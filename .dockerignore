@@ -1,0 +1,15 @@
+.git
+.venv
+node_modules
+apps/web/node_modules
+apps/web/dist
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+data/private
+data/raw
+exports
+.env
+.env.*
+!.env.example

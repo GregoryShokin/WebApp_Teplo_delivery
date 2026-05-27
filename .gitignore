@@ -1,0 +1,32 @@
+.env
+.env.*
+!.env.example
+ENV
+
+# Local exports and raw source files with business data.
+data/raw/
+data/private/
+exports/
+
+# OS/editor noise.
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+.venv*/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+apps/api/build/
+*.egg-info/
+*.tsbuildinfo
+node_modules/
+apps/web/node_modules/
+apps/web/dist/
+apps/web/.vite/
+apps/web/vite.config.d.ts
+apps/web/vite.config.js
+playwright-report/
+test-results/

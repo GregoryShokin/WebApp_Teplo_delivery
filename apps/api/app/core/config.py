@@ -13,13 +13,18 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://teplo:teplo@localhost:5432/teplo"
 
-    jwt_secret_key: str = Field(default="change-me-in-local-env", min_length=16)
+    jwt_secret_key: str = Field(default="change-me-in-local-env-change-me", min_length=32)
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 60
+    jwt_access_token_expire_minutes: int = 15
+    jwt_refresh_token_expire_days: int = 7
+    auth_refresh_cookie_name: str = "teplo_refresh_token"
+    auth_cookie_secure: bool = False
 
     backend_cors_origins: list[str] = ["http://localhost:5173"]
 
     scheduler_enabled: bool = True
+    employee_sync_enabled: bool = True
+    employee_sync_interval_hours: int = 6
 
     model_config = SettingsConfigDict(
         env_file=".env",
