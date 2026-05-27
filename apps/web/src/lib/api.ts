@@ -27,7 +27,12 @@ export type AppSetting = {
   value: unknown;
   value_type: string;
   category: string;
+  display_name: string;
   description: string | null;
+  widget_type: string;
+  widget_options: Record<string, unknown> | null;
+  unit: string | null;
+  is_critical: boolean;
   updated_at: string;
   updated_by_user_id: string | null;
   updated_by_user_name: string | null;

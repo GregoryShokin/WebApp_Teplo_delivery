@@ -1,45 +1,101 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, History, Pencil, RefreshCw, X } from "lucide-react";
+import { Eye, Lock, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 
-import { Button } from "../components/ui/button";
-import { PageHeader } from "../components/ui-app/PageHeader";
-import { getSettingHistory, getSettings, updateSetting, type AppSetting } from "../lib/api";
-import { cn } from "../lib/utils";
+import {
+  BooleanWidget,
+  DateArrayWidget,
+  DateWidget,
+  JsonWidget,
+  NumberWidget,
+  PercentWidget,
+  SelectWidget,
+  TimeWidget,
+  findSelectLabel,
+  type SettingWidgetOptions,
+} from "@/components/settings-widgets";
+import { formatJson, getPath } from "@/components/settings-widgets/widget-utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { PageHeader } from "@/components/ui-app/PageHeader";
+import { getAuthSnapshot, subscribeAuth } from "@/lib/auth";
+import { getSettingHistory, getSettings, updateSetting, type AppSetting } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
-const CRITICAL_SETTING_KEYS = new Set([
-  "balance_close_deadline",
-  "fixed_asset_threshold",
-  "repair_vs_modernization_pct",
-  "balance.close_day",
-  "balance.close_deadline",
-  "fixed_assets.capitalization_threshold_rub",
-  "fixed_assets.threshold_rub",
-  "fixed_assets.repair_modernization_threshold_ratio",
-  "fixed_assets.repair_vs_modernization_pct",
-]);
+type CategoryMeta = {
+  label: string;
+  description: string;
+};
 
-type EditingState = {
-  key: string;
-  draft: string;
+const CATEGORY_ORDER = ["schedule", "payroll", "payment_calendar", "balance", "fixed_assets", "dz_kz"];
+
+const CATEGORY_META: Record<string, CategoryMeta> = {
+  schedule: {
+    label: "График сотрудников",
+    description: "Планирование смен, целевой ФОТ и нетиповые дни.",
+  },
+  payroll: {
+    label: "Зарплата",
+    description: "Payroll-недели, смены, накопительный фонд и правила расчёта.",
+  },
+  payment_calendar: {
+    label: "Платёжный календарь",
+    description: "Сопоставление план/факт и параметры прогноза выручки.",
+  },
+  balance: {
+    label: "Баланс",
+    description: "Сроки закрытия и правила фиксации финансового состояния.",
+  },
+  fixed_assets: {
+    label: "Учёт ОС",
+    description: "Пороги признания, ремонт и модернизация основных средств.",
+  },
+  dz_kz: {
+    label: "Учёт ДЗ/КЗ",
+    description: "Правила контроля дебиторской и кредиторской задолженности.",
+  },
+};
+
+const LEGACY_CATEGORY_TO_SLUG: Record<string, string> = {
+  "График": "schedule",
+  "График сотрудников": "schedule",
+  "Зарплата": "payroll",
+  "Платёжный календарь": "payment_calendar",
+  "Финансы/Баланс": "balance",
+  "Финансы / Баланс": "balance",
+  "Баланс": "balance",
+  "Учёт ОС": "fixed_assets",
+  "Учёт ДЗ/КЗ": "dz_kz",
 };
 
 export function SettingsRoute() {
   const queryClient = useQueryClient();
+  const auth = useAuthSnapshot();
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
-  const [editing, setEditing] = useState<EditingState | null>(null);
   const [historyKey, setHistoryKey] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, unknown>>({});
+  const [savingKeys, setSavingKeys] = useState<Set<string>>(() => new Set());
+  const saveTimers = useRef<Record<string, ReturnType<typeof window.setTimeout>>>({});
+  const developerMode = useMemo(
+    () => import.meta.env.DEV || window.localStorage.getItem("teplo:developer-mode") === "1",
+    [],
+  );
 
   const settingsQuery = useQuery({
-    queryKey: ["settings", selectedCategory],
-    queryFn: () => getSettings(selectedCategory),
-  });
-
-  const allSettingsQuery = useQuery({
-    queryKey: ["settings", "all-categories"],
+    queryKey: ["settings"],
     queryFn: () => getSettings(),
   });
+
+  const settings = useMemo(() => settingsQuery.data ?? [], [settingsQuery.data]);
+  const selectedSetting = settings.find((setting) => setting.key === historyKey) ?? null;
 
   const historyQuery = useQuery({
     queryKey: ["settings-history", historyKey],
@@ -50,46 +106,81 @@ export function SettingsRoute() {
   const updateMutation = useMutation({
     mutationFn: ({ key, value }: { key: string; value: unknown }) => updateSetting(key, value),
     onSuccess: async (_, variables) => {
-      setEditing(null);
-      setError(null);
+      setDrafts((current) => {
+        if (!valuesEqual(current[variables.key], variables.value)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[variables.key];
+        return next;
+      });
+      toast.success("Сохранено");
       await queryClient.invalidateQueries({ queryKey: ["settings"] });
       await queryClient.invalidateQueries({ queryKey: ["settings-history", variables.key] });
     },
-    onError: () => setError("Не удалось сохранить настройку"),
+    onError: () => {
+      toast.error("Не удалось сохранить настройку");
+    },
+    onSettled: (_, __, variables) => {
+      if (!variables) {
+        return;
+      }
+      setSavingKeys((current) => {
+        const next = new Set(current);
+        next.delete(variables.key);
+        return next;
+      });
+    },
   });
 
+  useEffect(() => {
+    const timers = saveTimers.current;
+    return () => {
+      Object.values(timers).forEach(window.clearTimeout);
+    };
+  }, []);
+
   const categories = useMemo(() => {
-    const names = new Set((allSettingsQuery.data ?? []).map((setting) => setting.category));
-    return Array.from(names).sort((a, b) => a.localeCompare(b, "ru"));
-  }, [allSettingsQuery.data]);
+    const found = Array.from(new Set(settings.map((setting) => normalizeCategory(setting.category))));
+    return found.sort((a, b) => categoryIndex(a) - categoryIndex(b) || labelForCategory(a).localeCompare(labelForCategory(b), "ru"));
+  }, [settings]);
 
-  function startEditing(setting: AppSetting) {
-    setError(null);
-    setEditing({ key: setting.key, draft: stringifyValue(setting.value) });
-  }
+  const groupedSettings = useMemo(() => {
+    const groups = new Map<string, AppSetting[]>();
+    settings.forEach((setting) => {
+      const category = normalizeCategory(setting.category);
+      if (selectedCategory && category !== selectedCategory) {
+        return;
+      }
+      const items = groups.get(category) ?? [];
+      items.push(setting);
+      groups.set(category, items);
+    });
 
-  function saveSetting(setting: AppSetting) {
-    if (!editing || editing.key !== setting.key) {
-      return;
-    }
-    let nextValue: unknown;
-    try {
-      nextValue = parseDraft(setting, editing.draft);
-    } catch {
-      setError("Проверьте формат значения");
-      return;
-    }
-    if (!window.confirm("Сохранить изменение настройки?")) {
-      return;
-    }
-    updateMutation.mutate({ key: setting.key, value: nextValue });
+    return Array.from(groups.entries())
+      .sort(([a], [b]) => categoryIndex(a) - categoryIndex(b) || labelForCategory(a).localeCompare(labelForCategory(b), "ru"))
+      .map(([category, items]) => [
+        category,
+        items.sort((a, b) => a.display_name.localeCompare(b.display_name, "ru")),
+      ] as const);
+  }, [selectedCategory, settings]);
+
+  const isOwner = Boolean(auth.user?.roles.includes("owner"));
+
+  function handleValueChange(setting: AppSetting, value: unknown) {
+    setDrafts((current) => ({ ...current, [setting.key]: value }));
+    window.clearTimeout(saveTimers.current[setting.key]);
+    saveTimers.current[setting.key] = window.setTimeout(() => {
+      setSavingKeys((current) => new Set(current).add(setting.key));
+      updateMutation.mutate({ key: setting.key, value });
+    }, 500);
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <PageHeader
         title="Настройки"
-        description="Рабочие параметры приложения и история изменений."
+        description="Рабочие параметры приложения с понятными названиями, безопасным редактированием и историей изменений."
         action={
           <Button
             onClick={() => {
@@ -117,141 +208,263 @@ export function SettingsRoute() {
             key={category}
             onClick={() => setSelectedCategory(category)}
           >
-            {category}
+            {labelForCategory(category)}
           </CategoryButton>
         ))}
       </div>
 
-      {error ? (
-        <div className="mt-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
+      {settingsQuery.isLoading ? (
+        <div className="rounded-lg border bg-card px-4 py-8 text-sm text-muted-foreground">
+          Загрузка настроек...
         </div>
       ) : null}
 
-      <div className="mt-4 grid flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <section className="overflow-hidden rounded-lg border border-border bg-white">
-          <div className="grid grid-cols-[minmax(180px,1fr)_minmax(220px,1.2fr)_96px] gap-3 border-b border-border px-4 py-3 text-xs font-semibold uppercase text-muted-foreground">
-            <div>Ключ</div>
-            <div>Значение</div>
-            <div className="text-right">Действия</div>
-          </div>
-          <div className="divide-y divide-border">
-            {(settingsQuery.data ?? []).map((setting) => {
-              const isEditing = editing?.key === setting.key;
-              return (
-                <div
-                  className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(180px,1fr)_minmax(220px,1.2fr)_96px]"
-                  key={setting.key}
-                >
-                  <div className="min-w-0">
-                    <div className="break-all text-sm font-semibold">{setting.key}</div>
-                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      <span>{setting.category}</span>
-                      {CRITICAL_SETTING_KEYS.has(setting.key) ? <span>owner</span> : null}
-                    </div>
-                    {setting.description ? (
-                      <div className="mt-2 text-sm text-muted-foreground">
-                        {setting.description}
-                      </div>
-                    ) : null}
-                  </div>
+      {settingsQuery.isError ? (
+        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          Не удалось загрузить настройки
+        </div>
+      ) : null}
 
-                  <div className="min-w-0">
-                    {isEditing ? (
-                      <textarea
-                        className="min-h-24 w-full resize-y rounded-md border border-border bg-white px-3 py-2 font-mono text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                        onChange={(event) =>
-                          setEditing({ key: setting.key, draft: event.target.value })
-                        }
-                        value={editing.draft}
-                      />
-                    ) : (
-                      <pre className="max-h-40 overflow-auto rounded-md bg-muted px-3 py-2 text-sm leading-6">
-                        {stringifyValue(setting.value)}
-                      </pre>
-                    )}
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      {setting.updated_by_user_name ?? "system"} · {formatDate(setting.updated_at)}
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end gap-2">
-                    {isEditing ? (
-                      <>
-                        <Button
-                          disabled={updateMutation.isPending}
-                          onClick={() => saveSetting(setting)}
-                          size="icon"
-                          title="Сохранить"
-                        >
-                          <Check size={16} aria-hidden="true" />
-                        </Button>
-                        <Button
-                          onClick={() => setEditing(null)}
-                          size="icon"
-                          title="Отмена"
-                          variant="outline"
-                        >
-                          <X size={16} aria-hidden="true" />
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          onClick={() => startEditing(setting)}
-                          size="icon"
-                          title="Изменить"
-                          variant="outline"
-                        >
-                          <Pencil size={16} aria-hidden="true" />
-                        </Button>
-                        <Button
-                          onClick={() => setHistoryKey(setting.key)}
-                          size="icon"
-                          title="История"
-                          variant="outline"
-                        >
-                          <History size={16} aria-hidden="true" />
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-
-            {settingsQuery.isLoading ? (
-              <div className="px-4 py-6 text-sm text-muted-foreground">Загрузка...</div>
-            ) : null}
-            {!settingsQuery.isLoading && (settingsQuery.data ?? []).length === 0 ? (
-              <div className="px-4 py-6 text-sm text-muted-foreground">Нет настроек</div>
-            ) : null}
-          </div>
-        </section>
-
-        <aside className="rounded-lg border border-border bg-white">
-          <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-semibold uppercase text-muted-foreground">История</h2>
-            <div className="mt-1 break-all text-sm">{historyKey ?? "Настройка не выбрана"}</div>
-          </div>
-          <div className="divide-y divide-border">
-            {(historyQuery.data ?? []).map((item) => (
-              <div className="grid gap-2 px-4 py-3" key={item.id}>
-                <div className="text-xs text-muted-foreground">
-                  {item.changed_by_user_name ?? "system"} · {formatDate(item.changed_at)}
-                </div>
-                <HistoryValue label="Старое" value={item.old_value} />
-                <HistoryValue label="Новое" value={item.new_value} />
+      <div className="space-y-6">
+        {groupedSettings.map(([category, items]) => (
+          <section className="space-y-3" key={category}>
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold tracking-normal">{labelForCategory(category)}</h2>
+                <p className="text-sm text-muted-foreground">{descriptionForCategory(category)}</p>
               </div>
-            ))}
-            {historyKey && historyQuery.isLoading ? (
-              <div className="px-4 py-6 text-sm text-muted-foreground">Загрузка...</div>
-            ) : null}
-            {historyKey && !historyQuery.isLoading && (historyQuery.data ?? []).length === 0 ? (
-              <div className="px-4 py-6 text-sm text-muted-foreground">История пуста</div>
+              <div className="text-xs text-muted-foreground">{items.length} настроек</div>
+            </div>
+
+            <div className="grid gap-3">
+              {items.map((setting) => {
+                const value = draftValue(drafts, setting);
+                const locked = setting.is_critical && !isOwner;
+                return (
+                  <SettingCard
+                    developerMode={developerMode}
+                    disabled={locked}
+                    isSaving={savingKeys.has(setting.key)}
+                    key={setting.key}
+                    onChange={(nextValue) => handleValueChange(setting, nextValue)}
+                    onOpenHistory={() => setHistoryKey(setting.key)}
+                    setting={setting}
+                    value={value}
+                  />
+                );
+              })}
+            </div>
+          </section>
+        ))}
+
+        {!settingsQuery.isLoading && groupedSettings.length === 0 ? (
+          <div className="rounded-lg border bg-card px-4 py-8 text-sm text-muted-foreground">
+            Настройки в этом разделе пока не заданы.
+          </div>
+        ) : null}
+      </div>
+
+      <HistorySheet
+        history={historyQuery.data ?? []}
+        isLoading={historyQuery.isLoading}
+        onOpenChange={(open) => {
+          if (!open) {
+            setHistoryKey(null);
+          }
+        }}
+        open={Boolean(historyKey)}
+        setting={selectedSetting}
+        title={historyKey}
+      />
+    </div>
+  );
+}
+
+function SettingCard({
+  developerMode,
+  disabled,
+  isSaving,
+  onChange,
+  onOpenHistory,
+  setting,
+  value,
+}: {
+  developerMode: boolean;
+  disabled: boolean;
+  isSaving: boolean;
+  onChange: (value: unknown) => void;
+  onOpenHistory: () => void;
+  setting: AppSetting;
+  value: unknown;
+}) {
+  return (
+    <article className="grid gap-4 rounded-lg border bg-card p-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_minmax(300px,430px)]">
+      <div className="min-w-0">
+        <div className="flex items-start gap-2">
+          <h3 className="min-w-0 text-base font-semibold leading-6">{setting.display_name}</h3>
+          {setting.is_critical ? (
+            <span
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
+              title="Изменяет только владелец"
+            >
+              <Lock aria-hidden="true" className="h-3.5 w-3.5" />
+            </span>
+          ) : null}
+        </div>
+        {setting.description ? (
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+            {setting.description}
+          </p>
+        ) : null}
+        <div className="mt-3 text-xs text-muted-foreground">
+          {setting.updated_by_user_name ?? "system"} · {formatDateTime(setting.updated_at)}
+          {isSaving ? <span> · сохранение...</span> : null}
+        </div>
+      </div>
+
+      <div className="min-w-0">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <RenderSettingWidget
+              disabled={disabled}
+              onChange={onChange}
+              setting={setting}
+              value={value}
+            />
+            {developerMode ? (
+              <div className="mt-2 break-all font-mono text-[11px] leading-4 text-muted-foreground">
+                {setting.key}
+              </div>
             ) : null}
           </div>
-        </aside>
+          <Button onClick={onOpenHistory} size="icon" title="История" type="button" variant="outline">
+            <Eye aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function RenderSettingWidget({
+  disabled,
+  onChange,
+  setting,
+  value,
+}: {
+  disabled: boolean;
+  onChange: (value: unknown) => void;
+  setting: AppSetting;
+  value: unknown;
+}) {
+  const options = setting.widget_options as SettingWidgetOptions | null;
+  const props = {
+    disabled,
+    onChange,
+    options,
+    unit: setting.unit,
+    value,
+  };
+
+  switch (setting.widget_type) {
+    case "percent":
+      return <PercentWidget {...props} />;
+    case "number":
+      return <NumberWidget {...props} />;
+    case "date":
+      return <DateWidget {...props} />;
+    case "date_array":
+      return <DateArrayWidget {...props} />;
+    case "select":
+      return <SelectWidget {...props} />;
+    case "boolean":
+      return <BooleanWidget {...props} />;
+    case "time":
+      return <TimeWidget {...props} />;
+    case "text":
+      return (
+        <Input
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+          value={typeof value === "string" ? value : ""}
+        />
+      );
+    case "json":
+    default:
+      return <JsonWidget {...props} />;
+  }
+}
+
+function HistorySheet({
+  history,
+  isLoading,
+  onOpenChange,
+  open,
+  setting,
+  title,
+}: {
+  history: Array<{
+    id: string;
+    old_value: unknown;
+    new_value: unknown;
+    changed_at: string;
+    changed_by_user_name: string | null;
+  }>;
+  isLoading: boolean;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  setting: AppSetting | null;
+  title: string | null;
+}) {
+  return (
+    <Sheet onOpenChange={onOpenChange} open={open}>
+      <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+        <SheetHeader>
+          <SheetTitle>{setting?.display_name ?? "История настройки"}</SheetTitle>
+          <SheetDescription>{title ?? "Настройка не выбрана"}</SheetDescription>
+        </SheetHeader>
+
+        <div className="mt-6 space-y-4">
+          {history.map((item) => (
+            <div className="relative border-l pl-4" key={item.id}>
+              <span className="absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full bg-primary" />
+              <div className="text-sm font-medium">
+                {item.changed_by_user_name ?? "system"}
+              </div>
+              <div className="text-xs text-muted-foreground">{formatDateTime(item.changed_at)}</div>
+              <div className="mt-3 grid gap-2 text-sm">
+                <HistoryValue label="Было" setting={setting} value={item.old_value} />
+                <HistoryValue label="Стало" setting={setting} value={item.new_value} />
+              </div>
+            </div>
+          ))}
+
+          {isLoading ? (
+            <div className="text-sm text-muted-foreground">Загрузка истории...</div>
+          ) : null}
+          {!isLoading && open && history.length === 0 ? (
+            <div className="text-sm text-muted-foreground">История изменений пуста.</div>
+          ) : null}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function HistoryValue({
+  label,
+  setting,
+  value,
+}: {
+  label: string;
+  setting: AppSetting | null;
+  value: unknown;
+}) {
+  return (
+    <div className="rounded-md bg-muted px-3 py-2">
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="mt-1 whitespace-pre-wrap break-words text-sm">
+        {setting ? formatSettingValue(value, setting) : formatJson(value)}
       </div>
     </div>
   );
@@ -270,7 +483,7 @@ function CategoryButton({
     <button
       className={cn(
         "h-9 rounded-md border border-border px-3 text-sm font-medium transition-colors",
-        active ? "bg-primary text-primary-foreground" : "bg-white text-foreground hover:bg-muted",
+        active ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-muted",
       )}
       onClick={onClick}
       type="button"
@@ -280,46 +493,107 @@ function CategoryButton({
   );
 }
 
-function HistoryValue({ label, value }: { label: string; value: unknown }) {
-  return (
-    <div>
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <pre className="mt-1 max-h-32 overflow-auto rounded-md bg-muted px-2 py-1.5 text-xs leading-5">
-        {stringifyValue(value)}
-      </pre>
-    </div>
-  );
+function useAuthSnapshot() {
+  const [auth, setAuth] = useState(getAuthSnapshot);
+
+  useEffect(() => {
+    const unsubscribe = subscribeAuth(setAuth);
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  return auth;
 }
 
-function stringifyValue(value: unknown) {
-  if (typeof value === "string") {
-    return value;
-  }
-  return JSON.stringify(value, null, 2);
+function normalizeCategory(category: string) {
+  return LEGACY_CATEGORY_TO_SLUG[category] ?? category;
 }
 
-function parseDraft(setting: AppSetting, draft: string) {
-  if (setting.value_type === "object") {
-    return JSON.parse(draft);
-  }
-  if (["integer", "money"].includes(setting.value_type)) {
-    const value = Number.parseInt(draft, 10);
-    if (Number.isNaN(value)) {
-      throw new Error("Invalid integer");
-    }
-    return value;
-  }
-  if (setting.value_type === "number") {
-    const value = Number.parseFloat(draft);
-    if (Number.isNaN(value)) {
-      throw new Error("Invalid number");
-    }
-    return value;
-  }
-  return draft;
+function categoryIndex(category: string) {
+  const index = CATEGORY_ORDER.indexOf(category);
+  return index === -1 ? CATEGORY_ORDER.length : index;
 }
 
-function formatDate(value: string) {
+function labelForCategory(category: string) {
+  return CATEGORY_META[category]?.label ?? category;
+}
+
+function descriptionForCategory(category: string) {
+  return CATEGORY_META[category]?.description ?? "Параметры раздела.";
+}
+
+function draftValue(drafts: Record<string, unknown>, setting: AppSetting) {
+  return Object.prototype.hasOwnProperty.call(drafts, setting.key) ? drafts[setting.key] : setting.value;
+}
+
+function valuesEqual(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function formatSettingValue(value: unknown, setting: AppSetting) {
+  const options = setting.widget_options as SettingWidgetOptions | null;
+  if (value === null || value === undefined) {
+    return "Пусто";
+  }
+
+  if (setting.widget_type === "percent") {
+    const raw = getPath(value, options?.value_path);
+    return `${formatNumber(numberValue(raw) * 100)}%`;
+  }
+  if (setting.widget_type === "number") {
+    return [formatNumber(numberValue(value)), setting.unit].filter(Boolean).join(" ");
+  }
+  if (setting.widget_type === "boolean") {
+    return value === true ? "Да" : "Нет";
+  }
+  if (setting.widget_type === "select") {
+    return findSelectLabel(value, options?.options) ?? formatJson(value);
+  }
+  if (setting.widget_type === "date_array") {
+    return formatDateArray(value);
+  }
+  if (setting.widget_type === "date" || setting.widget_type === "time" || setting.widget_type === "text") {
+    return String(value);
+  }
+  return formatJson(value);
+}
+
+function formatDateArray(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.join(", ");
+  }
+  if (!value || typeof value !== "object") {
+    return "Пусто";
+  }
+  const record = value as { dates?: unknown; ranges?: unknown };
+  const dates = Array.isArray(record.dates) ? record.dates.join(", ") : "";
+  const ranges = Array.isArray(record.ranges)
+    ? record.ranges
+        .map((range) => {
+          if (!range || typeof range !== "object") {
+            return "";
+          }
+          const item = range as { start?: unknown; end?: unknown };
+          return `${String(item.start ?? "")}-${String(item.end ?? "")}`;
+        })
+        .filter(Boolean)
+        .join(", ")
+    : "";
+  return [dates, ranges].filter(Boolean).join("; ");
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" ? value : Number(value) || 0;
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("ru-RU", {
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("ru-RU", {
     dateStyle: "short",
     timeStyle: "short",

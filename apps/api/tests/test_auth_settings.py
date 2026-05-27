@@ -32,14 +32,23 @@ def _user(*roles: str) -> CurrentUser:
     )
 
 
-def _setting(key: str, value: Any, category: str = "Платёжный календарь") -> dict[str, Any]:
+def _setting(
+    key: str,
+    value: Any,
+    category: str = "Платёжный календарь",
+) -> dict[str, Any]:
     return {
         "id": uuid.uuid4(),
         "key": key,
         "value": value,
         "value_type": "object" if isinstance(value, dict) else "number",
         "category": category,
+        "display_name": "Тестовая настройка",
         "description": "Test setting",
+        "widget_type": "json" if isinstance(value, dict) else "number",
+        "widget_options": None,
+        "unit": None,
+        "is_critical": settings_service.is_critical_setting_key(key),
         "updated_at": datetime(2026, 5, 27, 10, 0, tzinfo=UTC),
         "updated_by_user_id": None,
         "updated_by_user_name": None,
@@ -52,8 +61,13 @@ def fake_settings(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         "payment_calendar.auto_match_tolerance": _setting(
             "payment_calendar.auto_match_tolerance",
             {"relative": 0.1, "date_window": "same_month"},
+            "payment_calendar",
         ),
-        "fixed_asset_threshold": _setting("fixed_asset_threshold", 5000, "Учёт ОС"),
+        "fixed_assets.capitalization_threshold_rub": _setting(
+            "fixed_assets.capitalization_threshold_rub",
+            5000,
+            "fixed_assets",
+        ),
     }
     history: list[dict[str, Any]] = []
 
@@ -170,10 +184,26 @@ def test_get_settings_authorized_returns_ok(
 ) -> None:
     client.app.dependency_overrides[current_user] = lambda: _user("accountant")
 
-    response = client.get("/api/v1/settings", params={"category": "Учёт ОС"})
+    response = client.get("/api/v1/settings", params={"category": "fixed_assets"})
 
     assert response.status_code == 200
-    assert [item["key"] for item in response.json()] == ["fixed_asset_threshold"]
+    assert [item["key"] for item in response.json()] == [
+        "fixed_assets.capitalization_threshold_rub"
+    ]
+
+
+def test_get_settings_authorized_returns_display_metadata(
+    client: TestClient, fake_settings: dict[str, Any]
+) -> None:
+    client.app.dependency_overrides[current_user] = lambda: _user("accountant")
+
+    response = client.get("/api/v1/settings", params={"category": "payment_calendar"})
+
+    assert response.status_code == 200
+    item = response.json()[0]
+    assert item["display_name"] == "Тестовая настройка"
+    assert item["widget_type"] == "json"
+    assert item["is_critical"] is False
 
 
 def test_put_setting_manager_returns_403(
@@ -213,7 +243,7 @@ def test_put_setting_finance_manager_critical_returns_403(
     client.app.dependency_overrides[current_user] = lambda: _user("finance_manager")
 
     response = client.put(
-        "/api/v1/settings/fixed_asset_threshold",
+        "/api/v1/settings/fixed_assets.capitalization_threshold_rub",
         json={"value": 7000},
     )
 
@@ -226,7 +256,7 @@ def test_put_setting_owner_can_update_critical(
     client.app.dependency_overrides[current_user] = lambda: _user("owner")
 
     response = client.put(
-        "/api/v1/settings/fixed_asset_threshold",
+        "/api/v1/settings/fixed_assets.capitalization_threshold_rub",
         json={"value": 7000},
     )
 

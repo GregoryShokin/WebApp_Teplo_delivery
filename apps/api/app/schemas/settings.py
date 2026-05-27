@@ -13,7 +13,12 @@ class AppSettingRead(BaseModel):
     value: Any
     value_type: str
     category: str
+    display_name: str
     description: str | None = None
+    widget_type: str
+    widget_options: Any | None = None
+    unit: str | None = None
+    is_critical: bool = False
     updated_at: datetime
     updated_by_user_id: uuid.UUID | None = None
     updated_by_user_name: str | None = None

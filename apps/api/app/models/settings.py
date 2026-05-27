@@ -19,7 +19,11 @@ class AppSetting(Base):
     value: Mapped[Any] = mapped_column(JSONB, nullable=False)
     value_type: Mapped[str] = mapped_column(String(64), nullable=False)
     category: Mapped[str] = mapped_column(String(128), nullable=False)
+    display_name: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    widget_type: Mapped[str] = mapped_column(Text, nullable=False)
+    widget_options: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
+    unit: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )

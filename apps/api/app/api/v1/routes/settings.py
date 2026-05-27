@@ -58,6 +58,11 @@ async def put_setting(
         return await settings_service.write_setting(session, key, payload.value, user.id)
     except settings_service.SettingNotFoundError:
         raise _not_found(key) from None
+    except settings_service.SettingValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from None
 
 
 @router.get("/{key}/history", response_model=list[AppSettingHistoryRead])

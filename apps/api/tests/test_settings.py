@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -37,7 +38,12 @@ def _setting(key: str, value: Any) -> dict[str, Any]:
         "value": value,
         "value_type": "number",
         "category": "Учёт ОС",
+        "display_name": "Тестовая настройка",
         "description": "Test setting",
+        "widget_type": "number",
+        "widget_options": None,
+        "unit": "₽",
+        "is_critical": settings_service.is_critical_setting_key(key),
         "updated_at": datetime(2026, 5, 27, 10, 0, tzinfo=UTC),
         "updated_by_user_id": None,
         "updated_by_user_name": None,
@@ -101,3 +107,29 @@ def test_get_setting_history_missing_key_returns_404(
     response = client.get("/api/v1/settings/missing/history")
 
     assert response.status_code == 404
+
+
+def test_validate_setting_value_accepts_nested_percent() -> None:
+    setting = SimpleNamespace(widget_type="percent", widget_options={"value_path": "relative"})
+
+    settings_service.validate_setting_value(
+        setting,
+        {"relative": 0.1, "date_window": "same_month"},
+    )
+
+
+def test_validate_setting_value_rejects_out_of_range_percent() -> None:
+    setting = SimpleNamespace(widget_type="percent", widget_options=None)
+
+    with pytest.raises(settings_service.SettingValidationError):
+        settings_service.validate_setting_value(setting, 1.5)
+
+
+def test_validate_setting_value_rejects_unknown_select_value() -> None:
+    setting = SimpleNamespace(
+        widget_type="select",
+        widget_options={"options": [{"value": "calendar", "label": "Календарная"}]},
+    )
+
+    with pytest.raises(settings_service.SettingValidationError):
+        settings_service.validate_setting_value(setting, "workday")

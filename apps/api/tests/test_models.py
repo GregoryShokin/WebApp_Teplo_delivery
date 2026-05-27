@@ -103,6 +103,15 @@ def test_required_unique_constraints_are_declared() -> None:
     assert models.AppSetting.__table__.c.key.unique is True
 
 
+def test_app_setting_display_metadata_columns_are_declared() -> None:
+    columns = models.AppSetting.__table__.c
+
+    assert columns.display_name.nullable is False
+    assert columns.widget_type.nullable is False
+    assert "widget_options" in columns
+    assert "unit" in columns
+
+
 def test_counterparty_inn_partial_unique_index_is_declared() -> None:
     indexes = {index.name: index for index in models.Counterparty.__table__.indexes}
 
@@ -195,6 +204,33 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
         "app_setting": 20,
         "app_setting_history": 20,
     }
+
+
+async def test_seeded_settings_have_display_metadata(migrated_db: str) -> None:
+    engine = create_async_engine(migrated_db)
+    try:
+        async with engine.connect() as conn:
+            missing_display_names = await conn.scalar(
+                text("select count(*) from app_setting where display_name is null")
+            )
+            target_payroll = (
+                await conn.execute(
+                    text(
+                        "select category, display_name, widget_type, unit "
+                        "from app_setting where key = 'schedule.target_payroll_revenue_ratio'"
+                    )
+                )
+            ).one()
+    finally:
+        await engine.dispose()
+
+    assert missing_display_names == 0
+    assert target_payroll == (
+        "schedule",
+        "Целевой ФОТ % от выручки",
+        "percent",
+        "%",
+    )
 
 
 async def test_employee_iiko_id_unique_constraint_raises_integrity_error(

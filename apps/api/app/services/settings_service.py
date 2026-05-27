@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -23,8 +24,19 @@ CRITICAL_SETTING_KEYS = frozenset(
     }
 )
 
+TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+MONTH_DAY_RE = re.compile(r"^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$")
+ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+ALLOWED_WIDGET_TYPES = frozenset(
+    {"text", "number", "percent", "date", "date_array", "select", "boolean", "json", "time"}
+)
+
 
 class SettingNotFoundError(LookupError):
+    pass
+
+
+class SettingValidationError(ValueError):
     pass
 
 
@@ -45,7 +57,12 @@ def serialize_setting(setting: AppSetting, user: User | None = None) -> dict[str
         "value": setting.value,
         "value_type": setting.value_type,
         "category": setting.category,
+        "display_name": setting.display_name,
         "description": setting.description,
+        "widget_type": setting.widget_type,
+        "widget_options": setting.widget_options,
+        "unit": setting.unit,
+        "is_critical": is_critical_setting_key(setting.key),
         "updated_at": setting.updated_at,
         "updated_by_user_id": setting.updated_by_user_id,
         "updated_by_user_name": _user_name(user),
@@ -108,6 +125,7 @@ async def write_setting(
     changed_by_user_id: uuid.UUID,
 ) -> dict[str, Any]:
     setting = await get_setting_model(session, key)
+    validate_setting_value(setting, value)
     old_value = setting.value
 
     setting.value = value
@@ -138,3 +156,115 @@ async def get_setting_history(session: AsyncSession, key: str) -> list[dict[str,
     )
     result = await session.execute(stmt)
     return [serialize_history(history, user) for history, user in result.all()]
+
+
+def validate_setting_value(setting: AppSetting, value: Any) -> None:
+    widget_type = setting.widget_type
+    if widget_type not in ALLOWED_WIDGET_TYPES:
+        raise SettingValidationError(f"Unsupported widget type: {widget_type}")
+
+    if widget_type == "json":
+        return
+    if widget_type == "boolean":
+        _require(isinstance(value, bool), "Expected boolean value")
+        return
+    if widget_type == "number":
+        _require(_is_number(value), "Expected number value")
+        return
+    if widget_type == "percent":
+        _validate_percent(setting, value)
+        return
+    if widget_type == "select":
+        _validate_select(setting, value)
+        return
+    if widget_type == "date":
+        _require(isinstance(value, str), "Expected date string")
+        _require(_is_date_value(setting, value), "Expected date in configured format")
+        return
+    if widget_type == "time":
+        _require(isinstance(value, str) and TIME_RE.match(value), "Expected HH:MM time")
+        return
+    if widget_type == "date_array":
+        _validate_date_array(setting, value)
+        return
+
+    _require(isinstance(value, str), "Expected text value")
+
+
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise SettingValidationError(message)
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _validate_percent(setting: AppSetting, value: Any) -> None:
+    target = value
+    value_path = _widget_options(setting).get("value_path")
+    if value_path:
+        _require(isinstance(value, dict), "Expected object value")
+        target = _get_path(value, str(value_path))
+
+    _require(_is_number(target), "Expected numeric percent value")
+    _require(0 <= float(target) <= 1, "Expected percent value between 0 and 1")
+
+
+def _validate_select(setting: AppSetting, value: Any) -> None:
+    options = _widget_options(setting).get("options")
+    _require(isinstance(options, list) and len(options) > 0, "Select options are not configured")
+    option_values = [
+        option.get("value")
+        for option in options
+        if isinstance(option, dict) and "value" in option
+    ]
+    _require(
+        any(value == option_value for option_value in option_values),
+        "Value is not in options",
+    )
+
+
+def _validate_date_array(setting: AppSetting, value: Any) -> None:
+    if isinstance(value, list):
+        dates = value
+        ranges: list[Any] = []
+    elif isinstance(value, dict):
+        dates = value.get("dates")
+        ranges = value.get("ranges", [])
+    else:
+        raise SettingValidationError("Expected date array value")
+
+    _require(isinstance(dates, list), "Expected dates list")
+    for date_value in dates:
+        _require(isinstance(date_value, str), "Expected date string")
+        _require(_is_date_value(setting, date_value), "Expected date in configured format")
+
+    _require(isinstance(ranges, list), "Expected ranges list")
+    for range_value in ranges:
+        _require(isinstance(range_value, dict), "Expected range object")
+        start = range_value.get("start")
+        end = range_value.get("end")
+        _require(isinstance(start, str) and isinstance(end, str), "Expected range dates")
+        _require(_is_date_value(setting, start), "Expected range start in configured format")
+        _require(_is_date_value(setting, end), "Expected range end in configured format")
+
+
+def _is_date_value(setting: AppSetting, value: str) -> bool:
+    options = _widget_options(setting)
+    if options.get("format") == "MM-DD" or options.get("fixed_year") is False:
+        return bool(MONTH_DAY_RE.match(value))
+    return bool(ISO_DATE_RE.match(value))
+
+
+def _widget_options(setting: AppSetting) -> dict[str, Any]:
+    return setting.widget_options if isinstance(setting.widget_options, dict) else {}
+
+
+def _get_path(value: dict[str, Any], path: str) -> Any:
+    current: Any = value
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            raise SettingValidationError(f"Missing value path: {path}")
+        current = current[part]
+    return current
