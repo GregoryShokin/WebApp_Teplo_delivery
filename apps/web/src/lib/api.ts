@@ -74,6 +74,42 @@ export type EmployeeSyncResult = {
   deactivated: number;
 };
 
+export type PayrollPeriod = {
+  id: string;
+  period_type: "week";
+  start_date: string;
+  end_date: string;
+  payroll_date: string;
+  status: string;
+  finalized_at: string | null;
+  finalized_by_user_id: string | null;
+};
+
+export type PayrollRun = {
+  id: string;
+  period_id: string;
+  started_at: string;
+  finished_at: string | null;
+  status: string;
+  blocking_issues: Array<Record<string, unknown>>;
+  summary: Record<string, unknown>;
+  period: PayrollPeriod | null;
+};
+
+export type PayrollLine = {
+  id: string;
+  run_id: string;
+  employee_id: string;
+  role: string;
+  base_pay: number;
+  premium: number;
+  percent_pay: number;
+  fund_accrual: number;
+  deduction: number;
+  total_payable: number;
+  components: Record<string, unknown>;
+};
+
 export const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
   withCredentials: true,
@@ -187,5 +223,35 @@ export async function patchEmployee(id: string, patch: EmployeePatch): Promise<E
 
 export async function syncEmployees(): Promise<EmployeeSyncResult> {
   const response = await api.post<EmployeeSyncResult>("/employees/sync");
+  return response.data;
+}
+
+export async function autoCreateNextPayrollPeriod(): Promise<PayrollPeriod> {
+  const response = await api.post<PayrollPeriod>("/payroll/periods/auto-create-next");
+  return response.data;
+}
+
+export async function createPayrollRun(periodId: string): Promise<PayrollRun> {
+  const response = await api.post<PayrollRun>("/payroll/runs", { period_id: periodId });
+  return response.data;
+}
+
+export async function getPayrollRuns(): Promise<PayrollRun[]> {
+  const response = await api.get<PayrollRun[]>("/payroll/runs");
+  return response.data;
+}
+
+export async function getPayrollRun(id: string): Promise<PayrollRun> {
+  const response = await api.get<PayrollRun>(`/payroll/runs/${id}`);
+  return response.data;
+}
+
+export async function getPayrollRunLines(id: string): Promise<PayrollLine[]> {
+  const response = await api.get<PayrollLine[]>(`/payroll/runs/${id}/lines`);
+  return response.data;
+}
+
+export async function finalizePayrollRun(id: string): Promise<PayrollRun> {
+  const response = await api.post<PayrollRun>(`/payroll/runs/${id}/finalize`);
   return response.data;
 }

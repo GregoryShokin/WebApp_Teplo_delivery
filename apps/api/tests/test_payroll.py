@@ -1,0 +1,371 @@
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, date, datetime
+from decimal import Decimal
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.api.v1.routes import payroll as payroll_routes
+from app.main import create_app
+from app.models import (
+    AccumulationFundAccount,
+    AttendanceEntry,
+    DepositAccount,
+    Employee,
+    PayrollPeriod,
+    PayrollRun,
+)
+from app.services.attendance_loader import build_attendance_entry
+from app.services.payroll_calculator import calculate_payroll_lines_from_inputs
+from app.services.payroll_runner import (
+    PayrollConflictError,
+    apply_deposit_write_offs_to_accounts,
+    apply_fund_payouts_if_due,
+    compute_next_payroll_period_dates,
+    finalize_payroll_run,
+)
+
+
+def payroll_settings(revenue: dict[str, int] | None = None) -> dict[str, Any]:
+    return {
+        "payroll.role_category_rates": {
+            "Пиццерист": {"2": 2200},
+            "Сушист": {"2": 2400},
+        },
+        "payroll.category_rules": {
+            "2": {"coeff": 7.5, "deposit_target": 15000, "deposit_withholding": 1000}
+        },
+        "payroll.revenue_percent_tiers": [
+            {"from": 50000, "rate": 0.035},
+            {"from": 140000, "rate": 0.045},
+            {"from": 190000, "rate": 0.055},
+            {"from": 550000, "rate": 0.065},
+        ],
+        "payroll.allowances": {"senior": 500, "deputy_senior": 300},
+        "payroll.fund_rates_by_tenure": [
+            {"min_years": 0.5, "rate": 0.05},
+            {"min_years": 1.0, "rate": 0.10},
+            {"min_years": 1.5, "rate": 0.15},
+        ],
+        "payroll.mock_daily_revenue": revenue or {},
+        "payroll.deposit_auto_withholding_enabled": False,
+        "payroll.deposit_fund_payment_date": "01-15",
+    }
+
+
+def make_period(
+    start: date = date(2026, 5, 19),
+    end: date = date(2026, 5, 25),
+    payroll_date: date = date(2026, 5, 26),
+) -> PayrollPeriod:
+    return PayrollPeriod(
+        id=uuid.uuid4(),
+        period_type="week",
+        start_date=start,
+        end_date=end,
+        payroll_date=payroll_date,
+        status="open",
+    )
+
+
+def make_employee(
+    *,
+    status: str = "active",
+    position: str | None = "Пиццерист",
+    category: str | None = "2",
+    hire_date: date | None = None,
+) -> Employee:
+    return Employee(
+        id=uuid.uuid4(),
+        full_name="Payroll Employee",
+        iiko_id=f"iiko-{uuid.uuid4()}",
+        position=position,
+        category=category,
+        status=status,
+        hire_date=hire_date,
+        is_senior=False,
+        is_deputy_senior=False,
+        created_at=datetime(2026, 5, 1, tzinfo=UTC),
+        updated_at=datetime(2026, 5, 1, tzinfo=UTC),
+    )
+
+
+def make_entry(
+    period: PayrollPeriod,
+    employee: Employee,
+    work_date: date,
+    minutes: int = 720,
+    role: str | None = "Пиццерист",
+    quality_status: str = "ok",
+) -> AttendanceEntry:
+    return AttendanceEntry(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        period_id=period.id,
+        work_date=work_date,
+        started_at=datetime.combine(work_date, datetime.min.time(), tzinfo=UTC),
+        ended_at=datetime.combine(work_date, datetime.min.time(), tzinfo=UTC),
+        minutes_worked=minutes,
+        role=role,
+        station=None,
+        source="manual",
+        quality_status=quality_status,
+        notes=None,
+    )
+
+
+def test_tuesday_monday_payroll_period_is_computed() -> None:
+    start_date, end_date, payroll_date = compute_next_payroll_period_dates(date(2026, 5, 27))
+
+    assert start_date == date(2026, 5, 19)
+    assert end_date == date(2026, 5, 25)
+    assert payroll_date == date(2026, 5, 26)
+
+
+def test_open_shift_closes_at_22_msk() -> None:
+    period = make_period()
+    employee = make_employee()
+
+    entry = build_attendance_entry(
+        {"employeeId": employee.iiko_id, "dateFrom": "2026-05-19T11:00:00+03:00"},
+        period,
+        employee,
+    )
+
+    assert entry.ended_at == datetime(2026, 5, 19, 19, 0, tzinfo=UTC)
+    assert entry.minutes_worked == 11 * 60
+    assert entry.quality_status == "ok"
+
+
+def test_closed_shift_over_12_hours_requires_quality_review() -> None:
+    period = make_period()
+    employee = make_employee()
+
+    entry = build_attendance_entry(
+        {
+            "employeeId": employee.iiko_id,
+            "dateFrom": "2026-05-19T08:00:00+03:00",
+            "dateTo": "2026-05-19T21:00:00+03:00",
+        },
+        period,
+        employee,
+    )
+
+    assert entry.minutes_worked == 13 * 60
+    assert entry.quality_status == "quality_review"
+    assert "duration_over_12h" in (entry.notes or "")
+
+
+def test_unknown_or_unconfigured_employee_blocks_payroll_and_finalize() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(status="needs_setup", position=None, category=None)
+    entry = make_entry(period, employee, period.start_date, role=None)
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        payroll_settings(),
+    )
+
+    assert result.blocking_issues[0]["type"] == "needs_setup"
+
+
+def test_fixed_salary_for_full_week_is_calculated() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    entries = [
+        make_entry(period, employee, period.start_date.replace(day=19 + offset))
+        for offset in range(7)
+    ]
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {employee.id: employee},
+        payroll_settings(),
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].base_pay == 15400
+    assert result.lines[0].total_payable == 15400
+
+
+def test_percent_from_revenue_uses_settings_revenue_mock() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    entry = make_entry(period, employee, period.start_date)
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        payroll_settings({period.start_date.isoformat(): 140000}),
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].percent_pay == 6300
+    assert result.lines[0].components["days"][0]["revenue_rate"] == 0.045
+
+
+def test_fund_is_paid_out_on_january_15_for_previous_year() -> None:
+    employee_id = uuid.uuid4()
+    account = AccumulationFundAccount(
+        id=uuid.uuid4(),
+        employee_id=employee_id,
+        year=2025,
+        accumulated_amount=Decimal("5000"),
+        paid_out_amount=Decimal("0"),
+        status="active",
+    )
+
+    paid = apply_fund_payouts_if_due([account], date(2026, 1, 15))
+
+    assert paid == Decimal("5000")
+    assert account.paid_out_amount == Decimal("5000")
+    assert account.status == "paid_out"
+
+
+def test_deposit_write_off_reduces_deposit_balance() -> None:
+    employee_id = uuid.uuid4()
+    account = DepositAccount(
+        id=uuid.uuid4(),
+        employee_id=employee_id,
+        balance=Decimal("1000"),
+        last_updated=datetime(2026, 5, 27, tzinfo=UTC),
+    )
+
+    transactions = apply_deposit_write_offs_to_accounts(
+        {employee_id: account},
+        [{"employee_id": employee_id, "amount": Decimal("300")}],
+        uuid.uuid4(),
+        datetime(2026, 5, 27, 10, 0, tzinfo=UTC),
+    )
+
+    assert account.balance == Decimal("700")
+    assert transactions[0].transaction_type == "write_off"
+    assert transactions[0].amount == Decimal("300")
+
+
+def test_finalize_request_manager_returns_403(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    async def fake_finalize(*_args, **_kwargs):
+        raise AssertionError("manager must not reach finalize service")
+
+    monkeypatch.setattr(payroll_routes, "finalize_payroll_run", fake_finalize)
+
+    response = client.post(
+        f"/api/v1/payroll/runs/{uuid.uuid4()}/finalize",
+        headers={"X-User-Role": "manager"},
+    )
+
+    assert response.status_code == 403
+    client.close()
+
+
+def test_finalize_request_finance_manager_returns_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = create_app()
+    client = TestClient(app)
+    run_id = uuid.uuid4()
+
+    async def fake_finalize(_session, _run_id):
+        return PayrollRun(
+            id=run_id,
+            period_id=uuid.uuid4(),
+            started_at=datetime(2026, 5, 27, tzinfo=UTC),
+            finished_at=datetime(2026, 5, 27, 1, tzinfo=UTC),
+            status="finalized",
+            blocking_issues=[],
+            summary={},
+        )
+
+    async def fake_get_run(_session, _run_id):
+        return {
+            "id": run_id,
+            "period_id": uuid.uuid4(),
+            "started_at": datetime(2026, 5, 27, tzinfo=UTC),
+            "finished_at": datetime(2026, 5, 27, 1, tzinfo=UTC),
+            "status": "finalized",
+            "blocking_issues": [],
+            "summary": {},
+            "period": None,
+        }
+
+    monkeypatch.setattr(payroll_routes, "finalize_payroll_run", fake_finalize)
+    monkeypatch.setattr(payroll_routes, "get_run", fake_get_run)
+
+    response = client.post(
+        f"/api/v1/payroll/runs/{run_id}/finalize",
+        headers={"X-User-Role": "finance_manager"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "finalized"
+    client.close()
+
+
+class FinalizeFakeSession:
+    def __init__(self, run: PayrollRun, period: PayrollPeriod) -> None:
+        self.run = run
+        self.period = period
+        self.committed = False
+
+    async def get(self, model, object_id):
+        if model is PayrollRun and object_id == self.run.id:
+            return self.run
+        if model is PayrollPeriod and object_id == self.period.id:
+            return self.period
+        return None
+
+    async def commit(self) -> None:
+        self.committed = True
+
+    async def refresh(self, _model) -> None:
+        return None
+
+
+async def test_finalize_without_issues_sets_status_finalized() -> None:
+    period = make_period()
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 5, 27, tzinfo=UTC),
+        finished_at=datetime(2026, 5, 27, 1, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    session = FinalizeFakeSession(run, period)
+
+    finalized = await finalize_payroll_run(session, run.id)  # type: ignore[arg-type]
+
+    assert finalized.status == "finalized"
+    assert period.status == "finalized"
+    assert session.committed is True
+
+
+async def test_finalized_run_cannot_be_finalized_again() -> None:
+    period = make_period()
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 5, 27, tzinfo=UTC),
+        status="finalized",
+        blocking_issues=[],
+        summary={},
+    )
+    session = FinalizeFakeSession(run, period)
+
+    with pytest.raises(PayrollConflictError):
+        await finalize_payroll_run(session, run.id)  # type: ignore[arg-type]

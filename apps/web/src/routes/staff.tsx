@@ -88,14 +88,22 @@ export function StaffRoute() {
             </div>
           </div>
           <nav className="mt-8 grid gap-1 text-sm">
-            {["Обзор", "Штат", "График", "Зарплата", "ДДС", "ОПиУ", "Интеграции"].map((item) => (
+            {[
+              ["Обзор", "/"],
+              ["Штат", "/staff"],
+              ["График", "/"],
+              ["Зарплата", "/payroll/runs"],
+              ["ДДС", "/"],
+              ["ОПиУ", "/"],
+              ["Интеграции", "/"],
+            ].map(([item, href]) => (
               <a
                 className={`rounded-md px-3 py-2 text-left ${
                   item === "Штат"
                     ? "bg-muted font-medium text-foreground"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 }`}
-                href={item === "Штат" ? "/staff" : "/"}
+                href={href}
                 key={item}
               >
                 {item}

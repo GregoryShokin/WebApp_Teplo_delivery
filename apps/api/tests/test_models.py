@@ -43,6 +43,13 @@ EXPECTED_TABLES = {
     "agent_action",
     "app_setting",
     "app_setting_history",
+    "payroll_period",
+    "attendance_entry",
+    "payroll_run",
+    "payroll_line",
+    "deposit_account",
+    "deposit_transaction",
+    "accumulation_fund_account",
 }
 
 
@@ -69,6 +76,13 @@ def test_all_models_import() -> None:
         "AgentAction",
         "AppSetting",
         "AppSettingHistory",
+        "PayrollPeriod",
+        "AttendanceEntry",
+        "PayrollRun",
+        "PayrollLine",
+        "DepositAccount",
+        "DepositTransaction",
+        "AccumulationFundAccount",
     } <= exported
 
 
@@ -178,8 +192,8 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
         "organization": 1,
         "location": 2,
         "user": 1,
-        "app_setting": 12,
-        "app_setting_history": 12,
+        "app_setting": 20,
+        "app_setting_history": 20,
     }
 
 

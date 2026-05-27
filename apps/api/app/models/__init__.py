@@ -10,6 +10,15 @@ from app.models.audit import (
 from app.models.core import Location, Organization, Role, User, UserRole
 from app.models.counterparty import Counterparty, CounterpartyRole
 from app.models.employee import Employee
+from app.models.payroll import (
+    AccumulationFundAccount,
+    AttendanceEntry,
+    DepositAccount,
+    DepositTransaction,
+    PayrollLine,
+    PayrollPeriod,
+    PayrollRun,
+)
 from app.models.period import Period
 from app.models.settings import AppSetting, AppSettingHistory
 from app.models.wallet import Wallet
@@ -19,12 +28,19 @@ __all__ = [
     "AgentRun",
     "AppSetting",
     "AppSettingHistory",
+    "AccumulationFundAccount",
+    "AttendanceEntry",
     "Counterparty",
     "CounterpartyRole",
     "DataSource",
+    "DepositAccount",
+    "DepositTransaction",
     "Employee",
     "Location",
     "Organization",
+    "PayrollLine",
+    "PayrollPeriod",
+    "PayrollRun",
     "ParsedDocument",
     "Period",
     "Role",
