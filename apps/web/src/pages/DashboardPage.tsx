@@ -1,145 +1,196 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Banknote, RefreshCw, Settings, UserRoundCheck } from "lucide-react";
 import type { ReactNode } from "react";
-import { Database, FileCheck2, RefreshCw, ShieldCheck, Workflow } from "lucide-react";
 
-import { Button } from "../components/ui/button";
-import { getHealth, getIntegrationDefinitions } from "../lib/api";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui-app/EmptyState";
+import { PageHeader } from "@/components/ui-app/PageHeader";
+import { getEmployees, getPayrollRuns, getSettings, type PayrollRun } from "@/lib/api";
 
-const modules = [
-  { name: "Зарплата", status: "first module", detail: "employees, shifts, ledger" },
-  { name: "Финансы", status: "core", detail: "DDS, P&L, balance" },
-  { name: "Интеграции", status: "audit-ready", detail: "iiko, banks, mail, OCR" },
-  { name: "Склад", status: "later", detail: "tech cards, inventory" },
-];
+type DashboardPageProps = {
+  onNavigate: (path: string) => void;
+};
 
-export function DashboardPage() {
-  const healthQuery = useQuery({ queryKey: ["health"], queryFn: getHealth });
-  const integrationsQuery = useQuery({
-    queryKey: ["integration-definitions"],
-    queryFn: getIntegrationDefinitions,
+export function DashboardPage({ onNavigate }: DashboardPageProps) {
+  const queryClient = useQueryClient();
+  const payrollRunsQuery = useQuery({ queryKey: ["payroll-runs"], queryFn: getPayrollRuns });
+  const employeesQuery = useQuery({
+    queryKey: ["employees", "dashboard-active"],
+    queryFn: () => getEmployees({ status: "active" }),
+  });
+  const settingsQuery = useQuery({
+    queryKey: ["settings", "dashboard-count"],
+    queryFn: () => getSettings(),
   });
 
+  const weeklyRun = getCurrentWeekRun(payrollRunsQuery.data ?? []);
+  const weeklyTotal = Number(weeklyRun?.summary.total_payable ?? 0);
+  const activeEmployees = employeesQuery.data?.length ?? 0;
+  const activeSettings = settingsQuery.data?.length ?? 0;
+
   return (
-    <main className="min-h-screen">
-      <div className="mx-auto grid min-h-screen max-w-7xl grid-cols-1 lg:grid-cols-[240px_1fr]">
-        <aside className="border-b border-border bg-white px-5 py-5 lg:border-b-0 lg:border-r">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Database size={18} aria-hidden="true" />
-            </div>
-            <div>
-              <div className="text-base font-semibold">Тепло</div>
-              <div className="text-xs text-muted-foreground">management app</div>
-            </div>
-          </div>
-          <nav className="mt-8 grid gap-1 text-sm">
-            {["Обзор", "Штат", "Зарплата", "ДДС", "ОПиУ", "Интеграции", "Аудит"].map((item) => (
-              <a
-                className="rounded-md px-3 py-2 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
-                href={item === "Штат" ? "/staff" : "/"}
-                key={item}
-              >
-                {item}
-              </a>
-            ))}
-          </nav>
-        </aside>
+    <div className="space-y-5">
+      <PageHeader
+        title="Главная"
+        description="Ключевые показатели для зарплаты, штата и настроек."
+        action={
+          <Button
+            onClick={() => {
+              void queryClient.invalidateQueries({ queryKey: ["payroll-runs"] });
+              void queryClient.invalidateQueries({ queryKey: ["employees"] });
+              void queryClient.invalidateQueries({ queryKey: ["settings"] });
+            }}
+            variant="outline"
+          >
+            <RefreshCw aria-hidden="true" />
+            Обновить
+          </Button>
+        }
+      />
 
-        <section className="px-5 py-5 sm:px-8">
-          <header className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-normal">Операционный контур</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Первый экран для self-hosted учета, интеграций и источников.
-              </p>
-            </div>
-            <Button
-              onClick={() => {
-                void healthQuery.refetch();
-                void integrationsQuery.refetch();
-              }}
-              variant="outline"
-            >
-              <RefreshCw size={16} aria-hidden="true" />
-              Обновить
-            </Button>
-          </header>
+      <section className="grid gap-4 md:grid-cols-3">
+        {payrollRunsQuery.isLoading ? (
+          <MetricSkeleton title="Зарплата за эту неделю" />
+        ) : weeklyRun ? (
+          <MetricCard
+            description={weeklyRun.period ? weekLabel(weeklyRun) : "Последний доступный расчёт"}
+            icon={<Banknote className="h-5 w-5" aria-hidden="true" />}
+            title="Зарплата за эту неделю"
+            value={formatMoney(weeklyTotal)}
+          />
+        ) : (
+          <EmptyState
+            icon={<Banknote className="h-5 w-5" aria-hidden="true" />}
+            title="Зарплата за эту неделю"
+            description="Расчётов пока нет."
+            action={<Button onClick={() => onNavigate("/payroll/runs")}>Перейти к расчётам</Button>}
+          />
+        )}
 
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            <StatusTile
-              icon={<ShieldCheck size={20} aria-hidden="true" />}
-              label="API"
-              value={healthQuery.data?.status ?? (healthQuery.isError ? "offline" : "checking")}
-            />
-            <StatusTile
-              icon={<Workflow size={20} aria-hidden="true" />}
-              label="Источники"
-              value={`${integrationsQuery.data?.length ?? 0} adapters`}
-            />
-            <StatusTile
-              icon={<FileCheck2 size={20} aria-hidden="true" />}
-              label="Audit"
-              value="source_reference"
-            />
-          </div>
+        {employeesQuery.isLoading ? (
+          <MetricSkeleton title="Сотрудников активно" />
+        ) : activeEmployees > 0 ? (
+          <MetricCard
+            description="Сотрудники со статусом «Активен»"
+            icon={<UserRoundCheck className="h-5 w-5" aria-hidden="true" />}
+            title="Сотрудников активно"
+            value={String(activeEmployees)}
+          />
+        ) : (
+          <EmptyState
+            icon={<UserRoundCheck className="h-5 w-5" aria-hidden="true" />}
+            title="Сотрудников активно"
+            description="Активных сотрудников пока нет."
+            action={<Button onClick={() => onNavigate("/staff")}>Открыть штат</Button>}
+          />
+        )}
 
-          <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_380px]">
-            <section className="rounded-lg border border-border bg-white">
-              <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-semibold uppercase text-muted-foreground">Модули</h2>
-              </div>
-              <div className="divide-y divide-border">
-                {modules.map((module) => (
-                  <div className="grid gap-2 px-4 py-4 sm:grid-cols-[160px_140px_1fr]" key={module.name}>
-                    <div className="font-medium">{module.name}</div>
-                    <div className="text-sm text-primary">{module.status}</div>
-                    <div className="text-sm text-muted-foreground">{module.detail}</div>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-lg border border-border bg-white">
-              <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-semibold uppercase text-muted-foreground">Интеграции</h2>
-              </div>
-              <div className="divide-y divide-border">
-                {(integrationsQuery.data ?? []).map((source) => (
-                  <div className="px-4 py-3" key={source.code}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="font-medium">{source.name}</div>
-                      <div className="rounded-sm bg-muted px-2 py-1 text-xs text-muted-foreground">
-                        {source.pattern}
-                      </div>
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">{source.script_path}</div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-        </section>
-      </div>
-    </main>
+        {settingsQuery.isLoading ? (
+          <MetricSkeleton title="Настроек активно" />
+        ) : activeSettings > 0 ? (
+          <MetricCard
+            description="Параметры, доступные в рабочем контуре"
+            icon={<Settings className="h-5 w-5" aria-hidden="true" />}
+            title="Настроек активно"
+            value={String(activeSettings)}
+          />
+        ) : (
+          <EmptyState
+            icon={<Settings className="h-5 w-5" aria-hidden="true" />}
+            title="Настроек активно"
+            description="Настройки ещё не загружены."
+            action={<Button onClick={() => onNavigate("/settings")}>Открыть настройки</Button>}
+          />
+        )}
+      </section>
+    </div>
   );
 }
 
-function StatusTile({
+function MetricCard({
+  description,
   icon,
-  label,
+  title,
   value,
 }: {
+  description: string;
   icon: ReactNode;
-  label: string;
+  title: string;
   value: string;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-white p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm text-muted-foreground">{label}</div>
-        <div className="text-primary">{icon}</div>
-      </div>
-      <div className="mt-3 text-xl font-semibold">{value}</div>
-    </div>
+    <Card className="shadow-none">
+      <CardHeader className="space-y-0 p-4 pb-2">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardDescription>{title}</CardDescription>
+            <CardTitle className="mt-3 text-2xl tabular-nums">{value}</CardTitle>
+          </div>
+          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            {icon}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="px-4 pb-4 pt-0 text-sm text-muted-foreground">
+        {description}
+      </CardContent>
+    </Card>
   );
+}
+
+function MetricSkeleton({ title }: { title: string }) {
+  return (
+    <Card className="shadow-none">
+      <CardHeader className="p-4 pb-2">
+        <CardDescription>{title}</CardDescription>
+        <Skeleton className="mt-3 h-8 w-28" />
+      </CardHeader>
+      <CardContent className="px-4 pb-4 pt-0">
+        <Skeleton className="h-5 w-44" />
+      </CardContent>
+    </Card>
+  );
+}
+
+function getCurrentWeekRun(runs: PayrollRun[]) {
+  if (runs.length === 0) {
+    return null;
+  }
+
+  const now = new Date();
+  const runInCurrentWeek = runs.find((run) => {
+    if (!run.period) {
+      return false;
+    }
+    const startDate = new Date(run.period.start_date);
+    const endDate = new Date(run.period.end_date);
+    return startDate <= now && now <= endDate;
+  });
+
+  return (
+    runInCurrentWeek ??
+    [...runs].sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at))[0]
+  );
+}
+
+function weekLabel(run: PayrollRun) {
+  if (!run.period) {
+    return "Последний доступный расчёт";
+  }
+
+  return `${formatDate(run.period.start_date)} - ${formatDate(run.period.end_date)}`;
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow" }).format(new Date(value));
+}
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("ru-RU", {
+    maximumFractionDigits: 0,
+    style: "currency",
+    currency: "RUB",
+  }).format(value);
 }

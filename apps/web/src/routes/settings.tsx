@@ -1,16 +1,10 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, History, LogOut, Pencil, RefreshCw, X } from "lucide-react";
+import { Check, History, Pencil, RefreshCw, X } from "lucide-react";
 
 import { Button } from "../components/ui/button";
-import {
-  getSettingHistory,
-  getSettings,
-  logout,
-  updateSetting,
-  type AppSetting,
-} from "../lib/api";
-import { getCurrentUser } from "../lib/auth";
+import { PageHeader } from "../components/ui-app/PageHeader";
+import { getSettingHistory, getSettings, updateSetting, type AppSetting } from "../lib/api";
 import { cn } from "../lib/utils";
 
 const CRITICAL_SETTING_KEYS = new Set([
@@ -25,22 +19,17 @@ const CRITICAL_SETTING_KEYS = new Set([
   "fixed_assets.repair_vs_modernization_pct",
 ]);
 
-type SettingsRouteProps = {
-  onNavigate: (path: string) => void;
-};
-
 type EditingState = {
   key: string;
   draft: string;
 };
 
-export function SettingsRoute({ onNavigate }: SettingsRouteProps) {
+export function SettingsRoute() {
   const queryClient = useQueryClient();
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
   const [editing, setEditing] = useState<EditingState | null>(null);
   const [historyKey, setHistoryKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const user = getCurrentUser();
 
   const settingsQuery = useQuery({
     queryKey: ["settings", selectedCategory],
@@ -74,11 +63,6 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps) {
     return Array.from(names).sort((a, b) => a.localeCompare(b, "ru"));
   }, [allSettingsQuery.data]);
 
-  async function handleLogout() {
-    await logout();
-    onNavigate("/login");
-  }
-
   function startEditing(setting: AppSetting) {
     setError(null);
     setEditing({ key: setting.key, draft: stringifyValue(setting.value) });
@@ -102,168 +86,174 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps) {
   }
 
   return (
-    <main className="min-h-screen bg-background">
-      <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-4 sm:px-6">
-        <header className="flex flex-col gap-4 border-b border-border pb-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-normal">Настройки</h1>
-            <div className="mt-1 text-sm text-muted-foreground">
-              {user ? `${user.full_name} · ${user.roles.join(", ")}` : "Тепло"}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={() => {
-                void queryClient.invalidateQueries({ queryKey: ["settings"] });
-                if (historyKey) {
-                  void queryClient.invalidateQueries({ queryKey: ["settings-history", historyKey] });
-                }
-              }}
-              title="Обновить"
-              variant="outline"
-            >
-              <RefreshCw size={16} aria-hidden="true" />
-              Обновить
-            </Button>
-            <Button onClick={handleLogout} title="Выйти" variant="outline">
-              <LogOut size={16} aria-hidden="true" />
-              Выйти
-            </Button>
-          </div>
-        </header>
+    <div className="space-y-4">
+      <PageHeader
+        title="Настройки"
+        description="Рабочие параметры приложения и история изменений."
+        action={
+          <Button
+            onClick={() => {
+              void queryClient.invalidateQueries({ queryKey: ["settings"] });
+              if (historyKey) {
+                void queryClient.invalidateQueries({ queryKey: ["settings-history", historyKey] });
+              }
+            }}
+            title="Обновить"
+            variant="outline"
+          >
+            <RefreshCw size={16} aria-hidden="true" />
+            Обновить
+          </Button>
+        }
+      />
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <CategoryButton active={!selectedCategory} onClick={() => setSelectedCategory(undefined)}>
-            Все
+      <div className="flex flex-wrap gap-2">
+        <CategoryButton active={!selectedCategory} onClick={() => setSelectedCategory(undefined)}>
+          Все
+        </CategoryButton>
+        {categories.map((category) => (
+          <CategoryButton
+            active={selectedCategory === category}
+            key={category}
+            onClick={() => setSelectedCategory(category)}
+          >
+            {category}
           </CategoryButton>
-          {categories.map((category) => (
-            <CategoryButton
-              active={selectedCategory === category}
-              key={category}
-              onClick={() => setSelectedCategory(category)}
-            >
-              {category}
-            </CategoryButton>
-          ))}
-        </div>
-
-        {error ? <div className="mt-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div> : null}
-
-        <div className="mt-4 grid flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <section className="overflow-hidden rounded-lg border border-border bg-white">
-            <div className="grid grid-cols-[minmax(180px,1fr)_minmax(220px,1.2fr)_96px] gap-3 border-b border-border px-4 py-3 text-xs font-semibold uppercase text-muted-foreground">
-              <div>Ключ</div>
-              <div>Значение</div>
-              <div className="text-right">Действия</div>
-            </div>
-            <div className="divide-y divide-border">
-              {(settingsQuery.data ?? []).map((setting) => {
-                const isEditing = editing?.key === setting.key;
-                return (
-                  <div className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(180px,1fr)_minmax(220px,1.2fr)_96px]" key={setting.key}>
-                    <div className="min-w-0">
-                      <div className="break-all text-sm font-semibold">{setting.key}</div>
-                      <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                        <span>{setting.category}</span>
-                        {CRITICAL_SETTING_KEYS.has(setting.key) ? <span>owner</span> : null}
-                      </div>
-                      {setting.description ? (
-                        <div className="mt-2 text-sm text-muted-foreground">{setting.description}</div>
-                      ) : null}
-                    </div>
-
-                    <div className="min-w-0">
-                      {isEditing ? (
-                        <textarea
-                          className="min-h-24 w-full resize-y rounded-md border border-border bg-white px-3 py-2 font-mono text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                          onChange={(event) => setEditing({ key: setting.key, draft: event.target.value })}
-                          value={editing.draft}
-                        />
-                      ) : (
-                        <pre className="max-h-40 overflow-auto rounded-md bg-muted px-3 py-2 text-sm leading-6">
-                          {stringifyValue(setting.value)}
-                        </pre>
-                      )}
-                      <div className="mt-2 text-xs text-muted-foreground">
-                        {setting.updated_by_user_name ?? "system"} · {formatDate(setting.updated_at)}
-                      </div>
-                    </div>
-
-                    <div className="flex justify-end gap-2">
-                      {isEditing ? (
-                        <>
-                          <Button
-                            disabled={updateMutation.isPending}
-                            onClick={() => saveSetting(setting)}
-                            size="icon"
-                            title="Сохранить"
-                          >
-                            <Check size={16} aria-hidden="true" />
-                          </Button>
-                          <Button
-                            onClick={() => setEditing(null)}
-                            size="icon"
-                            title="Отмена"
-                            variant="outline"
-                          >
-                            <X size={16} aria-hidden="true" />
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button onClick={() => startEditing(setting)} size="icon" title="Изменить" variant="outline">
-                            <Pencil size={16} aria-hidden="true" />
-                          </Button>
-                          <Button
-                            onClick={() => setHistoryKey(setting.key)}
-                            size="icon"
-                            title="История"
-                            variant="outline"
-                          >
-                            <History size={16} aria-hidden="true" />
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {settingsQuery.isLoading ? (
-                <div className="px-4 py-6 text-sm text-muted-foreground">Загрузка...</div>
-              ) : null}
-              {!settingsQuery.isLoading && (settingsQuery.data ?? []).length === 0 ? (
-                <div className="px-4 py-6 text-sm text-muted-foreground">Нет настроек</div>
-              ) : null}
-            </div>
-          </section>
-
-          <aside className="rounded-lg border border-border bg-white">
-            <div className="border-b border-border px-4 py-3">
-              <h2 className="text-sm font-semibold uppercase text-muted-foreground">История</h2>
-              <div className="mt-1 break-all text-sm">{historyKey ?? "Настройка не выбрана"}</div>
-            </div>
-            <div className="divide-y divide-border">
-              {(historyQuery.data ?? []).map((item) => (
-                <div className="grid gap-2 px-4 py-3" key={item.id}>
-                  <div className="text-xs text-muted-foreground">
-                    {item.changed_by_user_name ?? "system"} · {formatDate(item.changed_at)}
-                  </div>
-                  <HistoryValue label="Старое" value={item.old_value} />
-                  <HistoryValue label="Новое" value={item.new_value} />
-                </div>
-              ))}
-              {historyKey && historyQuery.isLoading ? (
-                <div className="px-4 py-6 text-sm text-muted-foreground">Загрузка...</div>
-              ) : null}
-              {historyKey && !historyQuery.isLoading && (historyQuery.data ?? []).length === 0 ? (
-                <div className="px-4 py-6 text-sm text-muted-foreground">История пуста</div>
-              ) : null}
-            </div>
-          </aside>
-        </div>
+        ))}
       </div>
-    </main>
+
+      {error ? (
+        <div className="mt-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
+
+      <div className="mt-4 grid flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <section className="overflow-hidden rounded-lg border border-border bg-white">
+          <div className="grid grid-cols-[minmax(180px,1fr)_minmax(220px,1.2fr)_96px] gap-3 border-b border-border px-4 py-3 text-xs font-semibold uppercase text-muted-foreground">
+            <div>Ключ</div>
+            <div>Значение</div>
+            <div className="text-right">Действия</div>
+          </div>
+          <div className="divide-y divide-border">
+            {(settingsQuery.data ?? []).map((setting) => {
+              const isEditing = editing?.key === setting.key;
+              return (
+                <div
+                  className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(180px,1fr)_minmax(220px,1.2fr)_96px]"
+                  key={setting.key}
+                >
+                  <div className="min-w-0">
+                    <div className="break-all text-sm font-semibold">{setting.key}</div>
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                      <span>{setting.category}</span>
+                      {CRITICAL_SETTING_KEYS.has(setting.key) ? <span>owner</span> : null}
+                    </div>
+                    {setting.description ? (
+                      <div className="mt-2 text-sm text-muted-foreground">
+                        {setting.description}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="min-w-0">
+                    {isEditing ? (
+                      <textarea
+                        className="min-h-24 w-full resize-y rounded-md border border-border bg-white px-3 py-2 font-mono text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                        onChange={(event) =>
+                          setEditing({ key: setting.key, draft: event.target.value })
+                        }
+                        value={editing.draft}
+                      />
+                    ) : (
+                      <pre className="max-h-40 overflow-auto rounded-md bg-muted px-3 py-2 text-sm leading-6">
+                        {stringifyValue(setting.value)}
+                      </pre>
+                    )}
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      {setting.updated_by_user_name ?? "system"} · {formatDate(setting.updated_at)}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    {isEditing ? (
+                      <>
+                        <Button
+                          disabled={updateMutation.isPending}
+                          onClick={() => saveSetting(setting)}
+                          size="icon"
+                          title="Сохранить"
+                        >
+                          <Check size={16} aria-hidden="true" />
+                        </Button>
+                        <Button
+                          onClick={() => setEditing(null)}
+                          size="icon"
+                          title="Отмена"
+                          variant="outline"
+                        >
+                          <X size={16} aria-hidden="true" />
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          onClick={() => startEditing(setting)}
+                          size="icon"
+                          title="Изменить"
+                          variant="outline"
+                        >
+                          <Pencil size={16} aria-hidden="true" />
+                        </Button>
+                        <Button
+                          onClick={() => setHistoryKey(setting.key)}
+                          size="icon"
+                          title="История"
+                          variant="outline"
+                        >
+                          <History size={16} aria-hidden="true" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {settingsQuery.isLoading ? (
+              <div className="px-4 py-6 text-sm text-muted-foreground">Загрузка...</div>
+            ) : null}
+            {!settingsQuery.isLoading && (settingsQuery.data ?? []).length === 0 ? (
+              <div className="px-4 py-6 text-sm text-muted-foreground">Нет настроек</div>
+            ) : null}
+          </div>
+        </section>
+
+        <aside className="rounded-lg border border-border bg-white">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="text-sm font-semibold uppercase text-muted-foreground">История</h2>
+            <div className="mt-1 break-all text-sm">{historyKey ?? "Настройка не выбрана"}</div>
+          </div>
+          <div className="divide-y divide-border">
+            {(historyQuery.data ?? []).map((item) => (
+              <div className="grid gap-2 px-4 py-3" key={item.id}>
+                <div className="text-xs text-muted-foreground">
+                  {item.changed_by_user_name ?? "system"} · {formatDate(item.changed_at)}
+                </div>
+                <HistoryValue label="Старое" value={item.old_value} />
+                <HistoryValue label="Новое" value={item.new_value} />
+              </div>
+            ))}
+            {historyKey && historyQuery.isLoading ? (
+              <div className="px-4 py-6 text-sm text-muted-foreground">Загрузка...</div>
+            ) : null}
+            {historyKey && !historyQuery.isLoading && (historyQuery.data ?? []).length === 0 ? (
+              <div className="px-4 py-6 text-sm text-muted-foreground">История пуста</div>
+            ) : null}
+          </div>
+        </aside>
+      </div>
+    </div>
   );
 }
 
