@@ -24,6 +24,8 @@ type DataTableProps<T> = {
   rows: T[];
   isLoading?: boolean;
   getRowKey?: (row: T, index: number) => string;
+  onRowClick?: (row: T) => void;
+  rowClassName?: string | ((row: T) => string | undefined);
   emptyMessage?: string;
   className?: string;
 };
@@ -33,6 +35,8 @@ export function DataTable<T>({
   rows,
   isLoading = false,
   getRowKey,
+  onRowClick,
+  rowClassName,
   emptyMessage = "Нет данных",
   className,
 }: DataTableProps<T>) {
@@ -67,7 +71,14 @@ export function DataTable<T>({
                   </TableRow>
                 ))
               : rows.map((row, rowIndex) => (
-                  <TableRow key={getRowKey?.(row, rowIndex) ?? rowIndex}>
+                  <TableRow
+                    className={cn(
+                      onRowClick ? "cursor-pointer" : undefined,
+                      typeof rowClassName === "function" ? rowClassName(row) : rowClassName,
+                    )}
+                    key={getRowKey?.(row, rowIndex) ?? rowIndex}
+                    onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  >
                     {columns.map((column) => (
                       <TableCell className={column.className} key={column.key}>
                         {column.cell(row)}
