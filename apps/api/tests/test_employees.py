@@ -6,9 +6,12 @@ from typing import Any
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 from app.api.deps import CurrentActor
 from app.api.v1.routes.employees import list_employees, patch_employee
+from app.db.session import get_session
+from app.main import create_app
 from app.models import Employee
 from app.services.iiko_sync import plan_employee_sync
 
@@ -195,3 +198,18 @@ async def test_get_filter_status_needs_setup_returns_only_unconfigured() -> None
     employees = await list_employees(session, status_filter="needs_setup")  # type: ignore[arg-type]
 
     assert [employee.iiko_id for employee in employees] == ["iiko-7"]
+
+
+def test_list_employees_without_trailing_slash_returns_200() -> None:
+    app = create_app()
+
+    async def override_session():
+        yield FakeSession([])
+
+    app.dependency_overrides[get_session] = override_session
+
+    with TestClient(app, follow_redirects=False) as client:
+        response = client.get("/api/v1/employees")
+
+    assert response.status_code == 200
+    assert response.json() == []

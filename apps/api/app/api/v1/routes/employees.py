@@ -28,7 +28,8 @@ APP_MANAGED_FIELDS = {
 }
 
 
-@router.get("/", response_model=list[EmployeeRead])
+@router.get("", response_model=list[EmployeeRead])
+@router.get("/", response_model=list[EmployeeRead], include_in_schema=False)
 async def list_employees(
     session: Annotated[AsyncSession, Depends(get_session)],
     status_filter: Annotated[str | None, Query(alias="status")] = None,

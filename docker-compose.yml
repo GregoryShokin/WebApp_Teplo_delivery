@@ -23,7 +23,7 @@ services:
     container_name: teplo-api
     environment:
       DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
-      JWT_SECRET_KEY: change-me-in-local-env
+      JWT_SECRET_KEY: change-me-in-local-env-change-me
       BACKEND_CORS_ORIGINS: '["http://localhost:5173"]'
     ports:
       - "8000:8000"
