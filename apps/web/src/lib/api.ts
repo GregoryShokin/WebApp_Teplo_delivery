@@ -48,14 +48,17 @@ export type AppSettingHistory = {
   changed_by_user_name: string | null;
 };
 
-export type EmployeeStatus = "active" | "inactive" | "needs_setup";
+export type EmployeeStatus = "active" | "inactive" | "requires_setup";
+export type EmployeeCategory = "category_1" | "category_2" | "category_3" | "intern" | "freelancer";
+export type CookingStation = "sushi" | "pizza" | "shawarma";
 
 export type Employee = {
   id: string;
   full_name: string;
   iiko_id: string;
   position: string | null;
-  category: string | null;
+  category: EmployeeCategory | null;
+  default_cooking_station: CookingStation | null;
   is_senior: boolean;
   is_deputy_senior: boolean;
   status: EmployeeStatus;
@@ -69,7 +72,13 @@ export type Employee = {
 export type EmployeePatch = Partial<
   Pick<
     Employee,
-    "position" | "category" | "is_senior" | "is_deputy_senior" | "status" | "hire_date" | "fire_date"
+    | "position"
+    | "category"
+    | "default_cooking_station"
+    | "is_senior"
+    | "is_deputy_senior"
+    | "hire_date"
+    | "fire_date"
   >
 >;
 
@@ -210,12 +219,14 @@ export async function updateSetting(key: string, value: unknown): Promise<AppSet
 
 export async function getEmployees(filters: {
   status?: EmployeeStatus | "all";
-  category?: string;
+  category?: EmployeeCategory;
+  cookingStation?: CookingStation;
 }): Promise<Employee[]> {
   const response = await api.get<Employee[]>("/employees/", {
     params: {
       status: filters.status === "all" ? undefined : filters.status,
       category: filters.category,
+      cooking_station: filters.cookingStation,
     },
   });
   return response.data;

@@ -20,6 +20,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -32,31 +39,39 @@ import { EmptyState } from "@/components/ui-app/EmptyState";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { StatusBadge } from "@/components/ui-app/StatusBadge";
 import {
+  type CookingStation,
   type Employee,
+  type EmployeeCategory,
   type EmployeePatch,
   type EmployeeStatus,
   getEmployees,
   patchEmployee,
   syncEmployees,
 } from "@/lib/api";
+import {
+  COOKING_STATION_LABELS,
+  EMPLOYEE_CATEGORY_LABELS,
+  EMPLOYEE_STATUS_LABELS,
+} from "@/lib/i18n/employee";
 import { cn } from "@/lib/utils";
 
-const statusLabels: Record<EmployeeStatus, string> = {
-  active: "Активен",
-  inactive: "Уволен",
-  needs_setup: "Требует настройки",
-};
+const statusOptions: Array<EmployeeStatus | "all"> = ["all", "active", "requires_setup", "inactive"];
+const categoryOptions = Object.keys(EMPLOYEE_CATEGORY_LABELS) as EmployeeCategory[];
+const cookingStationOptions = Object.keys(COOKING_STATION_LABELS) as CookingStation[];
 
-const statusOptions: Array<EmployeeStatus | "all"> = ["all", "active", "needs_setup", "inactive"];
-
-type Draft = Pick<Employee, "position" | "category" | "is_senior" | "is_deputy_senior" | "status">;
+type Draft = Pick<
+  Employee,
+  "position" | "category" | "default_cooking_station" | "is_senior" | "is_deputy_senior"
+>;
 type ViewMode = "grid" | "table";
+type StaffGroupFilter = "all" | "cook" | "staff";
 
 export function StaffRoute() {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<EmployeeStatus | "all">("all");
-  const [category, setCategory] = useState("all");
-  const [location, setLocation] = useState("all");
+  const [category, setCategory] = useState<EmployeeCategory | "all">("all");
+  const [group, setGroup] = useState<StaffGroupFilter>("all");
+  const [cookingStation, setCookingStation] = useState<CookingStation | "all">("all");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -66,6 +81,12 @@ export function StaffRoute() {
     const timeoutId = window.setTimeout(() => setDebouncedSearch(search), 250);
     return () => window.clearTimeout(timeoutId);
   }, [search]);
+
+  useEffect(() => {
+    if (group !== "cook") {
+      setCookingStation("all");
+    }
+  }, [group]);
 
   const employeesQuery = useQuery({
     queryKey: ["employees", status, category],
@@ -99,24 +120,20 @@ export function StaffRoute() {
     [allEmployeesQuery.data, employeesQuery.data],
   );
 
-  const categories = useMemo(() => {
-    const values = new Set<string>();
-    for (const employee of optionEmployees) {
-      if (employee.category) {
-        values.add(employee.category);
-      }
-    }
-    return [...values].sort((a, b) => a.localeCompare(b, "ru"));
-  }, [optionEmployees]);
-
   const employees = useMemo(() => {
     const needle = debouncedSearch.trim().toLowerCase();
     return (employeesQuery.data ?? []).filter((employee) => {
       const matchesSearch = needle ? employee.full_name.toLowerCase().includes(needle) : true;
-      const matchesLocation = location === "all";
-      return matchesSearch && matchesLocation;
+      const employeeIsCook = isCookPosition(employee.position);
+      const matchesGroup =
+        group === "all" ? true : group === "cook" ? employeeIsCook : !employeeIsCook;
+      const matchesStation =
+        group === "cook" && cookingStation !== "all"
+          ? employee.default_cooking_station === cookingStation
+          : true;
+      return matchesSearch && matchesGroup && matchesStation;
     });
-  }, [debouncedSearch, employeesQuery.data, location]);
+  }, [cookingStation, debouncedSearch, employeesQuery.data, group]);
 
   const selectedEmployee = useMemo(
     () => optionEmployees.find((employee) => employee.id === selectedEmployeeId) ?? null,
@@ -125,7 +142,9 @@ export function StaffRoute() {
 
   const stats = useMemo(() => {
     const active = optionEmployees.filter((employee) => employee.status === "active").length;
-    const needsSetup = optionEmployees.filter((employee) => employee.status === "needs_setup").length;
+    const needsSetup = optionEmployees.filter(
+      (employee) => employee.status === "requires_setup",
+    ).length;
     return { active, needsSetup, total: optionEmployees.length };
   }, [optionEmployees]);
 
@@ -135,6 +154,8 @@ export function StaffRoute() {
     optionEmployees.length === 0 &&
     status === "all" &&
     category === "all" &&
+    group === "all" &&
+    cookingStation === "all" &&
     debouncedSearch.trim() === "";
 
   const tableColumns = useMemo<Array<DataTableColumn<Employee>>>(
@@ -157,7 +178,12 @@ export function StaffRoute() {
       {
         key: "category",
         header: "Категория",
-        cell: (employee) => employee.category || "Не задана",
+        cell: (employee) => categoryLabel(employee.category),
+      },
+      {
+        key: "default_cooking_station",
+        header: "Цех",
+        cell: (employee) => stationLabel(employee.default_cooking_station),
       },
       {
         key: "allowances",
@@ -217,10 +243,10 @@ export function StaffRoute() {
       <section className="grid gap-3 md:grid-cols-3">
         <StaffMetric label="Всего в реестре" value={stats.total} />
         <StaffMetric label="Активны" value={stats.active} tone="success" />
-        <StaffMetric label="Требуют настройки" value={stats.needsSetup} tone="warning" />
+        <StaffMetric label="Требуют проверки" value={stats.needsSetup} tone="warning" />
       </section>
 
-      <section className="grid gap-3 rounded-lg border bg-card p-3 lg:grid-cols-[minmax(220px,1fr)_180px_180px_180px_auto] lg:items-end">
+      <section className="grid gap-3 rounded-lg border bg-card p-3 lg:grid-cols-[minmax(220px,1fr)_160px_160px_160px_160px_auto] lg:items-end">
         <Label className="grid gap-1 text-sm">
           <span className="text-xs font-medium uppercase text-muted-foreground">Поиск</span>
           <div className="flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3">
@@ -236,44 +262,76 @@ export function StaffRoute() {
 
         <Label className="grid gap-1 text-sm">
           <span className="text-xs font-medium uppercase text-muted-foreground">Статус</span>
-          <select
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-            onChange={(event) => setStatus(event.target.value as EmployeeStatus | "all")}
+          <Select
+            onValueChange={(value) => setStatus(value as EmployeeStatus | "all")}
             value={status}
           >
-            {statusOptions.map((option) => (
-              <option value={option} key={option}>
-                {option === "all" ? "Все" : statusLabels[option]}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {statusOptions.map((option) => (
+                <SelectItem value={option} key={option}>
+                  {option === "all" ? "Все" : EMPLOYEE_STATUS_LABELS[option]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Label>
+
+        <Label className="grid gap-1 text-sm">
+          <span className="text-xs font-medium uppercase text-muted-foreground">Группа</span>
+          <Select onValueChange={(value) => setGroup(value as StaffGroupFilter)} value={group}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все</SelectItem>
+              <SelectItem value="cook">Повара</SelectItem>
+              <SelectItem value="staff">Администраторы</SelectItem>
+            </SelectContent>
+          </Select>
         </Label>
 
         <Label className="grid gap-1 text-sm">
           <span className="text-xs font-medium uppercase text-muted-foreground">Категория</span>
-          <select
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-            onChange={(event) => setCategory(event.target.value)}
+          <Select
+            onValueChange={(value) => setCategory(value as EmployeeCategory | "all")}
             value={category}
           >
-            <option value="all">Все</option>
-            {categories.map((value) => (
-              <option value={value} key={value}>
-                {value}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все</SelectItem>
+              {categoryOptions.map((value) => (
+                <SelectItem value={value} key={value}>
+                  {EMPLOYEE_CATEGORY_LABELS[value]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Label>
 
         <Label className="grid gap-1 text-sm">
-          <span className="text-xs font-medium uppercase text-muted-foreground">Локация</span>
-          <select
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-            onChange={(event) => setLocation(event.target.value)}
-            value={location}
+          <span className="text-xs font-medium uppercase text-muted-foreground">Цех</span>
+          <Select
+            disabled={group !== "cook"}
+            onValueChange={(value) => setCookingStation(value as CookingStation | "all")}
+            value={cookingStation}
           >
-            <option value="all">Все точки</option>
-          </select>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все</SelectItem>
+              {cookingStationOptions.map((value) => (
+                <SelectItem value={value} key={value}>
+                  {COOKING_STATION_LABELS[value]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Label>
 
         <Tabs onValueChange={(value) => setViewMode(value as ViewMode)} value={viewMode}>
@@ -426,7 +484,8 @@ function StaffEditor({ employee }: { employee: Employee }) {
 
   const mutation = useMutation({
     mutationFn: (patch: EmployeePatch) => patchEmployee(employee.id, patch),
-    onSuccess: () => {
+    onSuccess: (updatedEmployee) => {
+      setDraft(toDraft(updatedEmployee));
       toast.success("Карточка сотрудника обновлена");
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
     },
@@ -438,9 +497,15 @@ function StaffEditor({ employee }: { employee: Employee }) {
   const dirty =
     draft.position !== employee.position ||
     draft.category !== employee.category ||
-    draft.status !== employee.status ||
+    draft.default_cooking_station !== employee.default_cooking_station ||
     draft.is_senior !== employee.is_senior ||
     draft.is_deputy_senior !== employee.is_deputy_senior;
+  const isCook = isCookPosition(draft.position);
+
+  function autosaveField<K extends keyof Draft>(field: K, value: Draft[K]) {
+    setDraft((current) => ({ ...current, [field]: value }));
+    mutation.mutate({ [field]: value } as EmployeePatch);
+  }
 
   return (
     <div className="space-y-5">
@@ -484,7 +549,16 @@ function StaffEditor({ employee }: { employee: Employee }) {
         <Label className="grid gap-2">
           <span>Должность</span>
           <Input
-            onChange={(event) => setDraft({ ...draft, position: event.target.value || null })}
+            onChange={(event) => {
+              const position = event.target.value || null;
+              setDraft({
+                ...draft,
+                position,
+                default_cooking_station: isCookPosition(position)
+                  ? draft.default_cooking_station
+                  : null,
+              });
+            }}
             placeholder="Например, повар"
             value={draft.position ?? ""}
           />
@@ -492,28 +566,61 @@ function StaffEditor({ employee }: { employee: Employee }) {
 
         <Label className="grid gap-2">
           <span>Категория</span>
-          <Input
-            onChange={(event) => setDraft({ ...draft, category: event.target.value || null })}
-            placeholder="Например, 1 категория"
-            value={draft.category ?? ""}
-          />
+          <Select
+            disabled={mutation.isPending}
+            onValueChange={(value) => autosaveField("category", value as EmployeeCategory)}
+            value={draft.category ?? undefined}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Выберите категорию" />
+            </SelectTrigger>
+            <SelectContent>
+              {categoryOptions.map((value) => (
+                <SelectItem value={value} key={value}>
+                  {EMPLOYEE_CATEGORY_LABELS[value]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Label>
+
+        {isCook ? (
+          <Label className="grid gap-2">
+            <span>Цех</span>
+            <Select
+              disabled={mutation.isPending}
+              onValueChange={(value) =>
+                autosaveField("default_cooking_station", value as CookingStation)
+              }
+              value={draft.default_cooking_station ?? undefined}
+            >
+              <SelectTrigger
+                className={cn(!draft.default_cooking_station && "border-amber-300")}
+              >
+                <SelectValue placeholder="Выберите цех" />
+              </SelectTrigger>
+              <SelectContent>
+                {cookingStationOptions.map((value) => (
+                  <SelectItem value={value} key={value}>
+                    {COOKING_STATION_LABELS[value]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!draft.default_cooking_station ? (
+              <span className="text-sm text-amber-700">Выберите цех</span>
+            ) : null}
+          </Label>
+        ) : null}
 
         <Label className="grid gap-2">
           <span>Статус</span>
-          <select
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-            onChange={(event) => setDraft({ ...draft, status: event.target.value as EmployeeStatus })}
-            value={draft.status}
+          <div
+            className="flex h-10 items-center rounded-md border border-input bg-muted/30 px-3"
+            title="Рассчитывается автоматически"
           >
-            {statusOptions
-              .filter((option): option is EmployeeStatus => option !== "all")
-              .map((option) => (
-                <option value={option} key={option}>
-                  {statusLabels[option]}
-                </option>
-              ))}
-          </select>
+            <StatusBadge status={employee.status} />
+          </div>
         </Label>
 
         <div className="grid gap-3 rounded-lg border bg-card p-4">
@@ -573,8 +680,11 @@ function EmployeeTags({ employee, compact = false }: { employee: Employee; compa
   const tags = [
     employee.is_senior ? "Старший" : null,
     employee.is_deputy_senior ? "Зам" : null,
-    employee.category,
-  ].filter(Boolean);
+    employee.category ? categoryLabel(employee.category) : null,
+    isCookPosition(employee.position) && employee.default_cooking_station
+      ? stationLabel(employee.default_cooking_station)
+      : null,
+  ].filter((tag): tag is string => Boolean(tag));
 
   if (tags.length === 0) {
     return <span className="text-sm text-muted-foreground">Без надбавок</span>;
@@ -639,13 +749,56 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+const cookPositions = new Set(
+  [
+    "Повар",
+    "Повара",
+    "Сушист",
+    "Сушисты",
+    "Пиццист",
+    "Пиццисты",
+    "Пиццерист",
+    "Пиццеристы",
+    "Шаурмист",
+    "Шаурмисты",
+    "Заготовщик",
+    "Заготовщики",
+    "Шеф-повар",
+    "Шеф повар",
+    "Шеф-повара",
+  ].map(normalizePosition),
+);
+
+function isCookPosition(position: string | null) {
+  return cookPositions.has(normalizePosition(position));
+}
+
+function normalizePosition(position: string | null) {
+  return (position ?? "")
+    .replace(/\u00a0/g, " ")
+    .trim()
+    .replace(/Ё/g, "Е")
+    .replace(/ё/g, "е")
+    .toLowerCase()
+    .replace(/\s*[-–—]\s*/g, "-")
+    .replace(/\s+/g, " ");
+}
+
+function categoryLabel(category: EmployeeCategory | null) {
+  return category ? EMPLOYEE_CATEGORY_LABELS[category] : "Не задана";
+}
+
+function stationLabel(station: CookingStation | null) {
+  return station ? COOKING_STATION_LABELS[station] : "Не задан";
+}
+
 function toDraft(employee: Employee): Draft {
   return {
     position: employee.position,
     category: employee.category,
+    default_cooking_station: employee.default_cooking_station,
     is_senior: employee.is_senior,
     is_deputy_senior: employee.is_deputy_senior,
-    status: employee.status,
   };
 }
 

@@ -49,8 +49,8 @@ class FakeSession:
     async def scalars(self, query: Any) -> FakeScalarResult:
         sql = str(query.compile(compile_kwargs={"literal_binds": True}))
         employees = list(self.employees)
-        if "employee.status = 'needs_setup'" in sql:
-            employees = [employee for employee in employees if employee.status == "needs_setup"]
+        if "employee.status = 'requires_setup'" in sql:
+            employees = [employee for employee in employees if employee.status == "requires_setup"]
         if "employee.status = 'active'" in sql:
             employees = [employee for employee in employees if employee.status == "active"]
         if "employee.status = 'inactive'" in sql:
@@ -65,7 +65,8 @@ def make_employee(
     full_name: str,
     status: str = "active",
     position: str | None = "Повар",
-    category: str | None = "2",
+    category: str | None = "category_2",
+    default_cooking_station: str | None = "sushi",
 ) -> Employee:
     return Employee(
         id=uuid.uuid4(),
@@ -74,6 +75,7 @@ def make_employee(
         status=status,
         position=position,
         category=category,
+        default_cooking_station=default_cooking_station,
         is_senior=False,
         is_deputy_senior=False,
         created_at=SYNC_NOW,
@@ -100,7 +102,7 @@ def test_sync_skips_employee_outside_target_positions() -> None:
 
     plan = plan_employee_sync(
         existing,
-        [{"id": "iiko-1", "name": "Кассир", "position": "Кассир"}],
+        [{"id": "iiko-1", "name": "Курьер", "position": "Курьер"}],
         SYNC_TODAY,
         SYNC_NOW,
     )
@@ -109,7 +111,7 @@ def test_sync_skips_employee_outside_target_positions() -> None:
     assert existing == {}
 
 
-def test_sync_creates_target_position_employee_as_active() -> None:
+def test_sync_creates_target_position_employee_as_requires_setup() -> None:
     existing: dict[str, Employee] = {}
 
     plan = plan_employee_sync(
@@ -122,9 +124,10 @@ def test_sync_creates_target_position_employee_as_active() -> None:
     employee = existing["iiko-1"]
     assert plan.result.created == 1
     assert employee.full_name == "Новый Сотрудник"
-    assert employee.status == "active"
+    assert employee.status == "requires_setup"
     assert employee.position == "Повар"
     assert employee.category is None
+    assert employee.default_cooking_station is None
     assert employee.is_senior is False
 
 
@@ -218,7 +221,7 @@ def test_sync_deactivates_existing_employee_outside_target_positions() -> None:
 
     plan = plan_employee_sync(
         existing,
-        [{"id": "iiko-10", "name": "Бывший Повар", "position": "Кассир"}],
+        [{"id": "iiko-10", "name": "Бывший Повар", "position": "Курьер"}],
         SYNC_TODAY,
         SYNC_NOW,
     )
@@ -248,7 +251,7 @@ async def test_patch_employee_category_manager_returns_403() -> None:
     with pytest.raises(HTTPException) as exc_info:
         await patch_employee(
             session.employees[0].id,
-            {"category": "3"},
+            {"category": "category_3"},
             session,  # type: ignore[arg-type]
             CurrentActor(roles=frozenset({"manager"})),
         )
@@ -260,40 +263,154 @@ async def test_patch_employee_category_finance_manager_ok() -> None:
     employee = make_employee(
         iiko_id="iiko-6",
         full_name="Needs Setup",
-        status="needs_setup",
+        status="requires_setup",
         position="Повар",
         category=None,
+        default_cooking_station=None,
     )
     session = FakeSession([employee])
 
     updated = await patch_employee(
         employee.id,
-        {"category": "4"},
+        {"category": "category_1"},
         session,  # type: ignore[arg-type]
         CurrentActor(roles=frozenset({"finance_manager"})),
     )
 
-    assert updated.category == "4"
-    assert updated.status == "active"
+    assert updated.category == "category_1"
+    assert updated.status == "requires_setup"
     assert session.committed is True
 
 
-async def test_get_filter_status_needs_setup_returns_only_unconfigured() -> None:
+async def test_patch_employee_cooking_station_finishes_cook_setup() -> None:
+    employee = make_employee(
+        iiko_id="iiko-11",
+        full_name="Cook Setup",
+        status="requires_setup",
+        position="Повар",
+        category="category_1",
+        default_cooking_station=None,
+    )
+    session = FakeSession([employee])
+
+    updated = await patch_employee(
+        employee.id,
+        {"default_cooking_station": "sushi"},
+        session,  # type: ignore[arg-type]
+        CurrentActor(roles=frozenset({"finance_manager"})),
+    )
+
+    assert updated.default_cooking_station == "sushi"
+    assert updated.status == "active"
+
+
+async def test_patch_employee_category_null_requires_setup() -> None:
+    employee = make_employee(
+        iiko_id="iiko-12",
+        full_name="Configured Cook",
+        status="active",
+        position="Повар",
+        category="category_1",
+        default_cooking_station="sushi",
+    )
+    session = FakeSession([employee])
+
+    updated = await patch_employee(
+        employee.id,
+        {"category": None},
+        session,  # type: ignore[arg-type]
+        CurrentActor(roles=frozenset({"finance_manager"})),
+    )
+
+    assert updated.category is None
+    assert updated.status == "requires_setup"
+
+
+async def test_patch_employee_cashier_category_makes_active_without_station() -> None:
+    employee = make_employee(
+        iiko_id="iiko-13",
+        full_name="Cashier Setup",
+        status="requires_setup",
+        position="Кассир",
+        category=None,
+        default_cooking_station=None,
+    )
+    session = FakeSession([employee])
+
+    updated = await patch_employee(
+        employee.id,
+        {"category": "category_1"},
+        session,  # type: ignore[arg-type]
+        CurrentActor(roles=frozenset({"finance_manager"})),
+    )
+
+    assert updated.category == "category_1"
+    assert updated.default_cooking_station is None
+    assert updated.status == "active"
+
+
+async def test_patch_employee_cashier_cooking_station_returns_400() -> None:
+    employee = make_employee(
+        iiko_id="iiko-14",
+        full_name="Cashier",
+        status="active",
+        position="Кассир",
+        category="category_1",
+        default_cooking_station=None,
+    )
+    session = FakeSession([employee])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await patch_employee(
+            employee.id,
+            {"cooking_station": "sushi"},
+            session,  # type: ignore[arg-type]
+            CurrentActor(roles=frozenset({"finance_manager"})),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Цех допустим только для поваров"
+
+
+async def test_patch_employee_iiko_deleted_stays_inactive() -> None:
+    employee = make_employee(
+        iiko_id="iiko-15",
+        full_name="Deleted Cook",
+        status="inactive",
+        position="Повар",
+        category=None,
+        default_cooking_station="sushi",
+    )
+    session = FakeSession([employee])
+
+    updated = await patch_employee(
+        employee.id,
+        {"category": "category_1"},
+        session,  # type: ignore[arg-type]
+        CurrentActor(roles=frozenset({"finance_manager"})),
+    )
+
+    assert updated.category == "category_1"
+    assert updated.status == "inactive"
+
+
+async def test_get_filter_status_requires_setup_returns_only_unconfigured() -> None:
     session = FakeSession(
         [
             make_employee(
                 iiko_id="iiko-7",
                 full_name="Needs Setup",
-                status="needs_setup",
+                status="requires_setup",
                 position=None,
                 category=None,
+                default_cooking_station=None,
             ),
             make_employee(iiko_id="iiko-8", full_name="Active Employee", status="active"),
             make_employee(iiko_id="iiko-9", full_name="Inactive Employee", status="inactive"),
         ]
     )
 
-    employees = await list_employees(session, status_filter="needs_setup")  # type: ignore[arg-type]
+    employees = await list_employees(session, status_filter="requires_setup")  # type: ignore[arg-type]
 
     assert [employee.iiko_id for employee in employees] == ["iiko-7"]
 

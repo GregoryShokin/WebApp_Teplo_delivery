@@ -77,7 +77,7 @@ async def load_attendance_entries(
             employee = Employee(
                 iiko_id=iiko_id,
                 full_name=first_text(record, "employeeName", "Employee", "name") or iiko_id,
-                status="needs_setup",
+                status="requires_setup",
                 position=None,
                 category=None,
                 is_senior=False,

@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib
 import json
 import os
-import re
 import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -28,6 +27,12 @@ from app.models import (
     PayrollLine,
     SourceCredential,
 )
+from app.services.employee_status import (
+    compute_status,
+    is_cook_position,
+    is_target_position,
+    position_group_for_position,
+)
 
 ACTIVE_STATUSES = {"active", "enabled", "not_deleted", "not deleted", "не удален", "не удалён"}
 DELETED_STATUSES = {
@@ -41,31 +46,6 @@ DELETED_STATUSES = {
     "удален",
     "удалён",
 }
-TARGET_POSITION_ALIASES = (
-    "Повар",
-    "Повара",
-    "Сушист",
-    "Сушисты",
-    "Пиццист",
-    "Пиццисты",
-    "Шаурмист",
-    "Шаурмисты",
-    "Заготовщик",
-    "Заготовщики",
-    "Шеф-повар",
-    "Шеф повар",
-    "Шеф-повара",
-    "Администратор",
-    "Администраторы",
-    "Старший администратор",
-    "Старшие администраторы",
-    "Управляющий",
-    "Управляющие",
-)
-TARGET_POSITIONS = frozenset(
-    re.sub(r"\s+", " ", value.replace("ё", "е").casefold().strip())
-    for value in TARGET_POSITION_ALIASES
-)
 SERVICE_ACCOUNT_LOGINS = {
     "apiimportuser",
     "deliveryuser",
@@ -309,11 +289,16 @@ def plan_employee_sync(
                 iiko_id=record.iiko_id,
                 position=record.position,
                 category=None,
+                default_cooking_station=None,
                 is_senior=False,
                 is_deputy_senior=False,
-                status="active",
                 hire_date=record.hire_date,
                 iiko_sync_at=sync_now,
+            )
+            employee.status = compute_status(
+                employee,
+                is_iiko_deleted=False,
+                position_group=position_group_for_position(employee.position),
             )
             existing_by_iiko_id[record.iiko_id] = employee
             created_employees.append(employee)
@@ -344,14 +329,25 @@ def plan_employee_sync(
             if employee.position != record.position:
                 employee.position = record.position
                 changed = True
-            if employee.status != "active":
-                employee.status = "active"
+            if (
+                not is_cook_position(employee.position)
+                and employee.default_cooking_station is not None
+            ):
+                employee.default_cooking_station = None
                 changed = True
             if employee.fire_date is not None:
                 employee.fire_date = None
                 changed = True
             if record.hire_date and employee.hire_date != record.hire_date:
                 employee.hire_date = record.hire_date
+                changed = True
+            computed_status = compute_status(
+                employee,
+                is_iiko_deleted=False,
+                position_group=position_group_for_position(employee.position),
+            )
+            if employee.status != computed_status:
+                employee.status = computed_status
                 changed = True
 
         employee.iiko_sync_at = sync_now
@@ -462,17 +458,6 @@ def _is_active_target_employee(record: IikoEmployeeRecord) -> bool:
     )
 
 
-def is_target_position(position: str | None) -> bool:
-    return _normalize_position(position) in TARGET_POSITIONS
-
-
-def _normalize_position(position: str | None) -> str:
-    text = (position or "").replace("\xa0", " ").strip()
-    text = text.replace("ё", "е").replace("Ё", "Е").casefold()
-    text = re.sub(r"\s*[-–—]\s*", "-", text)
-    return re.sub(r"\s+", " ", text).strip()
-
-
 def _is_service_account(record: Mapping[str, Any], full_name: str) -> bool:
     code = _first_text(record, "code", "employeeCode").casefold()
     login = _first_text(record, "login", "customUserName", "userName", "username").casefold()
@@ -572,6 +557,7 @@ def _employee_snapshot(employee: Employee) -> dict[str, Any]:
         "full_name": employee.full_name,
         "position": employee.position,
         "category": employee.category,
+        "default_cooking_station": employee.default_cooking_station,
         "is_senior": employee.is_senior,
         "is_deputy_senior": employee.is_deputy_senior,
         "status": employee.status,

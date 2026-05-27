@@ -189,7 +189,7 @@ def validate_calculation_inputs(
                 }
             )
             continue
-        if employee.status == "needs_setup":
+        if employee.status == "requires_setup":
             issues.append(needs_setup_issue(employee))
         if entry.quality_status != "ok":
             issues.append(

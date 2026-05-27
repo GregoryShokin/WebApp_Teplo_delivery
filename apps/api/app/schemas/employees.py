@@ -17,6 +17,7 @@ class EmployeeRead(BaseModel):
     iiko_id: str
     position: str | None = None
     category: str | None = None
+    default_cooking_station: str | None = None
     is_senior: bool = False
     is_deputy_senior: bool = False
     status: EmployeeStatus
@@ -30,9 +31,9 @@ class EmployeeRead(BaseModel):
 class EmployeePatch(BaseModel):
     position: str | None = Field(default=None, max_length=160)
     category: str | None = Field(default=None, max_length=160)
+    default_cooking_station: str | None = Field(default=None, max_length=160)
     is_senior: bool | None = None
     is_deputy_senior: bool | None = None
-    status: EmployeeStatus | None = None
     hire_date: date | None = None
     fire_date: date | None = None
 

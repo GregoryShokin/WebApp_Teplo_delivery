@@ -11,21 +11,29 @@ from app.api.deps import CurrentActor, get_current_actor, require_finance_manage
 from app.db.session import get_session
 from app.models import Employee
 from app.schemas.employees import EmployeePatch, EmployeeRead, SyncResultRead
+from app.services.employee_status import (
+    COOKING_STATIONS,
+    EMPLOYEE_CATEGORIES,
+    EMPLOYEE_STATUSES,
+    compute_status,
+    is_cook_position,
+    position_group_for_position,
+)
 from app.services.iiko_sync import sync_employees
 
 router = APIRouter()
 
-EMPLOYEE_STATUSES = {"active", "inactive", "needs_setup"}
 READ_ONLY_FIELDS = {"id", "full_name", "iiko_id", "iiko_sync_at", "created_at", "updated_at"}
 APP_MANAGED_FIELDS = {
     "position",
     "category",
+    "default_cooking_station",
     "is_senior",
     "is_deputy_senior",
-    "status",
     "hire_date",
     "fire_date",
 }
+COMPUTED_FIELDS = {"status"}
 
 
 @router.get("", response_model=list[EmployeeRead])
@@ -34,6 +42,7 @@ async def list_employees(
     session: Annotated[AsyncSession, Depends(get_session)],
     status_filter: Annotated[str | None, Query(alias="status")] = None,
     category: str | None = None,
+    cooking_station: Annotated[str | None, Query(alias="cooking_station")] = None,
     search: str | None = None,
 ) -> list[Employee]:
     query = select(Employee)
@@ -42,7 +51,13 @@ async def list_employees(
             raise HTTPException(status_code=400, detail="Invalid employee status")
         query = query.where(Employee.status == status_filter)
     if category:
+        if category not in EMPLOYEE_CATEGORIES:
+            raise HTTPException(status_code=400, detail="Invalid employee category")
         query = query.where(Employee.category == category)
+    if cooking_station:
+        if cooking_station not in COOKING_STATIONS:
+            raise HTTPException(status_code=400, detail="Invalid cooking station")
+        query = query.where(Employee.default_cooking_station == cooking_station)
     if search:
         query = query.where(Employee.full_name.ilike(f"%{search}%"))
 
@@ -66,18 +81,26 @@ async def patch_employee(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Employee:
     require_finance_manager_plus(actor)
-    _validate_patch_payload(payload)
+    normalized_payload = _normalize_patch_payload(payload)
+    _validate_patch_payload(normalized_payload)
 
-    patch = EmployeePatch.model_validate(payload)
+    patch = EmployeePatch.model_validate(normalized_payload)
     employee = await _get_employee_or_404(session, employee_id)
+    is_iiko_deleted = employee.status == "inactive"
 
     for field in patch.model_fields_set:
         setattr(employee, field, getattr(patch, field))
 
-    if employee.status not in EMPLOYEE_STATUSES:
-        raise HTTPException(status_code=400, detail="Invalid employee status")
+    if not is_cook_position(employee.position):
+        if "default_cooking_station" in patch.model_fields_set and employee.default_cooking_station:
+            raise HTTPException(status_code=400, detail="Цех допустим только для поваров")
+        employee.default_cooking_station = None
 
-    _recalculate_setup_status(employee)
+    employee.status = compute_status(
+        employee,
+        is_iiko_deleted=is_iiko_deleted,
+        position_group=position_group_for_position(employee.position),
+    )
 
     await session.commit()
     await session.refresh(employee)
@@ -102,6 +125,18 @@ async def _get_employee_or_404(session: AsyncSession, employee_id: uuid.UUID) ->
     return employee
 
 
+def _normalize_patch_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    if "cooking_station" in normalized:
+        if "default_cooking_station" in normalized:
+            raise HTTPException(
+                status_code=400,
+                detail="Use either cooking_station or default_cooking_station",
+            )
+        normalized["default_cooking_station"] = normalized.pop("cooking_station")
+    return normalized
+
+
 def _validate_patch_payload(payload: dict[str, Any]) -> None:
     read_only = READ_ONLY_FIELDS & payload.keys()
     if "full_name" in read_only:
@@ -112,6 +147,13 @@ def _validate_patch_payload(payload: dict[str, Any]) -> None:
             detail=f"Read-only fields: {', '.join(sorted(read_only))}",
         )
 
+    computed = COMPUTED_FIELDS & payload.keys()
+    if computed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Computed fields: {', '.join(sorted(computed))}",
+        )
+
     unknown = set(payload) - APP_MANAGED_FIELDS
     if unknown:
         raise HTTPException(
@@ -119,12 +161,10 @@ def _validate_patch_payload(payload: dict[str, Any]) -> None:
             detail=f"Unsupported fields: {', '.join(sorted(unknown))}",
         )
 
-    status_value = payload.get("status")
-    if status_value is not None and status_value not in EMPLOYEE_STATUSES:
-        raise HTTPException(status_code=400, detail="Invalid employee status")
+    category_value = payload.get("category")
+    if category_value is not None and category_value not in EMPLOYEE_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Invalid employee category")
 
-
-def _recalculate_setup_status(employee: Employee) -> None:
-    if employee.status == "inactive":
-        return
-    employee.status = "active" if employee.position else "needs_setup"
+    station_value = payload.get("default_cooking_station")
+    if station_value is not None and station_value not in COOKING_STATIONS:
+        raise HTTPException(status_code=400, detail="Invalid cooking station")

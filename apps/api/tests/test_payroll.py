@@ -162,7 +162,7 @@ def test_closed_shift_over_12_hours_requires_quality_review() -> None:
 def test_unknown_or_unconfigured_employee_blocks_payroll_and_finalize() -> None:
     period = make_period()
     run_id = uuid.uuid4()
-    employee = make_employee(status="needs_setup", position=None, category=None)
+    employee = make_employee(status="requires_setup", position=None, category=None)
     entry = make_entry(period, employee, period.start_date, role=None)
 
     result = calculate_payroll_lines_from_inputs(
