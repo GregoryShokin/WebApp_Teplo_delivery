@@ -176,6 +176,23 @@ def test_unknown_or_unconfigured_employee_blocks_payroll_and_finalize() -> None:
     assert result.blocking_issues[0]["type"] == "needs_setup"
 
 
+def test_employee_position_does_not_backfill_missing_payroll_role() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(position="Пиццерист", category="2")
+    entry = make_entry(period, employee, period.start_date, role=None)
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        payroll_settings(),
+    )
+
+    assert result.blocking_issues[0]["type"] == "missing_payroll_role"
+
+
 def test_fixed_salary_for_full_week_is_calculated() -> None:
     period = make_period()
     run_id = uuid.uuid4()

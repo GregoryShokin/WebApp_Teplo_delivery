@@ -3,19 +3,31 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import re
 import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
-from app.models import AgentAction, AgentRun, DataSource, Employee, SourceCredential
+from app.models import (
+    AccumulationFundAccount,
+    AgentAction,
+    AgentRun,
+    AttendanceEntry,
+    DataSource,
+    DepositAccount,
+    DepositTransaction,
+    Employee,
+    PayrollLine,
+    SourceCredential,
+)
 
 ACTIVE_STATUSES = {"active", "enabled", "not_deleted", "not deleted", "не удален", "не удалён"}
 DELETED_STATUSES = {
@@ -29,6 +41,52 @@ DELETED_STATUSES = {
     "удален",
     "удалён",
 }
+TARGET_POSITION_ALIASES = (
+    "Повар",
+    "Повара",
+    "Сушист",
+    "Сушисты",
+    "Пиццист",
+    "Пиццисты",
+    "Шаурмист",
+    "Шаурмисты",
+    "Заготовщик",
+    "Заготовщики",
+    "Шеф-повар",
+    "Шеф повар",
+    "Шеф-повара",
+    "Администратор",
+    "Администраторы",
+    "Старший администратор",
+    "Старшие администраторы",
+    "Управляющий",
+    "Управляющие",
+)
+TARGET_POSITIONS = frozenset(
+    re.sub(r"\s+", " ", value.replace("ё", "е").casefold().strip())
+    for value in TARGET_POSITION_ALIASES
+)
+SERVICE_ACCOUNT_LOGINS = {
+    "apiimportuser",
+    "deliveryuser",
+    "iikominiuser",
+    "iikouser",
+    "pluginuser_default",
+    "systemintegrationuser",
+    "transportuser",
+}
+SERVICE_ACCOUNT_NAME_MARKERS = (
+    "docsinbox user",
+    "пользователь api импорта",
+    "пользователь front.api",
+    "пользователь iikomini",
+    "пользователь iikotransport",
+    "пользователь для интеграции",
+    "пользователь для централизованной доставки",
+    "сотрудник техподдержки iiko",
+    "сотрудник техподдержки лемма",
+)
+SyncMode = Literal["incremental", "reset"]
 
 
 @dataclass(slots=True)
@@ -49,7 +107,9 @@ class SyncResult:
 class IikoEmployeeRecord:
     iiko_id: str
     full_name: str
+    position: str | None = None
     is_deleted: bool = False
+    is_service_account: bool = False
     hire_date: date | None = None
     fire_date: date | None = None
 
@@ -128,7 +188,13 @@ def fetch_iiko_employee_records() -> list[Mapping[str, Any]]:
     export_employees.load_local_env()
     client = export_employees.IikoClient()
     _status, data = client.request("/employees", params={"includeDeleted": "true"})
-    return list(export_employees.records_from_response("/employees", data))
+    _roles_status, roles_data = client.request(
+        "/employees/roles",
+        params={"includeDeleted": "true"},
+    )
+    employee_records = list(export_employees.records_from_response("/employees", data))
+    role_records = list(export_employees.records_from_response("/employees/roles", roles_data))
+    return _enrich_employee_records_with_roles(employee_records, role_records)
 
 
 async def sync_employees(
@@ -136,9 +202,13 @@ async def sync_employees(
     *,
     iiko_records: Iterable[Mapping[str, Any]] | None = None,
     run_reason: str = "manual",
+    mode: SyncMode = "incremental",
     today: date | None = None,
     now: datetime | None = None,
 ) -> SyncResult:
+    if mode not in ("incremental", "reset"):
+        raise ValueError("Employee sync mode must be 'incremental' or 'reset'")
+
     owns_session = session is None
     if owns_session:
         async with AsyncSessionLocal() as owned_session:
@@ -146,6 +216,7 @@ async def sync_employees(
                 owned_session,
                 iiko_records=iiko_records,
                 run_reason=run_reason,
+                mode=mode,
                 today=today,
                 now=now,
             )
@@ -160,13 +231,15 @@ async def sync_employees(
     agent_run = AgentRun(
         agent_name="iiko_employee_sync",
         status="running",
-        params={"reason": run_reason},
+        params={"reason": run_reason, "mode": mode},
         result={},
     )
     session.add(agent_run)
     await session.flush()
 
     try:
+        if mode == "reset":
+            await _reset_employees_for_sync(session, records, sync_today, sync_now)
         result = await _apply_employee_records(session, records, agent_run.id, sync_today, sync_now)
         agent_run.status = "success"
         agent_run.finished_at = datetime.now(UTC)
@@ -227,17 +300,18 @@ def plan_employee_sync(
             continue
 
         employee = existing_by_iiko_id.get(record.iiko_id)
+        is_active_target = _is_active_target_employee(record)
         if employee is None:
-            if record.is_deleted:
+            if not is_active_target:
                 continue
             employee = Employee(
                 full_name=record.full_name,
                 iiko_id=record.iiko_id,
-                position=None,
+                position=record.position,
                 category=None,
                 is_senior=False,
                 is_deputy_senior=False,
-                status="needs_setup",
+                status="active",
                 hire_date=record.hire_date,
                 iiko_sync_at=sync_now,
             )
@@ -251,7 +325,13 @@ def plan_employee_sync(
         changed = False
         deactivated = False
 
-        if record.is_deleted:
+        if not is_active_target:
+            if employee.full_name != record.full_name:
+                employee.full_name = record.full_name
+                changed = True
+            if employee.position != record.position:
+                employee.position = record.position
+                changed = True
             if employee.status != "inactive" or employee.fire_date is None:
                 employee.status = "inactive"
                 employee.fire_date = record.fire_date or sync_today
@@ -260,6 +340,15 @@ def plan_employee_sync(
         else:
             if employee.full_name != record.full_name:
                 employee.full_name = record.full_name
+                changed = True
+            if employee.position != record.position:
+                employee.position = record.position
+                changed = True
+            if employee.status != "active":
+                employee.status = "active"
+                changed = True
+            if employee.fire_date is not None:
+                employee.fire_date = None
                 changed = True
             if record.hire_date and employee.hire_date != record.hire_date:
                 employee.hire_date = record.hire_date
@@ -304,14 +393,135 @@ def normalize_iiko_employee(raw_record: Mapping[str, Any]) -> IikoEmployeeRecord
     )
     if not full_name:
         return None
+    position = _extract_position(raw_record)
 
     return IikoEmployeeRecord(
         iiko_id=iiko_id,
         full_name=full_name,
+        position=position,
         is_deleted=_is_deleted(raw_record),
+        is_service_account=_is_service_account(raw_record, full_name),
         hire_date=_first_date(raw_record, "hireDate", "hire_date", "employmentDate"),
         fire_date=_first_date(raw_record, "fireDate", "fire_date", "terminationDate"),
     )
+
+
+def _enrich_employee_records_with_roles(
+    employee_records: Iterable[Mapping[str, Any]],
+    role_records: Iterable[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    roles_by_id: dict[str, str] = {}
+    roles_by_code: dict[str, str] = {}
+    for role in role_records:
+        role_name = _first_text(role, "name", "title", "roleName")
+        if not role_name:
+            continue
+        role_id = _first_text(role, "id", "roleId")
+        role_code = _first_text(role, "code", "roleCode")
+        if role_id:
+            roles_by_id[role_id] = role_name
+        if role_code:
+            roles_by_code[role_code] = role_name
+
+    enriched_records: list[Mapping[str, Any]] = []
+    for record in employee_records:
+        position = _extract_position(record)
+        if not position:
+            main_role_id = _first_text(record, "mainRoleId", "main_role_id", "roleId")
+            main_role_code = _first_text(record, "mainRoleCode", "main_role_code", "roleCode")
+            position = roles_by_id.get(main_role_id) or roles_by_code.get(main_role_code)
+        if position:
+            enriched_record = dict(record)
+            enriched_record["position"] = position
+            enriched_records.append(enriched_record)
+        else:
+            enriched_records.append(record)
+    return enriched_records
+
+
+def _extract_position(record: Mapping[str, Any]) -> str | None:
+    position = _first_text(
+        record,
+        "position",
+        "jobTitle",
+        "job_title",
+        "title",
+        "mainRoleName",
+        "main_role_name",
+        "roleName",
+        "role_name",
+    )
+    return position or None
+
+
+def _is_active_target_employee(record: IikoEmployeeRecord) -> bool:
+    return (
+        not record.is_deleted
+        and not record.is_service_account
+        and is_target_position(record.position)
+    )
+
+
+def is_target_position(position: str | None) -> bool:
+    return _normalize_position(position) in TARGET_POSITIONS
+
+
+def _normalize_position(position: str | None) -> str:
+    text = (position or "").replace("\xa0", " ").strip()
+    text = text.replace("ё", "е").replace("Ё", "Е").casefold()
+    text = re.sub(r"\s*[-–—]\s*", "-", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _is_service_account(record: Mapping[str, Any], full_name: str) -> bool:
+    code = _first_text(record, "code", "employeeCode").casefold()
+    login = _first_text(record, "login", "customUserName", "userName", "username").casefold()
+    normalized_name = full_name.casefold()
+    if code.startswith("dxbx") or login.startswith("dxbx"):
+        return True
+    if login in SERVICE_ACCOUNT_LOGINS:
+        return True
+    return any(marker in normalized_name for marker in SERVICE_ACCOUNT_NAME_MARKERS)
+
+
+async def _reset_employees_for_sync(
+    session: AsyncSession,
+    records: Iterable[Mapping[str, Any]],
+    sync_today: date,
+    sync_now: datetime,
+) -> None:
+    target_iiko_ids = {
+        record.iiko_id
+        for raw_record in records
+        if (record := normalize_iiko_employee(raw_record)) is not None
+        and _is_active_target_employee(record)
+    }
+    protected_employee_ids = await _employee_ids_with_payroll_history(session)
+    employees = list((await session.scalars(select(Employee))).all())
+
+    for employee in employees:
+        if employee.iiko_id in target_iiko_ids:
+            continue
+        if employee.id in protected_employee_ids:
+            employee.status = "inactive"
+            employee.fire_date = employee.fire_date or sync_today
+            employee.iiko_sync_at = sync_now
+        else:
+            await session.delete(employee)
+    await session.flush()
+
+
+async def _employee_ids_with_payroll_history(session: AsyncSession) -> set[Any]:
+    protected_ids: set[Any] = set()
+    for model in (
+        AttendanceEntry,
+        PayrollLine,
+        DepositAccount,
+        DepositTransaction,
+        AccumulationFundAccount,
+    ):
+        protected_ids.update((await session.scalars(select(model.employee_id).distinct())).all())
+    return protected_ids
 
 
 def _first_text(record: Mapping[str, Any], *keys: str) -> str:

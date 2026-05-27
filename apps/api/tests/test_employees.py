@@ -9,11 +9,16 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.api.deps import CurrentActor
+from app.api.v1.routes import employees as employee_routes
 from app.api.v1.routes.employees import list_employees, patch_employee
 from app.db.session import get_session
 from app.main import create_app
 from app.models import Employee
-from app.services.iiko_sync import plan_employee_sync
+from app.services.iiko_sync import (
+    SyncResult,
+    _enrich_employee_records_with_roles,
+    plan_employee_sync,
+)
 
 SYNC_TODAY = date(2026, 5, 27)
 SYNC_NOW = datetime(2026, 5, 27, 10, 0, tzinfo=UTC)
@@ -76,7 +81,7 @@ def make_employee(
     )
 
 
-def test_sync_creates_new_employee_from_iiko() -> None:
+def test_sync_skips_employee_without_position() -> None:
     existing: dict[str, Employee] = {}
 
     plan = plan_employee_sync(
@@ -86,13 +91,89 @@ def test_sync_creates_new_employee_from_iiko() -> None:
         SYNC_NOW,
     )
 
+    assert plan.result.created == 0
+    assert existing == {}
+
+
+def test_sync_skips_employee_outside_target_positions() -> None:
+    existing: dict[str, Employee] = {}
+
+    plan = plan_employee_sync(
+        existing,
+        [{"id": "iiko-1", "name": "Кассир", "position": "Кассир"}],
+        SYNC_TODAY,
+        SYNC_NOW,
+    )
+
+    assert plan.result.created == 0
+    assert existing == {}
+
+
+def test_sync_creates_target_position_employee_as_active() -> None:
+    existing: dict[str, Employee] = {}
+
+    plan = plan_employee_sync(
+        existing,
+        [{"id": "iiko-1", "name": "Новый Сотрудник", "position": "Повар"}],
+        SYNC_TODAY,
+        SYNC_NOW,
+    )
+
     employee = existing["iiko-1"]
     assert plan.result.created == 1
     assert employee.full_name == "Новый Сотрудник"
-    assert employee.status == "needs_setup"
-    assert employee.position is None
+    assert employee.status == "active"
+    assert employee.position == "Повар"
     assert employee.category is None
     assert employee.is_senior is False
+
+
+def test_sync_creates_lowercase_target_position_employee() -> None:
+    existing: dict[str, Employee] = {}
+
+    plan = plan_employee_sync(
+        existing,
+        [{"id": "iiko-1", "name": "Сушист", "position": "сушист"}],
+        SYNC_TODAY,
+        SYNC_NOW,
+    )
+
+    assert plan.result.created == 1
+    assert existing["iiko-1"].position == "сушист"
+
+
+def test_sync_resolves_position_from_iiko_main_role_id() -> None:
+    existing: dict[str, Employee] = {}
+    records = _enrich_employee_records_with_roles(
+        [{"id": "iiko-1", "name": "Ролевой Сотрудник", "mainRoleId": "role-cook"}],
+        [{"id": "role-cook", "name": "Повар"}],
+    )
+
+    plan = plan_employee_sync(existing, records, SYNC_TODAY, SYNC_NOW)
+
+    assert plan.result.created == 1
+    assert existing["iiko-1"].position == "Повар"
+
+
+def test_sync_skips_service_account() -> None:
+    existing: dict[str, Employee] = {}
+
+    plan = plan_employee_sync(
+        existing,
+        [
+            {
+                "id": "iiko-service",
+                "code": "dxbx168759",
+                "name": "DocsInBox User (dxbx168759)",
+                "position": "Повар",
+            }
+        ],
+        SYNC_TODAY,
+        SYNC_NOW,
+    )
+
+    assert plan.result.created == 0
+    assert existing == {}
 
 
 def test_sync_updates_full_name_for_existing_employee() -> None:
@@ -102,7 +183,7 @@ def test_sync_updates_full_name_for_existing_employee() -> None:
 
     plan = plan_employee_sync(
         existing,
-        [{"id": "iiko-2", "fullName": "Новое Имя"}],
+        [{"id": "iiko-2", "fullName": "Новое Имя", "position": "Повар"}],
         SYNC_TODAY,
         SYNC_NOW,
     )
@@ -128,6 +209,23 @@ def test_sync_deactivates_fired_employee() -> None:
     assert existing["iiko-3"].status == "inactive"
     assert existing["iiko-3"].fire_date == SYNC_TODAY
     assert plan.mutations[0].action_type == "deactivate"
+
+
+def test_sync_deactivates_existing_employee_outside_target_positions() -> None:
+    existing = {
+        "iiko-10": make_employee(iiko_id="iiko-10", full_name="Бывший Повар"),
+    }
+
+    plan = plan_employee_sync(
+        existing,
+        [{"id": "iiko-10", "name": "Бывший Повар", "position": "Кассир"}],
+        SYNC_TODAY,
+        SYNC_NOW,
+    )
+
+    assert plan.result.deactivated == 1
+    assert existing["iiko-10"].status == "inactive"
+    assert existing["iiko-10"].fire_date == SYNC_TODAY
 
 
 async def test_patch_employee_full_name_returns_400() -> None:
@@ -213,3 +311,28 @@ def test_list_employees_without_trailing_slash_returns_200() -> None:
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+async def test_employee_sync_endpoint_passes_reset_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: dict[str, str] = {}
+
+    async def fake_sync_employees(
+        _session: Any,
+        *,
+        run_reason: str,
+        mode: str,
+    ) -> SyncResult:
+        calls["run_reason"] = run_reason
+        calls["mode"] = mode
+        return SyncResult()
+
+    monkeypatch.setattr(employee_routes, "sync_employees", fake_sync_employees)
+
+    response = await employee_routes.trigger_employee_sync(
+        FakeSession([]),  # type: ignore[arg-type]
+        CurrentActor(roles=frozenset({"finance_manager"})),
+        mode="reset",
+    )
+
+    assert response == {"created": 0, "updated": 0, "deactivated": 0}
+    assert calls == {"run_reason": "manual", "mode": "reset"}

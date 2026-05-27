@@ -248,7 +248,7 @@ def needs_setup_issue(employee: Employee) -> dict[str, Any]:
 
 
 def payroll_role_for_entry(entry: AttendanceEntry, employee: Employee) -> str:
-    return (entry.role or employee.position or "").strip()
+    return (entry.role or "").strip()
 
 
 def role_category_rate_exists(settings: Mapping[str, Any], role: str, category: str) -> bool:

@@ -23,7 +23,7 @@ class Employee(Base):
     )
     iiko_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     position: Mapped[str | None] = mapped_column(
-        String(160), nullable=True, comment="source=app_managed"
+        String(160), nullable=True, comment="source=iiko"
     )
     category: Mapped[str | None] = mapped_column(
         String(160), nullable=True, comment="source=app_managed"

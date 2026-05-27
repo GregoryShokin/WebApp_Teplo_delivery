@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -88,9 +88,10 @@ async def patch_employee(
 async def trigger_employee_sync(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    mode: Annotated[Literal["incremental", "reset"], Query()] = "incremental",
 ) -> dict[str, int]:
     require_finance_manager_plus(actor)
-    result = await sync_employees(session, run_reason="manual")
+    result = await sync_employees(session, run_reason="manual", mode=mode)
     return result.as_dict()
 
 
@@ -126,4 +127,4 @@ def _validate_patch_payload(payload: dict[str, Any]) -> None:
 def _recalculate_setup_status(employee: Employee) -> None:
     if employee.status == "inactive":
         return
-    employee.status = "active" if employee.position and employee.category else "needs_setup"
+    employee.status = "active" if employee.position else "needs_setup"
