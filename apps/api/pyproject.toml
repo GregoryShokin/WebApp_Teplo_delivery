@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "teplo-api"
+version = "0.1.0"
+description = "FastAPI backend for the Teplo management accounting app."
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.13.2",
+  "apscheduler>=3.10.4",
+  "asyncpg>=0.29.0",
+  "bcrypt>=4.1.3",
+  "fastapi>=0.115.0",
+  "pydantic-settings>=2.3.0",
+  "pyjwt>=2.8.0",
+  "sqlalchemy[asyncio]>=2.0.30",
+  "uvicorn[standard]>=0.30.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.27.0",
+  "pytest>=8.2.0",
+  "pytest-asyncio>=0.23.0",
+  "ruff>=0.5.0"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["alembic*", "tests*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["build"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
