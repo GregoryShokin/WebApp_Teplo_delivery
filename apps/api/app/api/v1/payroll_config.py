@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentActor, get_current_actor
 from app.db.session import get_session
 from app.schemas.payroll_config import (
+    PayrollCategoryCoefficientBase,
+    PayrollCategoryCoefficientRead,
     PayrollDeductionCategoryBase,
     PayrollDeductionCategoryRead,
     PayrollRateBase,
@@ -15,6 +17,8 @@ from app.schemas.payroll_config import (
     PayrollRateRead,
     PayrollRevenueShareBase,
     PayrollRevenueShareRead,
+    PayrollRevenueTierBase,
+    PayrollRevenueTierRead,
     PayrollRoleCategoryAvailabilityRead,
     PayrollRoleCategoryAvailabilityToggle,
     PayrollSeniorityPremiumBase,
@@ -27,12 +31,16 @@ from app.services.payroll_config import (
     create_rate_version,
     create_revenue_share_version,
     create_seniority_premium_version,
+    list_category_coefficients,
     list_deduction_categories,
     list_rate_matrix,
     list_rates,
     list_revenue_shares,
+    list_revenue_tiers,
     list_role_category_availability,
     list_seniority_premiums,
+    replace_category_coefficient_versions,
+    replace_revenue_tier_versions,
     set_role_category_availability,
 )
 
@@ -126,6 +134,60 @@ async def put_revenue_share(
     require_payroll_config_writer(actor)
     try:
         return await create_revenue_share_version(session, payload)
+    except PayrollConfigConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except PayrollConfigValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/revenue-tiers", response_model=list[PayrollRevenueTierRead])
+async def get_revenue_tiers(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    history: Annotated[bool, Query()] = False,
+) -> list:
+    return await list_revenue_tiers(session, history=history)
+
+
+@router.put("/revenue-tiers", response_model=list[PayrollRevenueTierRead])
+async def put_revenue_tiers(
+    payload: list[PayrollRevenueTierBase],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+):
+    require_payroll_config_writer(actor)
+    try:
+        return await replace_revenue_tier_versions(session, payload)
+    except PayrollConfigConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except PayrollConfigValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/category-coefficients", response_model=list[PayrollCategoryCoefficientRead])
+async def get_category_coefficients(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    history: Annotated[bool, Query()] = False,
+) -> list:
+    return await list_category_coefficients(session, history=history)
+
+
+@router.put("/category-coefficients", response_model=list[PayrollCategoryCoefficientRead])
+async def put_category_coefficients(
+    payload: list[PayrollCategoryCoefficientBase],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+):
+    require_payroll_config_writer(actor)
+    try:
+        return await replace_category_coefficient_versions(session, payload)
     except PayrollConfigConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except PayrollConfigValidationError as exc:

@@ -171,6 +171,32 @@ export type PayrollRevenueShare = {
 
 export type PayrollRevenueSharePayload = Omit<PayrollRevenueShare, "id" | "created_at">;
 
+export type PayrollRevenueTier = {
+  id: string;
+  min_revenue: number;
+  max_revenue: number | null;
+  rate_percent: number;
+  effective_from: string;
+  effective_to: string | null;
+  created_at: string;
+};
+
+export type PayrollRevenueTierPayload = Omit<PayrollRevenueTier, "id" | "created_at">;
+
+export type PayrollCategoryCoefficient = {
+  id: string;
+  category: EmployeeCategory;
+  coefficient: number;
+  effective_from: string;
+  effective_to: string | null;
+  created_at: string;
+};
+
+export type PayrollCategoryCoefficientPayload = Omit<
+  PayrollCategoryCoefficient,
+  "id" | "created_at"
+>;
+
 export type PayrollDeductionCategory = {
   id: string;
   code: string;
@@ -390,6 +416,42 @@ export async function putPayrollRevenueShare(
   payload: PayrollRevenueSharePayload,
 ): Promise<PayrollRevenueShare> {
   const response = await api.put<PayrollRevenueShare>("/payroll/config/revenue-share", payload);
+  return response.data;
+}
+
+export async function getPayrollRevenueTiers(history = false): Promise<PayrollRevenueTier[]> {
+  const response = await api.get<PayrollRevenueTier[]>("/payroll/config/revenue-tiers", {
+    params: { history: history || undefined },
+  });
+  return response.data;
+}
+
+export async function putPayrollRevenueTiers(
+  payload: PayrollRevenueTierPayload[],
+): Promise<PayrollRevenueTier[]> {
+  const response = await api.put<PayrollRevenueTier[]>("/payroll/config/revenue-tiers", payload);
+  return response.data;
+}
+
+export async function getPayrollCategoryCoefficients(
+  history = false,
+): Promise<PayrollCategoryCoefficient[]> {
+  const response = await api.get<PayrollCategoryCoefficient[]>(
+    "/payroll/config/category-coefficients",
+    {
+      params: { history: history || undefined },
+    },
+  );
+  return response.data;
+}
+
+export async function putPayrollCategoryCoefficients(
+  payload: PayrollCategoryCoefficientPayload[],
+): Promise<PayrollCategoryCoefficient[]> {
+  const response = await api.put<PayrollCategoryCoefficient[]>(
+    "/payroll/config/category-coefficients",
+    payload,
+  );
   return response.data;
 }
 

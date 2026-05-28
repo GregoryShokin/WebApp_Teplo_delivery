@@ -36,20 +36,24 @@ import { PageHeader } from "@/components/ui-app/PageHeader";
 import { getAuthSnapshot, subscribeAuth } from "@/lib/auth";
 import { EMPLOYEE_CATEGORY_LABELS } from "@/lib/i18n/employee";
 import {
+  getPayrollCategoryCoefficients,
   getPayrollDeductions,
   getPayrollRates,
-  getPayrollRevenueShares,
+  getPayrollRevenueTiers,
   getPayrollSeniorityPremiums,
+  putPayrollCategoryCoefficients,
   putPayrollDeduction,
   putPayrollRate,
   putPayrollRateAvailability,
-  putPayrollRevenueShare,
+  putPayrollRevenueTiers,
   putPayrollSeniorityPremium,
+  type PayrollCategoryCoefficient,
+  type PayrollCategoryCoefficientPayload,
   type PayrollDeductionCategory,
   type PayrollDeductionCategoryPayload,
   type PayrollRate,
-  type PayrollRevenueShare,
-  type PayrollRevenueSharePayload,
+  type PayrollRevenueTier,
+  type PayrollRevenueTierPayload,
   type PayrollSeniorityPremium,
   type PayrollSeniorityPremiumPayload,
 } from "@/lib/api";
@@ -75,6 +79,17 @@ type RateSaveRequest = {
   is_enabled: boolean;
 };
 
+type RevenueTierDraft = {
+  min_revenue: string;
+  max_revenue: string;
+  rate_percent: number;
+};
+
+type CategoryCoefficientDraft = {
+  category: PayrollCategoryCoefficient["category"];
+  coefficient: string;
+};
+
 type HistoryDrawer = "rates" | null;
 
 export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRouteProps) {
@@ -88,7 +103,6 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
   const [advanced, setAdvanced] = useState(false);
   const [pendingRate, setPendingRate] = useState<PendingRate | null>(null);
   const [historyDrawer, setHistoryDrawer] = useState<HistoryDrawer>(null);
-  const [revenueDraft, setRevenueDraft] = useState<PayrollRevenueSharePayload | null>(null);
   const [deductionDraft, setDeductionDraft] = useState<PayrollDeductionCategoryPayload | null>(
     null,
   );
@@ -103,9 +117,13 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
     queryFn: () => getPayrollRates(true),
     enabled: historyDrawer === "rates",
   });
-  const revenueQuery = useQuery({
-    queryKey: ["payroll-config", "revenue-share"],
-    queryFn: () => getPayrollRevenueShares(),
+  const revenueTiersQuery = useQuery({
+    queryKey: ["payroll-config", "revenue-tiers"],
+    queryFn: () => getPayrollRevenueTiers(),
+  });
+  const categoryCoefficientsQuery = useQuery({
+    queryKey: ["payroll-config", "category-coefficients"],
+    queryFn: () => getPayrollCategoryCoefficients(),
   });
   const deductionsQuery = useQuery({
     queryKey: ["payroll-config", "deductions"],
@@ -140,14 +158,22 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
     onError: () => toast.error("Не удалось сохранить ставку"),
   });
 
-  const revenueMutation = useMutation({
-    mutationFn: putPayrollRevenueShare,
+  const revenueTiersMutation = useMutation({
+    mutationFn: putPayrollRevenueTiers,
     onSuccess: async () => {
-      toast.success("Правило процента сохранено");
-      setRevenueDraft(null);
+      toast.success("Пороги выручки сохранены");
       await invalidatePayrollConfig(queryClient);
     },
-    onError: () => toast.error("Не удалось сохранить процент от выручки"),
+    onError: () => toast.error("Не удалось сохранить пороги выручки"),
+  });
+
+  const categoryCoefficientsMutation = useMutation({
+    mutationFn: putPayrollCategoryCoefficients,
+    onSuccess: async () => {
+      toast.success("Коэффициенты категорий сохранены");
+      await invalidatePayrollConfig(queryClient);
+    },
+    onError: () => toast.error("Не удалось сохранить коэффициенты категорий"),
   });
 
   const deductionMutation = useMutation({
@@ -171,17 +197,23 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
   });
 
   const rates = ratesQuery.data ?? [];
-  const revenueShares = revenueQuery.data ?? [];
+  const revenueTiers = revenueTiersQuery.data ?? [];
+  const categoryCoefficients = categoryCoefficientsQuery.data ?? [];
   const deductions = deductionsQuery.data ?? [];
   const premiums = premiumsQuery.data ?? [];
 
   const isLoading =
     ratesQuery.isLoading ||
-    revenueQuery.isLoading ||
+    revenueTiersQuery.isLoading ||
+    categoryCoefficientsQuery.isLoading ||
     deductionsQuery.isLoading ||
     premiumsQuery.isLoading;
   const hasError =
-    ratesQuery.isError || revenueQuery.isError || deductionsQuery.isError || premiumsQuery.isError;
+    ratesQuery.isError ||
+    revenueTiersQuery.isError ||
+    categoryCoefficientsQuery.isError ||
+    deductionsQuery.isError ||
+    premiumsQuery.isError;
 
   return (
     <div className="space-y-5">
@@ -248,20 +280,15 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
         </TabsContent>
 
         <TabsContent value="revenue" className="mt-0">
-          <RevenueShareSection
+          <RevenuePercentSection
             advanced={advanced}
+            categoryCoefficients={categoryCoefficients}
             canWrite={canWrite}
-            onAdd={() =>
-              setRevenueDraft({
-                position_group: "Производство",
-                category: "",
-                percent: 0,
-                effective_from: todayKey(),
-                effective_to: null,
-              })
-            }
-            onEdit={setRevenueDraft}
-            revenueShares={revenueShares}
+            isSavingCoefficients={categoryCoefficientsMutation.isPending}
+            isSavingTiers={revenueTiersMutation.isPending}
+            onSaveCoefficients={(payload) => categoryCoefficientsMutation.mutate(payload)}
+            onSaveTiers={(payload) => revenueTiersMutation.mutate(payload)}
+            revenueTiers={revenueTiers}
           />
         </TabsContent>
 
@@ -309,19 +336,6 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
         }}
         pendingRate={pendingRate}
         setPendingRate={setPendingRate}
-      />
-
-      <RevenueShareDialog
-        advanced={advanced}
-        draft={revenueDraft}
-        isSaving={revenueMutation.isPending}
-        onChange={setRevenueDraft}
-        onOpenChange={(open) => {
-          if (!open) {
-            setRevenueDraft(null);
-          }
-        }}
-        onSave={(payload) => revenueMutation.mutate(payload)}
       />
 
       <DeductionDialog
@@ -529,63 +543,282 @@ function RateCell({
   );
 }
 
-function RevenueShareSection({
+function RevenuePercentSection({
   advanced,
   canWrite,
-  onAdd,
-  onEdit,
-  revenueShares,
+  categoryCoefficients,
+  isSavingCoefficients,
+  isSavingTiers,
+  onSaveCoefficients,
+  onSaveTiers,
+  revenueTiers,
 }: {
   advanced: boolean;
   canWrite: boolean;
-  onAdd: () => void;
-  onEdit: (payload: PayrollRevenueSharePayload) => void;
-  revenueShares: PayrollRevenueShare[];
+  categoryCoefficients: PayrollCategoryCoefficient[];
+  isSavingCoefficients: boolean;
+  isSavingTiers: boolean;
+  onSaveCoefficients: (payload: PayrollCategoryCoefficientPayload[]) => void;
+  onSaveTiers: (payload: PayrollRevenueTierPayload[]) => void;
+  revenueTiers: PayrollRevenueTier[];
 }) {
+  const [tierEffectiveFrom, setTierEffectiveFrom] = useState(todayKey());
+  const [coefficientEffectiveFrom, setCoefficientEffectiveFrom] = useState(todayKey());
+  const [tierDrafts, setTierDrafts] = useState<RevenueTierDraft[]>([]);
+  const [coefficientDrafts, setCoefficientDrafts] = useState<CategoryCoefficientDraft[]>([]);
+  const [previewRevenue, setPreviewRevenue] = useState("140000");
+  const [previewCategory, setPreviewCategory] =
+    useState<PayrollCategoryCoefficient["category"]>("category_1");
+  const [previewHours, setPreviewHours] = useState("12");
+
+  useEffect(() => {
+    setTierDrafts(
+      [...revenueTiers]
+        .sort((left, right) => left.min_revenue - right.min_revenue)
+        .map((tier) => ({
+          min_revenue: String(tier.min_revenue),
+          max_revenue: tier.max_revenue === null ? "" : String(tier.max_revenue),
+          rate_percent: tier.rate_percent,
+        })),
+    );
+  }, [revenueTiers]);
+
+  useEffect(() => {
+    setCoefficientDrafts(
+      PAYROLL_RATE_CATEGORIES.map((category) => {
+        const current = categoryCoefficients.find((item) => item.category === category);
+        return {
+          category: category as PayrollCategoryCoefficient["category"],
+          coefficient: current ? String(current.coefficient) : "",
+        };
+      }),
+    );
+  }, [categoryCoefficients]);
+
+  const tierPayloads = useMemo(
+    () => buildRevenueTierPayloads(tierDrafts, tierEffectiveFrom),
+    [tierDrafts, tierEffectiveFrom],
+  );
+  const coefficientPayloads = useMemo(
+    () => buildCategoryCoefficientPayloads(coefficientDrafts, coefficientEffectiveFrom),
+    [coefficientDrafts, coefficientEffectiveFrom],
+  );
+  const preview = useMemo(
+    () =>
+      calculateRevenuePreview({
+        category: previewCategory,
+        coefficients: coefficientDrafts,
+        hours: previewHours,
+        revenue: previewRevenue,
+        tiers: tierDrafts,
+      }),
+    [coefficientDrafts, previewCategory, previewHours, previewRevenue, tierDrafts],
+  );
+
   return (
     <section className="space-y-4 rounded-lg border bg-card p-4">
       <SectionHeader
-        action={
-          <Button disabled={!canWrite} onClick={onAdd}>
-            <Plus size={16} aria-hidden="true" />
-            Добавить правило
-          </Button>
-        }
-        description="Правила процента от дневной выручки. Текущие seed-данные сохранены как пороги из исходного листа."
+        description="Дневной пул выручки распределяется между участниками смены по коэффициенту категории и отработанным часам."
         title="Проценты от выручки"
       />
-      <div className="grid gap-2">
-        {revenueShares.map((rule) => (
-          <div
-            className="grid gap-3 rounded-md border px-3 py-3 sm:grid-cols-[1fr_auto_auto] sm:items-center"
-            key={rule.id}
-          >
-            <div className="min-w-0">
-              <div className="font-medium">{rule.position_group}</div>
-              <div className="text-sm text-muted-foreground">{rule.category}</div>
-              {advanced ? <RawMeta value={`${rule.position_group} / ${rule.category}`} /> : null}
-            </div>
-            <div className="text-lg font-semibold tabular-nums">{formatPercent(rule.percent)}</div>
+
+      <div className="space-y-3 border-t pt-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 className="text-base font-semibold tracking-normal">Tier-таблица выручки</h3>
+            <p className="mt-1 text-sm text-muted-foreground">Объём от-до и ставка дневного пула.</p>
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
+            {advanced ? (
+              <LabeledInput
+                label="Дата начала версии"
+                onChange={(value) => setTierEffectiveFrom(String(value))}
+                type="date"
+                value={tierEffectiveFrom}
+              />
+            ) : null}
             <Button
-              disabled={!canWrite}
-              onClick={() =>
-                onEdit({
-                  position_group: rule.position_group,
-                  category: rule.category,
-                  percent: rule.percent,
-                  effective_from: todayKey(),
-                  effective_to: null,
-                })
-              }
-              size="sm"
-              variant="outline"
+              disabled={!canWrite || isSavingTiers || !tierPayloads}
+              onClick={() => tierPayloads && onSaveTiers(tierPayloads)}
             >
               <Save size={16} aria-hidden="true" />
-              Новая версия
+              Сохранить пороги
             </Button>
           </div>
-        ))}
-        {revenueShares.length === 0 ? <EmptyConfigLine text="Правила пока не заданы." /> : null}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-[680px] border-separate border-spacing-0 text-sm">
+            <thead>
+              <tr>
+                <th className="border-b p-3 text-left font-medium text-muted-foreground">
+                  Выручка от
+                </th>
+                <th className="border-b p-3 text-left font-medium text-muted-foreground">
+                  Выручка до
+                </th>
+                <th className="border-b p-3 text-left font-medium text-muted-foreground">
+                  Процент
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {tierDrafts.map((tier, index) => (
+                <tr key={`${index}-${tier.min_revenue}`}>
+                  <td className="border-b p-2">
+                    <Input
+                      disabled={!canWrite}
+                      min={0}
+                      onChange={(event) =>
+                        updateTierDraft(setTierDrafts, index, "min_revenue", event.target.value)
+                      }
+                      type="number"
+                      value={tier.min_revenue}
+                    />
+                  </td>
+                  <td className="border-b p-2">
+                    <Input
+                      disabled={!canWrite}
+                      min={0}
+                      onChange={(event) =>
+                        updateTierDraft(setTierDrafts, index, "max_revenue", event.target.value)
+                      }
+                      placeholder="без лимита"
+                      type="number"
+                      value={tier.max_revenue}
+                    />
+                  </td>
+                  <td className="border-b p-2">
+                    <PercentWidget
+                      disabled={!canWrite}
+                      onChange={(value) =>
+                        updateTierDraft(setTierDrafts, index, "rate_percent", Number(value) || 0)
+                      }
+                      value={tier.rate_percent}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {tierDrafts.length === 0 ? <EmptyConfigLine text="Пороги выручки пока не заданы." /> : null}
+        {!tierPayloads ? (
+          <div className="text-sm text-destructive">Проверьте границы tier-таблицы.</div>
+        ) : null}
+      </div>
+
+      <div className="space-y-3 border-t pt-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 className="text-base font-semibold tracking-normal">Коэффициенты категорий</h3>
+            <p className="mt-1 text-sm text-muted-foreground">Пять категорий для распределения процентного пула.</p>
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
+            {advanced ? (
+              <LabeledInput
+                label="Дата начала версии"
+                onChange={(value) => setCoefficientEffectiveFrom(String(value))}
+                type="date"
+                value={coefficientEffectiveFrom}
+              />
+            ) : null}
+            <Button
+              disabled={!canWrite || isSavingCoefficients || !coefficientPayloads}
+              onClick={() => coefficientPayloads && onSaveCoefficients(coefficientPayloads)}
+            >
+              <Save size={16} aria-hidden="true" />
+              Сохранить коэффициенты
+            </Button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-[520px] border-separate border-spacing-0 text-sm">
+            <thead>
+              <tr>
+                <th className="border-b p-3 text-left font-medium text-muted-foreground">
+                  Категория
+                </th>
+                <th className="border-b p-3 text-left font-medium text-muted-foreground">
+                  Коэффициент
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {coefficientDrafts.map((row, index) => (
+                <tr key={row.category}>
+                  <td className="border-b p-3 font-medium">{categoryLabel(row.category)}</td>
+                  <td className="border-b p-2">
+                    <Input
+                      disabled={!canWrite}
+                      min={0}
+                      onChange={(event) =>
+                        updateCoefficientDraft(setCoefficientDrafts, index, event.target.value)
+                      }
+                      step={0.1}
+                      type="number"
+                      value={row.coefficient}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!coefficientPayloads ? (
+          <div className="text-sm text-destructive">Проверьте коэффициенты категорий.</div>
+        ) : null}
+      </div>
+
+      <div className="space-y-3 border-t pt-4">
+        <div>
+          <h3 className="text-base font-semibold tracking-normal">Пример расчёта</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Живой пример для визуальной проверки.
+          </p>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-[180px_180px_180px_1fr] lg:items-end">
+          <LabeledInput
+            label="Дневная выручка"
+            onChange={(value) => setPreviewRevenue(String(value))}
+            type="number"
+            value={previewRevenue}
+          />
+          <div className="grid gap-2">
+            <Label>Категория сотрудника</Label>
+            <select
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              onChange={(event) =>
+                setPreviewCategory(event.target.value as PayrollCategoryCoefficient["category"])
+              }
+              value={previewCategory}
+            >
+              {PAYROLL_RATE_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {categoryLabel(category)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <LabeledInput
+            label="Часы сотрудника"
+            onChange={(value) => setPreviewHours(String(value))}
+            type="number"
+            value={previewHours}
+          />
+          <div className="grid gap-1 rounded-md bg-muted px-3 py-2 text-sm">
+            <span>
+              Если дневная выручка = {formatMoney(preview.revenue)}, процентный пул ={" "}
+              {formatMoney(preview.pool)}.
+            </span>
+            <span>
+              Сотрудник Сушист {categoryLabel(previewCategory)} проработал{" "}
+              {formatCompactNumber(preview.hours)}ч → его доля ={" "}
+              <span className="font-semibold tabular-nums">{formatMoney(preview.share)}</span>.
+            </span>
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -822,72 +1055,6 @@ function RateConfirmDialog({
               });
             }}
           >
-            <Save size={16} aria-hidden="true" />
-            Сохранить
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function RevenueShareDialog({
-  advanced,
-  draft,
-  isSaving,
-  onChange,
-  onOpenChange,
-  onSave,
-}: {
-  advanced: boolean;
-  draft: PayrollRevenueSharePayload | null;
-  isSaving: boolean;
-  onChange: (value: PayrollRevenueSharePayload | null) => void;
-  onOpenChange: (open: boolean) => void;
-  onSave: (payload: PayrollRevenueSharePayload) => void;
-}) {
-  return (
-    <Dialog onOpenChange={onOpenChange} open={Boolean(draft)}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Правило процента от выручки</DialogTitle>
-          <DialogDescription>Сохранение создаёт новую версию правила.</DialogDescription>
-        </DialogHeader>
-        {draft ? (
-          <div className="grid gap-4">
-            <LabeledInput
-              label="Должность или группа"
-              onChange={(value) => onChange({ ...draft, position_group: String(value) })}
-              value={draft.position_group}
-            />
-            <LabeledInput
-              label="Категория или порог"
-              onChange={(value) => onChange({ ...draft, category: String(value) })}
-              value={draft.category}
-            />
-            <div className="grid gap-2">
-              <Label>Процент</Label>
-              <PercentWidget
-                onChange={(value) => onChange({ ...draft, percent: Number(value) || 0 })}
-                value={draft.percent}
-              />
-            </div>
-            {advanced ? (
-              <EffectiveInputs
-                effectiveFrom={draft.effective_from}
-                effectiveTo={draft.effective_to}
-                onChange={(effective_from, effective_to) =>
-                  onChange({ ...draft, effective_from, effective_to })
-                }
-              />
-            ) : null}
-          </div>
-        ) : null}
-        <DialogFooter>
-          <Button onClick={() => onOpenChange(false)} variant="outline">
-            Отмена
-          </Button>
-          <Button disabled={!draft || isSaving} onClick={() => draft && onSave(draft)}>
             <Save size={16} aria-hidden="true" />
             Сохранить
           </Button>
@@ -1192,7 +1359,8 @@ async function invalidatePayrollConfig(queryClient: ReturnType<typeof useQueryCl
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ["payroll-config", "rates"] }),
     queryClient.invalidateQueries({ queryKey: ["payroll-config", "availability"] }),
-    queryClient.invalidateQueries({ queryKey: ["payroll-config", "revenue-share"] }),
+    queryClient.invalidateQueries({ queryKey: ["payroll-config", "revenue-tiers"] }),
+    queryClient.invalidateQueries({ queryKey: ["payroll-config", "category-coefficients"] }),
     queryClient.invalidateQueries({ queryKey: ["payroll-config", "deductions"] }),
     queryClient.invalidateQueries({ queryKey: ["payroll-config", "seniority-premium"] }),
   ]);
@@ -1244,6 +1412,154 @@ function parseRateAmount(value: string): number | null | undefined {
   return amount;
 }
 
+function buildRevenueTierPayloads(
+  drafts: RevenueTierDraft[],
+  effectiveFrom: string,
+): PayrollRevenueTierPayload[] | null {
+  const rows: PayrollRevenueTierPayload[] = [];
+  for (const draft of drafts) {
+    const minRevenue = parseNonNegativeNumber(draft.min_revenue);
+    const maxRevenue = parseOptionalNonNegativeNumber(draft.max_revenue);
+    if (minRevenue === undefined || maxRevenue === undefined || draft.rate_percent < 0) {
+      return null;
+    }
+    rows.push({
+      min_revenue: minRevenue,
+      max_revenue: maxRevenue,
+      rate_percent: draft.rate_percent,
+      effective_from: effectiveFrom,
+      effective_to: null,
+    });
+  }
+  const sortedRows = rows.sort((left, right) => left.min_revenue - right.min_revenue);
+  const hasOverlap = sortedRows.some((row, index) => {
+    const next = sortedRows[index + 1];
+    return Boolean(next && row.max_revenue !== null && row.max_revenue > next.min_revenue);
+  });
+  const hasOpenMiddleTier = sortedRows.some(
+    (row, index) => row.max_revenue === null && index !== sortedRows.length - 1,
+  );
+  return hasOverlap || hasOpenMiddleTier ? null : sortedRows;
+}
+
+function buildCategoryCoefficientPayloads(
+  drafts: CategoryCoefficientDraft[],
+  effectiveFrom: string,
+): PayrollCategoryCoefficientPayload[] | null {
+  const rows: PayrollCategoryCoefficientPayload[] = [];
+  for (const draft of drafts) {
+    const coefficient = parseNonNegativeNumber(draft.coefficient);
+    if (coefficient === undefined) {
+      return null;
+    }
+    rows.push({
+      category: draft.category,
+      coefficient,
+      effective_from: effectiveFrom,
+      effective_to: null,
+    });
+  }
+  return rows;
+}
+
+function updateTierDraft(
+  setTierDrafts: (updater: (value: RevenueTierDraft[]) => RevenueTierDraft[]) => void,
+  index: number,
+  key: keyof RevenueTierDraft,
+  value: string | number,
+) {
+  setTierDrafts((drafts) =>
+    drafts.map((draft, draftIndex) =>
+      draftIndex === index ? { ...draft, [key]: value } : draft,
+    ),
+  );
+}
+
+function updateCoefficientDraft(
+  setCoefficientDrafts: (
+    updater: (value: CategoryCoefficientDraft[]) => CategoryCoefficientDraft[],
+  ) => void,
+  index: number,
+  value: string,
+) {
+  setCoefficientDrafts((drafts) =>
+    drafts.map((draft, draftIndex) =>
+      draftIndex === index ? { ...draft, coefficient: value } : draft,
+    ),
+  );
+}
+
+function calculateRevenuePreview({
+  category,
+  coefficients,
+  hours,
+  revenue,
+  tiers,
+}: {
+  category: PayrollCategoryCoefficient["category"];
+  coefficients: CategoryCoefficientDraft[];
+  hours: string;
+  revenue: string;
+  tiers: RevenueTierDraft[];
+}) {
+  const revenueValue = parseNonNegativeNumber(revenue) ?? 0;
+  const hoursValue = parseNonNegativeNumber(hours) ?? 0;
+  const rate = findRevenueRate(revenueValue, tiers);
+  const pool = revenueValue * rate;
+  const sampleShifts = [
+    { category, hours: hoursValue },
+    { category: "category_2", hours: 12 },
+    { category: "category_3", hours: 12 },
+    { category: "intern", hours: 12 },
+  ];
+  const weights = sampleShifts.map((shift) => {
+    const coefficient = coefficientForCategory(coefficients, shift.category);
+    return coefficient * Math.min(shift.hours, 12) / 12;
+  });
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  const share = totalWeight > 0 ? Math.floor((pool * weights[0]) / totalWeight) : 0;
+  return {
+    hours: hoursValue,
+    pool,
+    rate,
+    revenue: revenueValue,
+    share,
+  };
+}
+
+function findRevenueRate(revenue: number, tiers: RevenueTierDraft[]) {
+  return [...tiers]
+    .sort((left, right) => Number(right.min_revenue || 0) - Number(left.min_revenue || 0))
+    .find((tier) => {
+      const minRevenue = parseNonNegativeNumber(tier.min_revenue);
+      const maxRevenue = parseOptionalNonNegativeNumber(tier.max_revenue);
+      if (minRevenue === undefined || maxRevenue === undefined || revenue < minRevenue) {
+        return false;
+      }
+      return maxRevenue === null || revenue < maxRevenue;
+    })?.rate_percent ?? 0;
+}
+
+function coefficientForCategory(coefficients: CategoryCoefficientDraft[], category: string) {
+  const value = coefficients.find((row) => row.category === category)?.coefficient ?? "0";
+  return parseNonNegativeNumber(value) ?? 0;
+}
+
+function parseNonNegativeNumber(value: string) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue < 0 || value.trim() === "") {
+    return undefined;
+  }
+  return numberValue;
+}
+
+function parseOptionalNonNegativeNumber(value: string) {
+  if (value.trim() === "") {
+    return null;
+  }
+  return parseNonNegativeNumber(value);
+}
+
 function deductionTypeLabel(type: PayrollDeductionCategory["type"]) {
   if (type === "fine") {
     return "Штраф";
@@ -1274,6 +1590,12 @@ function formatMoney(value: number | null) {
     maximumFractionDigits: 0,
     style: "currency",
     currency: "RUB",
+  }).format(value);
+}
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat("ru-RU", {
+    maximumFractionDigits: 1,
   }).format(value);
 }
 

@@ -53,6 +53,42 @@ def _availability(
     }
 
 
+def _tier(
+    *,
+    min_revenue: float,
+    max_revenue: float | None,
+    rate_percent: float,
+    effective_from: date,
+    effective_to: date | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": uuid.uuid4(),
+        "min_revenue": min_revenue,
+        "max_revenue": max_revenue,
+        "rate_percent": rate_percent,
+        "effective_from": effective_from,
+        "effective_to": effective_to,
+        "created_at": datetime(2026, 5, 28, 10, 0, tzinfo=UTC),
+    }
+
+
+def _coefficient(
+    *,
+    category: str,
+    coefficient: float,
+    effective_from: date,
+    effective_to: date | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": uuid.uuid4(),
+        "category": category,
+        "coefficient": coefficient,
+        "effective_from": effective_from,
+        "effective_to": effective_to,
+        "created_at": datetime(2026, 5, 28, 10, 0, tzinfo=UTC),
+    }
+
+
 def test_get_payroll_rates_current_returns_current_rows(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -344,6 +380,114 @@ def test_put_payroll_availability_manager_returns_403(
         "/api/v1/payroll/config/availability/Шаурмист/category_1",
         headers={"X-User-Role": "manager"},
         json={"is_enabled": True},
+    )
+
+    assert response.status_code == 403
+
+
+def test_get_revenue_tiers_returns_current_rows(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current = _tier(
+        min_revenue=140000,
+        max_revenue=190000,
+        rate_percent=0.045,
+        effective_from=date(2026, 1, 1),
+    )
+
+    async def fake_list_revenue_tiers(_session, *, history: bool = False):
+        assert history is False
+        return [current]
+
+    monkeypatch.setattr(payroll_config_routes, "list_revenue_tiers", fake_list_revenue_tiers)
+
+    response = client.get(
+        "/api/v1/payroll/config/revenue-tiers",
+        headers={"X-User-Role": "manager"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()[0]["rate_percent"] == 0.045
+
+
+def test_put_revenue_tiers_creates_new_version(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = [
+        _tier(
+            min_revenue=50000,
+            max_revenue=140000,
+            rate_percent=0.035,
+            effective_from=date(2026, 1, 1),
+        )
+    ]
+
+    async def fake_replace_revenue_tier_versions(_session, payloads):
+        payloads = list(payloads)
+        store[0]["effective_to"] = payloads[0].effective_from
+        created = [
+            {
+                "id": uuid.uuid4(),
+                **payload.model_dump(),
+                "created_at": datetime(2026, 5, 28, 11, 0, tzinfo=UTC),
+            }
+            for payload in payloads
+        ]
+        store.extend(created)
+        return created
+
+    monkeypatch.setattr(
+        payroll_config_routes,
+        "replace_revenue_tier_versions",
+        fake_replace_revenue_tier_versions,
+    )
+
+    response = client.put(
+        "/api/v1/payroll/config/revenue-tiers",
+        headers={"X-User-Role": "finance_manager"},
+        json=[
+            {
+                "min_revenue": 50000,
+                "max_revenue": 140000,
+                "rate_percent": 0.04,
+                "effective_from": "2026-06-01",
+                "effective_to": None,
+            }
+        ],
+    )
+
+    assert response.status_code == 200
+    assert response.json()[0]["effective_from"] == "2026-06-01"
+    assert response.json()[0]["rate_percent"] == 0.04
+    assert store[0]["effective_to"] == date(2026, 6, 1)
+
+
+def test_put_category_coefficients_requires_finance_manager(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_replace_category_coefficient_versions(*_args, **_kwargs):
+        raise AssertionError("manager must not write category coefficients")
+
+    monkeypatch.setattr(
+        payroll_config_routes,
+        "replace_category_coefficient_versions",
+        fake_replace_category_coefficient_versions,
+    )
+
+    response = client.put(
+        "/api/v1/payroll/config/category-coefficients",
+        headers={"X-User-Role": "manager"},
+        json=[
+            {
+                "category": "category_1",
+                "coefficient": 3,
+                "effective_from": "2026-06-01",
+                "effective_to": None,
+            }
+        ],
     )
 
     assert response.status_code == 403

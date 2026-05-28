@@ -53,6 +53,8 @@ EXPECTED_TABLES = {
     "payroll_rate",
     "payroll_role_category_availability",
     "payroll_revenue_share",
+    "revenue_tier",
+    "category_coefficient",
     "payroll_deduction_category",
     "payroll_seniority_premium",
 }
@@ -88,6 +90,8 @@ def test_all_models_import() -> None:
         "PayrollRate",
         "PayrollRoleCategoryAvailability",
         "PayrollRevenueShare",
+        "RevenueTier",
+        "CategoryCoefficient",
         "PayrollDeductionCategory",
         "PayrollSeniorityPremium",
         "DepositAccount",
@@ -125,6 +129,8 @@ def test_app_setting_display_metadata_columns_are_declared() -> None:
 def test_payroll_configuration_tables_are_declared() -> None:
     rate_columns = models.PayrollRate.__table__.c
     availability_columns = models.PayrollRoleCategoryAvailability.__table__.c
+    tier_columns = models.RevenueTier.__table__.c
+    coefficient_columns = models.CategoryCoefficient.__table__.c
     deduction_columns = models.PayrollDeductionCategory.__table__.c
     premium_columns = models.PayrollSeniorityPremium.__table__.c
 
@@ -135,8 +141,39 @@ def test_payroll_configuration_tables_are_declared() -> None:
     assert availability_columns.position_group.nullable is False
     assert availability_columns.category.nullable is False
     assert availability_columns.is_enabled.nullable is False
+    assert tier_columns.min_revenue.nullable is False
+    assert tier_columns.max_revenue.nullable is True
+    assert coefficient_columns.category.nullable is False
+    assert coefficient_columns.coefficient.nullable is False
     assert deduction_columns.code.nullable is False
     assert premium_columns.percent_of_base.nullable is False
+
+
+def test_percent_methodology_is_additive_for_existing_payroll_runs() -> None:
+    run_columns = set(models.PayrollRun.__table__.c.keys())
+    line_columns = set(models.PayrollLine.__table__.c.keys())
+
+    assert {
+        "id",
+        "period_id",
+        "started_at",
+        "finished_at",
+        "status",
+        "blocking_issues",
+        "summary",
+    } <= run_columns
+    assert {
+        "run_id",
+        "employee_id",
+        "role",
+        "base_pay",
+        "premium",
+        "percent_pay",
+        "fund_accrual",
+        "deduction",
+        "total_payable",
+        "components",
+    } <= line_columns
 
 
 def test_counterparty_inn_partial_unique_index_is_declared() -> None:
@@ -232,6 +269,10 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
                 "payroll_revenue_share": await conn.scalar(
                     text("select count(*) from payroll_revenue_share")
                 ),
+                "revenue_tier": await conn.scalar(text("select count(*) from revenue_tier")),
+                "category_coefficient": await conn.scalar(
+                    text("select count(*) from category_coefficient")
+                ),
                 "payroll_deduction_category": await conn.scalar(
                     text("select count(*) from payroll_deduction_category")
                 ),
@@ -289,12 +330,14 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
         "organization": 1,
         "location": 2,
         "user": 1,
-        "app_setting": 20,
-        "app_setting_history": 20,
+        "app_setting": 21,
+        "app_setting_history": 21,
         "payroll_rate": 20,
         "payroll_role_category_availability": 20,
         "enabled_payroll_role_category_availability": 14,
         "payroll_revenue_share": 4,
+        "revenue_tier": 4,
+        "category_coefficient": 5,
         "payroll_deduction_category": 4,
         "payroll_seniority_premium": 2,
         "invalid_payroll_rate_category": 0,
@@ -318,6 +361,14 @@ async def test_seeded_settings_have_display_metadata(migrated_db: str) -> None:
                     )
                 )
             ).one()
+            weekday_premium = (
+                await conn.execute(
+                    text(
+                        "select category, value, widget_type, unit "
+                        "from app_setting where key = 'payroll.weekday_premium'"
+                    )
+                )
+            ).one()
     finally:
         await engine.dispose()
 
@@ -327,6 +378,12 @@ async def test_seeded_settings_have_display_metadata(migrated_db: str) -> None:
         "Целевой ФОТ % от выручки",
         "percent",
         "%",
+    )
+    assert weekday_premium == (
+        "payroll",
+        {"friday": 200, "saturday": 200},
+        "weekday_premium",
+        "₽",
     )
 
 

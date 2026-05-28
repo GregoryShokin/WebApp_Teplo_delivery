@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import and_, or_, select
@@ -9,16 +10,20 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    CategoryCoefficient,
     PayrollDeductionCategory,
     PayrollRate,
     PayrollRevenueShare,
     PayrollRoleCategoryAvailability,
     PayrollSeniorityPremium,
+    RevenueTier,
 )
 from app.schemas.payroll_config import (
+    PayrollCategoryCoefficientBase,
     PayrollDeductionCategoryBase,
     PayrollRateBase,
     PayrollRevenueShareBase,
+    PayrollRevenueTierBase,
     PayrollSeniorityPremiumBase,
 )
 
@@ -218,6 +223,59 @@ async def create_revenue_share_version(
     return await _insert_version(session, record)
 
 
+async def list_revenue_tiers(
+    session: AsyncSession,
+    *,
+    history: bool = False,
+) -> list[RevenueTier]:
+    statement = select(RevenueTier)
+    if not history:
+        statement = statement.where(_current_filter(RevenueTier, date.today()))
+    statement = statement.order_by(RevenueTier.min_revenue, RevenueTier.effective_from.desc())
+    return list((await session.scalars(statement)).all())
+
+
+async def replace_revenue_tier_versions(
+    session: AsyncSession,
+    payloads: Iterable[PayrollRevenueTierBase],
+) -> list[RevenueTier]:
+    payloads = list(payloads)
+    _validate_revenue_tier_payloads(payloads)
+    effective_from = payloads[0].effective_from
+    await _ensure_no_existing_set_version(session, RevenueTier, effective_from)
+    await _close_all_previous_versions(session, RevenueTier, effective_from)
+    records = [RevenueTier(**payload.model_dump()) for payload in payloads]
+    return await _insert_versions(session, records)
+
+
+async def list_category_coefficients(
+    session: AsyncSession,
+    *,
+    history: bool = False,
+) -> list[CategoryCoefficient]:
+    statement = select(CategoryCoefficient)
+    if not history:
+        statement = statement.where(_current_filter(CategoryCoefficient, date.today()))
+    statement = statement.order_by(
+        CategoryCoefficient.category,
+        CategoryCoefficient.effective_from.desc(),
+    )
+    return list((await session.scalars(statement)).all())
+
+
+async def replace_category_coefficient_versions(
+    session: AsyncSession,
+    payloads: Iterable[PayrollCategoryCoefficientBase],
+) -> list[CategoryCoefficient]:
+    payloads = list(payloads)
+    _validate_category_coefficient_payloads(payloads)
+    effective_from = payloads[0].effective_from
+    await _ensure_no_existing_set_version(session, CategoryCoefficient, effective_from)
+    await _close_all_previous_versions(session, CategoryCoefficient, effective_from)
+    records = [CategoryCoefficient(**payload.model_dump()) for payload in payloads]
+    return await _insert_versions(session, records)
+
+
 async def list_deduction_categories(
     session: AsyncSession,
     *,
@@ -330,6 +388,29 @@ async def _close_previous_versions(
         record.effective_to = effective_from
 
 
+async def _ensure_no_existing_set_version(
+    session: AsyncSession,
+    model: type[Any],
+    effective_from: date,
+) -> None:
+    existing = await session.scalar(select(model).where(model.effective_from == effective_from))
+    if existing is not None:
+        raise PayrollConfigConflictError("Version already exists for this effective date")
+
+
+async def _close_all_previous_versions(
+    session: AsyncSession,
+    model: type[Any],
+    effective_from: date,
+) -> None:
+    statement = select(model).where(
+        model.effective_from < effective_from,
+        or_(model.effective_to.is_(None), model.effective_to > effective_from),
+    )
+    for record in (await session.scalars(statement)).all():
+        record.effective_to = effective_from
+
+
 async def _insert_version(
     session: AsyncSession,
     record: Any,
@@ -342,6 +423,21 @@ async def _insert_version(
         raise PayrollConfigConflictError("Version already exists for this effective date") from exc
     await session.refresh(record)
     return record
+
+
+async def _insert_versions(
+    session: AsyncSession,
+    records: list[Any],
+) -> list[Any]:
+    session.add_all(records)
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise PayrollConfigConflictError("Version already exists for this effective date") from exc
+    for record in records:
+        await session.refresh(record)
+    return records
 
 
 async def _update_rate_version(
@@ -434,6 +530,51 @@ def _validate_rate_payload(payload: PayrollRateBase) -> None:
 def _validate_rate_category(category: str) -> None:
     if category not in VALID_PAYROLL_RATE_CATEGORIES:
         raise PayrollConfigValidationError("Invalid payroll rate category")
+
+
+def _validate_revenue_tier_payloads(payloads: list[PayrollRevenueTierBase]) -> None:
+    if not payloads:
+        raise PayrollConfigValidationError("At least one revenue tier is required")
+    effective_dates = {payload.effective_from for payload in payloads}
+    if len(effective_dates) != 1:
+        raise PayrollConfigValidationError("All revenue tiers must share effective_from")
+
+    rows = sorted(payloads, key=lambda payload: Decimal(str(payload.min_revenue)))
+    seen_min_revenue: set[Decimal] = set()
+    for index, payload in enumerate(rows):
+        _validate_effective_range(payload.effective_from, payload.effective_to)
+        min_revenue = Decimal(str(payload.min_revenue))
+        max_revenue = Decimal(str(payload.max_revenue)) if payload.max_revenue is not None else None
+        if min_revenue in seen_min_revenue:
+            raise PayrollConfigValidationError("Revenue tier min_revenue must be unique")
+        seen_min_revenue.add(min_revenue)
+        if max_revenue is not None and max_revenue <= min_revenue:
+            raise PayrollConfigValidationError("Revenue tier max_revenue must exceed min_revenue")
+        if max_revenue is None and index != len(rows) - 1:
+            raise PayrollConfigValidationError("Only the last revenue tier can have empty max")
+        if index < len(rows) - 1:
+            next_min_revenue = Decimal(str(rows[index + 1].min_revenue))
+            if max_revenue is not None and max_revenue > next_min_revenue:
+                raise PayrollConfigValidationError("Revenue tiers must not overlap")
+
+
+def _validate_category_coefficient_payloads(
+    payloads: list[PayrollCategoryCoefficientBase],
+) -> None:
+    if not payloads:
+        raise PayrollConfigValidationError("At least one category coefficient is required")
+    effective_dates = {payload.effective_from for payload in payloads}
+    if len(effective_dates) != 1:
+        raise PayrollConfigValidationError("All category coefficients must share effective_from")
+
+    categories = [payload.category for payload in payloads]
+    if set(categories) != VALID_PAYROLL_RATE_CATEGORIES or len(categories) != len(set(categories)):
+        raise PayrollConfigValidationError(
+            "Category coefficients must include each payroll category"
+        )
+    for payload in payloads:
+        _validate_rate_category(payload.category)
+        _validate_effective_range(payload.effective_from, payload.effective_to)
 
 
 def _validate_effective_range(effective_from: date, effective_to: date | None) -> None:

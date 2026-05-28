@@ -290,6 +290,82 @@ class PayrollRevenueShare(Base):
     )
 
 
+class RevenueTier(Base):
+    __tablename__ = "revenue_tier"
+    __table_args__ = (
+        CheckConstraint("min_revenue >= 0", name="ck_revenue_tier_min_revenue_non_negative"),
+        CheckConstraint(
+            "max_revenue is null or max_revenue > min_revenue",
+            name="ck_revenue_tier_revenue_range",
+        ),
+        CheckConstraint("rate_percent >= 0", name="ck_revenue_tier_rate_percent_non_negative"),
+        CheckConstraint(
+            "effective_to is null or effective_to > effective_from",
+            name="ck_revenue_tier_effective_range",
+        ),
+        UniqueConstraint(
+            "min_revenue",
+            "effective_from",
+            name="uq_revenue_tier_min_revenue_effective_from",
+        ),
+        Index(
+            "ix_revenue_tier_current_lookup",
+            "min_revenue",
+            "max_revenue",
+            "effective_from",
+            "effective_to",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    min_revenue: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    max_revenue: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    rate_percent: Mapped[Decimal] = mapped_column(Numeric(8, 5), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class CategoryCoefficient(Base):
+    __tablename__ = "category_coefficient"
+    __table_args__ = (
+        CheckConstraint(
+            "category in ('category_1', 'category_2', 'category_3', 'intern', 'freelancer')",
+            name="ck_category_coefficient_category_value",
+        ),
+        CheckConstraint(
+            "coefficient >= 0",
+            name="ck_category_coefficient_coefficient_non_negative",
+        ),
+        CheckConstraint(
+            "effective_to is null or effective_to > effective_from",
+            name="ck_category_coefficient_effective_range",
+        ),
+        UniqueConstraint(
+            "category",
+            "effective_from",
+            name="uq_category_coefficient_category_effective_from",
+        ),
+        Index(
+            "ix_category_coefficient_current_lookup",
+            "category",
+            "effective_from",
+            "effective_to",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    coefficient: Mapped[Decimal] = mapped_column(Numeric(8, 3), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class PayrollDeductionCategory(Base):
     __tablename__ = "payroll_deduction_category"
     __table_args__ = (

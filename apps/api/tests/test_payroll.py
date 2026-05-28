@@ -23,6 +23,11 @@ from app.services.payroll_calculator import (
     PAYROLL_RATE_CONFIG_KEY,
     calculate_payroll_lines_from_inputs,
 )
+from app.services.payroll_percent import (
+    PercentShift,
+    compute_daily_percent_pool,
+    distribute_percent_pool,
+)
 from app.services.payroll_runner import (
     PayrollConflictError,
     apply_deposit_write_offs_to_accounts,
@@ -160,6 +165,64 @@ def test_closed_shift_over_12_hours_requires_quality_review() -> None:
     assert entry.minutes_worked == 13 * 60
     assert entry.quality_status == "quality_review"
     assert "duration_over_12h" in (entry.notes or "")
+
+
+@pytest.mark.parametrize(
+    ("daily_revenue", "expected_pool"),
+    [
+        (Decimal("50000"), Decimal("1750.00000")),
+        (Decimal("140000"), Decimal("6300.00000")),
+        (Decimal("550000"), Decimal("35750.00000")),
+    ],
+)
+def test_compute_daily_percent_pool_uses_revenue_tiers(
+    daily_revenue: Decimal,
+    expected_pool: Decimal,
+) -> None:
+    assert compute_daily_percent_pool(daily_revenue, date(2026, 5, 19)) == expected_pool
+
+
+def test_distribute_percent_pool_weights_three_categories_by_coeff_and_hours() -> None:
+    distribution = distribute_percent_pool(
+        Decimal("6500"),
+        [
+            PercentShift("employee-1", "category_1", Decimal("12")),
+            PercentShift("employee-2", "category_2", Decimal("12")),
+            PercentShift("employee-3", "category_3", Decimal("12")),
+        ],
+    )
+
+    assert distribution == {
+        "employee-1": Decimal("3000"),
+        "employee-2": Decimal("2000"),
+        "employee-3": Decimal("1500"),
+    }
+
+
+def test_distribute_percent_pool_gives_intern_zero() -> None:
+    distribution = distribute_percent_pool(
+        Decimal("5000"),
+        [
+            PercentShift("cook", "category_1", Decimal("12")),
+            PercentShift("intern", "intern", Decimal("12")),
+        ],
+    )
+
+    assert distribution["cook"] == Decimal("5000")
+    assert distribution["intern"] == Decimal("0")
+
+
+def test_distribute_percent_pool_excludes_freelancer_weight() -> None:
+    distribution = distribute_percent_pool(
+        Decimal("5000"),
+        [
+            PercentShift("cook", "category_1", Decimal("12")),
+            PercentShift("freelancer", "freelancer", Decimal("12")),
+        ],
+    )
+
+    assert distribution["cook"] == Decimal("5000")
+    assert distribution["freelancer"] == Decimal("0")
 
 
 def test_unknown_or_unconfigured_employee_blocks_payroll_and_finalize() -> None:

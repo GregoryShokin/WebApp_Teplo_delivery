@@ -21,6 +21,18 @@ from app.models import (
     PayrollRate,
     PayrollRoleCategoryAvailability,
 )
+from app.services.payroll_percent import (
+    CATEGORY_COEFFICIENT_CONFIG_KEY,
+    REVENUE_TIER_CONFIG_KEY,
+    PercentShift,
+    category_coefficient,
+    compute_daily_percent_pool,
+    distribute_percent_pool,
+    load_category_coefficient_versions,
+    load_revenue_tier_versions,
+    revenue_tier_rate,
+    shift_weight,
+)
 
 MONEY = Decimal("0.01")
 FULL_SHIFT_MINUTES = Decimal(12 * 60)
@@ -34,7 +46,6 @@ CATEGORY_RULE_KEY_BY_APP_CATEGORY = {
 
 PAYROLL_SETTING_KEYS = {
     "payroll.category_rules",
-    "payroll.revenue_percent_tiers",
     "payroll.allowances",
     "payroll.fund_rates_by_tenure",
     "payroll.mock_daily_revenue",
@@ -67,6 +78,16 @@ async def calculate_payroll_lines(
     }
     settings = await load_payroll_settings(session)
     settings[PAYROLL_RATE_CONFIG_KEY] = await load_payroll_rate_versions(
+        session,
+        period.start_date,
+        period.end_date,
+    )
+    settings[REVENUE_TIER_CONFIG_KEY] = await load_revenue_tier_versions(
+        session,
+        period.start_date,
+        period.end_date,
+    )
+    settings[CATEGORY_COEFFICIENT_CONFIG_KEY] = await load_category_coefficient_versions(
         session,
         period.start_date,
         period.end_date,
@@ -140,24 +161,54 @@ def calculate_payroll_lines_from_inputs(
         station = (entry.station or "").strip() or None
         grouped_minutes[(entry.employee_id, role, entry.work_date, station)] += entry.minutes_worked
 
-    daily_coefficients: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
     day_components: dict[tuple[uuid.UUID, str, date, str | None], dict[str, Any]] = {}
+    daily_percent_shifts: dict[date, list[PercentShift]] = defaultdict(list)
+    daily_total_coefficients: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
 
     for (employee_id, role, work_date, station), minutes in grouped_minutes.items():
         employee = employees[employee_id]
         category = str(employee.category)
-        coeff = category_coeff(settings, category)
-        adjusted_coeff = adjusted_shift_coeff(coeff, minutes)
-        daily_coefficients[work_date] += adjusted_coeff
-        day_components[(employee_id, role, work_date, station)] = {
+        coeff = category_coeff(settings, category, work_date)
+        hours = Decimal(minutes) / Decimal(60)
+        group_key = (employee_id, role, work_date, station)
+        percent_shift = PercentShift(
+            employee_id=group_key,
+            category=category,
+            hours=hours,
+            coefficient=coeff,
+        )
+        adjusted_coeff = shift_weight(percent_shift)
+        daily_percent_shifts[work_date].append(percent_shift)
+        daily_total_coefficients[work_date] += adjusted_coeff
+        day_components[group_key] = {
             "date": work_date.isoformat(),
             "minutes": minutes,
-            "hours": float(Decimal(minutes) / Decimal(60)),
+            "hours": float(hours),
             "role": role,
             "category": category,
             "station": station,
             "adjusted_coeff": float(adjusted_coeff),
         }
+
+    daily_percent_distributions = {
+        work_date: distribute_percent_pool(
+            compute_daily_percent_pool(
+                daily_revenue(settings, work_date),
+                work_date,
+                percent_revenue_tiers(settings),
+            ),
+            shifts,
+        )
+        for work_date, shifts in daily_percent_shifts.items()
+    }
+    daily_percent_components = {
+        work_date: percent_components_for_day(
+            settings,
+            work_date,
+            daily_total_coefficients[work_date],
+        )
+        for work_date in daily_percent_shifts
+    }
 
     line_totals: dict[tuple[uuid.UUID, str], dict[str, Any]] = {}
     for (employee_id, role, work_date, station), minutes in sorted(
@@ -166,12 +217,9 @@ def calculate_payroll_lines_from_inputs(
         employee = employees[employee_id]
         category = str(employee.category)
         base_pay = base_shift_pay(settings, role, category, employee, minutes, work_date, station)
-        percent_pay, percent_components = percent_for_day(
-            settings,
-            work_date,
-            day_components[(employee_id, role, work_date, station)]["adjusted_coeff"],
-            daily_coefficients[work_date],
-        )
+        group_key = (employee_id, role, work_date, station)
+        percent_pay = daily_percent_distributions.get(work_date, {}).get(group_key, Decimal("0"))
+        percent_components = daily_percent_components.get(work_date, {})
         fund_accrual = fund_for_base_pay(settings, employee, period.end_date, base_pay)
         key = (employee_id, role)
         totals = line_totals.setdefault(
@@ -188,7 +236,7 @@ def calculate_payroll_lines_from_inputs(
         totals["base_pay"] += base_pay
         totals["percent_pay"] += percent_pay
         totals["fund_accrual"] += fund_accrual
-        day_component = day_components[(employee_id, role, work_date, station)]
+        day_component = day_components[group_key]
         day_component.update(
             {
                 "base_pay": money(base_pay),
@@ -411,9 +459,13 @@ def role_category_rate_from_versions(
     return candidates[0][2]
 
 
-def category_coeff(settings: Mapping[str, Any], category: str) -> Decimal:
-    rules = settings["payroll.category_rules"]
-    return decimal(rules[category_rule_key(category)]["coeff"])
+def category_coeff(settings: Mapping[str, Any], category: str, work_date: date) -> Decimal:
+    coefficients = settings.get(CATEGORY_COEFFICIENT_CONFIG_KEY)
+    return category_coefficient(
+        category,
+        work_date,
+        coefficients if isinstance(coefficients, list) else None,
+    )
 
 
 def base_shift_pay(
@@ -441,28 +493,26 @@ def adjusted_shift_coeff(coeff: Decimal, minutes: int) -> Decimal:
     return coeff * Decimal(minutes) / FULL_SHIFT_MINUTES
 
 
-def percent_for_day(
+def percent_components_for_day(
     settings: Mapping[str, Any],
     work_date: date,
-    adjusted_coeff: float | Decimal,
     total_adjusted_coeff: Decimal,
-) -> tuple[Decimal, dict[str, Any]]:
-    adjusted_coeff_decimal = decimal(adjusted_coeff)
+) -> dict[str, Any]:
     revenue = daily_revenue(settings, work_date)
-    rate = revenue_percent_rate(settings, revenue)
-    if not rate or total_adjusted_coeff <= 0 or adjusted_coeff_decimal <= 0:
-        return Decimal("0"), {
+    rate = revenue_percent_rate(settings, revenue, work_date)
+    daily_pool = compute_daily_percent_pool(revenue, work_date, percent_revenue_tiers(settings))
+    if not rate or total_adjusted_coeff <= 0:
+        return {
             "daily_revenue": money(revenue),
             "revenue_rate": float(rate or 0),
+            "daily_percent_pool": money(daily_pool),
             "daily_total_coeff": float(total_adjusted_coeff),
             "percent_status": "not_applicable",
         }
-    value = (revenue * rate / total_adjusted_coeff * adjusted_coeff_decimal).to_integral_value(
-        rounding=ROUND_FLOOR
-    )
-    return value, {
+    return {
         "daily_revenue": money(revenue),
         "revenue_rate": float(rate),
+        "daily_percent_pool": money(daily_pool),
         "daily_total_coeff": float(total_adjusted_coeff),
         "percent_status": "calculated",
     }
@@ -475,13 +525,17 @@ def daily_revenue(settings: Mapping[str, Any], work_date: date) -> Decimal:
     return decimal(revenue_by_day.get(work_date.isoformat(), 0))
 
 
-def revenue_percent_rate(settings: Mapping[str, Any], revenue: Decimal) -> Decimal | None:
-    tiers = settings.get("payroll.revenue_percent_tiers", [])
-    best_rate: Decimal | None = None
-    for tier in tiers:
-        if revenue >= decimal(tier.get("from", 0)):
-            best_rate = decimal(tier.get("rate", 0))
-    return best_rate
+def revenue_percent_rate(
+    settings: Mapping[str, Any],
+    revenue: Decimal,
+    work_date: date,
+) -> Decimal | None:
+    return revenue_tier_rate(revenue, work_date, percent_revenue_tiers(settings))
+
+
+def percent_revenue_tiers(settings: Mapping[str, Any]) -> list[Mapping[str, Any]] | None:
+    tiers = settings.get(REVENUE_TIER_CONFIG_KEY)
+    return tiers if isinstance(tiers, list) else None
 
 
 def fund_for_base_pay(

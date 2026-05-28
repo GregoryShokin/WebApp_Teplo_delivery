@@ -68,6 +68,35 @@ class PayrollRevenueShareRead(PayrollRevenueShareBase):
     created_at: datetime
 
 
+class PayrollRevenueTierBase(BaseModel):
+    min_revenue: float = Field(ge=0)
+    max_revenue: float | None = Field(default=None, ge=0)
+    rate_percent: float = Field(ge=0)
+    effective_from: date
+    effective_to: date | None = None
+
+
+class PayrollRevenueTierRead(PayrollRevenueTierBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    created_at: datetime
+
+
+class PayrollCategoryCoefficientBase(BaseModel):
+    category: str
+    coefficient: float = Field(ge=0)
+    effective_from: date
+    effective_to: date | None = None
+
+
+class PayrollCategoryCoefficientRead(PayrollCategoryCoefficientBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    created_at: datetime
+
+
 class PayrollDeductionCategoryBase(BaseModel):
     code: str
     display_name: str

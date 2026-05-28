@@ -13,6 +13,7 @@ from app.models.employee import Employee
 from app.models.payroll import (
     AccumulationFundAccount,
     AttendanceEntry,
+    CategoryCoefficient,
     DepositAccount,
     DepositTransaction,
     PayrollDeductionCategory,
@@ -23,6 +24,7 @@ from app.models.payroll import (
     PayrollRoleCategoryAvailability,
     PayrollRun,
     PayrollSeniorityPremium,
+    RevenueTier,
 )
 from app.models.period import Period
 from app.models.settings import AppSetting, AppSettingHistory
@@ -35,6 +37,7 @@ __all__ = [
     "AppSettingHistory",
     "AccumulationFundAccount",
     "AttendanceEntry",
+    "CategoryCoefficient",
     "Counterparty",
     "CounterpartyRole",
     "DataSource",
@@ -53,6 +56,7 @@ __all__ = [
     "PayrollSeniorityPremium",
     "ParsedDocument",
     "Period",
+    "RevenueTier",
     "Role",
     "SourceCredential",
     "SourceDocument",
