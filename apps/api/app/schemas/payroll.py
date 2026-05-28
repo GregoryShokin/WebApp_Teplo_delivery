@@ -58,6 +58,12 @@ class ShiftLedgerBuildRequest(BaseModel):
 
 
 class ShiftLedgerPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    payroll_role: str
+
+
+class ShiftLedgerAvailableRoleRead(BaseModel):
     payroll_role: str
     category: str
 
@@ -75,3 +81,5 @@ class ShiftLedgerEntryRead(BaseModel):
     closed_at: datetime | None = None
     notes: str | None = None
     is_resolved: bool
+    status: str
+    available_roles: list[ShiftLedgerAvailableRoleRead]

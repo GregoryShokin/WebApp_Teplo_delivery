@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.v1.routes import payroll as payroll_routes
+from app.api.v1.routes import shifts as shift_routes
 from app.main import create_app
 from app.models import (
     AccumulationFundAccount,
@@ -112,6 +113,23 @@ def make_employee(
     )
 
 
+def make_role_assignment(
+    employee_id: uuid.UUID,
+    payroll_role: str,
+    category: str,
+    *,
+    is_primary: bool = False,
+) -> EmployeeRoleAssignment:
+    return EmployeeRoleAssignment(
+        id=uuid.uuid4(),
+        employee_id=employee_id,
+        payroll_role=payroll_role,
+        category=category,
+        is_primary=is_primary,
+        effective_from=date(2026, 1, 1),
+    )
+
+
 def make_entry(
     period: PayrollPeriod,
     employee: Employee,
@@ -170,7 +188,7 @@ async def _prepare_shift_ledger_build(
     employee_id: uuid.UUID,
     *,
     schedule: dict[uuid.UUID, LedgerAssignment],
-    primary: dict[uuid.UUID, LedgerAssignment],
+    primary: dict[uuid.UUID, Any],
 ) -> None:
     async def fake_snapshots(*_args, **_kwargs):
         return [
@@ -189,7 +207,7 @@ async def _prepare_shift_ledger_build(
 
     monkeypatch.setattr(shift_ledger_service, "load_iiko_attendance_snapshots", fake_snapshots)
     monkeypatch.setattr(shift_ledger_service, "load_schedule_assignments", fake_schedule)
-    monkeypatch.setattr(shift_ledger_service, "load_primary_assignments", fake_primary)
+    monkeypatch.setattr(shift_ledger_service, "load_available_role_assignments", fake_primary)
     monkeypatch.setattr(shift_ledger_service, "load_existing_entries", _empty_assignments)
 
 
@@ -253,9 +271,12 @@ async def test_build_shift_ledger_creates_entries_from_iiko_attendance(
     async def fake_schedule(*_args, **_kwargs):
         return {employee.id: LedgerAssignment("pizza", "category_2")}
 
+    async def fake_roles(*_args, **_kwargs):
+        return {employee.id: [LedgerAssignment("pizza", "category_2")]}
+
     monkeypatch.setattr(shift_ledger_service, "load_iiko_attendance_snapshots", fake_snapshots)
     monkeypatch.setattr(shift_ledger_service, "load_schedule_assignments", fake_schedule)
-    monkeypatch.setattr(shift_ledger_service, "load_primary_assignments", _empty_assignments)
+    monkeypatch.setattr(shift_ledger_service, "load_available_role_assignments", fake_roles)
     monkeypatch.setattr(shift_ledger_service, "load_existing_entries", _empty_assignments)
 
     session = ShiftLedgerFakeSession()
@@ -278,7 +299,12 @@ async def test_build_shift_ledger_prefers_schedule_assignment(
         monkeypatch,
         employee.id,
         schedule={employee.id: LedgerAssignment("pizza", "category_2")},
-        primary={employee.id: LedgerAssignment("sushi", "category_1")},
+        primary={
+            employee.id: [
+                LedgerAssignment("sushi", "category_1", is_primary=True),
+                LedgerAssignment("pizza", "category_2"),
+            ]
+        },
     )
 
     entries = await shift_ledger_service.build_ledger_for_date(  # type: ignore[arg-type]
@@ -302,7 +328,12 @@ async def test_build_shift_ledger_falls_back_to_primary_assignment(
         monkeypatch,
         employee.id,
         schedule={},
-        primary={employee.id: LedgerAssignment("sushi", "category_1")},
+        primary={
+            employee.id: [
+                LedgerAssignment("sushi", "category_1", is_primary=True),
+                LedgerAssignment("pizza", "category_2"),
+            ]
+        },
     )
 
     entries = await shift_ledger_service.build_ledger_for_date(  # type: ignore[arg-type]
@@ -313,6 +344,29 @@ async def test_build_shift_ledger_falls_back_to_primary_assignment(
     assert entries[0].payroll_role == "sushi"
     assert entries[0].category == "category_1"
     assert entries[0].source == "fallback_primary"
+    assert entries[0].is_resolved is True
+
+
+async def test_build_shift_ledger_single_assignment_resolves_without_dropdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    employee = make_employee()
+    work_date = date(2026, 5, 28)
+
+    await _prepare_shift_ledger_build(
+        monkeypatch,
+        employee.id,
+        schedule={},
+        primary={employee.id: [LedgerAssignment("sushi", "category_1")]},
+    )
+
+    entries = await shift_ledger_service.build_ledger_for_date(  # type: ignore[arg-type]
+        ShiftLedgerFakeSession(),
+        work_date,
+    )
+
+    assert entries[0].payroll_role == "sushi"
+    assert entries[0].category == "category_1"
     assert entries[0].is_resolved is True
 
 
@@ -335,10 +389,41 @@ async def test_build_shift_ledger_marks_missing_assignment_unresolved(
     assert entries[0].is_resolved is False
 
 
-async def test_patch_shift_ledger_sets_manual_correction_and_audit() -> None:
+async def test_build_shift_ledger_multiple_assignments_without_primary_needs_choice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    employee = make_employee()
+    work_date = date(2026, 5, 28)
+
+    await _prepare_shift_ledger_build(
+        monkeypatch,
+        employee.id,
+        schedule={},
+        primary={
+            employee.id: [
+                LedgerAssignment("sushi", "category_1"),
+                LedgerAssignment("pizza", "category_2"),
+            ]
+        },
+    )
+
+    entries = await shift_ledger_service.build_ledger_for_date(  # type: ignore[arg-type]
+        ShiftLedgerFakeSession(),
+        work_date,
+    )
+
+    assert entries[0].payroll_role is None
+    assert entries[0].category is None
+    assert entries[0].is_resolved is False
+
+
+async def test_patch_shift_ledger_sets_manual_correction_and_audit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    employee_id = uuid.uuid4()
     entry = ShiftLedgerEntry(
         id=uuid.uuid4(),
-        employee_id=uuid.uuid4(),
+        employee_id=employee_id,
         work_date=date(2026, 5, 28),
         payroll_role=None,
         category=None,
@@ -347,13 +432,17 @@ async def test_patch_shift_ledger_sets_manual_correction_and_audit() -> None:
         closed_at=None,
         is_resolved=False,
     )
+
+    async def fake_assignments(*_args, **_kwargs):
+        return [make_role_assignment(employee_id, "pizza", "category_2")]
+
+    monkeypatch.setattr(shift_ledger_service, "get_assignments", fake_assignments)
     session = ShiftLedgerFakeSession(entry)
 
     corrected = await shift_ledger_service.manually_correct(
         session,  # type: ignore[arg-type]
         entry.id,
         "pizza",
-        "category_2",
     )
 
     actions = [item for item in session.added if isinstance(item, AgentAction)]
@@ -363,6 +452,105 @@ async def test_patch_shift_ledger_sets_manual_correction_and_audit() -> None:
     assert corrected.is_resolved is True
     assert actions[0].target_table == "shift_ledger_entry"
     assert session.committed is True
+
+
+async def test_patch_shift_ledger_rejects_role_not_in_staff_assignments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    employee_id = uuid.uuid4()
+    entry = ShiftLedgerEntry(
+        id=uuid.uuid4(),
+        employee_id=employee_id,
+        work_date=date(2026, 5, 28),
+        payroll_role=None,
+        category=None,
+        source="fallback_primary",
+        opened_at=datetime(2026, 5, 28, 8, 0, tzinfo=UTC),
+        closed_at=None,
+        is_resolved=False,
+    )
+
+    async def fake_assignments(*_args, **_kwargs):
+        return [make_role_assignment(employee_id, "sushi", "category_1")]
+
+    monkeypatch.setattr(shift_ledger_service, "get_assignments", fake_assignments)
+
+    with pytest.raises(shift_ledger_service.ShiftLedgerValidationError, match="Штате"):
+        await shift_ledger_service.manually_correct(  # type: ignore[arg-type]
+            ShiftLedgerFakeSession(entry),
+            entry.id,
+            "pizza",
+        )
+
+
+def test_patch_shift_ledger_route_returns_400_for_unassigned_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    async def fake_manually_correct(*_args, **_kwargs):
+        raise shift_ledger_service.ShiftLedgerValidationError(
+            "Эта роль не закреплена за сотрудником в Штате"
+        )
+
+    monkeypatch.setattr(shift_routes, "manually_correct", fake_manually_correct)
+
+    response = client.patch(
+        f"/api/v1/shifts/ledger/{uuid.uuid4()}",
+        headers={"X-User-Role": "manager"},
+        json={"payroll_role": "pizza"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Эта роль не закреплена за сотрудником в Штате"
+    client.close()
+
+
+def test_ledger_response_category_is_computed_from_staff_assignment() -> None:
+    employee = make_employee()
+    entry = ShiftLedgerEntry(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        work_date=date(2026, 5, 28),
+        payroll_role="pizza",
+        category="category_1",
+        source="manual_correction",
+        opened_at=datetime(2026, 5, 28, 8, 0, tzinfo=UTC),
+        closed_at=None,
+        is_resolved=True,
+    )
+
+    row = shift_ledger_service.serialize_ledger_entry(
+        entry,
+        employee,
+        [LedgerAssignment("pizza", "category_2")],
+    )
+
+    assert row["category"] == "category_2"
+    assert row["status"] == "resolved"
+    assert row["available_roles"] == [{"payroll_role": "pizza", "category": "category_2"}]
+
+
+def test_ledger_response_marks_employee_without_assignments_as_needs_setup() -> None:
+    employee = make_employee()
+    entry = ShiftLedgerEntry(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        work_date=date(2026, 5, 28),
+        payroll_role=None,
+        category=None,
+        source="fallback_primary",
+        opened_at=datetime(2026, 5, 28, 8, 0, tzinfo=UTC),
+        closed_at=None,
+        is_resolved=False,
+    )
+
+    row = shift_ledger_service.serialize_ledger_entry(entry, employee, [])
+
+    assert row["category"] is None
+    assert row["status"] == "needs_employee_setup"
+    assert row["available_roles"] == []
 
 
 @pytest.mark.parametrize(

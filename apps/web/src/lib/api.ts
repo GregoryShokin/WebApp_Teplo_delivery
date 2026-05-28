@@ -150,6 +150,12 @@ export type PayrollLine = {
 };
 
 export type ShiftLedgerSource = "schedule" | "manual_correction" | "fallback_primary";
+export type ShiftLedgerStatus = "resolved" | "needs_role_selection" | "needs_employee_setup";
+
+export type ShiftLedgerAvailableRole = {
+  payroll_role: PayrollRole | string;
+  category: EmployeeCategory;
+};
 
 export type ShiftLedgerEntry = {
   id: string;
@@ -164,11 +170,12 @@ export type ShiftLedgerEntry = {
   closed_at: string | null;
   notes: string | null;
   is_resolved: boolean;
+  status: ShiftLedgerStatus;
+  available_roles: ShiftLedgerAvailableRole[];
 };
 
 export type ShiftLedgerPatch = {
   payroll_role: PayrollRole | string;
-  category: EmployeeCategory;
 };
 
 export type PayrollRate = {

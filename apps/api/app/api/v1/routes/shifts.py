@@ -59,7 +59,6 @@ async def patch_shift_ledger_entry(
             session,
             entry_id,
             payload.payroll_role,
-            payload.category,
         )
     except ShiftLedgerNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

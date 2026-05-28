@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import or_, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +34,7 @@ class AttendanceSnapshot:
 class LedgerAssignment:
     payroll_role: str | None
     category: str | None
+    is_primary: bool = False
 
 
 class ShiftLedgerNotFoundError(LookupError):
@@ -61,6 +62,7 @@ async def build_ledger_for_date(
     iiko_records: Iterable[Mapping[str, Any]] | None = None,
     schedule_assignments: Mapping[uuid.UUID | str, Any] | None = None,
     primary_assignments: Mapping[uuid.UUID | str, Any] | None = None,
+    role_assignments: Mapping[uuid.UUID | str, Any] | None = None,
 ) -> list[ShiftLedgerEntry]:
     snapshots = await load_iiko_attendance_snapshots(
         session,
@@ -70,18 +72,22 @@ async def build_ledger_for_date(
     employee_ids = {snapshot.employee_id for snapshot in snapshots}
     if schedule_assignments is None:
         schedule_assignments = await load_schedule_assignments(session, work_date, employee_ids)
-    if primary_assignments is None:
-        primary_assignments = await load_primary_assignments(session, work_date, employee_ids)
+    if role_assignments is None:
+        role_assignments = (
+            primary_assignments
+            if primary_assignments is not None
+            else await load_available_role_assignments(session, work_date, employee_ids)
+        )
 
     existing_by_employee = await load_existing_entries(session, work_date, employee_ids)
     entries: list[ShiftLedgerEntry] = []
 
     for snapshot in sorted(snapshots, key=lambda item: (item.opened_at, str(item.employee_id))):
         schedule_assignment = assignment_for_employee(schedule_assignments, snapshot.employee_id)
-        primary_assignment = assignment_for_employee(primary_assignments, snapshot.employee_id)
+        available_roles = assignments_for_employee(role_assignments, snapshot.employee_id)
         default_assignment, source = resolve_default_assignment(
             schedule_assignment,
-            primary_assignment,
+            available_roles,
         )
         entry = existing_by_employee.get(snapshot.employee_id)
 
@@ -116,22 +122,29 @@ async def manually_correct(
     session: AsyncSession,
     entry_id: uuid.UUID,
     payroll_role: str,
-    category: str,
 ) -> ShiftLedgerEntry:
     payroll_role = payroll_role.strip()
-    category = category.strip()
     if not payroll_role:
         raise ShiftLedgerValidationError("payroll_role is required")
-    if not category:
-        raise ShiftLedgerValidationError("category is required")
 
     entry = await session.get(ShiftLedgerEntry, entry_id)
     if entry is None:
         raise ShiftLedgerNotFoundError("Shift ledger entry not found")
 
+    assignment = next(
+        (
+            item
+            for item in await get_assignments(session, entry.employee_id, entry.work_date)
+            if item.payroll_role == payroll_role
+        ),
+        None,
+    )
+    if assignment is None:
+        raise ShiftLedgerValidationError("Эта роль не закреплена за сотрудником в Штате")
+
     before = ledger_entry_snapshot(entry)
     entry.payroll_role = payroll_role
-    entry.category = category
+    entry.category = assignment.category
     entry.source = "manual_correction"
     entry.is_resolved = True
     after = ledger_entry_snapshot(entry)
@@ -169,7 +182,17 @@ async def list_ledger_for_date(session: AsyncSession, work_date: date) -> list[d
         .where(ShiftLedgerEntry.work_date == work_date)
         .order_by(ShiftLedgerEntry.opened_at, Employee.full_name)
     )
-    return [serialize_ledger_entry(entry, employee) for entry, employee in result.all()]
+    rows = result.all()
+    employee_ids = {entry.employee_id for entry, _employee in rows}
+    roles_by_employee = await load_available_role_assignments(session, work_date, employee_ids)
+    return [
+        serialize_ledger_entry(
+            entry,
+            employee,
+            assignments_for_employee(roles_by_employee, entry.employee_id),
+        )
+        for entry, employee in rows
+    ]
 
 
 async def load_iiko_attendance_snapshots(
@@ -262,6 +285,37 @@ async def load_existing_entries(
     return {entry.employee_id: entry for entry in result.all()}
 
 
+async def load_available_role_assignments(
+    session: AsyncSession,
+    work_date: date,
+    employee_ids: set[uuid.UUID],
+) -> dict[uuid.UUID, list[LedgerAssignment]]:
+    if not employee_ids:
+        return {}
+    result = await session.scalars(
+        select(EmployeeRoleAssignment)
+        .where(
+            EmployeeRoleAssignment.employee_id.in_(employee_ids),
+            EmployeeRoleAssignment.effective_from <= work_date,
+            or_(
+                EmployeeRoleAssignment.effective_to.is_(None),
+                EmployeeRoleAssignment.effective_to > work_date,
+            ),
+        )
+        .order_by(
+            EmployeeRoleAssignment.employee_id,
+            EmployeeRoleAssignment.is_primary.desc(),
+            EmployeeRoleAssignment.payroll_role,
+        )
+    )
+    assignments: dict[uuid.UUID, list[LedgerAssignment]] = {}
+    for assignment in result.all():
+        ledger_assignment = coerce_assignment(assignment)
+        if ledger_assignment is not None:
+            assignments.setdefault(assignment.employee_id, []).append(ledger_assignment)
+    return assignments
+
+
 async def load_primary_assignments(
     session: AsyncSession,
     work_date: date,
@@ -278,6 +332,7 @@ async def load_primary_assignments(
             assignments[employee_id] = LedgerAssignment(
                 payroll_role=primary.payroll_role,
                 category=primary.category,
+                is_primary=primary.is_primary,
             )
     return assignments
 
@@ -381,10 +436,20 @@ async def table_columns(session: AsyncSession, table_name: str) -> set[str]:
 
 def resolve_default_assignment(
     schedule_assignment: LedgerAssignment | None,
-    primary_assignment: LedgerAssignment | None,
+    available_roles: list[LedgerAssignment],
 ) -> tuple[LedgerAssignment, str]:
-    if schedule_assignment is not None:
-        return schedule_assignment, "schedule"
+    if not available_roles:
+        return LedgerAssignment(payroll_role=None, category=None), "fallback_primary"
+    if schedule_assignment is not None and schedule_assignment.payroll_role is not None:
+        scheduled_role = assignment_by_role(available_roles, schedule_assignment.payroll_role)
+        if scheduled_role is not None:
+            return scheduled_role, "schedule"
+    if len(available_roles) == 1:
+        return available_roles[0], "fallback_primary"
+    primary_assignment = next(
+        (assignment for assignment in available_roles if assignment.is_primary),
+        None,
+    )
     if primary_assignment is not None:
         return primary_assignment, "fallback_primary"
     return LedgerAssignment(payroll_role=None, category=None), "fallback_primary"
@@ -400,30 +465,111 @@ def assignment_for_employee(
     return coerce_assignment(value)
 
 
+def assignments_for_employee(
+    assignments: Mapping[uuid.UUID | str, Any],
+    employee_id: uuid.UUID,
+) -> list[LedgerAssignment]:
+    value = assignments.get(employee_id)
+    if value is None:
+        value = assignments.get(str(employee_id))
+    if value is None:
+        return []
+    if isinstance(value, Iterable) and not isinstance(
+        value,
+        (str, bytes, Mapping, LedgerAssignment, EmployeeRoleAssignment),
+    ):
+        return [
+            assignment
+            for item in value
+            if (assignment := coerce_assignment(item)) is not None
+            and assignment.payroll_role is not None
+            and assignment.category is not None
+        ]
+    assignment = coerce_assignment(value)
+    if assignment is None or assignment.payroll_role is None or assignment.category is None:
+        return []
+    return [assignment]
+
+
+def assignment_by_role(
+    assignments: list[LedgerAssignment],
+    payroll_role: str,
+) -> LedgerAssignment | None:
+    return next(
+        (assignment for assignment in assignments if assignment.payroll_role == payroll_role),
+        None,
+    )
+
+
 def coerce_assignment(value: Any) -> LedgerAssignment | None:
     if value is None:
         return None
     if isinstance(value, LedgerAssignment):
         return value
     if isinstance(value, EmployeeRoleAssignment):
-        return LedgerAssignment(payroll_role=value.payroll_role, category=value.category)
+        return LedgerAssignment(
+            payroll_role=value.payroll_role,
+            category=value.category,
+            is_primary=value.is_primary,
+        )
     if isinstance(value, Mapping):
         return LedgerAssignment(
             payroll_role=clean_text(value.get("payroll_role") or value.get("role")),
             category=clean_text(value.get("category")),
+            is_primary=bool(value.get("is_primary")),
         )
     payroll_role = getattr(value, "payroll_role", None) or getattr(value, "role", None)
     return LedgerAssignment(
         payroll_role=clean_text(payroll_role),
         category=clean_text(getattr(value, "category", None)),
+        is_primary=bool(getattr(value, "is_primary", False)),
     )
 
 
-def serialize_ledger_entry(entry: ShiftLedgerEntry, employee: Employee) -> dict[str, Any]:
+def serialize_ledger_entry(
+    entry: ShiftLedgerEntry,
+    employee: Employee,
+    available_roles: list[LedgerAssignment],
+) -> dict[str, Any]:
+    category = category_for_role(entry.payroll_role, available_roles)
+    is_resolved = entry.is_resolved and entry.payroll_role is not None and category is not None
     return ledger_entry_snapshot(entry) | {
         "employee_name": employee.full_name,
         "employee_iiko_id": employee.iiko_id,
+        "category": category,
+        "available_roles": serialize_available_roles(available_roles),
+        "status": ledger_status(available_roles, is_resolved),
+        "is_resolved": is_resolved,
     }
+
+
+def serialize_available_roles(assignments: list[LedgerAssignment]) -> list[dict[str, str]]:
+    return [
+        {
+            "payroll_role": assignment.payroll_role,
+            "category": assignment.category,
+        }
+        for assignment in assignments
+        if assignment.payroll_role is not None and assignment.category is not None
+    ]
+
+
+def category_for_role(
+    payroll_role: str | None,
+    assignments: list[LedgerAssignment],
+) -> str | None:
+    if payroll_role is None:
+        return None
+    assignment = assignment_by_role(assignments, payroll_role)
+    return assignment.category if assignment is not None else None
+
+
+def ledger_status(available_roles: list[LedgerAssignment], is_resolved: bool) -> str:
+    if not available_roles:
+        return "needs_employee_setup"
+    if is_resolved:
+        return "resolved"
+    return "needs_role_selection"
 
 
 def ledger_entry_snapshot(entry: ShiftLedgerEntry) -> dict[str, Any]:

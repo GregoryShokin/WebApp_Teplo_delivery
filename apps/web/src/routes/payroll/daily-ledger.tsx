@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, LoaderCircle, RefreshCw, Save } from "lucide-react";
+import { AlertTriangle, ExternalLink, LoaderCircle, RefreshCw, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -22,7 +22,7 @@ import {
   getShiftLedger,
   patchShiftLedgerEntry,
   type EmployeeCategory,
-  type PayrollRole,
+  type ShiftLedgerAvailableRole,
   type ShiftLedgerEntry,
 } from "@/lib/api";
 import { EMPLOYEE_CATEGORY_LABELS, PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
@@ -32,9 +32,6 @@ type Draft = {
   payroll_role: string;
   category: EmployeeCategory | "";
 };
-
-const payrollRoleOptions = Object.keys(PAYROLL_ROLE_LABELS) as PayrollRole[];
-const categoryOptions = Object.keys(EMPLOYEE_CATEGORY_LABELS) as EmployeeCategory[];
 
 const sourceLabels: Record<ShiftLedgerEntry["source"], string> = {
   schedule: "График",
@@ -80,7 +77,6 @@ export function PayrollDailyLedgerRoute() {
     mutationFn: ({ id, draft }: { id: string; draft: Draft }) =>
       patchShiftLedgerEntry(id, {
         payroll_role: draft.payroll_role,
-        category: draft.category as EmployeeCategory,
       }),
     onSuccess: async () => {
       toast.success("Смена скорректирована");
@@ -117,18 +113,44 @@ export function PayrollDailyLedgerRoute() {
       header: "Payroll-роль",
       cell: (row) => {
         const draft = drafts[row.id] ?? draftFromRow(row);
+        const availableRoles = row.available_roles ?? [];
+
+        if (availableRoles.length === 0) {
+          return (
+            <div className="flex min-w-[220px] flex-wrap items-center gap-2">
+              <Badge className="border-amber-200 bg-amber-50 text-amber-800" variant="outline">
+                Не назначены роли в Штате
+              </Badge>
+              <Button
+                className="h-8 px-2"
+                onClick={() => navigateToStaff(row.employee_id)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <ExternalLink size={14} aria-hidden="true" />
+                Перейти в Штат
+              </Button>
+            </div>
+          );
+        }
+
+        if (availableRoles.length === 1) {
+          return <ReadOnlyValue>{roleLabel(availableRoles[0].payroll_role)}</ReadOnlyValue>;
+        }
+
         return (
           <Select
             value={draft.payroll_role || undefined}
-            onValueChange={(value) => updateDraft(row.id, { payroll_role: value })}
+            onValueChange={(value) => updateDraftFromRole(row, value)}
           >
             <SelectTrigger className="h-9 min-w-[170px] bg-background">
               <SelectValue placeholder="Выбрать" />
             </SelectTrigger>
             <SelectContent>
-              {payrollRoleOptions.map((role) => (
-                <SelectItem key={role} value={role}>
-                  {PAYROLL_ROLE_LABELS[role]}
+              {availableRoles.map((role) => (
+                <SelectItem key={role.payroll_role} value={role.payroll_role}>
+                  {roleLabel(role.payroll_role)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -141,25 +163,7 @@ export function PayrollDailyLedgerRoute() {
       header: "Категория",
       cell: (row) => {
         const draft = drafts[row.id] ?? draftFromRow(row);
-        return (
-          <Select
-            value={draft.category || undefined}
-            onValueChange={(value) =>
-              updateDraft(row.id, { category: value as EmployeeCategory })
-            }
-          >
-            <SelectTrigger className="h-9 min-w-[140px] bg-background">
-              <SelectValue placeholder="Выбрать" />
-            </SelectTrigger>
-            <SelectContent>
-              {categoryOptions.map((category) => (
-                <SelectItem key={category} value={category}>
-                  {EMPLOYEE_CATEGORY_LABELS[category]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        );
+        return <ReadOnlyValue>{categoryLabel(draft.category)}</ReadOnlyValue>;
       },
     },
     {
@@ -172,7 +176,11 @@ export function PayrollDailyLedgerRoute() {
       key: "resolution",
       header: "Резолюция",
       cell: (row) =>
-        row.is_resolved ? (
+        row.status === "needs_employee_setup" ? (
+          <Badge className="border-amber-200 bg-amber-50 text-amber-800" variant="outline">
+            Нет ролей в Штате
+          </Badge>
+        ) : row.is_resolved ? (
           <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700" variant="outline">
             Готово
           </Badge>
@@ -217,6 +225,14 @@ export function PayrollDailyLedgerRoute() {
         ...patch,
       },
     }));
+  }
+
+  function updateDraftFromRole(row: ShiftLedgerEntry, payrollRole: string) {
+    const assignment = findAvailableRole(row.available_roles, payrollRole);
+    updateDraft(row.id, {
+      payroll_role: payrollRole,
+      category: assignment?.category ?? "",
+    });
   }
 
   return (
@@ -274,17 +290,45 @@ export function PayrollDailyLedgerRoute() {
 }
 
 function draftFromRow(row: ShiftLedgerEntry): Draft {
+  const singleAssignment = row.available_roles?.length === 1 ? row.available_roles[0] : null;
+  const payrollRole = row.payroll_role ?? singleAssignment?.payroll_role ?? "";
+  const assignment = findAvailableRole(row.available_roles, payrollRole);
   return {
-    payroll_role: row.payroll_role ?? "",
-    category: row.category ?? "",
+    payroll_role: payrollRole,
+    category: assignment?.category ?? row.category ?? singleAssignment?.category ?? "",
   };
 }
 
 function canSaveDraft(row: ShiftLedgerEntry, draft: Draft) {
+  const assignment = findAvailableRole(row.available_roles, draft.payroll_role);
   return (
-    Boolean(draft.payroll_role && draft.category) &&
-    (draft.payroll_role !== (row.payroll_role ?? "") || draft.category !== (row.category ?? ""))
+    Boolean(assignment && draft.category) &&
+    (!row.is_resolved || draft.payroll_role !== (row.payroll_role ?? ""))
   );
+}
+
+function findAvailableRole(
+  availableRoles: ShiftLedgerAvailableRole[] | undefined,
+  payrollRole: string,
+) {
+  return availableRoles?.find((role) => role.payroll_role === payrollRole);
+}
+
+function roleLabel(payrollRole: string) {
+  return PAYROLL_ROLE_LABELS[payrollRole as keyof typeof PAYROLL_ROLE_LABELS] ?? payrollRole;
+}
+
+function categoryLabel(category: EmployeeCategory | "") {
+  return category ? EMPLOYEE_CATEGORY_LABELS[category] : "—";
+}
+
+function ReadOnlyValue({ children }: { children: string }) {
+  return <span className="inline-flex min-h-9 items-center text-sm">{children}</span>;
+}
+
+function navigateToStaff(employeeId: string) {
+  window.history.pushState({}, "", `/staff?employee=${encodeURIComponent(employeeId)}`);
+  window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
 function todayIsoDate() {
