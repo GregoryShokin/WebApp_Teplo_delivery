@@ -382,7 +382,7 @@ def test_compute_daily_percent_pool_uses_revenue_tiers(
 
 def test_distribute_percent_pool_weights_three_categories_by_coeff_and_hours() -> None:
     distribution = distribute_percent_pool(
-        Decimal("6500"),
+        Decimal("6750"),
         [
             PercentShift("employee-1", "category_1", Decimal("12")),
             PercentShift("employee-2", "category_2", Decimal("12")),
@@ -392,7 +392,7 @@ def test_distribute_percent_pool_weights_three_categories_by_coeff_and_hours() -
 
     assert distribution == {
         "employee-1": Decimal("3000"),
-        "employee-2": Decimal("2000"),
+        "employee-2": Decimal("2250"),
         "employee-3": Decimal("1500"),
     }
 

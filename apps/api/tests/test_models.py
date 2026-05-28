@@ -361,6 +361,27 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
                 "category_coefficient": await conn.scalar(
                     text("select count(*) from category_coefficient")
                 ),
+                "current_category_coefficient": await conn.scalar(
+                    text(
+                        """
+                        select count(*)
+                          from category_coefficient
+                         where effective_from <= date '2026-05-28'
+                           and (effective_to is null or effective_to > date '2026-05-28')
+                        """
+                    )
+                ),
+                "current_category_2_coefficient": await conn.scalar(
+                    text(
+                        """
+                        select coefficient::text
+                          from category_coefficient
+                         where category = 'category_2'
+                           and effective_from <= date '2026-05-28'
+                           and (effective_to is null or effective_to > date '2026-05-28')
+                        """
+                    )
+                ),
                 "payroll_deduction_category": await conn.scalar(
                     text("select count(*) from payroll_deduction_category")
                 ),
@@ -425,7 +446,9 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
         "enabled_payroll_role_category_availability": 14,
         "payroll_revenue_share": 4,
         "revenue_tier": 4,
-        "category_coefficient": 5,
+        "category_coefficient": 6,
+        "current_category_coefficient": 5,
+        "current_category_2_coefficient": "2.250",
         "payroll_deduction_category": 4,
         "payroll_seniority_premium": 2,
         "invalid_payroll_rate_category": 0,

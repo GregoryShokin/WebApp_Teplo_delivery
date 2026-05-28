@@ -464,6 +464,39 @@ def test_put_revenue_tiers_creates_new_version(
     assert store[0]["effective_to"] == date(2026, 6, 1)
 
 
+def test_get_category_coefficients_returns_normalized_category_2(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current = [
+        _coefficient(category="category_1", coefficient=3, effective_from=date(2026, 1, 1)),
+        _coefficient(category="category_2", coefficient=2.25, effective_from=date(2026, 5, 28)),
+        _coefficient(category="category_3", coefficient=1.5, effective_from=date(2026, 1, 1)),
+        _coefficient(category="intern", coefficient=0, effective_from=date(2026, 1, 1)),
+        _coefficient(category="freelancer", coefficient=0, effective_from=date(2026, 1, 1)),
+    ]
+
+    async def fake_list_category_coefficients(_session, *, history: bool = False):
+        assert history is False
+        return current
+
+    monkeypatch.setattr(
+        payroll_config_routes,
+        "list_category_coefficients",
+        fake_list_category_coefficients,
+    )
+
+    response = client.get(
+        "/api/v1/payroll/config/category-coefficients",
+        headers={"X-User-Role": "manager"},
+    )
+
+    coefficients = {item["category"]: item["coefficient"] for item in response.json()}
+
+    assert response.status_code == 200
+    assert coefficients["category_2"] == 2.25
+
+
 def test_put_category_coefficients_requires_finance_manager(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

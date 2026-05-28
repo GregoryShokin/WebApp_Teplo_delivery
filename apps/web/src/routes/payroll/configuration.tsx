@@ -566,10 +566,6 @@ function RevenuePercentSection({
   const [coefficientEffectiveFrom, setCoefficientEffectiveFrom] = useState(todayKey());
   const [tierDrafts, setTierDrafts] = useState<RevenueTierDraft[]>([]);
   const [coefficientDrafts, setCoefficientDrafts] = useState<CategoryCoefficientDraft[]>([]);
-  const [previewRevenue, setPreviewRevenue] = useState("140000");
-  const [previewCategory, setPreviewCategory] =
-    useState<PayrollCategoryCoefficient["category"]>("category_1");
-  const [previewHours, setPreviewHours] = useState("12");
 
   useEffect(() => {
     setTierDrafts(
@@ -603,17 +599,6 @@ function RevenuePercentSection({
     () => buildCategoryCoefficientPayloads(coefficientDrafts, coefficientEffectiveFrom),
     [coefficientDrafts, coefficientEffectiveFrom],
   );
-  const preview = useMemo(
-    () =>
-      calculateRevenuePreview({
-        category: previewCategory,
-        coefficients: coefficientDrafts,
-        hours: previewHours,
-        revenue: previewRevenue,
-        tiers: tierDrafts,
-      }),
-    [coefficientDrafts, previewCategory, previewHours, previewRevenue, tierDrafts],
-  );
 
   return (
     <section className="space-y-4 rounded-lg border bg-card p-4">
@@ -626,7 +611,9 @@ function RevenuePercentSection({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h3 className="text-base font-semibold tracking-normal">Tier-таблица выручки</h3>
-            <p className="mt-1 text-sm text-muted-foreground">Объём от-до и ставка дневного пула.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Объём от-до и ставка дневного пула.
+            </p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
             {advanced ? (
@@ -712,7 +699,9 @@ function RevenuePercentSection({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h3 className="text-base font-semibold tracking-normal">Коэффициенты категорий</h3>
-            <p className="mt-1 text-sm text-muted-foreground">Пять категорий для распределения процентного пула.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Пять категорий для распределения процентного пула.
+            </p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
             {advanced ? (
@@ -772,53 +761,16 @@ function RevenuePercentSection({
       </div>
 
       <div className="space-y-3 border-t pt-4">
-        <div>
-          <h3 className="text-base font-semibold tracking-normal">Пример расчёта</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Живой пример для визуальной проверки.
-          </p>
-        </div>
-        <div className="grid gap-3 lg:grid-cols-[180px_180px_180px_1fr] lg:items-end">
-          <LabeledInput
-            label="Дневная выручка"
-            onChange={(value) => setPreviewRevenue(String(value))}
-            type="number"
-            value={previewRevenue}
-          />
-          <div className="grid gap-2">
-            <Label>Категория сотрудника</Label>
-            <select
-              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-              onChange={(event) =>
-                setPreviewCategory(event.target.value as PayrollCategoryCoefficient["category"])
-              }
-              value={previewCategory}
-            >
-              {PAYROLL_RATE_CATEGORIES.map((category) => (
-                <option key={category} value={category}>
-                  {categoryLabel(category)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <LabeledInput
-            label="Часы сотрудника"
-            onChange={(value) => setPreviewHours(String(value))}
-            type="number"
-            value={previewHours}
-          />
-          <div className="grid gap-1 rounded-md bg-muted px-3 py-2 text-sm">
-            <span>
-              Если дневная выручка = {formatMoney(preview.revenue)}, процентный пул ={" "}
-              {formatMoney(preview.pool)}.
-            </span>
-            <span>
-              Сотрудник Сушист {categoryLabel(previewCategory)} проработал{" "}
-              {formatCompactNumber(preview.hours)}ч → его доля ={" "}
-              <span className="font-semibold tabular-nums">{formatMoney(preview.share)}</span>.
-            </span>
-          </div>
-        </div>
+        <h3 className="text-base font-semibold tracking-normal">Распределение процентного пула:</h3>
+        <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+          <li>Процентный пул = Дневная выручка × Tier rate (см. таблицу tier выше)</li>
+          <li>Вес сотрудника = коэффициент его категории × часы смены</li>
+          <li>Доля сотрудника = Процентный пул × его вес ÷ сумма весов всех сотрудников смены</li>
+        </ol>
+        <p className="text-sm text-muted-foreground">
+          Коэффициенты нужны для справедливого распределения: сотрудник старшей категории получит
+          больше из общего пула, чем стажёр или младшая категория.
+        </p>
       </div>
     </section>
   );
@@ -1469,9 +1421,7 @@ function updateTierDraft(
   value: string | number,
 ) {
   setTierDrafts((drafts) =>
-    drafts.map((draft, draftIndex) =>
-      draftIndex === index ? { ...draft, [key]: value } : draft,
-    ),
+    drafts.map((draft, draftIndex) => (draftIndex === index ? { ...draft, [key]: value } : draft)),
   );
 }
 
@@ -1487,62 +1437,6 @@ function updateCoefficientDraft(
       draftIndex === index ? { ...draft, coefficient: value } : draft,
     ),
   );
-}
-
-function calculateRevenuePreview({
-  category,
-  coefficients,
-  hours,
-  revenue,
-  tiers,
-}: {
-  category: PayrollCategoryCoefficient["category"];
-  coefficients: CategoryCoefficientDraft[];
-  hours: string;
-  revenue: string;
-  tiers: RevenueTierDraft[];
-}) {
-  const revenueValue = parseNonNegativeNumber(revenue) ?? 0;
-  const hoursValue = parseNonNegativeNumber(hours) ?? 0;
-  const rate = findRevenueRate(revenueValue, tiers);
-  const pool = revenueValue * rate;
-  const sampleShifts = [
-    { category, hours: hoursValue },
-    { category: "category_2", hours: 12 },
-    { category: "category_3", hours: 12 },
-    { category: "intern", hours: 12 },
-  ];
-  const weights = sampleShifts.map((shift) => {
-    const coefficient = coefficientForCategory(coefficients, shift.category);
-    return coefficient * Math.min(shift.hours, 12) / 12;
-  });
-  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-  const share = totalWeight > 0 ? Math.floor((pool * weights[0]) / totalWeight) : 0;
-  return {
-    hours: hoursValue,
-    pool,
-    rate,
-    revenue: revenueValue,
-    share,
-  };
-}
-
-function findRevenueRate(revenue: number, tiers: RevenueTierDraft[]) {
-  return [...tiers]
-    .sort((left, right) => Number(right.min_revenue || 0) - Number(left.min_revenue || 0))
-    .find((tier) => {
-      const minRevenue = parseNonNegativeNumber(tier.min_revenue);
-      const maxRevenue = parseOptionalNonNegativeNumber(tier.max_revenue);
-      if (minRevenue === undefined || maxRevenue === undefined || revenue < minRevenue) {
-        return false;
-      }
-      return maxRevenue === null || revenue < maxRevenue;
-    })?.rate_percent ?? 0;
-}
-
-function coefficientForCategory(coefficients: CategoryCoefficientDraft[], category: string) {
-  const value = coefficients.find((row) => row.category === category)?.coefficient ?? "0";
-  return parseNonNegativeNumber(value) ?? 0;
 }
 
 function parseNonNegativeNumber(value: string) {
@@ -1590,12 +1484,6 @@ function formatMoney(value: number | null) {
     maximumFractionDigits: 0,
     style: "currency",
     currency: "RUB",
-  }).format(value);
-}
-
-function formatCompactNumber(value: number) {
-  return new Intl.NumberFormat("ru-RU", {
-    maximumFractionDigits: 1,
   }).format(value);
 }
 

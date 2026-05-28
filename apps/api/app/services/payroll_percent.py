@@ -55,7 +55,7 @@ DEFAULT_CATEGORY_COEFFICIENTS = (
     },
     {
         "category": "category_2",
-        "coefficient": Decimal("2.000"),
+        "coefficient": Decimal("2.250"),
         "effective_from": date(2026, 1, 1),
         "effective_to": None,
     },
