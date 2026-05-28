@@ -51,6 +51,7 @@ EXPECTED_TABLES = {
     "deposit_transaction",
     "accumulation_fund_account",
     "payroll_rate",
+    "payroll_role_category_availability",
     "payroll_revenue_share",
     "payroll_deduction_category",
     "payroll_seniority_premium",
@@ -85,6 +86,7 @@ def test_all_models_import() -> None:
         "PayrollRun",
         "PayrollLine",
         "PayrollRate",
+        "PayrollRoleCategoryAvailability",
         "PayrollRevenueShare",
         "PayrollDeductionCategory",
         "PayrollSeniorityPremium",
@@ -122,6 +124,7 @@ def test_app_setting_display_metadata_columns_are_declared() -> None:
 
 def test_payroll_configuration_tables_are_declared() -> None:
     rate_columns = models.PayrollRate.__table__.c
+    availability_columns = models.PayrollRoleCategoryAvailability.__table__.c
     deduction_columns = models.PayrollDeductionCategory.__table__.c
     premium_columns = models.PayrollSeniorityPremium.__table__.c
 
@@ -129,6 +132,9 @@ def test_payroll_configuration_tables_are_declared() -> None:
     assert rate_columns.amount.nullable is True
     assert rate_columns.is_active.nullable is False
     assert rate_columns.effective_to.nullable is True
+    assert availability_columns.position_group.nullable is False
+    assert availability_columns.category.nullable is False
+    assert availability_columns.is_enabled.nullable is False
     assert deduction_columns.code.nullable is False
     assert premium_columns.percent_of_base.nullable is False
 
@@ -190,9 +196,7 @@ def migrated_db(alembic_cfg: Config, postgres_available: None) -> str:
         command.downgrade(alembic_cfg, "base")
 
 
-def test_migrations_upgrade_and_downgrade(
-    alembic_cfg: Config, postgres_available: None
-) -> None:
+def test_migrations_upgrade_and_downgrade(alembic_cfg: Config, postgres_available: None) -> None:
     command.downgrade(alembic_cfg, "base")
     command.upgrade(alembic_cfg, "head")
     command.downgrade(alembic_cfg, "base")
@@ -213,6 +217,18 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
                     text("select count(*) from app_setting_history")
                 ),
                 "payroll_rate": await conn.scalar(text("select count(*) from payroll_rate")),
+                "payroll_role_category_availability": await conn.scalar(
+                    text("select count(*) from payroll_role_category_availability")
+                ),
+                "enabled_payroll_role_category_availability": await conn.scalar(
+                    text(
+                        """
+                        select count(*)
+                          from payroll_role_category_availability
+                         where is_enabled = true
+                        """
+                    )
+                ),
                 "payroll_revenue_share": await conn.scalar(
                     text("select count(*) from payroll_revenue_share")
                 ),
@@ -276,6 +292,8 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
         "app_setting": 20,
         "app_setting_history": 20,
         "payroll_rate": 20,
+        "payroll_role_category_availability": 20,
+        "enabled_payroll_role_category_availability": 14,
         "payroll_revenue_share": 4,
         "payroll_deduction_category": 4,
         "payroll_seniority_premium": 2,

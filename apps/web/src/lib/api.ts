@@ -125,7 +125,20 @@ export type PayrollLine = {
 };
 
 export type PayrollRate = {
-  id: string;
+  id: string | null;
+  position_group: string;
+  category: string;
+  station: string | null;
+  rate_type: "daily" | "hourly" | "monthly";
+  amount: number | null;
+  is_active: boolean;
+  is_enabled: boolean;
+  effective_from: string | null;
+  effective_to: string | null;
+  created_at: string | null;
+};
+
+export type PayrollRatePayload = {
   position_group: string;
   category: string;
   station: string | null;
@@ -134,10 +147,17 @@ export type PayrollRate = {
   is_active: boolean;
   effective_from: string;
   effective_to: string | null;
-  created_at: string;
 };
 
-export type PayrollRatePayload = Omit<PayrollRate, "id" | "created_at">;
+export type PayrollRoleCategoryAvailability = {
+  position_group: string;
+  category: string;
+  is_enabled: boolean;
+};
+
+export type PayrollRoleCategoryAvailabilityPayload = {
+  is_enabled: boolean;
+};
 
 export type PayrollRevenueShare = {
   id: string;
@@ -220,11 +240,9 @@ api.interceptors.response.use(
 
 async function refreshAccessToken() {
   try {
-    const response = await axios.post<LoginResponse>(
-      `${API_BASE_URL}/api/v1/auth/refresh`,
-      null,
-      { withCredentials: true },
-    );
+    const response = await axios.post<LoginResponse>(`${API_BASE_URL}/api/v1/auth/refresh`, null, {
+      withCredentials: true,
+    });
     setSession(response.data.access_token, response.data.user);
     return response.data.access_token;
   } catch {
@@ -260,7 +278,9 @@ export async function getSettings(category?: string): Promise<AppSetting[]> {
 }
 
 export async function getSettingHistory(key: string): Promise<AppSettingHistory[]> {
-  const response = await api.get<AppSettingHistory[]>(`/settings/${encodeURIComponent(key)}/history`);
+  const response = await api.get<AppSettingHistory[]>(
+    `/settings/${encodeURIComponent(key)}/history`,
+  );
   return response.data;
 }
 
@@ -324,9 +344,15 @@ export async function finalizePayrollRun(id: string): Promise<PayrollRun> {
   return response.data;
 }
 
-export async function getPayrollRates(history = false): Promise<PayrollRate[]> {
+export async function getPayrollRates(
+  history = false,
+  includeDisabled = false,
+): Promise<PayrollRate[]> {
   const response = await api.get<PayrollRate[]>("/payroll/config/rates", {
-    params: { history: history || undefined },
+    params: {
+      history: history || undefined,
+      include_disabled: includeDisabled || undefined,
+    },
   });
   return response.data;
 }
@@ -336,9 +362,24 @@ export async function putPayrollRate(payload: PayrollRatePayload): Promise<Payro
   return response.data;
 }
 
-export async function getPayrollRevenueShares(
-  history = false,
-): Promise<PayrollRevenueShare[]> {
+export async function getPayrollRateAvailability(): Promise<PayrollRoleCategoryAvailability[]> {
+  const response = await api.get<PayrollRoleCategoryAvailability[]>("/payroll/config/availability");
+  return response.data;
+}
+
+export async function putPayrollRateAvailability(
+  positionGroup: string,
+  category: string,
+  payload: PayrollRoleCategoryAvailabilityPayload,
+): Promise<PayrollRoleCategoryAvailability> {
+  const response = await api.put<PayrollRoleCategoryAvailability>(
+    `/payroll/config/availability/${encodeURIComponent(positionGroup)}/${encodeURIComponent(category)}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function getPayrollRevenueShares(history = false): Promise<PayrollRevenueShare[]> {
   const response = await api.get<PayrollRevenueShare[]>("/payroll/config/revenue-share", {
     params: { history: history || undefined },
   });
@@ -352,9 +393,7 @@ export async function putPayrollRevenueShare(
   return response.data;
 }
 
-export async function getPayrollDeductions(
-  history = false,
-): Promise<PayrollDeductionCategory[]> {
+export async function getPayrollDeductions(history = false): Promise<PayrollDeductionCategory[]> {
   const response = await api.get<PayrollDeductionCategory[]>("/payroll/config/deductions", {
     params: { history: history || undefined },
   });
@@ -371,10 +410,9 @@ export async function putPayrollDeduction(
 export async function getPayrollSeniorityPremiums(
   history = false,
 ): Promise<PayrollSeniorityPremium[]> {
-  const response = await api.get<PayrollSeniorityPremium[]>(
-    "/payroll/config/seniority-premium",
-    { params: { history: history || undefined } },
-  );
+  const response = await api.get<PayrollSeniorityPremium[]>("/payroll/config/seniority-premium", {
+    params: { history: history || undefined },
+  });
   return response.data;
 }
 

@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { NumberWidget, PercentWidget } from "@/components/settings-widgets";
+import { BooleanWidget, NumberWidget, PercentWidget } from "@/components/settings-widgets";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,17 +42,18 @@ import {
   getPayrollSeniorityPremiums,
   putPayrollDeduction,
   putPayrollRate,
+  putPayrollRateAvailability,
   putPayrollRevenueShare,
   putPayrollSeniorityPremium,
   type PayrollDeductionCategory,
   type PayrollDeductionCategoryPayload,
   type PayrollRate,
-  type PayrollRatePayload,
   type PayrollRevenueShare,
   type PayrollRevenueSharePayload,
   type PayrollSeniorityPremium,
   type PayrollSeniorityPremiumPayload,
 } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 type PayrollConfigurationRouteProps = {
   onNavigate: (path: string) => void;
@@ -60,9 +61,18 @@ type PayrollConfigurationRouteProps = {
 
 type PendingRate = {
   record: PayrollRate;
-  amount: number;
+  amount: string;
   effective_from: string;
   effective_to: string | null;
+  is_enabled: boolean;
+};
+
+type RateSaveRequest = {
+  record: PayrollRate;
+  amount: number | null;
+  effective_from: string;
+  effective_to: string | null;
+  is_enabled: boolean;
 };
 
 type HistoryDrawer = "rates" | null;
@@ -71,10 +81,11 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
   const queryClient = useQueryClient();
   const auth = useAuthSnapshot();
   const canWrite = Boolean(
-    auth.user?.roles.some((role) => role === "finance_manager" || role === "owner"),
+    auth.user?.roles.some(
+      (role) => role === "finance_manager" || role === "owner" || role === "admin",
+    ),
   );
   const [advanced, setAdvanced] = useState(false);
-  const [rateDrafts, setRateDrafts] = useState<Record<string, string>>({});
   const [pendingRate, setPendingRate] = useState<PendingRate | null>(null);
   const [historyDrawer, setHistoryDrawer] = useState<HistoryDrawer>(null);
   const [revenueDraft, setRevenueDraft] = useState<PayrollRevenueSharePayload | null>(null);
@@ -85,7 +96,7 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
 
   const ratesQuery = useQuery({
     queryKey: ["payroll-config", "rates"],
-    queryFn: () => getPayrollRates(),
+    queryFn: () => getPayrollRates(false, true),
   });
   const ratesHistoryQuery = useQuery({
     queryKey: ["payroll-config", "rates", "history"],
@@ -106,11 +117,24 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
   });
 
   const rateMutation = useMutation({
-    mutationFn: putPayrollRate,
+    mutationFn: async (request: RateSaveRequest) => {
+      await putPayrollRateAvailability(request.record.position_group, request.record.category, {
+        is_enabled: request.is_enabled,
+      });
+      return putPayrollRate({
+        position_group: request.record.position_group,
+        category: request.record.category,
+        station: request.record.station,
+        rate_type: request.record.rate_type,
+        amount: request.amount,
+        is_active: true,
+        effective_from: request.effective_from,
+        effective_to: request.effective_to,
+      });
+    },
     onSuccess: async () => {
-      toast.success("Создана новая версия ставки");
+      toast.success("Ставка сохранена");
       setPendingRate(null);
-      setRateDrafts({});
       await invalidatePayrollConfig(queryClient);
     },
     onError: () => toast.error("Не удалось сохранить ставку"),
@@ -217,8 +241,6 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
           <RatesSection
             advanced={advanced}
             canWrite={canWrite}
-            drafts={rateDrafts}
-            onDraftChange={setRateDrafts}
             onOpenHistory={() => setHistoryDrawer("rates")}
             onPendingRate={setPendingRate}
             rates={rates}
@@ -345,37 +367,42 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
 function RatesSection({
   advanced,
   canWrite,
-  drafts,
-  onDraftChange,
   onOpenHistory,
   onPendingRate,
   rates,
 }: {
   advanced: boolean;
   canWrite: boolean;
-  drafts: Record<string, string>;
-  onDraftChange: (drafts: Record<string, string>) => void;
   onOpenHistory: () => void;
   onPendingRate: (rate: PendingRate) => void;
   rates: PayrollRate[];
 }) {
-  const positions = useMemo(
-    () => sortedUnique(rates.map((rate) => rate.position_group)),
-    [rates],
-  );
-  const categories = useMemo(
-    () => sortedUnique(rates.map((rate) => rate.category)).sort(compareCategory),
-    [rates],
-  );
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const positions = useMemo(() => sortedUnique(rates.map((rate) => rate.position_group)), [rates]);
+  const categories = PAYROLL_RATE_CATEGORIES;
 
   return (
     <section className="space-y-4 rounded-lg border bg-card p-4">
       <SectionHeader
         action={
-          <Button onClick={onOpenHistory} variant="outline">
-            <History size={16} aria-hidden="true" />
-            История изменений
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={() => setShowAllCategories(false)}
+              variant={showAllCategories ? "outline" : "default"}
+            >
+              Только включённые
+            </Button>
+            <Button
+              onClick={() => setShowAllCategories(true)}
+              variant={showAllCategories ? "default" : "outline"}
+            >
+              Показать все категории
+            </Button>
+            <Button onClick={onOpenHistory} variant="outline">
+              <History size={16} aria-hidden="true" />
+              История изменений
+            </Button>
+          </div>
         }
         description="Матрица дневных ставок полной смены. Изменение создаёт новую версию с выбранной даты."
         title="Ставки по должностям и категориям"
@@ -399,41 +426,57 @@ function RatesSection({
             </tr>
           </thead>
           <tbody>
-            {positions.map((position) => (
-              <tr key={position}>
-                <td className="sticky left-0 z-10 border-b bg-card p-3 font-medium">
-                  {position}
-                </td>
-                {categories.map((category) => {
-                  const rate = findRate(rates, position, category);
-                  return (
-                    <td className="min-w-[136px] border-b p-2 text-right" key={category}>
-                      {rate ? (
-                        <RateCell
-                          advanced={advanced}
-                          canWrite={canWrite}
-                          draft={drafts[rate.id]}
-                          onCommit={(amount) =>
-                            onPendingRate({
-                              record: rate,
-                              amount,
-                              effective_from: todayKey(),
-                              effective_to: null,
-                            })
-                          }
-                          onDraftChange={(value) =>
-                            onDraftChange({ ...drafts, [rate.id]: value })
-                          }
-                          rate={rate}
-                        />
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
+            {positions.map((position) => {
+              const rowCells = categories.map(
+                (category) =>
+                  findRate(rates, position, category) ?? emptyRateCell(rates, position, category),
+              );
+              const enabledCount = rowCells.filter((rate) => rate.is_enabled).length;
+              if (!showAllCategories && enabledCount === 0) {
+                return (
+                  <tr key={position}>
+                    <td className="sticky left-0 z-10 border-b bg-card p-3 font-medium">
+                      {position}
                     </td>
-                  );
-                })}
-              </tr>
-            ))}
+                    <td className="border-b p-2" colSpan={categories.length}>
+                      <EmptyConfigLine text="У этой должности нет настроенных ставок. Включите хотя бы одну категорию." />
+                    </td>
+                  </tr>
+                );
+              }
+              return (
+                <tr key={position}>
+                  <td className="sticky left-0 z-10 border-b bg-card p-3 font-medium">
+                    {position}
+                  </td>
+                  {rowCells.map((rate) => {
+                    const hidden = !showAllCategories && !rate.is_enabled;
+                    return (
+                      <td className="min-w-[136px] border-b p-2 text-right" key={rate.category}>
+                        {hidden ? (
+                          <span className="block min-h-12 text-muted-foreground"> </span>
+                        ) : (
+                          <RateCell
+                            advanced={advanced}
+                            canWrite={canWrite}
+                            onEdit={() =>
+                              onPendingRate({
+                                record: rate,
+                                amount: rate.amount === null ? "" : String(rate.amount),
+                                effective_from: todayKey(),
+                                effective_to: null,
+                                is_enabled: rate.is_enabled,
+                              })
+                            }
+                            rate={rate}
+                          />
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -444,47 +487,45 @@ function RatesSection({
 function RateCell({
   advanced,
   canWrite,
-  draft,
-  onCommit,
-  onDraftChange,
+  onEdit,
   rate,
 }: {
   advanced: boolean;
   canWrite: boolean;
-  draft: string | undefined;
-  onCommit: (amount: number) => void;
-  onDraftChange: (value: string) => void;
+  onEdit: () => void;
   rate: PayrollRate;
 }) {
-  const value = draft ?? (rate.amount === null ? "" : String(rate.amount));
-
   return (
-    <div className="grid gap-1">
-      <Input
-        className="h-9 text-right tabular-nums"
-        disabled={!canWrite}
-        min={0}
-        onBlur={() => {
-          if (value.trim() === "") {
-            return;
-          }
-          const nextAmount = Number(value);
-          if (Number.isFinite(nextAmount) && nextAmount !== rate.amount) {
-            onCommit(nextAmount);
-          }
-        }}
-        onChange={(event) => onDraftChange(event.target.value)}
-        step={100}
-        type="number"
-        value={value}
-      />
-      {advanced ? (
-        <div className="text-right text-[11px] leading-4 text-muted-foreground">
-          {formatDate(rate.effective_from)} → {rate.effective_to ? formatDate(rate.effective_to) : "сейчас"}
-          {!rate.is_active ? " · заглушка" : ""}
-        </div>
+    <button
+      className={cn(
+        "grid min-h-12 w-full gap-1 rounded-md border px-3 py-2 text-right transition-colors",
+        "hover:border-primary/60 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        !rate.is_enabled && "border-dashed bg-muted/35 text-muted-foreground",
+        !canWrite && "cursor-not-allowed opacity-70 hover:border-input hover:bg-background",
+      )}
+      disabled={!canWrite}
+      onClick={onEdit}
+      type="button"
+    >
+      <span className="font-medium tabular-nums">
+        {rate.amount === null ? "—" : formatMoney(rate.amount)}
+      </span>
+      {!rate.is_enabled ? (
+        <span className="flex justify-end">
+          <Badge variant="secondary">Отключена</Badge>
+        </span>
       ) : null}
-    </div>
+      {advanced ? (
+        <span className="text-[11px] leading-4 text-muted-foreground">
+          {rate.effective_from
+            ? `${formatDate(rate.effective_from)} → ${
+                rate.effective_to ? formatDate(rate.effective_to) : "сейчас"
+              }`
+            : "нет записи"}
+          {!rate.is_active ? " · заглушка" : ""}
+        </span>
+      ) : null}
+    </button>
   );
 }
 
@@ -592,7 +633,9 @@ function DeductionsSection({
               {advanced ? <RawMeta value={deduction.code} /> : null}
             </div>
             <div className="text-right font-medium tabular-nums">
-              {deduction.default_amount === null ? "Без суммы" : formatMoney(deduction.default_amount)}
+              {deduction.default_amount === null
+                ? "Без суммы"
+                : formatMoney(deduction.default_amount)}
             </div>
             <Button
               disabled={!canWrite}
@@ -615,7 +658,9 @@ function DeductionsSection({
             </Button>
           </div>
         ))}
-        {deductions.length === 0 ? <EmptyConfigLine text="Причины удержаний пока не заданы." /> : null}
+        {deductions.length === 0 ? (
+          <EmptyConfigLine text="Причины удержаний пока не заданы." />
+        ) : null}
       </div>
     </section>
   );
@@ -686,8 +731,8 @@ function FundSection({ onNavigate }: { onNavigate: (path: string) => void }) {
       />
       <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
         <div className="text-sm leading-6 text-muted-foreground">
-          Здесь нет дублирования: текущие параметры фонда остаются в разделе «Настройки», а
-          расчёт зарплаты использует единый источник для выплат 15 января и ставок по стажу.
+          Здесь нет дублирования: текущие параметры фонда остаются в разделе «Настройки», а расчёт
+          зарплаты использует единый источник для выплат 15 января и ставок по стажу.
         </div>
         <Button onClick={() => onNavigate("/settings")} variant="outline">
           <Settings size={16} aria-hidden="true" />
@@ -707,27 +752,40 @@ function RateConfirmDialog({
   setPendingRate,
 }: {
   isSaving: boolean;
-  onConfirm: (payload: PayrollRatePayload) => void;
+  onConfirm: (payload: RateSaveRequest) => void;
   onOpenChange: (open: boolean) => void;
   pendingRate: PendingRate | null;
   setPendingRate: (value: PendingRate | null) => void;
 }) {
   const record = pendingRate?.record;
+  const parsedAmount = pendingRate ? parseRateAmount(pendingRate.amount) : undefined;
+  const amountIsValid = parsedAmount !== undefined;
   return (
     <Dialog onOpenChange={onOpenChange} open={Boolean(pendingRate)}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Создать новую версию ставки?</DialogTitle>
+          <DialogTitle>
+            {record?.is_enabled ? "Ставка категории" : "Включить категорию и задать ставку"}
+          </DialogTitle>
           <DialogDescription>
-            Старая ставка останется в истории, новая начнёт действовать с выбранной даты.
+            Сохранение обновит доступность комбинации и создаст новую версию ставки с выбранной
+            даты.
           </DialogDescription>
         </DialogHeader>
         {pendingRate && record ? (
           <div className="grid gap-4">
             <div className="rounded-md bg-muted px-3 py-2 text-sm">
-              {record.position_group}, {categoryLabel(record.category)}:{" "}
-              {formatMoney(record.amount)} → {formatMoney(pendingRate.amount)}
+              {record.position_group}, {categoryLabel(record.category)}
             </div>
+            <LabeledInput
+              label="Ставка"
+              onChange={(value) => setPendingRate({ ...pendingRate, amount: String(value) })}
+              type="number"
+              value={pendingRate.amount}
+            />
+            {!amountIsValid ? (
+              <div className="text-sm text-destructive">Введите неотрицательное число.</div>
+            ) : null}
             <LabeledInput
               label="Дата начала действия"
               onChange={(value) =>
@@ -736,6 +794,13 @@ function RateConfirmDialog({
               type="date"
               value={pendingRate.effective_from}
             />
+            <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-3">
+              <Label>Включить эту комбинацию</Label>
+              <BooleanWidget
+                onChange={(value) => setPendingRate({ ...pendingRate, is_enabled: Boolean(value) })}
+                value={pendingRate.is_enabled}
+              />
+            </div>
           </div>
         ) : null}
         <DialogFooter>
@@ -743,25 +808,22 @@ function RateConfirmDialog({
             Отмена
           </Button>
           <Button
-            disabled={!pendingRate || isSaving}
+            disabled={!pendingRate || !amountIsValid || isSaving}
             onClick={() => {
-              if (!pendingRate) {
+              if (!pendingRate || parsedAmount === undefined) {
                 return;
               }
               onConfirm({
-                position_group: pendingRate.record.position_group,
-                category: pendingRate.record.category,
-                station: pendingRate.record.station,
-                rate_type: pendingRate.record.rate_type,
-                amount: pendingRate.amount,
-                is_active: true,
+                record: pendingRate.record,
+                amount: parsedAmount,
                 effective_from: pendingRate.effective_from,
                 effective_to: pendingRate.effective_to,
+                is_enabled: pendingRate.is_enabled,
               });
             }}
           >
             <Save size={16} aria-hidden="true" />
-            Создать версию
+            Сохранить
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1005,14 +1067,17 @@ function RateHistoryDrawer({
         </SheetHeader>
         <div className="mt-6 grid gap-3">
           {history.map((rate) => (
-            <div className="rounded-md border px-3 py-3" key={rate.id}>
+            <div
+              className="rounded-md border px-3 py-3"
+              key={rate.id ?? `${rate.position_group}-${rate.category}-${rate.effective_from}`}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="font-medium">
                     {rate.position_group}, {categoryLabel(rate.category)}
                   </div>
                   <div className="mt-1 text-sm text-muted-foreground">
-                    {formatDate(rate.effective_from)} →{" "}
+                    {rate.effective_from ? formatDate(rate.effective_from) : "без даты"} →{" "}
                     {rate.effective_to ? formatDate(rate.effective_to) : "сейчас"}
                   </div>
                 </div>
@@ -1126,40 +1191,57 @@ function useAuthSnapshot() {
 async function invalidatePayrollConfig(queryClient: ReturnType<typeof useQueryClient>) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ["payroll-config", "rates"] }),
+    queryClient.invalidateQueries({ queryKey: ["payroll-config", "availability"] }),
     queryClient.invalidateQueries({ queryKey: ["payroll-config", "revenue-share"] }),
     queryClient.invalidateQueries({ queryKey: ["payroll-config", "deductions"] }),
     queryClient.invalidateQueries({ queryKey: ["payroll-config", "seniority-premium"] }),
   ]);
 }
 
+const PAYROLL_RATE_CATEGORIES = ["category_1", "category_2", "category_3", "intern", "freelancer"];
+
 function findRate(rates: PayrollRate[], position: string, category: string) {
   return rates.find(
-    (rate) => rate.position_group === position && rate.category === category && rate.rate_type === "daily",
+    (rate) =>
+      rate.position_group === position && rate.category === category && rate.rate_type === "daily",
   );
+}
+
+function emptyRateCell(rates: PayrollRate[], position: string, category: string): PayrollRate {
+  const station =
+    rates.find((rate) => rate.position_group === position && rate.station)?.station ?? null;
+  return {
+    id: null,
+    position_group: position,
+    category,
+    station,
+    rate_type: "daily",
+    amount: null,
+    is_active: true,
+    is_enabled: false,
+    effective_from: null,
+    effective_to: null,
+    created_at: null,
+  };
 }
 
 function sortedUnique(values: string[]) {
   return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b, "ru"));
 }
 
-function compareCategory(left: string, right: string) {
-  const order = ["category_1", "category_2", "category_3", "intern", "freelancer"];
-  const leftIndex = order.indexOf(left);
-  const rightIndex = order.indexOf(right);
-  if (leftIndex !== -1 && rightIndex !== -1) {
-    return leftIndex - rightIndex;
-  }
-  if (leftIndex !== -1) {
-    return -1;
-  }
-  if (rightIndex !== -1) {
-    return 1;
-  }
-  return left.localeCompare(right, "ru");
-}
-
 function categoryLabel(category: string) {
   return EMPLOYEE_CATEGORY_LABELS[category as keyof typeof EMPLOYEE_CATEGORY_LABELS] ?? category;
+}
+
+function parseRateAmount(value: string): number | null | undefined {
+  if (value.trim() === "") {
+    return null;
+  }
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) {
+    return undefined;
+  }
+  return amount;
 }
 
 function deductionTypeLabel(type: PayrollDeductionCategory["type"]) {

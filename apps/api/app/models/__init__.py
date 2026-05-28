@@ -20,6 +20,7 @@ from app.models.payroll import (
     PayrollPeriod,
     PayrollRate,
     PayrollRevenueShare,
+    PayrollRoleCategoryAvailability,
     PayrollRun,
     PayrollSeniorityPremium,
 )
@@ -47,6 +48,7 @@ __all__ = [
     "PayrollPeriod",
     "PayrollRate",
     "PayrollRevenueShare",
+    "PayrollRoleCategoryAvailability",
     "PayrollRun",
     "PayrollSeniorityPremium",
     "ParsedDocument",

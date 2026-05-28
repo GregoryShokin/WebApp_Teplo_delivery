@@ -9,7 +9,7 @@ from datetime import date
 from decimal import ROUND_FLOOR, Decimal
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -19,6 +19,7 @@ from app.models import (
     PayrollLine,
     PayrollPeriod,
     PayrollRate,
+    PayrollRoleCategoryAvailability,
 )
 
 MONEY = Decimal("0.01")
@@ -86,7 +87,16 @@ async def load_payroll_rate_versions(
     end_date: date,
 ) -> list[dict[str, Any]]:
     result = await session.scalars(
-        select(PayrollRate).where(
+        select(PayrollRate)
+        .join(
+            PayrollRoleCategoryAvailability,
+            and_(
+                PayrollRoleCategoryAvailability.position_group == PayrollRate.position_group,
+                PayrollRoleCategoryAvailability.category == PayrollRate.category,
+                PayrollRoleCategoryAvailability.is_enabled.is_(True),
+            ),
+        )
+        .where(
             PayrollRate.effective_from <= end_date,
             or_(PayrollRate.effective_to.is_(None), PayrollRate.effective_to > start_date),
             PayrollRate.is_active.is_(True),
@@ -512,9 +522,7 @@ def summarize_lines(lines: Iterable[PayrollLine]) -> dict[str, Any]:
         "percent_pay": money(sum((decimal(line.percent_pay) for line in lines), Decimal("0"))),
         "fund_accrual": money(sum((decimal(line.fund_accrual) for line in lines), Decimal("0"))),
         "deduction": money(sum((decimal(line.deduction) for line in lines), Decimal("0"))),
-        "total_payable": money(
-            sum((decimal(line.total_payable) for line in lines), Decimal("0"))
-        ),
+        "total_payable": money(sum((decimal(line.total_payable) for line in lines), Decimal("0"))),
     }
 
 

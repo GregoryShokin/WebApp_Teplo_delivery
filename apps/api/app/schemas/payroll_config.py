@@ -22,6 +22,35 @@ class PayrollRateRead(PayrollRateBase):
 
     id: uuid.UUID
     created_at: datetime
+    is_enabled: bool = True
+
+
+class PayrollRateCellRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID | None = None
+    position_group: str
+    category: str
+    station: str | None = None
+    rate_type: str = "daily"
+    amount: float | None = None
+    is_active: bool = True
+    is_enabled: bool = True
+    effective_from: date | None = None
+    effective_to: date | None = None
+    created_at: datetime | None = None
+
+
+class PayrollRoleCategoryAvailabilityToggle(BaseModel):
+    is_enabled: bool
+
+
+class PayrollRoleCategoryAvailabilityRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    position_group: str
+    category: str
+    is_enabled: bool
 
 
 class PayrollRevenueShareBase(BaseModel):

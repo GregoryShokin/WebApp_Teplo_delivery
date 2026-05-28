@@ -232,6 +232,30 @@ class PayrollRate(Base):
     )
 
 
+class PayrollRoleCategoryAvailability(Base):
+    __tablename__ = "payroll_role_category_availability"
+    __table_args__ = (
+        CheckConstraint(
+            "category in ('category_1', 'category_2', 'category_3', 'intern', 'freelancer')",
+            name="ck_payroll_role_category_availability_category_value",
+        ),
+        UniqueConstraint(
+            "position_group",
+            "category",
+            name="uq_payroll_role_category_availability_position_category",
+        ),
+    )
+
+    position_group: Mapped[str] = mapped_column(Text, primary_key=True, nullable=False)
+    category: Mapped[str] = mapped_column(Text, primary_key=True, nullable=False)
+    is_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+
+
 class PayrollRevenueShare(Base):
     __tablename__ = "payroll_revenue_share"
     __table_args__ = (

@@ -11,9 +11,12 @@ from app.schemas.payroll_config import (
     PayrollDeductionCategoryBase,
     PayrollDeductionCategoryRead,
     PayrollRateBase,
+    PayrollRateCellRead,
     PayrollRateRead,
     PayrollRevenueShareBase,
     PayrollRevenueShareRead,
+    PayrollRoleCategoryAvailabilityRead,
+    PayrollRoleCategoryAvailabilityToggle,
     PayrollSeniorityPremiumBase,
     PayrollSeniorityPremiumRead,
 )
@@ -25,14 +28,17 @@ from app.services.payroll_config import (
     create_revenue_share_version,
     create_seniority_premium_version,
     list_deduction_categories,
+    list_rate_matrix,
     list_rates,
     list_revenue_shares,
+    list_role_category_availability,
     list_seniority_premiums,
+    set_role_category_availability,
 )
 
 router = APIRouter()
 
-PAYROLL_CONFIG_WRITERS = frozenset({"finance_manager", "owner"})
+PAYROLL_CONFIG_WRITERS = frozenset({"finance_manager", "owner", "admin"})
 
 
 def require_payroll_config_writer(actor: CurrentActor) -> None:
@@ -41,13 +47,16 @@ def require_payroll_config_writer(actor: CurrentActor) -> None:
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
 
 
-@router.get("/rates", response_model=list[PayrollRateRead])
+@router.get("/rates", response_model=list[PayrollRateCellRead])
 async def get_rates(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
     history: Annotated[bool, Query()] = False,
+    include_disabled: Annotated[bool, Query()] = False,
 ) -> list:
-    return await list_rates(session, history=history)
+    if history:
+        return await list_rates(session, history=True)
+    return await list_rate_matrix(session, include_disabled=include_disabled)
 
 
 @router.post("/rates", response_model=PayrollRateRead)
@@ -60,6 +69,39 @@ async def put_rate(
     require_payroll_config_writer(actor)
     try:
         return await create_rate_version(session, payload)
+    except PayrollConfigConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except PayrollConfigValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.get("/availability", response_model=list[PayrollRoleCategoryAvailabilityRead])
+async def get_availability(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> list:
+    return await list_role_category_availability(session)
+
+
+@router.put(
+    "/availability/{position_group}/{category}",
+    response_model=PayrollRoleCategoryAvailabilityRead,
+)
+async def put_availability(
+    position_group: str,
+    category: str,
+    payload: PayrollRoleCategoryAvailabilityToggle,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+):
+    require_payroll_config_writer(actor)
+    try:
+        return await set_role_category_availability(
+            session,
+            position_group=position_group,
+            category=category,
+            is_enabled=payload.is_enabled,
+        )
     except PayrollConfigConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except PayrollConfigValidationError as exc:
