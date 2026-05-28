@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
@@ -11,8 +11,9 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
 from app.db.session import get_session
-from app.models import Employee, EmployeeRoleAssignment
+from app.models import AgentAction, AgentRun, Employee, EmployeeRoleAssignment
 from app.schemas.employees import (
+    EmployeeDismissRequest,
     EmployeePatch,
     EmployeeRead,
     EmployeeRoleAssignmentCreate,
@@ -32,6 +33,7 @@ from app.services.employee_status import (
 from app.services.iiko_sync import sync_employees
 
 router = APIRouter()
+OWNER_ONLY = frozenset({"owner"})
 
 READ_ONLY_FIELDS = {"id", "full_name", "iiko_id", "iiko_sync_at", "created_at", "updated_at"}
 APP_MANAGED_FIELDS = {
@@ -85,6 +87,90 @@ async def trigger_employee_sync(
     require_finance_manager_plus(actor)
     result = await sync_employees(session, run_reason="manual", mode=mode)
     return result.as_dict()
+
+
+@router.post("/{employee_id}/dismiss", response_model=EmployeeRead)
+async def dismiss_employee(
+    employee_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    payload: Annotated[EmployeeDismissRequest | None, Body()] = None,
+) -> Employee:
+    require_finance_manager_plus(actor)
+    dismiss_payload = payload or EmployeeDismissRequest()
+    employee = await _get_employee_or_404(session, employee_id)
+    if employee.status == "inactive" or employee.fire_date is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Сотрудник уже уволен")
+
+    before = _employee_lifecycle_snapshot(employee)
+    now = datetime.now(UTC)
+    reason = dismiss_payload.reason.strip() if dismiss_payload.reason else None
+    employee.status = "inactive"
+    employee.fire_date = dismiss_payload.fire_date or date.today()
+    employee.fire_reason = reason or None
+    employee.updated_at = now
+    after = _employee_lifecycle_snapshot(employee)
+    await _add_employee_lifecycle_action(
+        session,
+        action_type="dismiss",
+        employee=employee,
+        before=before,
+        after=after,
+        now=now,
+        actor=actor,
+        reason=reason,
+    )
+
+    await session.commit()
+    await session.refresh(employee)
+    if isinstance(session, AsyncSession):
+        return await _get_employee_or_404(session, employee_id, include_assignments=True)
+    return employee
+
+
+@router.post("/{employee_id}/reinstate", response_model=EmployeeRead)
+async def reinstate_employee(
+    employee_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> Employee:
+    _require_owner(actor)
+    employee = await _get_employee_or_404(session, employee_id)
+    before = _employee_lifecycle_snapshot(employee)
+    now = datetime.now(UTC)
+    employee.fire_date = None
+    employee.fire_reason = None
+
+    assignments = None
+    if isinstance(session, AsyncSession):
+        assignments = await employee_assignment_service.get_assignments(
+            session,
+            employee.id,
+            date.today(),
+        )
+    employee.status = compute_status(
+        employee,
+        is_iiko_deleted=False,
+        position_group=position_group_for_position(employee.position),
+        assignments=assignments,
+    )
+    employee.updated_at = now
+    after = _employee_lifecycle_snapshot(employee)
+    await _add_employee_lifecycle_action(
+        session,
+        action_type="reinstate",
+        employee=employee,
+        before=before,
+        after=after,
+        now=now,
+        actor=actor,
+    )
+
+    await session.commit()
+    await session.refresh(employee)
+    if isinstance(session, AsyncSession):
+        return await _get_employee_or_404(session, employee_id, include_assignments=True)
+    return employee
 
 
 @router.get("/{employee_id}/assignments", response_model=list[EmployeeRoleAssignmentRead])
@@ -322,3 +408,58 @@ def _validate_patch_payload(payload: dict[str, Any]) -> None:
     station_value = payload.get("default_cooking_station")
     if station_value is not None and station_value not in COOKING_STATIONS:
         raise HTTPException(status_code=400, detail="Invalid cooking station")
+
+
+def _require_owner(actor: CurrentActor) -> None:
+    if actor.roles & OWNER_ONLY:
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+
+
+def _employee_lifecycle_snapshot(employee: Employee) -> dict[str, Any]:
+    return {
+        "id": str(employee.id),
+        "iiko_id": employee.iiko_id,
+        "full_name": employee.full_name,
+        "status": employee.status,
+        "fire_date": employee.fire_date.isoformat() if employee.fire_date else None,
+        "fire_reason": employee.fire_reason,
+    }
+
+
+async def _add_employee_lifecycle_action(
+    session: AsyncSession,
+    *,
+    action_type: str,
+    employee: Employee,
+    before: dict[str, Any],
+    after: dict[str, Any],
+    now: datetime,
+    actor: CurrentActor,
+    reason: str | None = None,
+) -> None:
+    agent_run = AgentRun(
+        id=uuid.uuid4(),
+        agent_name="employee_lifecycle_manual",
+        finished_at=now,
+        status="success",
+        params={
+            "employee_id": str(employee.id),
+            "actor_roles": sorted(actor.roles),
+            "reason": reason,
+        },
+        result={"action_type": action_type},
+    )
+    session.add(agent_run)
+    await session.flush()
+    session.add(
+        AgentAction(
+            id=uuid.uuid4(),
+            agent_run_id=agent_run.id,
+            action_type=action_type,
+            target_table="employee",
+            target_id=employee.id,
+            before_value=before,
+            after_value=after,
+        )
+    )

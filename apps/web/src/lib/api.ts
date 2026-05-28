@@ -88,6 +88,7 @@ export type Employee = {
   status: EmployeeStatus;
   hire_date: string | null;
   fire_date: string | null;
+  fire_reason: string | null;
   iiko_sync_at: string | null;
   created_at: string;
   updated_at: string;
@@ -111,6 +112,11 @@ export type EmployeeSyncResult = {
   created: number;
   updated: number;
   deactivated: number;
+};
+
+export type EmployeeDismissPayload = {
+  fire_date?: string;
+  reason?: string;
 };
 
 export type PayrollPeriod = {
@@ -386,6 +392,19 @@ export async function getEmployees(filters: {
 
 export async function patchEmployee(id: string, patch: EmployeePatch): Promise<Employee> {
   const response = await api.patch<Employee>(`/employees/${id}`, patch);
+  return response.data;
+}
+
+export async function dismissEmployee(
+  id: string,
+  payload: EmployeeDismissPayload,
+): Promise<Employee> {
+  const response = await api.post<Employee>(`/employees/${id}/dismiss`, payload);
+  return response.data;
+}
+
+export async function reinstateEmployee(id: string): Promise<Employee> {
+  const response = await api.post<Employee>(`/employees/${id}/reinstate`);
   return response.data;
 }
 

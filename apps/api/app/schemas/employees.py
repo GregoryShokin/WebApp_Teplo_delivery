@@ -50,10 +50,16 @@ class EmployeeRead(BaseModel):
     status: EmployeeStatus
     hire_date: date | None = None
     fire_date: date | None = None
+    fire_reason: str | None = None
     iiko_sync_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     assignments: list[EmployeeRoleAssignmentRead] = Field(default_factory=list)
+
+
+class EmployeeDismissRequest(BaseModel):
+    fire_date: date | None = None
+    reason: str | None = Field(default=None, max_length=1000)
 
 
 class EmployeePatch(BaseModel):

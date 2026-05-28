@@ -78,6 +78,9 @@ class Employee(Base):
     fire_date: Mapped[date | None] = mapped_column(
         Date, nullable=True, comment="source=app_managed"
     )
+    fire_reason: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="source=app_managed"
+    )
     iiko_sync_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, comment="source=iiko"
     )

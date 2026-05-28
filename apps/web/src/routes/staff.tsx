@@ -10,8 +10,10 @@ import {
   Search,
   ShieldAlert,
   Star,
+  RotateCcw,
   X,
   UserPlus,
+  UserMinus,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -20,6 +22,14 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -51,12 +61,15 @@ import {
   type PayrollRole,
   createEmployeeAssignment,
   deleteEmployeeAssignment,
+  dismissEmployee,
   getEmployeeAssignments,
   getEmployees,
   patchEmployeeAssignment,
   patchEmployee,
+  reinstateEmployee,
   syncEmployees,
 } from "@/lib/api";
+import { getAuthSnapshot, subscribeAuth } from "@/lib/auth";
 import {
   COOKING_STATION_LABELS,
   EMPLOYEE_CATEGORY_LABELS,
@@ -65,7 +78,15 @@ import {
 } from "@/lib/i18n/employee";
 import { cn } from "@/lib/utils";
 
-const statusOptions: Array<EmployeeStatus | "all"> = ["all", "active", "requires_setup", "inactive"];
+type StaffStatusFilter = EmployeeStatus | "current" | "all";
+
+const statusOptions: StaffStatusFilter[] = [
+  "current",
+  "active",
+  "requires_setup",
+  "inactive",
+  "all",
+];
 const categoryOptions = Object.keys(EMPLOYEE_CATEGORY_LABELS) as EmployeeCategory[];
 const cookingStationOptions = Object.keys(COOKING_STATION_LABELS) as CookingStation[];
 const payrollRoleOptions = Object.keys(PAYROLL_ROLE_LABELS) as PayrollRole[];
@@ -78,7 +99,7 @@ type StaffGroupFilter = "all" | "cook" | "staff";
 
 export function StaffRoute() {
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<EmployeeStatus | "all">("all");
+  const [status, setStatus] = useState<StaffStatusFilter>("current");
   const [category, setCategory] = useState<EmployeeCategory | "all">("all");
   const [group, setGroup] = useState<StaffGroupFilter>("all");
   const [cookingStation, setCookingStation] = useState<CookingStation | "all">("all");
@@ -102,7 +123,7 @@ export function StaffRoute() {
     queryKey: ["employees", status, category],
     queryFn: () =>
       getEmployees({
-        status,
+        status: status === "current" ? "all" : status,
         category: category === "all" ? undefined : category,
       }),
   });
@@ -133,6 +154,7 @@ export function StaffRoute() {
   const employees = useMemo(() => {
     const needle = debouncedSearch.trim().toLowerCase();
     return (employeesQuery.data ?? []).filter((employee) => {
+      const matchesStatus = status === "current" ? employee.status !== "inactive" : true;
       const matchesSearch = needle ? employee.full_name.toLowerCase().includes(needle) : true;
       const employeeIsCook = isCookPosition(employee.position);
       const matchesGroup =
@@ -143,9 +165,9 @@ export function StaffRoute() {
               (assignment) => assignment.payroll_role === cookingStation,
             )
           : true;
-      return matchesSearch && matchesGroup && matchesStation;
+      return matchesStatus && matchesSearch && matchesGroup && matchesStation;
     });
-  }, [cookingStation, debouncedSearch, employeesQuery.data, group]);
+  }, [cookingStation, debouncedSearch, employeesQuery.data, group, status]);
 
   const selectedEmployee = useMemo(
     () => optionEmployees.find((employee) => employee.id === selectedEmployeeId) ?? null,
@@ -190,7 +212,8 @@ export function StaffRoute() {
       {
         key: "category",
         header: "Категория",
-        cell: (employee) => categoryLabel(primaryAssignment(employee)?.category ?? employee.category),
+        cell: (employee) =>
+          categoryLabel(primaryAssignment(employee)?.category ?? employee.category),
       },
       {
         key: "default_cooking_station",
@@ -276,17 +299,14 @@ export function StaffRoute() {
 
         <Label className="grid gap-1 text-sm">
           <span className="text-xs font-medium uppercase text-muted-foreground">Статус</span>
-          <Select
-            onValueChange={(value) => setStatus(value as EmployeeStatus | "all")}
-            value={status}
-          >
+          <Select onValueChange={(value) => setStatus(value as StaffStatusFilter)} value={status}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {statusOptions.map((option) => (
                 <SelectItem value={option} key={option}>
-                  {option === "all" ? "Все" : EMPLOYEE_STATUS_LABELS[option]}
+                  {statusFilterLabel(option)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -415,7 +435,9 @@ export function StaffRoute() {
         }}
       >
         <SheetContent className="w-full overflow-y-auto sm:max-w-xl" side="right">
-          {selectedEmployee ? <StaffEditor employee={selectedEmployee} /> : null}
+          {selectedEmployee ? (
+            <StaffEditor employee={selectedEmployee} onClose={() => setSelectedEmployeeId(null)} />
+          ) : null}
         </SheetContent>
       </Sheet>
     </div>
@@ -488,12 +510,18 @@ function StaffGrid({
   );
 }
 
-function StaffEditor({ employee }: { employee: Employee }) {
+function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const auth = useAuthSnapshot();
   const [draft, setDraft] = useState<Draft>(() => toDraft(employee));
+  const [dismissOpen, setDismissOpen] = useState(false);
+  const [dismissFireDate, setDismissFireDate] = useState(() => todayDateInputValue());
+  const [dismissReason, setDismissReason] = useState("");
 
   useEffect(() => {
     setDraft(toDraft(employee));
+    setDismissFireDate(employee.fire_date ?? todayDateInputValue());
+    setDismissReason("");
   }, [employee]);
 
   const mutation = useMutation({
@@ -552,6 +580,32 @@ function StaffEditor({ employee }: { employee: Employee }) {
       toast.error((error as Error).message);
     },
   });
+  const dismissMutation = useMutation({
+    mutationFn: () =>
+      dismissEmployee(employee.id, {
+        fire_date: dismissFireDate,
+        reason: dismissReason.trim() || undefined,
+      }),
+    onSuccess: () => {
+      toast.success("Сотрудник уволен");
+      setDismissOpen(false);
+      onClose();
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+    },
+    onError: (error) => {
+      toast.error((error as Error).message);
+    },
+  });
+  const reinstateMutation = useMutation({
+    mutationFn: () => reinstateEmployee(employee.id),
+    onSuccess: () => {
+      toast.success("Сотрудник восстановлен");
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+    },
+    onError: (error) => {
+      toast.error((error as Error).message);
+    },
+  });
 
   const dirty =
     draft.position !== employee.position ||
@@ -565,6 +619,10 @@ function StaffEditor({ employee }: { employee: Employee }) {
     assignmentMutation.isPending ||
     createAssignmentMutation.isPending ||
     deleteAssignmentMutation.isPending;
+  const canDismiss =
+    !auth.user || hasAnyRole(auth.user.roles, ["finance_manager", "owner", "admin"]);
+  const canReinstate = hasAnyRole(auth.user?.roles, ["owner"]);
+  const canDismissStatus = employee.status === "active" || employee.status === "requires_setup";
 
   function addRole() {
     const payrollRole = roleOptions.find((role) => !activeRoleIds.has(role));
@@ -582,7 +640,9 @@ function StaffEditor({ employee }: { employee: Employee }) {
     <div className="space-y-5">
       <SheetHeader>
         <SheetTitle className="pr-8">Карточка сотрудника</SheetTitle>
-        <SheetDescription>Поля реестра, которые используются графиком и зарплатой.</SheetDescription>
+        <SheetDescription>
+          Поля реестра, которые используются графиком и зарплатой.
+        </SheetDescription>
       </SheetHeader>
 
       <div className="flex items-start gap-3 rounded-lg border bg-card p-4">
@@ -763,23 +823,121 @@ function StaffEditor({ employee }: { employee: Employee }) {
       </div>
 
       <div className="grid gap-2 rounded-lg border bg-muted/30 p-4 text-sm">
+        {employee.status === "inactive" ? (
+          <InfoRow label="Дата увольнения" value={formatDate(employee.fire_date)} />
+        ) : null}
+        {employee.status === "inactive" && employee.fire_reason ? (
+          <InfoRow label="Причина" value={employee.fire_reason} />
+        ) : null}
         <InfoRow label="Синхронизация" value={formatDateTime(employee.iiko_sync_at)} />
         <InfoRow label="Создан" value={formatDateTime(employee.created_at)} />
         <InfoRow label="Обновлён" value={formatDateTime(employee.updated_at)} />
       </div>
 
-      <Button
-        className="w-full"
-        disabled={!dirty || mutation.isPending}
-        onClick={() => mutation.mutate(draft)}
-      >
-        {mutation.isPending ? (
-          <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-        ) : (
-          <Save size={16} aria-hidden="true" />
-        )}
-        Сохранить изменения
-      </Button>
+      <div className="grid gap-2">
+        <Button
+          className="w-full"
+          disabled={!dirty || mutation.isPending}
+          onClick={() => mutation.mutate(draft)}
+        >
+          {mutation.isPending ? (
+            <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+          ) : (
+            <Save size={16} aria-hidden="true" />
+          )}
+          Сохранить изменения
+        </Button>
+
+        {canDismiss && canDismissStatus ? (
+          <Button
+            className="w-full"
+            disabled={dismissMutation.isPending}
+            onClick={() => {
+              setDismissFireDate(todayDateInputValue());
+              setDismissReason("");
+              setDismissOpen(true);
+            }}
+            type="button"
+            variant="destructive"
+          >
+            <UserMinus size={16} aria-hidden="true" />
+            Уволить
+          </Button>
+        ) : null}
+
+        {employee.status === "inactive" && canReinstate ? (
+          <Button
+            className="w-full"
+            disabled={reinstateMutation.isPending}
+            onClick={() => reinstateMutation.mutate()}
+            type="button"
+            variant="outline"
+          >
+            {reinstateMutation.isPending ? (
+              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+            ) : (
+              <RotateCcw size={16} aria-hidden="true" />
+            )}
+            Восстановить
+          </Button>
+        ) : null}
+      </div>
+
+      <Dialog open={dismissOpen} onOpenChange={setDismissOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Уволить {employee.full_name}?</DialogTitle>
+            <DialogDescription>
+              Укажите дату увольнения и причину, если её нужно сохранить в карточке.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4">
+            <Label className="grid gap-2">
+              <span>Дата увольнения</span>
+              <Input
+                onChange={(event) => setDismissFireDate(event.target.value)}
+                type="date"
+                value={dismissFireDate}
+              />
+            </Label>
+
+            <Label className="grid gap-2">
+              <span>Причина</span>
+              <textarea
+                className="min-h-24 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) => setDismissReason(event.target.value)}
+                placeholder="Опционально"
+                value={dismissReason}
+              />
+            </Label>
+          </div>
+
+          <DialogFooter>
+            <Button
+              disabled={dismissMutation.isPending}
+              onClick={() => setDismissOpen(false)}
+              type="button"
+              variant="outline"
+            >
+              Отмена
+            </Button>
+            <Button
+              disabled={!dismissFireDate || dismissMutation.isPending}
+              onClick={() => dismissMutation.mutate()}
+              type="button"
+              variant="destructive"
+            >
+              {dismissMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <UserMinus size={16} aria-hidden="true" />
+              )}
+              Уволить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -815,7 +973,10 @@ function EmployeeTags({ employee, compact = false }: { employee: Employee; compa
   return (
     <div className={cn("flex flex-wrap gap-2", compact ? "max-w-[240px]" : undefined)}>
       {tags.map((tag) => (
-        <Badge className="rounded-md border-border bg-background text-foreground shadow-none" key={tag}>
+        <Badge
+          className="rounded-md border-border bg-background text-foreground shadow-none"
+          key={tag}
+        >
           {tag}
         </Badge>
       ))}
@@ -934,6 +1095,21 @@ function payrollRoleLabel(role: PayrollRole | null | undefined) {
   return role ? PAYROLL_ROLE_LABELS[role] : null;
 }
 
+
+function statusFilterLabel(status: StaffStatusFilter) {
+  if (status === "current") {
+    return "Работают";
+  }
+  if (status === "all") {
+    return "Все";
+  }
+  return EMPLOYEE_STATUS_LABELS[status];
+}
+
+function hasAnyRole(roles: string[] | undefined, allowedRoles: readonly string[]) {
+  return Boolean(roles?.some((role) => allowedRoles.includes(role)));
+}
+
 function activeAssignments(employee: Employee) {
   const today = new Date().toISOString().slice(0, 10);
   return (employee.assignments ?? []).filter(
@@ -971,6 +1147,28 @@ function initials(name: string) {
   return parts.map((part) => part[0]?.toUpperCase() ?? "").join("") || "С";
 }
 
+function todayDateInputValue() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+  }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+function formatDate(value: string | null) {
+  if (!value) {
+    return "Не указана";
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    dateStyle: "short",
+    timeZone: "Europe/Moscow",
+  }).format(new Date(`${value}T00:00:00+03:00`));
+}
+
 function formatDateTime(value: string | null) {
   if (!value) {
     return "Не было";
@@ -981,4 +1179,17 @@ function formatDateTime(value: string | null) {
     timeStyle: "short",
     timeZone: "Europe/Moscow",
   }).format(new Date(value));
+}
+
+function useAuthSnapshot() {
+  const [auth, setAuth] = useState(getAuthSnapshot);
+
+  useEffect(() => {
+    const unsubscribe = subscribeAuth(setAuth);
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  return auth;
 }

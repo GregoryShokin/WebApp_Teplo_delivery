@@ -63,6 +63,8 @@ def compute_status(
     position_group: PositionGroup,
     assignments: Iterable[object] | None = None,
 ) -> EmployeeStatus:
+    if employee.fire_date is not None:
+        return "inactive"
     if is_iiko_deleted:
         return "inactive"
     if not employee.position or position_group is None:

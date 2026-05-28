@@ -10,10 +10,17 @@ from fastapi.testclient import TestClient
 
 from app.api.deps import CurrentActor
 from app.api.v1.routes import employees as employee_routes
-from app.api.v1.routes.employees import list_employees, patch_employee
+from app.api.v1.routes.employees import (
+    dismiss_employee,
+    list_employees,
+    patch_employee,
+    reinstate_employee,
+)
 from app.db.session import get_session
 from app.main import create_app
-from app.models import Employee
+from app.models import AgentAction, Employee
+from app.schemas.employees import EmployeeDismissRequest
+from app.services.employee_status import compute_status, position_group_for_position
 from app.services.iiko_sync import (
     SyncResult,
     _enrich_employee_records_with_roles,
@@ -36,6 +43,7 @@ class FakeSession:
     def __init__(self, employees: list[Employee]) -> None:
         self.employees = employees
         self.committed = False
+        self.added: list[Any] = []
 
     async def get(self, _model: Any, employee_id: uuid.UUID) -> Employee | None:
         return next((employee for employee in self.employees if employee.id == employee_id), None)
@@ -43,8 +51,14 @@ class FakeSession:
     async def commit(self) -> None:
         self.committed = True
 
+    async def flush(self) -> None:
+        return None
+
     async def refresh(self, _employee: Employee) -> None:
         return None
+
+    def add(self, item: Any) -> None:
+        self.added.append(item)
 
     async def scalars(self, query: Any) -> FakeScalarResult:
         sql = str(query.compile(compile_kwargs={"literal_binds": True}))
@@ -67,6 +81,8 @@ def make_employee(
     position: str | None = "Повар",
     category: str | None = "category_2",
     default_cooking_station: str | None = "sushi",
+    fire_date: date | None = None,
+    fire_reason: str | None = None,
 ) -> Employee:
     return Employee(
         id=uuid.uuid4(),
@@ -76,6 +92,8 @@ def make_employee(
         position=position,
         category=category,
         default_cooking_station=default_cooking_station,
+        fire_date=fire_date,
+        fire_reason=fire_reason,
         is_senior=False,
         is_deputy_senior=False,
         created_at=SYNC_NOW,
@@ -392,6 +410,184 @@ async def test_patch_employee_iiko_deleted_stays_inactive() -> None:
 
     assert updated.category == "category_1"
     assert updated.status == "inactive"
+
+
+def test_compute_status_fire_date_overrides_active_setup() -> None:
+    employee = make_employee(
+        iiko_id="iiko-16",
+        full_name="Fired Cook",
+        status="active",
+        fire_date=SYNC_TODAY,
+    )
+
+    status = compute_status(
+        employee,
+        is_iiko_deleted=False,
+        position_group=position_group_for_position(employee.position),
+    )
+
+    assert status == "inactive"
+
+
+async def test_dismiss_employee_sets_status_fire_date_reason_and_audit() -> None:
+    employee = make_employee(iiko_id="iiko-17", full_name="Dismiss Me")
+    session = FakeSession([employee])
+
+    updated = await dismiss_employee(
+        employee.id,
+        session,  # type: ignore[arg-type]
+        CurrentActor(roles=frozenset({"finance_manager"})),
+        EmployeeDismissRequest(fire_date=SYNC_TODAY, reason="  Переезд  "),
+    )
+
+    actions = [item for item in session.added if isinstance(item, AgentAction)]
+    assert updated.status == "inactive"
+    assert updated.fire_date == SYNC_TODAY
+    assert updated.fire_reason == "Переезд"
+    assert session.committed is True
+    assert len(actions) == 1
+    assert actions[0].before_value["status"] == "active"
+    assert actions[0].after_value["status"] == "inactive"
+    assert actions[0].after_value["fire_reason"] == "Переезд"
+
+
+async def test_dismiss_employee_twice_returns_409() -> None:
+    employee = make_employee(iiko_id="iiko-18", full_name="Already Dismissed")
+    session = FakeSession([employee])
+    actor = CurrentActor(roles=frozenset({"finance_manager"}))
+
+    await dismiss_employee(
+        employee.id,
+        session,  # type: ignore[arg-type]
+        actor,
+        EmployeeDismissRequest(fire_date=SYNC_TODAY),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await dismiss_employee(
+            employee.id,
+            session,  # type: ignore[arg-type]
+            actor,
+            EmployeeDismissRequest(fire_date=SYNC_TODAY),
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "Сотрудник уже уволен"
+
+
+async def test_dismiss_employee_without_role_returns_403() -> None:
+    employee = make_employee(iiko_id="iiko-19", full_name="No Role")
+    session = FakeSession([employee])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await dismiss_employee(
+            employee.id,
+            session,  # type: ignore[arg-type]
+            CurrentActor(roles=frozenset()),
+            EmployeeDismissRequest(fire_date=SYNC_TODAY),
+        )
+
+    assert exc_info.value.status_code == 403
+    assert employee.status == "active"
+
+
+async def test_dismiss_employee_manager_returns_403() -> None:
+    employee = make_employee(iiko_id="iiko-20", full_name="Manager Denied")
+    session = FakeSession([employee])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await dismiss_employee(
+            employee.id,
+            session,  # type: ignore[arg-type]
+            CurrentActor(roles=frozenset({"manager"})),
+            EmployeeDismissRequest(fire_date=SYNC_TODAY),
+        )
+
+    assert exc_info.value.status_code == 403
+    assert employee.status == "active"
+
+
+async def test_dismiss_employee_finance_manager_ok() -> None:
+    employee = make_employee(iiko_id="iiko-21", full_name="Finance Allowed")
+    session = FakeSession([employee])
+
+    updated = await dismiss_employee(
+        employee.id,
+        session,  # type: ignore[arg-type]
+        CurrentActor(roles=frozenset({"finance_manager"})),
+        EmployeeDismissRequest(fire_date=SYNC_TODAY),
+    )
+
+    assert updated.status == "inactive"
+    assert updated.fire_date == SYNC_TODAY
+
+
+def test_dismiss_employee_endpoint_returns_200() -> None:
+    app = create_app()
+    employee = make_employee(iiko_id="iiko-22", full_name="Endpoint Dismiss")
+    session = FakeSession([employee])
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/v1/employees/{employee.id}/dismiss",
+            headers={"X-User-Role": "finance_manager"},
+            json={"fire_date": SYNC_TODAY.isoformat(), "reason": "Сезон завершён"},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "inactive"
+    assert response.json()["fire_date"] == SYNC_TODAY.isoformat()
+    assert response.json()["fire_reason"] == "Сезон завершён"
+
+
+async def test_reinstate_employee_restores_computed_status() -> None:
+    employee = make_employee(
+        iiko_id="iiko-23",
+        full_name="Restore Me",
+        status="inactive",
+        fire_date=SYNC_TODAY,
+        fire_reason="Ошибка",
+    )
+    session = FakeSession([employee])
+
+    updated = await reinstate_employee(
+        employee.id,
+        session,  # type: ignore[arg-type]
+        CurrentActor(roles=frozenset({"owner"})),
+    )
+
+    assert updated.status == "active"
+    assert updated.fire_date is None
+    assert updated.fire_reason is None
+    assert session.committed is True
+
+
+async def test_reinstate_employee_finance_manager_returns_403() -> None:
+    employee = make_employee(
+        iiko_id="iiko-24",
+        full_name="Restore Denied",
+        status="inactive",
+        fire_date=SYNC_TODAY,
+    )
+    session = FakeSession([employee])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await reinstate_employee(
+            employee.id,
+            session,  # type: ignore[arg-type]
+            CurrentActor(roles=frozenset({"finance_manager"})),
+        )
+
+    assert exc_info.value.status_code == 403
+    assert employee.status == "inactive"
+    assert employee.fire_date == SYNC_TODAY
 
 
 async def test_get_filter_status_requires_setup_returns_only_unconfigured() -> None:
