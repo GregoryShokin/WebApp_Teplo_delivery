@@ -15,11 +15,13 @@ from app.models import (
     AttendanceEntry,
     DepositAccount,
     Employee,
+    EmployeeRoleAssignment,
     PayrollPeriod,
     PayrollRun,
 )
 from app.services.attendance_loader import build_attendance_entry
 from app.services.payroll_calculator import (
+    EMPLOYEE_ASSIGNMENTS_CONFIG_KEY,
     PAYROLL_RATE_CONFIG_KEY,
     calculate_payroll_lines_from_inputs,
 )
@@ -40,11 +42,12 @@ from app.services.payroll_runner import (
 def payroll_settings(revenue: dict[str, int] | None = None) -> dict[str, Any]:
     return {
         "payroll.role_category_rates": {
-            "Пиццерист": {"category_2": 2200},
+            "Пиццерист": {"category_2": 2200, "intern": 2000},
             "Сушист": {"category_2": 2400},
         },
         "payroll.category_rules": {
-            "2": {"coeff": 7.5, "deposit_target": 15000, "deposit_withholding": 1000}
+            "2": {"coeff": 7.5, "deposit_target": 15000, "deposit_withholding": 1000},
+            "4": {"coeff": 0, "deposit_target": 7000, "deposit_withholding": 1000},
         },
         "payroll.revenue_percent_tiers": [
             {"from": 50000, "rate": 0.035},
@@ -53,6 +56,7 @@ def payroll_settings(revenue: dict[str, int] | None = None) -> dict[str, Any]:
             {"from": 550000, "rate": 0.065},
         ],
         "payroll.allowances": {"senior": 500, "deputy_senior": 300},
+        "payroll.weekday_premium": {"friday": 200, "saturday": 200},
         "payroll.fund_rates_by_tenure": [
             {"min_years": 0.5, "rate": 0.05},
             {"min_years": 1.0, "rate": 0.10},
@@ -84,6 +88,7 @@ def make_employee(
     status: str = "active",
     position: str | None = "Пиццерист",
     category: str | None = "category_2",
+    default_cooking_station: str | None = None,
     hire_date: date | None = None,
 ) -> Employee:
     return Employee(
@@ -92,6 +97,7 @@ def make_employee(
         iiko_id=f"iiko-{uuid.uuid4()}",
         position=position,
         category=category,
+        default_cooking_station=default_cooking_station,
         status=status,
         hire_date=hire_date,
         is_senior=False,
@@ -107,6 +113,7 @@ def make_entry(
     work_date: date,
     minutes: int = 720,
     role: str | None = "Пиццерист",
+    station: str | None = None,
     quality_status: str = "ok",
 ) -> AttendanceEntry:
     return AttendanceEntry(
@@ -118,7 +125,7 @@ def make_entry(
         ended_at=datetime.combine(work_date, datetime.min.time(), tzinfo=UTC),
         minutes_worked=minutes,
         role=role,
-        station=None,
+        station=station,
         source="manual",
         quality_status=quality_status,
         notes=None,
@@ -278,7 +285,114 @@ def test_fixed_salary_for_full_week_is_calculated() -> None:
 
     assert result.blocking_issues == []
     assert result.lines[0].base_pay == 15400
-    assert result.lines[0].total_payable == 15400
+    assert result.lines[0].premium == 400
+    assert result.lines[0].total_payable == 15800
+
+
+def test_weekday_premium_applies_on_friday() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    entry = make_entry(period, employee, date(2026, 5, 22))
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        payroll_settings(),
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].premium == 200
+    assert result.lines[0].total_payable == 2400
+    assert result.lines[0].components["days"][0]["weekday_premium"] == 200
+
+
+def test_weekday_premium_applies_on_saturday() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    entry = make_entry(period, employee, date(2026, 5, 23))
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        payroll_settings(),
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].premium == 200
+    assert result.lines[0].total_payable == 2400
+
+
+def test_weekday_premium_does_not_apply_on_wednesday() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    entry = make_entry(period, employee, date(2026, 5, 20))
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        payroll_settings(),
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].premium == 0
+    assert result.lines[0].total_payable == 2200
+
+
+def test_weekday_premium_uses_updated_setting_on_next_run() -> None:
+    period = make_period()
+    employee = make_employee()
+    entry = make_entry(period, employee, date(2026, 5, 22))
+    settings = payroll_settings()
+
+    first_result = calculate_payroll_lines_from_inputs(
+        period,
+        uuid.uuid4(),
+        [entry],
+        {employee.id: employee},
+        settings,
+    )
+    settings["payroll.weekday_premium"] = {"friday": 500, "saturday": 0}
+    second_result = calculate_payroll_lines_from_inputs(
+        period,
+        uuid.uuid4(),
+        [entry],
+        {employee.id: employee},
+        settings,
+    )
+
+    assert first_result.lines[0].premium == 200
+    assert second_result.lines[0].premium == 500
+    assert second_result.lines[0].total_payable == 2700
+
+
+def test_intern_with_zero_coeff_still_gets_weekday_premium() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(category="intern")
+    entry = make_entry(period, employee, date(2026, 5, 22))
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        payroll_settings({"2026-05-22": 190000}),
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].base_pay == 2000
+    assert result.lines[0].premium == 200
+    assert result.lines[0].percent_pay == 0
+    assert result.lines[0].total_payable == 2200
 
 
 def test_payroll_calculator_prefers_versioned_rate_configuration() -> None:
@@ -310,6 +424,51 @@ def test_payroll_calculator_prefers_versioned_rate_configuration() -> None:
 
     assert result.blocking_issues == []
     assert result.lines[0].base_pay == 3100
+
+
+def test_payroll_calculator_uses_assignment_category_for_shift_station() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(
+        position="Повар",
+        category="category_1",
+        default_cooking_station="sushi",
+    )
+    entry = make_entry(period, employee, period.start_date, role="Пиццерист", station="pizza")
+    settings = payroll_settings()
+    settings["payroll.role_category_rates"] = {"Пиццерист": {"category_2": 2200}}
+    settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = {
+        (employee.id, period.start_date): [
+            EmployeeRoleAssignment(
+                id=uuid.uuid4(),
+                employee_id=employee.id,
+                payroll_role="sushi",
+                category="category_1",
+                is_primary=True,
+                effective_from=period.start_date,
+            ),
+            EmployeeRoleAssignment(
+                id=uuid.uuid4(),
+                employee_id=employee.id,
+                payroll_role="pizza",
+                category="category_2",
+                is_primary=False,
+                effective_from=period.start_date,
+            ),
+        ]
+    }
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].base_pay == 2200
+    assert result.lines[0].components["days"][0]["category"] == "category_2"
 
 
 def test_freelancer_category_does_not_match_legacy_daily_rate() -> None:

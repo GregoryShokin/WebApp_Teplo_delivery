@@ -1,4 +1,4 @@
-import type { CookingStation, EmployeeCategory, EmployeeStatus } from "@/lib/api";
+import type { CookingStation, EmployeeCategory, EmployeeStatus, PayrollRole } from "@/lib/api";
 
 export const EMPLOYEE_STATUS_LABELS: Record<EmployeeStatus, string> = {
   active: "Активен",
@@ -24,4 +24,13 @@ export const COOKING_STATION_LABELS: Record<CookingStation, string> = {
   sushi: "Сушист",
   pizza: "Пиццерист",
   shawarma: "Шаурмист",
+};
+
+export const PAYROLL_ROLE_LABELS: Record<PayrollRole, string> = {
+  sushi: "Сушист",
+  pizza: "Пиццерист",
+  shawarma: "Шаурмист",
+  prep: "Заготовщик",
+  administrator: "Администратор",
+  manager: "Управляющий",
 };

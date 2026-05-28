@@ -5,9 +5,12 @@ import {
   Grid2X2,
   List,
   LoaderCircle,
+  Plus,
   Save,
   Search,
   ShieldAlert,
+  Star,
+  X,
   UserPlus,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -43,8 +46,14 @@ import {
   type Employee,
   type EmployeeCategory,
   type EmployeePatch,
+  type EmployeeRoleAssignment,
   type EmployeeStatus,
+  type PayrollRole,
+  createEmployeeAssignment,
+  deleteEmployeeAssignment,
+  getEmployeeAssignments,
   getEmployees,
+  patchEmployeeAssignment,
   patchEmployee,
   syncEmployees,
 } from "@/lib/api";
@@ -52,17 +61,18 @@ import {
   COOKING_STATION_LABELS,
   EMPLOYEE_CATEGORY_LABELS,
   EMPLOYEE_STATUS_LABELS,
+  PAYROLL_ROLE_LABELS,
 } from "@/lib/i18n/employee";
 import { cn } from "@/lib/utils";
 
 const statusOptions: Array<EmployeeStatus | "all"> = ["all", "active", "requires_setup", "inactive"];
 const categoryOptions = Object.keys(EMPLOYEE_CATEGORY_LABELS) as EmployeeCategory[];
 const cookingStationOptions = Object.keys(COOKING_STATION_LABELS) as CookingStation[];
+const payrollRoleOptions = Object.keys(PAYROLL_ROLE_LABELS) as PayrollRole[];
+const cookPayrollRoles: PayrollRole[] = ["sushi", "pizza", "shawarma", "prep"];
+const staffPayrollRoles: PayrollRole[] = ["administrator", "manager"];
 
-type Draft = Pick<
-  Employee,
-  "position" | "category" | "default_cooking_station" | "is_senior" | "is_deputy_senior"
->;
+type Draft = Pick<Employee, "position" | "is_senior" | "is_deputy_senior">;
 type ViewMode = "grid" | "table";
 type StaffGroupFilter = "all" | "cook" | "staff";
 
@@ -129,7 +139,9 @@ export function StaffRoute() {
         group === "all" ? true : group === "cook" ? employeeIsCook : !employeeIsCook;
       const matchesStation =
         group === "cook" && cookingStation !== "all"
-          ? employee.default_cooking_station === cookingStation
+          ? activeAssignments(employee).some(
+              (assignment) => assignment.payroll_role === cookingStation,
+            )
           : true;
       return matchesSearch && matchesGroup && matchesStation;
     });
@@ -178,12 +190,14 @@ export function StaffRoute() {
       {
         key: "category",
         header: "Категория",
-        cell: (employee) => categoryLabel(employee.category),
+        cell: (employee) => categoryLabel(primaryAssignment(employee)?.category ?? employee.category),
       },
       {
         key: "default_cooking_station",
-        header: "Цех",
-        cell: (employee) => stationLabel(employee.default_cooking_station),
+        header: "Роль",
+        cell: (employee) =>
+          payrollRoleLabel(primaryAssignment(employee)?.payroll_role) ||
+          stationLabel(employee.default_cooking_station),
       },
       {
         key: "allowances",
@@ -493,18 +507,75 @@ function StaffEditor({ employee }: { employee: Employee }) {
       toast.error((error as Error).message);
     },
   });
+  const assignmentsQuery = useQuery({
+    queryKey: ["employees", employee.id, "assignments"],
+    queryFn: () => getEmployeeAssignments(employee.id),
+    initialData: activeAssignments(employee),
+  });
+  const assignmentMutation = useMutation({
+    mutationFn: ({
+      assignmentId,
+      patch,
+    }: {
+      assignmentId: string;
+      patch: Partial<Pick<EmployeeRoleAssignment, "payroll_role" | "category" | "is_primary">>;
+    }) => patchEmployeeAssignment(employee.id, assignmentId, patch),
+    onSuccess: () => {
+      toast.success("Роль сотрудника обновлена");
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "assignments"] });
+    },
+    onError: (error) => {
+      toast.error((error as Error).message);
+    },
+  });
+  const createAssignmentMutation = useMutation({
+    mutationFn: (payload: { payroll_role: PayrollRole; category: EmployeeCategory }) =>
+      createEmployeeAssignment(employee.id, payload),
+    onSuccess: () => {
+      toast.success("Роль добавлена");
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "assignments"] });
+    },
+    onError: (error) => {
+      toast.error((error as Error).message);
+    },
+  });
+  const deleteAssignmentMutation = useMutation({
+    mutationFn: (assignmentId: string) => deleteEmployeeAssignment(employee.id, assignmentId),
+    onSuccess: () => {
+      toast.success("Роль удалена");
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "assignments"] });
+    },
+    onError: (error) => {
+      toast.error((error as Error).message);
+    },
+  });
 
   const dirty =
     draft.position !== employee.position ||
-    draft.category !== employee.category ||
-    draft.default_cooking_station !== employee.default_cooking_station ||
     draft.is_senior !== employee.is_senior ||
     draft.is_deputy_senior !== employee.is_deputy_senior;
-  const isCook = isCookPosition(draft.position);
+  const assignments = assignmentsQuery.data ?? [];
+  const activeRoleIds = new Set(assignments.map((assignment) => assignment.payroll_role));
+  const roleOptions = payrollRolesForPosition(draft.position);
+  const isAssignmentPending =
+    assignmentsQuery.isFetching ||
+    assignmentMutation.isPending ||
+    createAssignmentMutation.isPending ||
+    deleteAssignmentMutation.isPending;
 
-  function autosaveField<K extends keyof Draft>(field: K, value: Draft[K]) {
-    setDraft((current) => ({ ...current, [field]: value }));
-    mutation.mutate({ [field]: value } as EmployeePatch);
+  function addRole() {
+    const payrollRole = roleOptions.find((role) => !activeRoleIds.has(role));
+    if (!payrollRole) {
+      toast.error("Все подходящие роли уже добавлены");
+      return;
+    }
+    createAssignmentMutation.mutate({
+      payroll_role: payrollRole,
+      category: primaryAssignment(employee)?.category ?? employee.category ?? "category_3",
+    });
   }
 
   return (
@@ -551,67 +622,114 @@ function StaffEditor({ employee }: { employee: Employee }) {
           <Input
             onChange={(event) => {
               const position = event.target.value || null;
-              setDraft({
-                ...draft,
-                position,
-                default_cooking_station: isCookPosition(position)
-                  ? draft.default_cooking_station
-                  : null,
-              });
+              setDraft({ ...draft, position });
             }}
             placeholder="Например, повар"
             value={draft.position ?? ""}
           />
         </Label>
 
-        <Label className="grid gap-2">
-          <span>Категория</span>
-          <Select
-            disabled={mutation.isPending}
-            onValueChange={(value) => autosaveField("category", value as EmployeeCategory)}
-            value={draft.category ?? undefined}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Выберите категорию" />
-            </SelectTrigger>
-            <SelectContent>
-              {categoryOptions.map((value) => (
-                <SelectItem value={value} key={value}>
-                  {EMPLOYEE_CATEGORY_LABELS[value]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Label>
-
-        {isCook ? (
-          <Label className="grid gap-2">
-            <span>Цех</span>
-            <Select
-              disabled={mutation.isPending}
-              onValueChange={(value) =>
-                autosaveField("default_cooking_station", value as CookingStation)
-              }
-              value={draft.default_cooking_station ?? undefined}
+        <div className="grid gap-3 rounded-lg border bg-card p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-medium">Роли и категории</div>
+            <Button
+              disabled={isAssignmentPending}
+              onClick={addRole}
+              size="sm"
+              type="button"
+              variant="outline"
             >
-              <SelectTrigger
-                className={cn(!draft.default_cooking_station && "border-amber-300")}
-              >
-                <SelectValue placeholder="Выберите цех" />
-              </SelectTrigger>
-              <SelectContent>
-                {cookingStationOptions.map((value) => (
-                  <SelectItem value={value} key={value}>
-                    {COOKING_STATION_LABELS[value]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {!draft.default_cooking_station ? (
-              <span className="text-sm text-amber-700">Выберите цех</span>
-            ) : null}
-          </Label>
-        ) : null}
+              <Plus size={15} aria-hidden="true" />
+              Добавить роль
+            </Button>
+          </div>
+
+          {assignments.length === 0 ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Добавьте хотя бы одну роль
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {assignments.map((assignment) => (
+                <div
+                  className="grid gap-2 rounded-md border bg-background p-3 sm:grid-cols-[1fr_1fr_auto_auto] sm:items-center"
+                  key={assignment.id}
+                >
+                  <Select
+                    disabled={isAssignmentPending}
+                    onValueChange={(value) =>
+                      assignmentMutation.mutate({
+                        assignmentId: assignment.id,
+                        patch: { payroll_role: value as PayrollRole },
+                      })
+                    }
+                    value={assignment.payroll_role}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {payrollRoleOptions.map((value) => (
+                        <SelectItem value={value} key={value}>
+                          {PAYROLL_ROLE_LABELS[value]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select
+                    disabled={isAssignmentPending}
+                    onValueChange={(value) =>
+                      assignmentMutation.mutate({
+                        assignmentId: assignment.id,
+                        patch: { category: value as EmployeeCategory },
+                      })
+                    }
+                    value={assignment.category}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categoryOptions.map((value) => (
+                        <SelectItem value={value} key={value}>
+                          {EMPLOYEE_CATEGORY_LABELS[value]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Button
+                    disabled={assignment.is_primary || isAssignmentPending}
+                    onClick={() =>
+                      assignmentMutation.mutate({
+                        assignmentId: assignment.id,
+                        patch: { is_primary: true },
+                      })
+                    }
+                    size="sm"
+                    type="button"
+                    variant={assignment.is_primary ? "secondary" : "outline"}
+                  >
+                    <Star size={15} aria-hidden="true" />
+                    Основная
+                  </Button>
+
+                  <Button
+                    disabled={assignment.is_primary || isAssignmentPending}
+                    onClick={() => deleteAssignmentMutation.mutate(assignment.id)}
+                    size="icon"
+                    title="Удалить роль"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <X size={16} aria-hidden="true" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <Label className="grid gap-2">
           <span>Статус</span>
@@ -677,13 +795,17 @@ function EmployeeAvatar({ employee }: { employee: Employee }) {
 }
 
 function EmployeeTags({ employee, compact = false }: { employee: Employee; compact?: boolean }) {
+  const primary = primaryAssignment(employee);
+  const additionalRoles = Math.max(activeAssignments(employee).length - (primary ? 1 : 0), 0);
   const tags = [
     employee.is_senior ? "Старший" : null,
     employee.is_deputy_senior ? "Зам" : null,
-    employee.category ? categoryLabel(employee.category) : null,
-    isCookPosition(employee.position) && employee.default_cooking_station
-      ? stationLabel(employee.default_cooking_station)
-      : null,
+    primary
+      ? `${payrollRoleLabel(primary.payroll_role)} · ${categoryLabel(primary.category)}`
+      : employee.category
+        ? categoryLabel(employee.category)
+        : null,
+    additionalRoles > 0 ? `+${additionalRoles} ролей` : null,
   ].filter((tag): tag is string => Boolean(tag));
 
   if (tags.length === 0) {
@@ -768,9 +890,25 @@ const cookPositions = new Set(
     "Шеф-повара",
   ].map(normalizePosition),
 );
+const staffPositions = new Set(
+  [
+    "Администратор",
+    "Администраторы",
+    "Старший администратор",
+    "Старшие администраторы",
+    "Кассир",
+    "Кассиры",
+    "Управляющий",
+    "Управляющие",
+  ].map(normalizePosition),
+);
 
 function isCookPosition(position: string | null) {
   return cookPositions.has(normalizePosition(position));
+}
+
+function isStaffPosition(position: string | null) {
+  return staffPositions.has(normalizePosition(position));
 }
 
 function normalizePosition(position: string | null) {
@@ -792,11 +930,37 @@ function stationLabel(station: CookingStation | null) {
   return station ? COOKING_STATION_LABELS[station] : "Не задан";
 }
 
+function payrollRoleLabel(role: PayrollRole | null | undefined) {
+  return role ? PAYROLL_ROLE_LABELS[role] : null;
+}
+
+function activeAssignments(employee: Employee) {
+  const today = new Date().toISOString().slice(0, 10);
+  return (employee.assignments ?? []).filter(
+    (assignment) =>
+      assignment.effective_from <= today &&
+      (!assignment.effective_to || assignment.effective_to > today),
+  );
+}
+
+function primaryAssignment(employee: Employee) {
+  const assignments = activeAssignments(employee);
+  return assignments.find((assignment) => assignment.is_primary) ?? assignments[0] ?? null;
+}
+
+function payrollRolesForPosition(position: string | null): PayrollRole[] {
+  if (isCookPosition(position)) {
+    return cookPayrollRoles;
+  }
+  if (isStaffPosition(position)) {
+    return staffPayrollRoles;
+  }
+  return payrollRoleOptions;
+}
+
 function toDraft(employee: Employee): Draft {
   return {
     position: employee.position,
-    category: employee.category,
-    default_cooking_station: employee.default_cooking_station,
     is_senior: employee.is_senior,
     is_deputy_senior: employee.is_deputy_senior,
   };

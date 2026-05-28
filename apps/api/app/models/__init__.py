@@ -9,7 +9,7 @@ from app.models.audit import (
 )
 from app.models.core import Location, Organization, Role, User, UserRole
 from app.models.counterparty import Counterparty, CounterpartyRole
-from app.models.employee import Employee
+from app.models.employee import Employee, EmployeeRoleAssignment
 from app.models.payroll import (
     AccumulationFundAccount,
     AttendanceEntry,
@@ -44,6 +44,7 @@ __all__ = [
     "DepositAccount",
     "DepositTransaction",
     "Employee",
+    "EmployeeRoleAssignment",
     "Location",
     "PayrollDeductionCategory",
     "Organization",

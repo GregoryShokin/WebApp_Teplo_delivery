@@ -32,6 +32,7 @@ EXPECTED_TABLES = {
     "counterparty",
     "counterparty_role",
     "employee",
+    "employee_role_assignment",
     "wallet",
     "period",
     "data_source",
@@ -72,6 +73,7 @@ def test_all_models_import() -> None:
         "Counterparty",
         "CounterpartyRole",
         "Employee",
+        "EmployeeRoleAssignment",
         "Wallet",
         "Period",
         "DataSource",
@@ -135,6 +137,12 @@ def test_payroll_configuration_tables_are_declared() -> None:
     premium_columns = models.PayrollSeniorityPremium.__table__.c
 
     assert rate_columns.position_group.nullable is False
+    assignment_columns = models.EmployeeRoleAssignment.__table__.c
+    assert assignment_columns.employee_id.nullable is False
+    assert assignment_columns.payroll_role.nullable is False
+    assert assignment_columns.category.nullable is False
+    assert assignment_columns.is_primary.nullable is False
+    assert assignment_columns.effective_to.nullable is True
     assert rate_columns.amount.nullable is True
     assert rate_columns.is_active.nullable is False
     assert rate_columns.effective_to.nullable is True
@@ -237,6 +245,69 @@ def test_migrations_upgrade_and_downgrade(alembic_cfg: Config, postgres_availabl
     command.downgrade(alembic_cfg, "base")
     command.upgrade(alembic_cfg, "head")
     command.downgrade(alembic_cfg, "base")
+
+
+async def test_employee_role_assignment_backfill_from_legacy_shortcuts(
+    alembic_cfg: Config,
+    postgres_available: None,
+) -> None:
+    employee_id = uuid.uuid4()
+    command.downgrade(alembic_cfg, "base")
+    command.upgrade(alembic_cfg, "0012_weekday_payroll_premium")
+
+    engine = create_async_engine(TEST_DATABASE_URL)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    """
+                    insert into employee (
+                        id,
+                        full_name,
+                        iiko_id,
+                        position,
+                        category,
+                        default_cooking_station,
+                        status
+                    )
+                    values (
+                        :id,
+                        'Александр Ушанов',
+                        'iiko-alexander-ushanov',
+                        'Сушист',
+                        'category_1',
+                        'sushi',
+                        'active'
+                    )
+                    """
+                ),
+                {"id": employee_id},
+            )
+    finally:
+        await engine.dispose()
+
+    command.upgrade(alembic_cfg, "head")
+
+    engine = create_async_engine(TEST_DATABASE_URL)
+    try:
+        async with engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    text(
+                        """
+                        select payroll_role, category, is_primary
+                          from employee_role_assignment
+                         where employee_id = :employee_id
+                        """
+                    ),
+                    {"employee_id": employee_id},
+                )
+            ).all()
+    finally:
+        await engine.dispose()
+        command.downgrade(alembic_cfg, "base")
+
+    assert rows == [("sushi", "category_1", True)]
 
 
 async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:

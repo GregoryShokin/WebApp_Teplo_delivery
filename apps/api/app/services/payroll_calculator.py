@@ -21,6 +21,10 @@ from app.models import (
     PayrollRate,
     PayrollRoleCategoryAvailability,
 )
+from app.services.employee_assignments import (
+    assignment_role_for_payroll_context,
+    get_assignments,
+)
 from app.services.payroll_percent import (
     CATEGORY_COEFFICIENT_CONFIG_KEY,
     REVENUE_TIER_CONFIG_KEY,
@@ -47,12 +51,23 @@ CATEGORY_RULE_KEY_BY_APP_CATEGORY = {
 PAYROLL_SETTING_KEYS = {
     "payroll.category_rules",
     "payroll.allowances",
+    "payroll.weekday_premium",
     "payroll.fund_rates_by_tenure",
     "payroll.mock_daily_revenue",
     "payroll.deposit_auto_withholding_enabled",
     "payroll.deposit_fund_payment_date",
 }
 PAYROLL_RATE_CONFIG_KEY = "payroll.role_category_rates_by_date"
+EMPLOYEE_ASSIGNMENTS_CONFIG_KEY = "employee.role_assignments_by_date"
+WEEKDAY_KEYS = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
 
 
 @dataclass(slots=True)
@@ -91,6 +106,10 @@ async def calculate_payroll_lines(
         session,
         period.start_date,
         period.end_date,
+    )
+    settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = await load_employee_assignments_for_entries(
+        session,
+        entries,
     )
     return calculate_payroll_lines_from_inputs(period, run_id, entries, employees, settings)
 
@@ -138,6 +157,24 @@ async def load_payroll_rate_versions(
     ]
 
 
+async def load_employee_assignments_for_entries(
+    session: AsyncSession,
+    entries: Iterable[AttendanceEntry],
+) -> dict[tuple[uuid.UUID, date], list[Any]]:
+    assignments_by_day: dict[tuple[uuid.UUID, date], list[Any]] = {}
+    entry_days = {(entry.employee_id, entry.work_date) for entry in entries}
+    for employee_id, work_date in sorted(
+        entry_days,
+        key=lambda item: (str(item[0]), item[1]),
+    ):
+        assignments_by_day[(employee_id, work_date)] = await get_assignments(
+            session,
+            employee_id,
+            work_date,
+        )
+    return assignments_by_day
+
+
 def calculate_payroll_lines_from_inputs(
     period: PayrollPeriod,
     run_id: uuid.UUID,
@@ -155,11 +192,20 @@ def calculate_payroll_lines_from_inputs(
         )
 
     grouped_minutes: dict[tuple[uuid.UUID, str, date, str | None], int] = defaultdict(int)
+    group_categories: dict[tuple[uuid.UUID, str, date, str | None], str] = {}
     for entry in entries:
         employee = employees[entry.employee_id]
         role = payroll_role_for_entry(entry, employee)
         station = (entry.station or "").strip() or None
-        grouped_minutes[(entry.employee_id, role, entry.work_date, station)] += entry.minutes_worked
+        group_key = (entry.employee_id, role, entry.work_date, station)
+        grouped_minutes[group_key] += entry.minutes_worked
+        group_categories[group_key] = category_for_payroll_entry(
+            settings,
+            employee,
+            entry.work_date,
+            role,
+            station,
+        )
 
     day_components: dict[tuple[uuid.UUID, str, date, str | None], dict[str, Any]] = {}
     daily_percent_shifts: dict[date, list[PercentShift]] = defaultdict(list)
@@ -167,10 +213,10 @@ def calculate_payroll_lines_from_inputs(
 
     for (employee_id, role, work_date, station), minutes in grouped_minutes.items():
         employee = employees[employee_id]
-        category = str(employee.category)
+        group_key = (employee_id, role, work_date, station)
+        category = group_categories[group_key]
         coeff = category_coeff(settings, category, work_date)
         hours = Decimal(minutes) / Decimal(60)
-        group_key = (employee_id, role, work_date, station)
         percent_shift = PercentShift(
             employee_id=group_key,
             category=category,
@@ -215,11 +261,12 @@ def calculate_payroll_lines_from_inputs(
         grouped_minutes.items(), key=lambda item: (item[0][2], item[0][1], item[0][3] or "")
     ):
         employee = employees[employee_id]
-        category = str(employee.category)
-        base_pay = base_shift_pay(settings, role, category, employee, minutes, work_date, station)
         group_key = (employee_id, role, work_date, station)
+        category = group_categories[group_key]
+        base_pay = base_shift_pay(settings, role, category, employee, minutes, work_date, station)
         percent_pay = daily_percent_distributions.get(work_date, {}).get(group_key, Decimal("0"))
         percent_components = daily_percent_components.get(work_date, {})
+        weekday_premium = weekday_premium_for_day(settings, work_date)
         fund_accrual = fund_for_base_pay(settings, employee, period.end_date, base_pay)
         key = (employee_id, role)
         totals = line_totals.setdefault(
@@ -234,12 +281,15 @@ def calculate_payroll_lines_from_inputs(
             },
         )
         totals["base_pay"] += base_pay
+        totals["premium"] += weekday_premium
         totals["percent_pay"] += percent_pay
         totals["fund_accrual"] += fund_accrual
         day_component = day_components[group_key]
         day_component.update(
             {
                 "base_pay": money(base_pay),
+                "weekday_premium": money(weekday_premium),
+                "premium": money(weekday_premium),
                 "percent_pay": money(percent_pay),
                 "fund_accrual": money(fund_accrual),
                 **percent_components,
@@ -319,7 +369,13 @@ def validate_calculation_inputs(
                 }
             )
         role = payroll_role_for_entry(entry, employee)
-        category = str(employee.category or "")
+        category = category_for_payroll_entry(
+            settings,
+            employee,
+            entry.work_date,
+            role,
+            entry.station,
+        )
         if not role:
             issues.append(
                 {
@@ -361,6 +417,58 @@ def needs_setup_issue(employee: Employee) -> dict[str, Any]:
 
 def payroll_role_for_entry(entry: AttendanceEntry, employee: Employee) -> str:
     return (entry.role or "").strip()
+
+
+def category_for_payroll_entry(
+    settings: Mapping[str, Any],
+    employee: Employee,
+    work_date: date,
+    role: str | None,
+    station: str | None,
+) -> str:
+    assignments = assignments_for_employee_date(settings, employee.id, work_date)
+    if assignments:
+        assignment_role = assignment_role_for_payroll_context(role, station)
+        if assignment_role:
+            for assignment in assignments:
+                category = getattr(assignment, "category", None)
+                if (
+                    getattr(assignment, "payroll_role", None) == assignment_role
+                    and category
+                ):
+                    return str(category)
+        primary = next(
+            (
+                assignment
+                for assignment in assignments
+                if getattr(assignment, "is_primary", False)
+                and getattr(assignment, "category", None)
+            ),
+            None,
+        )
+        if primary is not None:
+            return str(primary.category)
+        first = next(
+            (assignment for assignment in assignments if getattr(assignment, "category", None)),
+            None,
+        )
+        if first is not None:
+            return str(first.category)
+    return str(employee.category or "")
+
+
+def assignments_for_employee_date(
+    settings: Mapping[str, Any],
+    employee_id: uuid.UUID,
+    work_date: date,
+) -> list[Any]:
+    assignments_by_day = settings.get(EMPLOYEE_ASSIGNMENTS_CONFIG_KEY)
+    if not isinstance(assignments_by_day, Mapping):
+        return []
+    value = assignments_by_day.get((employee_id, work_date))
+    if value is None:
+        value = assignments_by_day.get((str(employee_id), work_date.isoformat()))
+    return list(value) if isinstance(value, Iterable) and not isinstance(value, str | bytes) else []
 
 
 def role_category_rate_exists(
@@ -487,10 +595,11 @@ def base_shift_pay(
     return rate * payable_ratio
 
 
-def adjusted_shift_coeff(coeff: Decimal, minutes: int) -> Decimal:
-    if minutes >= int(FULL_SHIFT_MINUTES):
-        return coeff
-    return coeff * Decimal(minutes) / FULL_SHIFT_MINUTES
+def weekday_premium_for_day(settings: Mapping[str, Any], work_date: date) -> Decimal:
+    premiums = settings.get("payroll.weekday_premium", {})
+    if not isinstance(premiums, Mapping):
+        return Decimal("0")
+    return decimal(premiums.get(WEEKDAY_KEYS[work_date.weekday()], 0))
 
 
 def percent_components_for_day(

@@ -51,6 +51,30 @@ export type AppSettingHistory = {
 export type EmployeeStatus = "active" | "inactive" | "requires_setup";
 export type EmployeeCategory = "category_1" | "category_2" | "category_3" | "intern" | "freelancer";
 export type CookingStation = "sushi" | "pizza" | "shawarma";
+export type PayrollRole = CookingStation | "prep" | "administrator" | "manager";
+
+export type EmployeeRoleAssignment = {
+  id: string;
+  employee_id: string;
+  payroll_role: PayrollRole;
+  category: EmployeeCategory;
+  is_primary: boolean;
+  effective_from: string;
+  effective_to: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EmployeeRoleAssignmentCreate = {
+  payroll_role: PayrollRole;
+  category: EmployeeCategory;
+  is_primary?: boolean;
+  effective_from?: string | null;
+};
+
+export type EmployeeRoleAssignmentPatch = Partial<
+  Pick<EmployeeRoleAssignment, "payroll_role" | "category" | "is_primary">
+>;
 
 export type Employee = {
   id: string;
@@ -67,6 +91,7 @@ export type Employee = {
   iiko_sync_at: string | null;
   created_at: string;
   updated_at: string;
+  assignments: EmployeeRoleAssignment[];
 };
 
 export type EmployeePatch = Partial<
@@ -333,6 +358,38 @@ export async function getEmployees(filters: {
 export async function patchEmployee(id: string, patch: EmployeePatch): Promise<Employee> {
   const response = await api.patch<Employee>(`/employees/${id}`, patch);
   return response.data;
+}
+
+export async function getEmployeeAssignments(id: string): Promise<EmployeeRoleAssignment[]> {
+  const response = await api.get<EmployeeRoleAssignment[]>(`/employees/${id}/assignments`);
+  return response.data;
+}
+
+export async function createEmployeeAssignment(
+  id: string,
+  payload: EmployeeRoleAssignmentCreate,
+): Promise<EmployeeRoleAssignment> {
+  const response = await api.post<EmployeeRoleAssignment>(`/employees/${id}/assignments`, payload);
+  return response.data;
+}
+
+export async function patchEmployeeAssignment(
+  employeeId: string,
+  assignmentId: string,
+  payload: EmployeeRoleAssignmentPatch,
+): Promise<EmployeeRoleAssignment> {
+  const response = await api.patch<EmployeeRoleAssignment>(
+    `/employees/${employeeId}/assignments/${assignmentId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteEmployeeAssignment(
+  employeeId: string,
+  assignmentId: string,
+): Promise<void> {
+  await api.delete(`/employees/${employeeId}/assignments/${assignmentId}`);
 }
 
 export async function syncEmployees(): Promise<EmployeeSyncResult> {
