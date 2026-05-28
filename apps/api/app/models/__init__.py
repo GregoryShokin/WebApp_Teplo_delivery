@@ -15,9 +15,13 @@ from app.models.payroll import (
     AttendanceEntry,
     DepositAccount,
     DepositTransaction,
+    PayrollDeductionCategory,
     PayrollLine,
     PayrollPeriod,
+    PayrollRate,
+    PayrollRevenueShare,
     PayrollRun,
+    PayrollSeniorityPremium,
 )
 from app.models.period import Period
 from app.models.settings import AppSetting, AppSettingHistory
@@ -37,10 +41,14 @@ __all__ = [
     "DepositTransaction",
     "Employee",
     "Location",
+    "PayrollDeductionCategory",
     "Organization",
     "PayrollLine",
     "PayrollPeriod",
+    "PayrollRate",
+    "PayrollRevenueShare",
     "PayrollRun",
+    "PayrollSeniorityPremium",
     "ParsedDocument",
     "Period",
     "Role",

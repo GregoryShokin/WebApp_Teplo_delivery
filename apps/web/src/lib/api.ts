@@ -124,6 +124,58 @@ export type PayrollLine = {
   components: Record<string, unknown>;
 };
 
+export type PayrollRate = {
+  id: string;
+  position_group: string;
+  category: string;
+  station: string | null;
+  rate_type: "daily" | "hourly" | "monthly";
+  amount: number | null;
+  is_active: boolean;
+  effective_from: string;
+  effective_to: string | null;
+  created_at: string;
+};
+
+export type PayrollRatePayload = Omit<PayrollRate, "id" | "created_at">;
+
+export type PayrollRevenueShare = {
+  id: string;
+  position_group: string;
+  category: string;
+  percent: number;
+  effective_from: string;
+  effective_to: string | null;
+  created_at: string;
+};
+
+export type PayrollRevenueSharePayload = Omit<PayrollRevenueShare, "id" | "created_at">;
+
+export type PayrollDeductionCategory = {
+  id: string;
+  code: string;
+  display_name: string;
+  description: string | null;
+  type: "fine" | "withholding" | "deposit_writeoff";
+  default_amount: number | null;
+  effective_from: string;
+  effective_to: string | null;
+  created_at: string;
+};
+
+export type PayrollDeductionCategoryPayload = Omit<PayrollDeductionCategory, "id" | "created_at">;
+
+export type PayrollSeniorityPremium = {
+  id: string;
+  role: "senior" | "deputy_senior";
+  percent_of_base: number;
+  effective_from: string;
+  effective_to: string | null;
+  created_at: string;
+};
+
+export type PayrollSeniorityPremiumPayload = Omit<PayrollSeniorityPremium, "id" | "created_at">;
+
 export const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
   withCredentials: true,
@@ -269,5 +321,69 @@ export async function getPayrollRunLines(id: string): Promise<PayrollLine[]> {
 
 export async function finalizePayrollRun(id: string): Promise<PayrollRun> {
   const response = await api.post<PayrollRun>(`/payroll/runs/${id}/finalize`);
+  return response.data;
+}
+
+export async function getPayrollRates(history = false): Promise<PayrollRate[]> {
+  const response = await api.get<PayrollRate[]>("/payroll/config/rates", {
+    params: { history: history || undefined },
+  });
+  return response.data;
+}
+
+export async function putPayrollRate(payload: PayrollRatePayload): Promise<PayrollRate> {
+  const response = await api.put<PayrollRate>("/payroll/config/rates", payload);
+  return response.data;
+}
+
+export async function getPayrollRevenueShares(
+  history = false,
+): Promise<PayrollRevenueShare[]> {
+  const response = await api.get<PayrollRevenueShare[]>("/payroll/config/revenue-share", {
+    params: { history: history || undefined },
+  });
+  return response.data;
+}
+
+export async function putPayrollRevenueShare(
+  payload: PayrollRevenueSharePayload,
+): Promise<PayrollRevenueShare> {
+  const response = await api.put<PayrollRevenueShare>("/payroll/config/revenue-share", payload);
+  return response.data;
+}
+
+export async function getPayrollDeductions(
+  history = false,
+): Promise<PayrollDeductionCategory[]> {
+  const response = await api.get<PayrollDeductionCategory[]>("/payroll/config/deductions", {
+    params: { history: history || undefined },
+  });
+  return response.data;
+}
+
+export async function putPayrollDeduction(
+  payload: PayrollDeductionCategoryPayload,
+): Promise<PayrollDeductionCategory> {
+  const response = await api.put<PayrollDeductionCategory>("/payroll/config/deductions", payload);
+  return response.data;
+}
+
+export async function getPayrollSeniorityPremiums(
+  history = false,
+): Promise<PayrollSeniorityPremium[]> {
+  const response = await api.get<PayrollSeniorityPremium[]>(
+    "/payroll/config/seniority-premium",
+    { params: { history: history || undefined } },
+  );
+  return response.data;
+}
+
+export async function putPayrollSeniorityPremium(
+  payload: PayrollSeniorityPremiumPayload,
+): Promise<PayrollSeniorityPremium> {
+  const response = await api.put<PayrollSeniorityPremium>(
+    "/payroll/config/seniority-premium",
+    payload,
+  );
   return response.data;
 }

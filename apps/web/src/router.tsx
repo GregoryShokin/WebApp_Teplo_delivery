@@ -5,6 +5,7 @@ import { EmptyModule } from "@/components/layout/EmptyModule";
 import { Toaster } from "@/components/ui/sonner";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { LoginRoute } from "@/routes/login";
+import { PayrollConfigurationRoute } from "@/routes/payroll/configuration";
 import { PayrollRunDetailRoute } from "@/routes/payroll/run-detail";
 import { PayrollRunsRoute } from "@/routes/payroll/runs";
 import { SettingsRoute } from "@/routes/settings";
@@ -55,6 +56,10 @@ const routes: AppRoute[] = [
         render: ({ navigate, params }) => (
           <PayrollRunDetailRoute runId={params.id ?? ""} onNavigate={navigate} />
         ),
+      },
+      {
+        path: "configuration",
+        render: ({ navigate }) => <PayrollConfigurationRoute onNavigate={navigate} />,
       },
     ],
   },

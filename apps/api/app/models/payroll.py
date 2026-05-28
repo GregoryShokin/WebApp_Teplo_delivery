@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -175,3 +176,170 @@ class AccumulationFundAccount(Base):
     accumulated_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     paid_out_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+
+
+class PayrollRate(Base):
+    __tablename__ = "payroll_rate"
+    __table_args__ = (
+        CheckConstraint(
+            "rate_type in ('daily', 'hourly', 'monthly')",
+            name="ck_payroll_rate_rate_type",
+        ),
+        CheckConstraint(
+            "category in ('category_1', 'category_2', 'category_3', 'intern', 'freelancer')",
+            name="ck_payroll_rate_category_value",
+        ),
+        CheckConstraint("amount >= 0", name="ck_payroll_rate_amount_non_negative"),
+        CheckConstraint(
+            "effective_to is null or effective_to > effective_from",
+            name="ck_payroll_rate_effective_range",
+        ),
+        UniqueConstraint(
+            "position_group",
+            "category",
+            "station",
+            "rate_type",
+            "effective_from",
+            name="uq_payroll_rate_natural_effective_from",
+        ),
+        Index(
+            "ix_payroll_rate_current_lookup",
+            "position_group",
+            "category",
+            "station",
+            "rate_type",
+            "effective_from",
+            "effective_to",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    position_group: Mapped[str] = mapped_column(String(160), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    station: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    rate_type: Mapped[str] = mapped_column(String(24), nullable=False, default="daily")
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PayrollRevenueShare(Base):
+    __tablename__ = "payroll_revenue_share"
+    __table_args__ = (
+        CheckConstraint("percent >= 0", name="ck_payroll_revenue_share_percent_non_negative"),
+        CheckConstraint(
+            "effective_to is null or effective_to > effective_from",
+            name="ck_payroll_revenue_share_effective_range",
+        ),
+        UniqueConstraint(
+            "position_group",
+            "category",
+            "effective_from",
+            name="uq_payroll_revenue_share_natural_effective_from",
+        ),
+        Index(
+            "ix_payroll_revenue_share_current_lookup",
+            "position_group",
+            "category",
+            "effective_from",
+            "effective_to",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    position_group: Mapped[str] = mapped_column(String(160), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    percent: Mapped[Decimal] = mapped_column(Numeric(8, 5), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PayrollDeductionCategory(Base):
+    __tablename__ = "payroll_deduction_category"
+    __table_args__ = (
+        CheckConstraint(
+            "type in ('fine', 'withholding', 'deposit_writeoff')",
+            name="ck_payroll_deduction_category_type",
+        ),
+        CheckConstraint(
+            "default_amount is null or default_amount >= 0",
+            name="ck_payroll_deduction_category_default_amount_non_negative",
+        ),
+        CheckConstraint(
+            "effective_to is null or effective_to > effective_from",
+            name="ck_payroll_deduction_category_effective_range",
+        ),
+        UniqueConstraint(
+            "code",
+            "effective_from",
+            name="uq_payroll_deduction_category_code_effective_from",
+        ),
+        Index(
+            "ix_payroll_deduction_category_current_lookup",
+            "code",
+            "effective_from",
+            "effective_to",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code: Mapped[str] = mapped_column(String(96), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    type: Mapped[str] = mapped_column(String(32), nullable=False)
+    default_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PayrollSeniorityPremium(Base):
+    __tablename__ = "payroll_seniority_premium"
+    __table_args__ = (
+        CheckConstraint(
+            "role in ('senior', 'deputy_senior')",
+            name="ck_payroll_seniority_premium_role",
+        ),
+        CheckConstraint(
+            "percent_of_base >= 0",
+            name="ck_payroll_seniority_premium_percent_non_negative",
+        ),
+        CheckConstraint(
+            "effective_to is null or effective_to > effective_from",
+            name="ck_payroll_seniority_premium_effective_range",
+        ),
+        UniqueConstraint(
+            "role",
+            "effective_from",
+            name="uq_payroll_seniority_premium_role_effective_from",
+        ),
+        Index(
+            "ix_payroll_seniority_premium_current_lookup",
+            "role",
+            "effective_from",
+            "effective_to",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    percent_of_base: Mapped[Decimal] = mapped_column(Numeric(8, 5), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

@@ -19,7 +19,10 @@ from app.models import (
     PayrollRun,
 )
 from app.services.attendance_loader import build_attendance_entry
-from app.services.payroll_calculator import calculate_payroll_lines_from_inputs
+from app.services.payroll_calculator import (
+    PAYROLL_RATE_CONFIG_KEY,
+    calculate_payroll_lines_from_inputs,
+)
 from app.services.payroll_runner import (
     PayrollConflictError,
     apply_deposit_write_offs_to_accounts,
@@ -32,8 +35,8 @@ from app.services.payroll_runner import (
 def payroll_settings(revenue: dict[str, int] | None = None) -> dict[str, Any]:
     return {
         "payroll.role_category_rates": {
-            "Пиццерист": {"2": 2200},
-            "Сушист": {"2": 2400},
+            "Пиццерист": {"category_2": 2200},
+            "Сушист": {"category_2": 2400},
         },
         "payroll.category_rules": {
             "2": {"coeff": 7.5, "deposit_target": 15000, "deposit_withholding": 1000}
@@ -75,7 +78,7 @@ def make_employee(
     *,
     status: str = "active",
     position: str | None = "Пиццерист",
-    category: str | None = "2",
+    category: str | None = "category_2",
     hire_date: date | None = None,
 ) -> Employee:
     return Employee(
@@ -179,7 +182,7 @@ def test_unknown_or_unconfigured_employee_blocks_payroll_and_finalize() -> None:
 def test_employee_position_does_not_backfill_missing_payroll_role() -> None:
     period = make_period()
     run_id = uuid.uuid4()
-    employee = make_employee(position="Пиццерист", category="2")
+    employee = make_employee(position="Пиццерист", category="category_2")
     entry = make_entry(period, employee, period.start_date, role=None)
 
     result = calculate_payroll_lines_from_inputs(
@@ -213,6 +216,56 @@ def test_fixed_salary_for_full_week_is_calculated() -> None:
     assert result.blocking_issues == []
     assert result.lines[0].base_pay == 15400
     assert result.lines[0].total_payable == 15400
+
+
+def test_payroll_calculator_prefers_versioned_rate_configuration() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    entry = make_entry(period, employee, period.start_date)
+    settings = payroll_settings()
+    del settings["payroll.role_category_rates"]
+    settings[PAYROLL_RATE_CONFIG_KEY] = [
+        {
+            "position_group": "Пиццерист",
+            "category": "category_2",
+            "station": None,
+            "rate_type": "daily",
+            "amount": Decimal("3100"),
+            "effective_from": date(2026, 1, 1),
+            "effective_to": None,
+        }
+    ]
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].base_pay == 3100
+
+
+def test_freelancer_category_does_not_match_legacy_daily_rate() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(category="freelancer")
+    entry = make_entry(period, employee, period.start_date)
+    settings = payroll_settings()
+    settings["payroll.role_category_rates"] = {"Пиццерист": {"6": 5000}}
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues[0]["type"] == "missing_role_category_rate"
 
 
 def test_percent_from_revenue_uses_settings_revenue_mock() -> None:

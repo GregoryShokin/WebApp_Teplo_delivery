@@ -50,6 +50,10 @@ EXPECTED_TABLES = {
     "deposit_account",
     "deposit_transaction",
     "accumulation_fund_account",
+    "payroll_rate",
+    "payroll_revenue_share",
+    "payroll_deduction_category",
+    "payroll_seniority_premium",
 }
 
 
@@ -80,6 +84,10 @@ def test_all_models_import() -> None:
         "AttendanceEntry",
         "PayrollRun",
         "PayrollLine",
+        "PayrollRate",
+        "PayrollRevenueShare",
+        "PayrollDeductionCategory",
+        "PayrollSeniorityPremium",
         "DepositAccount",
         "DepositTransaction",
         "AccumulationFundAccount",
@@ -110,6 +118,19 @@ def test_app_setting_display_metadata_columns_are_declared() -> None:
     assert columns.widget_type.nullable is False
     assert "widget_options" in columns
     assert "unit" in columns
+
+
+def test_payroll_configuration_tables_are_declared() -> None:
+    rate_columns = models.PayrollRate.__table__.c
+    deduction_columns = models.PayrollDeductionCategory.__table__.c
+    premium_columns = models.PayrollSeniorityPremium.__table__.c
+
+    assert rate_columns.position_group.nullable is False
+    assert rate_columns.amount.nullable is True
+    assert rate_columns.is_active.nullable is False
+    assert rate_columns.effective_to.nullable is True
+    assert deduction_columns.code.nullable is False
+    assert premium_columns.percent_of_base.nullable is False
 
 
 def test_counterparty_inn_partial_unique_index_is_declared() -> None:
@@ -191,6 +212,57 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
                 "app_setting_history": await conn.scalar(
                     text("select count(*) from app_setting_history")
                 ),
+                "payroll_rate": await conn.scalar(text("select count(*) from payroll_rate")),
+                "payroll_revenue_share": await conn.scalar(
+                    text("select count(*) from payroll_revenue_share")
+                ),
+                "payroll_deduction_category": await conn.scalar(
+                    text("select count(*) from payroll_deduction_category")
+                ),
+                "payroll_seniority_premium": await conn.scalar(
+                    text("select count(*) from payroll_seniority_premium")
+                ),
+                "invalid_payroll_rate_category": await conn.scalar(
+                    text(
+                        """
+                        select count(*)
+                          from payroll_rate
+                         where category not in (
+                             'category_1',
+                             'category_2',
+                             'category_3',
+                             'intern',
+                             'freelancer'
+                         )
+                        """
+                    )
+                ),
+                "invalid_employee_category": await conn.scalar(
+                    text(
+                        """
+                        select count(*)
+                          from employee
+                         where category is not null
+                           and category not in (
+                               'category_1',
+                               'category_2',
+                               'category_3',
+                               'intern',
+                               'freelancer'
+                           )
+                        """
+                    )
+                ),
+                "inactive_payroll_rate_placeholder": await conn.scalar(
+                    text(
+                        """
+                        select count(*)
+                          from payroll_rate
+                         where is_active = false
+                           and amount is null
+                        """
+                    )
+                ),
             }
     finally:
         await engine.dispose()
@@ -203,6 +275,13 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
         "user": 1,
         "app_setting": 20,
         "app_setting_history": 20,
+        "payroll_rate": 20,
+        "payroll_revenue_share": 4,
+        "payroll_deduction_category": 4,
+        "payroll_seniority_premium": 2,
+        "invalid_payroll_rate_category": 0,
+        "invalid_employee_category": 0,
+        "inactive_payroll_rate_placeholder": 6,
     }
 
 

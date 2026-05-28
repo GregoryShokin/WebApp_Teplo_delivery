@@ -9,16 +9,29 @@ from datetime import date
 from decimal import ROUND_FLOOR, Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AppSetting, AttendanceEntry, Employee, PayrollLine, PayrollPeriod
+from app.models import (
+    AppSetting,
+    AttendanceEntry,
+    Employee,
+    PayrollLine,
+    PayrollPeriod,
+    PayrollRate,
+)
 
 MONEY = Decimal("0.01")
 FULL_SHIFT_MINUTES = Decimal(12 * 60)
+CATEGORY_RULE_KEY_BY_APP_CATEGORY = {
+    "category_1": "1",
+    "category_2": "2",
+    "category_3": "3",
+    "intern": "4",
+    "freelancer": "6",
+}
 
 PAYROLL_SETTING_KEYS = {
-    "payroll.role_category_rates",
     "payroll.category_rules",
     "payroll.revenue_percent_tiers",
     "payroll.allowances",
@@ -27,6 +40,7 @@ PAYROLL_SETTING_KEYS = {
     "payroll.deposit_auto_withholding_enabled",
     "payroll.deposit_fund_payment_date",
 }
+PAYROLL_RATE_CONFIG_KEY = "payroll.role_category_rates_by_date"
 
 
 @dataclass(slots=True)
@@ -51,6 +65,11 @@ async def calculate_payroll_lines(
         ).all()
     }
     settings = await load_payroll_settings(session)
+    settings[PAYROLL_RATE_CONFIG_KEY] = await load_payroll_rate_versions(
+        session,
+        period.start_date,
+        period.end_date,
+    )
     return calculate_payroll_lines_from_inputs(period, run_id, entries, employees, settings)
 
 
@@ -59,6 +78,33 @@ async def load_payroll_settings(session: AsyncSession) -> dict[str, Any]:
         select(AppSetting).where(AppSetting.key.in_(PAYROLL_SETTING_KEYS))
     )
     return {setting.key: setting.value for setting in result.all()}
+
+
+async def load_payroll_rate_versions(
+    session: AsyncSession,
+    start_date: date,
+    end_date: date,
+) -> list[dict[str, Any]]:
+    result = await session.scalars(
+        select(PayrollRate).where(
+            PayrollRate.effective_from <= end_date,
+            or_(PayrollRate.effective_to.is_(None), PayrollRate.effective_to > start_date),
+            PayrollRate.is_active.is_(True),
+            PayrollRate.amount.is_not(None),
+        )
+    )
+    return [
+        {
+            "position_group": rate.position_group,
+            "category": rate.category,
+            "station": rate.station,
+            "rate_type": rate.rate_type,
+            "amount": rate.amount,
+            "effective_from": rate.effective_from,
+            "effective_to": rate.effective_to,
+        }
+        for rate in result.all()
+    ]
 
 
 def calculate_payroll_lines_from_inputs(
@@ -77,41 +123,43 @@ def calculate_payroll_lines_from_inputs(
             summary={"blocking_issue_count": len(blocking_issues)},
         )
 
-    grouped_minutes: dict[tuple[uuid.UUID, str, date], int] = defaultdict(int)
+    grouped_minutes: dict[tuple[uuid.UUID, str, date, str | None], int] = defaultdict(int)
     for entry in entries:
         employee = employees[entry.employee_id]
         role = payroll_role_for_entry(entry, employee)
-        grouped_minutes[(entry.employee_id, role, entry.work_date)] += entry.minutes_worked
+        station = (entry.station or "").strip() or None
+        grouped_minutes[(entry.employee_id, role, entry.work_date, station)] += entry.minutes_worked
 
     daily_coefficients: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
-    day_components: dict[tuple[uuid.UUID, str, date], dict[str, Any]] = {}
+    day_components: dict[tuple[uuid.UUID, str, date, str | None], dict[str, Any]] = {}
 
-    for (employee_id, role, work_date), minutes in grouped_minutes.items():
+    for (employee_id, role, work_date, station), minutes in grouped_minutes.items():
         employee = employees[employee_id]
         category = str(employee.category)
         coeff = category_coeff(settings, category)
         adjusted_coeff = adjusted_shift_coeff(coeff, minutes)
         daily_coefficients[work_date] += adjusted_coeff
-        day_components[(employee_id, role, work_date)] = {
+        day_components[(employee_id, role, work_date, station)] = {
             "date": work_date.isoformat(),
             "minutes": minutes,
             "hours": float(Decimal(minutes) / Decimal(60)),
             "role": role,
             "category": category,
+            "station": station,
             "adjusted_coeff": float(adjusted_coeff),
         }
 
     line_totals: dict[tuple[uuid.UUID, str], dict[str, Any]] = {}
-    for (employee_id, role, work_date), minutes in sorted(
-        grouped_minutes.items(), key=lambda item: (item[0][2], item[0][1])
+    for (employee_id, role, work_date, station), minutes in sorted(
+        grouped_minutes.items(), key=lambda item: (item[0][2], item[0][1], item[0][3] or "")
     ):
         employee = employees[employee_id]
         category = str(employee.category)
-        base_pay = base_shift_pay(settings, role, category, employee, minutes)
+        base_pay = base_shift_pay(settings, role, category, employee, minutes, work_date, station)
         percent_pay, percent_components = percent_for_day(
             settings,
             work_date,
-            day_components[(employee_id, role, work_date)]["adjusted_coeff"],
+            day_components[(employee_id, role, work_date, station)]["adjusted_coeff"],
             daily_coefficients[work_date],
         )
         fund_accrual = fund_for_base_pay(settings, employee, period.end_date, base_pay)
@@ -130,7 +178,7 @@ def calculate_payroll_lines_from_inputs(
         totals["base_pay"] += base_pay
         totals["percent_pay"] += percent_pay
         totals["fund_accrual"] += fund_accrual
-        day_component = day_components[(employee_id, role, work_date)]
+        day_component = day_components[(employee_id, role, work_date, station)]
         day_component.update(
             {
                 "base_pay": money(base_pay),
@@ -224,7 +272,13 @@ def validate_calculation_inputs(
             )
         if not category:
             issues.append(needs_setup_issue(employee))
-        elif role and not role_category_rate_exists(settings, role, category):
+        elif role and not role_category_rate_exists(
+            settings,
+            role,
+            category,
+            entry.work_date,
+            entry.station,
+        ):
             issues.append(
                 {
                     "type": "missing_role_category_rate",
@@ -251,11 +305,30 @@ def payroll_role_for_entry(entry: AttendanceEntry, employee: Employee) -> str:
     return (entry.role or "").strip()
 
 
-def role_category_rate_exists(settings: Mapping[str, Any], role: str, category: str) -> bool:
-    return role_category_rate(settings, role, category) is not None
+def role_category_rate_exists(
+    settings: Mapping[str, Any],
+    role: str,
+    category: str,
+    work_date: date | None = None,
+    station: str | None = None,
+) -> bool:
+    return role_category_rate(settings, role, category, work_date, station) is not None
 
 
-def role_category_rate(settings: Mapping[str, Any], role: str, category: str) -> Decimal | None:
+def role_category_rate(
+    settings: Mapping[str, Any],
+    role: str,
+    category: str,
+    work_date: date | None = None,
+    station: str | None = None,
+) -> Decimal | None:
+    if category_rule_key(category) == "6":
+        return None
+
+    versioned_rate = role_category_rate_from_versions(settings, role, category, work_date, station)
+    if versioned_rate is not None:
+        return versioned_rate
+
     rates = settings.get("payroll.role_category_rates")
     if not isinstance(rates, Mapping):
         return None
@@ -263,14 +336,74 @@ def role_category_rate(settings: Mapping[str, Any], role: str, category: str) ->
     role_rates = rates.get(role)
     if isinstance(role_rates, Mapping):
         value = role_rates.get(category)
+        if value is None:
+            value = role_rates.get(category_rule_key(category))
     if value is None:
-        value = rates.get(f"{role} / {category}") or rates.get(f"{role}/{category}")
+        normalized_category = category_rule_key(category)
+        value = (
+            rates.get(f"{role} / {category}")
+            or rates.get(f"{role}/{category}")
+            or rates.get(f"{role} / {normalized_category}")
+            or rates.get(f"{role}/{normalized_category}")
+        )
     return decimal_or_none(value)
+
+
+def role_category_rate_from_versions(
+    settings: Mapping[str, Any],
+    role: str,
+    category: str,
+    work_date: date | None,
+    station: str | None,
+) -> Decimal | None:
+    rates = settings.get(PAYROLL_RATE_CONFIG_KEY)
+    if not isinstance(rates, list):
+        return None
+
+    candidates: list[tuple[int, date, Decimal]] = []
+    normalized_role = normalized_key(role)
+    normalized_categories = normalized_category_keys(category)
+    normalized_station = normalized_key(station)
+
+    for item in rates:
+        if not isinstance(item, Mapping):
+            continue
+        if normalized_key(item.get("position_group")) != normalized_role:
+            continue
+        if normalized_key(item.get("category")) not in normalized_categories:
+            continue
+        if str(item.get("rate_type") or "daily") != "daily":
+            continue
+
+        item_station = normalized_key(item.get("station"))
+        if item_station and item_station != normalized_station:
+            continue
+        if item_station and not normalized_station:
+            continue
+
+        effective_from = date_or_none(item.get("effective_from"))
+        effective_to = date_or_none(item.get("effective_to"))
+        if work_date is not None:
+            if effective_from is not None and effective_from > work_date:
+                continue
+            if effective_to is not None and effective_to <= work_date:
+                continue
+
+        amount = decimal_or_none(item.get("amount"))
+        if amount is None:
+            continue
+        station_score = 1 if item_station else 0
+        candidates.append((station_score, effective_from or date.min, amount))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda candidate: (candidate[0], candidate[1]), reverse=True)
+    return candidates[0][2]
 
 
 def category_coeff(settings: Mapping[str, Any], category: str) -> Decimal:
     rules = settings["payroll.category_rules"]
-    return decimal(rules[category]["coeff"])
+    return decimal(rules[category_rule_key(category)]["coeff"])
 
 
 def base_shift_pay(
@@ -279,8 +412,10 @@ def base_shift_pay(
     category: str,
     employee: Employee,
     minutes: int,
+    work_date: date | None = None,
+    station: str | None = None,
 ) -> Decimal:
-    rate = role_category_rate(settings, role, category) or Decimal("0")
+    rate = role_category_rate(settings, role, category, work_date, station) or Decimal("0")
     allowances = settings["payroll.allowances"]
     if employee.is_senior:
         rate += decimal(allowances.get("senior", 0))
@@ -363,7 +498,7 @@ def deposit_withholding(
     if not settings.get("payroll.deposit_auto_withholding_enabled"):
         return Decimal("0")
     category = str(employee.category or "")
-    rules = settings["payroll.category_rules"].get(category, {})
+    rules = settings["payroll.category_rules"].get(category_rule_key(category), {})
     withholding = decimal(rules.get("deposit_withholding", 0))
     return min(withholding, payable_before_deduction)
 
@@ -409,3 +544,28 @@ def decimal_or_none(value: Any) -> Decimal | None:
 
 def money(value: Any) -> float:
     return float(decimal(value).quantize(MONEY))
+
+
+def normalized_key(value: Any) -> str:
+    return str(value or "").strip().casefold()
+
+
+def normalized_category_keys(value: Any) -> set[str]:
+    text = str(value or "").strip()
+    return {normalized_key(text), normalized_key(category_rule_key(text))}
+
+
+def category_rule_key(value: Any) -> str:
+    text = str(value or "").strip()
+    return CATEGORY_RULE_KEY_BY_APP_CATEGORY.get(text, text)
+
+
+def date_or_none(value: Any) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        return None

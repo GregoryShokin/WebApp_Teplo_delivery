@@ -7,6 +7,7 @@ import {
   CalendarClock,
   CalendarDays,
   ChevronDown,
+  ClipboardList,
   Flame,
   Home,
   Landmark,
@@ -68,6 +69,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: "Расчёты", href: "/payroll/runs", icon: Banknote },
       { label: "График сотрудников", href: "/schedule", icon: CalendarDays },
+      { label: "Исходные данные", href: "/payroll/configuration", icon: ClipboardList },
     ],
   },
   {
