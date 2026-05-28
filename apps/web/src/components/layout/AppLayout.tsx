@@ -7,6 +7,7 @@ import {
   CalendarClock,
   CalendarDays,
   ChevronDown,
+  ClipboardCheck,
   ClipboardList,
   Flame,
   Home,
@@ -68,6 +69,7 @@ const navGroups: NavGroup[] = [
     title: "Зарплата",
     items: [
       { label: "Расчёты", href: "/payroll/runs", icon: Banknote },
+      { label: "Учёт смен", href: "/payroll/daily-ledger", icon: ClipboardCheck },
       { label: "График сотрудников", href: "/schedule", icon: CalendarDays },
       { label: "Исходные данные", href: "/payroll/configuration", icon: ClipboardList },
     ],

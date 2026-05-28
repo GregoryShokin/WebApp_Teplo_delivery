@@ -77,6 +77,40 @@ class AttendanceEntry(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ShiftLedgerEntry(Base):
+    __tablename__ = "shift_ledger_entry"
+    __table_args__ = (
+        CheckConstraint(
+            "source in ('schedule', 'manual_correction', 'fallback_primary')",
+            name="ck_shift_ledger_entry_source",
+        ),
+        UniqueConstraint(
+            "work_date",
+            "employee_id",
+            name="uq_shift_ledger_entry_work_date_employee",
+        ),
+        Index("ix_shift_ledger_entry_work_date", "work_date"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    work_date: Mapped[date] = mapped_column(Date, nullable=False)
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee.id", ondelete="RESTRICT"), nullable=False
+    )
+    payroll_role: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="fallback_primary")
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_resolved: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+
+
 class PayrollRun(Base):
     __tablename__ = "payroll_run"
     __table_args__ = (Index("ix_payroll_run_period_started", "period_id", "started_at"),)

@@ -46,6 +46,7 @@ EXPECTED_TABLES = {
     "app_setting_history",
     "payroll_period",
     "attendance_entry",
+    "shift_ledger_entry",
     "payroll_run",
     "payroll_line",
     "deposit_account",
@@ -87,6 +88,7 @@ def test_all_models_import() -> None:
         "AppSettingHistory",
         "PayrollPeriod",
         "AttendanceEntry",
+        "ShiftLedgerEntry",
         "PayrollRun",
         "PayrollLine",
         "PayrollRate",
@@ -182,6 +184,21 @@ def test_percent_methodology_is_additive_for_existing_payroll_runs() -> None:
         "total_payable",
         "components",
     } <= line_columns
+
+
+def test_shift_ledger_entry_table_is_declared() -> None:
+    columns = models.ShiftLedgerEntry.__table__.c
+    indexes = {index.name for index in models.ShiftLedgerEntry.__table__.indexes}
+
+    assert columns.work_date.nullable is False
+    assert columns.employee_id.nullable is False
+    assert columns.payroll_role.nullable is True
+    assert columns.category.nullable is True
+    assert columns.source.nullable is False
+    assert columns.opened_at.nullable is False
+    assert columns.closed_at.nullable is True
+    assert columns.is_resolved.nullable is False
+    assert "ix_shift_ledger_entry_work_date" in indexes
 
 
 def test_counterparty_inn_partial_unique_index_is_declared() -> None:

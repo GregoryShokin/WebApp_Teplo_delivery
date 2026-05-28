@@ -15,6 +15,7 @@ class CurrentActor:
 
 
 ROLE_HIERARCHY = ("manager", "accountant", "finance_manager", "owner", "admin")
+MANAGER_PLUS = frozenset(ROLE_HIERARCHY)
 FINANCE_MANAGER_PLUS = frozenset({"finance_manager", "owner", "admin"})
 
 
@@ -53,5 +54,11 @@ async def get_current_actor(
 
 def require_finance_manager_plus(actor: CurrentActor) -> None:
     if actor.roles & FINANCE_MANAGER_PLUS:
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+
+
+def require_manager_plus(actor: CurrentActor) -> None:
+    if actor.roles & MANAGER_PLUS:
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")

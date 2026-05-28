@@ -51,3 +51,27 @@ class PayrollLineRead(BaseModel):
     deduction: float
     total_payable: float
     components: dict[str, Any]
+
+
+class ShiftLedgerBuildRequest(BaseModel):
+    work_date: date
+
+
+class ShiftLedgerPatch(BaseModel):
+    payroll_role: str
+    category: str
+
+
+class ShiftLedgerEntryRead(BaseModel):
+    id: uuid.UUID
+    work_date: date
+    employee_id: uuid.UUID
+    employee_name: str
+    employee_iiko_id: str
+    payroll_role: str | None = None
+    category: str | None = None
+    source: str
+    opened_at: datetime
+    closed_at: datetime | None = None
+    notes: str | None = None
+    is_resolved: bool

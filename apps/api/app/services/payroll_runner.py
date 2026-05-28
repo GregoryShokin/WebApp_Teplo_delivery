@@ -26,7 +26,6 @@ from app.services.payroll_calculator import (
     deduplicate_issues,
     money,
     needs_setup_issue,
-    payroll_role_for_entry,
     summarize_lines,
 )
 
@@ -207,8 +206,6 @@ async def collect_blocking_issues(
                     "fire_date": employee.fire_date.isoformat(),
                 }
             )
-        if not payroll_role_for_entry(entry, employee) or not employee.category:
-            issues.append(needs_setup_issue(employee))
     return deduplicate_issues(issues)
 
 

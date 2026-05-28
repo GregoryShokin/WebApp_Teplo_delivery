@@ -149,6 +149,28 @@ export type PayrollLine = {
   components: Record<string, unknown>;
 };
 
+export type ShiftLedgerSource = "schedule" | "manual_correction" | "fallback_primary";
+
+export type ShiftLedgerEntry = {
+  id: string;
+  work_date: string;
+  employee_id: string;
+  employee_name: string;
+  employee_iiko_id: string;
+  payroll_role: PayrollRole | string | null;
+  category: EmployeeCategory | null;
+  source: ShiftLedgerSource;
+  opened_at: string;
+  closed_at: string | null;
+  notes: string | null;
+  is_resolved: boolean;
+};
+
+export type ShiftLedgerPatch = {
+  payroll_role: PayrollRole | string;
+  category: EmployeeCategory;
+};
+
 export type PayrollRate = {
   id: string | null;
   position_group: string;
@@ -424,6 +446,28 @@ export async function getPayrollRunLines(id: string): Promise<PayrollLine[]> {
 
 export async function finalizePayrollRun(id: string): Promise<PayrollRun> {
   const response = await api.post<PayrollRun>(`/payroll/runs/${id}/finalize`);
+  return response.data;
+}
+
+export async function getShiftLedger(workDate: string): Promise<ShiftLedgerEntry[]> {
+  const response = await api.get<ShiftLedgerEntry[]>("/shifts/ledger", {
+    params: { date: workDate },
+  });
+  return response.data;
+}
+
+export async function buildShiftLedger(workDate: string): Promise<ShiftLedgerEntry[]> {
+  const response = await api.post<ShiftLedgerEntry[]>("/shifts/ledger/build", {
+    work_date: workDate,
+  });
+  return response.data;
+}
+
+export async function patchShiftLedgerEntry(
+  id: string,
+  payload: ShiftLedgerPatch,
+): Promise<ShiftLedgerEntry> {
+  const response = await api.patch<ShiftLedgerEntry>(`/shifts/ledger/${id}`, payload);
   return response.data;
 }
 

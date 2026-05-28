@@ -25,6 +25,7 @@ from app.models.payroll import (
     PayrollRun,
     PayrollSeniorityPremium,
     RevenueTier,
+    ShiftLedgerEntry,
 )
 from app.models.period import Period
 from app.models.settings import AppSetting, AppSettingHistory
@@ -59,6 +60,7 @@ __all__ = [
     "Period",
     "RevenueTier",
     "Role",
+    "ShiftLedgerEntry",
     "SourceCredential",
     "SourceDocument",
     "SourceSnapshot",

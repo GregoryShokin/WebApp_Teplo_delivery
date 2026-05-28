@@ -20,8 +20,10 @@ from app.models import (
     PayrollPeriod,
     PayrollRate,
     PayrollRoleCategoryAvailability,
+    ShiftLedgerEntry,
 )
 from app.services.employee_assignments import (
+    PAYROLL_ROLE_LABELS,
     assignment_role_for_payroll_context,
     get_assignments,
 )
@@ -59,6 +61,7 @@ PAYROLL_SETTING_KEYS = {
 }
 PAYROLL_RATE_CONFIG_KEY = "payroll.role_category_rates_by_date"
 EMPLOYEE_ASSIGNMENTS_CONFIG_KEY = "employee.role_assignments_by_date"
+SHIFT_LEDGER_CONFIG_KEY = "shift_ledger.entries_by_date"
 WEEKDAY_KEYS = (
     "monday",
     "tuesday",
@@ -111,6 +114,7 @@ async def calculate_payroll_lines(
         session,
         entries,
     )
+    settings[SHIFT_LEDGER_CONFIG_KEY] = await load_shift_ledger_for_entries(session, entries)
     return calculate_payroll_lines_from_inputs(period, run_id, entries, employees, settings)
 
 
@@ -175,6 +179,24 @@ async def load_employee_assignments_for_entries(
     return assignments_by_day
 
 
+async def load_shift_ledger_for_entries(
+    session: AsyncSession,
+    entries: Iterable[AttendanceEntry],
+) -> dict[tuple[uuid.UUID, date], ShiftLedgerEntry]:
+    entry_days = {(entry.employee_id, entry.work_date) for entry in entries}
+    if not entry_days:
+        return {}
+    employee_ids = {employee_id for employee_id, _work_date in entry_days}
+    work_dates = {work_date for _employee_id, work_date in entry_days}
+    result = await session.scalars(
+        select(ShiftLedgerEntry).where(
+            ShiftLedgerEntry.employee_id.in_(employee_ids),
+            ShiftLedgerEntry.work_date.in_(work_dates),
+        )
+    )
+    return {(entry.employee_id, entry.work_date): entry for entry in result.all()}
+
+
 def calculate_payroll_lines_from_inputs(
     period: PayrollPeriod,
     run_id: uuid.UUID,
@@ -195,7 +217,7 @@ def calculate_payroll_lines_from_inputs(
     group_categories: dict[tuple[uuid.UUID, str, date, str | None], str] = {}
     for entry in entries:
         employee = employees[entry.employee_id]
-        role = payroll_role_for_entry(entry, employee)
+        role = payroll_role_for_entry(entry, employee, settings)
         station = (entry.station or "").strip() or None
         group_key = (entry.employee_id, role, entry.work_date, station)
         grouped_minutes[group_key] += entry.minutes_worked
@@ -368,7 +390,7 @@ def validate_calculation_inputs(
                     "fire_date": employee.fire_date.isoformat(),
                 }
             )
-        role = payroll_role_for_entry(entry, employee)
+        role = payroll_role_for_entry(entry, employee, settings)
         category = category_for_payroll_entry(
             settings,
             employee,
@@ -415,7 +437,15 @@ def needs_setup_issue(employee: Employee) -> dict[str, Any]:
     }
 
 
-def payroll_role_for_entry(entry: AttendanceEntry, employee: Employee) -> str:
+def payroll_role_for_entry(
+    entry: AttendanceEntry,
+    employee: Employee,
+    settings: Mapping[str, Any] | None = None,
+) -> str:
+    if settings is not None:
+        ledger_entry = ledger_entry_for_employee_date(settings, employee.id, entry.work_date)
+        if ledger_entry is not None:
+            return clean_string(getattr(ledger_entry, "payroll_role", None))
     return (entry.role or "").strip()
 
 
@@ -426,6 +456,10 @@ def category_for_payroll_entry(
     role: str | None,
     station: str | None,
 ) -> str:
+    ledger_entry = ledger_entry_for_employee_date(settings, employee.id, work_date)
+    if ledger_entry is not None:
+        return clean_string(getattr(ledger_entry, "category", None))
+
     assignments = assignments_for_employee_date(settings, employee.id, work_date)
     if assignments:
         assignment_role = assignment_role_for_payroll_context(role, station)
@@ -455,6 +489,20 @@ def category_for_payroll_entry(
         if first is not None:
             return str(first.category)
     return str(employee.category or "")
+
+
+def ledger_entry_for_employee_date(
+    settings: Mapping[str, Any],
+    employee_id: uuid.UUID,
+    work_date: date,
+) -> Any | None:
+    ledger_by_day = settings.get(SHIFT_LEDGER_CONFIG_KEY)
+    if not isinstance(ledger_by_day, Mapping):
+        return None
+    value = ledger_by_day.get((employee_id, work_date))
+    if value is None:
+        value = ledger_by_day.get((str(employee_id), work_date.isoformat()))
+    return value
 
 
 def assignments_for_employee_date(
@@ -499,19 +547,25 @@ def role_category_rate(
     if not isinstance(rates, Mapping):
         return None
     value = None
-    role_rates = rates.get(role)
-    if isinstance(role_rates, Mapping):
-        value = role_rates.get(category)
-        if value is None:
-            value = role_rates.get(category_rule_key(category))
+    for role_key in role_lookup_keys(role):
+        role_rates = rates.get(role_key)
+        if isinstance(role_rates, Mapping):
+            value = role_rates.get(category)
+            if value is None:
+                value = role_rates.get(category_rule_key(category))
+        if value is not None:
+            break
     if value is None:
         normalized_category = category_rule_key(category)
-        value = (
-            rates.get(f"{role} / {category}")
-            or rates.get(f"{role}/{category}")
-            or rates.get(f"{role} / {normalized_category}")
-            or rates.get(f"{role}/{normalized_category}")
-        )
+        for role_key in role_lookup_keys(role):
+            value = (
+                rates.get(f"{role_key} / {category}")
+                or rates.get(f"{role_key}/{category}")
+                or rates.get(f"{role_key} / {normalized_category}")
+                or rates.get(f"{role_key}/{normalized_category}")
+            )
+            if value is not None:
+                break
     return decimal_or_none(value)
 
 
@@ -527,14 +581,14 @@ def role_category_rate_from_versions(
         return None
 
     candidates: list[tuple[int, date, Decimal]] = []
-    normalized_role = normalized_key(role)
+    normalized_roles = normalized_role_keys(role)
     normalized_categories = normalized_category_keys(category)
     normalized_station = normalized_key(station)
 
     for item in rates:
         if not isinstance(item, Mapping):
             continue
-        if normalized_key(item.get("position_group")) != normalized_role:
+        if normalized_key(item.get("position_group")) not in normalized_roles:
             continue
         if normalized_key(item.get("category")) not in normalized_categories:
             continue
@@ -719,6 +773,25 @@ def money(value: Any) -> float:
 
 def normalized_key(value: Any) -> str:
     return str(value or "").strip().casefold()
+
+
+def normalized_role_keys(value: Any) -> set[str]:
+    return {normalized_key(role) for role in role_lookup_keys(value)}
+
+
+def role_lookup_keys(value: Any) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    keys = [text]
+    label = PAYROLL_ROLE_LABELS.get(text)
+    if label and label not in keys:
+        keys.append(label)
+    return keys
+
+
+def clean_string(value: Any) -> str:
+    return str(value or "").strip()
 
 
 def normalized_category_keys(value: Any) -> set[str]:
