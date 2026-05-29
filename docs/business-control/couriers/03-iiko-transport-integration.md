@@ -1,6 +1,6 @@
 # Интеграция с iiko Transport / iikoCloud
 
-Обновлено после разведки Python-сервиса в `data/raw/courier_service/`: загрузка книги подтвержденно идет не через Apps Script внутри Google Sheets, а через внешний FastAPI-сервис `TestAppScript.py`.
+Обновлено после разведки Python-сервиса в `research/raw/courier_service/`: загрузка книги подтвержденно идет не через Apps Script внутри Google Sheets, а через внешний FastAPI-сервис `TestAppScript.py`.
 
 ## Главное резюме
 
@@ -139,7 +139,7 @@ Token хранится только в памяти процесса как glob
 
 ## Связь с iikoServer Resto в проекте
 
-В репозитории также есть iikoServer Resto-контур (`scripts/iiko/*`, `apps/api/app/services/iiko_sync.py`), который использует `IIKO_SERVER_*` и `/resto/api`. Он нужен для других задач проекта: сотрудники, attendance, delivery/P&L exports, сверки.
+В репозитории также есть iikoServer Resto-контур (`research/scripts/iiko/*`, `apps/api/app/services/iiko_sync.py`), который использует `IIKO_SERVER_*` и `/resto/api`. Он нужен для других задач проекта: сотрудники, attendance, delivery/P&L exports, сверки.
 
 Для переноса курьерской книги нельзя смешивать эти API:
 

@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: teplo-postgres
+    environment:
+      POSTGRES_DB: teplo
+      POSTGRES_USER: teplo
+      POSTGRES_PASSWORD: teplo
+    ports:
+      - "5432:5432"
+    volumes:
+      - teplo_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teplo -d teplo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    container_name: teplo-api
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
+      TEPLO_ADMIN_EMAIL: admin@teplo.local
+      TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
+      JWT_SECRET_KEY: change-me-in-local-env-change-me
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 90
+      BACKEND_CORS_ORIGINS: '["http://localhost:5173"]'
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./api:/app/apps/api
+      - ../research/scripts:/app/research/scripts:ro
+      - ../research/raw:/app/research/raw
+      - ../research/processed:/app/research/processed
+      - ../research/private:/app/research/private
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    container_name: teplo-web
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./web:/app/apps/web
+      - /app/apps/web/node_modules
+    depends_on:
+      - api
+
+volumes:
+  teplo_pgdata:

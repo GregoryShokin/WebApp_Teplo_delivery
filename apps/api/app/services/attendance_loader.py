@@ -240,14 +240,14 @@ def first_text(record: Mapping[str, Any], *keys: str) -> str:
 
 def load_export_employees_module():
     current = Path(__file__).resolve()
-    candidate_roots = [parent for parent in current.parents if (parent / "scripts/iiko").exists()]
+    candidate_roots = [parent for parent in current.parents if (parent / "research/scripts/iiko").exists()]
     candidate_roots.extend([Path("/app"), Path.cwd(), Path.cwd().parent, Path.cwd().parent.parent])
     for root in candidate_roots:
-        script_dir = root / "scripts/iiko"
+        script_dir = root / "research/scripts/iiko"
         if not (script_dir / "export_employees.py").exists():
             continue
         script_dir_str = str(script_dir)
         if script_dir_str not in sys.path:
             sys.path.insert(0, script_dir_str)
         return importlib.import_module("export_employees")
-    raise RuntimeError("scripts/iiko/export_employees.py is not available")
+    raise RuntimeError("research/scripts/iiko/export_employees.py is not available")

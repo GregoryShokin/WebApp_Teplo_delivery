@@ -1,0 +1,52 @@
+[
+  {
+    "risk_id": "promo_parent_zero_cost",
+    "period": "2025-11-01 — 2026-05-17",
+    "area": "OLAP food cost aggregation",
+    "severity": "high",
+    "fact": "Родительские строки Акционный набор №1/№2/№3 имеют выручку 2 098 361.75 руб. и ProductCostBase.ProductCost=0.",
+    "source": "OLAP SALES, groupRow=DishName и groupRow=SoldWithDish",
+    "impact": "0% food cost в категории Акционные предложения является артефактом структуры, а не реальной маржей.",
+    "action": "В управленческих отчетах заменять cost родительской строки суммой cost дочерних строк SoldWithDish."
+  },
+  {
+    "risk_id": "empty_active_assembly_charts",
+    "period": "Состояние API на 2026-05-18",
+    "area": "Assembly charts",
+    "severity": "high",
+    "fact": "getTree/getHistory для действующих наборов №1/№2/№3 возвращают assembly chart с items=[]; у тестового набора техкарта отсутствует.",
+    "source": "/resto/api/v2/assemblyCharts/getTree, /getHistory, /byId",
+    "impact": "Техкарта самого набора не восстанавливает себестоимость; себестоимость живет в модификаторах/дочерних позициях.",
+    "action": "Для расчета использовать OLAP SoldWithDish; техкарты проверять только на уровне дочерних блюд/модификаторов."
+  },
+  {
+    "risk_id": "test_promo_in_active_group",
+    "period": "Состояние справочника на 2026-05-18",
+    "area": "Product catalog",
+    "severity": "medium",
+    "fact": "В группе Акционные предложения есть Акционный набор №2 ТЕСТ: deleted=false, defaultIncludedInMenu=false, продаж за период не найдено.",
+    "source": "/resto/api/v2/entities/products/list",
+    "impact": "Тестовая позиция может попасть в справочники, если фильтровать только deleted=false.",
+    "action": "В отчетах исключать позиции defaultIncludedInMenu=false без продаж либо явно помечать как тестовые."
+  },
+  {
+    "risk_id": "line_level_linkage_partial_sample",
+    "period": "2026-05-01 — 2026-05-17",
+    "area": "Order-line linkage",
+    "severity": "medium",
+    "fact": "В пробном OLAP-срезе 152 из 160 дочерних строк связались с родительской строкой по UniqOrderId.Id + SoldWithItem.Id; агрегат SoldWithDish при этом заполнен для всех дочерних компонент набора.",
+    "source": "OLAP SALES, groupRow=UniqOrderId.Id, ItemSaleEvent.Id, SoldWithItem.Id, SoldWithDish",
+    "impact": "Для агрегированного расчета SoldWithDish достаточно; для стопроцентного аудита каждого заказа нужен состав заказов до строк модификаторов.",
+    "action": "Добрать выгрузку заказов/OLAP с ItemSaleEvent.Id и SoldWithItem.Id по конкретным примерам чеков, если нужен чековый аудит."
+  },
+  {
+    "risk_id": "prepared_chart_byid_errors",
+    "period": "Состояние API на 2026-05-18",
+    "area": "Assembly chart endpoint behavior",
+    "severity": "low",
+    "fact": "byId для prepared chart id возвращает 500 ClassCastException, обычные assembly chart id читаются.",
+    "source": "/resto/api/v2/assemblyCharts/byId; raw ошибки сохранены без секретов",
+    "impact": "byId нельзя использовать как единственный источник для prepared charts.",
+    "action": "Для статуса prepared charts использовать getTree/getHistory; byId применять только к обычным assembly chart id."
+  }
+]

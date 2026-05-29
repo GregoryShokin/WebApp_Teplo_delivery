@@ -1,0 +1,22 @@
+order,gid,sheet_name,processed_file,raw_rows,nonempty_rows,max_nonempty_cols,inferred_header_row_1based,date_min,date_max
+0,1636448168,Регламент,research/processed/dz_kz/00_reglament.csv,68,56,7,6,2024-06-06,2024-06-13
+1,1384949747,Регистрация вход. док-тов,research/processed/dz_kz/01_incoming_docs.csv,992,901,7,1,2024-03-01,2024-12-31
+2,2137665578,Как настроить,research/processed/dz_kz/02_how_to_setup.csv,6,6,7,3,,
+3,0,01,research/processed/dz_kz/03_month_01.csv,910,910,10,2,,
+4,1660948620,02,research/processed/dz_kz/04_month_02.csv,910,910,10,2,,
+5,1166657821,03,research/processed/dz_kz/05_month_03.csv,910,910,10,2,2024-03-03,2024-03-31
+6,1070185871,04,research/processed/dz_kz/06_month_04.csv,910,910,10,2,2024-04-05,2024-04-25
+7,1505968183,05,research/processed/dz_kz/07_month_05.csv,910,910,10,2,2024-05-03,2024-05-31
+8,1619729764,06,research/processed/dz_kz/08_month_06.csv,910,910,10,2,2024-06-03,2024-06-29
+9,761823532,07,research/processed/dz_kz/09_month_07.csv,910,910,10,2,2024-07-03,2024-07-31
+10,2024142869,08,research/processed/dz_kz/10_month_08.csv,910,910,10,2,2024-08-04,2024-08-31
+11,2057377597,09,research/processed/dz_kz/11_month_09.csv,910,910,10,2,2024-09-03,2024-09-30
+12,830929295,10,research/processed/dz_kz/12_month_10.csv,910,910,10,2,2024-10-01,2024-10-31
+13,1840746664,11,research/processed/dz_kz/13_month_11.csv,910,910,10,2,2024-11-01,2024-11-30
+14,692754110,12,research/processed/dz_kz/14_month_12.csv,910,910,10,2,2024-12-02,2024-12-31
+15,670537010,Свод,research/processed/dz_kz/15_summary.csv,86,82,13,1,,
+16,360363186,Инструк,research/processed/dz_kz/16_instruction.csv,5,4,4,1,,
+17,513067478,Импорт ДДС,research/processed/dz_kz/17_dds_import.csv,7016,7016,9,1,2024-01-01,2025-06-04
+18,545896792,Контрагенты,research/processed/dz_kz/18_counterparties.csv,44,44,4,1,,
+19,2080096551,Справочник,research/processed/dz_kz/19_reference.csv,21,21,3,1,,
+20,316979013,НФ,research/processed/dz_kz/20_nf.csv,23,12,4,8,,

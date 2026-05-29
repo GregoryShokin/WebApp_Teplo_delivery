@@ -1,0 +1,5 @@
+period,days_count,transactions_count,opening_balance_first_day,inflows_total,outflows_total_abs,net_cashflow,closing_balance_last_day,min_closing_balance,min_closing_balance_date,max_outflow_day_abs,max_outflow_day,status,source
+2026-02,28,173,101928.69,2932164.26,2754377.00,177787.26,279715.95,440.18,2026-02-03,810199.00,2026-02-24,ok,Sber API statement summary + transactions
+2026-03,31,188,279715.95,3376477.58,3629917.00,-253439.42,26276.53,335.33,2026-03-23,1000000.00,2026-03-10,ok,Sber API statement summary + transactions
+2026-04,30,169,26276.53,2558836.39,2479305.00,79531.39,105807.92,549.46,2026-04-27,580199.00,2026-04-20,ok,Sber API statement summary + transactions
+2026-05,19,110,105807.92,1825645.31,1930491.00,-104845.69,962.23,962.23,2026-05-19,677000.00,2026-05-12,ok,Sber API statement summary + transactions

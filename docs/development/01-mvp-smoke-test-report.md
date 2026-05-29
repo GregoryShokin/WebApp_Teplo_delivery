@@ -28,8 +28,8 @@
 
 | Priority | Статус | Описание |
 | --- | --- | --- |
-| P1 | ✅ fixed | API контейнер падал при старте: `JWT_SECRET_KEY` в `docker-compose.yml` был короче `min_length=32`. |
-| P1 | ✅ fixed | `Makefile` не содержал `migrate` и `test`, хотя smoke-инструкция на них опирается. |
+| P1 | ✅ fixed | API контейнер падал при старте: `JWT_SECRET_KEY` в `apps/docker-compose.yml` был короче `min_length=32`. |
+| P1 | ✅ fixed | `apps/Makefile` не содержал `migrate` и `test`, хотя smoke-инструкция на них опирается. |
 | P2 | ✅ fixed | `GET /api/v1/employees` без trailing slash давал 307, теперь `/employees` и `/employees/` оба возвращают 200. |
 | P2 | ✅ fixed | Отдельных P2 test artifacts `test_auth.py` / `test_settings.py` не было; добавлены проверки refresh/logout/settings history. |
 | P3 | ⚠️ skipped | `POST /api/v1/employees/sync` не прогонялся в clean smoke: iiko credentials не настроены, а HTTP endpoint не имеет mock-mode. |
@@ -38,10 +38,10 @@
 
 | Команда / проверка | Результат |
 | --- | --- |
-| `docker compose down -v` | ✅ clean Postgres volume removed |
-| `docker compose up -d` | ✅ postgres/api/web started |
-| `TEPLO_ADMIN_PASSWORD=admin-password-for-smoke make migrate` | ✅ applied `0001_core_domain` → `0004_payroll` |
-| `make test` | ✅ 41 passed, 3 skipped |
+| `(cd apps && docker compose down -v)` | ✅ clean Postgres volume removed |
+| `(cd apps && docker compose up -d)` | ✅ postgres/api/web started |
+| `TEPLO_ADMIN_PASSWORD=admin-password-for-smoke make -C apps migrate` | ✅ applied `0001_core_domain` → `0004_payroll` |
+| `make -C apps test` | ✅ 41 passed, 3 skipped |
 | `POST /api/v1/auth/login` | ✅ 200, admin token получен |
 | `GET /api/v1/settings` | ✅ 200 |
 | `GET /api/v1/employees` | ✅ 200, `[]` |
@@ -58,10 +58,10 @@
 ## How to run locally
 
 ```bash
-docker compose down -v
-docker compose up -d
-TEPLO_ADMIN_PASSWORD=admin-password-for-smoke make migrate
-make test
+(cd apps && docker compose down -v)
+(cd apps && docker compose up -d)
+TEPLO_ADMIN_PASSWORD=admin-password-for-smoke make -C apps migrate
+make -C apps test
 ```
 
 Admin login for this smoke run:
@@ -74,8 +74,8 @@ password: admin-password-for-smoke
 Notes:
 
 - Pass `TEPLO_ADMIN_PASSWORD` when running migrations on a clean DB. Without it, migration `0002_seed_reference` generates a random admin password.
-- `Makefile` defaults to `../../.venv-api/bin/python` from `apps/api`. Override with `make API_PYTHON=python test` if using an activated environment.
-- First clean `docker compose up -d` can be slow because Docker builds API/Web images and downloads dependencies.
+- `apps/Makefile` defaults to `../.venv-api/bin/python` from `apps/`. Override with `make -C apps API_PYTHON=python test` if using an activated environment.
+- First clean `(cd apps && docker compose up -d)` can be slow because Docker builds API/Web images and downloads dependencies.
 
 ## Recommendations before next module
 

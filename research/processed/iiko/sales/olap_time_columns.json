@@ -1,0 +1,462 @@
+[
+  {
+    "field": "CloseTime",
+    "name": "Время закрытия",
+    "type": "DATETIME",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Заказ"
+    ]
+  },
+  {
+    "field": "CloseTime.Minutes15",
+    "name": "15-минутный интервал закрытия",
+    "type": "STRING",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время"
+    ]
+  },
+  {
+    "field": "Cooking.CookingLateTime.Avg",
+    "name": "Опоздание приготовления (средняя)",
+    "type": "DURATION_IN_SECONDS",
+    "groupingAllowed": false,
+    "aggregationAllowed": true,
+    "tags": [
+      "Временные интервалы",
+      "Приготовление"
+    ]
+  },
+  {
+    "field": "Cooking.FeedLateTime.Avg",
+    "name": "Опоздание подачи (средняя)",
+    "type": "DURATION_IN_SECONDS",
+    "groupingAllowed": false,
+    "aggregationAllowed": true,
+    "tags": [
+      "Временные интервалы",
+      "Приготовление"
+    ]
+  },
+  {
+    "field": "Cooking.GuestWaitTime.Avg",
+    "name": "Продолжительность ожидания гостя (средняя)",
+    "type": "DURATION_IN_SECONDS",
+    "groupingAllowed": false,
+    "aggregationAllowed": true,
+    "tags": [
+      "Временные интервалы",
+      "Приготовление"
+    ]
+  },
+  {
+    "field": "Cooking.KitchenTime.Avg",
+    "name": "Продолжительность работы кухни (средняя)",
+    "type": "DURATION_IN_SECONDS",
+    "groupingAllowed": false,
+    "aggregationAllowed": true,
+    "tags": [
+      "Временные интервалы",
+      "Приготовление"
+    ]
+  },
+  {
+    "field": "Cooking.ServeTime.Avg",
+    "name": "Продолжительность подачи гостю (средняя)",
+    "type": "DURATION_IN_SECONDS",
+    "groupingAllowed": false,
+    "aggregationAllowed": true,
+    "tags": [
+      "Временные интервалы",
+      "Приготовление"
+    ]
+  },
+  {
+    "field": "Cooking.StartDelayTime.Avg",
+    "name": "Задержка начала приготовления (средняя)",
+    "type": "DURATION_IN_SECONDS",
+    "groupingAllowed": false,
+    "aggregationAllowed": true,
+    "tags": [
+      "Временные интервалы",
+      "Приготовление"
+    ]
+  },
+  {
+    "field": "DayOfWeekOpen",
+    "name": "День недели",
+    "type": "STRING",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время"
+    ]
+  },
+  {
+    "field": "Delivery.ActualTime",
+    "name": "Фактическое время доставки",
+    "type": "DATETIME",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Доставка"
+    ]
+  },
+  {
+    "field": "Delivery.BillTime",
+    "name": "Время печати накладной",
+    "type": "DATETIME",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Доставка"
+    ]
+  },
+  {
+    "field": "Delivery.CloseTime",
+    "name": "Время закрытия доставки",
+    "type": "DATETIME",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Доставка"
+    ]
+  },
+  {
+    "field": "Delivery.CookingFinishTime",
+    "name": "Время окончания приготовления",
+    "type": "DATETIME",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Доставка",
+      "Приготовление"
+    ]
+  },
+  {
+    "field": "Delivery.CookingToSendDuration",
+    "name": "Длит: посл.серв.печать-отправка",
+    "type": "INTEGER",
+    "groupingAllowed": false,
+    "aggregationAllowed": true,
+    "tags": [
+      "Время",
+      "Доставка"
+    ]
+  },
+  {
+    "field": "Delivery.Delay",
+    "name": "Опоздание доставки(мин)",
+    "type": "INTEGER",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Доставка"
+    ]
+  },
+  {
+    "field": "Delivery.DiffBetweenActualDeliveryTimeAndPredictedDeliveryTime",
+    "name": "Отклонение от сроков доставки, фактическое от прогнозируемого (мин)",
+    "type": "INTEGER",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Доставка"
+    ]
+  },
+  {
+    "field": "Delivery.ExpectedTime",
+    "name": "Планируемое время доставки",
+    "type": "DATETIME",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Доставка"
+    ]
+  },
+  {
+    "field": "Delivery.PredictedCookingCompleteTime",
+    "name": "Прогнозируемое время окончания готовки заказа",
+    "type": "DATETIME",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Доставка"
+    ]
+  },
+  {
+    "field": "Delivery.PredictedDeliveryTime",
+    "name": "Прогнозируемое время доставки",
+    "type": "DATETIME",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Доставка"
+    ]
+  },
+  {
+    "field": "Delivery.PrintTime",
+    "name": "Время печати доставки",
+    "type": "DATETIME",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Доставка"
+    ]
+  },
+  {
+    "field": "Delivery.SendTime",
+    "name": "Время отправки доставки",
+    "type": "DATETIME",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Доставка"
+    ]
+  },
+  {
+    "field": "Delivery.WayDuration",
+    "name": "Время в пути(мин)",
+    "type": "INTEGER",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Доставка"
+    ]
+  },
+  {
+    "field": "Delivery.WayDurationAvg",
+    "name": "Ср.время в пути(мин)",
+    "type": "AMOUNT",
+    "groupingAllowed": false,
+    "aggregationAllowed": true,
+    "tags": [
+      "Временные интервалы",
+      "Доставка"
+    ]
+  },
+  {
+    "field": "Delivery.WayDurationSum",
+    "name": "Сумм.время в пути(мин)",
+    "type": "INTEGER",
+    "groupingAllowed": false,
+    "aggregationAllowed": true,
+    "tags": [
+      "Временные интервалы",
+      "Доставка"
+    ]
+  },
+  {
+    "field": "DishServicePrintTime",
+    "name": "Сервисная печать блюда",
+    "type": "DATETIME",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время"
+    ]
+  },
+  {
+    "field": "DishServicePrintTime.Max",
+    "name": "Сервисная печать последнего блюда",
+    "type": "DATETIME",
+    "groupingAllowed": false,
+    "aggregationAllowed": true,
+    "tags": [
+      "Время"
+    ]
+  },
+  {
+    "field": "DishServicePrintTime.OpenToLastPrintDuration",
+    "name": "Длит: откр.-посл.серв.печать",
+    "type": "INTEGER",
+    "groupingAllowed": false,
+    "aggregationAllowed": true,
+    "tags": [
+      "Время"
+    ]
+  },
+  {
+    "field": "HourClose",
+    "name": "Час закрытия",
+    "type": "STRING",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время"
+    ]
+  },
+  {
+    "field": "HourOpen",
+    "name": "Час открытия",
+    "type": "STRING",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время"
+    ]
+  },
+  {
+    "field": "Mounth",
+    "name": "Месяц",
+    "type": "STRING",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время"
+    ]
+  },
+  {
+    "field": "OpenDate.Typed",
+    "name": "Учетный день",
+    "type": "DATE",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время"
+    ]
+  },
+  {
+    "field": "OpenTime",
+    "name": "Время открытия",
+    "type": "DATETIME",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Заказ"
+    ]
+  },
+  {
+    "field": "OpenTime.Minutes15",
+    "name": "15-минутный интервал открытия",
+    "type": "STRING",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время"
+    ]
+  },
+  {
+    "field": "OrderTime.AverageOrderTime",
+    "name": "Ср.время обсл.(мин)",
+    "type": "AMOUNT",
+    "groupingAllowed": false,
+    "aggregationAllowed": true,
+    "tags": [
+      "Время",
+      "Заказ"
+    ]
+  },
+  {
+    "field": "OrderTime.AveragePrechequeTime",
+    "name": "Ср.время в пречеке (мин)",
+    "type": "AMOUNT",
+    "groupingAllowed": false,
+    "aggregationAllowed": true,
+    "tags": [
+      "Время",
+      "Заказ"
+    ]
+  },
+  {
+    "field": "OrderTime.OrderLength",
+    "name": "Время обслуживания (мин)",
+    "type": "INTEGER",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Заказ"
+    ]
+  },
+  {
+    "field": "OrderTime.OrderLengthSum",
+    "name": "Время обсл.сумм.(мин)",
+    "type": "INTEGER",
+    "groupingAllowed": false,
+    "aggregationAllowed": true,
+    "tags": [
+      "Время",
+      "Заказ"
+    ]
+  },
+  {
+    "field": "OrderTime.PrechequeLength",
+    "name": "Время в пречеке (мин)",
+    "type": "INTEGER",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Заказ"
+    ]
+  },
+  {
+    "field": "PrechequeTime",
+    "name": "Время пречека",
+    "type": "DATETIME",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время",
+      "Заказ"
+    ]
+  },
+  {
+    "field": "QuarterOpen",
+    "name": "Квартал",
+    "type": "STRING",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время"
+    ]
+  },
+  {
+    "field": "WeekInMonthOpen",
+    "name": "Неделя месяца",
+    "type": "STRING",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время"
+    ]
+  },
+  {
+    "field": "WeekInYearOpen",
+    "name": "Неделя года",
+    "type": "STRING",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время"
+    ]
+  },
+  {
+    "field": "YearOpen",
+    "name": "Год",
+    "type": "STRING",
+    "groupingAllowed": true,
+    "aggregationAllowed": false,
+    "tags": [
+      "Время"
+    ]
+  }
+]

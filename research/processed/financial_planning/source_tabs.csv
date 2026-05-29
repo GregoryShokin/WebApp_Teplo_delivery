@@ -1,0 +1,8 @@
+source_document_id,source_title_observed,downloaded_at,tab_name,gid,filtered_csv,rows,pii_filter,notes
+1GK6Cl8U7MiMa_Z97Snz_tdCXej5lwi_Ji5si6qZZLKI,2025 Учет Основных Средств 2.0 [PII_FILTERED],2026-05-24,Регламент,865869757,reglament.csv,61,"names/emails/phones/tax ids redacted","Document regulation; fixed assets, not financial planning"
+1GK6Cl8U7MiMa_Z97Snz_tdCXej5lwi_Ji5si6qZZLKI,2025 Учет Основных Средств 2.0 [PII_FILTERED],2026-05-24,Учёт ОС,2021085115,uchet_os.csv,1155,"names/emails/phones/tax ids redacted","Fixed asset register; direct CSV export by gid"
+1GK6Cl8U7MiMa_Z97Snz_tdCXej5lwi_Ji5si6qZZLKI,2025 Учет Основных Средств 2.0 [PII_FILTERED],2026-05-24,Свод,718206523,svod.csv,204,"names/emails/phones/tax ids redacted","Monthly depreciation, residual value, asset count, purchases and disposals"
+1GK6Cl8U7MiMa_Z97Snz_tdCXej5lwi_Ji5si6qZZLKI,2025 Учет Основных Средств 2.0 [PII_FILTERED],2026-05-24,Свод по помещениям,2110930045,svod_po_pomescheniyam.csv,32,"names/emails/phones/tax ids redacted","Pivot by location and asset type"
+1GK6Cl8U7MiMa_Z97Snz_tdCXej5lwi_Ji5si6qZZLKI,2025 Учет Основных Средств 2.0 [PII_FILTERED],2026-05-24,Свод по ответственным,1201239738,svod_po_otvetstvennym.csv,18,"names/emails/phones/tax ids redacted","Pivot by responsible role and asset type"
+1GK6Cl8U7MiMa_Z97Snz_tdCXej5lwi_Ji5si6qZZLKI,2025 Учет Основных Средств 2.0 [PII_FILTERED],2026-05-24,Справочник,200204434,spravochnik.csv,12,"names/emails/phones/tax ids redacted","Asset type dictionary"
+1GK6Cl8U7MiMa_Z97Snz_tdCXej5lwi_Ji5si6qZZLKI,2025 Учет Основных Средств 2.0 [PII_FILTERED],2026-05-24,НФ,1663922954,nf.csv,23,"names/emails/phones/tax ids redacted","Template/vendor info; contacts redacted"

@@ -1,0 +1,233 @@
+[
+  {
+    "period_start": "2025-11-01",
+    "period_end": "2025-11-30",
+    "metric_type": "AVERAGE",
+    "pizza_time": 0.0,
+    "cutting_time": 4.56,
+    "on_shelf_time": -0.98,
+    "in_restaurant_time": 71.87,
+    "on_the_way_time": 27.93,
+    "total_time": 106.81
+  },
+  {
+    "period_start": "2025-11-01",
+    "period_end": "2025-11-30",
+    "metric_type": "TARGET",
+    "pizza_time": 100.0,
+    "cutting_time": 60.2,
+    "on_shelf_time": 95.8,
+    "in_restaurant_time": 6.1,
+    "on_the_way_time": 4.9,
+    "total_time": 2.5
+  },
+  {
+    "period_start": "2025-11-01",
+    "period_end": "2025-11-30",
+    "metric_type": "MAXIMUM",
+    "pizza_time": 0.0,
+    "cutting_time": 368.87,
+    "on_shelf_time": 599.08,
+    "in_restaurant_time": 795.0,
+    "on_the_way_time": 139.0,
+    "total_time": 795.0
+  },
+  {
+    "period_start": "2025-12-01",
+    "period_end": "2025-12-31",
+    "metric_type": "AVERAGE",
+    "pizza_time": 0.0,
+    "cutting_time": 4.94,
+    "on_shelf_time": -1.05,
+    "in_restaurant_time": 71.87,
+    "on_the_way_time": 29.53,
+    "total_time": 106.06
+  },
+  {
+    "period_start": "2025-12-01",
+    "period_end": "2025-12-31",
+    "metric_type": "TARGET",
+    "pizza_time": 100.0,
+    "cutting_time": 56.6,
+    "on_shelf_time": 95.4,
+    "in_restaurant_time": 6.2,
+    "on_the_way_time": 4.5,
+    "total_time": 2.8
+  },
+  {
+    "period_start": "2025-12-01",
+    "period_end": "2025-12-31",
+    "metric_type": "MAXIMUM",
+    "pizza_time": 0.0,
+    "cutting_time": 553.38,
+    "on_shelf_time": 335.68,
+    "in_restaurant_time": 1790.0,
+    "on_the_way_time": 238.0,
+    "total_time": 1797.0
+  },
+  {
+    "period_start": "2026-01-01",
+    "period_end": "2026-01-31",
+    "metric_type": "AVERAGE",
+    "pizza_time": 0.0,
+    "cutting_time": 4.84,
+    "on_shelf_time": -0.86,
+    "in_restaurant_time": 66.28,
+    "on_the_way_time": 35.84,
+    "total_time": 107.26
+  },
+  {
+    "period_start": "2026-01-01",
+    "period_end": "2026-01-31",
+    "metric_type": "TARGET",
+    "pizza_time": 100.0,
+    "cutting_time": 59.6,
+    "on_shelf_time": 96.0,
+    "in_restaurant_time": 5.9,
+    "on_the_way_time": 4.5,
+    "total_time": 2.7
+  },
+  {
+    "period_start": "2026-01-01",
+    "period_end": "2026-01-31",
+    "metric_type": "MAXIMUM",
+    "pizza_time": 0.0,
+    "cutting_time": 486.53,
+    "on_shelf_time": 359.07,
+    "in_restaurant_time": 677.0,
+    "on_the_way_time": 535.0,
+    "total_time": 737.0
+  },
+  {
+    "period_start": "2026-02-01",
+    "period_end": "2026-02-28",
+    "metric_type": "AVERAGE",
+    "pizza_time": 0.0,
+    "cutting_time": 3.79,
+    "on_shelf_time": -0.61,
+    "in_restaurant_time": 72.15,
+    "on_the_way_time": 37.12,
+    "total_time": 113.36
+  },
+  {
+    "period_start": "2026-02-01",
+    "period_end": "2026-02-28",
+    "metric_type": "TARGET",
+    "pizza_time": 100.0,
+    "cutting_time": 65.8,
+    "on_shelf_time": 95.3,
+    "in_restaurant_time": 7.2,
+    "on_the_way_time": 5.3,
+    "total_time": 3.5
+  },
+  {
+    "period_start": "2026-02-01",
+    "period_end": "2026-02-28",
+    "metric_type": "MAXIMUM",
+    "pizza_time": 0.0,
+    "cutting_time": 166.87,
+    "on_shelf_time": 576.45,
+    "in_restaurant_time": 710.0,
+    "on_the_way_time": 1415.0,
+    "total_time": 1430.0
+  },
+  {
+    "period_start": "2026-03-01",
+    "period_end": "2026-03-31",
+    "metric_type": "AVERAGE",
+    "pizza_time": 0.0,
+    "cutting_time": 3.28,
+    "on_shelf_time": -0.86,
+    "in_restaurant_time": 76.08,
+    "on_the_way_time": 31.04,
+    "total_time": 112.88
+  },
+  {
+    "period_start": "2026-03-01",
+    "period_end": "2026-03-31",
+    "metric_type": "TARGET",
+    "pizza_time": 100.0,
+    "cutting_time": 68.0,
+    "on_shelf_time": 96.1,
+    "in_restaurant_time": 8.6,
+    "on_the_way_time": 7.8,
+    "total_time": 5.7
+  },
+  {
+    "period_start": "2026-03-01",
+    "period_end": "2026-03-31",
+    "metric_type": "MAXIMUM",
+    "pizza_time": 0.0,
+    "cutting_time": 136.65,
+    "on_shelf_time": 333.33,
+    "in_restaurant_time": 715.0,
+    "on_the_way_time": 301.0,
+    "total_time": 715.0
+  },
+  {
+    "period_start": "2026-04-01",
+    "period_end": "2026-04-30",
+    "metric_type": "AVERAGE",
+    "pizza_time": 0.0,
+    "cutting_time": 2.51,
+    "on_shelf_time": -1.59,
+    "in_restaurant_time": 64.78,
+    "on_the_way_time": 30.21,
+    "total_time": 101.46
+  },
+  {
+    "period_start": "2026-04-01",
+    "period_end": "2026-04-30",
+    "metric_type": "TARGET",
+    "pizza_time": 100.0,
+    "cutting_time": 71.9,
+    "on_shelf_time": 94.5,
+    "in_restaurant_time": 7.3,
+    "on_the_way_time": 3.6,
+    "total_time": 2.3
+  },
+  {
+    "period_start": "2026-04-01",
+    "period_end": "2026-04-30",
+    "metric_type": "MAXIMUM",
+    "pizza_time": 0.0,
+    "cutting_time": 139.62,
+    "on_shelf_time": 635.52,
+    "in_restaurant_time": 760.0,
+    "on_the_way_time": 163.0,
+    "total_time": 760.0
+  },
+  {
+    "period_start": "2026-05-01",
+    "period_end": "2026-05-17",
+    "metric_type": "AVERAGE",
+    "pizza_time": 0.0,
+    "cutting_time": 2.22,
+    "on_shelf_time": -1.89,
+    "in_restaurant_time": 66.81,
+    "on_the_way_time": 26.84,
+    "total_time": 103.21
+  },
+  {
+    "period_start": "2026-05-01",
+    "period_end": "2026-05-17",
+    "metric_type": "TARGET",
+    "pizza_time": 100.0,
+    "cutting_time": 70.8,
+    "on_shelf_time": 96.1,
+    "in_restaurant_time": 7.2,
+    "on_the_way_time": 5.1,
+    "total_time": 2.8
+  },
+  {
+    "period_start": "2026-05-01",
+    "period_end": "2026-05-17",
+    "metric_type": "MAXIMUM",
+    "pizza_time": 0.0,
+    "cutting_time": 60.32,
+    "on_shelf_time": 491.18,
+    "in_restaurant_time": 658.0,
+    "on_the_way_time": 285.0,
+    "total_time": 658.0
+  }
+]

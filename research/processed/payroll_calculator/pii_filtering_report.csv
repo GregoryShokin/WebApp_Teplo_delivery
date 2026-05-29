@@ -1,0 +1,15 @@
+order,sheet_name,file,csv_rows,csv_cols,redacted_cells,private_token_count_global
+0,Исходные данные,00_source_data.csv,25,28,31,104
+1,Категории и надбавки,01_categories_allowances.csv,958,22,2114,104
+2,Штат,02_staff.csv,25,17,41,104
+3,Калькулятор,03_calculator.csv,25,12,4,104
+4,Зарплата Администрации,04_admin_payroll.csv,8,11,12,104
+5,Выплаты,05_payments.csv,1859,7,1865,104
+6,Персональный отчет,06_personal_report.csv,15,15,7,104
+7,Выгрузка,07_export_ledger.csv,17028,8,18479,104
+8,Смены и выручка,08_shifts_revenue.csv,18,11,18,104
+9,Загрузка явок,09_attendance_upload.csv,15,12,28,104
+10,Технический лист,10_technical_sheet.csv,710,9,32,104
+11,Расчет коэффициентов,11_coefficient_calc.csv,19,17,32,104
+12,Расчет длительности смен,12_duration_calc.csv,15,31,14,104
+13,Понедельные начисления,13_weekly_accruals.csv,67,9,0,104

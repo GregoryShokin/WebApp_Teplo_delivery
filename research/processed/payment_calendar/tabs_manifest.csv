@@ -1,0 +1,12 @@
+order,title,gid,role,processed_csv,raw_rows_after_trim,raw_cols_after_trim,nonempty_rows,nonempty_cells,redacted_cells
+0,Регламент,1595972210,regulation,00_reglament.csv,70,7,59,113,5
+1,Как настроить,880944335,setup_instruction,01_how_to_setup.csv,11,9,10,32,0
+2,Календарь,1946658381,weekly_plan_fact,02_calendar.csv,75,132,75,9452,0
+3,Плановый Реестр поступлений,0,planned_inflows,03_plan_inflows.csv,73,9,72,478,71
+4,Плановые Реестр выбытий,231194425,planned_outflows,04_plan_outflows.csv,1019,10,1018,6656,1020
+5,Факт ДДС,1892020578,dds_actual_import,05_dds_actual.csv,7016,8,7016,40659,6541
+6,Поставщики,825905594,supplier_list,06_suppliers.csv,63,21,63,296,60
+7,Справочник,2111860448,article_reference,07_reference.csv,57,2,56,112,0
+8,Контрагенты,1594769772,counterparty_reference,08_counterparties.csv,60,2,60,61,59
+9,Диапазон недель,2025053366,week_ranges,09_week_ranges.csv,54,3,54,162,0
+10,НФ,300517260,service,10_nf.csv,24,4,13,16,2

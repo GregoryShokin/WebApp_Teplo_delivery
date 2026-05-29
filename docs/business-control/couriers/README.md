@@ -23,7 +23,7 @@
 - в книге 7 вкладок: `Курьеры`, `Выходы`, `Смены`, `Технический лист`, `График`, `Доставки`, `Статистика`;
 - `Технический лист` является служебным/скрытым в XLSX-снимке;
 - `Доставки` и `Выходы` дают операционные факты, но не выплаты;
-- книга заполняется внешним Python FastAPI-сервисом из `data/raw/courier_service/`, а не Apps Script внутри книги;
+- книга заполняется внешним Python FastAPI-сервисом из `research/raw/courier_service/`, а не Apps Script внутри книги;
 - сервис использует iikoCloud / iiko Transport `https://api-ru.iiko.services/api/1`, а не iikoServer Resto;
 - исходящие endpoint'ы сервиса: `POST /api/1/access_token`, `POST /api/1/employees/couriers/by_role`, `POST /api/1/employees/info`;
 - доставки и смены приходят через inbound webhook `POST /aiko-webhook`;

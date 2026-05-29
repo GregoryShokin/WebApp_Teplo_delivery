@@ -1,6 +1,6 @@
 # Python-сервис курьерской книги: обзор и iikoCloud
 
-Документ основан на reference snapshot `data/raw/courier_service/` и описывает только найденный Python-сервис. Значения токенов, ключей, spreadsheet id и service account не приводятся.
+Документ основан на reference snapshot `research/raw/courier_service/` и описывает только найденный Python-сервис. Значения токенов, ключей, spreadsheet id и service account не приводятся.
 
 ## 1. Общая карта сервиса
 

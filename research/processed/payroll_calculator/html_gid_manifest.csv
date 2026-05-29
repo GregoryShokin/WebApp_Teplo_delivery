@@ -1,0 +1,15 @@
+order,sheet_state_code,gid,sheet_name,extraction_pattern
+0,0,0,Исходные данные,bootstrapData record 21350203
+1,0,1505174086,Категории и надбавки,bootstrapData record 21350203
+2,0,1176727298,Штат,bootstrapData record 21350203
+3,0,1019409828,Калькулятор,bootstrapData record 21350203
+4,0,410754589,Зарплата Администрации,bootstrapData record 21350203
+5,0,258902766,Выплаты,bootstrapData record 21350203
+6,0,345435248,Персональный отчет,bootstrapData record 21350203
+7,0,1578260979,Выгрузка,bootstrapData record 21350203
+8,0,1577032092,Смены и выручка,bootstrapData record 21350203
+9,0,1562584021,Загрузка явок,bootstrapData record 21350203
+10,0,1995335248,Технический лист,bootstrapData record 21350203
+11,0,1796414532,Расчет коэффициентов,bootstrapData record 21350203
+12,0,1468378961,Расчет длительности смен,bootstrapData record 21350203
+13,0,814874892,Понедельные начисления,bootstrapData record 21350203

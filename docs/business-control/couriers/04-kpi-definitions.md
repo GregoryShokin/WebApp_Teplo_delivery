@@ -26,7 +26,7 @@
 
 ## Подтвержденные месячные агрегаты из snapshot
 
-Файл: `data/processed/economic_block/couriers_monthly.csv`.
+Файл: `research/processed/economic_block/couriers_monthly.csv`.
 
 | Месяц | Уникальные доставки Sheet | Доставки iiko `COURIER` | Часы выходов Sheet | Расхождение Sheet - iiko | Качество |
 | --- | ---: | ---: | ---: | ---: | --- |

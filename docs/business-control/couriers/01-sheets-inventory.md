@@ -7,10 +7,10 @@
 
 Google Drive connector был вызван, но в этой сессии стабильно падал на `MCP startup failed: timed out awaiting tools/list after 30s`. Прямой экспорт Google Sheets в XLSX через URL вернул страницу авторизации Google, а не файл. Поэтому инвентаризация ниже основана на:
 
-- предыдущем read-only XLSX-снимке, уже использованном в `data/processed/economic_block/labor_report.md`;
-- локальном агрегаторе [scripts/business_control/build_labor_costs.py](../../../scripts/business_control/build_labor_costs.py), который читает эту книгу;
-- локальных агрегатах `data/processed/economic_block/couriers_monthly.csv`;
-- iiko raw/processed файлах в `data/raw/iiko/ops/` и `data/processed/iiko/ops/`.
+- предыдущем read-only XLSX-снимке, уже использованном в `research/processed/economic_block/labor_report.md`;
+- локальном агрегаторе [research/scripts/business_control/build_labor_costs.py](../../../research/scripts/business_control/build_labor_costs.py), который читает эту книгу;
+- локальных агрегатах `research/processed/economic_block/couriers_monthly.csv`;
+- iiko raw/processed файлах в `research/raw/iiko/ops/` и `research/processed/iiko/ops/`.
 
 Персональные данные курьеров в документацию не вынесены.
 

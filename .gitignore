@@ -4,8 +4,8 @@
 ENV
 
 # Local exports and raw source files with business data.
-data/raw/
-data/private/
+research/raw/
+research/private/
 exports/
 
 # OS/editor noise.

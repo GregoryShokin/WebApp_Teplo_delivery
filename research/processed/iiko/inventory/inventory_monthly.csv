@@ -1,0 +1,43 @@
+month,pnl_line,document_id,document_date,document_num,signed_sum,classification_method,confidence
+2025-11,Результаты инвентаризации упаковки (кроме коробок для пиццы),59b39f6d-de63-46fc-909b-faf2cb39be82,2025-11-01,0070,-35692.27,packaging_context_ratio=0.958; whitelist_packaging_ratio=0.667; context_matches=46/48; whitelist_matches=32/48; threshold=0.80,0.958
+2025-11,Результаты инвентаризации коробки д/пиццы,59b39f6d-de63-46fc-909b-faf2cb39be82,2025-11-01,0070,-3070.79,packaging_context_ratio=0.958; whitelist_packaging_ratio=0.667; context_matches=46/48; whitelist_matches=32/48; threshold=0.80,0.958
+2025-11,Результаты ревизии,3f470a56-5f09-405e-9099-4c9ba08db238,2025-11-03,0069,-3701.87,raw_material_ratio=0.571; raw_matches=64/112; weekday=mon/tue; threshold=0.50,0.750
+2025-11,Результаты ревизии,2b872ead-4f94-4276-83f0-1efd0c756578,2025-11-10,0071,-9600.11,raw_material_ratio=0.566; raw_matches=64/113; weekday=mon/tue; threshold=0.50,0.750
+2025-11,Результаты ревизии,f7c68186-33f7-4ff6-a03f-d305018aa994,2025-11-17,0072,-12160.44,raw_material_ratio=0.566; raw_matches=64/113; weekday=mon/tue; threshold=0.50,0.750
+2025-11,Результаты ревизии,d02b8b39-2922-4fb1-9c96-3b3cf8858329,2025-11-24,0074,12050.57,raw_material_ratio=0.555; raw_matches=61/110; weekday=mon/tue; threshold=0.50,0.750
+2025-12,Результаты инвентаризации упаковки (кроме коробок для пиццы),15862f94-093b-4e6b-af6a-b5d363d617f7,2025-12-01,0075,-35239.13,packaging_context_ratio=0.978; whitelist_packaging_ratio=0.674; context_matches=45/46; whitelist_matches=31/46; threshold=0.80,0.978
+2025-12,Результаты инвентаризации коробки д/пиццы,15862f94-093b-4e6b-af6a-b5d363d617f7,2025-12-01,0075,1564.81,packaging_context_ratio=0.978; whitelist_packaging_ratio=0.674; context_matches=45/46; whitelist_matches=31/46; threshold=0.80,0.978
+2025-12,Результаты ревизии,8fa30e2d-f266-4ecf-ace6-b5cfbeff2122,2025-12-01,0076,-7255.87,raw_material_ratio=0.566; raw_matches=64/113; weekday=mon/tue; threshold=0.50,0.750
+2025-12,Результаты ревизии,3564db99-3c2b-45d2-8646-d2823f215ce6,2025-12-01,0077,-3274.94,raw_material_ratio=1.000; raw_matches=1/1; weekday=mon/tue; threshold=0.50,1.000
+2025-12,Результаты ревизии,f2b1d60c-0de7-4c40-b7f1-8c40712b2922,2025-12-08,0078,7549.19,raw_material_ratio=0.561; raw_matches=64/114; weekday=mon/tue; threshold=0.50,0.750
+2025-12,Результаты ревизии,0cdd3b54-b13c-4507-a694-1de79b4443c7,2025-12-15,0080,7912.52,raw_material_ratio=0.566; raw_matches=64/113; weekday=mon/tue; threshold=0.50,0.750
+2025-12,Результаты ревизии,aceb2b2f-414e-40d9-9d83-639f26db6b87,2025-12-22,0081,-3033.95,raw_material_ratio=0.566; raw_matches=64/113; weekday=mon/tue; threshold=0.50,0.750
+2026-01,Результаты инвентаризации упаковки (кроме коробок для пиццы),ad9d5d0e-3af8-4364-b4b6-705aef45536a,2026-01-01,0001,-41072.80,packaging_context_ratio=0.979; whitelist_packaging_ratio=0.688; context_matches=47/48; whitelist_matches=33/48; threshold=0.80,0.979
+2026-01,Результаты инвентаризации коробки д/пиццы,ad9d5d0e-3af8-4364-b4b6-705aef45536a,2026-01-01,0001,-6122.06,packaging_context_ratio=0.979; whitelist_packaging_ratio=0.688; context_matches=47/48; whitelist_matches=33/48; threshold=0.80,0.979
+2026-01,Результаты ревизии,4af04576-29bf-49e6-be72-06c03a13260a,2026-01-05,0002,3516.82,raw_material_ratio=0.558; raw_matches=63/113; weekday=mon/tue; threshold=0.50,0.750
+2026-01,Результаты ревизии,f3b3d1f4-490f-46f3-9c2e-3ccf89c6c08f,2026-01-12,0003,18904.32,raw_material_ratio=0.561; raw_matches=64/114; weekday=mon/tue; threshold=0.50,0.750
+2026-01,Результаты ревизии,139b4d8f-2f78-4540-9eda-9e14b9e4e721,2026-01-19,0004,2211.33,raw_material_ratio=0.561; raw_matches=64/114; weekday=mon/tue; threshold=0.50,0.750
+2026-01,Результаты ревизии,dfb2b75f-1a22-4308-bbb3-0c292d68ccbc,2026-01-26,0005,2326.81,raw_material_ratio=0.558; raw_matches=63/113; weekday=mon/tue; threshold=0.50,0.750
+2026-02,Результаты инвентаризации упаковки (кроме коробок для пиццы),e07b99c4-fb08-4d44-9aaf-065e54a20746,2026-02-01,0006,-33516.26,packaging_context_ratio=0.958; whitelist_packaging_ratio=0.667; context_matches=46/48; whitelist_matches=32/48; threshold=0.80,0.958
+2026-02,Результаты инвентаризации коробки д/пиццы,e07b99c4-fb08-4d44-9aaf-065e54a20746,2026-02-01,0006,5769.20,packaging_context_ratio=0.958; whitelist_packaging_ratio=0.667; context_matches=46/48; whitelist_matches=32/48; threshold=0.80,0.958
+2026-02,Результаты ревизии,f1f24900-d178-4827-9b57-8bb916ffe2a9,2026-02-02,0007,26280.15,raw_material_ratio=0.571; raw_matches=64/112; weekday=mon/tue; threshold=0.50,0.750
+2026-02,Результаты ревизии,2cefac93-90fa-4f48-bf06-21c8c7d727ed,2026-02-09,0008,-1850.57,raw_material_ratio=0.566; raw_matches=64/113; weekday=mon/tue; threshold=0.50,0.750
+2026-02,Результаты ревизии,44a42a4b-1108-4875-8b64-d6486f916e5a,2026-02-16,0009,8502.57,raw_material_ratio=0.571; raw_matches=64/112; weekday=mon/tue; threshold=0.50,0.750
+2026-02,Результаты ревизии,f689696d-7b82-43a9-aa99-7cab5b8908b0,2026-02-23,0010,7323.64,raw_material_ratio=0.561; raw_matches=64/114; weekday=mon/tue; threshold=0.50,0.750
+2026-03,Результаты ревизии,c4a0af2b-b070-4cf9-b4bd-1a44587e4e12,2026-03-02,0011,1507.26,raw_material_ratio=0.575; raw_matches=65/113; weekday=mon/tue; threshold=0.50,0.750
+2026-03,Результаты инвентаризации упаковки (кроме коробок для пиццы),d06b2444-8aa7-4511-a803-1d9c38d6b788,2026-03-02,0012,-28414.92,packaging_context_ratio=0.979; whitelist_packaging_ratio=0.702; context_matches=46/47; whitelist_matches=33/47; threshold=0.80,0.979
+2026-03,Результаты инвентаризации коробки д/пиццы,d06b2444-8aa7-4511-a803-1d9c38d6b788,2026-03-02,0012,2234.69,packaging_context_ratio=0.979; whitelist_packaging_ratio=0.702; context_matches=46/47; whitelist_matches=33/47; threshold=0.80,0.979
+2026-03,Результаты ревизии,eb4530c9-df32-4ca9-b39e-91e9ced40022,2026-03-10,0013,8445.96,raw_material_ratio=0.575; raw_matches=65/113; weekday=mon/tue; threshold=0.50,0.750
+2026-03,Результаты ревизии,39b20265-99d9-4184-924a-e51f531e779b,2026-03-16,0014,2689.47,raw_material_ratio=0.561; raw_matches=64/114; weekday=mon/tue; threshold=0.50,0.750
+2026-03,Результаты ревизии,074ae63c-572e-4ea1-8967-0bbc12b0e779,2026-03-23,0015,-2219.66,raw_material_ratio=0.570; raw_matches=65/114; weekday=mon/tue; threshold=0.50,0.750
+2026-03,Результаты ревизии,4d82dc5a-0410-4ec7-80da-47920d370b03,2026-03-30,0017,499.12,raw_material_ratio=0.570; raw_matches=65/114; weekday=mon/tue; threshold=0.50,0.750
+2026-04,Результаты инвентаризации упаковки (кроме коробок для пиццы),70d51a6b-ad4b-412e-8563-19945a5e184e,2026-04-01,0016,-39327.36,packaging_context_ratio=0.977; whitelist_packaging_ratio=0.705; context_matches=43/44; whitelist_matches=31/44; threshold=0.80,0.977
+2026-04,Результаты инвентаризации коробки д/пиццы,70d51a6b-ad4b-412e-8563-19945a5e184e,2026-04-01,0016,3488.75,packaging_context_ratio=0.977; whitelist_packaging_ratio=0.705; context_matches=43/44; whitelist_matches=31/44; threshold=0.80,0.977
+2026-04,Результаты ревизии,ed7c366c-4051-4c94-bddc-dcfd73872667,2026-04-06,0018,-5972.70,raw_material_ratio=0.569; raw_matches=66/116; weekday=mon/tue; threshold=0.50,0.750
+2026-04,Результаты ревизии,24f3c99c-a84b-4161-bd4c-10ae7141ebca,2026-04-13,0019,2629.14,raw_material_ratio=0.562; raw_matches=63/112; weekday=mon/tue; threshold=0.50,0.750
+2026-04,Результаты ревизии,28920447-5c9d-4844-b48d-0aad8c387447,2026-04-20,0020,-747.19,raw_material_ratio=0.566; raw_matches=64/113; weekday=mon/tue; threshold=0.50,0.750
+2026-04,Результаты ревизии,df45381d-c983-41f6-af9e-6dc297603cb5,2026-04-27,0021,-3716.19,raw_material_ratio=0.565; raw_matches=61/108; weekday=mon/tue; threshold=0.50,0.750
+2026-05,Результаты инвентаризации упаковки (кроме коробок для пиццы),b3560339-4e7d-4ecc-a170-d6bcfa1e35ce,2026-05-01,0022,-22050.61,packaging_context_ratio=0.936; whitelist_packaging_ratio=0.638; context_matches=44/47; whitelist_matches=30/47; threshold=0.80,0.936
+2026-05,Результаты инвентаризации коробки д/пиццы,b3560339-4e7d-4ecc-a170-d6bcfa1e35ce,2026-05-01,0022,4190.19,packaging_context_ratio=0.936; whitelist_packaging_ratio=0.638; context_matches=44/47; whitelist_matches=30/47; threshold=0.80,0.936
+2026-05,Результаты ревизии,3efe136c-3f96-4048-a387-3a2165736f9d,2026-05-11,0024,-3943.04,raw_material_ratio=0.566; raw_matches=64/113; weekday=mon/tue; threshold=0.50,0.750
+2026-05,Результаты ревизии,38ef93ef-9b85-42c0-acf6-52f38ab328f0,2026-05-18,0025,-23489.16,raw_material_ratio=0.561; raw_matches=64/114; weekday=mon/tue; threshold=0.50,0.750

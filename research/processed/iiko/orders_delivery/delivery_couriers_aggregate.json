@@ -1,0 +1,233 @@
+[
+  {
+    "period_start": "2025-11-01",
+    "period_end": "2025-11-30",
+    "metric_type": "AVERAGE",
+    "courier_metric_rows": 14.0,
+    "total_time": 101.29785714285715,
+    "on_the_way_time": 27.77285714285714,
+    "double_orders": 2.117857142857143,
+    "triple_orders": 2.6350000000000002,
+    "order_count": 17.03
+  },
+  {
+    "period_start": "2025-11-01",
+    "period_end": "2025-11-30",
+    "metric_type": "MAXIMUM",
+    "courier_metric_rows": 14.0,
+    "total_time": 795.0,
+    "on_the_way_time": 139.0,
+    "double_orders": 9.0,
+    "triple_orders": 9.0,
+    "order_count": 46.0
+  },
+  {
+    "period_start": "2025-11-01",
+    "period_end": "2025-11-30",
+    "metric_type": "TARGET",
+    "courier_metric_rows": 14.0,
+    "total_time": 9.364285714285714,
+    "on_the_way_time": 11.45,
+    "double_orders": 22.0,
+    "triple_orders": 11.142857142857142,
+    "order_count": 100.0
+  },
+  {
+    "period_start": "2025-12-01",
+    "period_end": "2025-12-31",
+    "metric_type": "AVERAGE",
+    "courier_metric_rows": 11.0,
+    "total_time": 100.64090909090909,
+    "on_the_way_time": 29.989090909090915,
+    "double_orders": 2.205454545454545,
+    "triple_orders": 2.7345454545454544,
+    "order_count": 16.527272727272727
+  },
+  {
+    "period_start": "2025-12-01",
+    "period_end": "2025-12-31",
+    "metric_type": "MAXIMUM",
+    "courier_metric_rows": 11.0,
+    "total_time": 1797.0,
+    "on_the_way_time": 238.0,
+    "double_orders": 7.0,
+    "triple_orders": 10.0,
+    "order_count": 47.0
+  },
+  {
+    "period_start": "2025-12-01",
+    "period_end": "2025-12-31",
+    "metric_type": "TARGET",
+    "courier_metric_rows": 11.0,
+    "total_time": 12.209090909090907,
+    "on_the_way_time": 10.981818181818182,
+    "double_orders": 25.181818181818183,
+    "triple_orders": 20.636363636363637,
+    "order_count": 100.0
+  },
+  {
+    "period_start": "2026-01-01",
+    "period_end": "2026-01-31",
+    "metric_type": "AVERAGE",
+    "courier_metric_rows": 16.0,
+    "total_time": 112.333125,
+    "on_the_way_time": 37.919375,
+    "double_orders": 2.965625,
+    "triple_orders": 2.7100000000000004,
+    "order_count": 19.384999999999998
+  },
+  {
+    "period_start": "2026-01-01",
+    "period_end": "2026-01-31",
+    "metric_type": "MAXIMUM",
+    "courier_metric_rows": 16.0,
+    "total_time": 737.0,
+    "on_the_way_time": 535.0,
+    "double_orders": 8.0,
+    "triple_orders": 7.0,
+    "order_count": 42.0
+  },
+  {
+    "period_start": "2026-01-01",
+    "period_end": "2026-01-31",
+    "metric_type": "TARGET",
+    "courier_metric_rows": 16.0,
+    "total_time": 8.31875,
+    "on_the_way_time": 8.6125,
+    "double_orders": 14.1875,
+    "triple_orders": 11.3125,
+    "order_count": 100.0
+  },
+  {
+    "period_start": "2026-02-01",
+    "period_end": "2026-02-28",
+    "metric_type": "AVERAGE",
+    "courier_metric_rows": 17.0,
+    "total_time": 114.98000000000002,
+    "on_the_way_time": 37.455882352941174,
+    "double_orders": 2.0405882352941176,
+    "triple_orders": 2.355294117647059,
+    "order_count": 15.284117647058826
+  },
+  {
+    "period_start": "2026-02-01",
+    "period_end": "2026-02-28",
+    "metric_type": "MAXIMUM",
+    "courier_metric_rows": 17.0,
+    "total_time": 1430.0,
+    "on_the_way_time": 1415.0,
+    "double_orders": 7.0,
+    "triple_orders": 10.0,
+    "order_count": 54.0
+  },
+  {
+    "period_start": "2026-02-01",
+    "period_end": "2026-02-28",
+    "metric_type": "TARGET",
+    "courier_metric_rows": 17.0,
+    "total_time": 8.976470588235296,
+    "on_the_way_time": 7.505882352941177,
+    "double_orders": 25.647058823529413,
+    "triple_orders": 13.235294117647058,
+    "order_count": 100.0
+  },
+  {
+    "period_start": "2026-03-01",
+    "period_end": "2026-03-31",
+    "metric_type": "AVERAGE",
+    "courier_metric_rows": 15.0,
+    "total_time": 125.74600000000001,
+    "on_the_way_time": 34.727333333333334,
+    "double_orders": 2.7053333333333334,
+    "triple_orders": 2.6133333333333337,
+    "order_count": 18.146
+  },
+  {
+    "period_start": "2026-03-01",
+    "period_end": "2026-03-31",
+    "metric_type": "MAXIMUM",
+    "courier_metric_rows": 15.0,
+    "total_time": 715.0,
+    "on_the_way_time": 301.0,
+    "double_orders": 8.0,
+    "triple_orders": 10.0,
+    "order_count": 55.0
+  },
+  {
+    "period_start": "2026-03-01",
+    "period_end": "2026-03-31",
+    "metric_type": "TARGET",
+    "courier_metric_rows": 15.0,
+    "total_time": 9.366666666666669,
+    "on_the_way_time": 8.92,
+    "double_orders": 18.466666666666665,
+    "triple_orders": 11.333333333333334,
+    "order_count": 100.0
+  },
+  {
+    "period_start": "2026-04-01",
+    "period_end": "2026-04-30",
+    "metric_type": "AVERAGE",
+    "courier_metric_rows": 14.0,
+    "total_time": 111.76714285714284,
+    "on_the_way_time": 36.402142857142856,
+    "double_orders": 2.5585714285714287,
+    "triple_orders": 2.34,
+    "order_count": 16.550714285714285
+  },
+  {
+    "period_start": "2026-04-01",
+    "period_end": "2026-04-30",
+    "metric_type": "MAXIMUM",
+    "courier_metric_rows": 14.0,
+    "total_time": 760.0,
+    "on_the_way_time": 163.0,
+    "double_orders": 8.0,
+    "triple_orders": 8.0,
+    "order_count": 46.0
+  },
+  {
+    "period_start": "2026-04-01",
+    "period_end": "2026-04-30",
+    "metric_type": "TARGET",
+    "courier_metric_rows": 14.0,
+    "total_time": 9.757142857142856,
+    "on_the_way_time": 9.114285714285714,
+    "double_orders": 19.642857142857142,
+    "triple_orders": 13.928571428571429,
+    "order_count": 100.0
+  },
+  {
+    "period_start": "2026-05-01",
+    "period_end": "2026-05-17",
+    "metric_type": "AVERAGE",
+    "courier_metric_rows": 12.0,
+    "total_time": 115.89833333333333,
+    "on_the_way_time": 34.26916666666667,
+    "double_orders": 3.0691666666666664,
+    "triple_orders": 1.9666666666666668,
+    "order_count": 16.151666666666667
+  },
+  {
+    "period_start": "2026-05-01",
+    "period_end": "2026-05-17",
+    "metric_type": "MAXIMUM",
+    "courier_metric_rows": 12.0,
+    "total_time": 658.0,
+    "on_the_way_time": 285.0,
+    "double_orders": 7.0,
+    "triple_orders": 8.0,
+    "order_count": 45.0
+  },
+  {
+    "period_start": "2026-05-01",
+    "period_end": "2026-05-17",
+    "metric_type": "TARGET",
+    "courier_metric_rows": 12.0,
+    "total_time": 10.733333333333334,
+    "on_the_way_time": 11.241666666666667,
+    "double_orders": 21.583333333333332,
+    "triple_orders": 23.666666666666668,
+    "order_count": 100.0
+  }
+]

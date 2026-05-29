@@ -1,0 +1,72 @@
+[
+  {
+    "field": "Дата создания клиента",
+    "title": "",
+    "source_file": "research/raw/iiko/orders_delivery/olap_columns_deliveries.json",
+    "safe_for_aggregate_grouping": false,
+    "reason": "schema candidate may be personal or unclear"
+  },
+  {
+    "field": "Комментарий к клиенту",
+    "title": "",
+    "source_file": "research/raw/iiko/orders_delivery/olap_columns_deliveries.json",
+    "safe_for_aggregate_grouping": false,
+    "reason": "schema candidate may be personal or unclear"
+  },
+  {
+    "field": "НДС платит гость",
+    "title": "",
+    "source_file": "research/raw/iiko/orders_delivery/olap_columns_deliveries.json",
+    "safe_for_aggregate_grouping": false,
+    "reason": "schema candidate may be personal or unclear"
+  },
+  {
+    "field": "Номер карты клиента",
+    "title": "",
+    "source_file": "research/raw/iiko/orders_delivery/olap_columns_deliveries.json",
+    "safe_for_aggregate_grouping": false,
+    "reason": "schema candidate may be personal or unclear"
+  },
+  {
+    "field": "Отзыв клиента",
+    "title": "",
+    "source_file": "research/raw/iiko/orders_delivery/olap_columns_deliveries.json",
+    "safe_for_aggregate_grouping": false,
+    "reason": "schema candidate may be personal or unclear"
+  },
+  {
+    "field": "Реклама клиента",
+    "title": "",
+    "source_file": "research/raw/iiko/orders_delivery/olap_columns_deliveries.json",
+    "safe_for_aggregate_grouping": false,
+    "reason": "schema candidate may be personal or unclear"
+  },
+  {
+    "field": "Телефон клиента",
+    "title": "",
+    "source_file": "research/raw/iiko/orders_delivery/olap_columns_deliveries.json",
+    "safe_for_aggregate_grouping": false,
+    "reason": "schema candidate may be personal or unclear"
+  },
+  {
+    "field": "Тип карты клиента",
+    "title": "",
+    "source_file": "research/raw/iiko/orders_delivery/olap_columns_deliveries.json",
+    "safe_for_aggregate_grouping": false,
+    "reason": "schema candidate may be personal or unclear"
+  },
+  {
+    "field": "ФИО клиента",
+    "title": "",
+    "source_file": "research/raw/iiko/orders_delivery/olap_columns_deliveries.json",
+    "safe_for_aggregate_grouping": false,
+    "reason": "schema candidate may be personal or unclear"
+  },
+  {
+    "field": "Ценовая категория клиента",
+    "title": "",
+    "source_file": "research/raw/iiko/orders_delivery/olap_columns_deliveries.json",
+    "safe_for_aggregate_grouping": false,
+    "reason": "schema candidate may be personal or unclear"
+  }
+]

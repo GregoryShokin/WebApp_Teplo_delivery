@@ -1,0 +1,7 @@
+{
+  "status": "not_available",
+  "reason": "No clearly safe aggregate new/repeat client field was found in OLAP columns.",
+  "orders_per_client": "not_calculated_without_non_personal_stable_client_key",
+  "frequency": "not_calculated_without_non_personal_stable_client_key",
+  "repeat_30_days": "not_calculated_without_non_personal_stable_client_key"
+}

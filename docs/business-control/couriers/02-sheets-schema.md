@@ -49,7 +49,7 @@ flowchart LR
 
 Назначение: факт выхода курьера на работу. Этот лист используется в локальном агрегаторе как источник часов смен и количества фактических выходов.
 
-Подтвержденные индексы из [scripts/business_control/build_labor_costs.py](../../../scripts/business_control/build_labor_costs.py):
+Подтвержденные индексы из [research/scripts/business_control/build_labor_costs.py](../../../research/scripts/business_control/build_labor_costs.py):
 
 - `A` (`row[0]`) парсится как дата;
 - `D` (`row[3]`) парсится как часы;

@@ -1,0 +1,22 @@
+[
+  {
+    "origin_name": "site",
+    "orders": 12527.0,
+    "revenue": 20769200.109999996,
+    "discount_sum": 3822852.890000001,
+    "is_problem_origin": false,
+    "order_share": 0.7951631331725276,
+    "revenue_share": 0.8136980698803091,
+    "avg_check": 1657.9548263750296
+  },
+  {
+    "origin_name": "(пусто)",
+    "orders": 3227.0,
+    "revenue": 4755255.309999999,
+    "discount_sum": 622952.69,
+    "is_problem_origin": true,
+    "order_share": 0.20483686682747237,
+    "revenue_share": 0.18630193011969062,
+    "avg_check": 1473.5839200495811
+  }
+]

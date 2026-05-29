@@ -1,0 +1,280 @@
+{
+  "generated_at": "2026-05-18T14:56:52",
+  "current_department_scope": "active_chernikova",
+  "periods": {
+    "channels_clients_cancellations": {
+      "start": "2025-11-01",
+      "end": "2026-05-17"
+    },
+    "delivery": {
+      "start": "2025-11-01",
+      "end": "2026-05-17"
+    }
+  },
+  "orders": 15754.0,
+  "revenue": 25524455.42,
+  "avg_check": 1620.1888675891837,
+  "service_type_summary": [
+    {
+      "service_type": "COURIER",
+      "orders": 11942.0,
+      "revenue": 21458231.409999996,
+      "discount_sum": 3515003.59,
+      "order_share": 0.7580297067411451,
+      "revenue_share": 0.8406930160471174,
+      "avg_check": 1796.8708264947243
+    },
+    {
+      "service_type": "PICKUP",
+      "orders": 3728.0,
+      "revenue": 4066224.0100000002,
+      "discount_sum": 917386.99,
+      "order_share": 0.23663831407896407,
+      "revenue_share": 0.15930698395288231,
+      "avg_check": 1090.7253245708155
+    },
+    {
+      "service_type": "(пусто)",
+      "orders": 84.0,
+      "revenue": 0.0,
+      "discount_sum": 13415.0,
+      "order_share": 0.005331979179890822,
+      "revenue_share": 0.0,
+      "avg_check": 0.0
+    }
+  ],
+  "top_origins": [
+    {
+      "origin_name": "site",
+      "orders": 12527.0,
+      "revenue": 20769200.109999996,
+      "discount_sum": 3822852.890000001,
+      "is_problem_origin": false,
+      "order_share": 0.7951631331725276,
+      "revenue_share": 0.8136980698803091,
+      "avg_check": 1657.9548263750296
+    },
+    {
+      "origin_name": "(пусто)",
+      "orders": 3227.0,
+      "revenue": 4755255.309999999,
+      "discount_sum": 622952.69,
+      "is_problem_origin": true,
+      "order_share": 0.20483686682747237,
+      "revenue_share": 0.18630193011969062,
+      "avg_check": 1473.5839200495811
+    }
+  ],
+  "blank_origin_orders": 3227.0,
+  "blank_origin_order_share": 0.20483686682747237,
+  "delivery": {
+    "courier_orders": 11778.0,
+    "courier_avg_way_duration_min": 31.443538801154695,
+    "courier_avg_delay_min": 19.899767362879945,
+    "rows": [
+      {
+        "period_start": "2025-11-01",
+        "period_end": "2026-05-17",
+        "service_type": "(пусто)",
+        "region": "(пусто)",
+        "orders": 76.0,
+        "revenue": 0.0,
+        "way_duration_sum_min": 0.0,
+        "avg_check": 0.0,
+        "avg_delay_min": 0.0,
+        "avg_way_duration_min": 0.0,
+        "avg_delivery_mark": 0.0,
+        "mark_weight_orders": 0.0
+      },
+      {
+        "period_start": "2025-11-01",
+        "period_end": "2026-05-17",
+        "service_type": "COURIER",
+        "region": "(пусто)",
+        "orders": 11778.0,
+        "revenue": 21458231.409999996,
+        "way_duration_sum_min": 370342.0,
+        "avg_check": 1821.8909330956017,
+        "avg_delay_min": 19.899767362879945,
+        "avg_way_duration_min": 31.443538801154695,
+        "avg_delivery_mark": 0.0,
+        "mark_weight_orders": 0.0
+      },
+      {
+        "period_start": "2025-11-01",
+        "period_end": "2026-05-17",
+        "service_type": "PICKUP",
+        "region": "(пусто)",
+        "orders": 3674.0,
+        "revenue": 4066224.01,
+        "way_duration_sum_min": 0.0,
+        "avg_check": 1106.7566712030484,
+        "avg_delay_min": 19.68824986390855,
+        "avg_way_duration_min": 0.0,
+        "avg_delivery_mark": 0.0,
+        "mark_weight_orders": 0.0
+      }
+    ]
+  },
+  "cancellations_returns": {
+    "known_return_loss_without_vat": 163092.99,
+    "loss_amount_estimate": 544428.99,
+    "rows": [
+      {
+        "period_start": "2025-11-01",
+        "period_end": "2026-05-17",
+        "order_deleted": "DELETED",
+        "cancel_cause": "Отказ клиента",
+        "storned": "FALSE",
+        "removal_type": "Без списания",
+        "deleted_with_writeoff": "DELETED_WITHOUT_WRITEOFF",
+        "cases_orders": 119.0,
+        "known_return_loss_without_vat": 0.0,
+        "canceled_order_amount": 0.0,
+        "removal_amount": 242824.0,
+        "loss_amount_estimate": 242824.0
+      },
+      {
+        "period_start": "2025-11-01",
+        "period_end": "2026-05-17",
+        "order_deleted": "NOT_DELETED",
+        "cancel_cause": "(пусто)",
+        "storned": "TRUE",
+        "removal_type": "(пусто)",
+        "deleted_with_writeoff": "NOT_DELETED",
+        "cases_orders": 73.0,
+        "known_return_loss_without_vat": 163092.99,
+        "canceled_order_amount": 0.0,
+        "removal_amount": 0.0,
+        "loss_amount_estimate": 163092.99
+      },
+      {
+        "period_start": "2025-11-01",
+        "period_end": "2026-05-17",
+        "order_deleted": "DELETED",
+        "cancel_cause": "Отказ клиента",
+        "storned": "FALSE",
+        "removal_type": "Со списанием",
+        "deleted_with_writeoff": "DELETED_WITH_WRITEOFF",
+        "cases_orders": 74.0,
+        "known_return_loss_without_vat": 0.0,
+        "canceled_order_amount": 0.0,
+        "removal_amount": 82928.0,
+        "loss_amount_estimate": 82928.0
+      },
+      {
+        "period_start": "2025-11-01",
+        "period_end": "2026-05-17",
+        "order_deleted": "NOT_DELETED",
+        "cancel_cause": "(пусто)",
+        "storned": "FALSE",
+        "removal_type": "Без списания",
+        "deleted_with_writeoff": "DELETED_WITHOUT_WRITEOFF",
+        "cases_orders": 88.0,
+        "known_return_loss_without_vat": 0.0,
+        "canceled_order_amount": 0.0,
+        "removal_amount": 46909.0,
+        "loss_amount_estimate": 46909.0
+      },
+      {
+        "period_start": "2025-11-01",
+        "period_end": "2026-05-17",
+        "order_deleted": "NOT_DELETED",
+        "cancel_cause": "(пусто)",
+        "storned": "FALSE",
+        "removal_type": "Со списанием",
+        "deleted_with_writeoff": "DELETED_WITH_WRITEOFF",
+        "cases_orders": 7.0,
+        "known_return_loss_without_vat": 0.0,
+        "canceled_order_amount": 0.0,
+        "removal_amount": 8675.0,
+        "loss_amount_estimate": 8675.0
+      },
+      {
+        "period_start": "2025-11-01",
+        "period_end": "2026-05-17",
+        "order_deleted": "NOT_DELETED",
+        "cancel_cause": "(пусто)",
+        "storned": "TRUE",
+        "removal_type": "(пусто)",
+        "deleted_with_writeoff": "DELETED_WITHOUT_WRITEOFF",
+        "cases_orders": 17.0,
+        "known_return_loss_without_vat": 0.0,
+        "canceled_order_amount": 0.0,
+        "removal_amount": 0.0,
+        "loss_amount_estimate": 0.0
+      },
+      {
+        "period_start": "2025-11-01",
+        "period_end": "2026-05-17",
+        "order_deleted": "DELETED",
+        "cancel_cause": "Отказ клиента",
+        "storned": "FALSE",
+        "removal_type": "(пусто)",
+        "deleted_with_writeoff": "DELETED_WITHOUT_WRITEOFF",
+        "cases_orders": 352.0,
+        "known_return_loss_without_vat": 0.0,
+        "canceled_order_amount": 0.0,
+        "removal_amount": 0.0,
+        "loss_amount_estimate": 0.0
+      },
+      {
+        "period_start": "2025-11-01",
+        "period_end": "2026-05-17",
+        "order_deleted": "NOT_DELETED",
+        "cancel_cause": "(пусто)",
+        "storned": "TRUE",
+        "removal_type": "Со списанием",
+        "deleted_with_writeoff": "DELETED_WITH_WRITEOFF",
+        "cases_orders": 1.0,
+        "known_return_loss_without_vat": 0.0,
+        "canceled_order_amount": 0.0,
+        "removal_amount": 0.0,
+        "loss_amount_estimate": 0.0
+      },
+      {
+        "period_start": "2025-11-01",
+        "period_end": "2026-05-17",
+        "order_deleted": "NOT_DELETED",
+        "cancel_cause": "(пусто)",
+        "storned": "TRUE",
+        "removal_type": "Без списания",
+        "deleted_with_writeoff": "DELETED_WITHOUT_WRITEOFF",
+        "cases_orders": 1.0,
+        "known_return_loss_without_vat": 0.0,
+        "canceled_order_amount": 0.0,
+        "removal_amount": 0.0,
+        "loss_amount_estimate": 0.0
+      },
+      {
+        "period_start": "2025-11-01",
+        "period_end": "2026-05-17",
+        "order_deleted": "DELETED",
+        "cancel_cause": "(пусто)",
+        "storned": "FALSE",
+        "removal_type": "(пусто)",
+        "deleted_with_writeoff": "DELETED_WITHOUT_WRITEOFF",
+        "cases_orders": 3.0,
+        "known_return_loss_without_vat": 0.0,
+        "canceled_order_amount": 0.0,
+        "removal_amount": 0.0,
+        "loss_amount_estimate": 0.0
+      }
+    ]
+  },
+  "client_segments": [],
+  "recommended_daily_owner_panel_metrics": [
+    "orders",
+    "revenue",
+    "avg_check",
+    "orders_by_origin_name",
+    "orders_by_delivery_service_type",
+    "discount_sum_and_discount_share",
+    "blank_origin_share",
+    "canceled_orders_and_cancel_causes",
+    "return_loss_without_vat",
+    "courier_avg_way_duration_min",
+    "courier_avg_delay_min",
+    "delivery_mark_if_filled"
+  ]
+}

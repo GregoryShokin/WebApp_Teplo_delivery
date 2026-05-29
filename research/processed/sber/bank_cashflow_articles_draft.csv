@@ -1,0 +1,13 @@
+period,direction,article_group,article,transaction_count,amount_rub_total_abs,first_date,last_date,counterparty_ids,review_status
+2026-02,CREDIT,operating_inflow,Поступления от эквайринга / агрегаторов,162,2932164.26,2026-02-01,2026-02-28,CP0003; CP0005,needs_owner_review
+2026-02,DEBIT,financing,Кредиты / овердрафт,2,398.00,2026-02-16,2026-02-24,CP0007,needs_owner_review
+2026-02,DEBIT,unclassified_outflow,"Списания, требуется разметка",9,2753979.00,2026-02-02,2026-02-24,CP0004; CP0006; CP0009,needs_owner_review
+2026-03,CREDIT,operating_inflow,"Поступления / выручка, требуется разметка",1,220000.00,2026-03-17,2026-03-17,CP0008,needs_owner_review
+2026-03,CREDIT,operating_inflow,Поступления от эквайринга / агрегаторов,177,3156477.58,2026-03-01,2026-03-31,CP0003; CP0005,needs_owner_review
+2026-03,DEBIT,unclassified_outflow,"Списания, требуется разметка",10,3629917.00,2026-03-02,2026-03-31,CP0001; CP0004; CP0006; CP0009,needs_owner_review
+2026-04,CREDIT,operating_inflow,Поступления от эквайринга / агрегаторов,157,2558836.39,2026-04-01,2026-04-30,CP0003; CP0005,needs_owner_review
+2026-04,DEBIT,financing,Кредиты / овердрафт,1,199.00,2026-04-20,2026-04-20,CP0007,needs_owner_review
+2026-04,DEBIT,operating_outflow,Аренда,1,100000.00,2026-04-30,2026-04-30,CP0004,needs_owner_review
+2026-04,DEBIT,unclassified_outflow,"Списания, требуется разметка",10,2379106.00,2026-04-01,2026-04-27,CP0001; CP0002; CP0004; CP0006; CP0009,needs_owner_review
+2026-05,CREDIT,operating_inflow,Поступления от эквайринга / агрегаторов,105,1825645.31,2026-05-01,2026-05-19,CP0003; CP0005,needs_owner_review
+2026-05,DEBIT,unclassified_outflow,"Списания, требуется разметка",5,1930491.00,2026-05-01,2026-05-19,CP0004; CP0006; CP0009,needs_owner_review

@@ -1,0 +1,38 @@
+[
+  {
+    "period_start": "2026-02-01",
+    "period_end": "2026-05-17",
+    "writeoff_reason": "(пусто)",
+    "removal_type": "(пусто)",
+    "deleted_with_writeoff": "DELETED_WITHOUT_WRITEOFF",
+    "cases_orders": 1691.0,
+    "dish_amount": 3832.0,
+    "gross_sum": 883166.0,
+    "revenue": 0.0,
+    "product_cost": 161164.62286596023
+  },
+  {
+    "period_start": "2026-02-01",
+    "period_end": "2026-05-17",
+    "writeoff_reason": "(пусто)",
+    "removal_type": "Без списания",
+    "deleted_with_writeoff": "DELETED_WITHOUT_WRITEOFF",
+    "cases_orders": 123.0,
+    "dish_amount": 627.0,
+    "gross_sum": 184489.0,
+    "revenue": 0.0,
+    "product_cost": 42427.0363601586
+  },
+  {
+    "period_start": "2026-02-01",
+    "period_end": "2026-05-17",
+    "writeoff_reason": "(пусто)",
+    "removal_type": "Со списанием",
+    "deleted_with_writeoff": "DELETED_WITH_WRITEOFF",
+    "cases_orders": 45.0,
+    "dish_amount": 142.0,
+    "gross_sum": 61226.0,
+    "revenue": 0.0,
+    "product_cost": 15995.696925219165
+  }
+]

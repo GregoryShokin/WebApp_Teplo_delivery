@@ -1,0 +1,4 @@
+period_start,period_end,writeoff_reason,removal_type,deleted_with_writeoff,cases_orders,dish_amount,gross_sum,revenue,product_cost
+2026-02-01,2026-05-17,(пусто),(пусто),DELETED_WITHOUT_WRITEOFF,1691.0,3832.0,883166.0,0.0,161164.62286596023
+2026-02-01,2026-05-17,(пусто),Без списания,DELETED_WITHOUT_WRITEOFF,123.0,627.0,184489.0,0.0,42427.0363601586
+2026-02-01,2026-05-17,(пусто),Со списанием,DELETED_WITH_WRITEOFF,45.0,142.0,61226.0,0.0,15995.696925219165

@@ -1,6 +1,6 @@
 # Python-сервис курьерской книги: модели, Sheets и расчеты
 
-Документ продолжает разбор `data/raw/courier_service/TestAppScript.py` и фиксирует фактический поток данных: iikoCloud/webhook -> Python dict'и -> Google Sheets. PII и секреты не приводятся.
+Документ продолжает разбор `research/raw/courier_service/TestAppScript.py` и фиксирует фактический поток данных: iikoCloud/webhook -> Python dict'и -> Google Sheets. PII и секреты не приводятся.
 
 ## 3. Модель данных в памяти и на выходе
 
@@ -73,7 +73,7 @@ Scope:
 https://www.googleapis.com/auth/spreadsheets
 ```
 
-Файл ключа: `data/raw/courier_service/service_account.json` в snapshot. Внутри есть `private_key`, `client_email`, `private_key_id`, `project_id` и другие поля service account. Значения не документировать и не переносить в приложение.
+Файл ключа: `research/raw/courier_service/service_account.json` в snapshot. Внутри есть `private_key`, `client_email`, `private_key_id`, `project_id` и другие поля service account. Значения не документировать и не переносить в приложение.
 
 ### Какие листы сервис пишет
 

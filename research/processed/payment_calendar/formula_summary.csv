@@ -1,0 +1,165 @@
+sheet,formula_count,functions,sample_formulas
+Регламент,0,,
+Как настроить,0,,
+Календарь,8997,"DUMMYFUNCTION:56, FILTER:2, IF:208, IFERROR:56, SUM:172, SUMIFS:4340, VLOOKUP:212","M2: =C2
+W2: =O2
+AG2: =Y2
+AS2: =AI2
+BC2: =AU2
+BM2: =BE2
+BY2: =BO2
+CI2: =CA2
+CS2: =CK2
+DE2: =CW2
+DO2: =DG2
+EA2: =DQ2
+C4: =ifna(VLOOKUP(C$6,'Диапазон недель'!$A$2:$C75,2,0),"""")
+D4: =ifna(VLOOKUP(D$6,'Диапазон недель'!$A$2:$C75,2,0),"""")
+E4: =ifna(VLOOKUP(E$6,'Диапазон недель'!$A$2:$C75,2,0),"""")
+F4: =ifna(VLOOKUP(F$6,'Диапазон недель'!$A$2:$C75,2,0),"""")
+G4: =ifna(VLOOKUP(G$6,'Диапазон недель'!$A$2:$C75,2,0),"""")
+H4: =ifna(VLOOKUP(H$6,'Диапазон недель'!$A$2:$C75,2,0),"""")
+I4: =ifna(VLOOKUP(I$6,'Диапазон недель'!$A$2:$C75,2,0),"""")
+J4: =ifna(VLOOKUP(J$6,'Диапазон недель'!$A$2:$C75,2,0),"""")"
+Плановый Реестр поступлений,1970,"ISBLANK:1970, MONTH:985, YEAR:985","G3: =if(ISBLANK($D3)=TRUE,"""",YEAR($D3))
+H3: =if(ISBLANK($D3)=TRUE,"""",MONTH($D3))
+G4: =if(ISBLANK($D4)=TRUE,"""",YEAR($D4))
+H4: =if(ISBLANK($D4)=TRUE,"""",MONTH($D4))
+G5: =if(ISBLANK($D5)=TRUE,"""",YEAR($D5))
+H5: =if(ISBLANK($D5)=TRUE,"""",MONTH($D5))
+G6: =if(ISBLANK($D6)=TRUE,"""",YEAR($D6))
+H6: =if(ISBLANK($D6)=TRUE,"""",MONTH($D6))
+G7: =if(ISBLANK($D7)=TRUE,"""",YEAR($D7))
+H7: =if(ISBLANK($D7)=TRUE,"""",MONTH($D7))
+G8: =if(ISBLANK($D8)=TRUE,"""",YEAR($D8))
+H8: =if(ISBLANK($D8)=TRUE,"""",MONTH($D8))
+G9: =if(ISBLANK($D9)=TRUE,"""",YEAR($D9))
+H9: =if(ISBLANK($D9)=TRUE,"""",MONTH($D9))
+G10: =if(ISBLANK($D10)=TRUE,"""",YEAR($D10))
+H10: =if(ISBLANK($D10)=TRUE,"""",MONTH($D10))
+G11: =if(ISBLANK($D11)=TRUE,"""",YEAR($D11))
+H11: =if(ISBLANK($D11)=TRUE,"""",MONTH($D11))
+G12: =if(ISBLANK($D12)=TRUE,"""",YEAR($D12))
+H12: =if(ISBLANK($D12)=TRUE,"""",MONTH($D12))"
+Плановые Реестр выбытий,2030,"ISBLANK:2030, MONTH:1015, YEAR:1015","H3: =if(ISBLANK($E3)=TRUE,"""",YEAR($E3))
+I3: =if(ISBLANK($E3)=TRUE,"""",MONTH($E3))
+H4: =if(ISBLANK($E4)=TRUE,"""",YEAR($E4))
+I4: =if(ISBLANK($E4)=TRUE,"""",MONTH($E4))
+H5: =if(ISBLANK($E5)=TRUE,"""",YEAR($E5))
+I5: =if(ISBLANK($E5)=TRUE,"""",MONTH($E5))
+H6: =if(ISBLANK($E6)=TRUE,"""",YEAR($E6))
+I6: =if(ISBLANK($E6)=TRUE,"""",MONTH($E6))
+H7: =if(ISBLANK($E7)=TRUE,"""",YEAR($E7))
+I7: =if(ISBLANK($E7)=TRUE,"""",MONTH($E7))
+H8: =if(ISBLANK($E8)=TRUE,"""",YEAR($E8))
+I8: =if(ISBLANK($E8)=TRUE,"""",MONTH($E8))
+H9: =if(ISBLANK($E9)=TRUE,"""",YEAR($E9))
+I9: =if(ISBLANK($E9)=TRUE,"""",MONTH($E9))
+H10: =if(ISBLANK($E10)=TRUE,"""",YEAR($E10))
+I10: =if(ISBLANK($E10)=TRUE,"""",MONTH($E10))
+H11: =if(ISBLANK($E11)=TRUE,"""",YEAR($E11))
+I11: =if(ISBLANK($E11)=TRUE,"""",MONTH($E11))
+H12: =if(ISBLANK($E12)=TRUE,"""",YEAR($E12))
+I12: =if(ISBLANK($E12)=TRUE,"""",MONTH($E12))"
+Факт ДДС,41091,"DUMMYFUNCTION:27585, IFERROR:27585, YEAR:4502","A2: =if(C2=0,"""",YEAR(C2))
+B2: =if(C2=0,"""",month(C2))
+C2: =IFERROR(__xludf.DUMMYFUNCTION(""[text]""""[private_ref]""""[text]""""'ДДС: месяц'!c5:d""""[text]""),45294.0)
+D2: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),-20000.0)
+E2: =IFERROR(__xludf.DUMMYFUNCTION(""[text]""""[private_ref]""""[text]""""'ДДС: месяц'!g5:i""""[text]""),"""")
+G2: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+H2: =ifna(vlookup(G2,'Справочник'!$A$3:$B7148,2,false),"""")
+A3: =if(C3=0,"""",YEAR(C3))
+B3: =if(C3=0,"""",month(C3))
+C3: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),45294.0)
+D3: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),-1000.0)
+G3: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+H3: =ifna(vlookup(G3,'Справочник'!$A$3:$B7148,2,false),"""")
+A4: =if(C4=0,"""",YEAR(C4))
+B4: =if(C4=0,"""",month(C4))
+C4: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),45294.0)
+D4: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),-6540.0)
+E4: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+G4: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+H4: =ifna(vlookup(G4,'Справочник'!$A$3:$B7148,2,false),"""")"
+Поставщики,1098,"IF:992, SUM:12, SUMIFS:1984","J4: =SUM(J5:J50)
+K4: =SUM(K5:K50)
+L4: =SUM(L5:L50)
+M4: =SUM(M5:M50)
+N4: =SUM(N5:N50)
+O4: =SUM(O5:O50)
+P4: =SUM(P5:P50)
+Q4: =SUM(Q5:Q50)
+R4: =SUM(R5:R50)
+S4: =SUM(S5:S50)
+T4: =SUM(T5:T50)
+U4: =SUM(U5:U50)
+A5: ='Контрагенты'!A2
+B5: =IF(SUMIFS('Факт ДДС'!$D$2:$D1001, 'Факт ДДС'!$B$2:$B1001, ""[text]""&B$3, 'Факт ДДС'!$E$2:$E1001, $A5, 'Факт ДДС'!$G$2:$G1001, $A$1)=0, """", -SUMIFS('Факт ДДС'!$D$2:$D1001, 'Факт ДДС'!$B$2:$B1001, ""[text]""&B$3, 'Факт ДДС'!$E$2:$E1001, $A5, 'Факт ДДС'!$G$2:$G1001, $A$1))
+C5: =IF(SUMIFS('Факт ДДС'!$D$2:$D1001, 'Факт ДДС'!$B$2:$B1001, ""[text]""&C$3, 'Факт ДДС'!$E$2:$E1001, $A5, 'Факт ДДС'!$G$2:$G1001, $A$1)=0, """", -SUMIFS('Факт ДДС'!$D$2:$D1001, 'Факт ДДС'!$B$2:$B1001, ""[text]""&C$3, 'Факт ДДС'!$E$2:$E1001, $A5, 'Факт ДДС'!$G$2:$G1001, $A$1))
+D5: =IF(SUMIFS('Факт ДДС'!$D$2:$D1001, 'Факт ДДС'!$B$2:$B1001, ""[text]""&D$3, 'Факт ДДС'!$E$2:$E1001, $A5, 'Факт ДДС'!$G$2:$G1001, $A$1)=0, """", -SUMIFS('Факт ДДС'!$D$2:$D1001, 'Факт ДДС'!$B$2:$B1001, ""[text]""&D$3, 'Факт ДДС'!$E$2:$E1001, $A5, 'Факт ДДС'!$G$2:$G1001, $A$1))
+E5: =IF(SUMIFS('Факт ДДС'!$D$2:$D1001, 'Факт ДДС'!$B$2:$B1001, ""[text]""&E$3, 'Факт ДДС'!$E$2:$E1001, $A5, 'Факт ДДС'!$G$2:$G1001, $A$1)=0, """", -SUMIFS('Факт ДДС'!$D$2:$D1001, 'Факт ДДС'!$B$2:$B1001, ""[text]""&E$3, 'Факт ДДС'!$E$2:$E1001, $A5, 'Факт ДДС'!$G$2:$G1001, $A$1))
+F5: =IF(SUMIFS('Факт ДДС'!$D$2:$D1001, 'Факт ДДС'!$B$2:$B1001, ""[text]""&F$3, 'Факт ДДС'!$E$2:$E1001, $A5, 'Факт ДДС'!$G$2:$G1001, $A$1)=0, """", -SUMIFS('Факт ДДС'!$D$2:$D1001, 'Факт ДДС'!$B$2:$B1001, ""[text]""&F$3, 'Факт ДДС'!$E$2:$E1001, $A5, 'Факт ДДС'!$G$2:$G1001, $A$1))
+G5: =IF(SUMIFS('Факт ДДС'!$D$2:$D1001, 'Факт ДДС'!$B$2:$B1001, ""[text]""&G$3, 'Факт ДДС'!$E$2:$E1001, $A5, 'Факт ДДС'!$G$2:$G1001, $A$1)=0, """", -SUMIFS('Факт ДДС'!$D$2:$D1001, 'Факт ДДС'!$B$2:$B1001, ""[text]""&G$3, 'Факт ДДС'!$E$2:$E1001, $A5, 'Факт ДДС'!$G$2:$G1001, $A$1))
+H5: =IF(SUMIFS('Факт ДДС'!$D$2:$D1001, 'Факт ДДС'!$B$2:$B1001, ""[text]""&H$3, 'Факт ДДС'!$E$2:$E1001, $A5, 'Факт ДДС'!$G$2:$G1001, $A$1)=0, """", -SUMIFS('Факт ДДС'!$D$2:$D1001, 'Факт ДДС'!$B$2:$B1001, ""[text]""&H$3, 'Факт ДДС'!$E$2:$E1001, $A5, 'Факт ДДС'!$G$2:$G1001, $A$1))"
+Справочник,112,"DUMMYFUNCTION:112, IFERROR:112","A2: =IFERROR(__xludf.DUMMYFUNCTION(""[text]""""[private_ref]""""[text]""""'ДДС: статьи'!a4:b""""[text]""),""[text]"")
+B2: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A3: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+B3: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A4: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+B4: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A5: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+B5: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A6: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+B6: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A7: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+B7: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A8: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+B8: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A9: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+B9: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A10: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+B10: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A11: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+B11: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")"
+Контрагенты,59,"DUMMYFUNCTION:59, IFERROR:59","A2: =IFERROR(__xludf.DUMMYFUNCTION(""[text]""""[private_ref]""""[text]""""'Контрагенты'!A1:A""""[text]""),""[text]"")
+A3: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A4: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A5: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A6: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A7: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A8: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A9: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A10: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A11: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A12: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A13: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A14: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A15: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A16: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A17: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A18: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A19: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A20: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")
+A21: =IFERROR(__xludf.DUMMYFUNCTION(""""""COMPUTED_VALUE""""""),""[text]"")"
+Диапазон недель,104,,"C2: =B2+6
+B3: =B2+7
+C3: =C2+7
+B4: =B3+7
+C4: =C3+7
+B5: =B4+7
+C5: =C4+7
+B6: =B5+7
+C6: =C5+7
+B7: =B6+7
+C7: =C6+7
+B8: =B7+7
+C8: =C7+7
+B9: =B8+7
+C9: =C8+7
+B10: =B9+7
+C10: =C9+7
+B11: =B10+7
+C11: =C10+7
+B12: =B11+7"
+НФ,2,HYPERLINK:2,"B7: =HYPERLINK(""[private_ref]"",""[text]"")
+B24: =HYPERLINK(""[private_ref]"",""[private_ref]"")"

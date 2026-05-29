@@ -1,0 +1,44 @@
+[
+  {
+    "period_start": "2025-11-01",
+    "period_end": "2026-05-17",
+    "service_type": "(пусто)",
+    "region": "(пусто)",
+    "orders": 76.0,
+    "revenue": 0.0,
+    "way_duration_sum_min": 0.0,
+    "avg_check": 0.0,
+    "avg_delay_min": 0.0,
+    "avg_way_duration_min": 0.0,
+    "avg_delivery_mark": 0.0,
+    "mark_weight_orders": 0.0
+  },
+  {
+    "period_start": "2025-11-01",
+    "period_end": "2026-05-17",
+    "service_type": "COURIER",
+    "region": "(пусто)",
+    "orders": 11778.0,
+    "revenue": 21458231.409999996,
+    "way_duration_sum_min": 370342.0,
+    "avg_check": 1821.8909330956017,
+    "avg_delay_min": 19.899767362879945,
+    "avg_way_duration_min": 31.443538801154695,
+    "avg_delivery_mark": 0.0,
+    "mark_weight_orders": 0.0
+  },
+  {
+    "period_start": "2025-11-01",
+    "period_end": "2026-05-17",
+    "service_type": "PICKUP",
+    "region": "(пусто)",
+    "orders": 3674.0,
+    "revenue": 4066224.01,
+    "way_duration_sum_min": 0.0,
+    "avg_check": 1106.7566712030484,
+    "avg_delay_min": 19.68824986390855,
+    "avg_way_duration_min": 0.0,
+    "avg_delivery_mark": 0.0,
+    "mark_weight_orders": 0.0
+  }
+]

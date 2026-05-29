@@ -1,20 +1,20 @@
 # Слабые места и Migration plan
 
-Документ обновлен после чтения reference snapshot `data/raw/courier_service/`. Пункты про Apps Script и выбор между iikoTransport/iikoServer закрыты: для этой книги найден внешний Python-сервис на iikoCloud `api-ru.iiko.services/api/1`; iikoServer Resto остается отдельным контуром проекта.
+Документ обновлен после чтения reference snapshot `research/raw/courier_service/`. Пункты про Apps Script и выбор между iikoTransport/iikoServer закрыты: для этой книги найден внешний Python-сервис на iikoCloud `api-ru.iiko.services/api/1`; iikoServer Resto остается отдельным контуром проекта.
 
 ## Слабые места текущего контура
 
 | # | Проблема | Доказательство | Риск | Что делать |
 | ---: | --- | --- | --- | --- |
-| 1 | ~~Не удалось прочитать Apps Script живой Google Sheets-книги~~ Механизм загрузки найден: внешний Python-сервис, не Apps Script | `data/raw/courier_service/TestAppScript.py` пишет через `gspread` | старый риск закрыт; новый риск - ad-hoc сервис без production-обвязки | переносить логику сервиса в backend, Apps Script не ждать |
+| 1 | ~~Не удалось прочитать Apps Script живой Google Sheets-книги~~ Механизм загрузки найден: внешний Python-сервис, не Apps Script | `research/raw/courier_service/TestAppScript.py` пишет через `gspread` | старый риск закрыт; новый риск - ad-hoc сервис без production-обвязки | переносить логику сервиса в backend, Apps Script не ждать |
 | 2 | В книге не найдены ставки и выплаты курьеров | `labor_report.md`, `couriers_monthly.csv`: `courier_payout_source_status=not_found_in_sheet` | KPI нельзя превратить в оплату без владельца | подтвердить источник/правило оплаты курьеров |
 | 3 | Майских строк в XLSX snapshot нет | `couriers_monthly.csv`: 2026-05 Sheet = 0, iiko COURIER = 909 | Google Sheet snapshot/импорт мог быть обрезан или интеграция сломана | проверить live book и логи Python-сервиса за май |
 | 4 | Sheet vs iiko delivery delta большой | 2026-04: Sheet 898 vs iiko 1441 | неполный webhook/import или различие счетчиков | определить канонический order counter и backfill |
 | 5 | `/reports/delivery/couriers` нельзя суммировать как факт заказов | endpoint возвращает `AVERAGE`, `MAXIMUM`, `TARGET` | неверная статистика и оплата | использовать только как KPI/SLA, факт заказов брать из webhook/order facts/OLAP |
-| 6 | `regions` по delivery пустые | `data/processed/iiko/orders_delivery/quality_risks.csv` | нельзя строить районную аналитику | проверить заполнение районов в iiko |
+| 6 | `regions` по delivery пустые | `research/processed/iiko/orders_delivery/quality_risks.csv` | нельзя строить районную аналитику | проверить заполнение районов в iiko |
 | 7 | `Смены`/`Выходы` могут содержать ручные корректировки без audit trail | spreadsheet-логика + Python-сервис пишет прямо в `Выходы` | спорные часы и выплаты | в приложении correction layer с автором/причиной |
 | 8 | PII курьеров живет в raw iiko, таблице и логах сервиса | сервис пишет ФИО в `Курьеры`/`Выходы`, логирует ФИО/order id | риск раскрытия ПДн | protected lookup + masked analytics + безопасные логи |
-| 9 | iiko employees schedule вернул 0 строк в ops-снимке | `data/processed/iiko/ops/report.md` | нельзя заменить Google-график iiko schedule | план вести в приложении, iiko использовать как факт/контроль |
+| 9 | iiko employees schedule вернул 0 строк в ops-снимке | `research/processed/iiko/ops/report.md` | нельзя заменить Google-график iiko schedule | план вести в приложении, iiko использовать как факт/контроль |
 | 10 | ~~Терминологический риск: iikoTransport vs iikoServer~~ API для книги подтвержден | `TestAppScript.py`: `https://api-ru.iiko.services/api/1/...` | старый риск закрыт; новый риск - два разных iiko API в одном проекте | создать отдельный `iiko_cloud` слой, не смешивать с `iiko_sync.py` |
 | 11 | Секреты и id hard-coded в snapshot-сервисе | `IIKO_API_LOGIN`, `SPREADSHEET_ID`, `ORGANIZATION_ID`, `service_account.json` | утечка credential и невозможность окружений | вынести в secrets/env, ротировать service account/apiLogin |
 | 12 | Нет idempotency/retry/backfill | `OnWay` всегда `insert_row`, retry отсутствует | дубли/дыры при повторных или потерянных webhook | idempotent upsert + import run ledger + backfill |

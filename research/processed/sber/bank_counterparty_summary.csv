@@ -1,0 +1,10 @@
+counterparty_id,direction,inn_kind,inn_mask,transaction_count,amount_rub_total_abs,first_date,last_date,operation_codes,mapping_status
+CP0001,DEBIT,legal_10,******9831,2,3400.00,2026-03-12,2026-04-13,02,needs_manual_mapping
+CP0002,DEBIT,legal_10,******3893,1,1863.00,2026-04-17,2026-04-17,17,needs_manual_mapping
+CP0003,CREDIT,legal_10,******3893,492,7584746.28,2026-02-01,2026-05-19,01,needs_manual_mapping
+CP0004,DEBIT,legal_10,******3893,9,1318394.00,2026-02-02,2026-05-01,01,needs_manual_mapping
+CP0005,CREDIT,legal_10,******3893,109,2888377.26,2026-02-02,2026-05-19,01,needs_manual_mapping
+CP0006,DEBIT,legal_10,******3893,4,73836.00,2026-02-02,2026-05-04,02,needs_manual_mapping
+CP0007,DEBIT,legal_10,******3893,3,597.00,2026-02-16,2026-04-20,17,needs_manual_mapping
+CP0008,CREDIT,person_or_ip_12,********9201,1,220000.00,2026-03-17,2026-03-17,01,needs_manual_mapping
+CP0009,DEBIT,person_or_ip_12,********9201,19,9396000.00,2026-02-03,2026-05-19,01,needs_manual_mapping

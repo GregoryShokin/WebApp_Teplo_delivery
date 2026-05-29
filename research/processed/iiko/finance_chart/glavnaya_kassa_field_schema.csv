@@ -1,0 +1,17 @@
+endpoint,field_path,type,nullable,example_redacted,business_meaning,target_app_column
+/reports/olap,records[],array<object>,false,[],Список строк OLAP TRANSACTIONS после фильтра `Account.Name=Главная касса`.,import_batch.source_records
+/reports/olap,records[].DateTime.DateTyped,date-string,false,Sun Feb 01 00:00:00 MSK 2026,Учетный день операции в iiko.,cashflow_transactions.operation_date
+/reports/olap,records[].Account.Id,uuid,false,<main_cash_account_id_redacted>,ID счета Главная касса из справочника `/v2/entities/accounts/list`.,cashflow_transactions.source_account_id
+/reports/olap,records[].Account.Name,string,false,Главная касса,"Счет плана счетов, по которому строится wallet ТК Черникова.",wallets.source_account_name
+/reports/olap,records[].Account.Type,enum,false,CASH,Тип счета iiko.,wallets.source_account_type
+/reports/olap,records[].Contr-Account.Id,uuid,true,<corr_account_id_redacted>,ID корреспондирующего счета; основной ключ для правил ДДС.,cashflow_transactions.corr_account_id
+/reports/olap,records[].Contr-Account.Name,string,false,Торговые кассы,"Корсчет операции, главный признак статьи ДДС.",cashflow_transactions.corr_account_name
+/reports/olap,records[].Contr-Account.Type,enum,true,CASH,Тип корсчета из iiko.,cashflow_transactions.corr_account_type
+/reports/olap,records[].TransactionSide,enum,false,DEBIT,"Сторона операции по Главной кассе: дебет = поступление, кредит = расход.",cashflow_transactions.direction
+/reports/olap,records[].TransactionType,enum,false,PAYOUT,Тип транзакции iiko.,cashflow_transactions.source_operation_type
+/reports/olap,records[].Document,string,true,1006,Номер документа iiko.,source_documents.external_number
+/reports/olap,records[].CashFlowCategory,string,true,<empty>,Статья ДДС iiko; заполнена надежно только для отдельных корсчетов.,cashflow_transactions.iiko_cashflow_category
+/reports/olap,records[].Comment,string,true,<redacted PII/comment>,Комментарий операции; может содержать ФИО курьера/сотрудника и не выносится в processed.,cashflow_transactions.source_comment_private
+/reports/olap,records[].Sum.ResignedSum,money-string,false,9067.000000000,Сумма со знаком в представлении iiko.,cashflow_transactions.amount_signed
+/reports/olap,records[].Sum.Incoming,money-string,false,9067.000000000,"Дебет Главной кассы, поступление.",cashflow_transactions.debit_amount
+/reports/olap,records[].Sum.Outgoing,money-string,false,0,"Кредит Главной кассы, расход.",cashflow_transactions.credit_amount

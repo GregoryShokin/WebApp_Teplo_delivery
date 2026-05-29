@@ -1,0 +1,42 @@
+[
+  {
+    "endpoint": "/reports/delivery/couriers",
+    "period_start": "2026-02-01",
+    "period_end": "2026-02-28",
+    "status": 200,
+    "parsed_rows": 17,
+    "raw_file": "research/raw/iiko/ops/delivery_couriers_2026-02-01_2026-02-28.xml",
+    "note": "departmentFormat=json_id;dateFormat=dd.MM.yyyy",
+    "requires_parameter_clarification": false
+  },
+  {
+    "endpoint": "/reports/delivery/couriers",
+    "period_start": "2026-03-01",
+    "period_end": "2026-03-31",
+    "status": 200,
+    "parsed_rows": 15,
+    "raw_file": "research/raw/iiko/ops/delivery_couriers_2026-03-01_2026-03-31.xml",
+    "note": "departmentFormat=json_id;dateFormat=dd.MM.yyyy",
+    "requires_parameter_clarification": false
+  },
+  {
+    "endpoint": "/reports/delivery/couriers",
+    "period_start": "2026-04-01",
+    "period_end": "2026-04-30",
+    "status": 200,
+    "parsed_rows": 14,
+    "raw_file": "research/raw/iiko/ops/delivery_couriers_2026-04-01_2026-04-30.xml",
+    "note": "departmentFormat=json_id;dateFormat=dd.MM.yyyy",
+    "requires_parameter_clarification": false
+  },
+  {
+    "endpoint": "/reports/delivery/couriers",
+    "period_start": "2026-05-01",
+    "period_end": "2026-05-17",
+    "status": 200,
+    "parsed_rows": 12,
+    "raw_file": "research/raw/iiko/ops/delivery_couriers_2026-05-01_2026-05-17.xml",
+    "note": "departmentFormat=json_id;dateFormat=dd.MM.yyyy",
+    "requires_parameter_clarification": false
+  }
+]

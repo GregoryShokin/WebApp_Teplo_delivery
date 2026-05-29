@@ -1,0 +1,55 @@
+pnl_block,pnl_line,2026-02,2026-03,2026-04,2026-05,total_4mo,status,source_summary
+Выручка,Выручка без учета скидок Гагарина,0.00,0.00,0.00,0.00,0.00,not_applicable,requires_owner_review | docs/business-control/pnl-build-methodology.md
+Выручка,Выручка с учетом скидок Гагарина,0.00,0.00,0.00,0.00,0.00,not_applicable,requires_owner_review | docs/business-control/pnl-build-methodology.md
+Выручка,Выручка без учета скидок Черникова,4507792.00,4689415.00,3975522.00,2712325.00,15885054.00,partial,iiko_revenue_by_direction | research/processed/iiko/revenue_by_direction/revenue_by_direction_monthly.csv
+Выручка,Выручка с учетом скидок Черникова,3833597.82,4006534.78,3326144.31,2277008.90,13443285.81,partial,iiko_revenue_by_direction | research/processed/iiko/revenue_by_direction/revenue_by_direction_monthly.csv
+Выручка,Комиссия партнерам (с -),45676.00,50478.00,44926.60,31157.00,172237.60,partial,iiko_partner_report | research/processed/pnl/partner_commissions_2026.csv
+Выручка,Возвраты клиентам (с минусом),0.00,2316.91,0.00,619.98,2936.89,partial,bank_tbank | research/processed/cashflow/dds_by_article_2026.csv
+Переменные,Расход продуктов (фудкост) Черникова,1208634.78,1227017.12,1033962.20,716116.32,4185730.42,partial,iiko_revenue_by_direction | research/processed/iiko/revenue_by_direction/revenue_by_direction_monthly.csv
+Переменные,Расход продуктов (фудкост) Гагарина,0.00,0.00,0.00,0.00,0.00,not_applicable,requires_owner_review | docs/business-control/pnl-build-methodology.md
+Прямые постоянные,Зарплата поваров (оклады и удержания),597985.00,606139.00,498745.00,209786.00,1912655.00,requires_recalc,legacy payroll_monthly control; MVP требует Расчет зарплат NEW Свод!C7:C13 role-only export
+Прямые постоянные,Результаты инвентаризации коробки д/пиццы,5769.20,2234.69,3488.75,4190.19,15682.83,partial,iiko_inventory | research/processed/iiko/inventory/pnl_line_monthly.csv
+Общепроизводственные,Аренда торговой точки Гагарина,0.00,0.00,0.00,0.00,0.00,not_applicable,requires_owner_review | docs/business-control/pnl-build-methodology.md
+Общепроизводственные,Аренда торговой точки Черникова,100000.00,100000.00,100000.00,100000.00,400000.00,final,fixed_contract | research/processed/cashflow/fixed_costs_2026.csv
+Общепроизводственные,Зарплата администраторов,193674.00,218202.00,199692.00,68314.00,679882.00,requires_recalc,legacy payroll_monthly control; MVP требует Расчет зарплат NEW Свод!C7:C13 role-only export
+Общепроизводственные,"Премии поваров, шеф-повара, администраторов",197426.00,265888.00,178243.00,71094.00,712651.00,requires_recalc,legacy payroll_monthly control; MVP требует Расчет зарплат NEW Свод!C7:C13 role-only export
+Общепроизводственные,Списание продукции и сырья,101694.01,100632.60,91552.95,42238.27,336117.83,partial,iiko_writeoff | research/processed/iiko/ops/writeoff_documents_summary.csv
+Общепроизводственные,Результаты ревизии,40255.79,10922.15,-7806.94,-27432.20,15938.80,partial,iiko_inventory | research/processed/iiko/inventory/pnl_line_monthly.csv
+Общепроизводственные,Траты на курьерскую службу,268593.00,280132.00,248401.00,143108.00,940234.00,partial,iiko_couriers_pnl_preset | research/processed/economic_block/iiko_pnl_by_preset_rows.csv
+Общепроизводственные,Комиссия за эквайринг,4631.20,4044.89,4290.83,680.37,13647.29,partial,bank_sber | research/processed/cashflow/fixed_costs_2026.csv; bank_tbank | research/processed/cashflow/fixed_costs_2026.csv
+Общепроизводственные,Транспортные услуги,0.00,0.00,0.00,0.00,0.00,confirmed_zero,bank_tbank | research/processed/cashflow/fixed_costs_2026.csv
+Общепроизводственные,Расходы на питание персонала,0.00,0.00,0.00,0.00,0.00,confirmed_zero,bank_tbank | research/processed/cashflow/fixed_costs_2026.csv
+Общепроизводственные,Оплата систем автоматизации,100471.00,36270.00,36270.00,0.00,173011.00,requires_recalc,superseded_cash_basis | research/processed/cashflow/fixed_costs_2026.csv
+Общепроизводственные,Содержание торговых точек,21762.02,24546.21,29733.80,12600.39,88642.42,partial,iiko_incoming_invoice | research/processed/iiko/incoming_invoice/pnl_line_monthly.csv
+Общепроизводственные,Аренда склада,5000.00,5000.00,5000.00,5000.00,20000.00,final,fixed_contract | research/processed/cashflow/fixed_costs_2026.csv
+Общепроизводственные,Результаты инвентаризации упаковки (кроме коробок для пиццы),-33516.26,-28414.92,-39327.36,-22050.61,-123309.15,partial,iiko_inventory | research/processed/iiko/inventory/pnl_line_monthly.csv
+Общепроизводственные,Вспомогательные товары(учет по факту оплаты),16773.46,13215.00,7967.21,5711.39,43667.06,partial,iiko_incoming_invoice | research/processed/iiko/incoming_invoice/pnl_line_monthly.csv
+Административные,Зарплата администрации,302000.00,302000.00,302000.00,221000.00,1127000.00,requires_recalc,legacy payroll_monthly control; MVP требует Расчет зарплат NEW Свод!C7:C13 role-only export
+Административные,Коммунальные платежи Гагарина,0.00,0.00,0.00,0.00,0.00,not_applicable,requires_owner_review | docs/business-control/pnl-build-methodology.md
+Административные,Коммунальные платежи Черникова,,,,,,source_not_loaded,telegram_ocr_utilities | платежки арендодателя в structured storage; суммы не загружены в processed P&L
+Административные,РКО,0.00,0.00,0.00,0.00,0.00,confirmed_zero,bank_tbank | research/processed/cashflow/fixed_costs_2026.csv
+Административные,Прочие банковские комиссии,23378.40,24628.00,24938.00,19219.00,92163.40,partial,bank_sber | research/processed/cashflow/fixed_costs_2026.csv; bank_tbank | research/processed/cashflow/fixed_costs_2026.csv
+Административные,Услуги ФД и НК,0.00,0.00,0.00,9000.00,9000.00,partial,bank_tbank | research/processed/cashflow/fixed_costs_2026.csv
+Административные,Расходы на персонал,,,,,,source_not_loaded,requires_owner_review | research/processed/cashflow/dds_by_article_2026.csv
+Административные,Телекоммуникации,15776.61,15952.02,14019.52,3830.00,49578.15,source_not_loaded,manual_form Mango owner_decision_2026-05-25 + fixed_contract iHC.ru 600 + Микроэл 3230; 2026-05 Mango source_not_loaded
+Административные,Поиск и найм персонала,4900.00,4000.00,2000.00,1500.00,12400.00,partial,bank_tbank | research/processed/cashflow/fixed_costs_2026.csv
+Коммерческие,Комиссия агрегатору,,,,,,source_not_loaded,requires_owner_review | docs/business-control/pnl-build-methodology.md
+Коммерческие,Таргетированная реклама,,,,,,source_not_loaded,"source confirmed: WorkMail smmbux@yandex.ru, sender ИП Билинский А.Р., subject Документы для ИП Шокина Кристина Юрьевна..., УПД attachments; needs parse, not owner question; ДДС/T-Bank only cash-сверка"
+Коммерческие,Наружная реклама,,,,,,source_not_loaded,requires_owner_review | docs/business-control/pnl-build-methodology.md
+Коммерческие,Контекстная реклама,,,41984.77,,41984.77,source_not_loaded,mail_biz_panel | docs/business-control/pnl-build-methodology.md; research/processed/mail/april_2026_yandex_direct_spend.md; research/processed/mail/april_2026_counterparty_invoices.csv; requires_owner_review | docs/business-control/pnl-build-methodology.md
+Коммерческие,Печатные материалы НЕ ИСПОЛЬЗУЕМ!,0.00,0.00,0.00,0.00,0.00,not_applicable,requires_owner_review | docs/business-control/pnl-build-methodology.md
+Коммерческие,Листовки,0.00,0.00,0.00,0.00,0.00,confirmed_zero,bank_tbank | research/processed/cashflow/dds_by_article_2026.csv
+Коммерческие,SEO - оптимизация,,,,,,source_not_loaded,requires_owner_review | docs/business-control/pnl-build-methodology.md
+Коммерческие,Прочие маркетинговые услуги,0.00,0.00,0.00,0.00,0.00,confirmed_zero,bank_tbank | research/processed/cashflow/dds_by_article_2026.csv
+Коммерческие,Сайт и приложение,,,,,,source_not_loaded,requires_owner_review | docs/business-control/pnl-build-methodology.md
+Доходы ниже EBITDA,Прочие доходы,1100.92,10000.00,9650.00,1300.00,22050.92,source_not_loaded,requires_owner_review | research/processed/economic_block/iiko_pnl_by_preset_rows.csv
+Расходы ниже EBITDA,Прочие расходы,,,,,,source_not_loaded,requires_owner_review | research/processed/economic_block/iiko_pnl_by_preset_rows.csv
+Расходы ниже EBITDA,Проценты по кредитам,,,,,,source_not_loaded,requires_owner_review | research/processed/cashflow/dds_by_article_2026.csv
+Расходы ниже EBITDA,Налоги,315545.44,328259.05,278286.54,189862.75,1111953.78,partial,tax_accrual_model_7pct_iiko_revenue_not_cash / owner correction: P&L/API accrual = 7% от iiko OLAP revenue_without_discount; cash 659 783 = только УСН 6%; tax payable/1% separately from WorkMail askad02; 2026-05 рассчитан по MTD
+Расходы ниже EBITDA,Комиссия за овердрафт,8674.31,19338.05,3903.03,18332.79,50248.18,source_not_loaded,bank_tbank | research/processed/cashflow/dds_by_article_2026.csv
+Расходы ниже EBITDA,Амортизация,,,,,,source_not_loaded,requires_owner_review | docs/business-control/16-fixed-assets-and-balance.md
+Расходы ниже EBITDA,Штрафы и пени,0.00,0.00,0.00,0.00,0.00,confirmed_zero,bank_tbank | research/processed/cashflow/dds_by_article_2026.csv
+Доходы ниже EBITDA,Списание невостребованных депозитов,,,,,,partial,gs_payroll | research/processed/economic_block/payroll_monthly.csv
+Общепроизводственные,Налоги с ЗП,22383.93,20060.93,,500.00,42944.86,source_not_loaded,"WorkMail askad02@mail.ru tax-agent map + ДДС статья Налоги с з/п cash/control; excludes USN 6%, IP 1% insurance and separate tax payable; 2026-04 чистая сумма payroll taxes pending_parse/source_not_loaded, not 0"
+Общепроизводственные,Накопительный фонд,30338.00,34739.00,34806.00,12340.00,112223.00,requires_recalc,legacy payroll_monthly control; MVP требует Расчет зарплат NEW Свод!C7:C13 role-only export
+Выручка,Скидки (информационно),674194.18,682880.22,649377.69,435316.10,2441768.19,partial,iiko_revenue_by_direction | research/processed/iiko/revenue_by_direction/revenue_by_direction_monthly.csv
