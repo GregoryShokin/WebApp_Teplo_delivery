@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
 from app.db.session import get_session
 from app.schemas.payroll import PayrollLineRead, PayrollPeriodRead, PayrollRunCreate, PayrollRunRead
+from app.schemas.payroll_config import PayrollRoleCategoryOptionRead
+from app.services.payroll_config import list_enabled_role_categories
 from app.services.payroll_runner import (
     PayrollConflictError,
     PayrollNotFoundError,
@@ -40,6 +42,14 @@ async def get_runs(
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> list[dict]:
     return await list_runs(session)
+
+
+@router.get("/role-categories", response_model=dict[str, list[PayrollRoleCategoryOptionRead]])
+async def get_role_categories(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, list[dict[str, str]]]:
+    return await list_enabled_role_categories(session)
 
 
 @router.post("/runs", response_model=PayrollRunRead)

@@ -9,26 +9,25 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, EmployeeRoleAssignment
+from app.models import Employee, EmployeeRoleAssignment, PayrollRoleCategoryAvailability
 from app.services.employee_status import (
     COOKING_STATIONS,
     EMPLOYEE_CATEGORIES,
     compute_status,
     position_group_for_position,
 )
+from app.services.staff_taxonomy import (
+    PAYROLL_ROLE_LABELS,
+    canonical_position_name,
+    categories_for_payroll_role,
+    payroll_role_allows_category,
+    payroll_roles_for_position,
+    position_allows_payroll_role,
+)
 
-PAYROLL_ROLES = frozenset({"sushi", "pizza", "shawarma", "prep", "administrator", "manager"})
+PAYROLL_ROLES = frozenset(PAYROLL_ROLE_LABELS)
 COOK_PAYROLL_ROLES = frozenset({"sushi", "pizza", "shawarma", "prep"})
-STAFF_PAYROLL_ROLES = frozenset({"administrator", "manager"})
-
-PAYROLL_ROLE_LABELS = {
-    "sushi": "Сушист",
-    "pizza": "Пиццерист",
-    "shawarma": "Шаурмист",
-    "prep": "Заготовщик",
-    "administrator": "Администратор",
-    "manager": "Управляющий",
-}
+STAFF_PAYROLL_ROLES = frozenset({"administrator"})
 
 
 class EmployeeAssignmentError(ValueError):
@@ -71,6 +70,7 @@ async def set_primary(
     _validate_category(category)
     as_of = effective_from or date.today()
     employee = await _get_employee(session, employee_id)
+    await _ensure_assignment_valid(session, employee, role, category)
     active_assignments = await get_assignments(session, employee_id, as_of)
     assignment = next(
         (item for item in active_assignments if item.payroll_role == role),
@@ -104,11 +104,13 @@ async def add_role(
     *,
     is_primary: bool = False,
     effective_from: date | None = None,
+    commit: bool = True,
 ) -> EmployeeRoleAssignment:
     _validate_role(role)
     _validate_category(category)
     as_of = effective_from or date.today()
     employee = await _get_employee(session, employee_id)
+    await _ensure_assignment_valid(session, employee, role, category)
     active_assignments = await get_assignments(session, employee_id, as_of)
     if any(assignment.payroll_role == role for assignment in active_assignments):
         raise EmployeeAssignmentError("Employee already has an active assignment for this role")
@@ -128,8 +130,21 @@ async def add_role(
         await _set_primary_assignment(session, employee_id, assignment, as_of)
         _sync_employee_shortcut(employee, assignment)
     await _refresh_employee_status(session, employee, as_of)
-    await _commit_refresh(session, assignment)
+    if commit:
+        await _commit_refresh(session, assignment)
+    else:
+        await session.flush()
     return assignment
+
+
+async def ensure_category_available(
+    session: AsyncSession,
+    role: str,
+    category: str,
+) -> None:
+    _validate_role(role)
+    _validate_category(category)
+    await _ensure_category_available(session, role, category)
 
 
 async def update_assignment(
@@ -144,6 +159,8 @@ async def update_assignment(
     assignment = await _get_assignment(session, employee_id, assignment_id)
     as_of = date.today()
     employee = await _get_employee(session, employee_id)
+    target_role = payroll_role or assignment.payroll_role
+    target_category = category or assignment.category
 
     if payroll_role is not None and payroll_role != assignment.payroll_role:
         _validate_role(payroll_role)
@@ -153,9 +170,14 @@ async def update_assignment(
             for item in active_assignments
         ):
             raise EmployeeAssignmentError("Employee already has an active assignment for this role")
-        assignment.payroll_role = payroll_role
     if category is not None:
         _validate_category(category)
+
+    await _ensure_assignment_valid(session, employee, target_role, target_category)
+
+    if payroll_role is not None and payroll_role != assignment.payroll_role:
+        assignment.payroll_role = payroll_role
+    if category is not None:
         assignment.category = category
     if is_primary is False and assignment.is_primary:
         raise PrimaryAssignmentRequiredError("Choose another primary assignment first")
@@ -232,6 +254,7 @@ async def sync_primary_from_shortcut(
     if role is None:
         await _refresh_employee_status(session, employee, as_of)
         return None
+    await _ensure_assignment_valid(session, employee, role, employee.category)
 
     active_assignments = await get_assignments(session, employee.id, as_of)
     assignment = next(
@@ -272,6 +295,8 @@ def assignment_role_from_employee(employee: Employee) -> str | None:
     station = _normalize_ascii(employee.default_cooking_station)
     if station in COOKING_STATIONS:
         return station
+    if canonical_position_name(employee.position) == "Кассир":
+        return "administrator"
     return assignment_role_from_position(employee.position)
 
 
@@ -287,15 +312,13 @@ def assignment_role_from_position(position: str | None) -> str | None:
         return "prep"
     if "администратор" in normalized or "кассир" in normalized:
         return "administrator"
-    if "управля" in normalized:
-        return "manager"
     return None
 
 
 def role_matches_position_group(payroll_role: str | None, position_group: str | None) -> bool:
     if position_group == "cook":
         return payroll_role in COOK_PAYROLL_ROLES
-    if position_group == "staff":
+    if position_group == "cashier":
         return payroll_role in STAFF_PAYROLL_ROLES
     return False
 
@@ -394,6 +417,53 @@ def _validate_role(role: str) -> None:
 def _validate_category(category: str) -> None:
     if category not in EMPLOYEE_CATEGORIES:
         raise EmployeeAssignmentError("Invalid employee category")
+
+
+async def _ensure_category_available(
+    session: AsyncSession,
+    payroll_role: str,
+    category: str,
+) -> None:
+    if not payroll_role_allows_category(payroll_role, category):
+        raise EmployeeAssignmentError("Категория недоступна для этой роли")
+
+    position_group = PAYROLL_ROLE_LABELS.get(payroll_role)
+    if position_group is None:
+        return
+
+    records = list(
+        (
+            await session.scalars(
+                select(PayrollRoleCategoryAvailability).where(
+                    PayrollRoleCategoryAvailability.position_group == position_group
+                )
+            )
+        ).all()
+    )
+    if not records:
+        return
+    if any(record.category == category and record.is_enabled for record in records):
+        return
+    message = "Категория недоступна для этой роли"
+    raise EmployeeAssignmentError(message)
+
+
+async def _ensure_assignment_valid(
+    session: AsyncSession,
+    employee: Employee,
+    payroll_role: str,
+    category: str,
+) -> None:
+    canonical_position = canonical_position_name(employee.position)
+    if canonical_position is None:
+        raise EmployeeAssignmentError("У сотрудника не задана каноническая должность")
+    if not position_allows_payroll_role(canonical_position, payroll_role):
+        raise EmployeeAssignmentError("Роль не соответствует должности сотрудника")
+    if payroll_role not in payroll_roles_for_position(canonical_position):
+        raise EmployeeAssignmentError("Роль не соответствует должности сотрудника")
+    if category not in categories_for_payroll_role(payroll_role):
+        raise EmployeeAssignmentError("Категория недоступна для этой роли")
+    await _ensure_category_available(session, payroll_role, category)
 
 
 def _normalize_position(value: str | None) -> str:

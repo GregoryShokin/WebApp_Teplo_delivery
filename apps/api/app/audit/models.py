@@ -46,9 +46,7 @@ class SourceReference(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class AuditEvent(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "audit_event"
-    __table_args__ = (
-        Index("ix_audit_event_subject", "subject_type", "subject_id", "occurred_at"),
-    )
+    __table_args__ = (Index("ix_audit_event_subject", "subject_type", "subject_id", "occurred_at"),)
 
     subject_type: Mapped[str] = mapped_column(String(128))
     subject_id: Mapped[UUID | None] = mapped_column(nullable=True)

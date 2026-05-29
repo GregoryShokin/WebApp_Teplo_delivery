@@ -133,3 +133,27 @@ def test_validate_setting_value_rejects_unknown_select_value() -> None:
 
     with pytest.raises(settings_service.SettingValidationError):
         settings_service.validate_setting_value(setting, "workday")
+
+
+def test_validate_setting_value_accepts_weekday_premium() -> None:
+    setting = SimpleNamespace(widget_type="weekday_premium", widget_options=None)
+
+    settings_service.validate_setting_value(
+        setting,
+        {
+            "monday": 0,
+            "tuesday": 0,
+            "wednesday": 0,
+            "thursday": 0,
+            "friday": 200,
+            "saturday": 200,
+            "sunday": 0,
+        },
+    )
+
+
+def test_validate_setting_value_rejects_negative_weekday_premium() -> None:
+    setting = SimpleNamespace(widget_type="weekday_premium", widget_options=None)
+
+    with pytest.raises(settings_service.SettingValidationError):
+        settings_service.validate_setting_value(setting, {"friday": -1})

@@ -3,6 +3,7 @@ import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { clearSession, getAccessToken, setSession, type AuthUser } from "./auth";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const REQUEST_TIMEOUT_MS = 15_000;
 
 type RetriableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean };
 
@@ -49,9 +50,15 @@ export type AppSettingHistory = {
 };
 
 export type EmployeeStatus = "active" | "inactive" | "requires_setup";
-export type EmployeeCategory = "category_1" | "category_2" | "category_3" | "intern" | "freelancer";
+export type EmployeeCategory =
+  | "category_1"
+  | "category_2"
+  | "category_3"
+  | "category_4"
+  | "intern"
+  | "freelancer";
 export type CookingStation = "sushi" | "pizza" | "shawarma";
-export type PayrollRole = CookingStation | "prep" | "administrator" | "manager";
+export type PayrollRole = CookingStation | "prep" | "administrator";
 
 export type EmployeeRoleAssignment = {
   id: string;
@@ -89,6 +96,7 @@ export type Employee = {
   hire_date: string | null;
   fire_date: string | null;
   fire_reason: string | null;
+  pin_set_at: string | null;
   iiko_sync_at: string | null;
   created_at: string;
   updated_at: string;
@@ -117,6 +125,35 @@ export type EmployeeSyncResult = {
 export type EmployeeDismissPayload = {
   fire_date?: string;
   reason?: string;
+};
+
+export type EmployeeCreatePayload = {
+  full_name: string;
+  pin_code: string;
+  iiko_role_id: string;
+  roles: Array<{
+    payroll_role: PayrollRole;
+    category: EmployeeCategory;
+    is_primary: boolean;
+  }>;
+  is_senior?: boolean;
+  is_deputy_senior?: boolean;
+};
+
+export type EmployeePinChangePayload = {
+  pin_code: string;
+};
+
+export type IikoEmployeeRole = {
+  id: string;
+  name: string;
+  code: string | null;
+  deleted: boolean;
+};
+
+export type PayrollRoleCategoryOption = {
+  code: EmployeeCategory;
+  name: string;
 };
 
 export type PayrollPeriod = {
@@ -178,6 +215,44 @@ export type ShiftLedgerEntry = {
   is_resolved: boolean;
   status: ShiftLedgerStatus;
   available_roles: ShiftLedgerAvailableRole[];
+};
+
+export type ShiftLedgerMatrixSummary = {
+  earliest_open: string | null;
+  latest_close: string | null;
+  shift_count: number;
+};
+
+export type ShiftLedgerMatrixShift = {
+  ledger_entry_id: string;
+  opened_at: string;
+  closed_at: string | null;
+  payroll_role: PayrollRole | string | null;
+  category: EmployeeCategory | null;
+  is_resolved: boolean;
+  status: ShiftLedgerStatus;
+};
+
+export type ShiftLedgerMatrixDay = {
+  date: string;
+  available_roles: ShiftLedgerAvailableRole[];
+  summary: ShiftLedgerMatrixSummary;
+  shifts: ShiftLedgerMatrixShift[];
+};
+
+export type ShiftLedgerMatrixEmployee = {
+  id: string;
+  full_name: string;
+  iiko_id: string;
+  days: ShiftLedgerMatrixDay[];
+};
+
+export type ShiftLedgerMatrix = {
+  selected_date: string;
+  start_date: string;
+  end_date: string;
+  days: Array<{ date: string; is_today: boolean }>;
+  employees: ShiftLedgerMatrixEmployee[];
 };
 
 export type ShiftLedgerPatch = {
@@ -284,6 +359,7 @@ export type PayrollSeniorityPremiumPayload = Omit<PayrollSeniorityPremium, "id" 
 
 export const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
+  timeout: REQUEST_TIMEOUT_MS,
   withCredentials: true,
 });
 
@@ -327,6 +403,7 @@ api.interceptors.response.use(
 async function refreshAccessToken() {
   try {
     const response = await axios.post<LoginResponse>(`${API_BASE_URL}/api/v1/auth/refresh`, null, {
+      timeout: REQUEST_TIMEOUT_MS,
       withCredentials: true,
     });
     setSession(response.data.access_token, response.data.user);
@@ -335,6 +412,10 @@ async function refreshAccessToken() {
     clearSession();
     return null;
   }
+}
+
+export async function restoreSession() {
+  return refreshAccessToken();
 }
 
 export async function login(email: string, password: string) {
@@ -395,6 +476,24 @@ export async function patchEmployee(id: string, patch: EmployeePatch): Promise<E
   return response.data;
 }
 
+export async function getIikoEmployeeRoles(): Promise<IikoEmployeeRole[]> {
+  const response = await api.get<IikoEmployeeRole[]>("/employees/iiko-roles");
+  return response.data;
+}
+
+export async function createEmployee(payload: EmployeeCreatePayload): Promise<Employee> {
+  const response = await api.post<Employee>("/employees/", payload);
+  return response.data;
+}
+
+export async function changeEmployeePin(
+  id: string,
+  payload: EmployeePinChangePayload,
+): Promise<Employee> {
+  const response = await api.post<Employee>(`/employees/${id}/pin`, payload);
+  return response.data;
+}
+
 export async function dismissEmployee(
   id: string,
   payload: EmployeeDismissPayload,
@@ -445,6 +544,16 @@ export async function syncEmployees(): Promise<EmployeeSyncResult> {
   return response.data;
 }
 
+export async function getPayrollRoleCategories(): Promise<
+  Partial<Record<PayrollRole, PayrollRoleCategoryOption[]>>
+> {
+  const response =
+    await api.get<Partial<Record<PayrollRole, PayrollRoleCategoryOption[]>>>(
+      "/payroll/role-categories",
+    );
+  return response.data;
+}
+
 export async function autoCreateNextPayrollPeriod(): Promise<PayrollPeriod> {
   const response = await api.post<PayrollPeriod>("/payroll/periods/auto-create-next");
   return response.data;
@@ -484,6 +593,20 @@ export async function getShiftLedger(workDate: string): Promise<ShiftLedgerEntry
 
 export async function buildShiftLedger(workDate: string): Promise<ShiftLedgerEntry[]> {
   const response = await api.post<ShiftLedgerEntry[]>("/shifts/ledger/build", {
+    work_date: workDate,
+  });
+  return response.data;
+}
+
+export async function getShiftLedgerMatrix(workDate: string): Promise<ShiftLedgerMatrix> {
+  const response = await api.get<ShiftLedgerMatrix>("/shifts/ledger/matrix", {
+    params: { date: workDate },
+  });
+  return response.data;
+}
+
+export async function buildShiftLedgerWeek(workDate: string): Promise<ShiftLedgerMatrix> {
+  const response = await api.post<ShiftLedgerMatrix>("/shifts/ledger/build-week", {
     work_date: workDate,
   });
   return response.data;
@@ -613,4 +736,18 @@ export async function putPayrollSeniorityPremium(
     payload,
   );
   return response.data;
+}
+
+export function apiErrorMessage(error: unknown, fallback = "Не удалось выполнить запрос") {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as { detail?: unknown } | undefined;
+    const detail = data?.detail;
+    if (typeof detail === "string" && detail.trim()) {
+      return detail;
+    }
+    if (detail && typeof detail === "object") {
+      return JSON.stringify(detail);
+    }
+  }
+  return error instanceof Error ? error.message : fallback;
 }

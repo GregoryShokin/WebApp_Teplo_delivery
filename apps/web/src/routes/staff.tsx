@@ -3,19 +3,19 @@ import {
   CheckCircle2,
   DatabaseZap,
   Grid2X2,
+  KeyRound,
   List,
   LoaderCircle,
   Plus,
   Save,
   Search,
   ShieldAlert,
-  Star,
   RotateCcw,
   X,
   UserPlus,
   UserMinus,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -54,16 +54,24 @@ import { StatusBadge } from "@/components/ui-app/StatusBadge";
 import {
   type CookingStation,
   type Employee,
+  type EmployeeCreatePayload,
   type EmployeeCategory,
+  type IikoEmployeeRole,
   type EmployeePatch,
   type EmployeeRoleAssignment,
   type EmployeeStatus,
+  type PayrollRoleCategoryOption,
   type PayrollRole,
+  apiErrorMessage,
+  changeEmployeePin,
+  createEmployee,
   createEmployeeAssignment,
   deleteEmployeeAssignment,
   dismissEmployee,
   getEmployeeAssignments,
   getEmployees,
+  getIikoEmployeeRoles,
+  getPayrollRoleCategories,
   patchEmployeeAssignment,
   patchEmployee,
   reinstateEmployee,
@@ -87,11 +95,57 @@ const statusOptions: StaffStatusFilter[] = [
   "inactive",
   "all",
 ];
-const categoryOptions = Object.keys(EMPLOYEE_CATEGORY_LABELS) as EmployeeCategory[];
+const deprecatedCategoryOptions = new Set<EmployeeCategory>(["freelancer"]);
+const categoryOptions = (Object.keys(EMPLOYEE_CATEGORY_LABELS) as EmployeeCategory[]).filter(
+  (category) => !deprecatedCategoryOptions.has(category),
+);
 const cookingStationOptions = Object.keys(COOKING_STATION_LABELS) as CookingStation[];
 const payrollRoleOptions = Object.keys(PAYROLL_ROLE_LABELS) as PayrollRole[];
 const cookPayrollRoles: PayrollRole[] = ["sushi", "pizza", "shawarma", "prep"];
-const staffPayrollRoles: PayrollRole[] = ["administrator", "manager"];
+const cashierPayrollRoles: PayrollRole[] = ["administrator"];
+
+type CanonicalPosition =
+  | "Кассир"
+  | "Повар"
+  | "Управляющий"
+  | "Системный администратор"
+  | "Курьер"
+  | "Менеджер";
+
+const canonicalPositions: CanonicalPosition[] = [
+  "Кассир",
+  "Повар",
+  "Управляющий",
+  "Системный администратор",
+  "Курьер",
+  "Менеджер",
+];
+const createPositions = new Set<CanonicalPosition>([
+  "Кассир",
+  "Менеджер",
+  "Повар",
+  "Управляющий",
+  "Курьер",
+]);
+const positionPayrollRoles: Record<CanonicalPosition, PayrollRole[]> = {
+  Кассир: cashierPayrollRoles,
+  Повар: cookPayrollRoles,
+  Управляющий: [],
+  "Системный администратор": [],
+  Курьер: [],
+  Менеджер: [],
+};
+const premiumApplicability: Record<
+  CanonicalPosition,
+  { is_senior: boolean; is_deputy_senior: boolean }
+> = {
+  Кассир: { is_senior: true, is_deputy_senior: true },
+  Повар: { is_senior: true, is_deputy_senior: true },
+  Курьер: { is_senior: true, is_deputy_senior: false },
+  Управляющий: { is_senior: false, is_deputy_senior: false },
+  "Системный администратор": { is_senior: false, is_deputy_senior: false },
+  Менеджер: { is_senior: false, is_deputy_senior: false },
+};
 
 type Draft = Pick<Employee, "position" | "is_senior" | "is_deputy_senior">;
 type ViewMode = "grid" | "table";
@@ -107,6 +161,7 @@ export function StaffRoute() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setDebouncedSearch(search), 250);
@@ -133,6 +188,18 @@ export function StaffRoute() {
     queryFn: () => getEmployees({ status: "all" }),
   });
 
+  const iikoRolesQuery = useQuery({
+    queryKey: ["employees", "iiko-roles"],
+    queryFn: getIikoEmployeeRoles,
+    enabled: createOpen,
+  });
+
+  const roleCategoriesQuery = useQuery({
+    queryKey: ["payroll", "role-categories"],
+    queryFn: getPayrollRoleCategories,
+    enabled: createOpen,
+  });
+
   const syncMutation = useMutation({
     mutationFn: syncEmployees,
     onSuccess: (result) => {
@@ -142,7 +209,23 @@ export function StaffRoute() {
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
     },
     onError: (error) => {
-      toast.error((error as Error).message);
+      toast.error(apiErrorMessage(error));
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: createEmployee,
+    onSuccess: (employee) => {
+      toast.success("Сотрудник создан");
+      if (!isTargetPosition(employee.position)) {
+        toast.warning("Роль iiko не относится к целевым позициям Штата");
+      }
+      setCreateOpen(false);
+      setSelectedEmployeeId(employee.id);
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось создать сотрудника"));
     },
   });
 
@@ -266,14 +349,20 @@ export function StaffRoute() {
         title="Штат"
         description="Реестр сотрудников. Имена синхронизируются из iiko."
         action={
-          <Button onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}>
-            {syncMutation.isPending ? (
-              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-            ) : (
-              <DatabaseZap size={16} aria-hidden="true" />
-            )}
-            Загрузить из iiko
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={() => setCreateOpen(true)} variant="outline">
+              <UserPlus size={16} aria-hidden="true" />
+              Создать сотрудника
+            </Button>
+            <Button onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}>
+              {syncMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <DatabaseZap size={16} aria-hidden="true" />
+              )}
+              Загрузить из iiko
+            </Button>
+          </div>
         }
       />
 
@@ -322,7 +411,7 @@ export function StaffRoute() {
             <SelectContent>
               <SelectItem value="all">Все</SelectItem>
               <SelectItem value="cook">Повара</SelectItem>
-              <SelectItem value="staff">Администраторы</SelectItem>
+              <SelectItem value="staff">Не повара</SelectItem>
             </SelectContent>
           </Select>
         </Label>
@@ -385,7 +474,7 @@ export function StaffRoute() {
       {employeesQuery.isError ? (
         <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           <ShieldAlert size={16} aria-hidden="true" />
-          {(employeesQuery.error as Error).message}
+          {apiErrorMessage(employeesQuery.error, "Не удалось загрузить сотрудников")}
         </div>
       ) : null}
 
@@ -440,6 +529,21 @@ export function StaffRoute() {
           ) : null}
         </SheetContent>
       </Sheet>
+
+      <CreateEmployeeDialog
+        isPending={createMutation.isPending}
+        onCreate={(payload) => createMutation.mutate(payload)}
+        onOpenChange={setCreateOpen}
+        open={createOpen}
+        roles={iikoRolesQuery.data ?? []}
+        rolesError={iikoRolesQuery.error}
+        rolesLoading={iikoRolesQuery.isLoading || iikoRolesQuery.isFetching}
+        roleCategories={roleCategoriesQuery.data ?? {}}
+        roleCategoriesError={roleCategoriesQuery.error}
+        roleCategoriesLoading={
+          roleCategoriesQuery.isLoading || roleCategoriesQuery.isFetching
+        }
+      />
     </div>
   );
 }
@@ -510,6 +614,444 @@ function StaffGrid({
   );
 }
 
+type CreateEmployeeRoleRow = {
+  id: string;
+  payroll_role: PayrollRole | "";
+  category: EmployeeCategory | "";
+  is_primary: boolean;
+};
+
+let createEmployeeRoleRowCounter = 0;
+
+function createRoleRow(isPrimary = false): CreateEmployeeRoleRow {
+  createEmployeeRoleRowCounter += 1;
+  return {
+    id: `create-role-${createEmployeeRoleRowCounter}`,
+    payroll_role: "",
+    category: "",
+    is_primary: isPrimary,
+  };
+}
+
+function CreateEmployeeDialog({
+  isPending,
+  onCreate,
+  onOpenChange,
+  open,
+  roles,
+  rolesError,
+  rolesLoading,
+  roleCategories,
+  roleCategoriesError,
+  roleCategoriesLoading,
+}: {
+  isPending: boolean;
+  onCreate: (payload: EmployeeCreatePayload) => void;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  roles: IikoEmployeeRole[];
+  rolesError: unknown;
+  rolesLoading: boolean;
+  roleCategories: Partial<Record<PayrollRole, PayrollRoleCategoryOption[]>>;
+  roleCategoriesError: unknown;
+  roleCategoriesLoading: boolean;
+}) {
+  const [fullName, setFullName] = useState("");
+  const [pinCode, setPinCode] = useState("");
+  const [iikoRoleId, setIikoRoleId] = useState("");
+  const [roleRows, setRoleRows] = useState<CreateEmployeeRoleRow[]>(() => [createRoleRow(true)]);
+  const [isSenior, setIsSenior] = useState(false);
+  const [isDeputySenior, setIsDeputySenior] = useState(false);
+
+  const filteredRoles = useMemo(
+	    () =>
+	      roles.filter((role) => {
+	        if (role.deleted) {
+	          return false;
+	        }
+	        const position = canonicalPosition(role.name);
+	        return Boolean(position && createPositions.has(position));
+	      }),
+	    [roles],
+	  );
+  const selectedIikoRole = useMemo(
+	    () => filteredRoles.find((role) => role.id === iikoRoleId) ?? null,
+	    [filteredRoles, iikoRoleId],
+	  );
+  const selectedPosition = canonicalPosition(selectedIikoRole?.name ?? null);
+  const createPayrollRoleOptions = selectedPosition ? positionPayrollRoles[selectedPosition] : [];
+  const premiumOptions = selectedPosition ? premiumApplicability[selectedPosition] : null;
+  const showRoleSection = createPayrollRoleOptions.length > 0;
+  const selectedRoleIds = useMemo(
+	    () => new Set(roleRows.map((row) => row.payroll_role).filter(Boolean)),
+	    [roleRows],
+	  );
+  useEffect(() => {
+    if (!open) {
+      setFullName("");
+      setPinCode("");
+      setIikoRoleId("");
+      setRoleRows([createRoleRow(true)]);
+      setIsSenior(false);
+      setIsDeputySenior(false);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!selectedPosition) {
+      setRoleRows([createRoleRow(true)]);
+      setIsSenior(false);
+      setIsDeputySenior(false);
+      return;
+    }
+    const allowedRoles = positionPayrollRoles[selectedPosition];
+    if (allowedRoles.length === 0) {
+      setRoleRows([]);
+    } else {
+      setRoleRows((rows) => {
+        const keptRows = rows
+          .filter((row) => row.payroll_role === "" || allowedRoles.includes(row.payroll_role))
+          .map((row, index) => ({ ...row, is_primary: index === 0 ? true : row.is_primary }));
+        const nextRows = keptRows.length > 0 ? keptRows : [createRoleRow(true)];
+        const hasPrimary = nextRows.some((row) => row.is_primary);
+        return hasPrimary
+          ? nextRows
+          : nextRows.map((row, index) => ({ ...row, is_primary: index === 0 }));
+      });
+    }
+    const applicability = premiumApplicability[selectedPosition];
+    if (!applicability.is_senior) {
+      setIsSenior(false);
+    }
+    if (!applicability.is_deputy_senior) {
+      setIsDeputySenior(false);
+    }
+  }, [selectedPosition]);
+  const hasUnusedCreateRole = createPayrollRoleOptions.some((role) => !selectedRoleIds.has(role));
+  const trimmedName = fullName.trim();
+  const nameIsValid = trimmedName.split(/\s+/).filter(Boolean).length >= 2;
+  const pinIsValid = /^\d{4}$/.test(pinCode);
+  const primaryCount = roleRows.filter((row) => row.is_primary).length;
+	  const rolesAreValid =
+	    !showRoleSection ||
+	    (roleRows.length > 0 &&
+	      primaryCount === 1 &&
+	      roleRows.every((row) => {
+	        if (!row.payroll_role || !row.category) {
+	          return false;
+	        }
+	        return categoriesForPayrollRole(row.payroll_role).some(
+	          (category) => category.code === row.category,
+	        );
+	      }));
+  const canSubmit =
+    nameIsValid &&
+    pinIsValid &&
+    Boolean(iikoRoleId) &&
+    rolesAreValid &&
+    !isPending &&
+    !rolesLoading &&
+    !roleCategoriesLoading;
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canSubmit) {
+      return;
+    }
+    onCreate({
+      full_name: trimmedName,
+      pin_code: pinCode,
+      iiko_role_id: iikoRoleId,
+	      roles: showRoleSection
+	        ? roleRows.map((row) => ({
+	            payroll_role: row.payroll_role as PayrollRole,
+	            category: row.category as EmployeeCategory,
+	            is_primary: row.is_primary,
+	          }))
+	        : [],
+      is_senior: isSenior,
+      is_deputy_senior: isDeputySenior,
+    });
+  }
+
+  function categoriesForPayrollRole(payrollRole: PayrollRole | "") {
+    return payrollRole ? (roleCategories[payrollRole] ?? []) : [];
+  }
+
+  function roleOptionsForRow(row: CreateEmployeeRoleRow) {
+    return createPayrollRoleOptions.filter(
+      (role) => role === row.payroll_role || !selectedRoleIds.has(role),
+    );
+  }
+
+  function updateRoleRow(rowId: string, patch: Partial<CreateEmployeeRoleRow>) {
+    setRoleRows((rows) => rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row)));
+  }
+
+  function selectRole(row: CreateEmployeeRoleRow, payrollRole: PayrollRole) {
+    const categories = categoriesForPayrollRole(payrollRole);
+    updateRoleRow(row.id, {
+      payroll_role: payrollRole,
+      category: categories.length === 1 ? categories[0].code : "",
+    });
+  }
+
+  function setPrimaryRole(rowId: string) {
+    setRoleRows((rows) => rows.map((row) => ({ ...row, is_primary: row.id === rowId })));
+  }
+
+  function addRoleRow() {
+    const hasUnusedRole = createPayrollRoleOptions.some((role) => !selectedRoleIds.has(role));
+    if (!hasUnusedRole) {
+      toast.error("Все доступные роли уже выбраны");
+      return;
+    }
+    setRoleRows((rows) => [...rows, createRoleRow(false)]);
+  }
+
+  function removeRoleRow(rowId: string) {
+    setRoleRows((rows) => rows.filter((row) => row.id !== rowId));
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+        <form className="grid gap-4" onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>Создать сотрудника</DialogTitle>
+            <DialogDescription>Карточка будет заведена в iiko и добавлена в Штат.</DialogDescription>
+          </DialogHeader>
+
+          {rolesError ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {apiErrorMessage(rolesError, "Не удалось загрузить роли iiko")}
+            </div>
+          ) : null}
+
+          {roleCategoriesError ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {apiErrorMessage(roleCategoriesError, "Не удалось загрузить категории ролей")}
+            </div>
+          ) : null}
+
+          <Label className="grid gap-2">
+            <span>ФИО</span>
+            <Input
+              autoComplete="off"
+              onChange={(event) => setFullName(event.target.value)}
+              placeholder="Иванов Иван Иванович"
+              value={fullName}
+            />
+            {trimmedName && !nameIsValid ? (
+              <span className="text-xs text-destructive">Укажите минимум фамилию и имя</span>
+            ) : null}
+          </Label>
+
+          <Label className="grid gap-2">
+            <span>ПИН-код для открытия смены</span>
+            <Input
+              autoComplete="off"
+              inputMode="numeric"
+              maxLength={4}
+              onChange={(event) => setPinCode(event.target.value.replace(/\D/g, "").slice(0, 4))}
+              placeholder="0000"
+              value={pinCode}
+            />
+            {pinCode && !pinIsValid ? (
+              <span className="text-xs text-destructive">ПИН-код должен состоять из 4 цифр</span>
+            ) : null}
+          </Label>
+
+          <Label className="grid gap-2">
+            <span>Должность iiko</span>
+            <Select
+              disabled={rolesLoading || isPending || filteredRoles.length === 0}
+              onValueChange={setIikoRoleId}
+              value={iikoRoleId}
+            >
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={rolesLoading ? "Загрузка должностей..." : "Выберите должность"}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {filteredRoles.map((role) => (
+                  <SelectItem value={role.id} key={role.id}>
+                    {role.name}
+                    {role.code ? ` · ${role.code}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Label>
+
+	          {showRoleSection ? (
+	            <div className="grid gap-3 rounded-lg border bg-card p-4">
+	              <div className="flex items-center justify-between gap-3">
+	                <div className="text-sm font-medium">Роли и категории</div>
+	                <Button
+	                  disabled={isPending || roleCategoriesLoading || !hasUnusedCreateRole}
+	                  onClick={addRoleRow}
+	                  size="sm"
+	                  type="button"
+	                  variant="outline"
+	                >
+	                  <Plus size={15} aria-hidden="true" />
+	                  Добавить роль
+	                </Button>
+	              </div>
+
+	              <div className="grid gap-2">
+	                {roleRows.map((row) => {
+	                  const rowCategories = categoriesForPayrollRole(row.payroll_role);
+	                  return (
+	                    <div
+	                      className="grid gap-3 rounded-md border bg-background p-3 lg:grid-cols-[120px_1fr_1fr_auto] lg:items-end"
+	                      key={row.id}
+	                    >
+	                      <label className="flex h-10 items-center gap-2 text-sm">
+	                        <input
+	                          checked={row.is_primary}
+	                          disabled={isPending}
+	                          name="create-primary-role"
+	                          onChange={() => setPrimaryRole(row.id)}
+	                          type="radio"
+	                        />
+	                        <span>Основная</span>
+	                      </label>
+
+	                      <Label className="grid gap-1">
+	                        <span className="text-xs font-medium uppercase text-muted-foreground">
+	                          Роль
+	                        </span>
+	                        <Select
+	                          disabled={
+	                            roleCategoriesLoading ||
+	                            isPending ||
+	                            roleOptionsForRow(row).length === 0
+	                          }
+	                          onValueChange={(value) => selectRole(row, value as PayrollRole)}
+	                          value={row.payroll_role}
+	                        >
+	                          <SelectTrigger>
+	                            <SelectValue placeholder="Выберите роль" />
+	                          </SelectTrigger>
+	                          <SelectContent>
+	                            {roleOptionsForRow(row).map((role) => (
+	                              <SelectItem value={role} key={role}>
+	                                {PAYROLL_ROLE_LABELS[role]}
+	                              </SelectItem>
+	                            ))}
+	                          </SelectContent>
+	                        </Select>
+	                      </Label>
+
+	                      <Label className="grid gap-1">
+	                        <span className="text-xs font-medium uppercase text-muted-foreground">
+	                          Категория
+	                        </span>
+	                        <Select
+	                          disabled={
+	                            roleCategoriesLoading ||
+	                            isPending ||
+	                            !row.payroll_role ||
+	                            rowCategories.length === 0
+	                          }
+	                          onValueChange={(value) =>
+	                            updateRoleRow(row.id, { category: value as EmployeeCategory })
+	                          }
+	                          value={row.category}
+	                        >
+	                          <SelectTrigger>
+	                            <SelectValue
+	                              placeholder={
+	                                roleCategoriesLoading
+	                                  ? "Загрузка категорий..."
+	                                  : "Выберите категорию"
+	                              }
+	                            />
+	                          </SelectTrigger>
+	                          <SelectContent>
+	                            {rowCategories.map((category) => (
+	                              <SelectItem value={category.code} key={category.code}>
+	                                {category.name}
+	                              </SelectItem>
+	                            ))}
+	                          </SelectContent>
+	                        </Select>
+	                      </Label>
+
+	                      {row.is_primary ? (
+	                        <div className="hidden h-10 lg:block" />
+	                      ) : (
+	                        <Button
+	                          disabled={isPending}
+	                          onClick={() => removeRoleRow(row.id)}
+	                          size="icon"
+	                          title="Удалить роль"
+	                          type="button"
+	                          variant="ghost"
+	                        >
+	                          <X size={16} aria-hidden="true" />
+	                        </Button>
+	                      )}
+	                    </div>
+	                  );
+	                })}
+	              </div>
+	            </div>
+	          ) : null}
+
+	          {premiumOptions?.is_senior || premiumOptions?.is_deputy_senior ? (
+	            <div className="grid gap-3 rounded-lg border bg-card p-4">
+	              <div className="text-sm font-medium">Надбавки</div>
+	              {premiumOptions.is_senior ? (
+	                <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
+	                  <span>Старший</span>
+	                  <input
+	                    checked={isSenior}
+	                    onChange={(event) => setIsSenior(event.target.checked)}
+	                    type="checkbox"
+	                  />
+	                </label>
+	              ) : null}
+	              {premiumOptions.is_deputy_senior ? (
+	                <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
+	                  <span>Зам старшего</span>
+	                  <input
+	                    checked={isDeputySenior}
+	                    onChange={(event) => setIsDeputySenior(event.target.checked)}
+	                    type="checkbox"
+	                  />
+	                </label>
+	              ) : null}
+	            </div>
+	          ) : null}
+
+          <DialogFooter>
+            <Button
+              disabled={isPending}
+              onClick={() => onOpenChange(false)}
+              type="button"
+              variant="outline"
+            >
+              Отмена
+            </Button>
+            <Button disabled={!canSubmit} type="submit">
+              {isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <UserPlus size={16} aria-hidden="true" />
+              )}
+              Создать
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () => void }) {
   const queryClient = useQueryClient();
   const auth = useAuthSnapshot();
@@ -517,11 +1059,15 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
   const [dismissOpen, setDismissOpen] = useState(false);
   const [dismissFireDate, setDismissFireDate] = useState(() => todayDateInputValue());
   const [dismissReason, setDismissReason] = useState("");
+  const [pinOpen, setPinOpen] = useState(false);
+  const [pinCode, setPinCode] = useState("");
 
   useEffect(() => {
     setDraft(toDraft(employee));
     setDismissFireDate(employee.fire_date ?? todayDateInputValue());
     setDismissReason("");
+    setPinOpen(false);
+    setPinCode("");
   }, [employee]);
 
   const mutation = useMutation({
@@ -532,13 +1078,17 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
     },
     onError: (error) => {
-      toast.error((error as Error).message);
+      toast.error(apiErrorMessage(error, "Не удалось обновить карточку сотрудника"));
     },
   });
-  const assignmentsQuery = useQuery({
-    queryKey: ["employees", employee.id, "assignments"],
-    queryFn: () => getEmployeeAssignments(employee.id),
-    initialData: activeAssignments(employee),
+	  const assignmentsQuery = useQuery({
+	    queryKey: ["employees", employee.id, "assignments"],
+	    queryFn: () => getEmployeeAssignments(employee.id),
+	    initialData: activeAssignments(employee),
+	  });
+  const roleCategoriesQuery = useQuery({
+    queryKey: ["payroll", "role-categories"],
+    queryFn: getPayrollRoleCategories,
   });
   const assignmentMutation = useMutation({
     mutationFn: ({
@@ -553,8 +1103,8 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
       void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "assignments"] });
     },
-    onError: (error) => {
-      toast.error((error as Error).message);
+    onError: (error, variables) => {
+      toast.error(assignmentErrorMessage(error, variables.patch.category));
     },
   });
   const createAssignmentMutation = useMutation({
@@ -565,11 +1115,11 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
       void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "assignments"] });
     },
-    onError: (error) => {
-      toast.error((error as Error).message);
+    onError: (error, variables) => {
+      toast.error(assignmentErrorMessage(error, variables.category));
     },
   });
-  const deleteAssignmentMutation = useMutation({
+	  const deleteAssignmentMutation = useMutation({
     mutationFn: (assignmentId: string) => deleteEmployeeAssignment(employee.id, assignmentId),
     onSuccess: () => {
       toast.success("Роль удалена");
@@ -577,7 +1127,20 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
       void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "assignments"] });
     },
     onError: (error) => {
-      toast.error((error as Error).message);
+      toast.error(apiErrorMessage(error, "Не удалось удалить роль сотрудника"));
+    },
+	  });
+  const pinMutation = useMutation({
+    mutationFn: () => changeEmployeePin(employee.id, { pin_code: pinCode }),
+    onSuccess: (updatedEmployee) => {
+      setDraft(toDraft(updatedEmployee));
+      setPinOpen(false);
+      setPinCode("");
+      toast.success("ПИН изменён");
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось сменить ПИН"));
     },
   });
   const dismissMutation = useMutation({
@@ -593,7 +1156,7 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
     },
     onError: (error) => {
-      toast.error((error as Error).message);
+      toast.error(apiErrorMessage(error, "Не удалось уволить сотрудника"));
     },
   });
   const reinstateMutation = useMutation({
@@ -603,7 +1166,7 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
     },
     onError: (error) => {
-      toast.error((error as Error).message);
+      toast.error(apiErrorMessage(error, "Не удалось восстановить сотрудника"));
     },
   });
 
@@ -611,30 +1174,56 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
     draft.position !== employee.position ||
     draft.is_senior !== employee.is_senior ||
     draft.is_deputy_senior !== employee.is_deputy_senior;
-  const assignments = assignmentsQuery.data ?? [];
-  const activeRoleIds = new Set(assignments.map((assignment) => assignment.payroll_role));
-  const roleOptions = payrollRolesForPosition(draft.position);
-  const isAssignmentPending =
-    assignmentsQuery.isFetching ||
-    assignmentMutation.isPending ||
-    createAssignmentMutation.isPending ||
-    deleteAssignmentMutation.isPending;
+	  const assignments = assignmentsQuery.data ?? [];
+	  const activeRoleIds = new Set(assignments.map((assignment) => assignment.payroll_role));
+	  const roleOptions = payrollRolesForPosition(draft.position);
+  const editorPosition = canonicalPosition(draft.position);
+  const editorPremiumOptions = editorPosition ? premiumApplicability[editorPosition] : null;
+  const showEditorRoles = roleOptions.length > 0;
+  const editorRoleCategories = roleCategoriesQuery.data ?? {};
+  const pinIsValid = /^\d{4}$/.test(pinCode);
+	  const isAssignmentPending =
+	    assignmentsQuery.isFetching ||
+    roleCategoriesQuery.isFetching ||
+	    assignmentMutation.isPending ||
+	    createAssignmentMutation.isPending ||
+	    deleteAssignmentMutation.isPending;
   const canDismiss =
     !auth.user || hasAnyRole(auth.user.roles, ["finance_manager", "owner", "admin"]);
   const canReinstate = hasAnyRole(auth.user?.roles, ["owner"]);
-  const canDismissStatus = employee.status === "active" || employee.status === "requires_setup";
+	  const canDismissStatus = employee.status === "active" || employee.status === "requires_setup";
 
-  function addRole() {
-    const payrollRole = roleOptions.find((role) => !activeRoleIds.has(role));
+  function setDraftPosition(position: CanonicalPosition) {
+    const applicability = premiumApplicability[position];
+    setDraft((current) => ({
+      ...current,
+      position,
+      is_senior: applicability.is_senior ? current.is_senior : false,
+      is_deputy_senior: applicability.is_deputy_senior ? current.is_deputy_senior : false,
+    }));
+  }
+
+  function categoriesForEditorRole(payrollRole: PayrollRole) {
+    return editorRoleCategories[payrollRole] ?? [];
+  }
+
+	  function addRole() {
+	    const payrollRole = roleOptions.find((role) => !activeRoleIds.has(role));
     if (!payrollRole) {
       toast.error("Все подходящие роли уже добавлены");
       return;
+	    }
+    const categories = categoriesForEditorRole(payrollRole);
+    const category = categories[0]?.code;
+    if (!category) {
+      toast.error("Для роли нет доступных категорий");
+      return;
     }
-    createAssignmentMutation.mutate({
-      payroll_role: payrollRole,
-      category: primaryAssignment(employee)?.category ?? employee.category ?? "category_3",
-    });
-  }
+	    createAssignmentMutation.mutate({
+	      payroll_role: payrollRole,
+	      category,
+	    });
+	  }
 
   return (
     <div className="space-y-5">
@@ -677,119 +1266,145 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
           </div>
         </Label>
 
-        <Label className="grid gap-2">
-          <span>Должность</span>
-          <Input
-            onChange={(event) => {
-              const position = event.target.value || null;
-              setDraft({ ...draft, position });
-            }}
-            placeholder="Например, повар"
-            value={draft.position ?? ""}
-          />
-        </Label>
+	        <Label className="grid gap-2">
+	          <span>Должность</span>
+	          <Select
+	            onValueChange={(value) => setDraftPosition(value as CanonicalPosition)}
+	            value={editorPosition ?? undefined}
+	          >
+	            <SelectTrigger>
+	              <SelectValue placeholder="Выберите должность" />
+	            </SelectTrigger>
+	            <SelectContent>
+	              {canonicalPositions.map((position) => (
+	                <SelectItem value={position} key={position}>
+	                  {position}
+	                </SelectItem>
+	              ))}
+	            </SelectContent>
+	          </Select>
+	        </Label>
 
-        <div className="grid gap-3 rounded-lg border bg-card p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-medium">Роли и категории</div>
-            <Button
-              disabled={isAssignmentPending}
-              onClick={addRole}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <Plus size={15} aria-hidden="true" />
-              Добавить роль
-            </Button>
-          </div>
+	        {showEditorRoles ? (
+	          <div className="grid gap-3 rounded-lg border bg-card p-4">
+	            <div className="flex items-center justify-between gap-3">
+	              <div className="text-sm font-medium">Роли и категории</div>
+	              <Button
+	                disabled={isAssignmentPending || roleOptions.every((role) => activeRoleIds.has(role))}
+	                onClick={addRole}
+	                size="sm"
+	                type="button"
+	                variant="outline"
+	              >
+	                <Plus size={15} aria-hidden="true" />
+	                Добавить роль
+	              </Button>
+	            </div>
 
-          {assignments.length === 0 ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Добавьте хотя бы одну роль
-            </div>
-          ) : (
-            <div className="grid gap-2">
-              {assignments.map((assignment) => (
-                <div
-                  className="grid gap-2 rounded-md border bg-background p-3 sm:grid-cols-[1fr_1fr_auto_auto] sm:items-center"
-                  key={assignment.id}
-                >
-                  <Select
-                    disabled={isAssignmentPending}
-                    onValueChange={(value) =>
-                      assignmentMutation.mutate({
-                        assignmentId: assignment.id,
-                        patch: { payroll_role: value as PayrollRole },
-                      })
-                    }
-                    value={assignment.payroll_role}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {payrollRoleOptions.map((value) => (
-                        <SelectItem value={value} key={value}>
-                          {PAYROLL_ROLE_LABELS[value]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+	            {assignments.length === 0 ? (
+	              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+	                Добавьте хотя бы одну роль
+	              </div>
+	            ) : (
+	              <div className="grid gap-2">
+	                {assignments.map((assignment) => {
+	                  const roleOptionsForAssignment = roleOptions.filter(
+	                    (role) => role === assignment.payroll_role || !activeRoleIds.has(role),
+	                  );
+	                  const rowCategories = categoriesForEditorRole(assignment.payroll_role);
+	                  return (
+	                    <div
+	                      className="grid gap-2 rounded-md border bg-background p-3 sm:grid-cols-[120px_1fr_1fr_auto] sm:items-center"
+	                      key={assignment.id}
+	                    >
+	                      <label className="flex h-10 items-center gap-2 text-sm">
+	                        <input
+	                          checked={assignment.is_primary}
+	                          disabled={assignment.is_primary || isAssignmentPending}
+	                          name="edit-primary-role"
+	                          onChange={() =>
+	                            assignmentMutation.mutate({
+	                              assignmentId: assignment.id,
+	                              patch: { is_primary: true },
+	                            })
+	                          }
+	                          type="radio"
+	                        />
+	                        <span>Основная</span>
+	                      </label>
 
-                  <Select
-                    disabled={isAssignmentPending}
-                    onValueChange={(value) =>
-                      assignmentMutation.mutate({
-                        assignmentId: assignment.id,
-                        patch: { category: value as EmployeeCategory },
-                      })
-                    }
-                    value={assignment.category}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categoryOptions.map((value) => (
-                        <SelectItem value={value} key={value}>
-                          {EMPLOYEE_CATEGORY_LABELS[value]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+	                      <Select
+	                        disabled={isAssignmentPending}
+	                        onValueChange={(value) => {
+	                          const payrollRole = value as PayrollRole;
+	                          const nextCategories = categoriesForEditorRole(payrollRole);
+	                          const category = nextCategories.some(
+	                            (option) => option.code === assignment.category,
+	                          )
+	                            ? assignment.category
+	                            : nextCategories[0]?.code;
+	                          if (!category) {
+	                            toast.error("Для роли нет доступных категорий");
+	                            return;
+	                          }
+	                          assignmentMutation.mutate({
+	                            assignmentId: assignment.id,
+	                            patch: { payroll_role: payrollRole, category },
+	                          });
+	                        }}
+	                        value={assignment.payroll_role}
+	                      >
+	                        <SelectTrigger>
+	                          <SelectValue />
+	                        </SelectTrigger>
+	                        <SelectContent>
+	                          {roleOptionsForAssignment.map((value) => (
+	                            <SelectItem value={value} key={value}>
+	                              {PAYROLL_ROLE_LABELS[value]}
+	                            </SelectItem>
+	                          ))}
+	                        </SelectContent>
+	                      </Select>
 
-                  <Button
-                    disabled={assignment.is_primary || isAssignmentPending}
-                    onClick={() =>
-                      assignmentMutation.mutate({
-                        assignmentId: assignment.id,
-                        patch: { is_primary: true },
-                      })
-                    }
-                    size="sm"
-                    type="button"
-                    variant={assignment.is_primary ? "secondary" : "outline"}
-                  >
-                    <Star size={15} aria-hidden="true" />
-                    Основная
-                  </Button>
+	                      <Select
+	                        disabled={isAssignmentPending || rowCategories.length === 0}
+	                        onValueChange={(value) =>
+	                          assignmentMutation.mutate({
+	                            assignmentId: assignment.id,
+	                            patch: { category: value as EmployeeCategory },
+	                          })
+	                        }
+	                        value={assignment.category}
+	                      >
+	                        <SelectTrigger>
+	                          <SelectValue />
+	                        </SelectTrigger>
+	                        <SelectContent>
+	                          {rowCategories.map((value) => (
+	                            <SelectItem value={value.code} key={value.code}>
+	                              {value.name}
+	                            </SelectItem>
+	                          ))}
+	                        </SelectContent>
+	                      </Select>
 
-                  <Button
-                    disabled={assignment.is_primary || isAssignmentPending}
-                    onClick={() => deleteAssignmentMutation.mutate(assignment.id)}
-                    size="icon"
-                    title="Удалить роль"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <X size={16} aria-hidden="true" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+	                      <Button
+	                        disabled={assignment.is_primary || isAssignmentPending}
+	                        onClick={() => deleteAssignmentMutation.mutate(assignment.id)}
+	                        size="icon"
+	                        title="Удалить роль"
+	                        type="button"
+	                        variant="ghost"
+	                      >
+	                        <X size={16} aria-hidden="true" />
+	                      </Button>
+	                    </div>
+	                  );
+	                })}
+	              </div>
+	            )}
+	          </div>
+	        ) : null}
 
         <Label className="grid gap-2">
           <span>Статус</span>
@@ -801,54 +1416,77 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
           </div>
         </Label>
 
-        <div className="grid gap-3 rounded-lg border bg-card p-4">
-          <div className="text-sm font-medium">Надбавки</div>
-          <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
-            <span>Старший</span>
-            <input
-              checked={draft.is_senior}
-              onChange={(event) => setDraft({ ...draft, is_senior: event.target.checked })}
-              type="checkbox"
-            />
-          </label>
-          <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
-            <span>Заместитель старшего</span>
-            <input
-              checked={draft.is_deputy_senior}
-              onChange={(event) => setDraft({ ...draft, is_deputy_senior: event.target.checked })}
-              type="checkbox"
-            />
-          </label>
-        </div>
+	        {editorPremiumOptions?.is_senior || editorPremiumOptions?.is_deputy_senior ? (
+	          <div className="grid gap-3 rounded-lg border bg-card p-4">
+	            <div className="text-sm font-medium">Надбавки</div>
+	            {editorPremiumOptions.is_senior ? (
+	              <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
+	                <span>Старший</span>
+	                <input
+	                  checked={draft.is_senior}
+	                  onChange={(event) => setDraft({ ...draft, is_senior: event.target.checked })}
+	                  type="checkbox"
+	                />
+	              </label>
+	            ) : null}
+	            {editorPremiumOptions.is_deputy_senior ? (
+	              <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
+	                <span>Зам старшего</span>
+	                <input
+	                  checked={draft.is_deputy_senior}
+	                  onChange={(event) =>
+	                    setDraft({ ...draft, is_deputy_senior: event.target.checked })
+	                  }
+	                  type="checkbox"
+	                />
+	              </label>
+	            ) : null}
+	          </div>
+	        ) : null}
       </div>
 
       <div className="grid gap-2 rounded-lg border bg-muted/30 p-4 text-sm">
         {employee.status === "inactive" ? (
           <InfoRow label="Дата увольнения" value={formatDate(employee.fire_date)} />
         ) : null}
-        {employee.status === "inactive" && employee.fire_reason ? (
-          <InfoRow label="Причина" value={employee.fire_reason} />
-        ) : null}
-        <InfoRow label="Синхронизация" value={formatDateTime(employee.iiko_sync_at)} />
+	        {employee.status === "inactive" && employee.fire_reason ? (
+	          <InfoRow label="Причина" value={employee.fire_reason} />
+	        ) : null}
+	        <InfoRow label="ПИН изменён" value={formatDateTime(employee.pin_set_at)} />
+	        <InfoRow label="Синхронизация" value={formatDateTime(employee.iiko_sync_at)} />
         <InfoRow label="Создан" value={formatDateTime(employee.created_at)} />
         <InfoRow label="Обновлён" value={formatDateTime(employee.updated_at)} />
       </div>
 
       <div className="grid gap-2">
-        <Button
-          className="w-full"
-          disabled={!dirty || mutation.isPending}
-          onClick={() => mutation.mutate(draft)}
-        >
+	        <Button
+	          className="w-full"
+	          disabled={!dirty || mutation.isPending}
+	          onClick={() => mutation.mutate(draft)}
+	        >
           {mutation.isPending ? (
             <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
           ) : (
             <Save size={16} aria-hidden="true" />
           )}
-          Сохранить изменения
-        </Button>
+	          Сохранить изменения
+	        </Button>
 
-        {canDismiss && canDismissStatus ? (
+	        <Button
+	          className="w-full"
+	          disabled={pinMutation.isPending}
+	          onClick={() => {
+	            setPinCode("");
+	            setPinOpen(true);
+	          }}
+	          type="button"
+	          variant="outline"
+	        >
+	          <KeyRound size={16} aria-hidden="true" />
+	          Сменить ПИН
+	        </Button>
+
+	        {canDismiss && canDismissStatus ? (
           <Button
             className="w-full"
             disabled={dismissMutation.isPending}
@@ -883,8 +1521,8 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
         ) : null}
       </div>
 
-      <Dialog open={dismissOpen} onOpenChange={setDismissOpen}>
-        <DialogContent>
+	      <Dialog open={dismissOpen} onOpenChange={setDismissOpen}>
+	        <DialogContent>
           <DialogHeader>
             <DialogTitle>Уволить {employee.full_name}?</DialogTitle>
             <DialogDescription>
@@ -936,11 +1574,60 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
               Уволить
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
+	        </DialogContent>
+	      </Dialog>
+
+	      <Dialog open={pinOpen} onOpenChange={setPinOpen}>
+	        <DialogContent>
+	          <DialogHeader>
+	            <DialogTitle>Сменить ПИН</DialogTitle>
+	            <DialogDescription>
+	              Новый ПИН будет использоваться для открытия смены.
+	            </DialogDescription>
+	          </DialogHeader>
+
+	          <Label className="grid gap-2">
+	            <span>ПИН-код</span>
+	            <Input
+	              autoComplete="off"
+	              inputMode="numeric"
+	              maxLength={4}
+	              onChange={(event) => setPinCode(event.target.value.replace(/\D/g, "").slice(0, 4))}
+	              placeholder="0000"
+	              value={pinCode}
+	            />
+	            {pinCode && !pinIsValid ? (
+	              <span className="text-xs text-destructive">ПИН-код должен состоять из 4 цифр</span>
+	            ) : null}
+	          </Label>
+
+	          <DialogFooter>
+	            <Button
+	              disabled={pinMutation.isPending}
+	              onClick={() => setPinOpen(false)}
+	              type="button"
+	              variant="outline"
+	            >
+	              Отмена
+	            </Button>
+	            <Button
+	              disabled={!pinIsValid || pinMutation.isPending}
+	              onClick={() => pinMutation.mutate()}
+	              type="button"
+	            >
+	              {pinMutation.isPending ? (
+	                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+	              ) : (
+	                <KeyRound size={16} aria-hidden="true" />
+	              )}
+	              Сохранить
+	            </Button>
+	          </DialogFooter>
+	        </DialogContent>
+	      </Dialog>
+	    </div>
+	  );
+	}
 
 function EmployeeAvatar({ employee }: { employee: Employee }) {
   return (
@@ -1032,44 +1719,25 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-const cookPositions = new Set(
-  [
-    "Повар",
-    "Повара",
-    "Сушист",
-    "Сушисты",
-    "Пиццист",
-    "Пиццисты",
-    "Пиццерист",
-    "Пиццеристы",
-    "Шаурмист",
-    "Шаурмисты",
-    "Заготовщик",
-    "Заготовщики",
-    "Шеф-повар",
-    "Шеф повар",
-    "Шеф-повара",
-  ].map(normalizePosition),
-);
-const staffPositions = new Set(
-  [
-    "Администратор",
-    "Администраторы",
-    "Старший администратор",
-    "Старшие администраторы",
-    "Кассир",
-    "Кассиры",
-    "Управляющий",
-    "Управляющие",
-  ].map(normalizePosition),
+const canonicalPositionByName = new Map(
+  canonicalPositions.map((position) => [normalizePosition(position), position]),
 );
 
 function isCookPosition(position: string | null) {
-  return cookPositions.has(normalizePosition(position));
+  return canonicalPosition(position) === "Повар";
 }
 
 function isStaffPosition(position: string | null) {
-  return staffPositions.has(normalizePosition(position));
+  const canonical = canonicalPosition(position);
+  return Boolean(canonical && canonical !== "Повар");
+}
+
+function isTargetPosition(position: string | null) {
+  return canonicalPosition(position) !== null;
+}
+
+function canonicalPosition(position: string | null): CanonicalPosition | null {
+  return canonicalPositionByName.get(normalizePosition(position)) ?? null;
 }
 
 function normalizePosition(position: string | null) {
@@ -1095,6 +1763,12 @@ function payrollRoleLabel(role: PayrollRole | null | undefined) {
   return role ? PAYROLL_ROLE_LABELS[role] : null;
 }
 
+function assignmentErrorMessage(error: unknown, category?: EmployeeCategory) {
+  if (category === "category_4") {
+    return "Категория 4-я доступна только для Шаурмиста";
+  }
+  return apiErrorMessage(error, "Не удалось обновить роль сотрудника");
+}
 
 function statusFilterLabel(status: StaffStatusFilter) {
   if (status === "current") {
@@ -1125,13 +1799,8 @@ function primaryAssignment(employee: Employee) {
 }
 
 function payrollRolesForPosition(position: string | null): PayrollRole[] {
-  if (isCookPosition(position)) {
-    return cookPayrollRoles;
-  }
-  if (isStaffPosition(position)) {
-    return staffPayrollRoles;
-  }
-  return payrollRoleOptions;
+  const canonical = canonicalPosition(position);
+  return canonical ? positionPayrollRoles[canonical] : payrollRoleOptions;
 }
 
 function toDraft(employee: Employee): Draft {

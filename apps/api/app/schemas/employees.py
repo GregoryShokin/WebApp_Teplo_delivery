@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 EmployeeStatus = str
 
@@ -51,6 +51,7 @@ class EmployeeRead(BaseModel):
     hire_date: date | None = None
     fire_date: date | None = None
     fire_reason: str | None = None
+    pin_set_at: datetime | None = None
     iiko_sync_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
@@ -60,6 +61,66 @@ class EmployeeRead(BaseModel):
 class EmployeeDismissRequest(BaseModel):
     fire_date: date | None = None
     reason: str | None = Field(default=None, max_length=1000)
+
+
+class EmployeeCreateRoleRequest(BaseModel):
+    payroll_role: str = Field(min_length=1, max_length=64)
+    category: str = Field(min_length=1, max_length=64)
+    is_primary: bool = False
+
+
+class EmployeeCreateRequest(BaseModel):
+    full_name: str = Field(min_length=1, max_length=255)
+    pin_code: str
+    iiko_role_id: str = Field(min_length=1, max_length=128)
+    roles: list[EmployeeCreateRoleRequest] = Field(default_factory=list)
+    is_senior: bool = False
+    is_deputy_senior: bool = False
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_full_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized.split()) < 2:
+            raise ValueError("Укажите минимум два слова в ФИО")
+        return normalized
+
+    @field_validator("pin_code")
+    @classmethod
+    def validate_pin_code(cls, value: str) -> str:
+        if not value.isdigit() or len(value) != 4:
+            raise ValueError("ПИН-код должен состоять из 4 цифр")
+        return value
+
+    @model_validator(mode="after")
+    def validate_roles(self) -> EmployeeCreateRequest:
+        if not self.roles:
+            return self
+        primary_count = sum(1 for role in self.roles if role.is_primary)
+        if primary_count != 1:
+            raise ValueError("Ровно одна роль должна быть основной")
+        payroll_roles = [role.payroll_role for role in self.roles]
+        if len(set(payroll_roles)) != len(payroll_roles):
+            raise ValueError("Роли не должны повторяться")
+        return self
+
+
+class EmployeePinChangeRequest(BaseModel):
+    pin_code: str
+
+    @field_validator("pin_code")
+    @classmethod
+    def validate_pin_code(cls, value: str) -> str:
+        if not value.isdigit() or len(value) != 4:
+            raise ValueError("ПИН-код должен состоять из 4 цифр")
+        return value
+
+
+class IikoEmployeeRoleRead(BaseModel):
+    id: str
+    name: str
+    code: str | None = None
+    deleted: bool = False
 
 
 class EmployeePatch(BaseModel):

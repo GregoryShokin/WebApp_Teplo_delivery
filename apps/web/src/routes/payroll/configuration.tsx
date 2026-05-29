@@ -464,7 +464,8 @@ function RatesSection({
                     {position}
                   </td>
                   {rowCells.map((rate) => {
-                    const hidden = !showAllCategories && !rate.is_enabled;
+                    const hidden =
+                      !showAllCategories && !rate.is_enabled && rate.category !== "category_4";
                     return (
                       <td className="min-w-[136px] border-b p-2 text-right" key={rate.category}>
                         {hidden ? (
@@ -700,7 +701,7 @@ function RevenuePercentSection({
           <div>
             <h3 className="text-base font-semibold tracking-normal">Коэффициенты категорий</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Пять категорий для распределения процентного пула.
+              Категории для распределения процентного пула.
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
@@ -1318,7 +1319,14 @@ async function invalidatePayrollConfig(queryClient: ReturnType<typeof useQueryCl
   ]);
 }
 
-const PAYROLL_RATE_CATEGORIES = ["category_1", "category_2", "category_3", "intern", "freelancer"];
+const PAYROLL_RATE_CATEGORIES = [
+  "category_1",
+  "category_2",
+  "category_3",
+  "category_4",
+  "intern",
+  "freelancer",
+];
 
 function findRate(rates: PayrollRate[], position: string, category: string) {
   return rates.find(

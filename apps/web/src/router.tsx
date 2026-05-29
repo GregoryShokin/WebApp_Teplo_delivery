@@ -3,6 +3,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyModule } from "@/components/layout/EmptyModule";
 import { Toaster } from "@/components/ui/sonner";
+import { restoreSession } from "@/lib/api";
+import { getAuthSnapshot } from "@/lib/auth";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { LoginRoute } from "@/routes/login";
 import { PayrollConfigurationRoute } from "@/routes/payroll/configuration";
@@ -100,12 +102,41 @@ const routes: AppRoute[] = [
 
 export function AppRouter() {
   const [path, setPath] = useState(getCurrentPath);
+  const [isAuthReady, setIsAuthReady] = useState(() => path === "/login");
 
   useEffect(() => {
     const handlePopState = () => setPath(getCurrentPath());
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (path === "/login" || getAuthSnapshot().accessToken) {
+      setIsAuthReady(true);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    setIsAuthReady(false);
+    void restoreSession().then((token) => {
+      if (isCancelled) {
+        return;
+      }
+
+      if (!token) {
+        window.history.replaceState({}, "", "/login");
+        setPath(getCurrentPath());
+      }
+      setIsAuthReady(true);
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [path]);
 
   function navigate(nextPath: string) {
     if (window.location.pathname !== nextPath) {
@@ -126,6 +157,10 @@ export function AppRouter() {
         <Toaster closeButton richColors position="top-right" />
       </>
     );
+  }
+
+  if (!isAuthReady) {
+    return <div className="min-h-screen bg-background" />;
   }
 
   return (

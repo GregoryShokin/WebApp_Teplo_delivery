@@ -167,9 +167,7 @@ def test_protected_endpoint_without_token_returns_401(client: TestClient) -> Non
 
 
 def test_protected_endpoint_with_expired_token_returns_401(client: TestClient) -> None:
-    expired_token = create_access_token(
-        str(uuid.uuid4()), expires_delta=timedelta(minutes=-1)
-    )
+    expired_token = create_access_token(str(uuid.uuid4()), expires_delta=timedelta(minutes=-1))
 
     response = client.get(
         "/api/v1/settings",
@@ -206,9 +204,7 @@ def test_get_settings_authorized_returns_display_metadata(
     assert item["is_critical"] is False
 
 
-def test_put_setting_manager_returns_403(
-    client: TestClient, fake_settings: dict[str, Any]
-) -> None:
+def test_put_setting_manager_returns_403(client: TestClient, fake_settings: dict[str, Any]) -> None:
     client.app.dependency_overrides[current_user] = lambda: _user("manager")
 
     response = client.put(

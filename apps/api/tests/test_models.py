@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,7 @@ EXPECTED_TABLES = {
     "counterparty_role",
     "employee",
     "employee_role_assignment",
+    "delivery_order",
     "wallet",
     "period",
     "data_source",
@@ -75,6 +77,7 @@ def test_all_models_import() -> None:
         "CounterpartyRole",
         "Employee",
         "EmployeeRoleAssignment",
+        "DeliveryOrder",
         "Wallet",
         "Period",
         "DataSource",
@@ -113,6 +116,8 @@ def test_employee_full_name_is_marked_iiko_read_only() -> None:
 
     assert column.info == {"source": "iiko", "read_only": True}
     assert column.comment == "source=iiko; read-only in app"
+    assert models.Employee.__table__.c.pin_hash.nullable is True
+    assert models.Employee.__table__.c.pin_set_at.nullable is True
 
 
 def test_required_unique_constraints_are_declared() -> None:
@@ -199,6 +204,19 @@ def test_shift_ledger_entry_table_is_declared() -> None:
     assert columns.closed_at.nullable is True
     assert columns.is_resolved.nullable is False
     assert "ix_shift_ledger_entry_work_date" in indexes
+
+
+def test_delivery_order_table_is_declared() -> None:
+    columns = models.DeliveryOrder.__table__.c
+    indexes = {index.name for index in models.DeliveryOrder.__table__.indexes}
+
+    assert columns.iiko_order_id.nullable is False
+    assert columns.iiko_order_id.unique is True
+    assert columns.work_date.nullable is False
+    assert columns.raw.nullable is False
+    assert "ix_delivery_order_work_date" in indexes
+    assert "ix_delivery_order_courier_work_date" in indexes
+    assert "ix_delivery_order_status" in indexes
 
 
 def test_counterparty_inn_partial_unique_index_is_declared() -> None:
@@ -397,6 +415,7 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
                              'category_1',
                              'category_2',
                              'category_3',
+                             'category_4',
                              'intern',
                              'freelancer'
                          )
@@ -413,6 +432,7 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
                                'category_1',
                                'category_2',
                                'category_3',
+                               'category_4',
                                'intern',
                                'freelancer'
                            )
@@ -441,13 +461,13 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
         "user": 1,
         "app_setting": 21,
         "app_setting_history": 21,
-        "payroll_rate": 20,
-        "payroll_role_category_availability": 20,
-        "enabled_payroll_role_category_availability": 14,
+        "payroll_rate": 22,
+        "payroll_role_category_availability": 30,
+        "enabled_payroll_role_category_availability": 16,
         "payroll_revenue_share": 4,
         "revenue_tier": 4,
-        "category_coefficient": 6,
-        "current_category_coefficient": 5,
+        "category_coefficient": 7,
+        "current_category_coefficient": 6,
         "current_category_2_coefficient": "2.250",
         "payroll_deduction_category": 4,
         "payroll_seniority_premium": 2,
@@ -498,6 +518,205 @@ async def test_seeded_settings_have_display_metadata(migrated_db: str) -> None:
     )
 
 
+async def test_cleanup_non_canonical_employee_migration_deletes_dependents(
+    alembic_cfg: Config,
+    postgres_available: None,
+) -> None:
+    employee_id = uuid.uuid4()
+    period_id = uuid.uuid4()
+    assignment_id = uuid.uuid4()
+    attendance_id = uuid.uuid4()
+    ledger_id = uuid.uuid4()
+    command.downgrade(alembic_cfg, "base")
+    command.upgrade(alembic_cfg, "0019_taxonomy_align")
+
+    engine = create_async_engine(TEST_DATABASE_URL)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    """
+                    insert into payroll_period (
+                        id,
+                        period_type,
+                        start_date,
+                        end_date,
+                        payroll_date,
+                        status
+                    )
+                    values (:id, 'week', :start_date, :end_date, :payroll_date, 'open')
+                    """
+                ),
+                {
+                    "id": period_id,
+                    "start_date": date(2026, 5, 25),
+                    "end_date": date(2026, 5, 31),
+                    "payroll_date": date(2026, 6, 1),
+                },
+            )
+            await conn.execute(
+                text(
+                    """
+                    insert into employee (
+                        id,
+                        full_name,
+                        iiko_id,
+                        position,
+                        status
+                    )
+                    values (
+                        :id,
+                        'Legacy Waiter',
+                        'iiko-legacy-waiter',
+                        'Официант',
+                        'active'
+                    )
+                    """
+                ),
+                {"id": employee_id},
+            )
+            await conn.execute(
+                text(
+                    """
+                    insert into employee_role_assignment (
+                        id,
+                        employee_id,
+                        payroll_role,
+                        category,
+                        is_primary,
+                        effective_from
+                    )
+                    values (
+                        :id,
+                        :employee_id,
+                        'sushi',
+                        'category_1',
+                        true,
+                        :effective_from
+                    )
+                    """
+                ),
+                {
+                    "id": assignment_id,
+                    "employee_id": employee_id,
+                    "effective_from": date(2026, 5, 29),
+                },
+            )
+            await conn.execute(
+                text(
+                    """
+                    insert into attendance_entry (
+                        id,
+                        employee_id,
+                        period_id,
+                        work_date,
+                        started_at,
+                        minutes_worked,
+                        source,
+                        quality_status
+                    )
+                    values (
+                        :id,
+                        :employee_id,
+                        :period_id,
+                        :work_date,
+                        :started_at,
+                        60,
+                        'manual',
+                        'ok'
+                    )
+                    """
+                ),
+                {
+                    "id": attendance_id,
+                    "employee_id": employee_id,
+                    "period_id": period_id,
+                    "work_date": date(2026, 5, 29),
+                    "started_at": datetime(2026, 5, 29, 10, 0, tzinfo=UTC),
+                },
+            )
+            await conn.execute(
+                text(
+                    """
+                    insert into shift_ledger_entry (
+                        id,
+                        work_date,
+                        employee_id,
+                        payroll_role,
+                        category,
+                        source,
+                        opened_at,
+                        is_resolved
+                    )
+                    values (
+                        :id,
+                        :work_date,
+                        :employee_id,
+                        'sushi',
+                        'category_1',
+                        'manual_correction',
+                        :opened_at,
+                        true
+                    )
+                    """
+                ),
+                {
+                    "id": ledger_id,
+                    "work_date": date(2026, 5, 29),
+                    "employee_id": employee_id,
+                    "opened_at": datetime(2026, 5, 29, 10, 0, tzinfo=UTC),
+                },
+            )
+    finally:
+        await engine.dispose()
+
+    command.upgrade(alembic_cfg, "head")
+
+    engine = create_async_engine(TEST_DATABASE_URL)
+    try:
+        async with engine.connect() as conn:
+            counts = {
+                "employee": await conn.scalar(
+                    text("select count(*) from employee where id = :id"),
+                    {"id": employee_id},
+                ),
+                "assignment": await conn.scalar(
+                    text("select count(*) from employee_role_assignment where id = :id"),
+                    {"id": assignment_id},
+                ),
+                "attendance": await conn.scalar(
+                    text("select count(*) from attendance_entry where id = :id"),
+                    {"id": attendance_id},
+                ),
+                "ledger": await conn.scalar(
+                    text("select count(*) from shift_ledger_entry where id = :id"),
+                    {"id": ledger_id},
+                ),
+                "deleted_log": await conn.scalar(
+                    text(
+                        """
+                        select result ->> 'deleted_employees'
+                          from agent_run
+                         where agent_name = 'taxonomy_cleanup_non_canonical_employees'
+                         order by started_at desc
+                         limit 1
+                        """
+                    )
+                ),
+            }
+    finally:
+        await engine.dispose()
+        command.downgrade(alembic_cfg, "base")
+
+    assert counts == {
+        "employee": 0,
+        "assignment": 0,
+        "attendance": 0,
+        "ledger": 0,
+        "deleted_log": "1",
+    }
+
+
 async def test_employee_iiko_id_unique_constraint_raises_integrity_error(
     migrated_db: str,
 ) -> None:
@@ -508,8 +727,8 @@ async def test_employee_iiko_id_unique_constraint_raises_integrity_error(
             async with engine.begin() as conn:
                 await conn.execute(
                     text(
-                        "insert into employee (id, full_name, iiko_id, status) "
-                        "values (:id, :full_name, :iiko_id, 'active')"
+                        "insert into employee (id, full_name, iiko_id, position, status) "
+                        "values (:id, :full_name, :iiko_id, 'Повар', 'active')"
                     ),
                     {
                         "id": uuid.uuid4(),
@@ -519,8 +738,8 @@ async def test_employee_iiko_id_unique_constraint_raises_integrity_error(
                 )
                 await conn.execute(
                     text(
-                        "insert into employee (id, full_name, iiko_id, status) "
-                        "values (:id, :full_name, :iiko_id, 'active')"
+                        "insert into employee (id, full_name, iiko_id, position, status) "
+                        "values (:id, :full_name, :iiko_id, 'Повар', 'active')"
                     ),
                     {
                         "id": uuid.uuid4(),

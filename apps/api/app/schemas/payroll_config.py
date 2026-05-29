@@ -53,6 +53,11 @@ class PayrollRoleCategoryAvailabilityRead(BaseModel):
     is_enabled: bool
 
 
+class PayrollRoleCategoryOptionRead(BaseModel):
+    code: str
+    name: str
+
+
 class PayrollRevenueShareBase(BaseModel):
     position_group: str
     category: str

@@ -83,3 +83,46 @@ class ShiftLedgerEntryRead(BaseModel):
     is_resolved: bool
     status: str
     available_roles: list[ShiftLedgerAvailableRoleRead]
+
+
+class ShiftLedgerMatrixDayHeaderRead(BaseModel):
+    date: date
+    is_today: bool
+
+
+class ShiftLedgerMatrixSummaryRead(BaseModel):
+    earliest_open: datetime | None = None
+    latest_close: datetime | None = None
+    shift_count: int
+
+
+class ShiftLedgerMatrixShiftRead(BaseModel):
+    ledger_entry_id: uuid.UUID
+    opened_at: datetime
+    closed_at: datetime | None = None
+    payroll_role: str | None = None
+    category: str | None = None
+    is_resolved: bool
+    status: str
+
+
+class ShiftLedgerMatrixDayRead(BaseModel):
+    date: date
+    available_roles: list[ShiftLedgerAvailableRoleRead]
+    summary: ShiftLedgerMatrixSummaryRead
+    shifts: list[ShiftLedgerMatrixShiftRead]
+
+
+class ShiftLedgerMatrixEmployeeRead(BaseModel):
+    id: uuid.UUID
+    full_name: str
+    iiko_id: str
+    days: list[ShiftLedgerMatrixDayRead]
+
+
+class ShiftLedgerMatrixRead(BaseModel):
+    selected_date: date
+    start_date: date
+    end_date: date
+    days: list[ShiftLedgerMatrixDayHeaderRead]
+    employees: list[ShiftLedgerMatrixEmployeeRead]

@@ -237,15 +237,9 @@ def upgrade() -> None:
             comment="source=iiko; read-only in app",
         ),
         sa.Column("iiko_id", sa.String(length=128), nullable=False),
-        sa.Column(
-            "position", sa.String(length=160), nullable=True, comment="source=app_managed"
-        ),
-        sa.Column(
-            "category", sa.String(length=160), nullable=True, comment="source=app_managed"
-        ),
-        sa.Column(
-            "status", sa.String(length=64), nullable=False, comment="source=app_managed"
-        ),
+        sa.Column("position", sa.String(length=160), nullable=True, comment="source=app_managed"),
+        sa.Column("category", sa.String(length=160), nullable=True, comment="source=app_managed"),
+        sa.Column("status", sa.String(length=64), nullable=False, comment="source=app_managed"),
         sa.Column("hire_date", sa.Date(), nullable=True, comment="source=app_managed"),
         sa.Column("fire_date", sa.Date(), nullable=True, comment="source=app_managed"),
         sa.Column(

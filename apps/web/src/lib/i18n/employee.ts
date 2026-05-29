@@ -16,6 +16,7 @@ export const EMPLOYEE_CATEGORY_LABELS: Record<EmployeeCategory, string> = {
   category_1: "1-я",
   category_2: "2-я",
   category_3: "3-я",
+  category_4: "4-я",
   intern: "Стажёр",
   freelancer: "Внештатный",
 };
@@ -32,5 +33,4 @@ export const PAYROLL_ROLE_LABELS: Record<PayrollRole, string> = {
   shawarma: "Шаурмист",
   prep: "Заготовщик",
   administrator: "Администратор",
-  manager: "Управляющий",
 };

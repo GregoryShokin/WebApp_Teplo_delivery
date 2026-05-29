@@ -28,7 +28,21 @@ TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 MONTH_DAY_RE = re.compile(r"^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$")
 ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 ALLOWED_WIDGET_TYPES = frozenset(
-    {"text", "number", "percent", "date", "date_array", "select", "boolean", "json", "time"}
+    {
+        "text",
+        "number",
+        "percent",
+        "date",
+        "date_array",
+        "select",
+        "boolean",
+        "json",
+        "time",
+        "weekday_premium",
+    }
+)
+WEEKDAY_PREMIUM_KEYS = frozenset(
+    {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
 )
 
 
@@ -81,9 +95,7 @@ def serialize_history(history: AppSettingHistory, user: User | None = None) -> d
     }
 
 
-async def list_settings(
-    session: AsyncSession, category: str | None = None
-) -> list[dict[str, Any]]:
+async def list_settings(session: AsyncSession, category: str | None = None) -> list[dict[str, Any]]:
     stmt = (
         select(AppSetting, User)
         .outerjoin(User, AppSetting.updated_by_user_id == User.id)
@@ -187,6 +199,9 @@ def validate_setting_value(setting: AppSetting, value: Any) -> None:
     if widget_type == "date_array":
         _validate_date_array(setting, value)
         return
+    if widget_type == "weekday_premium":
+        _validate_weekday_premium(value)
+        return
 
     _require(isinstance(value, str), "Expected text value")
 
@@ -215,9 +230,7 @@ def _validate_select(setting: AppSetting, value: Any) -> None:
     options = _widget_options(setting).get("options")
     _require(isinstance(options, list) and len(options) > 0, "Select options are not configured")
     option_values = [
-        option.get("value")
-        for option in options
-        if isinstance(option, dict) and "value" in option
+        option.get("value") for option in options if isinstance(option, dict) and "value" in option
     ]
     _require(
         any(value == option_value for option_value in option_values),
@@ -248,6 +261,17 @@ def _validate_date_array(setting: AppSetting, value: Any) -> None:
         _require(isinstance(start, str) and isinstance(end, str), "Expected range dates")
         _require(_is_date_value(setting, start), "Expected range start in configured format")
         _require(_is_date_value(setting, end), "Expected range end in configured format")
+
+
+def _validate_weekday_premium(value: Any) -> None:
+    _require(isinstance(value, dict), "Expected weekday premium object")
+    unknown_keys = sorted(set(value.keys()) - WEEKDAY_PREMIUM_KEYS)
+    _require(not unknown_keys, f"Unexpected weekday keys: {', '.join(unknown_keys)}")
+
+    for weekday, amount in value.items():
+        _require(weekday in WEEKDAY_PREMIUM_KEYS, "Unexpected weekday key")
+        _require(_is_number(amount), "Expected numeric weekday premium amount")
+        _require(float(amount) >= 0, "Expected non-negative weekday premium amount")
 
 
 def _is_date_value(setting: AppSetting, value: str) -> bool:

@@ -74,19 +74,7 @@ async def load_attendance_entries(
 
         employee = employees_by_iiko_id.get(iiko_id)
         if employee is None:
-            employee = Employee(
-                iiko_id=iiko_id,
-                full_name=first_text(record, "employeeName", "Employee", "name") or iiko_id,
-                status="requires_setup",
-                position=None,
-                category=None,
-                is_senior=False,
-                is_deputy_senior=False,
-                iiko_sync_at=datetime.now(UTC),
-            )
-            session.add(employee)
-            await session.flush()
-            employees_by_iiko_id[iiko_id] = employee
+            continue
 
         entry = build_attendance_entry(record, period, employee, rules)
         if entry.work_date < period.start_date or entry.work_date > period.end_date:
@@ -253,9 +241,7 @@ def first_text(record: Mapping[str, Any], *keys: str) -> str:
 def load_export_employees_module():
     current = Path(__file__).resolve()
     candidate_roots = [parent for parent in current.parents if (parent / "scripts/iiko").exists()]
-    candidate_roots.extend(
-        [Path("/app"), Path.cwd(), Path.cwd().parent, Path.cwd().parent.parent]
-    )
+    candidate_roots.extend([Path("/app"), Path.cwd(), Path.cwd().parent, Path.cwd().parent.parent])
     for root in candidate_roots:
         script_dir = root / "scripts/iiko"
         if not (script_dir / "export_employees.py").exists():

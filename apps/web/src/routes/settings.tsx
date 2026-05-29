@@ -12,8 +12,11 @@ import {
   PercentWidget,
   SelectWidget,
   TimeWidget,
+  WEEKDAY_PREMIUM_DAYS,
+  WeekdayPremiumWidget,
   findSelectLabel,
   type SettingWidgetOptions,
+  weekdayPremiumAmounts,
 } from "@/components/settings-widgets";
 import { formatJson, getPath } from "@/components/settings-widgets/widget-utils";
 import { Button } from "@/components/ui/button";
@@ -381,6 +384,8 @@ function RenderSettingWidget({
       return <BooleanWidget {...props} />;
     case "time":
       return <TimeWidget {...props} />;
+    case "weekday_premium":
+      return <WeekdayPremiumWidget {...props} />;
     case "text":
       return (
         <Input
@@ -553,6 +558,9 @@ function formatSettingValue(value: unknown, setting: AppSetting) {
   if (setting.widget_type === "date_array") {
     return formatDateArray(value);
   }
+  if (setting.widget_type === "weekday_premium") {
+    return formatWeekdayPremium(value, setting.unit);
+  }
   if (setting.widget_type === "date" || setting.widget_type === "time" || setting.widget_type === "text") {
     return String(value);
   }
@@ -581,6 +589,21 @@ function formatDateArray(value: unknown) {
         .join(", ")
     : "";
   return [dates, ranges].filter(Boolean).join("; ");
+}
+
+function formatWeekdayPremium(value: unknown, unit: string | null) {
+  const amounts = weekdayPremiumAmounts(value);
+  const activeDays = WEEKDAY_PREMIUM_DAYS
+    .map((day) => ({ ...day, amount: amounts[day.key] }))
+    .filter((day) => day.amount > 0);
+
+  if (activeDays.length === 0) {
+    return ["0", unit].filter(Boolean).join(" ");
+  }
+
+  return activeDays
+    .map((day) => `${day.shortLabel}: ${formatNumber(day.amount)} ${unit ?? ""}`.trim())
+    .join(", ");
 }
 
 function numberValue(value: unknown) {

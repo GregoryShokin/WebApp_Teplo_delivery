@@ -27,8 +27,13 @@ class Employee(Base):
     __tablename__ = "employee"
     __table_args__ = (
         CheckConstraint(
+            "position in "
+            "('Кассир', 'Повар', 'Управляющий', 'Системный администратор', 'Курьер', 'Менеджер')",
+            name="ck_employee_position_canonical",
+        ),
+        CheckConstraint(
             "category is null or category in "
-            "('category_1', 'category_2', 'category_3', 'intern', 'freelancer')",
+            "('category_1', 'category_2', 'category_3', 'category_4', 'intern', 'freelancer')",
             name="ck_employee_category_value",
         ),
         CheckConstraint(
@@ -46,7 +51,7 @@ class Employee(Base):
         info={"source": "iiko", "read_only": True},
     )
     iiko_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
-    position: Mapped[str | None] = mapped_column(String(160), nullable=True, comment="source=iiko")
+    position: Mapped[str] = mapped_column(String(160), nullable=False, comment="source=iiko")
     category: Mapped[str | None] = mapped_column(Text, nullable=True, comment="source=app_managed")
     default_cooking_station: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="source=app_managed"
@@ -81,6 +86,12 @@ class Employee(Base):
     fire_reason: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="source=app_managed"
     )
+    pin_hash: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="source=app_managed"
+    )
+    pin_set_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="source=app_managed"
+    )
     iiko_sync_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, comment="source=iiko"
     )
@@ -114,12 +125,12 @@ class EmployeeRoleAssignment(Base):
     __tablename__ = "employee_role_assignment"
     __table_args__ = (
         CheckConstraint(
-            "payroll_role in "
-            "('sushi', 'pizza', 'shawarma', 'prep', 'administrator', 'manager')",
+            "payroll_role in ('sushi', 'pizza', 'shawarma', 'prep', 'administrator')",
             name="ck_employee_role_assignment_payroll_role_value",
         ),
         CheckConstraint(
-            "category in ('category_1', 'category_2', 'category_3', 'intern', 'freelancer')",
+            "category in "
+            "('category_1', 'category_2', 'category_3', 'category_4', 'intern', 'freelancer')",
             name="ck_employee_role_assignment_category_value",
         ),
         CheckConstraint(

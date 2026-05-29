@@ -39,9 +39,7 @@ async def get_user_role_codes(session: AsyncSession, user_id: uuid.UUID) -> tupl
     return tuple(result.scalars().all())
 
 
-async def build_authenticated_user(
-    session: AsyncSession, user: User
-) -> AuthenticatedUser | None:
+async def build_authenticated_user(session: AsyncSession, user: User) -> AuthenticatedUser | None:
     if not user.is_active:
         return None
 

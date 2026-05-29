@@ -116,7 +116,6 @@ def upgrade() -> None:
         ],
     )
 
-    admin_user_id = uuid.uuid4()
     admin_email = os.environ.get("TEPLO_ADMIN_EMAIL", "admin@teplo.local")
     user_table = sa.table(
         "user",
@@ -126,17 +125,25 @@ def upgrade() -> None:
         sa.column("full_name", sa.String()),
         sa.column("is_active", sa.Boolean()),
     )
-    op.bulk_insert(
-        user_table,
-        [
-            {
-                "id": admin_user_id,
-                "email": admin_email,
-                "hashed_password": _admin_password_hash(),
-                "full_name": os.environ.get("TEPLO_ADMIN_FULL_NAME", "Teplo Admin"),
-                "is_active": True,
-            }
-        ],
+    admin_user_insert = postgresql.insert(user_table).values(
+        id=uuid.uuid4(),
+        email=admin_email,
+        hashed_password=_admin_password_hash(),
+        full_name=os.environ.get("TEPLO_ADMIN_FULL_NAME", "Teplo Admin"),
+        is_active=True,
+    )
+    admin_user_id = (
+        op.get_bind()
+        .execute(
+            admin_user_insert.on_conflict_do_update(
+                index_elements=["email"],
+                set_={
+                    "hashed_password": admin_user_insert.excluded.hashed_password,
+                    "is_active": True,
+                },
+            ).returning(user_table.c.id)
+        )
+        .scalar_one()
     )
 
     admin_role_id = roles[0]["id"]
@@ -146,15 +153,16 @@ def upgrade() -> None:
         sa.column("role_id", postgresql.UUID(as_uuid=True)),
         sa.column("organization_id", postgresql.UUID(as_uuid=True)),
     )
-    op.bulk_insert(
-        user_role_table,
-        [
-            {
-                "user_id": admin_user_id,
-                "role_id": admin_role_id,
-                "organization_id": organization_id,
-            }
-        ],
+    op.get_bind().execute(
+        postgresql.insert(user_role_table)
+        .values(
+            user_id=admin_user_id,
+            role_id=admin_role_id,
+            organization_id=organization_id,
+        )
+        .on_conflict_do_nothing(
+            index_elements=["user_id", "role_id", "organization_id"],
+        )
     )
 
     data_source_table = sa.table(
@@ -374,11 +382,11 @@ def downgrade() -> None:
     )
     conn.execute(
         sa.text(
-            "delete from user_role where user_id in (select id from \"user\" where email = :email)"
+            'delete from user_role where user_id in (select id from "user" where email = :email)'
         ),
         {"email": admin_email},
     )
     conn.execute(sa.text("delete from location where name in ('Черникова', 'Гагарина')"))
     conn.execute(sa.text("delete from organization where name = 'ИП Шокина'"))
-    conn.execute(sa.text("delete from \"user\" where email = :email"), {"email": admin_email})
+    conn.execute(sa.text('delete from "user" where email = :email'), {"email": admin_email})
     conn.execute(sa.text("delete from role where code = any(:codes)"), {"codes": list(ROLE_CODES)})

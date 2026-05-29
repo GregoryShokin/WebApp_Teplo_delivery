@@ -26,6 +26,8 @@ from app.schemas.payroll_config import (
     PayrollRevenueTierBase,
     PayrollSeniorityPremiumBase,
 )
+from app.services.employee_assignments import PAYROLL_ROLE_LABELS
+from app.services.staff_taxonomy import categories_for_payroll_role
 
 
 class PayrollConfigConflictError(RuntimeError):
@@ -37,9 +39,24 @@ class PayrollConfigValidationError(ValueError):
 
 
 VALID_PAYROLL_RATE_CATEGORIES = frozenset(
-    {"category_1", "category_2", "category_3", "intern", "freelancer"}
+    {"category_1", "category_2", "category_3", "category_4", "intern", "freelancer"}
 )
-PAYROLL_RATE_CATEGORY_ORDER = ("category_1", "category_2", "category_3", "intern", "freelancer")
+PAYROLL_RATE_CATEGORY_ORDER = (
+    "category_1",
+    "category_2",
+    "category_3",
+    "category_4",
+    "intern",
+    "freelancer",
+)
+PAYROLL_RATE_CATEGORY_LABELS = {
+    "category_1": "1-я",
+    "category_2": "2-я",
+    "category_3": "3-я",
+    "category_4": "4-я",
+    "intern": "Стажёр",
+    "freelancer": "Внештатный",
+}
 
 
 async def list_rates(session: AsyncSession, *, history: bool = False) -> list[PayrollRate]:
@@ -120,6 +137,21 @@ async def list_role_category_availability(session: AsyncSession) -> list[dict[st
         for position_group in positions
         for category in PAYROLL_RATE_CATEGORY_ORDER
     ]
+
+
+async def list_enabled_role_categories(session: AsyncSession) -> dict[str, list[dict[str, str]]]:
+    availability = await _availability_by_key(session)
+    return {
+        payroll_role: [
+            {
+                "code": category,
+                "name": PAYROLL_RATE_CATEGORY_LABELS[category],
+            }
+            for category in categories_for_payroll_role(payroll_role)
+            if availability.get((position_group, category), False)
+        ]
+        for payroll_role, position_group in PAYROLL_ROLE_LABELS.items()
+    }
 
 
 async def set_role_category_availability(

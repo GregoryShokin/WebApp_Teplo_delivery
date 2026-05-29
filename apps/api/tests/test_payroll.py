@@ -92,7 +92,7 @@ def make_period(
 def make_employee(
     *,
     status: str = "active",
-    position: str | None = "Пиццерист",
+    position: str | None = "Повар",
     category: str | None = "category_2",
     default_cooking_station: str | None = None,
     hire_date: date | None = None,
@@ -108,6 +108,8 @@ def make_employee(
         hire_date=hire_date,
         is_senior=False,
         is_deputy_senior=False,
+        pin_hash="hashed-pin",
+        pin_set_at=datetime(2026, 5, 1, tzinfo=UTC),
         created_at=datetime(2026, 5, 1, tzinfo=UTC),
         updated_at=datetime(2026, 5, 1, tzinfo=UTC),
     )
@@ -177,6 +179,30 @@ class ShiftLedgerFakeSession:
         if model is ShiftLedgerEntry and self.entry is not None and self.entry.id == object_id:
             return self.entry
         return None
+
+
+class ShiftLedgerAttendanceFakeSession:
+    def __init__(self, employees: list[Employee]) -> None:
+        self.employees = employees
+        self.added: list[Any] = []
+        self.flush_count = 0
+
+    async def scalars(self, _stmt: Any) -> Any:
+        return ShiftLedgerAttendanceScalarResult(self.employees)
+
+    def add(self, item: Any) -> None:
+        self.added.append(item)
+
+    async def flush(self) -> None:
+        self.flush_count += 1
+
+
+class ShiftLedgerAttendanceScalarResult:
+    def __init__(self, employees: list[Employee]) -> None:
+        self.employees = employees
+
+    def all(self) -> list[Employee]:
+        return self.employees
 
 
 async def _empty_assignments(*_args, **_kwargs) -> dict:
@@ -251,6 +277,35 @@ def test_closed_shift_over_12_hours_requires_quality_review() -> None:
     assert entry.minutes_worked == 13 * 60
     assert entry.quality_status == "quality_review"
     assert "duration_over_12h" in (entry.notes or "")
+
+
+async def test_load_shift_ledger_iiko_snapshots_skips_unknown_iiko_employee() -> None:
+    employee = make_employee()
+    work_date = date(2026, 5, 28)
+    session = ShiftLedgerAttendanceFakeSession([employee])
+
+    snapshots = await shift_ledger_service.load_iiko_attendance_snapshots(
+        session,  # type: ignore[arg-type]
+        work_date,
+        iiko_records=[
+            {
+                "employeeId": employee.iiko_id,
+                "dateFrom": "2026-05-28T08:00:00+03:00",
+                "dateTo": "2026-05-28T17:00:00+03:00",
+            },
+            {
+                "employeeId": "unknown-courier-iiko-id",
+                "employeeName": "Unknown Courier",
+                "dateFrom": "2026-05-28T09:00:00+03:00",
+                "dateTo": "2026-05-28T12:00:00+03:00",
+            },
+        ],
+    )
+
+    assert len(snapshots) == 1
+    assert snapshots[0].employee_id == employee.id
+    assert session.added == []
+    assert session.flush_count == 0
 
 
 async def test_build_shift_ledger_creates_entries_from_iiko_attendance(
@@ -631,7 +686,7 @@ def test_unknown_or_unconfigured_employee_blocks_payroll_and_finalize() -> None:
 def test_employee_position_does_not_backfill_missing_payroll_role() -> None:
     period = make_period()
     run_id = uuid.uuid4()
-    employee = make_employee(position="Пиццерист", category="category_2")
+    employee = make_employee(position="Повар", category="category_2")
     entry = make_entry(period, employee, period.start_date, role=None)
 
     result = calculate_payroll_lines_from_inputs(

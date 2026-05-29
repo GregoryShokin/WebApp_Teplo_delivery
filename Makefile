@@ -34,6 +34,8 @@ web-dev:
 api-test:
 	cd apps/api && $(API_PYTHON) -m pytest
 
+# Courier deliveries Phase 1: run from cron/scheduler later via
+# POST /api/v1/couriers/sync?mode=hot (or mode=custom&date_from=YYYY-MM-DD&date_to=YYYY-MM-DD).
 api-lint:
 	cd apps/api && ruff check .
 

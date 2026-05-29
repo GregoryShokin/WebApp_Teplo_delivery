@@ -66,6 +66,12 @@ DEFAULT_CATEGORY_COEFFICIENTS = (
         "effective_to": None,
     },
     {
+        "category": "category_4",
+        "coefficient": Decimal("2.500"),
+        "effective_from": date(2026, 5, 28),
+        "effective_to": None,
+    },
+    {
         "category": "intern",
         "coefficient": Decimal("0.000"),
         "effective_from": date(2026, 1, 1),

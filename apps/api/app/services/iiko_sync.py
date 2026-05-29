@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import http.client
 import importlib
 import json
 import os
+import re
 import sys
+import time
+import uuid
+import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -11,20 +16,19 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Literal
 
-from sqlalchemy import select
+import anyio
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
 from app.models import (
-    AccumulationFundAccount,
     AgentAction,
     AgentRun,
-    AttendanceEntry,
     DataSource,
-    DepositAccount,
-    DepositTransaction,
     Employee,
+    EmployeeRoleAssignment,
     PayrollLine,
+    ShiftLedgerEntry,
     SourceCredential,
 )
 from app.services.employee_status import (
@@ -33,6 +37,7 @@ from app.services.employee_status import (
     is_target_position,
     position_group_for_position,
 )
+from app.services.staff_taxonomy import canonical_position_name
 
 ACTIVE_STATUSES = {"active", "enabled", "not_deleted", "not deleted", "не удален", "не удалён"}
 DELETED_STATUSES = {
@@ -67,6 +72,13 @@ SERVICE_ACCOUNT_NAME_MARKERS = (
     "сотрудник техподдержки лемма",
 )
 SyncMode = Literal["incremental", "reset"]
+GHOST_CLEANUP_NOTE = "ghost cleanup auto"
+RESET_MISSING_NOTE = "missing from iiko reset"
+SKIP_MISSING_NAME_OR_POSITION = "missing_name_or_position"
+IIKO_ID_KEYS = ("id", "employeeId", "employee_id", "iikoId", "iiko_id", "code")
+IIKO_INCOMPLETE_READ_ATTEMPTS = 3
+IIKO_INCOMPLETE_READ_RETRY_DELAY_SECONDS = 5
+IIKO_EMPLOYEE_XML_CONTENT_TYPE = "application/xml; charset=utf-8"
 
 
 @dataclass(slots=True)
@@ -74,6 +86,8 @@ class SyncResult:
     created: int = 0
     updated: int = 0
     deactivated: int = 0
+    ghost_cleaned: int = 0
+    existing_assignments_preserved: bool | None = None
 
     def as_dict(self) -> dict[str, int]:
         return {
@@ -81,6 +95,15 @@ class SyncResult:
             "updated": self.updated,
             "deactivated": self.deactivated,
         }
+
+    def audit_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            **self.as_dict(),
+            "ghost_cleaned": self.ghost_cleaned,
+        }
+        if self.existing_assignments_preserved is not None:
+            result["existing_assignments_preserved"] = self.existing_assignments_preserved
+        return result
 
 
 @dataclass(slots=True)
@@ -94,11 +117,42 @@ class IikoEmployeeRecord:
     fire_date: date | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class IikoEmployeeRole:
+    id: str
+    name: str
+    code: str | None = None
+    deleted: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class IikoEmployeeCreateResult:
+    iiko_id: str
+    full_name: str
+    position: str
+    role_id: str
+    role_code: str | None
+    is_target_position: bool
+
+
+class IikoEmployeeOperationError(RuntimeError):
+    def __init__(self, message: str, *, status_code: int = 502) -> None:
+        self.status_code = status_code
+        super().__init__(message)
+
+
 @dataclass(slots=True)
 class EmployeeMutation:
     action_type: str
     employee: Employee
     before: dict[str, Any] | None
+    note: str | None = None
+
+
+@dataclass(slots=True)
+class SkippedEmployeeRecord:
+    iiko_id: str | None
+    reason: str
 
 
 @dataclass(slots=True)
@@ -106,6 +160,8 @@ class EmployeeSyncPlan:
     result: SyncResult
     mutations: list[EmployeeMutation]
     created_employees: list[Employee]
+    skipped_records: list[SkippedEmployeeRecord]
+    ghost_cleanup_employees: list[Employee]
 
 
 def _candidate_project_roots() -> list[Path]:
@@ -167,14 +223,268 @@ def fetch_iiko_employee_records() -> list[Mapping[str, Any]]:
     export_employees = _load_export_employees_module()
     export_employees.load_local_env()
     client = export_employees.IikoClient()
-    _status, data = client.request("/employees", params={"includeDeleted": "true"})
-    _roles_status, roles_data = client.request(
+    _status, data = _request_iiko_with_incomplete_read_retry(
+        client,
+        "/employees",
+    )
+    _roles_status, roles_data = _request_iiko_with_incomplete_read_retry(
+        client,
         "/employees/roles",
-        params={"includeDeleted": "true"},
     )
     employee_records = list(export_employees.records_from_response("/employees", data))
     role_records = list(export_employees.records_from_response("/employees/roles", roles_data))
     return _enrich_employee_records_with_roles(employee_records, role_records)
+
+
+async def get_iiko_employee_roles(session: AsyncSession) -> list[IikoEmployeeRole]:
+    await _load_source_credential_env(session)
+    return await anyio.to_thread.run_sync(fetch_iiko_employee_roles)
+
+
+def fetch_iiko_employee_roles(*, include_deleted: bool = False) -> list[IikoEmployeeRole]:
+    export_employees = _load_export_employees_module()
+    export_employees.load_local_env()
+    client = export_employees.IikoClient()
+    roles = _fetch_iiko_employee_roles_with_client(
+        export_employees,
+        client,
+        include_deleted=True,
+    )
+    if include_deleted:
+        return roles
+    return [role for role in roles if not role.deleted]
+
+
+async def create_iiko_employee(
+    session: AsyncSession,
+    *,
+    full_name: str,
+    role_id: str,
+    pin_code: str,
+) -> IikoEmployeeCreateResult:
+    await _load_source_credential_env(session)
+    return await anyio.to_thread.run_sync(
+        _create_iiko_employee_sync,
+        full_name.strip(),
+        role_id.strip(),
+        pin_code.strip(),
+    )
+
+
+async def dismiss_iiko_employee(session: AsyncSession, *, iiko_id: str) -> None:
+    await _load_source_credential_env(session)
+    await anyio.to_thread.run_sync(_dismiss_iiko_employee_sync, iiko_id)
+
+
+def _request_iiko_with_incomplete_read_retry(
+    client: Any,
+    path: str,
+    **kwargs: Any,
+) -> tuple[Any, Any]:
+    for attempt in range(IIKO_INCOMPLETE_READ_ATTEMPTS):
+        try:
+            return client.request(path, **kwargs)
+        except http.client.IncompleteRead:
+            if attempt == IIKO_INCOMPLETE_READ_ATTEMPTS - 1:
+                raise
+            time.sleep(IIKO_INCOMPLETE_READ_RETRY_DELAY_SECONDS)
+    raise RuntimeError("unreachable")
+
+
+def _fetch_iiko_employee_roles_with_client(
+    export_employees: ModuleType,
+    client: Any,
+    *,
+    include_deleted: bool,
+) -> list[IikoEmployeeRole]:
+    try:
+        _status, data = _request_iiko_with_incomplete_read_retry(
+            client,
+            "/employees/roles",
+            params={"includeDeleted": "true" if include_deleted else "false"},
+        )
+    except export_employees.IikoHTTPError as exc:
+        raise _iiko_operation_error("получить роли сотрудников из iiko", exc) from exc
+
+    records = list(export_employees.records_from_response("/employees/roles", data))
+    roles: list[IikoEmployeeRole] = []
+    for record in records:
+        role_id = _first_text(record, "id", "roleId")
+        role_name = _first_text(record, "name", "title", "roleName")
+        if not role_id or not role_name:
+            continue
+        roles.append(
+            IikoEmployeeRole(
+                id=role_id,
+                name=role_name,
+                code=_first_text(record, "code", "roleCode") or None,
+                deleted=_is_deleted(record),
+            )
+        )
+    roles.sort(key=lambda role: (role.deleted, role.name.casefold(), role.id))
+    return roles
+
+
+def _create_iiko_employee_sync(
+    full_name: str,
+    role_id: str,
+    pin_code: str,
+) -> IikoEmployeeCreateResult:
+    if not full_name:
+        raise IikoEmployeeOperationError("ФИО сотрудника обязательно", status_code=400)
+    if not role_id:
+        raise IikoEmployeeOperationError("Выберите роль iiko", status_code=400)
+    if re.fullmatch(r"\d{4}", pin_code) is None:
+        raise IikoEmployeeOperationError("ПИН-код должен состоять из 4 цифр", status_code=400)
+
+    export_employees = _load_export_employees_module()
+    export_employees.load_local_env()
+    client = export_employees.IikoClient()
+    roles = _fetch_iiko_employee_roles_with_client(
+        export_employees,
+        client,
+        include_deleted=True,
+    )
+    role = next((item for item in roles if item.id == role_id), None)
+    if role is None:
+        raise IikoEmployeeOperationError("Роль iiko не найдена", status_code=400)
+    if role.deleted:
+        raise IikoEmployeeOperationError("Выбранная роль iiko удалена", status_code=400)
+
+    employee_id = str(uuid.uuid4())
+    body = _build_iiko_employee_xml(employee_id, full_name, role, pin_code)
+    try:
+        _status, data = _request_iiko_with_incomplete_read_retry(
+            client,
+            f"/employees/byId/{employee_id}",
+            method="PUT",
+            raw_body=body,
+            content_type=IIKO_EMPLOYEE_XML_CONTENT_TYPE,
+        )
+    except export_employees.IikoHTTPError as exc:
+        raise _iiko_operation_error("создать сотрудника в iiko", exc) from exc
+
+    returned_id = _extract_iiko_id_from_response(export_employees, data) or employee_id
+    return IikoEmployeeCreateResult(
+        iiko_id=returned_id,
+        full_name=full_name,
+        position=canonical_position_name(role.name) or role.name,
+        role_id=role.id,
+        role_code=role.code,
+        is_target_position=is_target_position(role.name),
+    )
+
+
+def _dismiss_iiko_employee_sync(iiko_id: str) -> None:
+    iiko_id = iiko_id.strip()
+    if not iiko_id:
+        raise IikoEmployeeOperationError("У сотрудника нет iiko id", status_code=400)
+
+    export_employees = _load_export_employees_module()
+    export_employees.load_local_env()
+    client = export_employees.IikoClient()
+    try:
+        _status, data = _request_iiko_with_incomplete_read_retry(
+            client,
+            f"/employees/byId/{iiko_id}",
+        )
+        body = _build_iiko_employee_deleted_xml(data)
+        _request_iiko_with_incomplete_read_retry(
+            client,
+            f"/employees/byId/{iiko_id}",
+            method="PUT",
+            raw_body=body,
+            content_type=IIKO_EMPLOYEE_XML_CONTENT_TYPE,
+        )
+    except export_employees.IikoHTTPError as exc:
+        raise _iiko_operation_error("уволить сотрудника в iiko", exc) from exc
+
+
+def _build_iiko_employee_xml(
+    employee_id: str,
+    full_name: str,
+    role: IikoEmployeeRole,
+    pin_code: str,
+) -> bytes:
+    root = ET.Element("employee")
+    _set_xml_text(root, "id", employee_id)
+    _set_xml_text(root, "code", "")
+    _set_xml_text(root, "name", full_name)
+    _set_xml_text(root, "login", "")
+    _set_xml_text(root, "pinCode", pin_code)
+    _set_xml_text(root, "mainRoleId", role.id)
+    _set_xml_text(root, "rolesIds", role.id)
+    _set_xml_text(root, "mainRoleCode", role.code or "")
+    _set_xml_text(root, "roleCodes", role.code or "")
+    _set_xml_text(root, "deleted", "false")
+    _set_xml_text(root, "supplier", "false")
+    _set_xml_text(root, "employee", "true")
+    _set_xml_text(root, "client", "false")
+    _set_xml_text(root, "representsStore", "false")
+    _set_xml_text(root, "publicExternalData", "")
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
+def _build_iiko_employee_deleted_xml(data: bytes) -> bytes:
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError as exc:
+        raise IikoEmployeeOperationError(
+            "iiko вернул карточку сотрудника в неподдерживаемом формате",
+            status_code=502,
+        ) from exc
+
+    employee = _find_employee_xml_element(root)
+    if employee is None:
+        raise IikoEmployeeOperationError("iiko не вернул карточку сотрудника", status_code=502)
+    _set_xml_text(employee, "deleted", "true")
+    return ET.tostring(employee, encoding="utf-8", xml_declaration=True)
+
+
+def _find_employee_xml_element(root: ET.Element) -> ET.Element | None:
+    if _local_xml_name(root.tag) in {"employee", "employeeDto"}:
+        return root
+    for child in root.iter():
+        if _local_xml_name(child.tag) in {"employee", "employeeDto"}:
+            return child
+    return None
+
+
+def _set_xml_text(root: ET.Element, tag: str, value: str) -> None:
+    element = root.find(tag)
+    if element is None:
+        element = ET.SubElement(root, tag)
+    element.text = value
+
+
+def _local_xml_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _extract_iiko_id_from_response(export_employees: ModuleType, data: bytes) -> str | None:
+    if not data.strip():
+        return None
+    records = export_employees.records_from_response("/employees", data)
+    if not records:
+        return None
+    return _extract_iiko_id(records[0]) or None
+
+
+def _iiko_operation_error(operation: str, exc: Exception) -> IikoEmployeeOperationError:
+    status = getattr(exc, "status", None)
+    message = getattr(exc, "message", None) or str(exc)
+    message = _sanitize_iiko_error_message(message)
+    detail = f"Не удалось {operation}"
+    if status:
+        detail = f"{detail}: iiko вернул HTTP {status}"
+    if message:
+        detail = f"{detail}: {message}"
+    return IikoEmployeeOperationError(detail)
+
+
+def _sanitize_iiko_error_message(message: str) -> str:
+    text = str(message).replace("\n", " ").replace("\r", " ").strip()
+    return text[:500]
 
 
 async def sync_employees(
@@ -206,7 +516,11 @@ async def sync_employees(
 
     sync_today = today or datetime.now(UTC).date()
     sync_now = now or datetime.now(UTC)
-    records = list(iiko_records) if iiko_records is not None else fetch_iiko_employee_records()
+    records = (
+        list(iiko_records)
+        if iiko_records is not None
+        else await anyio.to_thread.run_sync(fetch_iiko_employee_records)
+    )
 
     agent_run = AgentRun(
         agent_name="iiko_employee_sync",
@@ -218,12 +532,17 @@ async def sync_employees(
     await session.flush()
 
     try:
-        if mode == "reset":
-            await _reset_employees_for_sync(session, records, sync_today, sync_now)
-        result = await _apply_employee_records(session, records, agent_run.id, sync_today, sync_now)
+        result = await _apply_employee_records(
+            session,
+            records,
+            agent_run.id,
+            sync_today,
+            sync_now,
+            mode=mode,
+        )
         agent_run.status = "success"
         agent_run.finished_at = datetime.now(UTC)
-        agent_run.result = result.as_dict()
+        agent_run.result = result.audit_dict()
         await session.commit()
         return result
     except Exception as exc:
@@ -240,26 +559,40 @@ async def _apply_employee_records(
     agent_run_id: Any,
     sync_today: date,
     sync_now: datetime,
+    *,
+    mode: SyncMode = "incremental",
 ) -> SyncResult:
     existing_by_iiko_id = {
-        employee.iiko_id: employee
-        for employee in (await session.scalars(select(Employee))).all()
+        employee.iiko_id: employee for employee in (await session.scalars(select(Employee))).all()
     }
-    plan = plan_employee_sync(existing_by_iiko_id, records, sync_today, sync_now)
+    plan = plan_employee_sync(existing_by_iiko_id, records, sync_today, sync_now, mode=mode)
 
     for employee in plan.created_employees:
         session.add(employee)
     await session.flush()
 
+    if mode == "reset":
+        plan.result.ghost_cleaned = await _delete_ghost_employees_without_real_payroll_history(
+            session,
+            plan.ghost_cleanup_employees,
+        )
+        plan.result.existing_assignments_preserved = True
+
     for mutation in plan.mutations:
+        after = _employee_snapshot(mutation.employee)
+        if mutation.note:
+            after = {**after, "notes": mutation.note}
         _add_action(
             session,
             agent_run_id,
             mutation.action_type,
             mutation.employee,
             before=mutation.before,
-            after=_employee_snapshot(mutation.employee),
+            after=after,
         )
+
+    for skipped in plan.skipped_records:
+        _add_skipped_action(session, agent_run_id, skipped)
 
     return plan.result
 
@@ -269,16 +602,33 @@ def plan_employee_sync(
     records: Iterable[Mapping[str, Any]],
     sync_today: date,
     sync_now: datetime,
+    *,
+    mode: SyncMode = "incremental",
 ) -> EmployeeSyncPlan:
+    if mode not in ("incremental", "reset"):
+        raise ValueError("Employee sync mode must be 'incremental' or 'reset'")
+
     result = SyncResult()
     mutations: list[EmployeeMutation] = []
     created_employees: list[Employee] = []
+    skipped_records: list[SkippedEmployeeRecord] = []
+    ghost_cleanup_employees: list[Employee] = []
+    seen_iiko_ids: set[str] = set()
 
     for raw_record in records:
-        record = normalize_iiko_employee(raw_record)
+        raw_iiko_id = _extract_iiko_id(raw_record)
+        existing_employee = existing_by_iiko_id.get(raw_iiko_id) if raw_iiko_id else None
+        record = normalize_iiko_employee(
+            raw_record,
+            allow_non_target_position=existing_employee is not None,
+        )
         if record is None:
+            skipped_records.append(
+                SkippedEmployeeRecord(raw_iiko_id or None, SKIP_MISSING_NAME_OR_POSITION)
+            )
             continue
 
+        seen_iiko_ids.add(record.iiko_id)
         employee = existing_by_iiko_id.get(record.iiko_id)
         is_active_target = _is_active_target_employee(record)
         if employee is None:
@@ -314,8 +664,9 @@ def plan_employee_sync(
             if employee.full_name != record.full_name:
                 employee.full_name = record.full_name
                 changed = True
-            if employee.position != record.position:
-                employee.position = record.position
+            canonical_position = canonical_position_name(record.position)
+            if canonical_position is not None and employee.position != canonical_position:
+                employee.position = canonical_position
                 changed = True
             if employee.status != "inactive" or employee.fire_date is None:
                 employee.status = "inactive"
@@ -326,29 +677,31 @@ def plan_employee_sync(
             if employee.full_name != record.full_name:
                 employee.full_name = record.full_name
                 changed = True
-            if employee.position != record.position:
-                employee.position = record.position
+            canonical_position = canonical_position_name(record.position)
+            if canonical_position is not None and employee.position != canonical_position:
+                employee.position = canonical_position
                 changed = True
-            if (
-                not is_cook_position(employee.position)
-                and employee.default_cooking_station is not None
-            ):
-                employee.default_cooking_station = None
-                changed = True
-            if employee.fire_date is not None:
-                employee.fire_date = None
-                changed = True
-            if record.hire_date and employee.hire_date != record.hire_date:
-                employee.hire_date = record.hire_date
-                changed = True
-            computed_status = compute_status(
-                employee,
-                is_iiko_deleted=False,
-                position_group=position_group_for_position(employee.position),
-            )
-            if employee.status != computed_status:
-                employee.status = computed_status
-                changed = True
+            if mode == "incremental":
+                if (
+                    not is_cook_position(employee.position)
+                    and employee.default_cooking_station is not None
+                ):
+                    employee.default_cooking_station = None
+                    changed = True
+                if employee.fire_date is not None:
+                    employee.fire_date = None
+                    changed = True
+                if record.hire_date and employee.hire_date != record.hire_date:
+                    employee.hire_date = record.hire_date
+                    changed = True
+                computed_status = compute_status(
+                    employee,
+                    is_iiko_deleted=False,
+                    position_group=position_group_for_position(employee.position),
+                )
+                if employee.status != computed_status:
+                    employee.status = computed_status
+                    changed = True
 
         employee.iiko_sync_at = sync_now
 
@@ -359,43 +712,87 @@ def plan_employee_sync(
             result.updated += 1
             mutations.append(EmployeeMutation("update", employee, before))
 
-    return EmployeeSyncPlan(result=result, mutations=mutations, created_employees=created_employees)
+    if mode == "reset":
+        for employee in existing_by_iiko_id.values():
+            if employee.iiko_id in seen_iiko_ids or _is_ghost_employee(employee):
+                continue
+            before = _employee_snapshot(employee)
+            deactivated = False
+            if employee.status != "inactive":
+                employee.status = "inactive"
+                deactivated = True
+            if employee.fire_date is None:
+                employee.fire_date = sync_today
+                deactivated = True
+            employee.iiko_sync_at = sync_now
+            if deactivated:
+                result.deactivated += 1
+                mutations.append(
+                    EmployeeMutation(
+                        "deactivate",
+                        employee,
+                        before,
+                        note=RESET_MISSING_NOTE,
+                    )
+                )
 
+    for employee in existing_by_iiko_id.values():
+        if not _is_ghost_employee(employee):
+            continue
+        ghost_cleanup_employees.append(employee)
+        before = _employee_snapshot(employee)
+        changed = False
+        if employee.status != "inactive":
+            employee.status = "inactive"
+            changed = True
+        if employee.fire_date is None:
+            employee.fire_date = sync_today
+            changed = True
+        employee.iiko_sync_at = sync_now
+        if changed:
+            result.deactivated += 1
+            mutations.append(
+                EmployeeMutation(
+                    "deactivate",
+                    employee,
+                    before,
+                    note=GHOST_CLEANUP_NOTE,
+                )
+            )
 
-def normalize_iiko_employee(raw_record: Mapping[str, Any]) -> IikoEmployeeRecord | None:
-    iiko_id = _first_text(
-        raw_record,
-        "id",
-        "employeeId",
-        "employee_id",
-        "iikoId",
-        "iiko_id",
-        "code",
+    return EmployeeSyncPlan(
+        result=result,
+        mutations=mutations,
+        created_employees=created_employees,
+        skipped_records=skipped_records,
+        ghost_cleanup_employees=ghost_cleanup_employees,
     )
+
+
+def normalize_iiko_employee(
+    raw_record: Mapping[str, Any],
+    *,
+    allow_non_target_position: bool = True,
+) -> IikoEmployeeRecord | None:
+    iiko_id = _extract_iiko_id(raw_record)
     if not iiko_id:
         return None
 
-    full_name = (
-        _first_text(raw_record, "fullName", "full_name", "name", "displayName", "fio")
-        or " ".join(
-            part
-            for part in (
-                _first_text(raw_record, "lastName", "last_name", "surname"),
-                _first_text(raw_record, "firstName", "first_name"),
-                _first_text(raw_record, "middleName", "middle_name", "patronymic"),
-            )
-            if part
-        ).strip()
-    )
+    full_name = _extract_full_name(raw_record, iiko_id)
     if not full_name:
         return None
-    position = _extract_position(raw_record)
+
+    raw_position = _extract_position(raw_record)
+    position = canonical_position_name(raw_position) or raw_position
+    is_deleted = _is_deleted(raw_record)
+    if not allow_non_target_position and not is_deleted and not is_target_position(position):
+        return None
 
     return IikoEmployeeRecord(
         iiko_id=iiko_id,
         full_name=full_name,
         position=position,
-        is_deleted=_is_deleted(raw_record),
+        is_deleted=is_deleted,
         is_service_account=_is_service_account(raw_record, full_name),
         hire_date=_first_date(raw_record, "hireDate", "hire_date", "employmentDate"),
         fire_date=_first_date(raw_record, "fireDate", "fire_date", "terminationDate"),
@@ -469,44 +866,136 @@ def _is_service_account(record: Mapping[str, Any], full_name: str) -> bool:
     return any(marker in normalized_name for marker in SERVICE_ACCOUNT_NAME_MARKERS)
 
 
-async def _reset_employees_for_sync(
+async def _delete_ghost_employees_without_real_payroll_history(
     session: AsyncSession,
-    records: Iterable[Mapping[str, Any]],
-    sync_today: date,
-    sync_now: datetime,
-) -> None:
-    target_iiko_ids = {
-        record.iiko_id
-        for raw_record in records
-        if (record := normalize_iiko_employee(raw_record)) is not None
-        and _is_active_target_employee(record)
-    }
-    protected_employee_ids = await _employee_ids_with_payroll_history(session)
-    employees = list((await session.scalars(select(Employee))).all())
+    employees: Iterable[Employee],
+) -> int:
+    cleanup_candidates = [
+        employee
+        for employee in employees
+        if employee.id is not None and _is_ghost_employee(employee)
+    ]
+    ids = list(dict.fromkeys(employee.id for employee in cleanup_candidates))
+    if not ids:
+        return 0
 
-    for employee in employees:
-        if employee.iiko_id in target_iiko_ids:
-            continue
-        if employee.id in protected_employee_ids:
-            employee.status = "inactive"
-            employee.fire_date = employee.fire_date or sync_today
-            employee.iiko_sync_at = sync_now
-        else:
+    protected_ids = await _employee_ids_with_real_payroll_lines(session, ids)
+    cleanup_ids = [employee_id for employee_id in ids if employee_id not in protected_ids]
+    if not cleanup_ids:
+        return 0
+
+    await session.execute(
+        delete(ShiftLedgerEntry).where(ShiftLedgerEntry.employee_id.in_(cleanup_ids))
+    )
+    await session.execute(
+        delete(EmployeeRoleAssignment).where(EmployeeRoleAssignment.employee_id.in_(cleanup_ids))
+    )
+    await session.execute(delete(PayrollLine).where(PayrollLine.employee_id.in_(cleanup_ids)))
+    for employee in cleanup_candidates:
+        if employee.id in cleanup_ids:
             await session.delete(employee)
     await session.flush()
+    return len(cleanup_ids)
 
 
-async def _employee_ids_with_payroll_history(session: AsyncSession) -> set[Any]:
-    protected_ids: set[Any] = set()
-    for model in (
-        AttendanceEntry,
-        PayrollLine,
-        DepositAccount,
-        DepositTransaction,
-        AccumulationFundAccount,
+async def _employee_ids_with_real_payroll_lines(
+    session: AsyncSession,
+    employee_ids: Iterable[Any],
+) -> set[Any]:
+    ids = list(dict.fromkeys(employee_ids))
+    if not ids:
+        return set()
+
+    amount_filter = or_(
+        PayrollLine.base_pay != 0,
+        PayrollLine.premium != 0,
+        PayrollLine.percent_pay != 0,
+        PayrollLine.fund_accrual != 0,
+        PayrollLine.deduction != 0,
+        PayrollLine.total_payable != 0,
+    )
+    return set(
+        (
+            await session.scalars(
+                select(PayrollLine.employee_id)
+                .where(PayrollLine.employee_id.in_(ids), amount_filter)
+                .distinct()
+            )
+        ).all()
+    )
+
+
+def _extract_iiko_id(record: Mapping[str, Any]) -> str:
+    return _first_text(record, *IIKO_ID_KEYS)
+
+
+def _extract_full_name(record: Mapping[str, Any], iiko_id: str) -> str | None:
+    for candidate in _candidate_texts(
+        record,
+        "fullName",
+        "full_name",
+        "name",
+        "displayName",
+        "fio",
+        "employeeName",
     ):
-        protected_ids.update((await session.scalars(select(model.employee_id).distinct())).all())
-    return protected_ids
+        if not _is_identifier_fallback_name(candidate, record, iiko_id):
+            return candidate
+
+    composed_name = " ".join(
+        part
+        for part in (
+            _first_text(record, "lastName", "last_name", "surname"),
+            _first_text(record, "firstName", "first_name"),
+            _first_text(record, "middleName", "middle_name", "patronymic"),
+        )
+        if part
+    ).strip()
+    if composed_name and not _is_identifier_fallback_name(composed_name, record, iiko_id):
+        return composed_name
+
+    for candidate in _candidate_texts(record, "customUserName", "userName", "username"):
+        if not _is_identifier_fallback_name(candidate, record, iiko_id):
+            return candidate
+
+    return None
+
+
+def _candidate_texts(record: Mapping[str, Any], *keys: str) -> Iterable[str]:
+    seen: set[str] = set()
+    for key in keys:
+        candidate = _first_text(record, key)
+        normalized = candidate.casefold()
+        if candidate and normalized not in seen:
+            seen.add(normalized)
+            yield candidate
+
+
+def _is_identifier_fallback_name(
+    value: str,
+    record: Mapping[str, Any],
+    iiko_id: str,
+) -> bool:
+    if _is_uuid_like_text(value):
+        return True
+    normalized = value.casefold()
+    identifiers = {iiko_id}
+    identifiers.update(_first_text(record, key) for key in IIKO_ID_KEYS)
+    return normalized in {identifier.casefold() for identifier in identifiers if identifier}
+
+
+def _is_uuid_like_text(value: str) -> bool:
+    text = value.strip().strip("{}")
+    try:
+        parsed = uuid.UUID(text)
+    except ValueError:
+        return False
+    normalized = text.casefold()
+    return normalized in {str(parsed), parsed.hex}
+
+
+def _is_ghost_employee(employee: Employee) -> bool:
+    return employee.position is None and _is_uuid_like_text(employee.full_name)
 
 
 def _first_text(record: Mapping[str, Any], *keys: str) -> str:
@@ -583,5 +1072,25 @@ def _add_action(
             target_id=employee.id,
             before_value=before,
             after_value=after,
+        )
+    )
+
+
+def _add_skipped_action(
+    session: AsyncSession,
+    agent_run_id: Any,
+    skipped: SkippedEmployeeRecord,
+) -> None:
+    session.add(
+        AgentAction(
+            agent_run_id=agent_run_id,
+            action_type=f"skipped: {skipped.reason}",
+            target_table="employee",
+            target_id=None,
+            before_value=None,
+            after_value={
+                "iiko_id": skipped.iiko_id,
+                "reason": skipped.reason,
+            },
         )
     )

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import or_, select, text
@@ -53,6 +54,7 @@ SCHEDULE_TABLE_CANDIDATES = (
 SCHEDULE_DATE_COLUMNS = ("work_date", "shift_date", "date")
 SCHEDULE_ROLE_COLUMNS = ("payroll_role", "primary_role", "role", "station")
 SCHEDULE_CATEGORY_COLUMNS = ("category", "payroll_category")
+logger = logging.getLogger(__name__)
 
 
 async def build_ledger_for_date(
@@ -79,7 +81,7 @@ async def build_ledger_for_date(
             else await load_available_role_assignments(session, work_date, employee_ids)
         )
 
-    existing_by_employee = await load_existing_entries(session, work_date, employee_ids)
+    existing_by_shift = await load_existing_entries(session, work_date, employee_ids)
     entries: list[ShiftLedgerEntry] = []
 
     for snapshot in sorted(snapshots, key=lambda item: (item.opened_at, str(item.employee_id))):
@@ -89,7 +91,7 @@ async def build_ledger_for_date(
             schedule_assignment,
             available_roles,
         )
-        entry = existing_by_employee.get(snapshot.employee_id)
+        entry = existing_by_shift.get((snapshot.employee_id, snapshot.opened_at))
 
         if entry is None:
             entry = ShiftLedgerEntry(
@@ -195,6 +197,79 @@ async def list_ledger_for_date(session: AsyncSession, work_date: date) -> list[d
     ]
 
 
+async def list_ledger_matrix(session: AsyncSession, selected_date: date) -> dict[str, Any]:
+    start_date, end_date = ledger_week_bounds(selected_date)
+    days = list(iter_dates(start_date, end_date))
+    result = await session.execute(
+        select(ShiftLedgerEntry, Employee)
+        .join(Employee, Employee.id == ShiftLedgerEntry.employee_id)
+        .where(
+            ShiftLedgerEntry.work_date >= start_date,
+            ShiftLedgerEntry.work_date <= end_date,
+        )
+        .order_by(Employee.full_name, ShiftLedgerEntry.work_date, ShiftLedgerEntry.opened_at)
+    )
+    rows = result.all()
+    employee_ids = {entry.employee_id for entry, _employee in rows}
+    roles_by_day = {
+        day: await load_available_role_assignments(session, day, employee_ids) for day in days
+    }
+    employee_rows: dict[uuid.UUID, dict[str, Any]] = {}
+
+    for entry, employee in rows:
+        employee_row = employee_rows.setdefault(
+            employee.id,
+            {
+                "id": str(employee.id),
+                "full_name": employee.full_name,
+                "iiko_id": employee.iiko_id,
+                "_days": {day: [] for day in days},
+            },
+        )
+        employee_row["_days"][entry.work_date].append(entry)
+
+    today = ledger_today()
+    serialized_employees: list[dict[str, Any]] = []
+    for employee_id, employee_row in employee_rows.items():
+        serialized_days: list[dict[str, Any]] = []
+        for day in days:
+            available_roles = assignments_for_employee(roles_by_day[day], employee_id)
+            entries = employee_row["_days"][day]
+            serialized_days.append(
+                {
+                    "date": day.isoformat(),
+                    "available_roles": serialize_available_roles(available_roles),
+                    "summary": serialize_shift_summary(entries),
+                    "shifts": [
+                        serialize_matrix_shift(entry, available_roles)
+                        for entry in sorted(entries, key=lambda item: item.opened_at)
+                    ],
+                }
+            )
+        serialized_employees.append(
+            {
+                "id": employee_row["id"],
+                "full_name": employee_row["full_name"],
+                "iiko_id": employee_row["iiko_id"],
+                "days": serialized_days,
+            }
+        )
+
+    return {
+        "selected_date": selected_date.isoformat(),
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "days": [
+            {
+                "date": day.isoformat(),
+                "is_today": day == today,
+            }
+            for day in days
+        ],
+        "employees": serialized_employees,
+    }
+
+
 async def load_iiko_attendance_snapshots(
     session: AsyncSession,
     work_date: date,
@@ -212,7 +287,9 @@ async def load_iiko_attendance_snapshots(
     employees_by_iiko_id = {
         employee.iiko_id: employee for employee in (await session.scalars(select(Employee))).all()
     }
-    grouped: dict[uuid.UUID, AttendanceSnapshot] = {}
+    grouped: dict[tuple[uuid.UUID, datetime], AttendanceSnapshot] = {}
+    skipped_missing_employee_iiko_ids: set[str] = set()
+    skipped_missing_employee_records = 0
 
     for record in records:
         if not is_work_attendance(record):
@@ -228,26 +305,16 @@ async def load_iiko_attendance_snapshots(
 
         employee = employees_by_iiko_id.get(iiko_id)
         if employee is None:
-            employee = Employee(
-                id=uuid.uuid4(),
-                iiko_id=iiko_id,
-                full_name=first_text(record, "employeeName", "Employee", "name") or iiko_id,
-                status="requires_setup",
-                position=None,
-                category=None,
-                is_senior=False,
-                is_deputy_senior=False,
-                iiko_sync_at=datetime.now(UTC),
-            )
-            session.add(employee)
-            await session.flush()
-            employees_by_iiko_id[iiko_id] = employee
+            skipped_missing_employee_iiko_ids.add(iiko_id)
+            skipped_missing_employee_records += 1
+            continue
 
         ended_at = parse_datetime(first_value(record, "dateTo", "CloseTime", "ended_at"))
         note = first_text(record, "notes", "comment")
-        previous = grouped.get(employee.id)
+        snapshot_key = (employee.id, started_at)
+        previous = grouped.get(snapshot_key)
         if previous is None:
-            grouped[employee.id] = AttendanceSnapshot(
+            grouped[snapshot_key] = AttendanceSnapshot(
                 employee_id=employee.id,
                 opened_at=started_at,
                 closed_at=ended_at,
@@ -255,15 +322,23 @@ async def load_iiko_attendance_snapshots(
             )
             continue
 
-        closed_at = None
-        if previous.closed_at is not None and ended_at is not None:
-            closed_at = max(previous.closed_at, ended_at)
+        closed_at = max(
+            (item for item in (previous.closed_at, ended_at) if item is not None),
+            default=None,
+        )
         notes = ";".join(part for part in (previous.notes, note) if part)
-        grouped[employee.id] = AttendanceSnapshot(
+        grouped[snapshot_key] = AttendanceSnapshot(
             employee_id=employee.id,
             opened_at=min(previous.opened_at, started_at),
             closed_at=closed_at,
             notes=notes or None,
+        )
+
+    if skipped_missing_employee_iiko_ids:
+        logger.info(
+            "attendance: employee iiko_id не найден в БД, записи пропущены: count=%s ids=%s",
+            skipped_missing_employee_records,
+            ", ".join(sorted(skipped_missing_employee_iiko_ids)),
         )
 
     return list(grouped.values())
@@ -273,7 +348,7 @@ async def load_existing_entries(
     session: AsyncSession,
     work_date: date,
     employee_ids: set[uuid.UUID],
-) -> dict[uuid.UUID, ShiftLedgerEntry]:
+) -> dict[tuple[uuid.UUID, datetime], ShiftLedgerEntry]:
     if not employee_ids:
         return {}
     result = await session.scalars(
@@ -282,7 +357,7 @@ async def load_existing_entries(
             ShiftLedgerEntry.employee_id.in_(employee_ids),
         )
     )
-    return {entry.employee_id: entry for entry in result.all()}
+    return {(entry.employee_id, entry.opened_at): entry for entry in result.all()}
 
 
 async def load_available_role_assignments(
@@ -543,6 +618,34 @@ def serialize_ledger_entry(
     }
 
 
+def serialize_matrix_shift(
+    entry: ShiftLedgerEntry,
+    available_roles: list[LedgerAssignment],
+) -> dict[str, Any]:
+    category = category_for_role(entry.payroll_role, available_roles)
+    is_resolved = entry.is_resolved and entry.payroll_role is not None and category is not None
+    return {
+        "ledger_entry_id": str(entry.id) if entry.id is not None else None,
+        "opened_at": entry.opened_at.isoformat() if entry.opened_at is not None else None,
+        "closed_at": entry.closed_at.isoformat() if entry.closed_at is not None else None,
+        "payroll_role": entry.payroll_role,
+        "category": category,
+        "is_resolved": is_resolved,
+        "status": ledger_status(available_roles, is_resolved),
+    }
+
+
+def serialize_shift_summary(entries: list[ShiftLedgerEntry]) -> dict[str, Any]:
+    closed_values = [entry.closed_at for entry in entries if entry.closed_at is not None]
+    earliest_open = min((entry.opened_at for entry in entries), default=None)
+    latest_close = max(closed_values, default=None)
+    return {
+        "earliest_open": earliest_open.isoformat() if earliest_open is not None else None,
+        "latest_close": latest_close.isoformat() if latest_close is not None else None,
+        "shift_count": len(entries),
+    }
+
+
 def serialize_available_roles(assignments: list[LedgerAssignment]) -> list[dict[str, str]]:
     return [
         {
@@ -572,16 +675,31 @@ def ledger_status(available_roles: list[LedgerAssignment], is_resolved: bool) ->
     return "needs_role_selection"
 
 
+def ledger_week_bounds(selected_date: date) -> tuple[date, date]:
+    return selected_date - timedelta(days=6), selected_date
+
+
+def ledger_today() -> date:
+    return datetime.now(MOSCOW_TZ).date()
+
+
+def iter_dates(start_date: date, end_date: date) -> Iterable[date]:
+    current = start_date
+    while current <= end_date:
+        yield current
+        current += timedelta(days=1)
+
+
 def ledger_entry_snapshot(entry: ShiftLedgerEntry) -> dict[str, Any]:
     return {
-        "id": entry.id,
-        "work_date": entry.work_date,
-        "employee_id": entry.employee_id,
+        "id": str(entry.id) if entry.id is not None else None,
+        "work_date": entry.work_date.isoformat() if entry.work_date is not None else None,
+        "employee_id": str(entry.employee_id) if entry.employee_id is not None else None,
         "payroll_role": entry.payroll_role,
         "category": entry.category,
         "source": entry.source,
-        "opened_at": entry.opened_at,
-        "closed_at": entry.closed_at,
+        "opened_at": entry.opened_at.isoformat() if entry.opened_at is not None else None,
+        "closed_at": entry.closed_at.isoformat() if entry.closed_at is not None else None,
         "notes": entry.notes,
         "is_resolved": entry.is_resolved,
     }

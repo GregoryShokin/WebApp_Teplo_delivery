@@ -87,7 +87,8 @@ class ShiftLedgerEntry(Base):
         UniqueConstraint(
             "work_date",
             "employee_id",
-            name="uq_shift_ledger_entry_work_date_employee",
+            "opened_at",
+            name="uq_shift_ledger_entry_work_date_employee_opened",
         ),
         Index("ix_shift_ledger_entry_work_date", "work_date"),
     )
@@ -220,7 +221,8 @@ class PayrollRate(Base):
             name="ck_payroll_rate_rate_type",
         ),
         CheckConstraint(
-            "category in ('category_1', 'category_2', 'category_3', 'intern', 'freelancer')",
+            "category in "
+            "('category_1', 'category_2', 'category_3', 'category_4', 'intern', 'freelancer')",
             name="ck_payroll_rate_category_value",
         ),
         CheckConstraint("amount >= 0", name="ck_payroll_rate_amount_non_negative"),
@@ -270,7 +272,8 @@ class PayrollRoleCategoryAvailability(Base):
     __tablename__ = "payroll_role_category_availability"
     __table_args__ = (
         CheckConstraint(
-            "category in ('category_1', 'category_2', 'category_3', 'intern', 'freelancer')",
+            "category in "
+            "('category_1', 'category_2', 'category_3', 'category_4', 'intern', 'freelancer')",
             name="ck_payroll_role_category_availability_category_value",
         ),
         UniqueConstraint(
@@ -366,7 +369,8 @@ class CategoryCoefficient(Base):
     __tablename__ = "category_coefficient"
     __table_args__ = (
         CheckConstraint(
-            "category in ('category_1', 'category_2', 'category_3', 'intern', 'freelancer')",
+            "category in "
+            "('category_1', 'category_2', 'category_3', 'category_4', 'intern', 'freelancer')",
             name="ck_category_coefficient_category_value",
         ),
         CheckConstraint(

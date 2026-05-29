@@ -21,9 +21,15 @@ services:
       context: ./apps/api
       dockerfile: Dockerfile.dev
     container_name: teplo-api
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
+      TEPLO_ADMIN_EMAIL: admin@teplo.local
+      TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
       JWT_SECRET_KEY: change-me-in-local-env-change-me
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 90
       BACKEND_CORS_ORIGINS: '["http://localhost:5173"]'
     ports:
       - "8000:8000"
