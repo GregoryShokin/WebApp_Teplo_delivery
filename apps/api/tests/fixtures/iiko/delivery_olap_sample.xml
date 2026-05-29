@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<report>
+  <r>
+    <Department.Id>d8d4a22e-3abd-4f02-b82d-7d4712f32729</Department.Id>
+    <Department>Foodmarket Тепло Черникова</Department>
+    <Delivery.ServiceType>COURIER</Delivery.ServiceType>
+    <UniqOrderId.Id>order-onway</UniqOrderId.Id>
+    <Delivery.Id>delivery-onway</Delivery.Id>
+    <OrderNum>1001</OrderNum>
+    <OpenDate.Typed>Thu May 28 00:00:00 MSK 2026</OpenDate.Typed>
+    <OpenTime>2026-05-28T10:00:00+03:00</OpenTime>
+    <Delivery.SendTime>2026-05-28T10:20:00+03:00</Delivery.SendTime>
+    <Delivery.ActualTime/>
+    <Delivery.CloseTime/>
+    <CloseTime/>
+    <Delivery.WayDuration/>
+    <Delivery.Courier.Id>courier-1</Delivery.Courier.Id>
+    <Delivery.Status>OnWay</Delivery.Status>
+    <DishDiscountSumInt>1500.50</DishDiscountSumInt>
+  </r>
+  <r>
+    <Department.Id>d8d4a22e-3abd-4f02-b82d-7d4712f32729</Department.Id>
+    <Department>Foodmarket Тепло Черникова</Department>
+    <Delivery.ServiceType>COURIER</Delivery.ServiceType>
+    <UniqOrderId.Id>order-delivered</UniqOrderId.Id>
+    <Delivery.Id>delivery-delivered</Delivery.Id>
+    <OrderNum>1002</OrderNum>
+    <OpenDate.Typed>Thu May 28 00:00:00 MSK 2026</OpenDate.Typed>
+    <OpenTime>2026-05-28T11:00:00+03:00</OpenTime>
+    <Delivery.SendTime>2026-05-28T11:10:00+03:00</Delivery.SendTime>
+    <Delivery.ActualTime>2026-05-28T11:45:00+03:00</Delivery.ActualTime>
+    <Delivery.CloseTime>2026-05-28T11:46:00+03:00</Delivery.CloseTime>
+    <CloseTime>2026-05-28T11:50:00+03:00</CloseTime>
+    <Delivery.WayDuration>35</Delivery.WayDuration>
+    <Delivery.Courier.Id>courier-2</Delivery.Courier.Id>
+    <Delivery.Status>Delivered</Delivery.Status>
+    <DishDiscountSumInt>900.00</DishDiscountSumInt>
+  </r>
+  <r>
+    <Department.Id>d8d4a22e-3abd-4f02-b82d-7d4712f32729</Department.Id>
+    <Department>Foodmarket Тепло Черникова</Department>
+    <Delivery.ServiceType>COURIER</Delivery.ServiceType>
+    <UniqOrderId.Id>order-cancelled</UniqOrderId.Id>
+    <Delivery.Id>delivery-cancelled</Delivery.Id>
+    <OrderNum>1003</OrderNum>
+    <OpenDate.Typed>Fri May 29 00:00:00 MSK 2026</OpenDate.Typed>
+    <OpenTime>2026-05-29T12:00:00+03:00</OpenTime>
+    <Delivery.SendTime/>
+    <Delivery.ActualTime/>
+    <Delivery.CloseTime>2026-05-29T12:15:00+03:00</Delivery.CloseTime>
+    <CloseTime>2026-05-29T12:16:00+03:00</CloseTime>
+    <Delivery.WayDuration/>
+    <Delivery.Courier.Id/>
+    <OrderDeleted>true</OrderDeleted>
+    <Delivery.CancelCause>client_cancelled</Delivery.CancelCause>
+    <DishDiscountSumInt>0</DishDiscountSumInt>
+  </r>
+  <r>
+    <Department.Id>d8d4a22e-3abd-4f02-b82d-7d4712f32729</Department.Id>
+    <Department>Foodmarket Тепло Черникова</Department>
+    <Delivery.ServiceType>PICKUP</Delivery.ServiceType>
+    <UniqOrderId.Id>order-pickup</UniqOrderId.Id>
+    <OrderNum>1004</OrderNum>
+    <OpenDate.Typed>Thu May 28 00:00:00 MSK 2026</OpenDate.Typed>
+    <OpenTime>2026-05-28T13:00:00+03:00</OpenTime>
+    <DishDiscountSumInt>500.00</DishDiscountSumInt>
+  </r>
+  <r>
+    <Department.Id>other-department</Department.Id>
+    <Department>Foodmarket Тепло Гагарина</Department>
+    <Delivery.ServiceType>COURIER</Delivery.ServiceType>
+    <UniqOrderId.Id>order-other-department</UniqOrderId.Id>
+    <OrderNum>1005</OrderNum>
+    <OpenDate.Typed>Thu May 28 00:00:00 MSK 2026</OpenDate.Typed>
+    <OpenTime>2026-05-28T14:00:00+03:00</OpenTime>
+    <DishDiscountSumInt>700.00</DishDiscountSumInt>
+  </r>
+</report>
