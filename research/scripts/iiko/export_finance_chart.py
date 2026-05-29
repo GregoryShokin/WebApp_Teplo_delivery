@@ -670,7 +670,7 @@ def write_report(
         "",
         "- Raw: `research/raw/iiko/finance_chart_research/` (может содержать комментарии iiko и PII).",
         "- Processed: `research/processed/iiko/finance_chart/`.",
-        "- Документ API: `docs/business-control/22-iiko-finance-chart-of-accounts.md`.",
+        "- Документ API: `app-spec/integrations/iiko/finance-chart-of-accounts.md`.",
         "",
         "## Top-10 корсчетов по обороту",
         "",
