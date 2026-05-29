@@ -70,7 +70,7 @@
 
 ## 5. Сущности веб-приложения
 
-Сущности согласованы с [30-app-database-architecture.md](/docs/business-control/30-app-database-architecture.md) и не отменяют решения §15. В архитектуре 30 уже есть payroll-entity `shift_schedule`; в этой спецификации `scheduled_shift` является строкой планового графика, а для Payroll может формироваться совместимая проекция `shift_schedule` с полями employee/date/location/role/source.
+Сущности согласованы с [database.md](/app-spec/architecture/database.md) и не отменяют [§15 database decisions](/app-spec/architecture/decisions/database-decisions.md#15-принятые-архитектурные-решения-2026-05-242527). В архитектуре БД уже есть payroll-entity `shift_schedule`; в этой спецификации `scheduled_shift` является строкой планового графика, а для Payroll может формироваться совместимая проекция `shift_schedule` с полями employee/date/location/role/source.
 
 Решение 2026-05-27: сотрудники для `scheduled_shift` приходят из master `employee` страницы `Штат`; имя read-only синхронизируется из iiko. Надбавки `Старший`/`Заместитель старшего` берутся из `Штат` на дату смены.
 
@@ -142,7 +142,7 @@ forecast_amount =
 
 ## 7. Методология расчета стоимости смены
 
-Расчет стоимости смены - preview на базе payroll-правил из [19-payroll-module-spec.md](/docs/business-control/19-payroll-module-spec.md) и [payroll-calculator-analysis.md](/research/archive/payroll-calculator-analysis.md). Он нужен для управленческого решения по графику, но не является финальным начислением.
+Расчет стоимости смены - preview на базе payroll-правил из [payroll engine spec](/app-spec/modules/staff/payroll/00-engine.md) и [payroll-calculator-analysis.md](/research/archive/payroll-calculator-analysis.md). Он нужен для управленческого решения по графику, но не является финальным начислением.
 
 ### 7.1 Плановые часы
 
@@ -261,7 +261,7 @@ total_cost_estimate =
 | iiko employees | `/employees/attendance` дает фактические явки для сверки план-факт и Payroll. `/employees/schedule` не используется как источник плана в MVP. |
 | OLAP выручки | iiko OLAP `Отчет о выручке по направлениям` дает фактическую дневную выручку для истории и фактическую выручку после дня. |
 | P&L / ОПиУ | Правило источника выручки и направления берутся из P&L methodology; агрегированный ФОТ после Payroll попадает в P&L по accrual-принципу. |
-| DDS | Дает cash-fact выплат и сверку forecast/payroll obligation vs фактическая оплата. Индивидуальные суммы доступны только payroll-роли согласно решению 30 §15 / 11.7. |
+| DDS | Дает cash-fact выплат и сверку forecast/payroll obligation vs фактическая оплата. Индивидуальные суммы доступны только payroll-роли согласно [§11.7 database decisions](/app-spec/architecture/decisions/database-decisions.md#117-payroll-payments-vs-dds-cashflowtransaction). |
 | Core master data | `employee`, `location`, `role`, `period`, `user` используются как общие справочники. |
 | Audit/source_reference | Каждый прогноз, override и факт должен иметь источник: OLAP snapshot, ручной ввод, payroll rule version, attendance import или DDS match. |
 

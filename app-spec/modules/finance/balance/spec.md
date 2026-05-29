@@ -5,7 +5,7 @@
 
 ## Назначение
 
-Модуль `Баланс` — третий продуктовый модуль единого управленческого веб-приложения после `Зарплата и кадры` ([19-payroll-module-spec.md](/docs/business-control/19-payroll-module-spec.md)) и `ДДС и платежный контур` ([21-dds-module-spec.md](/app-spec/modules/finance/dds/spec.md)).
+Модуль `Баланс` — третий продуктовый модуль единого управленческого веб-приложения после `Зарплата и кадры` ([payroll engine spec](/app-spec/modules/staff/payroll/00-engine.md)) и `ДДС и платежный контур` ([21-dds-module-spec.md](/app-spec/modules/finance/dds/spec.md)).
 
 Цель модуля: заменить текущую связку Google Sheets `Баланс • [ИП Шокина]` и ручных сверок на управляемый web-процесс ежемесячных snapshot'ов активов, капитала и обязательств с автоматическим подтягиванием остатков из подключённых модулей (Payroll, DDS, P&L, ОС, Учёт ФД, Учёт налогов) и контролируемым ручным fallback на статьи, где автоматического источника пока нет.
 
@@ -20,7 +20,7 @@
 | `подтверждено данными` | правило проверено на live-выгрузках iiko/банков/payroll без раскрытия строк |
 | `гипотеза / owner review` | правило вероятно, но требует решения владельца перед автозакрытием |
 
-Главное правило источников: **баланс показывает остатки на дату, ДДС показывает потоки за период, P&L показывает результат за период**. Из ДДС нельзя реконструировать остатки активов и обязательств без инвентаризации и реестра. Это закреплено в [16-fixed-assets-and-balance.md](/docs/business-control/16-fixed-assets-and-balance.md) и применимо ко всему модулю.
+Главное правило источников: **баланс показывает остатки на дату, ДДС показывает потоки за период, P&L показывает результат за период**. Из ДДС нельзя реконструировать остатки активов и обязательств без инвентаризации и реестра. Это закреплено в [old-os-and-balance-discovery.md](/research/archive/old-os-and-balance-discovery.md) и применимо ко всему модулю.
 
 ## 1. Текущее устройство Google Sheets
 
@@ -138,7 +138,7 @@
 | Не работающее оборудование | Учёт ОС | то же | `partial` | Legacy/control строка: owner decision 2026-05-25 - в целевой модели это статус `not_working` внутри исходной категории ОС, а не отдельная категория; в 2024-2025 = 0 |
 | Мебель и предметы интерьера | Учёт ОС | то же | `partial` | то же |
 
-Актуальный owner-provided реестр 2025 года для всех 11 строк ОС: https://docs.google.com/spreadsheets/d/1GK6Cl8U7MiMa_Z97Snz_tdCXej5lwi_Ji5si6qZZLKI/edit?gid=2021085115#gid=2021085115. Он является seed/source candidate, но статус строк остаётся `partial` до физической инвентаризации 2026-06-01..2026-06-12 и owner-approved opening register. Решение владельца 2026-05-27: параллельно нужен авто-канал кандидатов в ОС из крупных платежей T-Bank; это control/source-candidate слой, а не замена инвентаризации. План восстановления реестра ОС описан в [16-fixed-assets-and-balance.md §План Восстановления Реестра ОС](/docs/business-control/16-fixed-assets-and-balance.md#план-восстановления-реестра-ос).
+Актуальный owner-provided реестр 2025 года для всех 11 строк ОС: https://docs.google.com/spreadsheets/d/1GK6Cl8U7MiMa_Z97Snz_tdCXej5lwi_Ji5si6qZZLKI/edit?gid=2021085115#gid=2021085115. Он является seed/source candidate, но статус строк остаётся `partial` до физической инвентаризации 2026-06-01..2026-06-12 и owner-approved opening register. Решение владельца 2026-05-27: параллельно нужен авто-канал кандидатов в ОС из крупных платежей T-Bank; это control/source-candidate слой, а не замена инвентаризации. План восстановления реестра ОС описан в [fixed-assets-rules.md §3](/business-docs/finance/fixed-assets-rules.md#3-план-восстановления-реестра-ос).
 
 ### Активы — Оборотные / Запасы
 
@@ -290,10 +290,10 @@
 
 | Модуль | Что отдаёт балансу | Сущности |
 | --- | --- | --- |
-| Payroll ([19-payroll-module-spec.md](/docs/business-control/19-payroll-module-spec.md)) | Задолженность перед сотрудниками, депозиты, накопительный фонд | `employee_account`, `deposit_account`, `payroll_period` |
+| Payroll ([payroll engine spec](/app-spec/modules/staff/payroll/00-engine.md)) | Задолженность перед сотрудниками, депозиты, накопительный фонд | `employee_account`, `deposit_account`, `payroll_period` |
 | DDS ([21-dds-module-spec.md](/app-spec/modules/finance/dds/spec.md)) | Остатки по р/счетам и кассе на дату | `wallet`, `cashflow_transaction` остатки roll-forward |
 | P&L ([pnl-build-methodology.md](/business-docs/finance/pnl-methodology.md)) | Накопленная прибыль/убыток (прошлые + текущие периоды) | `pnl_run`, `pnl_value` агрегаты EBITDA − below-EBITDA |
-| Учёт ОС (новый модуль, [16-fixed-assets-and-balance.md](/docs/business-control/16-fixed-assets-and-balance.md)) | Все 11 строк внеоборотных активов + строка P&L `Амортизация` | `fixed_asset`, `depreciation_schedule` |
+| Учёт ОС (новый модуль, [old-os-and-balance-discovery.md](/research/archive/old-os-and-balance-discovery.md)) | Все 11 строк внеоборотных активов + строка P&L `Амортизация` | `fixed_asset`, `depreciation_schedule` |
 | Учёт ФД / owner register (новый модуль, ещё не описан) | Кредиты через Sber API, овердрафт (тело) через банковские API/выписки, займы собственников через `owner_loan_register`, дивиденды и выплаты собственникам через ДДС-лист | `financial_obligation`, `loan_schedule`, `owner_loan_register`, `dividend_ledger`, `owner_payment` |
 | Учёт налогов (новый модуль, ещё не описан) | Задолженность по налогам, P&L строка `Налоги` ниже EBITDA, налоговые платежи; для MVP - manual structured form из WorkMail налогового агента | `tax_charge`, `tax_payment` |
 | iiko (внешний источник) | Запасы (5 строк), задолженность поставщикам, дебиторка партнёров | OLAP / API остатков на дату |
@@ -344,20 +344,20 @@
 | A3 | Расходы будущих периодов | 0 | **закрыто 2026-05-24**: префиксы идут в `Выданные авансы поставщикам`; РБП в управленческой модели = `not_applicable` |
 | A4 | Задолженность сотрудников | 0 во все месяцы | **частично закрыто 2026-05-24**, расследование отложено 2026-05-27: владелец подтвердил, что строка **должна быть >0 каждый месяц**; причина нулей в 2025 непонятна, но сверка payroll vs balance за апрель 2025 перенесена в post-MVP |
 | A5 | Расхождение Активы = Пассивы | +147 759 ₽ (2.77%) | методологическое расхождение, расследование отложено по решению владельца 2026-05-24 |
-| A6 | Учёт ОС за 2025 | копия 2024 | реестр ОС не обновлялся; цифры условные; план восстановления в [16-fixed-assets-and-balance.md](/docs/business-control/16-fixed-assets-and-balance.md) |
+| A6 | Учёт ОС за 2025 | копия 2024 | реестр ОС не обновлялся; цифры условные; план восстановления в [old-os-and-balance-discovery.md](/research/archive/old-os-and-balance-discovery.md) |
 | A7 | УФД-документ актуальности | — | **закрыто 2026-05-24**: документ неактуален; кредитные остатки → Sber API, дивиденды и расчёты с собственниками → ДДС-лист, лизинг/займы не используются |
 
 ## 8. Сущности веб-приложения
 
 Модель данных модуля `Баланс` в будущем приложении:
 
-**Решение владельца 2026-05-24 (см. [30-app-database-architecture.md §11.3](/docs/business-control/30-app-database-architecture.md))**: audit централизован. `balance_value.source_reference_id` ссылается на общий `source_reference` из [30-app-database-architecture.md §7](/docs/business-control/30-app-database-architecture.md); отдельная сущность `balance_source_reference` не создаётся.
+**Решение владельца 2026-05-24 (см. [database decisions §11.3](/app-spec/architecture/decisions/database-decisions.md#113-balance_source_reference-vs-общий-source_reference--source_snapshot--agent_run))**: audit централизован. `balance_value.source_reference_id` ссылается на общий `source_reference` из [database.md §7](/app-spec/architecture/database.md); отдельная сущность `balance_source_reference` не создаётся.
 
 | Сущность | Назначение | Ключевые поля |
 | --- | --- | --- |
 | `balance_period` | Snapshot на дату | `id`, `snapshot_date`, `status` (draft/final), `responsible_user`, `created_at`, `finalized_at` |
 | `balance_line` | Справочник строк баланса | `id`, `block` (asset/liability/equity), `parent_id` (иерархия), `code`, `name`, `sign`, `display_order`, `source_module`, `methodology_status` |
-| `balance_value` | Значение строки в snapshot'е | `id`, `period_id`, `line_id`, `value`, `quality_status`, `calculation_method` (auto/manual), `source_reference_id` - ссылка на общий `source_reference` (см. [30-app-database-architecture.md §7](/docs/business-control/30-app-database-architecture.md)) |
+| `balance_value` | Значение строки в snapshot'е | `id`, `period_id`, `line_id`, `value`, `quality_status`, `calculation_method` (auto/manual), `source_reference_id` - ссылка на общий `source_reference` (см. [database.md §7](/app-spec/architecture/database.md)) |
 | `balance_check` | Контрольная сверка А=П | `id`, `period_id`, `assets_total`, `liabilities_total`, `delta`, `delta_pct`, `status` (matched/unmatched) |
 | `balance_financial_metric` | Финансовые показатели | `id`, `period_id`, `metric_code`, `value`, `target`, `status` (above/below/on_target) |
 | `balance_anomaly_log` | Журнал расхождений и owner review | `id`, `period_id`, `line_id`, `description`, `resolved`, `resolution_note` |

@@ -94,7 +94,7 @@
 | `owner_capital_contribution` | Вклад собственника в капитал | `id`, `owner_id`, `period_id`, `amount`, `contribution_type`, `source_cashflow_transaction_id`, `source_reference_id`, `quality_status` |
 | `owner_loan_register` | Займы бизнес ↔ собственник | `id`, `owner_id`, `direction`, `issue_date`, `amount_principal`, `repayment_schedule_ref_private`, `interest_rate`, `balance_amount`, `quality_status` |
 
-Примечание к неймингу: в [30-app-database-architecture.md](/docs/business-control/30-app-database-architecture.md) уже используется `dividend_ledger` и `owner_contribution`. Для будущей логической модели можно оставить эти имена, а `dividend_declaration` трактовать как более явную сущность начисления внутри dividend-ledger. Решение о финальном имени не должно менять принятый смысл 11.9.
+Примечание к неймингу: в [database.md](/app-spec/architecture/database.md) уже используется `dividend_ledger` и `owner_contribution`. Для будущей логической модели можно оставить эти имена, а `dividend_declaration` трактовать как более явную сущность начисления внутри dividend-ledger. Решение о финальном имени не должно менять принятый смысл 11.9.
 
 ## 4. Методология прогноза
 

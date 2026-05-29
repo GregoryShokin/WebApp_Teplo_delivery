@@ -8,7 +8,7 @@
 
 ## §1. Назначение и принципы roadmap
 
-Этот документ превращает принятый контур единого управленческого приложения из [17-unified-management-app.md](/docs/business-control/17-unified-management-app.md), карту источников [28-data-inventory-for-migration.md](/app-spec/integrations/data-inventory.md), архитектуру БД [30-app-database-architecture.md](/docs/business-control/30-app-database-architecture.md) и модульные спецификации в практический план миграции.
+Этот документ превращает принятый контур единого управленческого приложения из [vision.md](/app-spec/architecture/vision.md), карту источников [28-data-inventory-for-migration.md](/app-spec/integrations/data-inventory.md), архитектуру БД [database.md](/app-spec/architecture/database.md) и модульные спецификации в практический план миграции.
 
 Roadmap не выбирает стек, не проектирует UI и не расширяет архитектурные решения. Он отвечает на вопросы:
 
@@ -33,6 +33,27 @@ Roadmap не выбирает стек, не проектирует UI и не �
 11. **Документы идут через pipeline.** `parsed_document` - техническое извлечение, `source_document` - подтвержденный бизнес-документ после promotion.
 12. **ФД и налоги в MVP асимметричны.** Кредиты - Sber API, дивиденды и расчеты с собственниками - DDS/ручной owner register, налоги - ручной structured form до отдельной спеки.
 13. **Нет нулей вместо дыр.** Если источник не найден, период не закрыт или методология не подтверждена, значение получает `requires_review` / `source_not_loaded`, а не `0`.
+
+### Decision traceability from database architecture §12
+
+Roadmap уже operationalizes принятые решения 12a/12b: дата X = **2026-02-01**, глубина миграции = **C гибрид**. Ниже сохранён traceability-блок из database architecture, чтобы варианты решения не потерялись после удаления исходного гибридного файла.
+
+| Вариант | Что переносим | Плюсы | Минусы / риск | Когда подходит |
+| --- | --- | --- | --- | --- |
+| A. Полная историческая миграция 2024-2025 | Все доступные Google Sheets snapshots и processed CSV превращаются в доменные записи с source_reference | максимальная аналитика и тренды; можно сверять старые отчёты | дорого; много дыр, устаревших формул, ПДн и legacy-кошельков | если owner хочет приложение как полный архив управленческого учета |
+| B. Cutover на дату X + read-only legacy archive | В БД заносится opening balance / opening ledgers на дату X, старые Sheets остаются read-only | быстрее MVP; меньше мусора; проще права | меньше drill-down по истории; нужны качественные opening balances | если приоритет - текущий управленческий контур |
+| C. Гибрид: справочники + закрытые snapshots, без каждой операции | Перенести master data, статьи, контрагентов, сотрудников, monthly totals и opening balances; raw history оставить в source_snapshot | баланс скорости и проверяемости | нельзя расследовать каждую историческую операцию из UI | выбранный вариант первого запуска |
+| D. Модульный cutover | Payroll стартует с одной даты, DDS с другой, balance с контрольного snapshot, УДКЗ с последнего закрытого месяца | учитывает разную зрелость модулей | сложная коммуникация и межмодульные сверки | если модули запускаются постепенно |
+
+Минимальный безопасный набор при любом варианте:
+
+1. Создать `data_source` для каждого S01-S49 из `/app-spec/integrations/data-inventory.md`.
+2. Снять `source_snapshot` для всех исторических Google Sheets, которые используются как источник правил или opening balance.
+3. Перенести master data: locations, wallets, employees, roles/categories, dds articles, P&L lines, balance lines, supplier counterparties, fixed asset categories.
+4. Зафиксировать opening values на дату X: cash by wallet, supplier AP/advances, payroll liabilities/deposits/fund, fixed assets residual value, loans/owner balances, tax liabilities.
+5. Всем историческим значениям дать `quality_status`: `final` только если источник и методология подтверждены; `partial` для устаревших/неполных; `requires_review` для дыр; `not_applicable` для закрытых контуров Гагарина/Alfa/РБП.
+
+Дубликатами признаны и не перенесены отдельным текстом: сама дата X, выбранный гибрид, opening balance таблицы, master data plan и monthly totals, потому что они уже раскрыты в §1, §3, §4 и §5 roadmap.
 
 ### Dependency graph
 

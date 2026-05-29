@@ -12,8 +12,8 @@
 
 - [08-iiko-server-api-endpoints.md](/app-spec/integrations/iiko/server-api-endpoints.md) — общая карта iiko API, авторизация, даты, ограничения.
 - [09-iiko-first-export-audit.md](/app-spec/integrations/iiko/first-export-audit.md) — первый аудит, где персонал был ошибочно признан незакрытым по iiko.
-- [17-unified-management-app.md](/docs/business-control/17-unified-management-app.md) — целевой модуль `Зарплата и кадры`.
-- [19-payroll-module-spec.md](/docs/business-control/19-payroll-module-spec.md) — правила расчета payroll из Google Sheets.
+- [vision.md](/app-spec/architecture/vision.md) — целевой модуль `Зарплата и кадры`.
+- [payroll engine spec](/app-spec/modules/staff/payroll/00-engine.md) — правила расчета payroll из Google Sheets.
 - `research/processed/payroll_discovery/` — сущности, формулы и handoff по зарплатному модулю.
 - `research/processed/iiko/employees/` — обезличенные результаты текущей разведки.
 

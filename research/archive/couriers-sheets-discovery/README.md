@@ -1,6 +1,6 @@
-# Курьеры: разведка Google Sheets и план миграции
+# Курьеры: разведка Google Sheets
 
-Пакет документов фиксирует устройство книги `График курьеров и показатели курьеров`, подтвержденный внешний Python-сервис загрузки из iikoCloud, KPI и план переноса в приложение.
+Пакет документов фиксирует устройство книги `График курьеров и показатели курьеров`, KPI и план переноса в приложение. Техническая спецификация внешнего Python/iikoCloud-сервиса вынесена в `/app-spec/integrations/iiko/courier-service/`.
 
 ## Файлы
 
@@ -8,13 +8,16 @@
 | --- | --- | --- |
 | [01-sheets-inventory.md](01-sheets-inventory.md) | список 7 вкладок, назначение, служебные листы | готово с ограничением по live connector |
 | [02-sheets-schema.md](02-sheets-schema.md) | восстановленная схема листов, источники колонок, ручные/формульные зоны | частично: точные формулы/валидации живой книги не сняты; колонки `Курьеры`/`Выходы`/`Доставки` уточнены в 08 |
-| [03-iiko-transport-integration.md](03-iiko-transport-integration.md) | подтвержденная iikoCloud-интеграция внешнего Python-сервиса, webhook, endpoint'ы, маппинг Sheets | обновлено после snapshot |
+| [03-iiko-transport-integration.md](03-iiko-transport-integration.md) | discovery-описание подтвержденной iikoCloud-интеграции внешнего Python-сервиса, webhook, endpoint'ы, маппинг Sheets | обновлено после snapshot |
 | [04-kpi-definitions.md](04-kpi-definitions.md) | KPI курьеров, формулы, периоды, payroll-связь | готово; payroll rules отсутствуют |
 | [05-views-and-manual-inputs.md](05-views-and-manual-inputs.md) | пользовательские виды и ручные места ввода | готово |
 | [06-issues-and-migration-plan.md](06-issues-and-migration-plan.md) | слабые места, целевые сущности БД, сервисы, UI, очередность | обновлено с учетом Python-сервиса |
-| [07-courier-service-overview.md](07-courier-service-overview.md) | карта snapshot-сервиса, запуск, зависимости, конфигурация, iikoCloud endpoint'ы | готово |
-| [08-courier-service-data-flow.md](08-courier-service-data-flow.md) | модели dict'ов, webhook payload, Google Sheets операции, маппинг колонок, бизнес-расчеты | готово |
-| [09-courier-service-migration-mapping.md](09-courier-service-migration-mapping.md) | какие листы сервис пишет, слабые места кода, перенос в `apps/api` | готово |
+
+Связанные integration docs:
+
+- `/app-spec/integrations/iiko/courier-service/overview.md`
+- `/app-spec/integrations/iiko/courier-service/data-flow.md`
+- `/app-spec/integrations/iiko/courier-service/migration-mapping.md`
 
 ## Статус разведки
 

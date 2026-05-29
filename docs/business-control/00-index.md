@@ -35,10 +35,7 @@
 | [13-counterparties.md](13-counterparties.md) | Рабочий справочник контрагентов: юрлица, бренды, роли, источники распознавания и маппинг на учет |
 | [14-tbank-api-endpoints.md](14-tbank-api-endpoints.md) | Локальная карта T-Bank Business Open API: токен, выписки, лимиты, риски. T-Bank = банк расходов (98% расчетов с поставщиками) |
 | [15-telephony.md](15-telephony.md) | Работа с телефонией Mango Office: финансовая строка `Телекоммуникации`, VPBX API, Speech Analytics, управление хранилищем записей, метрики |
-| [16-fixed-assets-and-balance.md](16-fixed-assets-and-balance.md) | Основные средства, амортизация и баланс: read-only срез старых Sheets, processed-артефакты и план восстановления реестра/баланса |
-| [17-unified-management-app.md](17-unified-management-app.md) | Целевой контур единого веб-приложения: перенос Google Sheets, зарплаты, финансов, ЭДО, банков, iiko, телефонии, производства и маркетинга |
 | [18-payroll-module-agent-prompts.md](18-payroll-module-agent-prompts.md) | Пакет промптов для агентов по разбору `Расчет зарплат NEW`: формулы, штат, категории, персональный отчёт и спецификация payroll-модуля |
-| [19-payroll-module-spec.md](19-payroll-module-spec.md) | Спецификация первого модуля веб-приложения `Зарплата и кадры`: текущая логика расчёта, категории, коэффициенты, персональный отчёт, депозиты, накопительный фонд и MVP |
 | [20-dds-module-agent-prompts.md](20-dds-module-agent-prompts.md) | Пакет промптов для агентов по разбору ДДС, платежного календаря, банковского контура, статей, контрагентов и спецификации DDS-модуля |
 | [21-dds-module-spec.md](21-dds-module-spec.md) | Спецификация второго модуля веб-приложения `ДДС и платежный контур`: кошельки, операции, статьи, контрагенты, классификация, сверки, MVP |
 | [22-iiko-employees-api.md](22-iiko-employees-api.md) | Проверенная карта iiko employees API: журнал явки, график, зарплатные настройки, маппинг на payroll-модуль и риски данных |
@@ -50,7 +47,6 @@
 | [27-dz-kz-module-spec.md](27-dz-kz-module-spec.md) | Спецификация модуля `Учёт ДЗ/КЗ поставщиков`: Google Sheets УДКЗ, входящие документы, roll-forward поставщиков, авансы поставщикам и кредиторка для Баланса |
 | [28-data-inventory-for-migration.md](28-data-inventory-for-migration.md) | Единый реестр текущих источников управленческой, операционной и маркетинговой отчётности перед миграцией в веб-приложение: coverage class, способ доставки, дырки, OCR/LK/email-паттерны и кандидаты автоматизации |
 | [29-ai-agent-integration-patterns.md](29-ai-agent-integration-patterns.md) | Каталог переиспользуемых паттернов подключения AI-агентов и автоматизаций к источникам данных: API, Google Sheets, почта/OCR, Telegram OCR, LK cookie, LK-агенты, ручные формы и audit layer |
-| [30-app-database-architecture.md](30-app-database-architecture.md) | Первый архитектурный каркас core domain единой БД приложения: карта сущностей из модульных спек, владельцы, поля, связи, централизованный audit trail, единые статусы качества, migration strategy и §15 с принятыми архитектурными решениями владельца от 2026-05-24/25 |
 | [31-migration-roadmap.md](31-migration-roadmap.md) | Поэтапный roadmap миграции управленческой отчётности в веб-приложение: фазы 3-6 месяцев, opening balances на 2026-02-01, master data, monthly totals, модульные cutover criteria, AI-agent слой, owner-чекпоинты и риски |
 | [payroll-calculator-analysis.md](/research/archive/payroll-calculator-analysis.md) | Read-only разбор рабочего Google Sheets-калькулятора зарплат по iiko-явкам: вкладки, формулы, потоки, связь с employees API, выходы в `Выгрузка`/`Выплаты`, PII-аспекты, дельта к спецификации 19 и 18 вопросов владельцу |
 | [33-payment-calendar-spec.md](33-payment-calendar-spec.md) | Спецификация модуля `Платёжный календарь`: недельный план-факт из рабочего Google Sheets шаблона, связь с DDS cash-fact, прогноз регулярных платежей, сущности plan/match/view и вопросы owner review |
@@ -70,7 +66,6 @@
 5. Какие данные уже есть в iiko, а какие нужно начать собирать.
 6. Какие решения нужно принимать ежедневно, еженедельно и ежемесячно.
 
-При этом каждый собранный источник, processed-файл и правило расчёта рассматриваем как будущую спецификацию для единого веб-приложения: см. [17-unified-management-app.md](17-unified-management-app.md).
 
 ## Важное правило источника
 

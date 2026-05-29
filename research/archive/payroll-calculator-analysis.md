@@ -8,13 +8,13 @@
 
 ## 1. Назначение и место в проекте
 
-Этот документ дополняет, но не заменяет [19-payroll-module-spec.md](19-payroll-module-spec.md). Документ 19 фиксирует целевую модель будущего модуля `Зарплата и кадры`: `payroll_run`, immutable `payroll_ledger_line`, отдельные счета депозитов и накопительного фонда, персональный отчет, payroll payments и связь с DDS. Текущий документ фиксирует, как реально работает Google Sheets-калькулятор на снимке 2026-05-24.
+Этот документ дополняет, но не заменяет [payroll engine spec](/app-spec/modules/staff/payroll/00-engine.md). Документ 19 фиксирует целевую модель будущего модуля `Зарплата и кадры`: `payroll_run`, immutable `payroll_ledger_line`, отдельные счета депозитов и накопительного фонда, персональный отчет, payroll payments и связь с DDS. Текущий документ фиксирует, как реально работает Google Sheets-калькулятор на снимке 2026-05-24.
 
 Связанные документы:
 
-- [19-payroll-module-spec.md](19-payroll-module-spec.md) - управленческая и целевая модель payroll-модуля.
+- [payroll engine spec](/app-spec/modules/staff/payroll/00-engine.md) - управленческая и целевая модель payroll-модуля.
 - [22-iiko-employees-api.md](/app-spec/integrations/iiko/employees-api.md) - проверенная карта iiko employees API и схема `AttendanceJournal`.
-- [30-app-database-architecture.md](30-app-database-architecture.md) - архитектурные решения по единой БД, особенно §11.1, §11.5, §11.7 и §15.
+- [database decisions](/app-spec/architecture/decisions/database-decisions.md) - архитектурные решения по единой БД, особенно §11.1, §11.5, §11.7 и §15.
 
 Главный вывод: калькулятор уже использует факт явок из iiko, но не как прямой API-import `employeeId/dateFrom/dateTo`. Вкладка `Загрузка явок` содержит широкий ручной/экспортный отчет: `employee_source_id`, `Имя сотрудника`, `Подразделение`, `Должность`, затем даты недели с текстовыми интервалами `9:26-21:59`. Формулы парсят эти интервалы и считают часы. Для приложения это нужно превратить в нормализованные `attendance_entry` + `shift_duration_result`.
 
@@ -280,7 +280,7 @@ Owner decision 2026-05-24: внеурочный коэффициент в стр
 - `Выплата аванса`;
 - `Выплата накоплений`.
 
-Вкладка не содержит явного банковского счета, кассы, платежного поручения или `cashflow_transaction_id`. По решению [30 §11.7](30-app-database-architecture.md#117-payroll-payments-vs-dds-cashflowtransaction) в приложении это должно стать `payroll_payment` как обязательство payroll-модуля, а cash-fact должен жить в DDS.
+Вкладка не содержит явного банковского счета, кассы, платежного поручения или `cashflow_transaction_id`. По решению [§11.7 database decision](/app-spec/architecture/decisions/database-decisions.md#117-payroll-payments-vs-dds-cashflowtransaction) в приложении это должно стать `payroll_payment` как обязательство payroll-модуля, а cash-fact должен жить в DDS.
 
 ### 4.9 `Персональный отчет`
 
@@ -392,7 +392,7 @@ Owner decision 2026-05-25 по кошелькам выплат: информац
 - `Выплаты` -> `payroll_payment`;
 - факт денег -> `cashflow_transaction` в DDS или агрегированный `payroll_payment_batch`.
 
-Это напрямую соответствует [30 §11.7](30-app-database-architecture.md#117-payroll-payments-vs-dds-cashflowtransaction).
+Это напрямую соответствует [§11.7 database decision](/app-spec/architecture/decisions/database-decisions.md#117-payroll-payments-vs-dds-cashflowtransaction).
 
 ### 6.3 Депозит и накопительный фонд
 
@@ -428,25 +428,25 @@ Owner decision 2026-05-24 по накопительному фонду:
 
 ### 7.1 Что совпадает
 
-- Роли, категории, ставки, коэффициенты и дефолтные депозиты совпадают с [19 §3](19-payroll-module-spec.md#3-роли-должности-категории-и-коэффициенты).
-- Оклад считается как ставка роли/категории, пропорционально часам при неполной смене, см. [19 §4.1](19-payroll-module-spec.md#41-оклад).
-- Процент от выручки распределяется через общий дневной пул и adjusted coefficients, см. [19 §4.2](19-payroll-module-spec.md#42-процент-от-выручки) и [19 §5](19-payroll-module-spec.md#5-правила-распределения-процента-от-выручки-между-сменой).
-- Премии, штрафы, НДФЛ, больничные/отпуска/пособия идут как ручные события из `Категории и надбавки`, см. [19 §4.3](19-payroll-module-spec.md#43-премия), [19 §4.5](19-payroll-module-spec.md#45-больничные-отпуска-и-пособия), [19 §4.6](19-payroll-module-spec.md#46-штрафы-и-удержания), [19 §4.8](19-payroll-module-spec.md#48-ндфл).
-- Накопительный фонд и депозитные операции совпадают по базовой логике с [19 §4.4](19-payroll-module-spec.md#44-накопительный-фонд) и [19 §4.9](19-payroll-module-spec.md#49-депозиты).
-- `Персональный отчет` сводит `Выгрузка` и `Выплаты`, см. [19 §6](19-payroll-module-spec.md#6-персональный-отчет-сотрудника).
-- Разделение начислений и выплат совпадает с [19 §7](19-payroll-module-spec.md#7-разделение-pl-начислений-и-cash-flow-выплат).
+- Роли, категории, ставки, коэффициенты и дефолтные депозиты совпадают с [19 §3](/app-spec/modules/staff/payroll/production/spec.md#1-роли-категории-и-коэффициенты).
+- Оклад считается как ставка роли/категории, пропорционально часам при неполной смене, см. [19 §4.1](/app-spec/modules/staff/payroll/production/spec.md#3-оклад-production).
+- Процент от выручки распределяется через общий дневной пул и adjusted coefficients, см. [19 §4.2](/app-spec/modules/staff/payroll/production/spec.md#4-процент-от-выручки) и [19 §5](/app-spec/modules/staff/payroll/production/spec.md#5-распределение-процента-по-точным-минутам).
+- Премии, штрафы, НДФЛ, больничные/отпуска/пособия идут как ручные события из `Категории и надбавки`, см. [19 §4.3](/app-spec/modules/staff/payroll/00-engine.md#3-общие-payroll-events), [19 §4.5](/app-spec/modules/staff/payroll/00-engine.md#3-общие-payroll-events), [19 §4.6](/app-spec/modules/staff/payroll/00-engine.md#3-общие-payroll-events), [19 §4.8](/business-docs/staff/payroll-policy.md#3-ндфл-и-pl).
+- Накопительный фонд и депозитные операции совпадают по базовой логике с [19 §4.4](/app-spec/modules/staff/payroll/00-engine.md#4-накопительный-фонд) и [19 §4.9](/app-spec/modules/staff/payroll/00-engine.md#5-депозитный-счет).
+- `Персональный отчет` сводит `Выгрузка` и `Выплаты`, см. [19 §6](/app-spec/modules/staff/payroll/00-engine.md#6-персональный-отчет-сотрудника).
+- Разделение начислений и выплат совпадает с [payroll engine §7](/app-spec/modules/staff/payroll/00-engine.md#7-разделение-pl-начислений-и-cash-flow-выплат).
 
 ### 7.2 Что расходится или уточняет 19
 
 | Расхождение | Что найдено в калькуляторе | Ссылка на 19 | Вывод |
 | --- | --- | --- | --- |
-| Источник явок | Реальный лист `Загрузка явок` - широкий iiko-отчет с именами и текстовыми интервалами, а не нормализованный `attendance_entry`. | [19 §9](19-payroll-module-spec.md#9-предлагаемая-модель-данных-веб-приложения) | Для приложения нужно делать importer `employeeId/dateFrom/dateTo`, а не повторять широкий лист. |
-| Ключ сотрудника | Формулы связывают явки по имени сотрудника, не по `employeeId`. | [19 §8](19-payroll-module-spec.md#8-жизненный-цикл-сотрудника), [19 §9](19-payroll-module-spec.md#9-предлагаемая-модель-данных-веб-приложения) | Нужен защищенный lookup `employeeId -> employee`, а display name не должен быть ключом. |
-| iiko role | `Должность` iiko (`Кассир`/`Повар`) не задает payroll-роль; payroll-роль приходит из расписания. | [19 §3](19-payroll-module-spec.md#3-роли-должности-категории-и-коэффициенты) | Owner decision 2026-05-25: `Смены и выручка` / `Учет смен` остаётся единственным источником payroll-роли; iiko-должность не маппится автоматически. |
-| Период | Рабочий расчет недельный; snapshot - `12.05.2026-18.05.2026`, недельная сводка стартует от `2026-03-03`. | [19 §10](19-payroll-module-spec.md#10-вопросы-владельцу), вопрос 11 | Owner decision 2026-05-24: целевой `payroll_period` фиксируется как вторник-понедельник, расчёт и выплата ЗП - каждый вторник; в приложении это параметризованный payroll-календарь, а не перенос legacy-hardcode. |
-| Перенос в ledger | `Калькулятор -> Выгрузка` не формульный, через Apps Script/операционное действие. | [19 §Решения Владельца 2026-05-20](19-payroll-module-spec.md#решения-владельца-2026-05-20), [19 §9](19-payroll-module-spec.md#9-предлагаемая-модель-данных-веб-приложения) | Совпадает с фактом, но расходится с целевой архитектурой: нужен immutable `payroll_run`. |
-| Attendance types | `attendanceType` из iiko не попадает в текущую таблицу. | [19 §4.5](19-payroll-module-spec.md#45-больничные-отпуска-и-пособия) | Owner decision 2026-05-24: в payroll-расчёте используются только рабочие явки; больничные/отпуска/пособия остаются ручными событиями. |
-| Output payments | `Выплаты` не содержит bank/cash source и не матчится с DDS. | [19 §7](19-payroll-module-spec.md#7-разделение-pl-начислений-и-cash-flow-выплат) | Owner decision 2026-05-25: это ведомость/обязательство к выплате; в приложении нужен bridge по [30 §11.7](30-app-database-architecture.md#117-payroll-payments-vs-dds-cashflowtransaction). |
+| Источник явок | Реальный лист `Загрузка явок` - широкий iiko-отчет с именами и текстовыми интервалами, а не нормализованный `attendance_entry`. | [19 §9](/app-spec/entities/payroll-entities.md) | Для приложения нужно делать importer `employeeId/dateFrom/dateTo`, а не повторять широкий лист. |
+| Ключ сотрудника | Формулы связывают явки по имени сотрудника, не по `employeeId`. | [19 §8](/app-spec/modules/staff/payroll/00-engine.md#8-жизненный-цикл-сотрудника), [19 §9](/app-spec/entities/payroll-entities.md) | Нужен защищенный lookup `employeeId -> employee`, а display name не должен быть ключом. |
+| iiko role | `Должность` iiko (`Кассир`/`Повар`) не задает payroll-роль; payroll-роль приходит из расписания. | [19 §3](/app-spec/modules/staff/payroll/production/spec.md#1-роли-категории-и-коэффициенты) | Owner decision 2026-05-25: `Смены и выручка` / `Учет смен` остаётся единственным источником payroll-роли; iiko-должность не маппится автоматически. |
+| Период | Рабочий расчет недельный; snapshot - `12.05.2026-18.05.2026`, недельная сводка стартует от `2026-03-03`. | [19 §10](/app-spec/modules/staff/payroll/00-engine.md#открытые-вопросы), вопрос 11 | Owner decision 2026-05-24: целевой `payroll_period` фиксируется как вторник-понедельник, расчёт и выплата ЗП - каждый вторник; в приложении это параметризованный payroll-календарь, а не перенос legacy-hardcode. |
+| Перенос в ledger | `Калькулятор -> Выгрузка` не формульный, через Apps Script/операционное действие. | [19 §Решения Владельца 2026-05-20](/app-spec/architecture/decisions/payroll-decisions.md#1-owner-decisions-2026-05-20), [19 §9](/app-spec/entities/payroll-entities.md) | Совпадает с фактом, но расходится с целевой архитектурой: нужен immutable `payroll_run`. |
+| Attendance types | `attendanceType` из iiko не попадает в текущую таблицу. | [19 §4.5](/app-spec/modules/staff/payroll/00-engine.md#3-общие-payroll-events) | Owner decision 2026-05-24: в payroll-расчёте используются только рабочие явки; больничные/отпуска/пособия остаются ручными событиями. |
+| Output payments | `Выплаты` не содержит bank/cash source и не матчится с DDS. | [payroll engine §7](/app-spec/modules/staff/payroll/00-engine.md#7-разделение-pl-начислений-и-cash-flow-выплат) | Owner decision 2026-05-25: это ведомость/обязательство к выплате; в приложении нужен bridge по [§11.7 database decision](/app-spec/architecture/decisions/database-decisions.md#117-payroll-payments-vs-dds-cashflowtransaction). |
 
 ### 7.3 Что нового относительно 19
 
@@ -483,10 +483,10 @@ Owner decision 2026-05-24 по накопительному фонду:
 
 ## 9. Связь с архитектурой 30
 
-- [30 §11.1](30-app-database-architecture.md#111-counterparty-dds-vs-supplier_counterparty-удкз): сотрудник должен быть `counterparty` с ролью `employee` только в том объеме, который нужен для выплат и связей с DDS. Payroll-карточка и ПДн остаются в закрытом HR-слое.
-- [30 §11.5](30-app-database-architecture.md#115-prepaid_expenses-vs-баланс-выданные-авансы-поставщикам-vs-supplier_document-с-типом-аванса): префиксные авансы поставщикам не смешивать с payroll-депозитами и накопительным фондом. Депозит сотрудника - отдельное payroll-обязательство/счет, а не `supplier_document.prepayment_kind`.
-- [30 §11.7](30-app-database-architecture.md#117-payroll-payments-vs-dds-cashflowtransaction): `Выплаты` должны стать `payroll_payment` как обязательства/ведомости. Денежный факт закрывается через DDS `cashflow_transaction` или `payroll_payment_batch`, индивидуальные суммы доступны только payroll-роли.
-- [30 §15](30-app-database-architecture.md#15-принятые-архитектурные-решения-2026-05-2425): для миграции этого калькулятора первыми нужны `employee`, `attendance_entry`, `shift_duration_result`, `daily_revenue`, `shift_coefficient`, `payroll_run`, `payroll_ledger_line`, `payroll_payment`, `deposit_account`, `accumulation_fund_account`, `source_reference`.
+- [§11.1 database decision](/app-spec/architecture/decisions/database-decisions.md#111-counterparty-dds-vs-supplier_counterparty-удкз): сотрудник должен быть `counterparty` с ролью `employee` только в том объеме, который нужен для выплат и связей с DDS. Payroll-карточка и ПДн остаются в закрытом HR-слое.
+- [§11.5 database decision](/app-spec/architecture/decisions/database-decisions.md#115-prepaid_expenses-vs-баланс-выданные-авансы-поставщикам-vs-supplier_document-с-типом-аванса): префиксные авансы поставщикам не смешивать с payroll-депозитами и накопительным фондом. Депозит сотрудника - отдельное payroll-обязательство/счет, а не `supplier_document.prepayment_kind`.
+- [§11.7 database decision](/app-spec/architecture/decisions/database-decisions.md#117-payroll-payments-vs-dds-cashflowtransaction): `Выплаты` должны стать `payroll_payment` как обязательства/ведомости. Денежный факт закрывается через DDS `cashflow_transaction` или `payroll_payment_batch`, индивидуальные суммы доступны только payroll-роли.
+- [§15 database decisions](/app-spec/architecture/decisions/database-decisions.md#15-принятые-архитектурные-решения-2026-05-242527): для миграции этого калькулятора первыми нужны `employee`, `attendance_entry`, `shift_duration_result`, `daily_revenue`, `shift_coefficient`, `payroll_run`, `payroll_ledger_line`, `payroll_payment`, `deposit_account`, `accumulation_fund_account`, `source_reference`.
 
 ## 10. Открытые вопросы владельцу
 
@@ -507,7 +507,7 @@ Owner decision 2026-05-24 по накопительному фонду:
 
 8. ✅ закрыто 2026-05-25: `Выплаты` - это ведомость/обязательство к выплате; факт выдачи денег потом ищется и закрывается в DDS.
 9. ✅ закрыто 2026-05-25: счета/кошельки, с которых произведены выплаты, относятся только к DDS; в зарплатной ведомости wallet выплаты не указывать.
-10. ✅ закрыто 2026-05-24: `Выплата накоплений` происходит строго 15 января за предыдущий календарный год и обнуляет накопительный счёт сотрудника за этот год; cash-fact матчится через DDS/payroll payment по архитектуре 30 §11.7.
+10. ✅ закрыто 2026-05-24: `Выплата накоплений` происходит строго 15 января за предыдущий календарный год и обнуляет накопительный счёт сотрудника за этот год; cash-fact матчится через DDS/payroll payment по [§11.7 database decisions](/app-spec/architecture/decisions/database-decisions.md#117-payroll-payments-vs-dds-cashflowtransaction).
 
 ### Edge cases
 

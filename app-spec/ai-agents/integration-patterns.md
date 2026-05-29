@@ -86,7 +86,7 @@ Safeguards:
 | Источник | Что берем | Файл / документ |
 | --- | --- | --- |
 | Google Drive | ДДС, ОПиУ/P&L, баланс, управленческие документы | [06-data-sources.md](/business-docs/data-quality/data-sources.md), [07-google-drive-discovery.md](/app-spec/integrations/google-drive-discovery.md) |
-| Payroll Sheets | зарплаты, категории, фонд, удержания | [19-payroll-module-spec.md](/docs/business-control/19-payroll-module-spec.md) |
+| Payroll Sheets | зарплаты, категории, фонд, удержания | [payroll engine spec](/app-spec/modules/staff/payroll/00-engine.md) |
 | DDS Sheets | ДДС, платежный календарь, кошельки, ручная классификация | [21-dds-module-spec.md](/app-spec/modules/finance/dds/spec.md), [25-dds-filling-methodology.md](/business-docs/finance/dds-methodology.md) |
 | Balance Sheets | баланс, ОС, ДЗ/КЗ, РБП/авансы поставщикам | [26-balance-module-spec.md](/app-spec/modules/finance/balance/spec.md) |
 | P&L Sheets | построчная методология ОПиУ | [pnl-build-methodology.md](/business-docs/finance/pnl-methodology.md) |

@@ -16,7 +16,7 @@
 ## Связь с модулями
 
 - DDS module: [21-dds-module-spec.md](/app-spec/modules/finance/dds/spec.md), раздел 2, `ТК Черникова`.
-- Payroll module: [19-payroll-module-spec.md](/docs/business-control/19-payroll-module-spec.md), `deposit_accounts` и `deposit_transactions`.
+- Payroll module: [payroll engine spec](/app-spec/modules/staff/payroll/00-engine.md), `deposit_accounts` и `deposit_transactions`.
 - Общая карта iiko API: [08-iiko-server-api-endpoints.md](/app-spec/integrations/iiko/server-api-endpoints.md).
 - Processed-артефакты: `research/processed/iiko/finance_chart/`.
 - Raw-артефакты: `research/raw/iiko/finance_chart_research/` (ignored, может содержать PII в комментариях iiko).

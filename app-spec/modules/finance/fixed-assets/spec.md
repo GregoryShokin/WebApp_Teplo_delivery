@@ -7,7 +7,7 @@
 
 Модуль `Учёт основных средств` должен заменить исторический Google Sheets `Учёт Основных Средств 2.0` на веб-процесс ведения реестра ОС: инвентаризация, ввод новых единиц, перемещения, амортизация, ремонты/модернизации, выбытия и передача остаточной стоимости в баланс.
 
-Документ фиксирует целевую продуктовую и доменную модель. Он не пересчитывает старый реестр, не обновляет [16-fixed-assets-and-balance.md](/docs/business-control/16-fixed-assets-and-balance.md) и не считает амортизацию 2026 до подтверждения актуального состава ОС владельцем.
+Документ фиксирует целевую продуктовую и доменную модель. Он не пересчитывает старый реестр, не обновляет [old-os-and-balance-discovery.md](/research/archive/old-os-and-balance-discovery.md) и не считает амортизацию 2026 до подтверждения актуального состава ОС владельцем.
 
 Ключевой принцип: старый реестр - это seed для категорий, локаций, сроков полезного использования и исторических карточек. Текущим фактом на дату запуска приложения становится только owner-approved инвентаризация с источниками и статусами качества.
 
@@ -15,13 +15,13 @@
 
 | Источник | Роль в модуле | Статус | Ограничение |
 | --- | --- | --- | --- |
-| [16-fixed-assets-and-balance.md](/docs/business-control/16-fixed-assets-and-balance.md) | Read-only срез старого Google Sheets, план восстановления ОС и баланса | `partial` | Исторический контур устарел с 2024-06-11 |
+| [old-os-and-balance-discovery.md](/research/archive/old-os-and-balance-discovery.md) | Read-only срез старого Google Sheets, план восстановления ОС и баланса | `partial` | Исторический контур устарел с 2024-06-11 |
 | [fixed_assets_inventory_historic.csv](/research/processed/fixed_assets/fixed_assets_inventory_historic.csv) | Исторический реестр 134 строк ОС | `partial` | Не подтверждает физическое наличие и локацию на 2026-05-24 |
 | [balance_structure.csv](/research/processed/fixed_assets/balance_structure.csv) | 11 строк внеоборотных активов в балансе | `partial` | Значения последнего периода 2024-12-31 условные |
 | [fixed_assets_bank_candidates.csv](/research/processed/fixed_assets/fixed_assets_bank_candidates.csv) | Скрининг банковских операций 2026-02-01..2026-05-19 | `empty_result` | По строгому правилу найдено 0 кандидатов; это не доказывает отсутствие покупок ОС |
 | [2025 реестр ОС](https://docs.google.com/spreadsheets/d/1GK6Cl8U7MiMa_Z97Snz_tdCXej5lwi_Ji5si6qZZLKI/edit?gid=2021085115#gid=2021085115) | Owner-provided реестр 2025 года | `seed_not_current_truth` | Использовать как seed для инвентаризации, но не как current truth без физической проверки |
 | [26-balance-module-spec.md](/app-spec/modules/finance/balance/spec.md) | Методология баланса и статусы 11 строк ОС | `partial` по ОС | Баланс ждёт подтверждённый реестр ОС |
-| [30-app-database-architecture.md](/docs/business-control/30-app-database-architecture.md) | Общая архитектура БД и audit | `draft architecture` | В §6.6 зафиксированы только `fixed_asset` и `depreciation_schedule`; эта спека расширяет доменную модель ОС |
+| [database.md](/app-spec/architecture/database.md) | Общая архитектура БД и audit | `draft architecture` | В §6.6 зафиксированы только `fixed_asset` и `depreciation_schedule`; эта спека расширяет доменную модель ОС |
 | [31-migration-roadmap.md](/app-spec/architecture/migration-roadmap.md) | Roadmap миграции и cutover ОС | `requires_review` до инвентаризации | ОС не должны блокировать весь MVP, если владелец принимает `requires_review` по 11 строкам |
 
 По memory проекта применяются решения: единый `counterparty`, DDS как cash-fact, общий `source_reference`, префиксы через `prepayment_kind`, pipeline `parsed_document` -> `source_document`.
@@ -139,7 +139,7 @@ flowchart LR
 | `writeoff` | Списание из-за износа, поломки, утраты или непригодности |
 | `loss` | Недостача/потеря по инвентаризации |
 
-`fixed_asset` и `depreciation_schedule` уже названы в [30-app-database-architecture.md §6.6](/docs/business-control/30-app-database-architecture.md). Дополнительные сущности этой спеки являются детализацией модуля ОС и должны быть синхронизированы с архитектурой 30 при следующем обновлении логической модели, без SQL и выбора стека.
+`fixed_asset` и `depreciation_schedule` уже названы в [database.md §6.6](/app-spec/architecture/database.md). Дополнительные сущности этой спеки являются детализацией модуля ОС и должны быть синхронизированы с архитектурой 30 при следующем обновлении логической модели, без SQL и выбора стека.
 
 ## 5. Жизненный цикл единицы ОС
 
@@ -368,13 +368,13 @@ Cutover-критерий: модуль можно считать первичн�
 
 | Файл | Назначение |
 | --- | --- |
-| [16-fixed-assets-and-balance.md](/docs/business-control/16-fixed-assets-and-balance.md) | Read-only срез старого ОС и баланса, план восстановления |
+| [old-os-and-balance-discovery.md](/research/archive/old-os-and-balance-discovery.md) | Read-only срез старого ОС и баланса, план восстановления |
 | [fixed_assets_inventory_historic.csv](/research/processed/fixed_assets/fixed_assets_inventory_historic.csv) | Исторический реестр 134 строк ОС |
 | [balance_structure.csv](/research/processed/fixed_assets/balance_structure.csv) | Структура баланса и 11 строк ОС |
 | [fixed_assets_bank_candidates.csv](/research/processed/fixed_assets/fixed_assets_bank_candidates.csv) | Пустой результат скрининга банковских кандидатов в ОС |
 | [report.md](/research/processed/fixed_assets/report.md) | Технический отчёт по сборке processed-артефактов |
 | [26-balance-module-spec.md](/app-spec/modules/finance/balance/spec.md) | Баланс, где ОС закрывают 11 строк внеоборотных активов |
-| [30-app-database-architecture.md](/docs/business-control/30-app-database-architecture.md) | Общая архитектура сущностей и audit |
+| [database.md](/app-spec/architecture/database.md) | Общая архитектура сущностей и audit |
 | [31-migration-roadmap.md](/app-spec/architecture/migration-roadmap.md) | Roadmap миграции, где ОС-инвентаризация идёт отдельным потоком |
 
 ## 14. Предложение для индекса

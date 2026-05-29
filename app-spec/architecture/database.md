@@ -3,6 +3,8 @@
 Дата фиксации: 2026-05-24.  
 Статус: первый архитектурный каркас core domain, без SQL DDL, ORM-кода и выбора конкретной СУБД.
 
+Архитектурные решения вынесены в `/app-spec/architecture/decisions/database-decisions.md`; решения, которые нельзя принимать автоматически, — в `/app-spec/architecture/decisions/non-automatic-decisions.md`; Settings module — в `/app-spec/modules/settings/spec.md`.
+
 ## 1. Назначение
 
 Этот документ сводит независимые модульные спецификации в первый каркас единой БД управленческого веб-приложения «Тепло». Он фиксирует:
@@ -21,19 +23,21 @@
 
 | Обозначение | Источник |
 | --- | --- |
-| `[17]` | [17-unified-management-app.md](17-unified-management-app.md) |
-| `[19]` | [19-payroll-module-spec.md](19-payroll-module-spec.md) |
-| `[21]` | [21-dds-module-spec.md](/app-spec/modules/finance/dds/spec.md) |
-| `[26]` | [26-balance-module-spec.md](/app-spec/modules/finance/balance/spec.md) |
-| `[27]` | [27-dz-kz-module-spec.md](/app-spec/modules/finance/dz-kz/spec.md) |
-| `[28]` | [28-data-inventory-for-migration.md](/app-spec/integrations/data-inventory.md) |
-| `[29]` | [29-ai-agent-integration-patterns.md](/app-spec/ai-agents/integration-patterns.md) |
-| `[16]` | [16-fixed-assets-and-balance.md](16-fixed-assets-and-balance.md) |
-| `[P&L]` | [pnl-build-methodology.md](/business-docs/finance/pnl-methodology.md) |
+| `[17]` | `/app-spec/architecture/vision.md` |
+| `[19]` | `/app-spec/modules/staff/payroll/00-engine.md`, `/app-spec/modules/staff/payroll/production/spec.md`, `/app-spec/modules/staff/payroll/administrative/spec.md` |
+| `[21]` | `/app-spec/modules/finance/dds/spec.md` |
+| `[26]` | `/app-spec/modules/finance/balance/spec.md` |
+| `[27]` | `/app-spec/modules/finance/dz-kz/spec.md` |
+| `[28]` | `/app-spec/integrations/data-inventory.md` |
+| `[29]` | `/app-spec/ai-agents/integration-patterns.md` |
+| `[16]` | `/research/archive/old-os-and-balance-discovery.md`, `/business-docs/finance/fixed-assets-rules.md`, `/business-docs/finance/balance-methodology.md` |
+| `[P&L]` | `/business-docs/finance/pnl-methodology.md` |
+| `[decisions]` | `/app-spec/architecture/decisions/database-decisions.md` |
 | `[memory:*]` | Memory-файлы проекта в `.claude/.../memory/` |
 | `[new:*]` | Новое системное поле, добавленное только для единой БД; причина указана рядом |
 
 Общее правило: каждое поле в таблицах ниже имеет источник в квадратных скобках. Если поле новое, оно не является новой бизнес-сущностью, а служит стабильному ключу, связи, audit trail, lifecycle или защите от потери истории.
+
 
 ## 3. Полная карта сущностей из модульных спецификаций
 
@@ -108,7 +112,7 @@
 | Сущность | Поля с источником | Связи | Владелец | Читатели | Жизненный цикл | PII |
 | --- | --- | --- | --- | --- | --- | --- |
 | `employee` / страница `Штат` | `iiko_managed.display_name` `[memory:project_staff_list_page; read-only from iiko]`; `app_managed.position` `[memory]`; `app_managed.category` `[memory]`; `app_managed.allowances` `[memory:Старший/Заместитель старшего]` | master `employee` для Payroll, Shift schedule, DDS, Balance, УДКЗ; payroll-события и счета остаются в payroll-таблицах | core/master staff | Payroll, Shift schedule, DDS, Balance, УДКЗ | имя автоматически синхронизируется из iiko; app-managed поля меняются в приложении с audit trail; архив вместо удаления | high |
-| `app_setting` | `key` `[memory:project_app_settings_page]`; `value`; `value_type`; `category`; `last_changed_at`; `last_changed_by`; `history` | настройки читают модули через сервисный слой; бизнес-справочники и секреты интеграций не хранятся в settings | core_admin | все модули | изменение только через UI/сервис настроек; каждое изменение попадает в history | medium |
+| `app_setting` | `id` `[new: stable_key]`; `key`; `value_type`; `category_id`; `settings_module_ref` | FK/reference на Settings module; поведение, категории, permissions и audit описаны в `/app-spec/modules/settings/spec.md` | settings | все модули | изменение только через Settings service; history живёт в Settings module | medium |
 
 ## 6. Financial modules
 
@@ -340,143 +344,12 @@ flowchart LR
 | No local quality enums | Модуль может иметь workflow-стадии, но финансовое значение хранит только global `quality_status`. |
 | PII boundary | Полные ФИО, телефоны, назначения платежей, реквизиты, cookie, OCR text и body писем не попадают в публичные docs/processed. |
 
-## 11. Архитектурные вопросы и зафиксированные решения
+## 11. Decision links
 
-Варианты ниже сохранены для traceability: они показывают исходные конфликтные развилки, а строка «Решение владельца 2026-05-24/25» в каждом подразделе фиксирует принятый вариант.
-
-### 11.1 `counterparty` DDS vs `supplier_counterparty` УДКЗ
-
-**Решение владельца 2026-05-24: вариант A - единый `counterparty` + роли; `supplier_counterparty` УДКЗ становится профильным view/extension над `counterparty` с ролью `supplier`.**
-
-Уточнение владельца 2026-05-25 (C12): единый supplier registry используется как общий выпадающий список поставщиков в платежном календаре, DDS, УДКЗ и balance views. Это не отменяет общий `counterparty`: поставщик является ролью/profile, а не отдельным master. Главные предохранители - aliases между источниками, поддержка нескольких ролей у одного контрагента и хранение supplier-specific полей в supplier-profile, а не в базовой карточке `counterparty`.
-
-| Вариант | Суть | Плюсы | Минусы / риск | Что решает владелец |
-| --- | --- | --- | --- | --- |
-| A. Единый `counterparty` + role `supplier` | `supplier_counterparty` становится профильной таблицей/расширением к `counterparty` | один справочник aliases, меньше дублей, легче связывать банк/ЭДО/УДКЗ | миграция сложнее; нужно аккуратно с приватностью и разными ролями одного контрагента | готов ли владелец объединить рабочие поставщики, банки, сервисы, сотрудников/owner-группы в один master |
-| B. Раздельные таблицы + `counterparty_id` bridge | УДКЗ сохраняет `supplier_counterparty`, но каждая запись может ссылаться на master `counterparty` | мягкая миграция, можно вести supplier-ledger без полного merge | остаётся риск рассинхрона aliases и статусов | кто отвечает за bridge и merge-очередь |
-| C. Раздельные таблицы с discriminator/namespace | DDS и УДКЗ держат разные сущности, совпадения только через aliases/hash | минимум риска при импорте старых Sheets | сложные сверки оплат, документов и поставщиков; выше шанс дублей | допустима ли цена будущих сверок ради простого старта |
-
-### 11.2 `cashflow_transaction` DDS vs `supplier_document.payment` / оплата в УДКЗ
-
-**Решение владельца 2026-05-24: вариант A - DDS является единственным первоисточником cash-fact оплат поставщикам; УДКЗ хранит только `supplier_payment_match`.**
-
-| Вариант | Суть | Плюсы | Минусы / риск | Что решает владелец |
-| --- | --- | --- | --- | --- |
-| A. DDS - единственный первоисточник cash fact | УДКЗ хранит только `supplier_payment_match` на `cashflow_transaction` | нет дубля оплат; банк/касса/кошелёк закрываются в одном месте | УДКЗ зависит от готовности DDS и качества классификации | считать ли ДДС обязательным перед закрытием УДКЗ |
-| B. УДКЗ хранит собственный payment ledger, DDS сверяет | УДКЗ может закрываться по ручному импорту, а DDS потом матчится | удобно для исторического 2024 и ручной миграции | дубли и расхождения payment-факта; сложно объяснять баланс | нужна ли автономность УДКЗ на переходном этапе |
-| C. Общий `payment`/`settlement` слой над DDS и УДКЗ | Создать нейтральную settlement-сущность, а DDS и УДКЗ читают её | архитектурно чисто для оплат, авансов, частичных закрытий | новая абстракция поверх уже описанных модулей; дороже MVP | оправдана ли отдельная settlement-модель сейчас |
-
-### 11.3 `balance_source_reference` vs общий `source_reference` + `source_snapshot` + `agent_run`
-
-**Решение владельца 2026-05-24: вариант A - audit полностью централизован через общий `source_reference`; `balance_source_reference` упраздняется.**
-
-| Вариант | Суть | Плюсы | Минусы / риск | Что решает владелец |
-| --- | --- | --- | --- | --- |
-| A. Полная централизация | `balance_value.source_reference_id` ссылается только на общий `source_reference`; `balance_source_reference` не создаётся | единый audit trail для всех модулей | нужна миграция спеки баланса и UI на общий слой | можно ли отказаться от module-local audit сразу |
-| B. Adapter layer | `balance_source_reference` остаётся как балансный adapter, но внутри имеет `source_reference_id` | совместимо с текущей спекой 26; легче внедрять баланс | две точки чтения audit; возможны дубли полей | считать ли это временным переходным решением |
-| C. Полностью отдельный балансный audit | Баланс хранит свои source refs, общий audit живёт отдельно | проще для первого MVP баланса | нарушает правило централизованного audit; сложнее общая трассировка | допустимо ли исключение из общего правила |
-
-### 11.4 `wallet` DDS vs `data_source` AI/integration
-
-**Решение владельца 2026-05-24: вариант A - `wallet` описывает бизнес-кошелёк, `data_source` описывает способ доставки данных; связь N:M через `wallet_data_source`.**
-
-| Вариант | Суть | Плюсы | Минусы / риск | Что решает владелец |
-| --- | --- | --- | --- | --- |
-| A. `wallet` - бизнес-сущность, `data_source` - источник доставки | T-Bank wallet связан с T-Bank data_source, но не является им | чистое разделение денег и интеграций | нужно поддерживать связку wallet/account/source | базовый рекомендуемый уровень разделения |
-| B. `wallet` как subtype `data_source` для cash sources | Кошелёк и источник объединяются для банков/кассы | меньше сущностей в MVP | `Сейф`/`ТК Черникова` как бизнес-остаток смешиваются с API credentials | готов ли владелец принять смешение понятий ради простоты |
-| C. `account`/`wallet` хранят source metadata напрямую | Без отдельной связи; wallet знает endpoint/source | быстро для DDS | плохо масштабируется на P&L, баланс, ЭДО и manual sources | допускается ли локальное решение только для DDS |
-
-### 11.5 `prepaid_expenses` vs баланс «Выданные авансы поставщикам» vs `supplier_document` с типом аванса
-
-**Решение владельца 2026-05-24/25: вариант B для supplier-based авансов + external components для остальных префиксов.** УДКЗ хранит supplier roll-forward и supplier-based авансы; рекламные кабинеты, Mango/телефония, аренда/подписки вне supplier roll-forward и будущие налоговые переплаты живут в своих источниках, но все агрегируются в Balance line «Выданные авансы поставщикам». «Расходы будущих периодов» = `not_applicable`.
-
-Факт из memory: владелец 2026-05-24 уже выбрал управленческое упрощение для баланса: все префиксные платежи идут в строку «Выданные авансы поставщикам». Уточнение 2026-05-25: `prepayment_kind` обязателен только для регулярных/известных предоплат; налоговых предоплат в MVP нет. Псевдо-поставщиков для рекламных кабинетов и Mango в УДКЗ не создаём, если они не являются реальным supplier balance.
-
-| Вариант | Суть | Плюсы | Минусы / риск | Что решает владелец |
-| --- | --- | --- | --- | --- |
-| A. Первичный реестр `prepaid_expense` в P&L/accrual | Любая предоплата создаёт prepaid balance и график списания в P&L | хорошо для подписок, аренды, рекламных бюджетов; баланс агрегирует остаток | УДКЗ supplier advances и P&L prepaid нужно синхронизировать | делать ли P&L/accrual владельцем всех префиксов |
-| B. Первичный источник - УДКЗ/supplier roll-forward | Отрицательные supplier balances дают supplier-based авансы; остальные prepayment components приходят из contract/ad/Mango/tax sources | естественно для поставщиков и текущего файла УДКЗ; не раздувает УДКЗ псевдо-поставщиками | нужен агрегирующий Balance/P&L view поверх разных источников | как показывать единый advance view без смешения источников |
-| C. Balance-owned advance register | Баланс ведёт свой реестр авансов/префиксов, P&L и УДКЗ дают компоненты | быстро закрывает строку баланса | баланс становится не терминальным модулем, противоречит спека 26 | готов ли владелец сделать исключение для баланса |
-
-### 11.6 `dds_article` vs `pnl_line` vs `balance_line`
-
-**Решение владельца 2026-05-24: вариант A - три раздельных справочника статей (`dds_article`, `pnl_line`, `balance_line`) связаны через mapping tables.**
-
-| Вариант | Суть | Плюсы | Минусы / риск | Что решает владелец |
-| --- | --- | --- | --- | --- |
-| A. Три отдельных справочника + mapping tables | Оставить `dds_article`, `pnl_line`, `balance_line` как разные планы статей | отражает разные учетные плоскости cash/accrual/snapshot; меньше ложных совпадений | много mapping-правил и aliases | кто владеет маппингом и ревью новых статей |
-| B. Единая `management_article` с типами | Один план статей с discriminator `dds/pnl/balance` | единый UI и aliases, проще поиск | риск смешать cash-flow, P&L и баланс; сложная иерархия | нужен ли единый план статей в первом MVP |
-| C. Иерархический `article_group` + module-specific leaves | Общие группы, но конечные строки модульные | баланс между унификацией и методологией | сложнее объяснить пользователям и реализовать | выбрать ли компромиссную модель справочников |
-
-### 11.7 Payroll `payments` vs DDS `cashflow_transaction`
-
-**Решение владельца 2026-05-24/25: вариант A - `payroll_payment` является обязательством/ведомостью payroll-модуля; DDS хранит cash-fact через 1:1 matching с `cashflow_transaction` или через `payroll_payment_batch`. Wallet/source account выплаты хранится только в DDS, не в payroll-ведомости.**
-
-| Вариант | Суть | Плюсы | Минусы / риск | Что решает владелец |
-| --- | --- | --- | --- | --- |
-| A. Payroll payment - обязательство/ведомость, DDS - cash fact | `payroll_payment` всегда матчится к `cashflow_transaction` или cash batch | защищает ПДн сотрудников; DDS видит агрегаты | нужен payment batch и приватные ссылки | насколько детально DDS должен видеть payroll |
-| B. Все выплаты сотрудникам - DDS transactions с payroll metadata | Каждая выплата живёт в DDS как операция | простая сверка денег | DDS получает ПДн/персональные суммы; риск доступа | допустимо ли раскрытие payroll внутри finance |
-| C. Отдельный `payroll_payment_batch` как единственный публичный bridge | Payroll хранит персональные выплаты, DDS только batches | приватность сильнее всего | сложнее расследовать расхождения без payroll-доступа | какие роли имеют право drill-down |
-
-### 11.8 `source_document` DDS vs `parsed_document` integration
-
-**Решение владельца 2026-05-24: вариант A - `parsed_document` хранит raw OCR/extract, `source_document` хранит подтверждённый бизнес-документ; promotion контролируется правилами или ручным review.**
-
-| Вариант | Суть | Плюсы | Минусы / риск | Что решает владелец |
-| --- | --- | --- | --- | --- |
-| A. `parsed_document` = технический extraction, `source_document` = подтверждённый бизнес-документ | Чёткий pipeline raw -> parsed -> business | меньше мусора в бизнес-модуле | нужна стадия promotion/verification | кто подтверждает promotion |
-| B. Единая document table | Все документы сразу в одной таблице со статусами | проще MVP | смешиваются низкоуверенные OCR-кандидаты и подтверждённые документы | допустим ли такой риск |
-| C. Модульные документы (`edo_document`, `supplier_document`, `tax_document`) + общий parsed layer | Каждый модуль имеет свой документ после parsing | хорошо для разных процессов | больше дублирующих полей | нужен ли общий `source_document` как master |
-
-### 11.9 Учёт ФД и налоги: недостаток спецификаций
-
-**Решение владельца 2026-05-24/25: вариант C - асимметричный MVP: кредиты из Sber API, овердрафт как остаток тела по банковским API/выпискам, дивиденды и расчёты с собственниками из ДДС/owner register, owner loans через `owner_loan_register`, налоги ручным structured form из WorkMail налогового агента; полные модули ФД и налогов отложены.**
-
-| Вариант | Суть | Плюсы | Минусы / риск | Что решает владелец |
-| --- | --- | --- | --- | --- |
-| A. Сначала отдельные полноценные спеки модулей | Не проектировать глубже `financial_obligation`, `loan_schedule`, `tax_charge`, `tax_payment` | не выдумываем методологию | SQL/реализация откладывается | когда разбирать УФД/налоги |
-| B. MVP как ручные structured forms + audit | Вести кредиты/налоги вручную с source_reference | можно закрывать баланс раньше | ручной ввод без полной методологии | кто ответственный и частота |
-| C. Использовать существующие источники как primary там, где уже есть owner decision | Кредиты из Sber API, дивиденды/owner payments из ДДС, owner loans из `owner_loan_register`, налоги через manual structured form + WorkMail | быстрее для известных строк | модуль получится неполным и асимметричным | допустим ли частичный модуль |
-
-## 12. Стратегия миграции исторических данных
-
-Исторические источники 2024-2025: балансы, ДДС, ЗПВ/payroll, ОПиУ, УФД, УДКЗ, Учёт ОС. Вопрос «переносить историю или начать с чистого листа на дату X» был owner-question, потому что влияет на стоимость, доверие к цифрам и скорость запуска; решение зафиксировано ниже.
-
-**Решение владельца 2026-05-24: дата X = 2026-02-01, глубина = C гибрид. Переносим master data, monthly totals 2024-2025 и opening balances на 2026-02-01; raw history построчно остаётся в исторических Google Sheets как `source_snapshot` и в БД не переносится.**
-
-| Вариант | Что переносим | Плюсы | Минусы / риск | Когда подходит |
-| --- | --- | --- | --- | --- |
-| A. Полная историческая миграция 2024-2025 | Все доступные Google Sheets snapshots и processed CSV превращаются в доменные записи с source_reference | максимальная аналитика и тренды; можно сверять старые отчёты | дорого; много дыр, устаревших формул, ПДн и legacy-кошельков | если owner хочет приложение как полный архив управленческого учета |
-| B. Cutover на дату X + read-only legacy archive | В БД заносится opening balance / opening ledgers на дату X, старые Sheets остаются read-only | быстрее MVP; меньше мусора; проще права | меньше drill-down по истории; нужны качественные opening balances | если приоритет - текущий управленческий контур |
-| C. Гибрид: справочники + закрытые snapshots, без каждой операции | Перенести master data, статьи, контрагентов, сотрудников, monthly totals и opening balances; raw history оставить в source_snapshot | баланс скорости и проверяемости | нельзя расследовать каждую историческую операцию из UI | хороший вариант для первого запуска |
-| D. Модульный cutover | Payroll стартует с одной даты, DDS с другой, balance с контрольного snapshot, УДКЗ с последнего закрытого месяца | учитывает разную зрелость модулей | сложная коммуникация и межмодульные сверки | если модули запускаются постепенно |
-
-Минимальный безопасный набор при любом варианте:
-
-1. Создать `data_source` для каждого S01-S49 из `[28]`.
-2. Снять `source_snapshot` для всех исторических Google Sheets, которые используются как источник правил или opening balance.
-3. Перенести master data: locations, wallets, employees, roles/categories, dds articles, P&L lines, balance lines, supplier counterparties, fixed asset categories.
-4. Зафиксировать opening values на дату X: cash by wallet, supplier AP/advances, payroll liabilities/deposits/fund, fixed assets residual value, loans/owner balances, tax liabilities.
-5. Всем историческим значениям дать `quality_status`: `final` только если источник и методология подтверждены; `partial` для устаревших/неполных; `requires_review` для дыр; `not_applicable` для закрытых контуров Гагарина/Alfa/РБП.
-
-Owner-question закрыт решением владельца 2026-05-24: дата X = `2026-02-01`. Кандидаты, которые сравнивались перед решением:
-
-- `2026-01-01`: чистый годовой старт, но нужно восстановить 2025 closing balance.
-- `2026-02-01`: совпадает с активным банковским/iiko processed-контуром февраль-май 2026.
-- дата актуальной инвентаризации ОС и баланса: методологически чище, но старт приложения позже.
-
-## 13. Решения, которые нельзя принимать автоматически
-
-1. ✅ Вариант 11.1/A: `counterparty` - единый master с ролями; `supplier_counterparty` - профильное view/extension для роли `supplier`.
-2. ✅ Вариант 11.2/A: первичный cash fact оплат поставщикам хранится в DDS; УДКЗ хранит только `supplier_payment_match`.
-3. ✅ Вариант 11.3/A: `balance_source_reference` не создаётся; audit идёт через общий `source_reference`.
-4. ✅ Вариант 11.4/A: `wallet` - бизнес-сущность, `data_source` - способ доставки, связь N:M через `wallet_data_source`.
-5. ✅ Вариант 11.5/B + уточнение 2026-05-25: УДКЗ владеет supplier-based авансами; остальные регулярные префиксы живут в своих источниках и агрегируются в Balance.
-6. ✅ Вариант 11.6/A: три справочника статей (`dds_article`, `pnl_line`, `balance_line`) + mapping tables.
-7. ✅ Вариант 11.7/A: DDS видит payroll cash-fact через 1:1 matching или `payroll_payment_batch`; индивидуальные суммы доступны только payroll-роли.
-8. ✅ Вариант 11.8/A: `parsed_document` - technical extract, `source_document` - подтверждённый бизнес-документ.
-9. ✅ Решения 12a/12b: дата X = 2026-02-01; глубина миграции = C гибрид.
-10. ✅ Вариант 11.9/C: ФД и налоги идут в асимметричный MVP; полноценные спеки модулей отложены.
+- Database decisions: `/app-spec/architecture/decisions/database-decisions.md`.
+- Non-automatic decision policy: `/app-spec/architecture/decisions/non-automatic-decisions.md`.
+- Migration roadmap: `/app-spec/architecture/migration-roadmap.md`.
+- Settings module: `/app-spec/modules/settings/spec.md`.
 
 ## 14. Первый технический вывод
 
@@ -487,47 +360,3 @@ Owner-question закрыт решением владельца 2026-05-24: да
 - правила обязательности `source_reference_id`;
 - migration map из Google Sheets/source snapshots в доменные таблицы;
 - затем уже SQL/ORM.
-
-## 14.1 Settings layer
-
-Страница `Настройки` хранит централизованные конфигурационные параметры модулей, которые не являются операциями, документами, master-справочниками или секретами интеграций. Каноническая сущность слоя - `app_setting`.
-
-Минимальная структура `app_setting`: `key`, `value`, `value_type`, `category`, `last_changed_at`, `last_changed_by`, `history`. Значения читаются модулями через сервисный слой, чтобы правила не расходились между Payroll, графиком, Balance, ОС и платежным календарем.
-
-Категории настроек:
-
-| Категория | Известные параметры на 2026-05-27 |
-| --- | --- |
-| `Финансы/Баланс` | срок закрытия баланса до 7 числа |
-| `Зарплата` | cap open shift 12 часов и авто-закрытие 22:00; окно ЗП вторник за вторник-понедельник; дата выплаты накопительного фонда 15 января |
-| `Платёжный календарь` | tolerance auto-match `±10%` внутри месяца; сезонные коэффициенты выручки |
-| `Учёт ОС` | порог ОС 5 000 ₽; граница ремонт/модернизация 15% |
-| `График` | целевой ФОТ 28%; порог отклонения план-факт 3%; праздничные/нетиповые дни |
-| `Интеграции` | параметры интеграций без хранения самих секретов |
-
-Права доступа: чтение доступно всем авторизованным пользователям приложения; запись доступна ФМ и владельцу; критичные параметры меняет только владелец.
-
-Audit trail обязателен: каждое изменение `app_setting` сохраняет автора, timestamp, старое значение и новое значение в `history`.
-
-## 15. Принятые архитектурные решения 2026-05-24/25/27
-
-| ID | Вариант | Решение | Затронутые модули |
-| --- | --- | --- | --- |
-| 11.1 | A + C12 | Единый `counterparty` + роли (`supplier`, `customer`, `bank`, `employee`, `owner`, `tax_authority`). Supplier registry для платежного календаря, DDS, УДКЗ и Balance - это общий `counterparty` с ролью/profile `supplier`; `supplier_counterparty` УДКЗ только профильное view/extension, не отдельный master. | Core, DDS, УДКЗ, P&L, Balance, Taxes, Payroll, Payment calendar |
-| 11.2 | A | DDS - единственный первоисточник cash-fact оплат поставщикам. УДКЗ хранит только `supplier_payment_match(supplier_document_id, cashflow_transaction_id, matched_amount)`, без своего payment ledger. | DDS, УДКЗ, Balance, P&L |
-| 11.3 | A | Audit полностью централизован: `balance_value.source_reference_id` ссылается на общий `source_reference`; `balance_source_reference` упраздняется. | Balance, Audit/integration, все финансовые модули |
-| 11.4 | A | `wallet` и `data_source` разделены: `wallet` - бизнес-кошелёк, `data_source` - способ доставки данных; связь many-to-many через `wallet_data_source`. | DDS, Audit/integration, Balance |
-| 11.5 | B + external components | УДКЗ хранит supplier-based авансы через supplier roll-forward. `prepayment_kind` обязателен только для регулярных/известных предоплат; аренда, подписки, рекламные кабинеты, Mango/телефония и будущие налоговые переплаты живут в своих источниках и агрегируются в `Выданные авансы поставщикам`. Налоговых предоплат в MVP нет. | УДКЗ, Balance, P&L, DDS, Taxes, Payment calendar |
-| 11.6 | A | Три раздельных справочника статей: `dds_article`, `pnl_line`, `balance_line`. Связи между cash/accrual/snapshot плоскостями ведутся через mapping tables (`dds_article_pnl_mapping`, `pnl_balance_mapping` и т.п.). | DDS, P&L, Balance |
-| 11.7 | A + C11 | `payroll_payment` / `Выплаты` - обязательство payroll-модуля без wallet/source account. DDS получает cash-fact либо 1:1 matching с `cashflow_transaction`, либо через `payroll_payment_batch`; доступ к индивидуальным суммам только у payroll-роли. | Payroll, DDS, Balance, P&L |
-| 11.8 | A | Document pipeline: `parsed_document` (raw OCR extract, статус `extracted`/`auto_confirmed`/`needs_review`) -> `source_document` (подтверждённый бизнес-документ). Promotion автоматический по правилам или ручной через review. | Audit/integration, DDS, P&L, УДКЗ, Taxes |
-| 11.9 | C + tax update | Асимметричный MVP для ФД и налогов: кредиты - Sber API, овердрафт - банковские API/выписки по телу, дивиденды и выплаты собственникам - ДДС-лист, займы собственников - `owner_loan_register`, налоги - manual structured form + WorkMail налогового агента. Полные модули `financial_activity` и `taxes` со своими спеками отложены. | Financial activity, Taxes, DDS, Balance, P&L |
-| 12a | 2026-02-01 | Дата X старта приложения - 2026-02-01, совпадает с активным processed-контуром Sber/T-Bank/iiko. | Migration, DDS, Balance, P&L, Payroll, УДКЗ |
-| 12b | C гибрид | Глубина миграции: master data + monthly totals баланс/ДДС/P&L за 2024-2025 + opening balances на 2026-02-01. Raw history построчно остаётся в исторических Google Sheets как `source_snapshot`, в БД не переносится. | Migration, Audit/integration, все модули |
-| 15.1 | Payroll rules | Payroll готов к разработке по ключевым правилам: точные минуты без `>=40`, payroll-период вторник-понедельник, роли/станции только из `Учет смен`, unknown employee блокирует run, open shift закрывается в 22:00 с cap 12h, увольнение синхронизируется в iiko. | Payroll, iiko employees, Shift schedule |
-| 15.2 | Payment calendar | Production-календарь планирует ближайший месяц; forecast выручки строится из iiko OLAP `Выручка по направлениям` по same-month истории + тренд + маркетинговые планы; cash gap = `total cash < 0`; internal transfers скрыты как строки календаря и неттируются в DDS. | Payment calendar, DDS, P&L |
-| 15.3 | Supplier forecast | План оплат поставщикам строится гибридно: УДКЗ + iiko unpaid supplies для known AP, DDS cadence + rolling average для неизвестных будущих сумм, agent/owner adjustments с audit trail. | Payment calendar, УДКЗ, DDS, iiko, Audit |
-| 15.4 | Fixed assets | ОС: порог 5 000 ₽, линейная помесячная амортизация, СПИ по категориям/карточкам, ввод управляющим, ремонт/модернизация по 15%, покупки контролируются из DDS, продажа не попадает в P&L. | Fixed assets, DDS, Balance, P&L |
-| 15.5 | Fixed assets migration | Гагарина неактивна; ОС Гагарина до инвентаризации переводятся в складской provisional-контур; реестр 2025 `1GK6...` - seed, current truth только после инвентаризации 2026-06-01..2026-06-12. | Fixed assets, Balance, Migration |
-| 15.6 | 2026-05-27 Staff page | Штат — отдельная страница master `employee`; имя read-only из iiko, должность/категория/надбавки app_managed. | Core, Payroll, Shift schedule, DDS, Balance, УДКЗ |
-| 15.7 | 2026-05-27 Settings layer | Settings — централизованная страница `app_setting` с audit trail и категориями по модулям. | Core, все модули |
