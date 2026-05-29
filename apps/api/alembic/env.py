@@ -54,7 +54,27 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
-    asyncio.run(run_async_migrations())
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(run_async_migrations())
+        return
+
+    import threading
+
+    error: list[BaseException] = []
+
+    def _runner() -> None:
+        try:
+            asyncio.run(run_async_migrations())
+        except BaseException as exc:
+            error.append(exc)
+
+    thread = threading.Thread(target=_runner)
+    thread.start()
+    thread.join()
+    if error:
+        raise error[0]
 
 
 if context.is_offline_mode():

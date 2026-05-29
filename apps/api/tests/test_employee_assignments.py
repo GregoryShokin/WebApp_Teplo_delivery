@@ -203,7 +203,7 @@ async def test_category_4_shawarma_rate_is_seeded(session_factory) -> None:
     assert shawarma_category_4["is_enabled"] is True
 
 
-async def test_category_4_availability_is_shawarma_only(session_factory) -> None:
+async def test_category_4_availability_matches_taxonomy(session_factory) -> None:
     async with session_factory() as session:
         availability = await list_role_category_availability(session)
 
@@ -212,11 +212,13 @@ async def test_category_4_availability_is_shawarma_only(session_factory) -> None
         for row in availability
         if row["category"] == "category_4"
     }
+    enabled_for = {"Шаурмист", "Администратор"}
     assert category_4["Шаурмист"] is True
+    assert category_4["Администратор"] is True
     assert all(
         is_enabled is False
         for position_group, is_enabled in category_4.items()
-        if position_group != "Шаурмист"
+        if position_group not in enabled_for
     )
 
 
