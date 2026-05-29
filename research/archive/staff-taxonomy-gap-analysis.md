@@ -1,6 +1,6 @@
 # Gap analysis: таксономия сотрудников
 
-Источник истины: `docs/business-control/staff/taxonomy.md`, фиксация владельца 2026-05-29.
+Источник истины: `app-spec/modules/staff/taxonomy.md`, фиксация владельца 2026-05-29.
 
 ## A. Бэкенд: модели, схемы, сервисы
 

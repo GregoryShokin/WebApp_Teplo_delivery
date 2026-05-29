@@ -19,7 +19,7 @@
 
 ## 2. Текущее устройство
 
-В текущем payroll-контуре есть лист `Смены и выручка`, который дает payroll-роль по дням и дневную выручку для расчета процента. По [32-payroll-attendance-calculator.md](/docs/business-control/32-payroll-attendance-calculator.md), расписание в этом листе приходит через `IMPORTRANGE`, а payroll-роль/станция указывается вручную ответственным администратором через шаблон `Учет смен`.
+В текущем payroll-контуре есть лист `Смены и выручка`, который дает payroll-роль по дням и дневную выручку для расчета процента. По [payroll-calculator-analysis.md](/research/archive/payroll-calculator-analysis.md), расписание в этом листе приходит через `IMPORTRANGE`, а payroll-роль/станция указывается вручную ответственным администратором через шаблон `Учет смен`.
 
 Для нового модуля это не переносится как главный UX. Целевое состояние:
 
@@ -142,7 +142,7 @@ forecast_amount =
 
 ## 7. Методология расчета стоимости смены
 
-Расчет стоимости смены - preview на базе payroll-правил из [19-payroll-module-spec.md](/docs/business-control/19-payroll-module-spec.md) и [32-payroll-attendance-calculator.md](/docs/business-control/32-payroll-attendance-calculator.md). Он нужен для управленческого решения по графику, но не является финальным начислением.
+Расчет стоимости смены - preview на базе payroll-правил из [19-payroll-module-spec.md](/docs/business-control/19-payroll-module-spec.md) и [payroll-calculator-analysis.md](/research/archive/payroll-calculator-analysis.md). Он нужен для управленческого решения по графику, но не является финальным начислением.
 
 ### 7.1 Плановые часы
 

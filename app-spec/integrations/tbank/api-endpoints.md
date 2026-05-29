@@ -238,7 +238,7 @@ Runtime-распознавание платежных оснований вып�
 
 ## Связь со строками ОПиУ и ДДС
 
-Строки ОПиУ с источником «ДДС классический» (см. [pnl-build-methodology.md](/business-docs/finance/pnl-methodology.md) и [10-economic-block.md](/docs/business-control/10-economic-block.md)) должны брать суммы из T-API:
+Строки ОПиУ с источником «ДДС классический» (см. [pnl-build-methodology.md](/business-docs/finance/pnl-methodology.md) и [economic-block.md](/business-docs/finance/economic-block.md)) должны брать суммы из T-API:
 
 | Строка ОПиУ | Соответствующая статья ДДС | Источник |
 | --- | --- | --- |
