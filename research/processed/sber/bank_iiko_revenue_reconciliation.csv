@@ -1,5 +1,0 @@
-period,period_start,period_end,period_days,bank_days_available,iiko_revenue,bank_inflows,bank_inflows_minus_iiko_revenue,bank_inflows_pct_of_iiko_revenue,bank_outflows_abs,bank_net_cashflow,status,comment
-2026-02,2026-02-01,2026-02-28,28,28,3833597.82,2932164.26,-901433.56,76.5,2754377.00,177787.26,same_period,"Bank inflows are cash receipts, not accrual revenue; compare with lags/acquiring/aggregators in mind."
-2026-03,2026-03-01,2026-03-31,31,31,4006534.78,3376477.58,-630057.20,84.3,3629917.00,-253439.42,same_period,"Bank inflows are cash receipts, not accrual revenue; compare with lags/acquiring/aggregators in mind."
-2026-04,2026-04-01,2026-04-30,30,30,3326144.31,2558836.39,-767307.92,76.9,2479305.00,79531.39,same_period,"Bank inflows are cash receipts, not accrual revenue; compare with lags/acquiring/aggregators in mind."
-2026-05-01_2026-05-17,2026-05-01,2026-05-17,17,17,2082482.51,1614909.27,-467573.24,77.5,1272491.00,342418.27,same_period,"Bank inflows are cash receipts, not accrual revenue; compare with lags/acquiring/aggregators in mind."

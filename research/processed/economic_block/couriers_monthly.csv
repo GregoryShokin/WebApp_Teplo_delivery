@@ -1,8 +1,0 @@
-month,courier_payout_total,courier_payout_source_status,delivery_rows_sheet,unique_delivery_orders_sheet,completed_delivery_rows_sheet,delivery_duration_hours_sum_sheet,shift_rows_sheet,completed_shift_rows_sheet,shift_hours_sum_sheet,help_shift_rows_sheet,schedule_went_out_count_sheet,schedule_no_show_count_sheet,cost_per_delivery_order,courier_cost_pct_of_delivery_revenue,iiko_total_revenue,iiko_total_orders,iiko_delivery_revenue,iiko_delivery_orders,sheet_vs_iiko_delivery_orders_delta,delivery_date_span_sheet,shift_date_span_sheet,data_quality
-2025-11,,not_found_in_sheet,1877,1794,1312,548.48,79,77,702.37,4,0,0,,,3815263.37,2555.0,3170945.4,1928.0,-134.0,2025-11-01..2025-11-30,2025-11-01..2025-11-30,payout_rules_missing
-2025-12,,not_found_in_sheet,2103,2016,1616,757.96,99,99,872.71,36,0,0,,,4364517.52,2677.0,3750552.37,2135.0,-119.0,2025-12-01..2025-12-31,2025-12-01..2025-12-31,payout_rules_missing
-2026-01,,not_found_in_sheet,1920,1819,1257,634.48,100,99,770.43,29,0,0,,,4095915.11,2469.0,3502227.53,1975.0,-156.0,2026-01-02..2026-01-31,2026-01-02..2026-01-31,payout_rules_missing
-2026-02,,not_found_in_sheet,1751,1657,969,498.08,96,94,776.25,16,64,38,,,3833597.82,2213.0,3234851.86,1759.0,-102.0,2026-02-01..2026-02-28,2026-02-01..2026-02-28,payout_rules_missing
-2026-03,,not_found_in_sheet,1715,1650,1057,514.31,80,80,744.97,3,0,0,,,4006534.78,2355.0,3321133.32,1795.0,-145.0,2026-03-01..2026-03-31,2026-03-01..2026-03-31,payout_rules_missing
-2026-04,,not_found_in_sheet,941,898,549,239.61,36,23,236.42,0,0,0,,,3326144.31,1957.0,2748251.2,1441.0,-543.0,2026-04-01..2026-04-21,2026-04-01..2026-04-21,payout_rules_missing
-2026-05,,not_found_in_sheet,0,0,0,0.0,0,0,0.0,0,0,0,,,2082482.51,1229.0,1730269.73,909.0,-909.0,,,no_courier_rows_for_month

@@ -1,4 +1,0 @@
-{
-  "status": "not_available",
-  "reason": "No clearly safe aggregate new/repeat client field was found in OLAP columns."
-}

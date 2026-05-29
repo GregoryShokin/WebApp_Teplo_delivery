@@ -1,5 +1,0 @@
-risk_id,severity,risk,source,period,action
-order_num_grouping_diff,medium,"OrderNum в дневно-часовом срезе на 299 меньше, чем прежний канальный ориентир.",сравнение sales_hourly с audit-ориентиром по каналам,2025-11-01 — 2026-05-17,Для панели собственника использовать один закрепленный срез OrderNum; вероятная причина расхождения — зависимость OrderNum от группировок PayTypes/OriginName/OrderType.
-product_cost_method,medium,Food cost считается как ProductCostBase.ProductCost / DishDiscountSumInt и зависит от актуальности техкарт.,iiko OLAP ProductCostBase.ProductCost,2025-05-01 — 2026-05-17,Сверить с ОПиУ/P&L и отдельной корректировкой акционных наборов.
-zero_sales_days,low,Найдены даты без активных продаж: 1.,sales_daily.csv,2026-01-01 — 2026-01-01,Исключать такие даты из списка провалов и отдельно проверять график работы.
-hour_field,low,"Часовая динамика построена по `HourOpen`: час открытия заказа, а не час закрытия/доставки.",iiko /v2/reports/olap/columns,2025-11-01 — 2026-05-17,Для нагрузки кухни можно дополнительно сравнить с CloseTime или Delivery.CookingFinishTime.

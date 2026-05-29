@@ -1,8 +1,0 @@
-month,iiko_revenue,payroll_accrual_total,payroll_accrual_pct_of_revenue,payroll_cash_paid_total,central_admin_accrual,shift_admin_accrual,kitchen_accrual,courier_payout_total,courier_payout_source_status,unique_delivery_orders_sheet,iiko_delivery_orders,iiko_delivery_revenue,labor_data_quality
-2025-11,3815263.37,1233648.0,0.323345,1017857.0,450500.0,195844.0,587304.0,,not_found_in_sheet,1794,1928.0,3170945.4,ok; payout_rules_missing
-2025-12,4364517.52,1166813.0,0.267341,1192916.0,286000.0,203926.0,676887.0,,not_found_in_sheet,2016,2135.0,3750552.37,ok; payout_rules_missing
-2026-01,4095915.11,1123666.0,0.274338,1319206.0,302000.0,198898.0,622768.0,,not_found_in_sheet,1819,1975.0,3502227.53,ok; payout_rules_missing
-2026-02,3833597.82,1093659.0,0.285283,1043768.0,302000.0,193674.0,597985.0,,not_found_in_sheet,1657,1759.0,3234851.86,ok; payout_rules_missing
-2026-03,4006534.78,1126341.0,0.281126,1083397.0,302000.0,218202.0,606139.0,,not_found_in_sheet,1650,1795.0,3321133.32,ok; payout_rules_missing
-2026-04,3326144.31,1000437.0,0.30078,939522.0,302000.0,199692.0,498745.0,,not_found_in_sheet,898,1441.0,2748251.2,ok; payout_rules_missing
-2026-05,2082482.51,499100.0,0.239666,497612.0,221000.0,68314.0,209786.0,,not_found_in_sheet,0,909.0,1730269.73,partial_month; no_courier_rows_for_month
