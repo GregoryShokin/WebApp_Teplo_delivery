@@ -520,7 +520,7 @@ def build_report(
 Источники:
 - Google Sheets `Учёт Основных Средств 2.0`, read-only export: {FA_URL}
 - Google Sheets `Копия Баланс• [ИП Шокина]`, read-only export: {BALANCE_URL}
-- Локальные classified CSV банков: `research/private/tbank/statement_classified.csv`, `research/private/sber/statement_classified.csv`
+- Локальные classified CSV банков: `research/private/tbank/statement_classified.csv`, `integrations/sber/private/statement_classified.csv`
 
 Google Sheets не изменялись. В processed не вынесены полные назначения платежей, ИНН, счета и персональные данные.
 

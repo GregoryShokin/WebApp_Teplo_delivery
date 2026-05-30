@@ -441,7 +441,7 @@ summary=false
 Если нужен новый локальный сборщик, создавать его отдельно от Markdown-документов, например:
 
 ```text
-research/scripts/iiko/export_<block>.py
+integrations/iiko/scripts/export_<block>.py
 ```
 
 Минимальные правила сборщика:

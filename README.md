@@ -7,9 +7,10 @@
 | Раздел | Что внутри |
 |---|---|
 | [apps/](apps/) | Код приложения: FastAPI backend, React frontend, dev-инфра |
+| [integrations/](integrations/00-index.md) | Операционные интеграции: скрипты экспорта из iiko/Sber/T-Bank/Mango/Mail.ru, credentials |
 | [app-spec/](app-spec/00-index.md) | Спецификация приложения: архитектура, модули, страницы, сущности БД, ADR, интеграции |
 | [business-docs/](business-docs/00-index.md) | Бизнес-логика: методологии финансов, маркетинга, штата, операций |
-| [research/](research/00-index.md) | Исследовательский слой: ETL-скрипты, сырые выгрузки, исторические снапшоты, archive |
+| [research/](research/00-index.md) | Исследовательский слой: исторические снапшоты, downstream-классификаторы, archive |
 
 ## Быстрый старт разработчика
 

@@ -946,7 +946,7 @@ API-источник для компонента расходников:
 
 | # | Путь | Усилие владельца | Усилие проекта | Срок жизни решения |
 | --- | --- | --- | --- | --- |
-| A | Импорт cookies из браузера в `research/private/mango/session.json` (после ручного логина владельцем со SmartCaptcha) | 1 раз залогиниться → экспортировать cookies `.mango-office.ru` через Chrome extension типа Cookie-Editor | Скрипт `research/scripts/mango/export_telecom.py` уже умеет resume через session.json | Cookie протухает обычно за дни-недели; повторный экспорт ~30 сек |
+| A | Импорт cookies из браузера в `research/private/mango/session.json` (после ручного логина владельцем со SmartCaptcha) | 1 раз залогиниться → экспортировать cookies `.mango-office.ru` через Chrome extension типа Cookie-Editor | Скрипт `integrations/mango/scripts/export_telecom.py` уже умеет resume через session.json | Cookie протухает обычно за дни-недели; повторный экспорт ~30 сек |
 | B | Ручной CSV-экспорт из дашборда | Залогиниться, выбрать 6 периодов, нажать «Экспорт» 6 раз, прислать CSV | Парсер CSV → processed | Разовое решение, ежемесячно повторять |
 | C | Headed Playwright с интерактивной CAPTCHA | Установить Playwright Chromium, владелец вручную решает SmartCaptcha при запуске | Сценарий и оркестрация | Каждый месяц интерактивно |
 | D | Email — Mango высылает счета/УПД | Подтвердить, что счета приходят на email (или подключены в СБИС/DocsInbox) | Парсер email/PDF либо подтягивание через СБИС API | Стабильно, как только инвойсы найдены |
@@ -998,8 +998,8 @@ API-источник для компонента расходников:
 
 Артефакты headless-попытки сохранены и могут быть переиспользованы:
 
-- `research/scripts/mango/export_telecom.py` — рабочий идемпотентный скрипт с resume через `research/private/mango/session.json`.
-- `research/scripts/mango/endpoint_map.md` — полная карта endpoint'ов report-pipeline и OIDC API.
+- `integrations/mango/scripts/export_telecom.py` — рабочий идемпотентный скрипт с resume через `research/private/mango/session.json`.
+- `integrations/mango/scripts/endpoint_map.md` — полная карта endpoint'ов report-pipeline и OIDC API.
 - `research/private/mango/raw/01_lk_root..04_vpbx_login` — снимки шагов OIDC с маскированными секретами.
 - `research/private/mango/raw/spa/` — Angular-бандлы LK на случай будущего discovery.
 

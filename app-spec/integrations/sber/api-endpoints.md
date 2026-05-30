@@ -48,7 +48,7 @@
 - `https://developers.sber.ru/docs/files/openapi/sbapi/correspondents.yaml`
 - `https://developers.sber.ru/docs/files/openapi/sbapi/dicts.yaml`
 
-Практические read-only запросы к Sber API выполнены 2026-05-19 на промышленном контуре: `GET /v1/client-info`, `GET /v2/statement/summary` и `GET /v2/statement/transactions` работают с `Bearer`-токеном и клиентским TLS-сертификатом. Сырые ответы сохранены только локально в `research/private/sber/`.
+Практические read-only запросы к Sber API выполнены 2026-05-19 на промышленном контуре: `GET /v1/client-info`, `GET /v2/statement/summary` и `GET /v2/statement/transactions` работают с `Bearer`-токеном и клиентским TLS-сертификатом. Сырые ответы сохранены только локально в `integrations/sber/private/`.
 
 ## Безопасность
 
@@ -99,7 +99,7 @@ SBER_API_TLS_CERT_PATH
 SBER_API_TLS_KEY_PATH
 ```
 
-Локальный файл `Sber API data.rtf` прочитан 2026-05-19. Из него в локальный `.env` перенесены служебные параметры подключения: базовые URL, имя сервиса, `client_id` и scope. `client_secret`, `access_token`, `refresh_token`, TLS-контейнер и пароль к нему отдельно сохранены пользователем в локальный `.env` / `research/private/sber/certs/`. `redirect_uri` в документе указан неполно, поэтому не считается рабочим значением для будущего OAuth refresh/callback flow.
+Локальный файл `Sber API data.rtf` прочитан 2026-05-19. Из него в локальный `.env` перенесены служебные параметры подключения: базовые URL, имя сервиса, `client_id` и scope. `client_secret`, `access_token`, `refresh_token`, TLS-контейнер и пароль к нему отдельно сохранены пользователем в локальный `.env` / `integrations/sber/credentials/`. `redirect_uri` в документе указан неполно, поэтому не считается рабочим значением для будущего OAuth refresh/callback flow.
 
 ## Где получить данные для доступа
 
@@ -168,7 +168,7 @@ https://sbi.sberbank.ru:9443/ic/ufs/host/index.html#/main
 - `access_token` и `refresh_token`, созданные прямо в Личном кабинете, имеют сроки жизни, отличающиеся от токена после обновления через OAuth endpoint. Для рабочего сборщика лучше реализовать нормальный refresh flow.
 - Если в организации несколько счетов, пользователь при авторизации/согласии должен дать доступ именно к тем счетам, которые нужны для ДДС/P&L. Иначе выписка может вернуть `403 ACCESS_EXCEPTION`.
 - Для боевых REST-запросов Sber API gateway требует клиентский TLS-сертификат. Проверка 2026-05-19 без mTLS дошла до gateway и вернула HTML-ошибку `400 No required SSL certificate was sent`.
-- Для Python/OpenSSL нужен локальный CA bundle с промежуточным `SberCA Ext` и корневым `SberCA Root Ext`, потому что сервер `fintech.sberbank.ru` отдает не всю цепочку. Bundle сохранен локально в `research/private/sber/certs/sberca_server_bundle.pem` и указан в `.env` как `SBER_API_CA_BUNDLE_PATH`.
+- Для Python/OpenSSL нужен локальный CA bundle с промежуточным `SberCA Ext` и корневым `SberCA Root Ext`, потому что сервер `fintech.sberbank.ru` отдает не всю цепочку. Bundle сохранен локально в `integrations/sber/credentials/sberca_server_bundle.pem` и указан в `.env` как `SBER_API_CA_BUNDLE_PATH`.
 - `SBER_API_ACCOUNT_NUMBER` должен быть записан строго как 20 цифр без пробелов и разделителей. При наличии пробелов `/v2/statement/*` возвращает `400` с проверкой регулярного выражения `^[0-9]{20}$`.
 
 ## Авторизация
@@ -331,9 +331,9 @@ REST API / Fintech error:
 | Запрос `/v2/statement/summary` с mTLS | успешно | HTTP `200`; сводка за `2026-05-19` по расчетному счету |
 | Запрос `/v2/statement/transactions` с mTLS | успешно | HTTP `200`; первая страница за `2026-05-19`, 7 операций |
 
-После практической проверки добавлены локальные скрипты: `research/scripts/sber/export_statement.py` для raw-выписок и `research/scripts/sber/build_cashflow.py` для безопасных агрегатов ДДС. Период `2026-02-01`–`2026-05-19` выгружен и сверен.
-Для диагностики выручки добавлен `research/scripts/sber/reconcile_iiko_revenue.py`: он сравнивает банковские поступления с iiko-выручкой по фокусным периодам.
-Для операционной расшифровки добавлен `research/scripts/sber/build_operations_table.py`: он строит таблицу операций за период и извлекает комиссии эквайринга/приема платежей из `paymentPurpose`.
+После практической проверки добавлены локальные скрипты: `integrations/sber/scripts/export_statement.py` для raw-выписок и `integrations/sber/scripts/build_cashflow.py` для безопасных агрегатов ДДС. Период `2026-02-01`–`2026-05-19` выгружен и сверен.
+Для диагностики выручки добавлен `integrations/sber/scripts/reconcile_iiko_revenue.py`: он сравнивает банковские поступления с iiko-выручкой по фокусным периодам.
+Для операционной расшифровки добавлен `integrations/sber/scripts/build_operations_table.py`: он строит таблицу операций за период и извлекает комиссии эквайринга/приема платежей из `paymentPurpose`.
 
 ## Endpoint'ы из документации
 
@@ -472,32 +472,32 @@ curl -sS -G "$SBER_API_BASE_URL/v1/dicts" \
 Локальный сборщик для выписки за один день или период:
 
 ```bash
-python3 research/scripts/sber/export_statement.py --date 2026-05-19
-python3 research/scripts/sber/export_statement.py --start-date 2026-05-01 --end-date 2026-05-19
-python3 research/scripts/sber/export_statement.py --start-date 2026-02-01 --end-date 2026-05-19 --sleep-seconds 0.5
+python3 integrations/sber/scripts/export_statement.py --date 2026-05-19
+python3 integrations/sber/scripts/export_statement.py --start-date 2026-05-01 --end-date 2026-05-19
+python3 integrations/sber/scripts/export_statement.py --start-date 2026-02-01 --end-date 2026-05-19 --sleep-seconds 0.5
 ```
 
-Сборщик печатает только маску счета, количество операций и путь к manifest. Сырые `summary.json` / `transactions_page_*.json` сохраняются в `research/private/sber/statement/`.
+Сборщик печатает только маску счета, количество операций и путь к manifest. Сырые `summary.json` / `transactions_page_*.json` сохраняются в `integrations/sber/private/statement/`.
 
 Построить безопасные агрегаты ДДС из raw-выписок:
 
 ```bash
-python3 research/scripts/sber/build_cashflow.py --start-date 2026-05-01 --end-date 2026-05-19
-python3 research/scripts/sber/build_cashflow.py --start-date 2026-02-01 --end-date 2026-05-19
+python3 integrations/sber/scripts/build_cashflow.py --start-date 2026-05-01 --end-date 2026-05-19
+python3 integrations/sber/scripts/build_cashflow.py --start-date 2026-02-01 --end-date 2026-05-19
 ```
 
-Агрегаты сохраняются в `research/processed/sber/`. Приватная расшифровка контрагентов и назначений платежей сохраняется отдельно в `research/private/sber/processed/`.
+Агрегаты сохраняются в `research/processed/sber/`. Приватная расшифровка контрагентов и назначений платежей сохраняется отдельно в `integrations/sber/private/processed/`.
 
 Сверить банковские поступления с iiko-выручкой:
 
 ```bash
-python3 research/scripts/sber/reconcile_iiko_revenue.py
+python3 integrations/sber/scripts/reconcile_iiko_revenue.py
 ```
 
 Собрать таблицу операций и комиссий за период:
 
 ```bash
-python3 research/scripts/sber/build_operations_table.py --start-date 2026-05-13 --end-date 2026-05-18
+python3 integrations/sber/scripts/build_operations_table.py --start-date 2026-05-13 --end-date 2026-05-18
 ```
 
 Если endpoint возвращает `401`, повторить с заголовком без `Bearer` только после фиксации этого факта в рабочем логе:
@@ -554,8 +554,8 @@ Authorization: <access_token>
 
 ## Следующие действия
 
-1. Расширить `research/scripts/sber/export_statement.py` на полный нужный период 2026, сохраняя последовательный режим без параллельных запросов.
-2. Разметить `research/private/sber/processed/transactions_private.csv` и `counterparty_map_private.csv` по статьям ДДС/P&L.
+1. Расширить `integrations/sber/scripts/export_statement.py` на полный нужный период 2026, сохраняя последовательный режим без параллельных запросов.
+2. Разметить `integrations/sber/private/processed/transactions_private.csv` и `counterparty_map_private.csv` по статьям ДДС/P&L.
 3. Отделить операционные расходы от кредитов, налогов, внутренних переводов и прочих ниже EBITDA.
 4. Разложить банковские поступления по источникам оплаты и сверить с iiko-выручкой с учетом эквайринга, агрегаторов, комиссий, наличных и кассовых лагов.
 5. В Личном кабинете Sber API задать рабочий `redirect_uri`, потому что в локальном документе он неполный.

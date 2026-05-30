@@ -1,6 +1,6 @@
 # Исследовательский слой
 
-ETL-скрипты, выгрузки из внешних систем, исторические снапшоты, архив анализов. Контент здесь — рабочий для текущих агентов и исторически ценный, но не является источником истины для приложения или бизнес-логики.
+Исторические снапшоты, downstream-классификаторы поверх данных и архив анализов. Контент здесь — рабочий для текущих агентов и исторически ценный, но не является источником истины для приложения или бизнес-логики.
 
 ## Структура
 
@@ -8,8 +8,8 @@ ETL-скрипты, выгрузки из внешних систем, исто�
 |---|---|
 | [raw/](raw/) | Сырые выгрузки из iiko, T-Bank, Courier Service. Gitignored. |
 | [processed/](processed/) | Пустые подпапки — target для билдер-скриптов |
-| [private/](private/) | Секреты: .pem сертификаты Sber, личные ключи. Gitignored. |
-| [scripts/](scripts/) | Python-скрипты: экспортёры из API и билдеры аналитических CSV |
+| [private/](private/) | Локальные приватные данные и исторические артефакты. Gitignored. |
+| [scripts/](scripts/) | Downstream-классификаторы и агрегаторы поверх данных |
 | [archive/](archive/) | Исторические анализы и discovery-документы |
 
 ## Архив
@@ -27,10 +27,9 @@ ETL-скрипты, выгрузки из внешних систем, исто�
 
 | Папка | Что внутри |
 |---|---|
-| [scripts/iiko/](scripts/iiko/) | Экспортёры данных iiko (employees, OLAP, продажи) + билдеры (economic block, P&L) |
-| [scripts/sber/](scripts/sber/) | Экспорт выписки, построение cashflow, сверка с iiko |
-| [scripts/tbank/](scripts/tbank/) | Экспорт выписки, парсеры платёжек, OCR |
 | [scripts/bank/](scripts/bank/) | Классификация cashflow |
-| [scripts/mango/](scripts/mango/) | Экспорт телекома |
-| [scripts/mail/](scripts/mail/) | Mail.ru интеграция |
 | [scripts/business_control/](scripts/business_control/) | Сводные билдеры: fixed assets, labor costs |
+
+## Не здесь
+
+Операционные интеграции с внешними API (iiko, Sber, T-Bank, Mango, Mail.ru) и их credentials живут в [/integrations/](../integrations/00-index.md). research/ содержит только исторические снапшоты и downstream-классификаторы поверх данных.

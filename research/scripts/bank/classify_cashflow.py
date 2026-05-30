@@ -24,7 +24,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PRIVATE_DIR = PROJECT_ROOT / "research/private"
 PROCESSED_DIR = PROJECT_ROOT / "research/processed/cashflow"
-SBER_RAW_DIR = PROJECT_ROOT / "research/private/sber/statement"
+SBER_RAW_DIR = PROJECT_ROOT / "integrations/sber/private/statement"
 TBANK_RAW_FILE = PROJECT_ROOT / "research/private/tbank/statement_2026-02-01_2026-05-31_p01.json"
 RULE_TEMPLATE = PROJECT_ROOT / "research/processed/bank_operation_rules_template.csv"
 IIKO_REVENUE_FILE = PROJECT_ROOT / "research/processed/economic_block/iiko_monthly_gross_margin.csv"
@@ -1160,7 +1160,7 @@ def write_report(
             "",
             "- `research/private/bank_own_accounts_registry.csv`",
             "- `research/private/bank_operation_rules.csv`",
-            "- `research/private/sber/statement_classified.csv`",
+            "- `integrations/sber/private/statement_classified.csv`",
             "- `research/private/tbank/statement_classified.csv`",
             "- `research/processed/cashflow/dds_by_article_2026.csv`",
             "- `research/processed/cashflow/revenue_split.csv`",

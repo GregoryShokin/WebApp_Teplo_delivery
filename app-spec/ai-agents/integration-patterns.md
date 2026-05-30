@@ -24,7 +24,7 @@
 | T-Bank Business Open API | исходящие операции, поставщики, сверка оплат | [14-tbank-api-endpoints.md](/app-spec/integrations/tbank/api-endpoints.md), [06-data-sources.md](/business-docs/data-quality/data-sources.md) |
 | iikoServer / Resto API | продажи, блюда, курьеры, явки, склад, OLAP-отчеты | [08-iiko-server-api-endpoints.md](/app-spec/integrations/iiko/server-api-endpoints.md), [22-iiko-employees-api.md](/app-spec/integrations/iiko/employees-api.md) |
 | Mango VPBX API | звонки, пропущенные, записи, webhook завершения звонка | [15-telephony.md](/app-spec/integrations/mango/telephony.md) |
-| Telegram Bot API | прием документов/фото от владельца, не банковская отправка | [payment_order_bot.py](/research/scripts/tbank/payment_order_bot.py) |
+| Telegram Bot API | прием документов/фото от владельца, не банковская отправка | [payment_order_bot.py](/integrations/tbank/scripts/payment_order_bot.py) |
 | СБИС/Saby ЭДО | входящие счета/акты/УПД после подключения | [11-sbis-edo-api-endpoints.md](/app-spec/integrations/sbis-edo/api-endpoints.md), [06-data-sources.md](/business-docs/data-quality/data-sources.md) |
 
 ### Предусловия
@@ -148,7 +148,7 @@ Safeguards:
 
 | Источник | Что берем | Файл / документ |
 | --- | --- | --- |
-| Mail.ru личный ящик | письма, папки, переписки, вложения | [23-mailru-personal-mailbox.md](/app-spec/integrations/mailru/personal-mailbox.md), [mailru_mailbox.py](/research/scripts/mail/mailru_mailbox.py) |
+| Mail.ru личный ящик | письма, папки, переписки, вложения | [23-mailru-personal-mailbox.md](/app-spec/integrations/mailru/personal-mailbox.md), [mailru_mailbox.py](/integrations/mailru/scripts/mailru_mailbox.py) |
 | WorkMail / `smmbux@yandex.ru` | документы по таргетированной рекламе | [pnl-build-methodology.md](/business-docs/finance/pnl-methodology.md) |
 | `webmaster@insaitov.ru` | SEO-счета Синапса | [pnl-build-methodology.md](/business-docs/finance/pnl-methodology.md) |
 | `donotreply@iiko.ru` | PDF-счета iiko | [pnl-build-methodology.md](/business-docs/finance/pnl-methodology.md) |
@@ -215,10 +215,10 @@ Safeguards:
 
 | Источник | Что берем | Файл / документ |
 | --- | --- | --- |
-| T-Bank payment order intake | кандидат платежки из документа/фото/текста; бот не отправляет платеж в банк | [payment_order_bot.py](/research/scripts/tbank/payment_order_bot.py) |
-| OCR macOS Vision | распознавание русско-английского текста с изображений | [ocr_image_macos.swift](/research/scripts/tbank/ocr_image_macos.swift) |
-| Deterministic parsers | счета, УПД, накладные, платежки, известные контрагенты | [payment_parsers.py](/research/scripts/tbank/payment_parsers.py) |
-| Водоканал / электроэнергия | коммунальные счета/акты, status `owner_review` при неполной паре или низкой уверенности | [payment_parsers.py](/research/scripts/tbank/payment_parsers.py) |
+| T-Bank payment order intake | кандидат платежки из документа/фото/текста; бот не отправляет платеж в банк | [payment_order_bot.py](/integrations/tbank/scripts/payment_order_bot.py) |
+| OCR macOS Vision | распознавание русско-английского текста с изображений | [ocr_image_macos.swift](/integrations/tbank/scripts/ocr_image_macos.swift) |
+| Deterministic parsers | счета, УПД, накладные, платежки, известные контрагенты | [payment_parsers.py](/integrations/tbank/scripts/payment_parsers.py) |
+| Водоканал / электроэнергия | коммунальные счета/акты, status `owner_review` при неполной паре или низкой уверенности | [payment_parsers.py](/integrations/tbank/scripts/payment_parsers.py) |
 
 ### Предусловия
 
@@ -278,7 +278,7 @@ Safeguards:
 
 | Источник | Что берем | Файл / документ |
 | --- | --- | --- |
-| Mango Office LK / финансы | расходы на продуктовый набор через `product-expenses/report-*` | [15-telephony.md](/app-spec/integrations/mango/telephony.md), [endpoint_map.md](/research/scripts/mango/endpoint_map.md), [export_telecom.py](/research/scripts/mango/export_telecom.py) |
+| Mango Office LK / финансы | расходы на продуктовый набор через `product-expenses/report-*` | [15-telephony.md](/app-spec/integrations/mango/telephony.md), [endpoint_map.md](/integrations/mango/scripts/endpoint_map.md), [export_telecom.py](/integrations/mango/scripts/export_telecom.py) |
 | Рекламные кабинеты с MFA | proposed: расходы/балансы/выгрузки при известном endpoint или CSV-export | [06-data-sources.md](/business-docs/data-quality/data-sources.md) |
 
 ### Предусловия

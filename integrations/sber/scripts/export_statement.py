@@ -2,7 +2,7 @@
 """Read-only Sber API statement export.
 
 Reads Sber API credentials and mTLS paths from ENV/.env, writes raw bank
-responses only under research/private/sber/, and prints a sanitized run summary.
+responses only under integrations/sber/private/, and prints a sanitized run summary.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "research/private/sber/statement"
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "integrations/sber/private/statement"
 
 
 class SberHTTPError(RuntimeError):

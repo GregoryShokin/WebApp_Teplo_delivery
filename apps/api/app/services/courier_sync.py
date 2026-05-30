@@ -98,14 +98,14 @@ class CourierDeliveryParseResult:
 
 def _load_export_orders_delivery_module() -> ModuleType:
     for root in _candidate_project_roots():
-        script_dir = root / "research/scripts/iiko"
+        script_dir = root / "integrations/iiko/scripts"
         if not (script_dir / "export_orders_delivery.py").exists():
             continue
         script_dir_str = str(script_dir)
         if script_dir_str not in sys.path:
             sys.path.insert(0, script_dir_str)
         return importlib.import_module("export_orders_delivery")
-    raise RuntimeError("research/scripts/iiko/export_orders_delivery.py is not available")
+    raise RuntimeError("integrations/iiko/scripts/export_orders_delivery.py is not available")
 
 
 def fetch_iiko_courier_delivery_rows(start_date: date, end_date: date) -> list[Mapping[str, Any]]:

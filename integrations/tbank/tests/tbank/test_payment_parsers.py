@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCRIPT_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_ROOT = Path(__file__).resolve().parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPT_ROOT))
 payment_parsers = import_module("payment_parsers")
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "tbank"

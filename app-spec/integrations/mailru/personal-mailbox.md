@@ -18,7 +18,7 @@
 | Создать новое письмо | SMTP `send_message` | `send` |
 | Ответить в цепочку | SMTP + `In-Reply-To`/`References` | `reply` |
 
-Скрипт: `research/scripts/mail/mailru_mailbox.py`.
+Скрипт: `integrations/mailru/scripts/mailru_mailbox.py`.
 
 Локальная база: `research/private/mail/mail.sqlite3`.
 
@@ -66,19 +66,19 @@ MAIL_ATTACHMENTS_DIR=research/private/mail/attachments
 Команда для личного ящика:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py check
+python3 integrations/mailru/scripts/mailru_mailbox.py check
 ```
 
 Команда для рабочего ящика:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py --account workmail check
+python3 integrations/mailru/scripts/mailru_mailbox.py --account workmail check
 ```
 
 Команда для обоих источников:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py --account all check
+python3 integrations/mailru/scripts/mailru_mailbox.py --account all check
 ```
 
 Что делает:
@@ -106,7 +106,7 @@ DB: research/private/mail/mail.sqlite3
 Команда:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py folders
+python3 integrations/mailru/scripts/mailru_mailbox.py folders
 ```
 
 Что делает:
@@ -131,13 +131,13 @@ INBOX [INBOX] attrs=\Inbox
 Базовая команда:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py sync --limit 50
+python3 integrations/mailru/scripts/mailru_mailbox.py sync --limit 50
 ```
 
 Для синхронизации обоих источников:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py --account all sync --limit 50
+python3 integrations/mailru/scripts/mailru_mailbox.py --account all sync --limit 50
 ```
 
 По умолчанию синхронизируются:
@@ -148,20 +148,20 @@ python3 research/scripts/mail/mailru_mailbox.py --account all sync --limit 50
 Синхронизация конкретной папки:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py sync --folder INBOX --limit 100
-python3 research/scripts/mail/mailru_mailbox.py sync --folder "Отправленные" --limit 100
+python3 integrations/mailru/scripts/mailru_mailbox.py sync --folder INBOX --limit 100
+python3 integrations/mailru/scripts/mailru_mailbox.py sync --folder "Отправленные" --limit 100
 ```
 
 Полная повторная выборка выбранного диапазона:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py sync --full --limit 100
+python3 integrations/mailru/scripts/mailru_mailbox.py sync --full --limit 100
 ```
 
 Синхронизация всех папок:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py sync --all-folders --limit 100
+python3 integrations/mailru/scripts/mailru_mailbox.py sync --all-folders --limit 100
 ```
 
 Как работает синхронизация:
@@ -183,25 +183,25 @@ python3 research/scripts/mail/mailru_mailbox.py sync --all-folders --limit 100
 Показать последние письма:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py messages --limit 20
+python3 integrations/mailru/scripts/mailru_mailbox.py messages --limit 20
 ```
 
 Прочитать письмо по локальному ID:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py show 123
+python3 integrations/mailru/scripts/mailru_mailbox.py show 123
 ```
 
 Показать HTML-версию тела:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py show 123 --html
+python3 integrations/mailru/scripts/mailru_mailbox.py show 123 --html
 ```
 
 Ограничить размер вывода:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py show 123 --max-chars 5000
+python3 integrations/mailru/scripts/mailru_mailbox.py show 123 --max-chars 5000
 ```
 
 Что хранится по письму:
@@ -226,7 +226,7 @@ python3 research/scripts/mail/mailru_mailbox.py show 123 --max-chars 5000
 Показать последние переписки:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py summary --limit 20
+python3 integrations/mailru/scripts/mailru_mailbox.py summary --limit 20
 ```
 
 Группировка строится локально:
@@ -282,7 +282,7 @@ LIMIT 20;"
 Сухой прогон без отправки:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py send \
+python3 integrations/mailru/scripts/mailru_mailbox.py send \
   --to client@example.com \
   --subject "Тема письма" \
   --text "Текст письма" \
@@ -292,7 +292,7 @@ python3 research/scripts/mail/mailru_mailbox.py send \
 Отправить письмо:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py send \
+python3 integrations/mailru/scripts/mailru_mailbox.py send \
   --to client@example.com \
   --subject "Тема письма" \
   --text "Текст письма"
@@ -301,7 +301,7 @@ python3 research/scripts/mail/mailru_mailbox.py send \
 Отправить нескольким адресатам:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py send \
+python3 integrations/mailru/scripts/mailru_mailbox.py send \
   --to client1@example.com \
   --to client2@example.com \
   --cc manager@example.com \
@@ -312,7 +312,7 @@ python3 research/scripts/mail/mailru_mailbox.py send \
 Отправить HTML и вложение:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py send \
+python3 integrations/mailru/scripts/mailru_mailbox.py send \
   --to client@example.com \
   --subject "Тема письма" \
   --text-file research/private/mail/drafts/message.txt \
@@ -338,7 +338,7 @@ python3 research/scripts/mail/mailru_mailbox.py send \
 Сухой прогон без отправки:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py reply 123 \
+python3 integrations/mailru/scripts/mailru_mailbox.py reply 123 \
   --text "Здравствуйте! Ответ по вашему письму..." \
   --dry-run
 ```
@@ -346,14 +346,14 @@ python3 research/scripts/mail/mailru_mailbox.py reply 123 \
 Отправить ответ:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py reply 123 \
+python3 integrations/mailru/scripts/mailru_mailbox.py reply 123 \
   --text "Здравствуйте! Ответ по вашему письму..."
 ```
 
 Ответ с HTML и вложением:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py reply 123 \
+python3 integrations/mailru/scripts/mailru_mailbox.py reply 123 \
   --text-file research/private/mail/drafts/reply.txt \
   --html-file research/private/mail/drafts/reply.html \
   --attachment research/private/mail/drafts/file.pdf
@@ -373,7 +373,7 @@ python3 research/scripts/mail/mailru_mailbox.py reply 123 \
 Получателя можно переопределить вручную:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py reply 123 \
+python3 integrations/mailru/scripts/mailru_mailbox.py reply 123 \
   --to another@example.com \
   --text "Текст ответа"
 ```
@@ -410,17 +410,17 @@ sqlite3 research/private/mail/mail.sqlite3 \
 ## Рабочий порядок для первого ящика
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py check
-python3 research/scripts/mail/mailru_mailbox.py folders
-python3 research/scripts/mail/mailru_mailbox.py sync --limit 50
-python3 research/scripts/mail/mailru_mailbox.py messages --limit 20
-python3 research/scripts/mail/mailru_mailbox.py show 123
-python3 research/scripts/mail/mailru_mailbox.py reply 123 --text "Текст ответа" --dry-run
-python3 research/scripts/mail/mailru_mailbox.py reply 123 --text "Текст ответа"
+python3 integrations/mailru/scripts/mailru_mailbox.py check
+python3 integrations/mailru/scripts/mailru_mailbox.py folders
+python3 integrations/mailru/scripts/mailru_mailbox.py sync --limit 50
+python3 integrations/mailru/scripts/mailru_mailbox.py messages --limit 20
+python3 integrations/mailru/scripts/mailru_mailbox.py show 123
+python3 integrations/mailru/scripts/mailru_mailbox.py reply 123 --text "Текст ответа" --dry-run
+python3 integrations/mailru/scripts/mailru_mailbox.py reply 123 --text "Текст ответа"
 ```
 
 Для регулярной работы достаточно периодически запускать:
 
 ```bash
-python3 research/scripts/mail/mailru_mailbox.py sync --limit 100
+python3 integrations/mailru/scripts/mailru_mailbox.py sync --limit 100
 ```

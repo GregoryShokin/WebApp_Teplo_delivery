@@ -16,9 +16,9 @@ from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-RAW_DIR = PROJECT_ROOT / "research/private/sber/statement"
+RAW_DIR = PROJECT_ROOT / "integrations/sber/private/statement"
 PROCESSED_DIR = PROJECT_ROOT / "research/processed/sber"
-PRIVATE_DIR = PROJECT_ROOT / "research/private/sber/processed"
+PRIVATE_DIR = PROJECT_ROOT / "integrations/sber/private/processed"
 
 
 Money = Decimal
@@ -743,7 +743,7 @@ def write_report(
         "",
         f"Дата сборки: {dt.date.today().isoformat()}.",
         "",
-        "Источник: Sber API `statement/summary` и `statement/transactions`, raw только в `research/private/sber/statement/`.",
+        "Источник: Sber API `statement/summary` и `statement/transactions`, raw только в `integrations/sber/private/statement/`.",
         "В открытые processed-файлы не перенесены названия контрагентов, полные счета и назначения платежей.",
         "",
         "## Короткий ответ",
@@ -762,8 +762,8 @@ def write_report(
         "- `research/processed/sber/bank_operation_codes.csv`",
         "- `research/processed/sber/bank_counterparty_summary.csv`",
         "- `research/processed/sber/bank_cashflow_articles_draft.csv`",
-        "- `research/private/sber/processed/counterparty_map_private.csv`",
-        "- `research/private/sber/processed/transactions_private.csv`",
+        "- `integrations/sber/private/processed/counterparty_map_private.csv`",
+        "- `integrations/sber/private/processed/transactions_private.csv`",
         "",
     ]
     if monthly_rows:

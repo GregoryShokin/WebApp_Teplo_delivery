@@ -6,6 +6,9 @@ ENV
 # Local exports and raw source files with business data.
 research/raw/
 research/private/
+integrations/sber/credentials/
+integrations/*/credentials/
+integrations/*/private/
 exports/
 
 # OS/editor noise.

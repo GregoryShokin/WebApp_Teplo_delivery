@@ -5,22 +5,22 @@ Private payment-order intake lives under `research/private/tbank/payment_orders/
 Common commands:
 
 ```bash
-python3 research/scripts/tbank/payment_order.py check-env
-python3 research/scripts/tbank/payment_order.py parse --file invoice.txt
-python3 research/scripts/tbank/payment_order.py upload --file invoice.pdf --source-channel telegram --sender "@user"
-python3 research/scripts/tbank/payment_order.py prepare --parsed-id parsed_xxx
-python3 research/scripts/tbank/payment_order.py list-candidates --status owner_review
-python3 research/scripts/tbank/payment_order.py list-candidates --status ready
-python3 research/scripts/tbank/payment_order.py export-candidate --id cand_xxx
-python3 research/scripts/tbank/payment_order.py submit --input-json research/private/tbank/payment_orders/requests/payment_order_request_*.json
+python3 integrations/tbank/scripts/payment_order.py check-env
+python3 integrations/tbank/scripts/payment_order.py parse --file invoice.txt
+python3 integrations/tbank/scripts/payment_order.py upload --file invoice.pdf --source-channel telegram --sender "@user"
+python3 integrations/tbank/scripts/payment_order.py prepare --parsed-id parsed_xxx
+python3 integrations/tbank/scripts/payment_order.py list-candidates --status owner_review
+python3 integrations/tbank/scripts/payment_order.py list-candidates --status ready
+python3 integrations/tbank/scripts/payment_order.py export-candidate --id cand_xxx
+python3 integrations/tbank/scripts/payment_order.py submit --input-json research/private/tbank/payment_orders/requests/payment_order_request_*.json
 ```
 
 Telegram intake bot:
 
 ```bash
-python3 research/scripts/tbank/payment_order_bot.py --check
-python3 research/scripts/tbank/payment_order_bot.py
-python3 research/scripts/tbank/payment_order_bot.py --once
+python3 integrations/tbank/scripts/payment_order_bot.py --check
+python3 integrations/tbank/scripts/payment_order_bot.py
+python3 integrations/tbank/scripts/payment_order_bot.py --once
 ```
 
 Required local `.env` keys:

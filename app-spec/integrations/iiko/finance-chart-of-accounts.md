@@ -79,7 +79,7 @@ agr=Sum.Outgoing
 Скрипт:
 
 ```text
-research/scripts/iiko/export_finance_chart.py
+integrations/iiko/scripts/export_finance_chart.py
 ```
 
 Raw за целевой период:

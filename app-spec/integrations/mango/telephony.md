@@ -51,8 +51,8 @@ Endpoint'ы самого отчёта найдены и поняты (`POST /pro
 
 Артефакты headless-попытки сохранены в репозитории:
 
-- `research/scripts/mango/export_telecom.py` — идемпотентный скрипт с resume через `research/private/mango/session.json`.
-- `research/scripts/mango/endpoint_map.md` — карта endpoint'ов LK.
+- `integrations/mango/scripts/export_telecom.py` — идемпотентный скрипт с resume через `research/private/mango/session.json`.
+- `integrations/mango/scripts/endpoint_map.md` — карта endpoint'ов LK.
 - `research/private/mango/raw/01_lk_root..04_vpbx_login` — снимки шагов OIDC с маскированными секретами.
 - `research/private/mango/raw/spa/` — Angular-бандлы для будущего discovery.
 
@@ -116,7 +116,7 @@ Webhook «Конец звонка» — Mango может пушить событ
 - [Bobrovskih/mango-vpbx](https://github.com/Bobrovskih/mango-vpbx) — NodeJS SDK.
 - [Sharoff45/mango-office-api](https://github.com/Sharoff45/mango-office-api) — PHP.
 
-Для проекта «Тепло» SDK не обязателен — REST-вызовы простые, обёртку можно написать в одном файле `research/scripts/mango/vpbx_client.py` после получения ключей.
+Для проекта «Тепло» SDK не обязателен — REST-вызовы простые, обёртку можно написать в одном файле `integrations/mango/scripts/vpbx_client.py` после получения ключей.
 
 ## 3. Speech Analytics: транскрипты разговоров
 

@@ -20,9 +20,9 @@ from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-RAW_DIR = PROJECT_ROOT / "research/private/sber/statement"
+RAW_DIR = PROJECT_ROOT / "integrations/sber/private/statement"
 PROCESSED_DIR = PROJECT_ROOT / "research/processed/sber"
-PRIVATE_DIR = PROJECT_ROOT / "research/private/sber/processed"
+PRIVATE_DIR = PROJECT_ROOT / "integrations/sber/private/processed"
 
 
 def parse_date(value: str) -> dt.date:

@@ -50,7 +50,7 @@ DEFAULT_REQUEST_DIR = PRIVATE_ROOT / "requests"
 DEFAULT_RESPONSE_DIR = PRIVATE_ROOT / "responses"
 DEFAULT_UPLOAD_DIR = PRIVATE_ROOT / "uploads"
 DEFAULT_INTAKE_DB = PRIVATE_ROOT / "payment_intake.sqlite3"
-MACOS_OCR_SCRIPT = PROJECT_ROOT / "research/scripts/tbank/ocr_image_macos.swift"
+MACOS_OCR_SCRIPT = PROJECT_ROOT / "integrations/tbank/scripts/ocr_image_macos.swift"
 SEQUENCE_PATH = PRIVATE_ROOT / "document_number_sequence.json"
 DEFAULT_BASE_URL = "https://business.tbank.ru/openapi"
 DEFAULT_ORDER_BASE_URL = "https://secured-openapi.tbank.ru"
@@ -905,7 +905,7 @@ def request_file_payload(payload: dict[str, Any], args: argparse.Namespace) -> d
         requires_owner_review = True
     metadata: dict[str, Any] = {
         "created_at": stamp,
-        "source": "research/scripts/tbank/payment_order.py",
+        "source": "integrations/tbank/scripts/payment_order.py",
         "target_ui_bucket": "Платежи в работе -> На подпись",
         "api_endpoint": f"POST {PAYMENT_ORDER_SUBMIT_PATH}",
         "fallback_draft_endpoint": f"POST {PAYMENT_DRAFT_PATH}",
@@ -1054,7 +1054,7 @@ def upload_file_metadata(args: argparse.Namespace, source_path: Path, stored_pat
     return {
         "upload_id": stored_path.parent.name,
         "created_at": dt.datetime.now().replace(microsecond=0).isoformat(),
-        "source": "research/scripts/tbank/payment_order.py upload",
+        "source": "integrations/tbank/scripts/payment_order.py upload",
         "source_channel": args.source_channel,
         "sender": args.sender,
         "chat_id": args.chat_id,

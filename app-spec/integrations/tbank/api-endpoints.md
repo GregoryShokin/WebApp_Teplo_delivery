@@ -185,7 +185,7 @@ TBANK_API_PAYMENT_DRAFT_TOKEN
 
 ### Programmatic intake parsers
 
-Runtime-распознавание платежных оснований выполняется без LLM. Слой `research/scripts/tbank/payment_parsers.py` содержит registry source-specific parsers с интерфейсом `name`, `source_type`, `detect(text, metadata)`, `parse(text, metadata)`.
+Runtime-распознавание платежных оснований выполняется без LLM. Слой `integrations/tbank/scripts/payment_parsers.py` содержит registry source-specific parsers с интерфейсом `name`, `source_type`, `detect(text, metadata)`, `parse(text, metadata)`.
 
 Поддерживаемые типы оснований MVP:
 
@@ -281,10 +281,10 @@ Runtime-распознавание платежных оснований вып�
 
 Скрипты:
 
-- `research/scripts/tbank/export_statement.py` — read-only выгрузка `/api/v1/statement`, `.env`, `Authorization: Bearer ...`, `X-Request-Id`, `nextCursor`, raw в `research/private/tbank/`, маскированный stdout.
-- `research/scripts/tbank/build_cashflow.py` — безопасные агрегаты из raw: категории, контрагенты, дневной cashflow, report.
-- `research/scripts/tbank/payment_order.py` — upload-inbox, deterministic parser registry, подготовка платежного поручения из JSON/текста/PDF/image, валидация реквизитов, приватный payload; команда `upload` кладет исходный документ и metadata в `research/private/tbank/payment_orders/uploads/`, сохраняет `payment_basis` в `payment_intake.sqlite3`, основная команда `submit` отправляет через H2H `/payments-orders/payments-by-requisites/submit` в целевой контур `Платежи в работе -> На подпись`, fallback-команда `create-draft` создает обычный черновик через `/payment/create`.
-- `research/scripts/tbank/payment_parsers.py` — deterministic parsers для счетов, УПД, накладных, чеков, платежных поручений и известных контрагентов; runtime не использует LLM.
+- `integrations/tbank/scripts/export_statement.py` — read-only выгрузка `/api/v1/statement`, `.env`, `Authorization: Bearer ...`, `X-Request-Id`, `nextCursor`, raw в `research/private/tbank/`, маскированный stdout.
+- `integrations/tbank/scripts/build_cashflow.py` — безопасные агрегаты из raw: категории, контрагенты, дневной cashflow, report.
+- `integrations/tbank/scripts/payment_order.py` — upload-inbox, deterministic parser registry, подготовка платежного поручения из JSON/текста/PDF/image, валидация реквизитов, приватный payload; команда `upload` кладет исходный документ и metadata в `research/private/tbank/payment_orders/uploads/`, сохраняет `payment_basis` в `payment_intake.sqlite3`, основная команда `submit` отправляет через H2H `/payments-orders/payments-by-requisites/submit` в целевой контур `Платежи в работе -> На подпись`, fallback-команда `create-draft` создает обычный черновик через `/payment/create`.
+- `integrations/tbank/scripts/payment_parsers.py` — deterministic parsers для счетов, УПД, накладных, чеков, платежных поручений и известных контрагентов; runtime не использует LLM.
 
 Raw/private:
 
