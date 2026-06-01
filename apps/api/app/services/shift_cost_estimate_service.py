@@ -18,6 +18,7 @@ from app.services.payroll_calculator import (
     category_coeff,
     category_for_payroll_entry,
     fund_accrual_for_day,
+    percent_revenue_tiers,
     position_for_payroll_entry,
     role_category_rate,
     shift_pay_ratio,
@@ -29,7 +30,6 @@ from app.services.payroll_percent import (
     distribute_percent_pool,
     revenue_tier_rate,
 )
-from app.services.payroll_calculator import percent_revenue_tiers
 
 MONEY = Decimal("0.01")
 HOUR = Decimal(60)
@@ -45,6 +45,7 @@ STATION_ROLE_BY_LABEL = {
     "sushi": "sushi",
     "shawarma": "shawarma",
     "шаурма": "shawarma",
+    "горячий цех": "shawarma",
     "касса": "administrator",
     "administrator": "administrator",
 }
@@ -80,7 +81,10 @@ async def compute_shift_cost(
     planned_hours = (Decimal(planned_minutes) / HOUR).quantize(Decimal("0.01"))
     quality_reasons: list[str] = []
 
-    if planned_minutes > MAX_REVIEW_MINUTES or shift.planned_start_at.date() != shift.planned_end_at.date():
+    if (
+        planned_minutes > MAX_REVIEW_MINUTES
+        or shift.planned_start_at.date() != shift.planned_end_at.date()
+    ):
         quality_reasons.append("overnight_shift")
 
     payroll_role = payroll_role_for_scheduled_shift(shift, employee)
@@ -221,7 +225,11 @@ def revenue_percent_for_shift(
             "percent_status": "forecast_missing",
         }
 
-    rate = revenue_tier_rate(daily_revenue_forecast, shift.business_date, percent_revenue_tiers(settings))
+    rate = revenue_tier_rate(
+        daily_revenue_forecast,
+        shift.business_date,
+        percent_revenue_tiers(settings),
+    )
     daily_pool = compute_daily_percent_pool(
         daily_revenue_forecast,
         shift.business_date,
@@ -229,7 +237,10 @@ def revenue_percent_for_shift(
     )
     percent_shifts = percent_shifts_for_day(settings, same_day_shifts)
     distributions = distribute_percent_pool(daily_pool, percent_shifts)
-    weights = {item.employee_id: percent_shift_weight(settings, item, shift.business_date) for item in percent_shifts}
+    weights = {
+        item.employee_id: percent_shift_weight(settings, item, shift.business_date)
+        for item in percent_shifts
+    }
     total_weight = sum(weights.values(), Decimal("0"))
     current_weight = weights.get(shift.id, Decimal("0"))
     weight_share = current_weight / total_weight if total_weight > 0 else Decimal("0")
@@ -241,7 +252,9 @@ def revenue_percent_for_shift(
         "daily_total_weight": money_string(total_weight),
         "weight": money_string(current_weight),
         "weight_share": money_string(weight_share),
-        "percent_status": "calculated" if rate is not None and total_weight > 0 else "not_applicable",
+        "percent_status": (
+            "calculated" if rate is not None and total_weight > 0 else "not_applicable"
+        ),
     }
 
 
@@ -263,7 +276,11 @@ def percent_shifts_for_day(
                 station_key_for_payroll(same_day_shift.station_code),
             )
         minutes = min(planned_minutes_for_shift(same_day_shift), FULL_SHIFT_MINUTES)
-        coefficient = category_coeff(settings, category, same_day_shift.business_date) if category else Decimal("0")
+        coefficient = (
+            category_coeff(settings, category, same_day_shift.business_date)
+            if category
+            else Decimal("0")
+        )
         result.append(
             PercentShift(
                 employee_id=same_day_shift.id,
@@ -275,7 +292,11 @@ def percent_shifts_for_day(
     return result
 
 
-def percent_shift_weight(settings: Mapping[str, Any], shift: PercentShift, work_date: Any) -> Decimal:
+def percent_shift_weight(
+    settings: Mapping[str, Any],
+    shift: PercentShift,
+    work_date: Any,
+) -> Decimal:
     coefficient = (
         Decimal(str(shift.coefficient))
         if shift.coefficient is not None
@@ -295,7 +316,10 @@ def payroll_role_for_scheduled_shift(
     if station_role is not None:
         return station_role
     return (
-        assignment_role_for_payroll_context(shift.payroll_role, station_key_for_payroll(shift.station_code))
+        assignment_role_for_payroll_context(
+            shift.payroll_role,
+            station_key_for_payroll(shift.station_code),
+        )
         or assignment_role_from_employee(employee)
         or shift.payroll_role
     )

@@ -55,7 +55,14 @@ async def get_assignments(
         )
         .order_by(EmployeeRoleAssignment.is_primary.desc(), EmployeeRoleAssignment.payroll_role)
     )
-    return list(result.all())
+    return sorted(
+        [
+            assignment
+            for assignment in result.all()
+            if assignment.employee_id == employee_id and _assignment_active_on(assignment, on_date)
+        ],
+        key=lambda assignment: (not assignment.is_primary, assignment.payroll_role),
+    )
 
 
 async def set_primary(
@@ -483,6 +490,13 @@ def _active_on(on_date: date) -> Any:
             EmployeeRoleAssignment.effective_to.is_(None),
             EmployeeRoleAssignment.effective_to > on_date,
         ),
+    )
+
+
+def _assignment_active_on(assignment: EmployeeRoleAssignment, on_date: date) -> bool:
+    return (
+        assignment.effective_from <= on_date
+        and (assignment.effective_to is None or assignment.effective_to > on_date)
     )
 
 

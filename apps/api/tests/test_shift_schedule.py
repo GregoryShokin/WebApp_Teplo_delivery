@@ -12,6 +12,7 @@ from app.api.deps import CurrentActor
 from app.api.v1.routes.shift_schedule import _shift_to_read
 from app.models import Employee, EmployeeRoleAssignment, ScheduledShift, ShiftSchedule
 from app.services import shift_schedule_service
+from app.services.staff_taxonomy import default_station_for_payroll_role
 
 
 class FakeScalarResult:
@@ -70,6 +71,8 @@ class ShiftScheduleFakeSession:
             return FakeScalarResult(list(self.shifts.values()))
         if entity is Employee:
             return FakeScalarResult(list(self.employees.values()))
+        if entity is EmployeeRoleAssignment:
+            return FakeScalarResult(self.assignments)
         return FakeScalarResult([])
 
     async def execute(self, query: Any) -> FakeExecuteResult:
@@ -176,15 +179,23 @@ def employee(
     )
 
 
-def assignment(employee_id: uuid.UUID, *, payroll_role: str = "pizza") -> EmployeeRoleAssignment:
+def assignment(
+    employee_id: uuid.UUID,
+    *,
+    payroll_role: str = "pizza",
+    category: str = "category_2",
+    is_primary: bool = True,
+    effective_from: date = date(2026, 1, 1),
+    effective_to: date | None = None,
+) -> EmployeeRoleAssignment:
     return EmployeeRoleAssignment(
         id=uuid.uuid4(),
         employee_id=employee_id,
         payroll_role=payroll_role,
-        category="category_2",
-        is_primary=True,
-        effective_from=date(2026, 1, 1),
-        effective_to=None,
+        category=category,
+        is_primary=is_primary,
+        effective_from=effective_from,
+        effective_to=effective_to,
     )
 
 
@@ -289,7 +300,11 @@ async def test_upsert_shift_in_published_schedule_fails_409() -> None:
 async def test_unique_employee_per_day() -> None:
     sched = schedule()
     cook = employee()
-    session = ShiftScheduleFakeSession(schedules=[sched], employees=[cook])
+    session = ShiftScheduleFakeSession(
+        schedules=[sched],
+        employees=[cook],
+        assignments=[assignment(cook.id, payroll_role="pizza")],
+    )
 
     first = await shift_schedule_service.upsert_shift(
         session,  # type: ignore[arg-type]
@@ -318,6 +333,139 @@ async def test_unique_employee_per_day() -> None:
     assert len(session.shifts) == 1
     assert second.station_code == "Роллы"
     assert second.comment_private == "обновлено"
+
+
+async def test_upsert_shift_with_no_optional_fields_uses_defaults() -> None:
+    sched = schedule()
+    cook = employee()
+    session = ShiftScheduleFakeSession(
+        schedules=[sched],
+        employees=[cook],
+        assignments=[assignment(cook.id, payroll_role="pizza")],
+    )
+
+    created = await shift_schedule_service.upsert_shift(
+        session,  # type: ignore[arg-type]
+        sched.id,
+        business_date=date(2026, 6, 2),
+        employee_id=cook.id,
+        station_code=None,
+        planned_start_at=None,
+        planned_end_at=None,
+        comment_private=None,
+        actor=actor(),
+    )
+
+    assert created.payroll_role == "pizza"
+    assert created.station_code == "Пицца"
+    assert created.planned_start_at.hour == 10
+    assert created.planned_end_at.hour == 22
+    assert created.planned_start_at.tzinfo is not None
+
+
+async def test_upsert_shift_with_no_assignments_fails_422() -> None:
+    sched = schedule()
+    cook = employee()
+    session = ShiftScheduleFakeSession(schedules=[sched], employees=[cook])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await shift_schedule_service.upsert_shift(
+            session,  # type: ignore[arg-type]
+            sched.id,
+            business_date=date(2026, 6, 2),
+            employee_id=cook.id,
+            station_code=None,
+            planned_start_at=None,
+            planned_end_at=None,
+            comment_private=None,
+            actor=actor(),
+        )
+
+    assert exc_info.value.status_code == 422
+    assert "не назначена ни одна роль" in exc_info.value.detail
+
+
+async def test_upsert_shift_with_role_not_in_assignments_fails_422() -> None:
+    sched = schedule()
+    cook = employee()
+    session = ShiftScheduleFakeSession(
+        schedules=[sched],
+        employees=[cook],
+        assignments=[assignment(cook.id, payroll_role="pizza")],
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await shift_schedule_service.upsert_shift(
+            session,  # type: ignore[arg-type]
+            sched.id,
+            business_date=date(2026, 6, 2),
+            employee_id=cook.id,
+            payroll_role="administrator",
+            station_code=None,
+            planned_start_at=datetime(2026, 6, 2, 10, tzinfo=UTC),
+            planned_end_at=datetime(2026, 6, 2, 22, tzinfo=UTC),
+            comment_private=None,
+            actor=actor(),
+        )
+
+    assert exc_info.value.status_code == 422
+    assert "не назначена этому сотруднику" in exc_info.value.detail
+
+
+async def test_upsert_shift_with_explicit_role_uses_it() -> None:
+    sched = schedule()
+    cook = employee()
+    session = ShiftScheduleFakeSession(
+        schedules=[sched],
+        employees=[cook],
+        assignments=[
+            assignment(cook.id, payroll_role="pizza", is_primary=True),
+            assignment(cook.id, payroll_role="sushi", is_primary=False),
+        ],
+    )
+
+    created = await shift_schedule_service.upsert_shift(
+        session,  # type: ignore[arg-type]
+        sched.id,
+        business_date=date(2026, 6, 2),
+        employee_id=cook.id,
+        payroll_role="sushi",
+        station_code=None,
+        planned_start_at=None,
+        planned_end_at=None,
+        comment_private=None,
+        actor=actor(),
+    )
+
+    assert created.payroll_role == "sushi"
+    assert created.station_code == "Роллы"
+
+
+async def test_upsert_shift_explicit_times_override_defaults() -> None:
+    sched = schedule()
+    cook = employee()
+    start = datetime(2026, 6, 2, 8, tzinfo=UTC)
+    end = datetime(2026, 6, 2, 18, tzinfo=UTC)
+    session = ShiftScheduleFakeSession(
+        schedules=[sched],
+        employees=[cook],
+        assignments=[assignment(cook.id, payroll_role="pizza")],
+    )
+
+    created = await shift_schedule_service.upsert_shift(
+        session,  # type: ignore[arg-type]
+        sched.id,
+        business_date=date(2026, 6, 2),
+        employee_id=cook.id,
+        station_code="Пицца",
+        planned_start_at=start,
+        planned_end_at=end,
+        comment_private=None,
+        actor=actor(),
+    )
+
+    assert created.planned_start_at == start
+    assert created.planned_end_at == end
 
 
 async def test_publish_supersedes_overlapping() -> None:
@@ -469,10 +617,61 @@ async def test_employees_roster_filters_payroll_positions() -> None:
     assert cook_row["allowances"]["senior"] is True
 
 
+async def test_roster_returns_available_roles_with_primary_flag() -> None:
+    cook = employee(position="Повар", full_name="Повар Активный")
+    session = ShiftScheduleFakeSession(
+        employees=[cook],
+        assignments=[
+            assignment(cook.id, payroll_role="pizza", is_primary=True),
+            assignment(cook.id, payroll_role="sushi", category="category_3", is_primary=False),
+        ],
+    )
+
+    roster = await shift_schedule_service.list_employees_roster(session)  # type: ignore[arg-type]
+
+    roles = next(row for row in roster if row["id"] == cook.id)["available_roles"]
+    assert roles == [
+        {
+            "payroll_role": "pizza",
+            "category": "category_2",
+            "is_primary": True,
+            "default_station_code": "Пицца",
+        },
+        {
+            "payroll_role": "sushi",
+            "category": "category_3",
+            "is_primary": False,
+            "default_station_code": "Роллы",
+        },
+    ]
+
+
+async def test_roster_returns_empty_available_roles_for_employee_without_assignments() -> None:
+    cook = employee(position="Повар", full_name="Повар без роли")
+    session = ShiftScheduleFakeSession(employees=[cook])
+
+    roster = await shift_schedule_service.list_employees_roster(session)  # type: ignore[arg-type]
+
+    cook_row = next(row for row in roster if row["id"] == cook.id)
+    assert cook_row["primary_payroll_role"] is None
+    assert cook_row["available_roles"] == []
+
+
+def test_default_station_mapping() -> None:
+    assert default_station_for_payroll_role("pizza") == "Пицца"
+    assert default_station_for_payroll_role("administrator") == "Касса"
+    assert default_station_for_payroll_role("prep") is None
+    assert default_station_for_payroll_role("Пиццерист") == "Пицца"
+
+
 async def test_shift_interval_longer_than_16h_fails_422() -> None:
     sched = schedule()
     cook = employee()
-    session = ShiftScheduleFakeSession(schedules=[sched], employees=[cook])
+    session = ShiftScheduleFakeSession(
+        schedules=[sched],
+        employees=[cook],
+        assignments=[assignment(cook.id, payroll_role="pizza")],
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await shift_schedule_service.upsert_shift(

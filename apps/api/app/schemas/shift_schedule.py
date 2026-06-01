@@ -49,12 +49,13 @@ class ScheduledShiftUpsertRequest(BaseModel):
 
     business_date: date
     employee_id: uuid.UUID
+    payroll_role: str | None = Field(default=None, max_length=64)
     station_code: str | None = Field(default=None, max_length=64)
-    planned_start_at: datetime
-    planned_end_at: datetime
+    planned_start_at: datetime | None = None
+    planned_end_at: datetime | None = None
     comment_private: str | None = Field(default=None, max_length=2000)
 
-    @field_validator("station_code", "comment_private")
+    @field_validator("payroll_role", "station_code", "comment_private")
     @classmethod
     def strip_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -100,12 +101,20 @@ class EmployeeRosterAllowanceRead(BaseModel):
     deputy: bool
 
 
+class EmployeeRosterAvailableRoleRead(BaseModel):
+    payroll_role: str
+    category: str
+    is_primary: bool
+    default_station_code: str | None = None
+
+
 class EmployeeRosterRow(BaseModel):
     id: uuid.UUID
     full_name: str
     position: str
     primary_payroll_role: str | None = None
     default_cooking_station: str | None = None
+    available_roles: list[EmployeeRosterAvailableRoleRead] = Field(default_factory=list)
     allowances: EmployeeRosterAllowanceRead
 
 

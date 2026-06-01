@@ -73,6 +73,19 @@ PREMIUM_APPLICABILITY = {
     "Посудомойка": {"is_senior": False, "is_deputy_senior": False},
 }
 
+DEFAULT_STATION_BY_PAYROLL_ROLE = {
+    "administrator": "Касса",
+    "sushi": "Роллы",
+    "pizza": "Пицца",
+    "shawarma": "Горячий цех",
+    "prep": None,
+}
+
+PAYROLL_ROLE_ALIASES = {
+    **{label: role for role, label in PAYROLL_ROLE_LABELS.items()},
+    "Касса": "administrator",
+}
+
 def normalize_position(position: str | None) -> str:
     return _normalize_position(position)
 
@@ -114,6 +127,13 @@ def categories_for_payroll_role(payroll_role: str | None) -> tuple[str, ...]:
 
 def payroll_role_allows_category(payroll_role: str, category: str | None) -> bool:
     return category in categories_for_payroll_role(payroll_role)
+
+
+def default_station_for_payroll_role(role: str | None) -> str | None:
+    if role is None:
+        return None
+    payroll_role = PAYROLL_ROLE_ALIASES.get(role, role)
+    return DEFAULT_STATION_BY_PAYROLL_ROLE.get(payroll_role)
 
 
 def premium_applicability(position: str | None) -> dict[str, bool]:

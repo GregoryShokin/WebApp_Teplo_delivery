@@ -1,22 +1,31 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from fastapi import status as http_status
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor
-from app.models import Employee, EmployeeRoleAssignment, ScheduledShift, ShiftSchedule
+from app.models import Employee, ScheduledShift, ShiftSchedule
+from app.services import employee_assignments
+from app.services.staff_taxonomy import (
+    PAYROLL_ROLE_LABELS,
+    default_station_for_payroll_role,
+)
 
 SCHEDULE_STATUSES = frozenset({"draft", "published", "superseded"})
 SCHEDULE_EMPLOYEE_POSITIONS = frozenset({"Повар", "Кассир"})
 MAX_SHIFT_HOURS = Decimal("16")
+LOCATION_TZ = ZoneInfo("Europe/Moscow")
+DEFAULT_SHIFT_START = time(10, 0)
+DEFAULT_SHIFT_END = time(22, 0)
 
 
 async def create_schedule(
@@ -222,20 +231,28 @@ async def upsert_shift(
     business_date: date,
     employee_id: uuid.UUID,
     payroll_role: str | None = None,
-    station_code: str | None,
-    planned_start_at: datetime,
-    planned_end_at: datetime,
+    station_code: str | None = None,
+    planned_start_at: datetime | None = None,
+    planned_end_at: datetime | None = None,
     comment_private: str | None,
     actor: CurrentActor,
 ) -> ScheduledShift:
-    del payroll_role
     schedule = await _get_draft_schedule(session, schedule_id)
     employee = await _get_schedulable_employee(session, employee_id)
+    resolved_role, resolved_station, resolved_start, resolved_end = await _resolve_shift_fields(
+        session,
+        employee=employee,
+        business_date=business_date,
+        payroll_role=payroll_role,
+        station_code=station_code,
+        planned_start_at=planned_start_at,
+        planned_end_at=planned_end_at,
+    )
     _validate_shift_payload(
         schedule,
         business_date=business_date,
-        planned_start_at=planned_start_at,
-        planned_end_at=planned_end_at,
+        planned_start_at=resolved_start,
+        planned_end_at=resolved_end,
     )
 
     existing = await _find_shift_for_employee_day(
@@ -256,10 +273,10 @@ async def upsert_shift(
 
     _assign_shift_fields(
         existing,
-        employee=employee,
-        station_code=station_code,
-        planned_start_at=planned_start_at,
-        planned_end_at=planned_end_at,
+        payroll_role=resolved_role,
+        station_code=resolved_station,
+        planned_start_at=resolved_start,
+        planned_end_at=resolved_end,
         comment_private=comment_private,
     )
     await _commit_refresh(session, existing)
@@ -273,9 +290,10 @@ async def update_shift(
     *,
     business_date: date,
     employee_id: uuid.UUID,
-    station_code: str | None,
-    planned_start_at: datetime,
-    planned_end_at: datetime,
+    payroll_role: str | None = None,
+    station_code: str | None = None,
+    planned_start_at: datetime | None = None,
+    planned_end_at: datetime | None = None,
     comment_private: str | None,
     actor: CurrentActor,
 ) -> ScheduledShift:
@@ -284,21 +302,30 @@ async def update_shift(
     if shift is None or shift.shift_schedule_id != schedule_id:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Смена не найдена")
     employee = await _get_schedulable_employee(session, employee_id)
+    resolved_role, resolved_station, resolved_start, resolved_end = await _resolve_shift_fields(
+        session,
+        employee=employee,
+        business_date=business_date,
+        payroll_role=payroll_role,
+        station_code=station_code,
+        planned_start_at=planned_start_at,
+        planned_end_at=planned_end_at,
+    )
     _validate_shift_payload(
         schedule,
         business_date=business_date,
-        planned_start_at=planned_start_at,
-        planned_end_at=planned_end_at,
+        planned_start_at=resolved_start,
+        planned_end_at=resolved_end,
     )
     shift.business_date = business_date
     shift.employee_id = employee_id
     shift.created_by_user_id = shift.created_by_user_id or _actor_user_id(actor)
     _assign_shift_fields(
         shift,
-        employee=employee,
-        station_code=station_code,
-        planned_start_at=planned_start_at,
-        planned_end_at=planned_end_at,
+        payroll_role=resolved_role,
+        station_code=resolved_station,
+        planned_start_at=resolved_start,
+        planned_end_at=resolved_end,
         comment_private=comment_private,
     )
     await _commit_refresh(session, shift)
@@ -395,48 +422,45 @@ async def bulk_copy_week(
 
 async def list_employees_roster(session: AsyncSession) -> list[dict[str, Any]]:
     today = date.today()
-    result = await session.execute(
-        select(Employee, EmployeeRoleAssignment)
-        .outerjoin(
-            EmployeeRoleAssignment,
-            and_(
-                EmployeeRoleAssignment.employee_id == Employee.id,
-                EmployeeRoleAssignment.is_primary.is_(True),
-                EmployeeRoleAssignment.effective_from <= today,
-                or_(
-                    EmployeeRoleAssignment.effective_to.is_(None),
-                    EmployeeRoleAssignment.effective_to > today,
-                ),
-            ),
-        )
+    result = await session.scalars(
+        select(Employee)
         .where(
             Employee.position.in_(SCHEDULE_EMPLOYEE_POSITIONS),
             Employee.status == "active",
         )
         .order_by(Employee.full_name)
     )
-    rows = result.all()
-    roster: dict[uuid.UUID, dict[str, Any]] = {}
-    for employee, assignment in rows:
+    roster: list[dict[str, Any]] = []
+    for employee in result.all():
         if employee.position not in SCHEDULE_EMPLOYEE_POSITIONS or employee.status != "active":
             continue
-        if assignment is not None and not _is_assignment_active(assignment, today):
-            assignment = None
-        roster.setdefault(
-            employee.id,
+        assignments = await employee_assignments.get_assignments(session, employee.id, today)
+        primary = next((assignment for assignment in assignments if assignment.is_primary), None)
+        roster.append(
             {
                 "id": employee.id,
                 "full_name": employee.full_name,
                 "position": employee.position,
-                "primary_payroll_role": assignment.payroll_role if assignment else None,
+                "primary_payroll_role": primary.payroll_role if primary else None,
                 "default_cooking_station": employee.default_cooking_station,
+                "available_roles": [
+                    {
+                        "payroll_role": assignment.payroll_role,
+                        "category": assignment.category,
+                        "is_primary": bool(assignment.is_primary),
+                        "default_station_code": default_station_for_payroll_role(
+                            assignment.payroll_role
+                        ),
+                    }
+                    for assignment in assignments
+                ],
                 "allowances": {
                     "senior": bool(employee.is_senior),
                     "deputy": bool(employee.is_deputy_senior),
                 },
             },
         )
-    return sorted(roster.values(), key=lambda row: row["full_name"])
+    return sorted(roster, key=lambda row: row["full_name"])
 
 
 def planned_hours(start: datetime, end: datetime) -> Decimal:
@@ -474,6 +498,66 @@ async def _get_schedulable_employee(session: AsyncSession, employee_id: uuid.UUI
             detail="В график можно ставить только Поваров и Кассиров",
         )
     return employee
+
+
+async def _resolve_shift_fields(
+    session: AsyncSession,
+    *,
+    employee: Employee,
+    business_date: date,
+    payroll_role: str | None,
+    station_code: str | None,
+    planned_start_at: datetime | None,
+    planned_end_at: datetime | None,
+) -> tuple[str, str | None, datetime, datetime]:
+    assignments = await employee_assignments.get_assignments(session, employee.id, business_date)
+    if not assignments:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="У сотрудника не назначена ни одна роль на эту дату. Назначьте роль в Штате.",
+        )
+
+    assignment_roles = {assignment.payroll_role for assignment in assignments}
+    if payroll_role is not None:
+        if payroll_role not in assignment_roles:
+            available = ", ".join(_role_display_name(role) for role in sorted(assignment_roles))
+            raise HTTPException(
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Роль «{_role_display_name(payroll_role)}» не назначена этому сотруднику."
+                    f" Доступны: {available}"
+                ),
+            )
+        resolved_role = payroll_role
+    else:
+        primary = next((assignment for assignment in assignments if assignment.is_primary), None)
+        if primary is None:
+            raise HTTPException(
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "У сотрудника нет основной роли на эту дату. "
+                    "Назначьте основную роль в Штате."
+                ),
+            )
+        resolved_role = primary.payroll_role
+
+    resolved_station = (
+        station_code
+        if station_code is not None
+        else default_station_for_payroll_role(resolved_role)
+    )
+    resolved_start = planned_start_at or datetime.combine(
+        business_date,
+        DEFAULT_SHIFT_START,
+        tzinfo=LOCATION_TZ,
+    )
+
+    return (
+        resolved_role,
+        resolved_station,
+        resolved_start,
+        planned_end_at or datetime.combine(business_date, DEFAULT_SHIFT_END, tzinfo=LOCATION_TZ),
+    )
 
 
 def _validate_shift_payload(
@@ -556,13 +640,13 @@ async def _list_shifts_for_schedule(
 def _assign_shift_fields(
     shift: ScheduledShift,
     *,
-    employee: Employee,
+    payroll_role: str,
     station_code: str | None,
     planned_start_at: datetime,
     planned_end_at: datetime,
     comment_private: str | None,
 ) -> None:
-    shift.payroll_role = employee.position
+    shift.payroll_role = payroll_role
     shift.station_code = station_code
     shift.planned_start_at = planned_start_at
     shift.planned_end_at = planned_end_at
@@ -613,12 +697,8 @@ def _is_timezone_aware(value: datetime) -> bool:
     return value.tzinfo is not None and value.utcoffset() is not None
 
 
-def _is_assignment_active(assignment: EmployeeRoleAssignment, today: date) -> bool:
-    return (
-        assignment.is_primary
-        and assignment.effective_from <= today
-        and (assignment.effective_to is None or assignment.effective_to > today)
-    )
+def _role_display_name(role: str) -> str:
+    return PAYROLL_ROLE_LABELS.get(role, role)
 
 
 def _actor_user_id(actor: CurrentActor) -> uuid.UUID | None:

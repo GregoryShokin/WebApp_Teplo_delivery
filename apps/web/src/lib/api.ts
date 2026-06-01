@@ -691,10 +691,18 @@ export type PlanFactSummaryRead = {
 export type ScheduledShiftUpsertPayload = {
   business_date: string;
   employee_id: string;
+  payroll_role?: string | null;
   station_code?: string | null;
-  planned_start_at: string;
-  planned_end_at: string;
+  planned_start_at?: string | null;
+  planned_end_at?: string | null;
   comment_private?: string | null;
+};
+
+export type EmployeeRosterAvailableRole = {
+  payroll_role: string;
+  category: string;
+  is_primary: boolean;
+  default_station_code: string | null;
 };
 
 export type EmployeeRosterRow = {
@@ -703,6 +711,7 @@ export type EmployeeRosterRow = {
   position: "Повар" | "Кассир" | string;
   primary_payroll_role: string | null;
   default_cooking_station: string | null;
+  available_roles: EmployeeRosterAvailableRole[];
   allowances: {
     senior: boolean;
     deputy: boolean;

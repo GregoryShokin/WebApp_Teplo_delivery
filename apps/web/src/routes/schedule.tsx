@@ -15,6 +15,7 @@ import {
   LoaderCircle,
   Lock,
   Percent,
+  Pencil,
   Plus,
   RefreshCw,
   Send,
@@ -84,13 +85,13 @@ import {
   listRuns,
   listSchedules,
   overrideForecast,
-  patchShift,
   publishSchedule,
   recomputeForecast,
   removeForecastOverride,
   runCostForecast,
   upsertShift,
   type EmployeeRosterRow,
+  type PayrollRole,
   type PayrollForecastRunRead,
   type PlanFactDayRowRead,
   type PlanFactDeviationStatus,
@@ -104,6 +105,7 @@ import {
   type ScheduledShiftRead,
   type ScheduledShiftUpsertPayload,
 } from "@/lib/api";
+import { PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
 import { cn } from "@/lib/utils";
 
 type ViewMode = "employees" | "stations" | "planFact";
@@ -118,10 +120,16 @@ type ShiftDialogState = {
   shift: ScheduledShiftRead | null;
   employeeId: string;
   businessDate: string;
+  payrollRole: string | null;
   stationCode: string | null;
   startTime: string;
   endTime: string;
   comment: string;
+};
+
+type FocusEditButtonTarget = {
+  employeeId: string;
+  businessDate: string;
 };
 
 type CopyWeekState = {
@@ -150,7 +158,7 @@ const DAY_CELL_WIDTH = 128;
 const EMPLOYEE_COLUMN_WIDTH = 230;
 const STATION_COLUMN_WIDTH = 170;
 const MOSCOW_OFFSET = "+03:00";
-const stationOptions = ["Пицца", "Роллы", "Касса", "Шаурма"];
+const stationOptions = ["Пицца", "Роллы", "Горячий цех", "Касса", "Шаурма"];
 const stationOrder = [...stationOptions, "(без станции)"];
 const weekdayLabels = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
@@ -173,6 +181,7 @@ export function ScheduleRoute() {
     defaultScheduleDraft(),
   );
   const [shiftDialog, setShiftDialog] = useState<ShiftDialogState | null>(null);
+  const [focusEditButton, setFocusEditButton] = useState<FocusEditButtonTarget | null>(null);
   const [forecastDialog, setForecastDialog] = useState<ForecastDialogState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ScheduledShiftRead | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
@@ -299,20 +308,31 @@ export function ScheduleRoute() {
   });
 
   const saveShiftMutation = useMutation({
-    mutationFn: (variables: {
-      scheduleId: string;
-      shiftId?: string;
-      payload: ScheduledShiftUpsertPayload;
-    }) =>
-      variables.shiftId
-        ? patchShift(variables.scheduleId, variables.shiftId, variables.payload)
-        : upsertShift(variables.scheduleId, variables.payload),
+    mutationFn: (variables: { scheduleId: string; payload: ScheduledShiftUpsertPayload }) =>
+      upsertShift(variables.scheduleId, variables.payload),
     onSuccess: async () => {
       toast.success("Смена сохранена");
       setShiftDialog(null);
       await invalidateCurrentSchedule();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить смену")),
+  });
+
+  const quickCreateShiftMutation = useMutation({
+    mutationFn: (variables: { scheduleId: string; employeeId: string; businessDate: string }) =>
+      upsertShift(variables.scheduleId, {
+        employee_id: variables.employeeId,
+        business_date: variables.businessDate,
+      }),
+    onSuccess: async (_shift, variables) => {
+      toast.success("Смена добавлена");
+      setFocusEditButton({
+        employeeId: variables.employeeId,
+        businessDate: variables.businessDate,
+      });
+      await invalidateCurrentSchedule();
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось добавить смену")),
   });
 
   const deleteShiftMutation = useMutation({
@@ -457,6 +477,20 @@ export function ScheduleRoute() {
     setCostHistoryOpen(false);
   }, [selectedScheduleId]);
 
+  useEffect(() => {
+    if (!focusEditButton) {
+      return;
+    }
+    const button = document.querySelector<HTMLButtonElement>(
+      `button[data-employee-id="${focusEditButton.employeeId}"][data-business-date="${focusEditButton.businessDate}"]`,
+    );
+    if (!button) {
+      return;
+    }
+    button.focus();
+    setFocusEditButton(null);
+  }, [currentSchedule?.shifts, focusEditButton]);
+
   async function invalidateCurrentSchedule() {
     await queryClient.invalidateQueries({ queryKey: ["schedule", selectedScheduleId] });
     await queryClient.invalidateQueries({ queryKey: ["schedules"] });
@@ -483,18 +517,41 @@ export function ScheduleRoute() {
       return;
     }
     const shift = options.shift ?? null;
+    const employee = roster.find(
+      (item) => item.id === (shift?.employee_id ?? options.employeeId),
+    );
     const fallbackStation =
-      options.stationCode ??
-      defaultStationForEmployee(roster.find((employee) => employee.id === options.employeeId));
+      options.stationCode !== undefined
+        ? options.stationCode
+        : shift
+          ? shift.station_code
+          : defaultStationForEmployee(employee);
+    const fallbackRole = shift
+      ? roleForShiftOrPrimary(shift, employee)
+      : defaultRoleForEmployeeAtStation(employee, fallbackStation) ??
+        employee?.primary_payroll_role ??
+        null;
     setShiftDialog({
       mode: shift ? "edit" : "create",
       shift,
       employeeId: shift?.employee_id ?? options.employeeId ?? "",
       businessDate: shift?.business_date ?? options.businessDate,
-      stationCode: shift?.station_code ?? fallbackStation,
+      payrollRole: fallbackRole,
+      stationCode: shift ? shift.station_code : fallbackStation,
       startTime: shift ? timeFromDateTime(shift.planned_start_at) : "10:00",
       endTime: shift ? timeFromDateTime(shift.planned_end_at) : "22:00",
       comment: shift?.comment_private ?? "",
+    });
+  }
+
+  function handleEmployeeEmptyCellClick(employee: EmployeeRosterRow, businessDate: string) {
+    if (!currentSchedule || isLocked || quickCreateShiftMutation.isPending) {
+      return;
+    }
+    quickCreateShiftMutation.mutate({
+      scheduleId: currentSchedule.id,
+      employeeId: employee.id,
+      businessDate,
     });
   }
 
@@ -503,12 +560,18 @@ export function ScheduleRoute() {
       toast.error("Выберите сотрудника");
       return;
     }
+    const employee = roster.find((item) => item.id === shiftDialog.employeeId);
+    const payrollRole =
+      shiftDialog.payrollRole ??
+      defaultRoleForEmployeeAtStation(employee, shiftDialog.stationCode) ??
+      employee?.primary_payroll_role ??
+      null;
     saveShiftMutation.mutate({
       scheduleId: currentSchedule.id,
-      shiftId: shiftDialog.shift?.id,
       payload: {
         business_date: shiftDialog.businessDate,
         employee_id: shiftDialog.employeeId,
+        payroll_role: payrollRole,
         station_code: shiftDialog.stationCode,
         planned_start_at: composeDateTime(
           shiftDialog.businessDate,
@@ -858,13 +921,13 @@ export function ScheduleRoute() {
           days={visibleDays}
           isLoading={scheduleQuery.isLoading || rosterQuery.isLoading}
           isLocked={isLocked}
-          onCellClick={(employee, day, shift) =>
+          onEditShift={(shift) =>
             openShiftDialog({
-              employeeId: employee.id,
-              businessDate: day,
+              businessDate: shift.business_date,
               shift,
             })
           }
+          onEmptyCellClick={handleEmployeeEmptyCellClick}
           costByShiftId={costEstimatesByShiftId}
           roster={roster}
           shiftByEmployeeDay={shiftByEmployeeDay}
@@ -2155,7 +2218,8 @@ function EmployeeScheduleGrid({
   days,
   isLoading,
   isLocked,
-  onCellClick,
+  onEditShift,
+  onEmptyCellClick,
   roster,
   shiftByEmployeeDay,
 }: {
@@ -2163,11 +2227,8 @@ function EmployeeScheduleGrid({
   days: string[];
   isLoading: boolean;
   isLocked: boolean;
-  onCellClick: (
-    employee: EmployeeRosterRow,
-    day: string,
-    shift: ScheduledShiftRead | undefined,
-  ) => void;
+  onEditShift: (shift: ScheduledShiftRead) => void;
+  onEmptyCellClick: (employee: EmployeeRosterRow, day: string) => void;
   roster: EmployeeRosterRow[];
   shiftByEmployeeDay: Map<string, ScheduledShiftRead>;
 }) {
@@ -2218,18 +2279,32 @@ function EmployeeScheduleGrid({
                     return (
                       <td
                         className={cn(
-                          "h-[72px] border-b border-r p-2 align-top",
-                          isLocked ? "bg-muted/10" : "cursor-pointer hover:bg-primary/5",
+                          "group relative h-[72px] border-b border-r p-2 align-top",
+                          !shift && !isLocked && "cursor-pointer hover:bg-primary/5",
+                          isLocked && "bg-muted/10",
                         )}
                         key={day}
-                        onClick={() => onCellClick(employee, day, shift)}
+                        onClick={() => {
+                          if (!shift && !isLocked) {
+                            onEmptyCellClick(employee, day);
+                          }
+                        }}
                         style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
                       >
                         {shift ? (
-                          <ShiftPill
-                            estimate={costByShiftId.get(shift.id)}
-                            shift={shift}
-                          />
+                          <>
+                            <ShiftPill
+                              estimate={costByShiftId.get(shift.id)}
+                              shift={shift}
+                            />
+                            {!isLocked ? (
+                              <EditShiftButton
+                                businessDate={day}
+                                employeeId={employee.id}
+                                onClick={() => onEditShift(shift)}
+                              />
+                            ) : null}
+                          </>
                         ) : null}
                       </td>
                     );
@@ -2299,49 +2374,85 @@ function StationScheduleGrid({
                   >
                     {row.station}
                   </td>
-                  {days.map((day) => (
-                    <td
-                      className={cn(
-                        "h-[86px] border-b border-r p-2 align-top",
-                        isLocked ? "bg-muted/10" : "cursor-pointer hover:bg-primary/5",
-                      )}
-                      key={day}
-                      onClick={() => onCellClick(row.station, day)}
-                      style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
-                    >
-                      <div className="space-y-1">
-                        {(row.byDay.get(day) ?? []).map((shift) => (
-                          <button
-                            className="w-full rounded-md border bg-background px-2 py-1 text-left text-xs hover:border-primary/50"
-                            key={shift.id}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onShiftClick(shift);
-                            }}
-                            title={shiftTitle(shift, costByShiftId.get(shift.id))}
-                            type="button"
-                          >
-                            <div className="truncate font-medium">{shift.employee_full_name}</div>
-                            <div className="tabular-nums text-muted-foreground">
-                              {formatShiftTime(shift)}
-                            </div>
-                            {costByShiftId.get(shift.id) ? (
+                  {days.map((day) => {
+                    const dayShifts = row.byDay.get(day) ?? [];
+                    return (
+                      <td
+                        className={cn(
+                          "h-[86px] border-b border-r p-2 align-top",
+                          dayShifts.length === 0 &&
+                            !isLocked &&
+                            "cursor-pointer hover:bg-primary/5",
+                          isLocked && "bg-muted/10",
+                        )}
+                        key={day}
+                        onClick={() => {
+                          if (dayShifts.length === 0 && !isLocked) {
+                            onCellClick(row.station, day);
+                          }
+                        }}
+                        style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
+                      >
+                        <div className="space-y-1">
+                          {dayShifts.map((shift) => (
+                            <div
+                              className={cn(
+                                "group relative w-full rounded-md border px-2 py-1 pr-7 text-left text-xs",
+                                roleColorClasses(shift.payroll_role).container,
+                              )}
+                              key={shift.id}
+                              onClick={(event) => event.stopPropagation()}
+                              title={shiftTitle(shift, costByShiftId.get(shift.id))}
+                            >
                               <div
                                 className={cn(
-                                  "mt-0.5 tabular-nums",
-                                  shiftCostClass(costByShiftId.get(shift.id)),
+                                  "truncate font-medium",
+                                  roleColorClasses(shift.payroll_role).primaryText,
                                 )}
                               >
-                                {formatMoneyWithCurrency(
-                                  costByShiftId.get(shift.id)?.total_cost_estimate ?? null,
-                                )}
+                                {shift.employee_full_name}
                               </div>
-                            ) : null}
-                          </button>
-                        ))}
-                      </div>
-                    </td>
-                  ))}
+                              <div
+                                className={cn(
+                                  "tabular-nums",
+                                  roleColorClasses(shift.payroll_role).secondaryText,
+                                )}
+                              >
+                                {formatShiftTime(shift)}
+                              </div>
+                              <div
+                                className={cn(
+                                  "truncate",
+                                  roleColorClasses(shift.payroll_role).secondaryText,
+                                )}
+                              >
+                                {payrollRoleLabel(shift.payroll_role)}
+                              </div>
+                              {costByShiftId.get(shift.id) ? (
+                                <div
+                                  className={cn(
+                                    "mt-0.5 tabular-nums",
+                                    shiftCostClass(costByShiftId.get(shift.id), shift.payroll_role),
+                                  )}
+                                >
+                                  {formatMoneyWithCurrency(
+                                    costByShiftId.get(shift.id)?.total_cost_estimate ?? null,
+                                  )}
+                                </div>
+                              ) : null}
+                              {!isLocked ? (
+                                <EditShiftButton
+                                  businessDate={shift.business_date}
+                                  employeeId={shift.employee_id}
+                                  onClick={() => onShiftClick(shift)}
+                                />
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    );
+                  })}
                 </tr>
               ))
             )}
@@ -2352,6 +2463,33 @@ function StationScheduleGrid({
   );
 }
 
+function EditShiftButton({
+  businessDate,
+  employeeId,
+  onClick,
+}: {
+  businessDate: string;
+  employeeId: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-label="Редактировать смену"
+      className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-sm border bg-background/95 text-muted-foreground opacity-0 shadow-sm transition hover:text-foreground focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring group-focus-within:opacity-100 group-hover:opacity-100"
+      data-business-date={businessDate}
+      data-employee-id={employeeId}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      title="Редактировать смену"
+      type="button"
+    >
+      <Pencil size={14} aria-hidden="true" />
+    </button>
+  );
+}
+
 function ShiftPill({
   estimate,
   shift,
@@ -2359,17 +2497,21 @@ function ShiftPill({
   estimate: ShiftCostEstimateRead | undefined;
   shift: ScheduledShiftRead;
 }) {
+  const colors = roleColorClasses(shift.payroll_role);
+
   return (
     <div
-      className="rounded-md border border-primary/20 bg-primary/10 px-2 py-1.5 text-xs"
+      className={cn("rounded-md border px-2 py-1.5 text-xs", colors.container)}
       title={shiftTitle(shift, estimate)}
     >
-      <div className="font-semibold tabular-nums text-primary">{formatShiftTime(shift)}</div>
-      <div className="mt-1 truncate text-muted-foreground">
-        {shift.station_code || stationForPayrollRole(shift.payroll_role)}
+      <div className={cn("font-semibold tabular-nums", colors.primaryText)}>
+        {formatShiftTime(shift)}
+      </div>
+      <div className={cn("mt-1 truncate", colors.secondaryText)}>
+        {payrollRoleLabel(shift.payroll_role)}
       </div>
       {estimate ? (
-        <div className={cn("mt-1 tabular-nums", shiftCostClass(estimate))}>
+        <div className={cn("mt-1 tabular-nums", shiftCostClass(estimate, shift.payroll_role))}>
           {formatMoneyWithCurrency(estimate.total_cost_estimate)}
         </div>
       ) : null}
@@ -2481,6 +2623,13 @@ function ShiftDialog({
   state: ShiftDialogState | null;
 }) {
   const selectedEmployee = employees.find((employee) => employee.id === state?.employeeId);
+  const employeeOptions =
+    state?.mode === "create" && state.stationCode
+      ? employees.filter((employee) => defaultRoleForEmployeeAtStation(employee, state.stationCode))
+      : employees;
+  const selectedRole = selectedEmployee?.available_roles.find(
+    (role) => role.payroll_role === state?.payrollRole,
+  );
   const plannedHours = state
     ? hoursBetween(state.businessDate, state.startTime, state.endTime)
     : 0;
@@ -2496,9 +2645,19 @@ function ShiftDialog({
     <Dialog open={Boolean(state)} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Смена</DialogTitle>
+          <DialogTitle>
+            {state?.mode === "edit"
+              ? `Смена ${formatDate(state.businessDate)}, ${
+                  selectedEmployee?.full_name ?? state.shift?.employee_full_name ?? ""
+                }`
+              : "Новая смена"}
+          </DialogTitle>
           <DialogDescription>
-            {state ? formatDate(state.businessDate) : ""}
+            {state?.mode === "create"
+              ? formatDate(state.businessDate)
+              : selectedRole
+                ? payrollRoleLabel(selectedRole.payroll_role)
+                : ""}
           </DialogDescription>
         </DialogHeader>
         {state ? (
@@ -2509,9 +2668,16 @@ function ShiftDialog({
                 disabled={state.mode === "edit"}
                 onValueChange={(value) => {
                   const employee = employees.find((item) => item.id === value);
+                  const stationCode = state.stationCode;
                   patchState({
                     employeeId: value === NO_VALUE ? "" : value,
-                    stationCode: defaultStationForEmployee(employee),
+                    payrollRole:
+                      value === NO_VALUE
+                        ? null
+                        : defaultRoleForEmployeeAtStation(employee, stationCode) ??
+                          employee?.primary_payroll_role ??
+                          null,
+                    stationCode,
                   });
                 }}
                 value={state.employeeId || NO_VALUE}
@@ -2523,7 +2689,7 @@ function ShiftDialog({
                   <SelectItem disabled value={NO_VALUE}>
                     Выберите сотрудника
                   </SelectItem>
-                  {employees.map((employee) => (
+                  {employeeOptions.map((employee) => (
                     <SelectItem key={employee.id} value={employee.id}>
                       {employee.full_name} · {employee.position}
                     </SelectItem>
@@ -2532,11 +2698,52 @@ function ShiftDialog({
               </Select>
             </div>
             <div className="grid gap-2">
+              <Label>Роль</Label>
+              <Select
+                disabled={!selectedEmployee || selectedEmployee.available_roles.length === 0}
+                onValueChange={(value) => {
+                  const role = selectedEmployee?.available_roles.find(
+                    (item) => item.payroll_role === value,
+                  );
+                  patchState({
+                    payrollRole: value,
+                    stationCode: role?.default_station_code ?? null,
+                  });
+                }}
+                value={state.payrollRole ?? undefined}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите роль" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(selectedEmployee?.available_roles ?? []).map((role) => (
+                    <SelectItem key={role.payroll_role} value={role.payroll_role}>
+                      {payrollRoleLabel(role.payroll_role)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
               <Label>Станция</Label>
               <Select
-                onValueChange={(value) =>
-                  patchState({ stationCode: value === NO_VALUE ? null : value })
-                }
+                onValueChange={(value) => {
+                  const stationCode = value === NO_VALUE ? null : value;
+                  const shouldResetEmployee =
+                    state.mode === "create" &&
+                    selectedEmployee &&
+                    stationCode &&
+                    !defaultRoleForEmployeeAtStation(selectedEmployee, stationCode);
+                  const payrollRole =
+                    state.mode === "create"
+                      ? defaultRoleForEmployeeAtStation(selectedEmployee, stationCode)
+                      : state.payrollRole;
+                  patchState({
+                    stationCode,
+                    payrollRole: shouldResetEmployee ? null : payrollRole ?? state.payrollRole,
+                    employeeId: shouldResetEmployee ? "" : state.employeeId,
+                  });
+                }}
                 value={state.stationCode ?? NO_VALUE}
               >
                 <SelectTrigger>
@@ -3222,12 +3429,24 @@ function stationForShift(shift: ScheduledShiftRead) {
 }
 
 function stationForPayrollRole(role: string) {
-  return role === "Кассир" ? "Касса" : "(без станции)";
+  const map: Record<string, string | null> = {
+    administrator: "Касса",
+    pizza: "Пицца",
+    sushi: "Роллы",
+    shawarma: "Горячий цех",
+    prep: null,
+    Кассир: "Касса",
+  };
+  return map[role] ?? "(без станции)";
 }
 
 function defaultStationForEmployee(employee: EmployeeRosterRow | undefined) {
   if (!employee) {
     return null;
+  }
+  const primary = primaryAvailableRole(employee);
+  if (primary) {
+    return primary.default_station_code;
   }
   if (employee.position === "Кассир") {
     return "Касса";
@@ -3235,11 +3454,60 @@ function defaultStationForEmployee(employee: EmployeeRosterRow | undefined) {
   const map: Record<string, string> = {
     pizza: "Пицца",
     sushi: "Роллы",
-    shawarma: "Шаурма",
+    shawarma: "Горячий цех",
   };
   return employee.default_cooking_station
     ? map[employee.default_cooking_station] ?? employee.default_cooking_station
     : null;
+}
+
+function primaryAvailableRole(employee: EmployeeRosterRow | undefined) {
+  return (
+    employee?.available_roles.find((role) => role.is_primary) ?? employee?.available_roles[0]
+  );
+}
+
+function roleForShiftOrPrimary(
+  shift: ScheduledShiftRead,
+  employee: EmployeeRosterRow | undefined,
+) {
+  if (employee?.available_roles.some((role) => role.payroll_role === shift.payroll_role)) {
+    return shift.payroll_role;
+  }
+  return primaryAvailableRole(employee)?.payroll_role ?? shift.payroll_role ?? null;
+}
+
+function defaultRoleForEmployeeAtStation(
+  employee: EmployeeRosterRow | undefined,
+  stationCode: string | null,
+) {
+  if (!employee) {
+    return null;
+  }
+  if (!stationCode) {
+    return primaryAvailableRole(employee)?.payroll_role ?? null;
+  }
+  return (
+    employee.available_roles.find((role) =>
+      stationsMatch(role.default_station_code, stationCode),
+    )?.payroll_role ?? null
+  );
+}
+
+function stationsMatch(left: string | null, right: string | null) {
+  return normalizeStation(left) === normalizeStation(right);
+}
+
+function normalizeStation(station: string | null) {
+  const normalized = (station ?? "").trim().toLocaleLowerCase("ru-RU");
+  return normalized === "шаурма" ? "горячий цех" : normalized;
+}
+
+function payrollRoleLabel(role: string | null | undefined) {
+  if (!role) {
+    return "—";
+  }
+  return PAYROLL_ROLE_LABELS[role as PayrollRole] ?? role;
 }
 
 function buildWeekDays(anchorIso: string) {
@@ -3397,8 +3665,54 @@ function costDayTitle(day: string, summary: CostDaySummary) {
     .join("\n");
 }
 
-function shiftCostClass(estimate: ShiftCostEstimateRead | undefined) {
-  return estimate?.quality_status === "requires_review" ? "text-orange-600" : "text-muted-foreground";
+function shiftCostClass(estimate: ShiftCostEstimateRead | undefined, role?: string) {
+  return estimate?.quality_status === "requires_review"
+    ? "text-orange-600"
+    : roleColorClasses(role ?? "").secondaryText;
+}
+
+function roleColorClasses(role: string) {
+  const fallback = {
+    container: "border-border bg-background",
+    primaryText: "text-foreground",
+    secondaryText: "text-muted-foreground",
+  };
+  const classes: Record<
+    string,
+    { container: string; primaryText: string; secondaryText: string }
+  > = {
+    sushi: {
+      container: "border-blue-300 bg-blue-50",
+      primaryText: "text-blue-900",
+      secondaryText: "text-blue-700",
+    },
+    shawarma: {
+      container: "border-purple-300 bg-purple-50",
+      primaryText: "text-purple-900",
+      secondaryText: "text-purple-700",
+    },
+    administrator: {
+      container: "border-pink-300 bg-pink-50",
+      primaryText: "text-pink-900",
+      secondaryText: "text-pink-700",
+    },
+    pizza: {
+      container: "border-yellow-300 bg-yellow-50",
+      primaryText: "text-yellow-950",
+      secondaryText: "text-yellow-800",
+    },
+    prep: {
+      container: "border-emerald-800 bg-emerald-900",
+      primaryText: "text-white",
+      secondaryText: "text-emerald-100",
+    },
+    Кассир: {
+      container: "border-pink-300 bg-pink-50",
+      primaryText: "text-pink-900",
+      secondaryText: "text-pink-700",
+    },
+  };
+  return classes[role] ?? fallback;
 }
 
 function fotStatusLevel(run: PayrollForecastRunRead): FotStatusLevel {
