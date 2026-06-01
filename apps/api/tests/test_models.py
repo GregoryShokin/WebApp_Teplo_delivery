@@ -34,6 +34,8 @@ EXPECTED_TABLES = {
     "counterparty_role",
     "employee",
     "employee_role_assignment",
+    "employee_change_event",
+    "employee_dismissal_reason",
     "delivery_order",
     "wallet",
     "period",
@@ -54,12 +56,15 @@ EXPECTED_TABLES = {
     "deposit_account",
     "deposit_transaction",
     "accumulation_fund_account",
+    "accumulation_fund_transaction",
     "payroll_rate",
     "payroll_role_category_availability",
     "payroll_revenue_share",
     "revenue_tier",
     "category_coefficient",
     "payroll_deduction_category",
+    "payroll_adjustment_category",
+    "payroll_adjustment",
     "payroll_seniority_premium",
 }
 
@@ -76,6 +81,8 @@ def test_all_models_import() -> None:
         "Counterparty",
         "CounterpartyRole",
         "Employee",
+        "EmployeeChangeEvent",
+        "EmployeeDismissalReason",
         "EmployeeRoleAssignment",
         "DeliveryOrder",
         "Wallet",
@@ -100,10 +107,13 @@ def test_all_models_import() -> None:
         "RevenueTier",
         "CategoryCoefficient",
         "PayrollDeductionCategory",
+        "PayrollAdjustment",
+        "PayrollAdjustmentCategory",
         "PayrollSeniorityPremium",
         "DepositAccount",
         "DepositTransaction",
         "AccumulationFundAccount",
+        "AccumulationFundTransaction",
     } <= exported
 
 
@@ -117,7 +127,17 @@ def test_employee_full_name_is_marked_iiko_read_only() -> None:
     assert column.info == {"source": "iiko", "read_only": True}
     assert column.comment == "source=iiko; read-only in app"
     assert models.Employee.__table__.c.pin_hash.nullable is True
+    assert models.Employee.__table__.c.pin_assumed_from_iiko.nullable is False
     assert models.Employee.__table__.c.pin_set_at.nullable is True
+    assert models.Employee.__table__.c.deposit_target_override.nullable is True
+    assert models.Employee.__table__.c.deposit_withholding_override.nullable is True
+    assert models.Employee.__table__.c.deposit_excluded.nullable is False
+    assert models.Employee.__table__.c.deposit_excluded_until.nullable is True
+    assert models.Employee.__table__.c.deposit_excluded_reason.nullable is True
+    constraints = {constraint.name for constraint in models.Employee.__table__.constraints}
+    assert "ck_employee_pin_origin_exclusive" in constraints
+    assert "ck_employee_deposit_target_override_non_negative" in constraints
+    assert "ck_employee_deposit_withholding_override_non_negative" in constraints
 
 
 def test_required_unique_constraints_are_declared() -> None:
@@ -141,6 +161,8 @@ def test_payroll_configuration_tables_are_declared() -> None:
     tier_columns = models.RevenueTier.__table__.c
     coefficient_columns = models.CategoryCoefficient.__table__.c
     deduction_columns = models.PayrollDeductionCategory.__table__.c
+    adjustment_category_columns = models.PayrollAdjustmentCategory.__table__.c
+    adjustment_columns = models.PayrollAdjustment.__table__.c
     premium_columns = models.PayrollSeniorityPremium.__table__.c
 
     assert rate_columns.position_group.nullable is False
@@ -161,6 +183,11 @@ def test_payroll_configuration_tables_are_declared() -> None:
     assert coefficient_columns.category.nullable is False
     assert coefficient_columns.coefficient.nullable is False
     assert deduction_columns.code.nullable is False
+    assert adjustment_category_columns.code.nullable is False
+    assert adjustment_category_columns.type.nullable is False
+    assert adjustment_columns.employee_id.nullable is False
+    assert adjustment_columns.work_date.nullable is False
+    assert adjustment_columns.amount.nullable is False
     assert premium_columns.percent_of_base.nullable is False
 
 
@@ -191,6 +218,14 @@ def test_percent_methodology_is_additive_for_existing_payroll_runs() -> None:
     } <= line_columns
 
 
+def test_deposit_account_initial_balance_is_declared() -> None:
+    columns = models.DepositAccount.__table__.c
+    constraints = {constraint.name for constraint in models.DepositAccount.__table__.constraints}
+
+    assert columns.initial_balance.nullable is False
+    assert "ck_deposit_account_initial_balance_non_negative" in constraints
+
+
 def test_shift_ledger_entry_table_is_declared() -> None:
     columns = models.ShiftLedgerEntry.__table__.c
     indexes = {index.name for index in models.ShiftLedgerEntry.__table__.indexes}
@@ -217,6 +252,41 @@ def test_delivery_order_table_is_declared() -> None:
     assert "ix_delivery_order_work_date" in indexes
     assert "ix_delivery_order_courier_work_date" in indexes
     assert "ix_delivery_order_status" in indexes
+
+
+def test_employee_change_event_table_is_declared() -> None:
+    columns = models.EmployeeChangeEvent.__table__.c
+    indexes = {index.name for index in models.EmployeeChangeEvent.__table__.indexes}
+
+    assert columns.employee_id.nullable is True
+    assert columns.changed_at.nullable is False
+    assert columns.effective_from.nullable is True
+    assert columns.change_type.nullable is False
+    assert columns.source.nullable is False
+    assert columns.actor_user_id.nullable is True
+    assert columns.status.nullable is False
+    assert columns.before_value.nullable is True
+    assert columns.after_value.nullable is True
+    assert columns.diff.nullable is True
+    assert columns.reason_id.nullable is True
+    assert columns.reason_code.nullable is True
+    assert columns.related_agent_run_id.nullable is True
+    assert columns.related_agent_action_id.nullable is True
+    assert columns.payroll_impact.nullable is False
+    assert columns.payroll_impact_metadata.nullable is False
+    assert "ix_employee_change_event_employee_changed" in indexes
+    assert "ix_employee_change_event_source_status" in indexes
+
+
+def test_employee_dismissal_reason_table_is_declared() -> None:
+    columns = models.EmployeeDismissalReason.__table__.c
+
+    assert columns.code.nullable is False
+    assert columns.label.nullable is False
+    assert columns.requires_comment.nullable is False
+    assert columns.is_system.nullable is False
+    assert columns.is_active.nullable is False
+    assert columns.sort_order.nullable is False
 
 
 def test_counterparty_inn_partial_unique_index_is_declared() -> None:
@@ -280,6 +350,62 @@ def test_migrations_upgrade_and_downgrade(alembic_cfg: Config, postgres_availabl
     command.downgrade(alembic_cfg, "base")
     command.upgrade(alembic_cfg, "head")
     command.downgrade(alembic_cfg, "base")
+
+
+async def test_pin_origin_migration_backfills_iiko_employees_without_local_pin(
+    alembic_cfg: Config,
+    postgres_available: None,
+) -> None:
+    assumed_id = uuid.uuid4()
+    local_id = uuid.uuid4()
+    command.downgrade(alembic_cfg, "base")
+    command.upgrade(alembic_cfg, "0024_employee_effective_events")
+
+    engine = create_async_engine(TEST_DATABASE_URL)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    """
+                    insert into employee (
+                        id,
+                        full_name,
+                        iiko_id,
+                        position,
+                        status,
+                        pin_hash
+                    )
+                    values
+                        (:assumed_id, 'Iiko Assumed', 'iiko-assumed', 'Повар', 'requires_setup', null),
+                        (:local_id, 'Local Pin', 'iiko-local', 'Повар', 'active', 'hashed-pin')
+                    """
+                ),
+                {"assumed_id": assumed_id, "local_id": local_id},
+            )
+    finally:
+        await engine.dispose()
+
+    command.upgrade(alembic_cfg, "0022_pin_origin")
+
+    engine = create_async_engine(TEST_DATABASE_URL)
+    try:
+        async with engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    text(
+                        """
+                        select iiko_id, pin_assumed_from_iiko
+                          from employee
+                         order by iiko_id
+                        """
+                    )
+                )
+            ).all()
+    finally:
+        await engine.dispose()
+        command.downgrade(alembic_cfg, "base")
+
+    assert rows == [("iiko-assumed", True), ("iiko-local", False)]
 
 
 @pytest.mark.skip(
@@ -408,8 +534,14 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
                 "payroll_deduction_category": await conn.scalar(
                     text("select count(*) from payroll_deduction_category")
                 ),
+                "payroll_adjustment_category": await conn.scalar(
+                    text("select count(*) from payroll_adjustment_category")
+                ),
                 "payroll_seniority_premium": await conn.scalar(
                     text("select count(*) from payroll_seniority_premium")
+                ),
+                "employee_dismissal_reason": await conn.scalar(
+                    text("select count(*) from employee_dismissal_reason")
                 ),
                 "invalid_payroll_rate_category": await conn.scalar(
                     text(
@@ -475,7 +607,9 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
         "current_category_coefficient": 6,
         "current_category_2_coefficient": "2.250",
         "payroll_deduction_category": 4,
+        "payroll_adjustment_category": 6,
         "payroll_seniority_premium": 2,
+        "employee_dismissal_reason": 7,
         "invalid_payroll_rate_category": 0,
         "invalid_employee_category": 0,
         "inactive_payroll_rate_placeholder": 6,
@@ -521,6 +655,35 @@ async def test_seeded_settings_have_display_metadata(migrated_db: str) -> None:
         "weekday_premium",
         "₽",
     )
+
+
+async def test_seeded_employee_dismissal_reasons_are_available(migrated_db: str) -> None:
+    engine = create_async_engine(migrated_db)
+    try:
+        async with engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    text(
+                        """
+                        select code, label, requires_comment, is_active, sort_order
+                          from employee_dismissal_reason
+                         order by sort_order, label
+                        """
+                    )
+                )
+            ).all()
+    finally:
+        await engine.dispose()
+
+    assert rows == [
+        ("voluntary", "По собственному желанию", False, True, 10),
+        ("no_show", "Не вышел на смену", False, True, 20),
+        ("discipline", "Нарушение дисциплины", False, True, 30),
+        ("failed_trial", "Не прошёл стажировку", False, True, 40),
+        ("layoff_no_shifts", "Сокращение/нет смен", False, True, 50),
+        ("transfer", "Перевод", False, True, 60),
+        ("other", "Другое", True, True, 70),
+    ]
 
 
 async def test_cleanup_non_canonical_employee_migration_deletes_dependents(

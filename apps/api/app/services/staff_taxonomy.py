@@ -9,8 +9,11 @@ CANONICAL_POSITIONS = (
     "Системный администратор",
     "Курьер",
     "Менеджер",
+    "Уборщица",
+    "Посудомойка",
 )
 CREATE_POSITIONS = ("Кассир", "Менеджер", "Повар", "Управляющий", "Курьер")
+AUXILIARY_POSITIONS = ("Уборщица", "Посудомойка")
 
 PAYROLL_ROLE_LABELS = {
     "administrator": "Администратор",
@@ -35,6 +38,8 @@ POSITION_PAYROLL_ROLES = {
     "Системный администратор": (),
     "Курьер": (),
     "Менеджер": (),
+    "Уборщица": (),
+    "Посудомойка": (),
 }
 
 ROLE_CATEGORIES = {
@@ -64,6 +69,8 @@ PREMIUM_APPLICABILITY = {
     "Управляющий": {"is_senior": False, "is_deputy_senior": False},
     "Системный администратор": {"is_senior": False, "is_deputy_senior": False},
     "Менеджер": {"is_senior": False, "is_deputy_senior": False},
+    "Уборщица": {"is_senior": False, "is_deputy_senior": False},
+    "Посудомойка": {"is_senior": False, "is_deputy_senior": False},
 }
 
 def normalize_position(position: str | None) -> str:
@@ -81,6 +88,11 @@ def is_canonical_position(position: str | None) -> bool:
 def is_create_position(position: str | None) -> bool:
     canonical = canonical_position_name(position)
     return canonical in CREATE_POSITIONS
+
+
+def position_requires_pin(position: str | None) -> bool:
+    canonical = canonical_position_name(position)
+    return canonical is not None and canonical not in AUXILIARY_POSITIONS
 
 
 def payroll_roles_for_position(position: str | None) -> tuple[str, ...]:

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -18,6 +21,7 @@ from app.models import (
     Employee,
     ShiftLedgerEntry,
 )
+from app.services import iiko_revenue
 from app.services.courier_sync import (
     parse_courier_delivery_rows,
     parse_iiko_olap_payload,
@@ -163,6 +167,60 @@ def test_delivery_olap_parser_reads_courier_order_facts() -> None:
     assert parsed.records[1].way_duration_minutes is not None
     assert str(parsed.records[1].way_duration_minutes) == "35.00"
     assert parsed.records[2].status == "Cancelled"
+
+
+async def test_fetch_daily_revenue_posts_v2_olap_and_parses_mock_response(
+    monkeypatch: Any,
+) -> None:
+    requests: list[dict[str, Any]] = []
+
+    class FakeIikoClient:
+        def request(self, path: str, **kwargs: Any) -> tuple[int, bytes]:
+            requests.append({"path": path, **kwargs})
+            return 200, json.dumps(
+                {
+                    "rows": [
+                        {
+                            "OpenDate.Typed": "2026-05-19",
+                            "DishDiscountSumInt": "350000.25",
+                        },
+                        {
+                            "OpenDate.Typed": "2026-05-20",
+                            "DishDiscountSumInt.sum": "125000,75",
+                        },
+                    ]
+                }
+            ).encode("utf-8")
+
+    async def fake_load_source_credential_env(_session: Any) -> None:
+        return None
+
+    monkeypatch.setattr(
+        iiko_revenue,
+        "_load_source_credential_env",
+        fake_load_source_credential_env,
+    )
+    monkeypatch.setattr(
+        iiko_revenue,
+        "_load_export_employees_module",
+        lambda: SimpleNamespace(load_local_env=lambda: None, IikoClient=FakeIikoClient),
+    )
+
+    result = await iiko_revenue.fetch_daily_revenue(
+        object(),
+        date(2026, 5, 19),
+        date(2026, 5, 20),
+    )
+
+    assert result == {
+        date(2026, 5, 19): Decimal("350000.25"),
+        date(2026, 5, 20): Decimal("125000.75"),
+    }
+    assert requests[0]["path"] == "/v2/reports/olap"
+    assert requests[0]["method"] == "POST"
+    assert requests[0]["json_body"]["reportType"] == "SALES"
+    assert requests[0]["json_body"]["groupByRowFields"] == ["OpenDate.Typed"]
+    assert requests[0]["json_body"]["aggregateFields"] == ["DishDiscountSumInt"]
 
 
 async def test_courier_sync_is_idempotent_for_same_olap_sample() -> None:

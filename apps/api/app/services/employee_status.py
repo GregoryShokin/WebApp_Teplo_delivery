@@ -12,6 +12,7 @@ from app.services.staff_taxonomy import (
     categories_for_payroll_role,
     payroll_role_allows_category,
     payroll_roles_for_position,
+    position_requires_pin,
 )
 from app.services.staff_taxonomy import (
     EMPLOYEE_CATEGORIES as TAXONOMY_EMPLOYEE_CATEGORIES,
@@ -45,7 +46,11 @@ def compute_status(
     canonical_position = canonical_position_name(employee.position)
     if canonical_position is None or position_group is None:
         return "requires_setup"
-    if not getattr(employee, "pin_hash", None):
+    if (
+        position_requires_pin(canonical_position)
+        and not getattr(employee, "pin_hash", None)
+        and not getattr(employee, "pin_assumed_from_iiko", False)
+    ):
         return "requires_setup"
 
     payroll_roles = payroll_roles_for_position(canonical_position)
