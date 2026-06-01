@@ -11,6 +11,8 @@ export type SettingWidgetOptions = {
   max?: number;
   step?: number;
   value_path?: string;
+  amount?: number;
+  threshold_hours?: number;
 };
 
 export type SettingWidgetProps = {

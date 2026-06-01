@@ -11,6 +11,7 @@ import { PayrollConfigurationRoute } from "@/routes/payroll/configuration";
 import { PayrollDailyLedgerRoute } from "@/routes/payroll/daily-ledger";
 import { PayrollRunDetailRoute } from "@/routes/payroll/run-detail";
 import { PayrollRunsRoute } from "@/routes/payroll/runs";
+import { PayrollAdjustmentsRoute } from "@/routes/payroll-adjustments";
 import { SettingsRoute } from "@/routes/settings";
 import { StaffRoute } from "@/routes/staff";
 
@@ -45,7 +46,7 @@ const routes: AppRoute[] = [
   },
   {
     path: "/staff",
-    render: () => <StaffRoute />,
+    render: ({ navigate }) => <StaffRoute onNavigate={navigate} />,
   },
   {
     path: "/payroll",
@@ -63,6 +64,10 @@ const routes: AppRoute[] = [
       {
         path: "daily-ledger",
         render: () => <PayrollDailyLedgerRoute />,
+      },
+      {
+        path: "adjustments",
+        render: ({ navigate }) => <PayrollAdjustmentsRoute onNavigate={navigate} />,
       },
       {
         path: "configuration",

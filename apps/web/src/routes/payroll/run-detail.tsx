@@ -1,3 +1,4 @@
+import axios from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -9,12 +10,24 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import {
   Sheet,
   SheetContent,
@@ -22,16 +35,21 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { EmptyState } from "@/components/ui-app/EmptyState";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { StatusBadge } from "@/components/ui-app/StatusBadge";
 import {
+  apiErrorMessage,
+  createPayrollRun,
   finalizePayrollRun,
   getEmployees,
   getPayrollRun,
   getPayrollRunLines,
   getSettings,
+  patchPayrollLineDepositOverride,
   type AppSetting,
   type Employee,
   type PayrollLine,
@@ -52,7 +70,14 @@ type PayrollRunDetailRouteProps = {
   onNavigate: (path: string) => void;
 };
 
-type SortKey = "name" | "role" | "hours" | "total";
+type SortKey =
+  | "name"
+  | "hours"
+  | "deposit_withholding"
+  | "deposit_payout"
+  | "fund_accrual"
+  | "ndfl_deduction"
+  | "total";
 type SortDirection = "asc" | "desc";
 
 type PayrollLineRowModel = {
@@ -68,6 +93,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [isRecalculateDialogOpen, setIsRecalculateDialogOpen] = useState(false);
 
   const runQuery = useQuery({
     queryKey: ["payroll-run", runId],
@@ -111,10 +137,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         if (!needle) {
           return true;
         }
-        return (
-          row.employeeName.toLowerCase().includes(needle) ||
-          row.line.role.toLowerCase().includes(needle)
-        );
+        return row.employeeName.toLowerCase().includes(needle);
       })
       .sort((left, right) => compareRows(left, right, sortKey, sortDirection));
   }, [employeesById, linesQuery.data, search, sortDirection, sortKey]);
@@ -146,6 +169,23 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
       await queryClient.invalidateQueries({ queryKey: ["payroll-runs"] });
     },
     onError: (mutationError) => toast.error((mutationError as Error).message),
+  });
+
+  const recalculateMutation = useMutation({
+    mutationFn: (periodId: string) => createPayrollRun(periodId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["payroll-run", runId] }),
+        queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", runId] }),
+        queryClient.invalidateQueries({ queryKey: ["payroll-runs"] }),
+      ]);
+      setIsRecalculateDialogOpen(false);
+      toast.success("Расчёт обновлён");
+    },
+    onError: (error) => {
+      setIsRecalculateDialogOpen(false);
+      toast.error(payrollRecalculateErrorMessage(error));
+    },
   });
 
   function setSort(nextKey: SortKey) {
@@ -187,15 +227,6 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
       ),
     },
     {
-      key: "role",
-      header: (
-        <SortButton active={sortKey === "role"} onClick={() => setSort("role")}>
-          Роль
-        </SortButton>
-      ),
-      cell: (row) => row.line.role || "Не задана",
-    },
-    {
       key: "hours",
       header: (
         <SortButton active={sortKey === "hours"} onClick={() => setSort("hours")}>
@@ -203,31 +234,84 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         </SortButton>
       ),
       cell: (row) => formatHours(row.hours),
-      className: "tabular-nums",
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
     },
     {
-      key: "base",
+      key: "base_pay",
       header: "Оклад",
       cell: (row) => formatMoney(row.line.base_pay),
-      className: "tabular-nums",
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
     },
     {
       key: "premium",
       header: "Премия",
       cell: (row) => formatMoney(row.line.premium),
-      className: "tabular-nums",
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
     },
     {
-      key: "percent",
+      key: "percent_pay",
       header: "%",
       cell: (row) => formatMoney(row.line.percent_pay),
-      className: "tabular-nums",
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
     },
     {
-      key: "deduction",
-      header: "Депозиты",
-      cell: (row) => formatMoney(row.line.deduction),
-      className: "tabular-nums",
+      key: "deposit_withholding",
+      header: (
+        <SortButton
+          active={sortKey === "deposit_withholding"}
+          onClick={() => setSort("deposit_withholding")}
+        >
+          Удержание депозита
+        </SortButton>
+      ),
+      cell: (row) => formatMoney(row.line.deposit_withholding),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "deposit_payout",
+      header: (
+        <SortButton active={sortKey === "deposit_payout"} onClick={() => setSort("deposit_payout")}>
+          Выдача депозита
+        </SortButton>
+      ),
+      cell: (row) => formatMoney(row.line.deposit_payout),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "fund_accrual",
+      header: (
+        <SortButton active={sortKey === "fund_accrual"} onClick={() => setSort("fund_accrual")}>
+          Нак. фонд
+        </SortButton>
+      ),
+      cell: (row) => formatMoney(row.line.fund_accrual),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "ndfl_deduction",
+      header: (
+        <SortButton
+          active={sortKey === "ndfl_deduction"}
+          onClick={() => setSort("ndfl_deduction")}
+        >
+          <span className="inline-flex items-center gap-1">
+            НДФЛ
+            <Badge className="rounded-sm border-amber-200 bg-amber-50 px-1 py-0 text-[10px] normal-case text-amber-800 shadow-none">
+              заглушка
+            </Badge>
+          </span>
+        </SortButton>
+      ),
+      cell: (row) => formatMoney(row.line.ndfl_deduction),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
     },
     {
       key: "total",
@@ -237,7 +321,8 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         </SortButton>
       ),
       cell: (row) => formatMoney(row.line.total_payable),
-      className: "font-semibold tabular-nums",
+      className: "text-right font-semibold tabular-nums",
+      headerClassName: "text-right",
     },
   ];
 
@@ -253,17 +338,65 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
               <ArrowLeft size={16} aria-hidden="true" />
               Назад
             </Button>
-            <Button
-              onClick={() => {
-                void queryClient.invalidateQueries({ queryKey: ["payroll-run", runId] });
-                void queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", runId] });
+            <AlertDialog
+              open={isRecalculateDialogOpen}
+              onOpenChange={(open) => {
+                if (!recalculateMutation.isPending) {
+                  setIsRecalculateDialogOpen(open);
+                }
               }}
-              title="Обновить"
-              variant="outline"
             >
-              <RefreshCw size={16} aria-hidden="true" />
-              Обновить
-            </Button>
+              <AlertDialogTrigger asChild>
+                <Button
+                  disabled={!run || recalculateMutation.isPending}
+                  title="Пересчитать"
+                  variant="outline"
+                >
+                  {recalculateMutation.isPending ? (
+                    <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                  ) : (
+                    <RefreshCw size={16} aria-hidden="true" />
+                  )}
+                  Пересчитать
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    Пересчитать расчёт за {run ? formatPeriodRange(run.period) : "период"}?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Текущие линии расчёта будут пересозданы, ручные корректировки в журнале смен НЕ
+                    потеряются.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel
+                    disabled={recalculateMutation.isPending}
+                    onClick={() => setIsRecalculateDialogOpen(false)}
+                    type="button"
+                  >
+                    Отмена
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={!run || recalculateMutation.isPending}
+                    onClick={() => {
+                      if (run) {
+                        recalculateMutation.mutate(run.period_id);
+                      }
+                    }}
+                    type="button"
+                  >
+                    {recalculateMutation.isPending ? (
+                      <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                    ) : (
+                      <RefreshCw size={16} aria-hidden="true" />
+                    )}
+                    Пересчитать
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <Button onClick={finalize} disabled={!canFinalize || finalizeMutation.isPending}>
               {finalizeMutation.isPending ? (
                 <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
@@ -354,7 +487,9 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         }}
       >
         <SheetContent className="w-full overflow-y-auto sm:max-w-2xl" side="right">
-          {selectedLine ? <PayrollLineDrawer row={selectedLine} /> : null}
+          {selectedLine ? (
+            <PayrollLineDrawer row={selectedLine} runStatus={run?.status ?? ""} />
+          ) : null}
         </SheetContent>
       </Sheet>
     </div>
@@ -394,7 +529,7 @@ function SortButton({
   onClick,
 }: {
   active: boolean;
-  children: string;
+  children: ReactNode;
   onClick: () => void;
 }) {
   return (
@@ -455,8 +590,10 @@ function BlockingIssue({
   );
 }
 
-function PayrollLineDrawer({ row }: { row: PayrollLineRowModel }) {
+function PayrollLineDrawer({ row, runStatus }: { row: PayrollLineRowModel; runStatus: string }) {
   const days = lineDays(row.line);
+  const weekdayPremiumTotal = days.reduce((sum, day) => sum + day.weekdayPremium, 0);
+  const adjustments = lineAdjustments(row.line);
 
   return (
     <div className="space-y-5">
@@ -471,10 +608,27 @@ function PayrollLineDrawer({ row }: { row: PayrollLineRowModel }) {
         <ComponentValue label="Оклад" value={formatMoney(row.line.base_pay)} />
         <ComponentValue label="Премия" value={formatMoney(row.line.premium)} />
         <ComponentValue label="Процент" value={formatMoney(row.line.percent_pay)} />
-        <ComponentValue label="Депозиты" value={formatMoney(row.line.deduction)} />
+        <ComponentValue label="Всего удержано" value={formatMoney(row.line.deduction)} />
         <ComponentValue label="Фонд" value={formatMoney(row.line.fund_accrual)} />
         <ComponentValue label="К выплате" value={formatMoney(row.line.total_payable)} strong />
       </section>
+
+      <DepositOverrideControl line={row.line} runStatus={runStatus} />
+
+      {weekdayPremiumTotal > 0 ? (
+        <section className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+          В окладе: надбавка пт/сб {formatMoney(weekdayPremiumTotal)} за{" "}
+          {days.filter((day) => day.weekdayPremium > 0).length} дн.
+        </section>
+      ) : null}
+
+      {adjustments.bonuses.length > 0 ? (
+        <AdjustmentList title="Ручные премии" items={adjustments.bonuses} />
+      ) : null}
+
+      {adjustments.penalties.length > 0 ? (
+        <AdjustmentList title="Штрафы и удержания" items={adjustments.penalties} />
+      ) : null}
 
       <section className="space-y-3">
         <div className="text-sm font-semibold">Смены и компоненты</div>
@@ -500,6 +654,11 @@ function PayrollLineDrawer({ row }: { row: PayrollLineRowModel }) {
                   <ComponentValue label="%" value={formatMoney(day.percentPay)} dense />
                   <ComponentValue label="Фонд" value={formatMoney(day.fundAccrual)} dense />
                 </div>
+                {day.weekdayPremium > 0 ? (
+                  <div className="mt-2 text-sm text-muted-foreground">
+                    В т.ч. надбавка пт/сб: {formatMoney(day.weekdayPremium)}
+                  </div>
+                ) : null}
                 {day.dailyRevenue > 0 ? (
                   <div className="mt-2 text-sm text-muted-foreground">
                     Выручка дня {formatMoney(day.dailyRevenue)}
@@ -516,6 +675,98 @@ function PayrollLineDrawer({ row }: { row: PayrollLineRowModel }) {
         )}
       </section>
     </div>
+  );
+}
+
+function DepositOverrideControl({ line, runStatus }: { line: PayrollLine; runStatus: string }) {
+  const queryClient = useQueryClient();
+  const [reason, setReason] = useState(line.deposit_exclusion_reason ?? "");
+  const disabledReason = "Ведомость зафинализирована, изменения невозможны";
+  const isFinal = isFinalStatus(runStatus);
+
+  useEffect(() => {
+    setReason(line.deposit_exclusion_reason ?? "");
+  }, [line.deposit_exclusion_reason, line.id]);
+
+  const mutation = useMutation({
+    mutationFn: (payload: {
+      deposit_excluded_for_run: boolean;
+      deposit_exclusion_reason?: string | null;
+    }) => patchPayrollLineDepositOverride(line.id, payload),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["payroll-run", line.run_id] }),
+        queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", line.run_id] }),
+        queryClient.invalidateQueries({ queryKey: ["payroll-runs"] }),
+      ]);
+      toast.success("Настройка депозита сохранена");
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось сохранить настройку депозита"));
+    },
+  });
+
+  const saveReason = () => {
+    mutation.mutate({
+      deposit_excluded_for_run: line.deposit_excluded_for_run,
+      deposit_exclusion_reason: cleanOptionalText(reason),
+    });
+  };
+
+  return (
+    <section className="space-y-3 rounded-md border bg-background p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold">Удержания</div>
+          <div className="mt-1 text-sm text-muted-foreground">
+            Депозит: {formatMoney(line.deposit_withholding)}
+          </div>
+        </div>
+        <span title={isFinal ? disabledReason : undefined}>
+          <Switch
+            checked={line.deposit_excluded_for_run}
+            disabled={isFinal || mutation.isPending}
+            onCheckedChange={(checked) => {
+              mutation.mutate({
+                deposit_excluded_for_run: checked,
+                deposit_exclusion_reason: checked ? cleanOptionalText(reason) : null,
+              });
+            }}
+          />
+        </span>
+      </div>
+      <Label className="flex items-center gap-2 text-sm">
+        <span>Исключить депозит из этой ведомости</span>
+      </Label>
+      <div className="text-xs leading-relaxed text-muted-foreground">
+        Скипнуть удержание депозита только для этой ведомости. Изменение применится после
+        пересчёта. Настройки сотрудника не затрагиваются.
+      </div>
+      {line.deposit_excluded_for_run ? (
+        <div className="space-y-2">
+          <Label htmlFor={`deposit-exclusion-reason-${line.id}`}>Причина</Label>
+          <Textarea
+            disabled={isFinal || mutation.isPending}
+            id={`deposit-exclusion-reason-${line.id}`}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Необязательно"
+            value={reason}
+          />
+          <Button
+            disabled={isFinal || mutation.isPending}
+            onClick={saveReason}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {mutation.isPending ? (
+              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+            ) : null}
+            Сохранить причину
+          </Button>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -540,6 +791,40 @@ function ComponentValue({
   );
 }
 
+function AdjustmentList({
+  items,
+  title,
+}: {
+  items: AdjustmentComponent[];
+  title: string;
+}) {
+  return (
+    <section className="space-y-2">
+      <div className="text-sm font-semibold">{title}</div>
+      <div className="grid gap-2">
+        {items.map((item) => (
+          <div
+            className="grid gap-2 rounded-md border bg-card p-3 text-sm sm:grid-cols-[90px_1fr_auto] sm:items-center"
+            key={item.id}
+          >
+            <span className="text-muted-foreground">{formatDate(item.workDate)}</span>
+            <span className="min-w-0 truncate">{item.category}</span>
+            <span className="font-medium tabular-nums">{formatMoney(item.amount)}</span>
+            {item.comment ? (
+              <span className="text-muted-foreground sm:col-span-3">{item.comment}</span>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function cleanOptionalText(value: string) {
+  const cleaned = value.trim();
+  return cleaned ? cleaned : null;
+}
+
 function runMeta(run: { started_at: string; finished_at: string | null; period: { finalized_at: string | null } | null }) {
   const parts = [`Создан ${formatDateTime(run.started_at)}`];
   if (run.finished_at) {
@@ -561,11 +846,20 @@ function compareRows(
   if (sortKey === "hours") {
     return (left.hours - right.hours) * modifier;
   }
+  if (sortKey === "deposit_withholding") {
+    return (left.line.deposit_withholding - right.line.deposit_withholding) * modifier;
+  }
+  if (sortKey === "deposit_payout") {
+    return (left.line.deposit_payout - right.line.deposit_payout) * modifier;
+  }
+  if (sortKey === "fund_accrual") {
+    return (left.line.fund_accrual - right.line.fund_accrual) * modifier;
+  }
+  if (sortKey === "ndfl_deduction") {
+    return (left.line.ndfl_deduction - right.line.ndfl_deduction) * modifier;
+  }
   if (sortKey === "total") {
     return (left.line.total_payable - right.line.total_payable) * modifier;
-  }
-  if (sortKey === "role") {
-    return left.line.role.localeCompare(right.line.role, "ru") * modifier;
   }
   return left.employeeName.localeCompare(right.employeeName, "ru") * modifier;
 }
@@ -580,9 +874,19 @@ type DayComponent = {
   category: string;
   hours: number;
   basePay: number;
+  basePayShift: number;
+  weekdayPremium: number;
   percentPay: number;
   fundAccrual: number;
   dailyRevenue: number;
+};
+
+type AdjustmentComponent = {
+  id: string;
+  workDate: string;
+  category: string;
+  amount: number;
+  comment: string | null;
 };
 
 function lineDays(line: PayrollLine): DayComponent[] {
@@ -593,9 +897,32 @@ function lineDays(line: PayrollLine): DayComponent[] {
     category: String(day.category ?? ""),
     hours: Number(day.hours ?? 0),
     basePay: Number(day.base_pay ?? 0),
+    basePayShift: Number(day.base_pay_shift ?? day.base_pay ?? 0),
+    weekdayPremium: Number(day.weekday_premium ?? 0),
     percentPay: Number(day.percent_pay ?? 0),
     fundAccrual: Number(day.fund_accrual ?? 0),
     dailyRevenue: Number(day.daily_revenue ?? 0),
+  }));
+}
+
+function lineAdjustments(line: PayrollLine) {
+  const adjustments = isRecord(line.components.adjustments) ? line.components.adjustments : {};
+  return {
+    bonuses: adjustmentItems(adjustments.bonuses),
+    penalties: adjustmentItems(adjustments.penalties),
+  };
+}
+
+function adjustmentItems(value: unknown): AdjustmentComponent[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter(isRecord).map((item) => ({
+    id: String(item.id ?? ""),
+    workDate: String(item.work_date ?? ""),
+    category: String(item.category ?? "Корректировка"),
+    amount: Number(item.amount ?? 0),
+    comment: typeof item.comment === "string" && item.comment ? item.comment : null,
   }));
 }
 
@@ -679,4 +1006,16 @@ function pluralizeEmployeeLine(count: number) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function payrollRecalculateErrorMessage(error: unknown) {
+  if (axios.isAxiosError(error)) {
+    if (error.response?.status === 409) {
+      return apiErrorMessage(error, "Payroll run is finalized");
+    }
+    if (!error.response) {
+      return "Не удалось пересчитать, попробуйте ещё раз";
+    }
+  }
+  return apiErrorMessage(error, "Не удалось пересчитать, попробуйте ещё раз");
 }

@@ -1,11 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Banknote,
+  BellOff,
+  BellPlus,
+  CalendarPlus,
   CheckCircle2,
+  CircleAlert,
+  CircleMinus,
   DatabaseZap,
   Grid2X2,
+  History,
   KeyRound,
   List,
   LoaderCircle,
+  MoreHorizontal,
   Plus,
   Save,
   Search,
@@ -15,9 +23,38 @@ import {
   UserPlus,
   UserMinus,
 } from "lucide-react";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  type Dispatch,
+  type FormEvent,
+  type SetStateAction,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { toast } from "sonner";
 
+import { EmployeeDepositSection } from "@/components/deposits/EmployeeDepositSection";
+import {
+  extractDepositSettings,
+  formatMoney as formatDepositMoney,
+  isDepositTargetPosition,
+} from "@/components/deposits/deposit-utils";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +67,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -46,47 +89,81 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { EmptyState } from "@/components/ui-app/EmptyState";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { StatusBadge } from "@/components/ui-app/StatusBadge";
 import {
   type CookingStation,
+  type AccumulationFundAccount,
+  type AccumulationFundEmployeeDetail,
+  type AccumulationFundTransaction,
   type Employee,
+  type EmployeeChangeEvent,
+  type EmployeeChangeSource,
+  type EmployeeChangeStatus,
   type EmployeeCreatePayload,
   type EmployeeCategory,
+  type EmployeeDismissPayload,
+  type EmployeeDismissalReason,
+  type DepositDismissAction,
   type IikoEmployeeRole,
   type EmployeePatch,
   type EmployeeRoleAssignment,
   type EmployeeStatus,
-  type PayrollRoleCategoryOption,
   type PayrollRole,
+  type PayrollAdjustment,
   apiErrorMessage,
-  changeEmployeePin,
+  apiErrorStatus,
+  cancelEmployeeNotice,
   createEmployee,
-  createEmployeeAssignment,
-  deleteEmployeeAssignment,
   dismissEmployee,
-  getEmployeeAssignments,
+  getEmployeeAccumulationFund,
+  getDeposits,
+  getEmployeeChanges,
+  getEmployeeDismissalReasons,
   getEmployees,
   getIikoEmployeeRoles,
-  getPayrollRoleCategories,
-  patchEmployeeAssignment,
+  getPayrollAdjustments,
+  getSettings,
   patchEmployee,
+  recordEmployeeNotice,
   reinstateEmployee,
+  setEmployeeHireDate,
   syncEmployees,
 } from "@/lib/api";
 import { getAuthSnapshot, subscribeAuth } from "@/lib/auth";
 import {
   COOKING_STATION_LABELS,
+  EMPLOYEE_CHANGE_FIELD_LABELS,
+  EMPLOYEE_CHANGE_SOURCE_LABELS,
+  EMPLOYEE_CHANGE_STATUS_LABELS,
+  EMPLOYEE_CHANGE_TYPE_LABELS,
   EMPLOYEE_CATEGORY_LABELS,
+  EMPLOYEE_PIN_BADGE_LABELS,
+  EMPLOYEE_PIN_BUTTON_LABELS,
   EMPLOYEE_STATUS_LABELS,
+  type EmployeePinState,
   PAYROLL_ROLE_LABELS,
 } from "@/lib/i18n/employee";
 import { cn } from "@/lib/utils";
 
 type StaffStatusFilter = EmployeeStatus | "current" | "all";
+type StaffPositionFilter =
+  | "all"
+  | "cashiers"
+  | "cooks"
+  | "administration"
+  | "couriers"
+  | "auxiliary";
+type StaffSecondaryFilter = "all" | PayrollRole | EmployeeCategory;
+
+type StaffSecondaryFilterOption = {
+  value: StaffSecondaryFilter;
+  label: string;
+};
 
 const statusOptions: StaffStatusFilter[] = [
   "current",
@@ -100,9 +177,29 @@ const categoryOptions = (Object.keys(EMPLOYEE_CATEGORY_LABELS) as EmployeeCatego
   (category) => !deprecatedCategoryOptions.has(category),
 );
 const cookingStationOptions = Object.keys(COOKING_STATION_LABELS) as CookingStation[];
-const payrollRoleOptions = Object.keys(PAYROLL_ROLE_LABELS) as PayrollRole[];
 const cookPayrollRoles: PayrollRole[] = ["sushi", "pizza", "shawarma", "prep"];
 const cashierPayrollRoles: PayrollRole[] = ["administrator"];
+const cashierSecondaryFilterOptions: StaffSecondaryFilterOption[] = [
+  { value: "all", label: "Все категории" },
+  { value: "category_2", label: "2" },
+  { value: "category_3", label: "3" },
+  { value: "category_4", label: "4" },
+  { value: "intern", label: "Стажёр" },
+];
+const cookSecondaryFilterOptions: StaffSecondaryFilterOption[] = [
+  { value: "all", label: "Все роли" },
+  ...cookPayrollRoles.map((role) => ({
+    value: role,
+    label: PAYROLL_ROLE_LABELS[role],
+  })),
+];
+const payrollRoleCategories: Record<PayrollRole, EmployeeCategory[]> = {
+  administrator: ["category_2", "category_3", "category_4", "intern"],
+  sushi: ["category_1", "category_2", "category_3", "intern"],
+  pizza: ["category_1", "category_2", "category_3", "intern"],
+  shawarma: ["category_3", "category_4", "intern"],
+  prep: ["category_3"],
+};
 
 type CanonicalPosition =
   | "Кассир"
@@ -110,7 +207,9 @@ type CanonicalPosition =
   | "Управляющий"
   | "Системный администратор"
   | "Курьер"
-  | "Менеджер";
+  | "Менеджер"
+  | "Уборщица"
+  | "Посудомойка";
 
 const canonicalPositions: CanonicalPosition[] = [
   "Кассир",
@@ -119,6 +218,8 @@ const canonicalPositions: CanonicalPosition[] = [
   "Системный администратор",
   "Курьер",
   "Менеджер",
+  "Уборщица",
+  "Посудомойка",
 ];
 const createPositions = new Set<CanonicalPosition>([
   "Кассир",
@@ -134,6 +235,8 @@ const positionPayrollRoles: Record<CanonicalPosition, PayrollRole[]> = {
   "Системный администратор": [],
   Курьер: [],
   Менеджер: [],
+  Уборщица: [],
+  Посудомойка: [],
 };
 const premiumApplicability: Record<
   CanonicalPosition,
@@ -145,23 +248,149 @@ const premiumApplicability: Record<
   Управляющий: { is_senior: false, is_deputy_senior: false },
   "Системный администратор": { is_senior: false, is_deputy_senior: false },
   Менеджер: { is_senior: false, is_deputy_senior: false },
+  Уборщица: { is_senior: false, is_deputy_senior: false },
+  Посудомойка: { is_senior: false, is_deputy_senior: false },
 };
+const auxiliaryPositions = new Set<CanonicalPosition>(["Уборщица", "Посудомойка"]);
+const positionFilterOptions: Array<{
+  value: StaffPositionFilter;
+  label: string;
+  positions: CanonicalPosition[] | null;
+}> = [
+  { value: "all", label: "Все", positions: null },
+  { value: "cashiers", label: "Кассиры", positions: ["Кассир"] },
+  { value: "cooks", label: "Повара", positions: ["Повар"] },
+  {
+    value: "administration",
+    label: "Администрация",
+    positions: ["Управляющий", "Менеджер", "Системный администратор"],
+  },
+  { value: "couriers", label: "Курьеры", positions: ["Курьер"] },
+  {
+    value: "auxiliary",
+    label: "Вспомогательный персонал",
+    positions: ["Уборщица", "Посудомойка"],
+  },
+];
 
-type Draft = Pick<Employee, "position" | "is_senior" | "is_deputy_senior">;
+type Draft = Pick<Employee, "full_name" | "position" | "is_senior" | "is_deputy_senior">;
+type AssignmentDraft = Pick<EmployeeRoleAssignment, "payroll_role" | "category" | "is_primary"> & {
+  id?: string;
+  draft_id: string;
+};
+type StaffEditorDraft = Draft & {
+  assignments: AssignmentDraft[];
+  pin_code: string;
+  pin_confirmation: string;
+};
 type ViewMode = "grid" | "table";
 type StaffGroupFilter = "all" | "cook" | "staff";
+type StaffTab = "employees" | "changes";
 
-export function StaffRoute() {
+type EmployeeChangeFiltersState = {
+  employeeId: string;
+  changedFrom: string;
+  changedTo: string;
+  actionDate: string;
+  changeType: string;
+  source: EmployeeChangeSource | "all";
+  actor: string;
+  status: EmployeeChangeStatus | "all";
+  onlyErrors: boolean;
+  onlyRequiresReview: boolean;
+  onlyRetroactive: boolean;
+  includeSystemMigrations: boolean;
+};
+
+type DismissalReasonOption = {
+  key: string;
+  id?: string;
+  code: string;
+  label: string;
+  requires_comment: boolean;
+};
+
+const changeSourceOptions: EmployeeChangeSource[] = ["app", "iiko_sync", "system_migration"];
+const changeStatusOptions: EmployeeChangeStatus[] = [
+  "success",
+  "error",
+  "requires_review",
+  "skipped",
+];
+const changeTypeOptions = [
+  "create_employee",
+  "update_full_name",
+  "update_position",
+  "assign_role",
+  "change_role",
+  "close_role",
+  "change_category",
+  "set_senior",
+  "unset_senior",
+  "set_deputy_senior",
+  "unset_deputy_senior",
+  "change_pin",
+  "notice_given",
+  "notice_cancelled",
+  "dismiss",
+  "reinstate",
+  "iiko_sync_create",
+  "iiko_sync_update",
+  "iiko_sync_deactivate",
+  "iiko_sync_skipped",
+  "iiko_sync_error",
+];
+const defaultChangeFilters: EmployeeChangeFiltersState = {
+  employeeId: "all",
+  changedFrom: "",
+  changedTo: "",
+  actionDate: "",
+  changeType: "all",
+  source: "all",
+  actor: "",
+  status: "all",
+  onlyErrors: false,
+  onlyRequiresReview: false,
+  onlyRetroactive: false,
+  includeSystemMigrations: false,
+};
+const staffChangeReaderRoles = ["manager", "finance_manager", "owner", "admin", "system_admin"];
+const dismissalReasonDefinitions: Array<Omit<DismissalReasonOption, "key" | "id">> = [
+  { code: "voluntary", label: "По собственному желанию", requires_comment: false },
+  { code: "no_show", label: "Не вышел на смену", requires_comment: false },
+  { code: "discipline", label: "Нарушение дисциплины", requires_comment: false },
+  { code: "failed_trial", label: "Не прошёл стажировку", requires_comment: false },
+  { code: "layoff_no_shifts", label: "Сокращение/нет смен", requires_comment: false },
+  { code: "transfer", label: "Перевод", requires_comment: false },
+  { code: "other", label: "Другое", requires_comment: true },
+];
+
+export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void }) {
   const queryClient = useQueryClient();
+  const auth = useAuthSnapshot();
+  const canViewChanges = canViewEmployeeChanges(auth.user?.roles);
+  const canManageStaff =
+    !auth.user || hasAnyRole(auth.user.roles, ["finance_manager", "owner", "admin"]);
+  const [activeTab, setActiveTab] = useState<StaffTab>("employees");
   const [status, setStatus] = useState<StaffStatusFilter>("current");
   const [category, setCategory] = useState<EmployeeCategory | "all">("all");
   const [group, setGroup] = useState<StaffGroupFilter>("all");
   const [cookingStation, setCookingStation] = useState<CookingStation | "all">("all");
+  const [positionFilter, setPositionFilter] = useState<StaffPositionFilter>("all");
+  const [secondaryFilter, setSecondaryFilter] = useState<StaffSecondaryFilter>("all");
+  const [onlyWithoutHireDate, setOnlyWithoutHireDate] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+  const [editorDirty, setEditorDirty] = useState(false);
+  const [discardEditorOpen, setDiscardEditorOpen] = useState(false);
+  const [selectedChangeId, setSelectedChangeId] = useState<string | null>(null);
+  const [changeFilters, setChangeFilters] =
+    useState<EmployeeChangeFiltersState>(defaultChangeFilters);
   const [createOpen, setCreateOpen] = useState(false);
+  const [noticeTarget, setNoticeTarget] = useState<Employee | null>(null);
+  const [noticeCancelTarget, setNoticeCancelTarget] = useState<Employee | null>(null);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setDebouncedSearch(search), 250);
@@ -173,6 +402,19 @@ export function StaffRoute() {
       setCookingStation("all");
     }
   }, [group]);
+
+  useEffect(() => {
+    if (!canViewChanges && activeTab === "changes") {
+      setActiveTab("employees");
+    }
+  }, [activeTab, canViewChanges]);
+
+  useEffect(() => {
+    if (!selectedEmployeeId) {
+      setEditorDirty(false);
+      setDiscardEditorOpen(false);
+    }
+  }, [selectedEmployeeId]);
 
   const employeesQuery = useQuery({
     queryKey: ["employees", status, category],
@@ -188,15 +430,28 @@ export function StaffRoute() {
     queryFn: () => getEmployees({ status: "all" }),
   });
 
+  const changesQuery = useQuery({
+    queryKey: ["employees", "changes", changeFilters],
+    queryFn: () =>
+      getEmployeeChanges({
+        employeeId: changeFilters.employeeId === "all" ? undefined : changeFilters.employeeId,
+        changedFrom: dateTimeFilterStart(changeFilters.changedFrom),
+        changedTo: dateTimeFilterEnd(changeFilters.changedTo),
+        changeType: changeFilters.changeType === "all" ? undefined : changeFilters.changeType,
+        source: changeFilters.source === "all" ? undefined : changeFilters.source,
+        actor: changeFilters.actor.trim() || undefined,
+        status: changeFilters.status === "all" ? undefined : changeFilters.status,
+        onlyErrors: changeFilters.onlyErrors,
+        onlyRequiresReview: changeFilters.onlyRequiresReview,
+        includeSystemMigrations:
+          changeFilters.includeSystemMigrations || changeFilters.source === "system_migration",
+      }),
+    enabled: canViewChanges && activeTab === "changes",
+  });
+
   const iikoRolesQuery = useQuery({
     queryKey: ["employees", "iiko-roles"],
     queryFn: getIikoEmployeeRoles,
-    enabled: createOpen,
-  });
-
-  const roleCategoriesQuery = useQuery({
-    queryKey: ["payroll", "role-categories"],
-    queryFn: getPayrollRoleCategories,
     enabled: createOpen,
   });
 
@@ -229,12 +484,61 @@ export function StaffRoute() {
     },
   });
 
+  const noticeMutation = useMutation({
+    mutationFn: ({
+      comment,
+      employee,
+      noticeDate,
+    }: {
+      employee: Employee;
+      noticeDate: string;
+      comment: string;
+    }) =>
+      recordEmployeeNotice(employee.id, {
+        notice_date: noticeDate,
+        comment: comment.trim() || undefined,
+      }),
+    onSuccess: (result, variables) => {
+      toast.success(`Уведомление зафиксировано на ${formatDate(result.effective_from)}`);
+      setNoticeTarget(null);
+      invalidateEmployeeQueries(variables.employee.id);
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось зафиксировать уведомление"));
+    },
+  });
+
+  const cancelNoticeMutation = useMutation({
+    mutationFn: ({ comment, employee }: { employee: Employee; comment: string }) =>
+      cancelEmployeeNotice(employee.id, { comment: comment.trim() || undefined }),
+    onSuccess: (_result, variables) => {
+      toast.success("Уведомление отменено");
+      setNoticeCancelTarget(null);
+      invalidateEmployeeQueries(variables.employee.id);
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось отменить уведомление"));
+    },
+  });
+
+  function invalidateEmployeeQueries(employeeId?: string) {
+    void queryClient.invalidateQueries({ queryKey: ["employees"] });
+    void queryClient.invalidateQueries({ queryKey: ["employees", "changes"] });
+    if (employeeId) {
+      void queryClient.invalidateQueries({ queryKey: ["employees", employeeId, "changes"] });
+    }
+  }
+
   const optionEmployees = useMemo(
     () => allEmployeesQuery.data ?? employeesQuery.data ?? [],
     [allEmployeesQuery.data, employeesQuery.data],
   );
+  const employeeById = useMemo(
+    () => new Map(optionEmployees.map((employee) => [employee.id, employee])),
+    [optionEmployees],
+  );
 
-  const employees = useMemo(() => {
+  const employeesBeforePositionFilter = useMemo(() => {
     const needle = debouncedSearch.trim().toLowerCase();
     return (employeesQuery.data ?? []).filter((employee) => {
       const matchesStatus = status === "current" ? employee.status !== "inactive" : true;
@@ -252,9 +556,88 @@ export function StaffRoute() {
     });
   }, [cookingStation, debouncedSearch, employeesQuery.data, group, status]);
 
+  const secondaryFilterOptions = useMemo(
+    () => secondaryFilterOptionsForPositionFilter(positionFilter),
+    [positionFilter],
+  );
+
+  const positionFilterCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        positionFilterOptions.map((option) => [
+          option.value,
+          employeesBeforePositionFilter.filter((employee) =>
+            employeeMatchesPositionFilter(employee, option.value),
+          ).length,
+        ]),
+      ) as Record<StaffPositionFilter, number>,
+    [employeesBeforePositionFilter],
+  );
+
+  const employeesBeforeSecondaryFilter = useMemo(
+    () =>
+      employeesBeforePositionFilter.filter((employee) =>
+        employeeMatchesPositionFilter(employee, positionFilter),
+      ),
+    [employeesBeforePositionFilter, positionFilter],
+  );
+
+  const secondaryFilterCounts = useMemo(
+    () =>
+      new Map(
+        secondaryFilterOptions.map((option) => [
+          option.value,
+          option.value === "all"
+            ? employeesBeforeSecondaryFilter.length
+            : employeesBeforeSecondaryFilter.filter((employee) =>
+                employeeMatchesSecondaryFilter(employee, positionFilter, option.value),
+              ).length,
+        ]),
+      ),
+    [employeesBeforeSecondaryFilter, positionFilter, secondaryFilterOptions],
+  );
+
+  const employeesBeforeHireDateFilter = useMemo(
+    () =>
+      employeesBeforeSecondaryFilter.filter((employee) =>
+        employeeMatchesSecondaryFilter(employee, positionFilter, secondaryFilter),
+      ),
+    [employeesBeforeSecondaryFilter, positionFilter, secondaryFilter],
+  );
+
+  const employees = useMemo(
+    () =>
+      onlyWithoutHireDate
+        ? employeesBeforeHireDateFilter.filter((employee) => employee.hire_date === null)
+        : employeesBeforeHireDateFilter,
+    [employeesBeforeHireDateFilter, onlyWithoutHireDate],
+  );
+
+  function handlePositionFilterChange(value: string) {
+    setPositionFilter(value as StaffPositionFilter);
+    setSecondaryFilter("all");
+  }
+
   const selectedEmployee = useMemo(
     () => optionEmployees.find((employee) => employee.id === selectedEmployeeId) ?? null,
     [optionEmployees, selectedEmployeeId],
+  );
+  const changes = useMemo(() => {
+    const rows = changesQuery.data ?? [];
+    if (!changeFilters.actionDate && !changeFilters.onlyRetroactive) {
+      return rows;
+    }
+    return rows.filter((change) => {
+      const matchesActionDate = changeFilters.actionDate
+        ? changeMatchesActionDate(change, changeFilters.actionDate)
+        : true;
+      const matchesRetroactive = changeFilters.onlyRetroactive ? isRetroactiveChange(change) : true;
+      return matchesActionDate && matchesRetroactive;
+    });
+  }, [changeFilters.actionDate, changeFilters.onlyRetroactive, changesQuery.data]);
+  const selectedChange = useMemo(
+    () => changes.find((change) => change.id === selectedChangeId) ?? null,
+    [changes, selectedChangeId],
   );
 
   const stats = useMemo(() => {
@@ -272,8 +655,20 @@ export function StaffRoute() {
     status === "all" &&
     category === "all" &&
     group === "all" &&
+    positionFilter === "all" &&
+    secondaryFilter === "all" &&
+    !onlyWithoutHireDate &&
     cookingStation === "all" &&
     debouncedSearch.trim() === "";
+  const emptyEmployeesTitle = onlyWithoutHireDate
+    ? "Все сотрудники имеют дату приёма"
+    : "Сотрудники не найдены";
+  const emptyEmployeesDescription = onlyWithoutHireDate
+    ? "В выбранном списке нет сотрудников без даты приёма."
+    : "Измените поиск или фильтры.";
+  const emptyEmployeesTableMessage = onlyWithoutHireDate
+    ? "Все сотрудники имеют дату приёма"
+    : "Сотрудники по выбранным фильтрам не найдены";
 
   const tableColumns = useMemo<Array<DataTableColumn<Employee>>>(
     () => [
@@ -284,7 +679,16 @@ export function StaffRoute() {
           <div className="flex min-w-[220px] items-center gap-3">
             <EmployeeAvatar employee={employee} />
             <div className="min-w-0">
-              <div className="truncate font-medium">{employee.full_name}</div>
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="truncate font-medium">{employee.full_name}</div>
+                {!employee.hire_date ? (
+                  <span
+                    aria-label="Дата приёма не указана"
+                    className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500"
+                    title="Дата приёма не указана"
+                  />
+                ) : null}
+              </div>
               <div className="truncate text-sm text-muted-foreground">
                 {employee.position || "Должность не указана"}
               </div>
@@ -327,205 +731,450 @@ export function StaffRoute() {
         header: "",
         className: "text-right",
         cell: (employee) => (
-          <Button
-            onClick={(event) => {
-              event.stopPropagation();
-              setSelectedEmployeeId(employee.id);
-            }}
-            size="sm"
-            variant="outline"
-          >
-            Открыть
-          </Button>
+          <div className="flex justify-end gap-2">
+            <Button
+              onClick={(event) => {
+                event.stopPropagation();
+                setSelectedEmployeeId(employee.id);
+              }}
+              size="sm"
+              variant="outline"
+            >
+              Открыть
+            </Button>
+            {canManageStaff ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    aria-label="Действия сотрудника"
+                    onClick={(event) => event.stopPropagation()}
+                    size="icon"
+                    variant="ghost"
+                  >
+                    <MoreHorizontal size={16} aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
+                  {employee.active_notice ? (
+                    <DropdownMenuItem onSelect={() => setNoticeCancelTarget(employee)}>
+                      <BellOff size={16} aria-hidden="true" />
+                      Отменить уведомление
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem onSelect={() => setNoticeTarget(employee)}>
+                      <BellPlus size={16} aria-hidden="true" />
+                      Зафиксировать уведомление об уходе
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+          </div>
         ),
       },
     ],
-    [],
+    [canManageStaff],
+  );
+
+  const changeColumns = useMemo<Array<DataTableColumn<EmployeeChangeEvent>>>(
+    () => [
+      {
+        key: "changed_at",
+        header: "Дата/время изменения",
+        cell: (change) => (
+          <span className="whitespace-nowrap text-sm">{formatDateTime(change.changed_at)}</span>
+        ),
+      },
+      {
+        key: "effective",
+        header: "Дата действия",
+        cell: (change) => (
+          <span className="whitespace-nowrap text-sm">{formatEffectivePeriod(change)}</span>
+        ),
+      },
+      {
+        key: "employee",
+        header: "Сотрудник",
+        cell: (change) => (
+          <span className="block min-w-[180px] max-w-[240px] truncate font-medium">
+            {employeeNameForChange(change, employeeById)}
+          </span>
+        ),
+      },
+      {
+        key: "change_type",
+        header: "Тип изменения",
+        cell: (change) => (
+          <span className="block min-w-[150px]">{changeTypeLabel(change.change_type)}</span>
+        ),
+      },
+      {
+        key: "source",
+        header: "Источник",
+        cell: (change) => (
+          <span className="whitespace-nowrap">{EMPLOYEE_CHANGE_SOURCE_LABELS[change.source]}</span>
+        ),
+      },
+      {
+        key: "actor",
+        header: "Кто изменил",
+        cell: (change) => (
+          <span className="block max-w-[180px] truncate text-muted-foreground">
+            {change.actor_label || "Система"}
+          </span>
+        ),
+      },
+      {
+        key: "summary",
+        header: "Краткое описание",
+        cell: (change) => <span className="block min-w-[220px]">{change.summary}</span>,
+      },
+      {
+        key: "status",
+        header: "Статус",
+        cell: (change) => <EmployeeChangeStatusBadge status={change.status} />,
+      },
+    ],
+    [employeeById],
   );
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Штат"
-        description="Реестр сотрудников. Имена синхронизируются из iiko."
+        description="Реестр сотрудников для графика и зарплаты."
         action={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={() => setCreateOpen(true)} variant="outline">
-              <UserPlus size={16} aria-hidden="true" />
-              Создать сотрудника
-            </Button>
-            <Button onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}>
-              {syncMutation.isPending ? (
-                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-              ) : (
-                <DatabaseZap size={16} aria-hidden="true" />
-              )}
-              Загрузить из iiko
-            </Button>
-          </div>
+          activeTab === "employees" ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={() => setCreateOpen(true)} variant="outline">
+                <UserPlus size={16} aria-hidden="true" />
+                Создать сотрудника
+              </Button>
+              <Button onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}>
+                {syncMutation.isPending ? (
+                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                ) : (
+                  <DatabaseZap size={16} aria-hidden="true" />
+                )}
+                Загрузить из iiko
+              </Button>
+            </div>
+          ) : undefined
         }
       />
 
-      <section className="grid gap-3 md:grid-cols-3">
-        <StaffMetric label="Всего в реестре" value={stats.total} />
-        <StaffMetric label="Активны" value={stats.active} tone="success" />
-        <StaffMetric label="Требуют проверки" value={stats.needsSetup} tone="warning" />
-      </section>
+      <Tabs
+        className="space-y-5"
+        onValueChange={(value) => setActiveTab(value as StaffTab)}
+        value={activeTab}
+      >
+        <TabsList>
+          <TabsTrigger value="employees">Сотрудники</TabsTrigger>
+          {canViewChanges ? (
+            <TabsTrigger className="gap-2" value="changes">
+              <History size={15} aria-hidden="true" />
+              Изменения
+            </TabsTrigger>
+          ) : null}
+        </TabsList>
 
-      <section className="grid gap-3 rounded-lg border bg-card p-3 lg:grid-cols-[minmax(220px,1fr)_160px_160px_160px_160px_auto] lg:items-end">
-        <Label className="grid gap-1 text-sm">
-          <span className="text-xs font-medium uppercase text-muted-foreground">Поиск</span>
-          <div className="flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3">
-            <Search size={16} className="text-muted-foreground" aria-hidden="true" />
-            <input
-              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Имя сотрудника"
-              value={search}
-            />
+        <TabsContent className="mt-0 space-y-5" value="employees">
+          <section className="grid gap-3 md:grid-cols-3">
+            <StaffMetric label="Всего в реестре" value={stats.total} />
+            <StaffMetric label="Активны" value={stats.active} tone="success" />
+            <StaffMetric label="Требуют проверки" value={stats.needsSetup} tone="warning" />
+          </section>
+
+          <div className="space-y-2">
+            <Tabs onValueChange={handlePositionFilterChange} value={positionFilter}>
+              <div className="-mx-1 overflow-x-auto px-1">
+                <TabsList className="inline-flex h-10 min-w-max justify-start">
+                  {positionFilterOptions.map((option) => (
+                    <TabsTrigger
+                      className="whitespace-nowrap"
+                      value={option.value}
+                      key={option.value}
+                    >
+                      {option.label} ({positionFilterCounts[option.value]})
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+            </Tabs>
+
+            {secondaryFilterOptions.length > 0 ? (
+              <Tabs
+                onValueChange={(value) => setSecondaryFilter(value as StaffSecondaryFilter)}
+                value={secondaryFilter}
+              >
+                <div className="overflow-x-auto pl-3">
+                  <TabsList className="inline-flex h-9 min-w-max justify-start">
+                    {secondaryFilterOptions.map((option) => (
+                      <TabsTrigger
+                        className="whitespace-nowrap"
+                        value={option.value}
+                        key={option.value}
+                      >
+                        {option.label} ({secondaryFilterCounts.get(option.value) ?? 0})
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </div>
+              </Tabs>
+            ) : null}
           </div>
-        </Label>
 
-        <Label className="grid gap-1 text-sm">
-          <span className="text-xs font-medium uppercase text-muted-foreground">Статус</span>
-          <Select onValueChange={(value) => setStatus(value as StaffStatusFilter)} value={status}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {statusOptions.map((option) => (
-                <SelectItem value={option} key={option}>
-                  {statusFilterLabel(option)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Label>
+          <section className="grid gap-3 rounded-lg border bg-card p-3 lg:grid-cols-[minmax(220px,1fr)_160px_160px_160px_160px_190px_auto] lg:items-end">
+            <Label className="grid gap-1 text-sm">
+              <span className="text-xs font-medium uppercase text-muted-foreground">Поиск</span>
+              <div className="flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3">
+                <Search size={16} className="text-muted-foreground" aria-hidden="true" />
+                <input
+                  className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Имя сотрудника"
+                  value={search}
+                />
+              </div>
+            </Label>
 
-        <Label className="grid gap-1 text-sm">
-          <span className="text-xs font-medium uppercase text-muted-foreground">Группа</span>
-          <Select onValueChange={(value) => setGroup(value as StaffGroupFilter)} value={group}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Все</SelectItem>
-              <SelectItem value="cook">Повара</SelectItem>
-              <SelectItem value="staff">Не повара</SelectItem>
-            </SelectContent>
-          </Select>
-        </Label>
+            <Label className="grid gap-1 text-sm">
+              <span className="text-xs font-medium uppercase text-muted-foreground">Статус</span>
+              <Select
+                onValueChange={(value) => setStatus(value as StaffStatusFilter)}
+                value={status}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {statusOptions.map((option) => (
+                    <SelectItem value={option} key={option}>
+                      {statusFilterLabel(option)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Label>
 
-        <Label className="grid gap-1 text-sm">
-          <span className="text-xs font-medium uppercase text-muted-foreground">Категория</span>
-          <Select
-            onValueChange={(value) => setCategory(value as EmployeeCategory | "all")}
-            value={category}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Все</SelectItem>
-              {categoryOptions.map((value) => (
-                <SelectItem value={value} key={value}>
-                  {EMPLOYEE_CATEGORY_LABELS[value]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Label>
+            <Label className="grid gap-1 text-sm">
+              <span className="text-xs font-medium uppercase text-muted-foreground">Группа</span>
+              <Select onValueChange={(value) => setGroup(value as StaffGroupFilter)} value={group}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все</SelectItem>
+                  <SelectItem value="cook">Повара</SelectItem>
+                  <SelectItem value="staff">Не повара</SelectItem>
+                </SelectContent>
+              </Select>
+            </Label>
 
-        <Label className="grid gap-1 text-sm">
-          <span className="text-xs font-medium uppercase text-muted-foreground">Цех</span>
-          <Select
-            disabled={group !== "cook"}
-            onValueChange={(value) => setCookingStation(value as CookingStation | "all")}
-            value={cookingStation}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Все</SelectItem>
-              {cookingStationOptions.map((value) => (
-                <SelectItem value={value} key={value}>
-                  {COOKING_STATION_LABELS[value]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Label>
+            <Label className="grid gap-1 text-sm">
+              <span className="text-xs font-medium uppercase text-muted-foreground">Категория</span>
+              <Select
+                onValueChange={(value) => setCategory(value as EmployeeCategory | "all")}
+                value={category}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все</SelectItem>
+                  {categoryOptions.map((value) => (
+                    <SelectItem value={value} key={value}>
+                      {EMPLOYEE_CATEGORY_LABELS[value]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Label>
 
-        <Tabs onValueChange={(value) => setViewMode(value as ViewMode)} value={viewMode}>
-          <TabsList>
-            <TabsTrigger className="gap-2" value="grid">
-              <Grid2X2 size={15} aria-hidden="true" />
-              Сетка
-            </TabsTrigger>
-            <TabsTrigger className="gap-2" value="table">
-              <List size={15} aria-hidden="true" />
-              Таблица
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </section>
+            <Label className="grid gap-1 text-sm">
+              <span className="text-xs font-medium uppercase text-muted-foreground">Цех</span>
+              <Select
+                disabled={group !== "cook"}
+                onValueChange={(value) => setCookingStation(value as CookingStation | "all")}
+                value={cookingStation}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все</SelectItem>
+                  {cookingStationOptions.map((value) => (
+                    <SelectItem value={value} key={value}>
+                      {COOKING_STATION_LABELS[value]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Label>
 
-      {employeesQuery.isError ? (
-        <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <ShieldAlert size={16} aria-hidden="true" />
-          {apiErrorMessage(employeesQuery.error, "Не удалось загрузить сотрудников")}
-        </div>
-      ) : null}
+            <label className="flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm">
+              <input
+                checked={onlyWithoutHireDate}
+                className="h-4 w-4"
+                onChange={(event) => setOnlyWithoutHireDate(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Только без даты приёма</span>
+            </label>
 
-      {isInitialEmpty ? (
-        <EmptyState
-          icon={<UserPlus className="h-5 w-5" aria-hidden="true" />}
-          title="Сотрудники не загружены."
-          description="Нажмите «Загрузить из iiko» для синхронизации."
-          action={
-            <Button
-              className="h-11 px-5"
-              onClick={() => syncMutation.mutate()}
-              disabled={syncMutation.isPending}
-            >
-              {syncMutation.isPending ? (
-                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-              ) : (
-                <DatabaseZap size={16} aria-hidden="true" />
-              )}
-              Загрузить из iiko
-            </Button>
-          }
-        />
-      ) : viewMode === "grid" ? (
-        <StaffGrid
-          employees={employees}
-          isLoading={employeesQuery.isLoading}
-          onSelect={(employee) => setSelectedEmployeeId(employee.id)}
-        />
-      ) : (
-        <DataTable
-          columns={tableColumns}
-          rows={employees}
-          isLoading={employeesQuery.isLoading}
-          getRowKey={(employee) => employee.id}
-          onRowClick={(employee) => setSelectedEmployeeId(employee.id)}
-          emptyMessage="Сотрудники по выбранным фильтрам не найдены"
-        />
-      )}
+            <Tabs onValueChange={(value) => setViewMode(value as ViewMode)} value={viewMode}>
+              <TabsList>
+                <TabsTrigger className="gap-2" value="grid">
+                  <Grid2X2 size={15} aria-hidden="true" />
+                  Сетка
+                </TabsTrigger>
+                <TabsTrigger className="gap-2" value="table">
+                  <List size={15} aria-hidden="true" />
+                  Таблица
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </section>
+
+          {employeesQuery.isError ? (
+            <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <ShieldAlert size={16} aria-hidden="true" />
+              {apiErrorMessage(employeesQuery.error, "Не удалось загрузить сотрудников")}
+            </div>
+          ) : null}
+
+          {isInitialEmpty ? (
+            <EmptyState
+              icon={<UserPlus className="h-5 w-5" aria-hidden="true" />}
+              title="Сотрудники не загружены."
+              description="Нажмите «Загрузить из iiko» для синхронизации."
+              action={
+                <Button
+                  className="h-11 px-5"
+                  onClick={() => syncMutation.mutate()}
+                  disabled={syncMutation.isPending}
+                >
+                  {syncMutation.isPending ? (
+                    <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                  ) : (
+                    <DatabaseZap size={16} aria-hidden="true" />
+                  )}
+                  Загрузить из iiko
+                </Button>
+              }
+            />
+          ) : viewMode === "grid" ? (
+            <StaffGrid
+              employees={employees}
+              emptyDescription={emptyEmployeesDescription}
+              emptyTitle={emptyEmployeesTitle}
+              isLoading={employeesQuery.isLoading}
+              onSelect={(employee) => setSelectedEmployeeId(employee.id)}
+            />
+          ) : (
+            <DataTable
+              columns={tableColumns}
+              rows={employees}
+              isLoading={employeesQuery.isLoading}
+              getRowKey={(employee) => employee.id}
+              onRowClick={(employee) => setSelectedEmployeeId(employee.id)}
+              emptyMessage={emptyEmployeesTableMessage}
+            />
+          )}
+        </TabsContent>
+
+        {canViewChanges ? (
+          <TabsContent className="mt-0 space-y-4" value="changes">
+            <EmployeeChangesPanel
+              changes={changes}
+              columns={changeColumns}
+              employees={optionEmployees}
+              filters={changeFilters}
+              isError={changesQuery.isError}
+              error={changesQuery.error}
+              isLoading={changesQuery.isLoading || changesQuery.isFetching}
+              onFiltersChange={setChangeFilters}
+              onSelectChange={(change) => setSelectedChangeId(change.id)}
+            />
+          </TabsContent>
+        ) : null}
+      </Tabs>
 
       <Sheet
         open={Boolean(selectedEmployee)}
         onOpenChange={(open) => {
           if (!open) {
+            if (editorDirty) {
+              setDiscardEditorOpen(true);
+              return;
+            }
             setSelectedEmployeeId(null);
           }
         }}
       >
         <SheetContent className="w-full overflow-y-auto sm:max-w-xl" side="right">
           {selectedEmployee ? (
-            <StaffEditor employee={selectedEmployee} onClose={() => setSelectedEmployeeId(null)} />
+            <StaffEditor
+              employee={selectedEmployee}
+              onNavigate={onNavigate}
+              onClose={() => {
+                setEditorDirty(false);
+                setSelectedEmployeeId(null);
+              }}
+              onDirtyChange={setEditorDirty}
+              onShowChanges={(employeeId) => {
+                setChangeFilters((current) => ({
+                  ...current,
+                  employeeId,
+                }));
+                setActiveTab("changes");
+                setEditorDirty(false);
+                setSelectedEmployeeId(null);
+              }}
+            />
+          ) : null}
+        </SheetContent>
+      </Sheet>
+
+      <AlertDialog open={discardEditorOpen} onOpenChange={setDiscardEditorOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Закрыть без сохранения?</AlertDialogTitle>
+            <AlertDialogDescription>Изменения будут потеряны.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDiscardEditorOpen(false)}>
+              Отмена
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setDiscardEditorOpen(false);
+                setEditorDirty(false);
+                setSelectedEmployeeId(null);
+              }}
+            >
+              Закрыть
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Sheet
+        open={Boolean(selectedChange)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedChangeId(null);
+          }
+        }}
+      >
+        <SheetContent className="w-full overflow-y-auto sm:max-w-2xl" side="right">
+          {selectedChange ? (
+            <EmployeeChangeDetails
+              change={selectedChange}
+              employee={
+                selectedChange.employee_id ? employeeById.get(selectedChange.employee_id) : null
+              }
+            />
           ) : null}
         </SheetContent>
       </Sheet>
@@ -538,21 +1187,223 @@ export function StaffRoute() {
         roles={iikoRolesQuery.data ?? []}
         rolesError={iikoRolesQuery.error}
         rolesLoading={iikoRolesQuery.isLoading || iikoRolesQuery.isFetching}
-        roleCategories={roleCategoriesQuery.data ?? {}}
-        roleCategoriesError={roleCategoriesQuery.error}
-        roleCategoriesLoading={
-          roleCategoriesQuery.isLoading || roleCategoriesQuery.isFetching
+      />
+
+      <EmployeeNoticeDialog
+        employee={noticeTarget}
+        isPending={noticeMutation.isPending}
+        onOpenChange={(open) => {
+          if (!open) {
+            setNoticeTarget(null);
+          }
+        }}
+        onSubmit={(employee, noticeDate, comment) =>
+          noticeMutation.mutate({ employee, noticeDate, comment })
         }
+      />
+
+      <EmployeeNoticeCancelDialog
+        employee={noticeCancelTarget}
+        isPending={cancelNoticeMutation.isPending}
+        onOpenChange={(open) => {
+          if (!open) {
+            setNoticeCancelTarget(null);
+          }
+        }}
+        onSubmit={(employee, comment) => cancelNoticeMutation.mutate({ employee, comment })}
       />
     </div>
   );
 }
 
+function EmployeeNoticeDialog({
+  employee,
+  isPending,
+  onOpenChange,
+  onSubmit,
+}: {
+  employee: Employee | null;
+  isPending: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (employee: Employee, noticeDate: string, comment: string) => void;
+}) {
+  const [noticeDate, setNoticeDate] = useState(todayDateInputValue);
+  const [comment, setComment] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    if (!employee) {
+      return;
+    }
+    setNoticeDate(todayDateInputValue());
+    setComment("");
+    setConfirmOpen(false);
+  }, [employee?.id]);
+
+  return (
+    <>
+      <Dialog open={Boolean(employee)} onOpenChange={onOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Уведомление об уходе</DialogTitle>
+            <DialogDescription>{employee?.full_name}</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4">
+            <Label className="grid gap-2">
+              <span>Дата уведомления</span>
+              <Input
+                onChange={(event) => setNoticeDate(event.target.value)}
+                type="date"
+                value={noticeDate}
+              />
+            </Label>
+            <Label className="grid gap-2">
+              <span>Комментарий (опционально)</span>
+              <textarea
+                className="min-h-24 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) => setComment(event.target.value)}
+                value={comment}
+              />
+            </Label>
+          </div>
+
+          <DialogFooter>
+            <Button disabled={isPending} onClick={() => onOpenChange(false)} variant="outline">
+              Отмена
+            </Button>
+            <Button
+              disabled={!employee || !noticeDate || isPending}
+              onClick={() => setConfirmOpen(true)}
+              type="button"
+            >
+              <BellPlus size={16} aria-hidden="true" />
+              Зафиксировать
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Зафиксировать уведомление?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {employee?.full_name}, дата уведомления: {formatDate(noticeDate)}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPending}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!employee || isPending}
+              onClick={() => {
+                if (employee) {
+                  onSubmit(employee, noticeDate, comment);
+                }
+              }}
+            >
+              Подтвердить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+function EmployeeNoticeCancelDialog({
+  employee,
+  isPending,
+  onOpenChange,
+  onSubmit,
+}: {
+  employee: Employee | null;
+  isPending: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (employee: Employee, comment: string) => void;
+}) {
+  const [comment, setComment] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    if (!employee) {
+      return;
+    }
+    setComment("");
+    setConfirmOpen(false);
+  }, [employee?.id]);
+
+  return (
+    <>
+      <Dialog open={Boolean(employee)} onOpenChange={onOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Отменить уведомление</DialogTitle>
+            <DialogDescription>{employee?.full_name}</DialogDescription>
+          </DialogHeader>
+
+          <Label className="grid gap-2">
+            <span>Комментарий (опционально)</span>
+            <textarea
+              className="min-h-24 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onChange={(event) => setComment(event.target.value)}
+              value={comment}
+            />
+          </Label>
+
+          <DialogFooter>
+            <Button disabled={isPending} onClick={() => onOpenChange(false)} variant="outline">
+              Отмена
+            </Button>
+            <Button
+              disabled={!employee || isPending}
+              onClick={() => setConfirmOpen(true)}
+              type="button"
+              variant="destructive"
+            >
+              <BellOff size={16} aria-hidden="true" />
+              Отменить уведомление
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Отменить уведомление?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {employee?.full_name}. Запись останется в истории изменений.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPending}>Назад</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!employee || isPending}
+              onClick={() => {
+                if (employee) {
+                  onSubmit(employee, comment);
+                }
+              }}
+            >
+              Отменить уведомление
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
 function StaffGrid({
+  emptyDescription = "Измените поиск или фильтры.",
+  emptyTitle = "Сотрудники не найдены",
   employees,
   isLoading,
   onSelect,
 }: {
+  emptyDescription?: string;
+  emptyTitle?: string;
   employees: Employee[];
   isLoading: boolean;
   onSelect: (employee: Employee) => void;
@@ -578,8 +1429,8 @@ function StaffGrid({
     return (
       <EmptyState
         icon={<Search className="h-5 w-5" aria-hidden="true" />}
-        title="Сотрудники не найдены"
-        description="Измените поиск или фильтры."
+        title={emptyTitle}
+        description={emptyDescription}
       />
     );
   }
@@ -614,6 +1465,623 @@ function StaffGrid({
   );
 }
 
+function EmployeeChangesPanel({
+  changes,
+  columns,
+  employees,
+  error,
+  filters,
+  isError,
+  isLoading,
+  onFiltersChange,
+  onSelectChange,
+}: {
+  changes: EmployeeChangeEvent[];
+  columns: Array<DataTableColumn<EmployeeChangeEvent>>;
+  employees: Employee[];
+  error: unknown;
+  filters: EmployeeChangeFiltersState;
+  isError: boolean;
+  isLoading: boolean;
+  onFiltersChange: Dispatch<SetStateAction<EmployeeChangeFiltersState>>;
+  onSelectChange: (change: EmployeeChangeEvent) => void;
+}) {
+  function updateFilters(patch: Partial<EmployeeChangeFiltersState>) {
+    onFiltersChange((current) => ({ ...current, ...patch }));
+  }
+
+  const filtersAreDefault = JSON.stringify(filters) === JSON.stringify(defaultChangeFilters);
+
+  return (
+    <>
+      <section className="grid gap-3 rounded-lg border bg-card p-3 xl:grid-cols-[minmax(220px,1.4fr)_repeat(4,minmax(150px,1fr))]">
+        <Label className="grid gap-1 text-sm">
+          <span className="text-xs font-medium uppercase text-muted-foreground">Сотрудник</span>
+          <Select
+            onValueChange={(value) => updateFilters({ employeeId: value })}
+            value={filters.employeeId}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все</SelectItem>
+              {employees.map((employee) => (
+                <SelectItem value={employee.id} key={employee.id}>
+                  {employee.full_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Label>
+
+        <Label className="grid gap-1 text-sm">
+          <span className="text-xs font-medium uppercase text-muted-foreground">Изменено с</span>
+          <Input
+            onChange={(event) => updateFilters({ changedFrom: event.target.value })}
+            type="date"
+            value={filters.changedFrom}
+          />
+        </Label>
+
+        <Label className="grid gap-1 text-sm">
+          <span className="text-xs font-medium uppercase text-muted-foreground">Изменено по</span>
+          <Input
+            onChange={(event) => updateFilters({ changedTo: event.target.value })}
+            type="date"
+            value={filters.changedTo}
+          />
+        </Label>
+
+        <Label className="grid gap-1 text-sm">
+          <span className="text-xs font-medium uppercase text-muted-foreground">Дата действия</span>
+          <Input
+            onChange={(event) => updateFilters({ actionDate: event.target.value })}
+            type="date"
+            value={filters.actionDate}
+          />
+        </Label>
+
+        <Label className="grid gap-1 text-sm">
+          <span className="text-xs font-medium uppercase text-muted-foreground">Тип</span>
+          <Select
+            onValueChange={(value) => updateFilters({ changeType: value })}
+            value={filters.changeType}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все</SelectItem>
+              {changeTypeOptions.map((type) => (
+                <SelectItem value={type} key={type}>
+                  {changeTypeLabel(type)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Label>
+
+        <Label className="grid gap-1 text-sm">
+          <span className="text-xs font-medium uppercase text-muted-foreground">Источник</span>
+          <Select
+            onValueChange={(value) =>
+              updateFilters({ source: value as EmployeeChangeSource | "all" })
+            }
+            value={filters.source}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все</SelectItem>
+              {changeSourceOptions.map((source) => (
+                <SelectItem value={source} key={source}>
+                  {EMPLOYEE_CHANGE_SOURCE_LABELS[source]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Label>
+
+        <Label className="grid gap-1 text-sm">
+          <span className="text-xs font-medium uppercase text-muted-foreground">Автор</span>
+          <Input
+            onChange={(event) => updateFilters({ actor: event.target.value })}
+            placeholder="Имя, роль или ID"
+            value={filters.actor}
+          />
+        </Label>
+
+        <Label className="grid gap-1 text-sm">
+          <span className="text-xs font-medium uppercase text-muted-foreground">Статус</span>
+          <Select
+            onValueChange={(value) =>
+              updateFilters({ status: value as EmployeeChangeStatus | "all" })
+            }
+            value={filters.status}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все</SelectItem>
+              {changeStatusOptions.map((status) => (
+                <SelectItem value={status} key={status}>
+                  {EMPLOYEE_CHANGE_STATUS_LABELS[status]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Label>
+
+        <div className="grid gap-2 xl:col-span-3">
+          <span className="text-xs font-medium uppercase text-muted-foreground">
+            Быстрые переключатели
+          </span>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={() => updateFilters({ onlyErrors: !filters.onlyErrors })}
+              size="sm"
+              type="button"
+              variant={filters.onlyErrors ? "secondary" : "outline"}
+            >
+              Только ошибки
+            </Button>
+            <Button
+              onClick={() => updateFilters({ onlyRequiresReview: !filters.onlyRequiresReview })}
+              size="sm"
+              type="button"
+              variant={filters.onlyRequiresReview ? "secondary" : "outline"}
+            >
+              Только требует проверки
+            </Button>
+            <Button
+              onClick={() => updateFilters({ onlyRetroactive: !filters.onlyRetroactive })}
+              size="sm"
+              type="button"
+              variant={filters.onlyRetroactive ? "secondary" : "outline"}
+            >
+              Только задним числом
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3 xl:col-span-2">
+          <label className="flex h-10 items-center gap-2 rounded-md border bg-background px-3 text-sm">
+            <input
+              checked={filters.includeSystemMigrations || filters.source === "system_migration"}
+              disabled={filters.source === "system_migration"}
+              onChange={(event) => updateFilters({ includeSystemMigrations: event.target.checked })}
+              type="checkbox"
+            />
+            <span>Include system migrations</span>
+          </label>
+          <Button
+            disabled={filtersAreDefault}
+            onClick={() => onFiltersChange(defaultChangeFilters)}
+            type="button"
+            variant="outline"
+          >
+            <RotateCcw size={16} aria-hidden="true" />
+            Сбросить
+          </Button>
+        </div>
+      </section>
+
+      {isError ? (
+        <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <ShieldAlert size={16} aria-hidden="true" />
+          {apiErrorMessage(error, "Не удалось загрузить изменения штата")}
+        </div>
+      ) : null}
+
+      <DataTable
+        columns={columns}
+        rows={changes}
+        isLoading={isLoading}
+        getRowKey={(change) => change.id}
+        onRowClick={onSelectChange}
+        emptyMessage="Изменения по выбранным фильтрам не найдены"
+      />
+    </>
+  );
+}
+
+function EmployeeChangeDetails({
+  change,
+  employee,
+}: {
+  change: EmployeeChangeEvent;
+  employee: Employee | null | undefined;
+}) {
+  const diffRows = employeeChangeDiffRows(change);
+  const payrollWarnings = payrollImpactWarnings(change);
+
+  return (
+    <div className="space-y-5">
+      <SheetHeader>
+        <SheetTitle className="pr-8">{changeTypeLabel(change.change_type)}</SheetTitle>
+        <SheetDescription>{change.summary}</SheetDescription>
+      </SheetHeader>
+
+      <div className="grid gap-2 rounded-lg border bg-card p-4 text-sm">
+        <InfoRow label="Сотрудник" value={employee?.full_name ?? employeeNameForChange(change)} />
+        <InfoRow label="Источник" value={EMPLOYEE_CHANGE_SOURCE_LABELS[change.source]} />
+        <InfoRow label="Кто изменил" value={change.actor_label || "Система"} />
+        <InfoRow label="Дата/время изменения" value={formatDateTime(change.changed_at)} />
+        <InfoRow label="Дата действия" value={formatEffectivePeriod(change)} />
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-muted-foreground">Статус</span>
+          <EmployeeChangeStatusBadge status={change.status} />
+        </div>
+      </div>
+
+      <section className="grid gap-3 rounded-lg border bg-card p-4">
+        <div className="text-sm font-medium">Изменения</div>
+        {diffRows.length > 0 ? (
+          <div className="grid gap-2">
+            {diffRows.map((row) => (
+              <div
+                className="grid gap-2 rounded-md border bg-background p-3 sm:grid-cols-[160px_1fr]"
+                key={row.label}
+              >
+                <div className="text-sm font-medium">{row.label}</div>
+                {row.note ? (
+                  <div className="text-sm">{row.note}</div>
+                ) : (
+                  <div className="grid gap-2 text-sm sm:grid-cols-2">
+                    <DiffValue label="Было" value={row.before} />
+                    <DiffValue label="Стало" value={row.after} />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">
+            Детали изменения не переданы.
+          </div>
+        )}
+      </section>
+
+      <section className="grid gap-2 rounded-lg border bg-card p-4 text-sm">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-muted-foreground">Влияет на зарплату</span>
+          <span className="font-medium">{change.payroll_impact ? "Да" : "Нет"}</span>
+        </div>
+        {payrollWarnings.map((warning) => (
+          <div
+            className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800"
+            key={warning}
+          >
+            {warning}
+          </div>
+        ))}
+      </section>
+
+      {change.change_type === "dismiss" || change.reason || change.comment ? (
+        <section className="grid gap-2 rounded-lg border bg-card p-4 text-sm">
+          <div className="text-sm font-medium">Увольнение</div>
+          <InfoRow label="Причина" value={change.reason_label || change.reason || "Не указана"} />
+          <InfoRow label="Комментарий" value={change.comment || "Не указан"} />
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function DiffValue({ label, value }: { label: string; value: string | undefined }) {
+  return (
+    <div className="min-w-0 rounded-md bg-muted/40 px-3 py-2">
+      <div className="text-xs font-medium uppercase text-muted-foreground">{label}</div>
+      <div className="mt-1 break-words font-medium">{value ?? "Не задано"}</div>
+    </div>
+  );
+}
+
+function EmployeeChangeHistoryPreview({
+  changes,
+  isError,
+  isLoading,
+  onShowAll,
+}: {
+  changes: EmployeeChangeEvent[];
+  isError: boolean;
+  isLoading: boolean;
+  onShowAll: () => void;
+}) {
+  return (
+    <section className="grid gap-3 rounded-lg border bg-card p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
+          <History size={16} aria-hidden="true" />
+          <span>История изменений</span>
+        </div>
+        <Button onClick={onShowAll} size="sm" type="button" variant="outline">
+          Показать все
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="grid gap-2">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div className="h-12 animate-pulse rounded-md bg-muted" key={index} />
+          ))}
+        </div>
+      ) : isError ? (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          Не удалось загрузить историю изменений
+        </div>
+      ) : changes.length === 0 ? (
+        <div className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">
+          История изменений пуста
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {changes.map((change) => (
+            <div className="rounded-md border bg-background px-3 py-2" key={change.id}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{change.summary}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {formatDateTime(change.changed_at)} · {changeTypeLabel(change.change_type)}
+                  </div>
+                </div>
+                <EmployeeChangeStatusBadge status={change.status} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function EmployeeFundSection({ employee }: { employee: Employee }) {
+  const [open, setOpen] = useState(false);
+  const fundQuery = useQuery({
+    queryKey: ["payroll-fund", "employee", employee.id],
+    queryFn: () => getEmployeeAccumulationFund(employee.id),
+    enabled: open,
+  });
+  const fund = fundQuery.data;
+  const accounts = fund?.accounts ?? [];
+  const transactionsByAccount = groupFundTransactions(fund?.transactions ?? []);
+
+  return (
+    <section className="rounded-lg border bg-card">
+      <Accordion type="single" collapsible>
+        <AccordionItem
+          className="border-0 bg-transparent"
+          open={open}
+          onToggle={(event) => setOpen(event.currentTarget.open)}
+          value="fund"
+        >
+          <AccordionTrigger className="px-4">
+            <div className="flex min-w-0 items-center gap-2">
+              <Banknote size={16} aria-hidden="true" />
+              <span>Накопительный фонд</span>
+            </div>
+            {fund?.employee ? (
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {fund.employee.tenure_months} мес. ·{" "}
+                {formatFundPercent(fund.employee.current_rate_percent)}
+              </span>
+            ) : null}
+          </AccordionTrigger>
+          <AccordionContent className="grid gap-4">
+            {fundQuery.isLoading ? (
+              <div className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">
+                Загрузка фонда
+              </div>
+            ) : fundQuery.isError ? (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                Не удалось загрузить накопительный фонд
+              </div>
+            ) : fund?.employee ? (
+              <>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <EmployeeFundMetric
+                    label="Стаж"
+                    value={`${fund.employee.tenure_months} мес. (${formatDate(
+                      fund.employee.tenure_started_at,
+                    )})`}
+                  />
+                  <EmployeeFundMetric
+                    label="Текущая ставка"
+                    value={formatFundPercent(fund.employee.current_rate_percent)}
+                  />
+                  <EmployeeFundMetric
+                    label="Следующий порог"
+                    value={nextFundThresholdLabel(fund)}
+                  />
+                </div>
+
+                {accounts.length === 0 ? (
+                  <div className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">
+                    Начислений ещё нет
+                  </div>
+                ) : (
+                  <div className="grid gap-3">
+                    {accounts.map((account) => (
+                      <EmployeeFundAccountRow
+                        account={account}
+                        key={account.id}
+                        transactions={transactionsByAccount.get(account.id) ?? []}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">
+                Начислений ещё нет
+              </div>
+            )}
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+    </section>
+  );
+}
+
+function EmployeeFundMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid min-w-0 gap-1 rounded-md border bg-background px-3 py-2">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="break-words text-sm font-semibold leading-5 text-foreground">{value}</span>
+    </div>
+  );
+}
+
+function EmployeeFundAccountRow({
+  account,
+  transactions,
+}: {
+  account: AccumulationFundAccount;
+  transactions: AccumulationFundTransaction[];
+}) {
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+            <span>{account.year} год</span>
+            <FundStatusBadge status={account.status} />
+          </div>
+          <div className="mt-2 grid gap-1 text-sm text-muted-foreground">
+            <span>Накоплено: {formatDepositMoney(account.accumulated)}</span>
+            {account.status === "paid_out" ? (
+              <span>
+                Выплачено {formatDateOnlyFromDateTime(account.paid_out_at)}:{" "}
+                {formatDepositMoney(account.paid_out)}
+              </span>
+            ) : account.status === "forfeited" ? (
+              <span>{forfeitedFundLabel(account)}</span>
+            ) : (
+              <span>Выплата планируется {formatDate(account.planned_payout_date)}</span>
+            )}
+          </div>
+        </div>
+        <div className="text-right text-sm">
+          <div className="text-muted-foreground">Остаток</div>
+          <div className="font-medium tabular-nums">{formatDepositMoney(account.outstanding)}</div>
+        </div>
+      </div>
+      <details className="mt-3">
+        <summary className="cursor-pointer list-none text-sm font-medium text-primary">
+          Транзакции
+        </summary>
+        <div className="mt-2 grid gap-2">
+          {transactions.length === 0 ? (
+            <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+              Транзакций нет
+            </div>
+          ) : (
+            transactions.map((transaction) => (
+              <div
+                className="grid gap-1 rounded-md border bg-muted/20 px-3 py-2 text-sm sm:grid-cols-[90px_1fr_auto] sm:items-center"
+                key={transaction.id}
+              >
+                <span className="text-muted-foreground">
+                  {formatDateOnlyFromDateTime(transaction.created_at)}
+                </span>
+                <span>{employeeFundTransactionLabel(transaction)}</span>
+                <span className="font-medium tabular-nums">
+                  {formatDepositMoney(transaction.amount)}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function groupFundTransactions(transactions: AccumulationFundTransaction[]) {
+  const grouped = new Map<string, AccumulationFundTransaction[]>();
+  for (const transaction of transactions) {
+    const rows = grouped.get(transaction.account_id) ?? [];
+    rows.push(transaction);
+    grouped.set(transaction.account_id, rows);
+  }
+  return grouped;
+}
+
+function EmployeeAdjustmentsPreview({
+  adjustments,
+  employeeId,
+  isError,
+  isLoading,
+  onNavigate,
+}: {
+  adjustments: PayrollAdjustment[];
+  employeeId: string;
+  isError: boolean;
+  isLoading: boolean;
+  onNavigate?: (path: string) => void;
+}) {
+  return (
+    <section className="grid gap-3 rounded-lg border bg-card p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
+          <Banknote size={16} aria-hidden="true" />
+          <span>Премии и штрафы за последние 60 дней</span>
+        </div>
+        <Button
+          disabled={!onNavigate}
+          onClick={() => onNavigate?.(`/payroll/adjustments?employee=${employeeId}`)}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Все
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="grid gap-2">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div className="h-11 animate-pulse rounded-md bg-muted" key={index} />
+          ))}
+        </div>
+      ) : isError ? (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          Не удалось загрузить премии и штрафы
+        </div>
+      ) : adjustments.length === 0 ? (
+        <div className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">
+          За последние 60 дней корректировок нет
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {adjustments.map((adjustment) => (
+            <div
+              className="grid gap-2 rounded-md border bg-background px-3 py-2 text-sm sm:grid-cols-[88px_1fr_auto] sm:items-center"
+              key={adjustment.id}
+            >
+              <span className="text-muted-foreground">{formatDate(adjustment.work_date)}</span>
+              <span className="min-w-0 truncate">
+                {adjustment.category_display_name || adjustment.custom_label || "Корректировка"}
+              </span>
+              <span className="inline-flex items-center justify-end gap-1 font-medium tabular-nums">
+                {adjustment.type === "bonus" ? (
+                  <Banknote size={14} aria-hidden="true" />
+                ) : (
+                  <CircleMinus size={14} aria-hidden="true" />
+                )}
+                {formatDepositMoney(numericAmount(adjustment.amount))}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 type CreateEmployeeRoleRow = {
   id: string;
   payroll_role: PayrollRole | "";
@@ -641,9 +2109,6 @@ function CreateEmployeeDialog({
   roles,
   rolesError,
   rolesLoading,
-  roleCategories,
-  roleCategoriesError,
-  roleCategoriesLoading,
 }: {
   isPending: boolean;
   onCreate: (payload: EmployeeCreatePayload) => void;
@@ -652,46 +2117,46 @@ function CreateEmployeeDialog({
   roles: IikoEmployeeRole[];
   rolesError: unknown;
   rolesLoading: boolean;
-  roleCategories: Partial<Record<PayrollRole, PayrollRoleCategoryOption[]>>;
-  roleCategoriesError: unknown;
-  roleCategoriesLoading: boolean;
 }) {
   const [fullName, setFullName] = useState("");
   const [pinCode, setPinCode] = useState("");
   const [iikoRoleId, setIikoRoleId] = useState("");
   const [roleRows, setRoleRows] = useState<CreateEmployeeRoleRow[]>(() => [createRoleRow(true)]);
+  const [cashierCategory, setCashierCategory] = useState<EmployeeCategory | "">("");
   const [isSenior, setIsSenior] = useState(false);
   const [isDeputySenior, setIsDeputySenior] = useState(false);
 
   const filteredRoles = useMemo(
-	    () =>
-	      roles.filter((role) => {
-	        if (role.deleted) {
-	          return false;
-	        }
-	        const position = canonicalPosition(role.name);
-	        return Boolean(position && createPositions.has(position));
-	      }),
-	    [roles],
-	  );
+    () =>
+      roles.filter((role) => {
+        if (role.deleted) {
+          return false;
+        }
+        const position = canonicalPosition(role.name);
+        return Boolean(position && createPositions.has(position));
+      }),
+    [roles],
+  );
   const selectedIikoRole = useMemo(
-	    () => filteredRoles.find((role) => role.id === iikoRoleId) ?? null,
-	    [filteredRoles, iikoRoleId],
-	  );
+    () => filteredRoles.find((role) => role.id === iikoRoleId) ?? null,
+    [filteredRoles, iikoRoleId],
+  );
   const selectedPosition = canonicalPosition(selectedIikoRole?.name ?? null);
   const createPayrollRoleOptions = selectedPosition ? positionPayrollRoles[selectedPosition] : [];
   const premiumOptions = selectedPosition ? premiumApplicability[selectedPosition] : null;
-  const showRoleSection = createPayrollRoleOptions.length > 0;
+  const showCashierCategory = selectedPosition === "Кассир";
+  const showCookRoleSection = selectedPosition === "Повар";
   const selectedRoleIds = useMemo(
-	    () => new Set(roleRows.map((row) => row.payroll_role).filter(Boolean)),
-	    [roleRows],
-	  );
+    () => new Set(roleRows.map((row) => row.payroll_role).filter(Boolean)),
+    [roleRows],
+  );
   useEffect(() => {
     if (!open) {
       setFullName("");
       setPinCode("");
       setIikoRoleId("");
       setRoleRows([createRoleRow(true)]);
+      setCashierCategory("");
       setIsSenior(false);
       setIsDeputySenior(false);
     }
@@ -700,14 +2165,22 @@ function CreateEmployeeDialog({
   useEffect(() => {
     if (!selectedPosition) {
       setRoleRows([createRoleRow(true)]);
+      setCashierCategory("");
       setIsSenior(false);
       setIsDeputySenior(false);
       return;
     }
     const allowedRoles = positionPayrollRoles[selectedPosition];
-    if (allowedRoles.length === 0) {
+    if (selectedPosition === "Кассир") {
       setRoleRows([]);
+      setCashierCategory((current) =>
+        isCategoryAllowedForRole("administrator", current) ? current : "",
+      );
+    } else if (allowedRoles.length === 0) {
+      setRoleRows([]);
+      setCashierCategory("");
     } else {
+      setCashierCategory("");
       setRoleRows((rows) => {
         const keptRows = rows
           .filter((row) => row.payroll_role === "" || allowedRoles.includes(row.payroll_role))
@@ -732,26 +2205,24 @@ function CreateEmployeeDialog({
   const nameIsValid = trimmedName.split(/\s+/).filter(Boolean).length >= 2;
   const pinIsValid = /^\d{4}$/.test(pinCode);
   const primaryCount = roleRows.filter((row) => row.is_primary).length;
-	  const rolesAreValid =
-	    !showRoleSection ||
-	    (roleRows.length > 0 &&
-	      primaryCount === 1 &&
-	      roleRows.every((row) => {
-	        if (!row.payroll_role || !row.category) {
-	          return false;
-	        }
-	        return categoriesForPayrollRole(row.payroll_role).some(
-	          (category) => category.code === row.category,
-	        );
-	      }));
+  const rolesAreValid =
+    (showCashierCategory ? isCategoryAllowedForRole("administrator", cashierCategory) : true) &&
+    (!showCookRoleSection ||
+      (roleRows.length > 0 &&
+        primaryCount === 1 &&
+        roleRows.every((row) => {
+          if (!row.payroll_role || !row.category) {
+            return false;
+          }
+          return isCategoryAllowedForRole(row.payroll_role, row.category);
+        })));
   const canSubmit =
     nameIsValid &&
     pinIsValid &&
     Boolean(iikoRoleId) &&
     rolesAreValid &&
     !isPending &&
-    !rolesLoading &&
-    !roleCategoriesLoading;
+    !rolesLoading;
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -762,20 +2233,24 @@ function CreateEmployeeDialog({
       full_name: trimmedName,
       pin_code: pinCode,
       iiko_role_id: iikoRoleId,
-	      roles: showRoleSection
-	        ? roleRows.map((row) => ({
-	            payroll_role: row.payroll_role as PayrollRole,
-	            category: row.category as EmployeeCategory,
-	            is_primary: row.is_primary,
-	          }))
-	        : [],
+      roles: showCashierCategory
+        ? [
+            {
+              payroll_role: "administrator",
+              category: cashierCategory as EmployeeCategory,
+              is_primary: true,
+            },
+          ]
+        : showCookRoleSection
+          ? roleRows.map((row) => ({
+              payroll_role: row.payroll_role as PayrollRole,
+              category: row.category as EmployeeCategory,
+              is_primary: row.is_primary,
+            }))
+          : [],
       is_senior: isSenior,
       is_deputy_senior: isDeputySenior,
     });
-  }
-
-  function categoriesForPayrollRole(payrollRole: PayrollRole | "") {
-    return payrollRole ? (roleCategories[payrollRole] ?? []) : [];
   }
 
   function roleOptionsForRow(row: CreateEmployeeRoleRow) {
@@ -792,7 +2267,7 @@ function CreateEmployeeDialog({
     const categories = categoriesForPayrollRole(payrollRole);
     updateRoleRow(row.id, {
       payroll_role: payrollRole,
-      category: categories.length === 1 ? categories[0].code : "",
+      category: categories.length === 1 ? categories[0] : "",
     });
   }
 
@@ -801,12 +2276,19 @@ function CreateEmployeeDialog({
   }
 
   function addRoleRow() {
-    const hasUnusedRole = createPayrollRoleOptions.some((role) => !selectedRoleIds.has(role));
-    if (!hasUnusedRole) {
+    const unusedRoles = createPayrollRoleOptions.filter((role) => !selectedRoleIds.has(role));
+    if (unusedRoles.length === 0) {
       toast.error("Все доступные роли уже выбраны");
       return;
     }
-    setRoleRows((rows) => [...rows, createRoleRow(false)]);
+    const nextRow = createRoleRow(false);
+    if (unusedRoles.length === 1) {
+      const payrollRole = unusedRoles[0];
+      const categories = categoriesForPayrollRole(payrollRole);
+      nextRow.payroll_role = payrollRole;
+      nextRow.category = categories.length === 1 ? categories[0] : "";
+    }
+    setRoleRows((rows) => [...rows, nextRow]);
   }
 
   function removeRoleRow(rowId: string) {
@@ -819,18 +2301,14 @@ function CreateEmployeeDialog({
         <form className="grid gap-4" onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>Создать сотрудника</DialogTitle>
-            <DialogDescription>Карточка будет заведена в iiko и добавлена в Штат.</DialogDescription>
+            <DialogDescription>
+              Карточка будет заведена в iiko и добавлена в Штат.
+            </DialogDescription>
           </DialogHeader>
 
           {rolesError ? (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {apiErrorMessage(rolesError, "Не удалось загрузить роли iiko")}
-            </div>
-          ) : null}
-
-          {roleCategoriesError ? (
-            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {apiErrorMessage(roleCategoriesError, "Не удалось загрузить категории ролей")}
             </div>
           ) : null}
 
@@ -885,148 +2363,173 @@ function CreateEmployeeDialog({
             </Select>
           </Label>
 
-	          {showRoleSection ? (
-	            <div className="grid gap-3 rounded-lg border bg-card p-4">
-	              <div className="flex items-center justify-between gap-3">
-	                <div className="text-sm font-medium">Роли и категории</div>
-	                <Button
-	                  disabled={isPending || roleCategoriesLoading || !hasUnusedCreateRole}
-	                  onClick={addRoleRow}
-	                  size="sm"
-	                  type="button"
-	                  variant="outline"
-	                >
-	                  <Plus size={15} aria-hidden="true" />
-	                  Добавить роль
-	                </Button>
-	              </div>
+          {showCashierCategory ? (
+            <div className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2">
+              <StaticField label="Роль" value={PAYROLL_ROLE_LABELS.administrator} />
 
-	              <div className="grid gap-2">
-	                {roleRows.map((row) => {
-	                  const rowCategories = categoriesForPayrollRole(row.payroll_role);
-	                  return (
-	                    <div
-	                      className="grid gap-3 rounded-md border bg-background p-3 lg:grid-cols-[120px_1fr_1fr_auto] lg:items-end"
-	                      key={row.id}
-	                    >
-	                      <label className="flex h-10 items-center gap-2 text-sm">
-	                        <input
-	                          checked={row.is_primary}
-	                          disabled={isPending}
-	                          name="create-primary-role"
-	                          onChange={() => setPrimaryRole(row.id)}
-	                          type="radio"
-	                        />
-	                        <span>Основная</span>
-	                      </label>
+              <Label className="grid gap-1">
+                <span className="text-xs font-medium uppercase text-muted-foreground">
+                  Категория
+                </span>
+                <Select
+                  disabled={isPending}
+                  onValueChange={(value) => setCashierCategory(value as EmployeeCategory)}
+                  value={cashierCategory}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите категорию" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categoriesForPayrollRole("administrator").map((category) => (
+                      <SelectItem value={category} key={category}>
+                        {EMPLOYEE_CATEGORY_LABELS[category]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Label>
+            </div>
+          ) : null}
 
-	                      <Label className="grid gap-1">
-	                        <span className="text-xs font-medium uppercase text-muted-foreground">
-	                          Роль
-	                        </span>
-	                        <Select
-	                          disabled={
-	                            roleCategoriesLoading ||
-	                            isPending ||
-	                            roleOptionsForRow(row).length === 0
-	                          }
-	                          onValueChange={(value) => selectRole(row, value as PayrollRole)}
-	                          value={row.payroll_role}
-	                        >
-	                          <SelectTrigger>
-	                            <SelectValue placeholder="Выберите роль" />
-	                          </SelectTrigger>
-	                          <SelectContent>
-	                            {roleOptionsForRow(row).map((role) => (
-	                              <SelectItem value={role} key={role}>
-	                                {PAYROLL_ROLE_LABELS[role]}
-	                              </SelectItem>
-	                            ))}
-	                          </SelectContent>
-	                        </Select>
-	                      </Label>
+          {showCookRoleSection ? (
+            <div className="grid gap-3 rounded-lg border bg-card p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-medium">Роли и категории</div>
+                <Button
+                  disabled={isPending || !hasUnusedCreateRole}
+                  onClick={addRoleRow}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <Plus size={15} aria-hidden="true" />
+                  Добавить роль
+                </Button>
+              </div>
 
-	                      <Label className="grid gap-1">
-	                        <span className="text-xs font-medium uppercase text-muted-foreground">
-	                          Категория
-	                        </span>
-	                        <Select
-	                          disabled={
-	                            roleCategoriesLoading ||
-	                            isPending ||
-	                            !row.payroll_role ||
-	                            rowCategories.length === 0
-	                          }
-	                          onValueChange={(value) =>
-	                            updateRoleRow(row.id, { category: value as EmployeeCategory })
-	                          }
-	                          value={row.category}
-	                        >
-	                          <SelectTrigger>
-	                            <SelectValue
-	                              placeholder={
-	                                roleCategoriesLoading
-	                                  ? "Загрузка категорий..."
-	                                  : "Выберите категорию"
-	                              }
-	                            />
-	                          </SelectTrigger>
-	                          <SelectContent>
-	                            {rowCategories.map((category) => (
-	                              <SelectItem value={category.code} key={category.code}>
-	                                {category.name}
-	                              </SelectItem>
-	                            ))}
-	                          </SelectContent>
-	                        </Select>
-	                      </Label>
+              <div className="grid gap-2">
+                {roleRows.map((row) => {
+                  const rowCategories = categoriesForPayrollRole(row.payroll_role);
+                  const rowRoleOptions = roleOptionsForRow(row);
+                  return (
+                    <div
+                      className="grid gap-3 rounded-md border bg-background p-3 lg:grid-cols-[120px_1fr_1fr_auto] lg:items-end"
+                      key={row.id}
+                    >
+                      <label className="flex h-10 items-center gap-2 text-sm">
+                        <input
+                          checked={row.is_primary}
+                          disabled={isPending}
+                          name="create-primary-role"
+                          onChange={() => setPrimaryRole(row.id)}
+                          type="radio"
+                        />
+                        <span>Основная</span>
+                      </label>
 
-	                      {row.is_primary ? (
-	                        <div className="hidden h-10 lg:block" />
-	                      ) : (
-	                        <Button
-	                          disabled={isPending}
-	                          onClick={() => removeRoleRow(row.id)}
-	                          size="icon"
-	                          title="Удалить роль"
-	                          type="button"
-	                          variant="ghost"
-	                        >
-	                          <X size={16} aria-hidden="true" />
-	                        </Button>
-	                      )}
-	                    </div>
-	                  );
-	                })}
-	              </div>
-	            </div>
-	          ) : null}
+                      {row.payroll_role && rowRoleOptions.length === 1 ? (
+                        <StaticField label="Роль" value={PAYROLL_ROLE_LABELS[row.payroll_role]} />
+                      ) : (
+                        <Label className="grid gap-1">
+                          <span className="text-xs font-medium uppercase text-muted-foreground">
+                            Роль
+                          </span>
+                          <Select
+                            disabled={isPending || rowRoleOptions.length === 0}
+                            onValueChange={(value) => selectRole(row, value as PayrollRole)}
+                            value={row.payroll_role}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Выберите роль" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {rowRoleOptions.map((role) => (
+                                <SelectItem value={role} key={role}>
+                                  {PAYROLL_ROLE_LABELS[role]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Label>
+                      )}
 
-	          {premiumOptions?.is_senior || premiumOptions?.is_deputy_senior ? (
-	            <div className="grid gap-3 rounded-lg border bg-card p-4">
-	              <div className="text-sm font-medium">Надбавки</div>
-	              {premiumOptions.is_senior ? (
-	                <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
-	                  <span>Старший</span>
-	                  <input
-	                    checked={isSenior}
-	                    onChange={(event) => setIsSenior(event.target.checked)}
-	                    type="checkbox"
-	                  />
-	                </label>
-	              ) : null}
-	              {premiumOptions.is_deputy_senior ? (
-	                <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
-	                  <span>Зам старшего</span>
-	                  <input
-	                    checked={isDeputySenior}
-	                    onChange={(event) => setIsDeputySenior(event.target.checked)}
-	                    type="checkbox"
-	                  />
-	                </label>
-	              ) : null}
-	            </div>
-	          ) : null}
+                      {row.payroll_role && rowCategories.length === 1 ? (
+                        <StaticField
+                          label="Категория"
+                          value={EMPLOYEE_CATEGORY_LABELS[rowCategories[0]]}
+                        />
+                      ) : (
+                        <Label className="grid gap-1">
+                          <span className="text-xs font-medium uppercase text-muted-foreground">
+                            Категория
+                          </span>
+                          <Select
+                            disabled={isPending || !row.payroll_role || rowCategories.length === 0}
+                            onValueChange={(value) =>
+                              updateRoleRow(row.id, { category: value as EmployeeCategory })
+                            }
+                            value={row.category}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Выберите категорию" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {rowCategories.map((category) => (
+                                <SelectItem value={category} key={category}>
+                                  {EMPLOYEE_CATEGORY_LABELS[category]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Label>
+                      )}
+
+                      {row.is_primary ? (
+                        <div className="hidden h-10 lg:block" />
+                      ) : (
+                        <Button
+                          disabled={isPending}
+                          onClick={() => removeRoleRow(row.id)}
+                          size="icon"
+                          title="Удалить роль"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <X size={16} aria-hidden="true" />
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {premiumOptions?.is_senior || premiumOptions?.is_deputy_senior ? (
+            <div className="grid gap-3 rounded-lg border bg-card p-4">
+              <div className="text-sm font-medium">Надбавки</div>
+              {premiumOptions.is_senior ? (
+                <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
+                  <span>Старший</span>
+                  <input
+                    checked={isSenior}
+                    onChange={(event) => setIsSenior(event.target.checked)}
+                    type="checkbox"
+                  />
+                </label>
+              ) : null}
+              {premiumOptions.is_deputy_senior ? (
+                <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
+                  <span>Зам старшего</span>
+                  <input
+                    checked={isDeputySenior}
+                    onChange={(event) => setIsDeputySenior(event.target.checked)}
+                    type="checkbox"
+                  />
+                </label>
+              ) : null}
+            </div>
+          ) : null}
 
           <DialogFooter>
             <Button
@@ -1052,108 +2555,216 @@ function CreateEmployeeDialog({
   );
 }
 
-function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () => void }) {
+function CashierRoleEditor({
+  category,
+  disabled,
+  onCategoryChange,
+  positionDirty,
+}: {
+  category: EmployeeCategory | "";
+  disabled: boolean;
+  onCategoryChange: (category: EmployeeCategory) => void;
+  positionDirty: boolean;
+}) {
+  return (
+    <div className="grid gap-3 rounded-lg border bg-card p-4">
+      <div className="text-sm font-medium">Роль и категория</div>
+      {positionDirty ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Категория сохранится вместе с должностью.
+        </div>
+      ) : null}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <StaticField label="Роль" value={PAYROLL_ROLE_LABELS.administrator} />
+        <Label className="grid gap-1">
+          <span className="text-xs font-medium uppercase text-muted-foreground">Категория</span>
+          <Select
+            disabled={disabled}
+            onValueChange={(value) => onCategoryChange(value as EmployeeCategory)}
+            value={category}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Выберите категорию" />
+            </SelectTrigger>
+            <SelectContent>
+              {categoriesForPayrollRole("administrator").map((value) => (
+                <SelectItem value={value} key={value}>
+                  {EMPLOYEE_CATEGORY_LABELS[value]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Label>
+      </div>
+    </div>
+  );
+}
+
+function StaffEditor({
+  employee,
+  onClose,
+  onDirtyChange,
+  onNavigate,
+  onShowChanges,
+}: {
+  employee: Employee;
+  onClose: () => void;
+  onDirtyChange: (dirty: boolean) => void;
+  onNavigate?: (path: string) => void;
+  onShowChanges: (employeeId: string) => void;
+}) {
   const queryClient = useQueryClient();
   const auth = useAuthSnapshot();
-  const [draft, setDraft] = useState<Draft>(() => toDraft(employee));
+  const canViewChangeHistory = canViewEmployeeChanges(auth.user?.roles);
+  const [initialDraft, setInitialDraft] = useState<StaffEditorDraft>(() => toEditorDraft(employee));
+  const [draft, setDraft] = useState<StaffEditorDraft>(() => toEditorDraft(employee));
   const [dismissOpen, setDismissOpen] = useState(false);
   const [dismissFireDate, setDismissFireDate] = useState(() => todayDateInputValue());
-  const [dismissReason, setDismissReason] = useState("");
+  const [dismissReasonKey, setDismissReasonKey] = useState("");
+  const [dismissComment, setDismissComment] = useState("");
+  const [dismissDepositAction, setDismissDepositAction] = useState<DepositDismissAction>("none");
+  const [dismissDepositAmount, setDismissDepositAmount] = useState("");
+  const [dismissDepositComment, setDismissDepositComment] = useState("");
+  const [dismissConfirmOpen, setDismissConfirmOpen] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
-  const [pinCode, setPinCode] = useState("");
+  const [hireDateOpen, setHireDateOpen] = useState(false);
+  const [hireDateValue, setHireDateValue] = useState("");
+  const [hireDateComment, setHireDateComment] = useState("");
+  const [hireDateConfirmOpen, setHireDateConfirmOpen] = useState(false);
+  const [premiumConfirmOpen, setPremiumConfirmOpen] = useState(false);
+  const [premiumConfirmActions, setPremiumConfirmActions] = useState<string[]>([]);
+  const [pendingDraftPatch, setPendingDraftPatch] = useState<EmployeePatch | null>(null);
 
   useEffect(() => {
-    setDraft(toDraft(employee));
+    const nextDraft = toEditorDraft(employee);
+    setInitialDraft(nextDraft);
+    setDraft(nextDraft);
     setDismissFireDate(employee.fire_date ?? todayDateInputValue());
-    setDismissReason("");
+    setDismissReasonKey("");
+    setDismissComment("");
+    setDismissDepositAction("none");
+    setDismissDepositAmount("");
+    setDismissDepositComment("");
+    setDismissConfirmOpen(false);
     setPinOpen(false);
-    setPinCode("");
-  }, [employee]);
+    setHireDateOpen(false);
+    setHireDateValue("");
+    setHireDateComment("");
+    setHireDateConfirmOpen(false);
+    setPremiumConfirmOpen(false);
+    setPendingDraftPatch(null);
+    setPremiumConfirmActions([]);
+  }, [employee.id]);
 
   const mutation = useMutation({
     mutationFn: (patch: EmployeePatch) => patchEmployee(employee.id, patch),
     onSuccess: (updatedEmployee) => {
-      setDraft(toDraft(updatedEmployee));
-      toast.success("Карточка сотрудника обновлена");
+      const nextDraft = toEditorDraft(updatedEmployee);
+      setInitialDraft(nextDraft);
+      setDraft(nextDraft);
+      setPinOpen(false);
+      toast.success("Изменения сохранены");
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["employees", updatedEmployee.id, "assignments"],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["employees", "changes"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["employees", updatedEmployee.id, "changes"],
+      });
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error, "Не удалось обновить карточку сотрудника"));
     },
   });
-	  const assignmentsQuery = useQuery({
-	    queryKey: ["employees", employee.id, "assignments"],
-	    queryFn: () => getEmployeeAssignments(employee.id),
-	    initialData: activeAssignments(employee),
-	  });
-  const roleCategoriesQuery = useQuery({
-    queryKey: ["payroll", "role-categories"],
-    queryFn: getPayrollRoleCategories,
+  const dismissalReasonsQuery = useQuery({
+    queryKey: ["employees", "dismissal-reasons"],
+    queryFn: () => getEmployeeDismissalReasons(),
+    enabled: dismissOpen,
   });
-  const assignmentMutation = useMutation({
-    mutationFn: ({
-      assignmentId,
-      patch,
-    }: {
-      assignmentId: string;
-      patch: Partial<Pick<EmployeeRoleAssignment, "payroll_role" | "category" | "is_primary">>;
-    }) => patchEmployeeAssignment(employee.id, assignmentId, patch),
-    onSuccess: () => {
-      toast.success("Роль сотрудника обновлена");
-      void queryClient.invalidateQueries({ queryKey: ["employees"] });
-      void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "assignments"] });
-    },
-    onError: (error, variables) => {
-      toast.error(assignmentErrorMessage(error, variables.patch.category));
-    },
+  const employeeChangesQuery = useQuery({
+    queryKey: ["employees", employee.id, "changes", "latest"],
+    queryFn: () => getEmployeeChanges({ employeeId: employee.id }),
+    enabled: canViewChangeHistory,
   });
-  const createAssignmentMutation = useMutation({
-    mutationFn: (payload: { payroll_role: PayrollRole; category: EmployeeCategory }) =>
-      createEmployeeAssignment(employee.id, payload),
-    onSuccess: () => {
-      toast.success("Роль добавлена");
-      void queryClient.invalidateQueries({ queryKey: ["employees"] });
-      void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "assignments"] });
-    },
-    onError: (error, variables) => {
-      toast.error(assignmentErrorMessage(error, variables.category));
-    },
+  const depositsQuery = useQuery({
+    queryKey: ["deposits"],
+    queryFn: getDeposits,
+    enabled: isDepositTargetPosition(employee.position),
   });
-	  const deleteAssignmentMutation = useMutation({
-    mutationFn: (assignmentId: string) => deleteEmployeeAssignment(employee.id, assignmentId),
-    onSuccess: () => {
-      toast.success("Роль удалена");
-      void queryClient.invalidateQueries({ queryKey: ["employees"] });
-      void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "assignments"] });
-    },
-    onError: (error) => {
-      toast.error(apiErrorMessage(error, "Не удалось удалить роль сотрудника"));
-    },
-	  });
-  const pinMutation = useMutation({
-    mutationFn: () => changeEmployeePin(employee.id, { pin_code: pinCode }),
-    onSuccess: (updatedEmployee) => {
-      setDraft(toDraft(updatedEmployee));
-      setPinOpen(false);
-      setPinCode("");
-      toast.success("ПИН изменён");
-      void queryClient.invalidateQueries({ queryKey: ["employees"] });
-    },
-    onError: (error) => {
-      toast.error(apiErrorMessage(error, "Не удалось сменить ПИН"));
-    },
+  const depositSettingsQuery = useQuery({
+    queryKey: ["settings", "deposits"],
+    queryFn: () => getSettings(),
+    enabled: isDepositTargetPosition(employee.position),
   });
-  const dismissMutation = useMutation({
-    mutationFn: () =>
-      dismissEmployee(employee.id, {
-        fire_date: dismissFireDate,
-        reason: dismissReason.trim() || undefined,
+  const recentAdjustmentsQuery = useQuery({
+    queryKey: ["payroll-adjustments", employee.id, "recent"],
+    queryFn: () =>
+      getPayrollAdjustments({
+        employeeId: employee.id,
+        dateFrom: dateInputDaysAgo(60),
+        dateTo: todayDateInputValue(),
       }),
+    enabled: isDepositTargetPosition(employee.position),
+  });
+  const depositSettings = useMemo(
+    () => extractDepositSettings(depositSettingsQuery.data),
+    [depositSettingsQuery.data],
+  );
+  const employeeDeposit = useMemo(
+    () => (depositsQuery.data ?? []).find((deposit) => deposit.id === employee.id) ?? null,
+    [depositsQuery.data, employee.id],
+  );
+  const dismissDepositBalance = numericAmount(employeeDeposit?.balance);
+  const dismissDepositHasBalance = dismissDepositBalance > 0;
+  const noticeDaysToFire =
+    employee.active_notice && dismissFireDate
+      ? daysBetweenDateStrings(employee.active_notice.notice_date, dismissFireDate)
+      : null;
+  const noticeTriggersFullPayout = noticeDaysToFire !== null && noticeDaysToFire >= 14;
+  const dismissDepositDecision = depositDismissDecision(
+    dismissDepositAction,
+    dismissDepositBalance,
+    dismissDepositAmount,
+  );
+  const dismissDepositValid =
+    !dismissDepositHasBalance ||
+    (dismissDepositDecision.isValid && dismissDepositAction !== "none");
+  const dismissalReasons = dismissalReasonOptions(dismissalReasonsQuery.data ?? []);
+  const selectedDismissalReason =
+    dismissalReasons.find((reason) => reason.key === dismissReasonKey) ?? null;
+  const dismissCommentRequired = Boolean(selectedDismissalReason?.requires_comment);
+  const dismissMutation = useMutation({
+    mutationFn: () => {
+      const dismissalReason = selectedDismissalReason;
+      if (!dismissalReason) {
+        throw new Error("Выберите причину увольнения");
+      }
+      const payload: EmployeeDismissPayload = {
+        fire_date: dismissFireDate,
+        reason_code: dismissalReason.code,
+        comment: dismissComment.trim() || undefined,
+        deposit_action: dismissDepositHasBalance ? dismissDepositAction : "none",
+        deposit_comment: dismissDepositComment.trim() || undefined,
+      };
+      if (dismissDepositHasBalance && dismissDepositAction === "payout_partial") {
+        payload.deposit_payout_amount = decimalPayload(dismissDepositAmount);
+      }
+      if (dismissalReason.id) {
+        payload.reason_id = dismissalReason.id;
+      }
+      return dismissEmployee(employee.id, payload);
+    },
     onSuccess: () => {
       toast.success("Сотрудник уволен");
       setDismissOpen(false);
+      setDismissConfirmOpen(false);
       onClose();
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      void queryClient.invalidateQueries({ queryKey: ["employees", "changes"] });
+      void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "changes"] });
+      void queryClient.invalidateQueries({ queryKey: ["deposits"] });
+      void queryClient.invalidateQueries({ queryKey: ["payroll-fund"] });
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error, "Не удалось уволить сотрудника"));
@@ -1164,74 +2775,217 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
     onSuccess: () => {
       toast.success("Сотрудник восстановлен");
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      void queryClient.invalidateQueries({ queryKey: ["employees", "changes"] });
+      void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "changes"] });
+      void queryClient.invalidateQueries({ queryKey: ["payroll-fund"] });
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error, "Не удалось восстановить сотрудника"));
     },
   });
+  const hireDateMutation = useMutation({
+    mutationFn: () =>
+      setEmployeeHireDate(employee.id, {
+        hire_date: hireDateValue,
+        comment: hireDateComment.trim() || undefined,
+      }),
+    onSuccess: (updatedEmployee) => {
+      const nextDraft = toEditorDraft(updatedEmployee);
+      toast.success("Дата приёма установлена");
+      setInitialDraft(nextDraft);
+      setDraft(nextDraft);
+      setHireDateOpen(false);
+      setHireDateConfirmOpen(false);
+      setHireDateValue("");
+      setHireDateComment("");
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      void queryClient.invalidateQueries({ queryKey: ["employee", updatedEmployee.id] });
+      void queryClient.invalidateQueries({ queryKey: ["employees", "changes"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["employees", updatedEmployee.id, "changes"],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["payroll-fund"] });
+    },
+    onError: (error) => {
+      setHireDateConfirmOpen(false);
+      if (apiErrorStatus(error) === 409) {
+        toast.error("Дата приёма уже недоступна для изменения");
+        setHireDateOpen(false);
+        setHireDateValue("");
+        setHireDateComment("");
+        void queryClient.invalidateQueries({ queryKey: ["employees"] });
+        void queryClient.invalidateQueries({ queryKey: ["employee", employee.id] });
+        return;
+      }
+      toast.error(apiErrorMessage(error, "Не удалось установить дату приёма"));
+    },
+  });
 
+  const trimmedDraftName = draft.full_name.trim();
+  const nameIsValid = trimmedDraftName.length > 0;
   const dirty =
-    draft.position !== employee.position ||
-    draft.is_senior !== employee.is_senior ||
-    draft.is_deputy_senior !== employee.is_deputy_senior;
-	  const assignments = assignmentsQuery.data ?? [];
-	  const activeRoleIds = new Set(assignments.map((assignment) => assignment.payroll_role));
-	  const roleOptions = payrollRolesForPosition(draft.position);
+    JSON.stringify(editorDraftSnapshot(draft)) !==
+    JSON.stringify(editorDraftSnapshot(initialDraft));
+  const positionDirty = draft.position !== initialDraft.position;
+  const assignments = draft.assignments;
+  const cashierAssignment = assignments.find(
+    (assignment) => assignment.payroll_role === "administrator",
+  );
+  const cashierCategoryValue = cashierAssignment?.category ?? "";
+  const activeRoleIds = new Set(assignments.map((assignment) => assignment.payroll_role));
+  const roleOptions = payrollRolesForPosition(draft.position);
   const editorPosition = canonicalPosition(draft.position);
   const editorPremiumOptions = editorPosition ? premiumApplicability[editorPosition] : null;
-  const showEditorRoles = roleOptions.length > 0;
-  const editorRoleCategories = roleCategoriesQuery.data ?? {};
-  const pinIsValid = /^\d{4}$/.test(pinCode);
-	  const isAssignmentPending =
-	    assignmentsQuery.isFetching ||
-    roleCategoriesQuery.isFetching ||
-	    assignmentMutation.isPending ||
-	    createAssignmentMutation.isPending ||
-	    deleteAssignmentMutation.isPending;
+  const editorRequiresPin = positionRequiresPin(draft.position);
+  const showEditorCashierRole = editorPosition === "Кассир";
+  const showEditorCookRoles = editorPosition === "Повар";
+  const roleValidation = validateEditorRoles(draft);
+  const pinTouched = pinDraftTouched(draft);
+  const pinState = employeePinState(employee);
+  const pinFormatValid = /^\d{4}$/.test(draft.pin_code);
+  const pinMatches = draft.pin_code === draft.pin_confirmation;
+  const pinIsValid = !pinTouched || (pinFormatValid && pinMatches);
+  const canSaveDraft = dirty && nameIsValid && !roleValidation && pinIsValid && !mutation.isPending;
+  const canSubmitDismiss =
+    Boolean(dismissFireDate) &&
+    Boolean(selectedDismissalReason) &&
+    (!dismissCommentRequired || dismissComment.trim().length > 0) &&
+    dismissDepositValid &&
+    (!isDepositTargetPosition(employee.position) || !depositsQuery.isLoading) &&
+    !dismissalReasonsQuery.isLoading &&
+    !dismissMutation.isPending;
   const canDismiss =
     !auth.user || hasAnyRole(auth.user.roles, ["finance_manager", "owner", "admin"]);
   const canReinstate = hasAnyRole(auth.user?.roles, ["owner"]);
-	  const canDismissStatus = employee.status === "active" || employee.status === "requires_setup";
+  const canDismissStatus = employee.status === "active" || employee.status === "requires_setup";
+  const canManageHireDate =
+    (!auth.user || hasAnyRole(auth.user.roles, ["finance_manager", "owner", "admin"])) &&
+    employee.status !== "inactive";
+  const hireDateMin = dateInputYearsAgo(10);
+  const hireDateMax = todayDateInputValue();
+  const hireDateIsValid =
+    Boolean(hireDateValue) && hireDateValue >= hireDateMin && hireDateValue <= hireDateMax;
+  const hireDateCanSubmit = hireDateIsValid && hireDateValue !== (employee.hire_date ?? "");
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+
+  useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
+
+  useEffect(() => {
+    if (!dismissOpen) {
+      return;
+    }
+    if (!dismissDepositHasBalance) {
+      setDismissDepositAction("none");
+      setDismissDepositAmount("");
+      return;
+    }
+    setDismissDepositAction(noticeTriggersFullPayout ? "payout_full" : "write_off");
+    setDismissDepositAmount("");
+  }, [dismissOpen, dismissDepositHasBalance, employee.id, noticeTriggersFullPayout]);
 
   function setDraftPosition(position: CanonicalPosition) {
     const applicability = premiumApplicability[position];
+    const requiresPin = positionRequiresPin(position);
+    if (!requiresPin) {
+      setPinOpen(false);
+    }
     setDraft((current) => ({
       ...current,
       position,
+      assignments: assignmentsForPositionChange(current.assignments, position),
       is_senior: applicability.is_senior ? current.is_senior : false,
       is_deputy_senior: applicability.is_deputy_senior ? current.is_deputy_senior : false,
+      pin_code: requiresPin ? current.pin_code : "",
+      pin_confirmation: requiresPin ? current.pin_confirmation : "",
     }));
   }
 
-  function categoriesForEditorRole(payrollRole: PayrollRole) {
-    return editorRoleCategories[payrollRole] ?? [];
-  }
-
-	  function addRole() {
-	    const payrollRole = roleOptions.find((role) => !activeRoleIds.has(role));
+  function addRole() {
+    const payrollRole = roleOptions.find((role) => !activeRoleIds.has(role));
     if (!payrollRole) {
       toast.error("Все подходящие роли уже добавлены");
       return;
-	    }
-    const categories = categoriesForEditorRole(payrollRole);
-    const category = categories[0]?.code;
+    }
+    const categories = categoriesForPayrollRole(payrollRole);
+    const category = categories[0];
     if (!category) {
       toast.error("Для роли нет доступных категорий");
       return;
     }
-	    createAssignmentMutation.mutate({
-	      payroll_role: payrollRole,
-	      category,
-	    });
-	  }
+    setDraft((current) => ({
+      ...current,
+      assignments: ensurePrimaryAssignment([
+        ...current.assignments,
+        newAssignmentDraft(payrollRole, category, current.assignments.length === 0),
+      ]),
+    }));
+  }
+
+  function saveDraft() {
+    if (!canSaveDraft) {
+      return;
+    }
+    const patch = buildEmployeePatch(initialDraft, draft);
+    if (Object.keys(patch).length === 0) {
+      return;
+    }
+    const premiumActions = premiumChangeConfirmations(initialDraft, draft);
+    if (premiumActions.length > 0) {
+      setPremiumConfirmActions(premiumActions);
+      setPendingDraftPatch(patch);
+      setPremiumConfirmOpen(true);
+      return;
+    }
+    mutation.mutate(patch);
+  }
+
+  function requestHireDateConfirmation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!hireDateIsValid) {
+      toast.error("Выберите дату приёма в допустимом диапазоне");
+      return;
+    }
+    if (hireDateValue === (employee.hire_date ?? "")) {
+      toast.error("Выберите новую дату приёма");
+      return;
+    }
+    setHireDateConfirmOpen(true);
+  }
+
+  function openHireDateDialog() {
+    setHireDateValue(employee.hire_date ?? "");
+    setHireDateComment("");
+    setHireDateConfirmOpen(false);
+    setHireDateOpen(true);
+  }
 
   return (
     <div className="space-y-5">
       <SheetHeader>
-        <SheetTitle className="pr-8">Карточка сотрудника</SheetTitle>
-        <SheetDescription>
-          Поля реестра, которые используются графиком и зарплатой.
-        </SheetDescription>
+        <div className="flex items-start justify-between gap-3 pr-8">
+          <div>
+            <SheetTitle>Карточка сотрудника</SheetTitle>
+            <SheetDescription>
+              Поля реестра, которые используются графиком и зарплатой.
+            </SheetDescription>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button disabled={mutation.isPending} onClick={onClose} type="button" variant="outline">
+              Отмена
+            </Button>
+            <Button disabled={!canSaveDraft} onClick={saveDraft} type="button">
+              {mutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <Save size={16} aria-hidden="true" />
+              )}
+              Сохранить
+            </Button>
+          </div>
+        </div>
       </SheetHeader>
 
       <div className="flex items-start gap-3 rounded-lg border bg-card p-4">
@@ -1252,159 +3006,255 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
         </div>
       </div>
 
+      {employee.hire_date ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3 text-sm">
+          <div>
+            <span className="font-medium">Дата приёма:</span> {formatDate(employee.hire_date)}
+            {employee.status === "inactive" ? (
+              <span className="text-muted-foreground"> (зафиксирована)</span>
+            ) : null}
+          </div>
+          {canManageHireDate ? (
+            <Button
+              disabled={hireDateMutation.isPending}
+              onClick={openHireDateDialog}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <CalendarPlus size={15} aria-hidden="true" />
+              Изменить
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        <div className="grid gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950">
+          <div className="flex items-center gap-2 font-medium">
+            <CircleAlert size={16} aria-hidden="true" />
+            Дата приёма не указана
+          </div>
+          <p className="text-sm text-amber-900">
+            Без даты приёма стаж считается как 0 и накопительный фонд не начисляется.
+          </p>
+          {canManageHireDate ? (
+            <Button
+              className="w-fit border-amber-300 bg-background text-amber-950 hover:bg-amber-100"
+              disabled={hireDateMutation.isPending}
+              onClick={openHireDateDialog}
+              type="button"
+              variant="outline"
+            >
+              <CalendarPlus size={16} aria-hidden="true" />
+              Указать дату приёма
+            </Button>
+          ) : null}
+        </div>
+      )}
+
       <div className="grid gap-4">
         <Label className="grid gap-2">
           <span>Имя</span>
-          <div className="flex items-center gap-2">
-            <Input disabled title="Управляется iiko" value={employee.full_name} />
-            <span
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border text-primary"
-              title="Управляется iiko"
-            >
-              <DatabaseZap size={16} aria-hidden="true" />
-            </span>
-          </div>
+          <Input
+            autoComplete="off"
+            onChange={(event) => setDraft({ ...draft, full_name: event.target.value })}
+            value={draft.full_name}
+          />
+          {!nameIsValid ? <span className="text-xs text-destructive">ФИО обязательно</span> : null}
         </Label>
 
-	        <Label className="grid gap-2">
-	          <span>Должность</span>
-	          <Select
-	            onValueChange={(value) => setDraftPosition(value as CanonicalPosition)}
-	            value={editorPosition ?? undefined}
-	          >
-	            <SelectTrigger>
-	              <SelectValue placeholder="Выберите должность" />
-	            </SelectTrigger>
-	            <SelectContent>
-	              {canonicalPositions.map((position) => (
-	                <SelectItem value={position} key={position}>
-	                  {position}
-	                </SelectItem>
-	              ))}
-	            </SelectContent>
-	          </Select>
-	        </Label>
+        <Label className="grid gap-2">
+          <span>Должность</span>
+          <Select
+            onValueChange={(value) => setDraftPosition(value as CanonicalPosition)}
+            value={editorPosition ?? undefined}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Выберите должность" />
+            </SelectTrigger>
+            <SelectContent>
+              {canonicalPositions.map((position) => (
+                <SelectItem value={position} key={position}>
+                  {position}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Label>
 
-	        {showEditorRoles ? (
-	          <div className="grid gap-3 rounded-lg border bg-card p-4">
-	            <div className="flex items-center justify-between gap-3">
-	              <div className="text-sm font-medium">Роли и категории</div>
-	              <Button
-	                disabled={isAssignmentPending || roleOptions.every((role) => activeRoleIds.has(role))}
-	                onClick={addRole}
-	                size="sm"
-	                type="button"
-	                variant="outline"
-	              >
-	                <Plus size={15} aria-hidden="true" />
-	                Добавить роль
-	              </Button>
-	            </div>
+        {showEditorCashierRole ? (
+          <CashierRoleEditor
+            category={cashierCategoryValue}
+            disabled={mutation.isPending}
+            onCategoryChange={(category) => {
+              setDraft((current) => ({
+                ...current,
+                assignments: setCashierAssignmentCategory(current.assignments, category),
+              }));
+            }}
+            positionDirty={positionDirty}
+          />
+        ) : null}
 
-	            {assignments.length === 0 ? (
-	              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-	                Добавьте хотя бы одну роль
-	              </div>
-	            ) : (
-	              <div className="grid gap-2">
-	                {assignments.map((assignment) => {
-	                  const roleOptionsForAssignment = roleOptions.filter(
-	                    (role) => role === assignment.payroll_role || !activeRoleIds.has(role),
-	                  );
-	                  const rowCategories = categoriesForEditorRole(assignment.payroll_role);
-	                  return (
-	                    <div
-	                      className="grid gap-2 rounded-md border bg-background p-3 sm:grid-cols-[120px_1fr_1fr_auto] sm:items-center"
-	                      key={assignment.id}
-	                    >
-	                      <label className="flex h-10 items-center gap-2 text-sm">
-	                        <input
-	                          checked={assignment.is_primary}
-	                          disabled={assignment.is_primary || isAssignmentPending}
-	                          name="edit-primary-role"
-	                          onChange={() =>
-	                            assignmentMutation.mutate({
-	                              assignmentId: assignment.id,
-	                              patch: { is_primary: true },
-	                            })
-	                          }
-	                          type="radio"
-	                        />
-	                        <span>Основная</span>
-	                      </label>
+        {showEditorCookRoles ? (
+          <div className="grid gap-3 rounded-lg border bg-card p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-medium">Роли и категории</div>
+              <Button
+                disabled={
+                  mutation.isPending || roleOptions.every((role) => activeRoleIds.has(role))
+                }
+                onClick={addRole}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <Plus size={15} aria-hidden="true" />
+                Добавить роль
+              </Button>
+            </div>
 
-	                      <Select
-	                        disabled={isAssignmentPending}
-	                        onValueChange={(value) => {
-	                          const payrollRole = value as PayrollRole;
-	                          const nextCategories = categoriesForEditorRole(payrollRole);
-	                          const category = nextCategories.some(
-	                            (option) => option.code === assignment.category,
-	                          )
-	                            ? assignment.category
-	                            : nextCategories[0]?.code;
-	                          if (!category) {
-	                            toast.error("Для роли нет доступных категорий");
-	                            return;
-	                          }
-	                          assignmentMutation.mutate({
-	                            assignmentId: assignment.id,
-	                            patch: { payroll_role: payrollRole, category },
-	                          });
-	                        }}
-	                        value={assignment.payroll_role}
-	                      >
-	                        <SelectTrigger>
-	                          <SelectValue />
-	                        </SelectTrigger>
-	                        <SelectContent>
-	                          {roleOptionsForAssignment.map((value) => (
-	                            <SelectItem value={value} key={value}>
-	                              {PAYROLL_ROLE_LABELS[value]}
-	                            </SelectItem>
-	                          ))}
-	                        </SelectContent>
-	                      </Select>
+            {assignments.length === 0 ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Добавьте хотя бы одну роль
+              </div>
+            ) : (
+              <div className="grid gap-2">
+                {assignments.map((assignment) => {
+                  const roleOptionsForAssignment = roleOptions.filter(
+                    (role) => role === assignment.payroll_role || !activeRoleIds.has(role),
+                  );
+                  const rowCategories = categoriesForPayrollRole(assignment.payroll_role);
+                  const canChooseRole = roleOptionsForAssignment.length > 1;
+                  return (
+                    <div
+                      className="grid gap-2 rounded-md border bg-background p-3 sm:grid-cols-[120px_1fr_1fr_auto] sm:items-center"
+                      key={assignment.draft_id}
+                    >
+                      <label className="flex h-10 items-center gap-2 text-sm">
+                        <input
+                          checked={assignment.is_primary}
+                          disabled={assignment.is_primary || mutation.isPending}
+                          name="edit-primary-role"
+                          onChange={() =>
+                            setDraft((current) => ({
+                              ...current,
+                              assignments: setPrimaryAssignment(
+                                current.assignments,
+                                assignment.draft_id,
+                              ),
+                            }))
+                          }
+                          type="radio"
+                        />
+                        <span>Основная</span>
+                      </label>
 
-	                      <Select
-	                        disabled={isAssignmentPending || rowCategories.length === 0}
-	                        onValueChange={(value) =>
-	                          assignmentMutation.mutate({
-	                            assignmentId: assignment.id,
-	                            patch: { category: value as EmployeeCategory },
-	                          })
-	                        }
-	                        value={assignment.category}
-	                      >
-	                        <SelectTrigger>
-	                          <SelectValue />
-	                        </SelectTrigger>
-	                        <SelectContent>
-	                          {rowCategories.map((value) => (
-	                            <SelectItem value={value.code} key={value.code}>
-	                              {value.name}
-	                            </SelectItem>
-	                          ))}
-	                        </SelectContent>
-	                      </Select>
+                      {canChooseRole ? (
+                        <Select
+                          disabled={mutation.isPending}
+                          onValueChange={(value) => {
+                            const payrollRole = value as PayrollRole;
+                            const nextCategories = categoriesForPayrollRole(payrollRole);
+                            const category = nextCategories.includes(assignment.category)
+                              ? assignment.category
+                              : nextCategories[0];
+                            if (!category) {
+                              toast.error("Для роли нет доступных категорий");
+                              return;
+                            }
+                            setDraft((current) => ({
+                              ...current,
+                              assignments: updateAssignmentDraft(
+                                current.assignments,
+                                assignment.draft_id,
+                                { payroll_role: payrollRole, category },
+                              ),
+                            }));
+                          }}
+                          value={assignment.payroll_role}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {roleOptionsForAssignment.map((value) => (
+                              <SelectItem value={value} key={value}>
+                                {PAYROLL_ROLE_LABELS[value]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <StaticField
+                          label="Роль"
+                          value={PAYROLL_ROLE_LABELS[assignment.payroll_role]}
+                        />
+                      )}
 
-	                      <Button
-	                        disabled={assignment.is_primary || isAssignmentPending}
-	                        onClick={() => deleteAssignmentMutation.mutate(assignment.id)}
-	                        size="icon"
-	                        title="Удалить роль"
-	                        type="button"
-	                        variant="ghost"
-	                      >
-	                        <X size={16} aria-hidden="true" />
-	                      </Button>
-	                    </div>
-	                  );
-	                })}
-	              </div>
-	            )}
-	          </div>
-	        ) : null}
+                      {rowCategories.length === 1 ? (
+                        <StaticField
+                          label="Категория"
+                          value={EMPLOYEE_CATEGORY_LABELS[rowCategories[0]]}
+                        />
+                      ) : (
+                        <Select
+                          disabled={mutation.isPending || rowCategories.length === 0}
+                          onValueChange={(value) =>
+                            setDraft((current) => ({
+                              ...current,
+                              assignments: updateAssignmentDraft(
+                                current.assignments,
+                                assignment.draft_id,
+                                { category: value as EmployeeCategory },
+                              ),
+                            }))
+                          }
+                          value={assignment.category}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {rowCategories.map((value) => (
+                              <SelectItem value={value} key={value}>
+                                {EMPLOYEE_CATEGORY_LABELS[value]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+
+                      <Button
+                        disabled={assignment.is_primary || mutation.isPending}
+                        onClick={() =>
+                          setDraft((current) => ({
+                            ...current,
+                            assignments: removeAssignmentDraft(
+                              current.assignments,
+                              assignment.draft_id,
+                            ),
+                          }))
+                        }
+                        size="icon"
+                        title="Удалить роль"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <X size={16} aria-hidden="true" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {roleValidation ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {roleValidation}
+          </div>
+        ) : null}
 
         <Label className="grid gap-2">
           <span>Статус</span>
@@ -1416,83 +3266,180 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
           </div>
         </Label>
 
-	        {editorPremiumOptions?.is_senior || editorPremiumOptions?.is_deputy_senior ? (
-	          <div className="grid gap-3 rounded-lg border bg-card p-4">
-	            <div className="text-sm font-medium">Надбавки</div>
-	            {editorPremiumOptions.is_senior ? (
-	              <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
-	                <span>Старший</span>
-	                <input
-	                  checked={draft.is_senior}
-	                  onChange={(event) => setDraft({ ...draft, is_senior: event.target.checked })}
-	                  type="checkbox"
-	                />
-	              </label>
-	            ) : null}
-	            {editorPremiumOptions.is_deputy_senior ? (
-	              <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
-	                <span>Зам старшего</span>
-	                <input
-	                  checked={draft.is_deputy_senior}
-	                  onChange={(event) =>
-	                    setDraft({ ...draft, is_deputy_senior: event.target.checked })
-	                  }
-	                  type="checkbox"
-	                />
-	              </label>
-	            ) : null}
-	          </div>
-	        ) : null}
+        {editorPremiumOptions?.is_senior || editorPremiumOptions?.is_deputy_senior ? (
+          <div className="grid gap-3 rounded-lg border bg-card p-4">
+            <div className="text-sm font-medium">Надбавки</div>
+            {editorPremiumOptions.is_senior ? (
+              <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
+                <span>Старший</span>
+                <input
+                  checked={draft.is_senior}
+                  onChange={(event) => setDraft({ ...draft, is_senior: event.target.checked })}
+                  type="checkbox"
+                />
+              </label>
+            ) : null}
+            {editorPremiumOptions.is_deputy_senior ? (
+              <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
+                <span>Зам старшего</span>
+                <input
+                  checked={draft.is_deputy_senior}
+                  onChange={(event) =>
+                    setDraft({ ...draft, is_deputy_senior: event.target.checked })
+                  }
+                  type="checkbox"
+                />
+              </label>
+            ) : null}
+          </div>
+        ) : null}
+
+        <EmployeeDepositSection
+          deposit={employeeDeposit}
+          employee={employee}
+          isLoading={depositsQuery.isLoading || depositSettingsQuery.isLoading}
+          rules={depositSettings.rules}
+        />
+
+        {isDepositTargetPosition(employee.position) ? (
+          <EmployeeFundSection employee={employee} />
+        ) : null}
+
+        {isDepositTargetPosition(employee.position) ? (
+          <EmployeeAdjustmentsPreview
+            adjustments={(recentAdjustmentsQuery.data ?? []).slice(0, 10)}
+            employeeId={employee.id}
+            isError={recentAdjustmentsQuery.isError}
+            isLoading={recentAdjustmentsQuery.isLoading}
+            onNavigate={onNavigate}
+          />
+        ) : null}
+
+        {editorRequiresPin ? (
+          <div className="grid gap-3 rounded-lg border bg-card p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-sm font-medium">ПИН-код смены</div>
+              <EmployeePinBadge employee={employee} />
+            </div>
+
+            {pinTouched ? (
+              <Badge className="w-fit rounded-md border-emerald-200 bg-emerald-50 text-emerald-700 shadow-none">
+                ПИН будет обновлён после сохранения
+              </Badge>
+            ) : null}
+
+            {pinOpen ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Label className="grid gap-2">
+                  <span>ПИН</span>
+                  <Input
+                    autoComplete="off"
+                    inputMode="numeric"
+                    maxLength={4}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        pin_code: sanitizePinInput(event.target.value),
+                      }))
+                    }
+                    placeholder="0000"
+                    type="password"
+                    value={draft.pin_code}
+                  />
+                </Label>
+                <Label className="grid gap-2">
+                  <span>Подтвердите ПИН</span>
+                  <Input
+                    autoComplete="off"
+                    inputMode="numeric"
+                    maxLength={4}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        pin_confirmation: sanitizePinInput(event.target.value),
+                      }))
+                    }
+                    placeholder="0000"
+                    type="password"
+                    value={draft.pin_confirmation}
+                  />
+                </Label>
+                {pinTouched && !pinFormatValid ? (
+                  <span className="text-xs text-destructive sm:col-span-2">
+                    ПИН-код должен состоять из 4 цифр
+                  </span>
+                ) : null}
+                {pinFormatValid && !pinMatches ? (
+                  <span className="text-xs text-destructive sm:col-span-2">
+                    ПИН и подтверждение не совпадают
+                  </span>
+                ) : null}
+                <Button
+                  className="w-fit sm:col-span-2"
+                  onClick={() => {
+                    setDraft((current) => ({ ...current, pin_code: "", pin_confirmation: "" }));
+                    setPinOpen(false);
+                  }}
+                  type="button"
+                  variant="outline"
+                >
+                  Отмена
+                </Button>
+              </div>
+            ) : (
+              <Button
+                className="w-fit"
+                onClick={() => setPinOpen(true)}
+                type="button"
+                variant="outline"
+              >
+                <KeyRound size={16} aria-hidden="true" />
+                {EMPLOYEE_PIN_BUTTON_LABELS[pinState]}
+              </Button>
+            )}
+          </div>
+        ) : null}
       </div>
 
       <div className="grid gap-2 rounded-lg border bg-muted/30 p-4 text-sm">
         {employee.status === "inactive" ? (
           <InfoRow label="Дата увольнения" value={formatDate(employee.fire_date)} />
         ) : null}
-	        {employee.status === "inactive" && employee.fire_reason ? (
-	          <InfoRow label="Причина" value={employee.fire_reason} />
-	        ) : null}
-	        <InfoRow label="ПИН изменён" value={formatDateTime(employee.pin_set_at)} />
-	        <InfoRow label="Синхронизация" value={formatDateTime(employee.iiko_sync_at)} />
-        <InfoRow label="Создан" value={formatDateTime(employee.created_at)} />
+        {canViewChangeHistory && employee.status === "inactive" && employee.fire_reason ? (
+          <InfoRow label="Причина" value={employee.fire_reason} />
+        ) : null}
+        {positionRequiresPin(employee.position) ? (
+          <InfoRow label="ПИН изменён" value={formatDateTime(employee.pin_set_at)} />
+        ) : null}
+        <InfoRow label="Синхронизация" value={formatDateTime(employee.iiko_sync_at)} />
+        <InfoRow label="Создано в приложении" value={formatDateTime(employee.created_at)} />
         <InfoRow label="Обновлён" value={formatDateTime(employee.updated_at)} />
       </div>
 
+      {canViewChangeHistory ? (
+        <EmployeeChangeHistoryPreview
+          changes={(employeeChangesQuery.data ?? []).slice(0, 5)}
+          isError={employeeChangesQuery.isError}
+          isLoading={employeeChangesQuery.isLoading}
+          onShowAll={() => onShowChanges(employee.id)}
+        />
+      ) : null}
+
       <div className="grid gap-2">
-	        <Button
-	          className="w-full"
-	          disabled={!dirty || mutation.isPending}
-	          onClick={() => mutation.mutate(draft)}
-	        >
-          {mutation.isPending ? (
-            <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-          ) : (
-            <Save size={16} aria-hidden="true" />
-          )}
-	          Сохранить изменения
-	        </Button>
-
-	        <Button
-	          className="w-full"
-	          disabled={pinMutation.isPending}
-	          onClick={() => {
-	            setPinCode("");
-	            setPinOpen(true);
-	          }}
-	          type="button"
-	          variant="outline"
-	        >
-	          <KeyRound size={16} aria-hidden="true" />
-	          Сменить ПИН
-	        </Button>
-
-	        {canDismiss && canDismissStatus ? (
+        {canDismiss && canDismissStatus ? (
           <Button
             className="w-full"
             disabled={dismissMutation.isPending}
             onClick={() => {
               setDismissFireDate(todayDateInputValue());
-              setDismissReason("");
+              setDismissReasonKey("");
+              setDismissComment("");
+              setDismissDepositAction(
+                employee.active_notice?.will_trigger_full_payout ? "payout_full" : "write_off",
+              );
+              setDismissDepositAmount("");
+              setDismissDepositComment("");
+              setDismissConfirmOpen(false);
               setDismissOpen(true);
             }}
             type="button"
@@ -1521,12 +3468,105 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
         ) : null}
       </div>
 
-	      <Dialog open={dismissOpen} onOpenChange={setDismissOpen}>
-	        <DialogContent>
+      <Dialog
+        open={hireDateOpen}
+        onOpenChange={(open) => {
+          setHireDateOpen(open);
+          if (!open && !hireDateMutation.isPending) {
+            setHireDateValue("");
+            setHireDateComment("");
+            setHireDateConfirmOpen(false);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Указать дату приёма</DialogTitle>
+            <DialogDescription>
+              Дата влияет на стаж и ставку накопительного фонда для текущего сотрудника.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form className="grid gap-4" onSubmit={requestHireDateConfirmation}>
+            <Label className="grid gap-2">
+              <span>Дата приёма</span>
+              <Input
+                max={hireDateMax}
+                min={hireDateMin}
+                onChange={(event) => setHireDateValue(event.target.value)}
+                type="date"
+                value={hireDateValue}
+              />
+            </Label>
+
+            <Label className="grid gap-2">
+              <span>Комментарий (опционально)</span>
+              <Textarea
+                maxLength={1000}
+                onChange={(event) => setHireDateComment(event.target.value)}
+                placeholder="Например: дата из анкеты сотрудника"
+                value={hireDateComment}
+              />
+            </Label>
+
+            <DialogFooter>
+              <Button
+                disabled={hireDateMutation.isPending}
+                onClick={() => {
+                  setHireDateOpen(false);
+                  setHireDateValue("");
+                  setHireDateComment("");
+                }}
+                type="button"
+                variant="outline"
+              >
+                Отмена
+              </Button>
+              <Button disabled={!hireDateCanSubmit || hireDateMutation.isPending} type="submit">
+                {hireDateMutation.isPending ? (
+                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                ) : (
+                  <Save size={16} aria-hidden="true" />
+                )}
+                Сохранить
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={hireDateConfirmOpen} onOpenChange={setHireDateConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Установить дату приёма {formatDate(hireDateValue)}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Стаж и ставка накопительного фонда будут пересчитаны от этой даты.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={hireDateMutation.isPending}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={hireDateMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                hireDateMutation.mutate();
+              }}
+            >
+              {hireDateMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : null}
+              Сохранить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={dismissOpen} onOpenChange={setDismissOpen}>
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Уволить {employee.full_name}?</DialogTitle>
             <DialogDescription>
-              Укажите дату увольнения и причину, если её нужно сохранить в карточке.
+              Укажите дату увольнения и причину для карточки сотрудника.
             </DialogDescription>
           </DialogHeader>
 
@@ -1542,13 +3582,142 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
 
             <Label className="grid gap-2">
               <span>Причина</span>
+              <Select
+                disabled={dismissalReasonsQuery.isLoading || dismissalReasons.length === 0}
+                onValueChange={setDismissReasonKey}
+                value={dismissReasonKey}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      dismissalReasonsQuery.isLoading ? "Загрузка причин..." : "Выберите причину"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {dismissalReasons.map((reason) => (
+                    <SelectItem value={reason.key} key={reason.key}>
+                      {reason.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Label>
+
+            {dismissalReasonsQuery.isError ? (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {apiErrorMessage(dismissalReasonsQuery.error, "Не удалось загрузить причины")}
+              </div>
+            ) : null}
+
+            <Label className="grid gap-2">
+              <span>{dismissCommentRequired ? "Комментарий" : "Комментарий (опционально)"}</span>
               <textarea
                 className="min-h-24 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) => setDismissReason(event.target.value)}
-                placeholder="Опционально"
-                value={dismissReason}
+                onChange={(event) => setDismissComment(event.target.value)}
+                placeholder={dismissCommentRequired ? "Обязателен" : "Можно оставить пустым"}
+                value={dismissComment}
               />
             </Label>
+
+            {dismissDepositHasBalance ? (
+              <section className="grid gap-3 rounded-lg border bg-card p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-medium">Депозит сотрудника</div>
+                  <div className="text-sm font-semibold">
+                    {formatDepositMoney(dismissDepositBalance)}
+                  </div>
+                </div>
+
+                {employee.active_notice ? (
+                  <div
+                    className={cn(
+                      "rounded-md border px-3 py-2 text-sm",
+                      noticeTriggersFullPayout
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border-amber-200 bg-amber-50 text-amber-800",
+                    )}
+                  >
+                    Уведомил об уходе {formatDate(employee.active_notice.notice_date)}. Прошло{" "}
+                    {noticeDaysToFire ?? employee.active_notice.days_since} дней —{" "}
+                    {noticeTriggersFullPayout ? "выплата по умолчанию" : "списание по умолчанию"}
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    Не было уведомления
+                  </div>
+                )}
+
+                <div className="grid gap-2 text-sm">
+                  <label className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
+                    <input
+                      checked={dismissDepositAction === "payout_full"}
+                      name="dismiss-deposit-action"
+                      onChange={() => setDismissDepositAction("payout_full")}
+                      type="radio"
+                    />
+                    <span>Выплатить полностью ({formatDepositMoney(dismissDepositBalance)})</span>
+                  </label>
+                  <label className="grid gap-2 rounded-md border bg-background px-3 py-2">
+                    <span className="flex items-center gap-2">
+                      <input
+                        checked={dismissDepositAction === "payout_partial"}
+                        name="dismiss-deposit-action"
+                        onChange={() => setDismissDepositAction("payout_partial")}
+                        type="radio"
+                      />
+                      <span>Выплатить частично</span>
+                    </span>
+                    {dismissDepositAction === "payout_partial" ? (
+                      <div className="grid gap-1 pl-6">
+                        <Input
+                          autoFocus
+                          inputMode="decimal"
+                          max={Math.max(dismissDepositBalance - 0.01, 0)}
+                          min={0.01}
+                          onChange={(event) => setDismissDepositAmount(event.target.value)}
+                          placeholder="0"
+                          step="0.01"
+                          type="number"
+                          value={dismissDepositAmount}
+                        />
+                        <span
+                          className={cn(
+                            "text-xs",
+                            dismissDepositDecision.isValid
+                              ? "text-muted-foreground"
+                              : "text-destructive",
+                          )}
+                        >
+                          Остаток ({formatDepositMoney(dismissDepositDecision.writeoff)}) будет
+                          списан автоматически
+                        </span>
+                      </div>
+                    ) : null}
+                  </label>
+                  <label className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
+                    <input
+                      checked={dismissDepositAction === "write_off"}
+                      name="dismiss-deposit-action"
+                      onChange={() => setDismissDepositAction("write_off")}
+                      type="radio"
+                    />
+                    <span>
+                      Не выплачивать (списать {formatDepositMoney(dismissDepositBalance)})
+                    </span>
+                  </label>
+                </div>
+
+                <Label className="grid gap-2">
+                  <span>Комментарий к решению</span>
+                  <textarea
+                    className="min-h-20 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onChange={(event) => setDismissDepositComment(event.target.value)}
+                    value={dismissDepositComment}
+                  />
+                </Label>
+              </section>
+            ) : null}
           </div>
 
           <DialogFooter>
@@ -1561,8 +3730,8 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
               Отмена
             </Button>
             <Button
-              disabled={!dismissFireDate || dismissMutation.isPending}
-              onClick={() => dismissMutation.mutate()}
+              disabled={!canSubmitDismiss}
+              onClick={() => setDismissConfirmOpen(true)}
               type="button"
               variant="destructive"
             >
@@ -1574,60 +3743,82 @@ function StaffEditor({ employee, onClose }: { employee: Employee; onClose: () =>
               Уволить
             </Button>
           </DialogFooter>
-	        </DialogContent>
-	      </Dialog>
+        </DialogContent>
+      </Dialog>
 
-	      <Dialog open={pinOpen} onOpenChange={setPinOpen}>
-	        <DialogContent>
-	          <DialogHeader>
-	            <DialogTitle>Сменить ПИН</DialogTitle>
-	            <DialogDescription>
-	              Новый ПИН будет использоваться для открытия смены.
-	            </DialogDescription>
-	          </DialogHeader>
+      <AlertDialog open={dismissConfirmOpen} onOpenChange={setDismissConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Подтвердите увольнение</AlertDialogTitle>
+            <AlertDialogDescription>
+              Уволить {employee.full_name} с {formatDate(dismissFireDate)}, выплатить{" "}
+              {formatDepositMoney(dismissDepositDecision.payout)}, списать{" "}
+              {formatDepositMoney(dismissDepositDecision.writeoff)}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={dismissMutation.isPending}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!canSubmitDismiss}
+              onClick={() => dismissMutation.mutate()}
+            >
+              Уволить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-	          <Label className="grid gap-2">
-	            <span>ПИН-код</span>
-	            <Input
-	              autoComplete="off"
-	              inputMode="numeric"
-	              maxLength={4}
-	              onChange={(event) => setPinCode(event.target.value.replace(/\D/g, "").slice(0, 4))}
-	              placeholder="0000"
-	              value={pinCode}
-	            />
-	            {pinCode && !pinIsValid ? (
-	              <span className="text-xs text-destructive">ПИН-код должен состоять из 4 цифр</span>
-	            ) : null}
-	          </Label>
+      <Dialog open={premiumConfirmOpen} onOpenChange={setPremiumConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Подтвердите изменение надбавок</DialogTitle>
+            <DialogDescription>
+              Изменение будет сохранено в карточке сотрудника и попадёт в историю штата.
+            </DialogDescription>
+          </DialogHeader>
 
-	          <DialogFooter>
-	            <Button
-	              disabled={pinMutation.isPending}
-	              onClick={() => setPinOpen(false)}
-	              type="button"
-	              variant="outline"
-	            >
-	              Отмена
-	            </Button>
-	            <Button
-	              disabled={!pinIsValid || pinMutation.isPending}
-	              onClick={() => pinMutation.mutate()}
-	              type="button"
-	            >
-	              {pinMutation.isPending ? (
-	                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-	              ) : (
-	                <KeyRound size={16} aria-hidden="true" />
-	              )}
-	              Сохранить
-	            </Button>
-	          </DialogFooter>
-	        </DialogContent>
-	      </Dialog>
-	    </div>
-	  );
-	}
+          <div className="grid gap-2 text-sm">
+            {premiumConfirmActions.map((action) => (
+              <div className="rounded-md border bg-muted/30 px-3 py-2" key={action}>
+                {action}
+              </div>
+            ))}
+          </div>
+
+          <DialogFooter>
+            <Button
+              disabled={mutation.isPending}
+              onClick={() => setPremiumConfirmOpen(false)}
+              type="button"
+              variant="outline"
+            >
+              Отмена
+            </Button>
+            <Button
+              disabled={!pendingDraftPatch || mutation.isPending}
+              onClick={() => {
+                if (!pendingDraftPatch) {
+                  return;
+                }
+                mutation.mutate(pendingDraftPatch);
+                setPremiumConfirmOpen(false);
+                setPendingDraftPatch(null);
+              }}
+              type="button"
+            >
+              {mutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <Save size={16} aria-hidden="true" />
+              )}
+              Сохранить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 function EmployeeAvatar({ employee }: { employee: Employee }) {
   return (
@@ -1653,12 +3844,17 @@ function EmployeeTags({ employee, compact = false }: { employee: Employee; compa
     additionalRoles > 0 ? `+${additionalRoles} ролей` : null,
   ].filter((tag): tag is string => Boolean(tag));
 
-  if (tags.length === 0) {
+  if (tags.length === 0 && !employee.active_notice) {
     return <span className="text-sm text-muted-foreground">Без надбавок</span>;
   }
 
   return (
     <div className={cn("flex flex-wrap gap-2", compact ? "max-w-[240px]" : undefined)}>
+      {employee.active_notice ? (
+        <Badge className={noticeBadgeClass(employee.active_notice.will_trigger_full_payout)}>
+          Уведомил об уходе
+        </Badge>
+      ) : null}
       {tags.map((tag) => (
         <Badge
           className="rounded-md border-border bg-background text-foreground shadow-none"
@@ -1668,6 +3864,39 @@ function EmployeeTags({ employee, compact = false }: { employee: Employee; compa
         </Badge>
       ))}
     </div>
+  );
+}
+
+function employeePinState(employee: Employee): EmployeePinState {
+  if (employee.pin_set_at) {
+    return "local";
+  }
+  if (employee.pin_assumed_from_iiko) {
+    return "iiko_assumed";
+  }
+  return "missing";
+}
+
+function EmployeePinBadge({ employee }: { employee: Employee }) {
+  const state = employeePinState(employee);
+  if (state === "local") {
+    return (
+      <Badge className="rounded-md border-emerald-200 bg-emerald-50 text-emerald-700 shadow-none">
+        {EMPLOYEE_PIN_BADGE_LABELS.local} · {formatDateOnlyFromDateTime(employee.pin_set_at)}
+      </Badge>
+    );
+  }
+  if (state === "iiko_assumed") {
+    return (
+      <Badge className="rounded-md border-sky-200 bg-sky-50 text-sky-800 shadow-none">
+        {EMPLOYEE_PIN_BADGE_LABELS.iiko_assumed}
+      </Badge>
+    );
+  }
+  return (
+    <Badge className="rounded-md border-amber-200 bg-amber-50 text-amber-800 shadow-none">
+      {EMPLOYEE_PIN_BADGE_LABELS.missing}
+    </Badge>
   );
 }
 
@@ -1719,6 +3948,17 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function StaticField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid gap-1">
+      <span className="text-xs font-medium uppercase text-muted-foreground">{label}</span>
+      <div className="flex h-10 items-center rounded-md border border-input bg-muted/30 px-3 text-sm">
+        {value}
+      </div>
+    </div>
+  );
+}
+
 const canonicalPositionByName = new Map(
   canonicalPositions.map((position) => [normalizePosition(position), position]),
 );
@@ -1727,13 +3967,52 @@ function isCookPosition(position: string | null) {
   return canonicalPosition(position) === "Повар";
 }
 
-function isStaffPosition(position: string | null) {
-  const canonical = canonicalPosition(position);
-  return Boolean(canonical && canonical !== "Повар");
-}
-
 function isTargetPosition(position: string | null) {
   return canonicalPosition(position) !== null;
+}
+
+function positionRequiresPin(position: string | null) {
+  const canonical = canonicalPosition(position);
+  return Boolean(canonical && !auxiliaryPositions.has(canonical));
+}
+
+function employeeMatchesPositionFilter(employee: Employee, filter: StaffPositionFilter) {
+  const option = positionFilterOptions.find((item) => item.value === filter);
+  if (!option?.positions) {
+    return true;
+  }
+  const position = canonicalPosition(employee.position);
+  return Boolean(position && option.positions.includes(position));
+}
+
+function secondaryFilterOptionsForPositionFilter(
+  filter: StaffPositionFilter,
+): StaffSecondaryFilterOption[] {
+  if (filter === "cashiers") {
+    return cashierSecondaryFilterOptions;
+  }
+  if (filter === "cooks") {
+    return cookSecondaryFilterOptions;
+  }
+  return [];
+}
+
+function employeeMatchesSecondaryFilter(
+  employee: Employee,
+  positionFilter: StaffPositionFilter,
+  filter: StaffSecondaryFilter,
+) {
+  if (filter === "all") {
+    return true;
+  }
+  const assignments = activeAssignments(employee);
+  if (positionFilter === "cashiers" && isEmployeeCategory(filter)) {
+    return assignments.some((assignment) => assignment.category === filter);
+  }
+  if (positionFilter === "cooks" && isPayrollRole(filter)) {
+    return assignments.some((assignment) => assignment.payroll_role === filter);
+  }
+  return true;
 }
 
 function canonicalPosition(position: string | null): CanonicalPosition | null {
@@ -1763,11 +4042,21 @@ function payrollRoleLabel(role: PayrollRole | null | undefined) {
   return role ? PAYROLL_ROLE_LABELS[role] : null;
 }
 
-function assignmentErrorMessage(error: unknown, category?: EmployeeCategory) {
-  if (category === "category_4") {
-    return "Категория 4-я доступна только для Шаурмиста";
-  }
-  return apiErrorMessage(error, "Не удалось обновить роль сотрудника");
+function noticeBadgeClass(willTriggerFullPayout: boolean) {
+  return willTriggerFullPayout
+    ? "rounded-md border-emerald-200 bg-emerald-50 text-emerald-700 shadow-none"
+    : "rounded-md border-amber-200 bg-amber-50 text-amber-700 shadow-none";
+}
+
+function categoriesForPayrollRole(payrollRole: PayrollRole | "") {
+  return payrollRole ? payrollRoleCategories[payrollRole] : [];
+}
+
+function isCategoryAllowedForRole(
+  payrollRole: PayrollRole,
+  category: EmployeeCategory | "" | null | undefined,
+) {
+  return Boolean(category && categoriesForPayrollRole(payrollRole).includes(category));
 }
 
 function statusFilterLabel(status: StaffStatusFilter) {
@@ -1782,6 +4071,151 @@ function statusFilterLabel(status: StaffStatusFilter) {
 
 function hasAnyRole(roles: string[] | undefined, allowedRoles: readonly string[]) {
   return Boolean(roles?.some((role) => allowedRoles.includes(role)));
+}
+
+function canViewEmployeeChanges(roles: string[] | undefined) {
+  return roles === undefined || hasAnyRole(roles, staffChangeReaderRoles);
+}
+
+function dateTimeFilterStart(value: string) {
+  return value ? `${value}T00:00:00+03:00` : undefined;
+}
+
+function dateTimeFilterEnd(value: string) {
+  return value ? `${value}T23:59:59+03:00` : undefined;
+}
+
+function changeTypeLabel(changeType: string) {
+  return EMPLOYEE_CHANGE_TYPE_LABELS[changeType] ?? changeType;
+}
+
+function formatEffectivePeriod(change: EmployeeChangeEvent) {
+  if (
+    change.effective_from &&
+    change.effective_to &&
+    change.effective_from !== change.effective_to
+  ) {
+    return `${formatDate(change.effective_from)} - ${formatDate(change.effective_to)}`;
+  }
+  if (change.effective_from) {
+    return formatDate(change.effective_from);
+  }
+  if (change.effective_to) {
+    return `до ${formatDate(change.effective_to)}`;
+  }
+  return "Не указана";
+}
+
+function employeeNameForChange(change: EmployeeChangeEvent, employeeById?: Map<string, Employee>) {
+  if (change.employee_id) {
+    return (
+      employeeById?.get(change.employee_id)?.full_name ?? `Сотрудник ${shortId(change.employee_id)}`
+    );
+  }
+  if (change.source === "iiko_sync") {
+    return "Запись IIko";
+  }
+  return "Не указан";
+}
+
+function shortId(value: string) {
+  return value.slice(0, 8);
+}
+
+function changeMatchesActionDate(change: EmployeeChangeEvent, actionDate: string) {
+  if (!actionDate) {
+    return true;
+  }
+  if (change.effective_from && change.effective_to) {
+    return change.effective_from <= actionDate && change.effective_to >= actionDate;
+  }
+  return change.effective_from === actionDate || change.effective_to === actionDate;
+}
+
+function isRetroactiveChange(change: EmployeeChangeEvent) {
+  if (change.payroll_impact_metadata.retroactive === true) {
+    return true;
+  }
+  if (!change.effective_from) {
+    return false;
+  }
+  return change.effective_from < dateInputValueFromDateTime(change.changed_at);
+}
+
+function dateInputValueFromDateTime(value: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+  }).formatToParts(new Date(value));
+  const dateParts = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+}
+
+function dismissalReasonOptions(reasons: EmployeeDismissalReason[]): DismissalReasonOption[] {
+  const byCode = new Map(reasons.map((reason) => [reason.code, reason]));
+  const byLabel = new Map(reasons.map((reason) => [reason.label, reason]));
+  const usedIds = new Set<string>();
+  const canonicalOptions = dismissalReasonDefinitions.map((definition) => {
+    const reason = byCode.get(definition.code) ?? byLabel.get(definition.label);
+    if (reason) {
+      usedIds.add(reason.id);
+    }
+    return {
+      key: reason?.id ?? definition.code,
+      id: reason?.id,
+      code: reason?.code ?? definition.code,
+      label: reason?.label ?? definition.label,
+      requires_comment: reason?.requires_comment ?? definition.requires_comment,
+    };
+  });
+  const extraOptions = reasons
+    .filter((reason) => !usedIds.has(reason.id))
+    .map((reason) => ({
+      key: reason.id,
+      id: reason.id,
+      code: reason.code,
+      label: reason.label,
+      requires_comment: reason.requires_comment,
+    }));
+  return [...canonicalOptions, ...extraOptions];
+}
+
+function premiumChangeConfirmations(initial: Draft, draft: Draft) {
+  const actions: string[] = [];
+  if (draft.is_senior !== initial.is_senior) {
+    actions.push(
+      draft.is_senior
+        ? "Вы уверены, что хотите присвоить сотруднику надбавку Старший?"
+        : "Вы уверены, что хотите снять с сотрудника надбавку Старший?",
+    );
+  }
+  if (draft.is_deputy_senior !== initial.is_deputy_senior) {
+    actions.push(
+      draft.is_deputy_senior
+        ? "Вы уверены, что хотите присвоить сотруднику надбавку Зам старшего?"
+        : "Вы уверены, что хотите снять с сотрудника надбавку Зам старшего?",
+    );
+  }
+  return actions;
+}
+
+function EmployeeChangeStatusBadge({ status }: { status: EmployeeChangeStatus }) {
+  const className =
+    status === "success"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : status === "error"
+        ? "border-red-200 bg-red-50 text-red-700"
+        : status === "requires_review"
+          ? "border-amber-200 bg-amber-50 text-amber-700"
+          : "border-zinc-200 bg-zinc-50 text-zinc-600";
+
+  return (
+    <Badge className={cn("rounded-md border font-medium shadow-none", className)}>
+      {EMPLOYEE_CHANGE_STATUS_LABELS[status]}
+    </Badge>
+  );
 }
 
 function activeAssignments(employee: Employee) {
@@ -1800,15 +4234,229 @@ function primaryAssignment(employee: Employee) {
 
 function payrollRolesForPosition(position: string | null): PayrollRole[] {
   const canonical = canonicalPosition(position);
-  return canonical ? positionPayrollRoles[canonical] : payrollRoleOptions;
+  return canonical ? positionPayrollRoles[canonical] : [];
+}
+
+function toEditorDraft(employee: Employee): StaffEditorDraft {
+  return {
+    ...toDraft(employee),
+    assignments: activeAssignments(employee).map((assignment) => ({
+      id: assignment.id,
+      draft_id: assignment.id,
+      payroll_role: assignment.payroll_role,
+      category: assignment.category,
+      is_primary: assignment.is_primary,
+    })),
+    pin_code: "",
+    pin_confirmation: "",
+  };
 }
 
 function toDraft(employee: Employee): Draft {
   return {
+    full_name: employee.full_name,
     position: employee.position,
     is_senior: employee.is_senior,
     is_deputy_senior: employee.is_deputy_senior,
   };
+}
+
+function editorDraftSnapshot(draft: StaffEditorDraft) {
+  return {
+    full_name: draft.full_name.trim(),
+    position: draft.position,
+    is_senior: draft.is_senior,
+    is_deputy_senior: draft.is_deputy_senior,
+    assignments: assignmentDraftsSnapshot(draft.assignments),
+    pin_code: draft.pin_code,
+    pin_confirmation: draft.pin_confirmation,
+  };
+}
+
+function assignmentDraftsSnapshot(assignments: AssignmentDraft[]) {
+  return assignments
+    .map((assignment) => ({
+      payroll_role: assignment.payroll_role,
+      category: assignment.category,
+      is_primary: assignment.is_primary,
+    }))
+    .sort((left, right) => left.payroll_role.localeCompare(right.payroll_role));
+}
+
+function pinDraftTouched(draft: StaffEditorDraft) {
+  return draft.pin_code.length > 0 || draft.pin_confirmation.length > 0;
+}
+
+function sanitizePinInput(value: string) {
+  return value.replace(/\D/g, "").slice(0, 4);
+}
+
+function validateEditorRoles(draft: StaffEditorDraft) {
+  const position = canonicalPosition(draft.position);
+  if (!position) {
+    return "Выберите каноническую должность";
+  }
+  const allowedRoles = positionPayrollRoles[position];
+  if (allowedRoles.length === 0) {
+    return draft.assignments.length > 0 ? "Для этой должности роли не предусмотрены" : null;
+  }
+  if (draft.assignments.length === 0) {
+    return "Добавьте основную роль и категорию";
+  }
+  const primaryCount = draft.assignments.filter((assignment) => assignment.is_primary).length;
+  if (primaryCount !== 1) {
+    return "Выберите одну основную роль";
+  }
+  const seenRoles = new Set<PayrollRole>();
+  for (const assignment of draft.assignments) {
+    if (!allowedRoles.includes(assignment.payroll_role)) {
+      return "Роль не соответствует должности";
+    }
+    if (seenRoles.has(assignment.payroll_role)) {
+      return "Роли не должны повторяться";
+    }
+    seenRoles.add(assignment.payroll_role);
+    if (!isCategoryAllowedForRole(assignment.payroll_role, assignment.category)) {
+      return "Категория недоступна для этой роли";
+    }
+  }
+  return null;
+}
+
+function buildEmployeePatch(initial: StaffEditorDraft, draft: StaffEditorDraft): EmployeePatch {
+  const patch: EmployeePatch = {};
+  const trimmedName = draft.full_name.trim();
+  if (trimmedName !== initial.full_name.trim()) {
+    patch.full_name = trimmedName;
+  }
+  if (draft.position !== initial.position) {
+    patch.position = draft.position;
+  }
+  if (draft.is_senior !== initial.is_senior) {
+    patch.is_senior = draft.is_senior;
+  }
+  if (draft.is_deputy_senior !== initial.is_deputy_senior) {
+    patch.is_deputy_senior = draft.is_deputy_senior;
+  }
+
+  const initialRoles = JSON.stringify(assignmentDraftsSnapshot(initial.assignments));
+  const currentRoles = JSON.stringify(assignmentDraftsSnapshot(draft.assignments));
+  if (initialRoles !== currentRoles) {
+    patch.roles = draft.assignments.map((assignment) => ({
+      id: assignment.id ?? null,
+      payroll_role: assignment.payroll_role,
+      category: assignment.category,
+      is_primary: assignment.is_primary,
+    }));
+    const primary = draft.assignments.find((assignment) => assignment.is_primary) ?? null;
+    patch.category = primary?.category ?? null;
+    patch.default_cooking_station =
+      primary && isCookingStationRole(primary.payroll_role) ? primary.payroll_role : null;
+  } else {
+    const position = canonicalPosition(draft.position);
+    if (
+      position &&
+      positionPayrollRoles[position].length === 0 &&
+      draft.position !== initial.position
+    ) {
+      patch.category = null;
+      patch.default_cooking_station = null;
+    }
+  }
+
+  if (pinDraftTouched(draft)) {
+    patch.pin_code = draft.pin_code;
+  }
+  return patch;
+}
+
+function assignmentsForPositionChange(
+  assignments: AssignmentDraft[],
+  position: CanonicalPosition,
+): AssignmentDraft[] {
+  const allowedRoles = positionPayrollRoles[position];
+  if (allowedRoles.length === 0) {
+    return [];
+  }
+  if (position === "Кассир") {
+    const existing = assignments.find((assignment) => assignment.payroll_role === "administrator");
+    return [
+      {
+        id: existing?.id,
+        draft_id: existing?.draft_id ?? newDraftId(),
+        payroll_role: "administrator",
+        category: existing?.category ?? "category_2",
+        is_primary: true,
+      },
+    ];
+  }
+  return ensurePrimaryAssignment(
+    assignments.filter((assignment) => allowedRoles.includes(assignment.payroll_role)),
+  );
+}
+
+function setCashierAssignmentCategory(
+  assignments: AssignmentDraft[],
+  category: EmployeeCategory,
+): AssignmentDraft[] {
+  const existing = assignments.find((assignment) => assignment.payroll_role === "administrator");
+  if (existing) {
+    return [{ ...existing, category, is_primary: true }];
+  }
+  return [newAssignmentDraft("administrator", category, true)];
+}
+
+function newAssignmentDraft(
+  payrollRole: PayrollRole,
+  category: EmployeeCategory,
+  isPrimary: boolean,
+): AssignmentDraft {
+  return {
+    draft_id: newDraftId(),
+    payroll_role: payrollRole,
+    category,
+    is_primary: isPrimary,
+  };
+}
+
+function newDraftId() {
+  return `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function ensurePrimaryAssignment(assignments: AssignmentDraft[]) {
+  if (assignments.length === 0 || assignments.some((assignment) => assignment.is_primary)) {
+    return assignments;
+  }
+  return assignments.map((assignment, index) =>
+    index === 0 ? { ...assignment, is_primary: true } : assignment,
+  );
+}
+
+function setPrimaryAssignment(assignments: AssignmentDraft[], draftId: string) {
+  return assignments.map((assignment) => ({
+    ...assignment,
+    is_primary: assignment.draft_id === draftId,
+  }));
+}
+
+function updateAssignmentDraft(
+  assignments: AssignmentDraft[],
+  draftId: string,
+  patch: Partial<Pick<AssignmentDraft, "payroll_role" | "category">>,
+) {
+  return assignments.map((assignment) =>
+    assignment.draft_id === draftId ? { ...assignment, ...patch } : assignment,
+  );
+}
+
+function removeAssignmentDraft(assignments: AssignmentDraft[], draftId: string) {
+  return ensurePrimaryAssignment(
+    assignments.filter((assignment) => assignment.draft_id !== draftId),
+  );
+}
+
+function isCookingStationRole(role: PayrollRole): role is CookingStation {
+  return (cookingStationOptions as PayrollRole[]).includes(role);
 }
 
 function initials(name: string) {
@@ -1825,6 +4473,128 @@ function todayDateInputValue() {
   }).formatToParts(new Date());
   const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${value.year}-${value.month}-${value.day}`;
+}
+
+function dateInputDaysAgo(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+function dateInputYearsAgo(years: number) {
+  const [year, month, day] = todayDateInputValue().split("-").map(Number);
+  const date = new Date(Date.UTC(year - years, month - 1, day));
+  if (date.getUTCMonth() !== month - 1) {
+    date.setUTCDate(0);
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+function numericAmount(value: string | number | null | undefined) {
+  const amount = Number(String(value ?? "0").replace(",", "."));
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function decimalPayload(value: string) {
+  return String(numericAmount(value));
+}
+
+function daysBetweenDateStrings(start: string, end: string) {
+  const startDate = new Date(`${start}T00:00:00+03:00`);
+  const endDate = new Date(`${end}T00:00:00+03:00`);
+  return Math.floor((endDate.getTime() - startDate.getTime()) / 86_400_000);
+}
+
+function depositDismissDecision(
+  action: DepositDismissAction,
+  balance: number,
+  partialAmountValue: string,
+) {
+  if (balance <= 0) {
+    return { isValid: true, payout: 0, writeoff: 0 };
+  }
+  if (action === "payout_full") {
+    return { isValid: true, payout: balance, writeoff: 0 };
+  }
+  if (action === "write_off") {
+    return { isValid: true, payout: 0, writeoff: balance };
+  }
+  if (action === "payout_partial") {
+    const payout = numericAmount(partialAmountValue);
+    const isValid = payout > 0 && payout < balance;
+    return {
+      isValid,
+      payout: isValid ? payout : 0,
+      writeoff: Math.max(balance - (Number.isFinite(payout) ? payout : 0), 0),
+    };
+  }
+  return { isValid: false, payout: 0, writeoff: balance };
+}
+
+function FundStatusBadge({ status }: { status: AccumulationFundAccount["status"] }) {
+  const styles: Record<AccumulationFundAccount["status"], string> = {
+    active: "border-blue-200 bg-blue-50 text-blue-700",
+    paid_out: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    forfeited: "border-slate-200 bg-slate-100 text-slate-600",
+  };
+  const labels: Record<AccumulationFundAccount["status"], string> = {
+    active: "Активен",
+    paid_out: "Выплачено",
+    forfeited: "Сгорело",
+  };
+  return <Badge className={cn("w-fit shadow-none", styles[status])}>{labels[status]}</Badge>;
+}
+
+function formatFundPercent(value: string | number | null | undefined) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) {
+    return "0%";
+  }
+  return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 }).format(amount)}%`;
+}
+
+function nextFundThresholdLabel(fund: AccumulationFundEmployeeDetail) {
+  const thresholdDate = fund.employee.next_threshold_date;
+  const nextRate = fund.employee.next_rate_percent;
+  if (!thresholdDate || !nextRate) {
+    return "Максимальная ставка";
+  }
+  return `${fund.employee.next_threshold_months} мес. (${formatDate(thresholdDate)}) → ${formatFundPercent(
+    nextRate,
+  )}`;
+}
+
+function forfeitedFundLabel(account: AccumulationFundAccount) {
+  const date = account.forfeited_at ? formatDateOnlyFromDateTime(account.forfeited_at) : "Не было";
+  return `Сгорело при увольнении ${date}: ${formatDepositMoney(account.forfeited)}`;
+}
+
+function employeeFundTransactionLabel(transaction: AccumulationFundTransaction) {
+  if (transaction.comment) {
+    return transaction.comment;
+  }
+  if (transaction.transaction_type === "accrual") {
+    const rate = transaction.rate_percent
+      ? `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 }).format(
+          Number(transaction.rate_percent) * 100,
+        )}%`
+      : "0%";
+    return `Начисление, ставка ${rate}`;
+  }
+  if (transaction.transaction_type === "payout") {
+    return "Выплата";
+  }
+  if (transaction.transaction_type === "initial_balance") {
+    return "Начальный баланс";
+  }
+  return "Списание при увольнении";
 }
 
 function formatDate(value: string | null) {
@@ -1848,6 +4618,276 @@ function formatDateTime(value: string | null) {
     timeStyle: "short",
     timeZone: "Europe/Moscow",
   }).format(new Date(value));
+}
+
+function formatDateOnlyFromDateTime(value: string | null) {
+  if (!value) {
+    return "Не было";
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+type EmployeeChangeDiffRow = {
+  label: string;
+  before?: string;
+  after?: string;
+  note?: string;
+};
+
+function employeeChangeDiffRows(change: EmployeeChangeEvent): EmployeeChangeDiffRow[] {
+  if (change.change_type === "change_pin" || change.diff?.pin_changed === true) {
+    return [{ label: "ПИН", note: "ПИН изменён" }];
+  }
+
+  if (change.change_type === "create_employee" || change.diff?.created === true) {
+    return createdEmployeeRows(change.after_value);
+  }
+
+  if (change.diff?.assigned === true) {
+    return assignmentRows(change.after_value, "Не было");
+  }
+
+  if (change.diff?.deleted === true) {
+    return assignmentRows(change.before_value, "Закрыто").map((row) => ({
+      ...row,
+      before: row.after,
+      after: "Закрыто",
+    }));
+  }
+
+  if (change.diff?.skipped === true) {
+    return [
+      {
+        label: "Причина пропуска",
+        note: textValue(change.reason ?? valueFromRecord(change.diff, "reason") ?? "Не указана"),
+      },
+    ];
+  }
+
+  if (change.diff?.error === true) {
+    return [{ label: "Ошибка", note: change.reason || "Не указана" }];
+  }
+
+  const rows = diffRowsFromDiff(change.diff);
+  if (rows.length > 0) {
+    return rows;
+  }
+
+  return diffRowsFromBeforeAfter(change.before_value, change.after_value);
+}
+
+function createdEmployeeRows(value: Record<string, unknown> | null): EmployeeChangeDiffRow[] {
+  if (!value) {
+    return [];
+  }
+  const fields = [
+    "full_name",
+    "position",
+    "payroll_role",
+    "roles",
+    "category",
+    "default_cooking_station",
+    "is_senior",
+    "is_deputy_senior",
+    "hire_date",
+    "fire_date",
+    "status",
+  ];
+  return fields
+    .filter((field) => Object.prototype.hasOwnProperty.call(value, field))
+    .map((field) => ({
+      label: changeFieldLabel(field),
+      before: "Не было",
+      after: formatChangeValue(field, value[field]),
+    }));
+}
+
+function assignmentRows(
+  value: Record<string, unknown> | null,
+  before: string,
+): EmployeeChangeDiffRow[] {
+  if (!value) {
+    return [];
+  }
+  return ["payroll_role", "category", "is_primary", "effective_from", "effective_to"]
+    .filter((field) => Object.prototype.hasOwnProperty.call(value, field))
+    .map((field) => ({
+      label: changeFieldLabel(field),
+      before,
+      after: formatChangeValue(field, value[field]),
+    }));
+}
+
+function diffRowsFromDiff(diff: Record<string, unknown> | null): EmployeeChangeDiffRow[] {
+  if (!diff) {
+    return [];
+  }
+  return Object.entries(diff)
+    .filter(([field]) => !isHiddenChangeField(field))
+    .flatMap(([field, value]) => {
+      if (!isRecord(value) || !("before" in value) || !("after" in value)) {
+        return [];
+      }
+      return [
+        {
+          label: changeFieldLabel(field),
+          before: formatChangeValue(field, value.before),
+          after: formatChangeValue(field, value.after),
+        },
+      ];
+    });
+}
+
+function diffRowsFromBeforeAfter(
+  before: Record<string, unknown> | null,
+  after: Record<string, unknown> | null,
+): EmployeeChangeDiffRow[] {
+  if (!before && !after) {
+    return [];
+  }
+  const keys = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
+  return Array.from(keys)
+    .filter((key) => !isHiddenChangeField(key))
+    .filter((key) => before?.[key] !== after?.[key])
+    .map((key) => ({
+      label: changeFieldLabel(key),
+      before: formatChangeValue(key, before?.[key]),
+      after: formatChangeValue(key, after?.[key]),
+    }));
+}
+
+function payrollImpactWarnings(change: EmployeeChangeEvent) {
+  const warnings: string[] = [];
+  if (change.payroll_impact_metadata.retroactive === true || isRetroactiveChange(change)) {
+    warnings.push("Изменение внесено задним числом.");
+  }
+  if (change.payroll_impact_metadata.requires_correction === true) {
+    warnings.push("Есть закрытый расчётный период, может потребоваться корректировка зарплаты.");
+  }
+  if (change.payroll_impact_metadata.correction_pending === true) {
+    warnings.push("Корректировка зарплаты ожидает обработки.");
+  }
+  return warnings;
+}
+
+function changeFieldLabel(field: string) {
+  return EMPLOYEE_CHANGE_FIELD_LABELS[field] ?? field;
+}
+
+function formatChangeValue(field: string, value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "Не задано";
+  }
+  if (typeof value === "boolean") {
+    return value ? "Да" : "Нет";
+  }
+  if (typeof value === "number") {
+    return String(value);
+  }
+  if (typeof value === "string") {
+    if (field === "category" && isEmployeeCategory(value)) {
+      return EMPLOYEE_CATEGORY_LABELS[value];
+    }
+    if ((field === "payroll_role" || field === "default_cooking_station") && isPayrollRole(value)) {
+      return PAYROLL_ROLE_LABELS[value];
+    }
+    if (field === "default_cooking_station" && isCookingStation(value)) {
+      return COOKING_STATION_LABELS[value];
+    }
+    if (field === "status" && isEmployeeStatus(value)) {
+      return EMPLOYEE_STATUS_LABELS[value];
+    }
+    if (field.includes("date") || field.startsWith("effective_")) {
+      return formatDate(value);
+    }
+    if (field.endsWith("_at")) {
+      return formatDateTime(value);
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return "Нет";
+    }
+    if (value.every(isRecord)) {
+      return value.map((item) => formatRecordValue(item)).join("; ");
+    }
+    return `${value.length} знач.`;
+  }
+  if (isRecord(value)) {
+    return formatRecordValue(value);
+  }
+  return "Данные изменены";
+}
+
+function formatRecordValue(value: Record<string, unknown>) {
+  const parts: string[] = [];
+  const fullName = valueFromRecord(value, "full_name");
+  if (fullName) {
+    parts.push(fullName);
+  }
+  const payrollRole = valueFromRecord(value, "payroll_role");
+  if (payrollRole) {
+    parts.push(formatChangeValue("payroll_role", payrollRole));
+  }
+  const category = valueFromRecord(value, "category");
+  if (category) {
+    parts.push(formatChangeValue("category", category));
+  }
+  const position = valueFromRecord(value, "position");
+  if (position) {
+    parts.push(position);
+  }
+  if (value.is_primary === true) {
+    parts.push("основная");
+  }
+  return parts.length > 0 ? parts.join(" · ") : "Данные изменены";
+}
+
+function valueFromRecord(value: Record<string, unknown> | null, field: string) {
+  const fieldValue = value?.[field];
+  return typeof fieldValue === "string" ? fieldValue : null;
+}
+
+function textValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : "Не указана";
+}
+
+function isHiddenChangeField(field: string) {
+  const normalized = field.replace(/_/g, "").toLowerCase();
+  return (
+    normalized.includes("pin") ||
+    field === "id" ||
+    field.endsWith("_id") ||
+    field === "created_at" ||
+    field === "updated_at"
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isEmployeeCategory(value: string): value is EmployeeCategory {
+  return value in EMPLOYEE_CATEGORY_LABELS;
+}
+
+function isCookingStation(value: string): value is CookingStation {
+  return value in COOKING_STATION_LABELS;
+}
+
+function isPayrollRole(value: string): value is PayrollRole {
+  return value in PAYROLL_ROLE_LABELS;
+}
+
+function isEmployeeStatus(value: string): value is EmployeeStatus {
+  return value in EMPLOYEE_STATUS_LABELS;
 }
 
 function useAuthSnapshot() {

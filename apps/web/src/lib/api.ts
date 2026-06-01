@@ -83,6 +83,12 @@ export type EmployeeRoleAssignmentPatch = Partial<
   Pick<EmployeeRoleAssignment, "payroll_role" | "category" | "is_primary">
 >;
 
+export type EmployeeNoticeInfo = {
+  notice_date: string;
+  days_since: number;
+  will_trigger_full_payout: boolean;
+};
+
 export type Employee = {
   id: string;
   full_name: string;
@@ -94,18 +100,22 @@ export type Employee = {
   is_deputy_senior: boolean;
   status: EmployeeStatus;
   hire_date: string | null;
+  tenure_started_at: string | null;
   fire_date: string | null;
   fire_reason: string | null;
+  pin_assumed_from_iiko: boolean;
   pin_set_at: string | null;
   iiko_sync_at: string | null;
   created_at: string;
   updated_at: string;
   assignments: EmployeeRoleAssignment[];
+  active_notice: EmployeeNoticeInfo | null;
 };
 
 export type EmployeePatch = Partial<
   Pick<
     Employee,
+    | "full_name"
     | "position"
     | "category"
     | "default_cooking_station"
@@ -114,7 +124,15 @@ export type EmployeePatch = Partial<
     | "hire_date"
     | "fire_date"
   >
->;
+> & {
+  pin_code?: string | null;
+  roles?: Array<{
+    id?: string | null;
+    payroll_role: PayrollRole;
+    category: EmployeeCategory;
+    is_primary: boolean;
+  }>;
+};
 
 export type EmployeeSyncResult = {
   created: number;
@@ -122,9 +140,103 @@ export type EmployeeSyncResult = {
   deactivated: number;
 };
 
+export type DepositDismissAction = "payout_full" | "payout_partial" | "write_off" | "none";
+
 export type EmployeeDismissPayload = {
   fire_date?: string;
+  reason_id?: string;
+  reason_code?: string;
+  comment?: string;
   reason?: string;
+  deposit_action: DepositDismissAction;
+  deposit_payout_amount?: string;
+  deposit_comment?: string;
+};
+
+export type EmployeeNoticePayload = {
+  notice_date?: string;
+  comment?: string;
+};
+
+export type EmployeeNoticeCancelPayload = {
+  comment?: string;
+};
+
+export type EmployeeNoticeAction = {
+  event_id: string;
+  effective_from: string;
+  days_until_today: number;
+};
+
+export type EmployeeDismissalReason = {
+  id: string;
+  code: string;
+  label: string;
+  requires_comment: boolean;
+  is_system: boolean;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EmployeeDismissalReasonCreatePayload = {
+  code?: string;
+  label: string;
+  requires_comment?: boolean;
+  is_active?: boolean;
+  sort_order?: number;
+};
+
+export type EmployeeDismissalReasonUpdatePayload = Partial<
+  Pick<EmployeeDismissalReason, "label" | "requires_comment" | "is_active" | "sort_order">
+>;
+
+export type EmployeeChangeSource = "app" | "iiko_sync" | "system_migration";
+export type EmployeeChangeStatus = "success" | "error" | "requires_review" | "skipped";
+
+export type EmployeeChangeEvent = {
+  id: string;
+  employee_id: string | null;
+  changed_at: string;
+  effective_from: string | null;
+  effective_to: string | null;
+  change_type: string;
+  source: EmployeeChangeSource;
+  actor_user_id: string | null;
+  actor_label: string | null;
+  status: EmployeeChangeStatus;
+  summary: string;
+  before_value: Record<string, unknown> | null;
+  after_value: Record<string, unknown> | null;
+  diff: Record<string, unknown> | null;
+  reason_id: string | null;
+  reason: string | null;
+  reason_code: string | null;
+  reason_label: string | null;
+  comment: string | null;
+  related_agent_run_id: string | null;
+  related_agent_action_id: string | null;
+  related_entity_type: string | null;
+  related_entity_id: string | null;
+  payroll_impact: boolean;
+  payroll_impact_metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type EmployeeChangeFilters = {
+  employeeId?: string;
+  changedFrom?: string;
+  changedTo?: string;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  changeType?: string;
+  source?: EmployeeChangeSource;
+  actor?: string;
+  status?: EmployeeChangeStatus;
+  onlyErrors?: boolean;
+  onlyRequiresReview?: boolean;
+  includeSystemMigrations?: boolean;
 };
 
 export type EmployeeCreatePayload = {
@@ -142,6 +254,11 @@ export type EmployeeCreatePayload = {
 
 export type EmployeePinChangePayload = {
   pin_code: string;
+};
+
+export type EmployeeHireDatePayload = {
+  hire_date: string;
+  comment?: string;
 };
 
 export type IikoEmployeeRole = {
@@ -188,9 +305,198 @@ export type PayrollLine = {
   percent_pay: number;
   fund_accrual: number;
   deduction: number;
+  deposit_withholding: number;
+  deposit_payout: number;
+  ndfl_deduction: number;
   total_payable: number;
+  deposit_excluded_for_run: boolean;
+  deposit_exclusion_reason: string | null;
   components: Record<string, unknown>;
 };
+
+export type PayrollLineDepositOverridePatch = {
+  deposit_excluded_for_run: boolean;
+  deposit_exclusion_reason?: string | null;
+};
+
+export type AccumulationFundStatus = "active" | "paid_out" | "forfeited";
+
+export type AccumulationFundSummary = {
+  year: number;
+  total_outstanding: string;
+  total_paid_out_ytd: string;
+  total_forfeited_ytd: string;
+  active_employees_count: number;
+  next_payout_date: string;
+};
+
+export type AccumulationFundAccount = {
+  id: string;
+  employee_id: string;
+  full_name: string;
+  position: string | null;
+  year: number;
+  status: AccumulationFundStatus;
+  tenure_months: number;
+  tenure_started_at: string | null;
+  current_rate_percent: string;
+  accumulated: string;
+  paid_out: string;
+  forfeited: string;
+  outstanding: string;
+  paid_out_at: string | null;
+  forfeited_at: string | null;
+  forfeit_reason: string | null;
+  planned_payout_date: string;
+};
+
+export type AccumulationFundTransaction = {
+  id: string;
+  account_id: string;
+  employee_id: string;
+  year: number;
+  transaction_type: "accrual" | "payout" | "forfeit" | "initial_balance";
+  amount: string;
+  rate_percent: string | null;
+  base_pay_amount: string | null;
+  run_id: string | null;
+  comment: string | null;
+  created_at: string | null;
+  account_status: AccumulationFundStatus | null;
+};
+
+export type AccumulationFundEmployee = {
+  id: string;
+  full_name: string;
+  position: string | null;
+  status: EmployeeStatus;
+  hire_date: string | null;
+  tenure_started_at: string | null;
+  tenure_months: number;
+  current_rate_percent: string;
+  next_threshold_months: number | null;
+  next_threshold_date: string | null;
+  next_rate_percent: string | null;
+};
+
+export type AccumulationFundEmployeeDetail = {
+  employee: AccumulationFundEmployee;
+  account: AccumulationFundAccount | null;
+  accounts: AccumulationFundAccount[];
+  transactions: AccumulationFundTransaction[];
+};
+
+export type AccumulationFundPayoutResult = {
+  year: number;
+  paid_out_count: number;
+  total_paid_out: string;
+};
+
+export type FundTierItem = {
+  min_months: number;
+  rate: number | string;
+};
+
+export type FundTiersRead = {
+  tiers: FundTierItem[];
+  updated_at: string | null;
+  updated_by_label: string | null;
+};
+
+export type FundRosterAccount = {
+  year: number;
+  accumulated: string;
+  is_initial_set: boolean;
+  initial_set_at: string | null;
+  initial_set_by_label: string | null;
+};
+
+export type FundRosterRow = {
+  employee_id: string;
+  full_name: string;
+  position: string | null;
+  hire_date: string | null;
+  tenure_months: number | null;
+  current_rate_percent: string | null;
+  fund_account: FundRosterAccount | null;
+};
+
+export type FundInitialBalanceRead = {
+  employee_id: string;
+  year: number;
+  accumulated: string;
+  transaction_id: string;
+  created_at: string;
+};
+
+export type PayrollAdjustmentType = "bonus" | "penalty";
+
+export type PayrollAdjustmentCategory = {
+  id: string;
+  type: PayrollAdjustmentType;
+  code: string;
+  display_name: string;
+  description: string | null;
+  default_amount: string | null;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type PayrollAdjustment = {
+  id: string;
+  employee_id: string;
+  employee_full_name: string;
+  employee_position: string;
+  work_date: string;
+  type: PayrollAdjustmentType;
+  category_id: string | null;
+  category_display_name: string | null;
+  custom_label: string | null;
+  amount: string;
+  comment: string | null;
+  created_by_user_id: string | null;
+  created_by_label: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  is_locked: boolean;
+};
+
+export type PayrollAdjustmentFilters = {
+  employeeId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  type?: PayrollAdjustmentType | "all";
+};
+
+export type PayrollAdjustmentPayload = {
+  employee_id: string;
+  work_date: string;
+  type: PayrollAdjustmentType;
+  category_id?: string | null;
+  custom_label?: string | null;
+  amount: string;
+  comment?: string | null;
+};
+
+export type PayrollAdjustmentPatch = Partial<PayrollAdjustmentPayload>;
+
+export type PayrollAdjustmentCategoryPayload = {
+  type: PayrollAdjustmentType;
+  code?: string;
+  display_name: string;
+  default_amount?: string | null;
+  description?: string | null;
+  sort_order?: number;
+};
+
+export type PayrollAdjustmentCategoryPatch = Partial<
+  Pick<
+    PayrollAdjustmentCategory,
+    "display_name" | "default_amount" | "description" | "is_active" | "sort_order"
+  >
+>;
 
 export type ShiftLedgerSource = "schedule" | "manual_correction" | "fallback_primary";
 export type ShiftLedgerStatus = "resolved" | "needs_role_selection" | "needs_employee_setup";
@@ -231,10 +537,12 @@ export type ShiftLedgerMatrixShift = {
   category: EmployeeCategory | null;
   is_resolved: boolean;
   status: ShiftLedgerStatus;
+  payroll_locked: boolean;
 };
 
 export type ShiftLedgerMatrixDay = {
   date: string;
+  payroll_locked: boolean;
   available_roles: ShiftLedgerAvailableRole[];
   summary: ShiftLedgerMatrixSummary;
   shifts: ShiftLedgerMatrixShift[];
@@ -356,6 +664,52 @@ export type PayrollSeniorityPremium = {
 };
 
 export type PayrollSeniorityPremiumPayload = Omit<PayrollSeniorityPremium, "id" | "created_at">;
+
+export type DepositListItem = {
+  id: string;
+  full_name: string;
+  position: string | null;
+  category: EmployeeCategory | null;
+  balance: string;
+  initial_balance: string;
+  target: string | null;
+  withholding: string | null;
+  is_excluded: boolean;
+  excluded_until: string | null;
+  progress_pct: string;
+  deposit_target_override?: string | null;
+  deposit_withholding_override?: string | null;
+  deposit_excluded_reason?: string | null;
+};
+
+export type DepositTransaction = {
+  id: string;
+  employee_id: string;
+  run_id: string | null;
+  transaction_type: string;
+  amount: string;
+  created_at: string | null;
+  comment?: string | null;
+  reason?: string | null;
+};
+
+export type DepositConfigPatch = {
+  deposit_target_override?: string | null;
+  deposit_withholding_override?: string | null;
+  deposit_excluded?: boolean;
+  deposit_excluded_until?: string | null;
+  deposit_excluded_reason?: string | null;
+};
+
+export type DepositPayoutPayload = {
+  amount: string;
+  comment?: string | null;
+};
+
+export type DepositWriteoffPayload = {
+  amount: string;
+  reason?: string | null;
+};
 
 export const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
@@ -494,11 +848,86 @@ export async function changeEmployeePin(
   return response.data;
 }
 
+export async function setEmployeeHireDate(
+  employeeId: string,
+  payload: EmployeeHireDatePayload,
+): Promise<Employee> {
+  const response = await api.post<Employee>(`/employees/${employeeId}/hire-date`, payload);
+  return response.data;
+}
+
 export async function dismissEmployee(
   id: string,
   payload: EmployeeDismissPayload,
 ): Promise<Employee> {
   const response = await api.post<Employee>(`/employees/${id}/dismiss`, payload);
+  return response.data;
+}
+
+export async function recordEmployeeNotice(
+  id: string,
+  payload: EmployeeNoticePayload,
+): Promise<EmployeeNoticeAction> {
+  const response = await api.post<EmployeeNoticeAction>(`/employees/${id}/notice`, payload);
+  return response.data;
+}
+
+export async function cancelEmployeeNotice(
+  id: string,
+  payload: EmployeeNoticeCancelPayload,
+): Promise<EmployeeNoticeAction> {
+  const response = await api.delete<EmployeeNoticeAction>(`/employees/${id}/notice`, {
+    data: payload,
+  });
+  return response.data;
+}
+
+export async function getEmployeeDismissalReasons(
+  includeInactive = false,
+): Promise<EmployeeDismissalReason[]> {
+  const response = await api.get<EmployeeDismissalReason[]>("/employees/dismissal-reasons", {
+    params: { include_inactive: includeInactive || undefined },
+  });
+  return response.data;
+}
+
+export async function getEmployeeChanges(
+  filters: EmployeeChangeFilters = {},
+): Promise<EmployeeChangeEvent[]> {
+  const response = await api.get<EmployeeChangeEvent[]>("/employees/changes", {
+    params: {
+      employee_id: filters.employeeId,
+      changed_from: filters.changedFrom,
+      changed_to: filters.changedTo,
+      effective_from: filters.effectiveFrom,
+      effective_to: filters.effectiveTo,
+      change_type: filters.changeType,
+      source: filters.source,
+      actor: filters.actor,
+      status: filters.status,
+      only_errors: filters.onlyErrors || undefined,
+      only_requires_review: filters.onlyRequiresReview || undefined,
+      include_system_migrations: filters.includeSystemMigrations || undefined,
+    },
+  });
+  return response.data;
+}
+
+export async function createEmployeeDismissalReason(
+  payload: EmployeeDismissalReasonCreatePayload,
+): Promise<EmployeeDismissalReason> {
+  const response = await api.post<EmployeeDismissalReason>("/employees/dismissal-reasons", payload);
+  return response.data;
+}
+
+export async function updateEmployeeDismissalReason(
+  id: string,
+  payload: EmployeeDismissalReasonUpdatePayload,
+): Promise<EmployeeDismissalReason> {
+  const response = await api.patch<EmployeeDismissalReason>(
+    `/employees/dismissal-reasons/${id}`,
+    payload,
+  );
   return response.data;
 }
 
@@ -547,10 +976,9 @@ export async function syncEmployees(): Promise<EmployeeSyncResult> {
 export async function getPayrollRoleCategories(): Promise<
   Partial<Record<PayrollRole, PayrollRoleCategoryOption[]>>
 > {
-  const response =
-    await api.get<Partial<Record<PayrollRole, PayrollRoleCategoryOption[]>>>(
-      "/payroll/role-categories",
-    );
+  const response = await api.get<Partial<Record<PayrollRole, PayrollRoleCategoryOption[]>>>(
+    "/payroll/role-categories",
+  );
   return response.data;
 }
 
@@ -559,8 +987,17 @@ export async function autoCreateNextPayrollPeriod(): Promise<PayrollPeriod> {
   return response.data;
 }
 
-export async function createPayrollRun(periodId: string): Promise<PayrollRun> {
-  const response = await api.post<PayrollRun>("/payroll/runs", { period_id: periodId });
+export async function createPayrollRun(
+  periodId: string,
+  options: { forceRefresh?: boolean } = {},
+): Promise<PayrollRun> {
+  // По умолчанию forceRefresh=true: пользователь жмёт «Пересчитать» когда хочет
+  // увидеть актуальные данные, в том числе подтянуть свежую выручку из iiko.
+  const force_refresh = options.forceRefresh ?? true;
+  const response = await api.post<PayrollRun>("/payroll/runs", {
+    period_id: periodId,
+    force_refresh,
+  });
   return response.data;
 }
 
@@ -579,8 +1016,148 @@ export async function getPayrollRunLines(id: string): Promise<PayrollLine[]> {
   return response.data;
 }
 
+export async function patchPayrollLineDepositOverride(
+  id: string,
+  payload: PayrollLineDepositOverridePatch,
+): Promise<PayrollLine> {
+  const response = await api.patch<PayrollLine>(`/payroll/lines/${id}`, payload);
+  return response.data;
+}
+
 export async function finalizePayrollRun(id: string): Promise<PayrollRun> {
   const response = await api.post<PayrollRun>(`/payroll/runs/${id}/finalize`);
+  return response.data;
+}
+
+export async function getAccumulationFundSummary(year: number): Promise<AccumulationFundSummary> {
+  const response = await api.get<AccumulationFundSummary>("/payroll/fund/summary", {
+    params: { year },
+  });
+  return response.data;
+}
+
+export async function getAccumulationFundAccounts(
+  year: number,
+): Promise<AccumulationFundAccount[]> {
+  const response = await api.get<AccumulationFundAccount[]>("/payroll/fund", {
+    params: { year },
+  });
+  return response.data;
+}
+
+export async function getEmployeeAccumulationFund(
+  employeeId: string,
+  year?: number,
+): Promise<AccumulationFundEmployeeDetail> {
+  const response = await api.get<AccumulationFundEmployeeDetail>(`/payroll/fund/${employeeId}`, {
+    params: { year },
+  });
+  return response.data;
+}
+
+export async function postAccumulationFundPayout(
+  year: number,
+  payload: { comment?: string | null } = {},
+): Promise<AccumulationFundPayoutResult> {
+  const response = await api.post<AccumulationFundPayoutResult>(
+    `/payroll/fund/payout/${year}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function getFundTiers(): Promise<FundTiersRead> {
+  const response = await api.get<FundTiersRead>("/payroll/fund/tiers");
+  return response.data;
+}
+
+export async function putFundTiers(tiers: FundTierItem[]): Promise<FundTiersRead> {
+  const response = await api.put<FundTiersRead>("/payroll/fund/tiers", { tiers });
+  return response.data;
+}
+
+export async function getFundInitialBalanceRoster(year: number): Promise<FundRosterRow[]> {
+  const response = await api.get<FundRosterRow[]>("/payroll/fund/initial-balance-roster", {
+    params: { year },
+  });
+  return response.data;
+}
+
+export async function setFundInitialBalance(
+  employeeId: string,
+  payload: { amount: number; comment?: string },
+): Promise<FundInitialBalanceRead> {
+  const response = await api.post<FundInitialBalanceRead>(
+    `/payroll/fund/${employeeId}/initial-balance`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function getPayrollAdjustments(
+  filters: PayrollAdjustmentFilters = {},
+): Promise<PayrollAdjustment[]> {
+  const response = await api.get<PayrollAdjustment[]>("/payroll/adjustments", {
+    params: {
+      employee_id: filters.employeeId,
+      date_from: filters.dateFrom || undefined,
+      date_to: filters.dateTo || undefined,
+      type: filters.type && filters.type !== "all" ? filters.type : undefined,
+    },
+  });
+  return response.data;
+}
+
+export async function createPayrollAdjustment(
+  payload: PayrollAdjustmentPayload,
+): Promise<PayrollAdjustment> {
+  const response = await api.post<PayrollAdjustment>("/payroll/adjustments", payload);
+  return response.data;
+}
+
+export async function patchPayrollAdjustment(
+  id: string,
+  payload: PayrollAdjustmentPatch,
+): Promise<PayrollAdjustment> {
+  const response = await api.patch<PayrollAdjustment>(`/payroll/adjustments/${id}`, payload);
+  return response.data;
+}
+
+export async function deletePayrollAdjustment(id: string): Promise<void> {
+  await api.delete(`/payroll/adjustments/${id}`);
+}
+
+export async function getPayrollAdjustmentCategories(
+  type?: PayrollAdjustmentType,
+  includeInactive = false,
+): Promise<PayrollAdjustmentCategory[]> {
+  const response = await api.get<PayrollAdjustmentCategory[]>("/payroll/adjustment-categories", {
+    params: {
+      type,
+      include_inactive: includeInactive || undefined,
+    },
+  });
+  return response.data;
+}
+
+export async function createPayrollAdjustmentCategory(
+  payload: PayrollAdjustmentCategoryPayload,
+): Promise<PayrollAdjustmentCategory> {
+  const response = await api.post<PayrollAdjustmentCategory>(
+    "/payroll/adjustment-categories",
+    payload,
+  );
+  return response.data;
+}
+
+export async function patchPayrollAdjustmentCategory(
+  id: string,
+  payload: PayrollAdjustmentCategoryPatch,
+): Promise<PayrollAdjustmentCategory> {
+  const response = await api.patch<PayrollAdjustmentCategory>(
+    `/payroll/adjustment-categories/${id}`,
+    payload,
+  );
   return response.data;
 }
 
@@ -738,6 +1315,41 @@ export async function putPayrollSeniorityPremium(
   return response.data;
 }
 
+export async function getDeposits(): Promise<DepositListItem[]> {
+  const response = await api.get<DepositListItem[]>("/deposits");
+  return response.data;
+}
+
+export async function getDepositTransactions(employeeId: string): Promise<DepositTransaction[]> {
+  const response = await api.get<DepositTransaction[]>(`/deposits/${employeeId}/transactions`);
+  return response.data;
+}
+
+export async function patchDepositConfig(
+  employeeId: string,
+  payload: DepositConfigPatch,
+): Promise<void> {
+  await api.patch(`/deposits/${employeeId}/config`, payload);
+}
+
+export async function postDepositPayout(
+  employeeId: string,
+  payload: DepositPayoutPayload,
+): Promise<void> {
+  await api.post(`/deposits/${employeeId}/payout`, payload);
+}
+
+export async function postDepositWriteoff(
+  employeeId: string,
+  payload: DepositWriteoffPayload,
+): Promise<void> {
+  await api.post(`/deposits/${employeeId}/writeoff`, payload);
+}
+
+export async function postDepositInitialBalance(employeeId: string, amount: string): Promise<void> {
+  await api.post(`/deposits/${employeeId}/initial-balance`, { amount });
+}
+
 export function apiErrorMessage(error: unknown, fallback = "Не удалось выполнить запрос") {
   if (axios.isAxiosError(error)) {
     const data = error.response?.data as { detail?: unknown } | undefined;
@@ -750,4 +1362,8 @@ export function apiErrorMessage(error: unknown, fallback = "Не удалось 
     }
   }
   return error instanceof Error ? error.message : fallback;
+}
+
+export function apiErrorStatus(error: unknown) {
+  return axios.isAxiosError(error) ? error.response?.status : undefined;
 }

@@ -1,17 +1,20 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  History,
-  Link as LinkIcon,
-  Plus,
-  RefreshCw,
-  Save,
-  Settings,
-  SlidersHorizontal,
-} from "lucide-react";
+import { Check, History, Plus, RefreshCw, Save, SlidersHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { DepositsSettingsTab } from "@/components/deposits/DepositsSettingsTab";
 import { BooleanWidget, NumberWidget, PercentWidget } from "@/components/settings-widgets";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,22 +34,42 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { getAuthSnapshot, subscribeAuth } from "@/lib/auth";
 import { EMPLOYEE_CATEGORY_LABELS } from "@/lib/i18n/employee";
 import {
+  apiErrorMessage,
+  apiErrorStatus,
+  createEmployeeDismissalReason,
+  getFundInitialBalanceRoster,
+  getFundTiers,
   getPayrollCategoryCoefficients,
   getPayrollDeductions,
+  getEmployeeDismissalReasons,
   getPayrollRates,
   getPayrollRevenueTiers,
   getPayrollSeniorityPremiums,
   putPayrollCategoryCoefficients,
   putPayrollDeduction,
+  putFundTiers,
   putPayrollRate,
   putPayrollRateAvailability,
   putPayrollRevenueTiers,
   putPayrollSeniorityPremium,
+  setFundInitialBalance,
+  updateEmployeeDismissalReason,
+  type EmployeeDismissalReason,
+  type EmployeeDismissalReasonCreatePayload,
+  type FundRosterRow,
+  type FundTierItem,
   type PayrollCategoryCoefficient,
   type PayrollCategoryCoefficientPayload,
   type PayrollDeductionCategory,
@@ -90,9 +113,29 @@ type CategoryCoefficientDraft = {
   coefficient: string;
 };
 
+type TerminationReasonDraft = {
+  id?: string;
+  code: string;
+  label: string;
+  requires_comment: boolean;
+  is_active: boolean;
+  sort_order: number;
+};
+
 type HistoryDrawer = "rates" | null;
+type FundTierDraft = {
+  id: string;
+  minMonths: string;
+  ratePercent: string;
+};
+type FundRosterFilter = "all" | "unset" | "set";
+type PendingInitialBalance = {
+  row: FundRosterRow;
+  amount: number;
+};
 
 export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRouteProps) {
+  void onNavigate;
   const queryClient = useQueryClient();
   const auth = useAuthSnapshot();
   const canWrite = Boolean(
@@ -107,6 +150,8 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
     null,
   );
   const [premiumDraft, setPremiumDraft] = useState<PayrollSeniorityPremiumPayload | null>(null);
+  const [terminationReasonDraft, setTerminationReasonDraft] =
+    useState<TerminationReasonDraft | null>(null);
 
   const ratesQuery = useQuery({
     queryKey: ["payroll-config", "rates"],
@@ -132,6 +177,10 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
   const premiumsQuery = useQuery({
     queryKey: ["payroll-config", "seniority-premium"],
     queryFn: () => getPayrollSeniorityPremiums(),
+  });
+  const terminationReasonsQuery = useQuery({
+    queryKey: ["employees", "dismissal-reasons", "all"],
+    queryFn: () => getEmployeeDismissalReasons(true),
   });
 
   const rateMutation = useMutation({
@@ -195,31 +244,63 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
     },
     onError: () => toast.error("Не удалось сохранить надбавку"),
   });
+  const terminationReasonMutation = useMutation({
+    mutationFn: (draft: TerminationReasonDraft) => {
+      if (draft.id) {
+        return updateEmployeeDismissalReason(draft.id, {
+          label: draft.label,
+          requires_comment: draft.requires_comment,
+          is_active: draft.is_active,
+          sort_order: draft.sort_order,
+        });
+      }
+      const payload: EmployeeDismissalReasonCreatePayload = {
+        label: draft.label,
+        requires_comment: draft.requires_comment,
+        is_active: draft.is_active,
+        sort_order: draft.sort_order,
+      };
+      const code = draft.code.trim();
+      if (code) {
+        payload.code = code;
+      }
+      return createEmployeeDismissalReason(payload);
+    },
+    onSuccess: async () => {
+      toast.success("Причина увольнения сохранена");
+      setTerminationReasonDraft(null);
+      await invalidateTerminationReasons(queryClient);
+    },
+    onError: () => toast.error("Не удалось сохранить причину увольнения"),
+  });
 
   const rates = ratesQuery.data ?? [];
   const revenueTiers = revenueTiersQuery.data ?? [];
   const categoryCoefficients = categoryCoefficientsQuery.data ?? [];
   const deductions = deductionsQuery.data ?? [];
   const premiums = premiumsQuery.data ?? [];
+  const terminationReasons = terminationReasonsQuery.data ?? [];
 
   const isLoading =
     ratesQuery.isLoading ||
     revenueTiersQuery.isLoading ||
     categoryCoefficientsQuery.isLoading ||
     deductionsQuery.isLoading ||
-    premiumsQuery.isLoading;
+    premiumsQuery.isLoading ||
+    terminationReasonsQuery.isLoading;
   const hasError =
     ratesQuery.isError ||
     revenueTiersQuery.isError ||
     categoryCoefficientsQuery.isError ||
     deductionsQuery.isError ||
-    premiumsQuery.isError;
+    premiumsQuery.isError ||
+    terminationReasonsQuery.isError;
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Исходные данные"
-        description="Конфигурация payroll-формул: ставки, проценты, удержания и надбавки с историей версий."
+        description="Конфигурация payroll-формул и рабочих справочников: ставки, проценты, удержания, увольнения и надбавки."
         action={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -231,7 +312,10 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
               Расширенный режим
             </Button>
             <Button
-              onClick={() => void invalidatePayrollConfig(queryClient)}
+              onClick={() => {
+                void invalidatePayrollConfig(queryClient);
+                void invalidateTerminationReasons(queryClient);
+              }}
               title="Обновить"
               variant="outline"
             >
@@ -256,7 +340,7 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
 
       {hasError ? (
         <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          Не удалось загрузить payroll-конфигурацию
+          Не удалось загрузить исходные данные
         </div>
       ) : null}
 
@@ -265,8 +349,10 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
           <TabsTrigger value="rates">Ставки</TabsTrigger>
           <TabsTrigger value="revenue">Проценты от выручки</TabsTrigger>
           <TabsTrigger value="deductions">Удержания</TabsTrigger>
+          <TabsTrigger value="termination">Причины увольнения</TabsTrigger>
           <TabsTrigger value="premiums">Надбавки</TabsTrigger>
           <TabsTrigger value="fund">Накопительный фонд</TabsTrigger>
+          <TabsTrigger value="deposits">Депозиты</TabsTrigger>
         </TabsList>
 
         <TabsContent value="rates" className="mt-0">
@@ -312,6 +398,33 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
           />
         </TabsContent>
 
+        <TabsContent value="termination" className="mt-0">
+          <TerminationReasonsSection
+            advanced={advanced}
+            canWrite={canWrite}
+            onAdd={() =>
+              setTerminationReasonDraft({
+                code: "",
+                label: "",
+                requires_comment: false,
+                is_active: true,
+                sort_order: nextSortOrder(terminationReasons),
+              })
+            }
+            onEdit={(reason) =>
+              setTerminationReasonDraft({
+                id: reason.id,
+                code: reason.code,
+                label: reason.label,
+                requires_comment: reason.requires_comment,
+                is_active: reason.is_active,
+                sort_order: reason.sort_order,
+              })
+            }
+            reasons={terminationReasons}
+          />
+        </TabsContent>
+
         <TabsContent value="premiums" className="mt-0">
           <PremiumsSection
             advanced={advanced}
@@ -322,7 +435,11 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
         </TabsContent>
 
         <TabsContent value="fund" className="mt-0">
-          <FundSection onNavigate={onNavigate} />
+          <FundSection canWrite={canWrite} />
+        </TabsContent>
+
+        <TabsContent value="deposits" className="mt-0">
+          <DepositsSettingsTab canWrite={canWrite} />
         </TabsContent>
       </Tabs>
 
@@ -349,6 +466,19 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
           }
         }}
         onSave={(payload) => deductionMutation.mutate(payload)}
+      />
+
+      <TerminationReasonDialog
+        advanced={advanced}
+        draft={terminationReasonDraft}
+        isSaving={terminationReasonMutation.isPending}
+        onChange={setTerminationReasonDraft}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTerminationReasonDraft(null);
+          }
+        }}
+        onSave={(payload) => terminationReasonMutation.mutate(payload)}
       />
 
       <PremiumDialog
@@ -852,6 +982,65 @@ function DeductionsSection({
   );
 }
 
+function TerminationReasonsSection({
+  advanced,
+  canWrite,
+  onAdd,
+  onEdit,
+  reasons,
+}: {
+  advanced: boolean;
+  canWrite: boolean;
+  onAdd: () => void;
+  onEdit: (reason: EmployeeDismissalReason) => void;
+  reasons: EmployeeDismissalReason[];
+}) {
+  return (
+    <section className="space-y-4 rounded-lg border bg-card p-4">
+      <SectionHeader
+        action={
+          <Button disabled={!canWrite} onClick={onAdd}>
+            <Plus size={16} aria-hidden="true" />
+            Добавить причину
+          </Button>
+        }
+        description="Справочник причин, которые выбираются при увольнении сотрудника в разделе «Штат»."
+        title="Причины увольнения"
+      />
+      <div className="grid gap-2">
+        {reasons.map((reason) => (
+          <div
+            className="grid gap-3 rounded-md border px-3 py-3 lg:grid-cols-[1fr_auto] lg:items-center"
+            key={reason.id}
+          >
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="font-medium">{reason.label}</div>
+                <Badge variant={reason.is_active ? "secondary" : "outline"}>
+                  {reason.is_active ? "Активна" : "Скрыта"}
+                </Badge>
+                {reason.requires_comment ? (
+                  <Badge variant="secondary">Комментарий обязателен</Badge>
+                ) : null}
+              </div>
+              {advanced ? (
+                <RawMeta value={`${reason.code} · порядок ${reason.sort_order}`} />
+              ) : null}
+            </div>
+            <Button disabled={!canWrite} onClick={() => onEdit(reason)} size="sm" variant="outline">
+              <Save size={16} aria-hidden="true" />
+              Изменить
+            </Button>
+          </div>
+        ))}
+        {reasons.length === 0 ? (
+          <EmptyConfigLine text="Причины увольнения пока не заданы." />
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function PremiumsSection({
   advanced,
   canWrite,
@@ -908,25 +1097,433 @@ function PremiumsSection({
   );
 }
 
-function FundSection({ onNavigate }: { onNavigate: (path: string) => void }) {
+function FundSection({ canWrite }: { canWrite: boolean }) {
+  const queryClient = useQueryClient();
+  const currentYear = new Date().getFullYear();
+  const [tierDrafts, setTierDrafts] = useState<FundTierDraft[]>([]);
+  const [tierMessage, setTierMessage] = useState<string | null>(null);
+  const [rosterFilter, setRosterFilter] = useState<FundRosterFilter>("all");
+  const [balanceDrafts, setBalanceDrafts] = useState<Record<string, string>>({});
+  const [pendingInitialBalance, setPendingInitialBalance] = useState<PendingInitialBalance | null>(
+    null,
+  );
+
+  const tiersQuery = useQuery({
+    queryKey: ["fund-tiers"],
+    queryFn: getFundTiers,
+  });
+  const rosterQuery = useQuery({
+    queryKey: ["fund-roster", currentYear],
+    queryFn: () => getFundInitialBalanceRoster(currentYear),
+  });
+
+  useEffect(() => {
+    if (tiersQuery.data) {
+      setTierDrafts(fundTiersToDrafts(tiersQuery.data.tiers));
+      setTierMessage(null);
+    }
+  }, [tiersQuery.data]);
+
+  const tierValidation = useMemo(() => validateFundTierDrafts(tierDrafts), [tierDrafts]);
+  const serverTierKey = useMemo(
+    () => fundTierKey(tiersQuery.data?.tiers ?? []),
+    [tiersQuery.data?.tiers],
+  );
+  const draftTierKey = useMemo(
+    () => (tierValidation.payload ? fundTierKey(tierValidation.payload) : ""),
+    [tierValidation.payload],
+  );
+  const hasTierChanges = Boolean(tierValidation.payload) && draftTierKey !== serverTierKey;
+
+  const tiersMutation = useMutation({
+    mutationFn: putFundTiers,
+    onSuccess: async () => {
+      toast.success("Ставки фонда обновлены");
+      setTierMessage(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["fund-tiers"] }),
+        queryClient.invalidateQueries({ queryKey: ["fund-roster"] }),
+      ]);
+    },
+    onError: (error) => {
+      setTierMessage(apiErrorMessage(error, "Не удалось сохранить ставки фонда"));
+    },
+  });
+
+  const initialBalanceMutation = useMutation({
+    mutationFn: ({ amount, employeeId }: { employeeId: string; amount: number }) =>
+      setFundInitialBalance(employeeId, { amount }),
+    onSuccess: async (_, variables) => {
+      toast.success("Начальный баланс установлен");
+      setBalanceDrafts((current) => {
+        const next = { ...current };
+        delete next[variables.employeeId];
+        return next;
+      });
+      await queryClient.invalidateQueries({ queryKey: ["fund-roster"] });
+    },
+    onError: async (error) => {
+      if (apiErrorStatus(error) === 409) {
+        toast.error("Баланс уже был установлен другим пользователем");
+        await queryClient.invalidateQueries({ queryKey: ["fund-roster"] });
+        return;
+      }
+      toast.error(apiErrorMessage(error, "Не удалось установить начальный баланс"));
+    },
+  });
+
+  const rosterRows = rosterQuery.data ?? [];
+  const filteredRows = rosterRows.filter((row) => {
+    const isInitialSet = Boolean(row.fund_account?.is_initial_set);
+    if (rosterFilter === "set") {
+      return isInitialSet;
+    }
+    if (rosterFilter === "unset") {
+      return !isInitialSet;
+    }
+    return true;
+  });
+
   return (
-    <section className="space-y-4 rounded-lg border bg-card p-4">
-      <SectionHeader
-        description="Ставка отчислений и дата выплаты накопительного фонда уже ведутся как общие настройки зарплаты."
-        title="Накопительный фонд"
-      />
-      <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
-        <div className="text-sm leading-6 text-muted-foreground">
-          Здесь нет дублирования: текущие параметры фонда остаются в разделе «Настройки», а расчёт
-          зарплаты использует единый источник для выплат 15 января и ставок по стажу.
+    <div className="space-y-5">
+      <section className="space-y-4 rounded-lg border bg-card p-4">
+        <SectionHeader
+          description="Процент отчислений в зависимости от стажа."
+          title="Ставки по стажу"
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={!canWrite || !hasTierChanges || tiersMutation.isPending}
+                onClick={() => {
+                  if (tierValidation.payload) {
+                    tiersMutation.mutate(tierValidation.payload);
+                  }
+                }}
+              >
+                <Save size={16} aria-hidden="true" />
+                Сохранить
+              </Button>
+              <Button
+                disabled={!hasTierChanges || tiersMutation.isPending}
+                onClick={() => {
+                  setTierDrafts(fundTiersToDrafts(tiersQuery.data?.tiers ?? []));
+                  setTierMessage(null);
+                }}
+                variant="outline"
+              >
+                Отмена
+              </Button>
+            </div>
+          }
+        />
+
+        <div className="overflow-x-auto">
+          <table className="min-w-[560px] border-separate border-spacing-0 text-sm">
+            <thead>
+              <tr>
+                <th className="border-b p-3 text-left font-medium text-muted-foreground">
+                  От стажа (месяцев)
+                </th>
+                <th className="border-b p-3 text-left font-medium text-muted-foreground">
+                  Процент
+                </th>
+                <th className="w-16 border-b p-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {tierDrafts.map((tier, index) => {
+                const rowError = tierValidation.errors[tier.id];
+                return (
+                  <Fragment key={tier.id}>
+                    <tr>
+                      <td className="border-b p-2">
+                        <Input
+                          disabled={!canWrite}
+                          min={0}
+                          max={600}
+                          onChange={(event) =>
+                            updateFundTierDraft(setTierDrafts, index, {
+                              minMonths: event.target.value,
+                            })
+                          }
+                          type="number"
+                          value={tier.minMonths}
+                        />
+                      </td>
+                      <td className="border-b p-2">
+                        <div className="flex items-center gap-2">
+                          <Input
+                            disabled={!canWrite}
+                            min={0}
+                            max={100}
+                            onChange={(event) =>
+                              updateFundTierDraft(setTierDrafts, index, {
+                                ratePercent: event.target.value,
+                              })
+                            }
+                            step="0.001"
+                            type="number"
+                            value={tier.ratePercent}
+                          />
+                          <span className="text-sm text-muted-foreground">%</span>
+                        </div>
+                      </td>
+                      <td className="border-b p-2 text-right">
+                        <Button
+                          disabled={!canWrite}
+                          onClick={() => {
+                            if (tierDrafts.length <= 1) {
+                              setTierMessage("Должен остаться минимум один порог фонда");
+                              return;
+                            }
+                            setTierDrafts((drafts) =>
+                              drafts.filter((_, draftIndex) => draftIndex !== index),
+                            );
+                          }}
+                          size="icon"
+                          title="Удалить порог"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Trash2 aria-hidden="true" />
+                        </Button>
+                      </td>
+                    </tr>
+                    {rowError ? (
+                      <tr>
+                        <td className="border-b px-2 pb-3 text-sm text-destructive" colSpan={3}>
+                          {rowError}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-        <Button onClick={() => onNavigate("/settings")} variant="outline">
-          <Settings size={16} aria-hidden="true" />
-          Открыть настройки
-          <LinkIcon size={16} aria-hidden="true" />
-        </Button>
-      </div>
-    </section>
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button
+            disabled={!canWrite || tierDrafts.length >= 10}
+            onClick={() =>
+              setTierDrafts((drafts) => [
+                ...drafts,
+                { id: draftId(), minMonths: "", ratePercent: "" },
+              ])
+            }
+            variant="outline"
+          >
+            <Plus size={16} aria-hidden="true" />
+            Добавить порог
+          </Button>
+          {tiersQuery.isLoading ? (
+            <span className="text-sm text-muted-foreground">Загрузка ставок...</span>
+          ) : null}
+        </div>
+        {tierValidation.formError ? (
+          <div className="text-sm text-destructive">{tierValidation.formError}</div>
+        ) : null}
+        {tiersQuery.isError ? (
+          <div className="text-sm text-destructive">Не удалось загрузить ставки фонда</div>
+        ) : null}
+        {tierMessage ? <div className="text-sm text-destructive">{tierMessage}</div> : null}
+      </section>
+
+      <section className="space-y-4 rounded-lg border bg-card p-4">
+        <SectionHeader
+          description="Единоразовый ввод текущего накопления сотрудника. После установки изменить нельзя."
+          title={`Начальные балансы за ${currentYear} год`}
+          action={
+            <div className="w-full min-w-[220px] sm:w-[260px]">
+              <Select
+                onValueChange={(value) => setRosterFilter(value as FundRosterFilter)}
+                value={rosterFilter}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Фильтр" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все</SelectItem>
+                  <SelectItem value="unset">Не установлены</SelectItem>
+                  <SelectItem value="set">Установлены</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          }
+        />
+
+        {rosterQuery.isError ? (
+          <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            Не удалось загрузить сотрудников фонда
+          </div>
+        ) : rosterQuery.isLoading ? (
+          <EmptyConfigLine text="Загрузка сотрудников..." />
+        ) : rosterRows.length === 0 ? (
+          <EmptyConfigLine text="Активных сотрудников с фондом нет" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-[820px] border-separate border-spacing-0 text-sm">
+              <thead>
+                <tr>
+                  <th className="border-b p-3 text-left font-medium text-muted-foreground">ФИО</th>
+                  <th className="border-b p-3 text-left font-medium text-muted-foreground">
+                    Должность
+                  </th>
+                  <th className="border-b p-3 text-left font-medium text-muted-foreground">Стаж</th>
+                  <th className="border-b p-3 text-left font-medium text-muted-foreground">%</th>
+                  <th className="border-b p-3 text-left font-medium text-muted-foreground">
+                    Баланс
+                  </th>
+                  <th className="w-32 border-b p-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.map((row) => {
+                  const account = row.fund_account;
+                  const isInitialSet = Boolean(account?.is_initial_set);
+                  const draftValue = balanceDrafts[row.employee_id] ?? "";
+                  const amount = parseBalanceAmount(draftValue);
+                  return (
+                    <tr key={row.employee_id}>
+                      <td className="border-b p-3 font-medium">{row.full_name}</td>
+                      <td className="border-b p-3">{row.position ?? "—"}</td>
+                      <td className="border-b p-3">
+                        {row.hire_date === null ? (
+                          <span
+                            className="text-muted-foreground"
+                            title="Не указана дата приёма. Установите её в карточке сотрудника."
+                          >
+                            —
+                          </span>
+                        ) : (
+                          `${row.tenure_months ?? 0}м`
+                        )}
+                      </td>
+                      <td className="border-b p-3">
+                        {row.hire_date === null ? (
+                          <span
+                            className="text-muted-foreground"
+                            title="Не указана дата приёма. Установите её в карточке сотрудника."
+                          >
+                            —
+                          </span>
+                        ) : (
+                          formatFundPercent(row.current_rate_percent)
+                        )}
+                      </td>
+                      <td className="border-b p-3">
+                        {isInitialSet && account ? (
+                          <div>
+                            <div className="font-medium tabular-nums">
+                              {formatMoney(account.accumulated)}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              установлен{" "}
+                              {account.initial_set_at
+                                ? formatDate(account.initial_set_at)
+                                : "без даты"}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              className="w-36"
+                              disabled={!canWrite}
+                              min={0}
+                              onChange={(event) =>
+                                setBalanceDrafts((current) => ({
+                                  ...current,
+                                  [row.employee_id]: event.target.value,
+                                }))
+                              }
+                              placeholder="0"
+                              step="0.01"
+                              type="number"
+                              value={draftValue}
+                            />
+                            <span className="text-muted-foreground">₽</span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="border-b p-3 text-right">
+                        {isInitialSet ? (
+                          <span
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border text-emerald-700"
+                            title="Начальный баланс установлен"
+                          >
+                            <Check aria-hidden="true" className="h-4 w-4" />
+                          </span>
+                        ) : (
+                          <Button
+                            disabled={
+                              !canWrite || amount === undefined || initialBalanceMutation.isPending
+                            }
+                            onClick={() => {
+                              if (amount !== undefined) {
+                                setPendingInitialBalance({ row, amount });
+                              }
+                            }}
+                            size="sm"
+                          >
+                            <Save size={16} aria-hidden="true" />
+                            Сохранить
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {filteredRows.length === 0 ? (
+              <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                Нет сотрудников для выбранного фильтра.
+              </div>
+            ) : null}
+          </div>
+        )}
+      </section>
+
+      <AlertDialog
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingInitialBalance(null);
+          }
+        }}
+        open={Boolean(pendingInitialBalance)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Установить начальный баланс?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingInitialBalance
+                ? `Установить начальный баланс ${formatMoney(
+                    pendingInitialBalance.amount,
+                  )} для ${pendingInitialBalance.row.full_name}? Изменить будет нельзя.`
+                : "Подтвердите установку начального баланса."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const pending = pendingInitialBalance;
+                setPendingInitialBalance(null);
+                if (pending) {
+                  initialBalanceMutation.mutate({
+                    employeeId: pending.row.employee_id,
+                    amount: pending.amount,
+                  });
+                }
+              }}
+            >
+              Установить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }
 
@@ -1099,6 +1696,88 @@ function DeductionDialog({
             Отмена
           </Button>
           <Button disabled={!draft || isSaving} onClick={() => draft && onSave(draft)}>
+            <Save size={16} aria-hidden="true" />
+            Сохранить
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TerminationReasonDialog({
+  advanced,
+  draft,
+  isSaving,
+  onChange,
+  onOpenChange,
+  onSave,
+}: {
+  advanced: boolean;
+  draft: TerminationReasonDraft | null;
+  isSaving: boolean;
+  onChange: (value: TerminationReasonDraft | null) => void;
+  onOpenChange: (open: boolean) => void;
+  onSave: (payload: TerminationReasonDraft) => void;
+}) {
+  const canSave = Boolean(draft?.label.trim()) && !isSaving;
+  return (
+    <Dialog onOpenChange={onOpenChange} open={Boolean(draft)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Причина увольнения</DialogTitle>
+          <DialogDescription>Справочник для формы увольнения сотрудника.</DialogDescription>
+        </DialogHeader>
+        {draft ? (
+          <div className="grid gap-4">
+            <LabeledInput
+              label="Название"
+              onChange={(value) => onChange({ ...draft, label: String(value) })}
+              value={draft.label}
+            />
+            {advanced ? (
+              draft.id ? (
+                <div className="rounded-md bg-muted px-3 py-2 text-sm font-mono">{draft.code}</div>
+              ) : (
+                <LabeledInput
+                  label="Код"
+                  onChange={(value) => onChange({ ...draft, code: String(value) })}
+                  value={draft.code}
+                />
+              )
+            ) : null}
+            <LabeledInput
+              label="Порядок"
+              onChange={(value) =>
+                onChange({
+                  ...draft,
+                  sort_order: Math.max(0, Number.parseInt(String(value), 10) || 0),
+                })
+              }
+              type="number"
+              value={String(draft.sort_order)}
+            />
+            <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-3">
+              <Label>Комментарий обязателен</Label>
+              <BooleanWidget
+                onChange={(value) => onChange({ ...draft, requires_comment: Boolean(value) })}
+                value={draft.requires_comment}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-3">
+              <Label>Активна</Label>
+              <BooleanWidget
+                onChange={(value) => onChange({ ...draft, is_active: Boolean(value) })}
+                value={draft.is_active}
+              />
+            </div>
+          </div>
+        ) : null}
+        <DialogFooter>
+          <Button onClick={() => onOpenChange(false)} variant="outline">
+            Отмена
+          </Button>
+          <Button disabled={!canSave} onClick={() => draft && onSave(draft)}>
             <Save size={16} aria-hidden="true" />
             Сохранить
           </Button>
@@ -1295,6 +1974,135 @@ function EmptyConfigLine({ text }: { text: string }) {
   );
 }
 
+function fundTiersToDrafts(tiers: FundTierItem[]): FundTierDraft[] {
+  return [...tiers]
+    .sort((left, right) => Number(left.min_months) - Number(right.min_months))
+    .map((tier) => ({
+      id: draftId(),
+      minMonths: String(tier.min_months),
+      ratePercent: formatDraftNumber(Number(tier.rate) * 100),
+    }));
+}
+
+function validateFundTierDrafts(drafts: FundTierDraft[]): {
+  errors: Record<string, string>;
+  formError: string | null;
+  payload: FundTierItem[] | null;
+} {
+  const errors: Record<string, string> = {};
+  let formError: string | null = null;
+  const parsedRows: Array<{ id: string; minMonths: number; ratePercent: number }> = [];
+
+  if (drafts.length === 0) {
+    formError = "Добавьте хотя бы один порог фонда";
+  }
+  if (drafts.length > 10) {
+    formError = "Можно указать не больше 10 порогов фонда";
+  }
+
+  for (const draft of drafts) {
+    const minMonths = Number(draft.minMonths);
+    const ratePercent = Number(draft.ratePercent);
+    if (
+      draft.minMonths.trim() === "" ||
+      !Number.isInteger(minMonths) ||
+      minMonths < 0 ||
+      minMonths > 600
+    ) {
+      errors[draft.id] = "Укажите стаж целым числом от 0 до 600 месяцев";
+      continue;
+    }
+    if (
+      draft.ratePercent.trim() === "" ||
+      !Number.isFinite(ratePercent) ||
+      ratePercent < 0 ||
+      ratePercent > 100
+    ) {
+      errors[draft.id] = "Укажите процент от 0 до 100";
+      continue;
+    }
+    parsedRows.push({ id: draft.id, minMonths, ratePercent });
+  }
+
+  const monthCounts = new Map<number, number>();
+  parsedRows.forEach((row) =>
+    monthCounts.set(row.minMonths, (monthCounts.get(row.minMonths) ?? 0) + 1),
+  );
+  parsedRows.forEach((row) => {
+    if ((monthCounts.get(row.minMonths) ?? 0) > 1) {
+      errors[row.id] = "Порог стажа должен быть уникальным";
+    }
+  });
+
+  const sortedRows = [...parsedRows].sort((left, right) => left.minMonths - right.minMonths);
+  sortedRows.forEach((row, index) => {
+    const previous = sortedRows[index - 1];
+    if (previous && row.ratePercent < previous.ratePercent) {
+      errors[row.id] = "Процент не может уменьшаться с ростом стажа";
+    }
+  });
+
+  const hasErrors = formError !== null || Object.keys(errors).length > 0;
+  return {
+    errors,
+    formError,
+    payload: hasErrors
+      ? null
+      : sortedRows.map((row) => ({
+          min_months: row.minMonths,
+          rate: Number((row.ratePercent / 100).toFixed(8)),
+        })),
+  };
+}
+
+function updateFundTierDraft(
+  setTierDrafts: (updater: (value: FundTierDraft[]) => FundTierDraft[]) => void,
+  index: number,
+  patch: Partial<Omit<FundTierDraft, "id">>,
+) {
+  setTierDrafts((drafts) =>
+    drafts.map((draft, draftIndex) => (draftIndex === index ? { ...draft, ...patch } : draft)),
+  );
+}
+
+function fundTierKey(tiers: FundTierItem[]) {
+  return JSON.stringify(
+    [...tiers]
+      .map((tier) => ({
+        min_months: Number(tier.min_months),
+        rate: Number(Number(tier.rate).toFixed(8)),
+      }))
+      .sort((left, right) => left.min_months - right.min_months),
+  );
+}
+
+function draftId() {
+  return `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function formatDraftNumber(value: number) {
+  if (!Number.isFinite(value)) {
+    return "";
+  }
+  return Number(value.toFixed(6)).toString();
+}
+
+function parseBalanceAmount(value: string) {
+  if (value.trim() === "") {
+    return undefined;
+  }
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount >= 0 ? amount : undefined;
+}
+
+function formatFundPercent(value: string | null) {
+  const percent = Number(value);
+  if (!Number.isFinite(percent)) {
+    return "—";
+  }
+  return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 }).format(percent)}%`;
+}
+
 function useAuthSnapshot() {
   const [auth, setAuth] = useState(getAuthSnapshot);
 
@@ -1316,7 +2124,20 @@ async function invalidatePayrollConfig(queryClient: ReturnType<typeof useQueryCl
     queryClient.invalidateQueries({ queryKey: ["payroll-config", "category-coefficients"] }),
     queryClient.invalidateQueries({ queryKey: ["payroll-config", "deductions"] }),
     queryClient.invalidateQueries({ queryKey: ["payroll-config", "seniority-premium"] }),
+    queryClient.invalidateQueries({ queryKey: ["fund-tiers"] }),
+    queryClient.invalidateQueries({ queryKey: ["fund-roster"] }),
   ]);
+}
+
+async function invalidateTerminationReasons(queryClient: ReturnType<typeof useQueryClient>) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["employees", "dismissal-reasons"] }),
+    queryClient.invalidateQueries({ queryKey: ["employees", "dismissal-reasons", "all"] }),
+  ]);
+}
+
+function nextSortOrder(reasons: EmployeeDismissalReason[]) {
+  return (Math.max(0, ...reasons.map((reason) => reason.sort_order)) || 0) + 10;
 }
 
 const PAYROLL_RATE_CATEGORIES = [
@@ -1484,15 +2305,19 @@ function todayKey() {
   return `${year}-${month}-${day}`;
 }
 
-function formatMoney(value: number | null) {
+function formatMoney(value: number | string | null) {
   if (value === null) {
     return "Без суммы";
+  }
+  const numberValue = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numberValue)) {
+    return String(value);
   }
   return new Intl.NumberFormat("ru-RU", {
     maximumFractionDigits: 0,
     style: "currency",
     currency: "RUB",
-  }).format(value);
+  }).format(numberValue);
 }
 
 function formatPercent(value: number) {

@@ -8,5 +8,9 @@ export { SelectWidget } from "./SelectWidget";
 export { TimeWidget } from "./TimeWidget";
 export { WeekdayPremiumWidget } from "./WeekdayPremiumWidget";
 export type { SettingWidgetOptions, SettingWidgetProps } from "./types";
-export { WEEKDAY_PREMIUM_DAYS, weekdayPremiumAmounts } from "./weekday-premium";
+export {
+  WEEKDAY_PREMIUM_DAYS,
+  weekdayPremiumAmounts,
+  weekdayPremiumConfig,
+} from "./weekday-premium";
 export { findSelectLabel } from "./widget-utils";

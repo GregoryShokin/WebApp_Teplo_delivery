@@ -16,6 +16,7 @@ import {
   WeekdayPremiumWidget,
   findSelectLabel,
   type SettingWidgetOptions,
+  weekdayPremiumConfig,
   weekdayPremiumAmounts,
 } from "@/components/settings-widgets";
 import { formatJson, getPath } from "@/components/settings-widgets/widget-utils";
@@ -38,7 +39,14 @@ type CategoryMeta = {
   description: string;
 };
 
-const CATEGORY_ORDER = ["schedule", "payroll", "payment_calendar", "balance", "fixed_assets", "dz_kz"];
+const CATEGORY_ORDER = [
+  "schedule",
+  "payroll",
+  "payment_calendar",
+  "balance",
+  "fixed_assets",
+  "dz_kz",
+];
 
 const CATEGORY_META: Record<string, CategoryMeta> = {
   schedule: {
@@ -47,7 +55,7 @@ const CATEGORY_META: Record<string, CategoryMeta> = {
   },
   payroll: {
     label: "Зарплата",
-    description: "Payroll-недели, смены, накопительный фонд и правила расчёта.",
+    description: "Payroll-недели, смены и правила расчёта.",
   },
   payment_calendar: {
     label: "Платёжный календарь",
@@ -67,14 +75,16 @@ const CATEGORY_META: Record<string, CategoryMeta> = {
   },
 };
 
+const HIDDEN_SETTING_KEYS = new Set(["payroll.fund_rates_by_tenure"]);
+
 const LEGACY_CATEGORY_TO_SLUG: Record<string, string> = {
-  "График": "schedule",
+  График: "schedule",
   "График сотрудников": "schedule",
-  "Зарплата": "payroll",
+  Зарплата: "payroll",
   "Платёжный календарь": "payment_calendar",
   "Финансы/Баланс": "balance",
   "Финансы / Баланс": "balance",
-  "Баланс": "balance",
+  Баланс: "balance",
   "Учёт ОС": "fixed_assets",
   "Учёт ДЗ/КЗ": "dz_kz",
 };
@@ -97,7 +107,10 @@ export function SettingsRoute() {
     queryFn: () => getSettings(),
   });
 
-  const settings = useMemo(() => settingsQuery.data ?? [], [settingsQuery.data]);
+  const settings = useMemo(
+    () => (settingsQuery.data ?? []).filter((setting) => !HIDDEN_SETTING_KEYS.has(setting.key)),
+    [settingsQuery.data],
+  );
   const selectedSetting = settings.find((setting) => setting.key === historyKey) ?? null;
 
   const historyQuery = useQuery({
@@ -144,8 +157,14 @@ export function SettingsRoute() {
   }, []);
 
   const categories = useMemo(() => {
-    const found = Array.from(new Set(settings.map((setting) => normalizeCategory(setting.category))));
-    return found.sort((a, b) => categoryIndex(a) - categoryIndex(b) || labelForCategory(a).localeCompare(labelForCategory(b), "ru"));
+    const found = Array.from(
+      new Set(settings.map((setting) => normalizeCategory(setting.category))),
+    );
+    return found.sort(
+      (a, b) =>
+        categoryIndex(a) - categoryIndex(b) ||
+        labelForCategory(a).localeCompare(labelForCategory(b), "ru"),
+    );
   }, [settings]);
 
   const groupedSettings = useMemo(() => {
@@ -161,11 +180,18 @@ export function SettingsRoute() {
     });
 
     return Array.from(groups.entries())
-      .sort(([a], [b]) => categoryIndex(a) - categoryIndex(b) || labelForCategory(a).localeCompare(labelForCategory(b), "ru"))
-      .map(([category, items]) => [
-        category,
-        items.sort((a, b) => a.display_name.localeCompare(b.display_name, "ru")),
-      ] as const);
+      .sort(
+        ([a], [b]) =>
+          categoryIndex(a) - categoryIndex(b) ||
+          labelForCategory(a).localeCompare(labelForCategory(b), "ru"),
+      )
+      .map(
+        ([category, items]) =>
+          [
+            category,
+            items.sort((a, b) => a.display_name.localeCompare(b.display_name, "ru")),
+          ] as const,
+      );
   }, [selectedCategory, settings]);
 
   const isOwner = Boolean(auth.user?.roles.includes("owner"));
@@ -233,7 +259,9 @@ export function SettingsRoute() {
           <section className="space-y-3" key={category}>
             <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 className="text-lg font-semibold tracking-normal">{labelForCategory(category)}</h2>
+                <h2 className="text-lg font-semibold tracking-normal">
+                  {labelForCategory(category)}
+                </h2>
                 <p className="text-sm text-muted-foreground">{descriptionForCategory(category)}</p>
               </div>
               <div className="text-xs text-muted-foreground">{items.length} настроек</div>
@@ -340,7 +368,13 @@ function SettingCard({
               </div>
             ) : null}
           </div>
-          <Button onClick={onOpenHistory} size="icon" title="История" type="button" variant="outline">
+          <Button
+            onClick={onOpenHistory}
+            size="icon"
+            title="История"
+            type="button"
+            variant="outline"
+          >
             <Eye aria-hidden="true" />
           </Button>
         </div>
@@ -433,9 +467,7 @@ function HistorySheet({
           {history.map((item) => (
             <div className="relative border-l pl-4" key={item.id}>
               <span className="absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full bg-primary" />
-              <div className="text-sm font-medium">
-                {item.changed_by_user_name ?? "system"}
-              </div>
+              <div className="text-sm font-medium">{item.changed_by_user_name ?? "system"}</div>
               <div className="text-xs text-muted-foreground">{formatDateTime(item.changed_at)}</div>
               <div className="mt-3 grid gap-2 text-sm">
                 <HistoryValue label="Было" setting={setting} value={item.old_value} />
@@ -529,7 +561,9 @@ function descriptionForCategory(category: string) {
 }
 
 function draftValue(drafts: Record<string, unknown>, setting: AppSetting) {
-  return Object.prototype.hasOwnProperty.call(drafts, setting.key) ? drafts[setting.key] : setting.value;
+  return Object.prototype.hasOwnProperty.call(drafts, setting.key)
+    ? drafts[setting.key]
+    : setting.value;
 }
 
 function valuesEqual(left: unknown, right: unknown) {
@@ -559,9 +593,13 @@ function formatSettingValue(value: unknown, setting: AppSetting) {
     return formatDateArray(value);
   }
   if (setting.widget_type === "weekday_premium") {
-    return formatWeekdayPremium(value, setting.unit);
+    return formatWeekdayPremium(value, setting.unit, options);
   }
-  if (setting.widget_type === "date" || setting.widget_type === "time" || setting.widget_type === "text") {
+  if (
+    setting.widget_type === "date" ||
+    setting.widget_type === "time" ||
+    setting.widget_type === "text"
+  ) {
     return String(value);
   }
   return formatJson(value);
@@ -591,19 +629,26 @@ function formatDateArray(value: unknown) {
   return [dates, ranges].filter(Boolean).join("; ");
 }
 
-function formatWeekdayPremium(value: unknown, unit: string | null) {
+function formatWeekdayPremium(
+  value: unknown,
+  unit: string | null,
+  options?: SettingWidgetOptions | null,
+) {
+  const config = weekdayPremiumConfig(value, options);
   const amounts = weekdayPremiumAmounts(value);
-  const activeDays = WEEKDAY_PREMIUM_DAYS
-    .map((day) => ({ ...day, amount: amounts[day.key] }))
-    .filter((day) => day.amount > 0);
+  const activeDays = WEEKDAY_PREMIUM_DAYS.map((day) => ({
+    ...day,
+    amount: amounts[day.key],
+  })).filter((day) => day.amount > 0);
 
   if (activeDays.length === 0) {
     return ["0", unit].filter(Boolean).join(" ");
   }
 
-  return activeDays
+  const daySummary = activeDays
     .map((day) => `${day.shortLabel}: ${formatNumber(day.amount)} ${unit ?? ""}`.trim())
     .join(", ");
+  return `${daySummary}, от ${formatNumber(config.threshold_hours)} ч`;
 }
 
 function numberValue(value: unknown) {

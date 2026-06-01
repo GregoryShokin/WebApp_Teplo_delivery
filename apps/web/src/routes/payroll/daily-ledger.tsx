@@ -1,5 +1,13 @@
+import axios from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ChevronDown, ChevronRight, LoaderCircle, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  LoaderCircle,
+  Lock,
+  RefreshCw,
+} from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -21,6 +29,7 @@ import {
   buildShiftLedgerWeek,
   getShiftLedgerMatrix,
   patchShiftLedgerEntry,
+  apiErrorMessage,
   type ShiftLedgerAvailableRole,
   type ShiftLedgerEntry,
   type ShiftLedgerMatrix,
@@ -39,6 +48,10 @@ type SaveRoleVariables = {
 
 type DayHeader = ShiftLedgerMatrix["days"][number];
 
+const COLLAPSED_TIMES_STORAGE_KEY = "daily-ledger-times-collapsed-days";
+const ROLE_COLUMN_WIDTH = 154;
+const TIME_COLUMN_WIDTH = 88;
+const EMPLOYEE_COLUMN_WIDTH = 240;
 const ROLE_COLUMN_CLASS = "w-[154px] min-w-[154px]";
 const TIME_COLUMN_CLASS = "w-[88px] min-w-[88px]";
 const EMPLOYEE_COLUMN_CLASS = "w-[240px] min-w-[240px]";
@@ -50,6 +63,9 @@ export function PayrollDailyLedgerRoute() {
   const [expandedEmployees, setExpandedEmployees] = useState<Record<string, boolean>>({});
   const [roleOverrides, setRoleOverrides] = useState<Record<string, string>>({});
   const [savingIds, setSavingIds] = useState<Record<string, boolean>>({});
+  const [collapsedTimeDays, setCollapsedTimeDays] = useState<string[] | null>(
+    readCollapsedTimeDays,
+  );
 
   const matrixQueryKey = useMemo(
     () => ["shift-ledger-matrix", selectedDate] as const,
@@ -63,10 +79,28 @@ export function PayrollDailyLedgerRoute() {
 
   const fallbackDays = useMemo(() => buildWeekHeaders(selectedDate), [selectedDate]);
   const days = matrixQuery.data?.days ?? fallbackDays;
+  const collapsedTimeDayDates = useMemo(
+    () => new Set(collapsedTimeDays ?? days.map((day) => day.date)),
+    [collapsedTimeDays, days],
+  );
+  const areAllCurrentTimesCollapsed =
+    days.length > 0 && days.every((day) => collapsedTimeDayDates.has(day.date));
   const employees = useMemo(
     () => [...(matrixQuery.data?.employees ?? [])].sort(compareEmployees),
     [matrixQuery.data?.employees],
   );
+
+  useEffect(() => {
+    if (collapsedTimeDays === null && matrixQuery.data?.days.length) {
+      setCollapsedTimeDays(matrixQuery.data.days.map((day) => day.date));
+    }
+  }, [collapsedTimeDays, matrixQuery.data?.days]);
+
+  useEffect(() => {
+    if (collapsedTimeDays !== null) {
+      persistCollapsedTimeDays(collapsedTimeDays);
+    }
+  }, [collapsedTimeDays]);
 
   useEffect(() => {
     setExpandedEmployees({});
@@ -99,7 +133,7 @@ export function PayrollDailyLedgerRoute() {
     },
     onError: (error, variables) => {
       clearRoleOverride(variables.shift.ledger_entry_id);
-      toast.error((error as Error).message);
+      toast.error(isPayrollLockedError(error) ? "ЗП за эту неделю закрыта" : apiErrorMessage(error));
     },
     onSettled: (_entry, _error, variables) => {
       if (variables) {
@@ -121,6 +155,9 @@ export function PayrollDailyLedgerRoute() {
   }
 
   function saveRole(shift: ShiftLedgerMatrixShift, payrollRole: string) {
+    if (shift.payroll_locked) {
+      return;
+    }
     const currentRole = roleValue(shift, roleOverrides);
     if (currentRole === payrollRole || savingIds[shift.ledger_entry_id]) {
       return;
@@ -129,6 +166,36 @@ export function PayrollDailyLedgerRoute() {
       queryKey: matrixQueryKey,
       shift,
       payrollRole,
+    });
+  }
+
+  function toggleDay(date: string) {
+    setCollapsedTimeDays((current) => {
+      const next = new Set(current ?? days.map((day) => day.date));
+      if (next.has(date)) {
+        next.delete(date);
+      } else {
+        next.add(date);
+      }
+      return sortIsoDates([...next]);
+    });
+  }
+
+  function toggleAllCurrentDays() {
+    setCollapsedTimeDays((current) => {
+      const next = new Set(current ?? days.map((day) => day.date));
+      const currentWeekDates = days.map((day) => day.date);
+      const shouldExpandAll = currentWeekDates.every((date) => next.has(date));
+
+      currentWeekDates.forEach((date) => {
+        if (shouldExpandAll) {
+          next.delete(date);
+        } else {
+          next.add(date);
+        }
+      });
+
+      return sortIsoDates([...next]);
     });
   }
 
@@ -173,16 +240,31 @@ export function PayrollDailyLedgerRoute() {
       />
 
       <section className="flex flex-col gap-3 rounded-lg border bg-card p-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="grid gap-2">
-          <Label htmlFor="shift-ledger-date">Дата окончания недели</Label>
-          <Input
-            className="w-full sm:w-[190px]"
-            id="shift-ledger-date"
-            max={maxDate}
-            onChange={(event) => handleDateChange(event.target.value)}
-            type="date"
-            value={selectedDate}
-          />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="grid gap-2">
+            <Label htmlFor="shift-ledger-date">Дата окончания недели</Label>
+            <Input
+              className="w-full sm:w-[190px]"
+              id="shift-ledger-date"
+              max={maxDate}
+              onChange={(event) => handleDateChange(event.target.value)}
+              type="date"
+              value={selectedDate}
+            />
+          </div>
+          <Button
+            data-testid="daily-ledger-collapse-toggle-all"
+            onClick={toggleAllCurrentDays}
+            type="button"
+            variant="outline"
+          >
+            {areAllCurrentTimesCollapsed ? (
+              <ChevronRight size={16} aria-hidden="true" />
+            ) : (
+              <ChevronDown size={16} aria-hidden="true" />
+            )}
+            {areAllCurrentTimesCollapsed ? "Развернуть все" : "Свернуть все"}
+          </Button>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
           <span>{formatWeekRange(days)}</span>
@@ -200,11 +282,13 @@ export function PayrollDailyLedgerRoute() {
         />
       ) : (
         <ShiftLedgerMatrixTable
+          collapsedTimeDayDates={collapsedTimeDayDates}
           days={days}
           employees={employees}
           expandedEmployees={expandedEmployees}
           isLoading={matrixQuery.isLoading}
           onRoleChange={saveRole}
+          onToggleTimeColumns={toggleDay}
           onToggleEmployee={(employeeId) =>
             setExpandedEmployees((current) => ({
               ...current,
@@ -220,28 +304,41 @@ export function PayrollDailyLedgerRoute() {
 }
 
 function ShiftLedgerMatrixTable({
+  collapsedTimeDayDates,
   days,
   employees,
   expandedEmployees,
   isLoading,
   onRoleChange,
+  onToggleTimeColumns,
   onToggleEmployee,
   roleOverrides,
   savingIds,
 }: {
+  collapsedTimeDayDates: Set<string>;
   days: DayHeader[];
   employees: ShiftLedgerMatrixEmployee[];
   expandedEmployees: Record<string, boolean>;
   isLoading: boolean;
   onRoleChange: (shift: ShiftLedgerMatrixShift, payrollRole: string) => void;
+  onToggleTimeColumns: (date: string) => void;
   onToggleEmployee: (employeeId: string) => void;
   roleOverrides: Record<string, string>;
   savingIds: Record<string, boolean>;
 }) {
+  const expandedTimeDayCount = days.filter((day) => !collapsedTimeDayDates.has(day.date)).length;
+  const tableMinWidth =
+    EMPLOYEE_COLUMN_WIDTH +
+    days.length * ROLE_COLUMN_WIDTH +
+    expandedTimeDayCount * TIME_COLUMN_WIDTH * 2;
+
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
       <div className="overflow-x-auto">
-        <table className="min-w-[2450px] border-separate border-spacing-0 text-sm">
+        <table
+          className="border-separate border-spacing-0 text-sm transition-all duration-200"
+          style={{ minWidth: `${tableMinWidth}px` }}
+        >
           <thead>
             <tr>
               <th
@@ -253,57 +350,100 @@ function ShiftLedgerMatrixTable({
               >
                 Сотрудник
               </th>
-              {days.map((day) => (
-                <th
-                  className={cn(
-                    "border-b border-r px-3 py-2 text-center font-medium",
-                    day.is_today
-                      ? "bg-primary/10 text-primary"
-                      : "bg-muted/70 text-muted-foreground",
-                  )}
-                  colSpan={3}
-                  key={day.date}
-                >
-                  <div className="flex items-center justify-center gap-2">
-                    <span>{formatDayHeader(day.date)}</span>
-                    {day.is_today ? (
-                      <Badge className="border-primary/30 bg-background text-primary" variant="outline">
-                        Сегодня
-                      </Badge>
-                    ) : null}
-                  </div>
-                </th>
-              ))}
-            </tr>
-            <tr>
-              {days.map((day) => (
-                <Fragment key={day.date}>
+              {days.map((day) => {
+                const areTimesCollapsed = collapsedTimeDayDates.has(day.date);
+
+                return (
                   <th
                     className={cn(
-                      ROLE_COLUMN_CLASS,
-                      subHeaderClassName(day.is_today),
-                      "text-left",
+                      "border-b border-r px-3 py-2 text-center font-medium transition-all duration-200",
+                      day.is_today
+                        ? "bg-primary/10 text-primary"
+                        : "bg-muted/70 text-muted-foreground",
                     )}
+                    colSpan={areTimesCollapsed ? 1 : 3}
+                    key={day.date}
                   >
-                    Роль
+                    <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+                      <span>{formatDayHeader(day.date)}</span>
+                      {day.is_today ? (
+                        <Badge
+                          className="border-primary/30 bg-background text-primary"
+                          variant="outline"
+                        >
+                          Сегодня
+                        </Badge>
+                      ) : null}
+                      <Button
+                        aria-label={
+                          areTimesCollapsed
+                            ? `Развернуть время ${formatDayHeader(day.date)}`
+                            : `Свернуть время ${formatDayHeader(day.date)}`
+                        }
+                        className="h-7 w-7"
+                        data-testid={`daily-ledger-day-toggle-${day.date}`}
+                        onClick={() => onToggleTimeColumns(day.date)}
+                        size="icon"
+                        title={areTimesCollapsed ? "Развернуть время" : "Свернуть время"}
+                        type="button"
+                        variant="ghost"
+                      >
+                        {areTimesCollapsed ? (
+                          <ChevronRight size={16} aria-hidden="true" />
+                        ) : (
+                          <ChevronDown size={16} aria-hidden="true" />
+                        )}
+                      </Button>
+                    </div>
                   </th>
-                  <th className={cn(TIME_COLUMN_CLASS, subHeaderClassName(day.is_today))}>
-                    Открытие
-                  </th>
-                  <th className={cn(TIME_COLUMN_CLASS, subHeaderClassName(day.is_today))}>
-                    Закрытие
-                  </th>
-                </Fragment>
-              ))}
+                );
+              })}
+            </tr>
+            <tr>
+              {days.map((day) => {
+                const areTimesCollapsed = collapsedTimeDayDates.has(day.date);
+
+                return (
+                  <Fragment key={day.date}>
+                    <th
+                      className={cn(
+                        ROLE_COLUMN_CLASS,
+                        subHeaderClassName(day.is_today),
+                        "text-left",
+                      )}
+                      data-testid={`daily-ledger-role-header-${day.date}`}
+                    >
+                      Роль
+                    </th>
+                    {areTimesCollapsed ? null : (
+                      <>
+                        <th
+                          className={cn(TIME_COLUMN_CLASS, subHeaderClassName(day.is_today))}
+                          data-testid={`daily-ledger-open-header-${day.date}`}
+                        >
+                          Открытие
+                        </th>
+                        <th
+                          className={cn(TIME_COLUMN_CLASS, subHeaderClassName(day.is_today))}
+                          data-testid={`daily-ledger-close-header-${day.date}`}
+                        >
+                          Закрытие
+                        </th>
+                      </>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <LoadingRows dayCount={days.length} />
+              <LoadingRows collapsedTimeDayDates={collapsedTimeDayDates} days={days} />
             ) : (
               employees.map((employee) => (
                 <Fragment key={employee.id}>
                   <SummaryRow
+                    collapsedTimeDayDates={collapsedTimeDayDates}
                     employee={employee}
                     expanded={Boolean(expandedEmployees[employee.id])}
                     onRoleChange={onRoleChange}
@@ -313,6 +453,7 @@ function ShiftLedgerMatrixTable({
                   />
                   {expandedEmployees[employee.id] ? (
                     <DetailRows
+                      collapsedTimeDayDates={collapsedTimeDayDates}
                       employee={employee}
                       onRoleChange={onRoleChange}
                       roleOverrides={roleOverrides}
@@ -330,6 +471,7 @@ function ShiftLedgerMatrixTable({
 }
 
 function SummaryRow({
+  collapsedTimeDayDates,
   employee,
   expanded,
   onRoleChange,
@@ -337,6 +479,7 @@ function SummaryRow({
   roleOverrides,
   savingIds,
 }: {
+  collapsedTimeDayDates: Set<string>;
   employee: ShiftLedgerMatrixEmployee;
   expanded: boolean;
   onRoleChange: (shift: ShiftLedgerMatrixShift, payrollRole: string) => void;
@@ -368,34 +511,48 @@ function SummaryRow({
           <span className="font-medium">{employee.full_name}</span>
         </div>
       </td>
-      {employee.days.map((day) => (
-        <Fragment key={day.date}>
-          <td className={cn(ROLE_COLUMN_CLASS, bodyCellClassName)}>
-            <SummaryRoleCell
-              day={day}
-              onRoleChange={onRoleChange}
-              roleOverrides={roleOverrides}
-              savingIds={savingIds}
-            />
-          </td>
-          <td className={cn(TIME_COLUMN_CLASS, bodyCellClassName, "text-center tabular-nums")}>
-            {formatTime(day.summary.earliest_open)}
-          </td>
-          <td className={cn(TIME_COLUMN_CLASS, bodyCellClassName, "text-center tabular-nums")}>
-            {formatTime(day.summary.latest_close)}
-          </td>
-        </Fragment>
-      ))}
+      {employee.days.map((day) => {
+        const areTimesCollapsed = collapsedTimeDayDates.has(day.date);
+
+        return (
+          <Fragment key={day.date}>
+            <td className={cn(ROLE_COLUMN_CLASS, bodyCellClassName)}>
+              <SummaryRoleCell
+                day={day}
+                onRoleChange={onRoleChange}
+                roleOverrides={roleOverrides}
+                savingIds={savingIds}
+              />
+            </td>
+            {areTimesCollapsed ? null : (
+              <>
+                <td
+                  className={cn(TIME_COLUMN_CLASS, bodyCellClassName, "text-center tabular-nums")}
+                >
+                  {formatTime(day.summary.earliest_open)}
+                </td>
+                <td
+                  className={cn(TIME_COLUMN_CLASS, bodyCellClassName, "text-center tabular-nums")}
+                >
+                  {formatTime(day.summary.latest_close)}
+                </td>
+              </>
+            )}
+          </Fragment>
+        );
+      })}
     </tr>
   );
 }
 
 function DetailRows({
+  collapsedTimeDayDates,
   employee,
   onRoleChange,
   roleOverrides,
   savingIds,
 }: {
+  collapsedTimeDayDates: Set<string>;
   employee: ShiftLedgerMatrixEmployee;
   onRoleChange: (shift: ShiftLedgerMatrixShift, payrollRole: string) => void;
   roleOverrides: Record<string, string>;
@@ -412,6 +569,8 @@ function DetailRows({
       </td>
       {employee.days.map((day) => {
         const shift = day.shifts[shiftIndex];
+        const areTimesCollapsed = collapsedTimeDayDates.has(day.date);
+
         return (
           <Fragment key={day.date}>
             <td className={cn(ROLE_COLUMN_CLASS, bodyCellClassName)}>
@@ -427,12 +586,20 @@ function DetailRows({
                 <DisabledRoleSelect placeholder="—" />
               )}
             </td>
-            <td className={cn(TIME_COLUMN_CLASS, bodyCellClassName, "text-center tabular-nums")}>
-              {formatTime(shift?.opened_at ?? null)}
-            </td>
-            <td className={cn(TIME_COLUMN_CLASS, bodyCellClassName, "text-center tabular-nums")}>
-              {formatTime(shift?.closed_at ?? null)}
-            </td>
+            {areTimesCollapsed ? null : (
+              <>
+                <td
+                  className={cn(TIME_COLUMN_CLASS, bodyCellClassName, "text-center tabular-nums")}
+                >
+                  {formatTime(shift?.opened_at ?? null)}
+                </td>
+                <td
+                  className={cn(TIME_COLUMN_CLASS, bodyCellClassName, "text-center tabular-nums")}
+                >
+                  {formatTime(shift?.closed_at ?? null)}
+                </td>
+              </>
+            )}
           </Fragment>
         );
       })}
@@ -487,6 +654,10 @@ function RoleSelectCell({
   shift: ShiftLedgerMatrixShift;
   value: string;
 }) {
+  if (shift.payroll_locked) {
+    return <LockedRoleSelect value={value} />;
+  }
+
   if (availableRoles.length === 0) {
     return <DisabledRoleSelect placeholder="Нет ролей" />;
   }
@@ -517,6 +688,25 @@ function RoleSelectCell({
   );
 }
 
+function LockedRoleSelect({ value }: { value: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Select disabled value={value || undefined}>
+        <SelectTrigger className="h-8 w-[132px] bg-muted/30 text-muted-foreground">
+          <span className="truncate">{value ? roleLabel(value) : "Нет ролей"}</span>
+        </SelectTrigger>
+      </Select>
+      <span
+        aria-label="ЗП за эту неделю закрыта"
+        className="inline-flex"
+        title="ЗП за эту неделю закрыта"
+      >
+        <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      </span>
+    </div>
+  );
+}
+
 function DisabledRoleSelect({ placeholder }: { placeholder: string }) {
   return (
     <Select disabled>
@@ -527,7 +717,13 @@ function DisabledRoleSelect({ placeholder }: { placeholder: string }) {
   );
 }
 
-function LoadingRows({ dayCount }: { dayCount: number }) {
+function LoadingRows({
+  collapsedTimeDayDates,
+  days,
+}: {
+  collapsedTimeDayDates: Set<string>;
+  days: DayHeader[];
+}) {
   return (
     <>
       {Array.from({ length: 4 }).map((_, rowIndex) => (
@@ -535,19 +731,27 @@ function LoadingRows({ dayCount }: { dayCount: number }) {
           <td className={stickyBodyCellClassName("bg-card")}>
             <Skeleton className="h-5 w-40" />
           </td>
-          {Array.from({ length: dayCount }).map((__, dayIndex) => (
-            <Fragment key={dayIndex}>
-              <td className={cn(ROLE_COLUMN_CLASS, bodyCellClassName)}>
-                <Skeleton className="h-8 w-[132px]" />
-              </td>
-              <td className={cn(TIME_COLUMN_CLASS, bodyCellClassName)}>
-                <Skeleton className="mx-auto h-5 w-12" />
-              </td>
-              <td className={cn(TIME_COLUMN_CLASS, bodyCellClassName)}>
-                <Skeleton className="mx-auto h-5 w-12" />
-              </td>
-            </Fragment>
-          ))}
+          {days.map((day) => {
+            const areTimesCollapsed = collapsedTimeDayDates.has(day.date);
+
+            return (
+              <Fragment key={day.date}>
+                <td className={cn(ROLE_COLUMN_CLASS, bodyCellClassName)}>
+                  <Skeleton className="h-8 w-[132px]" />
+                </td>
+                {areTimesCollapsed ? null : (
+                  <>
+                    <td className={cn(TIME_COLUMN_CLASS, bodyCellClassName)}>
+                      <Skeleton className="mx-auto h-5 w-12" />
+                    </td>
+                    <td className={cn(TIME_COLUMN_CLASS, bodyCellClassName)}>
+                      <Skeleton className="mx-auto h-5 w-12" />
+                    </td>
+                  </>
+                )}
+              </Fragment>
+            );
+          })}
         </tr>
       ))}
     </>
@@ -571,7 +775,10 @@ function subHeaderClassName(isToday: boolean) {
   );
 }
 
-function updateShiftInMatrix(matrix: ShiftLedgerMatrix, entry: ShiftLedgerEntry): ShiftLedgerMatrix {
+function updateShiftInMatrix(
+  matrix: ShiftLedgerMatrix,
+  entry: ShiftLedgerEntry,
+): ShiftLedgerMatrix {
   return {
     ...matrix,
     employees: matrix.employees.map((employee) => ({
@@ -689,4 +896,43 @@ function toIsoDate(value: Date) {
 
 function todayIsoDate() {
   return toIsoDate(new Date());
+}
+
+function sortIsoDates(values: string[]) {
+  return values.filter(isIsoDate).sort((left, right) => left.localeCompare(right));
+}
+
+function isPayrollLockedError(error: unknown) {
+  return axios.isAxiosError(error) && error.response?.status === 409;
+}
+
+function readCollapsedTimeDays() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(COLLAPSED_TIMES_STORAGE_KEY);
+    if (storedValue === null) {
+      return null;
+    }
+
+    const parsed = JSON.parse(storedValue);
+    return Array.isArray(parsed)
+      ? sortIsoDates(parsed.filter((item) => typeof item === "string"))
+      : [];
+  } catch {
+    return null;
+  }
+}
+
+function persistCollapsedTimeDays(values: string[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(COLLAPSED_TIMES_STORAGE_KEY, JSON.stringify(sortIsoDates(values)));
+}
+
+function isIsoDate(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
