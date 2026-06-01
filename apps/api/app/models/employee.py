@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -10,13 +12,15 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -28,7 +32,8 @@ class Employee(Base):
     __table_args__ = (
         CheckConstraint(
             "position in "
-            "('Кассир', 'Повар', 'Управляющий', 'Системный администратор', 'Курьер', 'Менеджер')",
+            "('Кассир', 'Повар', 'Управляющий', 'Системный администратор', "
+            "'Курьер', 'Менеджер', 'Уборщица', 'Посудомойка')",
             name="ck_employee_position_canonical",
         ),
         CheckConstraint(
@@ -40,6 +45,18 @@ class Employee(Base):
             "default_cooking_station is null or default_cooking_station in "
             "('sushi', 'pizza', 'shawarma')",
             name="ck_employee_default_cooking_station_value",
+        ),
+        CheckConstraint(
+            "not (pin_assumed_from_iiko = true and pin_hash is not null)",
+            name="pin_origin_exclusive",
+        ),
+        CheckConstraint(
+            "deposit_target_override is null or deposit_target_override >= 0",
+            name="deposit_target_override_non_negative",
+        ),
+        CheckConstraint(
+            "deposit_withholding_override is null or deposit_withholding_override >= 0",
+            name="deposit_withholding_override_non_negative",
         ),
     )
 
@@ -80,14 +97,43 @@ class Employee(Base):
     hire_date: Mapped[date | None] = mapped_column(
         Date, nullable=True, comment="source=app_managed"
     )
+    tenure_started_at: Mapped[date | None] = mapped_column(
+        Date, nullable=True, comment="source=app_managed"
+    )
     fire_date: Mapped[date | None] = mapped_column(
         Date, nullable=True, comment="source=app_managed"
     )
     fire_reason: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="source=app_managed"
     )
+    deposit_target_override: Mapped[Decimal | None] = mapped_column(
+        Numeric(14, 2), nullable=True, comment="source=app_managed"
+    )
+    deposit_withholding_override: Mapped[Decimal | None] = mapped_column(
+        Numeric(14, 2), nullable=True, comment="source=app_managed"
+    )
+    deposit_excluded: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="source=app_managed",
+    )
+    deposit_excluded_until: Mapped[date | None] = mapped_column(
+        Date, nullable=True, comment="source=app_managed"
+    )
+    deposit_excluded_reason: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="source=app_managed"
+    )
     pin_hash: Mapped[str | None] = mapped_column(
         String(255), nullable=True, comment="source=app_managed"
+    )
+    pin_assumed_from_iiko: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="source=app_managed",
     )
     pin_set_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, comment="source=app_managed"
@@ -108,6 +154,24 @@ class Employee(Base):
             EmployeeRoleAssignment.is_primary.desc(),
             EmployeeRoleAssignment.payroll_role,
         ),
+    )
+    position_events: Mapped[list[EmployeePositionEvent]] = relationship(
+        back_populates="employee",
+        cascade="all, delete-orphan",
+        order_by=lambda: EmployeePositionEvent.effective_from.desc(),
+    )
+    allowance_events: Mapped[list[EmployeeAllowanceEvent]] = relationship(
+        back_populates="employee",
+        cascade="all, delete-orphan",
+        order_by=lambda: (
+            EmployeeAllowanceEvent.allowance_type,
+            EmployeeAllowanceEvent.effective_from.desc(),
+        ),
+    )
+    pending_iiko_actions: Mapped[list[EmployeePendingIikoAction]] = relationship(
+        back_populates="employee",
+        cascade="all, delete-orphan",
+        order_by=lambda: EmployeePendingIikoAction.effective_on,
     )
 
     @property
@@ -179,3 +243,266 @@ class EmployeeRoleAssignment(Base):
     )
 
     employee: Mapped[Employee] = relationship(back_populates="role_assignments")
+
+
+class EmployeePositionEvent(Base):
+    __tablename__ = "employee_position_event"
+    __table_args__ = (
+        CheckConstraint(
+            "position in "
+            "('Кассир', 'Повар', 'Управляющий', 'Системный администратор', "
+            "'Курьер', 'Менеджер', 'Уборщица', 'Посудомойка')",
+            name="ck_employee_position_event_position_canonical",
+        ),
+        CheckConstraint(
+            "effective_to is null or effective_to > effective_from",
+            name="ck_employee_position_event_effective_range",
+        ),
+        UniqueConstraint(
+            "employee_id",
+            "effective_from",
+            name="uq_employee_position_event_employee_effective_from",
+        ),
+        Index(
+            "ix_employee_position_event_employee_active",
+            "employee_id",
+            "effective_from",
+            "effective_to",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee.id", ondelete="CASCADE"), nullable=False
+    )
+    position: Mapped[str] = mapped_column(String(160), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    employee: Mapped[Employee] = relationship(back_populates="position_events")
+
+
+class EmployeeAllowanceEvent(Base):
+    __tablename__ = "employee_allowance_event"
+    __table_args__ = (
+        CheckConstraint(
+            "allowance_type in ('senior', 'deputy_senior')",
+            name="ck_employee_allowance_event_type_value",
+        ),
+        CheckConstraint(
+            "effective_to is null or effective_to > effective_from",
+            name="ck_employee_allowance_event_effective_range",
+        ),
+        UniqueConstraint(
+            "employee_id",
+            "allowance_type",
+            "effective_from",
+            name="uq_employee_allowance_event_employee_type_effective_from",
+        ),
+        Index(
+            "ix_employee_allowance_event_employee_active",
+            "employee_id",
+            "allowance_type",
+            "effective_from",
+            "effective_to",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee.id", ondelete="CASCADE"), nullable=False
+    )
+    allowance_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    is_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    employee: Mapped[Employee] = relationship(back_populates="allowance_events")
+
+
+class EmployeePendingIikoAction(Base):
+    __tablename__ = "employee_pending_iiko_action"
+    __table_args__ = (
+        CheckConstraint(
+            "action_type in ('update_position')",
+            name="ck_employee_pending_iiko_action_type_value",
+        ),
+        CheckConstraint(
+            "status in ('pending', 'applied', 'failed', 'cancelled')",
+            name="ck_employee_pending_iiko_action_status_value",
+        ),
+        Index(
+            "ix_employee_pending_iiko_action_due",
+            "status",
+            "effective_on",
+        ),
+        Index(
+            "ix_employee_pending_iiko_action_employee",
+            "employee_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee.id", ondelete="CASCADE"), nullable=False
+    )
+    action_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    effective_on: Mapped[date] = mapped_column(Date, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    related_entity_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    related_entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    employee: Mapped[Employee] = relationship(back_populates="pending_iiko_actions")
+
+
+class EmployeeDismissalReason(Base):
+    __tablename__ = "employee_dismissal_reason"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_employee_dismissal_reason_code"),
+        Index("ix_employee_dismissal_reason_active", "is_active", "sort_order", "label"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code: Mapped[str] = mapped_column(String(64), nullable=False)
+    label: Mapped[str] = mapped_column(String(160), nullable=False)
+    requires_comment: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    is_system: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class EmployeeChangeEvent(Base):
+    __tablename__ = "employee_change_event"
+    __table_args__ = (
+        CheckConstraint(
+            "source in ('app', 'iiko_sync', 'system_migration')",
+            name="ck_employee_change_event_source_value",
+        ),
+        CheckConstraint(
+            "status in ('success', 'error', 'requires_review', 'skipped')",
+            name="ck_employee_change_event_status_value",
+        ),
+        Index("ix_employee_change_event_employee_changed", "employee_id", "changed_at"),
+        Index("ix_employee_change_event_changed_at", "changed_at"),
+        Index("ix_employee_change_event_effective_from", "effective_from"),
+        Index("ix_employee_change_event_type", "change_type"),
+        Index("ix_employee_change_event_source_status", "source", "status"),
+        Index("ix_employee_change_event_actor_user", "actor_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employee.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    effective_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    change_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    actor_label: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="success")
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    before_value: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    after_value: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    diff: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    reason_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employee_dismissal_reason.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reason_label: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    related_agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent_run.id", ondelete="SET NULL"), nullable=True
+    )
+    related_agent_action_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent_action.id", ondelete="SET NULL"), nullable=True
+    )
+    related_entity_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    related_entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    payroll_impact: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    payroll_impact_metadata: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

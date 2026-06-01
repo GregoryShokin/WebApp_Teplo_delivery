@@ -10,14 +10,25 @@ from app.models.audit import (
 from app.models.core import Location, Organization, Role, User, UserRole
 from app.models.counterparty import Counterparty, CounterpartyRole
 from app.models.courier import DeliveryOrder
-from app.models.employee import Employee, EmployeeRoleAssignment
+from app.models.employee import (
+    Employee,
+    EmployeeAllowanceEvent,
+    EmployeeChangeEvent,
+    EmployeeDismissalReason,
+    EmployeePendingIikoAction,
+    EmployeePositionEvent,
+    EmployeeRoleAssignment,
+)
 from app.models.payroll import (
     AccumulationFundAccount,
+    AccumulationFundTransaction,
     AttendanceEntry,
     CategoryCoefficient,
     DepositAccount,
     DepositTransaction,
     PayrollDeductionCategory,
+    PayrollAdjustment,
+    PayrollAdjustmentCategory,
     PayrollLine,
     PayrollPeriod,
     PayrollRate,
@@ -38,6 +49,7 @@ __all__ = [
     "AppSetting",
     "AppSettingHistory",
     "AccumulationFundAccount",
+    "AccumulationFundTransaction",
     "AttendanceEntry",
     "CategoryCoefficient",
     "Counterparty",
@@ -47,9 +59,16 @@ __all__ = [
     "DepositTransaction",
     "DeliveryOrder",
     "Employee",
+    "EmployeeAllowanceEvent",
+    "EmployeeChangeEvent",
+    "EmployeeDismissalReason",
+    "EmployeePendingIikoAction",
+    "EmployeePositionEvent",
     "EmployeeRoleAssignment",
     "Location",
     "PayrollDeductionCategory",
+    "PayrollAdjustment",
+    "PayrollAdjustmentCategory",
     "Organization",
     "PayrollLine",
     "PayrollPeriod",

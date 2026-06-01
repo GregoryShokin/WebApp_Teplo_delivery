@@ -19,7 +19,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -154,6 +154,13 @@ class PayrollLine(Base):
     fund_accrual: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     deduction: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     total_payable: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    deposit_excluded_for_run: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    deposit_exclusion_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     components: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )
@@ -161,13 +168,19 @@ class PayrollLine(Base):
 
 class DepositAccount(Base):
     __tablename__ = "deposit_account"
-    __table_args__ = (UniqueConstraint("employee_id", name="uq_deposit_account_employee"),)
+    __table_args__ = (
+        CheckConstraint("initial_balance >= 0", name="initial_balance_non_negative"),
+        UniqueConstraint("employee_id", name="uq_deposit_account_employee"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     employee_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("employee.id", ondelete="RESTRICT"), nullable=False
     )
     balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    initial_balance: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -177,7 +190,9 @@ class DepositTransaction(Base):
     __tablename__ = "deposit_transaction"
     __table_args__ = (
         CheckConstraint(
-            "transaction_type in ('accrual', 'payout', 'write_off')",
+            "transaction_type in ("
+            "'accrual', 'payout', 'write_off', 'dismissal_payout', 'dismissal_writeoff'"
+            ")",
             name="ck_deposit_transaction_type",
         ),
         Index("ix_deposit_transaction_employee_created", "employee_id", "created_at"),
@@ -200,6 +215,10 @@ class DepositTransaction(Base):
 class AccumulationFundAccount(Base):
     __tablename__ = "accumulation_fund_account"
     __table_args__ = (
+        CheckConstraint(
+            "status in ('active', 'paid_out', 'forfeited')",
+            name="ck_accumulation_fund_account_status",
+        ),
         UniqueConstraint("employee_id", "year", name="uq_accumulation_fund_employee_year"),
     )
 
@@ -210,7 +229,58 @@ class AccumulationFundAccount(Base):
     year: Mapped[int] = mapped_column(nullable=False)
     accumulated_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     paid_out_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    forfeited_amount: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
+    forfeited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    forfeit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    paid_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+
+
+class AccumulationFundTransaction(Base):
+    __tablename__ = "accumulation_fund_transaction"
+    __table_args__ = (
+        CheckConstraint(
+            "transaction_type in ('accrual', 'payout', 'forfeit', 'initial_balance')",
+            name="ck_accumulation_fund_transaction_type",
+        ),
+        CheckConstraint(
+            "(transaction_type = 'initial_balance' and amount >= 0) "
+            "or (transaction_type <> 'initial_balance' and amount > 0)",
+            name="ck_accumulation_fund_transaction_amount_positive",
+        ),
+        Index(
+            "ix_accumulation_fund_transaction_account_created",
+            "account_id",
+            "created_at",
+        ),
+        Index(
+            "ix_accumulation_fund_transaction_employee_year",
+            "employee_id",
+            "year",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("accumulation_fund_account.id", ondelete="CASCADE"), nullable=False
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee.id", ondelete="RESTRICT"), nullable=False
+    )
+    year: Mapped[int] = mapped_column(nullable=False)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payroll_run.id", ondelete="SET NULL"), nullable=True
+    )
+    transaction_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    rate_percent: Mapped[Decimal | None] = mapped_column(Numeric(8, 5), nullable=True)
+    base_pay_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class PayrollRate(Base):
@@ -443,6 +513,84 @@ class PayrollDeductionCategory(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class PayrollAdjustmentCategory(Base):
+    __tablename__ = "payroll_adjustment_category"
+    __table_args__ = (
+        CheckConstraint(
+            "type in ('bonus', 'penalty')",
+            name="ck_payroll_adjustment_category_type",
+        ),
+        CheckConstraint(
+            "default_amount is null or default_amount >= 0",
+            name="ck_payroll_adjustment_category_default_amount_non_negative",
+        ),
+        UniqueConstraint("code", name="uq_payroll_adjustment_category_code"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    type: Mapped[str] = mapped_column(String(16), nullable=False)
+    code: Mapped[str] = mapped_column(String(96), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    default_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+    sort_order: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PayrollAdjustment(Base):
+    __tablename__ = "payroll_adjustment"
+    __table_args__ = (
+        CheckConstraint(
+            "type in ('bonus', 'penalty')",
+            name="ck_payroll_adjustment_type",
+        ),
+        CheckConstraint("amount > 0", name="ck_payroll_adjustment_amount_positive"),
+        CheckConstraint(
+            "category_id is not null or custom_label is not null",
+            name="ck_payroll_adjustment_category_or_custom",
+        ),
+        Index("ix_payroll_adjustment_employee_date", "employee_id", "work_date"),
+        Index("ix_payroll_adjustment_work_date", "work_date"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee.id", ondelete="RESTRICT"), nullable=False
+    )
+    work_date: Mapped[date] = mapped_column(Date, nullable=False)
+    type: Mapped[str] = mapped_column(String(16), nullable=False)
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payroll_adjustment_category.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    custom_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    created_by_label: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    category: Mapped[PayrollAdjustmentCategory | None] = relationship()
 
 
 class PayrollSeniorityPremium(Base):
