@@ -44,6 +44,7 @@ ALLOWED_WIDGET_TYPES = frozenset(
 WEEKDAY_PREMIUM_KEYS = frozenset(
     {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
 )
+WEEKDAY_PREMIUM_CONFIG_KEYS = frozenset({"amount", "threshold_hours"})
 
 
 class SettingNotFoundError(LookupError):
@@ -265,11 +266,26 @@ def _validate_date_array(setting: AppSetting, value: Any) -> None:
 
 def _validate_weekday_premium(value: Any) -> None:
     _require(isinstance(value, dict), "Expected weekday premium object")
-    unknown_keys = sorted(set(value.keys()) - WEEKDAY_PREMIUM_KEYS)
+    allowed_keys = WEEKDAY_PREMIUM_KEYS | WEEKDAY_PREMIUM_CONFIG_KEYS
+    unknown_keys = sorted(set(value.keys()) - allowed_keys)
     _require(not unknown_keys, f"Unexpected weekday keys: {', '.join(unknown_keys)}")
 
-    for weekday, amount in value.items():
-        _require(weekday in WEEKDAY_PREMIUM_KEYS, "Unexpected weekday key")
+    if "amount" in value:
+        amount = value["amount"]
+        _require(_is_number(amount), "Expected numeric weekday premium amount")
+        _require(float(amount) >= 0, "Expected non-negative weekday premium amount")
+    if "threshold_hours" in value:
+        threshold_hours = value["threshold_hours"]
+        _require(_is_number(threshold_hours), "Expected numeric weekday premium threshold")
+        _require(
+            float(threshold_hours) >= 0,
+            "Expected non-negative weekday premium threshold",
+        )
+
+    for weekday in WEEKDAY_PREMIUM_KEYS:
+        if weekday not in value:
+            continue
+        amount = value[weekday]
         _require(_is_number(amount), "Expected numeric weekday premium amount")
         _require(float(amount) >= 0, "Expected non-negative weekday premium amount")
 

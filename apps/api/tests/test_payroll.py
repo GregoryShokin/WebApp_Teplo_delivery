@@ -9,26 +9,49 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.v1.routes import payroll as payroll_routes
+from app.api.v1.routes import payroll_adjustments as payroll_adjustment_routes
 from app.api.v1.routes import shifts as shift_routes
+from app.db.session import get_session
 from app.main import create_app
 from app.models import (
     AccumulationFundAccount,
+    AccumulationFundTransaction,
     AgentAction,
+    AppSetting,
+    AppSettingHistory,
     AttendanceEntry,
     DepositAccount,
+    DepositTransaction,
     Employee,
     EmployeeRoleAssignment,
+    PayrollAdjustment,
+    PayrollAdjustmentCategory,
+    PayrollLine,
     PayrollPeriod,
     PayrollRun,
     ShiftLedgerEntry,
 )
 from app.services import shift_ledger as shift_ledger_service
-from app.services.attendance_loader import build_attendance_entry
+from app.services.accumulation_fund_service import forfeit_active_fund_on_dismiss
+from app.services.attendance_loader import (
+    PAYROLL_TARGET_POSITIONS,
+    build_attendance_entry,
+    load_attendance_entries,
+)
+from app.services.payroll_adjustment_service import PayrollAdjustmentLockedError
 from app.services.payroll_calculator import (
+    DAILY_REVENUE_CONFIG_KEY,
+    EMPLOYEE_ALLOWANCES_CONFIG_KEY,
     EMPLOYEE_ASSIGNMENTS_CONFIG_KEY,
+    PAYROLL_ADJUSTMENTS_CONFIG_KEY,
     PAYROLL_RATE_CONFIG_KEY,
     SHIFT_LEDGER_CONFIG_KEY,
+    _fund_rate_for_months,
     calculate_payroll_lines_from_inputs,
+    deposit_withholding,
+    employee_deposit_target,
+    fund_accrual_for_day,
+    tenure_months_on,
 )
 from app.services.payroll_percent import (
     PercentShift,
@@ -37,10 +60,14 @@ from app.services.payroll_percent import (
 )
 from app.services.payroll_runner import (
     PayrollConflictError,
+    accrue_fund,
     apply_deposit_write_offs_to_accounts,
     apply_fund_payouts_if_due,
     compute_next_payroll_period_dates,
+    ensure_daily_revenue_cached,
     finalize_payroll_run,
+    line_deposit_overrides_from_lines,
+    payout_previous_year_fund_if_due,
 )
 from app.services.shift_ledger import AttendanceSnapshot, LedgerAssignment
 
@@ -62,7 +89,7 @@ def payroll_settings(revenue: dict[str, int] | None = None) -> dict[str, Any]:
             {"from": 550000, "rate": 0.065},
         ],
         "payroll.allowances": {"senior": 500, "deputy_senior": 300},
-        "payroll.weekday_premium": {"friday": 200, "saturday": 200},
+        "payroll.weekday_premium": {"amount": 200, "threshold_hours": 8},
         "payroll.fund_rates_by_tenure": [
             {"min_years": 0.5, "rate": 0.05},
             {"min_years": 1.0, "rate": 0.10},
@@ -96,6 +123,7 @@ def make_employee(
     category: str | None = "category_2",
     default_cooking_station: str | None = None,
     hire_date: date | None = None,
+    tenure_started_at: date | None = None,
 ) -> Employee:
     return Employee(
         id=uuid.uuid4(),
@@ -106,6 +134,7 @@ def make_employee(
         default_cooking_station=default_cooking_station,
         status=status,
         hire_date=hire_date,
+        tenure_started_at=tenure_started_at,
         is_senior=False,
         is_deputy_senior=False,
         pin_hash="hashed-pin",
@@ -121,6 +150,8 @@ def make_role_assignment(
     category: str,
     *,
     is_primary: bool = False,
+    effective_from: date = date(2026, 1, 1),
+    effective_to: date | None = None,
 ) -> EmployeeRoleAssignment:
     return EmployeeRoleAssignment(
         id=uuid.uuid4(),
@@ -128,7 +159,8 @@ def make_role_assignment(
         payroll_role=payroll_role,
         category=category,
         is_primary=is_primary,
-        effective_from=date(2026, 1, 1),
+        effective_from=effective_from,
+        effective_to=effective_to,
     )
 
 
@@ -157,9 +189,89 @@ def make_entry(
     )
 
 
+def make_payroll_line(
+    run_id: uuid.UUID,
+    employee_id: uuid.UUID,
+    *,
+    components: dict[str, Any] | None = None,
+) -> PayrollLine:
+    return PayrollLine(
+        id=uuid.uuid4(),
+        run_id=run_id,
+        employee_id=employee_id,
+        role="Пиццерист",
+        base_pay=Decimal("10000"),
+        premium=Decimal("1500"),
+        percent_pay=Decimal("750"),
+        fund_accrual=Decimal("500"),
+        deduction=Decimal("250"),
+        total_payable=Decimal("12000"),
+        deposit_excluded_for_run=False,
+        deposit_exclusion_reason=None,
+        components=components or {"days": [], "adjustments": {}},
+    )
+
+
+def make_adjustment(
+    employee: Employee,
+    work_date: date,
+    adjustment_type: str,
+    amount: Decimal,
+    *,
+    label: str = "Ручная корректировка",
+) -> PayrollAdjustment:
+    category = PayrollAdjustmentCategory(
+        id=uuid.uuid4(),
+        type=adjustment_type,
+        code=f"test-{uuid.uuid4()}",
+        display_name=label,
+        default_amount=amount,
+        is_active=True,
+        sort_order=0,
+    )
+    adjustment = PayrollAdjustment(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        work_date=work_date,
+        type=adjustment_type,
+        category_id=category.id,
+        amount=amount,
+        comment="Комментарий",
+    )
+    adjustment.category = category
+    return adjustment
+
+
+def make_shift_ledger_entry(
+    employee_id: uuid.UUID,
+    work_date: date,
+    *,
+    payroll_role: str | None = None,
+    category: str | None = None,
+    is_resolved: bool = False,
+) -> ShiftLedgerEntry:
+    return ShiftLedgerEntry(
+        id=uuid.uuid4(),
+        employee_id=employee_id,
+        work_date=work_date,
+        payroll_role=payroll_role,
+        category=category,
+        source="manual_correction" if payroll_role else "fallback_primary",
+        opened_at=datetime(work_date.year, work_date.month, work_date.day, 8, 0, tzinfo=UTC),
+        closed_at=datetime(work_date.year, work_date.month, work_date.day, 17, 0, tzinfo=UTC),
+        is_resolved=is_resolved,
+    )
+
+
 class ShiftLedgerFakeSession:
-    def __init__(self, entry: ShiftLedgerEntry | None = None) -> None:
+    def __init__(
+        self,
+        entry: ShiftLedgerEntry | None = None,
+        *,
+        role_assignments: list[EmployeeRoleAssignment] | None = None,
+    ) -> None:
         self.entry = entry
+        self.role_assignments = role_assignments or []
         self.added: list[Any] = []
         self.committed = False
 
@@ -179,6 +291,65 @@ class ShiftLedgerFakeSession:
         if model is ShiftLedgerEntry and self.entry is not None and self.entry.id == object_id:
             return self.entry
         return None
+
+    async def scalars(self, _stmt: Any) -> Any:
+        return ShiftLedgerScalarResult(self.role_assignments)
+
+
+class ShiftLedgerMatrixFakeSession:
+    def __init__(
+        self,
+        rows: list[tuple[ShiftLedgerEntry, Employee]],
+        *,
+        role_assignments: list[EmployeeRoleAssignment] | None = None,
+        latest_locked_date: date | None = None,
+    ) -> None:
+        self.rows = rows
+        self.role_assignments = role_assignments or []
+        self.latest_locked_date = latest_locked_date
+
+    async def execute(self, _stmt: Any) -> Any:
+        return ShiftLedgerExecuteResult(self.rows)
+
+    async def scalars(self, _stmt: Any) -> Any:
+        return ShiftLedgerScalarResult(self.role_assignments)
+
+    async def scalar(self, _stmt: Any) -> date | None:
+        return self.latest_locked_date
+
+
+class ShiftLedgerExecuteResult:
+    def __init__(self, rows: list[tuple[ShiftLedgerEntry, Employee]]) -> None:
+        self.rows = rows
+
+    def all(self) -> list[tuple[ShiftLedgerEntry, Employee]]:
+        return self.rows
+
+
+class ShiftLedgerScalarResult:
+    def __init__(self, items: list[Any]) -> None:
+        self.items = items
+
+    def all(self) -> list[Any]:
+        return self.items
+
+
+class RevenueCacheFakeSession:
+    def __init__(self, setting: AppSetting | None = None) -> None:
+        self.setting = setting
+        self.added: list[Any] = []
+
+    async def scalar(self, _stmt: Any) -> Any:
+        return self.setting
+
+    def add(self, item: Any) -> None:
+        self.added.append(item)
+        if isinstance(item, AppSetting):
+            self.setting = item
+
+    async def flush(self) -> None:
+        if self.setting is not None and self.setting.id is None:
+            self.setting.id = uuid.uuid4()
 
 
 class ShiftLedgerAttendanceFakeSession:
@@ -203,6 +374,156 @@ class ShiftLedgerAttendanceScalarResult:
 
     def all(self) -> list[Employee]:
         return self.employees
+
+
+class PayrollLineRouteFakeSession:
+    def __init__(self, payout_rows: list[tuple[uuid.UUID, Decimal]]) -> None:
+        self.payout_rows = payout_rows
+        self.statements: list[Any] = []
+
+    async def execute(self, stmt: Any) -> Any:
+        self.statements.append(stmt)
+        return PayrollLineExecuteResult(self.payout_rows)
+
+
+class PayrollLinePatchFakeSession:
+    def __init__(
+        self,
+        line: PayrollLine,
+        run: PayrollRun,
+        payout_rows: list[tuple[uuid.UUID, Decimal]] | None = None,
+    ) -> None:
+        self.line = line
+        self.run = run
+        self.payout_rows = payout_rows or []
+        self.added: list[Any] = []
+        self.committed = False
+
+    async def get(self, model: Any, object_id: uuid.UUID) -> Any | None:
+        if model is PayrollLine and object_id == self.line.id:
+            return self.line
+        if model is PayrollRun and object_id == self.run.id:
+            return self.run
+        return None
+
+    async def execute(self, stmt: Any) -> Any:
+        return PayrollLineExecuteResult(self.payout_rows)
+
+    def add(self, item: Any) -> None:
+        self.added.append(item)
+
+    async def flush(self) -> None:
+        return None
+
+    async def commit(self) -> None:
+        self.committed = True
+
+    async def refresh(self, _item: Any) -> None:
+        return None
+
+
+class PayrollLineExecuteResult:
+    def __init__(self, rows: list[tuple[uuid.UUID, Decimal]]) -> None:
+        self.rows = rows
+
+    def all(self) -> list[tuple[uuid.UUID, Decimal]]:
+        return self.rows
+
+
+class FundScalarResult:
+    def __init__(self, items: list[Any]) -> None:
+        self.items = items
+
+    def all(self) -> list[Any]:
+        return self.items
+
+
+class FundFakeSession:
+    def __init__(
+        self,
+        *,
+        employees: list[Employee] | None = None,
+        accounts: list[AccumulationFundAccount] | None = None,
+        transactions: list[AccumulationFundTransaction] | None = None,
+    ) -> None:
+        self.employees = {employee.id: employee for employee in employees or []}
+        self.accounts = {account.id: account for account in accounts or []}
+        self.transactions = transactions or []
+        self.added: list[Any] = []
+        self.deleted: list[Any] = []
+        self.committed = False
+
+    async def get(self, model: Any, object_id: uuid.UUID) -> Any | None:
+        if model is Employee:
+            return self.employees.get(object_id)
+        if model is AccumulationFundAccount:
+            return self.accounts.get(object_id)
+        return None
+
+    async def scalar(self, query: Any) -> Any | None:
+        entity = query_entity(query)
+        if entity is AccumulationFundAccount:
+            return next(iter(self.accounts.values()), None)
+        if entity is Employee:
+            return next(iter(self.employees.values()), None)
+        return None
+
+    async def scalars(self, query: Any) -> FundScalarResult:
+        entity = query_entity(query)
+        sql = str(query.compile(compile_kwargs={"literal_binds": True}))
+        if entity is AccumulationFundTransaction:
+            transactions = list(self.transactions)
+            if "transaction_type = 'payout'" in sql:
+                transactions = [
+                    transaction
+                    for transaction in transactions
+                    if transaction.transaction_type == "payout"
+                ]
+            if "transaction_type = 'forfeit'" in sql:
+                transactions = [
+                    transaction
+                    for transaction in transactions
+                    if transaction.transaction_type == "forfeit"
+                ]
+            if "transaction_type = 'accrual'" in sql:
+                transactions = [
+                    transaction
+                    for transaction in transactions
+                    if transaction.transaction_type == "accrual"
+                ]
+            return FundScalarResult(transactions)
+        if entity is AccumulationFundAccount:
+            accounts = list(self.accounts.values())
+            if "status = 'active'" in sql:
+                accounts = [account for account in accounts if account.status == "active"]
+            return FundScalarResult(accounts)
+        if entity is Employee:
+            return FundScalarResult(list(self.employees.values()))
+        return FundScalarResult([])
+
+    def add(self, item: Any) -> None:
+        self.added.append(item)
+        if isinstance(item, AccumulationFundAccount):
+            if item.id is None:
+                item.id = uuid.uuid4()
+            self.accounts[item.id] = item
+        if isinstance(item, AccumulationFundTransaction):
+            if item.id is None:
+                item.id = uuid.uuid4()
+            self.transactions.append(item)
+
+    async def delete(self, item: Any) -> None:
+        self.deleted.append(item)
+        if isinstance(item, AccumulationFundTransaction) and item in self.transactions:
+            self.transactions.remove(item)
+
+    async def flush(self) -> None:
+        for item in self.added:
+            if getattr(item, "id", None) is None:
+                item.id = uuid.uuid4()
+
+    async def commit(self) -> None:
+        self.committed = True
 
 
 async def _empty_assignments(*_args, **_kwargs) -> dict:
@@ -260,7 +581,7 @@ def test_open_shift_closes_at_22_msk() -> None:
     assert entry.quality_status == "ok"
 
 
-def test_closed_shift_over_12_hours_requires_quality_review() -> None:
+def test_closed_shift_over_12_hours_is_capped_without_quality_review() -> None:
     period = make_period()
     employee = make_employee()
 
@@ -274,9 +595,9 @@ def test_closed_shift_over_12_hours_requires_quality_review() -> None:
         employee,
     )
 
-    assert entry.minutes_worked == 13 * 60
-    assert entry.quality_status == "quality_review"
-    assert "duration_over_12h" in (entry.notes or "")
+    assert entry.minutes_worked == 12 * 60
+    assert entry.quality_status == "ok"
+    assert "capped_to_12h_from_780min" in (entry.notes or "")
 
 
 async def test_load_shift_ledger_iiko_snapshots_skips_unknown_iiko_employee() -> None:
@@ -472,9 +793,7 @@ async def test_build_shift_ledger_multiple_assignments_without_primary_needs_cho
     assert entries[0].is_resolved is False
 
 
-async def test_patch_shift_ledger_sets_manual_correction_and_audit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_patch_shift_ledger_sets_manual_correction_and_audit() -> None:
     employee_id = uuid.uuid4()
     entry = ShiftLedgerEntry(
         id=uuid.uuid4(),
@@ -488,11 +807,10 @@ async def test_patch_shift_ledger_sets_manual_correction_and_audit(
         is_resolved=False,
     )
 
-    async def fake_assignments(*_args, **_kwargs):
-        return [make_role_assignment(employee_id, "pizza", "category_2")]
-
-    monkeypatch.setattr(shift_ledger_service, "get_assignments", fake_assignments)
-    session = ShiftLedgerFakeSession(entry)
+    session = ShiftLedgerFakeSession(
+        entry,
+        role_assignments=[make_role_assignment(employee_id, "pizza", "category_2")],
+    )
 
     corrected = await shift_ledger_service.manually_correct(
         session,  # type: ignore[arg-type]
@@ -509,9 +827,7 @@ async def test_patch_shift_ledger_sets_manual_correction_and_audit(
     assert session.committed is True
 
 
-async def test_patch_shift_ledger_rejects_role_not_in_staff_assignments(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_patch_shift_ledger_rejects_role_not_in_staff_assignments() -> None:
     employee_id = uuid.uuid4()
     entry = ShiftLedgerEntry(
         id=uuid.uuid4(),
@@ -525,14 +841,12 @@ async def test_patch_shift_ledger_rejects_role_not_in_staff_assignments(
         is_resolved=False,
     )
 
-    async def fake_assignments(*_args, **_kwargs):
-        return [make_role_assignment(employee_id, "sushi", "category_1")]
-
-    monkeypatch.setattr(shift_ledger_service, "get_assignments", fake_assignments)
-
     with pytest.raises(shift_ledger_service.ShiftLedgerValidationError, match="Штате"):
         await shift_ledger_service.manually_correct(  # type: ignore[arg-type]
-            ShiftLedgerFakeSession(entry),
+            ShiftLedgerFakeSession(
+                entry,
+                role_assignments=[make_role_assignment(employee_id, "sushi", "category_1")],
+            ),
             entry.id,
             "pizza",
         )
@@ -543,22 +857,190 @@ def test_patch_shift_ledger_route_returns_400_for_unassigned_role(
 ) -> None:
     app = create_app()
     client = TestClient(app)
+    employee_id = uuid.uuid4()
+    entry = ShiftLedgerEntry(
+        id=uuid.uuid4(),
+        employee_id=employee_id,
+        work_date=date(2026, 5, 28),
+        payroll_role=None,
+        category=None,
+        source="fallback_primary",
+        opened_at=datetime(2026, 5, 28, 8, 0, tzinfo=UTC),
+        closed_at=None,
+        is_resolved=False,
+    )
+    session = ShiftLedgerFakeSession(entry)
+
+    async def override_session():
+        yield session
+
+    async def fake_latest_locked_date(_session):
+        return None
 
     async def fake_manually_correct(*_args, **_kwargs):
         raise shift_ledger_service.ShiftLedgerValidationError(
             "Эта роль не закреплена за сотрудником в Штате"
         )
 
+    app.dependency_overrides[get_session] = override_session
+    monkeypatch.setattr(shift_routes, "get_latest_locked_payroll_date", fake_latest_locked_date)
     monkeypatch.setattr(shift_routes, "manually_correct", fake_manually_correct)
 
     response = client.patch(
-        f"/api/v1/shifts/ledger/{uuid.uuid4()}",
+        f"/api/v1/shifts/ledger/{entry.id}",
         headers={"X-User-Role": "manager"},
         json={"payroll_role": "pizza"},
     )
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Эта роль не закреплена за сотрудником в Штате"
+    app.dependency_overrides.clear()
+    client.close()
+
+
+async def test_ledger_matrix_without_payroll_run_uses_current_roles_and_unlocked() -> None:
+    employee = make_employee()
+    entry = make_shift_ledger_entry(employee.id, date(2026, 5, 24))
+    role = make_role_assignment(
+        employee.id,
+        "pizza",
+        "category_2",
+        effective_from=date(2026, 5, 30),
+    )
+    session = ShiftLedgerMatrixFakeSession(
+        [(entry, employee)],
+        role_assignments=[role],
+        latest_locked_date=None,
+    )
+
+    matrix = await shift_ledger_service.list_ledger_matrix(  # type: ignore[arg-type]
+        session,
+        date(2026, 5, 30),
+    )
+    employee_days = matrix["employees"][0]["days"]
+
+    assert all(day["payroll_locked"] is False for day in employee_days)
+    assert all(shift["payroll_locked"] is False for day in employee_days for shift in day["shifts"])
+    assert employee_days[0]["date"] == "2026-05-24"
+    assert employee_days[0]["available_roles"] == [
+        {"payroll_role": "pizza", "category": "category_2"}
+    ]
+
+
+async def test_ledger_matrix_marks_days_locked_through_latest_completed_run() -> None:
+    employee = make_employee()
+    rows = [
+        (make_shift_ledger_entry(employee.id, work_date), employee)
+        for work_date in shift_ledger_service.iter_dates(date(2026, 5, 24), date(2026, 5, 30))
+    ]
+    session = ShiftLedgerMatrixFakeSession(
+        rows,
+        role_assignments=[make_role_assignment(employee.id, "pizza", "category_2")],
+        latest_locked_date=date(2026, 5, 24),
+    )
+
+    matrix = await shift_ledger_service.list_ledger_matrix(  # type: ignore[arg-type]
+        session,
+        date(2026, 5, 30),
+    )
+    locked_by_date = {
+        day["date"]: (day["payroll_locked"], day["shifts"][0]["payroll_locked"])
+        for day in matrix["employees"][0]["days"]
+    }
+
+    assert locked_by_date["2026-05-24"] == (True, True)
+    assert all(
+        locked_by_date[work_date.isoformat()] == (False, False)
+        for work_date in shift_ledger_service.iter_dates(date(2026, 5, 25), date(2026, 5, 30))
+    )
+
+
+def test_patch_shift_ledger_route_rejects_locked_period_without_audit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = create_app()
+    client = TestClient(app)
+    employee_id = uuid.uuid4()
+    entry = make_shift_ledger_entry(employee_id, date(2026, 5, 24))
+    session = ShiftLedgerFakeSession(
+        entry,
+        role_assignments=[make_role_assignment(employee_id, "pizza", "category_2")],
+    )
+
+    async def override_session():
+        yield session
+
+    async def fake_latest_locked_date(_session):
+        return date(2026, 5, 24)
+
+    app.dependency_overrides[get_session] = override_session
+    monkeypatch.setattr(shift_routes, "get_latest_locked_payroll_date", fake_latest_locked_date)
+
+    response = client.patch(
+        f"/api/v1/shifts/ledger/{entry.id}",
+        headers={"X-User-Role": "manager"},
+        json={"payroll_role": "pizza"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "ЗП за эту неделю уже закрыта, изменение роли невозможно"
+    assert [item for item in session.added if isinstance(item, AgentAction)] == []
+    app.dependency_overrides.clear()
+    client.close()
+
+
+def test_patch_shift_ledger_route_allows_unlocked_period(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = create_app()
+    client = TestClient(app)
+    employee_id = uuid.uuid4()
+    entry = make_shift_ledger_entry(employee_id, date(2026, 5, 25))
+    session = ShiftLedgerFakeSession(
+        entry,
+        role_assignments=[make_role_assignment(employee_id, "pizza", "category_2")],
+    )
+
+    async def override_session():
+        yield session
+
+    async def fake_latest_locked_date(_session):
+        return date(2026, 5, 24)
+
+    async def fake_list_ledger_for_date(_session, _work_date):
+        return [
+            {
+                "id": str(entry.id),
+                "work_date": entry.work_date.isoformat(),
+                "employee_id": str(entry.employee_id),
+                "employee_name": "Payroll Employee",
+                "employee_iiko_id": "iiko-test",
+                "payroll_role": entry.payroll_role,
+                "category": entry.category,
+                "source": entry.source,
+                "opened_at": entry.opened_at.isoformat(),
+                "closed_at": entry.closed_at.isoformat() if entry.closed_at else None,
+                "notes": entry.notes,
+                "is_resolved": entry.is_resolved,
+                "status": "resolved",
+                "available_roles": [{"payroll_role": "pizza", "category": "category_2"}],
+            }
+        ]
+
+    app.dependency_overrides[get_session] = override_session
+    monkeypatch.setattr(shift_routes, "get_latest_locked_payroll_date", fake_latest_locked_date)
+    monkeypatch.setattr(shift_routes, "list_ledger_for_date", fake_list_ledger_for_date)
+
+    response = client.patch(
+        f"/api/v1/shifts/ledger/{entry.id}",
+        headers={"X-User-Role": "manager"},
+        json={"payroll_role": "pizza"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["payroll_role"] == "pizza"
+    assert [item for item in session.added if isinstance(item, AgentAction)]
+    app.dependency_overrides.clear()
     client.close()
 
 
@@ -718,16 +1200,56 @@ def test_fixed_salary_for_full_week_is_calculated() -> None:
     )
 
     assert result.blocking_issues == []
-    assert result.lines[0].base_pay == 15400
-    assert result.lines[0].premium == 400
+    assert result.lines[0].base_pay == 15800
+    assert result.lines[0].premium == 0
     assert result.lines[0].total_payable == 15800
 
 
-def test_weekday_premium_applies_on_friday() -> None:
+def test_full_12_hour_shift_gets_full_salary_and_percent() -> None:
     period = make_period()
     run_id = uuid.uuid4()
     employee = make_employee()
-    entry = make_entry(period, employee, date(2026, 5, 22))
+    work_date = date(2026, 5, 20)
+    entry = make_entry(period, employee, work_date, minutes=720)
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        payroll_settings({work_date.isoformat(): 140000}),
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].base_pay == 2200
+    assert result.lines[0].percent_pay == 6300
+
+
+def test_11_hour_shift_prorates_salary_and_percent_by_720_minutes() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    work_date = date(2026, 5, 20)
+    entry = make_entry(period, employee, work_date, minutes=660)
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        payroll_settings({work_date.isoformat(): 140000}),
+    )
+
+    assert result.blocking_issues == []
+    assert Decimal(str(result.lines[0].base_pay)) == Decimal("2016.67")
+    assert result.lines[0].percent_pay == 5775
+
+
+def test_weekday_premium_now_in_base_pay() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    entry = make_entry(period, employee, date(2026, 5, 22), minutes=480)
 
     result = calculate_payroll_lines_from_inputs(
         period,
@@ -738,9 +1260,33 @@ def test_weekday_premium_applies_on_friday() -> None:
     )
 
     assert result.blocking_issues == []
-    assert result.lines[0].premium == 200
-    assert result.lines[0].total_payable == 2400
-    assert result.lines[0].components["days"][0]["weekday_premium"] == 200
+    assert result.lines[0].premium == 0
+    assert Decimal(str(result.lines[0].base_pay)) == Decimal("1666.67")
+    assert Decimal(str(result.lines[0].total_payable)) == Decimal("1666.67")
+    day = result.lines[0].components["days"][0]
+    assert day["weekday_premium"] == 200
+    assert Decimal(str(day["base_pay_shift"])) == Decimal("1466.67")
+    assert "premium" not in day
+
+
+def test_weekday_premium_does_not_apply_below_8_hour_threshold() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    entry = make_entry(period, employee, date(2026, 5, 22), minutes=479)
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        payroll_settings(),
+    )
+
+    assert result.blocking_issues == []
+    assert Decimal(str(result.lines[0].base_pay)) == Decimal("1463.61")
+    assert result.lines[0].premium == 0
+    assert result.lines[0].components["days"][0]["weekday_premium"] == 0
 
 
 def test_weekday_premium_applies_on_saturday() -> None:
@@ -758,8 +1304,55 @@ def test_weekday_premium_applies_on_saturday() -> None:
     )
 
     assert result.blocking_issues == []
-    assert result.lines[0].premium == 200
+    assert result.lines[0].base_pay == 2400
+    assert result.lines[0].premium == 0
     assert result.lines[0].total_payable == 2400
+
+
+def test_weekday_premium_applies_once_for_multiple_saturday_shifts_at_threshold() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    work_date = date(2026, 5, 23)
+    entries = [
+        make_entry(period, employee, work_date, minutes=300, station="oven"),
+        make_entry(period, employee, work_date, minutes=300, station="prep"),
+    ]
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {employee.id: employee},
+        payroll_settings(),
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].premium == 0
+    assert sum(day["weekday_premium"] for day in result.lines[0].components["days"]) == 200
+
+
+def test_weekday_premium_does_not_apply_for_multiple_saturday_shifts_below_threshold() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    work_date = date(2026, 5, 23)
+    entries = [
+        make_entry(period, employee, work_date, minutes=240, station="oven"),
+        make_entry(period, employee, work_date, minutes=200, station="prep"),
+    ]
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {employee.id: employee},
+        payroll_settings(),
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].premium == 0
+    assert sum(day["weekday_premium"] for day in result.lines[0].components["days"]) == 0
 
 
 def test_weekday_premium_does_not_apply_on_wednesday() -> None:
@@ -781,7 +1374,7 @@ def test_weekday_premium_does_not_apply_on_wednesday() -> None:
     assert result.lines[0].total_payable == 2200
 
 
-def test_weekday_premium_uses_updated_setting_on_next_run() -> None:
+def test_weekday_premium_uses_updated_amount_setting_on_next_run() -> None:
     period = make_period()
     employee = make_employee()
     entry = make_entry(period, employee, date(2026, 5, 22))
@@ -794,7 +1387,7 @@ def test_weekday_premium_uses_updated_setting_on_next_run() -> None:
         {employee.id: employee},
         settings,
     )
-    settings["payroll.weekday_premium"] = {"friday": 500, "saturday": 0}
+    settings["payroll.weekday_premium"] = {"amount": 250, "threshold_hours": 8}
     second_result = calculate_payroll_lines_from_inputs(
         period,
         uuid.uuid4(),
@@ -803,9 +1396,11 @@ def test_weekday_premium_uses_updated_setting_on_next_run() -> None:
         settings,
     )
 
-    assert first_result.lines[0].premium == 200
-    assert second_result.lines[0].premium == 500
-    assert second_result.lines[0].total_payable == 2700
+    assert first_result.lines[0].premium == 0
+    assert first_result.lines[0].base_pay == 2400
+    assert second_result.lines[0].premium == 0
+    assert second_result.lines[0].base_pay == 2450
+    assert second_result.lines[0].total_payable == 2450
 
 
 def test_intern_with_zero_coeff_still_gets_weekday_premium() -> None:
@@ -823,10 +1418,103 @@ def test_intern_with_zero_coeff_still_gets_weekday_premium() -> None:
     )
 
     assert result.blocking_issues == []
-    assert result.lines[0].base_pay == 2000
-    assert result.lines[0].premium == 200
+    assert result.lines[0].base_pay == 2200
+    assert result.lines[0].premium == 0
     assert result.lines[0].percent_pay == 0
     assert result.lines[0].total_payable == 2200
+
+
+def test_manual_bonus_increases_premium() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    work_date = date(2026, 5, 20)
+    entry = make_entry(period, employee, work_date)
+    bonus = make_adjustment(
+        employee,
+        work_date,
+        "bonus",
+        Decimal("1000"),
+        label="Качественная работа",
+    )
+    settings = payroll_settings()
+    settings[PAYROLL_ADJUSTMENTS_CONFIG_KEY] = {(employee.id, work_date): [bonus]}
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].premium == 1000
+    assert result.lines[0].total_payable == 3200
+    assert (
+        result.lines[0].components["adjustments"]["bonuses"][0]["category"]
+        == "Качественная работа"
+    )
+
+
+def test_manual_penalty_increases_deduction() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    work_date = date(2026, 5, 20)
+    entry = make_entry(period, employee, work_date)
+    penalty = make_adjustment(employee, work_date, "penalty", Decimal("500"), label="Опоздание")
+    settings = payroll_settings()
+    settings[PAYROLL_ADJUSTMENTS_CONFIG_KEY] = {(employee.id, work_date): [penalty]}
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].deduction == 500
+    assert result.lines[0].total_payable == 1700
+    assert result.lines[0].components["adjustments"]["penalties"][0]["amount"] == "500.00"
+
+
+def test_adjustment_for_employee_with_two_roles_goes_to_primary() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    work_date = date(2026, 5, 20)
+    entries = [
+        make_entry(period, employee, work_date, minutes=360, role="Сушист"),
+        make_entry(period, employee, work_date, minutes=360, role="Пиццерист"),
+    ]
+    bonus = make_adjustment(employee, work_date, "bonus", Decimal("1000"))
+    settings = payroll_settings()
+    settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = {
+        (employee.id, work_date): [
+            make_role_assignment(employee.id, "sushi", "category_2"),
+            make_role_assignment(employee.id, "pizza", "category_2", is_primary=True),
+        ]
+    }
+    settings[PAYROLL_ADJUSTMENTS_CONFIG_KEY] = {(employee.id, work_date): [bonus]}
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {employee.id: employee},
+        settings,
+    )
+
+    lines_by_role = {line.role: line for line in result.lines}
+    assert lines_by_role["Пиццерист"].premium == 1000
+    assert lines_by_role["Сушист"].premium == 0
+    assert (
+        lines_by_role["Пиццерист"].components["adjustments"]["primary_role_chosen"]
+        == "Пиццерист"
+    )
 
 
 def test_payroll_calculator_prefers_versioned_rate_configuration() -> None:
@@ -905,6 +1593,103 @@ def test_payroll_calculator_uses_assignment_category_for_shift_station() -> None
     assert result.lines[0].components["days"][0]["category"] == "category_2"
 
 
+def test_payroll_calculator_uses_assignment_category_by_work_date() -> None:
+    period = make_period(
+        start=date(2026, 6, 1),
+        end=date(2026, 6, 7),
+        payroll_date=date(2026, 6, 8),
+    )
+    run_id = uuid.uuid4()
+    employee = make_employee(
+        position="Повар",
+        category="category_3",
+        default_cooking_station="pizza",
+    )
+    before_change = date(2026, 6, 6)
+    after_change = date(2026, 6, 7)
+    entries = [
+        make_entry(period, employee, before_change, role="Пиццерист", station="pizza"),
+        make_entry(period, employee, after_change, role="Пиццерист", station="pizza"),
+    ]
+    settings = payroll_settings()
+    settings["payroll.role_category_rates"] = {
+        "Пиццерист": {"category_2": 2200, "category_3": 1800}
+    }
+    settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = {
+        (employee.id, before_change): [
+            EmployeeRoleAssignment(
+                id=uuid.uuid4(),
+                employee_id=employee.id,
+                payroll_role="pizza",
+                category="category_3",
+                is_primary=True,
+                effective_from=date(2026, 1, 1),
+                effective_to=after_change,
+            )
+        ],
+        (employee.id, after_change): [
+            EmployeeRoleAssignment(
+                id=uuid.uuid4(),
+                employee_id=employee.id,
+                payroll_role="pizza",
+                category="category_2",
+                is_primary=True,
+                effective_from=after_change,
+            )
+        ],
+    }
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].base_pay == 4200
+    assert [day["category"] for day in result.lines[0].components["days"]] == [
+        "category_3",
+        "category_2",
+    ]
+    assert result.lines[0].components["days"][0]["weekday_premium"] == 200
+
+
+def test_payroll_calculator_uses_allowance_events_by_work_date() -> None:
+    period = make_period(
+        start=date(2026, 6, 1),
+        end=date(2026, 6, 7),
+        payroll_date=date(2026, 6, 8),
+    )
+    run_id = uuid.uuid4()
+    employee = make_employee(position="Повар", category="category_2")
+    employee.is_senior = False
+    first_day = date(2026, 6, 1)
+    second_day = date(2026, 6, 2)
+    entries = [
+        make_entry(period, employee, first_day),
+        make_entry(period, employee, second_day),
+    ]
+    settings = payroll_settings()
+    settings[EMPLOYEE_ALLOWANCES_CONFIG_KEY] = {
+        (employee.id, first_day): {"is_senior": False, "is_deputy_senior": False},
+        (employee.id, second_day): {"is_senior": True, "is_deputy_senior": False},
+    }
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].base_pay == 4900
+    assert [day["base_pay"] for day in result.lines[0].components["days"]] == [2200, 2700]
+
+
 def test_payroll_calculator_uses_shift_ledger_role_and_category() -> None:
     period = make_period()
     run_id = uuid.uuid4()
@@ -977,6 +1762,73 @@ def test_percent_from_revenue_uses_settings_revenue_mock() -> None:
     assert result.lines[0].components["days"][0]["revenue_rate"] == 0.045
 
 
+def test_percent_from_revenue_uses_iiko_daily_revenue_before_mock() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    pizza_employee = make_employee()
+    sushi_employee = make_employee()
+    work_date = period.start_date
+    entries = [
+        make_entry(period, pizza_employee, work_date, role="Пиццерист"),
+        make_entry(period, sushi_employee, work_date, role="Сушист"),
+    ]
+    settings = payroll_settings({work_date.isoformat(): 50000})
+    settings[DAILY_REVENUE_CONFIG_KEY] = {work_date.isoformat(): "350000"}
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {pizza_employee.id: pizza_employee, sushi_employee.id: sushi_employee},
+        settings,
+    )
+
+    percent_by_employee = {line.employee_id: line.percent_pay for line in result.lines}
+
+    assert result.blocking_issues == []
+    assert percent_by_employee[pizza_employee.id] == 9625
+    assert percent_by_employee[sushi_employee.id] == 9625
+    assert result.lines[0].components["days"][0]["daily_percent_pool"] == 19250
+
+
+async def test_daily_revenue_cache_writes_and_reuses_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[date, date]] = []
+
+    async def fake_fetch_daily_revenue(
+        _session: Any,
+        date_from: date,
+        date_to: date,
+    ) -> dict[date, Decimal]:
+        calls.append((date_from, date_to))
+        return {date_from: Decimal("350000")}
+
+    monkeypatch.setattr(
+        "app.services.payroll_runner.fetch_daily_revenue",
+        fake_fetch_daily_revenue,
+    )
+    session = RevenueCacheFakeSession()
+
+    first = await ensure_daily_revenue_cached(
+        session, date(2026, 5, 19), date(2026, 5, 20)
+    )
+    second = await ensure_daily_revenue_cached(
+        session, date(2026, 5, 19), date(2026, 5, 20)
+    )
+
+    assert calls == [(date(2026, 5, 19), date(2026, 5, 20))]
+    assert first == {
+        date(2026, 5, 19): Decimal("350000"),
+        date(2026, 5, 20): Decimal("0"),
+    }
+    assert second == first
+    assert session.setting is not None
+    assert session.setting.key == DAILY_REVENUE_CONFIG_KEY
+    assert session.setting.value == {"2026-05-19": "350000", "2026-05-20": "0"}
+    assert [item for item in session.added if isinstance(item, AppSettingHistory)]
+
+
 def test_fund_is_paid_out_on_january_15_for_previous_year() -> None:
     employee_id = uuid.uuid4()
     account = AccumulationFundAccount(
@@ -993,6 +1845,567 @@ def test_fund_is_paid_out_on_january_15_for_previous_year() -> None:
     assert paid == Decimal("5000")
     assert account.paid_out_amount == Decimal("5000")
     assert account.status == "paid_out"
+
+
+def test_tenure_months_calendar() -> None:
+    employee = make_employee(hire_date=date(2025, 4, 15), tenure_started_at=date(2025, 4, 15))
+
+    assert tenure_months_on(employee, date(2025, 10, 14)) == 5
+    assert tenure_months_on(employee, date(2025, 10, 15)) == 6
+    assert tenure_months_on(employee, date(2026, 4, 14)) == 11
+    assert tenure_months_on(employee, date(2026, 4, 15)) == 12
+
+
+def test_fund_rate_by_tenure() -> None:
+    settings = payroll_settings()
+    settings["payroll.fund_rates_by_tenure"] = [
+        {"min_months": 0, "rate": 0},
+        {"min_months": 6, "rate": 0.05},
+        {"min_months": 12, "rate": 0.10},
+        {"min_months": 18, "rate": 0.15},
+    ]
+
+    rates = [_fund_rate_for_months(settings, months) for months in (0, 5, 12, 17, 18, 25)]
+
+    assert rates == [
+        Decimal("0"),
+        Decimal("0"),
+        Decimal("0.10"),
+        Decimal("0.10"),
+        Decimal("0.15"),
+        Decimal("0.15"),
+    ]
+    assert _fund_rate_for_months(payroll_settings(), 6) == Decimal("0.05")
+
+
+def test_fund_accrual_per_day_uses_today_rate() -> None:
+    period = make_period(
+        start=date(2025, 10, 14),
+        end=date(2025, 10, 15),
+        payroll_date=date(2025, 10, 21),
+    )
+    run_id = uuid.uuid4()
+    employee = make_employee(hire_date=date(2025, 4, 15), tenure_started_at=date(2025, 4, 15))
+    settings = payroll_settings()
+    settings["payroll.fund_rates_by_tenure"] = [
+        {"min_months": 0, "rate": 0},
+        {"min_months": 6, "rate": 0.05},
+        {"min_months": 12, "rate": 0.10},
+        {"min_months": 18, "rate": 0.15},
+    ]
+    entries = [
+        make_entry(period, employee, date(2025, 10, 14)),
+        make_entry(period, employee, date(2025, 10, 15)),
+    ]
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].fund_accrual == 110
+    assert [day["fund_rate_percent"] for day in result.lines[0].components["days"]] == [0.0, 5.0]
+    assert [day["fund_accrual"] for day in result.lines[0].components["days"]] == [0, 110]
+
+
+def test_fund_accrual_includes_weekday_premium() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(hire_date=date(2025, 11, 22), tenure_started_at=date(2025, 11, 22))
+    entry = make_entry(period, employee, date(2026, 5, 22), minutes=480)
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        payroll_settings(),
+    )
+
+    day = result.lines[0].components["days"][0]
+    assert day["weekday_premium"] == 200
+    assert Decimal(str(day["base_pay"])) == Decimal("1666.67")
+    assert result.lines[0].fund_accrual == 83
+
+
+async def test_fund_accrual_creates_transaction() -> None:
+    period = make_period()
+    employee_id = uuid.uuid4()
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 5, 27, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    line = make_payroll_line(run.id, employee_id)
+    session = FundFakeSession()
+
+    total = await accrue_fund(session, period, [line], run)  # type: ignore[arg-type]
+
+    assert total == Decimal("500")
+    account = next(iter(session.accounts.values()))
+    assert account.accumulated_amount == Decimal("500")
+    transaction = session.transactions[0]
+    assert transaction.transaction_type == "accrual"
+    assert transaction.amount == Decimal("500")
+    assert transaction.rate_percent == Decimal("0.05000")
+    assert transaction.base_pay_amount == Decimal("10000")
+    assert transaction.run_id == run.id
+
+
+async def test_fund_accrual_skipped_for_non_payroll_position() -> None:
+    period = make_period()
+    employee = make_employee(
+        position="Управляющий",
+        category=None,
+        hire_date=date(2025, 1, 1),
+        tenure_started_at=date(2025, 1, 1),
+    )
+    settings = payroll_settings()
+    assert (
+        fund_accrual_for_day(settings, employee, period.end_date, Decimal("10000"))
+        == Decimal("0")
+    )
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 5, 27, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    line = make_payroll_line(run.id, employee.id)
+    session = FundFakeSession(employees=[employee])
+
+    total = await accrue_fund(session, period, [line], run)  # type: ignore[arg-type]
+
+    assert total == Decimal("0")
+    assert session.accounts == {}
+    assert session.transactions == []
+
+
+async def test_fund_accrual_idempotent_on_run_resubmit() -> None:
+    period = make_period()
+    employee_id = uuid.uuid4()
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 5, 27, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    line = make_payroll_line(run.id, employee_id)
+    session = FundFakeSession()
+
+    await accrue_fund(session, period, [line], run)  # type: ignore[arg-type]
+    await accrue_fund(session, period, [line], run)  # type: ignore[arg-type]
+
+    account = next(iter(session.accounts.values()))
+    assert account.accumulated_amount == Decimal("500")
+    assert len(session.transactions) == 1
+    assert session.transactions[0].amount == Decimal("500")
+
+
+async def test_dismiss_forfeits_active_fund() -> None:
+    employee = make_employee()
+    accounts = [
+        AccumulationFundAccount(
+            id=uuid.uuid4(),
+            employee_id=employee.id,
+            year=2025,
+            accumulated_amount=Decimal("5000"),
+            paid_out_amount=Decimal("5000"),
+            forfeited_amount=Decimal("0"),
+            status="paid_out",
+            paid_out_at=datetime(2026, 1, 15, tzinfo=UTC),
+        ),
+        AccumulationFundAccount(
+            id=uuid.uuid4(),
+            employee_id=employee.id,
+            year=2026,
+            accumulated_amount=Decimal("2000"),
+            paid_out_amount=Decimal("0"),
+            forfeited_amount=Decimal("0"),
+            status="active",
+        ),
+    ]
+    session = FundFakeSession(employees=[employee], accounts=accounts)
+
+    await forfeit_active_fund_on_dismiss(
+        session, employee, fire_date=date(2026, 1, 16), now=datetime(2026, 1, 16, tzinfo=UTC)
+    )
+
+    assert accounts[0].status == "paid_out"
+    assert accounts[1].status == "forfeited"
+    assert accounts[1].forfeited_amount == Decimal("2000")
+    assert session.transactions[0].transaction_type == "forfeit"
+
+
+async def test_dismiss_forfeits_all_active_before_payout() -> None:
+    employee = make_employee()
+    accounts = [
+        AccumulationFundAccount(
+            id=uuid.uuid4(),
+            employee_id=employee.id,
+            year=2025,
+            accumulated_amount=Decimal("5000"),
+            paid_out_amount=Decimal("0"),
+            forfeited_amount=Decimal("0"),
+            status="active",
+        ),
+        AccumulationFundAccount(
+            id=uuid.uuid4(),
+            employee_id=employee.id,
+            year=2026,
+            accumulated_amount=Decimal("2000"),
+            paid_out_amount=Decimal("0"),
+            forfeited_amount=Decimal("0"),
+            status="active",
+        ),
+    ]
+    session = FundFakeSession(employees=[employee], accounts=accounts)
+
+    await forfeit_active_fund_on_dismiss(
+        session, employee, fire_date=date(2026, 1, 14), now=datetime(2026, 1, 14, tzinfo=UTC)
+    )
+
+    assert [account.status for account in accounts] == ["forfeited", "forfeited"]
+    assert [transaction.year for transaction in session.transactions] == [2025, 2026]
+
+
+def test_reinstate_resets_tenure_but_not_fund() -> None:
+    employee = make_employee(
+        status="inactive",
+        hire_date=date(2025, 4, 15),
+        tenure_started_at=date(2025, 4, 15),
+    )
+    account = AccumulationFundAccount(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        year=2026,
+        accumulated_amount=Decimal("2000"),
+        paid_out_amount=Decimal("0"),
+        forfeited_amount=Decimal("2000"),
+        status="forfeited",
+    )
+
+    employee.tenure_started_at = date(2026, 6, 15)
+
+    assert tenure_months_on(employee, date(2026, 6, 15)) == 0
+    assert account.status == "forfeited"
+    assert account.forfeited_amount == Decimal("2000")
+
+
+async def test_payout_january_15_triggered_by_period() -> None:
+    employee_id = uuid.uuid4()
+    account = AccumulationFundAccount(
+        id=uuid.uuid4(),
+        employee_id=employee_id,
+        year=2025,
+        accumulated_amount=Decimal("5000"),
+        paid_out_amount=Decimal("0"),
+        forfeited_amount=Decimal("0"),
+        status="active",
+    )
+    period = make_period(
+        start=date(2026, 1, 13),
+        end=date(2026, 1, 19),
+        payroll_date=date(2026, 1, 20),
+    )
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 1, 20, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    session = FundFakeSession(accounts=[account])
+
+    paid = await payout_previous_year_fund_if_due(session, period, run)  # type: ignore[arg-type]
+    repeat = await payout_previous_year_fund_if_due(
+        session,
+        make_period(start=date(2026, 1, 20), end=date(2026, 1, 26), payroll_date=date(2026, 1, 27)),
+        run,
+    )  # type: ignore[arg-type]
+
+    assert paid == Decimal("5000")
+    assert repeat == Decimal("0")
+    assert account.status == "paid_out"
+    assert session.transactions[0].transaction_type == "payout"
+
+
+def test_manual_payout_endpoint() -> None:
+    employee_id = uuid.uuid4()
+    account = AccumulationFundAccount(
+        id=uuid.uuid4(),
+        employee_id=employee_id,
+        year=2025,
+        accumulated_amount=Decimal("5000"),
+        paid_out_amount=Decimal("0"),
+        forfeited_amount=Decimal("0"),
+        status="active",
+    )
+    session = FundFakeSession(accounts=[account])
+    app = create_app()
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/payroll/fund/payout/2025",
+                headers={"X-User-Role": "finance_manager"},
+            )
+            repeat = client.post(
+                "/api/v1/payroll/fund/payout/2025",
+                headers={"X-User-Role": "finance_manager"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["paid_out_count"] == 1
+    assert response.json()["total_paid_out"] == "5000.00"
+    assert repeat.status_code == 200
+    assert repeat.json()["paid_out_count"] == 0
+
+
+def test_summary_endpoint() -> None:
+    employee_id = uuid.uuid4()
+    session = FundFakeSession(
+        accounts=[
+            AccumulationFundAccount(
+                id=uuid.uuid4(),
+                employee_id=employee_id,
+                year=2026,
+                accumulated_amount=Decimal("8000"),
+                paid_out_amount=Decimal("1000"),
+                forfeited_amount=Decimal("500"),
+                status="active",
+            )
+        ],
+        transactions=[
+            AccumulationFundTransaction(
+                id=uuid.uuid4(),
+                account_id=uuid.uuid4(),
+                employee_id=employee_id,
+                year=2026,
+                transaction_type="payout",
+                amount=Decimal("1000"),
+                created_at=datetime(2026, 1, 15, tzinfo=UTC),
+            ),
+            AccumulationFundTransaction(
+                id=uuid.uuid4(),
+                account_id=uuid.uuid4(),
+                employee_id=employee_id,
+                year=2026,
+                transaction_type="forfeit",
+                amount=Decimal("500"),
+                created_at=datetime(2026, 5, 1, tzinfo=UTC),
+            ),
+        ],
+    )
+    app = create_app()
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/payroll/fund/summary?year=2026",
+                headers={"X-User-Role": "finance_manager"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_outstanding"] == "6500.00"
+    assert payload["total_paid_out_ytd"] == "1000.00"
+    assert payload["total_forfeited_ytd"] == "500.00"
+    assert payload["active_employees_count"] == 1
+
+
+def deposit_settings(*, withholding: int = 2000) -> dict[str, Any]:
+    settings = payroll_settings()
+    settings["payroll.deposit_auto_withholding_enabled"] = True
+    settings["payroll.category_rules"]["2"]["deposit_withholding"] = withholding
+    return settings
+
+
+def test_deposit_withholding_is_capped_by_target_balance() -> None:
+    employee = make_employee(category="category_2")
+
+    deduction = deposit_withholding(
+        deposit_settings(),
+        employee,
+        Decimal("5000"),
+        today=date(2026, 5, 31),
+        current_balance=Decimal("14000"),
+    )
+
+    assert deduction == Decimal("1000")
+
+
+def test_payroll_calculation_uses_current_deposit_balance_for_target_cap() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(category="category_2")
+    entry = make_entry(period, employee, period.start_date)
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        deposit_settings(),
+        deposit_balances={employee.id: Decimal("14900")},
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].deduction == 100
+    assert result.lines[0].deposit_excluded_for_run is False
+
+
+def test_payroll_calculation_line_deposit_override_zeroes_only_selected_line() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    first = make_employee(category="category_2")
+    second = make_employee(category="category_2")
+    entries = [
+        make_entry(period, first, period.start_date),
+        make_entry(period, second, period.start_date),
+    ]
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {first.id: first, second.id: second},
+        deposit_settings(),
+        line_deposit_overrides={
+            (first.id, "Пиццерист"): {
+                "deposit_excluded_for_run": True,
+                "deposit_exclusion_reason": "Разово без депозита",
+            }
+        },
+    )
+
+    lines_by_employee = {line.employee_id: line for line in result.lines}
+    first_line = lines_by_employee[first.id]
+    second_line = lines_by_employee[second.id]
+    assert first_line.deposit_excluded_for_run is True
+    assert first_line.deposit_exclusion_reason == "Разово без депозита"
+    assert first_line.components["deposit_withholding"] == 0
+    assert first_line.deduction == 0
+    assert second_line.deposit_excluded_for_run is False
+    assert second_line.components["deposit_withholding"] == 2000
+    assert second_line.deduction == 2000
+
+
+def test_line_deposit_override_mapping_transfers_to_recreated_line() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(category="category_2")
+    entry = make_entry(period, employee, period.start_date)
+    old_line = make_payroll_line(run_id, employee.id)
+    old_line.deposit_excluded_for_run = True
+    old_line.deposit_exclusion_reason = "Перенести после пересчёта"
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        deposit_settings(),
+        line_deposit_overrides=line_deposit_overrides_from_lines([old_line]),
+    )
+
+    assert result.lines[0].deposit_excluded_for_run is True
+    assert result.lines[0].deposit_exclusion_reason == "Перенести после пересчёта"
+    assert result.lines[0].components["deposit_withholding"] == 0
+
+
+def test_deposit_withholding_is_zero_when_target_reached() -> None:
+    employee = make_employee(category="category_2")
+
+    deduction = deposit_withholding(
+        deposit_settings(),
+        employee,
+        Decimal("5000"),
+        today=date(2026, 5, 31),
+        current_balance=Decimal("15000"),
+    )
+
+    assert deduction == Decimal("0")
+
+
+def test_employee_deposit_target_override_has_priority() -> None:
+    employee = make_employee(category="category_2")
+    employee.deposit_target_override = Decimal("20000")
+
+    deduction = deposit_withholding(
+        deposit_settings(),
+        employee,
+        Decimal("5000"),
+        today=date(2026, 5, 31),
+        current_balance=Decimal("19000"),
+    )
+
+    assert employee_deposit_target(deposit_settings(), employee) == Decimal("20000")
+    assert deduction == Decimal("1000")
+
+
+def test_deposit_exclusion_without_until_date_blocks_withholding() -> None:
+    employee = make_employee(category="category_2")
+    employee.deposit_excluded = True
+    employee.deposit_excluded_until = None
+
+    deduction = deposit_withholding(
+        deposit_settings(),
+        employee,
+        Decimal("5000"),
+        today=date(2026, 5, 31),
+        current_balance=Decimal("0"),
+    )
+
+    assert deduction == Decimal("0")
+
+
+def test_deposit_exclusion_with_until_date_auto_resumes() -> None:
+    employee = make_employee(category="category_2")
+    employee.deposit_excluded = True
+    employee.deposit_excluded_until = date(2026, 6, 10)
+
+    blocked = deposit_withholding(
+        deposit_settings(),
+        employee,
+        Decimal("5000"),
+        today=date(2026, 6, 9),
+        current_balance=Decimal("0"),
+    )
+    resumed = deposit_withholding(
+        deposit_settings(),
+        employee,
+        Decimal("5000"),
+        today=date(2026, 6, 11),
+        current_balance=Decimal("0"),
+    )
+
+    assert blocked == Decimal("0")
+    assert resumed == Decimal("2000")
 
 
 def test_deposit_write_off_reduces_deposit_balance() -> None:
@@ -1014,6 +2427,289 @@ def test_deposit_write_off_reduces_deposit_balance() -> None:
     assert account.balance == Decimal("700")
     assert transactions[0].transaction_type == "write_off"
     assert transactions[0].amount == Decimal("300")
+
+
+def test_get_lines_response_enriches_deposit_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = create_app()
+    run_id = uuid.uuid4()
+    employee_id = uuid.uuid4()
+    line = make_payroll_line(
+        run_id,
+        employee_id,
+        components={"days": [], "deposit_withholding": "750.25", "adjustments": {}},
+    )
+    session = PayrollLineRouteFakeSession([(employee_id, Decimal("1250.50"))])
+
+    async def override_session():
+        yield session
+
+    async def fake_get_run_lines(_session: Any, requested_run_id: uuid.UUID) -> list[PayrollLine]:
+        assert requested_run_id == run_id
+        return [line]
+
+    app.dependency_overrides[get_session] = override_session
+    monkeypatch.setattr(payroll_routes, "get_run_lines", fake_get_run_lines)
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                f"/api/v1/payroll/runs/{run_id}/lines",
+                headers={"X-User-Role": "finance_manager"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["deposit_withholding"] == 750.25
+    assert payload[0]["deposit_payout"] == 1250.5
+    assert payload[0]["ndfl_deduction"] == 0
+    assert len(session.statements) == 1
+
+
+def test_get_lines_response_defaults_deposit_payout_and_ndfl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = create_app()
+    run_id = uuid.uuid4()
+    line = make_payroll_line(run_id, uuid.uuid4())
+    session = PayrollLineRouteFakeSession([])
+
+    async def override_session():
+        yield session
+
+    async def fake_get_run_lines(_session: Any, _run_id: uuid.UUID) -> list[PayrollLine]:
+        return [line]
+
+    app.dependency_overrides[get_session] = override_session
+    monkeypatch.setattr(payroll_routes, "get_run_lines", fake_get_run_lines)
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                f"/api/v1/payroll/runs/{run_id}/lines",
+                headers={"X-User-Role": "finance_manager"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["deposit_withholding"] == 0
+    assert payload[0]["deposit_payout"] == 0
+    assert payload[0]["ndfl_deduction"] == 0
+
+
+def test_patch_payroll_line_deposit_override_updates_line_and_audit() -> None:
+    app = create_app()
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=uuid.uuid4(),
+        started_at=datetime(2026, 5, 27, tzinfo=UTC),
+        finished_at=datetime(2026, 5, 27, 1, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    line = make_payroll_line(
+        run.id,
+        uuid.uuid4(),
+        components={"days": [], "deposit_withholding": "1000", "adjustments": {}},
+    )
+    session = PayrollLinePatchFakeSession(line, run)
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        with TestClient(app) as client:
+            response = client.patch(
+                f"/api/v1/payroll/lines/{line.id}",
+                headers={"X-User-Role": "finance_manager"},
+                json={
+                    "deposit_excluded_for_run": True,
+                    "deposit_exclusion_reason": "Разовая договорённость",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["deposit_excluded_for_run"] is True
+    assert response.json()["deposit_exclusion_reason"] == "Разовая договорённость"
+    assert line.deposit_excluded_for_run is True
+    assert line.deposit_exclusion_reason == "Разовая договорённость"
+    action = next(item for item in session.added if isinstance(item, AgentAction))
+    assert action.action_type == "payroll_line_deposit_override"
+    assert action.target_table == "payroll_line"
+    assert action.before_value["deposit_excluded_for_run"] is False
+    assert action.after_value["deposit_excluded_for_run"] is True
+    assert session.committed is True
+
+
+def test_patch_payroll_line_deposit_override_rejects_finalized_run() -> None:
+    app = create_app()
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=uuid.uuid4(),
+        started_at=datetime(2026, 5, 27, tzinfo=UTC),
+        finished_at=datetime(2026, 5, 27, 1, tzinfo=UTC),
+        status="finalized",
+        blocking_issues=[],
+        summary={},
+    )
+    line = make_payroll_line(run.id, uuid.uuid4())
+    session = PayrollLinePatchFakeSession(line, run)
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        with TestClient(app) as client:
+            response = client.patch(
+                f"/api/v1/payroll/lines/{line.id}",
+                headers={"X-User-Role": "finance_manager"},
+                json={"deposit_excluded_for_run": True},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert line.deposit_excluded_for_run is False
+    assert [item for item in session.added if isinstance(item, AgentAction)] == []
+    assert session.committed is False
+
+
+class PayrollAdjustmentFakeSession:
+    def __init__(
+        self,
+        employee: Employee,
+        *,
+        category: PayrollAdjustmentCategory | None = None,
+        adjustment: PayrollAdjustment | None = None,
+    ) -> None:
+        self.employee = employee
+        self.category = category
+        self.adjustment = adjustment
+        self.added: list[Any] = []
+        self.committed = False
+        self.deleted: list[Any] = []
+
+    async def get(self, model: Any, object_id: uuid.UUID) -> Any:
+        if model is Employee and object_id == self.employee.id:
+            return self.employee
+        if model is PayrollAdjustmentCategory and self.category and object_id == self.category.id:
+            return self.category
+        if model is PayrollAdjustment and self.adjustment and object_id == self.adjustment.id:
+            return self.adjustment
+        return None
+
+    def add(self, item: Any) -> None:
+        self.added.append(item)
+        if isinstance(item, PayrollAdjustment):
+            self.adjustment = item
+
+    async def commit(self) -> None:
+        self.committed = True
+
+    async def refresh(self, _item: Any) -> None:
+        return None
+
+    async def delete(self, item: Any) -> None:
+        self.deleted.append(item)
+
+
+def app_with_payroll_adjustment_session(session: PayrollAdjustmentFakeSession):
+    app = create_app()
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    return app
+
+
+def adjustment_category(adjustment_type: str = "bonus") -> PayrollAdjustmentCategory:
+    return PayrollAdjustmentCategory(
+        id=uuid.uuid4(),
+        type=adjustment_type,
+        code=f"{adjustment_type}-{uuid.uuid4()}",
+        display_name="Категория",
+        default_amount=Decimal("1000"),
+        is_active=True,
+        sort_order=0,
+    )
+
+
+async def locked_adjustment_date(_session: Any, _work_date: date) -> None:
+    raise PayrollAdjustmentLockedError("Период зафиксирован, изменения невозможны")
+
+
+def test_create_adjustment_in_finalized_period_409(monkeypatch: pytest.MonkeyPatch) -> None:
+    employee = make_employee()
+    category = adjustment_category("bonus")
+    session = PayrollAdjustmentFakeSession(employee, category=category)
+    monkeypatch.setattr(payroll_adjustment_routes, "assert_date_not_locked", locked_adjustment_date)
+
+    with TestClient(app_with_payroll_adjustment_session(session)) as client:
+        response = client.post(
+            "/api/v1/payroll/adjustments",
+            headers={"X-User-Role": "finance_manager"},
+            json={
+                "employee_id": str(employee.id),
+                "work_date": "2026-05-20",
+                "type": "bonus",
+                "category_id": str(category.id),
+                "amount": "1000",
+            },
+        )
+
+    assert response.status_code == 409
+    assert session.added == []
+
+
+def test_patch_delete_in_finalized_period_409(monkeypatch: pytest.MonkeyPatch) -> None:
+    employee = make_employee()
+    adjustment = make_adjustment(employee, date(2026, 5, 20), "penalty", Decimal("500"))
+    session = PayrollAdjustmentFakeSession(employee, adjustment=adjustment)
+    monkeypatch.setattr(payroll_adjustment_routes, "assert_date_not_locked", locked_adjustment_date)
+
+    with TestClient(app_with_payroll_adjustment_session(session)) as client:
+        patch_response = client.patch(
+            f"/api/v1/payroll/adjustments/{adjustment.id}",
+            headers={"X-User-Role": "finance_manager"},
+            json={"amount": "600"},
+        )
+        delete_response = client.delete(
+            f"/api/v1/payroll/adjustments/{adjustment.id}",
+            headers={"X-User-Role": "finance_manager"},
+        )
+
+    assert patch_response.status_code == 409
+    assert delete_response.status_code == 409
+    assert session.deleted == []
+
+
+def test_create_for_non_payroll_position_422() -> None:
+    employee = make_employee(position="Управляющий")
+    category = adjustment_category("bonus")
+    session = PayrollAdjustmentFakeSession(employee, category=category)
+
+    with TestClient(app_with_payroll_adjustment_session(session)) as client:
+        response = client.post(
+            "/api/v1/payroll/adjustments",
+            headers={"X-User-Role": "finance_manager"},
+            json={
+                "employee_id": str(employee.id),
+                "work_date": "2026-05-20",
+                "type": "bonus",
+                "category_id": str(category.id),
+                "amount": "1000",
+            },
+        )
+
+    assert response.status_code == 422
+    assert session.added == []
 
 
 def test_finalize_request_manager_returns_403(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1075,10 +2771,28 @@ def test_finalize_request_finance_manager_returns_ok(monkeypatch: pytest.MonkeyP
     client.close()
 
 
+class FinalizeScalarResult:
+    def __init__(self, items: list[Any]) -> None:
+        self._items = items
+
+    def all(self) -> list[Any]:
+        return self._items
+
+
 class FinalizeFakeSession:
-    def __init__(self, run: PayrollRun, period: PayrollPeriod) -> None:
+    def __init__(
+        self,
+        run: PayrollRun,
+        period: PayrollPeriod,
+        *,
+        accounts: list[DepositAccount] | None = None,
+        transactions: list[DepositTransaction] | None = None,
+    ) -> None:
         self.run = run
         self.period = period
+        self.accounts = {account.employee_id: account for account in accounts or []}
+        self.transactions = transactions or []
+        self.added: list[Any] = []
         self.committed = False
 
     async def get(self, model, object_id):
@@ -1088,11 +2802,34 @@ class FinalizeFakeSession:
             return self.period
         return None
 
+    async def scalars(self, query: Any) -> FinalizeScalarResult:
+        entity = query_entity(query)
+        if entity is DepositTransaction:
+            return FinalizeScalarResult(self.transactions)
+        if entity is DepositAccount:
+            return FinalizeScalarResult(list(self.accounts.values()))
+        return FinalizeScalarResult([])
+
+    def add(self, item: Any) -> None:
+        self.added.append(item)
+        if isinstance(item, DepositAccount):
+            self.accounts[item.employee_id] = item
+
+    async def flush(self) -> None:
+        return None
+
     async def commit(self) -> None:
         self.committed = True
 
     async def refresh(self, _model) -> None:
         return None
+
+
+def query_entity(query: Any) -> Any | None:
+    descriptions = getattr(query, "column_descriptions", None) or []
+    if not descriptions:
+        return None
+    return descriptions[0].get("entity")
 
 
 async def test_finalize_without_issues_sets_status_finalized() -> None:
@@ -1115,6 +2852,42 @@ async def test_finalize_without_issues_sets_status_finalized() -> None:
     assert session.committed is True
 
 
+async def test_finalize_deposit_accrual_updates_balance_not_initial_balance() -> None:
+    period = make_period()
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 5, 27, tzinfo=UTC),
+        finished_at=datetime(2026, 5, 27, 1, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    employee_id = uuid.uuid4()
+    account = DepositAccount(
+        id=uuid.uuid4(),
+        employee_id=employee_id,
+        balance=Decimal("7000"),
+        initial_balance=Decimal("5000"),
+        last_updated=datetime(2026, 5, 27, tzinfo=UTC),
+    )
+    transaction = DepositTransaction(
+        id=uuid.uuid4(),
+        employee_id=employee_id,
+        run_id=run.id,
+        transaction_type="accrual",
+        amount=Decimal("1000"),
+        created_at=datetime(2026, 5, 27, tzinfo=UTC),
+    )
+    session = FinalizeFakeSession(run, period, accounts=[account], transactions=[transaction])
+
+    await finalize_payroll_run(session, run.id)  # type: ignore[arg-type]
+
+    assert account.balance == Decimal("8000")
+    assert account.initial_balance == Decimal("5000")
+    assert session.committed is True
+
+
 async def test_finalized_run_cannot_be_finalized_again() -> None:
     period = make_period()
     run = PayrollRun(
@@ -1129,3 +2902,96 @@ async def test_finalized_run_cannot_be_finalized_again() -> None:
 
     with pytest.raises(PayrollConflictError):
         await finalize_payroll_run(session, run.id)  # type: ignore[arg-type]
+
+
+def test_payroll_target_positions_are_cook_and_cashier_only() -> None:
+    """Канон таксономии: ЗП считается только для Поваров и Кассиров.
+
+    См. app-spec/modules/staff/taxonomy.md — курьеры, управляющий, менеджер,
+    сисадмин, уборщица, посудомойка имеют отдельные правила оплаты.
+    """
+    assert set(PAYROLL_TARGET_POSITIONS) == {"Повар", "Кассир"}
+
+
+class AttendanceLoaderFakeScalarResult:
+    def __init__(self, items: list[Any]) -> None:
+        self._items = items
+
+    def all(self) -> list[Any]:
+        return self._items
+
+
+class AttendanceLoaderFakeSession:
+    """Минимальный fake-session для проверки position-фильтра в load_attendance_entries.
+
+    Возвращает по очереди: пустой список существующих записей → словарь сотрудников.
+    """
+
+    def __init__(self, employees: list[Employee]) -> None:
+        self._employees = employees
+        self._scalars_calls = 0
+        self.added: list[Any] = []
+
+    async def scalars(self, _stmt: Any) -> AttendanceLoaderFakeScalarResult:
+        self._scalars_calls += 1
+        if self._scalars_calls == 1:
+            return AttendanceLoaderFakeScalarResult([])
+        return AttendanceLoaderFakeScalarResult(self._employees)
+
+    def add(self, item: Any) -> None:
+        self.added.append(item)
+
+    async def flush(self) -> None:
+        return None
+
+
+async def test_load_attendance_entries_excludes_non_target_positions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    period = make_period()
+    cook = make_employee(position="Повар")
+    cashier = make_employee(position="Кассир")
+    courier = make_employee(position="Курьер")
+    manager = make_employee(position="Менеджер")
+    dishwasher = make_employee(position="Посудомойка")
+    cook.iiko_id = "iiko-cook"
+    cashier.iiko_id = "iiko-cashier"
+    courier.iiko_id = "iiko-courier"
+    manager.iiko_id = "iiko-manager"
+    dishwasher.iiko_id = "iiko-dishwasher"
+
+    monkeypatch.setattr(
+        "app.services.attendance_loader.load_attendance_rules",
+        lambda *_args, **_kwargs: _async_rules(),
+    )
+
+    iiko_records = [
+        {
+            "employeeId": emp.iiko_id,
+            "dateFrom": f"2026-05-{20 + i}T09:00:00+03:00",
+            "dateTo": f"2026-05-{20 + i}T18:00:00+03:00",
+        }
+        for i, emp in enumerate([cook, cashier, courier, manager, dishwasher])
+    ]
+
+    session = AttendanceLoaderFakeSession([cook, cashier, courier, manager, dishwasher])
+
+    entries = await load_attendance_entries(
+        session,  # type: ignore[arg-type]
+        period,
+        iiko_records=iiko_records,
+    )
+
+    employee_ids = {entry.employee_id for entry in entries}
+    assert cook.id in employee_ids
+    assert cashier.id in employee_ids
+    assert courier.id not in employee_ids
+    assert manager.id not in employee_ids
+    assert dishwasher.id not in employee_ids
+    assert len(entries) == 2
+
+
+async def _async_rules() -> Any:
+    from app.services.attendance_loader import default_attendance_rules
+
+    return default_attendance_rules()

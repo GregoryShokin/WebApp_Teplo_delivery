@@ -152,6 +152,15 @@ def test_validate_setting_value_accepts_weekday_premium() -> None:
     )
 
 
+def test_validate_setting_value_accepts_weekday_premium_amount_and_threshold() -> None:
+    setting = SimpleNamespace(widget_type="weekday_premium", widget_options=None)
+
+    settings_service.validate_setting_value(
+        setting,
+        {"amount": 250, "threshold_hours": 8},
+    )
+
+
 def test_validate_setting_value_rejects_negative_weekday_premium() -> None:
     setting = SimpleNamespace(widget_type="weekday_premium", widget_options=None)
 

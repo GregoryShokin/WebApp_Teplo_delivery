@@ -22,6 +22,7 @@ class PayrollPeriodRead(BaseModel):
 
 class PayrollRunCreate(BaseModel):
     period_id: uuid.UUID | None = None
+    force_refresh: bool = False
 
 
 class PayrollRunRead(BaseModel):
@@ -49,8 +50,20 @@ class PayrollLineRead(BaseModel):
     percent_pay: float
     fund_accrual: float
     deduction: float
+    deposit_withholding: float = 0
+    deposit_payout: float = 0
+    ndfl_deduction: float = 0
     total_payable: float
+    deposit_excluded_for_run: bool = False
+    deposit_exclusion_reason: str | None = None
     components: dict[str, Any]
+
+
+class PayrollLineDepositOverridePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    deposit_excluded_for_run: bool
+    deposit_exclusion_reason: str | None = None
 
 
 class ShiftLedgerBuildRequest(BaseModel):
@@ -104,10 +117,12 @@ class ShiftLedgerMatrixShiftRead(BaseModel):
     category: str | None = None
     is_resolved: bool
     status: str
+    payroll_locked: bool
 
 
 class ShiftLedgerMatrixDayRead(BaseModel):
     date: date
+    payroll_locked: bool
     available_roles: list[ShiftLedgerAvailableRoleRead]
     summary: ShiftLedgerMatrixSummaryRead
     shifts: list[ShiftLedgerMatrixShiftRead]

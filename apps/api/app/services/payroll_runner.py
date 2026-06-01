@@ -6,11 +6,14 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     AccumulationFundAccount,
+    AccumulationFundTransaction,
+    AppSetting,
+    AppSettingHistory,
     AttendanceEntry,
     DepositAccount,
     DepositTransaction,
@@ -19,8 +22,14 @@ from app.models import (
     PayrollPeriod,
     PayrollRun,
 )
-from app.services.attendance_loader import load_attendance_entries
+from app.services.accumulation_fund_service import (
+    fund_outstanding,
+    payout_fund_accounts_for_year,
+)
+from app.services.attendance_loader import PAYROLL_TARGET_POSITIONS, load_attendance_entries
+from app.services.iiko_revenue import fetch_daily_revenue
 from app.services.payroll_calculator import (
+    DAILY_REVENUE_CONFIG_KEY,
     calculate_payroll_lines,
     decimal,
     deduplicate_issues,
@@ -38,12 +47,92 @@ class PayrollConflictError(RuntimeError):
     pass
 
 
+REVENUE_CACHE_DISPLAY_NAME = "Дневная выручка iiko"
+
+
 def compute_next_payroll_period_dates(today: date) -> tuple[date, date, date]:
     days_since_payday = (today.weekday() - 1) % 7
     payroll_date = today - timedelta(days=days_since_payday)
     start_date = payroll_date - timedelta(days=7)
     end_date = payroll_date - timedelta(days=1)
     return start_date, end_date, payroll_date
+
+
+async def ensure_daily_revenue_cached(
+    session: AsyncSession,
+    date_from: date,
+    date_to: date,
+    *,
+    force_refresh: bool = False,
+) -> dict[date, Decimal]:
+    setting = await session.scalar(
+        select(AppSetting).where(AppSetting.key == DAILY_REVENUE_CONFIG_KEY)
+    )
+    cached_value = (
+        setting.value if setting is not None and isinstance(setting.value, Mapping) else {}
+    )
+    cached = {str(key): str(value) for key, value in cached_value.items()}
+    requested_dates = list(iter_dates(date_from, date_to))
+
+    if not force_refresh and all(work_date.isoformat() in cached for work_date in requested_dates):
+        return {work_date: decimal(cached[work_date.isoformat()]) for work_date in requested_dates}
+
+    fetched = await fetch_daily_revenue(session, date_from, date_to)
+    fetched_for_range = {
+        work_date.isoformat(): str(fetched.get(work_date, Decimal("0")))
+        for work_date in requested_dates
+    }
+    merged = cached | fetched_for_range
+    await write_daily_revenue_cache(session, setting, merged)
+    return {
+        work_date: decimal(fetched_for_range[work_date.isoformat()])
+        for work_date in requested_dates
+    }
+
+
+async def write_daily_revenue_cache(
+    session: AsyncSession,
+    setting: AppSetting | None,
+    value: dict[str, str],
+) -> None:
+    old_value = setting.value if setting is not None else None
+    if old_value == value:
+        return
+
+    if setting is None:
+        setting = AppSetting(
+            key=DAILY_REVENUE_CONFIG_KEY,
+            value=value,
+            value_type="object",
+            category="payroll",
+            display_name=REVENUE_CACHE_DISPLAY_NAME,
+            description="Кэш дневной выручки из iiko OLAP для расчёта процента ЗП.",
+            widget_type="json",
+            widget_options=None,
+            unit="₽",
+        )
+        session.add(setting)
+        await session.flush()
+    else:
+        setting.value = value
+        setting.updated_at = datetime.now(UTC)
+
+    session.add(
+        AppSettingHistory(
+            setting_id=setting.id,
+            old_value=old_value,
+            new_value=value,
+            changed_by_user_id=None,
+        )
+    )
+    await session.flush()
+
+
+def iter_dates(date_from: date, date_to: date) -> Iterable[date]:
+    current = date_from
+    while current <= date_to:
+        yield current
+        current += timedelta(days=1)
 
 
 async def auto_create_next_period(
@@ -89,6 +178,7 @@ async def run_payroll(
     period_id: uuid.UUID,
     *,
     iiko_records: Iterable[Mapping[str, Any]] | None = None,
+    force_refresh: bool = False,
 ) -> PayrollRun:
     period = await session.get(PayrollPeriod, period_id)
     if period is None:
@@ -105,14 +195,45 @@ async def run_payroll(
     if finalized_run is not None:
         raise PayrollConflictError("Payroll run is finalized")
 
-    run = PayrollRun(
-        period_id=period.id,
-        started_at=datetime.now(UTC),
-        status="running",
-        blocking_issues=[],
-        summary={},
+    # Upsert: переиспользуем последний незафинализированный run для этого периода,
+    # чтобы пересчёт не плодил дубликаты строк в payroll_run.
+    existing_run = await session.scalar(
+        select(PayrollRun)
+        .where(PayrollRun.period_id == period.id)
+        .order_by(PayrollRun.started_at.desc())
+        .limit(1)
     )
-    session.add(run)
+    line_deposit_overrides: dict[tuple[uuid.UUID, str], dict[str, Any]] = {}
+    if existing_run is not None:
+        line_deposit_overrides = await load_line_deposit_overrides(session, existing_run.id)
+        # Очищаем линии прошлой попытки расчёта — они будут пересозданы.
+        await session.execute(
+            text("DELETE FROM payroll_line WHERE run_id = :run_id"),
+            {"run_id": existing_run.id},
+        )
+        # Удаляем превью-транзакции прошлой попытки расчёта. Они НЕ влияли на balance
+        # (см. update_deposits_and_fund — balance меняется только в finalize),
+        # так что откат balance тут не нужен. Только если run уже был finalized —
+        # но это блокируется выше (raise PayrollConflictError).
+        await session.execute(
+            text("DELETE FROM deposit_transaction WHERE run_id = :run_id"),
+            {"run_id": existing_run.id},
+        )
+        existing_run.started_at = datetime.now(UTC)
+        existing_run.finished_at = None
+        existing_run.status = "running"
+        existing_run.blocking_issues = []
+        existing_run.summary = {}
+        run = existing_run
+    else:
+        run = PayrollRun(
+            period_id=period.id,
+            started_at=datetime.now(UTC),
+            status="running",
+            blocking_issues=[],
+            summary={},
+        )
+        session.add(run)
     await session.flush()
 
     try:
@@ -127,7 +248,19 @@ async def run_payroll(
             await session.refresh(run)
             return run
 
-        calculation = await calculate_payroll_lines(session, period, run.id, entries)
+        await ensure_daily_revenue_cached(
+            session,
+            period.start_date,
+            period.end_date,
+            force_refresh=force_refresh,
+        )
+        calculation = await calculate_payroll_lines(
+            session,
+            period,
+            run.id,
+            entries,
+            line_deposit_overrides=line_deposit_overrides,
+        )
         if calculation.blocking_issues:
             run.status = "blocked"
             run.finished_at = datetime.now(UTC)
@@ -155,6 +288,38 @@ async def run_payroll(
         run.summary = {"error": str(exc)[:500]}
         await session.commit()
         raise
+
+
+async def load_line_deposit_overrides(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+) -> dict[tuple[uuid.UUID, str], dict[str, Any]]:
+    result = await session.scalars(
+        select(PayrollLine).where(
+            PayrollLine.run_id == run_id,
+            or_(
+                PayrollLine.deposit_excluded_for_run.is_(True),
+                PayrollLine.deposit_exclusion_reason.is_not(None),
+            ),
+        )
+    )
+    return line_deposit_overrides_from_lines(result.all())
+
+
+def line_deposit_overrides_from_lines(
+    lines: Iterable[PayrollLine],
+) -> dict[tuple[uuid.UUID, str], dict[str, Any]]:
+    overrides: dict[tuple[uuid.UUID, str], dict[str, Any]] = {}
+    for line in lines:
+        excluded = bool(getattr(line, "deposit_excluded_for_run", False))
+        reason = clean_optional_text(getattr(line, "deposit_exclusion_reason", None))
+        if not excluded and reason is None:
+            continue
+        overrides[(line.employee_id, line.role)] = {
+            "deposit_excluded_for_run": excluded,
+            "deposit_exclusion_reason": reason,
+        }
+    return overrides
 
 
 async def collect_blocking_issues(
@@ -225,13 +390,10 @@ async def update_deposits_and_fund(
         amount = decimal((line.components or {}).get("deposit_withholding", 0))
         if amount <= 0:
             continue
-        account = deposit_accounts.get(line.employee_id)
-        if account is None:
-            account = DepositAccount(employee_id=line.employee_id, balance=Decimal("0"))
-            session.add(account)
-            deposit_accounts[line.employee_id] = account
-        account.balance = decimal(account.balance) + amount
-        account.last_updated = now
+        # Транзакция создаётся как «превью» расчёта (status = completed, не finalized).
+        # Balance счёта НЕ меняем — это произойдёт только в finalize_payroll_run.
+        # До финализации Исходные данные / API GET /deposits должны показывать «истинный»
+        # баланс (initial + ручные операции), а не накопленные но ещё не выплаченные.
         transaction = DepositTransaction(
             employee_id=line.employee_id,
             run_id=run.id,
@@ -253,8 +415,8 @@ async def update_deposits_and_fund(
     )
     deposit_transactions.extend(write_off_transactions)
 
-    fund_accrual_total = await accrue_fund(session, period, lines)
-    fund_payout_total = await payout_previous_year_fund_if_due(session, period)
+    fund_accrual_total = await accrue_fund(session, period, lines, run)
+    fund_payout_total = await payout_previous_year_fund_if_due(session, period, run)
 
     return {
         "deposit_transaction_count": len(deposit_transactions),
@@ -373,17 +535,86 @@ async def accrue_fund(
     session: AsyncSession,
     period: PayrollPeriod,
     lines: Iterable[PayrollLine],
+    run: PayrollRun,
 ) -> Decimal:
+    await reset_fund_accruals_for_run(session, run.id)
+    lines = list(lines)
+    employee_ids = {
+        line.employee_id for line in lines if decimal(line.fund_accrual) > Decimal("0")
+    }
+    employees_by_id: dict[uuid.UUID, Employee] = {}
+    if employee_ids:
+        employees_by_id = {
+            employee.id: employee
+            for employee in (
+                await session.scalars(select(Employee).where(Employee.id.in_(employee_ids)))
+            ).all()
+        }
     total = Decimal("0")
+    now = datetime.now(UTC)
     for line in lines:
         amount = decimal(line.fund_accrual)
         if amount <= 0:
             continue
+        employee = employees_by_id.get(line.employee_id)
+        if employee is not None and employee.position not in PAYROLL_TARGET_POSITIONS:
+            continue
         account = await get_or_create_fund_account(session, line.employee_id, period.end_date.year)
         account.accumulated_amount = decimal(account.accumulated_amount) + amount
         account.status = "active"
+        base_pay = decimal(line.base_pay)
+        rate = (amount / base_pay) if base_pay > 0 else Decimal("0")
+        session.add(
+            AccumulationFundTransaction(
+                id=uuid.uuid4(),
+                account_id=account.id,
+                employee_id=line.employee_id,
+                year=period.end_date.year,
+                run_id=run.id,
+                transaction_type="accrual",
+                amount=amount,
+                rate_percent=rate.quantize(Decimal("0.00001")),
+                base_pay_amount=base_pay,
+                created_at=now,
+            )
+        )
         total += amount
     return total
+
+
+async def reset_fund_accruals_for_run(session: AsyncSession, run_id: uuid.UUID) -> None:
+    transactions = (
+        await session.scalars(
+            select(AccumulationFundTransaction)
+            .where(
+                AccumulationFundTransaction.run_id == run_id,
+                AccumulationFundTransaction.transaction_type == "accrual",
+            )
+            .with_for_update()
+        )
+    ).all()
+    if not transactions:
+        return
+    account_ids = {transaction.account_id for transaction in transactions}
+    accounts = {
+        account.id: account
+        for account in (
+            await session.scalars(
+                select(AccumulationFundAccount)
+                .where(AccumulationFundAccount.id.in_(account_ids))
+                .with_for_update()
+            )
+        ).all()
+    }
+    for transaction in transactions:
+        account = accounts.get(transaction.account_id)
+        if account is not None:
+            account.accumulated_amount = max(
+                decimal(account.accumulated_amount) - decimal(transaction.amount),
+                Decimal("0"),
+            )
+        await session.delete(transaction)
+    await session.flush()
 
 
 async def get_or_create_fund_account(
@@ -404,6 +635,7 @@ async def get_or_create_fund_account(
         year=year,
         accumulated_amount=Decimal("0"),
         paid_out_amount=Decimal("0"),
+        forfeited_amount=Decimal("0"),
         status="active",
     )
     session.add(account)
@@ -414,31 +646,30 @@ async def get_or_create_fund_account(
 async def payout_previous_year_fund_if_due(
     session: AsyncSession,
     period: PayrollPeriod,
+    run: PayrollRun,
 ) -> Decimal:
-    from app.services.payroll_calculator import load_payroll_settings
-
-    settings = await load_payroll_settings(session)
-    payment_day = str(settings.get("payroll.deposit_fund_payment_date", "01-15"))
-    if period.payroll_date.strftime("%m-%d") != payment_day:
+    payment_date = date(period.payroll_date.year, 1, 15)
+    if not (period.start_date <= payment_date <= period.end_date):
         return Decimal("0")
-
-    result = await session.scalars(
-        select(AccumulationFundAccount).where(
-            AccumulationFundAccount.year == period.payroll_date.year - 1,
-            AccumulationFundAccount.status == "active",
-        )
+    target_year = payment_date.year - 1
+    result = await payout_fund_accounts_for_year(
+        session,
+        target_year,
+        run_id=run.id,
+        comment=f"Выплата фонда за {target_year} год",
     )
-    return apply_fund_payouts_if_due(result.all(), period.payroll_date, payment_day)
+    return result.total_paid_out
 
 
 def apply_fund_payouts_to_accounts(accounts: Iterable[AccumulationFundAccount]) -> Decimal:
     total = Decimal("0")
     for account in accounts:
-        amount = decimal(account.accumulated_amount) - decimal(account.paid_out_amount)
+        amount = fund_outstanding(account)
         if amount <= 0:
             continue
         account.paid_out_amount = decimal(account.paid_out_amount) + amount
         account.status = "paid_out"
+        account.paid_out_at = datetime.now(UTC)
         total += amount
     return total
 
@@ -476,6 +707,36 @@ async def finalize_payroll_run(
         raise PayrollConflictError("Payroll period is already finalized")
 
     now = datetime.now(UTC)
+
+    # Применяем deposit-транзакции этого run'а к balance счетов.
+    # До финализации они существовали как «превью» (см. update_deposits_and_fund),
+    # сейчас становятся реальными движениями денег.
+    run_transactions = (
+        await session.scalars(
+            select(DepositTransaction).where(DepositTransaction.run_id == run.id)
+        )
+    ).all()
+    if run_transactions:
+        employee_ids = {tx.employee_id for tx in run_transactions}
+        accounts = await get_deposit_accounts(session, employee_ids)
+        for tx in run_transactions:
+            account = accounts.get(tx.employee_id)
+            if account is None:
+                account = DepositAccount(
+                    employee_id=tx.employee_id,
+                    balance=Decimal("0"),
+                    initial_balance=Decimal("0"),
+                )
+                session.add(account)
+                accounts[tx.employee_id] = account
+                await session.flush()
+            delta = decimal(tx.amount)
+            if tx.transaction_type == "accrual":
+                account.balance = decimal(account.balance) + delta
+            else:
+                account.balance = decimal(account.balance) - delta
+            account.last_updated = now
+
     run.status = "finalized"
     run.finished_at = run.finished_at or now
     period.status = "finalized"
@@ -551,3 +812,10 @@ def serialize_run(run: PayrollRun, period: PayrollPeriod | None = None) -> dict[
 
 def summarize_persisted_lines(lines: Iterable[PayrollLine]) -> dict[str, Any]:
     return summarize_lines(lines)
+
+
+def clean_optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
