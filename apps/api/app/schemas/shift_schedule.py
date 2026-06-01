@@ -98,6 +98,20 @@ class ScheduleRead(BaseModel):
     shifts: list[ScheduledShiftRead] = Field(default_factory=list)
 
 
+class ScheduleLedgerEntryRead(BaseModel):
+    id: uuid.UUID
+    business_date: date
+    employee_id: uuid.UUID
+    employee_full_name: str
+    position: str
+    payroll_role: str | None = None
+    station_code: str | None = None
+    opened_at: datetime
+    closed_at: datetime | None = None
+    minutes_worked: int
+    is_closed: bool
+
+
 class EmployeeRosterAllowanceRead(BaseModel):
     senior: bool
     deputy: bool

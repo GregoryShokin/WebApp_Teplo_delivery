@@ -417,6 +417,115 @@ def test_migrations_upgrade_and_downgrade(alembic_cfg: Config, postgres_availabl
     command.downgrade(alembic_cfg, "base")
 
 
+async def test_migration_renames_existing_shaurma_to_hot_section(
+    alembic_cfg: Config,
+    postgres_available: None,
+) -> None:
+    employee_id = uuid.uuid4()
+    schedule_id = uuid.uuid4()
+    shift_id = uuid.uuid4()
+    command.downgrade(alembic_cfg, "base")
+    command.upgrade(alembic_cfg, "0037_shift_allowance_override")
+
+    engine = create_async_engine(TEST_DATABASE_URL)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    """
+                    insert into employee (
+                        id,
+                        full_name,
+                        iiko_id,
+                        position,
+                        status
+                    )
+                    values (
+                        :id,
+                        'Cook Shaurma',
+                        'iiko-cook-shaurma',
+                        'Повар',
+                        'active'
+                    )
+                    """
+                ),
+                {"id": employee_id},
+            )
+            await conn.execute(
+                text(
+                    """
+                    insert into shift_schedule (
+                        id,
+                        date_start,
+                        date_end,
+                        status
+                    )
+                    values (:id, :date_start, :date_end, 'draft')
+                    """
+                ),
+                {
+                    "id": schedule_id,
+                    "date_start": date(2026, 6, 1),
+                    "date_end": date(2026, 6, 30),
+                },
+            )
+            await conn.execute(
+                text(
+                    """
+                    insert into scheduled_shift (
+                        id,
+                        shift_schedule_id,
+                        business_date,
+                        employee_id,
+                        payroll_role,
+                        station_code,
+                        planned_start_at,
+                        planned_end_at
+                    )
+                    values (
+                        :id,
+                        :shift_schedule_id,
+                        :business_date,
+                        :employee_id,
+                        'shawarma',
+                        'Шаурма',
+                        :planned_start_at,
+                        :planned_end_at
+                    )
+                    """
+                ),
+                {
+                    "id": shift_id,
+                    "shift_schedule_id": schedule_id,
+                    "business_date": date(2026, 6, 2),
+                    "employee_id": employee_id,
+                    "planned_start_at": datetime(2026, 6, 2, 10, 0, tzinfo=UTC),
+                    "planned_end_at": datetime(2026, 6, 2, 22, 0, tzinfo=UTC),
+                },
+            )
+    finally:
+        await engine.dispose()
+
+    command.upgrade(alembic_cfg, "head")
+
+    engine = create_async_engine(TEST_DATABASE_URL)
+    try:
+        async with engine.connect() as conn:
+            shaurma_rows = await conn.scalar(
+                text("select count(*) from scheduled_shift where station_code = 'Шаурма'")
+            )
+            station_code = await conn.scalar(
+                text("select station_code from scheduled_shift where id = :id"),
+                {"id": shift_id},
+            )
+    finally:
+        await engine.dispose()
+        command.downgrade(alembic_cfg, "base")
+
+    assert shaurma_rows == 0
+    assert station_code == "Горячий цех"
+
+
 async def test_pin_origin_migration_backfills_iiko_employees_without_local_pin(
     alembic_cfg: Config,
     postgres_available: None,

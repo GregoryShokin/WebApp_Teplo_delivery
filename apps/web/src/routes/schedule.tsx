@@ -6,8 +6,10 @@ import {
   Calculator,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   CircleSlash,
   Copy,
   ExternalLink,
@@ -21,7 +23,15 @@ import {
   Send,
   Users,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
 import { toast } from "sonner";
 
 import {
@@ -34,12 +44,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -82,6 +86,7 @@ import {
   getLatestRun,
   getPlanFact,
   getRun,
+  getScheduleLedger,
   getSchedule,
   listRuns,
   listSchedules,
@@ -110,13 +115,19 @@ import {
   type ShiftCostEstimateRead,
   type ShiftAllowanceOverrideRead,
   type ScheduledShiftRead,
+  type ScheduleLedgerEntryRead,
   type ScheduledShiftUpsertPayload,
 } from "@/lib/api";
+import {
+  rangeForPreset,
+  shiftRange,
+  type PeriodPreset,
+  type PeriodRange,
+} from "@/lib/date-presets";
 import { PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
 import { cn } from "@/lib/utils";
 
 type ViewMode = "employees" | "stations" | "planFact";
-type ScaleMode = "week" | "month";
 type PlanFactTableMode = "days" | "employees";
 type SortDirection = "asc" | "desc";
 type DaySortKey = "date" | "hours" | "cost" | "status";
@@ -171,7 +182,7 @@ const DAY_CELL_WIDTH = 128;
 const EMPLOYEE_COLUMN_WIDTH = 230;
 const STATION_COLUMN_WIDTH = 170;
 const MOSCOW_OFFSET = "+03:00";
-const stationOptions = ["Пицца", "Роллы", "Горячий цех", "Касса", "Шаурма"];
+const stationOptions = ["Пицца", "Роллы", "Горячий цех", "Касса"];
 const stationOrder = [...stationOptions, "(без станции)"];
 const weekdayLabels = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
@@ -183,13 +194,24 @@ const statusLabels: Record<ScheduleRead["status"], string> = {
 
 export function ScheduleRoute() {
   const queryClient = useQueryClient();
-  const initialWeekStart = useMemo(() => startOfTuesdayWeek(new Date()), []);
-  const [anchorDate, setAnchorDate] = useState(() => toIsoDate(initialWeekStart));
+  const storedPeriodPreset = useMemo(readStoredSchedulePreset, []);
+  const [periodPreset, setPeriodPreset] = useLocalStorageState<PeriodPreset>(
+    "schedule.preset",
+    () => storedPeriodPreset ?? "month",
+    isPeriodPreset,
+    { hydrateFromStorage: false },
+  );
+  const [periodRange, setPeriodRange] = useLocalStorageState<PeriodRange>(
+    "schedule.range",
+    () => initialScheduleRange(storedPeriodPreset),
+    isPeriodRange,
+    { hydrateFromStorage: false },
+  );
   const [viewMode, setViewMode] = useState<ViewMode>("employees");
-  const [scaleMode, setScaleMode] = useState<ScaleMode>("week");
   const [planFactTableMode, setPlanFactTableMode] = useState<PlanFactTableMode>("days");
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createPeriodPreset, setCreatePeriodPreset] = useState<PeriodPreset>("month");
   const [createDraft, setCreateDraft] = useState<ScheduleCreatePayload>(() =>
     defaultScheduleDraft(),
   );
@@ -203,17 +225,19 @@ export function ScheduleRoute() {
   const [forceRefreshConfirmOpen, setForceRefreshConfirmOpen] = useState(false);
   const [selectedCostRunId, setSelectedCostRunId] = useState<string | null>(null);
   const [costHistoryOpen, setCostHistoryOpen] = useState(false);
+  const [forecastSummaryCollapsed, setForecastSummaryCollapsed] = useLocalStorageState<boolean>(
+    "schedule.forecastSummaryCollapsed",
+    false,
+    isBoolean,
+  );
   const warmedScheduleIds = useRef(new Set<string>());
   const [copyDialog, setCopyDialog] = useState<CopyWeekState>(() => ({
     open: false,
     targetMode: "next",
-    customDate: toIsoDate(addDays(initialWeekStart, 7)),
+    customDate: toIsoDate(addDays(startOfTuesdayWeek(parseIsoDate(periodRange.from)), 7)),
   }));
 
-  const visibleDays = useMemo(
-    () => (scaleMode === "week" ? buildWeekDays(anchorDate) : buildMonthDays(anchorDate)),
-    [anchorDate, scaleMode],
-  );
+  const visibleDays = useMemo(() => buildRangeDays(periodRange), [periodRange]);
   const forecastRange = useMemo(
     () => ({
       from: visibleDays[0],
@@ -221,13 +245,7 @@ export function ScheduleRoute() {
     }),
     [visibleDays],
   );
-  const scheduleWindow = useMemo(() => {
-    const anchor = parseIsoDate(anchorDate);
-    return {
-      from: toIsoDate(addDays(anchor, -84)),
-      to: toIsoDate(addDays(anchor, 84)),
-    };
-  }, [anchorDate]);
+  const scheduleWindow = periodRange;
 
   const schedulesQuery = useQuery({
     queryKey: ["schedules", scheduleWindow.from, scheduleWindow.to],
@@ -245,6 +263,14 @@ export function ScheduleRoute() {
     queryKey: ["schedule", selectedScheduleId],
     queryFn: () => getSchedule(selectedScheduleId ?? ""),
     enabled: Boolean(selectedScheduleId),
+  });
+  const ledgerQuery = useQuery({
+    queryKey: ["schedule-ledger", forecastRange.from, forecastRange.to],
+    queryFn: () =>
+      getScheduleLedger({
+        date_from: forecastRange.from,
+        date_to: forecastRange.to,
+      }),
   });
   const forecastQuery = useQuery({
     queryKey: ["forecast", forecastRange.from, forecastRange.to],
@@ -284,7 +310,13 @@ export function ScheduleRoute() {
     () => [...(rosterQuery.data ?? [])].sort(compareRosterRows),
     [rosterQuery.data],
   );
-  const currentSchedule = scheduleQuery.data ?? null;
+  const currentSchedule = selectedScheduleId ? (scheduleQuery.data ?? null) : null;
+  const currentScheduleRange: PeriodRange = currentSchedule
+    ? {
+        from: currentSchedule.date_start,
+        to: currentSchedule.date_end,
+      }
+    : periodRange;
   const cashierOverridesQuery = useQuery({
     queryKey: ["cashier-allowance-overrides", selectedScheduleId],
     queryFn: () => listCashierAllowanceOverrides(selectedScheduleId ?? ""),
@@ -317,24 +349,22 @@ export function ScheduleRoute() {
     [cashierOverridesQuery.data],
   );
   const displayedCostRun = selectedCostRunId
-    ? selectedCostQuery.data ?? null
-    : latestCostQuery.data ?? null;
+    ? (selectedCostQuery.data ?? null)
+    : (latestCostQuery.data ?? null);
   const costEstimatesByShiftId = useMemo(
     () => indexCostEstimatesByShift(displayedCostRun?.estimates ?? []),
     [displayedCostRun?.estimates],
   );
   const isDraft = currentSchedule?.status === "draft";
   const isLocked = currentSchedule != null && !isDraft;
-  const selectedWeekStart = toIsoDate(startOfTuesdayWeek(parseIsoDate(anchorDate)));
+  const selectedWeekStart = toIsoDate(startOfTuesdayWeek(parseIsoDate(periodRange.from)));
   const selectedWeekEnd = toIsoDate(addDays(parseIsoDate(selectedWeekStart), 6));
   const leadingWidth = viewMode === "stations" ? STATION_COLUMN_WIDTH : EMPLOYEE_COLUMN_WIDTH;
   const shiftDialogAllowanceAssignment = shiftDialog
     ? cashierAllowanceByDay.get(shiftDialog.businessDate)
     : undefined;
   const shiftDialogAllowanceQuery = shiftDialog
-    ? cashierAllowanceResolveQueries[
-        cashierAllowanceResolveDays.indexOf(shiftDialog.businessDate)
-      ]
+    ? cashierAllowanceResolveQueries[cashierAllowanceResolveDays.indexOf(shiftDialog.businessDate)]
     : undefined;
   const shiftDialogAllowanceLoading =
     Boolean(shiftDialogAllowanceQuery?.isLoading) || cashierOverridesQuery.isLoading;
@@ -343,7 +373,18 @@ export function ScheduleRoute() {
     if (!schedulesQuery.data) {
       return;
     }
-    if (selectedScheduleId && schedules.some((schedule) => schedule.id === selectedScheduleId)) {
+    const selectedSchedule = selectedScheduleId
+      ? schedules.find((schedule) => schedule.id === selectedScheduleId)
+      : null;
+    if (
+      selectedSchedule &&
+      rangesOverlap(
+        selectedSchedule.date_start,
+        selectedSchedule.date_end,
+        visibleDays[0],
+        visibleDays[visibleDays.length - 1],
+      )
+    ) {
       return;
     }
     setSelectedScheduleId(pickDefaultSchedule(schedules, visibleDays)?.id ?? null);
@@ -378,11 +419,7 @@ export function ScheduleRoute() {
       payload: CashierAllowanceOverridePayload;
       overrideId?: string | null;
     }) =>
-      upsertCashierAllowanceOverride(
-        variables.scheduleId,
-        variables.payload,
-        variables.overrideId,
-      ),
+      upsertCashierAllowanceOverride(variables.scheduleId, variables.payload, variables.overrideId),
     onSuccess: async () => {
       toast.success("Выбор надбавки сохранён");
       await invalidateCashierAllowance();
@@ -430,8 +467,7 @@ export function ScheduleRoute() {
   });
 
   const deleteShiftMutation = useMutation({
-    mutationFn: (shift: ScheduledShiftRead) =>
-      deleteShift(currentSchedule?.id ?? "", shift.id),
+    mutationFn: (shift: ScheduledShiftRead) => deleteShift(currentSchedule?.id ?? "", shift.id),
     onSuccess: async () => {
       toast.success("Смена удалена");
       setDeleteTarget(null);
@@ -635,9 +671,49 @@ export function ScheduleRoute() {
     await queryClient.invalidateQueries({ queryKey: ["cost-forecast", selectedScheduleId] });
   }
 
-  function openCreateDialog() {
-    setCreateDraft(defaultScheduleDraft());
+  function openCreateDialog(initialRange?: PeriodRange, initialPreset: PeriodPreset = "month") {
+    const draftRange = initialRange ?? rangeForPreset("month", new Date())!;
+    setCreatePeriodPreset(initialPreset);
+    setCreateDraft(defaultScheduleDraft(draftRange));
     setCreateOpen(true);
+  }
+
+  function handlePeriodPresetChange(nextPreset: PeriodPreset) {
+    setPeriodPreset(nextPreset);
+    if (nextPreset !== "custom") {
+      setPeriodRange(rangeForPreset(nextPreset, new Date())!);
+    }
+  }
+
+  function handlePeriodRangeApply(nextRange: PeriodRange) {
+    setPeriodRange(nextRange);
+  }
+
+  function handlePeriodNavigate(direction: -1 | 1) {
+    if (periodPreset === "custom") {
+      return;
+    }
+    setPeriodRange((current) => shiftRange(periodPreset, current, direction));
+  }
+
+  function handleCreatePeriodPresetChange(nextPreset: PeriodPreset) {
+    setCreatePeriodPreset(nextPreset);
+    if (nextPreset !== "custom") {
+      const nextRange = rangeForPreset(nextPreset, new Date())!;
+      setCreateDraft((current) => ({
+        ...current,
+        date_start: nextRange.from,
+        date_end: nextRange.to,
+      }));
+    }
+  }
+
+  function handleCreatePeriodRangeApply(nextRange: PeriodRange) {
+    setCreateDraft((current) => ({
+      ...current,
+      date_start: nextRange.from,
+      date_end: nextRange.to,
+    }));
   }
 
   function openShiftDialog(options: {
@@ -650,9 +726,7 @@ export function ScheduleRoute() {
       return;
     }
     const shift = options.shift ?? null;
-    const employee = roster.find(
-      (item) => item.id === (shift?.employee_id ?? options.employeeId),
-    );
+    const employee = roster.find((item) => item.id === (shift?.employee_id ?? options.employeeId));
     const fallbackStation =
       options.stationCode !== undefined
         ? options.stationCode
@@ -661,10 +735,12 @@ export function ScheduleRoute() {
           : defaultStationForEmployee(employee);
     const fallbackRole = shift
       ? roleForShiftOrPrimary(shift, employee)
-      : defaultRoleForEmployeeAtStation(employee, fallbackStation) ??
+      : (defaultRoleForEmployeeAtStation(employee, fallbackStation) ??
         employee?.primary_payroll_role ??
-        null;
-    const existingOverride = cashierOverridesByDay.get(shift?.business_date ?? options.businessDate);
+        null);
+    const existingOverride = cashierOverridesByDay.get(
+      shift?.business_date ?? options.businessDate,
+    );
     setShiftDialog({
       mode: shift ? "edit" : "create",
       shift,
@@ -738,10 +814,7 @@ export function ScheduleRoute() {
         employee_id: shiftDialog.employeeId,
         payroll_role: payrollRole,
         station_code: shiftDialog.stationCode,
-        planned_start_at: composeDateTime(
-          shiftDialog.businessDate,
-          shiftDialog.startTime,
-        ),
+        planned_start_at: composeDateTime(shiftDialog.businessDate, shiftDialog.startTime),
         planned_end_at: composeEndDateTime(
           shiftDialog.businessDate,
           shiftDialog.startTime,
@@ -838,33 +911,37 @@ export function ScheduleRoute() {
     removeForecastOverrideMutation.mutate(forecastDialog.forecast.business_date);
   }
 
-  function movePeriod(days: number) {
-    setAnchorDate((current) => toIsoDate(addDays(parseIsoDate(current), days)));
-  }
-
   const shiftByEmployeeDay = useMemo(
     () => indexShiftsByEmployeeDay(currentSchedule?.shifts ?? []),
     [currentSchedule?.shifts],
   );
+  const todayIso = useMemo(() => toIsoDate(new Date()), []);
+  const ledgerEntries = ledgerQuery.data ?? [];
+  const ledgerByEmployeeDay = useMemo(
+    () => indexLedgerByEmployeeDay(ledgerEntries),
+    [ledgerEntries],
+  );
+  const ledgerByStationDay = useMemo(() => indexLedgerByStationDay(ledgerEntries), [ledgerEntries]);
+  const ledgerByDay = useMemo(() => indexLedgerByDay(ledgerEntries), [ledgerEntries]);
   const stationRows = useMemo(
-    () => buildStationRows(currentSchedule?.shifts ?? []),
-    [currentSchedule?.shifts],
+    () => buildStationRows(currentSchedule?.shifts ?? [], ledgerEntries),
+    [currentSchedule?.shifts, ledgerEntries],
   );
   const hasPublishedOverlap = useMemo(
     () =>
       Boolean(
         currentSchedule &&
-          schedules.some(
-            (schedule) =>
-              schedule.id !== currentSchedule.id &&
-              schedule.status === "published" &&
-              rangesOverlap(
-                schedule.date_start,
-                schedule.date_end,
-                currentSchedule.date_start,
-                currentSchedule.date_end,
-              ),
-          ),
+        schedules.some(
+          (schedule) =>
+            schedule.id !== currentSchedule.id &&
+            schedule.status === "published" &&
+            rangesOverlap(
+              schedule.date_start,
+              schedule.date_end,
+              currentSchedule.date_start,
+              currentSchedule.date_end,
+            ),
+        ),
       ),
     [currentSchedule, schedules],
   );
@@ -875,30 +952,31 @@ export function ScheduleRoute() {
         title="График сотрудников"
         action={
           <>
-            <Button onClick={openCreateDialog} variant="outline">
+            <Button onClick={() => openCreateDialog()} variant="outline">
               <Plus size={16} aria-hidden="true" />
               Создать график
             </Button>
-            <Button
-              disabled={!currentSchedule || currentSchedule.status !== "published"}
-              onClick={() => setNewVersionOpen(true)}
-              variant="outline"
-            >
-              <Copy size={16} aria-hidden="true" />
-              Новая версия
-            </Button>
-            {isDraft ? (
+            <InlineTooltip content="Создать редактируемую копию опубликованного графика. Текущий остаётся опубликованным до публикации копии.">
               <Button
-                disabled={publishMutation.isPending}
-                onClick={() => setPublishOpen(true)}
+                disabled={!currentSchedule || currentSchedule.status !== "published"}
+                onClick={() => setNewVersionOpen(true)}
+                variant="outline"
               >
-                {publishMutation.isPending ? (
-                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-                ) : (
-                  <Send size={16} aria-hidden="true" />
-                )}
-                Опубликовать
+                <Copy size={16} aria-hidden="true" />
+                Новая версия
               </Button>
+            </InlineTooltip>
+            {isDraft ? (
+              <InlineTooltip content="Перевести черновик в действующий план. После публикации график виден в расчётах стоимости, план-факт сверке, payroll. Редактирование возможно только через «Новую версию». Если в этот период уже есть опубликованный график, он будет помечен как замещённый.">
+                <Button disabled={publishMutation.isPending} onClick={() => setPublishOpen(true)}>
+                  {publishMutation.isPending ? (
+                    <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                  ) : (
+                    <Send size={16} aria-hidden="true" />
+                  )}
+                  Опубликовать
+                </Button>
+              </InlineTooltip>
             ) : null}
           </>
         }
@@ -907,7 +985,7 @@ export function ScheduleRoute() {
       <section className="flex flex-col gap-4 rounded-lg border bg-card p-4">
         <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_auto] xl:items-end">
           <div className="grid gap-2 sm:max-w-[520px]">
-            <Label>Период</Label>
+            <Label>График</Label>
             <Select
               disabled={schedules.length === 0}
               onValueChange={(value) => setSelectedScheduleId(value)}
@@ -966,38 +1044,8 @@ export function ScheduleRoute() {
               label="План-факт"
               onClick={() => setViewMode("planFact")}
             />
-            <div className="mx-1 h-6 w-px bg-border" />
-            <SegmentedButton
-              active={scaleMode === "week"}
-              label="Неделя"
-              onClick={() => setScaleMode("week")}
-            />
-            <SegmentedButton
-              active={scaleMode === "month"}
-              label="Месяц"
-              onClick={() => setScaleMode("month")}
-            />
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              aria-label="Предыдущий период"
-              onClick={() => movePeriod(scaleMode === "week" ? -7 : -30)}
-              size="icon"
-              variant="outline"
-            >
-              <ChevronLeft size={16} aria-hidden="true" />
-            </Button>
-            <div className="min-w-[178px] text-center text-sm font-medium">
-              {formatRange(visibleDays[0], visibleDays[visibleDays.length - 1])}
-            </div>
-            <Button
-              aria-label="Следующий период"
-              onClick={() => movePeriod(scaleMode === "week" ? 7 : 30)}
-              size="icon"
-              variant="outline"
-            >
-              <ChevronRight size={16} aria-hidden="true" />
-            </Button>
             <Button
               disabled={!isDraft || copyWeekMutation.isPending}
               onClick={() =>
@@ -1016,91 +1064,46 @@ export function ScheduleRoute() {
         </div>
       </section>
 
-      {currentSchedule && viewMode === "planFact" ? (
-        <Accordion>
-          <AccordionItem value="schedule-inputs">
-            <AccordionTrigger>
-              <span>Прогноз и стоимость</span>
-              <span className="text-xs font-normal text-muted-foreground">
-                {displayedCostRun ? `расчёт от ${formatDateTime(displayedCostRun.run_at)}` : "свернуть/развернуть"}
-              </span>
-            </AccordionTrigger>
-            <AccordionContent className="grid gap-4">
-              <RevenueForecastPanel
-                days={visibleDays}
-                forecasts={forecastQuery.data ?? []}
-                forceRefreshIiko={forceRefreshIiko}
-                isLoading={forecastQuery.isLoading || warmForecastMutation.isPending}
-                isRecomputing={recomputeForecastMutation.isPending}
-                leadingWidth={EMPLOYEE_COLUMN_WIDTH}
-                onCellClick={openForecastDialog}
-                onForceRefreshChange={setForceRefreshIiko}
-                onRecompute={requestForecastRecompute}
-              />
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-                <CostForecastPanel
-                  days={visibleDays}
-                  isLoading={
-                    latestCostQuery.isLoading ||
-                    (selectedCostRunId ? selectedCostQuery.isLoading : false)
-                  }
-                  isRecomputing={runCostForecastMutation.isPending}
-                  leadingWidth={EMPLOYEE_COLUMN_WIDTH}
-                  onOpenHistory={() => setCostHistoryOpen(true)}
-                  onRecompute={() => runCostForecastMutation.mutate()}
-                  run={displayedCostRun}
-                />
-                <BudgetSummaryPanel
-                  isRecomputing={runCostForecastMutation.isPending}
-                  onOpenHistory={() => setCostHistoryOpen(true)}
-                  onRecompute={() => runCostForecastMutation.mutate()}
-                  run={displayedCostRun}
-                />
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-      ) : currentSchedule ? (
-        <>
-          <RevenueForecastPanel
-            days={visibleDays}
-            forecasts={forecastQuery.data ?? []}
-            forceRefreshIiko={forceRefreshIiko}
-            isLoading={forecastQuery.isLoading || warmForecastMutation.isPending}
-            isRecomputing={recomputeForecastMutation.isPending}
-            leadingWidth={leadingWidth}
-            onCellClick={openForecastDialog}
-            onForceRefreshChange={setForceRefreshIiko}
-            onRecompute={requestForecastRecompute}
-          />
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <CostForecastPanel
-              days={visibleDays}
-              isLoading={
-                latestCostQuery.isLoading ||
-                (selectedCostRunId ? selectedCostQuery.isLoading : false)
-              }
-              isRecomputing={runCostForecastMutation.isPending}
-              leadingWidth={leadingWidth}
-              onOpenHistory={() => setCostHistoryOpen(true)}
-              onRecompute={() => runCostForecastMutation.mutate()}
-              run={displayedCostRun}
-            />
-            <BudgetSummaryPanel
-              isRecomputing={runCostForecastMutation.isPending}
-              onOpenHistory={() => setCostHistoryOpen(true)}
-              onRecompute={() => runCostForecastMutation.mutate()}
-              run={displayedCostRun}
-            />
-          </div>
-        </>
+      <PeriodToolbar
+        onCustomRangeApply={handlePeriodRangeApply}
+        onNavigate={handlePeriodNavigate}
+        onPresetChange={handlePeriodPresetChange}
+        preset={periodPreset}
+        range={periodRange}
+        title="Период просмотра"
+      />
+
+      {currentSchedule ? (
+        <ScheduleForecastGroup
+          collapsed={forecastSummaryCollapsed}
+          costRun={displayedCostRun}
+          days={visibleDays}
+          forecasts={forecastQuery.data ?? []}
+          forceRefreshIiko={forceRefreshIiko}
+          isCostLoading={
+            latestCostQuery.isLoading || (selectedCostRunId ? selectedCostQuery.isLoading : false)
+          }
+          isCostRecomputing={runCostForecastMutation.isPending}
+          isForecastLoading={forecastQuery.isLoading || warmForecastMutation.isPending}
+          isForecastRecomputing={recomputeForecastMutation.isPending}
+          leadingWidth={leadingWidth}
+          onCollapsedChange={setForecastSummaryCollapsed}
+          onCostHistoryOpen={() => setCostHistoryOpen(true)}
+          onCostRecompute={() => runCostForecastMutation.mutate()}
+          onForecastCellClick={openForecastDialog}
+          onForceRefreshChange={setForceRefreshIiko}
+          onForecastRecompute={requestForecastRecompute}
+        />
       ) : null}
 
       {!currentSchedule && !schedulesQuery.isLoading ? (
-        <EmptyState
-          action={<Button onClick={openCreateDialog}>Создать новый график</Button>}
-          icon={<CalendarDays className="h-5 w-5" aria-hidden="true" />}
-          title="Графика на этот период ещё нет. Создайте новый."
+        <NoSchedulePeriodGrid
+          days={visibleDays}
+          isLoading={rosterQuery.isLoading}
+          onCreate={() => openCreateDialog(periodRange, periodPreset)}
+          range={periodRange}
+          roster={roster}
+          viewMode={viewMode}
         />
       ) : viewMode === "planFact" ? (
         <PlanFactView
@@ -1114,6 +1117,8 @@ export function ScheduleRoute() {
           days={visibleDays}
           isLoading={scheduleQuery.isLoading || rosterQuery.isLoading}
           isLocked={isLocked}
+          ledgerByDay={ledgerByDay}
+          ledgerByEmployeeDay={ledgerByEmployeeDay}
           onEditShift={(shift) =>
             openShiftDialog({
               businessDate: shift.business_date,
@@ -1125,13 +1130,17 @@ export function ScheduleRoute() {
           costByShiftId={costEstimatesByShiftId}
           cashierAllowanceByDay={cashierAllowanceByDay}
           roster={roster}
+          scheduleRange={currentScheduleRange}
           shiftByEmployeeDay={shiftByEmployeeDay}
+          today={todayIso}
         />
       ) : (
         <StationScheduleGrid
           days={visibleDays}
           isLoading={scheduleQuery.isLoading}
           isLocked={isLocked}
+          ledgerByDay={ledgerByDay}
+          ledgerByStationDay={ledgerByStationDay}
           onCellClick={(station, day) =>
             openShiftDialog({
               businessDate: day,
@@ -1149,6 +1158,8 @@ export function ScheduleRoute() {
           cashierAllowanceByDay={cashierAllowanceByDay}
           roster={roster}
           rows={stationRows}
+          scheduleRange={currentScheduleRange}
+          today={todayIso}
         />
       )}
 
@@ -1157,8 +1168,11 @@ export function ScheduleRoute() {
         isSaving={createMutation.isPending}
         onChange={setCreateDraft}
         onOpenChange={setCreateOpen}
+        onPeriodRangeApply={handleCreatePeriodRangeApply}
+        onPeriodPresetChange={handleCreatePeriodPresetChange}
         onSubmit={() => createMutation.mutate(createDraft)}
         open={createOpen}
+        periodPreset={createPeriodPreset}
       />
 
       <ShiftDialog
@@ -1334,9 +1348,7 @@ export function ScheduleRoute() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Принудительно перечитать выручку из iiko?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Может занять до минуты.
-            </AlertDialogDescription>
+            <AlertDialogDescription>Может занять до минуты.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={recomputeForecastMutation.isPending}>
@@ -1355,6 +1367,289 @@ export function ScheduleRoute() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+const periodPresetLabels: Record<PeriodPreset, string> = {
+  week: "Неделя",
+  "2weeks": "2 недели",
+  month: "Месяц",
+  custom: "Кастом",
+};
+
+function PeriodToolbar({
+  className,
+  compact = false,
+  onCustomRangeApply,
+  onNavigate,
+  onPresetChange,
+  preset,
+  range,
+  title,
+}: {
+  className?: string;
+  compact?: boolean;
+  onCustomRangeApply: (range: PeriodRange) => void;
+  onNavigate?: (direction: -1 | 1) => void;
+  onPresetChange: (preset: PeriodPreset) => void;
+  preset: PeriodPreset;
+  range: PeriodRange;
+  title?: string;
+}) {
+  const [customDialogOpen, setCustomDialogOpen] = useState(false);
+  const [customFrom, setCustomFrom] = useState(range.from);
+  const [customTo, setCustomTo] = useState(range.to);
+  const showNavigation = Boolean(onNavigate);
+  const customRangeInvalid = !customFrom || !customTo || customFrom > customTo;
+
+  useEffect(() => {
+    if (!customDialogOpen) {
+      setCustomFrom(range.from);
+      setCustomTo(range.to);
+    }
+  }, [customDialogOpen, range.from, range.to]);
+
+  function openCustomDialog() {
+    setCustomFrom(range.from);
+    setCustomTo(range.to);
+    setCustomDialogOpen(true);
+  }
+
+  function handlePresetClick(nextPreset: PeriodPreset) {
+    if (nextPreset === "custom") {
+      openCustomDialog();
+      return;
+    }
+    onPresetChange(nextPreset);
+  }
+
+  function applyCustomRange() {
+    if (customRangeInvalid) {
+      return;
+    }
+    onCustomRangeApply({ from: customFrom, to: customTo });
+    onPresetChange("custom");
+    setCustomDialogOpen(false);
+  }
+
+  return (
+    <>
+      <section className={cn("grid gap-3 rounded-lg border bg-card p-4", className)}>
+        <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div className="grid gap-1">
+            {title ? (
+              <div className="text-sm font-medium text-muted-foreground">{title}</div>
+            ) : null}
+            <div className={cn("font-medium tabular-nums", compact ? "text-sm" : "text-base")}>
+              {formatRange(range.from, range.to)}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {showNavigation ? (
+              <Button
+                aria-label="Предыдущий период"
+                disabled={preset === "custom"}
+                onClick={() => onNavigate?.(-1)}
+                size="icon"
+                type="button"
+                variant="outline"
+              >
+                <ChevronLeft size={16} aria-hidden="true" />
+              </Button>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-1">
+              {(Object.keys(periodPresetLabels) as PeriodPreset[]).map((item) => (
+                <Button
+                  className={cn(
+                    "min-w-[86px]",
+                    preset === item && "border-primary bg-primary/10 text-primary",
+                  )}
+                  key={item}
+                  onClick={() => handlePresetClick(item)}
+                  size={compact ? "sm" : "default"}
+                  type="button"
+                  variant="outline"
+                >
+                  {periodPresetLabels[item]}
+                </Button>
+              ))}
+            </div>
+            {showNavigation ? (
+              <Button
+                aria-label="Следующий период"
+                disabled={preset === "custom"}
+                onClick={() => onNavigate?.(1)}
+                size="icon"
+                type="button"
+                variant="outline"
+              >
+                <ChevronRight size={16} aria-hidden="true" />
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      <Dialog open={customDialogOpen} onOpenChange={setCustomDialogOpen}>
+        <DialogContent className="sm:max-w-[460px] sm:rounded-xl">
+          <DialogHeader>
+            <DialogTitle>Произвольный период</DialogTitle>
+            <DialogDescription>
+              Выберите даты начала и окончания периода просмотра.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-1">
+            <DatePopoverInput
+              id={compact ? "create-custom-period-from" : "schedule-custom-period-from"}
+              label="С"
+              onChange={setCustomFrom}
+              value={customFrom}
+            />
+            <DatePopoverInput
+              id={compact ? "create-custom-period-to" : "schedule-custom-period-to"}
+              label="По"
+              onChange={setCustomTo}
+              value={customTo}
+            />
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setCustomDialogOpen(false)} type="button" variant="outline">
+              Отмена
+            </Button>
+            <Button disabled={customRangeInvalid} onClick={applyCustomRange} type="button">
+              Применить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function DatePopoverInput({
+  id,
+  label,
+  onChange,
+  value,
+}: {
+  id: string;
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-[44px_1fr] sm:items-center">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="relative">
+        <Button
+          aria-expanded={open}
+          className="w-full justify-start text-left font-normal tabular-nums"
+          onClick={() => setOpen((current) => !current)}
+          type="button"
+          variant="outline"
+        >
+          <CalendarDays size={16} aria-hidden="true" />
+          {value ? formatDate(value) : "Выберите дату"}
+        </Button>
+        {open ? (
+          <div className="absolute left-0 top-full z-50 mt-2 rounded-md border bg-popover p-3 shadow-lg">
+            <Input
+              autoFocus
+              id={id}
+              onBlur={() => setOpen(false)}
+              onChange={(event) => onChange(event.target.value)}
+              type="date"
+              value={value}
+            />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function NoSchedulePeriodGrid({
+  days,
+  isLoading,
+  onCreate,
+  range,
+  roster,
+  viewMode,
+}: {
+  days: string[];
+  isLoading: boolean;
+  onCreate: () => void;
+  range: PeriodRange;
+  roster: EmployeeRosterRow[];
+  viewMode: ViewMode;
+}) {
+  const isStations = viewMode === "stations";
+  const leadingWidth = isStations ? STATION_COLUMN_WIDTH : EMPLOYEE_COLUMN_WIDTH;
+  const rows = isStations
+    ? stationOptions.map((station) => ({ id: station, title: station, subtitle: "" }))
+    : roster.map((employee) => ({
+        id: employee.id,
+        title: employee.full_name,
+        subtitle: positionRoleLabel(employee.position, primaryRoleLabelSource(employee)),
+      }));
+  const minWidth = leadingWidth + days.length * DAY_CELL_WIDTH;
+
+  return (
+    <section className="overflow-hidden rounded-lg border bg-card">
+      <div className="flex flex-col items-center gap-3 border-b px-4 py-5 text-center">
+        <div>
+          <div className="font-medium">Графика на этот период нет</div>
+          <div className="mt-1 text-sm text-muted-foreground">
+            {formatRange(range.from, range.to)}
+          </div>
+        </div>
+        <Button onClick={onCreate} type="button">
+          <Plus size={16} aria-hidden="true" />
+          Создать график на {formatShortRange(range.from, range.to)}
+        </Button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="border-separate border-spacing-0 text-sm" style={{ minWidth }}>
+          <thead>
+            <tr>
+              <th
+                className="sticky left-0 z-20 border-b border-r bg-muted/90 px-3 py-3 text-left font-medium text-muted-foreground"
+                style={{ width: leadingWidth, minWidth: leadingWidth }}
+              >
+                {isStations ? "Станция" : "Сотрудник"}
+              </th>
+              {days.map((day) => (
+                <GridDayHeader day={day} key={day} />
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <LoadingGridRows columns={days.length} stickyWidth={leadingWidth} />
+            ) : (
+              rows.map((row) => (
+                <tr className="hover:bg-muted/20" key={row.id}>
+                  <td
+                    className="sticky left-0 z-10 border-b border-r bg-card px-3 py-3 align-top"
+                    style={{ width: leadingWidth, minWidth: leadingWidth }}
+                  >
+                    <div className="font-medium leading-5">{row.title}</div>
+                    {row.subtitle ? (
+                      <div className="mt-1 text-xs text-muted-foreground">{row.subtitle}</div>
+                    ) : null}
+                  </td>
+                  {days.map((day) => (
+                    <DisabledScheduleCell key={day} label="Графика на этот период нет" />
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -1412,8 +1707,7 @@ function PlanFactView({
           action={
             <Button asChild>
               <a href="/payroll/runs">
-                <ExternalLink size={16} aria-hidden="true" />
-                К расчётам payroll
+                <ExternalLink size={16} aria-hidden="true" />К расчётам payroll
               </a>
             </Button>
           }
@@ -1443,8 +1737,8 @@ function PlanFactView({
 
           {summary.fact_availability === "partial" ? (
             <div className="border-b border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-              Факт доступен за {summary.covered_dates.length} из{" "}
-              {planFactTotalDays(summary)} дней. Остальные дни ожидают payroll-расчёт.
+              Факт доступен за {summary.covered_dates.length} из {planFactTotalDays(summary)} дней.
+              Остальные дни ожидают payroll-расчёт.
             </div>
           ) : null}
 
@@ -1573,8 +1867,7 @@ function PlanFactMetricStatus({ status }: { status: "none" | "within" | "over" }
   if (status === "within") {
     return (
       <span className="inline-flex items-center gap-1 text-emerald-700">
-        <CheckCircle2 size={15} aria-hidden="true" />
-        в норме
+        <CheckCircle2 size={15} aria-hidden="true" />в норме
       </span>
     );
   }
@@ -1607,19 +1900,35 @@ function PlanFactDaysTable({
       <table className="w-full min-w-[980px] text-sm">
         <thead>
           <tr className="border-b bg-muted/50 text-left text-muted-foreground">
-            <SortableTh active={sort.key === "date"} direction={sort.direction} onClick={() => onSort("date")}>
+            <SortableTh
+              active={sort.key === "date"}
+              direction={sort.direction}
+              onClick={() => onSort("date")}
+            >
               Дата
             </SortableTh>
             <th className="px-3 py-3 font-medium">План: смен/час/руб</th>
             <th className="px-3 py-3 font-medium">Факт: смен/час/руб</th>
-            <SortableTh active={sort.key === "hours"} direction={sort.direction} onClick={() => onSort("hours")}>
+            <SortableTh
+              active={sort.key === "hours"}
+              direction={sort.direction}
+              onClick={() => onSort("hours")}
+            >
               Δ часы
             </SortableTh>
-            <SortableTh active={sort.key === "cost"} direction={sort.direction} onClick={() => onSort("cost")}>
+            <SortableTh
+              active={sort.key === "cost"}
+              direction={sort.direction}
+              onClick={() => onSort("cost")}
+            >
               Δ стоим.
             </SortableTh>
             <th className="px-3 py-3 font-medium">Надбавка админа</th>
-            <SortableTh active={sort.key === "status"} direction={sort.direction} onClick={() => onSort("status")}>
+            <SortableTh
+              active={sort.key === "status"}
+              direction={sort.direction}
+              onClick={() => onSort("status")}
+            >
               Статус
             </SortableTh>
           </tr>
@@ -1636,17 +1945,22 @@ function PlanFactDaysTable({
                 {formatPlanFactTriplet(row.planned_shifts, row.planned_hours, row.planned_cost)}
               </td>
               <td className="px-3 py-3 tabular-nums">
-                {formatPlanFactTriplet(
-                  row.actual_shifts,
-                  row.actual_hours,
-                  row.actual_cost,
-                  true,
-                )}
+                {formatPlanFactTriplet(row.actual_shifts, row.actual_hours, row.actual_cost, true)}
               </td>
-              <td className={cn("px-3 py-3 tabular-nums", deviationTextClass(row.hours_deviation_pct, threshold))}>
+              <td
+                className={cn(
+                  "px-3 py-3 tabular-nums",
+                  deviationTextClass(row.hours_deviation_pct, threshold),
+                )}
+              >
                 {formatPercent(row.hours_deviation_pct)}
               </td>
-              <td className={cn("px-3 py-3 tabular-nums", deviationTextClass(row.cost_deviation_pct, threshold))}>
+              <td
+                className={cn(
+                  "px-3 py-3 tabular-nums",
+                  deviationTextClass(row.cost_deviation_pct, threshold),
+                )}
+              >
                 {formatPercent(row.cost_deviation_pct)}
               </td>
               <td className="px-3 py-3">
@@ -1681,19 +1995,35 @@ function PlanFactEmployeesTable({
       <table className="w-full min-w-[900px] text-sm">
         <thead>
           <tr className="border-b bg-muted/50 text-left text-muted-foreground">
-            <SortableTh active={sort.key === "name"} direction={sort.direction} onClick={() => onSort("name")}>
+            <SortableTh
+              active={sort.key === "name"}
+              direction={sort.direction}
+              onClick={() => onSort("name")}
+            >
               ФИО
             </SortableTh>
             <th className="px-3 py-3 font-medium">Должн.</th>
             <th className="px-3 py-3 font-medium">План: смен/час/руб</th>
             <th className="px-3 py-3 font-medium">Факт: смен/час/руб</th>
-            <SortableTh active={sort.key === "hours"} direction={sort.direction} onClick={() => onSort("hours")}>
+            <SortableTh
+              active={sort.key === "hours"}
+              direction={sort.direction}
+              onClick={() => onSort("hours")}
+            >
               Δ часы
             </SortableTh>
-            <SortableTh active={sort.key === "cost"} direction={sort.direction} onClick={() => onSort("cost")}>
+            <SortableTh
+              active={sort.key === "cost"}
+              direction={sort.direction}
+              onClick={() => onSort("cost")}
+            >
               Δ стоим.
             </SortableTh>
-            <SortableTh active={sort.key === "status"} direction={sort.direction} onClick={() => onSort("status")}>
+            <SortableTh
+              active={sort.key === "status"}
+              direction={sort.direction}
+              onClick={() => onSort("status")}
+            >
               Статус
             </SortableTh>
           </tr>
@@ -1711,17 +2041,22 @@ function PlanFactEmployeesTable({
                 {formatPlanFactTriplet(row.planned_shifts, row.planned_hours, row.planned_cost)}
               </td>
               <td className="px-3 py-3 tabular-nums">
-                {formatPlanFactTriplet(
-                  row.actual_shifts,
-                  row.actual_hours,
-                  row.actual_cost,
-                  true,
-                )}
+                {formatPlanFactTriplet(row.actual_shifts, row.actual_hours, row.actual_cost, true)}
               </td>
-              <td className={cn("px-3 py-3 tabular-nums", deviationTextClass(row.hours_deviation_pct, threshold))}>
+              <td
+                className={cn(
+                  "px-3 py-3 tabular-nums",
+                  deviationTextClass(row.hours_deviation_pct, threshold),
+                )}
+              >
                 {formatPercent(row.hours_deviation_pct)}
               </td>
-              <td className={cn("px-3 py-3 tabular-nums", deviationTextClass(row.cost_deviation_pct, threshold))}>
+              <td
+                className={cn(
+                  "px-3 py-3 tabular-nums",
+                  deviationTextClass(row.cost_deviation_pct, threshold),
+                )}
+              >
                 {formatPercent(row.cost_deviation_pct)}
               </td>
               <td className="px-3 py-3">
@@ -1757,8 +2092,13 @@ function SortableTh({
         type="button"
       >
         {children}
-        <ArrowUpDown className={cn("h-3.5 w-3.5", active ? "opacity-100" : "opacity-50")} aria-hidden="true" />
-        {active ? <span className="sr-only">{direction === "asc" ? "по возрастанию" : "по убыванию"}</span> : null}
+        <ArrowUpDown
+          className={cn("h-3.5 w-3.5", active ? "opacity-100" : "opacity-50")}
+          aria-hidden="true"
+        />
+        {active ? (
+          <span className="sr-only">{direction === "asc" ? "по возрастанию" : "по убыванию"}</span>
+        ) : null}
       </button>
     </th>
   );
@@ -1801,6 +2141,98 @@ function CashierAllowancePlanFactCell({ row }: { row: PlanFactDayRowRead }) {
   );
 }
 
+function ScheduleForecastGroup({
+  collapsed,
+  costRun,
+  days,
+  forecasts,
+  forceRefreshIiko,
+  isCostLoading,
+  isCostRecomputing,
+  isForecastLoading,
+  isForecastRecomputing,
+  leadingWidth,
+  onCollapsedChange,
+  onCostHistoryOpen,
+  onCostRecompute,
+  onForecastCellClick,
+  onForceRefreshChange,
+  onForecastRecompute,
+}: {
+  collapsed: boolean;
+  costRun: PayrollForecastRunRead | null;
+  days: string[];
+  forecasts: RevenueForecastRead[];
+  forceRefreshIiko: boolean;
+  isCostLoading: boolean;
+  isCostRecomputing: boolean;
+  isForecastLoading: boolean;
+  isForecastRecomputing: boolean;
+  leadingWidth: number;
+  onCollapsedChange: (collapsed: boolean) => void;
+  onCostHistoryOpen: () => void;
+  onCostRecompute: () => void;
+  onForecastCellClick: (forecast: RevenueForecastRead) => void;
+  onForceRefreshChange: (checked: boolean) => void;
+  onForecastRecompute: () => void;
+}) {
+  const revenueSummary = isForecastLoading
+    ? "загрузка"
+    : formatMoneyWithCurrency(totalForecastAmount(forecasts));
+  const costSummary = isCostLoading
+    ? "загрузка"
+    : formatMoneyWithCurrency(costRun?.total_shift_cost_estimate ?? null);
+  const budgetSummary = costRun
+    ? `${formatMoneyWithCurrency(costRun.total_shift_cost_estimate)} · ${formatPercent(
+        costRun.fot_to_revenue_pct,
+      )}`
+    : "—";
+  const summary = `Выручка ${revenueSummary} · Стоимость ${costSummary} · Бюджет ${budgetSummary}`;
+
+  return (
+    <section className="overflow-hidden rounded-lg border bg-card">
+      <CollapsibleSectionHeader
+        collapsed={collapsed}
+        onToggle={() => onCollapsedChange(!collapsed)}
+        summary={summary}
+        title="Прогнозы и бюджет"
+      />
+      {collapsed ? null : (
+        <div className="space-y-4 p-3">
+          <RevenueForecastPanel
+            days={days}
+            forecasts={forecasts}
+            forceRefreshIiko={forceRefreshIiko}
+            isLoading={isForecastLoading}
+            isRecomputing={isForecastRecomputing}
+            leadingWidth={leadingWidth}
+            onCellClick={onForecastCellClick}
+            onForceRefreshChange={onForceRefreshChange}
+            onRecompute={onForecastRecompute}
+          />
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <CostForecastPanel
+              days={days}
+              isLoading={isCostLoading}
+              isRecomputing={isCostRecomputing}
+              leadingWidth={leadingWidth}
+              onOpenHistory={onCostHistoryOpen}
+              onRecompute={onCostRecompute}
+              run={costRun}
+            />
+            <BudgetSummaryPanel
+              isRecomputing={isCostRecomputing}
+              onOpenHistory={onCostHistoryOpen}
+              onRecompute={onCostRecompute}
+              run={costRun}
+            />
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function RevenueForecastPanel({
   days,
   forecasts,
@@ -1828,9 +2260,16 @@ function RevenueForecastPanel({
     [forecasts],
   );
   const isEmpty = !isLoading && forecasts.length === 0;
+  const totalForecast = totalForecastAmount(forecasts);
+  const summaryValue = isLoading ? "загрузка" : formatMoneyWithCurrency(totalForecast);
 
   return (
     <section className="overflow-hidden rounded-lg border bg-card">
+      <StaticPanelHeader
+        subtitle="Плановая выручка по дням периода"
+        summary={summaryValue}
+        title="Прогноз выручки"
+      />
       <div className="overflow-x-auto">
         <table className="border-separate border-spacing-0 text-sm" style={{ minWidth }}>
           <tbody>
@@ -1841,18 +2280,15 @@ function RevenueForecastPanel({
                 style={{ width: leadingWidth, minWidth: leadingWidth }}
               >
                 <div className="grid gap-3">
-                  <div>
-                    <div className="font-medium">Прогноз выручки</div>
-                    <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                      <input
-                        checked={forceRefreshIiko}
-                        className="h-4 w-4 rounded border-border"
-                        onChange={(event) => onForceRefreshChange(event.target.checked)}
-                        type="checkbox"
-                      />
-                      Force-refresh iiko
-                    </label>
-                  </div>
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <input
+                      checked={forceRefreshIiko}
+                      className="h-4 w-4 rounded border-border"
+                      onChange={(event) => onForceRefreshChange(event.target.checked)}
+                      type="checkbox"
+                    />
+                    Force-refresh iiko
+                  </label>
                   <Button
                     disabled={isRecomputing}
                     onClick={onRecompute}
@@ -1900,11 +2336,7 @@ function RevenueForecastPanel({
                 </td>
               ) : (
                 days.map((day) => (
-                  <ForecastCell
-                    forecast={forecastByDay.get(day)}
-                    key={day}
-                    onClick={onCellClick}
-                  />
+                  <ForecastCell forecast={forecastByDay.get(day)} key={day} onClick={onCellClick} />
                 ))
               )}
             </tr>
@@ -1956,9 +2388,7 @@ function ForecastCell({
             </span>
           ) : null}
           {forecastStatusLabel(forecast) ? (
-            <span className={forecastAmountClass(forecast)}>
-              {forecastStatusLabel(forecast)}
-            </span>
+            <span className={forecastAmountClass(forecast)}>{forecastStatusLabel(forecast)}</span>
           ) : null}
         </div>
       </button>
@@ -1984,14 +2414,19 @@ function CostForecastPanel({
   run: PayrollForecastRunRead | null;
 }) {
   const minWidth = leadingWidth + days.length * DAY_CELL_WIDTH;
-  const costByDay = useMemo(
-    () => buildCostSummariesByDay(run?.estimates ?? []),
-    [run?.estimates],
-  );
+  const costByDay = useMemo(() => buildCostSummariesByDay(run?.estimates ?? []), [run?.estimates]);
   const isEmpty = !isLoading && !run;
+  const summaryValue = isLoading
+    ? "загрузка"
+    : formatMoneyWithCurrency(run?.total_shift_cost_estimate ?? null);
 
   return (
     <section className="overflow-hidden rounded-lg border bg-card">
+      <StaticPanelHeader
+        subtitle={run ? `Расчёт от ${formatDateTime(run.run_at)}` : "Стоимость ещё не рассчитана"}
+        summary={summaryValue}
+        title="Стоимость графика"
+      />
       <div className="overflow-x-auto">
         <table className="border-separate border-spacing-0 text-sm" style={{ minWidth }}>
           <tbody>
@@ -2002,12 +2437,6 @@ function CostForecastPanel({
                 style={{ width: leadingWidth, minWidth: leadingWidth }}
               >
                 <div className="grid gap-3">
-                  <div>
-                    <div className="font-medium">Стоимость графика</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {run ? `Версия от ${formatDateTime(run.run_at)}` : "Стоимость ещё не рассчитана"}
-                    </div>
-                  </div>
                   <div className="flex flex-wrap gap-2">
                     <Button
                       disabled={isRecomputing}
@@ -2069,9 +2498,7 @@ function CostForecastPanel({
                   </div>
                 </td>
               ) : (
-                days.map((day) => (
-                  <CostDayCell day={day} key={day} summary={costByDay.get(day)} />
-                ))
+                days.map((day) => <CostDayCell day={day} key={day} summary={costByDay.get(day)} />)
               )}
             </tr>
           </tbody>
@@ -2081,13 +2508,7 @@ function CostForecastPanel({
   );
 }
 
-function CostDayCell({
-  day,
-  summary,
-}: {
-  day: string;
-  summary: CostDaySummary | undefined;
-}) {
+function CostDayCell({ day, summary }: { day: string; summary: CostDaySummary | undefined }) {
   if (!summary) {
     return (
       <td
@@ -2145,57 +2566,67 @@ function BudgetSummaryPanel({
   run: PayrollForecastRunRead | null;
 }) {
   const fotLevel = run ? fotStatusLevel(run) : "none";
+  const summaryValue = run
+    ? `${formatMoneyWithCurrency(run.total_shift_cost_estimate)} · ${formatPercent(
+        run.fot_to_revenue_pct,
+      )}`
+    : "—";
 
   return (
-    <section className="rounded-lg border bg-card p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <div className="font-medium">Прогноз бюджета</div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {run ? `Расчёт от ${formatDateTime(run.run_at)}` : "Стоимость ещё не рассчитана"}
+    <section className="overflow-hidden rounded-lg border bg-card">
+      <StaticPanelHeader
+        icon={<Percent className="h-5 w-5 text-muted-foreground" aria-hidden="true" />}
+        subtitle={run ? `Расчёт от ${formatDateTime(run.run_at)}` : "Стоимость ещё не рассчитана"}
+        summary={summaryValue}
+        title="Прогноз бюджета"
+      />
+
+      <div className="p-4 pt-3">
+        {run ? (
+          <div className="grid gap-2 text-sm">
+            <SummaryRow
+              label="Выручка прогноз"
+              value={formatMoneyWithCurrency(run.total_revenue_forecast)}
+            />
+            <SummaryRow
+              label="Стоимость смен"
+              value={formatMoneyWithCurrency(run.total_shift_cost_estimate)}
+            />
+            <SummaryRow
+              className={fotStatusClass(fotLevel)}
+              label="ФОТ % от выручки"
+              title={`Порог: ${formatPercent(run.fot_warning_threshold_pct)}`}
+              value={`${formatPercent(run.fot_to_revenue_pct)} · ${fotStatusText(fotLevel)}`}
+            />
+            <div className="my-1 h-px bg-border" />
+            <SummaryRow label="Смен всего" value={String(run.shifts_total)} />
+            <SummaryRow
+              className={run.shifts_with_warnings > 0 ? "text-orange-600" : undefined}
+              label="С предупреждениями"
+              value={String(run.shifts_with_warnings)}
+            />
+            <SummaryRow label="Автор" value={run.run_by_label ?? "—"} />
           </div>
-        </div>
-        <Percent className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-      </div>
+        ) : (
+          <div className="rounded-md border border-dashed px-3 py-5 text-center text-sm text-muted-foreground">
+            Стоимость ещё не рассчитана. Запустите расчёт.
+          </div>
+        )}
 
-      {run ? (
-        <div className="grid gap-2 text-sm">
-          <SummaryRow label="Выручка прогноз" value={formatMoneyWithCurrency(run.total_revenue_forecast)} />
-          <SummaryRow label="Стоимость смен" value={formatMoneyWithCurrency(run.total_shift_cost_estimate)} />
-          <SummaryRow
-            className={fotStatusClass(fotLevel)}
-            label="ФОТ % от выручки"
-            title={`Порог: ${formatPercent(run.fot_warning_threshold_pct)}`}
-            value={`${formatPercent(run.fot_to_revenue_pct)} · ${fotStatusText(fotLevel)}`}
-          />
-          <div className="my-1 h-px bg-border" />
-          <SummaryRow label="Смен всего" value={String(run.shifts_total)} />
-          <SummaryRow
-            className={run.shifts_with_warnings > 0 ? "text-orange-600" : undefined}
-            label="С предупреждениями"
-            value={String(run.shifts_with_warnings)}
-          />
-          <SummaryRow label="Автор" value={run.run_by_label ?? "—"} />
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button disabled={isRecomputing} onClick={onRecompute} size="sm" type="button">
+            {isRecomputing ? (
+              <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+            ) : (
+              <Calculator size={15} aria-hidden="true" />
+            )}
+            {isRecomputing ? "Идёт расчёт..." : run ? "Пересчитать" : "Рассчитать стоимость"}
+          </Button>
+          <Button disabled={!run} onClick={onOpenHistory} size="sm" type="button" variant="outline">
+            <History size={15} aria-hidden="true" />
+            История версий
+          </Button>
         </div>
-      ) : (
-        <div className="rounded-md border border-dashed px-3 py-5 text-center text-sm text-muted-foreground">
-          Стоимость ещё не рассчитана. Запустите расчёт.
-        </div>
-      )}
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button disabled={isRecomputing} onClick={onRecompute} size="sm" type="button">
-          {isRecomputing ? (
-            <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
-          ) : (
-            <Calculator size={15} aria-hidden="true" />
-          )}
-          {isRecomputing ? "Идёт расчёт..." : run ? "Пересчитать" : "Рассчитать стоимость"}
-        </Button>
-        <Button disabled={!run} onClick={onOpenHistory} size="sm" type="button" variant="outline">
-          <History size={15} aria-hidden="true" />
-          История версий
-        </Button>
       </div>
     </section>
   );
@@ -2220,6 +2651,96 @@ function SummaryRow({
   );
 }
 
+function CollapsibleSectionHeader({
+  collapsed,
+  icon,
+  onToggle,
+  subtitle,
+  summary,
+  title,
+}: {
+  collapsed: boolean;
+  icon?: ReactNode;
+  onToggle: () => void;
+  subtitle?: string;
+  summary?: string;
+  title: string;
+}) {
+  return (
+    <button
+      aria-expanded={!collapsed}
+      className="flex w-full items-center justify-between gap-3 border-b px-4 py-3 text-left hover:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
+      onClick={onToggle}
+      type="button"
+    >
+      <span className="flex min-w-0 flex-1 items-center gap-3">
+        {icon}
+        <span className="min-w-0">
+          <span className="block font-medium">{title}</span>
+          {subtitle ? (
+            <span className="mt-1 block truncate text-xs font-normal text-muted-foreground">
+              {subtitle}
+            </span>
+          ) : null}
+        </span>
+      </span>
+      <span className="flex min-w-0 shrink items-center justify-end gap-2 text-sm text-muted-foreground">
+        {summary ? <span className="truncate tabular-nums">{summary}</span> : null}
+        {collapsed ? (
+          <ChevronDown size={16} aria-hidden="true" />
+        ) : (
+          <ChevronUp size={16} aria-hidden="true" />
+        )}
+      </span>
+    </button>
+  );
+}
+
+function StaticPanelHeader({
+  icon,
+  subtitle,
+  summary,
+  title,
+}: {
+  icon?: ReactNode;
+  subtitle?: string;
+  summary?: string;
+  title: string;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
+      <div className="flex min-w-0 items-start gap-3">
+        {icon}
+        <div className="min-w-0">
+          <div className="font-medium">{title}</div>
+          {subtitle ? (
+            <div className="mt-1 truncate text-xs text-muted-foreground">{subtitle}</div>
+          ) : null}
+        </div>
+      </div>
+      {summary ? (
+        <div className="shrink-0 text-sm font-medium tabular-nums text-muted-foreground">
+          {summary}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function InlineTooltip({ children, content }: { children: ReactNode; content: string }) {
+  return (
+    <span className="group relative inline-flex">
+      {children}
+      <span
+        className="pointer-events-none absolute right-0 top-full z-50 mt-2 hidden w-80 rounded-md border bg-popover px-3 py-2 text-left text-xs leading-5 text-popover-foreground shadow-lg group-focus-within:block group-hover:block"
+        role="tooltip"
+      >
+        {content}
+      </span>
+    </span>
+  );
+}
+
 function CostHistorySheet({
   currentRunId,
   isLoading,
@@ -2240,9 +2761,7 @@ function CostHistorySheet({
       <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
         <SheetHeader>
           <SheetTitle>История версий</SheetTitle>
-          <SheetDescription>
-            Выберите расчёт, чтобы отобразить его в графике.
-          </SheetDescription>
+          <SheetDescription>Выберите расчёт, чтобы отобразить его в графике.</SheetDescription>
         </SheetHeader>
         <div className="mt-5 grid gap-2">
           {isLoading ? (
@@ -2312,8 +2831,7 @@ function ForecastOverrideDialog({
   const forecast = state?.forecast ?? null;
   const hasOverride =
     forecast?.manual_override_amount !== null && forecast?.manual_override_amount !== undefined;
-  const validHistoryCount =
-    forecast?.history_points.filter((point) => point.included).length ?? 0;
+  const validHistoryCount = forecast?.history_points.filter((point) => point.included).length ?? 0;
 
   function patchState(patch: Partial<ForecastDialogState>) {
     if (!state) {
@@ -2330,9 +2848,7 @@ function ForecastOverrideDialog({
             <DialogTitle>
               {forecast ? `Прогноз выручки на ${formatDate(forecast.business_date)}` : ""}
             </DialogTitle>
-            <DialogDescription>
-              Метод: среднее за 6 одинаковых дней недели
-            </DialogDescription>
+            <DialogDescription>Метод: среднее за 6 одинаковых дней недели</DialogDescription>
           </DialogHeader>
           {forecast && state ? (
             <div className="grid gap-4">
@@ -2458,9 +2974,7 @@ function ForecastOverrideDialog({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Снять ручной прогноз?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Будет применён расчётный.
-            </AlertDialogDescription>
+            <AlertDialogDescription>Будет применён расчётный.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isRemoving}>Отмена</AlertDialogCancel>
@@ -2486,22 +3000,30 @@ function EmployeeScheduleGrid({
   days,
   isLoading,
   isLocked,
+  ledgerByDay,
+  ledgerByEmployeeDay,
   onEditShift,
   onEmptyCellClick,
   onFilledCellClick,
   roster,
+  scheduleRange,
   shiftByEmployeeDay,
+  today,
 }: {
   cashierAllowanceByDay: Map<string, AllowanceAssignmentRead>;
   costByShiftId: Map<string, ShiftCostEstimateRead>;
   days: string[];
   isLoading: boolean;
   isLocked: boolean;
+  ledgerByDay: Map<string, ScheduleLedgerEntryRead[]>;
+  ledgerByEmployeeDay: Map<string, ScheduleLedgerEntryRead[]>;
   onEditShift: (shift: ScheduledShiftRead) => void;
   onEmptyCellClick: (employee: EmployeeRosterRow, day: string) => void;
   onFilledCellClick: (shift: ScheduledShiftRead) => void;
   roster: EmployeeRosterRow[];
+  scheduleRange: PeriodRange;
   shiftByEmployeeDay: Map<string, ScheduledShiftRead>;
+  today: string;
 }) {
   const minWidth = EMPLOYEE_COLUMN_WIDTH + days.length * DAY_CELL_WIDTH;
 
@@ -2518,14 +3040,11 @@ function EmployeeScheduleGrid({
                 Сотрудник
               </th>
               {days.map((day) => (
-                <th
-                  className="border-b border-r bg-muted/70 px-2 py-2 text-center font-medium text-muted-foreground"
+                <GridDayHeader
+                  day={day}
+                  ledgerEmpty={day < today && !ledgerByDay.has(day)}
                   key={day}
-                  style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
-                >
-                  <div>{weekdayLabels[parseIsoDate(day).getDay()]}</div>
-                  <div className="text-base text-foreground">{day.slice(8, 10)}</div>
-                </th>
+                />
               ))}
             </tr>
           </thead>
@@ -2540,47 +3059,69 @@ function EmployeeScheduleGrid({
                     style={{ width: EMPLOYEE_COLUMN_WIDTH, minWidth: EMPLOYEE_COLUMN_WIDTH }}
                   >
                     <div className="font-medium leading-5">{employee.full_name}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {employee.position}
-                      {employee.allowances.senior
-                        ? " · ст"
-                        : employee.allowances.deputy
-                          ? " · зам"
-                          : ""}
-                    </div>
+                    <EmployeeRoleSubtitle
+                      employee={employee}
+                      payrollRole={firstVisibleShiftRole(employee, days, shiftByEmployeeDay)}
+                    />
                   </td>
                   {days.map((day) => {
                     const shift = shiftByEmployeeDay.get(`${employee.id}:${day}`);
+                    const visibleShift = day < today ? null : shift;
+                    const ledgerEntries = ledgerByEmployeeDay.get(`${employee.id}:${day}`) ?? [];
+                    const outsideSchedule = !isDateInRange(day, scheduleRange);
+                    const showFact = shouldShowFact(day, ledgerEntries, today);
+                    const canEditPlan = !isLocked && day >= today && !outsideSchedule;
+                    if (showFact) {
+                      return (
+                        <td
+                          className="h-[72px] border-b border-r p-2 align-top bg-muted/10"
+                          key={day}
+                          style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
+                        >
+                          <div className="space-y-1">
+                            {ledgerEntries.map((entry) => (
+                              <LedgerFactPill entry={entry} key={entry.id} />
+                            ))}
+                          </div>
+                        </td>
+                      );
+                    }
+                    if (day > today && outsideSchedule) {
+                      return <DisabledScheduleCell key={day} label="вне периода графика" />;
+                    }
                     return (
                       <td
                         className={cn(
                           "group relative h-[72px] border-b border-r p-2 align-top",
-                          !isLocked && "cursor-pointer hover:bg-primary/5",
+                          canEditPlan && "cursor-pointer hover:bg-primary/5",
                           isLocked && "bg-muted/10",
                         )}
                         key={day}
                         onClick={() => {
-                          if (!shift && !isLocked) {
+                          if (!canEditPlan) {
+                            return;
+                          }
+                          if (!visibleShift) {
                             onEmptyCellClick(employee, day);
-                          } else if (shift && !isLocked) {
-                            onFilledCellClick(shift);
+                          } else {
+                            onFilledCellClick(visibleShift);
                           }
                         }}
                         style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
                       >
-                        {shift ? (
+                        {visibleShift ? (
                           <>
                             <ShiftPill
                               allowanceAssignment={cashierAllowanceByDay.get(day)}
                               employee={employee}
-                              estimate={costByShiftId.get(shift.id)}
-                              shift={shift}
+                              estimate={costByShiftId.get(visibleShift.id)}
+                              shift={visibleShift}
                             />
-                            {!isLocked ? (
+                            {canEditPlan ? (
                               <EditShiftButton
                                 businessDate={day}
                                 employeeId={employee.id}
-                                onClick={() => onEditShift(shift)}
+                                onClick={() => onEditShift(visibleShift)}
                               />
                             ) : null}
                           </>
@@ -2604,22 +3145,30 @@ function StationScheduleGrid({
   days,
   isLoading,
   isLocked,
+  ledgerByDay,
+  ledgerByStationDay,
   onCellClick,
   onShiftDelete,
   onShiftClick,
   roster,
   rows,
+  scheduleRange,
+  today,
 }: {
   cashierAllowanceByDay: Map<string, AllowanceAssignmentRead>;
   costByShiftId: Map<string, ShiftCostEstimateRead>;
   days: string[];
   isLoading: boolean;
   isLocked: boolean;
+  ledgerByDay: Map<string, ScheduleLedgerEntryRead[]>;
+  ledgerByStationDay: Map<string, ScheduleLedgerEntryRead[]>;
   onCellClick: (station: string, day: string) => void;
   onShiftDelete: (shift: ScheduledShiftRead) => void;
   onShiftClick: (shift: ScheduledShiftRead) => void;
   roster: EmployeeRosterRow[];
   rows: Array<{ station: string; byDay: Map<string, ScheduledShiftRead[]> }>;
+  scheduleRange: PeriodRange;
+  today: string;
 }) {
   const minWidth = STATION_COLUMN_WIDTH + days.length * DAY_CELL_WIDTH;
 
@@ -2636,14 +3185,11 @@ function StationScheduleGrid({
                 Станция
               </th>
               {days.map((day) => (
-                <th
-                  className="border-b border-r bg-muted/70 px-2 py-2 text-center font-medium text-muted-foreground"
+                <GridDayHeader
+                  day={day}
+                  ledgerEmpty={day < today && !ledgerByDay.has(day)}
                   key={day}
-                  style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
-                >
-                  <div>{weekdayLabels[parseIsoDate(day).getDay()]}</div>
-                  <div className="text-base text-foreground">{day.slice(8, 10)}</div>
-                </th>
+                />
               ))}
             </tr>
           </thead>
@@ -2661,25 +3207,47 @@ function StationScheduleGrid({
                   </td>
                   {days.map((day) => {
                     const dayShifts = row.byDay.get(day) ?? [];
+                    const visibleShifts = day < today ? [] : dayShifts;
+                    const ledgerEntries = ledgerByStationDay.get(`${row.station}:${day}`) ?? [];
+                    const outsideSchedule = !isDateInRange(day, scheduleRange);
+                    const showFact = shouldShowFact(day, ledgerEntries, today);
+                    const canEditPlan =
+                      !isLocked && day >= today && !outsideSchedule && visibleShifts.length === 0;
+                    if (showFact) {
+                      return (
+                        <td
+                          className="h-[86px] border-b border-r bg-muted/10 p-2 align-top"
+                          key={day}
+                          style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
+                        >
+                          <div className="space-y-1">
+                            {ledgerEntries.map((entry) => (
+                              <LedgerFactPill entry={entry} key={entry.id} />
+                            ))}
+                          </div>
+                        </td>
+                      );
+                    }
+                    if (day > today && outsideSchedule) {
+                      return <DisabledScheduleCell key={day} label="вне периода графика" />;
+                    }
                     return (
                       <td
                         className={cn(
                           "h-[86px] border-b border-r p-2 align-top",
-                          dayShifts.length === 0 &&
-                            !isLocked &&
-                            "cursor-pointer hover:bg-primary/5",
+                          canEditPlan && "cursor-pointer hover:bg-primary/5",
                           isLocked && "bg-muted/10",
                         )}
                         key={day}
                         onClick={() => {
-                          if (dayShifts.length === 0 && !isLocked) {
+                          if (canEditPlan) {
                             onCellClick(row.station, day);
                           }
                         }}
                         style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
                       >
                         <div className="space-y-1">
-                          {dayShifts.map((shift) => (
+                          {visibleShifts.map((shift) => (
                             <StationShiftCard
                               allowanceAssignment={cashierAllowanceByDay.get(day)}
                               costByShiftId={costByShiftId}
@@ -2740,29 +3308,16 @@ function StationShiftCard({
       }}
       title={shiftTitle(shift, costByShiftId.get(shift.id), employee, allowanceAssignment)}
     >
-      <div
-        className={cn(
-          "truncate font-medium",
-          roleColorClasses(shift.payroll_role).primaryText,
-        )}
-      >
+      <div className={cn("truncate font-medium", roleColorClasses(shift.payroll_role).primaryText)}>
         {shift.employee_full_name}
       </div>
-      <div
-        className={cn(
-          "tabular-nums",
-          roleColorClasses(shift.payroll_role).secondaryText,
-        )}
-      >
+      <div className={cn("tabular-nums", roleColorClasses(shift.payroll_role).secondaryText)}>
         {formatShiftTime(shift)}
       </div>
-      <div
-        className={cn(
-          "truncate",
-          roleColorClasses(shift.payroll_role).secondaryText,
-        )}
-      >
-        {payrollRoleLabel(shift.payroll_role)}
+      <div className={cn("truncate", roleColorClasses(shift.payroll_role).secondaryText)}>
+        {employee
+          ? positionRoleLabel(employee.position, shift.payroll_role)
+          : payrollRoleLabel(shift.payroll_role)}
       </div>
       <AllowanceBadge badge={allowanceBadge} />
       {costByShiftId.get(shift.id) ? (
@@ -2810,6 +3365,63 @@ function EditShiftButton({
     >
       <Pencil size={14} aria-hidden="true" />
     </button>
+  );
+}
+
+function EmployeeRoleSubtitle({
+  employee,
+  payrollRole,
+}: {
+  employee: EmployeeRosterRow;
+  payrollRole?: string | null;
+}) {
+  const badge = employeeAllowanceFlag(employee);
+
+  return (
+    <div className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+      <span className="truncate">{positionRoleLabel(employee.position, payrollRole)}</span>
+      {badge ? <InlineAllowanceBadge role={badge} /> : null}
+    </div>
+  );
+}
+
+function InlineAllowanceBadge({ role }: { role: "senior" | "deputy_senior" }) {
+  return (
+    <span className="inline-flex h-4 min-w-5 shrink-0 items-center justify-center rounded-sm border border-muted-foreground/30 px-1 text-[10px] leading-none text-muted-foreground">
+      {allowanceRoleShortLabel(role)}
+    </span>
+  );
+}
+
+function LedgerFactPill({ entry }: { entry: ScheduleLedgerEntryRead }) {
+  const colors = roleColorClasses(entry.payroll_role ?? "");
+  const station = entry.station_code || stationForPayrollRole(entry.payroll_role ?? "");
+
+  return (
+    <div
+      className={cn("rounded-md border px-2 py-1.5 text-xs", colors.container)}
+      title={ledgerFactTitle(entry)}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className={cn("font-semibold tabular-nums", colors.primaryText)}>
+          {formatLedgerTime(entry)}
+        </div>
+        <span className="rounded-sm border border-slate-300 bg-slate-50 px-1 text-[10px] leading-4 text-slate-600">
+          факт
+        </span>
+      </div>
+      <div className={cn("mt-1 truncate", colors.secondaryText)}>
+        {positionRoleLabel(entry.position, entry.payroll_role)}
+      </div>
+      {station && station !== "(без станции)" ? (
+        <div className={cn("mt-0.5 truncate", colors.secondaryText)}>{station}</div>
+      ) : null}
+      {!entry.is_closed ? (
+        <span className="mt-1 inline-flex rounded-sm border border-amber-300 bg-amber-50 px-1 text-[10px] leading-4 text-amber-700">
+          не закрыта
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -2927,6 +3539,35 @@ function allowanceRoleShortLabel(role: "senior" | "deputy_senior") {
   return role === "senior" ? "ст" : "зам";
 }
 
+function GridDayHeader({ day, ledgerEmpty = false }: { day: string; ledgerEmpty?: boolean }) {
+  return (
+    <th
+      className="border-b border-r bg-muted/70 px-2 py-2 text-center font-medium text-muted-foreground"
+      style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
+    >
+      <div>{weekdayLabels[parseIsoDate(day).getDay()]}</div>
+      <div className="text-base text-foreground">{day.slice(8, 10)}</div>
+      {ledgerEmpty ? (
+        <div className="mt-1 text-[10px] font-normal leading-3 text-muted-foreground">
+          Учёт смен пуст
+        </div>
+      ) : null}
+    </th>
+  );
+}
+
+function DisabledScheduleCell({ label }: { label: string }) {
+  return (
+    <td
+      className="h-[72px] border-b border-r bg-muted/30 p-2 align-middle text-center text-xs leading-4 text-muted-foreground"
+      style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
+      title={label}
+    >
+      {label}
+    </td>
+  );
+}
+
 function LoadingGridRows({ columns, stickyWidth }: { columns: number; stickyWidth: number }) {
   return (
     <>
@@ -2954,15 +3595,21 @@ function CreateScheduleDialog({
   isSaving,
   onChange,
   onOpenChange,
+  onPeriodRangeApply,
+  onPeriodPresetChange,
   onSubmit,
   open,
+  periodPreset,
 }: {
   draft: ScheduleCreatePayload;
   isSaving: boolean;
   onChange: (draft: ScheduleCreatePayload) => void;
   onOpenChange: (open: boolean) => void;
+  onPeriodRangeApply: (range: PeriodRange) => void;
+  onPeriodPresetChange: (preset: PeriodPreset) => void;
   onSubmit: () => void;
   open: boolean;
+  periodPreset: PeriodPreset;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -2972,24 +3619,14 @@ function CreateScheduleDialog({
           <DialogDescription>Период черновика можно выбрать только при создании.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
-          <div className="grid gap-2">
-            <Label htmlFor="schedule-date-start">Период с</Label>
-            <Input
-              id="schedule-date-start"
-              onChange={(event) => onChange({ ...draft, date_start: event.target.value })}
-              type="date"
-              value={draft.date_start}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="schedule-date-end">Период по</Label>
-            <Input
-              id="schedule-date-end"
-              onChange={(event) => onChange({ ...draft, date_end: event.target.value })}
-              type="date"
-              value={draft.date_end}
-            />
-          </div>
+          <PeriodToolbar
+            className="rounded-md"
+            compact
+            onCustomRangeApply={onPeriodRangeApply}
+            onPresetChange={onPeriodPresetChange}
+            preset={periodPreset}
+            range={{ from: draft.date_start, to: draft.date_end }}
+          />
           <div className="grid gap-2">
             <Label htmlFor="schedule-notes">Заметки</Label>
             <Textarea
@@ -3046,9 +3683,7 @@ function ShiftDialog({
   const selectedRole = selectedEmployee?.available_roles.find(
     (role) => role.payroll_role === state?.payrollRole,
   );
-  const plannedHours = state
-    ? hoursBetween(state.businessDate, state.startTime, state.endTime)
-    : 0;
+  const plannedHours = state ? hoursBetween(state.businessDate, state.startTime, state.endTime) : 0;
   const allowanceCandidates = allowanceAssignment?.candidates ?? [];
   const showAllowanceSection =
     state?.mode === "edit" &&
@@ -3101,9 +3736,9 @@ function ShiftDialog({
                     payrollRole:
                       value === NO_VALUE
                         ? null
-                        : defaultRoleForEmployeeAtStation(employee, stationCode) ??
+                        : (defaultRoleForEmployeeAtStation(employee, stationCode) ??
                           employee?.primary_payroll_role ??
-                          null,
+                          null),
                     stationCode,
                   });
                 }}
@@ -3167,7 +3802,7 @@ function ShiftDialog({
                       : state.payrollRole;
                   patchState({
                     stationCode,
-                    payrollRole: shouldResetEmployee ? null : payrollRole ?? state.payrollRole,
+                    payrollRole: shouldResetEmployee ? null : (payrollRole ?? state.payrollRole),
                     employeeId: shouldResetEmployee ? "" : state.employeeId,
                   });
                 }}
@@ -3366,8 +4001,7 @@ function CopyWeekDialog({
         <DialogHeader>
           <DialogTitle>Копировать неделю</DialogTitle>
           <DialogDescription>
-            Копировать смены недели {formatDate(selectedWeekStart)} —{" "}
-            {formatDate(selectedWeekEnd)}
+            Копировать смены недели {formatDate(selectedWeekStart)} — {formatDate(selectedWeekEnd)}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -3450,7 +4084,11 @@ function planFactSummaryMetrics(summary: PlanFactSummaryRead) {
       label: "Смен",
       planned: String(summary.planned.total_shifts),
       actual: actual ? String(actual.total_shifts) : "—",
-      deviation: formatCountDeviation(actual?.total_shifts ?? null, summary.planned.total_shifts, deviation?.shifts_pct ?? null),
+      deviation: formatCountDeviation(
+        actual?.total_shifts ?? null,
+        summary.planned.total_shifts,
+        deviation?.shifts_pct ?? null,
+      ),
       status: metricDeviationStatus(deviation?.shifts_pct ?? null, threshold),
       className: deviationTextClass(deviation?.shifts_pct ?? null, threshold),
     },
@@ -3458,7 +4096,11 @@ function planFactSummaryMetrics(summary: PlanFactSummaryRead) {
       label: "Часов",
       planned: formatHoursValue(summary.planned.total_hours),
       actual: formatHoursValue(actual?.total_hours ?? null),
-      deviation: formatNumberDeviation(actual?.total_hours ?? null, summary.planned.total_hours, deviation?.hours_pct ?? null),
+      deviation: formatNumberDeviation(
+        actual?.total_hours ?? null,
+        summary.planned.total_hours,
+        deviation?.hours_pct ?? null,
+      ),
       status: metricDeviationStatus(deviation?.hours_pct ?? null, threshold),
       className: deviationTextClass(deviation?.hours_pct ?? null, threshold),
     },
@@ -3466,7 +4108,11 @@ function planFactSummaryMetrics(summary: PlanFactSummaryRead) {
       label: "Стоимость",
       planned: formatMoneyWithCurrency(summary.planned.total_cost),
       actual: formatMoneyWithCurrency(actual?.total_cost ?? null),
-      deviation: formatMoneyDeviation(actual?.total_cost ?? null, summary.planned.total_cost, deviation?.cost_pct ?? null),
+      deviation: formatMoneyDeviation(
+        actual?.total_cost ?? null,
+        summary.planned.total_cost,
+        deviation?.cost_pct ?? null,
+      ),
       status: metricDeviationStatus(deviation?.cost_pct ?? null, threshold),
       className: deviationTextClass(deviation?.cost_pct ?? null, threshold),
     },
@@ -3474,7 +4120,11 @@ function planFactSummaryMetrics(summary: PlanFactSummaryRead) {
       label: "Выручка",
       planned: formatMoneyWithCurrency(summary.planned.total_revenue),
       actual: formatMoneyWithCurrency(actual?.total_revenue ?? null),
-      deviation: formatMoneyDeviation(actual?.total_revenue ?? null, summary.planned.total_revenue, deviation?.revenue_pct ?? null),
+      deviation: formatMoneyDeviation(
+        actual?.total_revenue ?? null,
+        summary.planned.total_revenue,
+        deviation?.revenue_pct ?? null,
+      ),
       status: metricDeviationStatus(deviation?.revenue_pct ?? null, threshold),
       className: deviationTextClass(deviation?.revenue_pct ?? null, threshold),
     },
@@ -3673,11 +4323,7 @@ function formatHoursValue(value: string | number | null) {
   return amount === null ? "—" : formatHours(amount);
 }
 
-function formatCountDeviation(
-  actual: number | null,
-  planned: number,
-  pct: string | number | null,
-) {
+function formatCountDeviation(actual: number | null, planned: number, pct: string | number | null) {
   if (actual === null) {
     return "—";
   }
@@ -3850,6 +4496,51 @@ function indexShiftsByEmployeeDay(shifts: ScheduledShiftRead[]) {
   return index;
 }
 
+function indexLedgerByEmployeeDay(entries: ScheduleLedgerEntryRead[]) {
+  const index = new Map<string, ScheduleLedgerEntryRead[]>();
+  entries.forEach((entry) => {
+    const key = `${entry.employee_id}:${entry.business_date}`;
+    const current = index.get(key) ?? [];
+    current.push(entry);
+    index.set(key, current);
+  });
+  sortLedgerIndex(index);
+  return index;
+}
+
+function indexLedgerByStationDay(entries: ScheduleLedgerEntryRead[]) {
+  const index = new Map<string, ScheduleLedgerEntryRead[]>();
+  entries.forEach((entry) => {
+    const key = `${stationForLedgerEntry(entry)}:${entry.business_date}`;
+    const current = index.get(key) ?? [];
+    current.push(entry);
+    index.set(key, current);
+  });
+  sortLedgerIndex(index);
+  return index;
+}
+
+function indexLedgerByDay(entries: ScheduleLedgerEntryRead[]) {
+  const index = new Map<string, ScheduleLedgerEntryRead[]>();
+  entries.forEach((entry) => {
+    const current = index.get(entry.business_date) ?? [];
+    current.push(entry);
+    index.set(entry.business_date, current);
+  });
+  sortLedgerIndex(index);
+  return index;
+}
+
+function sortLedgerIndex(index: Map<string, ScheduleLedgerEntryRead[]>) {
+  index.forEach((entries) =>
+    entries.sort(
+      (left, right) =>
+        left.opened_at.localeCompare(right.opened_at) ||
+        left.employee_full_name.localeCompare(right.employee_full_name, "ru"),
+    ),
+  );
+}
+
 function indexCostEstimatesByShift(estimates: ShiftCostEstimateRead[]) {
   const index = new Map<string, ShiftCostEstimateRead>();
   estimates.forEach((estimate) => {
@@ -3887,12 +4578,11 @@ function findCashierAllowanceResolveDays(
 function buildCostSummariesByDay(estimates: ShiftCostEstimateRead[]) {
   const index = new Map<string, CostDaySummary>();
   estimates.forEach((estimate) => {
-    const current =
-      index.get(estimate.business_date) ?? {
-        total: 0,
-        warningCount: 0,
-        reasons: [],
-      };
+    const current = index.get(estimate.business_date) ?? {
+      total: 0,
+      warningCount: 0,
+      reasons: [],
+    };
     current.total += decimalToNumber(estimate.total_cost_estimate) ?? 0;
     if (estimate.quality_status === "requires_review") {
       current.warningCount += 1;
@@ -3907,7 +4597,20 @@ function buildCostSummariesByDay(estimates: ShiftCostEstimateRead[]) {
   return index;
 }
 
-function buildStationRows(shifts: ScheduledShiftRead[]) {
+function totalForecastAmount(forecasts: RevenueForecastRead[]) {
+  if (forecasts.length === 0) {
+    return null;
+  }
+  return forecasts.reduce(
+    (total, forecast) => total + (decimalToNumber(forecast.forecast_amount) ?? 0),
+    0,
+  );
+}
+
+function buildStationRows(
+  shifts: ScheduledShiftRead[],
+  ledgerEntries: ScheduleLedgerEntryRead[] = [],
+) {
   const stations = new Map<string, Map<string, ScheduledShiftRead[]>>();
   shifts.forEach((shift) => {
     const station = stationForShift(shift);
@@ -3917,23 +4620,106 @@ function buildStationRows(shifts: ScheduledShiftRead[]) {
     byDay.set(shift.business_date, dayShifts);
     stations.set(station, byDay);
   });
+  const ledgerStations = new Set(ledgerEntries.map(stationForLedgerEntry));
   const orderedStations = [
     ...stationOrder,
-    ...[...stations.keys()].filter((station) => !stationOrder.includes(station)).sort(),
+    ...[...new Set([...stations.keys(), ...ledgerStations])]
+      .filter((station) => !stationOrder.includes(station))
+      .sort(),
   ];
   return orderedStations
-    .filter((station) => station !== "(без станции)" || stations.has(station))
+    .filter(
+      (station) =>
+        station !== "(без станции)" || stations.has(station) || ledgerStations.has(station),
+    )
     .map((station) => ({
       station,
       byDay: stations.get(station) ?? new Map<string, ScheduledShiftRead[]>(),
     }));
 }
 
-function defaultScheduleDraft(): ScheduleCreatePayload {
-  const start = nextOrCurrentTuesday(new Date());
+function useLocalStorageState<T>(
+  key: string,
+  defaultValue: T | (() => T),
+  isValid: (value: unknown) => value is T,
+  options: { hydrateFromStorage?: boolean } = {},
+): [T, Dispatch<SetStateAction<T>>] {
+  const [value, setValue] = useState<T>(() => {
+    const fallback =
+      typeof defaultValue === "function" ? (defaultValue as () => T)() : defaultValue;
+    if (options.hydrateFromStorage === false) {
+      return fallback;
+    }
+    return readLocalStorageValue(key, isValid) ?? fallback;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(key, JSON.stringify(value));
+  }, [key, value]);
+
+  return [value, setValue];
+}
+
+function initialScheduleRange(storedPreset: PeriodPreset | null) {
+  if (storedPreset === "custom") {
+    return (
+      readLocalStorageValue("schedule.range", isPeriodRange) ?? rangeForPreset("month", new Date())!
+    );
+  }
+  return rangeForPreset(storedPreset ?? "month", new Date())!;
+}
+
+function readStoredSchedulePreset() {
+  return readLocalStorageValue("schedule.preset", isPeriodPreset);
+}
+
+function readLocalStorageValue<T>(key: string, isValid: (value: unknown) => value is T): T | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const rawValue = window.localStorage.getItem(key);
+  if (!rawValue) {
+    return null;
+  }
+  const parsedValue = parseStoredValue(rawValue);
+  return isValid(parsedValue) ? parsedValue : null;
+}
+
+function parseStoredValue(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function isPeriodPreset(value: unknown): value is PeriodPreset {
+  return value === "week" || value === "2weeks" || value === "month" || value === "custom";
+}
+
+function isPeriodRange(value: unknown): value is PeriodRange {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const range = value as Partial<PeriodRange>;
+  return isIsoDateString(range.from) && isIsoDateString(range.to) && range.from <= range.to;
+}
+
+function isBoolean(value: unknown): value is boolean {
+  return typeof value === "boolean";
+}
+
+function isIsoDateString(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function defaultScheduleDraft(range = rangeForPreset("month", new Date())!): ScheduleCreatePayload {
   return {
-    date_start: toIsoDate(start),
-    date_end: toIsoDate(addDays(start, 26)),
+    date_start: range.from,
+    date_end: range.to,
     notes: "",
   };
 }
@@ -3941,14 +4727,14 @@ function defaultScheduleDraft(): ScheduleCreatePayload {
 function pickDefaultSchedule(schedules: ScheduleRead[], visibleDays: string[]) {
   const firstDay = visibleDays[0];
   const lastDay = visibleDays[visibleDays.length - 1];
+  const overlappingSchedules = schedules.filter((schedule) =>
+    rangesOverlap(schedule.date_start, schedule.date_end, firstDay, lastDay),
+  );
   return (
-    schedules.find(
-      (schedule) =>
-        schedule.status === "published" &&
-        rangesOverlap(schedule.date_start, schedule.date_end, firstDay, lastDay),
-    ) ??
-    schedules.find((schedule) => schedule.status === "draft") ??
-    schedules[0]
+    overlappingSchedules.find((schedule) => schedule.status === "published") ??
+    overlappingSchedules.find((schedule) => schedule.status === "draft") ??
+    overlappingSchedules[0] ??
+    null
   );
 }
 
@@ -3972,6 +4758,12 @@ function stationForShift(shift: ScheduledShiftRead) {
   return shift.station_code || stationForPayrollRole(shift.payroll_role);
 }
 
+function stationForLedgerEntry(entry: ScheduleLedgerEntryRead) {
+  return normalizeStationDisplay(
+    entry.station_code || stationForPayrollRole(entry.payroll_role ?? ""),
+  );
+}
+
 function stationForPayrollRole(role: string) {
   const map: Record<string, string | null> = {
     administrator: "Касса",
@@ -3980,8 +4772,17 @@ function stationForPayrollRole(role: string) {
     shawarma: "Горячий цех",
     prep: null,
     Кассир: "Касса",
+    Касса: "Касса",
+    Сушист: "Роллы",
+    Пиццерист: "Пицца",
+    Шаурмист: "Горячий цех",
   };
   return map[role] ?? "(без станции)";
+}
+
+function normalizeStationDisplay(station: string | null) {
+  const value = station || "(без станции)";
+  return normalizeStation(value) === "горячий цех" ? "Горячий цех" : value;
 }
 
 function defaultStationForEmployee(employee: EmployeeRosterRow | undefined) {
@@ -4001,20 +4802,15 @@ function defaultStationForEmployee(employee: EmployeeRosterRow | undefined) {
     shawarma: "Горячий цех",
   };
   return employee.default_cooking_station
-    ? map[employee.default_cooking_station] ?? employee.default_cooking_station
+    ? (map[employee.default_cooking_station] ?? employee.default_cooking_station)
     : null;
 }
 
 function primaryAvailableRole(employee: EmployeeRosterRow | undefined) {
-  return (
-    employee?.available_roles.find((role) => role.is_primary) ?? employee?.available_roles[0]
-  );
+  return employee?.available_roles.find((role) => role.is_primary) ?? employee?.available_roles[0];
 }
 
-function roleForShiftOrPrimary(
-  shift: ScheduledShiftRead,
-  employee: EmployeeRosterRow | undefined,
-) {
+function roleForShiftOrPrimary(shift: ScheduledShiftRead, employee: EmployeeRosterRow | undefined) {
   if (employee?.available_roles.some((role) => role.payroll_role === shift.payroll_role)) {
     return shift.payroll_role;
   }
@@ -4032,9 +4828,8 @@ function defaultRoleForEmployeeAtStation(
     return primaryAvailableRole(employee)?.payroll_role ?? null;
   }
   return (
-    employee.available_roles.find((role) =>
-      stationsMatch(role.default_station_code, stationCode),
-    )?.payroll_role ?? null
+    employee.available_roles.find((role) => stationsMatch(role.default_station_code, stationCode))
+      ?.payroll_role ?? null
   );
 }
 
@@ -4051,7 +4846,62 @@ function payrollRoleLabel(role: string | null | undefined) {
   if (!role) {
     return "—";
   }
-  return PAYROLL_ROLE_LABELS[role as PayrollRole] ?? role;
+  const labels: Record<string, string> = {
+    ...PAYROLL_ROLE_LABELS,
+    Касса: "Администратор",
+    Сушист: "Сушист",
+    Пиццерист: "Пиццерист",
+    Шаурмист: "Шаурмист",
+  };
+  return labels[role] ?? role;
+}
+
+function positionRoleLabel(
+  position: string | null | undefined,
+  payrollRole: string | null | undefined,
+) {
+  const role = payrollRole
+    ? payrollRole
+        .split(",")
+        .map((item) => payrollRoleLabel(item.trim()))
+        .join(", ")
+    : "—";
+  return role === "—" ? position || "—" : `${position || "—"} • ${role}`;
+}
+
+function primaryRoleLabelSource(employee: EmployeeRosterRow) {
+  const primary = employee.available_roles.find((role) => role.is_primary);
+  if (primary) {
+    return primary.payroll_role;
+  }
+  if (employee.primary_payroll_role) {
+    return employee.primary_payroll_role;
+  }
+  return employee.available_roles
+    .slice(0, 2)
+    .map((role) => role.payroll_role)
+    .join(", ");
+}
+
+function firstVisibleShiftRole(
+  employee: EmployeeRosterRow,
+  days: string[],
+  shifts: Map<string, ScheduledShiftRead>,
+) {
+  for (const day of days) {
+    const shift = shifts.get(`${employee.id}:${day}`);
+    if (shift?.payroll_role) {
+      return shift.payroll_role;
+    }
+  }
+  return primaryRoleLabelSource(employee);
+}
+
+function shouldShowFact(day: string, ledgerEntries: ScheduleLedgerEntryRead[], today: string) {
+  if (ledgerEntries.length === 0) {
+    return false;
+  }
+  return day < today || day === today;
 }
 
 function allowanceRoleLabel(role: string | null | undefined) {
@@ -4077,18 +4927,12 @@ function allowanceReasonLabel(reason: string | null | undefined) {
     no_candidate: "нет кандидата",
     manual_override_fallback: "fallback после override",
   };
-  return reason ? labels[reason] ?? reason : "авто";
+  return reason ? (labels[reason] ?? reason) : "авто";
 }
 
-function buildWeekDays(anchorIso: string) {
-  const start = startOfTuesdayWeek(parseIsoDate(anchorIso));
-  return Array.from({ length: 7 }, (_, index) => toIsoDate(addDays(start, index)));
-}
-
-function buildMonthDays(anchorIso: string) {
-  const anchor = parseIsoDate(anchorIso);
-  const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-  const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+function buildRangeDays(range: PeriodRange) {
+  const start = parseIsoDate(range.from);
+  const end = parseIsoDate(range.to);
   const days: string[] = [];
   for (let cursor = start; cursor <= end; cursor = addDays(cursor, 1)) {
     days.push(toIsoDate(cursor));
@@ -4101,13 +4945,6 @@ function startOfTuesdayWeek(value: Date) {
   date.setHours(0, 0, 0, 0);
   const offset = (date.getDay() + 5) % 7;
   return addDays(date, -offset);
-}
-
-function nextOrCurrentTuesday(value: Date) {
-  const date = new Date(value);
-  date.setHours(0, 0, 0, 0);
-  const delta = (2 - date.getDay() + 7) % 7;
-  return addDays(date, delta);
 }
 
 function addDays(value: Date, days: number) {
@@ -4128,6 +4965,10 @@ function toIsoDate(value: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function isDateInRange(value: string, range: PeriodRange) {
+  return value >= range.from && value <= range.to;
+}
+
 function formatDate(value: string) {
   const [year, month, day] = value.split("-");
   return `${day}.${month}.${year}`;
@@ -4137,8 +4978,34 @@ function formatRange(start: string, end: string) {
   return `${formatDate(start)} — ${formatDate(end)}`;
 }
 
+function formatShortRange(start: string, end: string) {
+  return `${formatShortDate(start)} — ${formatShortDate(end)}`;
+}
+
+function formatShortDate(value: string) {
+  const [, month, day] = value.split("-");
+  return `${day}.${month}`;
+}
+
 function formatShiftTime(shift: ScheduledShiftRead) {
   return `${timeFromDateTime(shift.planned_start_at)}–${timeFromDateTime(shift.planned_end_at)}`;
+}
+
+function formatLedgerTime(entry: ScheduleLedgerEntryRead) {
+  const end = entry.closed_at ? timeFromDateTime(entry.closed_at) : "—";
+  return `${timeFromDateTime(entry.opened_at)}–${end}`;
+}
+
+function ledgerFactTitle(entry: ScheduleLedgerEntryRead) {
+  return [
+    `${entry.employee_full_name}: ${formatLedgerTime(entry)}`,
+    positionRoleLabel(entry.position, entry.payroll_role),
+    entry.station_code,
+    `Минут: ${entry.minutes_worked}`,
+    entry.is_closed ? null : "Смена не закрыта",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function timeFromDateTime(value: string) {
@@ -4242,14 +5109,11 @@ function cashierAllowancePlanFactTitle(row: PlanFactDayRowRead) {
   ].join("\n");
 }
 
-function cashierAllowanceInfoText(
-  value: PlanFactDayRowRead["planned_cashier_allowance"],
-) {
+function cashierAllowanceInfoText(value: PlanFactDayRowRead["planned_cashier_allowance"]) {
   if (!value) {
     return "нет данных";
   }
-  const recipient =
-    value.recipient_role === "none" ? "никто" : value.recipient_full_name ?? "—";
+  const recipient = value.recipient_role === "none" ? "никто" : (value.recipient_full_name ?? "—");
   return `${recipient} (${allowanceRoleLabel(value.recipient_role)}, ${allowanceReasonLabel(
     value.reason,
   )})`;
@@ -4286,41 +5150,59 @@ function roleColorClasses(role: string) {
     primaryText: "text-foreground",
     secondaryText: "text-muted-foreground",
   };
-  const classes: Record<
-    string,
-    { container: string; primaryText: string; secondaryText: string }
-  > = {
-    sushi: {
-      container: "border-blue-300 bg-blue-50",
-      primaryText: "text-blue-900",
-      secondaryText: "text-blue-700",
-    },
-    shawarma: {
-      container: "border-purple-300 bg-purple-50",
-      primaryText: "text-purple-900",
-      secondaryText: "text-purple-700",
-    },
-    administrator: {
-      container: "border-pink-300 bg-pink-50",
-      primaryText: "text-pink-900",
-      secondaryText: "text-pink-700",
-    },
-    pizza: {
-      container: "border-yellow-300 bg-yellow-50",
-      primaryText: "text-yellow-950",
-      secondaryText: "text-yellow-800",
-    },
-    prep: {
-      container: "border-emerald-800 bg-emerald-900",
-      primaryText: "text-white",
-      secondaryText: "text-emerald-100",
-    },
-    Кассир: {
-      container: "border-pink-300 bg-pink-50",
-      primaryText: "text-pink-900",
-      secondaryText: "text-pink-700",
-    },
-  };
+  const classes: Record<string, { container: string; primaryText: string; secondaryText: string }> =
+    {
+      sushi: {
+        container: "border-blue-300 bg-blue-50",
+        primaryText: "text-blue-900",
+        secondaryText: "text-blue-700",
+      },
+      shawarma: {
+        container: "border-purple-300 bg-purple-50",
+        primaryText: "text-purple-900",
+        secondaryText: "text-purple-700",
+      },
+      administrator: {
+        container: "border-pink-300 bg-pink-50",
+        primaryText: "text-pink-900",
+        secondaryText: "text-pink-700",
+      },
+      pizza: {
+        container: "border-yellow-300 bg-yellow-50",
+        primaryText: "text-yellow-950",
+        secondaryText: "text-yellow-800",
+      },
+      prep: {
+        container: "border-emerald-800 bg-emerald-900",
+        primaryText: "text-white",
+        secondaryText: "text-emerald-100",
+      },
+      Кассир: {
+        container: "border-pink-300 bg-pink-50",
+        primaryText: "text-pink-900",
+        secondaryText: "text-pink-700",
+      },
+      Касса: {
+        container: "border-pink-300 bg-pink-50",
+        primaryText: "text-pink-900",
+        secondaryText: "text-pink-700",
+      },
+      Сушист: {
+        container: "border-blue-300 bg-blue-50",
+        primaryText: "text-blue-900",
+        secondaryText: "text-blue-700",
+      },
+      Пиццерист: {
+        container: "border-yellow-300 bg-yellow-50",
+        primaryText: "text-yellow-950",
+        secondaryText: "text-yellow-800",
+      },
+      Шаурмист: {
+        container: "border-purple-300 bg-purple-50",
+        primaryText: "text-purple-900",
+        secondaryText: "text-purple-700",
+      },
+    };
   return classes[role] ?? fallback;
 }
 
@@ -4405,7 +5287,11 @@ function decimalToNumber(value: string | number | null) {
   const amount =
     typeof value === "number"
       ? value
-      : Number(String(value).replace(/[\s\u00a0]/g, "").replace(",", "."));
+      : Number(
+          String(value)
+            .replace(/[\s\u00a0]/g, "")
+            .replace(",", "."),
+        );
   return Number.isFinite(amount) ? amount : null;
 }
 
@@ -4475,11 +5361,7 @@ function shiftTitle(
     .join("\n");
 }
 
-function breakdownLine(
-  breakdown: Record<string, unknown>,
-  key: string,
-  label: string,
-) {
+function breakdownLine(breakdown: Record<string, unknown>, key: string, label: string) {
   const value = breakdown[key];
   if (value === null || value === undefined || value === "") {
     return null;
@@ -4487,11 +5369,6 @@ function breakdownLine(
   return `${label}: ${String(value)}`;
 }
 
-function rangesOverlap(
-  leftStart: string,
-  leftEnd: string,
-  rightStart: string,
-  rightEnd: string,
-) {
+function rangesOverlap(leftStart: string, leftEnd: string, rightStart: string, rightEnd: string) {
   return leftStart <= rightEnd && leftEnd >= rightStart;
 }

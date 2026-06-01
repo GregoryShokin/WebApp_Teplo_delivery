@@ -537,6 +537,20 @@ export type ScheduleRead = {
   shifts: ScheduledShiftRead[];
 };
 
+export type ScheduleLedgerEntryRead = {
+  id: string;
+  business_date: string;
+  employee_id: string;
+  employee_full_name: string;
+  position: string;
+  payroll_role: string | null;
+  station_code: string | null;
+  opened_at: string;
+  closed_at: string | null;
+  minutes_worked: number;
+  is_closed: boolean;
+};
+
 export type ScheduleCreatePayload = {
   date_start: string;
   date_end: string;
@@ -1435,6 +1449,14 @@ export async function getSchedule(id: string): Promise<ScheduleRead> {
   return response.data;
 }
 
+export async function getScheduleLedger(params: {
+  date_from: string;
+  date_to: string;
+}): Promise<ScheduleLedgerEntryRead[]> {
+  const response = await api.get<ScheduleLedgerEntryRead[]>("/schedule/ledger", { params });
+  return response.data;
+}
+
 export async function createSchedule(payload: ScheduleCreatePayload): Promise<ScheduleRead> {
   const response = await api.post<ScheduleRead>("/schedule", payload);
   return response.data;
@@ -1563,9 +1585,7 @@ export async function overrideForecast(
   return response.data;
 }
 
-export async function removeForecastOverride(
-  businessDate: string,
-): Promise<RevenueForecastRead> {
+export async function removeForecastOverride(businessDate: string): Promise<RevenueForecastRead> {
   const response = await api.delete<RevenueForecastRead>(
     `/schedule/forecast/${businessDate}/override`,
   );
@@ -1573,15 +1593,11 @@ export async function removeForecastOverride(
 }
 
 export async function runCostForecast(scheduleId: string): Promise<PayrollForecastRunRead> {
-  const response = await api.post<PayrollForecastRunRead>(
-    `/schedule/${scheduleId}/cost-forecast`,
-  );
+  const response = await api.post<PayrollForecastRunRead>(`/schedule/${scheduleId}/cost-forecast`);
   return response.data;
 }
 
-export async function getLatestRun(
-  scheduleId: string,
-): Promise<PayrollForecastRunRead | null> {
+export async function getLatestRun(scheduleId: string): Promise<PayrollForecastRunRead | null> {
   const response = await api.get<PayrollForecastRunRead | null>(
     `/schedule/${scheduleId}/cost-forecast/latest`,
   );
@@ -1595,10 +1611,7 @@ export async function listRuns(scheduleId: string): Promise<PayrollForecastRunRe
   return response.data;
 }
 
-export async function getRun(
-  scheduleId: string,
-  runId: string,
-): Promise<PayrollForecastRunRead> {
+export async function getRun(scheduleId: string, runId: string): Promise<PayrollForecastRunRead> {
   const response = await api.get<PayrollForecastRunRead>(
     `/schedule/${scheduleId}/cost-forecast/runs/${runId}`,
   );

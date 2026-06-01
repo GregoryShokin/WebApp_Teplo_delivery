@@ -7,10 +7,19 @@ from typing import Any
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 from app.api.deps import CurrentActor
 from app.api.v1.routes.shift_schedule import _shift_to_read
-from app.models import Employee, EmployeeRoleAssignment, ScheduledShift, ShiftSchedule
+from app.db.session import get_session
+from app.main import create_app
+from app.models import (
+    Employee,
+    EmployeeRoleAssignment,
+    ScheduledShift,
+    ShiftLedgerEntry,
+    ShiftSchedule,
+)
 from app.services import shift_schedule_service
 from app.services.staff_taxonomy import default_station_for_payroll_role
 
@@ -34,11 +43,13 @@ class ShiftScheduleFakeSession:
         schedules: list[ShiftSchedule] | None = None,
         employees: list[Employee] | None = None,
         shifts: list[ScheduledShift] | None = None,
+        ledger_entries: list[ShiftLedgerEntry] | None = None,
         assignments: list[EmployeeRoleAssignment] | None = None,
     ) -> None:
         self.schedules = {item.id: item for item in schedules or []}
         self.employees = {item.id: item for item in employees or []}
         self.shifts = {item.id: item for item in shifts or []}
+        self.ledger_entries = {item.id: item for item in ledger_entries or []}
         self.assignments = assignments or []
         self.commits = 0
         self.rollbacks = 0
@@ -59,6 +70,8 @@ class ShiftScheduleFakeSession:
             return self.schedules.get(item_id)
         if model is ScheduledShift:
             return self.shifts.get(item_id)
+        if model is ShiftLedgerEntry:
+            return self.ledger_entries.get(item_id)
         if model is Employee:
             return self.employees.get(item_id)
         return None
@@ -83,6 +96,14 @@ class ShiftScheduleFakeSession:
                     (shift, self.employees[shift.employee_id])
                     for shift in self.shifts.values()
                     if shift.employee_id in self.employees
+                ]
+            )
+        if entities[:2] == [ShiftLedgerEntry, Employee]:
+            return FakeExecuteResult(
+                [
+                    (entry, self.employees[entry.employee_id])
+                    for entry in self.ledger_entries.values()
+                    if entry.employee_id in self.employees
                 ]
             )
         if entities[:2] == [Employee, EmployeeRoleAssignment]:
@@ -221,6 +242,33 @@ def shift(
         station_code="Пицца",
         planned_start_at=start,
         planned_end_at=end,
+    )
+
+
+def ledger_entry(
+    employee_id: uuid.UUID,
+    *,
+    work_date: date = date(2026, 6, 2),
+    payroll_role: str | None = "sushi",
+    opened_hour: int = 10,
+    closed_hour: int | None = 22,
+) -> ShiftLedgerEntry:
+    opened_at = datetime(work_date.year, work_date.month, work_date.day, opened_hour, tzinfo=UTC)
+    closed_at = (
+        datetime(work_date.year, work_date.month, work_date.day, closed_hour, tzinfo=UTC)
+        if closed_hour is not None
+        else None
+    )
+    return ShiftLedgerEntry(
+        id=uuid.uuid4(),
+        work_date=work_date,
+        employee_id=employee_id,
+        payroll_role=payroll_role,
+        category="category_2" if payroll_role else None,
+        source="schedule" if payroll_role else "fallback_primary",
+        opened_at=opened_at,
+        closed_at=closed_at,
+        is_resolved=payroll_role is not None,
     )
 
 
@@ -662,6 +710,83 @@ def test_default_station_mapping() -> None:
     assert default_station_for_payroll_role("administrator") == "Касса"
     assert default_station_for_payroll_role("prep") is None
     assert default_station_for_payroll_role("Пиццерист") == "Пицца"
+
+
+def test_station_mapping_no_shaurma() -> None:
+    assert default_station_for_payroll_role("Шаурмист") == "Горячий цех"
+    assert default_station_for_payroll_role("shawarma") == "Горячий цех"
+
+
+def test_ledger_endpoint_returns_entries_in_range() -> None:
+    cook = employee(position="Повар", full_name="Повар Факт")
+    entry = ledger_entry(cook.id, work_date=date(2026, 6, 2), payroll_role="sushi")
+    outside_entry = ledger_entry(cook.id, work_date=date(2026, 6, 5), payroll_role="pizza")
+    session = ShiftScheduleFakeSession(
+        employees=[cook],
+        ledger_entries=[entry, outside_entry],
+    )
+    app = create_app()
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/schedule/ledger",
+                params={"date_from": "2026-06-01", "date_to": "2026-06-03"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": str(entry.id),
+            "business_date": "2026-06-02",
+            "employee_id": str(cook.id),
+            "employee_full_name": "Повар Факт",
+            "position": "Повар",
+            "payroll_role": "sushi",
+            "station_code": "Роллы",
+            "opened_at": "2026-06-02T10:00:00Z",
+            "closed_at": "2026-06-02T22:00:00Z",
+            "minutes_worked": 720,
+            "is_closed": True,
+        }
+    ]
+
+
+def test_ledger_endpoint_filters_payroll_positions() -> None:
+    cook = employee(position="Повар", full_name="Повар Факт")
+    manager = employee(position="Управляющий", full_name="Управляющий Факт")
+    courier = employee(position="Курьер", full_name="Курьер Факт")
+    session = ShiftScheduleFakeSession(
+        employees=[cook, manager, courier],
+        ledger_entries=[
+            ledger_entry(cook.id, work_date=date(2026, 6, 2), payroll_role="sushi"),
+            ledger_entry(manager.id, work_date=date(2026, 6, 2), payroll_role="administrator"),
+            ledger_entry(courier.id, work_date=date(2026, 6, 2), payroll_role=None),
+        ],
+    )
+    app = create_app()
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/schedule/ledger",
+                params={"date_from": "2026-06-01", "date_to": "2026-06-03"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert [row["employee_full_name"] for row in response.json()] == ["Повар Факт"]
 
 
 async def test_shift_interval_longer_than_16h_fails_422() -> None:

@@ -16,6 +16,7 @@ from app.models import (
     PayrollForecastRun,
     RevenueForecast,
     ScheduledShift,
+    ShiftLedgerEntry,
     ShiftAllowanceOverride,
     ShiftCostEstimate,
     ShiftSchedule,
@@ -37,6 +38,7 @@ from app.schemas.shift_schedule import (
     RevenueForecastRecomputeRequest,
     RevenueForecastRecomputeResponse,
     ScheduleCreateRequest,
+    ScheduleLedgerEntryRead,
     ScheduledShiftRead,
     ScheduledShiftUpsertRequest,
     SchedulePatchRequest,
@@ -50,6 +52,7 @@ from app.services import (
     revenue_forecast_service,
     shift_schedule_service,
 )
+from app.services.staff_taxonomy import default_station_for_payroll_role
 from app.services.seniority_allowance_resolver import (
     CASHIER_POSITION,
     AllowanceAssignment,
@@ -162,6 +165,37 @@ async def delete_forecast_override(
     )
     labels = await _manual_override_labels(session, [forecast])
     return _forecast_to_read(forecast, labels)
+
+
+@router.get("/ledger", response_model=list[ScheduleLedgerEntryRead])
+async def get_schedule_ledger(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    date_from: date,
+    date_to: date,
+) -> list[ScheduleLedgerEntryRead]:
+    del actor
+    if date_to < date_from:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Дата окончания не может быть раньше даты начала",
+        )
+    result = await session.execute(
+        select(ShiftLedgerEntry, Employee)
+        .join(Employee, Employee.id == ShiftLedgerEntry.employee_id)
+        .where(
+            ShiftLedgerEntry.work_date >= date_from,
+            ShiftLedgerEntry.work_date <= date_to,
+            Employee.position.in_(shift_schedule_service.SCHEDULE_EMPLOYEE_POSITIONS),
+        )
+        .order_by(ShiftLedgerEntry.work_date, Employee.full_name, ShiftLedgerEntry.opened_at)
+    )
+    return [
+        _ledger_to_read(entry, employee)
+        for entry, employee in result.all()
+        if date_from <= entry.work_date <= date_to
+        and employee.position in shift_schedule_service.SCHEDULE_EMPLOYEE_POSITIONS
+    ]
 
 
 @router.post("", response_model=ScheduleRead)
@@ -580,6 +614,29 @@ def _shift_to_read(
             shift.planned_end_at,
         ),
         comment_private=shift.comment_private,
+    )
+
+
+def _ledger_to_read(
+    entry: ShiftLedgerEntry,
+    employee: Employee,
+) -> ScheduleLedgerEntryRead:
+    is_closed = entry.closed_at is not None
+    minutes_worked = 0
+    if entry.closed_at is not None:
+        minutes_worked = max(0, int((entry.closed_at - entry.opened_at).total_seconds() // 60))
+    return ScheduleLedgerEntryRead(
+        id=entry.id,
+        business_date=entry.work_date,
+        employee_id=entry.employee_id,
+        employee_full_name=employee.full_name,
+        position=employee.position,
+        payroll_role=entry.payroll_role,
+        station_code=default_station_for_payroll_role(entry.payroll_role),
+        opened_at=entry.opened_at,
+        closed_at=entry.closed_at,
+        minutes_worked=minutes_worked,
+        is_closed=is_closed,
     )
 
 
