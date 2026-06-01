@@ -545,7 +545,12 @@ export function ScheduleRoute() {
   }
 
   function handleEmployeeEmptyCellClick(employee: EmployeeRosterRow, businessDate: string) {
-    if (!currentSchedule || isLocked || quickCreateShiftMutation.isPending) {
+    if (
+      !currentSchedule ||
+      isLocked ||
+      quickCreateShiftMutation.isPending ||
+      deleteShiftMutation.isPending
+    ) {
       return;
     }
     quickCreateShiftMutation.mutate({
@@ -553,6 +558,18 @@ export function ScheduleRoute() {
       employeeId: employee.id,
       businessDate,
     });
+  }
+
+  function handleFilledShiftClick(shift: ScheduledShiftRead) {
+    if (
+      !currentSchedule ||
+      isLocked ||
+      quickCreateShiftMutation.isPending ||
+      deleteShiftMutation.isPending
+    ) {
+      return;
+    }
+    deleteShiftMutation.mutate(shift);
   }
 
   function submitShiftDialog() {
@@ -928,6 +945,7 @@ export function ScheduleRoute() {
             })
           }
           onEmptyCellClick={handleEmployeeEmptyCellClick}
+          onFilledCellClick={handleFilledShiftClick}
           costByShiftId={costEstimatesByShiftId}
           roster={roster}
           shiftByEmployeeDay={shiftByEmployeeDay}
@@ -949,6 +967,7 @@ export function ScheduleRoute() {
               shift,
             })
           }
+          onShiftDelete={handleFilledShiftClick}
           costByShiftId={costEstimatesByShiftId}
           rows={stationRows}
         />
@@ -2220,6 +2239,7 @@ function EmployeeScheduleGrid({
   isLocked,
   onEditShift,
   onEmptyCellClick,
+  onFilledCellClick,
   roster,
   shiftByEmployeeDay,
 }: {
@@ -2229,6 +2249,7 @@ function EmployeeScheduleGrid({
   isLocked: boolean;
   onEditShift: (shift: ScheduledShiftRead) => void;
   onEmptyCellClick: (employee: EmployeeRosterRow, day: string) => void;
+  onFilledCellClick: (shift: ScheduledShiftRead) => void;
   roster: EmployeeRosterRow[];
   shiftByEmployeeDay: Map<string, ScheduledShiftRead>;
 }) {
@@ -2280,13 +2301,15 @@ function EmployeeScheduleGrid({
                       <td
                         className={cn(
                           "group relative h-[72px] border-b border-r p-2 align-top",
-                          !shift && !isLocked && "cursor-pointer hover:bg-primary/5",
+                          !isLocked && "cursor-pointer hover:bg-primary/5",
                           isLocked && "bg-muted/10",
                         )}
                         key={day}
                         onClick={() => {
                           if (!shift && !isLocked) {
                             onEmptyCellClick(employee, day);
+                          } else if (shift && !isLocked) {
+                            onFilledCellClick(shift);
                           }
                         }}
                         style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
@@ -2325,6 +2348,7 @@ function StationScheduleGrid({
   isLoading,
   isLocked,
   onCellClick,
+  onShiftDelete,
   onShiftClick,
   rows,
 }: {
@@ -2333,6 +2357,7 @@ function StationScheduleGrid({
   isLoading: boolean;
   isLocked: boolean;
   onCellClick: (station: string, day: string) => void;
+  onShiftDelete: (shift: ScheduledShiftRead) => void;
   onShiftClick: (shift: ScheduledShiftRead) => void;
   rows: Array<{ station: string; byDay: Map<string, ScheduledShiftRead[]> }>;
 }) {
@@ -2398,10 +2423,16 @@ function StationScheduleGrid({
                             <div
                               className={cn(
                                 "group relative w-full rounded-md border px-2 py-1 pr-7 text-left text-xs",
+                                !isLocked && "cursor-pointer",
                                 roleColorClasses(shift.payroll_role).container,
                               )}
                               key={shift.id}
-                              onClick={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (!isLocked) {
+                                  onShiftDelete(shift);
+                                }
+                              }}
                               title={shiftTitle(shift, costByShiftId.get(shift.id))}
                             >
                               <div
