@@ -1,4 +1,11 @@
 export const PAYROLL_ROLE_SORT_ORDER: Record<string, number> = {
+  // Канонические коды (DB):
+  sushi: 1,
+  pizza: 2,
+  shawarma: 3,
+  prep: 4,
+  administrator: 5,
+  // Локализованные синонимы (на случай если придёт русский лейбл):
   Сушист: 1,
   Пиццерист: 2,
   Шаурмист: 3,
