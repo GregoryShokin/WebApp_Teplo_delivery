@@ -26,9 +26,9 @@ from app.models.payroll import (
     CategoryCoefficient,
     DepositAccount,
     DepositTransaction,
-    PayrollDeductionCategory,
     PayrollAdjustment,
     PayrollAdjustmentCategory,
+    PayrollDeductionCategory,
     PayrollLine,
     PayrollPeriod,
     PayrollRate,
@@ -43,7 +43,7 @@ from app.models.payroll_forecast import PayrollForecastRun, ShiftCostEstimate
 from app.models.period import Period
 from app.models.revenue_forecast import RevenueForecast
 from app.models.settings import AppSetting, AppSettingHistory
-from app.models.shift_schedule import ScheduledShift, ShiftSchedule
+from app.models.shift_schedule import ScheduledShift, ShiftAllowanceOverride, ShiftSchedule
 from app.models.wallet import Wallet
 
 __all__ = [
@@ -87,6 +87,7 @@ __all__ = [
     "RevenueForecast",
     "Role",
     "ShiftLedgerEntry",
+    "ShiftAllowanceOverride",
     "ShiftCostEstimate",
     "ScheduledShift",
     "ShiftSchedule",

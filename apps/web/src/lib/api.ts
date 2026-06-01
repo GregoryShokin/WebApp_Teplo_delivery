@@ -641,6 +641,9 @@ export type PlanFactDayRowRead = {
   cost_deviation_pct: string | number | null;
   revenue_deviation_pct: string | number | null;
   deviation_status: PlanFactDeviationStatus;
+  deviation_flags: string[];
+  planned_cashier_allowance: CashierAllowancePlanFactInfo | null;
+  actual_cashier_allowance: CashierAllowancePlanFactInfo | null;
 };
 
 export type PlanFactEmployeeRowRead = {
@@ -720,6 +723,55 @@ export type EmployeeRosterRow = {
     deputy: boolean;
   };
 };
+
+export type CashierAllowanceRole = "senior" | "deputy_senior" | "none";
+
+export type ShiftAllowanceOverrideRead = {
+  id: string;
+  shift_schedule_id: string;
+  business_date: string;
+  position: "Кассир";
+  recipient_employee_id: string | null;
+  recipient_role: CashierAllowanceRole;
+  comment: string | null;
+  set_by_user_id: string | null;
+  set_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CashierAllowanceOverridePayload = {
+  business_date: string;
+  recipient_employee_id?: string | null;
+  recipient_role: CashierAllowanceRole;
+  comment?: string | null;
+};
+
+export type AllowanceCandidateRead = {
+  employee_id: string;
+  full_name: string;
+  is_senior: boolean;
+  is_deputy_senior: boolean;
+  is_planned: boolean;
+  is_actual: boolean;
+  minutes_worked: number;
+};
+
+export type AllowanceAssignmentRead = {
+  business_date: string;
+  position: "Кассир";
+  recipient_employee_id: string | null;
+  recipient_full_name: string | null;
+  recipient_role: CashierAllowanceRole;
+  reason: string;
+  candidates: AllowanceCandidateRead[];
+  has_manual_override: boolean;
+};
+
+export type CashierAllowancePlanFactInfo = Pick<
+  AllowanceAssignmentRead,
+  "recipient_employee_id" | "recipient_full_name" | "recipient_role" | "reason"
+>;
 
 export type ShiftLedgerSource = "schedule" | "manual_correction" | "fallback_primary";
 export type ShiftLedgerStatus = "resolved" | "needs_role_selection" | "needs_employee_setup";
@@ -1439,6 +1491,49 @@ export async function copyWeek(
   payload: { from_date: string; to_date: string },
 ): Promise<{ copied: number }> {
   const response = await api.post<{ copied: number }>(`/schedule/${scheduleId}/copy-week`, payload);
+  return response.data;
+}
+
+export async function listCashierAllowanceOverrides(
+  scheduleId: string,
+  params?: { business_date?: string },
+): Promise<ShiftAllowanceOverrideRead[]> {
+  const response = await api.get<ShiftAllowanceOverrideRead[]>(
+    `/schedule/${scheduleId}/cashier-allowance-overrides`,
+    { params },
+  );
+  return response.data;
+}
+
+export async function upsertCashierAllowanceOverride(
+  scheduleId: string,
+  payload: CashierAllowanceOverridePayload,
+  overrideId?: string | null,
+): Promise<ShiftAllowanceOverrideRead> {
+  const path = overrideId
+    ? `/schedule/${scheduleId}/cashier-allowance-overrides/${overrideId}`
+    : `/schedule/${scheduleId}/cashier-allowance-overrides`;
+  const response = overrideId
+    ? await api.patch<ShiftAllowanceOverrideRead>(path, payload)
+    : await api.post<ShiftAllowanceOverrideRead>(path, payload);
+  return response.data;
+}
+
+export async function deleteCashierAllowanceOverride(
+  scheduleId: string,
+  overrideId: string,
+): Promise<void> {
+  await api.delete(`/schedule/${scheduleId}/cashier-allowance-overrides/${overrideId}`);
+}
+
+export async function resolveCashierAllowance(
+  scheduleId: string,
+  params: { business_date: string },
+): Promise<AllowanceAssignmentRead> {
+  const response = await api.get<AllowanceAssignmentRead>(
+    `/schedule/${scheduleId}/cashier-allowance-resolve`,
+    { params },
+  );
   return response.data;
 }
 

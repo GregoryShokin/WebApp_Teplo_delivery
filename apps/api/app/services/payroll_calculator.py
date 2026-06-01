@@ -44,6 +44,12 @@ from app.services.payroll_percent import (
     revenue_tier_rate,
     shift_weight,
 )
+from app.services.seniority_allowance_resolver import (
+    CASHIER_ALLOWANCE_ASSIGNMENTS_CONFIG_KEY,
+    CASHIER_POSITION,
+    latest_published_schedule_id_covering,
+    resolve_cashier_allowance_for_day,
+)
 from app.services.seniority_allowance_service import (
     SENIORITY_ALLOWANCE_MAP_CONFIG_KEY,
     allowance_amount_from_settings,
@@ -146,6 +152,9 @@ async def calculate_payroll_lines(
     settings[SENIORITY_ALLOWANCE_MAP_CONFIG_KEY] = await load_seniority_allowance_maps(
         session,
         (entry.work_date for entry in entries),
+    )
+    settings[CASHIER_ALLOWANCE_ASSIGNMENTS_CONFIG_KEY] = (
+        await load_cashier_allowance_assignments_for_entries(session, entries)
     )
     settings[SHIFT_LEDGER_CONFIG_KEY] = await load_shift_ledger_for_entries(session, entries)
     settings[PAYROLL_ADJUSTMENTS_CONFIG_KEY] = await load_adjustments_for_period(
@@ -290,6 +299,24 @@ async def load_shift_ledger_for_entries(
     return {(entry.employee_id, entry.work_date): entry for entry in result.all()}
 
 
+async def load_cashier_allowance_assignments_for_entries(
+    session: AsyncSession,
+    entries: Iterable[AttendanceEntry],
+) -> dict[date, Any]:
+    assignments: dict[date, Any] = {}
+    work_dates = sorted({entry.work_date for entry in entries})
+    for work_date in work_dates:
+        shift_schedule_id = await latest_published_schedule_id_covering(session, work_date)
+        assignments[work_date] = await resolve_cashier_allowance_for_day(
+            session,
+            business_date=work_date,
+            shift_schedule_id=shift_schedule_id,
+            use_plan=True,
+            use_fact=True,
+        )
+    return assignments
+
+
 async def load_deposit_balances_for_employees(
     session: AsyncSession,
     employee_ids: Iterable[uuid.UUID],
@@ -399,11 +426,13 @@ def calculate_payroll_lines_from_inputs(
         group_key = (employee_id, role, work_date, station)
         category = group_categories[group_key]
         base_pay = base_shift_pay(settings, role, category, employee, minutes, work_date, station)
-        seniority_allowance_pay = seniority_allowance_for_payroll_entry(
-            settings,
-            employee,
-            minutes,
-            work_date,
+        seniority_allowance_pay, seniority_allowance_metadata = (
+            seniority_allowance_details_for_payroll_entry(
+                settings,
+                employee,
+                minutes,
+                work_date,
+            )
         )
         percent_pay = daily_percent_distributions.get(work_date, {}).get(
             group_key, Decimal("0")
@@ -459,6 +488,7 @@ def calculate_payroll_lines_from_inputs(
                 "fund_rate_percent": float((fund_rate * Decimal("100")).quantize(Decimal("0.001"))),
                 "fund_accrual": money(fund_accrual),
                 **percent_components,
+                **seniority_allowance_metadata,
             }
         )
         if fund_excluded:
@@ -1006,22 +1036,157 @@ def seniority_allowance_for_payroll_entry(
     minutes: int,
     work_date: date | None,
 ) -> Decimal:
+    amount, _metadata = seniority_allowance_details_for_payroll_entry(
+        settings,
+        employee,
+        minutes,
+        work_date,
+    )
+    return amount
+
+
+def seniority_allowance_details_for_payroll_entry(
+    settings: Mapping[str, Any],
+    employee: Employee,
+    minutes: int,
+    work_date: date | None,
+) -> tuple[Decimal, dict[str, Any]]:
     allowance_flags = allowance_flags_for_payroll_entry(settings, employee, work_date)
+    position = position_for_payroll_entry(settings, employee, work_date)
+    if position == CASHIER_POSITION:
+        cashier_assignments = settings.get(CASHIER_ALLOWANCE_ASSIGNMENTS_CONFIG_KEY)
+        if isinstance(cashier_assignments, Mapping):
+            assignment = cashier_allowance_assignment_for_date(
+                cashier_assignments,
+                work_date,
+            )
+            return cashier_seniority_allowance_for_assignment(
+                settings,
+                employee,
+                minutes,
+                work_date,
+                assignment,
+                allowance_flags,
+            )
+
     allowance_role: str | None = None
     if allowance_flags["is_senior"]:
         allowance_role = "senior"
     elif allowance_flags["is_deputy_senior"]:
         allowance_role = "deputy_senior"
     if allowance_role is None:
-        return Decimal("0")
+        return Decimal("0"), {}
 
     amount = allowance_amount_from_settings(
         settings,
-        position=position_for_payroll_entry(settings, employee, work_date),
+        position=position,
         role=allowance_role,
         on_date=work_date,
     )
-    return amount * shift_pay_ratio(minutes)
+    return amount * shift_pay_ratio(minutes), {
+        "seniority_allowance_role": allowance_role,
+    }
+
+
+def cashier_seniority_allowance_for_assignment(
+    settings: Mapping[str, Any],
+    employee: Employee,
+    minutes: int,
+    work_date: date | None,
+    assignment: Any,
+    allowance_flags: Mapping[str, bool],
+) -> tuple[Decimal, dict[str, Any]]:
+    reason = assignment_reason(assignment) or "no_candidate"
+    recipient_employee_id = assignment_recipient_employee_id(assignment)
+    recipient_role = assignment_recipient_role(assignment)
+    is_recipient = recipient_employee_id is not None and recipient_employee_id == employee.id
+
+    metadata: dict[str, Any] = {
+        "seniority_allowance_reason": reason,
+    }
+    if is_recipient and recipient_role in {"senior", "deputy_senior"}:
+        amount = allowance_amount_from_settings(
+            settings,
+            position=CASHIER_POSITION,
+            role=recipient_role,
+            on_date=work_date,
+        )
+        metadata["seniority_allowance_role"] = recipient_role
+        return amount * shift_pay_ratio(minutes), metadata
+
+    if allowance_flags.get("is_senior") or allowance_flags.get("is_deputy_senior"):
+        metadata["seniority_allowance_skipped_reason"] = cashier_skipped_reason(
+            reason,
+            recipient_employee_id,
+        )
+    return Decimal("0"), metadata
+
+
+def cashier_allowance_assignment_for_date(
+    assignments: Mapping[Any, Any],
+    work_date: date | None,
+) -> Any:
+    if work_date is None:
+        return None
+    value = assignments.get(work_date)
+    if value is None:
+        value = assignments.get(work_date.isoformat())
+    return value
+
+
+def assignment_recipient_employee_id(assignment: Any) -> uuid.UUID | None:
+    if assignment is None:
+        return None
+    value = (
+        assignment.get("recipient_employee_id")
+        if isinstance(assignment, Mapping)
+        else getattr(assignment, "recipient_employee_id", None)
+    )
+    if isinstance(value, uuid.UUID):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            return uuid.UUID(value)
+        except ValueError:
+            return None
+    return None
+
+
+def assignment_recipient_role(assignment: Any) -> str | None:
+    if assignment is None:
+        return None
+    value = (
+        assignment.get("recipient_role")
+        if isinstance(assignment, Mapping)
+        else getattr(assignment, "recipient_role", None)
+    )
+    return str(value) if value is not None else None
+
+
+def assignment_reason(assignment: Any) -> str | None:
+    if assignment is None:
+        return None
+    value = (
+        assignment.get("reason")
+        if isinstance(assignment, Mapping)
+        else getattr(assignment, "reason", None)
+    )
+    return str(value) if value is not None else None
+
+
+def cashier_skipped_reason(
+    assignment_reason_value: str,
+    recipient_employee_id: uuid.UUID | None,
+) -> str:
+    if assignment_reason_value == "manual_override":
+        return "manual_override"
+    if recipient_employee_id is not None:
+        return (
+            "plan_priority_to_other"
+            if assignment_reason_value == "plan_priority"
+            else assignment_reason_value
+        )
+    return assignment_reason_value
 
 
 def weekday_premium_for_employee_day(

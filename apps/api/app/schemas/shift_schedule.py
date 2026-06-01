@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+ALLOWANCE_RECIPIENT_ROLES = {"senior", "deputy_senior", "none"}
+
 
 class ScheduleCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -182,6 +184,76 @@ class RevenueForecastRecomputeResponse(BaseModel):
     recomputed: int
 
 
+class CashierAllowanceOverrideRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    business_date: date
+    recipient_role: str
+    recipient_employee_id: uuid.UUID | None = None
+    comment: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("recipient_role")
+    @classmethod
+    def validate_recipient_role(cls, value: str) -> str:
+        if value not in ALLOWANCE_RECIPIENT_ROLES:
+            raise ValueError("recipient_role должен быть senior, deputy_senior или none")
+        return value
+
+    @field_validator("comment")
+    @classmethod
+    def strip_comment(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        normalized = value.strip()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_recipient_consistency(self) -> CashierAllowanceOverrideRequest:
+        if self.recipient_role == "none" and self.recipient_employee_id is not None:
+            raise ValueError("Для recipient_role='none' не указывайте recipient_employee_id")
+        if (
+            self.recipient_role in {"senior", "deputy_senior"}
+            and self.recipient_employee_id is None
+        ):
+            raise ValueError("Для senior/deputy_senior укажите recipient_employee_id")
+        return self
+
+
+class ShiftAllowanceOverrideRead(BaseModel):
+    id: uuid.UUID
+    shift_schedule_id: uuid.UUID
+    business_date: date
+    position: str
+    recipient_employee_id: uuid.UUID | None
+    recipient_role: str
+    comment: str | None
+    set_by_user_id: uuid.UUID | None
+    set_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+
+class AllowanceCandidateRead(BaseModel):
+    employee_id: uuid.UUID
+    full_name: str
+    is_senior: bool
+    is_deputy_senior: bool
+    is_planned: bool
+    is_actual: bool
+    minutes_worked: int
+
+
+class AllowanceAssignmentRead(BaseModel):
+    business_date: date
+    position: str = "Кассир"
+    recipient_employee_id: uuid.UUID | None
+    recipient_full_name: str | None
+    recipient_role: str
+    reason: str
+    candidates: list[AllowanceCandidateRead]
+    has_manual_override: bool
+
+
 class ShiftCostEstimateRead(BaseModel):
     id: uuid.UUID
     scheduled_shift_id: uuid.UUID
@@ -229,6 +301,9 @@ class PlanFactDayRowRead(BaseModel):
     cost_deviation_pct: str | None
     revenue_deviation_pct: str | None
     deviation_status: str
+    deviation_flags: list[str] = Field(default_factory=list)
+    planned_cashier_allowance: dict[str, Any] | None = None
+    actual_cashier_allowance: dict[str, Any] | None = None
 
 
 class PlanFactEmployeeRowRead(BaseModel):

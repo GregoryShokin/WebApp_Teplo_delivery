@@ -16,11 +16,15 @@ from app.models import (
     PayrollForecastRun,
     RevenueForecast,
     ScheduledShift,
+    ShiftAllowanceOverride,
     ShiftCostEstimate,
     ShiftSchedule,
     User,
 )
 from app.schemas.shift_schedule import (
+    AllowanceAssignmentRead,
+    AllowanceCandidateRead,
+    CashierAllowanceOverrideRequest,
     CopyWeekRequest,
     CopyWeekResponse,
     EmployeeRosterRow,
@@ -37,6 +41,7 @@ from app.schemas.shift_schedule import (
     ScheduledShiftUpsertRequest,
     SchedulePatchRequest,
     ScheduleRead,
+    ShiftAllowanceOverrideRead,
     ShiftCostEstimateRead,
 )
 from app.services import (
@@ -44,6 +49,18 @@ from app.services import (
     plan_fact_service,
     revenue_forecast_service,
     shift_schedule_service,
+)
+from app.services.seniority_allowance_resolver import (
+    CASHIER_POSITION,
+    AllowanceAssignment,
+    delete_cashier_override,
+    get_cashier_override,
+    list_cashier_overrides,
+    load_cashier_candidates,
+    patch_cashier_override,
+    recipient_full_name,
+    resolve_cashier_allowance_recipient,
+    upsert_cashier_override,
 )
 
 router = APIRouter()
@@ -192,6 +209,134 @@ async def get_plan_fact(
     summary = await plan_fact_service.compute_plan_fact(session, schedule_id)
     await _attach_plan_fact_source_labels(session, summary)
     return _plan_fact_to_read(summary)
+
+
+@router.get(
+    "/{schedule_id}/cashier-allowance-overrides",
+    response_model=list[ShiftAllowanceOverrideRead],
+)
+async def get_cashier_allowance_overrides(
+    schedule_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    business_date: date | None = None,
+) -> list[ShiftAllowanceOverrideRead]:
+    del actor
+    schedule = await _get_schedule(session, schedule_id)
+    if business_date is not None:
+        _validate_schedule_business_date(schedule, business_date)
+    overrides = await list_cashier_overrides(
+        session,
+        shift_schedule_id=schedule_id,
+        business_date=business_date,
+    )
+    return [_cashier_override_to_read(item) for item in overrides]
+
+
+@router.post(
+    "/{schedule_id}/cashier-allowance-overrides",
+    response_model=ShiftAllowanceOverrideRead,
+)
+async def post_cashier_allowance_override(
+    schedule_id: uuid.UUID,
+    payload: CashierAllowanceOverrideRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> ShiftAllowanceOverrideRead:
+    require_finance_manager_plus(actor)
+    await _validate_cashier_override_request(session, schedule_id, payload)
+    override = await upsert_cashier_override(
+        session,
+        shift_schedule_id=schedule_id,
+        business_date=payload.business_date,
+        recipient_role=payload.recipient_role,
+        recipient_employee_id=payload.recipient_employee_id,
+        comment=payload.comment,
+        actor=actor,
+    )
+    return _cashier_override_to_read(override)
+
+
+@router.patch(
+    "/{schedule_id}/cashier-allowance-overrides/{override_id}",
+    response_model=ShiftAllowanceOverrideRead,
+)
+async def patch_cashier_allowance_override(
+    schedule_id: uuid.UUID,
+    override_id: uuid.UUID,
+    payload: CashierAllowanceOverrideRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> ShiftAllowanceOverrideRead:
+    require_finance_manager_plus(actor)
+    await _validate_cashier_override_request(session, schedule_id, payload)
+    override = await patch_cashier_override(
+        session,
+        shift_schedule_id=schedule_id,
+        override_id=override_id,
+        business_date=payload.business_date,
+        recipient_role=payload.recipient_role,
+        recipient_employee_id=payload.recipient_employee_id,
+        comment=payload.comment,
+        actor=actor,
+    )
+    return _cashier_override_to_read(override)
+
+
+@router.delete(
+    "/{schedule_id}/cashier-allowance-overrides/{override_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_cashier_allowance_override(
+    schedule_id: uuid.UUID,
+    override_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> Response:
+    require_finance_manager_plus(actor)
+    await _ensure_schedule_exists(session, schedule_id)
+    await delete_cashier_override(
+        session,
+        shift_schedule_id=schedule_id,
+        override_id=override_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/{schedule_id}/cashier-allowance-resolve",
+    response_model=AllowanceAssignmentRead,
+)
+async def get_cashier_allowance_resolve(
+    schedule_id: uuid.UUID,
+    business_date: date,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> AllowanceAssignmentRead:
+    del actor
+    schedule = await _get_schedule(session, schedule_id)
+    _validate_schedule_business_date(schedule, business_date)
+    candidates = await load_cashier_candidates(
+        session,
+        business_date=business_date,
+        use_plan=True,
+        use_fact=False,
+        shift_schedule_id=schedule_id,
+    )
+    override = await get_cashier_override(
+        session,
+        shift_schedule_id=schedule_id,
+        business_date=business_date,
+    )
+    assignment = resolve_cashier_allowance_recipient(
+        candidates=candidates,
+        manual_override=override,
+    )
+    return _cashier_assignment_to_read(
+        business_date,
+        assignment,
+        has_manual_override=override is not None,
+    )
 
 
 @router.post("/{schedule_id}/cost-forecast", response_model=PayrollForecastRunRead)
@@ -438,6 +583,103 @@ def _shift_to_read(
     )
 
 
+async def _validate_cashier_override_request(
+    session: AsyncSession,
+    schedule_id: uuid.UUID,
+    payload: CashierAllowanceOverrideRequest,
+) -> None:
+    schedule = await _get_schedule(session, schedule_id)
+    _validate_schedule_business_date(schedule, payload.business_date)
+    if payload.recipient_role == "none":
+        return
+
+    candidates = await load_cashier_candidates(
+        session,
+        business_date=payload.business_date,
+        use_plan=True,
+        use_fact=True,
+        shift_schedule_id=schedule_id,
+    )
+    recipient = next(
+        (
+            candidate
+            for candidate in candidates
+            if candidate.employee_id == payload.recipient_employee_id
+        ),
+        None,
+    )
+    if recipient is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Получатель надбавки должен быть активным кассиром в плане или факте этого дня",
+        )
+    if payload.recipient_role == "senior" and not recipient.is_senior:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Выбранный сотрудник не является старшим администратором",
+        )
+    if payload.recipient_role == "deputy_senior" and not recipient.is_deputy_senior:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Выбранный сотрудник не является замом администратора",
+        )
+
+
+def _validate_schedule_business_date(schedule: ShiftSchedule, business_date: date) -> None:
+    if not schedule.date_start <= business_date <= schedule.date_end:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Дата вне периода графика",
+        )
+
+
+def _cashier_override_to_read(
+    override: ShiftAllowanceOverride,
+) -> ShiftAllowanceOverrideRead:
+    return ShiftAllowanceOverrideRead(
+        id=override.id,
+        shift_schedule_id=override.shift_schedule_id,
+        business_date=override.business_date,
+        position=override.position,
+        recipient_employee_id=override.recipient_employee_id,
+        recipient_role=override.recipient_role,
+        comment=override.comment,
+        set_by_user_id=override.set_by_user_id,
+        set_at=override.set_at,
+        created_at=override.created_at,
+        updated_at=override.updated_at,
+    )
+
+
+def _cashier_assignment_to_read(
+    business_date: date,
+    assignment: AllowanceAssignment,
+    *,
+    has_manual_override: bool,
+) -> AllowanceAssignmentRead:
+    return AllowanceAssignmentRead(
+        business_date=business_date,
+        position=CASHIER_POSITION,
+        recipient_employee_id=assignment.recipient_employee_id,
+        recipient_full_name=recipient_full_name(assignment),
+        recipient_role=assignment.recipient_role,
+        reason=assignment.reason,
+        candidates=[
+            AllowanceCandidateRead(
+                employee_id=uuid.UUID(str(candidate["employee_id"])),
+                full_name=str(candidate["full_name"]),
+                is_senior=bool(candidate["is_senior"]),
+                is_deputy_senior=bool(candidate["is_deputy_senior"]),
+                is_planned=bool(candidate["is_planned"]),
+                is_actual=bool(candidate["is_actual"]),
+                minutes_worked=int(candidate["minutes_worked"]),
+            )
+            for candidate in assignment.candidates_snapshot
+        ],
+        has_manual_override=has_manual_override,
+    )
+
+
 def _forecast_to_read(
     forecast: RevenueForecast,
     manual_override_labels: dict[uuid.UUID, str],
@@ -597,6 +839,13 @@ async def _ensure_schedule_exists(session: AsyncSession, schedule_id: uuid.UUID)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="График не найден")
 
 
+async def _get_schedule(session: AsyncSession, schedule_id: uuid.UUID) -> ShiftSchedule:
+    schedule = await session.get(ShiftSchedule, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="График не найден")
+    return schedule
+
+
 def _plan_fact_to_read(summary: plan_fact_service.PlanFactSummary) -> PlanFactSummaryRead:
     return PlanFactSummaryRead(
         schedule=_decimal_data(summary.schedule),
@@ -621,6 +870,9 @@ def _plan_fact_to_read(summary: plan_fact_service.PlanFactSummary) -> PlanFactSu
                 cost_deviation_pct=_optional_decimal_to_str(row.cost_deviation_pct),
                 revenue_deviation_pct=_optional_decimal_to_str(row.revenue_deviation_pct),
                 deviation_status=row.deviation_status,
+                deviation_flags=row.deviation_flags,
+                planned_cashier_allowance=_decimal_data(row.planned_cashier_allowance),
+                actual_cashier_allowance=_decimal_data(row.actual_cashier_allowance),
             )
             for row in summary.by_date
         ],

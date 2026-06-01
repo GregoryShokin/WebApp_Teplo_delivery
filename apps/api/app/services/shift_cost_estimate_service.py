@@ -21,7 +21,7 @@ from app.services.payroll_calculator import (
     percent_revenue_tiers,
     position_for_payroll_entry,
     role_category_rate,
-    seniority_allowance_for_payroll_entry,
+    seniority_allowance_details_for_payroll_entry,
     shift_pay_ratio,
     weekday_premium_for_employee_day,
 )
@@ -77,7 +77,6 @@ async def compute_shift_cost(
     same_day_shifts: list[tuple[ScheduledShift, Employee]],
     forecast_quality_status: str | None = None,
 ) -> ShiftCostBreakdown:
-    del session
     normalized_settings = normalize_settings(settings)
     planned_minutes = planned_minutes_for_shift(shift)
     planned_hours = (Decimal(planned_minutes) / HOUR).quantize(Decimal("0.01"))
@@ -94,6 +93,7 @@ async def compute_shift_cost(
     category = ""
     base_salary = Decimal("0")
     allowance = Decimal("0")
+    allowance_metadata: dict[str, Any] = {}
     rate_exists = False
     if payroll_role is None:
         quality_reasons.append("no_role")
@@ -130,7 +130,7 @@ async def compute_shift_cost(
                     shift.business_date,
                     station_key,
                 )
-                allowance = seniority_allowance_for_payroll_entry(
+                allowance, allowance_metadata = seniority_allowance_details_for_payroll_entry(
                     normalized_settings,
                     employee,
                     min(planned_minutes, FULL_SHIFT_MINUTES),
@@ -187,6 +187,7 @@ async def compute_shift_cost(
         "allowance": money_string(allowance),
         "allowance_included_in_base": True,
         "allowance_flags": dict(allowance_flags),
+        **allowance_metadata,
         "shift_pay_ratio": money_string(shift_pay_ratio(min(planned_minutes, FULL_SHIFT_MINUTES))),
         "rate_exists": rate_exists,
         "fund_accrual": money_string(fund_accrual),

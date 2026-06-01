@@ -38,6 +38,10 @@ from app.services.payroll_percent import (
     load_revenue_tier_versions,
 )
 from app.services.revenue_forecast_service import get_forecasts_in_range
+from app.services.seniority_allowance_resolver import (
+    CASHIER_ALLOWANCE_ASSIGNMENTS_CONFIG_KEY,
+    resolve_cashier_allowance_for_day,
+)
 from app.services.seniority_allowance_service import (
     SENIORITY_ALLOWANCE_MAP_CONFIG_KEY,
     load_seniority_allowance_maps,
@@ -62,6 +66,7 @@ async def create_forecast_run(
     shift_rows = await _load_shift_rows(session, shift_schedule_id)
     settings = await _load_pricing_settings(
         session,
+        shift_schedule_id,
         schedule.date_start,
         schedule.date_end,
         shift_rows,
@@ -255,6 +260,7 @@ async def _load_shift_rows(
 
 async def _load_pricing_settings(
     session: AsyncSession,
+    shift_schedule_id: uuid.UUID,
     date_start: date,
     date_end: date,
     shift_rows: list[tuple[ScheduledShift, Employee]],
@@ -291,7 +297,31 @@ async def _load_pricing_settings(
         session,
         (shift.business_date for shift, _employee in shift_rows),
     )
+    settings[CASHIER_ALLOWANCE_ASSIGNMENTS_CONFIG_KEY] = (
+        await _load_cashier_allowance_assignments_for_schedule(
+            session,
+            shift_schedule_id,
+            shift_rows,
+        )
+    )
     return settings
+
+
+async def _load_cashier_allowance_assignments_for_schedule(
+    session: AsyncSession,
+    shift_schedule_id: uuid.UUID,
+    shift_rows: list[tuple[ScheduledShift, Employee]],
+) -> dict[date, Any]:
+    assignments: dict[date, Any] = {}
+    for business_date in sorted({shift.business_date for shift, _employee in shift_rows}):
+        assignments[business_date] = await resolve_cashier_allowance_for_day(
+            session,
+            business_date=business_date,
+            shift_schedule_id=shift_schedule_id,
+            use_plan=True,
+            use_fact=False,
+        )
+    return assignments
 
 
 async def _load_employee_assignments_for_shifts(

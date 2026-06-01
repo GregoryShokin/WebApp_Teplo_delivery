@@ -53,6 +53,7 @@ EXPECTED_TABLES = {
     "shift_ledger_entry",
     "shift_schedule",
     "scheduled_shift",
+    "shift_allowance_override",
     "payroll_run",
     "payroll_line",
     "deposit_account",
@@ -101,6 +102,7 @@ def test_all_models_import() -> None:
         "PayrollPeriod",
         "AttendanceEntry",
         "ShiftLedgerEntry",
+        "ShiftAllowanceOverride",
         "ScheduledShift",
         "ShiftSchedule",
         "PayrollRun",
@@ -260,13 +262,20 @@ def test_shift_ledger_entry_table_is_declared() -> None:
 def test_shift_schedule_tables_are_declared() -> None:
     schedule_columns = models.ShiftSchedule.__table__.c
     shift_columns = models.ScheduledShift.__table__.c
+    override_columns = models.ShiftAllowanceOverride.__table__.c
     schedule_indexes = {index.name for index in models.ShiftSchedule.__table__.indexes}
     shift_indexes = {index.name for index in models.ScheduledShift.__table__.indexes}
+    override_indexes = {
+        index.name for index in models.ShiftAllowanceOverride.__table__.indexes
+    }
     schedule_constraints = {
         constraint.name for constraint in models.ShiftSchedule.__table__.constraints
     }
     shift_constraints = {
         constraint.name for constraint in models.ScheduledShift.__table__.constraints
+    }
+    override_constraints = {
+        constraint.name for constraint in models.ShiftAllowanceOverride.__table__.constraints
     }
 
     assert schedule_columns.date_start.nullable is False
@@ -285,6 +294,16 @@ def test_shift_schedule_tables_are_declared() -> None:
     assert "uq_scheduled_shift_schedule_date_employee" in shift_constraints
     assert "ix_scheduled_shift_schedule_date" in shift_indexes
     assert "ix_scheduled_shift_employee_date" in shift_indexes
+    assert override_columns.shift_schedule_id.nullable is False
+    assert override_columns.business_date.nullable is False
+    assert override_columns.position.nullable is False
+    assert override_columns.recipient_employee_id.nullable is True
+    assert override_columns.recipient_role.nullable is False
+    assert "ck_shift_allowance_override_recipient_role" in override_constraints
+    assert "ck_shift_allowance_override_position_cashier_only" in override_constraints
+    assert "ck_shift_allowance_override_recipient_consistency" in override_constraints
+    assert "uq_shift_allowance_override_schedule_date_position" in override_constraints
+    assert "ix_shift_allowance_override_date_position" in override_indexes
 
 
 def test_delivery_order_table_is_declared() -> None:
@@ -422,7 +441,8 @@ async def test_pin_origin_migration_backfills_iiko_employees_without_local_pin(
                         pin_hash
                     )
                     values
-                        (:assumed_id, 'Iiko Assumed', 'iiko-assumed', 'Повар', 'requires_setup', null),
+                        (:assumed_id, 'Iiko Assumed', 'iiko-assumed', 'Повар',
+                         'requires_setup', null),
                         (:local_id, 'Local Pin', 'iiko-local', 'Повар', 'active', 'hashed-pin')
                     """
                 ),

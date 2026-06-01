@@ -26,6 +26,11 @@ from app.models import (
     ShiftSchedule,
 )
 from app.services.iiko_revenue import fetch_daily_revenue
+from app.services.seniority_allowance_resolver import (
+    AllowanceAssignment,
+    assignment_to_dict,
+    resolve_cashier_allowance_for_day,
+)
 from app.services.shift_schedule_service import planned_hours
 
 PLAN_FACT_WARNING_THRESHOLD_KEY = "schedule.plan_fact_warning_threshold_pct"
@@ -51,6 +56,9 @@ class PlanFactDayRow:
     cost_deviation_pct: Decimal | None
     revenue_deviation_pct: Decimal | None
     deviation_status: str
+    deviation_flags: list[str]
+    planned_cashier_allowance: dict[str, Any] | None
+    actual_cashier_allowance: dict[str, Any] | None
 
 
 @dataclass
@@ -144,6 +152,11 @@ async def compute_plan_fact(
         ledger_metrics["minutes_by_period_employee"],
         schedule_days,
     )
+    cashier_allowance_by_day = await _build_cashier_allowance_plan_fact(
+        session,
+        schedule.id,
+        schedule_days,
+    )
 
     by_date = [
         _build_day_row(
@@ -154,6 +167,7 @@ async def compute_plan_fact(
             forecast_by_day,
             actual_revenue_by_day,
             threshold,
+            cashier_allowance_by_day.get(day),
         )
         for day in schedule_days
     ]
@@ -515,6 +529,7 @@ def _build_day_row(
     forecast_by_day: dict[date, RevenueForecast],
     actual_revenue_by_day: dict[date, Decimal],
     threshold: Decimal,
+    cashier_allowance: dict[str, AllowanceAssignment] | None,
 ) -> PlanFactDayRow:
     planned_shifts = len(planned_metrics["shifts_by_day"].get(day, []))
     planned_hours_value = _quant_hours(planned_metrics["hours_by_day"].get(day, Decimal("0")))
@@ -539,6 +554,24 @@ def _build_day_row(
     hours_pct = _deviation_pct(actual_hours, planned_hours_value)
     cost_pct = _deviation_pct(actual_cost_value, planned_cost)
     revenue_pct = _deviation_pct(actual_revenue, planned_revenue)
+    planned_cashier_allowance = (
+        assignment_to_dict(cashier_allowance["planned"])
+        if cashier_allowance is not None
+        else None
+    )
+    actual_cashier_allowance = (
+        assignment_to_dict(cashier_allowance["actual"])
+        if cashier_allowance is not None
+        else None
+    )
+    deviation_flags: list[str] = []
+    if (
+        planned_cashier_allowance is not None
+        and actual_cashier_allowance is not None
+        and planned_cashier_allowance.get("recipient_employee_id")
+        != actual_cashier_allowance.get("recipient_employee_id")
+    ):
+        deviation_flags.append("cashier_allowance_recipient_changed")
 
     return PlanFactDayRow(
         business_date=day,
@@ -564,7 +597,35 @@ def _build_day_row(
             deviations=[hours_pct, cost_pct],
             threshold=threshold,
         ),
+        deviation_flags=deviation_flags,
+        planned_cashier_allowance=planned_cashier_allowance,
+        actual_cashier_allowance=actual_cashier_allowance,
     )
+
+
+async def _build_cashier_allowance_plan_fact(
+    session: AsyncSession,
+    shift_schedule_id: uuid.UUID,
+    schedule_days: list[date],
+) -> dict[date, dict[str, AllowanceAssignment]]:
+    assignments: dict[date, dict[str, AllowanceAssignment]] = {}
+    for day in schedule_days:
+        planned = await resolve_cashier_allowance_for_day(
+            session,
+            business_date=day,
+            shift_schedule_id=shift_schedule_id,
+            use_plan=True,
+            use_fact=False,
+        )
+        actual = await resolve_cashier_allowance_for_day(
+            session,
+            business_date=day,
+            shift_schedule_id=shift_schedule_id,
+            use_plan=True,
+            use_fact=True,
+        )
+        assignments[day] = {"planned": planned, "actual": actual}
+    return assignments
 
 
 def _build_employee_rows(
