@@ -69,6 +69,7 @@ from app.services.payroll_runner import (
     line_deposit_overrides_from_lines,
     payout_previous_year_fund_if_due,
 )
+from app.services.seniority_allowance_service import SENIORITY_ALLOWANCE_MAP_CONFIG_KEY
 from app.services.shift_ledger import AttendanceSnapshot, LedgerAssignment
 
 
@@ -1675,6 +1676,9 @@ def test_payroll_calculator_uses_allowance_events_by_work_date() -> None:
     settings[EMPLOYEE_ALLOWANCES_CONFIG_KEY] = {
         (employee.id, first_day): {"is_senior": False, "is_deputy_senior": False},
         (employee.id, second_day): {"is_senior": True, "is_deputy_senior": False},
+    }
+    settings[SENIORITY_ALLOWANCE_MAP_CONFIG_KEY] = {
+        second_day: {("Повар", "senior"): Decimal("500")}
     }
 
     result = calculate_payroll_lines_from_inputs(

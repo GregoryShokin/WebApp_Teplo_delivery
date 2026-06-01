@@ -23,6 +23,7 @@ from app.services.payroll_calculator import (
     PAYROLL_RATE_CONFIG_KEY,
 )
 from app.services.payroll_percent import REVENUE_TIER_CONFIG_KEY
+from app.services.seniority_allowance_service import SENIORITY_ALLOWANCE_MAP_CONFIG_KEY
 from app.services.shift_cost_estimate_service import compute_shift_cost
 
 
@@ -186,6 +187,7 @@ def make_settings(*, pizza_rate: Decimal | None = Decimal("3600")) -> dict[str, 
                 "effective_to": None,
             },
         ],
+        SENIORITY_ALLOWANCE_MAP_CONFIG_KEY: {},
         "payroll.allowances": {"senior": 500, "deputy_senior": 300},
         "payroll.weekday_premium": {"amount": 200, "threshold_hours": 8},
         "payroll.fund_rates_by_tenure": [{"min_months": 0, "rate": 0.05}],
@@ -302,6 +304,22 @@ async def test_fund_accrual_displayed_not_summed() -> None:
     assert result.total == result.base_salary + result.weekday_premium + result.revenue_percent
 
 
+async def test_shift_cost_estimate_uses_new_seniority_amounts() -> None:
+    employee = make_employee()
+    employee.is_senior = True
+    shift = make_shift(uuid.uuid4(), employee)
+    settings = make_settings()
+    settings[SENIORITY_ALLOWANCE_MAP_CONFIG_KEY] = {
+        shift.business_date: {("Повар", "senior"): Decimal("600")}
+    }
+
+    result = await price_shift(shift, employee, settings=settings)
+
+    assert result.base_salary == Decimal("4200.00")
+    assert result.allowance == Decimal("600.00")
+    assert result.components["allowance"] == "600.00"
+
+
 async def test_create_run_aggregates_totals(monkeypatch: pytest.MonkeyPatch) -> None:
     sched = ShiftSchedule(
         id=uuid.uuid4(),
@@ -343,9 +361,9 @@ async def test_create_run_aggregates_totals(monkeypatch: pytest.MonkeyPatch) -> 
         (estimate.total_cost_estimate for estimate in session.estimates),
         Decimal("0"),
     )
-    assert run.fot_to_revenue_pct == (run.total_shift_cost_estimate / Decimal("100000") * 100).quantize(
-        Decimal("0.00001")
-    )
+    assert run.fot_to_revenue_pct == (
+        run.total_shift_cost_estimate / Decimal("100000") * 100
+    ).quantize(Decimal("0.00001"))
 
 
 async def test_create_run_supersedes_previous(monkeypatch: pytest.MonkeyPatch) -> None:

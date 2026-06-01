@@ -605,16 +605,26 @@ class PayrollSeniorityPremium(Base):
             name="ck_payroll_seniority_premium_percent_non_negative",
         ),
         CheckConstraint(
+            "position in ('Повар', 'Кассир')",
+            name="ck_payroll_seniority_premium_position",
+        ),
+        CheckConstraint(
+            "amount >= 0",
+            name="ck_payroll_seniority_premium_amount_non_negative",
+        ),
+        CheckConstraint(
             "effective_to is null or effective_to > effective_from",
             name="ck_payroll_seniority_premium_effective_range",
         ),
         UniqueConstraint(
+            "position",
             "role",
             "effective_from",
-            name="uq_payroll_seniority_premium_role_effective_from",
+            name="uq_seniority_premium_position_role_effective_from",
         ),
         Index(
             "ix_payroll_seniority_premium_current_lookup",
+            "position",
             "role",
             "effective_from",
             "effective_to",
@@ -622,8 +632,10 @@ class PayrollSeniorityPremium(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    position: Mapped[str] = mapped_column(String(160), nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False)
-    percent_of_base: Mapped[Decimal] = mapped_column(Numeric(8, 5), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    percent_of_base: Mapped[Decimal | None] = mapped_column(Numeric(8, 5), nullable=True)
     effective_from: Mapped[date] = mapped_column(Date, nullable=False)
     effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

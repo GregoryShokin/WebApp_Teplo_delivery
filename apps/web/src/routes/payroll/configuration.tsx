@@ -157,7 +157,6 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
   const [deductionDraft, setDeductionDraft] = useState<PayrollDeductionCategoryPayload | null>(
     null,
   );
-  const [premiumDraft, setPremiumDraft] = useState<PayrollSeniorityPremiumPayload | null>(null);
   const [terminationReasonDraft, setTerminationReasonDraft] =
     useState<TerminationReasonDraft | null>(null);
 
@@ -185,6 +184,10 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
   const premiumsQuery = useQuery({
     queryKey: ["payroll-config", "seniority-premium"],
     queryFn: () => getPayrollSeniorityPremiums(),
+  });
+  const premiumsHistoryQuery = useQuery({
+    queryKey: ["payroll-config", "seniority-premium", "history"],
+    queryFn: () => getPayrollSeniorityPremiums(true),
   });
   const terminationReasonsQuery = useQuery({
     queryKey: ["employees", "dismissal-reasons", "all"],
@@ -244,13 +247,18 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
   });
 
   const premiumMutation = useMutation({
-    mutationFn: putPayrollSeniorityPremium,
+    mutationFn: async (payloads: PayrollSeniorityPremiumPayload[]) => {
+      const saved: PayrollSeniorityPremium[] = [];
+      for (const payload of payloads) {
+        saved.push(await putPayrollSeniorityPremium(payload));
+      }
+      return saved;
+    },
     onSuccess: async () => {
-      toast.success("Надбавка сохранена");
-      setPremiumDraft(null);
+      toast.success("Версия надбавок сохранена");
       await invalidatePayrollConfig(queryClient);
     },
-    onError: () => toast.error("Не удалось сохранить надбавку"),
+    onError: () => toast.error("Не удалось сохранить надбавки"),
   });
   const terminationReasonMutation = useMutation({
     mutationFn: (draft: TerminationReasonDraft) => {
@@ -287,6 +295,7 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
   const categoryCoefficients = categoryCoefficientsQuery.data ?? [];
   const deductions = deductionsQuery.data ?? [];
   const premiums = premiumsQuery.data ?? [];
+  const premiumsHistory = premiumsHistoryQuery.data ?? [];
   const terminationReasons = terminationReasonsQuery.data ?? [];
 
   const isLoading =
@@ -295,6 +304,7 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
     categoryCoefficientsQuery.isLoading ||
     deductionsQuery.isLoading ||
     premiumsQuery.isLoading ||
+    premiumsHistoryQuery.isLoading ||
     terminationReasonsQuery.isLoading;
   const hasError =
     ratesQuery.isError ||
@@ -302,6 +312,7 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
     categoryCoefficientsQuery.isError ||
     deductionsQuery.isError ||
     premiumsQuery.isError ||
+    premiumsHistoryQuery.isError ||
     terminationReasonsQuery.isError;
 
   return (
@@ -437,7 +448,9 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
           <PremiumsSection
             advanced={advanced}
             canWrite={canWrite}
-            onEdit={setPremiumDraft}
+            history={premiumsHistory}
+            isSaving={premiumMutation.isPending}
+            onSave={(payloads) => premiumMutation.mutate(payloads)}
             premiums={premiums}
           />
         </TabsContent>
@@ -487,19 +500,6 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
           }
         }}
         onSave={(payload) => terminationReasonMutation.mutate(payload)}
-      />
-
-      <PremiumDialog
-        advanced={advanced}
-        draft={premiumDraft}
-        isSaving={premiumMutation.isPending}
-        onChange={setPremiumDraft}
-        onOpenChange={(open) => {
-          if (!open) {
-            setPremiumDraft(null);
-          }
-        }}
-        onSave={(payload) => premiumMutation.mutate(payload)}
       />
 
       <RateHistoryDrawer
@@ -1052,55 +1052,169 @@ function TerminationReasonsSection({
 function PremiumsSection({
   advanced,
   canWrite,
-  onEdit,
+  history,
+  isSaving,
+  onSave,
   premiums,
 }: {
   advanced: boolean;
   canWrite: boolean;
-  onEdit: (payload: PayrollSeniorityPremiumPayload) => void;
+  history: PayrollSeniorityPremium[];
+  isSaving: boolean;
+  onSave: (payloads: PayrollSeniorityPremiumPayload[]) => void;
   premiums: PayrollSeniorityPremium[];
 }) {
-  const rows = ["senior", "deputy_senior"] as const;
+  const rows = seniorityAllowanceRows();
+  const [amounts, setAmounts] = useState<Record<SeniorityAllowanceKey, string>>(() =>
+    seniorityAllowanceDraftFromPremiums(premiums),
+  );
+  const [effectiveFrom, setEffectiveFrom] = useState(todayKey());
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const effectiveDates = Array.from(
+    new Set(premiums.map((premium) => premium.effective_from).filter(Boolean)),
+  );
+  const currentLabel =
+    effectiveDates.length === 1 ? formatDateOnly(effectiveDates[0]) : "разные даты";
+  const dateIsValid = effectiveFrom >= todayKey();
+  const amountValues = rows.map((row) => parseNonNegativeNumber(amounts[row.key] ?? ""));
+  const canSubmit = canWrite && dateIsValid && amountValues.every((value) => value !== undefined);
+
+  useEffect(() => {
+    setAmounts(seniorityAllowanceDraftFromPremiums(premiums));
+  }, [premiums]);
+
+  function buildPayloads(): PayrollSeniorityPremiumPayload[] {
+    return rows.map((row) => ({
+      position: row.position,
+      role: row.role,
+      amount: parseNonNegativeNumber(amounts[row.key] ?? "") ?? 0,
+      effective_from: effectiveFrom,
+    }));
+  }
+
+  const groupedHistory = groupSeniorityAllowanceHistory(history);
+
   return (
     <section className="space-y-4 rounded-lg border bg-card p-4">
       <SectionHeader
-        description="Процентные надбавки к базовой ставке. В исходном листе найдены фиксированные суммы, поэтому seed требует подтверждения владельца."
-        title="Надбавки"
+        description="Фиксированные суммы за полную 12-часовую смену. В расчёте они применяются по должности, роли и дате смены."
+        title="Надбавки старший/зам"
       />
-      <div className="grid gap-2 md:grid-cols-2">
-        {rows.map((role) => {
-          const premium = premiums.find((item) => item.role === role);
-          return (
-            <div className="rounded-md border px-3 py-3" key={role}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="font-medium">{seniorityRoleLabel(role)}</div>
-                  <div className="mt-1 text-sm text-muted-foreground">
-                    {premium ? formatPercent(premium.percent_of_base) : "Не задано"}
-                  </div>
-                </div>
-                <Button
-                  disabled={!canWrite}
-                  onClick={() =>
-                    onEdit({
-                      role,
-                      percent_of_base: premium?.percent_of_base ?? 0,
-                      effective_from: todayKey(),
-                      effective_to: null,
-                    })
-                  }
-                  size="sm"
-                  variant="outline"
-                >
-                  <Save size={16} aria-hidden="true" />
-                  Новая версия
-                </Button>
+      <div className="text-sm text-muted-foreground">Действуют с {currentLabel}</div>
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <div className="grid gap-5">
+          {(["Повар", "Кассир"] as const).map((position) => (
+            <div className="space-y-3" key={position}>
+              <div className="text-sm font-medium">
+                {position === "Повар" ? "Повара" : "Администраторы (кассиры)"}
               </div>
-              {advanced ? <RawMeta value={role} /> : null}
+              <div className="grid gap-3 sm:grid-cols-2">
+                {rows
+                  .filter((row) => row.position === position)
+                  .map((row) => (
+                    <div className="grid gap-2" key={row.key}>
+                      <Label htmlFor={`seniority-${row.key}`}>{row.label}</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          disabled={!canWrite || isSaving}
+                          id={`seniority-${row.key}`}
+                          min="0"
+                          onChange={(event) =>
+                            setAmounts((current) => ({
+                              ...current,
+                              [row.key]: event.target.value,
+                            }))
+                          }
+                          type="number"
+                          value={amounts[row.key] ?? ""}
+                        />
+                        <span className="text-sm text-muted-foreground">₽</span>
+                      </div>
+                    </div>
+                  ))}
+              </div>
             </div>
-          );
-        })}
+          ))}
+        </div>
+
+        <div className="space-y-3">
+          <div className="grid gap-2">
+            <Label htmlFor="seniority-effective-from">Действуют с</Label>
+            <Input
+              disabled={!canWrite || isSaving}
+              id="seniority-effective-from"
+              min={todayKey()}
+              onChange={(event) => setEffectiveFrom(event.target.value)}
+              type="date"
+              value={effectiveFrom}
+            />
+            {!dateIsValid ? (
+              <div className="text-sm text-destructive">Дата не должна быть раньше сегодня.</div>
+            ) : null}
+          </div>
+          <Button
+            className="w-full"
+            disabled={!canSubmit || isSaving}
+            onClick={() => setConfirmOpen(true)}
+          >
+            <Save size={16} aria-hidden="true" />
+            {isSaving ? "Сохранение..." : "Сохранить новую версию"}
+          </Button>
+          {advanced ? <RawMeta value="position × role fixed amount" /> : null}
+        </div>
       </div>
+
+      <details className="rounded-md border px-3 py-2">
+        <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+          <History size={16} aria-hidden="true" />
+          История
+        </summary>
+        <div className="mt-3 grid gap-2">
+          {groupedHistory.length === 0 ? (
+            <EmptyConfigLine text="История надбавок пока не задана." />
+          ) : (
+            groupedHistory.map((version) => (
+              <div
+                className="flex flex-col gap-1 rounded-md bg-muted/30 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
+                key={version.effective_from}
+              >
+                <span>
+                  {formatDateOnly(version.effective_from)} —{" "}
+                  {version.isCurrent ? "текущее" : "закрыто"}
+                </span>
+                <span className="tabular-nums text-muted-foreground">
+                  {version.amounts.map((amount) => formatMoney(amount)).join(" / ")}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </details>
+
+      <AlertDialog onOpenChange={setConfirmOpen} open={confirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Создать новую версию ставок?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Создать версию ставок с {formatDateOnly(effectiveFrom)}? Прежняя версия будет
+              закрыта.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSaving}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!canSubmit || isSaving}
+              onClick={() => {
+                onSave(buildPayloads());
+                setConfirmOpen(false);
+              }}
+            >
+              Сохранить новую версию
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
@@ -1985,65 +2099,6 @@ function TerminationReasonDialog({
   );
 }
 
-function PremiumDialog({
-  advanced,
-  draft,
-  isSaving,
-  onChange,
-  onOpenChange,
-  onSave,
-}: {
-  advanced: boolean;
-  draft: PayrollSeniorityPremiumPayload | null;
-  isSaving: boolean;
-  onChange: (value: PayrollSeniorityPremiumPayload | null) => void;
-  onOpenChange: (open: boolean) => void;
-  onSave: (payload: PayrollSeniorityPremiumPayload) => void;
-}) {
-  return (
-    <Dialog onOpenChange={onOpenChange} open={Boolean(draft)}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Надбавка</DialogTitle>
-          <DialogDescription>Новая версия процентной надбавки к базовой ставке.</DialogDescription>
-        </DialogHeader>
-        {draft ? (
-          <div className="grid gap-4">
-            <div className="rounded-md bg-muted px-3 py-2 text-sm">
-              {seniorityRoleLabel(draft.role)}
-            </div>
-            <div className="grid gap-2">
-              <Label>Процент к окладу</Label>
-              <PercentWidget
-                onChange={(value) => onChange({ ...draft, percent_of_base: Number(value) || 0 })}
-                value={draft.percent_of_base}
-              />
-            </div>
-            {advanced ? (
-              <EffectiveInputs
-                effectiveFrom={draft.effective_from}
-                effectiveTo={draft.effective_to}
-                onChange={(effective_from, effective_to) =>
-                  onChange({ ...draft, effective_from, effective_to })
-                }
-              />
-            ) : null}
-          </div>
-        ) : null}
-        <DialogFooter>
-          <Button onClick={() => onOpenChange(false)} variant="outline">
-            Отмена
-          </Button>
-          <Button disabled={!draft || isSaving} onClick={() => draft && onSave(draft)}>
-            <Save size={16} aria-hidden="true" />
-            Сохранить
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 function RateHistoryDrawer({
   history,
   isLoading,
@@ -2489,6 +2544,82 @@ function deductionTypeLabel(type: PayrollDeductionCategory["type"]) {
     return "Списание депозита";
   }
   return "Удержание";
+}
+
+type SeniorityAllowanceKey =
+  | "cook-senior"
+  | "cook-deputy_senior"
+  | "cashier-senior"
+  | "cashier-deputy_senior";
+
+type SeniorityAllowanceRow = {
+  key: SeniorityAllowanceKey;
+  position: PayrollSeniorityPremium["position"];
+  role: PayrollSeniorityPremium["role"];
+  label: string;
+};
+
+function seniorityAllowanceRows(): SeniorityAllowanceRow[] {
+  return [
+    {
+      key: "cook-senior",
+      position: "Повар",
+      role: "senior",
+      label: "Старший повар",
+    },
+    {
+      key: "cook-deputy_senior",
+      position: "Повар",
+      role: "deputy_senior",
+      label: "Зам старшего повара",
+    },
+    {
+      key: "cashier-senior",
+      position: "Кассир",
+      role: "senior",
+      label: "Старший администратор",
+    },
+    {
+      key: "cashier-deputy_senior",
+      position: "Кассир",
+      role: "deputy_senior",
+      label: "Зам старшего администратора",
+    },
+  ];
+}
+
+function seniorityAllowanceDraftFromPremiums(
+  premiums: PayrollSeniorityPremium[],
+): Record<SeniorityAllowanceKey, string> {
+  return Object.fromEntries(
+    seniorityAllowanceRows().map((row) => {
+      const premium = premiums.find(
+        (item) => item.position === row.position && item.role === row.role,
+      );
+      return [row.key, String(premium?.amount ?? 0)];
+    }),
+  ) as Record<SeniorityAllowanceKey, string>;
+}
+
+function groupSeniorityAllowanceHistory(history: PayrollSeniorityPremium[]) {
+  const rows = seniorityAllowanceRows();
+  const grouped = new Map<string, PayrollSeniorityPremium[]>();
+  for (const premium of history) {
+    const group = grouped.get(premium.effective_from) ?? [];
+    group.push(premium);
+    grouped.set(premium.effective_from, group);
+  }
+  return Array.from(grouped.entries())
+    .sort(([left], [right]) => right.localeCompare(left))
+    .map(([effective_from, items]) => ({
+      effective_from,
+      isCurrent: items.some((item) => item.effective_to === null),
+      amounts: rows.map(
+        (row) =>
+          items.find((item) => item.position === row.position && item.role === row.role)?.amount ??
+          0,
+      ),
+    }));
 }
 
 function seniorityRoleLabel(role: PayrollSeniorityPremium["role"]) {

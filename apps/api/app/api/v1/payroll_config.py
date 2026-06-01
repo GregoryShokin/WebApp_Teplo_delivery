@@ -233,6 +233,7 @@ async def get_seniority_premium(
     return await list_seniority_premiums(session, history=history)
 
 
+@router.post("/seniority-premium", response_model=PayrollSeniorityPremiumRead)
 @router.put("/seniority-premium", response_model=PayrollSeniorityPremiumRead)
 async def put_seniority_premium(
     payload: PayrollSeniorityPremiumBase,

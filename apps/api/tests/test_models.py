@@ -195,7 +195,16 @@ def test_payroll_configuration_tables_are_declared() -> None:
     assert adjustment_columns.employee_id.nullable is False
     assert adjustment_columns.work_date.nullable is False
     assert adjustment_columns.amount.nullable is False
-    assert premium_columns.percent_of_base.nullable is False
+    assert premium_columns.position.nullable is False
+    assert premium_columns.amount.nullable is False
+    assert premium_columns.percent_of_base.nullable is True
+
+
+def test_employee_active_seniority_unique_indexes_are_declared() -> None:
+    indexes = {index.name: index for index in models.Employee.__table__.indexes}
+
+    assert indexes["uq_employee_active_senior_per_position"].unique is True
+    assert indexes["uq_employee_active_deputy_senior_per_position"].unique is True
 
 
 def test_percent_methodology_is_additive_for_existing_payroll_runs() -> None:

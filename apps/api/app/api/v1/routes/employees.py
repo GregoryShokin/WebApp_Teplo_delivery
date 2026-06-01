@@ -120,7 +120,7 @@ APP_MANAGED_FIELDS = {
     "pin_code",
     "roles",
 }
-PATCH_META_FIELDS = {"effective_from", "comment"}
+PATCH_META_FIELDS = {"effective_from", "comment", "transfer_from_existing"}
 COMPUTED_FIELDS = {"status"}
 ALLOWED_CREATE_PAYROLL_ROLES = frozenset(PAYROLL_ROLE_LABELS)
 PAYROLL_EFFECTIVE_FIELDS = {
@@ -1179,12 +1179,15 @@ async def patch_employee(
         or ("is_senior" in patch.model_fields_set and bool(target_is_senior))
         or ("is_deputy_senior" in patch.model_fields_set and bool(target_is_deputy_senior))
     ):
-        await _validate_premium_capacity(
+        await _ensure_or_transfer_premium_capacity(
             session,
             target_position,
             is_senior=bool(target_is_senior),
             is_deputy_senior=bool(target_is_deputy_senior),
             exclude_employee_id=employee.id,
+            transfer_from_existing=patch.transfer_from_existing,
+            effective_from=effective_from,
+            comment=effective_comment,
         )
 
     await _validate_patch_assignment_shortcut(
@@ -1759,10 +1762,6 @@ async def _validate_premium_capacity(
     if canonical_position not in {"Повар", "Кассир"}:
         return
 
-    limits = {
-        "Повар": {"is_senior": 1, "is_deputy_senior": 1},
-        "Кассир": {"is_senior": 2, "is_deputy_senior": 2},
-    }[canonical_position]
     requested = {
         "is_senior": is_senior,
         "is_deputy_senior": is_deputy_senior,
@@ -1772,20 +1771,16 @@ async def _validate_premium_capacity(
         "is_deputy_senior": "Зам старшего",
     }
 
-    employees = list((await session.scalars(select(Employee))).all())
-    today = date.today()
     for field, should_be_enabled in requested.items():
         if not should_be_enabled:
             continue
-        holders = [
-            employee
-            for employee in employees
-            if employee.id != exclude_employee_id
-            and canonical_position_name(employee.position) == canonical_position
-            and getattr(employee, field)
-            and _employee_counts_as_active(employee, today)
-        ]
-        if len(holders) < limits[field]:
+        holders = await _active_premium_holders(
+            session,
+            canonical_position,
+            field,
+            exclude_employee_id=exclude_employee_id,
+        )
+        if not holders:
             continue
         names = ", ".join(employee.full_name for employee in holders)
         raise HTTPException(
@@ -1795,6 +1790,91 @@ async def _validate_premium_capacity(
                 f"уже назначены {names}"
             ),
         )
+
+
+async def _ensure_or_transfer_premium_capacity(
+    session: AsyncSession,
+    position: str | None,
+    *,
+    is_senior: bool,
+    is_deputy_senior: bool,
+    exclude_employee_id: uuid.UUID | None,
+    transfer_from_existing: bool,
+    effective_from: date,
+    comment: str | None,
+) -> None:
+    canonical_position = canonical_position_name(position)
+    if canonical_position not in {"Повар", "Кассир"}:
+        return
+
+    requested = {
+        "is_senior": is_senior,
+        "is_deputy_senior": is_deputy_senior,
+    }
+    allowance_type_by_field = {
+        "is_senior": "senior",
+        "is_deputy_senior": "deputy_senior",
+    }
+
+    for field, should_be_enabled in requested.items():
+        if not should_be_enabled:
+            continue
+        holders = await _active_premium_holders(
+            session,
+            canonical_position,
+            field,
+            exclude_employee_id=exclude_employee_id,
+        )
+        if not holders:
+            continue
+        existing = holders[0]
+        if not transfer_from_existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=_premium_conflict_detail(field, canonical_position, existing),
+            )
+        await employee_effective_event_service.set_allowance(
+            session,
+            existing.id,
+            allowance_type_by_field[field],
+            False,
+            effective_from=effective_from,
+            comment=comment or "Перенос надбавки другому сотруднику",
+        )
+
+
+async def _active_premium_holders(
+    session: AsyncSession,
+    position: str,
+    field: str,
+    *,
+    exclude_employee_id: uuid.UUID | None,
+) -> list[Employee]:
+    employees = list((await session.scalars(select(Employee))).all())
+    today = date.today()
+    return [
+        employee
+        for employee in employees
+        if employee.id != exclude_employee_id
+        and canonical_position_name(employee.position) == position
+        and getattr(employee, field)
+        and _employee_counts_as_active(employee, today)
+    ]
+
+
+def _premium_conflict_detail(field: str, position: str, existing: Employee) -> dict[str, str]:
+    if field == "is_senior":
+        code = "senior_already_assigned"
+        label = "Старший"
+    else:
+        code = "deputy_senior_already_assigned"
+        label = "Зам старшего"
+    return {
+        "code": code,
+        "message": f"{label} {position.lower()} уже назначен: {existing.full_name}",
+        "existing_employee_id": str(existing.id),
+        "existing_full_name": existing.full_name,
+    }
 
 
 def _employee_counts_as_active(employee: Employee, today: date) -> bool:

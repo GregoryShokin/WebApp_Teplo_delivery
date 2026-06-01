@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -120,14 +121,15 @@ class PayrollDeductionCategoryRead(PayrollDeductionCategoryBase):
 
 
 class PayrollSeniorityPremiumBase(BaseModel):
+    position: str = Field(min_length=1, max_length=160)
     role: str = Field(pattern="^(senior|deputy_senior)$")
-    percent_of_base: float = Field(ge=0)
+    amount: Decimal = Field(ge=0)
     effective_from: date
-    effective_to: date | None = None
 
 
 class PayrollSeniorityPremiumRead(PayrollSeniorityPremiumBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    effective_to: date | None = None
     created_at: datetime

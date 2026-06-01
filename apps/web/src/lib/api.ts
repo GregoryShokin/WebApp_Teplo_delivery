@@ -126,6 +126,9 @@ export type EmployeePatch = Partial<
   >
 > & {
   pin_code?: string | null;
+  effective_from?: string | null;
+  comment?: string | null;
+  transfer_from_existing?: boolean;
   roles?: Array<{
     id?: string | null;
     payroll_role: PayrollRole;
@@ -876,14 +879,18 @@ export type PayrollDeductionCategoryPayload = Omit<PayrollDeductionCategory, "id
 
 export type PayrollSeniorityPremium = {
   id: string;
+  position: "Повар" | "Кассир";
   role: "senior" | "deputy_senior";
-  percent_of_base: number;
+  amount: number;
   effective_from: string;
   effective_to: string | null;
   created_at: string;
 };
 
-export type PayrollSeniorityPremiumPayload = Omit<PayrollSeniorityPremium, "id" | "created_at">;
+export type PayrollSeniorityPremiumPayload = Pick<
+  PayrollSeniorityPremium,
+  "position" | "role" | "amount" | "effective_from"
+>;
 
 export type DepositListItem = {
   id: string;
@@ -1748,6 +1755,13 @@ export function apiErrorMessage(error: unknown, fallback = "Не удалось 
     }
   }
   return error instanceof Error ? error.message : fallback;
+}
+
+export function apiErrorDetail(error: unknown) {
+  if (!axios.isAxiosError(error)) {
+    return undefined;
+  }
+  return (error.response?.data as { detail?: unknown } | undefined)?.detail;
 }
 
 export function apiErrorStatus(error: unknown) {

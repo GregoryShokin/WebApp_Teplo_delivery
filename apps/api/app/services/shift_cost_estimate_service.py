@@ -21,6 +21,7 @@ from app.services.payroll_calculator import (
     percent_revenue_tiers,
     position_for_payroll_entry,
     role_category_rate,
+    seniority_allowance_for_payroll_entry,
     shift_pay_ratio,
     weekday_premium_for_employee_day,
 )
@@ -30,6 +31,7 @@ from app.services.payroll_percent import (
     distribute_percent_pool,
     revenue_tier_rate,
 )
+from app.services.seniority_allowance_service import SENIORITY_ALLOWANCE_MAP_CONFIG_KEY
 
 MONEY = Decimal("0.01")
 HOUR = Decimal(60)
@@ -91,6 +93,7 @@ async def compute_shift_cost(
     station_key = station_key_for_payroll(shift.station_code)
     category = ""
     base_salary = Decimal("0")
+    allowance = Decimal("0")
     rate_exists = False
     if payroll_role is None:
         quality_reasons.append("no_role")
@@ -127,13 +130,19 @@ async def compute_shift_cost(
                     shift.business_date,
                     station_key,
                 )
+                allowance = seniority_allowance_for_payroll_entry(
+                    normalized_settings,
+                    employee,
+                    min(planned_minutes, FULL_SHIFT_MINUTES),
+                    shift.business_date,
+                )
+                base_salary += allowance
 
     weekday_premium = weekday_premium_for_employee_day(
         normalized_settings,
         shift.business_date,
         planned_minutes,
     )
-    allowance = Decimal("0")
     revenue_percent, percent_components = revenue_percent_for_shift(
         normalized_settings,
         shift=shift,
@@ -150,7 +159,7 @@ async def compute_shift_cost(
         shift.business_date,
         base_salary + weekday_premium,
     )
-    total = base_salary + weekday_premium + allowance + revenue_percent
+    total = base_salary + weekday_premium + revenue_percent
     quality_status = "requires_review" if quality_reasons else "ok"
 
     allowance_flags = normalized_settings.get(EMPLOYEE_ALLOWANCES_CONFIG_KEY, {}).get(
@@ -339,7 +348,7 @@ def planned_minutes_for_shift(shift: ScheduledShift) -> int:
 
 def normalize_settings(settings: Mapping[str, Any]) -> dict[str, Any]:
     normalized = dict(settings)
-    normalized.setdefault("payroll.allowances", {})
+    normalized.setdefault(SENIORITY_ALLOWANCE_MAP_CONFIG_KEY, {})
     normalized.setdefault("payroll.fund_rates_by_tenure", [])
     normalized.setdefault("payroll.weekday_premium", {})
     return normalized

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -39,6 +38,10 @@ from app.services.payroll_percent import (
     load_revenue_tier_versions,
 )
 from app.services.revenue_forecast_service import get_forecasts_in_range
+from app.services.seniority_allowance_service import (
+    SENIORITY_ALLOWANCE_MAP_CONFIG_KEY,
+    load_seniority_allowance_maps,
+)
 from app.services.shift_cost_estimate_service import compute_shift_cost, money
 
 FOT_WARNING_THRESHOLD_KEY = "schedule.fot_warning_threshold_pct"
@@ -57,10 +60,19 @@ async def create_forecast_run(
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="График не найден")
 
     shift_rows = await _load_shift_rows(session, shift_schedule_id)
-    settings = await _load_pricing_settings(session, schedule.date_start, schedule.date_end, shift_rows)
+    settings = await _load_pricing_settings(
+        session,
+        schedule.date_start,
+        schedule.date_end,
+        shift_rows,
+    )
     forecasts = {
         forecast.business_date: forecast
-        for forecast in await get_forecasts_in_range(session, schedule.date_start, schedule.date_end)
+        for forecast in await get_forecasts_in_range(
+            session,
+            schedule.date_start,
+            schedule.date_end,
+        )
     }
     shifts_by_day: dict[date, list[tuple[ScheduledShift, Employee]]] = defaultdict(list)
     for shift, employee in shift_rows:
@@ -275,6 +287,10 @@ async def _load_pricing_settings(
         session,
         shift_rows,
     )
+    settings[SENIORITY_ALLOWANCE_MAP_CONFIG_KEY] = await load_seniority_allowance_maps(
+        session,
+        (shift.business_date for shift, _employee in shift_rows),
+    )
     return settings
 
 
@@ -283,7 +299,10 @@ async def _load_employee_assignments_for_shifts(
     shift_rows: list[tuple[ScheduledShift, Employee]],
 ) -> dict[tuple[uuid.UUID, date], list[Any]]:
     assignments_by_day: dict[tuple[uuid.UUID, date], list[Any]] = {}
-    for employee_id, business_date in sorted(_employee_days(shift_rows), key=lambda item: (str(item[0]), item[1])):
+    for employee_id, business_date in sorted(
+        _employee_days(shift_rows),
+        key=lambda item: (str(item[0]), item[1]),
+    ):
         assignments_by_day[(employee_id, business_date)] = await get_assignments(
             session,
             employee_id,
@@ -297,7 +316,10 @@ async def _load_employee_positions_for_shifts(
     shift_rows: list[tuple[ScheduledShift, Employee]],
 ) -> dict[tuple[uuid.UUID, date], str | None]:
     positions_by_day: dict[tuple[uuid.UUID, date], str | None] = {}
-    for employee_id, business_date in sorted(_employee_days(shift_rows), key=lambda item: (str(item[0]), item[1])):
+    for employee_id, business_date in sorted(
+        _employee_days(shift_rows),
+        key=lambda item: (str(item[0]), item[1]),
+    ):
         positions_by_day[(employee_id, business_date)] = await get_position_on_date(
             session,
             employee_id,
@@ -311,7 +333,10 @@ async def _load_employee_allowances_for_shifts(
     shift_rows: list[tuple[ScheduledShift, Employee]],
 ) -> dict[tuple[uuid.UUID, date], dict[str, bool]]:
     allowances_by_day: dict[tuple[uuid.UUID, date], dict[str, bool]] = {}
-    for employee_id, business_date in sorted(_employee_days(shift_rows), key=lambda item: (str(item[0]), item[1])):
+    for employee_id, business_date in sorted(
+        _employee_days(shift_rows),
+        key=lambda item: (str(item[0]), item[1]),
+    ):
         allowances_by_day[(employee_id, business_date)] = await get_allowances_on_date(
             session,
             employee_id,

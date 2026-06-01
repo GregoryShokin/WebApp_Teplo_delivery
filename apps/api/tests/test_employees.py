@@ -2217,7 +2217,7 @@ async def test_second_deputy_senior_cook_is_rejected_with_existing_cook_name(
     assert "Зам Повар" in str(exc_info.value.detail)
 
 
-async def test_third_senior_cashier_is_rejected_with_existing_admin_names(
+async def test_second_senior_cashier_is_rejected_with_existing_admin_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     first = make_employee(
@@ -2227,16 +2227,8 @@ async def test_third_senior_cashier_is_rejected_with_existing_admin_names(
         category="category_2",
         default_cooking_station=None,
     )
-    second = make_employee(
-        iiko_id="iiko-senior-cashier-2",
-        full_name="Второй Администратор",
-        position="Кассир",
-        category="category_3",
-        default_cooking_station=None,
-    )
     first.is_senior = True
-    second.is_senior = True
-    session = FakeSession([first, second])
+    session = FakeSession([first])
 
     async def fake_get_iiko_roles(_session: Any) -> list[IikoEmployeeRole]:
         return [IikoEmployeeRole(id="role-cashier", name="Кассир", code="CA")]
@@ -2269,7 +2261,43 @@ async def test_third_senior_cashier_is_rejected_with_existing_admin_names(
     detail = str(exc_info.value.detail)
     assert exc_info.value.status_code == 422
     assert "Первый Администратор" in detail
-    assert "Второй Администратор" in detail
+
+
+async def test_assign_second_senior_fails_409_with_existing() -> None:
+    existing = make_employee(iiko_id="iiko-existing-senior", full_name="Иванов Старший")
+    existing.is_senior = True
+    target = make_employee(iiko_id="iiko-target-senior", full_name="Петров Новый")
+    session = FakeSession([existing, target])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await patch_employee(
+            target.id,
+            {"is_senior": True},
+            session,  # type: ignore[arg-type]
+            CurrentActor(roles=frozenset({"finance_manager"})),
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "senior_already_assigned"
+    assert exc_info.value.detail["existing_employee_id"] == str(existing.id)
+
+
+async def test_assign_second_senior_with_transfer_succeeds() -> None:
+    existing = make_employee(iiko_id="iiko-transfer-from", full_name="Иванов Старший")
+    existing.is_senior = True
+    target = make_employee(iiko_id="iiko-transfer-to", full_name="Петров Новый")
+    session = FakeSession([existing, target])
+
+    updated = await patch_employee(
+        target.id,
+        {"is_senior": True, "transfer_from_existing": True},
+        session,  # type: ignore[arg-type]
+        CurrentActor(roles=frozenset({"finance_manager"})),
+    )
+
+    assert existing.is_senior is False
+    assert updated.is_senior is True
+    assert session.committed is True
 
 
 async def test_patch_employee_iiko_deleted_stays_inactive() -> None:

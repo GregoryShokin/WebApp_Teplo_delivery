@@ -115,6 +115,7 @@ import {
   type EmployeeStatus,
   type PayrollRole,
   type PayrollAdjustment,
+  apiErrorDetail,
   apiErrorMessage,
   apiErrorStatus,
   cancelEmployeeNotice,
@@ -282,6 +283,11 @@ type StaffEditorDraft = Draft & {
   assignments: AssignmentDraft[];
   pin_code: string;
   pin_confirmation: string;
+};
+type PremiumTransferConflict = {
+  patch: EmployeePatch;
+  message: string;
+  existingFullName: string;
 };
 type ViewMode = "grid" | "table";
 type StaffGroupFilter = "all" | "cook" | "staff";
@@ -2634,6 +2640,8 @@ function StaffEditor({
   const [premiumConfirmOpen, setPremiumConfirmOpen] = useState(false);
   const [premiumConfirmActions, setPremiumConfirmActions] = useState<string[]>([]);
   const [pendingDraftPatch, setPendingDraftPatch] = useState<EmployeePatch | null>(null);
+  const [premiumTransferConflict, setPremiumTransferConflict] =
+    useState<PremiumTransferConflict | null>(null);
 
   useEffect(() => {
     const nextDraft = toEditorDraft(employee);
@@ -2654,16 +2662,18 @@ function StaffEditor({
     setPremiumConfirmOpen(false);
     setPendingDraftPatch(null);
     setPremiumConfirmActions([]);
+    setPremiumTransferConflict(null);
   }, [employee.id]);
 
   const mutation = useMutation({
     mutationFn: (patch: EmployeePatch) => patchEmployee(employee.id, patch),
-    onSuccess: (updatedEmployee) => {
+    onSuccess: (updatedEmployee, patch) => {
       const nextDraft = toEditorDraft(updatedEmployee);
       setInitialDraft(nextDraft);
       setDraft(nextDraft);
       setPinOpen(false);
-      toast.success("Изменения сохранены");
+      setPremiumTransferConflict(null);
+      toast.success(patch.transfer_from_existing ? "Надбавка перенесена" : "Изменения сохранены");
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
       void queryClient.invalidateQueries({
         queryKey: ["employees", updatedEmployee.id, "assignments"],
@@ -2673,7 +2683,12 @@ function StaffEditor({
         queryKey: ["employees", updatedEmployee.id, "changes"],
       });
     },
-    onError: (error) => {
+    onError: (error, patch) => {
+      const transferConflict = premiumTransferConflictFromError(error, patch);
+      if (transferConflict) {
+        setPremiumTransferConflict(transferConflict);
+        return;
+      }
       toast.error(apiErrorMessage(error, "Не удалось обновить карточку сотрудника"));
     },
   });
@@ -3816,6 +3831,45 @@ function StaffEditor({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        onOpenChange={(open) => {
+          if (!open) {
+            setPremiumTransferConflict(null);
+          }
+        }}
+        open={Boolean(premiumTransferConflict)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Перенести надбавку?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {premiumTransferConflict?.message ??
+                "На эту должность уже назначена такая надбавка."}
+              <br />
+              Перенести надбавку с {premiumTransferConflict?.existingFullName} на этого
+              сотрудника?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={mutation.isPending}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!premiumTransferConflict || mutation.isPending}
+              onClick={() => {
+                if (!premiumTransferConflict) {
+                  return;
+                }
+                mutation.mutate({
+                  ...premiumTransferConflict.patch,
+                  transfer_from_existing: true,
+                });
+              }}
+            >
+              Перенести
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -4199,6 +4253,43 @@ function premiumChangeConfirmations(initial: Draft, draft: Draft) {
     );
   }
   return actions;
+}
+
+function premiumTransferConflictFromError(
+  error: unknown,
+  patch: EmployeePatch,
+): PremiumTransferConflict | null {
+  if (apiErrorStatus(error) !== 409) {
+    return null;
+  }
+  const detail = apiErrorDetail(error);
+  if (!isPremiumTransferConflictDetail(detail)) {
+    return null;
+  }
+  return {
+    patch,
+    message: detail.message,
+    existingFullName: detail.existing_full_name,
+  };
+}
+
+function isPremiumTransferConflictDetail(detail: unknown): detail is {
+  code: "senior_already_assigned" | "deputy_senior_already_assigned";
+  message: string;
+  existing_employee_id: string;
+  existing_full_name: string;
+} {
+  if (!detail || typeof detail !== "object") {
+    return false;
+  }
+  const value = detail as Record<string, unknown>;
+  return (
+    (value.code === "senior_already_assigned" ||
+      value.code === "deputy_senior_already_assigned") &&
+    typeof value.message === "string" &&
+    typeof value.existing_employee_id === "string" &&
+    typeof value.existing_full_name === "string"
+  );
 }
 
 function EmployeeChangeStatusBadge({ status }: { status: EmployeeChangeStatus }) {

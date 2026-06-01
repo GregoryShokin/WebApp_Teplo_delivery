@@ -57,6 +57,8 @@ PAYROLL_RATE_CATEGORY_LABELS = {
     "intern": "Стажёр",
     "freelancer": "Внештатный",
 }
+VALID_SENIORITY_PREMIUM_POSITIONS = frozenset({"Повар", "Кассир"})
+VALID_SENIORITY_PREMIUM_ROLES = frozenset({"senior", "deputy_senior"})
 
 
 async def list_rates(session: AsyncSession, *, history: bool = False) -> list[PayrollRate]:
@@ -355,6 +357,7 @@ async def list_seniority_premiums(
     if not history:
         statement = statement.where(_current_filter(PayrollSeniorityPremium, date.today()))
     statement = statement.order_by(
+        PayrollSeniorityPremium.position,
         PayrollSeniorityPremium.role,
         PayrollSeniorityPremium.effective_from.desc(),
     )
@@ -365,8 +368,12 @@ async def create_seniority_premium_version(
     session: AsyncSession,
     payload: PayrollSeniorityPremiumBase,
 ) -> PayrollSeniorityPremium:
-    _validate_effective_range(payload.effective_from, payload.effective_to)
-    natural_filters = [PayrollSeniorityPremium.role == payload.role]
+    _validate_seniority_premium_payload(payload)
+    _validate_effective_range(payload.effective_from, None)
+    natural_filters = [
+        PayrollSeniorityPremium.position == payload.position,
+        PayrollSeniorityPremium.role == payload.role,
+    ]
     await _ensure_no_existing_version(
         session,
         PayrollSeniorityPremium,
@@ -379,7 +386,7 @@ async def create_seniority_premium_version(
         natural_filters,
         payload.effective_from,
     )
-    record = PayrollSeniorityPremium(**payload.model_dump())
+    record = PayrollSeniorityPremium(**payload.model_dump(), percent_of_base=None)
     return await _insert_version(session, record)
 
 
@@ -557,6 +564,13 @@ def _current_filter(model: type[Any], as_of: date) -> Any:
 
 def _validate_rate_payload(payload: PayrollRateBase) -> None:
     _validate_rate_category(payload.category)
+
+
+def _validate_seniority_premium_payload(payload: PayrollSeniorityPremiumBase) -> None:
+    if payload.position not in VALID_SENIORITY_PREMIUM_POSITIONS:
+        raise PayrollConfigValidationError("Invalid seniority premium position")
+    if payload.role not in VALID_SENIORITY_PREMIUM_ROLES:
+        raise PayrollConfigValidationError("Invalid seniority premium role")
 
 
 def _validate_rate_category(category: str) -> None:

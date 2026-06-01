@@ -44,6 +44,11 @@ from app.services.payroll_percent import (
     revenue_tier_rate,
     shift_weight,
 )
+from app.services.seniority_allowance_service import (
+    SENIORITY_ALLOWANCE_MAP_CONFIG_KEY,
+    allowance_amount_from_settings,
+    load_seniority_allowance_maps,
+)
 
 MONEY = Decimal("0.01")
 FULL_SHIFT_MINUTES = Decimal(12 * 60)
@@ -61,7 +66,6 @@ CATEGORY_RULE_KEY_BY_APP_CATEGORY = {
 
 PAYROLL_SETTING_KEYS = {
     "payroll.category_rules",
-    "payroll.allowances",
     "payroll.weekday_premium",
     "payroll.fund_rates_by_tenure",
     "payroll.daily_revenue_by_date",
@@ -138,6 +142,10 @@ async def calculate_payroll_lines(
     settings[EMPLOYEE_ALLOWANCES_CONFIG_KEY] = await load_employee_allowances_for_entries(
         session,
         entries,
+    )
+    settings[SENIORITY_ALLOWANCE_MAP_CONFIG_KEY] = await load_seniority_allowance_maps(
+        session,
+        (entry.work_date for entry in entries),
     )
     settings[SHIFT_LEDGER_CONFIG_KEY] = await load_shift_ledger_for_entries(session, entries)
     settings[PAYROLL_ADJUSTMENTS_CONFIG_KEY] = await load_adjustments_for_period(
@@ -391,6 +399,12 @@ def calculate_payroll_lines_from_inputs(
         group_key = (employee_id, role, work_date, station)
         category = group_categories[group_key]
         base_pay = base_shift_pay(settings, role, category, employee, minutes, work_date, station)
+        seniority_allowance_pay = seniority_allowance_for_payroll_entry(
+            settings,
+            employee,
+            minutes,
+            work_date,
+        )
         percent_pay = daily_percent_distributions.get(work_date, {}).get(
             group_key, Decimal("0")
         ) * shift_pay_ratio(minutes)
@@ -404,7 +418,7 @@ def calculate_payroll_lines_from_inputs(
                 employee_day_minutes[employee_day_key],
             )
             premium_applied_employee_days.add(employee_day_key)
-        base_pay_with_premium = base_pay + weekday_premium
+        base_pay_with_premium = base_pay + seniority_allowance_pay + weekday_premium
         fund_excluded = is_fund_currently_excluded(employee, work_date)
         fund_rate = _fund_rate_for_months(settings, tenure_months_on(employee, work_date))
         fund_accrual = fund_accrual_for_day(
@@ -439,6 +453,7 @@ def calculate_payroll_lines_from_inputs(
             {
                 "base_pay": money(base_pay_with_premium),
                 "base_pay_shift": money(base_pay),
+                "seniority_allowance_pay": money(seniority_allowance_pay),
                 "weekday_premium": money(weekday_premium),
                 "percent_pay": money(percent_pay),
                 "fund_rate_percent": float((fund_rate * Decimal("100")).quantize(Decimal("0.001"))),
@@ -982,13 +997,31 @@ def base_shift_pay(
     station: str | None = None,
 ) -> Decimal:
     rate = role_category_rate(settings, role, category, work_date, station) or Decimal("0")
-    allowances = settings["payroll.allowances"]
-    allowance_flags = allowance_flags_for_payroll_entry(settings, employee, work_date)
-    if allowance_flags["is_senior"]:
-        rate += decimal(allowances.get("senior", 0))
-    if allowance_flags["is_deputy_senior"]:
-        rate += decimal(allowances.get("deputy_senior", 0))
     return rate * shift_pay_ratio(minutes)
+
+
+def seniority_allowance_for_payroll_entry(
+    settings: Mapping[str, Any],
+    employee: Employee,
+    minutes: int,
+    work_date: date | None,
+) -> Decimal:
+    allowance_flags = allowance_flags_for_payroll_entry(settings, employee, work_date)
+    allowance_role: str | None = None
+    if allowance_flags["is_senior"]:
+        allowance_role = "senior"
+    elif allowance_flags["is_deputy_senior"]:
+        allowance_role = "deputy_senior"
+    if allowance_role is None:
+        return Decimal("0")
+
+    amount = allowance_amount_from_settings(
+        settings,
+        position=position_for_payroll_entry(settings, employee, work_date),
+        role=allowance_role,
+        on_date=work_date,
+    )
+    return amount * shift_pay_ratio(minutes)
 
 
 def weekday_premium_for_employee_day(

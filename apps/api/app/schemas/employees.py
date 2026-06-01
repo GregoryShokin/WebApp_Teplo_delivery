@@ -390,6 +390,7 @@ class EmployeePatch(BaseModel):
     roles: list[EmployeePatchRoleAssignment] | None = None
     effective_from: date | None = None
     comment: str | None = Field(default=None, max_length=1000)
+    transfer_from_existing: bool = False
 
     @field_validator("full_name")
     @classmethod

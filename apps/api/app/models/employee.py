@@ -58,6 +58,18 @@ class Employee(Base):
             "deposit_withholding_override is null or deposit_withholding_override >= 0",
             name="deposit_withholding_override_non_negative",
         ),
+        Index(
+            "uq_employee_active_senior_per_position",
+            "position",
+            unique=True,
+            postgresql_where=text("is_senior = true and status = 'active'"),
+        ),
+        Index(
+            "uq_employee_active_deputy_senior_per_position",
+            "position",
+            unique=True,
+            postgresql_where=text("is_deputy_senior = true and status = 'active'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
