@@ -110,3 +110,63 @@ class EmployeeRosterRow(BaseModel):
 
 class CopyWeekResponse(BaseModel):
     copied: int
+
+
+class RevenueForecastHistoryPoint(BaseModel):
+    date: date
+    amount: Decimal | None
+    included: bool
+
+
+class RevenueForecastRead(BaseModel):
+    business_date: date
+    weekday: int
+    method_code: str
+    history_window_weeks: int
+    history_points: list[RevenueForecastHistoryPoint]
+    base_average_amount: Decimal | None
+    season_coeff: Decimal
+    event_coeff: Decimal
+    manual_override_amount: Decimal | None
+    manual_override_reason: str | None
+    manual_override_set_by_label: str | None
+    manual_override_set_at: datetime | None
+    forecast_amount: Decimal | None
+    quality_status: str
+    event_review_recommended: bool
+    computed_at: datetime | None
+
+
+class RevenueForecastOverrideRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0)
+    reason: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        normalized = value.strip()
+        return normalized or None
+
+
+class RevenueForecastRecomputeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    date_from: date
+    date_to: date
+    force_refresh_iiko: bool = False
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> RevenueForecastRecomputeRequest:
+        if self.date_to < self.date_from:
+            raise ValueError("Дата окончания не может быть раньше даты начала")
+        if (self.date_to - self.date_from).days > 62:
+            raise ValueError("Период прогноза не может быть длиннее 62 дней")
+        return self
+
+
+class RevenueForecastRecomputeResponse(BaseModel):
+    recomputed: int

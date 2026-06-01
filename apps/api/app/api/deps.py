@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -12,6 +13,7 @@ from app.core.security import decode_access_token
 @dataclass(frozen=True)
 class CurrentActor:
     roles: frozenset[str]
+    user_id: uuid.UUID | None = None
 
 
 ROLE_HIERARCHY = ("manager", "accountant", "finance_manager", "owner", "admin")
@@ -31,6 +33,7 @@ async def get_current_actor(
     x_user_roles: Annotated[str | None, Header()] = None,
 ) -> CurrentActor:
     roles = _split_roles(x_user_roles) | _split_roles(x_user_role)
+    user_id: uuid.UUID | None = None
 
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
@@ -45,11 +48,17 @@ async def get_current_actor(
             roles |= _split_roles(claim_roles)
         else:
             roles |= {str(role) for role in claim_roles}
+        subject = claims.get("sub")
+        if subject:
+            try:
+                user_id = uuid.UUID(str(subject))
+            except ValueError:
+                user_id = None
 
     if not roles and get_settings().environment == "local":
         roles.add("finance_manager")
 
-    return CurrentActor(roles=frozenset(roles))
+    return CurrentActor(roles=frozenset(roles), user_id=user_id)
 
 
 def require_finance_manager_plus(actor: CurrentActor) -> None:

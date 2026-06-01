@@ -544,6 +544,44 @@ export type SchedulePatchPayload = {
   notes?: string | null;
 };
 
+export type RevenueForecastQualityStatus = "ok" | "requires_review" | "manual_override";
+
+export type RevenueForecastHistoryPoint = {
+  date: string;
+  amount: string | number | null;
+  included: boolean;
+};
+
+export type RevenueForecastRead = {
+  business_date: string;
+  weekday: number;
+  method_code: string;
+  history_window_weeks: number;
+  history_points: RevenueForecastHistoryPoint[];
+  base_average_amount: string | number | null;
+  season_coeff: string | number;
+  event_coeff: string | number;
+  manual_override_amount: string | number | null;
+  manual_override_reason: string | null;
+  manual_override_set_by_label: string | null;
+  manual_override_set_at: string | null;
+  forecast_amount: string | number | null;
+  quality_status: RevenueForecastQualityStatus;
+  event_review_recommended: boolean;
+  computed_at: string | null;
+};
+
+export type RevenueForecastOverridePayload = {
+  amount: number;
+  reason?: string | null;
+};
+
+export type RevenueForecastRecomputePayload = {
+  date_from: string;
+  date_to: string;
+  force_refresh_iiko?: boolean;
+};
+
 export type ScheduledShiftUpsertPayload = {
   business_date: string;
   employee_id: string;
@@ -1279,6 +1317,41 @@ export async function copyWeek(
   payload: { from_date: string; to_date: string },
 ): Promise<{ copied: number }> {
   const response = await api.post<{ copied: number }>(`/schedule/${scheduleId}/copy-week`, payload);
+  return response.data;
+}
+
+export async function getForecastRange(params: {
+  date_from: string;
+  date_to: string;
+}): Promise<RevenueForecastRead[]> {
+  const response = await api.get<RevenueForecastRead[]>("/schedule/forecast", { params });
+  return response.data;
+}
+
+export async function recomputeForecast(
+  payload: RevenueForecastRecomputePayload,
+): Promise<{ recomputed: number }> {
+  const response = await api.post<{ recomputed: number }>("/schedule/forecast/recompute", payload);
+  return response.data;
+}
+
+export async function overrideForecast(
+  businessDate: string,
+  payload: RevenueForecastOverridePayload,
+): Promise<RevenueForecastRead> {
+  const response = await api.post<RevenueForecastRead>(
+    `/schedule/forecast/${businessDate}/override`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function removeForecastOverride(
+  businessDate: string,
+): Promise<RevenueForecastRead> {
+  const response = await api.delete<RevenueForecastRead>(
+    `/schedule/forecast/${businessDate}/override`,
+  );
   return response.data;
 }
 

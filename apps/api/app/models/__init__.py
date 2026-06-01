@@ -40,6 +40,7 @@ from app.models.payroll import (
     ShiftLedgerEntry,
 )
 from app.models.period import Period
+from app.models.revenue_forecast import RevenueForecast
 from app.models.settings import AppSetting, AppSettingHistory
 from app.models.shift_schedule import ScheduledShift, ShiftSchedule
 from app.models.wallet import Wallet
@@ -81,6 +82,7 @@ __all__ = [
     "ParsedDocument",
     "Period",
     "RevenueTier",
+    "RevenueForecast",
     "Role",
     "ShiftLedgerEntry",
     "ScheduledShift",

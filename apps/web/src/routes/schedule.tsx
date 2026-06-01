@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -7,10 +8,11 @@ import {
   LoaderCircle,
   Lock,
   Plus,
+  RefreshCw,
   Send,
   Users,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import {
@@ -53,12 +55,18 @@ import {
   createSchedule,
   deleteShift,
   getEmployeesRoster,
+  getForecastRange,
   getSchedule,
   listSchedules,
+  overrideForecast,
   patchShift,
   publishSchedule,
+  recomputeForecast,
+  removeForecastOverride,
   upsertShift,
   type EmployeeRosterRow,
+  type RevenueForecastRead,
+  type RevenueForecastRecomputePayload,
   type ScheduleCreatePayload,
   type ScheduleRead,
   type ScheduledShiftRead,
@@ -84,6 +92,13 @@ type CopyWeekState = {
   open: boolean;
   targetMode: "next" | "custom";
   customDate: string;
+};
+
+type ForecastDialogState = {
+  forecast: RevenueForecastRead;
+  amount: string;
+  reason: string;
+  removeConfirmOpen: boolean;
 };
 
 const NO_VALUE = "__none";
@@ -113,9 +128,13 @@ export function ScheduleRoute() {
     defaultScheduleDraft(),
   );
   const [shiftDialog, setShiftDialog] = useState<ShiftDialogState | null>(null);
+  const [forecastDialog, setForecastDialog] = useState<ForecastDialogState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ScheduledShiftRead | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
   const [newVersionOpen, setNewVersionOpen] = useState(false);
+  const [forceRefreshIiko, setForceRefreshIiko] = useState(false);
+  const [forceRefreshConfirmOpen, setForceRefreshConfirmOpen] = useState(false);
+  const warmedScheduleIds = useRef(new Set<string>());
   const [copyDialog, setCopyDialog] = useState<CopyWeekState>(() => ({
     open: false,
     targetMode: "next",
@@ -125,6 +144,13 @@ export function ScheduleRoute() {
   const visibleDays = useMemo(
     () => (scaleMode === "week" ? buildWeekDays(anchorDate) : buildMonthDays(anchorDate)),
     [anchorDate, scaleMode],
+  );
+  const forecastRange = useMemo(
+    () => ({
+      from: visibleDays[0],
+      to: visibleDays[visibleDays.length - 1],
+    }),
+    [visibleDays],
   );
   const scheduleWindow = useMemo(() => {
     const anchor = parseIsoDate(anchorDate);
@@ -149,6 +175,15 @@ export function ScheduleRoute() {
   const scheduleQuery = useQuery({
     queryKey: ["schedule", selectedScheduleId],
     queryFn: () => getSchedule(selectedScheduleId ?? ""),
+    enabled: Boolean(selectedScheduleId),
+  });
+  const forecastQuery = useQuery({
+    queryKey: ["forecast", forecastRange.from, forecastRange.to],
+    queryFn: () =>
+      getForecastRange({
+        date_from: forecastRange.from,
+        date_to: forecastRange.to,
+      }),
     enabled: Boolean(selectedScheduleId),
   });
 
@@ -255,6 +290,78 @@ export function ScheduleRoute() {
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось скопировать неделю")),
   });
 
+  const warmForecastMutation = useMutation({
+    mutationFn: (payload: RevenueForecastRecomputePayload) => recomputeForecast(payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["forecast"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось рассчитать прогноз")),
+  });
+
+  const recomputeForecastMutation = useMutation({
+    mutationFn: (payload: RevenueForecastRecomputePayload) => recomputeForecast(payload),
+    onSuccess: async (result) => {
+      toast.success(`Пересчитано ${result.recomputed} дней`);
+      setForceRefreshConfirmOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ["forecast"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось пересчитать прогноз")),
+  });
+
+  const saveForecastOverrideMutation = useMutation({
+    mutationFn: (variables: {
+      businessDate: string;
+      payload: { amount: number; reason?: string | null };
+    }) => overrideForecast(variables.businessDate, variables.payload),
+    onSuccess: async (forecast) => {
+      toast.success("Ручной прогноз сохранён");
+      setForecastDialog((current) =>
+        current
+          ? {
+              ...current,
+              forecast,
+              amount: amountInputValue(forecast.manual_override_amount),
+              reason: forecast.manual_override_reason ?? "",
+            }
+          : current,
+      );
+      await queryClient.invalidateQueries({ queryKey: ["forecast"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить прогноз")),
+  });
+
+  const removeForecastOverrideMutation = useMutation({
+    mutationFn: (businessDate: string) => removeForecastOverride(businessDate),
+    onSuccess: async (forecast) => {
+      toast.success("Ручной прогноз снят");
+      setForecastDialog((current) =>
+        current
+          ? {
+              ...current,
+              forecast,
+              amount: "",
+              reason: "",
+              removeConfirmOpen: false,
+            }
+          : current,
+      );
+      await queryClient.invalidateQueries({ queryKey: ["forecast"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось снять прогноз")),
+  });
+
+  useEffect(() => {
+    if (!currentSchedule || warmedScheduleIds.current.has(currentSchedule.id)) {
+      return;
+    }
+    warmedScheduleIds.current.add(currentSchedule.id);
+    warmForecastMutation.mutate({
+      date_from: currentSchedule.date_start,
+      date_to: currentSchedule.date_end,
+      force_refresh_iiko: false,
+    });
+  }, [currentSchedule, warmForecastMutation]);
+
   async function invalidateCurrentSchedule() {
     await queryClient.invalidateQueries({ queryKey: ["schedule", selectedScheduleId] });
     await queryClient.invalidateQueries({ queryKey: ["schedules"] });
@@ -322,6 +429,56 @@ export function ScheduleRoute() {
         ? toIsoDate(addDays(parseIsoDate(selectedWeekStart), 7))
         : copyDialog.customDate;
     copyWeekMutation.mutate(toDate);
+  }
+
+  function requestForecastRecompute() {
+    if (forceRefreshIiko) {
+      setForceRefreshConfirmOpen(true);
+      return;
+    }
+    runForecastRecompute(false);
+  }
+
+  function runForecastRecompute(forceRefresh: boolean) {
+    recomputeForecastMutation.mutate({
+      date_from: forecastRange.from,
+      date_to: forecastRange.to,
+      force_refresh_iiko: forceRefresh,
+    });
+  }
+
+  function openForecastDialog(forecast: RevenueForecastRead) {
+    setForecastDialog({
+      forecast,
+      amount: amountInputValue(forecast.manual_override_amount),
+      reason: forecast.manual_override_reason ?? "",
+      removeConfirmOpen: false,
+    });
+  }
+
+  function submitForecastOverride() {
+    if (!forecastDialog) {
+      return;
+    }
+    const amount = parseAmountInput(forecastDialog.amount);
+    if (amount === null || amount <= 0) {
+      toast.error("Введите сумму прогноза больше нуля");
+      return;
+    }
+    saveForecastOverrideMutation.mutate({
+      businessDate: forecastDialog.forecast.business_date,
+      payload: {
+        amount,
+        reason: forecastDialog.reason.trim() || null,
+      },
+    });
+  }
+
+  function removeForecastOverrideFromDialog() {
+    if (!forecastDialog) {
+      return;
+    }
+    removeForecastOverrideMutation.mutate(forecastDialog.forecast.business_date);
   }
 
   function movePeriod(days: number) {
@@ -496,6 +653,20 @@ export function ScheduleRoute() {
         </div>
       </section>
 
+      {currentSchedule ? (
+        <RevenueForecastPanel
+          days={visibleDays}
+          forecasts={forecastQuery.data ?? []}
+          forceRefreshIiko={forceRefreshIiko}
+          isLoading={forecastQuery.isLoading || warmForecastMutation.isPending}
+          isRecomputing={recomputeForecastMutation.isPending}
+          leadingWidth={viewMode === "employees" ? EMPLOYEE_COLUMN_WIDTH : STATION_COLUMN_WIDTH}
+          onCellClick={openForecastDialog}
+          onForceRefreshChange={setForceRefreshIiko}
+          onRecompute={requestForecastRecompute}
+        />
+      ) : null}
+
       {!currentSchedule && !schedulesQuery.isLoading ? (
         <EmptyState
           action={<Button onClick={openCreateDialog}>Создать новый график</Button>}
@@ -559,6 +730,20 @@ export function ScheduleRoute() {
         onSubmit={submitShiftDialog}
         setValue={setShiftDialog}
         state={shiftDialog}
+      />
+
+      <ForecastOverrideDialog
+        isRemoving={removeForecastOverrideMutation.isPending}
+        isSaving={saveForecastOverrideMutation.isPending}
+        onChange={setForecastDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            setForecastDialog(null);
+          }
+        }}
+        onRemove={removeForecastOverrideFromDialog}
+        onSubmit={submitForecastOverride}
+        state={forecastDialog}
       />
 
       <CopyWeekDialog
@@ -649,7 +834,388 @@ export function ScheduleRoute() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={forceRefreshConfirmOpen} onOpenChange={setForceRefreshConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Принудительно перечитать выручку из iiko?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Может занять до минуты.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={recomputeForecastMutation.isPending}>
+              Отмена
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={recomputeForecastMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                runForecastRecompute(true);
+              }}
+            >
+              Перечитать
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+  );
+}
+
+function RevenueForecastPanel({
+  days,
+  forecasts,
+  forceRefreshIiko,
+  isLoading,
+  isRecomputing,
+  leadingWidth,
+  onCellClick,
+  onForceRefreshChange,
+  onRecompute,
+}: {
+  days: string[];
+  forecasts: RevenueForecastRead[];
+  forceRefreshIiko: boolean;
+  isLoading: boolean;
+  isRecomputing: boolean;
+  leadingWidth: number;
+  onCellClick: (forecast: RevenueForecastRead) => void;
+  onForceRefreshChange: (checked: boolean) => void;
+  onRecompute: () => void;
+}) {
+  const minWidth = leadingWidth + days.length * DAY_CELL_WIDTH;
+  const forecastByDay = useMemo(
+    () => new Map(forecasts.map((forecast) => [forecast.business_date, forecast])),
+    [forecasts],
+  );
+  const isEmpty = !isLoading && forecasts.length === 0;
+
+  return (
+    <section className="overflow-hidden rounded-lg border bg-card">
+      <div className="overflow-x-auto">
+        <table className="border-separate border-spacing-0 text-sm" style={{ minWidth }}>
+          <tbody>
+            <tr>
+              <td
+                className="sticky left-0 z-20 border-b border-r bg-card px-3 py-3 align-top"
+                rowSpan={2}
+                style={{ width: leadingWidth, minWidth: leadingWidth }}
+              >
+                <div className="grid gap-3">
+                  <div>
+                    <div className="font-medium">Прогноз выручки</div>
+                    <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                      <input
+                        checked={forceRefreshIiko}
+                        className="h-4 w-4 rounded border-border"
+                        onChange={(event) => onForceRefreshChange(event.target.checked)}
+                        type="checkbox"
+                      />
+                      Force-refresh iiko
+                    </label>
+                  </div>
+                  <Button
+                    disabled={isRecomputing}
+                    onClick={onRecompute}
+                    size="sm"
+                    type="button"
+                    variant={isEmpty ? "default" : "outline"}
+                  >
+                    {isRecomputing ? (
+                      <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+                    ) : (
+                      <RefreshCw size={15} aria-hidden="true" />
+                    )}
+                    {isEmpty ? "Рассчитать прогноз" : "Пересчитать"}
+                  </Button>
+                </div>
+              </td>
+              {days.map((day) => (
+                <td
+                  className="border-b border-r bg-muted/70 px-2 py-2 text-center font-medium text-muted-foreground"
+                  key={day}
+                  style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
+                >
+                  <div>{weekdayLabels[parseIsoDate(day).getDay()]}</div>
+                  <div className="text-base text-foreground">{day.slice(8, 10)}</div>
+                </td>
+              ))}
+            </tr>
+            <tr>
+              {isLoading ? (
+                days.map((day) => (
+                  <td className="border-b border-r p-3" key={day}>
+                    <Skeleton className="h-12 w-full" />
+                  </td>
+                ))
+              ) : isEmpty ? (
+                <td className="border-b border-r px-3 py-4 text-center" colSpan={days.length}>
+                  <Button disabled={isRecomputing} onClick={onRecompute} type="button">
+                    {isRecomputing ? (
+                      <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                    ) : (
+                      <RefreshCw size={16} aria-hidden="true" />
+                    )}
+                    Рассчитать прогноз
+                  </Button>
+                </td>
+              ) : (
+                days.map((day) => (
+                  <ForecastCell
+                    day={day}
+                    forecast={forecastByDay.get(day)}
+                    key={day}
+                    onClick={onCellClick}
+                  />
+                ))
+              )}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function ForecastCell({
+  day,
+  forecast,
+  onClick,
+}: {
+  day: string;
+  forecast: RevenueForecastRead | undefined;
+  onClick: (forecast: RevenueForecastRead) => void;
+}) {
+  if (!forecast) {
+    return (
+      <td
+        className="h-[76px] border-b border-r px-2 py-3 text-center"
+        style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
+      >
+        <div className="text-lg font-semibold tabular-nums text-muted-foreground">—</div>
+      </td>
+    );
+  }
+
+  return (
+    <td
+      className="h-[76px] border-b border-r p-1.5 text-center"
+      style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
+    >
+      <button
+        className="flex h-full w-full flex-col items-center justify-center rounded-md px-1.5 hover:bg-primary/5 focus:outline-none focus:ring-2 focus:ring-ring"
+        onClick={() => onClick(forecast)}
+        type="button"
+      >
+        <div className={cn("text-lg font-semibold tabular-nums", forecastAmountClass(forecast))}>
+          {forecast.forecast_amount === null ? "—" : formatMoney(forecast.forecast_amount)}
+        </div>
+        <div className="mt-1 flex min-h-5 items-center justify-center gap-1 text-[11px] leading-4">
+          {forecast.event_review_recommended ? (
+            <span
+              aria-label="Праздничный день"
+              title="Праздничный день, рекомендуем проверить прогноз вручную"
+            >
+              <AlertTriangle className="h-3.5 w-3.5 text-orange-600" aria-hidden="true" />
+            </span>
+          ) : null}
+          {forecastStatusLabel(forecast) ? (
+            <span className={forecastAmountClass(forecast)}>
+              {forecastStatusLabel(forecast)}
+            </span>
+          ) : null}
+        </div>
+      </button>
+    </td>
+  );
+}
+
+function ForecastOverrideDialog({
+  isRemoving,
+  isSaving,
+  onChange,
+  onOpenChange,
+  onRemove,
+  onSubmit,
+  state,
+}: {
+  isRemoving: boolean;
+  isSaving: boolean;
+  onChange: (state: ForecastDialogState | null) => void;
+  onOpenChange: (open: boolean) => void;
+  onRemove: () => void;
+  onSubmit: () => void;
+  state: ForecastDialogState | null;
+}) {
+  const forecast = state?.forecast ?? null;
+  const hasOverride =
+    forecast?.manual_override_amount !== null && forecast?.manual_override_amount !== undefined;
+  const validHistoryCount =
+    forecast?.history_points.filter((point) => point.included).length ?? 0;
+
+  function patchState(patch: Partial<ForecastDialogState>) {
+    if (!state) {
+      return;
+    }
+    onChange({ ...state, ...patch });
+  }
+
+  return (
+    <>
+      <Dialog open={Boolean(state)} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-[640px]">
+          <DialogHeader>
+            <DialogTitle>
+              {forecast ? `Прогноз выручки на ${formatDate(forecast.business_date)}` : ""}
+            </DialogTitle>
+            <DialogDescription>
+              Метод: среднее за 6 одинаковых дней недели
+            </DialogDescription>
+          </DialogHeader>
+          {forecast && state ? (
+            <div className="grid gap-4">
+              <div className="grid gap-1 text-sm">
+                <div>
+                  Статус:{" "}
+                  <span className={forecastAmountClass(forecast)}>
+                    {forecastStatusText(forecast)}
+                  </span>
+                </div>
+                <div>
+                  История: {validHistoryCount} из {forecast.history_window_weeks} точек
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-md border">
+                <table className="w-full text-sm">
+                  <tbody>
+                    {forecast.history_points.map((point) => (
+                      <tr className="border-b last:border-b-0" key={point.date}>
+                        <td className="px-3 py-2">{formatDate(point.date)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {point.amount === null ? "—" : formatMoneyWithCurrency(point.amount)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">
+                          {point.included ? "учтён" : "исключён"}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td className="px-3 py-2 font-medium">Среднее</td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">
+                        {forecast.base_average_amount === null
+                          ? "—"
+                          : formatMoneyWithCurrency(forecast.base_average_amount)}
+                      </td>
+                      <td />
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="grid gap-1 text-sm">
+                <div>
+                  Текущий прогноз:{" "}
+                  <span className="font-medium tabular-nums">
+                    {forecast.forecast_amount === null
+                      ? "—"
+                      : formatMoneyWithCurrency(forecast.forecast_amount)}
+                  </span>
+                  {forecast.quality_status === "manual_override" ? " (override)" : ""}
+                </div>
+                {forecast.manual_override_set_by_label || forecast.manual_override_set_at ? (
+                  <div className="text-muted-foreground">
+                    Установил: {forecast.manual_override_set_by_label ?? "—"}
+                    {forecast.manual_override_set_at
+                      ? ` в ${formatDateTime(forecast.manual_override_set_at)}`
+                      : ""}
+                  </div>
+                ) : null}
+                {forecast.manual_override_reason ? (
+                  <div className="text-muted-foreground">
+                    Причина: {forecast.manual_override_reason}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="grid gap-3 rounded-md border p-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="forecast-override-amount">Ручной прогноз</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="forecast-override-amount"
+                      inputMode="decimal"
+                      onChange={(event) => patchState({ amount: event.target.value })}
+                      value={state.amount}
+                    />
+                    <span className="text-sm text-muted-foreground">₽</span>
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="forecast-override-reason">Причина</Label>
+                  <Textarea
+                    id="forecast-override-reason"
+                    maxLength={2000}
+                    onChange={(event) => patchState({ reason: event.target.value })}
+                    value={state.reason}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter className="gap-2 sm:justify-between sm:space-x-0">
+            <Button
+              disabled={!hasOverride || isRemoving || isSaving}
+              onClick={() => patchState({ removeConfirmOpen: true })}
+              type="button"
+              variant="outline"
+            >
+              Снять override
+            </Button>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button
+                disabled={isSaving || isRemoving}
+                onClick={() => onOpenChange(false)}
+                variant="outline"
+              >
+                Отмена
+              </Button>
+              <Button disabled={isSaving || isRemoving} onClick={onSubmit}>
+                {isSaving ? <LoaderCircle className="animate-spin" size={16} /> : null}
+                Сохранить
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={Boolean(state?.removeConfirmOpen)}
+        onOpenChange={(open) => patchState({ removeConfirmOpen: open })}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Снять ручной прогноз?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Будет применён расчётный.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRemoving}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isRemoving}
+              onClick={(event) => {
+                event.preventDefault();
+                onRemove();
+              }}
+            >
+              Снять
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -1370,6 +1936,83 @@ function hoursBetween(dateIso: string, startTime: string, endTime: string) {
 
 function formatHours(value: number) {
   return value.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+}
+
+function forecastAmountClass(forecast: RevenueForecastRead) {
+  if (forecast.quality_status === "manual_override") {
+    return "text-blue-600";
+  }
+  if (forecast.quality_status === "requires_review" || forecast.forecast_amount === null) {
+    return "text-orange-600";
+  }
+  return "text-foreground";
+}
+
+function forecastStatusLabel(forecast: RevenueForecastRead) {
+  if (forecast.quality_status === "manual_override") {
+    return "override";
+  }
+  if (forecast.quality_status === "requires_review" || forecast.forecast_amount === null) {
+    return "requires review";
+  }
+  return "";
+}
+
+function forecastStatusText(forecast: RevenueForecastRead) {
+  if (forecast.quality_status === "manual_override") {
+    return "Ручной override";
+  }
+  if (forecast.quality_status === "requires_review" || forecast.forecast_amount === null) {
+    return "Требует проверки";
+  }
+  return "Расчётный";
+}
+
+function formatMoney(value: string | number | null) {
+  const amount = decimalToNumber(value);
+  if (amount === null) {
+    return "—";
+  }
+  return amount.toLocaleString("ru-RU", { maximumFractionDigits: 0 });
+}
+
+function formatMoneyWithCurrency(value: string | number | null) {
+  const amount = formatMoney(value);
+  return amount === "—" ? amount : `${amount} ₽`;
+}
+
+function decimalToNumber(value: string | number | null) {
+  if (value === null) {
+    return null;
+  }
+  const amount =
+    typeof value === "number"
+      ? value
+      : Number(String(value).replace(/[\s\u00a0]/g, "").replace(",", "."));
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function amountInputValue(value: string | number | null) {
+  return value === null ? "" : String(value);
+}
+
+function parseAmountInput(value: string) {
+  const amount = Number(value.replace(/[\s\u00a0]/g, "").replace(",", "."));
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function formatDateTime(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function shiftTitle(shift: ScheduledShiftRead) {

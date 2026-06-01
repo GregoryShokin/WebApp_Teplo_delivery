@@ -4,25 +4,31 @@ import uuid
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
 from app.db.session import get_session
-from app.models import Employee, ScheduledShift, ShiftSchedule
+from app.models import Employee, RevenueForecast, ScheduledShift, ShiftSchedule, User
 from app.schemas.shift_schedule import (
     CopyWeekRequest,
     CopyWeekResponse,
     EmployeeRosterRow,
+    RevenueForecastOverrideRequest,
+    RevenueForecastRead,
+    RevenueForecastRecomputeRequest,
+    RevenueForecastRecomputeResponse,
     ScheduleCreateRequest,
     ScheduledShiftRead,
     ScheduledShiftUpsertRequest,
     SchedulePatchRequest,
     ScheduleRead,
 )
-from app.services import shift_schedule_service
+from app.services import revenue_forecast_service, shift_schedule_service
 
 router = APIRouter()
+MAX_FORECAST_RANGE_DAYS = 62
 
 
 @router.get("/employees-roster", response_model=list[EmployeeRosterRow])
@@ -51,6 +57,75 @@ async def get_schedules(
         date_to=date_to,
     )
     return [_schedule_to_read(schedule) for schedule in schedules]
+
+
+@router.get("/forecast", response_model=list[RevenueForecastRead])
+async def get_forecast_range(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    date_from: date,
+    date_to: date,
+) -> list[RevenueForecastRead]:
+    del actor
+    _validate_forecast_range(date_from, date_to)
+    forecasts = await revenue_forecast_service.get_forecasts_in_range(
+        session,
+        date_from,
+        date_to,
+    )
+    labels = await _manual_override_labels(session, forecasts)
+    return [_forecast_to_read(forecast, labels) for forecast in forecasts]
+
+
+@router.post("/forecast/recompute", response_model=RevenueForecastRecomputeResponse)
+async def post_recompute_forecast(
+    payload: RevenueForecastRecomputeRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> RevenueForecastRecomputeResponse:
+    require_finance_manager_plus(actor)
+    recomputed = await revenue_forecast_service.compute_forecast_for_range(
+        session,
+        payload.date_from,
+        payload.date_to,
+        force_refresh_iiko=payload.force_refresh_iiko,
+    )
+    return RevenueForecastRecomputeResponse(recomputed=len(recomputed))
+
+
+@router.post("/forecast/{business_date}/override", response_model=RevenueForecastRead)
+async def post_forecast_override(
+    business_date: date,
+    payload: RevenueForecastOverrideRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> RevenueForecastRead:
+    require_finance_manager_plus(actor)
+    forecast = await revenue_forecast_service.apply_manual_override(
+        session,
+        business_date,
+        amount=payload.amount,
+        reason=payload.reason,
+        actor=actor,
+    )
+    labels = await _manual_override_labels(session, [forecast])
+    return _forecast_to_read(forecast, labels)
+
+
+@router.delete("/forecast/{business_date}/override", response_model=RevenueForecastRead)
+async def delete_forecast_override(
+    business_date: date,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> RevenueForecastRead:
+    require_finance_manager_plus(actor)
+    forecast = await revenue_forecast_service.remove_manual_override(
+        session,
+        business_date,
+        actor=actor,
+    )
+    labels = await _manual_override_labels(session, [forecast])
+    return _forecast_to_read(forecast, labels)
 
 
 @router.post("", response_model=ScheduleRead)
@@ -261,3 +336,58 @@ def _shift_to_read(
         ),
         comment_private=shift.comment_private,
     )
+
+
+def _forecast_to_read(
+    forecast: RevenueForecast,
+    manual_override_labels: dict[uuid.UUID, str],
+) -> RevenueForecastRead:
+    label = None
+    if forecast.manual_override_set_by_user_id is not None:
+        label = manual_override_labels.get(forecast.manual_override_set_by_user_id)
+    return RevenueForecastRead(
+        business_date=forecast.business_date,
+        weekday=forecast.weekday,
+        method_code=forecast.method_code,
+        history_window_weeks=forecast.history_window_weeks,
+        history_points=forecast.history_points,
+        base_average_amount=forecast.base_average_amount,
+        season_coeff=forecast.season_coeff,
+        event_coeff=forecast.event_coeff,
+        manual_override_amount=forecast.manual_override_amount,
+        manual_override_reason=forecast.manual_override_reason,
+        manual_override_set_by_label=label,
+        manual_override_set_at=forecast.manual_override_set_at,
+        forecast_amount=forecast.forecast_amount,
+        quality_status=forecast.quality_status,
+        event_review_recommended=forecast.event_review_recommended,
+        computed_at=forecast.computed_at,
+    )
+
+
+async def _manual_override_labels(
+    session: AsyncSession,
+    forecasts: list[RevenueForecast],
+) -> dict[uuid.UUID, str]:
+    user_ids = {
+        forecast.manual_override_set_by_user_id
+        for forecast in forecasts
+        if forecast.manual_override_set_by_user_id is not None
+    }
+    if not user_ids:
+        return {}
+    result = await session.scalars(select(User).where(User.id.in_(user_ids)))
+    return {user.id: user.full_name for user in result.all()}
+
+
+def _validate_forecast_range(date_from: date, date_to: date) -> None:
+    if date_to < date_from:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Дата окончания не может быть раньше даты начала",
+        )
+    if (date_to - date_from).days > MAX_FORECAST_RANGE_DAYS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Период прогноза не может быть длиннее 62 дней",
+        )
