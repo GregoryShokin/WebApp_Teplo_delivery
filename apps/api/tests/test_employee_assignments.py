@@ -17,6 +17,7 @@ from app.api.deps import CurrentActor
 from app.api.v1.routes.employees import (
     create_employee_assignment,
     delete_employee_assignment,
+    list_employee_assignments,
     list_employee_changes,
     patch_employee_assignment,
 )
@@ -240,6 +241,285 @@ async def test_get_assignments_returns_only_active_on_date(session_factory) -> N
 
     assert [assignment.payroll_role for assignment in january] == ["sushi"]
     assert [assignment.payroll_role for assignment in february] == ["pizza"]
+
+
+async def test_get_with_include_pending_returns_future(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        today = date.today()
+        future = today + timedelta(days=7)
+        session.add_all(
+            [
+                EmployeeRoleAssignment(
+                    employee_id=employee.id,
+                    payroll_role="sushi",
+                    category="category_1",
+                    is_primary=False,
+                    effective_from=today,
+                    effective_to=future,
+                ),
+                EmployeeRoleAssignment(
+                    employee_id=employee.id,
+                    payroll_role="sushi",
+                    category="category_2",
+                    is_primary=False,
+                    effective_from=future,
+                ),
+            ]
+        )
+        await session.commit()
+
+        assignments = await list_employee_assignments(
+            employee.id,
+            session,
+            on_date=today,
+            include_pending=True,
+        )
+
+    assert [assignment.category for assignment in assignments] == ["category_1", "category_2"]
+    assert assignments[0].is_pending is False
+    assert assignments[1].is_pending is True
+
+
+async def test_get_without_include_pending_returns_only_active(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        today = date.today()
+        future = today + timedelta(days=7)
+        session.add_all(
+            [
+                EmployeeRoleAssignment(
+                    employee_id=employee.id,
+                    payroll_role="sushi",
+                    category="category_1",
+                    is_primary=False,
+                    effective_from=today,
+                    effective_to=future,
+                ),
+                EmployeeRoleAssignment(
+                    employee_id=employee.id,
+                    payroll_role="sushi",
+                    category="category_2",
+                    is_primary=False,
+                    effective_from=future,
+                ),
+            ]
+        )
+        await session.commit()
+
+        assignments = await list_employee_assignments(
+            employee.id,
+            session,
+            on_date=today,
+            include_pending=False,
+        )
+
+    assert [assignment.category for assignment in assignments] == ["category_1"]
+
+
+async def test_patch_with_future_effective_from_creates_pending(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        assignment = await add_role(session, employee.id, "sushi", "category_1", is_primary=True)
+        future = date.today() + timedelta(days=7)
+
+        updated = await patch_employee_assignment(
+            employee.id,
+            assignment.id,
+            EmployeeRoleAssignmentPatch(category="category_2", effective_from=future),
+            session,
+            _finance_manager(),
+        )
+        rows = list(
+            (
+                await session.scalars(
+                    select(EmployeeRoleAssignment)
+                    .where(EmployeeRoleAssignment.employee_id == employee.id)
+                    .order_by(EmployeeRoleAssignment.effective_from)
+                )
+            ).all()
+        )
+
+    assert updated.id != assignment.id
+    assert rows[0].category == "category_1"
+    assert rows[0].effective_to == future
+    assert rows[1].category == "category_2"
+    assert rows[1].effective_from == future
+    assert rows[1].effective_to is None
+
+
+async def test_delete_pending_restores_previous(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        today = date.today()
+        future = today + timedelta(days=7)
+        previous = EmployeeRoleAssignment(
+            employee_id=employee.id,
+            payroll_role="sushi",
+            category="category_1",
+            is_primary=False,
+            effective_from=today,
+            effective_to=future,
+        )
+        pending = EmployeeRoleAssignment(
+            employee_id=employee.id,
+            payroll_role="sushi",
+            category="category_2",
+            is_primary=False,
+            effective_from=future,
+        )
+        session.add_all([previous, pending])
+        await session.commit()
+
+        await delete_employee_assignment(
+            employee.id,
+            pending.id,
+            session,
+            _finance_manager(),
+        )
+        persisted_previous = await session.get(EmployeeRoleAssignment, previous.id)
+        deleted_pending = await session.get(EmployeeRoleAssignment, pending.id)
+
+    assert persisted_previous is not None
+    assert persisted_previous.effective_to is None
+    assert deleted_pending is None
+
+
+async def test_delete_active_uses_remove_assignment(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        today = date.today()
+        assignment = EmployeeRoleAssignment(
+            employee_id=employee.id,
+            payroll_role="sushi",
+            category="category_1",
+            is_primary=False,
+            effective_from=today,
+        )
+        session.add(assignment)
+        await session.commit()
+
+        await delete_employee_assignment(
+            employee.id,
+            assignment.id,
+            session,
+            _finance_manager(),
+        )
+        persisted = await session.get(EmployeeRoleAssignment, assignment.id)
+
+    assert persisted is not None
+    assert persisted.effective_to == today
+
+
+async def test_delete_pending_with_next_pending_chains_correctly(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        today = date.today()
+        first_date = today + timedelta(days=7)
+        second_date = today + timedelta(days=14)
+        previous = EmployeeRoleAssignment(
+            employee_id=employee.id,
+            payroll_role="sushi",
+            category="category_1",
+            is_primary=False,
+            effective_from=today,
+            effective_to=first_date,
+        )
+        first_pending = EmployeeRoleAssignment(
+            employee_id=employee.id,
+            payroll_role="sushi",
+            category="category_2",
+            is_primary=False,
+            effective_from=first_date,
+            effective_to=second_date,
+        )
+        second_pending = EmployeeRoleAssignment(
+            employee_id=employee.id,
+            payroll_role="sushi",
+            category="category_3",
+            is_primary=False,
+            effective_from=second_date,
+        )
+        session.add_all([previous, first_pending, second_pending])
+        await session.commit()
+
+        await delete_employee_assignment(
+            employee.id,
+            first_pending.id,
+            session,
+            _finance_manager(),
+        )
+        persisted_previous = await session.get(EmployeeRoleAssignment, previous.id)
+        deleted_first = await session.get(EmployeeRoleAssignment, first_pending.id)
+        persisted_second = await session.get(EmployeeRoleAssignment, second_pending.id)
+
+    assert persisted_previous is not None
+    assert persisted_previous.effective_to == second_date
+    assert deleted_first is None
+    assert persisted_second is not None
+
+
+async def test_delete_pending_primary_fails(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        pending = EmployeeRoleAssignment(
+            employee_id=employee.id,
+            payroll_role="sushi",
+            category="category_2",
+            is_primary=True,
+            effective_from=date.today() + timedelta(days=7),
+        )
+        session.add(pending)
+        await session.commit()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await delete_employee_assignment(
+                employee.id,
+                pending.id,
+                session,
+                _finance_manager(),
+            )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Choose another primary first"
+
+
+async def test_delete_active_with_future_pending_correctly_handled(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        today = date.today()
+        future = today + timedelta(days=7)
+        active = EmployeeRoleAssignment(
+            employee_id=employee.id,
+            payroll_role="sushi",
+            category="category_1",
+            is_primary=False,
+            effective_from=today,
+            effective_to=future,
+        )
+        pending = EmployeeRoleAssignment(
+            employee_id=employee.id,
+            payroll_role="sushi",
+            category="category_2",
+            is_primary=False,
+            effective_from=future,
+        )
+        session.add_all([active, pending])
+        await session.commit()
+
+        await delete_employee_assignment(
+            employee.id,
+            active.id,
+            session,
+            _finance_manager(),
+        )
+        persisted_active = await session.get(EmployeeRoleAssignment, active.id)
+        persisted_pending = await session.get(EmployeeRoleAssignment, pending.id)
+
+    assert persisted_active is not None
+    assert persisted_active.effective_to == today
+    assert persisted_pending is not None
+    assert persisted_pending.effective_from == future
 
 
 async def test_backdated_assignment_patch_requires_comment(session_factory) -> None:

@@ -65,6 +65,36 @@ async def get_assignments(
     )
 
 
+async def get_assignments_with_pending(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+    on_date: date,
+) -> list[EmployeeRoleAssignment]:
+    result = await session.scalars(
+        select(EmployeeRoleAssignment)
+        .where(
+            EmployeeRoleAssignment.employee_id == employee_id,
+            or_(
+                _active_on(on_date),
+                EmployeeRoleAssignment.effective_from > on_date,
+            ),
+        )
+        .order_by(
+            EmployeeRoleAssignment.payroll_role,
+            EmployeeRoleAssignment.effective_from,
+        )
+    )
+    return [
+        assignment
+        for assignment in result.all()
+        if assignment.employee_id == employee_id
+        and (
+            _assignment_active_on(assignment, on_date)
+            or assignment.effective_from > on_date
+        )
+    ]
+
+
 async def set_primary(
     session: AsyncSession,
     employee_id: uuid.UUID,
@@ -201,11 +231,26 @@ async def update_assignment(
         _validate_category(category)
 
     await _ensure_assignment_valid(session, employee, target_role, target_category)
+    if is_primary is False and assignment.is_primary:
+        raise PrimaryAssignmentRequiredError("Choose another primary assignment first")
 
     role_or_category_changed = (
         target_role != assignment.payroll_role or target_category != assignment.category
     )
-    if role_or_category_changed and assignment.effective_from < as_of:
+    effective_from_changed = (
+        effective_from is not None and effective_from != assignment.effective_from
+    )
+    if effective_from_changed and assignment.effective_from > date.today():
+        await _move_pending_assignment(
+            session,
+            employee_id,
+            assignment,
+            as_of,
+            payroll_role=target_role,
+            category=target_category,
+            is_primary=assignment.is_primary if is_primary is None else bool(is_primary),
+        )
+    elif role_or_category_changed and assignment.effective_from < as_of:
         assignment.effective_to = as_of
         next_assignment = await _next_assignment_for_role_after(
             session,
@@ -229,8 +274,6 @@ async def update_assignment(
             assignment.payroll_role = payroll_role
         if category is not None:
             assignment.category = category
-    if is_primary is False and assignment.is_primary:
-        raise PrimaryAssignmentRequiredError("Choose another primary assignment first")
     if is_primary is True:
         await _set_primary_assignment(session, employee_id, assignment, as_of)
 
@@ -239,6 +282,42 @@ async def update_assignment(
     await _refresh_employee_status(session, employee, as_of)
     await _commit_refresh(session, assignment)
     return assignment
+
+
+async def cancel_pending_assignment(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+    assignment_id: uuid.UUID,
+) -> None:
+    assignment = await _get_assignment(session, employee_id, assignment_id)
+    today = date.today()
+    if assignment.effective_from <= today:
+        raise EmployeeAssignmentError("Только запланированные изменения (будущие) можно удалить")
+    if assignment.is_primary:
+        raise PrimaryAssignmentRequiredError("Choose another primary first")
+
+    previous = await session.scalar(
+        select(EmployeeRoleAssignment).where(
+            EmployeeRoleAssignment.employee_id == employee_id,
+            EmployeeRoleAssignment.payroll_role == assignment.payroll_role,
+            EmployeeRoleAssignment.effective_to == assignment.effective_from,
+        )
+    )
+    next_pending = await _next_assignment_for_role_after(
+        session,
+        employee_id,
+        assignment.payroll_role,
+        assignment.effective_from,
+        exclude_assignment_id=assignment.id,
+    )
+
+    if previous is not None:
+        previous.effective_to = next_pending.effective_from if next_pending else None
+
+    await session.delete(assignment)
+    employee = await _get_employee(session, employee_id)
+    await _refresh_employee_status(session, employee, today)
+    await _commit(session)
 
 
 async def remove_role(
@@ -461,6 +540,78 @@ async def _next_assignment_for_role_after(
     if exclude_assignment_id is not None:
         query = query.where(EmployeeRoleAssignment.id != exclude_assignment_id)
     return await session.scalar(query.order_by(EmployeeRoleAssignment.effective_from).limit(1))
+
+
+async def _previous_assignment_for_role_before(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+    payroll_role: str,
+    effective_from: date,
+    *,
+    exclude_assignment_id: uuid.UUID | None = None,
+) -> EmployeeRoleAssignment | None:
+    query = select(EmployeeRoleAssignment).where(
+        EmployeeRoleAssignment.employee_id == employee_id,
+        EmployeeRoleAssignment.payroll_role == payroll_role,
+        EmployeeRoleAssignment.effective_from < effective_from,
+    )
+    if exclude_assignment_id is not None:
+        query = query.where(EmployeeRoleAssignment.id != exclude_assignment_id)
+    return await session.scalar(
+        query.order_by(EmployeeRoleAssignment.effective_from.desc()).limit(1)
+    )
+
+
+async def _move_pending_assignment(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+    assignment: EmployeeRoleAssignment,
+    effective_from: date,
+    *,
+    payroll_role: str,
+    category: str,
+    is_primary: bool,
+) -> None:
+    previous = await _previous_assignment_for_role_before(
+        session,
+        employee_id,
+        assignment.payroll_role,
+        assignment.effective_from,
+        exclude_assignment_id=assignment.id,
+    )
+    next_for_old_role = await _next_assignment_for_role_after(
+        session,
+        employee_id,
+        assignment.payroll_role,
+        assignment.effective_from,
+        exclude_assignment_id=assignment.id,
+    )
+    if previous is not None:
+        previous.effective_to = next_for_old_role.effective_from if next_for_old_role else None
+
+    assignment.payroll_role = payroll_role
+    assignment.category = category
+    assignment.is_primary = is_primary
+    assignment.effective_from = effective_from
+
+    next_for_new_role = await _next_assignment_for_role_after(
+        session,
+        employee_id,
+        payroll_role,
+        effective_from,
+        exclude_assignment_id=assignment.id,
+    )
+    previous_for_new_role = await _previous_assignment_for_role_before(
+        session,
+        employee_id,
+        payroll_role,
+        effective_from,
+        exclude_assignment_id=assignment.id,
+    )
+    if previous_for_new_role is not None:
+        previous_for_new_role.effective_to = effective_from
+    assignment.effective_to = next_for_new_role.effective_from if next_for_new_role else None
+    await session.flush()
 
 
 async def _commit_refresh(session: AsyncSession, assignment: EmployeeRoleAssignment) -> None:

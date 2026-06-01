@@ -23,6 +23,7 @@ class EmployeeRoleAssignmentRead(BaseModel):
     is_primary: bool
     effective_from: date
     effective_to: date | None = None
+    is_pending: bool
     created_at: datetime
     updated_at: datetime
 

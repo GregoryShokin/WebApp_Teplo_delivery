@@ -269,6 +269,10 @@ class EmployeeRoleAssignment(Base):
 
     employee: Mapped[Employee] = relationship(back_populates="role_assignments")
 
+    @property
+    def is_pending(self) -> bool:
+        return self.effective_from > date.today()
+
 
 class EmployeePositionEvent(Base):
     __tablename__ = "employee_position_event"

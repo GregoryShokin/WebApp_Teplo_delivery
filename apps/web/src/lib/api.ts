@@ -68,6 +68,7 @@ export type EmployeeRoleAssignment = {
   is_primary: boolean;
   effective_from: string;
   effective_to: string | null;
+  is_pending: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -77,11 +78,15 @@ export type EmployeeRoleAssignmentCreate = {
   category: EmployeeCategory;
   is_primary?: boolean;
   effective_from?: string | null;
+  comment?: string | null;
 };
 
 export type EmployeeRoleAssignmentPatch = Partial<
   Pick<EmployeeRoleAssignment, "payroll_role" | "category" | "is_primary">
->;
+> & {
+  effective_from?: string | null;
+  comment?: string | null;
+};
 
 export type EmployeeNoticeInfo = {
   notice_date: string;
@@ -1107,12 +1112,14 @@ export async function getEmployees(filters: {
   status?: EmployeeStatus | "all";
   category?: EmployeeCategory;
   cookingStation?: CookingStation;
+  includePending?: boolean;
 }): Promise<Employee[]> {
   const response = await api.get<Employee[]>("/employees/", {
     params: {
       status: filters.status === "all" ? undefined : filters.status,
       category: filters.category,
       cooking_station: filters.cookingStation,
+      include_pending: filters.includePending || undefined,
     },
   });
   return response.data;
@@ -1229,8 +1236,13 @@ export async function reinstateEmployee(id: string): Promise<Employee> {
   return response.data;
 }
 
-export async function getEmployeeAssignments(id: string): Promise<EmployeeRoleAssignment[]> {
-  const response = await api.get<EmployeeRoleAssignment[]>(`/employees/${id}/assignments`);
+export async function getEmployeeAssignments(
+  id: string,
+  includePending = false,
+): Promise<EmployeeRoleAssignment[]> {
+  const response = await api.get<EmployeeRoleAssignment[]>(`/employees/${id}/assignments`, {
+    params: { include_pending: includePending || undefined },
+  });
   return response.data;
 }
 

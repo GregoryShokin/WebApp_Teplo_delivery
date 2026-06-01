@@ -125,6 +125,7 @@ import {
   type PeriodRange,
 } from "@/lib/date-presets";
 import { PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
+import { sortEmployeesByRoleAndName } from "@/lib/role-sort";
 import { cn } from "@/lib/utils";
 
 type ViewMode = "employees" | "stations" | "planFact";
@@ -256,7 +257,7 @@ export function ScheduleRoute() {
       }),
   });
   const rosterQuery = useQuery({
-    queryKey: ["schedule-employees-roster"],
+    queryKey: ["employees-roster"],
     queryFn: getEmployeesRoster,
   });
   const scheduleQuery = useQuery({
@@ -310,6 +311,7 @@ export function ScheduleRoute() {
     () => [...(rosterQuery.data ?? [])].sort(compareRosterRows),
     [rosterQuery.data],
   );
+  const employeeViewRoster = useMemo(() => sortEmployeesByRoleAndName(roster), [roster]);
   const currentSchedule = selectedScheduleId ? (scheduleQuery.data ?? null) : null;
   const currentScheduleRange: PeriodRange = currentSchedule
     ? {
@@ -1102,7 +1104,7 @@ export function ScheduleRoute() {
           isLoading={rosterQuery.isLoading}
           onCreate={() => openCreateDialog(periodRange, periodPreset)}
           range={periodRange}
-          roster={roster}
+          roster={viewMode === "employees" ? employeeViewRoster : roster}
           viewMode={viewMode}
         />
       ) : viewMode === "planFact" ? (
@@ -1129,7 +1131,7 @@ export function ScheduleRoute() {
           onFilledCellClick={handleFilledShiftClick}
           costByShiftId={costEstimatesByShiftId}
           cashierAllowanceByDay={cashierAllowanceByDay}
-          roster={roster}
+          roster={employeeViewRoster}
           scheduleRange={currentScheduleRange}
           shiftByEmployeeDay={shiftByEmployeeDay}
           today={todayIso}

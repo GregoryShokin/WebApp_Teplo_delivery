@@ -10,6 +10,7 @@ import {
   DatabaseZap,
   Grid2X2,
   History,
+  Info,
   KeyRound,
   List,
   LoaderCircle,
@@ -19,6 +20,7 @@ import {
   Search,
   ShieldAlert,
   RotateCcw,
+  Trash2,
   X,
   UserPlus,
   UserMinus,
@@ -130,10 +132,12 @@ import {
   getPayrollAdjustments,
   getSettings,
   patchEmployee,
+  patchEmployeeAssignment,
   recordEmployeeNotice,
   reinstateEmployee,
   setEmployeeHireDate,
   syncEmployees,
+  deleteEmployeeAssignment,
 } from "@/lib/api";
 import { getAuthSnapshot, subscribeAuth } from "@/lib/auth";
 import {
@@ -289,6 +293,16 @@ type PremiumTransferConflict = {
   message: string;
   existingFullName: string;
 };
+type CategoryEffectiveChange = {
+  assignmentId: string;
+  payrollRole: PayrollRole;
+  currentCategory: EmployeeCategory;
+  nextCategory: EmployeeCategory;
+};
+type PendingAssignmentTarget = {
+  employee: Employee;
+  assignment: EmployeeRoleAssignment;
+};
 type ViewMode = "grid" | "table";
 type StaffGroupFilter = "all" | "cook" | "staff";
 type StaffTab = "employees" | "changes";
@@ -397,6 +411,8 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
   const [createOpen, setCreateOpen] = useState(false);
   const [noticeTarget, setNoticeTarget] = useState<Employee | null>(null);
   const [noticeCancelTarget, setNoticeCancelTarget] = useState<Employee | null>(null);
+  const [pendingAssignmentTarget, setPendingAssignmentTarget] =
+    useState<PendingAssignmentTarget | null>(null);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setDebouncedSearch(search), 250);
@@ -428,12 +444,13 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
       getEmployees({
         status: status === "current" ? "all" : status,
         category: category === "all" ? undefined : category,
+        includePending: true,
       }),
   });
 
   const allEmployeesQuery = useQuery({
     queryKey: ["employees", "staff-filter-options"],
-    queryFn: () => getEmployees({ status: "all" }),
+    queryFn: () => getEmployees({ status: "all", includePending: true }),
   });
 
   const changesQuery = useQuery({
@@ -468,6 +485,7 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
         `Создано ${result.created}, обновлено ${result.updated}, деактивировано ${result.deactivated}`,
       );
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      void queryClient.invalidateQueries({ queryKey: ["employees-roster"] });
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error));
@@ -484,6 +502,7 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
       setCreateOpen(false);
       setSelectedEmployeeId(employee.id);
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      void queryClient.invalidateQueries({ queryKey: ["employees-roster"] });
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error, "Не удалось создать сотрудника"));
@@ -529,6 +548,7 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
 
   function invalidateEmployeeQueries(employeeId?: string) {
     void queryClient.invalidateQueries({ queryKey: ["employees"] });
+    void queryClient.invalidateQueries({ queryKey: ["employees-roster"] });
     void queryClient.invalidateQueries({ queryKey: ["employees", "changes"] });
     if (employeeId) {
       void queryClient.invalidateQueries({ queryKey: ["employees", employeeId, "changes"] });
@@ -705,8 +725,14 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
       {
         key: "category",
         header: "Категория",
-        cell: (employee) =>
-          categoryLabel(primaryAssignment(employee)?.category ?? employee.category),
+        cell: (employee) => (
+          <CategoryCell
+            employee={employee}
+            onPendingClick={(assignment) =>
+              setPendingAssignmentTarget({ employee, assignment })
+            }
+          />
+        ),
       },
       {
         key: "default_cooking_station",
@@ -718,7 +744,15 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
       {
         key: "allowances",
         header: "Надбавки",
-        cell: (employee) => <EmployeeTags employee={employee} compact />,
+        cell: (employee) => (
+          <EmployeeTags
+            employee={employee}
+            compact
+            onPendingClick={(assignment) =>
+              setPendingAssignmentTarget({ employee, assignment })
+            }
+          />
+        ),
       },
       {
         key: "status",
@@ -1075,6 +1109,9 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
               emptyDescription={emptyEmployeesDescription}
               emptyTitle={emptyEmployeesTitle}
               isLoading={employeesQuery.isLoading}
+              onPendingClick={(employee, assignment) =>
+                setPendingAssignmentTarget({ employee, assignment })
+              }
               onSelect={(employee) => setSelectedEmployeeId(employee.id)}
             />
           ) : (
@@ -1123,6 +1160,9 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
             <StaffEditor
               employee={selectedEmployee}
               onNavigate={onNavigate}
+              onPendingClick={(assignment) =>
+                setPendingAssignmentTarget({ employee: selectedEmployee, assignment })
+              }
               onClose={() => {
                 setEditorDirty(false);
                 setSelectedEmployeeId(null);
@@ -1217,6 +1257,11 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
           }
         }}
         onSubmit={(employee, comment) => cancelNoticeMutation.mutate({ employee, comment })}
+      />
+
+      <PendingAssignmentDialog
+        target={pendingAssignmentTarget}
+        onClose={() => setPendingAssignmentTarget(null)}
       />
     </div>
   );
@@ -1401,17 +1446,269 @@ function EmployeeNoticeCancelDialog({
   );
 }
 
+function PendingAssignmentDialog({
+  onClose,
+  target,
+}: {
+  onClose: () => void;
+  target: PendingAssignmentTarget | null;
+}) {
+  const queryClient = useQueryClient();
+  const [effectiveDate, setEffectiveDate] = useState("");
+  const [comment, setComment] = useState("");
+  const [retroConfirmOpen, setRetroConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const assignment = target?.assignment ?? null;
+  const employee = target?.employee ?? null;
+  const today = todayDateInputValue();
+  const isPastDate = Boolean(effectiveDate) && effectiveDate < today;
+  const canSave =
+    Boolean(assignment) &&
+    Boolean(effectiveDate) &&
+    (!isPastDate || comment.trim().length > 0);
+
+  useEffect(() => {
+    setEffectiveDate(assignment?.effective_from ?? "");
+    setComment("");
+    setRetroConfirmOpen(false);
+    setDeleteConfirmOpen(false);
+  }, [assignment?.id]);
+
+  const changesQuery = useQuery({
+    queryKey: ["employees", employee?.id, "changes", "pending-assignment", assignment?.id],
+    queryFn: () => getEmployeeChanges({ employeeId: employee?.id }),
+    enabled: Boolean(employee && assignment),
+  });
+  const auditEvent = useMemo(() => {
+    if (!assignment) {
+      return null;
+    }
+    return (changesQuery.data ?? []).find(
+      (change) =>
+        change.related_entity_id === assignment.id ||
+        String((change.after_value ?? {})["id"] ?? "") === assignment.id,
+    );
+  }, [assignment, changesQuery.data]);
+
+  const patchMutation = useMutation({
+    mutationFn: () => {
+      if (!employee || !assignment) {
+        throw new Error("Не выбрано запланированное изменение");
+      }
+      return patchEmployeeAssignment(employee.id, assignment.id, {
+        effective_from: effectiveDate,
+        comment: comment.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      toast.success(
+        effectiveDate < today
+          ? `Изменено задним числом с ${formatDate(effectiveDate)}`
+          : `Запланировано: с ${formatDate(effectiveDate)}`,
+      );
+      onClose();
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      if (employee) {
+        void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "assignments"] });
+        void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "changes"] });
+      }
+      void queryClient.invalidateQueries({ queryKey: ["employees", "changes"] });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось сохранить запланированное изменение"));
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: () => {
+      if (!employee || !assignment) {
+        throw new Error("Не выбрано запланированное изменение");
+      }
+      return deleteEmployeeAssignment(employee.id, assignment.id);
+    },
+    onSuccess: () => {
+      toast.success("Запланированное изменение удалено");
+      onClose();
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      if (employee) {
+        void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "assignments"] });
+        void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "changes"] });
+      }
+      void queryClient.invalidateQueries({ queryKey: ["employees", "changes"] });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось удалить запланированное изменение"));
+    },
+  });
+
+  const current = employee && assignment ? currentAssignmentForPending(employee, assignment) : null;
+  const isBusy = patchMutation.isPending || deleteMutation.isPending;
+
+  return (
+    <>
+      <Dialog
+        open={Boolean(target)}
+        onOpenChange={(open) => {
+          if (!open && !isBusy) {
+            onClose();
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Запланированное изменение</DialogTitle>
+            <DialogDescription>
+              {employee?.full_name}
+              {assignment ? `, ${payrollRoleLabel(assignment.payroll_role)}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          {assignment ? (
+            <div className="grid gap-4">
+              <div className="grid gap-2 rounded-md border bg-muted/30 p-3 text-sm">
+                <InfoRow
+                  label={`С ${formatDate(assignment.effective_from)}`}
+                  value={`${categoryLabel(assignment.category)}${
+                    current ? ` вместо ${categoryLabel(current.category)}` : ""
+                  }`}
+                />
+                <InfoRow label="Создано" value={formatDateTime(assignment.created_at)} />
+                <InfoRow
+                  label="Автор"
+                  value={auditEvent?.actor_label || "Не указан"}
+                />
+                <InfoRow
+                  label="Комментарий"
+                  value={auditEvent?.comment || "Не указан"}
+                />
+              </div>
+
+              <Label className="grid gap-2">
+                <span>Изменить дату</span>
+                <Input
+                  disabled={isBusy}
+                  onChange={(event) => setEffectiveDate(event.target.value)}
+                  type="date"
+                  value={effectiveDate}
+                />
+              </Label>
+
+              {isPastDate ? (
+                <Label className="grid gap-2">
+                  <span>Комментарий</span>
+                  <Textarea
+                    disabled={isBusy}
+                    maxLength={1000}
+                    onChange={(event) => setComment(event.target.value)}
+                    placeholder="Обязателен для изменения задним числом"
+                    value={comment}
+                  />
+                </Label>
+              ) : null}
+            </div>
+          ) : null}
+
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button
+              disabled={!assignment || isBusy}
+              onClick={() => setDeleteConfirmOpen(true)}
+              type="button"
+              variant="destructive"
+            >
+              <Trash2 size={16} aria-hidden="true" />
+              Удалить запланированное
+            </Button>
+            <div className="flex justify-end gap-2">
+              <Button disabled={isBusy} onClick={onClose} type="button" variant="outline">
+                Отмена
+              </Button>
+              <Button
+                disabled={!canSave || isBusy}
+                onClick={() => {
+                  if (isPastDate) {
+                    setRetroConfirmOpen(true);
+                    return;
+                  }
+                  patchMutation.mutate();
+                }}
+                type="button"
+              >
+                {patchMutation.isPending ? (
+                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                ) : (
+                  <Save size={16} aria-hidden="true" />
+                )}
+                Сохранить
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={retroConfirmOpen} onOpenChange={setRetroConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Применить изменение задним числом?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Это перепишет историю с {formatDate(effectiveDate)}. Комментарий обязателен.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={patchMutation.isPending}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!canSave || patchMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                patchMutation.mutate();
+              }}
+            >
+              Применить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить запланированное изменение?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Текущая категория останется без изменений.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!assignment || deleteMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                deleteMutation.mutate();
+              }}
+            >
+              {deleteMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : null}
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
 function StaffGrid({
   emptyDescription = "Измените поиск или фильтры.",
   emptyTitle = "Сотрудники не найдены",
   employees,
   isLoading,
+  onPendingClick,
   onSelect,
 }: {
   emptyDescription?: string;
   emptyTitle?: string;
   employees: Employee[];
   isLoading: boolean;
+  onPendingClick: (employee: Employee, assignment: EmployeeRoleAssignment) => void;
   onSelect: (employee: Employee) => void;
 }) {
   if (isLoading) {
@@ -1462,7 +1759,10 @@ function StaffGrid({
                   {employee.position || "Должность не указана"}
                 </div>
               </div>
-              <EmployeeTags employee={employee} />
+              <EmployeeTags
+                employee={employee}
+                onPendingClick={(assignment) => onPendingClick(employee, assignment)}
+              />
             </CardContent>
           </Card>
         </button>
@@ -2611,12 +2911,14 @@ function StaffEditor({
   onClose,
   onDirtyChange,
   onNavigate,
+  onPendingClick,
   onShowChanges,
 }: {
   employee: Employee;
   onClose: () => void;
   onDirtyChange: (dirty: boolean) => void;
   onNavigate?: (path: string) => void;
+  onPendingClick: (assignment: EmployeeRoleAssignment) => void;
   onShowChanges: (employeeId: string) => void;
 }) {
   const queryClient = useQueryClient();
@@ -2640,6 +2942,10 @@ function StaffEditor({
   const [premiumConfirmOpen, setPremiumConfirmOpen] = useState(false);
   const [premiumConfirmActions, setPremiumConfirmActions] = useState<string[]>([]);
   const [pendingDraftPatch, setPendingDraftPatch] = useState<EmployeePatch | null>(null);
+  const [categoryChange, setCategoryChange] = useState<CategoryEffectiveChange | null>(null);
+  const [categoryApplyMode, setCategoryApplyMode] = useState<"today" | "custom">("today");
+  const [categoryEffectiveDate, setCategoryEffectiveDate] = useState(todayDateInputValue);
+  const [categoryComment, setCategoryComment] = useState("");
   const [premiumTransferConflict, setPremiumTransferConflict] =
     useState<PremiumTransferConflict | null>(null);
 
@@ -2661,6 +2967,10 @@ function StaffEditor({
     setHireDateConfirmOpen(false);
     setPremiumConfirmOpen(false);
     setPendingDraftPatch(null);
+    setCategoryChange(null);
+    setCategoryApplyMode("today");
+    setCategoryEffectiveDate(todayDateInputValue());
+    setCategoryComment("");
     setPremiumConfirmActions([]);
     setPremiumTransferConflict(null);
   }, [employee.id]);
@@ -2675,6 +2985,7 @@ function StaffEditor({
       setPremiumTransferConflict(null);
       toast.success(patch.transfer_from_existing ? "Надбавка перенесена" : "Изменения сохранены");
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      void queryClient.invalidateQueries({ queryKey: ["employees-roster"] });
       void queryClient.invalidateQueries({
         queryKey: ["employees", updatedEmployee.id, "assignments"],
       });
@@ -2690,6 +3001,57 @@ function StaffEditor({
         return;
       }
       toast.error(apiErrorMessage(error, "Не удалось обновить карточку сотрудника"));
+    },
+  });
+  const categoryMutation = useMutation({
+    mutationFn: ({
+      change,
+      comment,
+      effectiveFrom,
+    }: {
+      change: CategoryEffectiveChange;
+      comment: string;
+      effectiveFrom: string;
+    }) =>
+      patchEmployeeAssignment(employee.id, change.assignmentId, {
+        category: change.nextCategory,
+        effective_from: effectiveFrom,
+        comment: comment.trim() || undefined,
+      }),
+    onSuccess: (_assignment, variables) => {
+      const today = todayDateInputValue();
+      if (variables.effectiveFrom > today) {
+        toast.success(
+          `Запланировано: с ${formatDate(variables.effectiveFrom)} категория станет ${categoryLabel(
+            variables.change.nextCategory,
+          )}`,
+        );
+        setDraft(initialDraft);
+      } else if (variables.effectiveFrom < today) {
+        toast.success(`Изменено задним числом с ${formatDate(variables.effectiveFrom)}`);
+        const nextDraft = applyCategoryChangeToDraft(initialDraft, variables.change);
+        setInitialDraft(nextDraft);
+        setDraft(nextDraft);
+      } else {
+        toast.success("Категория изменена");
+        const nextDraft = applyCategoryChangeToDraft(initialDraft, variables.change);
+        setInitialDraft(nextDraft);
+        setDraft(nextDraft);
+      }
+      setCategoryChange(null);
+      setCategoryApplyMode("today");
+      setCategoryEffectiveDate(todayDateInputValue());
+      setCategoryComment("");
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      void queryClient.invalidateQueries({ queryKey: ["employees-roster"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["employees", employee.id, "assignments"],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["employees", "changes"] });
+      void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "changes"] });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось изменить категорию"));
     },
   });
   const dismissalReasonsQuery = useQuery({
@@ -2860,7 +3222,13 @@ function StaffEditor({
   const pinFormatValid = /^\d{4}$/.test(draft.pin_code);
   const pinMatches = draft.pin_code === draft.pin_confirmation;
   const pinIsValid = !pinTouched || (pinFormatValid && pinMatches);
-  const canSaveDraft = dirty && nameIsValid && !roleValidation && pinIsValid && !mutation.isPending;
+  const canSaveDraft =
+    dirty &&
+    nameIsValid &&
+    !roleValidation &&
+    pinIsValid &&
+    !mutation.isPending &&
+    !categoryMutation.isPending;
   const canSubmitDismiss =
     Boolean(dismissFireDate) &&
     Boolean(selectedDismissalReason) &&
@@ -2881,6 +3249,16 @@ function StaffEditor({
   const hireDateIsValid =
     Boolean(hireDateValue) && hireDateValue >= hireDateMin && hireDateValue <= hireDateMax;
   const hireDateCanSubmit = hireDateIsValid && hireDateValue !== (employee.hire_date ?? "");
+  const selectedCategoryEffectiveDate =
+    categoryApplyMode === "today" ? todayDateInputValue() : categoryEffectiveDate;
+  const categoryCommentRequired =
+    Boolean(selectedCategoryEffectiveDate) &&
+    selectedCategoryEffectiveDate < todayDateInputValue();
+  const canApplyCategoryChange =
+    Boolean(categoryChange) &&
+    Boolean(selectedCategoryEffectiveDate) &&
+    (!categoryCommentRequired || categoryComment.trim().length > 0) &&
+    !categoryMutation.isPending;
 
   useEffect(() => {
     onDirtyChange(dirty);
@@ -2945,6 +3323,18 @@ function StaffEditor({
     }
     const patch = buildEmployeePatch(initialDraft, draft);
     if (Object.keys(patch).length === 0) {
+      return;
+    }
+    const effectiveCategoryChange = categoryEffectiveChangeForDraft(initialDraft, draft, patch);
+    if (hasExistingCategoryChange(initialDraft, draft) && !effectiveCategoryChange) {
+      toast.error("Сохраните изменение категории отдельно от других изменений");
+      return;
+    }
+    if (effectiveCategoryChange) {
+      setCategoryChange(effectiveCategoryChange);
+      setCategoryApplyMode("today");
+      setCategoryEffectiveDate(todayDateInputValue());
+      setCategoryComment("");
       return;
     }
     const premiumActions = premiumChangeConfirmations(initialDraft, draft);
@@ -3016,7 +3406,7 @@ function StaffEditor({
             <StatusBadge status={employee.status} />
           </div>
           <div className="mt-3">
-            <EmployeeTags employee={employee} />
+            <EmployeeTags employee={employee} onPendingClick={onPendingClick} />
           </div>
         </div>
       </div>
@@ -3484,6 +3874,112 @@ function StaffEditor({
       </div>
 
       <Dialog
+        open={Boolean(categoryChange)}
+        onOpenChange={(open) => {
+          if (!open && !categoryMutation.isPending) {
+            setCategoryChange(null);
+            setCategoryApplyMode("today");
+            setCategoryEffectiveDate(todayDateInputValue());
+            setCategoryComment("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Изменить категорию</DialogTitle>
+            <DialogDescription>
+              {employee.full_name},{" "}
+              {categoryChange ? (payrollRoleLabel(categoryChange.payrollRole) ?? "") : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          {categoryChange ? (
+            <div className="grid gap-4">
+              <div className="grid gap-2 rounded-md border bg-muted/30 p-3 text-sm">
+                <InfoRow label="Сейчас" value={categoryLabel(categoryChange.currentCategory)} />
+                <InfoRow label="Новая" value={categoryLabel(categoryChange.nextCategory)} />
+              </div>
+
+              <div className="grid gap-2">
+                <div className="text-sm font-medium">Когда применить?</div>
+                <label className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm">
+                  <input
+                    checked={categoryApplyMode === "today"}
+                    disabled={categoryMutation.isPending}
+                    name="category-effective-date"
+                    onChange={() => setCategoryApplyMode("today")}
+                    type="radio"
+                  />
+                  <span>Сегодня ({formatDate(todayDateInputValue())})</span>
+                </label>
+                <label className="grid gap-2 rounded-md border bg-background px-3 py-2 text-sm">
+                  <span className="flex items-center gap-2">
+                    <input
+                      checked={categoryApplyMode === "custom"}
+                      disabled={categoryMutation.isPending}
+                      name="category-effective-date"
+                      onChange={() => setCategoryApplyMode("custom")}
+                      type="radio"
+                    />
+                    <span>Выбрать дату</span>
+                  </span>
+                  <Input
+                    disabled={categoryApplyMode !== "custom" || categoryMutation.isPending}
+                    onChange={(event) => setCategoryEffectiveDate(event.target.value)}
+                    type="date"
+                    value={categoryEffectiveDate}
+                  />
+                </label>
+              </div>
+
+              <Label className="grid gap-2">
+                <span>{categoryCommentRequired ? "Комментарий" : "Комментарий (опционально)"}</span>
+                <Textarea
+                  disabled={categoryMutation.isPending}
+                  maxLength={1000}
+                  onChange={(event) => setCategoryComment(event.target.value)}
+                  placeholder={categoryCommentRequired ? "Обязателен для задней даты" : ""}
+                  value={categoryComment}
+                />
+              </Label>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button
+              disabled={categoryMutation.isPending}
+              onClick={() => setCategoryChange(null)}
+              type="button"
+              variant="outline"
+            >
+              Отмена
+            </Button>
+            <Button
+              disabled={!canApplyCategoryChange}
+              onClick={() => {
+                if (!categoryChange || !selectedCategoryEffectiveDate) {
+                  return;
+                }
+                categoryMutation.mutate({
+                  change: categoryChange,
+                  effectiveFrom: selectedCategoryEffectiveDate,
+                  comment: categoryComment,
+                });
+              }}
+              type="button"
+            >
+              {categoryMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <Save size={16} aria-hidden="true" />
+              )}
+              Применить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={hireDateOpen}
         onOpenChange={(open) => {
           setHireDateOpen(open);
@@ -3884,21 +4380,52 @@ function EmployeeAvatar({ employee }: { employee: Employee }) {
   );
 }
 
-function EmployeeTags({ employee, compact = false }: { employee: Employee; compact?: boolean }) {
+function CategoryCell({
+  employee,
+  onPendingClick,
+}: {
+  employee: Employee;
+  onPendingClick?: (assignment: EmployeeRoleAssignment) => void;
+}) {
+  const pending = pendingAssignment(employee);
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span>{categoryLabel(primaryAssignment(employee)?.category ?? employee.category)}</span>
+      {pending ? (
+        <PendingAssignmentIndicator
+          assignment={pending}
+          employee={employee}
+          onClick={onPendingClick}
+        />
+      ) : null}
+    </span>
+  );
+}
+
+function EmployeeTags({
+  employee,
+  compact = false,
+  onPendingClick,
+}: {
+  employee: Employee;
+  compact?: boolean;
+  onPendingClick?: (assignment: EmployeeRoleAssignment) => void;
+}) {
   const primary = primaryAssignment(employee);
   const additionalRoles = Math.max(activeAssignments(employee).length - (primary ? 1 : 0), 0);
+  const pending = pendingAssignment(employee);
+  const roleTag = primary
+    ? `${payrollRoleLabel(primary.payroll_role)} · ${categoryLabel(primary.category)}`
+    : employee.category
+      ? categoryLabel(employee.category)
+      : null;
   const tags = [
     employee.is_senior ? "Старший" : null,
     employee.is_deputy_senior ? "Зам" : null,
-    primary
-      ? `${payrollRoleLabel(primary.payroll_role)} · ${categoryLabel(primary.category)}`
-      : employee.category
-        ? categoryLabel(employee.category)
-        : null,
     additionalRoles > 0 ? `+${additionalRoles} ролей` : null,
   ].filter((tag): tag is string => Boolean(tag));
 
-  if (tags.length === 0 && !employee.active_notice) {
+  if (tags.length === 0 && !roleTag && !employee.active_notice && !pending) {
     return <span className="text-sm text-muted-foreground">Без надбавок</span>;
   }
 
@@ -3909,6 +4436,24 @@ function EmployeeTags({ employee, compact = false }: { employee: Employee; compa
           Уведомил об уходе
         </Badge>
       ) : null}
+      {roleTag ? (
+        <Badge className="rounded-md border-border bg-background text-foreground shadow-none">
+          <span>{roleTag}</span>
+          {pending ? (
+            <PendingAssignmentIndicator
+              assignment={pending}
+              employee={employee}
+              onClick={onPendingClick}
+            />
+          ) : null}
+        </Badge>
+      ) : pending ? (
+        <PendingAssignmentIndicator
+          assignment={pending}
+          employee={employee}
+          onClick={onPendingClick}
+        />
+      ) : null}
       {tags.map((tag) => (
         <Badge
           className="rounded-md border-border bg-background text-foreground shadow-none"
@@ -3918,6 +4463,47 @@ function EmployeeTags({ employee, compact = false }: { employee: Employee; compa
         </Badge>
       ))}
     </div>
+  );
+}
+
+function PendingAssignmentIndicator({
+  assignment,
+  employee,
+  onClick,
+}: {
+  assignment: EmployeeRoleAssignment;
+  employee: Employee;
+  onClick?: (assignment: EmployeeRoleAssignment) => void;
+}) {
+  const tooltip = pendingAssignmentTooltip(employee, assignment);
+  return (
+    <span className="relative inline-flex shrink-0">
+      <span
+        aria-label={tooltip}
+        className="group inline-flex h-5 w-5 items-center justify-center rounded-full text-primary outline-none hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onClick?.(assignment);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          onClick?.(assignment);
+        }}
+        role={onClick ? "button" : "img"}
+        tabIndex={onClick ? 0 : -1}
+        title={tooltip}
+      >
+        <Info size={14} aria-hidden="true" />
+        <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-64 -translate-x-1/2 rounded-md border bg-popover px-3 py-2 text-left text-xs font-normal text-popover-foreground shadow-md group-hover:block group-focus-visible:block">
+          {tooltip}
+        </span>
+      </span>
+    </span>
   );
 }
 
@@ -4310,12 +4896,69 @@ function EmployeeChangeStatusBadge({ status }: { status: EmployeeChangeStatus })
 }
 
 function activeAssignments(employee: Employee) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayDateInputValue();
   return (employee.assignments ?? []).filter(
     (assignment) =>
       assignment.effective_from <= today &&
       (!assignment.effective_to || assignment.effective_to > today),
   );
+}
+
+function pendingAssignments(employee: Employee) {
+  const today = todayDateInputValue();
+  return (employee.assignments ?? [])
+    .filter((assignment) => assignment.is_pending || assignment.effective_from > today)
+    .filter((assignment) => pendingAssignmentIsMeaningful(employee, assignment))
+    .sort((left, right) => left.effective_from.localeCompare(right.effective_from));
+}
+
+function pendingAssignment(employee: Employee) {
+  return pendingAssignments(employee)[0] ?? null;
+}
+
+function pendingAssignmentIsMeaningful(
+  employee: Employee,
+  assignment: EmployeeRoleAssignment,
+) {
+  const current = currentAssignmentForPending(employee, assignment);
+  return !(
+    current &&
+    current.payroll_role === assignment.payroll_role &&
+    current.category === assignment.category
+  );
+}
+
+function currentAssignmentForPending(
+  employee: Employee,
+  assignment: EmployeeRoleAssignment,
+) {
+  const active = activeAssignments(employee);
+  return (
+    active.find((item) => item.payroll_role === assignment.payroll_role) ??
+    active.find((item) => item.is_primary) ??
+    active[0] ??
+    null
+  );
+}
+
+function pendingAssignmentTooltip(employee: Employee, assignment: EmployeeRoleAssignment) {
+  const current = currentAssignmentForPending(employee, assignment);
+  const roleChanged = Boolean(current && current.payroll_role !== assignment.payroll_role);
+  const categoryChanged = Boolean(!current || current.category !== assignment.category);
+  const dateLabel = formatDate(assignment.effective_from);
+  if (roleChanged && categoryChanged) {
+    return `Запланировано: с ${dateLabel} категория и роль сменятся на ${payrollRoleLabel(
+      assignment.payroll_role,
+    )} · ${categoryLabel(assignment.category)}`;
+  }
+  if (roleChanged) {
+    return `Запланировано: с ${dateLabel} роль сменится на ${payrollRoleLabel(
+      assignment.payroll_role,
+    )}`;
+  }
+  return `Запланировано: с ${dateLabel} категория сменится на ${categoryLabel(
+    assignment.category,
+  )}`;
 }
 
 function primaryAssignment(employee: Employee) {
@@ -4412,6 +5055,74 @@ function validateEditorRoles(draft: StaffEditorDraft) {
     }
   }
   return null;
+}
+
+function hasExistingCategoryChange(initial: StaffEditorDraft, draft: StaffEditorDraft) {
+  const initialById = new Map(
+    initial.assignments
+      .filter((assignment) => assignment.id)
+      .map((assignment) => [assignment.id, assignment]),
+  );
+  return draft.assignments.some((assignment) => {
+    const initialAssignment = assignment.id ? initialById.get(assignment.id) : null;
+    return Boolean(initialAssignment && initialAssignment.category !== assignment.category);
+  });
+}
+
+function categoryEffectiveChangeForDraft(
+  initial: StaffEditorDraft,
+  draft: StaffEditorDraft,
+  patch: EmployeePatch,
+): CategoryEffectiveChange | null {
+  const patchKeys = Object.keys(patch);
+  if (patchKeys.some((key) => !["roles", "category", "default_cooking_station"].includes(key))) {
+    return null;
+  }
+  if (initial.assignments.length !== draft.assignments.length) {
+    return null;
+  }
+
+  const initialById = new Map(
+    initial.assignments
+      .filter((assignment) => assignment.id)
+      .map((assignment) => [assignment.id, assignment]),
+  );
+  const changed: CategoryEffectiveChange[] = [];
+  for (const assignment of draft.assignments) {
+    const initialAssignment = assignment.id ? initialById.get(assignment.id) : null;
+    if (!initialAssignment || !assignment.id) {
+      return null;
+    }
+    if (
+      initialAssignment.payroll_role !== assignment.payroll_role ||
+      initialAssignment.is_primary !== assignment.is_primary
+    ) {
+      return null;
+    }
+    if (initialAssignment.category !== assignment.category) {
+      changed.push({
+        assignmentId: assignment.id,
+        payrollRole: assignment.payroll_role,
+        currentCategory: initialAssignment.category,
+        nextCategory: assignment.category,
+      });
+    }
+  }
+  return changed.length === 1 ? changed[0] : null;
+}
+
+function applyCategoryChangeToDraft(
+  draft: StaffEditorDraft,
+  change: CategoryEffectiveChange,
+): StaffEditorDraft {
+  return {
+    ...draft,
+    assignments: draft.assignments.map((assignment) =>
+      assignment.id === change.assignmentId
+        ? { ...assignment, category: change.nextCategory }
+        : assignment,
+    ),
+  };
 }
 
 function buildEmployeePatch(initial: StaffEditorDraft, draft: StaffEditorDraft): EmployeePatch {

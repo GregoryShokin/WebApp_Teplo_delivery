@@ -156,7 +156,8 @@ async def list_employees(
     category: str | None = None,
     cooking_station: Annotated[str | None, Query(alias="cooking_station")] = None,
     search: str | None = None,
-) -> list[Employee]:
+    include_pending: bool = False,
+) -> list[Employee] | list[EmployeeRead]:
     today = date.today()
     query = select(Employee).options(selectinload(Employee.role_assignments))
     if status_filter:
@@ -177,6 +178,21 @@ async def list_employees(
     result = await session.scalars(query.order_by(Employee.full_name))
     employees = list(result.all())
     await _attach_active_notices(session, employees, today)
+    if include_pending:
+        rows: list[EmployeeRead] = []
+        for employee in employees:
+            payload = EmployeeRead.model_validate(employee)
+            pending_assignments = await employee_assignment_service.get_assignments_with_pending(
+                session,
+                employee.id,
+                today,
+            )
+            payload.assignments = [
+                EmployeeRoleAssignmentRead.model_validate(assignment)
+                for assignment in pending_assignments
+            ]
+            rows.append(payload)
+        return rows
     return employees
 
 
@@ -853,8 +869,15 @@ async def list_employee_assignments(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     on_date: date | None = None,
+    include_pending: bool = False,
 ) -> list[EmployeeRoleAssignment]:
     await _get_employee_or_404(session, employee_id)
+    if include_pending:
+        return await employee_assignment_service.get_assignments_with_pending(
+            session,
+            employee_id,
+            on_date or date.today(),
+        )
     return await employee_assignment_service.get_assignments(
         session,
         employee_id,
@@ -992,9 +1015,18 @@ async def delete_employee_assignment(
     assignment_before = await _get_assignment_or_404(session, employee_id, assignment_id)
     before = _assignment_snapshot(assignment_before)
     try:
-        assignment = await employee_assignment_service.remove_assignment(
-            session, employee_id, assignment_id
-        )
+        if assignment_before.effective_from > date.today():
+            await employee_assignment_service.cancel_pending_assignment(
+                session,
+                employee_id,
+                assignment_id,
+            )
+            after = None
+        else:
+            assignment = await employee_assignment_service.remove_assignment(
+                session, employee_id, assignment_id
+            )
+            after = _assignment_snapshot(assignment)
     except employee_assignment_service.EmployeeAssignmentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except employee_assignment_service.EmployeeAssignmentError as exc:
@@ -1004,9 +1036,9 @@ async def delete_employee_assignment(
         session,
         action_type="remove_role_assignment",
         target_table="employee_role_assignment",
-        target_id=assignment.id,
+        target_id=assignment_id,
         before=before,
-        after=_assignment_snapshot(assignment),
+        after=after,
         now=now,
         actor=actor,
         employee_id=employee_id,
