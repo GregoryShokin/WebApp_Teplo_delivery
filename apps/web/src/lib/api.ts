@@ -617,6 +617,77 @@ export type PayrollForecastRunRead = {
   estimates: ShiftCostEstimateRead[];
 };
 
+export type PlanFactDeviationStatus =
+  | "no_data"
+  | "within_threshold"
+  | "over_threshold"
+  | "plan_no_fact"
+  | "fact_no_plan";
+
+export type PlanFactDayRowRead = {
+  business_date: string;
+  planned_shifts: number;
+  planned_hours: string | number;
+  planned_cost: string | number | null;
+  planned_revenue: string | number | null;
+  actual_shifts: number;
+  actual_hours: string | number | null;
+  actual_cost: string | number | null;
+  actual_revenue: string | number | null;
+  hours_deviation_pct: string | number | null;
+  cost_deviation_pct: string | number | null;
+  revenue_deviation_pct: string | number | null;
+  deviation_status: PlanFactDeviationStatus;
+};
+
+export type PlanFactEmployeeRowRead = {
+  employee_id: string;
+  full_name: string;
+  position: string;
+  planned_shifts: number;
+  planned_hours: string | number;
+  planned_cost: string | number | null;
+  actual_shifts: number;
+  actual_hours: string | number | null;
+  actual_cost: string | number | null;
+  hours_deviation_pct: string | number | null;
+  cost_deviation_pct: string | number | null;
+  deviation_status: PlanFactDeviationStatus;
+};
+
+export type PlanFactTotals = {
+  total_shifts: number;
+  total_hours: string | number | null;
+  total_cost: string | number | null;
+  total_revenue: string | number | null;
+  fot_pct: string | number | null;
+  cost_status?: "ok" | "no_cost_forecast" | string;
+};
+
+export type PlanFactSummaryRead = {
+  schedule: {
+    id: string;
+    date_start: string;
+    date_end: string;
+    status: ScheduleStatus;
+  };
+  fact_availability: "full" | "partial" | "none";
+  covered_dates: string[];
+  planned: PlanFactTotals;
+  actual: PlanFactTotals | null;
+  deviation: {
+    shifts_pct: string | number | null;
+    hours_pct: string | number | null;
+    cost_pct: string | number | null;
+    revenue_pct: string | number | null;
+    fot_pct_diff: string | number | null;
+  } | null;
+  warning_threshold_pct: string | number;
+  by_date: PlanFactDayRowRead[];
+  by_employee: PlanFactEmployeeRowRead[];
+  sources: Record<string, unknown>;
+};
+
 export type ScheduledShiftUpsertPayload = {
   business_date: string;
   employee_id: string;
@@ -1420,6 +1491,11 @@ export async function getRun(
   const response = await api.get<PayrollForecastRunRead>(
     `/schedule/${scheduleId}/cost-forecast/runs/${runId}`,
   );
+  return response.data;
+}
+
+export async function getPlanFact(scheduleId: string): Promise<PlanFactSummaryRead> {
+  const response = await api.get<PlanFactSummaryRead>(`/schedule/${scheduleId}/plan-fact`);
   return response.data;
 }
 

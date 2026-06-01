@@ -16,9 +16,16 @@ type AccordionItemProps = Omit<React.DetailsHTMLAttributes<HTMLDetailsElement>, 
 };
 
 const AccordionItem = React.forwardRef<HTMLDetailsElement, AccordionItemProps>(
-  ({ className, value: _value, ...props }, ref) => (
-    <details ref={ref} className={cn("group rounded-md border bg-background", className)} {...props} />
-  ),
+  ({ className, value, ...props }, ref) => {
+    void value;
+    return (
+      <details
+        ref={ref}
+        className={cn("group rounded-md border bg-background", className)}
+        {...props}
+      />
+    );
+  },
 );
 AccordionItem.displayName = "AccordionItem";
 

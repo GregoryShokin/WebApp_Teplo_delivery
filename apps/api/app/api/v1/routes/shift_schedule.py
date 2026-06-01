@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -24,19 +25,26 @@ from app.schemas.shift_schedule import (
     CopyWeekResponse,
     EmployeeRosterRow,
     PayrollForecastRunRead,
+    PlanFactDayRowRead,
+    PlanFactEmployeeRowRead,
+    PlanFactSummaryRead,
     RevenueForecastOverrideRequest,
     RevenueForecastRead,
     RevenueForecastRecomputeRequest,
     RevenueForecastRecomputeResponse,
     ScheduleCreateRequest,
     ScheduledShiftRead,
-    ShiftCostEstimateRead,
     ScheduledShiftUpsertRequest,
     SchedulePatchRequest,
     ScheduleRead,
+    ShiftCostEstimateRead,
 )
-from app.services import payroll_forecast_run_service, revenue_forecast_service
-from app.services import shift_schedule_service
+from app.services import (
+    payroll_forecast_run_service,
+    plan_fact_service,
+    revenue_forecast_service,
+    shift_schedule_service,
+)
 
 router = APIRouter()
 MAX_FORECAST_RANGE_DAYS = 62
@@ -172,6 +180,18 @@ async def get_schedule(
         schedule,
         shifts=[_shift_to_read(shift, employee) for shift, employee in shift_rows],
     )
+
+
+@router.get("/{schedule_id}/plan-fact", response_model=PlanFactSummaryRead)
+async def get_plan_fact(
+    schedule_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PlanFactSummaryRead:
+    del actor
+    summary = await plan_fact_service.compute_plan_fact(session, schedule_id)
+    await _attach_plan_fact_source_labels(session, summary)
+    return _plan_fact_to_read(summary)
 
 
 @router.post("/{schedule_id}/cost-forecast", response_model=PayrollForecastRunRead)
@@ -556,9 +576,91 @@ async def _employee_labels(
     return {employee.id: employee.full_name for employee in result.all()}
 
 
+async def _attach_plan_fact_source_labels(
+    session: AsyncSession,
+    summary: plan_fact_service.PlanFactSummary,
+) -> None:
+    planned_cost = summary.sources.get("planned_cost")
+    if not isinstance(planned_cost, dict):
+        return
+    run_by_user_id = planned_cost.get("run_by_user_id")
+    if not isinstance(run_by_user_id, uuid.UUID):
+        return
+    labels = await _user_labels(session, {run_by_user_id})
+    planned_cost["run_by_label"] = labels.get(run_by_user_id)
+
+
 async def _ensure_schedule_exists(session: AsyncSession, schedule_id: uuid.UUID) -> None:
     if await session.get(ShiftSchedule, schedule_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="График не найден")
+
+
+def _plan_fact_to_read(summary: plan_fact_service.PlanFactSummary) -> PlanFactSummaryRead:
+    return PlanFactSummaryRead(
+        schedule=_decimal_data(summary.schedule),
+        fact_availability=summary.fact_availability,
+        covered_dates=summary.covered_dates,
+        planned=_decimal_data(summary.planned),
+        actual=_decimal_data(summary.actual) if summary.actual is not None else None,
+        deviation=_decimal_data(summary.deviation) if summary.deviation is not None else None,
+        warning_threshold_pct=_decimal_to_str(summary.warning_threshold_pct),
+        by_date=[
+            PlanFactDayRowRead(
+                business_date=row.business_date,
+                planned_shifts=row.planned_shifts,
+                planned_hours=_decimal_to_str(row.planned_hours),
+                planned_cost=_optional_decimal_to_str(row.planned_cost),
+                planned_revenue=_optional_decimal_to_str(row.planned_revenue),
+                actual_shifts=row.actual_shifts,
+                actual_hours=_optional_decimal_to_str(row.actual_hours),
+                actual_cost=_optional_decimal_to_str(row.actual_cost),
+                actual_revenue=_optional_decimal_to_str(row.actual_revenue),
+                hours_deviation_pct=_optional_decimal_to_str(row.hours_deviation_pct),
+                cost_deviation_pct=_optional_decimal_to_str(row.cost_deviation_pct),
+                revenue_deviation_pct=_optional_decimal_to_str(row.revenue_deviation_pct),
+                deviation_status=row.deviation_status,
+            )
+            for row in summary.by_date
+        ],
+        by_employee=[
+            PlanFactEmployeeRowRead(
+                employee_id=row.employee_id,
+                full_name=row.full_name,
+                position=row.position,
+                planned_shifts=row.planned_shifts,
+                planned_hours=_decimal_to_str(row.planned_hours),
+                planned_cost=_optional_decimal_to_str(row.planned_cost),
+                actual_shifts=row.actual_shifts,
+                actual_hours=_optional_decimal_to_str(row.actual_hours),
+                actual_cost=_optional_decimal_to_str(row.actual_cost),
+                hours_deviation_pct=_optional_decimal_to_str(row.hours_deviation_pct),
+                cost_deviation_pct=_optional_decimal_to_str(row.cost_deviation_pct),
+                deviation_status=row.deviation_status,
+            )
+            for row in summary.by_employee
+        ],
+        sources=_decimal_data(summary.sources),
+    )
+
+
+def _decimal_data(value: object) -> object:
+    if isinstance(value, Decimal):
+        return _decimal_to_str(value)
+    if isinstance(value, list):
+        return [_decimal_data(item) for item in value]
+    if isinstance(value, tuple):
+        return [_decimal_data(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _decimal_data(item) for key, item in value.items()}
+    return value
+
+
+def _optional_decimal_to_str(value: Decimal | None) -> str | None:
+    return _decimal_to_str(value) if value is not None else None
+
+
+def _decimal_to_str(value: Decimal) -> str:
+    return str(value.quantize(Decimal("0.01")))
 
 
 def _validate_forecast_range(date_from: date, date_to: date) -> None:

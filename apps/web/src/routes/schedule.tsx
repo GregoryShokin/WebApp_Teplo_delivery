@@ -1,11 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  ArrowUpDown,
+  BarChart3,
   Calculator,
   CalendarDays,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  CircleSlash,
   Copy,
+  ExternalLink,
   History,
   LoaderCircle,
   Lock,
@@ -28,6 +33,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -67,6 +78,7 @@ import {
   getEmployeesRoster,
   getForecastRange,
   getLatestRun,
+  getPlanFact,
   getRun,
   getSchedule,
   listRuns,
@@ -80,6 +92,10 @@ import {
   upsertShift,
   type EmployeeRosterRow,
   type PayrollForecastRunRead,
+  type PlanFactDayRowRead,
+  type PlanFactDeviationStatus,
+  type PlanFactEmployeeRowRead,
+  type PlanFactSummaryRead,
   type RevenueForecastRead,
   type RevenueForecastRecomputePayload,
   type ScheduleCreatePayload,
@@ -90,8 +106,12 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type ViewMode = "employees" | "stations";
+type ViewMode = "employees" | "stations" | "planFact";
 type ScaleMode = "week" | "month";
+type PlanFactTableMode = "days" | "employees";
+type SortDirection = "asc" | "desc";
+type DaySortKey = "date" | "hours" | "cost" | "status";
+type EmployeeSortKey = "name" | "hours" | "cost" | "status";
 
 type ShiftDialogState = {
   mode: "create" | "edit";
@@ -146,6 +166,7 @@ export function ScheduleRoute() {
   const [anchorDate, setAnchorDate] = useState(() => toIsoDate(initialWeekStart));
   const [viewMode, setViewMode] = useState<ViewMode>("employees");
   const [scaleMode, setScaleMode] = useState<ScaleMode>("week");
+  const [planFactTableMode, setPlanFactTableMode] = useState<PlanFactTableMode>("days");
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createDraft, setCreateDraft] = useState<ScheduleCreatePayload>(() =>
@@ -227,6 +248,11 @@ export function ScheduleRoute() {
     queryFn: () => listRuns(selectedScheduleId ?? ""),
     enabled: Boolean(selectedScheduleId && costHistoryOpen),
   });
+  const planFactQuery = useQuery({
+    queryKey: ["plan-fact", selectedScheduleId],
+    queryFn: () => getPlanFact(selectedScheduleId ?? ""),
+    enabled: Boolean(selectedScheduleId && viewMode === "planFact"),
+  });
 
   const schedules = useMemo(
     () => [...(schedulesQuery.data ?? [])].sort(compareSchedulesForSelect),
@@ -248,6 +274,7 @@ export function ScheduleRoute() {
   const isLocked = currentSchedule != null && !isDraft;
   const selectedWeekStart = toIsoDate(startOfTuesdayWeek(parseIsoDate(anchorDate)));
   const selectedWeekEnd = toIsoDate(addDays(parseIsoDate(selectedWeekStart), 6));
+  const leadingWidth = viewMode === "stations" ? STATION_COLUMN_WIDTH : EMPLOYEE_COLUMN_WIDTH;
 
   useEffect(() => {
     if (!schedulesQuery.data) {
@@ -342,6 +369,7 @@ export function ScheduleRoute() {
     mutationFn: (payload: RevenueForecastRecomputePayload) => recomputeForecast(payload),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["forecast"] });
+      await queryClient.invalidateQueries({ queryKey: ["plan-fact"] });
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось рассчитать прогноз")),
   });
@@ -352,6 +380,7 @@ export function ScheduleRoute() {
       toast.success(`Пересчитано ${result.recomputed} дней`);
       setForceRefreshConfirmOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["forecast"] });
+      await queryClient.invalidateQueries({ queryKey: ["plan-fact"] });
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось пересчитать прогноз")),
   });
@@ -385,6 +414,7 @@ export function ScheduleRoute() {
           : current,
       );
       await queryClient.invalidateQueries({ queryKey: ["forecast"] });
+      await queryClient.invalidateQueries({ queryKey: ["plan-fact"] });
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить прогноз")),
   });
@@ -405,6 +435,7 @@ export function ScheduleRoute() {
           : current,
       );
       await queryClient.invalidateQueries({ queryKey: ["forecast"] });
+      await queryClient.invalidateQueries({ queryKey: ["plan-fact"] });
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось снять прогноз")),
   });
@@ -429,10 +460,12 @@ export function ScheduleRoute() {
   async function invalidateCurrentSchedule() {
     await queryClient.invalidateQueries({ queryKey: ["schedule", selectedScheduleId] });
     await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+    await queryClient.invalidateQueries({ queryKey: ["plan-fact", selectedScheduleId] });
   }
 
   async function invalidateCostForecast() {
     await queryClient.invalidateQueries({ queryKey: ["cost-forecast", currentSchedule?.id] });
+    await queryClient.invalidateQueries({ queryKey: ["plan-fact", currentSchedule?.id] });
   }
 
   function openCreateDialog() {
@@ -671,6 +704,12 @@ export function ScheduleRoute() {
               label="По станциям"
               onClick={() => setViewMode("stations")}
             />
+            <SegmentedButton
+              active={viewMode === "planFact"}
+              icon={<BarChart3 size={16} aria-hidden="true" />}
+              label="План-факт"
+              onClick={() => setViewMode("planFact")}
+            />
             <div className="mx-1 h-6 w-px bg-border" />
             <SegmentedButton
               active={scaleMode === "week"}
@@ -721,40 +760,84 @@ export function ScheduleRoute() {
         </div>
       </section>
 
-      {currentSchedule ? (
-        <RevenueForecastPanel
-          days={visibleDays}
-          forecasts={forecastQuery.data ?? []}
-          forceRefreshIiko={forceRefreshIiko}
-          isLoading={forecastQuery.isLoading || warmForecastMutation.isPending}
-          isRecomputing={recomputeForecastMutation.isPending}
-          leadingWidth={viewMode === "employees" ? EMPLOYEE_COLUMN_WIDTH : STATION_COLUMN_WIDTH}
-          onCellClick={openForecastDialog}
-          onForceRefreshChange={setForceRefreshIiko}
-          onRecompute={requestForecastRecompute}
-        />
-      ) : null}
-
-      {currentSchedule ? (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <CostForecastPanel
+      {currentSchedule && viewMode === "planFact" ? (
+        <Accordion>
+          <AccordionItem value="schedule-inputs">
+            <AccordionTrigger>
+              <span>Прогноз и стоимость</span>
+              <span className="text-xs font-normal text-muted-foreground">
+                {displayedCostRun ? `расчёт от ${formatDateTime(displayedCostRun.run_at)}` : "свернуть/развернуть"}
+              </span>
+            </AccordionTrigger>
+            <AccordionContent className="grid gap-4">
+              <RevenueForecastPanel
+                days={visibleDays}
+                forecasts={forecastQuery.data ?? []}
+                forceRefreshIiko={forceRefreshIiko}
+                isLoading={forecastQuery.isLoading || warmForecastMutation.isPending}
+                isRecomputing={recomputeForecastMutation.isPending}
+                leadingWidth={EMPLOYEE_COLUMN_WIDTH}
+                onCellClick={openForecastDialog}
+                onForceRefreshChange={setForceRefreshIiko}
+                onRecompute={requestForecastRecompute}
+              />
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                <CostForecastPanel
+                  days={visibleDays}
+                  isLoading={
+                    latestCostQuery.isLoading ||
+                    (selectedCostRunId ? selectedCostQuery.isLoading : false)
+                  }
+                  isRecomputing={runCostForecastMutation.isPending}
+                  leadingWidth={EMPLOYEE_COLUMN_WIDTH}
+                  onOpenHistory={() => setCostHistoryOpen(true)}
+                  onRecompute={() => runCostForecastMutation.mutate()}
+                  run={displayedCostRun}
+                />
+                <BudgetSummaryPanel
+                  isRecomputing={runCostForecastMutation.isPending}
+                  onOpenHistory={() => setCostHistoryOpen(true)}
+                  onRecompute={() => runCostForecastMutation.mutate()}
+                  run={displayedCostRun}
+                />
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      ) : currentSchedule ? (
+        <>
+          <RevenueForecastPanel
             days={visibleDays}
-            isLoading={
-              latestCostQuery.isLoading || (selectedCostRunId ? selectedCostQuery.isLoading : false)
-            }
-            isRecomputing={runCostForecastMutation.isPending}
-            leadingWidth={viewMode === "employees" ? EMPLOYEE_COLUMN_WIDTH : STATION_COLUMN_WIDTH}
-            onOpenHistory={() => setCostHistoryOpen(true)}
-            onRecompute={() => runCostForecastMutation.mutate()}
-            run={displayedCostRun}
+            forecasts={forecastQuery.data ?? []}
+            forceRefreshIiko={forceRefreshIiko}
+            isLoading={forecastQuery.isLoading || warmForecastMutation.isPending}
+            isRecomputing={recomputeForecastMutation.isPending}
+            leadingWidth={leadingWidth}
+            onCellClick={openForecastDialog}
+            onForceRefreshChange={setForceRefreshIiko}
+            onRecompute={requestForecastRecompute}
           />
-          <BudgetSummaryPanel
-            isRecomputing={runCostForecastMutation.isPending}
-            onOpenHistory={() => setCostHistoryOpen(true)}
-            onRecompute={() => runCostForecastMutation.mutate()}
-            run={displayedCostRun}
-          />
-        </div>
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <CostForecastPanel
+              days={visibleDays}
+              isLoading={
+                latestCostQuery.isLoading ||
+                (selectedCostRunId ? selectedCostQuery.isLoading : false)
+              }
+              isRecomputing={runCostForecastMutation.isPending}
+              leadingWidth={leadingWidth}
+              onOpenHistory={() => setCostHistoryOpen(true)}
+              onRecompute={() => runCostForecastMutation.mutate()}
+              run={displayedCostRun}
+            />
+            <BudgetSummaryPanel
+              isRecomputing={runCostForecastMutation.isPending}
+              onOpenHistory={() => setCostHistoryOpen(true)}
+              onRecompute={() => runCostForecastMutation.mutate()}
+              run={displayedCostRun}
+            />
+          </div>
+        </>
       ) : null}
 
       {!currentSchedule && !schedulesQuery.isLoading ? (
@@ -762,6 +845,13 @@ export function ScheduleRoute() {
           action={<Button onClick={openCreateDialog}>Создать новый график</Button>}
           icon={<CalendarDays className="h-5 w-5" aria-hidden="true" />}
           title="Графика на этот период ещё нет. Создайте новый."
+        />
+      ) : viewMode === "planFact" ? (
+        <PlanFactView
+          isLoading={planFactQuery.isLoading}
+          onTableModeChange={setPlanFactTableMode}
+          summary={planFactQuery.data ?? null}
+          tableMode={planFactTableMode}
         />
       ) : viewMode === "employees" ? (
         <EmployeeScheduleGrid
@@ -964,6 +1054,423 @@ export function ScheduleRoute() {
   );
 }
 
+function PlanFactView({
+  isLoading,
+  onTableModeChange,
+  summary,
+  tableMode,
+}: {
+  isLoading: boolean;
+  onTableModeChange: (mode: PlanFactTableMode) => void;
+  summary: PlanFactSummaryRead | null;
+  tableMode: PlanFactTableMode;
+}) {
+  const [daySort, setDaySort] = useState<{ key: DaySortKey; direction: SortDirection }>({
+    key: "date",
+    direction: "asc",
+  });
+  const [employeeSort, setEmployeeSort] = useState<{
+    key: EmployeeSortKey;
+    direction: SortDirection;
+  }>({
+    key: "name",
+    direction: "asc",
+  });
+
+  const dayRows = useMemo(
+    () => sortPlanFactDays(summary?.by_date ?? [], daySort),
+    [daySort, summary?.by_date],
+  );
+  const employeeRows = useMemo(
+    () => sortPlanFactEmployees(summary?.by_employee ?? [], employeeSort),
+    [employeeSort, summary?.by_employee],
+  );
+
+  if (isLoading) {
+    return <PlanFactLoading />;
+  }
+
+  if (!summary) {
+    return (
+      <EmptyState
+        icon={<BarChart3 className="h-5 w-5" aria-hidden="true" />}
+        title="Сверка пока недоступна"
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <PlanFactSummaryPanel summary={summary} />
+
+      {summary.fact_availability === "none" ? (
+        <EmptyState
+          action={
+            <Button asChild>
+              <a href="/payroll/runs">
+                <ExternalLink size={16} aria-hidden="true" />
+                К расчётам payroll
+              </a>
+            </Button>
+          }
+          icon={<CircleSlash className="h-5 w-5" aria-hidden="true" />}
+          title="Факт за этот период ещё не зафиксирован"
+          description="Запустите payroll-расчёт за пересекающиеся недели."
+        />
+      ) : (
+        <section className="rounded-lg border bg-card">
+          <div className="flex flex-col gap-3 border-b px-4 py-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap gap-2">
+              <SegmentedButton
+                active={tableMode === "days"}
+                label="По дням"
+                onClick={() => onTableModeChange("days")}
+              />
+              <SegmentedButton
+                active={tableMode === "employees"}
+                label="По сотрудникам"
+                onClick={() => onTableModeChange("employees")}
+              />
+            </div>
+            <Badge className={factAvailabilityClass(summary.fact_availability)} variant="outline">
+              {factAvailabilityText(summary.fact_availability)}
+            </Badge>
+          </div>
+
+          {summary.fact_availability === "partial" ? (
+            <div className="border-b border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              Факт доступен за {summary.covered_dates.length} из{" "}
+              {planFactTotalDays(summary)} дней. Остальные дни ожидают payroll-расчёт.
+            </div>
+          ) : null}
+
+          {tableMode === "days" ? (
+            <PlanFactDaysTable
+              rows={dayRows}
+              sort={daySort}
+              summary={summary}
+              onSort={(key) => setDaySort((current) => nextSort(current, key))}
+            />
+          ) : (
+            <PlanFactEmployeesTable
+              rows={employeeRows}
+              sort={employeeSort}
+              summary={summary}
+              onSort={(key) => setEmployeeSort((current) => nextSort(current, key))}
+            />
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function PlanFactLoading() {
+  return (
+    <div className="space-y-4">
+      <section className="rounded-lg border bg-card p-4">
+        <Skeleton className="h-6 w-64" />
+        <div className="mt-4 grid gap-3 md:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <Skeleton className="h-20 w-full" key={index} />
+          ))}
+        </div>
+      </section>
+      <section className="rounded-lg border bg-card p-4">
+        <Skeleton className="h-8 w-52" />
+        <div className="mt-4 space-y-2">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <Skeleton className="h-12 w-full" key={index} />
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PlanFactSummaryPanel({ summary }: { summary: PlanFactSummaryRead }) {
+  const metrics = planFactSummaryMetrics(summary);
+
+  return (
+    <section className="rounded-lg border bg-card p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="font-medium">
+            Итоги периода {formatRange(summary.schedule.date_start, summary.schedule.date_end)}
+          </div>
+          <div className="mt-3">
+            <PlanFactAvailability summary={summary} />
+          </div>
+        </div>
+        <div className="text-xs text-muted-foreground" title={planFactSourceTitle(summary)}>
+          Источники: график, payroll, iiko
+        </div>
+      </div>
+
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[720px] text-sm">
+          <thead>
+            <tr className="border-b text-left text-muted-foreground">
+              <th className="px-3 py-2 font-medium">Метрика</th>
+              <th className="px-3 py-2 text-right font-medium">План</th>
+              <th className="px-3 py-2 text-right font-medium">Факт</th>
+              <th className="px-3 py-2 text-right font-medium">Отклонение</th>
+              <th className="px-3 py-2 text-left font-medium">Статус</th>
+            </tr>
+          </thead>
+          <tbody>
+            {metrics.map((metric) => (
+              <tr className="border-b last:border-b-0" key={metric.label}>
+                <td className="px-3 py-2 font-medium">{metric.label}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{metric.planned}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{metric.actual}</td>
+                <td className={cn("px-3 py-2 text-right tabular-nums", metric.className)}>
+                  {metric.deviation}
+                </td>
+                <td className="px-3 py-2">
+                  <PlanFactMetricStatus status={metric.status} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function PlanFactAvailability({ summary }: { summary: PlanFactSummaryRead }) {
+  const totalDays = planFactTotalDays(summary);
+  const covered = summary.covered_dates.length;
+  const filled = totalDays === 0 ? 0 : Math.round((covered / totalDays) * 12);
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-sm">
+      <span className="text-muted-foreground">Доступность факта:</span>
+      <div className="flex gap-1" aria-hidden="true">
+        {Array.from({ length: 12 }).map((_, index) => (
+          <span
+            className={cn(
+              "h-3 w-3 rounded-sm border",
+              index < filled ? "border-emerald-600 bg-emerald-600" : "border-muted-foreground/30",
+            )}
+            key={index}
+          />
+        ))}
+      </div>
+      <Badge className={factAvailabilityClass(summary.fact_availability)} variant="outline">
+        {factAvailabilityText(summary.fact_availability)} ({covered} из {totalDays} дней)
+      </Badge>
+    </div>
+  );
+}
+
+function PlanFactMetricStatus({ status }: { status: "none" | "within" | "over" }) {
+  if (status === "within") {
+    return (
+      <span className="inline-flex items-center gap-1 text-emerald-700">
+        <CheckCircle2 size={15} aria-hidden="true" />
+        в норме
+      </span>
+    );
+  }
+  if (status === "over") {
+    return (
+      <span className="inline-flex items-center gap-1 text-amber-700">
+        <AlertTriangle size={15} aria-hidden="true" />
+        выше порога
+      </span>
+    );
+  }
+  return <span className="text-muted-foreground">—</span>;
+}
+
+function PlanFactDaysTable({
+  onSort,
+  rows,
+  sort,
+  summary,
+}: {
+  onSort: (key: DaySortKey) => void;
+  rows: PlanFactDayRowRead[];
+  sort: { key: DaySortKey; direction: SortDirection };
+  summary: PlanFactSummaryRead;
+}) {
+  const threshold = decimalToNumber(summary.warning_threshold_pct) ?? 3;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[860px] text-sm">
+        <thead>
+          <tr className="border-b bg-muted/50 text-left text-muted-foreground">
+            <SortableTh active={sort.key === "date"} direction={sort.direction} onClick={() => onSort("date")}>
+              Дата
+            </SortableTh>
+            <th className="px-3 py-3 font-medium">План: смен/час/руб</th>
+            <th className="px-3 py-3 font-medium">Факт: смен/час/руб</th>
+            <SortableTh active={sort.key === "hours"} direction={sort.direction} onClick={() => onSort("hours")}>
+              Δ часы
+            </SortableTh>
+            <SortableTh active={sort.key === "cost"} direction={sort.direction} onClick={() => onSort("cost")}>
+              Δ стоим.
+            </SortableTh>
+            <SortableTh active={sort.key === "status"} direction={sort.direction} onClick={() => onSort("status")}>
+              Статус
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr
+              className="border-b last:border-b-0 hover:bg-muted/30"
+              key={row.business_date}
+              title={planFactDayTitle(row, summary)}
+            >
+              <td className="px-3 py-3 font-medium">{formatDayWithWeekday(row.business_date)}</td>
+              <td className="px-3 py-3 tabular-nums">
+                {formatPlanFactTriplet(row.planned_shifts, row.planned_hours, row.planned_cost)}
+              </td>
+              <td className="px-3 py-3 tabular-nums">
+                {formatPlanFactTriplet(
+                  row.actual_shifts,
+                  row.actual_hours,
+                  row.actual_cost,
+                  true,
+                )}
+              </td>
+              <td className={cn("px-3 py-3 tabular-nums", deviationTextClass(row.hours_deviation_pct, threshold))}>
+                {formatPercent(row.hours_deviation_pct)}
+              </td>
+              <td className={cn("px-3 py-3 tabular-nums", deviationTextClass(row.cost_deviation_pct, threshold))}>
+                {formatPercent(row.cost_deviation_pct)}
+              </td>
+              <td className="px-3 py-3">
+                <PlanFactStatusBadge status={row.deviation_status} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PlanFactEmployeesTable({
+  onSort,
+  rows,
+  sort,
+  summary,
+}: {
+  onSort: (key: EmployeeSortKey) => void;
+  rows: PlanFactEmployeeRowRead[];
+  sort: { key: EmployeeSortKey; direction: SortDirection };
+  summary: PlanFactSummaryRead;
+}) {
+  const threshold = decimalToNumber(summary.warning_threshold_pct) ?? 3;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[900px] text-sm">
+        <thead>
+          <tr className="border-b bg-muted/50 text-left text-muted-foreground">
+            <SortableTh active={sort.key === "name"} direction={sort.direction} onClick={() => onSort("name")}>
+              ФИО
+            </SortableTh>
+            <th className="px-3 py-3 font-medium">Должн.</th>
+            <th className="px-3 py-3 font-medium">План: смен/час/руб</th>
+            <th className="px-3 py-3 font-medium">Факт: смен/час/руб</th>
+            <SortableTh active={sort.key === "hours"} direction={sort.direction} onClick={() => onSort("hours")}>
+              Δ часы
+            </SortableTh>
+            <SortableTh active={sort.key === "cost"} direction={sort.direction} onClick={() => onSort("cost")}>
+              Δ стоим.
+            </SortableTh>
+            <SortableTh active={sort.key === "status"} direction={sort.direction} onClick={() => onSort("status")}>
+              Статус
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr
+              className="border-b last:border-b-0 hover:bg-muted/30"
+              key={row.employee_id}
+              title={planFactEmployeeTitle(row, summary)}
+            >
+              <td className="px-3 py-3 font-medium">{row.full_name}</td>
+              <td className="px-3 py-3 text-muted-foreground">{row.position || "—"}</td>
+              <td className="px-3 py-3 tabular-nums">
+                {formatPlanFactTriplet(row.planned_shifts, row.planned_hours, row.planned_cost)}
+              </td>
+              <td className="px-3 py-3 tabular-nums">
+                {formatPlanFactTriplet(
+                  row.actual_shifts,
+                  row.actual_hours,
+                  row.actual_cost,
+                  true,
+                )}
+              </td>
+              <td className={cn("px-3 py-3 tabular-nums", deviationTextClass(row.hours_deviation_pct, threshold))}>
+                {formatPercent(row.hours_deviation_pct)}
+              </td>
+              <td className={cn("px-3 py-3 tabular-nums", deviationTextClass(row.cost_deviation_pct, threshold))}>
+                {formatPercent(row.cost_deviation_pct)}
+              </td>
+              <td className="px-3 py-3">
+                <PlanFactStatusBadge status={row.deviation_status} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SortableTh({
+  active,
+  children,
+  direction,
+  onClick,
+}: {
+  active: boolean;
+  children: ReactNode;
+  direction: SortDirection;
+  onClick: () => void;
+}) {
+  return (
+    <th className="px-3 py-3 font-medium">
+      <button
+        className={cn(
+          "inline-flex items-center gap-1 rounded-sm text-left hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring",
+          active && "text-foreground",
+        )}
+        onClick={onClick}
+        type="button"
+      >
+        {children}
+        <ArrowUpDown className={cn("h-3.5 w-3.5", active ? "opacity-100" : "opacity-50")} aria-hidden="true" />
+        {active ? <span className="sr-only">{direction === "asc" ? "по возрастанию" : "по убыванию"}</span> : null}
+      </button>
+    </th>
+  );
+}
+
+function PlanFactStatusBadge({ status }: { status: PlanFactDeviationStatus }) {
+  const labels: Record<PlanFactDeviationStatus, string> = {
+    no_data: "нет данных",
+    within_threshold: "в норме",
+    over_threshold: "выше порога",
+    plan_no_fact: "план без факта",
+    fact_no_plan: "факт без плана",
+  };
+  return (
+    <Badge className={planFactStatusClass(status)} variant="outline">
+      {labels[status] ?? status}
+    </Badge>
+  );
+}
+
 function RevenueForecastPanel({
   days,
   forecasts,
@@ -1064,7 +1571,6 @@ function RevenueForecastPanel({
               ) : (
                 days.map((day) => (
                   <ForecastCell
-                    day={day}
                     forecast={forecastByDay.get(day)}
                     key={day}
                     onClick={onCellClick}
@@ -1080,11 +1586,9 @@ function RevenueForecastPanel({
 }
 
 function ForecastCell({
-  day,
   forecast,
   onClick,
 }: {
-  day: string;
   forecast: RevenueForecastRead | undefined;
   onClick: (forecast: RevenueForecastRead) => void;
 }) {
@@ -2210,6 +2714,407 @@ function SegmentedButton({
       {label}
     </Button>
   );
+}
+
+function planFactSummaryMetrics(summary: PlanFactSummaryRead) {
+  const threshold = decimalToNumber(summary.warning_threshold_pct) ?? 3;
+  const actual = summary.actual;
+  const deviation = summary.deviation;
+  const rows = [
+    {
+      label: "Смен",
+      planned: String(summary.planned.total_shifts),
+      actual: actual ? String(actual.total_shifts) : "—",
+      deviation: formatCountDeviation(actual?.total_shifts ?? null, summary.planned.total_shifts, deviation?.shifts_pct ?? null),
+      status: metricDeviationStatus(deviation?.shifts_pct ?? null, threshold),
+      className: deviationTextClass(deviation?.shifts_pct ?? null, threshold),
+    },
+    {
+      label: "Часов",
+      planned: formatHoursValue(summary.planned.total_hours),
+      actual: formatHoursValue(actual?.total_hours ?? null),
+      deviation: formatNumberDeviation(actual?.total_hours ?? null, summary.planned.total_hours, deviation?.hours_pct ?? null),
+      status: metricDeviationStatus(deviation?.hours_pct ?? null, threshold),
+      className: deviationTextClass(deviation?.hours_pct ?? null, threshold),
+    },
+    {
+      label: "Стоимость",
+      planned: formatMoneyWithCurrency(summary.planned.total_cost),
+      actual: formatMoneyWithCurrency(actual?.total_cost ?? null),
+      deviation: formatMoneyDeviation(actual?.total_cost ?? null, summary.planned.total_cost, deviation?.cost_pct ?? null),
+      status: metricDeviationStatus(deviation?.cost_pct ?? null, threshold),
+      className: deviationTextClass(deviation?.cost_pct ?? null, threshold),
+    },
+    {
+      label: "Выручка",
+      planned: formatMoneyWithCurrency(summary.planned.total_revenue),
+      actual: formatMoneyWithCurrency(actual?.total_revenue ?? null),
+      deviation: formatMoneyDeviation(actual?.total_revenue ?? null, summary.planned.total_revenue, deviation?.revenue_pct ?? null),
+      status: metricDeviationStatus(deviation?.revenue_pct ?? null, threshold),
+      className: deviationTextClass(deviation?.revenue_pct ?? null, threshold),
+    },
+    {
+      label: "ФОТ %",
+      planned: formatPercent(summary.planned.fot_pct),
+      actual: formatPercent(actual?.fot_pct ?? null),
+      deviation: formatPpDiff(deviation?.fot_pct_diff ?? null),
+      status: metricDeviationStatus(deviation?.fot_pct_diff ?? null, threshold),
+      className: deviationTextClass(deviation?.fot_pct_diff ?? null, threshold),
+    },
+  ];
+  return rows;
+}
+
+function planFactTotalDays(summary: PlanFactSummaryRead) {
+  return (
+    Math.floor(
+      (parseIsoDate(summary.schedule.date_end).getTime() -
+        parseIsoDate(summary.schedule.date_start).getTime()) /
+        86_400_000,
+    ) + 1
+  );
+}
+
+function factAvailabilityText(value: PlanFactSummaryRead["fact_availability"]) {
+  if (value === "full") {
+    return "Полностью";
+  }
+  if (value === "partial") {
+    return "Частично";
+  }
+  return "Нет факта";
+}
+
+function factAvailabilityClass(value: PlanFactSummaryRead["fact_availability"]) {
+  if (value === "full") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+  if (value === "partial") {
+    return "border-blue-200 bg-blue-50 text-blue-700";
+  }
+  return "border-muted bg-muted/40 text-muted-foreground";
+}
+
+function planFactStatusClass(status: PlanFactDeviationStatus) {
+  const classes: Record<PlanFactDeviationStatus, string> = {
+    no_data: "border-muted bg-muted/40 text-muted-foreground",
+    within_threshold: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    over_threshold: "border-amber-200 bg-amber-50 text-amber-700",
+    plan_no_fact: "border-blue-200 bg-blue-50 text-blue-700",
+    fact_no_plan: "border-red-200 bg-red-50 text-red-700",
+  };
+  return classes[status] ?? classes.no_data;
+}
+
+function nextSort<T extends string>(
+  current: { key: T; direction: SortDirection },
+  key: T,
+): { key: T; direction: SortDirection } {
+  if (current.key === key) {
+    return {
+      key,
+      direction: current.direction === "asc" ? "desc" : "asc",
+    };
+  }
+  return {
+    key,
+    direction: key === "date" || key === "name" ? "asc" : "desc",
+  };
+}
+
+function sortPlanFactDays(
+  rows: PlanFactDayRowRead[],
+  sort: { key: DaySortKey; direction: SortDirection },
+) {
+  return [...rows].sort((left, right) => {
+    if (sort.key === "date") {
+      return sort.direction === "asc"
+        ? left.business_date.localeCompare(right.business_date)
+        : right.business_date.localeCompare(left.business_date);
+    }
+    if (sort.key === "hours") {
+      return compareNullable(
+        absDecimal(left.hours_deviation_pct),
+        absDecimal(right.hours_deviation_pct),
+        sort.direction,
+      );
+    }
+    if (sort.key === "cost") {
+      return compareNullable(
+        absDecimal(left.cost_deviation_pct),
+        absDecimal(right.cost_deviation_pct),
+        sort.direction,
+      );
+    }
+    return compareStatus(left.deviation_status, right.deviation_status, sort.direction);
+  });
+}
+
+function sortPlanFactEmployees(
+  rows: PlanFactEmployeeRowRead[],
+  sort: { key: EmployeeSortKey; direction: SortDirection },
+) {
+  return [...rows].sort((left, right) => {
+    if (sort.key === "name") {
+      return sort.direction === "asc"
+        ? left.full_name.localeCompare(right.full_name, "ru")
+        : right.full_name.localeCompare(left.full_name, "ru");
+    }
+    if (sort.key === "hours") {
+      return compareNullable(
+        absDecimal(left.hours_deviation_pct),
+        absDecimal(right.hours_deviation_pct),
+        sort.direction,
+      );
+    }
+    if (sort.key === "cost") {
+      return compareNullable(
+        absDecimal(left.cost_deviation_pct),
+        absDecimal(right.cost_deviation_pct),
+        sort.direction,
+      );
+    }
+    return compareStatus(left.deviation_status, right.deviation_status, sort.direction);
+  });
+}
+
+function compareNullable(left: number | null, right: number | null, direction: SortDirection) {
+  if (left === null && right === null) {
+    return 0;
+  }
+  if (left === null) {
+    return 1;
+  }
+  if (right === null) {
+    return -1;
+  }
+  return direction === "asc" ? left - right : right - left;
+}
+
+function compareStatus(
+  left: PlanFactDeviationStatus,
+  right: PlanFactDeviationStatus,
+  direction: SortDirection,
+) {
+  const rank: Record<PlanFactDeviationStatus, number> = {
+    over_threshold: 0,
+    fact_no_plan: 1,
+    plan_no_fact: 2,
+    no_data: 3,
+    within_threshold: 4,
+  };
+  const delta = rank[left] - rank[right];
+  return direction === "asc" ? delta : -delta;
+}
+
+function absDecimal(value: string | number | null) {
+  const amount = decimalToNumber(value);
+  return amount === null ? null : Math.abs(amount);
+}
+
+function metricDeviationStatus(
+  value: string | number | null,
+  threshold: number,
+): "none" | "within" | "over" {
+  const amount = decimalToNumber(value);
+  if (amount === null) {
+    return "none";
+  }
+  return Math.abs(amount) > threshold ? "over" : "within";
+}
+
+function deviationTextClass(value: string | number | null, threshold: number) {
+  const amount = decimalToNumber(value);
+  if (amount === null) {
+    return "text-muted-foreground";
+  }
+  return Math.abs(amount) > threshold ? "text-amber-700" : "text-emerald-700";
+}
+
+function formatPlanFactTriplet(
+  shifts: number,
+  hours: string | number | null,
+  cost: string | number | null,
+  isActual = false,
+) {
+  if (isActual && shifts === 0 && hours === null && cost === null) {
+    return "— / — / —";
+  }
+  return `${shifts} / ${formatHoursValue(hours)} / ${formatMoney(cost)}`;
+}
+
+function formatHoursValue(value: string | number | null) {
+  const amount = decimalToNumber(value);
+  return amount === null ? "—" : formatHours(amount);
+}
+
+function formatCountDeviation(
+  actual: number | null,
+  planned: number,
+  pct: string | number | null,
+) {
+  if (actual === null) {
+    return "—";
+  }
+  return `${formatSignedInteger(actual - planned)} (${formatSignedPercent(pct)})`;
+}
+
+function formatNumberDeviation(
+  actual: string | number | null,
+  planned: string | number | null,
+  pct: string | number | null,
+) {
+  const actualValue = decimalToNumber(actual);
+  const plannedValue = decimalToNumber(planned);
+  if (actualValue === null || plannedValue === null) {
+    return "—";
+  }
+  return `${formatSignedNumber(actualValue - plannedValue)} (${formatSignedPercent(pct)})`;
+}
+
+function formatMoneyDeviation(
+  actual: string | number | null,
+  planned: string | number | null,
+  pct: string | number | null,
+) {
+  const actualValue = decimalToNumber(actual);
+  const plannedValue = decimalToNumber(planned);
+  if (actualValue === null || plannedValue === null) {
+    return "—";
+  }
+  return `${formatSignedMoney(actualValue - plannedValue)} (${formatSignedPercent(pct)})`;
+}
+
+function formatSignedInteger(value: number) {
+  if (value === 0) {
+    return "0";
+  }
+  return `${value > 0 ? "+" : ""}${value.toLocaleString("ru-RU", {
+    maximumFractionDigits: 0,
+  })}`;
+}
+
+function formatSignedNumber(value: number) {
+  if (value === 0) {
+    return "0";
+  }
+  return `${value > 0 ? "+" : ""}${value.toLocaleString("ru-RU", {
+    maximumFractionDigits: 1,
+  })}`;
+}
+
+function formatSignedMoney(value: number) {
+  if (value === 0) {
+    return "0 ₽";
+  }
+  return `${value > 0 ? "+" : ""}${value.toLocaleString("ru-RU", {
+    maximumFractionDigits: 0,
+  })} ₽`;
+}
+
+function formatSignedPercent(value: string | number | null) {
+  const amount = decimalToNumber(value);
+  if (amount === null) {
+    return "—";
+  }
+  return `${amount > 0 ? "+" : ""}${amount.toLocaleString("ru-RU", {
+    maximumFractionDigits: 1,
+  })}%`;
+}
+
+function formatPpDiff(value: string | number | null) {
+  const amount = decimalToNumber(value);
+  if (amount === null) {
+    return "—";
+  }
+  return `${amount > 0 ? "+" : ""}${amount.toLocaleString("ru-RU", {
+    maximumFractionDigits: 1,
+  })} п.п.`;
+}
+
+function formatDayWithWeekday(value: string) {
+  const date = parseIsoDate(value);
+  return `${value.slice(8, 10)}.${value.slice(5, 7)} ${weekdayLabels[date.getDay()]}`;
+}
+
+function planFactDayTitle(row: PlanFactDayRowRead, summary: PlanFactSummaryRead) {
+  return [
+    formatDate(row.business_date),
+    `План: ${formatPlanFactTriplet(row.planned_shifts, row.planned_hours, row.planned_cost)}`,
+    `Факт: ${formatPlanFactTriplet(row.actual_shifts, row.actual_hours, row.actual_cost, true)}`,
+    `Плановая выручка: ${formatMoneyWithCurrency(row.planned_revenue)}`,
+    `Фактическая выручка: ${formatMoneyWithCurrency(row.actual_revenue)}`,
+    planFactSourceTitle(summary),
+  ].join("\n");
+}
+
+function planFactEmployeeTitle(row: PlanFactEmployeeRowRead, summary: PlanFactSummaryRead) {
+  return [
+    `${row.full_name}${row.position ? `, ${row.position}` : ""}`,
+    `План: ${formatPlanFactTriplet(row.planned_shifts, row.planned_hours, row.planned_cost)}`,
+    `Факт: ${formatPlanFactTriplet(row.actual_shifts, row.actual_hours, row.actual_cost, true)}`,
+    planFactSourceTitle(summary),
+  ].join("\n");
+}
+
+function planFactSourceTitle(summary: PlanFactSummaryRead) {
+  const plannedCost = sourceRecord(summary.sources["planned_cost"]);
+  const actualCost = Array.isArray(summary.sources["actual_cost"])
+    ? summary.sources["actual_cost"]
+    : [];
+  const lines = [
+    plannedCost
+      ? `Плановая стоимость: payroll_forecast_run #${shortId(
+          plannedCost.forecast_run_id,
+        )} от ${formatSourceDateTime(plannedCost.run_at)}${
+          plannedCost.run_by_label ? `, автор ${plannedCost.run_by_label}` : ""
+        }`
+      : "Плановая стоимость: расчёт стоимости не найден",
+  ];
+
+  if (actualCost.length > 0) {
+    const actualLines = actualCost.slice(0, 5).reduce<string[]>((accumulator, source) => {
+      const item = sourceRecord(source);
+      if (item) {
+        accumulator.push(
+          `Фактическая стоимость: payroll_run #${shortId(
+            item.run_id,
+          )} за ${formatSourceDate(item.period_start)}–${formatSourceDate(item.period_end)}`,
+        );
+      }
+      return accumulator;
+    }, []);
+    lines.push(...actualLines);
+    if (actualCost.length > 5) {
+      lines.push(`Ещё payroll_run: ${actualCost.length - 5}`);
+    }
+  } else {
+    lines.push("Фактическая стоимость: payroll_run не найден");
+  }
+
+  if (typeof summary.sources["actual_cost_note"] === "string") {
+    lines.push(summary.sources["actual_cost_note"]);
+  }
+  return lines.join("\n");
+}
+
+function sourceRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function shortId(value: unknown) {
+  const text = String(value ?? "");
+  return text ? text.slice(0, 8) : "—";
+}
+
+function formatSourceDate(value: unknown) {
+  return typeof value === "string" ? formatDate(value.slice(0, 10)) : "—";
+}
+
+function formatSourceDateTime(value: unknown) {
+  return typeof value === "string" ? formatDateTime(value) : "—";
 }
 
 function indexShiftsByEmployeeDay(shifts: ScheduledShiftRead[]) {

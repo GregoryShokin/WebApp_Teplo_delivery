@@ -204,3 +204,47 @@ class PayrollForecastRunRead(BaseModel):
     shifts_total: int
     shifts_with_warnings: int
     estimates: list[ShiftCostEstimateRead] = Field(default_factory=list)
+
+
+class PlanFactDayRowRead(BaseModel):
+    business_date: date
+    planned_shifts: int
+    planned_hours: str
+    planned_cost: str | None
+    planned_revenue: str | None
+    actual_shifts: int
+    actual_hours: str | None
+    actual_cost: str | None
+    actual_revenue: str | None
+    hours_deviation_pct: str | None
+    cost_deviation_pct: str | None
+    revenue_deviation_pct: str | None
+    deviation_status: str
+
+
+class PlanFactEmployeeRowRead(BaseModel):
+    employee_id: uuid.UUID
+    full_name: str
+    position: str
+    planned_shifts: int
+    planned_hours: str
+    planned_cost: str | None
+    actual_shifts: int
+    actual_hours: str | None
+    actual_cost: str | None
+    hours_deviation_pct: str | None
+    cost_deviation_pct: str | None
+    deviation_status: str
+
+
+class PlanFactSummaryRead(BaseModel):
+    schedule: dict[str, Any]
+    fact_availability: str
+    covered_dates: list[date]
+    planned: dict[str, Any]
+    actual: dict[str, Any] | None
+    deviation: dict[str, Any] | None
+    warning_threshold_pct: str
+    by_date: list[PlanFactDayRowRead]
+    by_employee: list[PlanFactEmployeeRowRead]
+    sources: dict[str, Any]
