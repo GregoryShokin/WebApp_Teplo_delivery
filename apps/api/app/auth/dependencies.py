@@ -50,7 +50,10 @@ async def current_user(
 
 def require_role(*roles: str):
     async def checker(user: Annotated[CurrentUser, Depends(current_user)]) -> CurrentUser:
-        if not set(user.roles).intersection(roles):
+        # `admin` — суперроль: имеет неявный доступ ко всем эндпоинтам, требующим
+        # любую конкретную роль (owner / finance_manager / manager и т.д.).
+        allowed = set(roles) | {"admin"}
+        if not set(user.roles).intersection(allowed):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient role",

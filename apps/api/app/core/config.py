@@ -20,7 +20,12 @@ class Settings(BaseSettings):
     auth_refresh_cookie_name: str = "teplo_refresh_token"
     auth_cookie_secure: bool = False
 
-    backend_cors_origins: list[str] = ["http://localhost:5173"]
+    backend_cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ]
 
     scheduler_enabled: bool = True
     employee_sync_enabled: bool = True
