@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  Calculator,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
   Copy,
+  History,
   LoaderCircle,
   Lock,
+  Percent,
   Plus,
   RefreshCw,
   Send,
@@ -44,6 +47,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/ui-app/EmptyState";
@@ -56,19 +66,25 @@ import {
   deleteShift,
   getEmployeesRoster,
   getForecastRange,
+  getLatestRun,
+  getRun,
   getSchedule,
+  listRuns,
   listSchedules,
   overrideForecast,
   patchShift,
   publishSchedule,
   recomputeForecast,
   removeForecastOverride,
+  runCostForecast,
   upsertShift,
   type EmployeeRosterRow,
+  type PayrollForecastRunRead,
   type RevenueForecastRead,
   type RevenueForecastRecomputePayload,
   type ScheduleCreatePayload,
   type ScheduleRead,
+  type ShiftCostEstimateRead,
   type ScheduledShiftRead,
   type ScheduledShiftUpsertPayload,
 } from "@/lib/api";
@@ -100,6 +116,14 @@ type ForecastDialogState = {
   reason: string;
   removeConfirmOpen: boolean;
 };
+
+type CostDaySummary = {
+  total: number;
+  warningCount: number;
+  reasons: string[];
+};
+
+type FotStatusLevel = "none" | "ok" | "warning" | "danger";
 
 const NO_VALUE = "__none";
 const DAY_CELL_WIDTH = 128;
@@ -134,6 +158,8 @@ export function ScheduleRoute() {
   const [newVersionOpen, setNewVersionOpen] = useState(false);
   const [forceRefreshIiko, setForceRefreshIiko] = useState(false);
   const [forceRefreshConfirmOpen, setForceRefreshConfirmOpen] = useState(false);
+  const [selectedCostRunId, setSelectedCostRunId] = useState<string | null>(null);
+  const [costHistoryOpen, setCostHistoryOpen] = useState(false);
   const warmedScheduleIds = useRef(new Set<string>());
   const [copyDialog, setCopyDialog] = useState<CopyWeekState>(() => ({
     open: false,
@@ -186,6 +212,21 @@ export function ScheduleRoute() {
       }),
     enabled: Boolean(selectedScheduleId),
   });
+  const latestCostQuery = useQuery({
+    queryKey: ["cost-forecast", selectedScheduleId, "latest"],
+    queryFn: () => getLatestRun(selectedScheduleId ?? ""),
+    enabled: Boolean(selectedScheduleId),
+  });
+  const selectedCostQuery = useQuery({
+    queryKey: ["cost-forecast", selectedScheduleId, selectedCostRunId],
+    queryFn: () => getRun(selectedScheduleId ?? "", selectedCostRunId ?? ""),
+    enabled: Boolean(selectedScheduleId && selectedCostRunId),
+  });
+  const costRunsQuery = useQuery({
+    queryKey: ["cost-forecast", selectedScheduleId, "runs"],
+    queryFn: () => listRuns(selectedScheduleId ?? ""),
+    enabled: Boolean(selectedScheduleId && costHistoryOpen),
+  });
 
   const schedules = useMemo(
     () => [...(schedulesQuery.data ?? [])].sort(compareSchedulesForSelect),
@@ -196,6 +237,13 @@ export function ScheduleRoute() {
     [rosterQuery.data],
   );
   const currentSchedule = scheduleQuery.data ?? null;
+  const displayedCostRun = selectedCostRunId
+    ? selectedCostQuery.data ?? null
+    : latestCostQuery.data ?? null;
+  const costEstimatesByShiftId = useMemo(
+    () => indexCostEstimatesByShift(displayedCostRun?.estimates ?? []),
+    [displayedCostRun?.estimates],
+  );
   const isDraft = currentSchedule?.status === "draft";
   const isLocked = currentSchedule != null && !isDraft;
   const selectedWeekStart = toIsoDate(startOfTuesdayWeek(parseIsoDate(anchorDate)));
@@ -308,6 +356,17 @@ export function ScheduleRoute() {
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось пересчитать прогноз")),
   });
 
+  const runCostForecastMutation = useMutation({
+    mutationFn: () => runCostForecast(currentSchedule?.id ?? ""),
+    onSuccess: async (run) => {
+      toast.success(`Расчёт готов: ФОТ ${formatPercent(run.fot_to_revenue_pct)}`);
+      setSelectedCostRunId(run.id);
+      queryClient.setQueryData(["cost-forecast", currentSchedule?.id, run.id], run);
+      await invalidateCostForecast();
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось рассчитать стоимость")),
+  });
+
   const saveForecastOverrideMutation = useMutation({
     mutationFn: (variables: {
       businessDate: string;
@@ -362,9 +421,18 @@ export function ScheduleRoute() {
     });
   }, [currentSchedule, warmForecastMutation]);
 
+  useEffect(() => {
+    setSelectedCostRunId(null);
+    setCostHistoryOpen(false);
+  }, [selectedScheduleId]);
+
   async function invalidateCurrentSchedule() {
     await queryClient.invalidateQueries({ queryKey: ["schedule", selectedScheduleId] });
     await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+  }
+
+  async function invalidateCostForecast() {
+    await queryClient.invalidateQueries({ queryKey: ["cost-forecast", currentSchedule?.id] });
   }
 
   function openCreateDialog() {
@@ -667,6 +735,28 @@ export function ScheduleRoute() {
         />
       ) : null}
 
+      {currentSchedule ? (
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <CostForecastPanel
+            days={visibleDays}
+            isLoading={
+              latestCostQuery.isLoading || (selectedCostRunId ? selectedCostQuery.isLoading : false)
+            }
+            isRecomputing={runCostForecastMutation.isPending}
+            leadingWidth={viewMode === "employees" ? EMPLOYEE_COLUMN_WIDTH : STATION_COLUMN_WIDTH}
+            onOpenHistory={() => setCostHistoryOpen(true)}
+            onRecompute={() => runCostForecastMutation.mutate()}
+            run={displayedCostRun}
+          />
+          <BudgetSummaryPanel
+            isRecomputing={runCostForecastMutation.isPending}
+            onOpenHistory={() => setCostHistoryOpen(true)}
+            onRecompute={() => runCostForecastMutation.mutate()}
+            run={displayedCostRun}
+          />
+        </div>
+      ) : null}
+
       {!currentSchedule && !schedulesQuery.isLoading ? (
         <EmptyState
           action={<Button onClick={openCreateDialog}>Создать новый график</Button>}
@@ -685,6 +775,7 @@ export function ScheduleRoute() {
               shift,
             })
           }
+          costByShiftId={costEstimatesByShiftId}
           roster={roster}
           shiftByEmployeeDay={shiftByEmployeeDay}
         />
@@ -705,6 +796,7 @@ export function ScheduleRoute() {
               shift,
             })
           }
+          costByShiftId={costEstimatesByShiftId}
           rows={stationRows}
         />
       )}
@@ -753,6 +845,15 @@ export function ScheduleRoute() {
         onSubmit={submitCopyWeek}
         selectedWeekEnd={selectedWeekEnd}
         selectedWeekStart={selectedWeekStart}
+      />
+
+      <CostHistorySheet
+        currentRunId={displayedCostRun?.id ?? null}
+        isLoading={costRunsQuery.isLoading}
+        onOpenChange={setCostHistoryOpen}
+        onSelectRun={(runId) => setSelectedCostRunId(runId)}
+        open={costHistoryOpen}
+        runs={costRunsQuery.data ?? []}
       />
 
       <AlertDialog open={Boolean(deleteTarget)} onOpenChange={() => setDeleteTarget(null)}>
@@ -1031,6 +1132,332 @@ function ForecastCell({
   );
 }
 
+function CostForecastPanel({
+  days,
+  isLoading,
+  isRecomputing,
+  leadingWidth,
+  onOpenHistory,
+  onRecompute,
+  run,
+}: {
+  days: string[];
+  isLoading: boolean;
+  isRecomputing: boolean;
+  leadingWidth: number;
+  onOpenHistory: () => void;
+  onRecompute: () => void;
+  run: PayrollForecastRunRead | null;
+}) {
+  const minWidth = leadingWidth + days.length * DAY_CELL_WIDTH;
+  const costByDay = useMemo(
+    () => buildCostSummariesByDay(run?.estimates ?? []),
+    [run?.estimates],
+  );
+  const isEmpty = !isLoading && !run;
+
+  return (
+    <section className="overflow-hidden rounded-lg border bg-card">
+      <div className="overflow-x-auto">
+        <table className="border-separate border-spacing-0 text-sm" style={{ minWidth }}>
+          <tbody>
+            <tr>
+              <td
+                className="sticky left-0 z-20 border-b border-r bg-card px-3 py-3 align-top"
+                rowSpan={2}
+                style={{ width: leadingWidth, minWidth: leadingWidth }}
+              >
+                <div className="grid gap-3">
+                  <div>
+                    <div className="font-medium">Стоимость графика</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {run ? `Версия от ${formatDateTime(run.run_at)}` : "Стоимость ещё не рассчитана"}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      disabled={isRecomputing}
+                      onClick={onRecompute}
+                      size="sm"
+                      type="button"
+                      variant={isEmpty ? "default" : "outline"}
+                    >
+                      {isRecomputing ? (
+                        <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+                      ) : (
+                        <Calculator size={15} aria-hidden="true" />
+                      )}
+                      {isRecomputing ? "Идёт расчёт..." : isEmpty ? "Рассчитать" : "Пересчитать"}
+                    </Button>
+                    <Button
+                      disabled={!run}
+                      onClick={onOpenHistory}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      <History size={15} aria-hidden="true" />
+                      История
+                    </Button>
+                  </div>
+                </div>
+              </td>
+              {days.map((day) => (
+                <td
+                  className="border-b border-r bg-muted/70 px-2 py-2 text-center font-medium text-muted-foreground"
+                  key={day}
+                  style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
+                >
+                  <div>{weekdayLabels[parseIsoDate(day).getDay()]}</div>
+                  <div className="text-base text-foreground">{day.slice(8, 10)}</div>
+                </td>
+              ))}
+            </tr>
+            <tr>
+              {isLoading ? (
+                days.map((day) => (
+                  <td className="border-b border-r p-3" key={day}>
+                    <Skeleton className="h-12 w-full" />
+                  </td>
+                ))
+              ) : isEmpty ? (
+                <td className="border-b border-r px-3 py-4 text-center" colSpan={days.length}>
+                  <Button disabled={isRecomputing} onClick={onRecompute} type="button">
+                    {isRecomputing ? (
+                      <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                    ) : (
+                      <Calculator size={16} aria-hidden="true" />
+                    )}
+                    Рассчитать стоимость
+                  </Button>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    Запустите расчёт, чтобы увидеть стоимость смен
+                  </div>
+                </td>
+              ) : (
+                days.map((day) => (
+                  <CostDayCell day={day} key={day} summary={costByDay.get(day)} />
+                ))
+              )}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function CostDayCell({
+  day,
+  summary,
+}: {
+  day: string;
+  summary: CostDaySummary | undefined;
+}) {
+  if (!summary) {
+    return (
+      <td
+        className="h-[76px] border-b border-r px-2 py-3 text-center"
+        style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
+        title="Нет смен или расчёт не содержит данных за день"
+      >
+        <div className="text-lg font-semibold tabular-nums text-muted-foreground">—</div>
+      </td>
+    );
+  }
+
+  return (
+    <td
+      className="h-[76px] border-b border-r p-1.5 text-center"
+      style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
+      title={costDayTitle(day, summary)}
+    >
+      <div className="flex h-full w-full flex-col items-center justify-center rounded-md px-1.5">
+        <div
+          className={cn(
+            "text-lg font-semibold tabular-nums",
+            summary.warningCount > 0 ? "text-orange-600" : "text-foreground",
+          )}
+        >
+          {formatMoney(summary.total)}
+        </div>
+        <div className="mt-1 flex min-h-5 flex-wrap items-center justify-center gap-1 text-[11px] leading-4">
+          {summary.warningCount > 0 ? (
+            <>
+              <AlertTriangle className="h-3.5 w-3.5 text-orange-600" aria-hidden="true" />
+              <span className="text-orange-600">проверить</span>
+            </>
+          ) : null}
+          {summary.reasons.slice(0, 2).map((reason) => (
+            <span className={costReasonClass(reason)} key={reason}>
+              {costReasonLabel(reason)}
+            </span>
+          ))}
+        </div>
+      </div>
+    </td>
+  );
+}
+
+function BudgetSummaryPanel({
+  isRecomputing,
+  onOpenHistory,
+  onRecompute,
+  run,
+}: {
+  isRecomputing: boolean;
+  onOpenHistory: () => void;
+  onRecompute: () => void;
+  run: PayrollForecastRunRead | null;
+}) {
+  const fotLevel = run ? fotStatusLevel(run) : "none";
+
+  return (
+    <section className="rounded-lg border bg-card p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="font-medium">Прогноз бюджета</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {run ? `Расчёт от ${formatDateTime(run.run_at)}` : "Стоимость ещё не рассчитана"}
+          </div>
+        </div>
+        <Percent className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+      </div>
+
+      {run ? (
+        <div className="grid gap-2 text-sm">
+          <SummaryRow label="Выручка прогноз" value={formatMoneyWithCurrency(run.total_revenue_forecast)} />
+          <SummaryRow label="Стоимость смен" value={formatMoneyWithCurrency(run.total_shift_cost_estimate)} />
+          <SummaryRow
+            className={fotStatusClass(fotLevel)}
+            label="ФОТ % от выручки"
+            title={`Порог: ${formatPercent(run.fot_warning_threshold_pct)}`}
+            value={`${formatPercent(run.fot_to_revenue_pct)} · ${fotStatusText(fotLevel)}`}
+          />
+          <div className="my-1 h-px bg-border" />
+          <SummaryRow label="Смен всего" value={String(run.shifts_total)} />
+          <SummaryRow
+            className={run.shifts_with_warnings > 0 ? "text-orange-600" : undefined}
+            label="С предупреждениями"
+            value={String(run.shifts_with_warnings)}
+          />
+          <SummaryRow label="Автор" value={run.run_by_label ?? "—"} />
+        </div>
+      ) : (
+        <div className="rounded-md border border-dashed px-3 py-5 text-center text-sm text-muted-foreground">
+          Стоимость ещё не рассчитана. Запустите расчёт.
+        </div>
+      )}
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button disabled={isRecomputing} onClick={onRecompute} size="sm" type="button">
+          {isRecomputing ? (
+            <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+          ) : (
+            <Calculator size={15} aria-hidden="true" />
+          )}
+          {isRecomputing ? "Идёт расчёт..." : run ? "Пересчитать" : "Рассчитать стоимость"}
+        </Button>
+        <Button disabled={!run} onClick={onOpenHistory} size="sm" type="button" variant="outline">
+          <History size={15} aria-hidden="true" />
+          История версий
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function SummaryRow({
+  className,
+  label,
+  title,
+  value,
+}: {
+  className?: string;
+  label: string;
+  title?: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3" title={title}>
+      <span className="text-muted-foreground">{label}</span>
+      <span className={cn("text-right font-medium tabular-nums", className)}>{value}</span>
+    </div>
+  );
+}
+
+function CostHistorySheet({
+  currentRunId,
+  isLoading,
+  onOpenChange,
+  onSelectRun,
+  open,
+  runs,
+}: {
+  currentRunId: string | null;
+  isLoading: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSelectRun: (runId: string) => void;
+  open: boolean;
+  runs: PayrollForecastRunRead[];
+}) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+        <SheetHeader>
+          <SheetTitle>История версий</SheetTitle>
+          <SheetDescription>
+            Выберите расчёт, чтобы отобразить его в графике.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="mt-5 grid gap-2">
+          {isLoading ? (
+            Array.from({ length: 5 }).map((_, index) => (
+              <Skeleton className="h-20 w-full" key={index} />
+            ))
+          ) : runs.length === 0 ? (
+            <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+              Истории расчётов пока нет.
+            </div>
+          ) : (
+            runs.map((run) => (
+              <button
+                className={cn(
+                  "rounded-md border px-3 py-3 text-left text-sm hover:border-primary/50",
+                  run.id === currentRunId && "border-primary bg-primary/5",
+                )}
+                key={run.id}
+                onClick={() => onSelectRun(run.id)}
+                type="button"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{formatDateTime(run.run_at)}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {run.run_by_label ?? "Автор не указан"} · {runStatusLabel(run.status)}
+                    </div>
+                  </div>
+                  <div className="text-right tabular-nums">
+                    <div className={fotStatusClass(fotStatusLevel(run))}>
+                      {formatPercent(run.fot_to_revenue_pct)}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {formatMoneyWithCurrency(run.total_shift_cost_estimate)}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  Смен: {run.shifts_total}, предупреждений: {run.shifts_with_warnings}
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 function ForecastOverrideDialog({
   isRemoving,
   isSaving,
@@ -1220,6 +1647,7 @@ function ForecastOverrideDialog({
 }
 
 function EmployeeScheduleGrid({
+  costByShiftId,
   days,
   isLoading,
   isLocked,
@@ -1227,6 +1655,7 @@ function EmployeeScheduleGrid({
   roster,
   shiftByEmployeeDay,
 }: {
+  costByShiftId: Map<string, ShiftCostEstimateRead>;
   days: string[];
   isLoading: boolean;
   isLocked: boolean;
@@ -1292,7 +1721,12 @@ function EmployeeScheduleGrid({
                         onClick={() => onCellClick(employee, day, shift)}
                         style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
                       >
-                        {shift ? <ShiftPill shift={shift} /> : null}
+                        {shift ? (
+                          <ShiftPill
+                            estimate={costByShiftId.get(shift.id)}
+                            shift={shift}
+                          />
+                        ) : null}
                       </td>
                     );
                   })}
@@ -1307,6 +1741,7 @@ function EmployeeScheduleGrid({
 }
 
 function StationScheduleGrid({
+  costByShiftId,
   days,
   isLoading,
   isLocked,
@@ -1314,6 +1749,7 @@ function StationScheduleGrid({
   onShiftClick,
   rows,
 }: {
+  costByShiftId: Map<string, ShiftCostEstimateRead>;
   days: string[];
   isLoading: boolean;
   isLocked: boolean;
@@ -1378,13 +1814,25 @@ function StationScheduleGrid({
                               event.stopPropagation();
                               onShiftClick(shift);
                             }}
-                            title={shiftTitle(shift)}
+                            title={shiftTitle(shift, costByShiftId.get(shift.id))}
                             type="button"
                           >
                             <div className="truncate font-medium">{shift.employee_full_name}</div>
                             <div className="tabular-nums text-muted-foreground">
                               {formatShiftTime(shift)}
                             </div>
+                            {costByShiftId.get(shift.id) ? (
+                              <div
+                                className={cn(
+                                  "mt-0.5 tabular-nums",
+                                  shiftCostClass(costByShiftId.get(shift.id)),
+                                )}
+                              >
+                                {formatMoneyWithCurrency(
+                                  costByShiftId.get(shift.id)?.total_cost_estimate ?? null,
+                                )}
+                              </div>
+                            ) : null}
                           </button>
                         ))}
                       </div>
@@ -1400,16 +1848,27 @@ function StationScheduleGrid({
   );
 }
 
-function ShiftPill({ shift }: { shift: ScheduledShiftRead }) {
+function ShiftPill({
+  estimate,
+  shift,
+}: {
+  estimate: ShiftCostEstimateRead | undefined;
+  shift: ScheduledShiftRead;
+}) {
   return (
     <div
       className="rounded-md border border-primary/20 bg-primary/10 px-2 py-1.5 text-xs"
-      title={shiftTitle(shift)}
+      title={shiftTitle(shift, estimate)}
     >
       <div className="font-semibold tabular-nums text-primary">{formatShiftTime(shift)}</div>
       <div className="mt-1 truncate text-muted-foreground">
         {shift.station_code || stationForPayrollRole(shift.payroll_role)}
       </div>
+      {estimate ? (
+        <div className={cn("mt-1 tabular-nums", shiftCostClass(estimate))}>
+          {formatMoneyWithCurrency(estimate.total_cost_estimate)}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1761,6 +2220,37 @@ function indexShiftsByEmployeeDay(shifts: ScheduledShiftRead[]) {
   return index;
 }
 
+function indexCostEstimatesByShift(estimates: ShiftCostEstimateRead[]) {
+  const index = new Map<string, ShiftCostEstimateRead>();
+  estimates.forEach((estimate) => {
+    index.set(estimate.scheduled_shift_id, estimate);
+  });
+  return index;
+}
+
+function buildCostSummariesByDay(estimates: ShiftCostEstimateRead[]) {
+  const index = new Map<string, CostDaySummary>();
+  estimates.forEach((estimate) => {
+    const current =
+      index.get(estimate.business_date) ?? {
+        total: 0,
+        warningCount: 0,
+        reasons: [],
+      };
+    current.total += decimalToNumber(estimate.total_cost_estimate) ?? 0;
+    if (estimate.quality_status === "requires_review") {
+      current.warningCount += 1;
+      estimate.quality_reasons.forEach((reason) => {
+        if (!current.reasons.includes(reason)) {
+          current.reasons.push(reason);
+        }
+      });
+    }
+    index.set(estimate.business_date, current);
+  });
+  return index;
+}
+
 function buildStationRows(shifts: ScheduledShiftRead[]) {
   const stations = new Map<string, Map<string, ScheduledShiftRead[]>>();
   shifts.forEach((shift) => {
@@ -1968,6 +2458,94 @@ function forecastStatusText(forecast: RevenueForecastRead) {
   return "Расчётный";
 }
 
+function costReasonLabel(reason: string) {
+  const labels: Record<string, string> = {
+    forecast_missing: "нет прогноза",
+    forecast_requires_review: "прогноз проверить",
+    no_category: "нет категории",
+    no_rate: "нет ставки",
+    no_role: "нет роли",
+    overnight_shift: "ночная смена",
+  };
+  return labels[reason] ?? reason;
+}
+
+function costReasonClass(reason: string) {
+  if (reason === "no_rate" || reason === "no_category" || reason === "no_role") {
+    return "text-red-600";
+  }
+  if (reason === "forecast_missing") {
+    return "text-muted-foreground";
+  }
+  return "text-orange-600";
+}
+
+function costDayTitle(day: string, summary: CostDaySummary) {
+  const reasons = summary.reasons.map(costReasonLabel).join(", ");
+  return [
+    formatDate(day),
+    `Стоимость: ${formatMoneyWithCurrency(summary.total)}`,
+    summary.warningCount > 0 ? `Предупреждения: ${summary.warningCount}` : null,
+    reasons ? `Причины: ${reasons}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function shiftCostClass(estimate: ShiftCostEstimateRead | undefined) {
+  return estimate?.quality_status === "requires_review" ? "text-orange-600" : "text-muted-foreground";
+}
+
+function fotStatusLevel(run: PayrollForecastRunRead): FotStatusLevel {
+  const value = decimalToNumber(run.fot_to_revenue_pct);
+  const threshold = decimalToNumber(run.fot_warning_threshold_pct) ?? 28;
+  if (value === null) {
+    return "none";
+  }
+  if (value < threshold) {
+    return "ok";
+  }
+  if (value < threshold + 4) {
+    return "warning";
+  }
+  return "danger";
+}
+
+function fotStatusClass(level: FotStatusLevel) {
+  if (level === "ok") {
+    return "text-emerald-700";
+  }
+  if (level === "warning") {
+    return "text-amber-700";
+  }
+  if (level === "danger") {
+    return "text-red-700";
+  }
+  return "text-muted-foreground";
+}
+
+function fotStatusText(level: FotStatusLevel) {
+  if (level === "ok") {
+    return "ниже порога";
+  }
+  if (level === "warning") {
+    return "внимание";
+  }
+  if (level === "danger") {
+    return "критично";
+  }
+  return "нет данных";
+}
+
+function runStatusLabel(status: PayrollForecastRunRead["status"]) {
+  const labels: Record<PayrollForecastRunRead["status"], string> = {
+    draft: "Черновик",
+    completed: "Активный",
+    superseded: "Замещён",
+  };
+  return labels[status];
+}
+
 function formatMoney(value: string | number | null) {
   const amount = decimalToNumber(value);
   if (amount === null) {
@@ -1979,6 +2557,17 @@ function formatMoney(value: string | number | null) {
 function formatMoneyWithCurrency(value: string | number | null) {
   const amount = formatMoney(value);
   return amount === "—" ? amount : `${amount} ₽`;
+}
+
+function formatPercent(value: string | number | null) {
+  const amount = decimalToNumber(value);
+  if (amount === null) {
+    return "—";
+  }
+  return `${amount.toLocaleString("ru-RU", {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 0,
+  })}%`;
 }
 
 function decimalToNumber(value: string | number | null) {
@@ -2015,15 +2604,47 @@ function formatDateTime(value: string) {
   });
 }
 
-function shiftTitle(shift: ScheduledShiftRead) {
+function shiftTitle(
+  shift: ScheduledShiftRead,
+  estimate?: ShiftCostEstimateRead,
+) {
   const station = shift.station_code || stationForPayrollRole(shift.payroll_role);
+  const costLines = estimate
+    ? [
+        "",
+        `Оклад: ${formatMoneyWithCurrency(estimate.base_salary_estimate)}`,
+        `Надбавка: ${formatMoneyWithCurrency(estimate.allowance_estimate)}`,
+        `Пт/сб: ${formatMoneyWithCurrency(estimate.weekday_premium_estimate)}`,
+        `Процент: ${formatMoneyWithCurrency(estimate.revenue_percent_estimate)}`,
+        `Итого: ${formatMoneyWithCurrency(estimate.total_cost_estimate)}`,
+        `Накопфонд: ${formatMoneyWithCurrency(estimate.fund_accrual_estimate)}`,
+        estimate.quality_reasons.length > 0
+          ? `Проверить: ${estimate.quality_reasons.map(costReasonLabel).join(", ")}`
+          : null,
+        breakdownLine(estimate.breakdown, "category", "Категория"),
+        breakdownLine(estimate.breakdown, "minutes", "Минут"),
+      ]
+    : [];
   return [
     `${shift.employee_full_name}: ${formatShiftTime(shift)}`,
     station,
     shift.comment_private,
+    ...costLines,
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function breakdownLine(
+  breakdown: Record<string, unknown>,
+  key: string,
+  label: string,
+) {
+  const value = breakdown[key];
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  return `${label}: ${String(value)}`;
 }
 
 function rangesOverlap(

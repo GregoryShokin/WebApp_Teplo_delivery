@@ -39,6 +39,7 @@ from app.models.payroll import (
     RevenueTier,
     ShiftLedgerEntry,
 )
+from app.models.payroll_forecast import PayrollForecastRun, ShiftCostEstimate
 from app.models.period import Period
 from app.models.revenue_forecast import RevenueForecast
 from app.models.settings import AppSetting, AppSettingHistory
@@ -78,6 +79,7 @@ __all__ = [
     "PayrollRevenueShare",
     "PayrollRoleCategoryAvailability",
     "PayrollRun",
+    "PayrollForecastRun",
     "PayrollSeniorityPremium",
     "ParsedDocument",
     "Period",
@@ -85,6 +87,7 @@ __all__ = [
     "RevenueForecast",
     "Role",
     "ShiftLedgerEntry",
+    "ShiftCostEstimate",
     "ScheduledShift",
     "ShiftSchedule",
     "SourceCredential",

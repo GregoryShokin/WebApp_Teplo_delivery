@@ -582,6 +582,41 @@ export type RevenueForecastRecomputePayload = {
   force_refresh_iiko?: boolean;
 };
 
+export type ShiftCostQualityStatus = "ok" | "requires_review";
+
+export type ShiftCostEstimateRead = {
+  id: string;
+  scheduled_shift_id: string;
+  business_date: string;
+  employee_id: string;
+  employee_full_name: string;
+  planned_hours: string | number;
+  base_salary_estimate: string | number;
+  weekday_premium_estimate: string | number;
+  allowance_estimate: string | number;
+  revenue_percent_estimate: string | number;
+  fund_accrual_estimate: string | number;
+  total_cost_estimate: string | number;
+  quality_status: ShiftCostQualityStatus;
+  quality_reasons: string[];
+  breakdown: Record<string, unknown>;
+};
+
+export type PayrollForecastRunRead = {
+  id: string;
+  shift_schedule_id: string;
+  run_at: string;
+  run_by_label: string | null;
+  status: "draft" | "completed" | "superseded";
+  total_revenue_forecast: string | number | null;
+  total_shift_cost_estimate: string | number | null;
+  fot_to_revenue_pct: string | number | null;
+  fot_warning_threshold_pct: string | number;
+  shifts_total: number;
+  shifts_with_warnings: number;
+  estimates: ShiftCostEstimateRead[];
+};
+
 export type ScheduledShiftUpsertPayload = {
   business_date: string;
   employee_id: string;
@@ -1351,6 +1386,39 @@ export async function removeForecastOverride(
 ): Promise<RevenueForecastRead> {
   const response = await api.delete<RevenueForecastRead>(
     `/schedule/forecast/${businessDate}/override`,
+  );
+  return response.data;
+}
+
+export async function runCostForecast(scheduleId: string): Promise<PayrollForecastRunRead> {
+  const response = await api.post<PayrollForecastRunRead>(
+    `/schedule/${scheduleId}/cost-forecast`,
+  );
+  return response.data;
+}
+
+export async function getLatestRun(
+  scheduleId: string,
+): Promise<PayrollForecastRunRead | null> {
+  const response = await api.get<PayrollForecastRunRead | null>(
+    `/schedule/${scheduleId}/cost-forecast/latest`,
+  );
+  return response.data;
+}
+
+export async function listRuns(scheduleId: string): Promise<PayrollForecastRunRead[]> {
+  const response = await api.get<PayrollForecastRunRead[]>(
+    `/schedule/${scheduleId}/cost-forecast/runs`,
+  );
+  return response.data;
+}
+
+export async function getRun(
+  scheduleId: string,
+  runId: string,
+): Promise<PayrollForecastRunRead> {
+  const response = await api.get<PayrollForecastRunRead>(
+    `/schedule/${scheduleId}/cost-forecast/runs/${runId}`,
   );
   return response.data;
 }

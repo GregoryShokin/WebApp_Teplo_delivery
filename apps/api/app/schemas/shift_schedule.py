@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -170,3 +171,36 @@ class RevenueForecastRecomputeRequest(BaseModel):
 
 class RevenueForecastRecomputeResponse(BaseModel):
     recomputed: int
+
+
+class ShiftCostEstimateRead(BaseModel):
+    id: uuid.UUID
+    scheduled_shift_id: uuid.UUID
+    business_date: date
+    employee_id: uuid.UUID
+    employee_full_name: str
+    planned_hours: Decimal
+    base_salary_estimate: Decimal
+    weekday_premium_estimate: Decimal
+    allowance_estimate: Decimal
+    revenue_percent_estimate: Decimal
+    fund_accrual_estimate: Decimal
+    total_cost_estimate: Decimal
+    quality_status: str
+    quality_reasons: list[str]
+    breakdown: dict[str, Any]
+
+
+class PayrollForecastRunRead(BaseModel):
+    id: uuid.UUID
+    shift_schedule_id: uuid.UUID
+    run_at: datetime
+    run_by_label: str | None
+    status: str
+    total_revenue_forecast: Decimal | None
+    total_shift_cost_estimate: Decimal | None
+    fot_to_revenue_pct: Decimal | None
+    fot_warning_threshold_pct: Decimal
+    shifts_total: int
+    shifts_with_warnings: int
+    estimates: list[ShiftCostEstimateRead] = Field(default_factory=list)

@@ -10,22 +10,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
 from app.db.session import get_session
-from app.models import Employee, RevenueForecast, ScheduledShift, ShiftSchedule, User
+from app.models import (
+    Employee,
+    PayrollForecastRun,
+    RevenueForecast,
+    ScheduledShift,
+    ShiftCostEstimate,
+    ShiftSchedule,
+    User,
+)
 from app.schemas.shift_schedule import (
     CopyWeekRequest,
     CopyWeekResponse,
     EmployeeRosterRow,
+    PayrollForecastRunRead,
     RevenueForecastOverrideRequest,
     RevenueForecastRead,
     RevenueForecastRecomputeRequest,
     RevenueForecastRecomputeResponse,
     ScheduleCreateRequest,
     ScheduledShiftRead,
+    ShiftCostEstimateRead,
     ScheduledShiftUpsertRequest,
     SchedulePatchRequest,
     ScheduleRead,
 )
-from app.services import revenue_forecast_service, shift_schedule_service
+from app.services import payroll_forecast_run_service, revenue_forecast_service
+from app.services import shift_schedule_service
 
 router = APIRouter()
 MAX_FORECAST_RANGE_DAYS = 62
@@ -161,6 +172,73 @@ async def get_schedule(
         schedule,
         shifts=[_shift_to_read(shift, employee) for shift, employee in shift_rows],
     )
+
+
+@router.post("/{schedule_id}/cost-forecast", response_model=PayrollForecastRunRead)
+async def post_cost_forecast(
+    schedule_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollForecastRunRead:
+    require_finance_manager_plus(actor)
+    run = await payroll_forecast_run_service.create_forecast_run(
+        session,
+        shift_schedule_id=schedule_id,
+        actor=actor,
+    )
+    estimates = await payroll_forecast_run_service.list_estimates(session, run.id)
+    return await _payroll_forecast_run_to_read(session, run, estimates=estimates)
+
+
+@router.get(
+    "/{schedule_id}/cost-forecast/latest",
+    response_model=PayrollForecastRunRead | None,
+)
+async def get_latest_cost_forecast(
+    schedule_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollForecastRunRead | None:
+    del actor
+    await _ensure_schedule_exists(session, schedule_id)
+    run = await payroll_forecast_run_service.get_latest_run(session, schedule_id)
+    if run is None:
+        return None
+    estimates = await payroll_forecast_run_service.list_estimates(session, run.id)
+    return await _payroll_forecast_run_to_read(session, run, estimates=estimates)
+
+
+@router.get("/{schedule_id}/cost-forecast/runs", response_model=list[PayrollForecastRunRead])
+async def get_cost_forecast_runs(
+    schedule_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> list[PayrollForecastRunRead]:
+    del actor
+    await _ensure_schedule_exists(session, schedule_id)
+    runs = await payroll_forecast_run_service.list_runs(session, schedule_id)
+    return await _payroll_forecast_runs_to_read(session, runs)
+
+
+@router.get(
+    "/{schedule_id}/cost-forecast/runs/{run_id}",
+    response_model=PayrollForecastRunRead,
+)
+async def get_cost_forecast_run(
+    schedule_id: uuid.UUID,
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollForecastRunRead:
+    del actor
+    await _ensure_schedule_exists(session, schedule_id)
+    run, estimates = await payroll_forecast_run_service.get_run_with_estimates(session, run_id)
+    if run.shift_schedule_id != schedule_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Расчёт не найден",
+        )
+    return await _payroll_forecast_run_to_read(session, run, estimates=estimates)
 
 
 @router.patch("/{schedule_id}", response_model=ScheduleRead)
@@ -365,6 +443,84 @@ def _forecast_to_read(
     )
 
 
+async def _payroll_forecast_runs_to_read(
+    session: AsyncSession,
+    runs: list[PayrollForecastRun],
+) -> list[PayrollForecastRunRead]:
+    threshold = await payroll_forecast_run_service.get_fot_warning_threshold_pct(session)
+    labels = await _user_labels(
+        session,
+        {run.run_by_user_id for run in runs if run.run_by_user_id is not None},
+    )
+    return [
+        PayrollForecastRunRead(
+            id=run.id,
+            shift_schedule_id=run.shift_schedule_id,
+            run_at=run.run_at,
+            run_by_label=labels.get(run.run_by_user_id) if run.run_by_user_id else None,
+            status=run.status,
+            total_revenue_forecast=run.total_revenue_forecast,
+            total_shift_cost_estimate=run.total_shift_cost_estimate,
+            fot_to_revenue_pct=run.fot_to_revenue_pct,
+            fot_warning_threshold_pct=threshold,
+            shifts_total=run.shifts_total,
+            shifts_with_warnings=run.shifts_with_warnings,
+            estimates=[],
+        )
+        for run in runs
+    ]
+
+
+async def _payroll_forecast_run_to_read(
+    session: AsyncSession,
+    run: PayrollForecastRun,
+    *,
+    estimates: list[ShiftCostEstimate],
+) -> PayrollForecastRunRead:
+    threshold = await payroll_forecast_run_service.get_fot_warning_threshold_pct(session)
+    user_labels = await _user_labels(
+        session,
+        {run.run_by_user_id} if run.run_by_user_id is not None else set(),
+    )
+    employee_labels = await _employee_labels(
+        session,
+        {estimate.employee_id for estimate in estimates},
+    )
+    return PayrollForecastRunRead(
+        id=run.id,
+        shift_schedule_id=run.shift_schedule_id,
+        run_at=run.run_at,
+        run_by_label=user_labels.get(run.run_by_user_id) if run.run_by_user_id else None,
+        status=run.status,
+        total_revenue_forecast=run.total_revenue_forecast,
+        total_shift_cost_estimate=run.total_shift_cost_estimate,
+        fot_to_revenue_pct=run.fot_to_revenue_pct,
+        fot_warning_threshold_pct=threshold,
+        shifts_total=run.shifts_total,
+        shifts_with_warnings=run.shifts_with_warnings,
+        estimates=[
+            ShiftCostEstimateRead(
+                id=estimate.id,
+                scheduled_shift_id=estimate.scheduled_shift_id,
+                business_date=estimate.business_date,
+                employee_id=estimate.employee_id,
+                employee_full_name=employee_labels.get(estimate.employee_id, ""),
+                planned_hours=estimate.planned_hours,
+                base_salary_estimate=estimate.base_salary_estimate,
+                weekday_premium_estimate=estimate.weekday_premium_estimate,
+                allowance_estimate=estimate.allowance_estimate,
+                revenue_percent_estimate=estimate.revenue_percent_estimate,
+                fund_accrual_estimate=estimate.fund_accrual_estimate,
+                total_cost_estimate=estimate.total_cost_estimate,
+                quality_status=estimate.quality_status,
+                quality_reasons=estimate.quality_reasons,
+                breakdown=estimate.breakdown,
+            )
+            for estimate in estimates
+        ],
+    )
+
+
 async def _manual_override_labels(
     session: AsyncSession,
     forecasts: list[RevenueForecast],
@@ -378,6 +534,31 @@ async def _manual_override_labels(
         return {}
     result = await session.scalars(select(User).where(User.id.in_(user_ids)))
     return {user.id: user.full_name for user in result.all()}
+
+
+async def _user_labels(
+    session: AsyncSession,
+    user_ids: set[uuid.UUID],
+) -> dict[uuid.UUID, str]:
+    if not user_ids:
+        return {}
+    result = await session.scalars(select(User).where(User.id.in_(user_ids)))
+    return {user.id: user.full_name for user in result.all()}
+
+
+async def _employee_labels(
+    session: AsyncSession,
+    employee_ids: set[uuid.UUID],
+) -> dict[uuid.UUID, str]:
+    if not employee_ids:
+        return {}
+    result = await session.scalars(select(Employee).where(Employee.id.in_(employee_ids)))
+    return {employee.id: employee.full_name for employee in result.all()}
+
+
+async def _ensure_schedule_exists(session: AsyncSession, schedule_id: uuid.UUID) -> None:
+    if await session.get(ShiftSchedule, schedule_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="График не найден")
 
 
 def _validate_forecast_range(date_from: date, date_to: date) -> None:
