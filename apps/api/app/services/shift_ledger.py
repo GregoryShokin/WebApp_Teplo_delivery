@@ -7,11 +7,19 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import or_, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AgentAction, AgentRun, Employee, EmployeeRoleAssignment, ShiftLedgerEntry
+from app.models import (
+    AgentAction,
+    AgentRun,
+    Employee,
+    EmployeeRoleAssignment,
+    PayrollPeriod,
+    PayrollRun,
+    ShiftLedgerEntry,
+)
 from app.services.attendance_loader import (
     MOSCOW_TZ,
     fetch_iiko_attendance_records,
@@ -133,14 +141,11 @@ async def manually_correct(
     if entry is None:
         raise ShiftLedgerNotFoundError("Shift ledger entry not found")
 
-    assignment = next(
-        (
-            item
-            for item in await get_assignments(session, entry.employee_id, entry.work_date)
-            if item.payroll_role == payroll_role
-        ),
-        None,
+    active_assignments = assignments_for_employee(
+        await load_currently_active_role_assignments(session, {entry.employee_id}),
+        entry.employee_id,
     )
+    assignment = assignment_by_role(active_assignments, payroll_role)
     if assignment is None:
         raise ShiftLedgerValidationError("Эта роль не закреплена за сотрудником в Штате")
 
@@ -161,6 +166,7 @@ async def manually_correct(
         result={"source": "manual_correction"},
     )
     session.add(agent_run)
+    await session.flush()
     session.add(
         AgentAction(
             id=uuid.uuid4(),
@@ -200,20 +206,21 @@ async def list_ledger_for_date(session: AsyncSession, work_date: date) -> list[d
 async def list_ledger_matrix(session: AsyncSession, selected_date: date) -> dict[str, Any]:
     start_date, end_date = ledger_week_bounds(selected_date)
     days = list(iter_dates(start_date, end_date))
+    # Только повара и кассиры попадают в Учёт смен (см. taxonomy.md).
     result = await session.execute(
         select(ShiftLedgerEntry, Employee)
         .join(Employee, Employee.id == ShiftLedgerEntry.employee_id)
         .where(
             ShiftLedgerEntry.work_date >= start_date,
             ShiftLedgerEntry.work_date <= end_date,
+            Employee.position.in_(("Повар", "Кассир")),
         )
         .order_by(Employee.full_name, ShiftLedgerEntry.work_date, ShiftLedgerEntry.opened_at)
     )
     rows = result.all()
     employee_ids = {entry.employee_id for entry, _employee in rows}
-    roles_by_day = {
-        day: await load_available_role_assignments(session, day, employee_ids) for day in days
-    }
+    roles_by_employee = await load_currently_active_role_assignments(session, employee_ids)
+    latest_locked_date = await get_latest_locked_payroll_date(session)
     employee_rows: dict[uuid.UUID, dict[str, Any]] = {}
 
     for entry, employee in rows:
@@ -233,15 +240,21 @@ async def list_ledger_matrix(session: AsyncSession, selected_date: date) -> dict
     for employee_id, employee_row in employee_rows.items():
         serialized_days: list[dict[str, Any]] = []
         for day in days:
-            available_roles = assignments_for_employee(roles_by_day[day], employee_id)
+            available_roles = assignments_for_employee(roles_by_employee, employee_id)
             entries = employee_row["_days"][day]
+            payroll_locked = is_payroll_locked(day, latest_locked_date)
             serialized_days.append(
                 {
                     "date": day.isoformat(),
+                    "payroll_locked": payroll_locked,
                     "available_roles": serialize_available_roles(available_roles),
                     "summary": serialize_shift_summary(entries),
                     "shifts": [
-                        serialize_matrix_shift(entry, available_roles)
+                        serialize_matrix_shift(
+                            entry,
+                            available_roles,
+                            payroll_locked=payroll_locked,
+                        )
                         for entry in sorted(entries, key=lambda item: item.opened_at)
                     ],
                 }
@@ -389,6 +402,49 @@ async def load_available_role_assignments(
         if ledger_assignment is not None:
             assignments.setdefault(assignment.employee_id, []).append(ledger_assignment)
     return assignments
+
+
+async def load_currently_active_role_assignments(
+    session: AsyncSession,
+    employee_ids: set[uuid.UUID],
+) -> dict[uuid.UUID, list[LedgerAssignment]]:
+    if not employee_ids:
+        return {}
+    today = ledger_today()
+    result = await session.scalars(
+        select(EmployeeRoleAssignment)
+        .where(
+            EmployeeRoleAssignment.employee_id.in_(employee_ids),
+            EmployeeRoleAssignment.effective_from <= today,
+            or_(
+                EmployeeRoleAssignment.effective_to.is_(None),
+                EmployeeRoleAssignment.effective_to > today,
+            ),
+        )
+        .order_by(
+            EmployeeRoleAssignment.employee_id,
+            EmployeeRoleAssignment.is_primary.desc(),
+            EmployeeRoleAssignment.payroll_role,
+        )
+    )
+    assignments: dict[uuid.UUID, list[LedgerAssignment]] = {}
+    for assignment in result.all():
+        ledger_assignment = coerce_assignment(assignment)
+        if ledger_assignment is not None:
+            assignments.setdefault(assignment.employee_id, []).append(ledger_assignment)
+    return assignments
+
+
+async def get_latest_locked_payroll_date(session: AsyncSession) -> date | None:
+    # Замораживаем ячейки роли в Учёте смен ТОЛЬКО для зафинализированных периодов.
+    # `completed` означает «расчёт прошёл без блокеров», но ещё не выплачен — менеджер
+    # должен иметь возможность поправить роль и пересчитать.
+    return await session.scalar(
+        select(func.max(PayrollPeriod.end_date))
+        .select_from(PayrollRun)
+        .join(PayrollPeriod, PayrollPeriod.id == PayrollRun.period_id)
+        .where(PayrollRun.status == "finalized")
+    )
 
 
 async def load_primary_assignments(
@@ -621,6 +677,8 @@ def serialize_ledger_entry(
 def serialize_matrix_shift(
     entry: ShiftLedgerEntry,
     available_roles: list[LedgerAssignment],
+    *,
+    payroll_locked: bool = False,
 ) -> dict[str, Any]:
     category = category_for_role(entry.payroll_role, available_roles)
     is_resolved = entry.is_resolved and entry.payroll_role is not None and category is not None
@@ -632,6 +690,7 @@ def serialize_matrix_shift(
         "category": category,
         "is_resolved": is_resolved,
         "status": ledger_status(available_roles, is_resolved),
+        "payroll_locked": payroll_locked,
     }
 
 
@@ -673,6 +732,10 @@ def ledger_status(available_roles: list[LedgerAssignment], is_resolved: bool) ->
     if is_resolved:
         return "resolved"
     return "needs_role_selection"
+
+
+def is_payroll_locked(work_date: date, latest_locked_date: date | None) -> bool:
+    return latest_locked_date is not None and work_date <= latest_locked_date
 
 
 def ledger_week_bounds(selected_date: date) -> tuple[date, date]:

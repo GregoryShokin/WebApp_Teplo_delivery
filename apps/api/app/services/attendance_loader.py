@@ -31,16 +31,25 @@ def default_attendance_rules() -> AttendanceRules:
     return AttendanceRules(open_shift_cap_hours=12, open_shift_auto_close_time=time(22, 0))
 
 
+PAYROLL_TARGET_POSITIONS = ("Повар", "Кассир")
+
+
 async def load_attendance_entries(
     session: AsyncSession,
     period: PayrollPeriod,
     *,
     iiko_records: Iterable[Mapping[str, Any]] | None = None,
 ) -> list[AttendanceEntry]:
+    # ЗП считаем только для поваров и кассиров; курьеры, управляющий, менеджер
+    # и прочие должности из канона имеют отдельные правила оплаты (см. taxonomy.md).
     existing_entries = (
         await session.scalars(
             select(AttendanceEntry)
-            .where(AttendanceEntry.period_id == period.id)
+            .join(Employee, Employee.id == AttendanceEntry.employee_id)
+            .where(
+                AttendanceEntry.period_id == period.id,
+                Employee.position.in_(PAYROLL_TARGET_POSITIONS),
+            )
             .order_by(AttendanceEntry.work_date, AttendanceEntry.started_at)
         )
     ).all()
@@ -74,6 +83,8 @@ async def load_attendance_entries(
 
         employee = employees_by_iiko_id.get(iiko_id)
         if employee is None:
+            continue
+        if employee.position not in PAYROLL_TARGET_POSITIONS:
             continue
 
         entry = build_attendance_entry(record, period, employee, rules)
@@ -164,9 +175,13 @@ def build_attendance_entry(
             notes.append("cross_midnight")
 
     minutes_worked = max(0, int((ended_at - started_at).total_seconds() // 60))
-    if minutes_worked > rules.open_shift_cap_hours * 60 and "open_shift_auto_closed" not in notes:
-        quality_status = "quality_review"
-        notes.append("duration_over_12h")
+    # Smena = 12 hours fixed business unit (owner-fixed taxonomy, см. payroll spec).
+    # Если по факту смена длилась >12ч — обрезаем до 12ч для расчёта ЗП.
+    # Это НЕ блокирует расчёт: quality_status остаётся ok, факт обрезки — в notes.
+    SHIFT_MAX_MINUTES = 12 * 60
+    if minutes_worked > SHIFT_MAX_MINUTES:
+        notes.append(f"capped_to_12h_from_{minutes_worked}min")
+        minutes_worked = SHIFT_MAX_MINUTES
     if ended_at < started_at:
         quality_status = "quality_review"
         notes.append("ended_before_started")
@@ -240,7 +255,9 @@ def first_text(record: Mapping[str, Any], *keys: str) -> str:
 
 def load_export_employees_module():
     current = Path(__file__).resolve()
-    candidate_roots = [parent for parent in current.parents if (parent / "integrations/iiko/scripts").exists()]
+    candidate_roots = [
+        parent for parent in current.parents if (parent / "integrations/iiko/scripts").exists()
+    ]
     candidate_roots.extend([Path("/app"), Path.cwd(), Path.cwd().parent, Path.cwd().parent.parent])
     for root in candidate_roots:
         script_dir = root / "integrations/iiko/scripts"

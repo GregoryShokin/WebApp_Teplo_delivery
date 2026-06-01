@@ -3,13 +3,13 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from alembic.config import Config
 from fastapi import HTTPException
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from alembic import command
@@ -17,12 +17,20 @@ from app.api.deps import CurrentActor
 from app.api.v1.routes.employees import (
     create_employee_assignment,
     delete_employee_assignment,
+    list_employee_changes,
     patch_employee_assignment,
 )
 from app.core.config import get_settings
-from app.models import Employee, EmployeeRoleAssignment
+from app.models import (
+    Employee,
+    EmployeeChangeEvent,
+    EmployeeRoleAssignment,
+    PayrollLine,
+    PayrollPeriod,
+    PayrollRun,
+)
 from app.schemas.employees import EmployeeRoleAssignmentCreate, EmployeeRoleAssignmentPatch
-from app.services.employee_assignments import add_role, get_assignments
+from app.services.employee_assignments import EmployeeAssignmentError, add_role, get_assignments
 from app.services.payroll_config import (
     list_category_coefficients,
     list_rate_matrix,
@@ -96,10 +104,80 @@ async def test_post_new_role_creates_additional_assignment(session_factory) -> N
             _finance_manager(),
         )
         assignments = await get_assignments(session, employee.id, date.today())
+        event = await session.scalar(
+            select(EmployeeChangeEvent).where(
+                EmployeeChangeEvent.employee_id == employee.id,
+                EmployeeChangeEvent.change_type == "assign_role",
+            )
+        )
 
     assert assignment.payroll_role == "pizza"
     assert assignment.category == "category_2"
     assert len(assignments) == 2
+    assert event is not None
+    assert event.source == "app"
+    assert event.after_value["payroll_role"] == "pizza"
+
+
+async def test_employee_changes_endpoint_filters_by_employee_source_status_type(
+    session_factory,
+) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session, iiko_id="iiko-change-filter")
+        other = await _create_employee(session, iiko_id="iiko-change-filter-other")
+        matching_event = EmployeeChangeEvent(
+            employee_id=employee.id,
+            changed_at=datetime(2026, 5, 29, 10, 0, tzinfo=UTC),
+            change_type="dismiss",
+            source="app",
+            actor_label="finance_manager",
+            status="success",
+            summary="Сотрудник уволен",
+            before_value={"status": "active"},
+            after_value={"status": "inactive"},
+            diff={"status": {"before": "active", "after": "inactive"}},
+            payroll_impact=True,
+            payroll_impact_metadata={},
+        )
+        session.add_all(
+            [
+                matching_event,
+                EmployeeChangeEvent(
+                    employee_id=employee.id,
+                    changed_at=datetime(2026, 5, 29, 11, 0, tzinfo=UTC),
+                    change_type="dismiss",
+                    source="iiko_sync",
+                    actor_label="Синхронизация IIko",
+                    status="success",
+                    summary="Синхронизация IIko: сотрудник деактивирован",
+                    payroll_impact=True,
+                    payroll_impact_metadata={},
+                ),
+                EmployeeChangeEvent(
+                    employee_id=other.id,
+                    changed_at=datetime(2026, 5, 29, 12, 0, tzinfo=UTC),
+                    change_type="dismiss",
+                    source="app",
+                    actor_label="finance_manager",
+                    status="error",
+                    summary="Ошибка",
+                    payroll_impact=True,
+                    payroll_impact_metadata={},
+                ),
+            ]
+        )
+        await session.commit()
+
+        rows = await list_employee_changes(
+            session,
+            _finance_manager(),
+            employee_id=employee.id,
+            change_type="dismiss",
+            source="app",
+            event_status="success",
+        )
+
+    assert [row.id for row in rows] == [matching_event.id]
 
 
 async def test_employee_can_have_multiple_active_assignments(session_factory) -> None:
@@ -162,6 +240,106 @@ async def test_get_assignments_returns_only_active_on_date(session_factory) -> N
 
     assert [assignment.payroll_role for assignment in january] == ["sushi"]
     assert [assignment.payroll_role for assignment in february] == ["pizza"]
+
+
+async def test_backdated_assignment_patch_requires_comment(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        assignment = await add_role(
+            session,
+            employee.id,
+            "sushi",
+            "category_1",
+            is_primary=True,
+            effective_from=date(2026, 1, 1),
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await patch_employee_assignment(
+                employee.id,
+                assignment.id,
+                EmployeeRoleAssignmentPatch(
+                    category="category_2",
+                    effective_from=date.today() - timedelta(days=1),
+                ),
+                session,
+                _finance_manager(),
+            )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "Для изменения задним числом комментарий обязателен"
+
+
+async def test_backdated_assignment_over_finalized_payroll_requires_review_without_mutating_line(
+    session_factory,
+) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        assignment = await add_role(
+            session,
+            employee.id,
+            "sushi",
+            "category_1",
+            is_primary=True,
+            effective_from=date(2026, 1, 1),
+        )
+        period = PayrollPeriod(
+            id=uuid.uuid4(),
+            period_type="week",
+            start_date=date(2026, 5, 18),
+            end_date=date(2026, 5, 24),
+            payroll_date=date(2026, 5, 25),
+            status="finalized",
+        )
+        run = PayrollRun(
+            id=uuid.uuid4(),
+            period_id=period.id,
+            started_at=datetime(2026, 5, 25, 10, 0, tzinfo=UTC),
+            finished_at=datetime(2026, 5, 25, 10, 5, tzinfo=UTC),
+            status="finalized",
+            blocking_issues=[],
+            summary={},
+        )
+        line = PayrollLine(
+            id=uuid.uuid4(),
+            run_id=run.id,
+            employee_id=employee.id,
+            role="sushi",
+            base_pay=1000,
+            premium=0,
+            percent_pay=0,
+            fund_accrual=0,
+            deduction=0,
+            total_payable=1000,
+            components={"days": []},
+        )
+        session.add_all([period, run, line])
+        await session.commit()
+
+        updated = await patch_employee_assignment(
+            employee.id,
+            assignment.id,
+            EmployeeRoleAssignmentPatch(
+                category="category_2",
+                effective_from=date(2026, 5, 20),
+                comment="Исправление категории за закрытую неделю",
+            ),
+            session,
+            _finance_manager(),
+        )
+        event = await session.scalar(
+            select(EmployeeChangeEvent).where(
+                EmployeeChangeEvent.employee_id == employee.id,
+                EmployeeChangeEvent.change_type == "change_category",
+            )
+        )
+        persisted_line = await session.get(PayrollLine, line.id)
+
+    assert updated.category == "category_2"
+    assert event is not None
+    assert event.status == "requires_review"
+    assert event.payroll_impact_metadata["correction_pending"] is True
+    assert str(persisted_line.base_pay) == "1000.00"
 
 
 async def test_delete_primary_assignment_without_replacement_returns_400(
@@ -262,16 +440,32 @@ async def test_patch_non_shawarma_assignment_rejects_category_4(session_factory)
     assert exc_info.value.detail == expected_detail
 
 
+async def test_auxiliary_employee_rejects_role_assignment(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(
+            session,
+            position="Уборщица",
+            category=None,
+            default_cooking_station=None,
+        )
+
+        with pytest.raises(EmployeeAssignmentError) as exc_info:
+            await add_role(session, employee.id, "sushi", "category_1", is_primary=True)
+
+    assert str(exc_info.value) == "Роль не соответствует должности сотрудника"
+
+
 async def _create_employee(
     session,
     *,
+    iiko_id: str | None = None,
     position: str | None = "Повар",
     category: str | None = "category_1",
     default_cooking_station: str | None = "sushi",
 ) -> Employee:
     employee = Employee(
         id=uuid.uuid4(),
-        iiko_id=f"iiko-{uuid.uuid4()}",
+        iiko_id=iiko_id or f"iiko-{uuid.uuid4()}",
         full_name="Assignment Employee",
         position=position,
         category=category,

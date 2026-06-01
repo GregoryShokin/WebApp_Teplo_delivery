@@ -65,6 +65,7 @@ async def set_primary(
     category: str,
     *,
     effective_from: date | None = None,
+    commit: bool = True,
 ) -> EmployeeRoleAssignment:
     _validate_role(role)
     _validate_category(category)
@@ -77,22 +78,40 @@ async def set_primary(
         None,
     )
     if assignment is None:
+        next_assignment = await _next_assignment_for_role_after(session, employee_id, role, as_of)
         assignment = EmployeeRoleAssignment(
             employee_id=employee_id,
             payroll_role=role,
             category=category,
             is_primary=False,
             effective_from=as_of,
+            effective_to=next_assignment.effective_from if next_assignment is not None else None,
         )
         session.add(assignment)
         await session.flush()
-    else:
+    elif assignment.effective_from == as_of:
         assignment.category = category
+    elif assignment.category != category:
+        assignment.effective_to = as_of
+        next_assignment = await _next_assignment_for_role_after(session, employee_id, role, as_of)
+        assignment = EmployeeRoleAssignment(
+            employee_id=employee_id,
+            payroll_role=role,
+            category=category,
+            is_primary=assignment.is_primary,
+            effective_from=as_of,
+            effective_to=next_assignment.effective_from if next_assignment is not None else None,
+        )
+        session.add(assignment)
+        await session.flush()
 
     await _set_primary_assignment(session, employee_id, assignment, as_of)
     _sync_employee_shortcut(employee, assignment)
     await _refresh_employee_status(session, employee, as_of)
-    await _commit_refresh(session, assignment)
+    if commit:
+        await _commit_refresh(session, assignment)
+    else:
+        await session.flush()
     return assignment
 
 
@@ -155,9 +174,10 @@ async def update_assignment(
     payroll_role: str | None = None,
     category: str | None = None,
     is_primary: bool | None = None,
+    effective_from: date | None = None,
 ) -> EmployeeRoleAssignment:
     assignment = await _get_assignment(session, employee_id, assignment_id)
-    as_of = date.today()
+    as_of = effective_from or date.today()
     employee = await _get_employee(session, employee_id)
     target_role = payroll_role or assignment.payroll_role
     target_category = category or assignment.category
@@ -175,10 +195,33 @@ async def update_assignment(
 
     await _ensure_assignment_valid(session, employee, target_role, target_category)
 
-    if payroll_role is not None and payroll_role != assignment.payroll_role:
-        assignment.payroll_role = payroll_role
-    if category is not None:
-        assignment.category = category
+    role_or_category_changed = (
+        target_role != assignment.payroll_role or target_category != assignment.category
+    )
+    if role_or_category_changed and assignment.effective_from < as_of:
+        assignment.effective_to = as_of
+        next_assignment = await _next_assignment_for_role_after(
+            session,
+            employee_id,
+            target_role,
+            as_of,
+            exclude_assignment_id=assignment.id,
+        )
+        assignment = EmployeeRoleAssignment(
+            employee_id=employee_id,
+            payroll_role=target_role,
+            category=target_category,
+            is_primary=assignment.is_primary if is_primary is None else bool(is_primary),
+            effective_from=as_of,
+            effective_to=next_assignment.effective_from if next_assignment is not None else None,
+        )
+        session.add(assignment)
+        await session.flush()
+    else:
+        if payroll_role is not None and payroll_role != assignment.payroll_role:
+            assignment.payroll_role = payroll_role
+        if category is not None:
+            assignment.category = category
     if is_primary is False and assignment.is_primary:
         raise PrimaryAssignmentRequiredError("Choose another primary assignment first")
     if is_primary is True:
@@ -236,9 +279,10 @@ async def sync_primary_from_shortcut(
     session: AsyncSession,
     employee: Employee,
     *,
+    effective_from: date | None = None,
     commit: bool = True,
 ) -> EmployeeRoleAssignment | None:
-    as_of = date.today()
+    as_of = effective_from or date.today()
     if employee.category is None:
         for assignment in await get_assignments(session, employee.id, as_of):
             assignment.is_primary = False
@@ -262,17 +306,32 @@ async def sync_primary_from_shortcut(
         None,
     )
     if assignment is None:
+        next_assignment = await _next_assignment_for_role_after(session, employee.id, role, as_of)
         assignment = EmployeeRoleAssignment(
             employee_id=employee.id,
             payroll_role=role,
             category=employee.category,
             is_primary=False,
             effective_from=as_of,
+            effective_to=next_assignment.effective_from if next_assignment is not None else None,
         )
         session.add(assignment)
         await session.flush()
-    else:
+    elif assignment.effective_from == as_of:
         assignment.category = employee.category
+    elif assignment.category != employee.category:
+        assignment.effective_to = as_of
+        next_assignment = await _next_assignment_for_role_after(session, employee.id, role, as_of)
+        assignment = EmployeeRoleAssignment(
+            employee_id=employee.id,
+            payroll_role=role,
+            category=employee.category,
+            is_primary=assignment.is_primary,
+            effective_from=as_of,
+            effective_to=next_assignment.effective_from if next_assignment is not None else None,
+        )
+        session.add(assignment)
+        await session.flush()
 
     await _set_primary_assignment(session, employee.id, assignment, as_of)
     _sync_employee_shortcut(employee, assignment)
@@ -377,6 +436,24 @@ async def _get_assignment(
     if assignment is None:
         raise EmployeeAssignmentNotFoundError("Assignment not found")
     return assignment
+
+
+async def _next_assignment_for_role_after(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+    payroll_role: str,
+    effective_from: date,
+    *,
+    exclude_assignment_id: uuid.UUID | None = None,
+) -> EmployeeRoleAssignment | None:
+    query = select(EmployeeRoleAssignment).where(
+        EmployeeRoleAssignment.employee_id == employee_id,
+        EmployeeRoleAssignment.payroll_role == payroll_role,
+        EmployeeRoleAssignment.effective_from > effective_from,
+    )
+    if exclude_assignment_id is not None:
+        query = query.where(EmployeeRoleAssignment.id != exclude_assignment_id)
+    return await session.scalar(query.order_by(EmployeeRoleAssignment.effective_from).limit(1))
 
 
 async def _commit_refresh(session: AsyncSession, assignment: EmployeeRoleAssignment) -> None:

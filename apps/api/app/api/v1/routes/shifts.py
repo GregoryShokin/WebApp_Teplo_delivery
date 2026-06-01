@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, get_current_actor, require_manager_plus
 from app.db.session import get_session
+from app.models import ShiftLedgerEntry
 from app.schemas.payroll import (
     ShiftLedgerBuildRequest,
     ShiftLedgerEntryRead,
@@ -19,6 +20,8 @@ from app.services.shift_ledger import (
     ShiftLedgerNotFoundError,
     ShiftLedgerValidationError,
     build_ledger_for_date,
+    get_latest_locked_payroll_date,
+    is_payroll_locked,
     iter_dates,
     ledger_today,
     ledger_week_bounds,
@@ -84,6 +87,20 @@ async def patch_shift_ledger_entry(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict:
     require_manager_plus(actor)
+    entry = await session.get(ShiftLedgerEntry, entry_id)
+    if entry is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Shift ledger entry not found",
+        )
+
+    latest_locked_date = await get_latest_locked_payroll_date(session)
+    if is_payroll_locked(entry.work_date, latest_locked_date):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="ЗП за эту неделю уже закрыта, изменение роли невозможно",
+        )
+
     try:
         entry = await manually_correct(
             session,
