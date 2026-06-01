@@ -51,6 +51,8 @@ EXPECTED_TABLES = {
     "payroll_period",
     "attendance_entry",
     "shift_ledger_entry",
+    "shift_schedule",
+    "scheduled_shift",
     "payroll_run",
     "payroll_line",
     "deposit_account",
@@ -99,6 +101,8 @@ def test_all_models_import() -> None:
         "PayrollPeriod",
         "AttendanceEntry",
         "ShiftLedgerEntry",
+        "ScheduledShift",
+        "ShiftSchedule",
         "PayrollRun",
         "PayrollLine",
         "PayrollRate",
@@ -134,6 +138,9 @@ def test_employee_full_name_is_marked_iiko_read_only() -> None:
     assert models.Employee.__table__.c.deposit_excluded.nullable is False
     assert models.Employee.__table__.c.deposit_excluded_until.nullable is True
     assert models.Employee.__table__.c.deposit_excluded_reason.nullable is True
+    assert models.Employee.__table__.c.fund_excluded.nullable is False
+    assert models.Employee.__table__.c.fund_excluded_until.nullable is True
+    assert models.Employee.__table__.c.fund_excluded_reason.nullable is True
     constraints = {constraint.name for constraint in models.Employee.__table__.constraints}
     assert "ck_employee_pin_origin_exclusive" in constraints
     assert "ck_employee_deposit_target_override_non_negative" in constraints
@@ -239,6 +246,36 @@ def test_shift_ledger_entry_table_is_declared() -> None:
     assert columns.closed_at.nullable is True
     assert columns.is_resolved.nullable is False
     assert "ix_shift_ledger_entry_work_date" in indexes
+
+
+def test_shift_schedule_tables_are_declared() -> None:
+    schedule_columns = models.ShiftSchedule.__table__.c
+    shift_columns = models.ScheduledShift.__table__.c
+    schedule_indexes = {index.name for index in models.ShiftSchedule.__table__.indexes}
+    shift_indexes = {index.name for index in models.ScheduledShift.__table__.indexes}
+    schedule_constraints = {
+        constraint.name for constraint in models.ShiftSchedule.__table__.constraints
+    }
+    shift_constraints = {
+        constraint.name for constraint in models.ScheduledShift.__table__.constraints
+    }
+
+    assert schedule_columns.date_start.nullable is False
+    assert schedule_columns.date_end.nullable is False
+    assert schedule_columns.status.nullable is False
+    assert schedule_columns.superseded_by_id.nullable is True
+    assert "ck_shift_schedule_status" in schedule_constraints
+    assert "ck_shift_schedule_date_range" in schedule_constraints
+    assert "ix_shift_schedule_status_date_start" in schedule_indexes
+    assert shift_columns.shift_schedule_id.nullable is False
+    assert shift_columns.business_date.nullable is False
+    assert shift_columns.employee_id.nullable is False
+    assert shift_columns.payroll_role.nullable is False
+    assert shift_columns.station_code.nullable is True
+    assert "ck_scheduled_shift_interval" in shift_constraints
+    assert "uq_scheduled_shift_schedule_date_employee" in shift_constraints
+    assert "ix_scheduled_shift_schedule_date" in shift_indexes
+    assert "ix_scheduled_shift_employee_date" in shift_indexes
 
 
 def test_delivery_order_table_is_declared() -> None:

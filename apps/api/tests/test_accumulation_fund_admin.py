@@ -78,6 +78,52 @@ class FundInitialBalanceFakeSession(FundAdminFakeSession):
             self.transactions.append(item)
 
 
+class FundExclusionFakeSession(FundAdminFakeSession):
+    def __init__(
+        self,
+        employee: Employee,
+        *,
+        account: AccumulationFundAccount | None = None,
+    ) -> None:
+        super().__init__(setting([]))
+        self.employee = employee
+        self.account = account
+        self.refreshed: list[Any] = []
+
+    async def scalar(self, query: Any) -> Any | None:
+        entity = query_entity(query)
+        if entity is Employee:
+            return self.employee
+        return await super().scalar(query)
+
+    async def refresh(self, item: Any) -> None:
+        self.refreshed.append(item)
+
+
+class FundRosterFakeSession(FundAdminFakeSession):
+    def __init__(
+        self,
+        employees: list[Employee],
+        *,
+        accounts: list[AccumulationFundAccount] | None = None,
+        transactions: list[AccumulationFundTransaction] | None = None,
+    ) -> None:
+        super().__init__(setting([{"min_months": 0, "rate": 0.05}]))
+        self.employees = employees
+        self.accounts = accounts or []
+        self.transactions = transactions or []
+
+    async def scalars(self, query: Any) -> FakeScalarResult:
+        entity = query_entity(query)
+        if entity is Employee:
+            return FakeScalarResult(self.employees)
+        if entity is AccumulationFundAccount:
+            return FakeScalarResult(self.accounts)
+        if entity is AccumulationFundTransaction:
+            return FakeScalarResult(self.transactions)
+        return FakeScalarResult([])
+
+
 class FakeScalarResult:
     def __init__(self, items: list[Any]) -> None:
         self._items = items
@@ -248,3 +294,93 @@ async def test_set_fund_initial_balance_creates_account_transaction_and_audit() 
         for item in session.added
     )
     assert session.committed is True
+
+
+async def test_existing_accumulated_not_touched_on_exclusion() -> None:
+    target = employee()
+    account = AccumulationFundAccount(
+        id=uuid.uuid4(),
+        employee_id=target.id,
+        year=2026,
+        accumulated_amount=Decimal("5000"),
+        paid_out_amount=Decimal("0"),
+        forfeited_amount=Decimal("0"),
+        status="active",
+    )
+    session = FundExclusionFakeSession(target, account=account)
+
+    response = await fund_routes.patch_fund_exclusion(
+        target.id,
+        fund_routes.FundExclusionPatch(fund_excluded=True),
+        session,  # type: ignore[arg-type]
+        finance_actor(),
+    )
+
+    assert response.is_currently_excluded is True
+    assert account.accumulated_amount == Decimal("5000")
+    assert account.status == "active"
+    assert any(
+        isinstance(item, AgentAction) and item.action_type == "fund_exclusion_update"
+        for item in session.added
+    )
+
+
+async def test_patch_exclusion_clears_until_and_reason_when_disabling() -> None:
+    target = employee()
+    session = FundExclusionFakeSession(target)
+
+    await fund_routes.patch_fund_exclusion(
+        target.id,
+        fund_routes.FundExclusionPatch(
+            fund_excluded=True,
+            fund_excluded_until=date(2026, 8, 31),
+            fund_excluded_reason="Отпуск",
+        ),
+        session,  # type: ignore[arg-type]
+        finance_actor(),
+    )
+    response = await fund_routes.patch_fund_exclusion(
+        target.id,
+        fund_routes.FundExclusionPatch(fund_excluded=False),
+        session,  # type: ignore[arg-type]
+        finance_actor(),
+    )
+
+    assert response.fund_excluded is False
+    assert response.fund_excluded_until is None
+    assert response.fund_excluded_reason is None
+    assert target.fund_excluded_until is None
+    assert target.fund_excluded_reason is None
+
+
+async def test_patch_exclusion_for_non_payroll_position_fails_422() -> None:
+    target = employee()
+    target.position = "Управляющий"
+    session = FundExclusionFakeSession(target)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await fund_routes.patch_fund_exclusion(
+            target.id,
+            fund_routes.FundExclusionPatch(fund_excluded=True),
+            session,  # type: ignore[arg-type]
+            finance_actor(),
+        )
+
+    assert exc_info.value.status_code == 422
+    assert session.committed is False
+
+
+async def test_roster_reflects_exclusion() -> None:
+    target = employee()
+    target.fund_excluded = True
+    target.fund_excluded_until = None
+    session = FundRosterFakeSession([target])
+
+    rows = await fund_routes.get_initial_balance_roster(
+        session,  # type: ignore[arg-type]
+        finance_actor(),
+        year=2026,
+    )
+
+    assert rows[0].fund_exclusion.fund_excluded is True
+    assert rows[0].fund_exclusion.is_currently_excluded is True

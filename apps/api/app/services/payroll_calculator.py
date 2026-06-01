@@ -405,6 +405,7 @@ def calculate_payroll_lines_from_inputs(
             )
             premium_applied_employee_days.add(employee_day_key)
         base_pay_with_premium = base_pay + weekday_premium
+        fund_excluded = is_fund_currently_excluded(employee, work_date)
         fund_rate = _fund_rate_for_months(settings, tenure_months_on(employee, work_date))
         fund_accrual = fund_accrual_for_day(
             settings,
@@ -445,6 +446,8 @@ def calculate_payroll_lines_from_inputs(
                 **percent_components,
             }
         )
+        if fund_excluded:
+            day_component["fund_excluded"] = True
         totals["days"].append(day_component)
 
     apply_adjustments_to_line_totals(line_totals, settings, period)
@@ -1111,6 +1114,8 @@ def fund_accrual_for_day(
     base_pay_with_premium = decimal(base_pay_with_premium)
     if base_pay_with_premium <= 0:
         return Decimal("0")
+    if is_fund_currently_excluded(employee, work_date):
+        return Decimal("0")
     months = tenure_months_on(employee, work_date)
     rate = _fund_rate_for_months(settings, months)
     return (base_pay_with_premium * rate).to_integral_value(rounding=ROUND_FLOOR)
@@ -1166,6 +1171,15 @@ def is_deposit_currently_excluded(employee: Employee, today: date) -> bool:
     if not getattr(employee, "deposit_excluded", False):
         return False
     excluded_until = getattr(employee, "deposit_excluded_until", None)
+    if excluded_until is None:
+        return True
+    return today <= excluded_until
+
+
+def is_fund_currently_excluded(employee: Employee, today: date) -> bool:
+    if not getattr(employee, "fund_excluded", False):
+        return False
+    excluded_until = getattr(employee, "fund_excluded_until", None)
     if excluded_until is None:
         return True
     return today <= excluded_until

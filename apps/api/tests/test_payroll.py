@@ -1990,6 +1990,62 @@ async def test_fund_accrual_skipped_for_non_payroll_position() -> None:
     assert session.transactions == []
 
 
+def test_fund_accrual_zero_for_excluded_indefinitely() -> None:
+    employee = make_employee(
+        hire_date=date(2025, 1, 1),
+        tenure_started_at=date(2025, 1, 1),
+    )
+    employee.fund_excluded = True
+    employee.fund_excluded_until = None
+
+    assert (
+        fund_accrual_for_day(payroll_settings(), employee, date(2026, 7, 15), Decimal("10000"))
+        == Decimal("0")
+    )
+
+
+def test_fund_accrual_zero_until_excluded_end() -> None:
+    employee = make_employee(
+        hire_date=date(2025, 1, 1),
+        tenure_started_at=date(2025, 1, 1),
+    )
+    employee.fund_excluded = True
+    employee.fund_excluded_until = date(2026, 8, 31)
+
+    blocked = fund_accrual_for_day(
+        payroll_settings(), employee, date(2026, 7, 15), Decimal("10000")
+    )
+    resumed = fund_accrual_for_day(
+        payroll_settings(), employee, date(2026, 9, 1), Decimal("10000")
+    )
+
+    assert blocked == Decimal("0")
+    assert resumed == Decimal("1500")
+
+
+def test_fund_day_component_marks_excluded_day() -> None:
+    period = make_period(start=date(2026, 7, 13), end=date(2026, 7, 19))
+    employee = make_employee(
+        hire_date=date(2025, 1, 1),
+        tenure_started_at=date(2025, 1, 1),
+    )
+    employee.fund_excluded = True
+    employee.fund_excluded_until = None
+    entry = make_entry(period, employee, date(2026, 7, 15))
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        uuid.uuid4(),
+        [entry],
+        {employee.id: employee},
+        payroll_settings(),
+    )
+
+    day = result.lines[0].components["days"][0]
+    assert result.lines[0].fund_accrual == Decimal("0")
+    assert day["fund_excluded"] is True
+
+
 async def test_fund_accrual_idempotent_on_run_resubmit() -> None:
     period = make_period()
     employee_id = uuid.uuid4()
@@ -2140,6 +2196,44 @@ async def test_payout_january_15_triggered_by_period() -> None:
     assert repeat == Decimal("0")
     assert account.status == "paid_out"
     assert session.transactions[0].transaction_type == "payout"
+
+
+async def test_january_payout_includes_pre_exclusion_accruals() -> None:
+    employee = make_employee(
+        hire_date=date(2025, 1, 1),
+        tenure_started_at=date(2025, 1, 1),
+    )
+    employee.fund_excluded = True
+    employee.fund_excluded_until = None
+    account = AccumulationFundAccount(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        year=2026,
+        accumulated_amount=Decimal("5000"),
+        paid_out_amount=Decimal("0"),
+        forfeited_amount=Decimal("0"),
+        status="active",
+    )
+    period = make_period(
+        start=date(2027, 1, 12),
+        end=date(2027, 1, 18),
+        payroll_date=date(2027, 1, 19),
+    )
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2027, 1, 19, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    session = FundFakeSession(employees=[employee], accounts=[account])
+
+    paid = await payout_previous_year_fund_if_due(session, period, run)  # type: ignore[arg-type]
+
+    assert paid == Decimal("5000")
+    assert account.status == "paid_out"
+    assert account.paid_out_amount == Decimal("5000")
 
 
 def test_manual_payout_endpoint() -> None:

@@ -41,6 +41,7 @@ from app.models.payroll import (
 )
 from app.models.period import Period
 from app.models.settings import AppSetting, AppSettingHistory
+from app.models.shift_schedule import ScheduledShift, ShiftSchedule
 from app.models.wallet import Wallet
 
 __all__ = [
@@ -82,6 +83,8 @@ __all__ = [
     "RevenueTier",
     "Role",
     "ShiftLedgerEntry",
+    "ScheduledShift",
+    "ShiftSchedule",
     "SourceCredential",
     "SourceDocument",
     "SourceSnapshot",

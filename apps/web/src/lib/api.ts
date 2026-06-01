@@ -411,6 +411,14 @@ export type FundRosterAccount = {
   initial_set_by_label: string | null;
 };
 
+export type FundExclusionRead = {
+  employee_id: string;
+  fund_excluded: boolean;
+  fund_excluded_until: string | null;
+  fund_excluded_reason: string | null;
+  is_currently_excluded: boolean;
+};
+
 export type FundRosterRow = {
   employee_id: string;
   full_name: string;
@@ -418,6 +426,7 @@ export type FundRosterRow = {
   hire_date: string | null;
   tenure_months: number | null;
   current_rate_percent: string | null;
+  fund_exclusion: FundExclusionRead;
   fund_account: FundRosterAccount | null;
 };
 
@@ -497,6 +506,64 @@ export type PayrollAdjustmentCategoryPatch = Partial<
     "display_name" | "default_amount" | "description" | "is_active" | "sort_order"
   >
 >;
+
+export type ScheduleStatus = "draft" | "published" | "superseded";
+
+export type ScheduledShiftRead = {
+  id: string;
+  business_date: string;
+  employee_id: string;
+  employee_full_name: string;
+  payroll_role: string;
+  station_code: string | null;
+  planned_start_at: string;
+  planned_end_at: string;
+  planned_hours: string | number;
+  comment_private: string | null;
+};
+
+export type ScheduleRead = {
+  id: string;
+  date_start: string;
+  date_end: string;
+  status: ScheduleStatus;
+  notes: string | null;
+  published_at: string | null;
+  superseded_by_id: string | null;
+  created_by_label: string | null;
+  shifts: ScheduledShiftRead[];
+};
+
+export type ScheduleCreatePayload = {
+  date_start: string;
+  date_end: string;
+  notes?: string | null;
+};
+
+export type SchedulePatchPayload = {
+  notes?: string | null;
+};
+
+export type ScheduledShiftUpsertPayload = {
+  business_date: string;
+  employee_id: string;
+  station_code?: string | null;
+  planned_start_at: string;
+  planned_end_at: string;
+  comment_private?: string | null;
+};
+
+export type EmployeeRosterRow = {
+  id: string;
+  full_name: string;
+  position: "Повар" | "Кассир" | string;
+  primary_payroll_role: string | null;
+  default_cooking_station: string | null;
+  allowances: {
+    senior: boolean;
+    deputy: boolean;
+  };
+};
 
 export type ShiftLedgerSource = "schedule" | "manual_correction" | "fallback_primary";
 export type ShiftLedgerStatus = "resolved" | "needs_role_selection" | "needs_employee_setup";
@@ -1094,6 +1161,21 @@ export async function setFundInitialBalance(
   return response.data;
 }
 
+export async function patchFundExclusion(
+  employeeId: string,
+  payload: {
+    fund_excluded: boolean;
+    fund_excluded_until?: string | null;
+    fund_excluded_reason?: string | null;
+  },
+): Promise<FundExclusionRead> {
+  const response = await api.patch<FundExclusionRead>(
+    `/payroll/fund/${employeeId}/exclusion`,
+    payload,
+  );
+  return response.data;
+}
+
 export async function getPayrollAdjustments(
   filters: PayrollAdjustmentFilters = {},
 ): Promise<PayrollAdjustment[]> {
@@ -1125,6 +1207,84 @@ export async function patchPayrollAdjustment(
 
 export async function deletePayrollAdjustment(id: string): Promise<void> {
   await api.delete(`/payroll/adjustments/${id}`);
+}
+
+export async function listSchedules(params?: {
+  status?: ScheduleStatus | string;
+  date_from?: string;
+  date_to?: string;
+}): Promise<ScheduleRead[]> {
+  const response = await api.get<ScheduleRead[]>("/schedule", { params });
+  return response.data;
+}
+
+export async function getSchedule(id: string): Promise<ScheduleRead> {
+  const response = await api.get<ScheduleRead>(`/schedule/${id}`);
+  return response.data;
+}
+
+export async function createSchedule(payload: ScheduleCreatePayload): Promise<ScheduleRead> {
+  const response = await api.post<ScheduleRead>("/schedule", payload);
+  return response.data;
+}
+
+export async function updateSchedule(
+  id: string,
+  payload: SchedulePatchPayload,
+): Promise<ScheduleRead> {
+  const response = await api.patch<ScheduleRead>(`/schedule/${id}`, payload);
+  return response.data;
+}
+
+export async function publishSchedule(id: string): Promise<ScheduleRead> {
+  const response = await api.post<ScheduleRead>(`/schedule/${id}/publish`);
+  return response.data;
+}
+
+export async function createNewVersion(id: string): Promise<ScheduleRead> {
+  const response = await api.post<ScheduleRead>(`/schedule/${id}/new-version`);
+  return response.data;
+}
+
+export async function deleteSchedule(id: string): Promise<void> {
+  await api.delete(`/schedule/${id}`);
+}
+
+export async function upsertShift(
+  scheduleId: string,
+  payload: ScheduledShiftUpsertPayload,
+): Promise<ScheduledShiftRead> {
+  const response = await api.post<ScheduledShiftRead>(`/schedule/${scheduleId}/shifts`, payload);
+  return response.data;
+}
+
+export async function patchShift(
+  scheduleId: string,
+  shiftId: string,
+  payload: ScheduledShiftUpsertPayload,
+): Promise<ScheduledShiftRead> {
+  const response = await api.patch<ScheduledShiftRead>(
+    `/schedule/${scheduleId}/shifts/${shiftId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteShift(scheduleId: string, shiftId: string): Promise<void> {
+  await api.delete(`/schedule/${scheduleId}/shifts/${shiftId}`);
+}
+
+export async function copyWeek(
+  scheduleId: string,
+  payload: { from_date: string; to_date: string },
+): Promise<{ copied: number }> {
+  const response = await api.post<{ copied: number }>(`/schedule/${scheduleId}/copy-week`, payload);
+  return response.data;
+}
+
+export async function getEmployeesRoster(): Promise<EmployeeRosterRow[]> {
+  const response = await api.get<EmployeeRosterRow[]>("/schedule/employees-roster");
+  return response.data;
 }
 
 export async function getPayrollAdjustmentCategories(

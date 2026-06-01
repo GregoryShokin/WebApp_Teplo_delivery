@@ -41,7 +41,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { getAuthSnapshot, subscribeAuth } from "@/lib/auth";
 import { EMPLOYEE_CATEGORY_LABELS } from "@/lib/i18n/employee";
@@ -57,6 +59,7 @@ import {
   getPayrollRates,
   getPayrollRevenueTiers,
   getPayrollSeniorityPremiums,
+  patchFundExclusion,
   putPayrollCategoryCoefficients,
   putPayrollDeduction,
   putFundTiers,
@@ -128,10 +131,15 @@ type FundTierDraft = {
   minMonths: string;
   ratePercent: string;
 };
-type FundRosterFilter = "all" | "unset" | "set";
+type FundRosterFilter = "all" | "active" | "excluded";
 type PendingInitialBalance = {
   row: FundRosterRow;
   amount: number;
+};
+type PendingFundExclusion = {
+  row: FundRosterRow;
+  until: string;
+  reason: string;
 };
 
 export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRouteProps) {
@@ -1107,6 +1115,9 @@ function FundSection({ canWrite }: { canWrite: boolean }) {
   const [pendingInitialBalance, setPendingInitialBalance] = useState<PendingInitialBalance | null>(
     null,
   );
+  const [pendingFundExclusion, setPendingFundExclusion] =
+    useState<PendingFundExclusion | null>(null);
+  const [pendingFundReturn, setPendingFundReturn] = useState<FundRosterRow | null>(null);
 
   const tiersQuery = useQuery({
     queryKey: ["fund-tiers"],
@@ -1172,14 +1183,42 @@ function FundSection({ canWrite }: { canWrite: boolean }) {
     },
   });
 
+  const exclusionMutation = useMutation({
+    mutationFn: ({
+      employeeId,
+      excluded,
+      reason,
+      until,
+    }: {
+      employeeId: string;
+      excluded: boolean;
+      until?: string | null;
+      reason?: string | null;
+    }) =>
+      patchFundExclusion(employeeId, {
+        fund_excluded: excluded,
+        fund_excluded_until: until,
+        fund_excluded_reason: reason,
+      }),
+    onSuccess: async (_, variables) => {
+      toast.success(
+        variables.excluded ? "Сотрудник исключён из фонда" : "Сотрудник возвращён в фонд",
+      );
+      await queryClient.invalidateQueries({ queryKey: ["fund-roster"] });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось обновить исключение из фонда"));
+    },
+  });
+
   const rosterRows = rosterQuery.data ?? [];
   const filteredRows = rosterRows.filter((row) => {
-    const isInitialSet = Boolean(row.fund_account?.is_initial_set);
-    if (rosterFilter === "set") {
-      return isInitialSet;
+    const isExcluded = row.fund_exclusion.is_currently_excluded;
+    if (rosterFilter === "active") {
+      return !isExcluded;
     }
-    if (rosterFilter === "unset") {
-      return !isInitialSet;
+    if (rosterFilter === "excluded") {
+      return isExcluded;
     }
     return true;
   });
@@ -1345,8 +1384,8 @@ function FundSection({ canWrite }: { canWrite: boolean }) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Все</SelectItem>
-                  <SelectItem value="unset">Не установлены</SelectItem>
-                  <SelectItem value="set">Установлены</SelectItem>
+                  <SelectItem value="active">Активные начисления</SelectItem>
+                  <SelectItem value="excluded">Исключённые</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1363,7 +1402,7 @@ function FundSection({ canWrite }: { canWrite: boolean }) {
           <EmptyConfigLine text="Активных сотрудников с фондом нет" />
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[820px] border-separate border-spacing-0 text-sm">
+            <table className="min-w-[1040px] border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
                   <th className="border-b p-3 text-left font-medium text-muted-foreground">ФИО</th>
@@ -1372,6 +1411,9 @@ function FundSection({ canWrite }: { canWrite: boolean }) {
                   </th>
                   <th className="border-b p-3 text-left font-medium text-muted-foreground">Стаж</th>
                   <th className="border-b p-3 text-left font-medium text-muted-foreground">%</th>
+                  <th className="border-b p-3 text-left font-medium text-muted-foreground">
+                    Исключён из фонда
+                  </th>
                   <th className="border-b p-3 text-left font-medium text-muted-foreground">
                     Баланс
                   </th>
@@ -1384,6 +1426,8 @@ function FundSection({ canWrite }: { canWrite: boolean }) {
                   const isInitialSet = Boolean(account?.is_initial_set);
                   const draftValue = balanceDrafts[row.employee_id] ?? "";
                   const amount = parseBalanceAmount(draftValue);
+                  const fundExclusion = row.fund_exclusion;
+                  const isFundExcluded = fundExclusion.is_currently_excluded;
                   return (
                     <tr key={row.employee_id}>
                       <td className="border-b p-3 font-medium">{row.full_name}</td>
@@ -1411,6 +1455,42 @@ function FundSection({ canWrite }: { canWrite: boolean }) {
                         ) : (
                           formatFundPercent(row.current_rate_percent)
                         )}
+                      </td>
+                      <td className="border-b p-3">
+                        <div className="flex min-w-[210px] items-center gap-2">
+                          <Switch
+                            aria-label={`Исключить ${row.full_name} из накопительного фонда`}
+                            checked={isFundExcluded}
+                            disabled={!canWrite || exclusionMutation.isPending}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setPendingFundExclusion({
+                                  row,
+                                  until: fundExclusion.fund_excluded_until ?? "",
+                                  reason: fundExclusion.fund_excluded_reason ?? "",
+                                });
+                                return;
+                              }
+                              setPendingFundReturn(row);
+                            }}
+                            title="Прекратит начисление накопительного фонда. Накопленное остаётся и будет выплачено 15 января."
+                          />
+                          {isFundExcluded ? (
+                            <Badge
+                              className="border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-100"
+                              title={fundExclusion.fund_excluded_reason ?? undefined}
+                              variant="outline"
+                            >
+                              {fundExclusion.fund_excluded_until
+                                ? `Исключён до ${formatDateOnly(
+                                    fundExclusion.fund_excluded_until,
+                                  )}`
+                                : "Исключён бессрочно"}
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Активно</span>
+                          )}
+                        </div>
                       </td>
                       <td className="border-b p-3">
                         {isInitialSet && account ? (
@@ -1519,6 +1599,124 @@ function FundSection({ canWrite }: { canWrite: boolean }) {
               }}
             >
               Установить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingFundExclusion(null);
+          }
+        }}
+        open={Boolean(pendingFundExclusion)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Исключить из накопительного фонда</DialogTitle>
+            <DialogDescription>
+              {pendingFundExclusion
+                ? `${pendingFundExclusion.row.full_name}: начисления прекратятся с текущей даты.`
+                : "Начисления прекратятся с текущей даты."}
+            </DialogDescription>
+          </DialogHeader>
+          {pendingFundExclusion ? (
+            <div className="grid gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="fund-exclusion-until">Исключить до</Label>
+                <Input
+                  id="fund-exclusion-until"
+                  onChange={(event) =>
+                    setPendingFundExclusion({
+                      ...pendingFundExclusion,
+                      until: event.target.value,
+                    })
+                  }
+                  type="date"
+                  value={pendingFundExclusion.until}
+                />
+                <div className="text-xs text-muted-foreground">Пусто = бессрочно</div>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="fund-exclusion-reason">Причина</Label>
+                <Textarea
+                  id="fund-exclusion-reason"
+                  maxLength={1000}
+                  onChange={(event) =>
+                    setPendingFundExclusion({
+                      ...pendingFundExclusion,
+                      reason: event.target.value,
+                    })
+                  }
+                  value={pendingFundExclusion.reason}
+                />
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              onClick={() => setPendingFundExclusion(null)}
+              type="button"
+              variant="outline"
+            >
+              Отмена
+            </Button>
+            <Button
+              disabled={exclusionMutation.isPending}
+              onClick={() => {
+                const pending = pendingFundExclusion;
+                setPendingFundExclusion(null);
+                if (pending) {
+                  exclusionMutation.mutate({
+                    employeeId: pending.row.employee_id,
+                    excluded: true,
+                    until: pending.until || null,
+                    reason: pending.reason.trim() || null,
+                  });
+                }
+              }}
+              type="button"
+            >
+              Исключить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingFundReturn(null);
+          }
+        }}
+        open={Boolean(pendingFundReturn)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Вернуть сотрудника в начисление фонда?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingFundReturn
+                ? `Вернуть ${pendingFundReturn.full_name} в начисление фонда?`
+                : "Подтвердите возврат в начисление фонда."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={exclusionMutation.isPending}
+              onClick={() => {
+                const pending = pendingFundReturn;
+                setPendingFundReturn(null);
+                if (pending) {
+                  exclusionMutation.mutate({
+                    employeeId: pending.employee_id,
+                    excluded: false,
+                  });
+                }
+              }}
+            >
+              Вернуть
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -2329,4 +2527,12 @@ function formatPercent(value: number) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow" }).format(new Date(value));
+}
+
+function formatDateOnly(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("ru-RU").format(new Date(year, month - 1, day));
 }

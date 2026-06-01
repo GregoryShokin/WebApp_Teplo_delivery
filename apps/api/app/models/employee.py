@@ -125,6 +125,19 @@ class Employee(Base):
     deposit_excluded_reason: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="source=app_managed"
     )
+    fund_excluded: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="source=app_managed",
+    )
+    fund_excluded_until: Mapped[date | None] = mapped_column(
+        Date, nullable=True, comment="source=app_managed"
+    )
+    fund_excluded_reason: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="source=app_managed"
+    )
     pin_hash: Mapped[str | None] = mapped_column(
         String(255), nullable=True, comment="source=app_managed"
     )

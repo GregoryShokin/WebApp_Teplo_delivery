@@ -31,6 +31,7 @@ from app.services.attendance_loader import PAYROLL_TARGET_POSITIONS
 from app.services.payroll_calculator import (
     _fund_rate_for_months,
     decimal,
+    is_fund_currently_excluded,
     load_payroll_settings,
     tenure_months_on,
 )
@@ -77,12 +78,35 @@ class FundInitialBalanceRead(BaseModel):
     created_at: datetime
 
 
+class FundExclusionPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fund_excluded: bool
+    fund_excluded_until: date | None = None
+    fund_excluded_reason: str | None = Field(default=None, max_length=1000)
+
+
+class FundExclusionRead(BaseModel):
+    employee_id: uuid.UUID
+    fund_excluded: bool
+    fund_excluded_until: date | None
+    fund_excluded_reason: str | None
+    is_currently_excluded: bool
+
+
 class FundRosterAccount(BaseModel):
     year: int
     accumulated: str
     is_initial_set: bool
     initial_set_at: datetime | None = None
     initial_set_by_label: str | None = None
+
+
+class FundRosterExclusion(BaseModel):
+    fund_excluded: bool
+    fund_excluded_until: date | None = None
+    fund_excluded_reason: str | None = None
+    is_currently_excluded: bool
 
 
 class FundRosterRow(BaseModel):
@@ -92,6 +116,7 @@ class FundRosterRow(BaseModel):
     hire_date: date | None
     tenure_months: int | None
     current_rate_percent: str | None
+    fund_exclusion: FundRosterExclusion
     fund_account: FundRosterAccount | None = None
 
 
@@ -330,6 +355,40 @@ async def set_fund_initial_balance(
         transaction_id=transaction.id,
         created_at=transaction.created_at,
     )
+
+
+@router.patch("/{employee_id}/exclusion", response_model=FundExclusionRead)
+async def patch_fund_exclusion(
+    employee_id: uuid.UUID,
+    payload: FundExclusionPatch,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> FundExclusionRead:
+    require_finance_manager_plus(actor)
+    employee = await _get_employee_or_404(session, employee_id)
+    if employee.position not in PAYROLL_TARGET_POSITIONS:
+        raise HTTPException(status_code=422, detail=FUND_TARGET_POSITIONS_ERROR)
+
+    before = _fund_exclusion_snapshot(employee)
+    now = datetime.now(UTC)
+    employee.fund_excluded = payload.fund_excluded
+    employee.fund_excluded_until = payload.fund_excluded_until if payload.fund_excluded else None
+    employee.fund_excluded_reason = payload.fund_excluded_reason if payload.fund_excluded else None
+    employee.updated_at = now
+    after = _fund_exclusion_snapshot(employee)
+
+    await _add_fund_exclusion_action(
+        session,
+        action_type="fund_exclusion_update",
+        employee_id=employee.id,
+        before=before,
+        after=after,
+        now=now,
+        actor=actor,
+    )
+    await session.commit()
+    await session.refresh(employee)
+    return _fund_exclusion_payload(employee, date.today())
 
 
 @router.get("/summary")
@@ -717,8 +776,46 @@ def _fund_roster_row(
         hire_date=employee.hire_date,
         tenure_months=tenure_months,
         current_rate_percent=current_rate_percent,
+        fund_exclusion=_fund_roster_exclusion(employee, today),
         fund_account=fund_account,
     )
+
+
+async def _get_employee_or_404(session: AsyncSession, employee_id: uuid.UUID) -> Employee:
+    employee = await session.scalar(
+        select(Employee).where(Employee.id == employee_id).with_for_update()
+    )
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сотрудник не найден")
+    return employee
+
+
+def _fund_exclusion_payload(employee: Employee, today: date) -> FundExclusionRead:
+    return FundExclusionRead(
+        employee_id=employee.id,
+        fund_excluded=bool(getattr(employee, "fund_excluded", False)),
+        fund_excluded_until=getattr(employee, "fund_excluded_until", None),
+        fund_excluded_reason=getattr(employee, "fund_excluded_reason", None),
+        is_currently_excluded=is_fund_currently_excluded(employee, today),
+    )
+
+
+def _fund_roster_exclusion(employee: Employee, today: date) -> FundRosterExclusion:
+    return FundRosterExclusion(
+        fund_excluded=bool(getattr(employee, "fund_excluded", False)),
+        fund_excluded_until=getattr(employee, "fund_excluded_until", None),
+        fund_excluded_reason=getattr(employee, "fund_excluded_reason", None),
+        is_currently_excluded=is_fund_currently_excluded(employee, today),
+    )
+
+
+def _fund_exclusion_snapshot(employee: Employee) -> dict[str, Any]:
+    return {
+        "employee_id": str(employee.id),
+        "fund_excluded": bool(getattr(employee, "fund_excluded", False)),
+        "fund_excluded_until": date_string(getattr(employee, "fund_excluded_until", None)),
+        "fund_excluded_reason": getattr(employee, "fund_excluded_reason", None),
+    }
 
 
 def _account_snapshot(account: AccumulationFundAccount | None) -> dict[str, Any] | None:
@@ -733,6 +830,29 @@ def _account_snapshot(account: AccumulationFundAccount | None) -> dict[str, Any]
         "forfeited": decimal_string(getattr(account, "forfeited_amount", 0)),
         "status": account.status,
     }
+
+
+async def _add_fund_exclusion_action(
+    session: AsyncSession,
+    *,
+    action_type: str,
+    employee_id: uuid.UUID,
+    before: dict[str, Any],
+    after: dict[str, Any],
+    actor: CurrentActor,
+    now: datetime,
+) -> None:
+    await _add_fund_action(
+        session,
+        action_type=action_type,
+        target_table="employee",
+        target_id=employee_id,
+        before=before,
+        after=after,
+        actor=actor,
+        now=now,
+        params={"employee_id": str(employee_id)},
+    )
 
 
 async def _add_fund_action(
@@ -777,3 +897,7 @@ async def _add_fund_action(
 
 def _actor_label(actor: CurrentActor) -> str:
     return ", ".join(sorted(actor.roles)) or "Система"
+
+
+def date_string(value: date | None) -> str | None:
+    return value.isoformat() if value is not None else None
