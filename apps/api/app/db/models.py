@@ -40,6 +40,7 @@ from app.models import (
     SourceSnapshot,
     User,
     UserRole,
+    VacationPeriod,
     Wallet,
 )
 
@@ -85,5 +86,6 @@ __all__ = [
     "SourceSnapshot",
     "User",
     "UserRole",
+    "VacationPeriod",
     "Wallet",
 ]

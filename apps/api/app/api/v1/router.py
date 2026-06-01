@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 
 from app.api.v1.payroll_config import router as payroll_config_router
-from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.accumulation_fund import router as accumulation_fund_router
+from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.couriers import router as couriers_router
 from app.api.v1.routes.deposits import router as deposits_router
 from app.api.v1.routes.employees import router as employees_router
@@ -13,6 +13,7 @@ from app.api.v1.routes.payroll_adjustments import router as payroll_adjustments_
 from app.api.v1.routes.settings import router as settings_router
 from app.api.v1.routes.shift_schedule import router as shift_schedule_router
 from app.api.v1.routes.shifts import router as shifts_router
+from app.api.v1.routes.vacations import router as vacations_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
@@ -28,3 +29,4 @@ api_router.include_router(payroll_config_router, prefix="/payroll/config", tags=
 api_router.include_router(settings_router, prefix="/settings", tags=["settings"])
 api_router.include_router(shift_schedule_router, prefix="/schedule", tags=["schedule"])
 api_router.include_router(shifts_router, prefix="/shifts", tags=["shifts"])
+api_router.include_router(vacations_router, prefix="/vacations", tags=["vacations"])

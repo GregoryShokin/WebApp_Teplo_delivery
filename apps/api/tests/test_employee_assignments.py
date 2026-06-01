@@ -588,6 +588,7 @@ async def test_backdated_assignment_over_finalized_payroll_requires_review_witho
             base_pay=1000,
             premium=0,
             percent_pay=0,
+            vacation_pay=0,
             fund_accrual=0,
             deduction=0,
             total_payable=1000,

@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Employee, ScheduledShift
+from app.services import vacation_service
 from app.services.employee_assignments import (
     assignment_role_for_payroll_context,
     assignment_role_from_employee,
@@ -87,6 +88,12 @@ async def compute_shift_cost(
         or shift.planned_start_at.date() != shift.planned_end_at.date()
     ):
         quality_reasons.append("overnight_shift")
+    if await vacation_service.employee_has_active_vacation(
+        session,
+        employee_id=employee.id,
+        business_date=shift.business_date,
+    ):
+        quality_reasons.append("employee_on_vacation")
 
     payroll_role = payroll_role_for_scheduled_shift(shift, employee)
     station_key = station_key_for_payroll(shift.station_code)

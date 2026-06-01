@@ -151,6 +151,7 @@ class PayrollLine(Base):
     base_pay: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     premium: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     percent_pay: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    vacation_pay: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     fund_accrual: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     deduction: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     total_payable: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)

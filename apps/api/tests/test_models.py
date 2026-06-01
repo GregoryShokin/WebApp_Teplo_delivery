@@ -54,6 +54,7 @@ EXPECTED_TABLES = {
     "shift_schedule",
     "scheduled_shift",
     "shift_allowance_override",
+    "vacation_period",
     "payroll_run",
     "payroll_line",
     "deposit_account",
@@ -105,6 +106,7 @@ def test_all_models_import() -> None:
         "ShiftAllowanceOverride",
         "ScheduledShift",
         "ShiftSchedule",
+        "VacationPeriod",
         "PayrollRun",
         "PayrollLine",
         "PayrollRate",
@@ -229,11 +231,31 @@ def test_percent_methodology_is_additive_for_existing_payroll_runs() -> None:
         "base_pay",
         "premium",
         "percent_pay",
+        "vacation_pay",
         "fund_accrual",
         "deduction",
         "total_payable",
         "components",
     } <= line_columns
+
+
+def test_vacation_period_table_is_declared() -> None:
+    columns = models.VacationPeriod.__table__.c
+    indexes = {index.name for index in models.VacationPeriod.__table__.indexes}
+    constraints = {constraint.name for constraint in models.VacationPeriod.__table__.constraints}
+
+    assert columns.employee_id.nullable is False
+    assert columns.date_start.nullable is False
+    assert columns.date_end.nullable is False
+    assert columns.days_count.nullable is False
+    assert columns.status.nullable is False
+    assert columns.comment.nullable is True
+    assert "ix_vacation_period_employee_start" in indexes
+    assert "ix_vacation_period_date_range" in indexes
+    assert "ck_vacation_period_date_range" in constraints
+    assert "ck_vacation_period_status" in constraints
+    assert "ck_vacation_period_days_positive" in constraints
+    assert "ck_vacation_period_same_year" in constraints
 
 
 def test_deposit_account_initial_balance_is_declared() -> None:

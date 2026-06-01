@@ -22,6 +22,7 @@ from app.models import (
     PayrollPeriod,
     PayrollRun,
 )
+from app.services import vacation_service
 from app.services.accumulation_fund_service import (
     fund_outstanding,
     payout_fund_accounts_for_year,
@@ -238,7 +239,7 @@ async def run_payroll(
 
     try:
         entries = await load_attendance_entries(session, period, iiko_records=iiko_records)
-        blocking_issues = await collect_blocking_issues(session, entries)
+        blocking_issues = await collect_blocking_issues(session, entries, period=period)
         if blocking_issues:
             run.status = "blocked"
             run.finished_at = datetime.now(UTC)
@@ -275,10 +276,17 @@ async def run_payroll(
         await session.flush()
 
         subledger_summary = await update_deposits_and_fund(session, period, run, calculation.lines)
+        paid_vacations = await vacation_service.mark_vacations_paid_for_payroll_period(
+            session,
+            period_start=period.start_date,
+            period_end=period.end_date,
+        )
         run.status = "completed"
         run.finished_at = datetime.now(UTC)
         run.blocking_issues = []
-        run.summary = calculation.summary | subledger_summary
+        run.summary = (
+            calculation.summary | subledger_summary | {"vacations_marked_paid": paid_vacations}
+        )
         await session.commit()
         await session.refresh(run)
         return run
@@ -325,9 +333,19 @@ def line_deposit_overrides_from_lines(
 async def collect_blocking_issues(
     session: AsyncSession,
     entries: Iterable[AttendanceEntry],
+    *,
+    period: PayrollPeriod | None = None,
 ) -> list[dict[str, Any]]:
     entries = list(entries)
     if not entries:
+        if period is not None:
+            vacation_days = await vacation_service.vacation_days_for_payroll_period(
+                session,
+                period_start=period.start_date,
+                period_end=period.end_date,
+            )
+            if vacation_days:
+                return []
         return [{"type": "missing_attendance", "message": "No attendance entries for period"}]
     employee_ids = {entry.employee_id for entry in entries}
     employees = {

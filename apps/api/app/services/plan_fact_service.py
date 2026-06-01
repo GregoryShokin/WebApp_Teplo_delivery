@@ -858,7 +858,12 @@ def _employee_sort_label(employee_id: uuid.UUID, employees: dict[uuid.UUID, Empl
 
 
 def _line_gross_cost(line: PayrollLine) -> Decimal:
-    return _money(_decimal(line.base_pay) + _decimal(line.premium) + _decimal(line.percent_pay))
+    return _money(
+        _decimal(line.base_pay)
+        + _decimal(line.premium)
+        + _decimal(line.percent_pay)
+        + _decimal(getattr(line, "vacation_pay", 0))
+    )
 
 
 def _ledger_minutes(entry: ShiftLedgerEntry) -> int:

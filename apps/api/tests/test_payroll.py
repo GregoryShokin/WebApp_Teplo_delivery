@@ -46,6 +46,8 @@ from app.services.payroll_calculator import (
     PAYROLL_ADJUSTMENTS_CONFIG_KEY,
     PAYROLL_RATE_CONFIG_KEY,
     SHIFT_LEDGER_CONFIG_KEY,
+    VACATION_DAILY_AMOUNT_CONFIG_KEY,
+    VACATION_DAYS_CONFIG_KEY,
     _fund_rate_for_months,
     calculate_payroll_lines_from_inputs,
     deposit_withholding,
@@ -204,6 +206,7 @@ def make_payroll_line(
         base_pay=Decimal("10000"),
         premium=Decimal("1500"),
         percent_pay=Decimal("750"),
+        vacation_pay=Decimal("0"),
         fund_accrual=Decimal("500"),
         deduction=Decimal("250"),
         total_payable=Decimal("12000"),
@@ -1204,6 +1207,67 @@ def test_fixed_salary_for_full_week_is_calculated() -> None:
     assert result.lines[0].base_pay == 15800
     assert result.lines[0].premium == 0
     assert result.lines[0].total_payable == 15800
+
+
+def test_vacation_day_creates_payroll_line_without_attendance() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    work_date = date(2026, 5, 20)
+    settings = payroll_settings()
+    settings[VACATION_DAYS_CONFIG_KEY] = {(employee.id, work_date): None}
+    settings[VACATION_DAILY_AMOUNT_CONFIG_KEY] = Decimal("1000")
+    settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = {
+        (employee.id, work_date): [
+            make_role_assignment(employee.id, "pizza", "category_2", is_primary=True)
+        ]
+    }
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [],
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].base_pay == 0
+    assert result.lines[0].percent_pay == 0
+    assert result.lines[0].vacation_pay == 1000
+    assert result.lines[0].fund_accrual == 0
+    assert result.lines[0].total_payable == 1000
+    assert result.lines[0].components["days"][0]["kind"] == "vacation"
+
+
+def test_vacation_day_suppresses_regular_pay_for_attendance_entry() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    work_date = date(2026, 5, 20)
+    settings = payroll_settings({work_date.isoformat(): 140000})
+    settings[VACATION_DAYS_CONFIG_KEY] = {(employee.id, work_date): None}
+    settings[VACATION_DAILY_AMOUNT_CONFIG_KEY] = Decimal("1000")
+    settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = {
+        (employee.id, work_date): [
+            make_role_assignment(employee.id, "pizza", "category_2", is_primary=True)
+        ]
+    }
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [make_entry(period, employee, work_date, role=None)],
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].base_pay == 0
+    assert result.lines[0].percent_pay == 0
+    assert result.lines[0].vacation_pay == 1000
+    assert result.lines[0].total_payable == 1000
+    assert result.lines[0].components["days"][0]["hours"] == 0
 
 
 def test_full_12_hour_shift_gets_full_salary_and_percent() -> None:

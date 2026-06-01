@@ -259,6 +259,13 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
       headerClassName: "text-right",
     },
     {
+      key: "vacation_pay",
+      header: "Отпуск",
+      cell: (row) => formatMoney(row.line.vacation_pay),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
       key: "deposit_withholding",
       header: (
         <SortButton
@@ -297,10 +304,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
     {
       key: "ndfl_deduction",
       header: (
-        <SortButton
-          active={sortKey === "ndfl_deduction"}
-          onClick={() => setSort("ndfl_deduction")}
-        >
+        <SortButton active={sortKey === "ndfl_deduction"} onClick={() => setSort("ndfl_deduction")}>
           <span className="inline-flex items-center gap-1">
             НДФЛ
             <Badge className="rounded-sm border-amber-200 bg-amber-50 px-1 py-0 text-[10px] normal-case text-amber-800 shadow-none">
@@ -415,8 +419,8 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
             <div className="min-w-0 flex-1">
               <div className="font-semibold">
-                Невозможно финализировать: {blockers.length}{" "}
-                {pluralizeIssue(blockers.length)} в расчёте
+                Невозможно финализировать: {blockers.length} {pluralizeIssue(blockers.length)} в
+                расчёте
               </div>
               <div className="mt-3 grid gap-2">
                 {blockers.map((issue, index) => (
@@ -430,7 +434,11 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard title="Сотрудников" value={String(employeeCount)} description="В прогоне" />
-        <KpiCard title="Часов отработано" value={formatHours(totalHours)} description="По iiko-явкам" />
+        <KpiCard
+          title="Часов отработано"
+          value={formatHours(totalHours)}
+          description="По iiko-явкам"
+        />
         <KpiCard title="ФОТ итого" value={formatMoney(totalPayable)} description="К выплате" />
         <KpiCard
           title="% от выручки"
@@ -509,10 +517,7 @@ function KpiCard({
 }) {
   return (
     <Card
-      className={cn(
-        "shadow-none",
-        tone === "warning" ? "border-amber-200 bg-amber-50" : undefined,
-      )}
+      className={cn("shadow-none", tone === "warning" ? "border-amber-200 bg-amber-50" : undefined)}
     >
       <CardContent className="p-4">
         <div className="text-sm text-muted-foreground">{title}</div>
@@ -608,6 +613,7 @@ function PayrollLineDrawer({ row, runStatus }: { row: PayrollLineRowModel; runSt
         <ComponentValue label="Оклад" value={formatMoney(row.line.base_pay)} />
         <ComponentValue label="Премия" value={formatMoney(row.line.premium)} />
         <ComponentValue label="Процент" value={formatMoney(row.line.percent_pay)} />
+        <ComponentValue label="Отпускные" value={formatMoney(row.line.vacation_pay)} />
         <ComponentValue label="Всего удержано" value={formatMoney(row.line.deduction)} />
         <ComponentValue label="Фонд" value={formatMoney(row.line.fund_accrual)} />
         <ComponentValue label="К выплате" value={formatMoney(row.line.total_payable)} strong />
@@ -649,9 +655,10 @@ function PayrollLineDrawer({ row, runStatus }: { row: PayrollLineRowModel; runSt
                     </Badge>
                   ) : null}
                 </div>
-                <div className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+                <div className="mt-3 grid gap-2 text-sm sm:grid-cols-4">
                   <ComponentValue label="Оклад" value={formatMoney(day.basePay)} dense />
                   <ComponentValue label="%" value={formatMoney(day.percentPay)} dense />
+                  <ComponentValue label="Отпуск" value={formatMoney(day.vacationPay)} dense />
                   <ComponentValue label="Фонд" value={formatMoney(day.fundAccrual)} dense />
                 </div>
                 {day.weekdayPremium > 0 ? (
@@ -739,8 +746,8 @@ function DepositOverrideControl({ line, runStatus }: { line: PayrollLine; runSta
         <span>Исключить депозит из этой ведомости</span>
       </Label>
       <div className="text-xs leading-relaxed text-muted-foreground">
-        Скипнуть удержание депозита только для этой ведомости. Изменение применится после
-        пересчёта. Настройки сотрудника не затрагиваются.
+        Скипнуть удержание депозита только для этой ведомости. Изменение применится после пересчёта.
+        Настройки сотрудника не затрагиваются.
       </div>
       {line.deposit_excluded_for_run ? (
         <div className="space-y-2">
@@ -791,13 +798,7 @@ function ComponentValue({
   );
 }
 
-function AdjustmentList({
-  items,
-  title,
-}: {
-  items: AdjustmentComponent[];
-  title: string;
-}) {
+function AdjustmentList({ items, title }: { items: AdjustmentComponent[]; title: string }) {
   return (
     <section className="space-y-2">
       <div className="text-sm font-semibold">{title}</div>
@@ -825,7 +826,11 @@ function cleanOptionalText(value: string) {
   return cleaned ? cleaned : null;
 }
 
-function runMeta(run: { started_at: string; finished_at: string | null; period: { finalized_at: string | null } | null }) {
+function runMeta(run: {
+  started_at: string;
+  finished_at: string | null;
+  period: { finalized_at: string | null } | null;
+}) {
   const parts = [`Создан ${formatDateTime(run.started_at)}`];
   if (run.finished_at) {
     parts.push(`посчитан ${formatDateTime(run.finished_at)}`);
@@ -877,6 +882,7 @@ type DayComponent = {
   basePayShift: number;
   weekdayPremium: number;
   percentPay: number;
+  vacationPay: number;
   fundAccrual: number;
   dailyRevenue: number;
 };
@@ -900,6 +906,7 @@ function lineDays(line: PayrollLine): DayComponent[] {
     basePayShift: Number(day.base_pay_shift ?? day.base_pay ?? 0),
     weekdayPremium: Number(day.weekday_premium ?? 0),
     percentPay: Number(day.percent_pay ?? 0),
+    vacationPay: Number(day.vacation_pay ?? 0),
     fundAccrual: Number(day.fund_accrual ?? 0),
     dailyRevenue: Number(day.daily_revenue ?? 0),
   }));

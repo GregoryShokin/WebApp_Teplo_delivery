@@ -76,9 +76,12 @@ import { EmptyState } from "@/components/ui-app/EmptyState";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import {
   apiErrorMessage,
+  apiErrorStatus,
+  cancelVacationPeriod,
   copyWeek,
   createNewVersion,
   createSchedule,
+  createVacationPeriod,
   deleteCashierAllowanceOverride,
   deleteShift,
   getEmployeesRoster,
@@ -88,9 +91,11 @@ import {
   getRun,
   getScheduleLedger,
   getSchedule,
+  getVacationRoster,
   listRuns,
   listSchedules,
   overrideForecast,
+  patchVacationPeriod,
   publishSchedule,
   recomputeForecast,
   removeForecastOverride,
@@ -102,7 +107,6 @@ import {
   type AllowanceAssignmentRead,
   type CashierAllowanceOverridePayload,
   type EmployeeRosterRow,
-  type PayrollRole,
   type PayrollForecastRunRead,
   type PlanFactDayRowRead,
   type PlanFactDeviationStatus,
@@ -117,6 +121,9 @@ import {
   type ScheduledShiftRead,
   type ScheduleLedgerEntryRead,
   type ScheduledShiftUpsertPayload,
+  type VacationConflictResponse,
+  type VacationPeriodRead,
+  type VacationRosterRow,
 } from "@/lib/api";
 import {
   rangeForPreset,
@@ -128,7 +135,7 @@ import { PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
 import { sortEmployeesByRoleAndName } from "@/lib/role-sort";
 import { cn } from "@/lib/utils";
 
-type ViewMode = "employees" | "stations" | "planFact";
+type ViewMode = "employees" | "stations" | "planFact" | "vacations";
 type PlanFactTableMode = "days" | "employees";
 type SortDirection = "asc" | "desc";
 type DaySortKey = "date" | "hours" | "cost" | "status";
@@ -170,6 +177,16 @@ type ForecastDialogState = {
   removeConfirmOpen: boolean;
 };
 
+type VacationDialogState = {
+  mode: "create" | "edit";
+  period: VacationPeriodRead | null;
+  employeeId: string;
+  dateStart: string;
+  dateEnd: string;
+  comment: string;
+  conflict: VacationConflictResponse | null;
+};
+
 type CostDaySummary = {
   total: number;
   warningCount: number;
@@ -182,6 +199,8 @@ const NO_VALUE = "__none";
 const DAY_CELL_WIDTH = 128;
 const EMPLOYEE_COLUMN_WIDTH = 230;
 const STATION_COLUMN_WIDTH = 170;
+const VACATION_MAX_PERIOD_DAYS = 10;
+const VACATION_MIN_GAP_MONTHS = 2;
 const MOSCOW_OFFSET = "+03:00";
 const stationOptions = ["Пицца", "Роллы", "Горячий цех", "Касса"];
 const stationOrder = [...stationOptions, "(без станции)"];
@@ -217,6 +236,7 @@ export function ScheduleRoute() {
     defaultScheduleDraft(),
   );
   const [shiftDialog, setShiftDialog] = useState<ShiftDialogState | null>(null);
+  const [vacationDialog, setVacationDialog] = useState<VacationDialogState | null>(null);
   const [focusEditButton, setFocusEditButton] = useState<FocusEditButtonTarget | null>(null);
   const [forecastDialog, setForecastDialog] = useState<ForecastDialogState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ScheduledShiftRead | null>(null);
@@ -246,6 +266,7 @@ export function ScheduleRoute() {
     }),
     [visibleDays],
   );
+  const vacationYear = parseIsoDate(visibleDays[0]).getFullYear();
   const scheduleWindow = periodRange;
 
   const schedulesQuery = useQuery({
@@ -272,6 +293,10 @@ export function ScheduleRoute() {
         date_from: forecastRange.from,
         date_to: forecastRange.to,
       }),
+  });
+  const vacationRosterQuery = useQuery({
+    queryKey: ["vacations-roster", vacationYear],
+    queryFn: () => getVacationRoster(vacationYear),
   });
   const forecastQuery = useQuery({
     queryKey: ["forecast", forecastRange.from, forecastRange.to],
@@ -413,6 +438,50 @@ export function ScheduleRoute() {
       await invalidateCurrentSchedule();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить смену")),
+  });
+
+  const saveVacationMutation = useMutation({
+    mutationFn: (variables: { state: VacationDialogState; forceRemoveShifts?: boolean }) => {
+      if (variables.state.mode === "edit" && variables.state.period) {
+        return patchVacationPeriod(variables.state.period.id, {
+          date_start: variables.state.dateStart,
+          date_end: variables.state.dateEnd,
+          comment: variables.state.comment.trim() || null,
+          force_remove_conflicting_shifts: Boolean(variables.forceRemoveShifts),
+        });
+      }
+      return createVacationPeriod({
+        employee_id: variables.state.employeeId,
+        date_start: variables.state.dateStart,
+        date_end: variables.state.dateEnd,
+        comment: variables.state.comment.trim() || null,
+        force_remove_conflicting_shifts: Boolean(variables.forceRemoveShifts),
+      });
+    },
+    onSuccess: async () => {
+      toast.success("Отпуск сохранён");
+      setVacationDialog(null);
+      await invalidateVacations();
+      await invalidateCurrentSchedule();
+    },
+    onError: (error) => {
+      const conflict = vacationConflictFromError(error);
+      if (conflict) {
+        setVacationDialog((current) => (current ? { ...current, conflict } : current));
+        return;
+      }
+      toast.error(apiErrorMessage(error, "Не удалось сохранить отпуск"));
+    },
+  });
+
+  const cancelVacationMutation = useMutation({
+    mutationFn: (periodId: string) => cancelVacationPeriod(periodId),
+    onSuccess: async () => {
+      toast.success("Отпуск отменён");
+      setVacationDialog(null);
+      await invalidateVacations();
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отменить отпуск")),
   });
 
   const saveCashierAllowanceOverrideMutation = useMutation({
@@ -659,6 +728,10 @@ export function ScheduleRoute() {
     await invalidateCashierAllowance();
   }
 
+  async function invalidateVacations() {
+    await queryClient.invalidateQueries({ queryKey: ["vacations-roster"] });
+  }
+
   async function invalidateCostForecast() {
     await queryClient.invalidateQueries({ queryKey: ["cost-forecast", currentSchedule?.id] });
     await queryClient.invalidateQueries({ queryKey: ["plan-fact", currentSchedule?.id] });
@@ -760,6 +833,46 @@ export function ScheduleRoute() {
       allowanceDirty: false,
       allowanceNoneConfirmOpen: false,
     });
+  }
+
+  function openVacationDialog(employee?: VacationRosterRow, period?: VacationPeriodRead) {
+    const today = toIsoDate(new Date());
+    setVacationDialog({
+      mode: period ? "edit" : "create",
+      period: period ?? null,
+      employeeId: employee?.employee_id ?? "",
+      dateStart: period?.date_start ?? today,
+      dateEnd: period?.date_end ?? today,
+      comment: period?.comment ?? "",
+      conflict: null,
+    });
+  }
+
+  function submitVacationDialog(forceRemoveShifts = false) {
+    if (!vacationDialog) {
+      return;
+    }
+    if (!vacationDialog.employeeId) {
+      toast.error("Выберите сотрудника");
+      return;
+    }
+    if (!vacationDialog.dateStart || !vacationDialog.dateEnd) {
+      toast.error("Выберите даты отпуска");
+      return;
+    }
+    if (vacationDialog.dateEnd < vacationDialog.dateStart) {
+      toast.error("Дата окончания не может быть раньше даты начала");
+      return;
+    }
+    const validationError = vacationDialogValidationError(
+      vacationDialog,
+      vacationRosterQuery.data ?? [],
+    );
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+    saveVacationMutation.mutate({ state: vacationDialog, forceRemoveShifts });
   }
 
   function handleEmployeeEmptyCellClick(employee: EmployeeRosterRow, businessDate: string) {
@@ -918,7 +1031,7 @@ export function ScheduleRoute() {
     [currentSchedule?.shifts],
   );
   const todayIso = useMemo(() => toIsoDate(new Date()), []);
-  const ledgerEntries = ledgerQuery.data ?? [];
+  const ledgerEntries = useMemo(() => ledgerQuery.data ?? [], [ledgerQuery.data]);
   const ledgerByEmployeeDay = useMemo(
     () => indexLedgerByEmployeeDay(ledgerEntries),
     [ledgerEntries],
@@ -928,6 +1041,10 @@ export function ScheduleRoute() {
   const stationRows = useMemo(
     () => buildStationRows(currentSchedule?.shifts ?? [], ledgerEntries),
     [currentSchedule?.shifts, ledgerEntries],
+  );
+  const vacationByEmployeeDay = useMemo(
+    () => indexVacationByEmployeeDay(vacationRosterQuery.data ?? []),
+    [vacationRosterQuery.data],
   );
   const hasPublishedOverlap = useMemo(
     () =>
@@ -1046,6 +1163,12 @@ export function ScheduleRoute() {
               label="План-факт"
               onClick={() => setViewMode("planFact")}
             />
+            <SegmentedButton
+              active={viewMode === "vacations"}
+              icon={<CalendarDays size={16} aria-hidden="true" />}
+              label="Отпуска"
+              onClick={() => setViewMode("vacations")}
+            />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -1075,7 +1198,7 @@ export function ScheduleRoute() {
         title="Период просмотра"
       />
 
-      {currentSchedule ? (
+      {currentSchedule && viewMode !== "vacations" ? (
         <ScheduleForecastGroup
           collapsed={forecastSummaryCollapsed}
           costRun={displayedCostRun}
@@ -1098,7 +1221,23 @@ export function ScheduleRoute() {
         />
       ) : null}
 
-      {!currentSchedule && !schedulesQuery.isLoading ? (
+      {viewMode === "vacations" ? (
+        <VacationsView
+          errorMessage={
+            vacationRosterQuery.isError
+              ? apiErrorMessage(vacationRosterQuery.error, "Не удалось загрузить отпуска")
+              : null
+          }
+          isError={vacationRosterQuery.isError}
+          isLoading={vacationRosterQuery.isLoading}
+          onCreate={() => openVacationDialog()}
+          onAdd={openVacationDialog}
+          onEdit={openVacationDialog}
+          onRetry={() => vacationRosterQuery.refetch()}
+          rows={vacationRosterQuery.data ?? []}
+          year={vacationYear}
+        />
+      ) : !currentSchedule && !schedulesQuery.isLoading ? (
         <NoSchedulePeriodGrid
           days={visibleDays}
           isLoading={rosterQuery.isLoading}
@@ -1135,6 +1274,7 @@ export function ScheduleRoute() {
           scheduleRange={currentScheduleRange}
           shiftByEmployeeDay={shiftByEmployeeDay}
           today={todayIso}
+          vacationByEmployeeDay={vacationByEmployeeDay}
         />
       ) : (
         <StationScheduleGrid
@@ -1201,6 +1341,65 @@ export function ScheduleRoute() {
         setValue={setShiftDialog}
         state={shiftDialog}
       />
+
+      <VacationDialog
+        employees={vacationRosterQuery.data ?? []}
+        isCancelling={cancelVacationMutation.isPending}
+        isSaving={saveVacationMutation.isPending}
+        onCancelPeriod={(period) => cancelVacationMutation.mutate(period.id)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setVacationDialog(null);
+          }
+        }}
+        onSubmit={() => submitVacationDialog(false)}
+        setValue={setVacationDialog}
+        state={vacationDialog}
+      />
+
+      <AlertDialog
+        open={Boolean(vacationDialog?.conflict)}
+        onOpenChange={(open) =>
+          setVacationDialog((current) =>
+            current ? { ...current, conflict: open ? current.conflict : null } : current,
+          )
+        }
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Есть смены в дни отпуска</AlertDialogTitle>
+            <AlertDialogDescription>
+              {vacationDialog?.conflict
+                ? `Найдено смен: ${vacationDialog.conflict.conflicting_shifts.length}. Можно удалить смены из черновиков и сохранить отпуск. Опубликованный график нужно сначала открыть новой версией.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={saveVacationMutation.isPending}
+              onClick={() =>
+                setVacationDialog((current) => (current ? { ...current, conflict: null } : current))
+              }
+              type="button"
+            >
+              Отмена
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={saveVacationMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                setVacationDialog((current) =>
+                  current ? { ...current, conflict: null } : current,
+                );
+                submitVacationDialog(true);
+              }}
+              type="button"
+            >
+              Удалить смены
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={Boolean(shiftDialog?.allowanceNoneConfirmOpen)}
@@ -1652,6 +1851,163 @@ function NoSchedulePeriodGrid({
         </table>
       </div>
     </section>
+  );
+}
+
+function VacationsView({
+  errorMessage,
+  isError,
+  isLoading,
+  onCreate,
+  onAdd,
+  onEdit,
+  onRetry,
+  rows,
+  year,
+}: {
+  errorMessage: string | null;
+  isError: boolean;
+  isLoading: boolean;
+  onCreate: () => void;
+  onAdd: (employee: VacationRosterRow) => void;
+  onEdit: (employee: VacationRosterRow, period: VacationPeriodRead) => void;
+  onRetry: () => void;
+  rows: VacationRosterRow[];
+  year: number;
+}) {
+  if (isLoading) {
+    return (
+      <section className="rounded-lg border bg-card p-4">
+        <Skeleton className="h-8 w-60" />
+        <div className="mt-4 space-y-2">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <Skeleton className="h-16 w-full" key={index} />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (isError) {
+    return (
+      <EmptyState
+        icon={<AlertTriangle className="h-5 w-5" aria-hidden="true" />}
+        title="Отпуска не загрузились"
+        description={errorMessage ?? "Не удалось получить список сотрудников для отпусков."}
+        action={
+          <Button onClick={onRetry} size="sm" type="button" variant="outline">
+            <RefreshCw size={15} aria-hidden="true" />
+            Повторить
+          </Button>
+        }
+      />
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        icon={<CalendarDays className="h-5 w-5" aria-hidden="true" />}
+        title="Нет сотрудников для отпусков"
+        description="Отпуска доступны для активных поваров и кассиров."
+        action={
+          <Button disabled size="sm" type="button" variant="outline">
+            <Plus size={15} aria-hidden="true" />
+            Новый отпуск
+          </Button>
+        }
+      />
+    );
+  }
+
+  return (
+    <section className="overflow-hidden rounded-lg border bg-card">
+      <div className="flex flex-col gap-2 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="font-medium">Отпуска {year}</div>
+          <div className="mt-1 text-sm text-muted-foreground">
+            Лимит считается по календарному году, без переноса остатка.
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline">{rows.length} сотрудников</Badge>
+          <Button onClick={onCreate} size="sm" type="button">
+            <Plus size={15} aria-hidden="true" />
+            Новый отпуск
+          </Button>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[880px] text-sm">
+          <thead>
+            <tr className="border-b bg-muted/50 text-left text-muted-foreground">
+              <th className="px-4 py-3 font-medium">Сотрудник</th>
+              <th className="px-4 py-3 text-right font-medium">Использовано</th>
+              <th className="px-4 py-3 text-right font-medium">Остаток</th>
+              <th className="px-4 py-3 font-medium">Периоды</th>
+              <th className="px-4 py-3 text-right font-medium">Действие</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr className="border-b last:border-b-0 hover:bg-muted/30" key={row.employee_id}>
+                <td className="px-4 py-3">
+                  <div className="font-medium">{row.employee_full_name}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{row.position}</div>
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums">
+                  {row.used} из {row.limit}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums">
+                  <span className={cn(row.remaining <= 3 && "text-amber-700")}>
+                    {row.remaining}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  {row.periods.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {row.periods.map((period) => (
+                        <button
+                          className="rounded-md border bg-background px-2 py-1 text-left text-xs hover:bg-muted"
+                          key={period.id}
+                          onClick={() => onEdit(row, period)}
+                          type="button"
+                        >
+                          <span className="font-medium">
+                            {formatShortRange(period.date_start, period.date_end)}
+                          </span>
+                          <span className="ml-2 text-muted-foreground">
+                            {period.days_count} дн.
+                          </span>
+                          <VacationStatusBadge status={period.status} />
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">Периодов нет</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <Button onClick={() => onAdd(row)} size="sm" type="button" variant="outline">
+                    <Plus size={15} aria-hidden="true" />
+                    Добавить
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function VacationStatusBadge({ status }: { status: VacationPeriodRead["status"] }) {
+  const label = status === "paid" ? "оплачен" : status === "cancelled" ? "отменён" : "план";
+  return (
+    <span className="ml-2 rounded-sm border border-muted-foreground/30 px-1 text-[10px] uppercase text-muted-foreground">
+      {label}
+    </span>
   );
 }
 
@@ -3011,6 +3367,7 @@ function EmployeeScheduleGrid({
   scheduleRange,
   shiftByEmployeeDay,
   today,
+  vacationByEmployeeDay,
 }: {
   cashierAllowanceByDay: Map<string, AllowanceAssignmentRead>;
   costByShiftId: Map<string, ShiftCostEstimateRead>;
@@ -3026,6 +3383,7 @@ function EmployeeScheduleGrid({
   scheduleRange: PeriodRange;
   shiftByEmployeeDay: Map<string, ScheduledShiftRead>;
   today: string;
+  vacationByEmployeeDay: Map<string, VacationPeriodRead>;
 }) {
   const minWidth = EMPLOYEE_COLUMN_WIDTH + days.length * DAY_CELL_WIDTH;
 
@@ -3070,6 +3428,7 @@ function EmployeeScheduleGrid({
                     const shift = shiftByEmployeeDay.get(`${employee.id}:${day}`);
                     const visibleShift = day < today ? null : shift;
                     const ledgerEntries = ledgerByEmployeeDay.get(`${employee.id}:${day}`) ?? [];
+                    const vacation = vacationByEmployeeDay.get(`${employee.id}:${day}`);
                     const outsideSchedule = !isDateInRange(day, scheduleRange);
                     const showFact = shouldShowFact(day, ledgerEntries, today);
                     const canEditPlan = !isLocked && day >= today && !outsideSchedule;
@@ -3090,6 +3449,9 @@ function EmployeeScheduleGrid({
                     }
                     if (day > today && outsideSchedule) {
                       return <DisabledScheduleCell key={day} label="вне периода графика" />;
+                    }
+                    if (vacation && !visibleShift) {
+                      return <VacationScheduleCell key={day} period={vacation} />;
                     }
                     return (
                       <td
@@ -3570,6 +3932,19 @@ function DisabledScheduleCell({ label }: { label: string }) {
   );
 }
 
+function VacationScheduleCell({ period }: { period: VacationPeriodRead }) {
+  return (
+    <td
+      className="h-[72px] border-b border-r bg-emerald-50 p-2 align-middle text-center text-xs leading-4 text-emerald-800"
+      style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
+      title={`Отпуск: ${formatShortRange(period.date_start, period.date_end)}`}
+    >
+      <div className="font-medium">отпуск</div>
+      <div className="mt-1 tabular-nums">{period.days_count} дн.</div>
+    </td>
+  );
+}
+
 function LoadingGridRows({ columns, stickyWidth }: { columns: number; stickyWidth: number }) {
   return (
     <>
@@ -3969,6 +4344,159 @@ function ShiftDialog({
               Отмена
             </Button>
             <Button disabled={isSaving} onClick={onSubmit}>
+              {isSaving ? <LoaderCircle className="animate-spin" size={16} /> : null}
+              Сохранить
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function VacationDialog({
+  employees,
+  isCancelling,
+  isSaving,
+  onCancelPeriod,
+  onOpenChange,
+  onSubmit,
+  setValue,
+  state,
+}: {
+  employees: VacationRosterRow[];
+  isCancelling: boolean;
+  isSaving: boolean;
+  onCancelPeriod: (period: VacationPeriodRead) => void;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: () => void;
+  setValue: Dispatch<SetStateAction<VacationDialogState | null>>;
+  state: VacationDialogState | null;
+}) {
+  const selectedEmployee = employees.find((employee) => employee.employee_id === state?.employeeId);
+  const validationError = vacationDialogValidationError(state, employees);
+  const dateEndMax = state?.dateStart
+    ? toIsoDate(addDays(parseIsoDate(state.dateStart), VACATION_MAX_PERIOD_DAYS - 1))
+    : undefined;
+  const selectedDaysCount =
+    state?.dateStart && state.dateEnd && state.dateEnd >= state.dateStart
+      ? vacationDaysCount(state.dateStart, state.dateEnd)
+      : null;
+
+  function patchState(patch: Partial<VacationDialogState>) {
+    setValue((current) => (current ? { ...current, ...patch, conflict: null } : current));
+  }
+
+  return (
+    <Dialog open={Boolean(state)} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {state?.mode === "edit" ? "Редактировать отпуск" : "Новый отпуск"}
+          </DialogTitle>
+          <DialogDescription>
+            {selectedEmployee
+              ? `${selectedEmployee.employee_full_name} · остаток ${selectedEmployee.remaining} дн.`
+              : "Выберите сотрудника и период отпуска."}
+          </DialogDescription>
+        </DialogHeader>
+        {state ? (
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label>Сотрудник</Label>
+              <Select
+                disabled={state.mode === "edit"}
+                onValueChange={(value) => patchState({ employeeId: value })}
+                value={state.employeeId || undefined}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите сотрудника" />
+                </SelectTrigger>
+                <SelectContent>
+                  {employees.map((employee) => (
+                    <SelectItem key={employee.employee_id} value={employee.employee_id}>
+                      {employee.employee_full_name} · остаток {employee.remaining} дн.
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="vacation-date-start">С</Label>
+                <Input
+                  id="vacation-date-start"
+                  onChange={(event) => patchState({ dateStart: event.target.value })}
+                  type="date"
+                  value={state.dateStart}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="vacation-date-end">По</Label>
+                <Input
+                  id="vacation-date-end"
+                  max={dateEndMax}
+                  min={state.dateStart || undefined}
+                  onChange={(event) => patchState({ dateEnd: event.target.value })}
+                  type="date"
+                  value={state.dateEnd}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="vacation-comment">Комментарий</Label>
+              <Textarea
+                id="vacation-comment"
+                onChange={(event) => patchState({ comment: event.target.value })}
+                value={state.comment}
+              />
+            </div>
+            <div
+              className={cn(
+                "rounded-md border bg-muted/30 px-3 py-2 text-sm",
+                validationError && "border-destructive/40 bg-destructive/5 text-destructive",
+              )}
+            >
+              <div>
+                {selectedDaysCount !== null
+                  ? `${selectedDaysCount} дн. · ${formatShortRange(state.dateStart, state.dateEnd)}`
+                  : "Выберите период отпуска"}
+              </div>
+              <div className="mt-1 text-xs">
+                Максимум {VACATION_MAX_PERIOD_DAYS} дней за один отпуск. Следующий отпуск — через{" "}
+                {VACATION_MIN_GAP_MONTHS} месяца после предыдущего.
+              </div>
+              {validationError ? (
+                <div className="mt-1 text-xs font-medium">{validationError}</div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+        <DialogFooter className="gap-2 sm:justify-between sm:space-x-0">
+          <div>
+            {state?.period && state.period.status !== "cancelled" ? (
+              <Button
+                disabled={isSaving || isCancelling}
+                onClick={() => state.period && onCancelPeriod(state.period)}
+                type="button"
+                variant="outline"
+              >
+                Отменить отпуск
+              </Button>
+            ) : null}
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <Button
+              disabled={isSaving || isCancelling}
+              onClick={() => onOpenChange(false)}
+              variant="outline"
+            >
+              Закрыть
+            </Button>
+            <Button
+              disabled={isSaving || isCancelling || Boolean(validationError)}
+              onClick={onSubmit}
+            >
               {isSaving ? <LoaderCircle className="animate-spin" size={16} /> : null}
               Сохранить
             </Button>
@@ -4471,10 +4999,31 @@ function planFactSourceTitle(summary: PlanFactSummaryRead) {
   return lines.join("\n");
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function sourceRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+  return isRecord(value) ? value : null;
+}
+
+function vacationConflictFromError(error: unknown): VacationConflictResponse | null {
+  if (apiErrorStatus(error) !== 409) {
+    return null;
+  }
+  const data = (error as { response?: { data?: unknown } }).response?.data;
+  if (!isRecord(data) || !Array.isArray(data.conflicting_shifts)) {
+    return null;
+  }
+  return {
+    detail: String(data.detail ?? "На период отпуска уже есть смены"),
+    conflicting_shifts: data.conflicting_shifts.filter(isRecord).map((item) => ({
+      shift_id: String(item.shift_id ?? ""),
+      business_date: String(item.business_date ?? ""),
+      schedule_id: String(item.schedule_id ?? ""),
+      schedule_status: String(item.schedule_status ?? ""),
+    })),
+  };
 }
 
 function shortId(value: unknown) {
@@ -4494,6 +5043,20 @@ function indexShiftsByEmployeeDay(shifts: ScheduledShiftRead[]) {
   const index = new Map<string, ScheduledShiftRead>();
   shifts.forEach((shift) => {
     index.set(`${shift.employee_id}:${shift.business_date}`, shift);
+  });
+  return index;
+}
+
+function indexVacationByEmployeeDay(rows: VacationRosterRow[]) {
+  const index = new Map<string, VacationPeriodRead>();
+  rows.forEach((row) => {
+    row.periods
+      .filter((period) => period.status !== "cancelled")
+      .forEach((period) => {
+        eachIsoDate(period.date_start, period.date_end).forEach((day) => {
+          index.set(`${row.employee_id}:${day}`, period);
+        });
+      });
   });
   return index;
 }
@@ -4942,6 +5505,91 @@ function buildRangeDays(range: PeriodRange) {
   return days;
 }
 
+function eachIsoDate(dateStart: string, dateEnd: string) {
+  const start = parseIsoDate(dateStart);
+  const end = parseIsoDate(dateEnd);
+  const days: string[] = [];
+  for (let cursor = start; cursor <= end; cursor = addDays(cursor, 1)) {
+    days.push(toIsoDate(cursor));
+  }
+  return days;
+}
+
+function vacationDaysCount(dateStart: string, dateEnd: string) {
+  return eachIsoDate(dateStart, dateEnd).length;
+}
+
+type VacationValidationPeriod = {
+  id: string;
+  date_start: string;
+  date_end: string;
+};
+
+function vacationDialogValidationError(
+  state: VacationDialogState | null,
+  employees: VacationRosterRow[],
+) {
+  if (!state) {
+    return null;
+  }
+  if (!state.employeeId) {
+    return "Выберите сотрудника";
+  }
+  if (!state.dateStart || !state.dateEnd) {
+    return "Выберите даты отпуска";
+  }
+  if (state.dateEnd < state.dateStart) {
+    return "Дата окончания не может быть раньше даты начала";
+  }
+  const daysCount = vacationDaysCount(state.dateStart, state.dateEnd);
+  if (daysCount > VACATION_MAX_PERIOD_DAYS) {
+    return `Один отпуск можно оформить максимум на ${VACATION_MAX_PERIOD_DAYS} дней.`;
+  }
+
+  const employee = employees.find((item) => item.employee_id === state.employeeId);
+  if (!employee) {
+    return "Сотрудник не найден в списке отпусков";
+  }
+
+  const candidateId = state.period?.id ?? "__new_vacation_period__";
+  const candidate: VacationValidationPeriod = {
+    id: candidateId,
+    date_start: state.dateStart,
+    date_end: state.dateEnd,
+  };
+  const periods: VacationValidationPeriod[] = employee.periods
+    .filter((period) => period.status !== "cancelled" && period.id !== state.period?.id)
+    .map((period) => ({
+      id: period.id,
+      date_start: period.date_start,
+      date_end: period.date_end,
+    }));
+  const ordered = [...periods, candidate].sort((left, right) =>
+    left.date_start.localeCompare(right.date_start),
+  );
+
+  for (let index = 1; index < ordered.length; index += 1) {
+    const previous = ordered[index - 1];
+    const next = ordered[index];
+    if (previous.id !== candidateId && next.id !== candidateId) {
+      continue;
+    }
+    const nextAllowedStart = toIsoDate(
+      addMonths(parseIsoDate(previous.date_end), VACATION_MIN_GAP_MONTHS),
+    );
+    if (next.date_start < nextAllowedStart) {
+      if (next.id === candidateId) {
+        return `Следующий отпуск можно начать не раньше ${formatDate(nextAllowedStart)}.`;
+      }
+      return `До следующего отпуска ${formatDate(
+        next.date_start,
+      )} должно пройти ${VACATION_MIN_GAP_MONTHS} месяца.`;
+    }
+  }
+
+  return null;
+}
+
 function startOfTuesdayWeek(value: Date) {
   const date = new Date(value);
   date.setHours(0, 0, 0, 0);
@@ -4953,6 +5601,14 @@ function addDays(value: Date, days: number) {
   const date = new Date(value);
   date.setDate(date.getDate() + days);
   return date;
+}
+
+function addMonths(value: Date, months: number) {
+  const targetMonthIndex = value.getMonth() + months;
+  const targetYear = value.getFullYear() + Math.floor(targetMonthIndex / 12);
+  const targetMonth = ((targetMonthIndex % 12) + 12) % 12;
+  const daysInTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+  return new Date(targetYear, targetMonth, Math.min(value.getDate(), daysInTargetMonth));
 }
 
 function parseIsoDate(value: string) {

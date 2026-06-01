@@ -311,6 +311,7 @@ export type PayrollLine = {
   base_pay: number;
   premium: number;
   percent_pay: number;
+  vacation_pay: number;
   fund_accrual: number;
   deduction: number;
   deposit_withholding: number;
@@ -721,6 +722,68 @@ export type ScheduledShiftUpsertPayload = {
   planned_start_at?: string | null;
   planned_end_at?: string | null;
   comment_private?: string | null;
+};
+
+export type VacationStatus = "planned" | "paid" | "cancelled";
+
+export type VacationPeriodRead = {
+  id: string;
+  employee_id: string;
+  employee_full_name: string;
+  date_start: string;
+  date_end: string;
+  days_count: number;
+  status: VacationStatus;
+  comment: string | null;
+  created_by_label: string | null;
+  created_at: string;
+};
+
+export type VacationBalanceRead = {
+  employee_id: string;
+  year: number;
+  limit: number;
+  used: number;
+  remaining: number;
+  periods: VacationPeriodRead[];
+};
+
+export type VacationRosterRow = {
+  employee_id: string;
+  employee_full_name: string;
+  position: string;
+  year: number;
+  limit: number;
+  used: number;
+  remaining: number;
+  periods: VacationPeriodRead[];
+};
+
+export type VacationPeriodPayload = {
+  employee_id: string;
+  date_start: string;
+  date_end: string;
+  comment?: string | null;
+  force_remove_conflicting_shifts?: boolean;
+};
+
+export type VacationPeriodPatchPayload = {
+  date_start?: string;
+  date_end?: string;
+  comment?: string | null;
+  force_remove_conflicting_shifts?: boolean;
+};
+
+export type VacationShiftConflict = {
+  shift_id: string;
+  business_date: string;
+  schedule_id: string;
+  schedule_status: string;
+};
+
+export type VacationConflictResponse = {
+  detail: string;
+  conflicting_shifts: VacationShiftConflict[];
 };
 
 export type EmployeeRosterAvailableRole = {
@@ -1466,6 +1529,31 @@ export async function getScheduleLedger(params: {
   date_to: string;
 }): Promise<ScheduleLedgerEntryRead[]> {
   const response = await api.get<ScheduleLedgerEntryRead[]>("/schedule/ledger", { params });
+  return response.data;
+}
+
+export async function getVacationRoster(year: number): Promise<VacationRosterRow[]> {
+  const response = await api.get<VacationRosterRow[]>("/vacations/roster", { params: { year } });
+  return response.data;
+}
+
+export async function createVacationPeriod(
+  payload: VacationPeriodPayload,
+): Promise<VacationPeriodRead> {
+  const response = await api.post<VacationPeriodRead>("/vacations", payload);
+  return response.data;
+}
+
+export async function patchVacationPeriod(
+  id: string,
+  payload: VacationPeriodPatchPayload,
+): Promise<VacationPeriodRead> {
+  const response = await api.patch<VacationPeriodRead>(`/vacations/${id}`, payload);
+  return response.data;
+}
+
+export async function cancelVacationPeriod(id: string): Promise<VacationPeriodRead> {
+  const response = await api.post<VacationPeriodRead>(`/vacations/${id}/cancel`);
   return response.data;
 }
 

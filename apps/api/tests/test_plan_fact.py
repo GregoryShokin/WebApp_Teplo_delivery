@@ -259,6 +259,7 @@ def make_line(
         base_pay=base_pay,
         premium=premium,
         percent_pay=percent_pay,
+        vacation_pay=Decimal("0"),
         fund_accrual=Decimal("0"),
         deduction=Decimal("0"),
         total_payable=base_pay + premium + percent_pay,

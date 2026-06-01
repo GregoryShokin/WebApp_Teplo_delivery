@@ -44,6 +44,7 @@ from app.models.period import Period
 from app.models.revenue_forecast import RevenueForecast
 from app.models.settings import AppSetting, AppSettingHistory
 from app.models.shift_schedule import ScheduledShift, ShiftAllowanceOverride, ShiftSchedule
+from app.models.vacation import VacationPeriod
 from app.models.wallet import Wallet
 
 __all__ = [
@@ -96,5 +97,6 @@ __all__ = [
     "SourceSnapshot",
     "User",
     "UserRole",
+    "VacationPeriod",
     "Wallet",
 ]

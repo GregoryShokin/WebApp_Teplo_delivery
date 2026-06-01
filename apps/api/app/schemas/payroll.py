@@ -48,6 +48,7 @@ class PayrollLineRead(BaseModel):
     base_pay: float
     premium: float
     percent_pay: float
+    vacation_pay: float
     fund_accrual: float
     deduction: float
     deposit_withholding: float = 0

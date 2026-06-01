@@ -24,6 +24,7 @@ from app.models import (
     PayrollRoleCategoryAvailability,
     ShiftLedgerEntry,
 )
+from app.services import vacation_service
 from app.services.attendance_loader import PAYROLL_TARGET_POSITIONS
 from app.services.employee_assignments import (
     PAYROLL_ROLE_LABELS,
@@ -88,6 +89,8 @@ EMPLOYEE_POSITIONS_CONFIG_KEY = "employee.positions_by_date"
 EMPLOYEE_ALLOWANCES_CONFIG_KEY = "employee.allowances_by_date"
 SHIFT_LEDGER_CONFIG_KEY = "shift_ledger.entries_by_date"
 PAYROLL_ADJUSTMENTS_CONFIG_KEY = "payroll.adjustments_by_date"
+VACATION_DAYS_CONFIG_KEY = "vacation.days_by_employee_date"
+VACATION_DAILY_AMOUNT_CONFIG_KEY = vacation_service.VACATION_DAILY_AMOUNT_KEY
 WEEKDAY_KEYS = (
     "monday",
     "tuesday",
@@ -114,7 +117,14 @@ async def calculate_payroll_lines(
     line_deposit_overrides: Mapping[tuple[uuid.UUID, str], Mapping[str, Any]] | None = None,
 ) -> PayrollCalculationResult:
     entries = list(entries)
-    employee_ids = {entry.employee_id for entry in entries}
+    vacation_days = await vacation_service.vacation_days_for_payroll_period(
+        session,
+        period_start=period.start_date,
+        period_end=period.end_date,
+    )
+    employee_ids = {entry.employee_id for entry in entries} | {
+        employee_id for employee_id, _work_date in vacation_days
+    }
     employees = {
         employee.id: employee
         for employee in (
@@ -122,6 +132,10 @@ async def calculate_payroll_lines(
         ).all()
     }
     settings = await load_payroll_settings(session)
+    settings[VACATION_DAYS_CONFIG_KEY] = vacation_days
+    settings[VACATION_DAILY_AMOUNT_CONFIG_KEY] = await vacation_service.vacation_daily_amount(
+        session
+    )
     settings[PAYROLL_RATE_CONFIG_KEY] = await load_payroll_rate_versions(
         session,
         period.start_date,
@@ -140,14 +154,17 @@ async def calculate_payroll_lines(
     settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = await load_employee_assignments_for_entries(
         session,
         entries,
+        extra_employee_days=vacation_days,
     )
     settings[EMPLOYEE_POSITIONS_CONFIG_KEY] = await load_employee_positions_for_entries(
         session,
         entries,
+        extra_employee_days=vacation_days,
     )
     settings[EMPLOYEE_ALLOWANCES_CONFIG_KEY] = await load_employee_allowances_for_entries(
         session,
         entries,
+        extra_employee_days=vacation_days,
     )
     settings[SENIORITY_ALLOWANCE_MAP_CONFIG_KEY] = await load_seniority_allowance_maps(
         session,
@@ -230,9 +247,11 @@ async def load_payroll_rate_versions(
 async def load_employee_assignments_for_entries(
     session: AsyncSession,
     entries: Iterable[AttendanceEntry],
+    extra_employee_days: Iterable[tuple[uuid.UUID, date]] | None = None,
 ) -> dict[tuple[uuid.UUID, date], list[Any]]:
     assignments_by_day: dict[tuple[uuid.UUID, date], list[Any]] = {}
     entry_days = {(entry.employee_id, entry.work_date) for entry in entries}
+    entry_days |= set(extra_employee_days or [])
     for employee_id, work_date in sorted(
         entry_days,
         key=lambda item: (str(item[0]), item[1]),
@@ -248,9 +267,11 @@ async def load_employee_assignments_for_entries(
 async def load_employee_positions_for_entries(
     session: AsyncSession,
     entries: Iterable[AttendanceEntry],
+    extra_employee_days: Iterable[tuple[uuid.UUID, date]] | None = None,
 ) -> dict[tuple[uuid.UUID, date], str | None]:
     positions_by_day: dict[tuple[uuid.UUID, date], str | None] = {}
     entry_days = {(entry.employee_id, entry.work_date) for entry in entries}
+    entry_days |= set(extra_employee_days or [])
     for employee_id, work_date in sorted(
         entry_days,
         key=lambda item: (str(item[0]), item[1]),
@@ -266,9 +287,11 @@ async def load_employee_positions_for_entries(
 async def load_employee_allowances_for_entries(
     session: AsyncSession,
     entries: Iterable[AttendanceEntry],
+    extra_employee_days: Iterable[tuple[uuid.UUID, date]] | None = None,
 ) -> dict[tuple[uuid.UUID, date], dict[str, bool]]:
     allowances_by_day: dict[tuple[uuid.UUID, date], dict[str, bool]] = {}
     entry_days = {(entry.employee_id, entry.work_date) for entry in entries}
+    entry_days |= set(extra_employee_days or [])
     for employee_id, work_date in sorted(
         entry_days,
         key=lambda item: (str(item[0]), item[1]),
@@ -340,6 +363,7 @@ def calculate_payroll_lines_from_inputs(
     line_deposit_overrides: Mapping[tuple[uuid.UUID, str], Mapping[str, Any]] | None = None,
 ) -> PayrollCalculationResult:
     entries = list(entries)
+    vacation_days = vacation_days_from_settings(settings)
     blocking_issues = validate_calculation_inputs(entries, employees, settings)
     if blocking_issues:
         return PayrollCalculationResult(
@@ -351,17 +375,46 @@ def calculate_payroll_lines_from_inputs(
     grouped_minutes: dict[tuple[uuid.UUID, str, date, str | None], int] = defaultdict(int)
     employee_day_minutes: dict[tuple[uuid.UUID, date], int] = defaultdict(int)
     group_categories: dict[tuple[uuid.UUID, str, date, str | None], str] = {}
+    vacation_group_days: set[tuple[uuid.UUID, date]] = set()
     for entry in entries:
         employee = employees[entry.employee_id]
-        role = payroll_role_for_entry(entry, employee, settings)
-        station = (entry.station or "").strip() or None
-        group_key = (entry.employee_id, role, entry.work_date, station)
-        grouped_minutes[group_key] += entry.minutes_worked
-        employee_day_minutes[(entry.employee_id, entry.work_date)] += entry.minutes_worked
+        employee_day_key = (entry.employee_id, entry.work_date)
+        if employee_day_key in vacation_days:
+            role = vacation_role_for_employee_day(settings, employee, entry.work_date)
+            station = None
+            group_key = (entry.employee_id, role, entry.work_date, station)
+            grouped_minutes[group_key] = 0
+            employee_day_minutes[employee_day_key] = 0
+            vacation_group_days.add(employee_day_key)
+        else:
+            role = payroll_role_for_entry(entry, employee, settings)
+            station = (entry.station or "").strip() or None
+            group_key = (entry.employee_id, role, entry.work_date, station)
+            grouped_minutes[group_key] += entry.minutes_worked
+            employee_day_minutes[employee_day_key] += entry.minutes_worked
         group_categories[group_key] = category_for_payroll_entry(
             settings,
             employee,
             entry.work_date,
+            role,
+            station,
+        )
+
+    for employee_id, work_date in sorted(vacation_days, key=lambda item: (str(item[0]), item[1])):
+        if (employee_id, work_date) in vacation_group_days:
+            continue
+        employee = employees.get(employee_id)
+        if employee is None:
+            continue
+        role = vacation_role_for_employee_day(settings, employee, work_date)
+        station = None
+        group_key = (employee_id, role, work_date, station)
+        grouped_minutes[group_key] = 0
+        employee_day_minutes[(employee_id, work_date)] = 0
+        group_categories[group_key] = category_for_payroll_entry(
+            settings,
+            employee,
+            work_date,
             role,
             station,
         )
@@ -375,7 +428,8 @@ def calculate_payroll_lines_from_inputs(
         group_key = (employee_id, role, work_date, station)
         category = group_categories[group_key]
         position = position_for_payroll_entry(settings, employee, work_date)
-        coeff = category_coeff(settings, category, work_date)
+        is_vacation_day = (employee_id, work_date) in vacation_days
+        coeff = Decimal("0") if is_vacation_day else category_coeff(settings, category, work_date)
         hours = Decimal(minutes) / Decimal(60)
         percent_shift = PercentShift(
             employee_id=group_key,
@@ -384,12 +438,13 @@ def calculate_payroll_lines_from_inputs(
             coefficient=coeff,
         )
         adjusted_coeff = shift_weight(percent_shift)
-        daily_percent_shifts[work_date].append(percent_shift)
-        daily_total_coefficients[work_date] += adjusted_coeff
+        if not is_vacation_day:
+            daily_percent_shifts[work_date].append(percent_shift)
+            daily_total_coefficients[work_date] += adjusted_coeff
         day_components[group_key] = {
             "date": work_date.isoformat(),
-            "minutes": minutes,
-            "hours": float(hours),
+            "minutes": 0 if is_vacation_day else minutes,
+            "hours": 0 if is_vacation_day else float(hours),
             "role": role,
             "category": category,
             "position": position,
@@ -425,37 +480,60 @@ def calculate_payroll_lines_from_inputs(
         employee = employees[employee_id]
         group_key = (employee_id, role, work_date, station)
         category = group_categories[group_key]
-        base_pay = base_shift_pay(settings, role, category, employee, minutes, work_date, station)
-        seniority_allowance_pay, seniority_allowance_metadata = (
-            seniority_allowance_details_for_payroll_entry(
+        employee_day_key = (employee_id, work_date)
+        is_vacation_day = employee_day_key in vacation_days
+        if is_vacation_day:
+            base_pay = Decimal("0")
+            seniority_allowance_pay = Decimal("0")
+            seniority_allowance_metadata = {}
+            percent_pay = Decimal("0")
+            percent_components = {"percent_status": "vacation"}
+            weekday_premium = Decimal("0")
+            vacation_pay = vacation_daily_amount_from_settings(settings)
+            base_pay_with_premium = Decimal("0")
+            fund_excluded = False
+            fund_rate = Decimal("0")
+            fund_accrual = Decimal("0")
+        else:
+            base_pay = base_shift_pay(
                 settings,
+                role,
+                category,
                 employee,
                 minutes,
                 work_date,
+                station,
             )
-        )
-        percent_pay = daily_percent_distributions.get(work_date, {}).get(
-            group_key, Decimal("0")
-        ) * shift_pay_ratio(minutes)
-        percent_components = daily_percent_components.get(work_date, {})
-        employee_day_key = (employee_id, work_date)
-        weekday_premium = Decimal("0")
-        if employee_day_key not in premium_applied_employee_days:
-            weekday_premium = weekday_premium_for_employee_day(
+            seniority_allowance_pay, seniority_allowance_metadata = (
+                seniority_allowance_details_for_payroll_entry(
+                    settings,
+                    employee,
+                    minutes,
+                    work_date,
+                )
+            )
+            percent_pay = daily_percent_distributions.get(work_date, {}).get(
+                group_key, Decimal("0")
+            ) * shift_pay_ratio(minutes)
+            percent_components = daily_percent_components.get(work_date, {})
+            weekday_premium = Decimal("0")
+            if employee_day_key not in premium_applied_employee_days:
+                weekday_premium = weekday_premium_for_employee_day(
+                    settings,
+                    work_date,
+                    employee_day_minutes[employee_day_key],
+                )
+                premium_applied_employee_days.add(employee_day_key)
+            vacation_pay = Decimal("0")
+            base_pay_with_premium = base_pay + seniority_allowance_pay + weekday_premium
+            fund_excluded = is_fund_currently_excluded(employee, work_date)
+            fund_rate = _fund_rate_for_months(settings, tenure_months_on(employee, work_date))
+            fund_accrual = fund_accrual_for_day(
                 settings,
+                employee,
                 work_date,
-                employee_day_minutes[employee_day_key],
+                base_pay_with_premium,
             )
-            premium_applied_employee_days.add(employee_day_key)
-        base_pay_with_premium = base_pay + seniority_allowance_pay + weekday_premium
-        fund_excluded = is_fund_currently_excluded(employee, work_date)
-        fund_rate = _fund_rate_for_months(settings, tenure_months_on(employee, work_date))
-        fund_accrual = fund_accrual_for_day(
-            settings,
-            employee,
-            work_date,
-            base_pay_with_premium,
-        )
         key = (employee_id, role)
         totals = line_totals.setdefault(
             key,
@@ -463,6 +541,7 @@ def calculate_payroll_lines_from_inputs(
                 "base_pay": Decimal("0"),
                 "premium": Decimal("0"),
                 "percent_pay": Decimal("0"),
+                "vacation_pay": Decimal("0"),
                 "fund_accrual": Decimal("0"),
                 "deduction": Decimal("0"),
                 "manual_deduction": Decimal("0"),
@@ -476,15 +555,18 @@ def calculate_payroll_lines_from_inputs(
         )
         totals["base_pay"] += base_pay_with_premium
         totals["percent_pay"] += percent_pay
+        totals["vacation_pay"] += vacation_pay
         totals["fund_accrual"] += fund_accrual
         day_component = day_components[group_key]
         day_component.update(
             {
+                "kind": "vacation" if is_vacation_day else "shift",
                 "base_pay": money(base_pay_with_premium),
                 "base_pay_shift": money(base_pay),
                 "seniority_allowance_pay": money(seniority_allowance_pay),
                 "weekday_premium": money(weekday_premium),
                 "percent_pay": money(percent_pay),
+                "vacation_pay": money(vacation_pay),
                 "fund_rate_percent": float((fund_rate * Decimal("100")).quantize(Decimal("0.001"))),
                 "fund_accrual": money(fund_accrual),
                 **percent_components,
@@ -503,7 +585,12 @@ def calculate_payroll_lines_from_inputs(
     }
     deposit_overrides = line_deposit_overrides or {}
     for (employee_id, role), totals in line_totals.items():
-        total_before_deduction = totals["base_pay"] + totals["premium"] + totals["percent_pay"]
+        total_before_deduction = (
+            totals["base_pay"]
+            + totals["premium"]
+            + totals["percent_pay"]
+            + totals["vacation_pay"]
+        )
         manual_deduction = totals.get("manual_deduction", Decimal("0"))
         current_deposit_balance = running_deposit_balances.get(employee_id, Decimal("0"))
         deposit_base = max(total_before_deduction - manual_deduction, Decimal("0"))
@@ -532,6 +619,7 @@ def calculate_payroll_lines_from_inputs(
                 base_pay=money(totals["base_pay"]),
                 premium=money(totals["premium"]),
                 percent_pay=money(totals["percent_pay"]),
+                vacation_pay=money(totals["vacation_pay"]),
                 fund_accrual=money(totals["fund_accrual"]),
                 deduction=money(totals["deduction"]),
                 total_payable=money(total_payable),
@@ -693,6 +781,7 @@ def validate_calculation_inputs(
     settings: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
+    vacation_days = vacation_days_from_settings(settings)
     missing_settings = sorted(
         PAYROLL_SETTING_KEYS - OPTIONAL_PAYROLL_SETTING_KEYS - settings.keys()
     )
@@ -733,6 +822,8 @@ def validate_calculation_inputs(
                     "fire_date": employee.fire_date.isoformat(),
                 }
             )
+        if (entry.employee_id, entry.work_date) in vacation_days:
+            continue
         role = payroll_role_for_entry(entry, employee, settings)
         category = category_for_payroll_entry(
             settings,
@@ -790,6 +881,68 @@ def payroll_role_for_entry(
         if ledger_entry is not None:
             return clean_string(getattr(ledger_entry, "payroll_role", None))
     return (entry.role or "").strip()
+
+
+def vacation_role_for_employee_day(
+    settings: Mapping[str, Any],
+    employee: Employee,
+    work_date: date,
+) -> str:
+    assignments = assignments_for_employee_date(settings, employee.id, work_date)
+    primary = next(
+        (
+            assignment
+            for assignment in assignments
+            if getattr(assignment, "is_primary", False)
+            and getattr(assignment, "payroll_role", None)
+        ),
+        None,
+    )
+    if primary is not None:
+        return str(primary.payroll_role)
+    first = next(
+        (assignment for assignment in assignments if getattr(assignment, "payroll_role", None)),
+        None,
+    )
+    if first is not None:
+        return str(first.payroll_role)
+    fallback_by_position = {"Кассир": "administrator", "Повар": "prep"}
+    return fallback_by_position.get(str(employee.position or ""), "vacation")
+
+
+def vacation_days_from_settings(settings: Mapping[str, Any]) -> set[tuple[uuid.UUID, date]]:
+    raw = settings.get(VACATION_DAYS_CONFIG_KEY)
+    if not isinstance(raw, Mapping):
+        return set()
+    result: set[tuple[uuid.UUID, date]] = set()
+    for key in raw:
+        if isinstance(key, tuple) and len(key) == 2:
+            employee_value, date_value = key
+        elif isinstance(key, str) and ":" in key:
+            employee_value, date_value = key.split(":", 1)
+        else:
+            continue
+        try:
+            employee_id = (
+                employee_value
+                if isinstance(employee_value, uuid.UUID)
+                else uuid.UUID(str(employee_value))
+            )
+            work_date = (
+                date_value
+                if isinstance(date_value, date)
+                else date.fromisoformat(str(date_value))
+            )
+        except (TypeError, ValueError):
+            continue
+        result.add((employee_id, work_date))
+    return result
+
+
+def vacation_daily_amount_from_settings(settings: Mapping[str, Any]) -> Decimal:
+    return decimal(
+        settings.get(VACATION_DAILY_AMOUNT_CONFIG_KEY, vacation_service.DEFAULT_DAILY_AMOUNT)
+    )
 
 
 def category_for_payroll_entry(
@@ -1432,6 +1585,7 @@ def summarize_lines(lines: Iterable[PayrollLine]) -> dict[str, Any]:
         "base_pay": money(sum((decimal(line.base_pay) for line in lines), Decimal("0"))),
         "premium": money(sum((decimal(line.premium) for line in lines), Decimal("0"))),
         "percent_pay": money(sum((decimal(line.percent_pay) for line in lines), Decimal("0"))),
+        "vacation_pay": money(sum((decimal(line.vacation_pay) for line in lines), Decimal("0"))),
         "fund_accrual": money(sum((decimal(line.fund_accrual) for line in lines), Decimal("0"))),
         "deduction": money(sum((decimal(line.deduction) for line in lines), Decimal("0"))),
         "total_payable": money(sum((decimal(line.total_payable) for line in lines), Decimal("0"))),

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor
 from app.models import Employee, ScheduledShift, ShiftSchedule
-from app.services import employee_assignments
+from app.services import employee_assignments, vacation_service
 from app.services.staff_taxonomy import (
     PAYROLL_ROLE_LABELS,
     default_station_for_payroll_role,
@@ -239,6 +239,7 @@ async def upsert_shift(
 ) -> ScheduledShift:
     schedule = await _get_draft_schedule(session, schedule_id)
     employee = await _get_schedulable_employee(session, employee_id)
+    await _ensure_employee_not_on_vacation(session, employee_id, business_date)
     resolved_role, resolved_station, resolved_start, resolved_end = await _resolve_shift_fields(
         session,
         employee=employee,
@@ -302,6 +303,7 @@ async def update_shift(
     if shift is None or shift.shift_schedule_id != schedule_id:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Смена не найдена")
     employee = await _get_schedulable_employee(session, employee_id)
+    await _ensure_employee_not_on_vacation(session, employee_id, business_date)
     resolved_role, resolved_station, resolved_start, resolved_end = await _resolve_shift_fields(
         session,
         employee=employee,
@@ -393,6 +395,7 @@ async def bulk_copy_week(
 
     for source in shifts:
         target_date = source.business_date + delta
+        await _ensure_employee_not_on_vacation(session, source.employee_id, target_date)
         target = await _find_shift_for_employee_day(
             session,
             schedule_id=schedule_id,
@@ -498,6 +501,22 @@ async def _get_schedulable_employee(session: AsyncSession, employee_id: uuid.UUI
             detail="В график можно ставить только Поваров и Кассиров",
         )
     return employee
+
+
+async def _ensure_employee_not_on_vacation(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+    business_date: date,
+) -> None:
+    if await vacation_service.employee_has_active_vacation(
+        session,
+        employee_id=employee_id,
+        business_date=business_date,
+    ):
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Сотрудник в отпуске в этот день. Смену поставить нельзя.",
+        )
 
 
 async def _resolve_shift_fields(
