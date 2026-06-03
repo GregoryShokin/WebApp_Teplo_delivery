@@ -16,7 +16,7 @@ import {
   History,
   LoaderCircle,
   Lock,
-  Percent,
+  MoreHorizontal,
   Pencil,
   Plus,
   RefreshCw,
@@ -54,6 +54,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -71,17 +79,17 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/ui-app/EmptyState";
 import { PageHeader } from "@/components/ui-app/PageHeader";
+import { PayrollDailyLedgerRoute } from "@/routes/payroll/daily-ledger";
+import { VacationsRoute } from "@/routes/shifts/vacations";
 import {
   apiErrorMessage,
-  apiErrorStatus,
-  cancelVacationPeriod,
   copyWeek,
   createNewVersion,
   createSchedule,
-  createVacationPeriod,
   deleteCashierAllowanceOverride,
   deleteShift,
   getEmployeesRoster,
@@ -95,7 +103,6 @@ import {
   listRuns,
   listSchedules,
   overrideForecast,
-  patchVacationPeriod,
   publishSchedule,
   recomputeForecast,
   removeForecastOverride,
@@ -121,7 +128,6 @@ import {
   type ScheduledShiftRead,
   type ScheduleLedgerEntryRead,
   type ScheduledShiftUpsertPayload,
-  type VacationConflictResponse,
   type VacationPeriodRead,
   type VacationRosterRow,
 } from "@/lib/api";
@@ -135,7 +141,8 @@ import { PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
 import { sortEmployeesByRoleAndName } from "@/lib/role-sort";
 import { cn } from "@/lib/utils";
 
-type ViewMode = "employees" | "stations" | "planFact" | "vacations";
+type ViewMode = "employees" | "stations" | "planFact";
+type ScheduleActiveTab = "schedule" | "shifts-ledger" | "vacations";
 type PlanFactTableMode = "days" | "employees";
 type SortDirection = "asc" | "desc";
 type DaySortKey = "date" | "hours" | "cost" | "status";
@@ -157,11 +164,7 @@ type ShiftDialogState = {
   allowanceComment: string;
   allowanceDirty: boolean;
   allowanceNoneConfirmOpen: boolean;
-};
-
-type FocusEditButtonTarget = {
-  employeeId: string;
-  businessDate: string;
+  compact: boolean;
 };
 
 type CopyWeekState = {
@@ -177,30 +180,36 @@ type ForecastDialogState = {
   removeConfirmOpen: boolean;
 };
 
-type VacationDialogState = {
-  mode: "create" | "edit";
-  period: VacationPeriodRead | null;
-  employeeId: string;
-  dateStart: string;
-  dateEnd: string;
-  comment: string;
-  conflict: VacationConflictResponse | null;
-};
-
 type CostDaySummary = {
   total: number;
+  estimateCount: number;
   warningCount: number;
   reasons: string[];
 };
 
 type FotStatusLevel = "none" | "ok" | "warning" | "danger";
 
+type ScheduleRouteProps = {
+  activeTab: ScheduleActiveTab;
+  onNavigate: (path: string) => void;
+  useStoredTab?: boolean;
+};
+
 const NO_VALUE = "__none";
 const DAY_CELL_WIDTH = 128;
 const EMPLOYEE_COLUMN_WIDTH = 230;
 const STATION_COLUMN_WIDTH = 170;
-const VACATION_MAX_PERIOD_DAYS = 10;
-const VACATION_MIN_GAP_MONTHS = 2;
+const FORECAST_BUDGET_LEFT_COLUMN_WIDTH = 140;
+const FORECAST_BUDGET_DAY_COLUMN_WIDTH = 90;
+const FORECAST_BUDGET_TOTAL_COLUMN_WIDTH = 110;
+const FORECAST_BUDGET_COLLAPSED_KEY = "schedule.forecastBudgetCollapsed";
+const FORECAST_BUDGET_LEGACY_COLLAPSED_KEYS = [
+  "schedule.forecastSummaryCollapsed",
+  "schedule.revenueForecastCollapsed",
+  "schedule.costForecastCollapsed",
+  "schedule.budgetSidebarCollapsed",
+];
+const SCHEDULE_ACTIVE_TAB_STORAGE_KEY = "schedule.activeTab";
 const MOSCOW_OFFSET = "+03:00";
 const stationOptions = ["Пицца", "Роллы", "Горячий цех", "Касса"];
 const stationOrder = [...stationOptions, "(без станции)"];
@@ -212,8 +221,9 @@ const statusLabels: Record<ScheduleRead["status"], string> = {
   superseded: "Замещён",
 };
 
-export function ScheduleRoute() {
+export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: ScheduleRouteProps) {
   const queryClient = useQueryClient();
+  const [isResolvingStoredTab, setIsResolvingStoredTab] = useState(useStoredTab);
   const storedPeriodPreset = useMemo(readStoredSchedulePreset, []);
   const [periodPreset, setPeriodPreset] = useLocalStorageState<PeriodPreset>(
     "schedule.preset",
@@ -236,19 +246,37 @@ export function ScheduleRoute() {
     defaultScheduleDraft(),
   );
   const [shiftDialog, setShiftDialog] = useState<ShiftDialogState | null>(null);
-  const [vacationDialog, setVacationDialog] = useState<VacationDialogState | null>(null);
-  const [focusEditButton, setFocusEditButton] = useState<FocusEditButtonTarget | null>(null);
   const [forecastDialog, setForecastDialog] = useState<ForecastDialogState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ScheduledShiftRead | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
   const [newVersionOpen, setNewVersionOpen] = useState(false);
+
+  useEffect(() => {
+    if (!useStoredTab) {
+      setIsResolvingStoredTab(false);
+      return;
+    }
+    const storedTab = readStoredScheduleTab();
+    if (storedTab && storedTab !== activeTab) {
+      onNavigate(scheduleTabPath(storedTab));
+      return;
+    }
+    setIsResolvingStoredTab(false);
+  }, [activeTab, onNavigate, useStoredTab]);
+
+  useEffect(() => {
+    if (isResolvingStoredTab) {
+      return;
+    }
+    window.localStorage.setItem(SCHEDULE_ACTIVE_TAB_STORAGE_KEY, activeTab);
+  }, [activeTab, isResolvingStoredTab]);
   const [forceRefreshIiko, setForceRefreshIiko] = useState(false);
   const [forceRefreshConfirmOpen, setForceRefreshConfirmOpen] = useState(false);
   const [selectedCostRunId, setSelectedCostRunId] = useState<string | null>(null);
   const [costHistoryOpen, setCostHistoryOpen] = useState(false);
-  const [forecastSummaryCollapsed, setForecastSummaryCollapsed] = useLocalStorageState<boolean>(
-    "schedule.forecastSummaryCollapsed",
-    false,
+  const [forecastBudgetCollapsed, setForecastBudgetCollapsed] = useLocalStorageState<boolean>(
+    FORECAST_BUDGET_COLLAPSED_KEY,
+    readForecastBudgetCollapsedDefault,
     isBoolean,
   );
   const warmedScheduleIds = useRef(new Set<string>());
@@ -325,7 +353,7 @@ export function ScheduleRoute() {
   const planFactQuery = useQuery({
     queryKey: ["plan-fact", selectedScheduleId],
     queryFn: () => getPlanFact(selectedScheduleId ?? ""),
-    enabled: Boolean(selectedScheduleId && viewMode === "planFact"),
+    enabled: Boolean(selectedScheduleId),
   });
 
   const schedules = useMemo(
@@ -378,6 +406,10 @@ export function ScheduleRoute() {
   const displayedCostRun = selectedCostRunId
     ? (selectedCostQuery.data ?? null)
     : (latestCostQuery.data ?? null);
+  const actualRevenueByDay = useMemo(
+    () => indexActualRevenueByDay(planFactQuery.data?.by_date ?? []),
+    [planFactQuery.data?.by_date],
+  );
   const costEstimatesByShiftId = useMemo(
     () => indexCostEstimatesByShift(displayedCostRun?.estimates ?? []),
     [displayedCostRun?.estimates],
@@ -386,7 +418,6 @@ export function ScheduleRoute() {
   const isLocked = currentSchedule != null && !isDraft;
   const selectedWeekStart = toIsoDate(startOfTuesdayWeek(parseIsoDate(periodRange.from)));
   const selectedWeekEnd = toIsoDate(addDays(parseIsoDate(selectedWeekStart), 6));
-  const leadingWidth = viewMode === "stations" ? STATION_COLUMN_WIDTH : EMPLOYEE_COLUMN_WIDTH;
   const shiftDialogAllowanceAssignment = shiftDialog
     ? cashierAllowanceByDay.get(shiftDialog.businessDate)
     : undefined;
@@ -440,50 +471,6 @@ export function ScheduleRoute() {
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить смену")),
   });
 
-  const saveVacationMutation = useMutation({
-    mutationFn: (variables: { state: VacationDialogState; forceRemoveShifts?: boolean }) => {
-      if (variables.state.mode === "edit" && variables.state.period) {
-        return patchVacationPeriod(variables.state.period.id, {
-          date_start: variables.state.dateStart,
-          date_end: variables.state.dateEnd,
-          comment: variables.state.comment.trim() || null,
-          force_remove_conflicting_shifts: Boolean(variables.forceRemoveShifts),
-        });
-      }
-      return createVacationPeriod({
-        employee_id: variables.state.employeeId,
-        date_start: variables.state.dateStart,
-        date_end: variables.state.dateEnd,
-        comment: variables.state.comment.trim() || null,
-        force_remove_conflicting_shifts: Boolean(variables.forceRemoveShifts),
-      });
-    },
-    onSuccess: async () => {
-      toast.success("Отпуск сохранён");
-      setVacationDialog(null);
-      await invalidateVacations();
-      await invalidateCurrentSchedule();
-    },
-    onError: (error) => {
-      const conflict = vacationConflictFromError(error);
-      if (conflict) {
-        setVacationDialog((current) => (current ? { ...current, conflict } : current));
-        return;
-      }
-      toast.error(apiErrorMessage(error, "Не удалось сохранить отпуск"));
-    },
-  });
-
-  const cancelVacationMutation = useMutation({
-    mutationFn: (periodId: string) => cancelVacationPeriod(periodId),
-    onSuccess: async () => {
-      toast.success("Отпуск отменён");
-      setVacationDialog(null);
-      await invalidateVacations();
-    },
-    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отменить отпуск")),
-  });
-
   const saveCashierAllowanceOverrideMutation = useMutation({
     mutationFn: (variables: {
       scheduleId: string;
@@ -526,24 +513,48 @@ export function ScheduleRoute() {
         employee_id: variables.employeeId,
         business_date: variables.businessDate,
       }),
-    onSuccess: async (_shift, variables) => {
+    onSuccess: (shift, variables) => {
       toast.success("Смена добавлена");
-      setFocusEditButton({
-        employeeId: variables.employeeId,
-        businessDate: variables.businessDate,
-      });
-      await invalidateCurrentSchedule();
+      queryClient.setQueryData<ScheduleRead | undefined>(
+        ["schedule", variables.scheduleId],
+        (old) => {
+          if (!old) return old;
+          const filtered = old.shifts.filter(
+            (s) =>
+              !(
+                s.employee_id === shift.employee_id &&
+                s.business_date === shift.business_date
+              ) && s.id !== shift.id,
+          );
+          return { ...old, shifts: [...filtered, shift] };
+        },
+      );
+      queryClient.invalidateQueries({ queryKey: ["plan-fact", variables.scheduleId] });
+      queryClient.invalidateQueries({ queryKey: ["cost-forecast", variables.scheduleId] });
+      void invalidateCashierAllowance();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось добавить смену")),
   });
 
   const deleteShiftMutation = useMutation({
     mutationFn: (shift: ScheduledShiftRead) => deleteShift(currentSchedule?.id ?? "", shift.id),
-    onSuccess: async () => {
+    onSuccess: (_void, shift) => {
       toast.success("Смена удалена");
       setDeleteTarget(null);
       setShiftDialog(null);
-      await invalidateCurrentSchedule();
+      const scheduleId = currentSchedule?.id;
+      if (scheduleId) {
+        queryClient.setQueryData<ScheduleRead | undefined>(
+          ["schedule", scheduleId],
+          (old) => {
+            if (!old) return old;
+            return { ...old, shifts: old.shifts.filter((s) => s.id !== shift.id) };
+          },
+        );
+        queryClient.invalidateQueries({ queryKey: ["plan-fact", scheduleId] });
+        queryClient.invalidateQueries({ queryKey: ["cost-forecast", scheduleId] });
+      }
+      void invalidateCashierAllowance();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось удалить смену")),
   });
@@ -679,20 +690,6 @@ export function ScheduleRoute() {
   }, [selectedScheduleId]);
 
   useEffect(() => {
-    if (!focusEditButton) {
-      return;
-    }
-    const button = document.querySelector<HTMLButtonElement>(
-      `button[data-employee-id="${focusEditButton.employeeId}"][data-business-date="${focusEditButton.businessDate}"]`,
-    );
-    if (!button) {
-      return;
-    }
-    button.focus();
-    setFocusEditButton(null);
-  }, [currentSchedule?.shifts, focusEditButton]);
-
-  useEffect(() => {
     if (!shiftDialog || shiftDialog.allowanceDirty) {
       return;
     }
@@ -726,10 +723,6 @@ export function ScheduleRoute() {
     await queryClient.invalidateQueries({ queryKey: ["schedules"] });
     await queryClient.invalidateQueries({ queryKey: ["plan-fact", selectedScheduleId] });
     await invalidateCashierAllowance();
-  }
-
-  async function invalidateVacations() {
-    await queryClient.invalidateQueries({ queryKey: ["vacations-roster"] });
   }
 
   async function invalidateCostForecast() {
@@ -808,14 +801,18 @@ export function ScheduleRoute() {
         : shift
           ? shift.station_code
           : defaultStationForEmployee(employee);
+    const hasPrimaryRole = employee?.available_roles.some((role) => role.is_primary) ?? false;
     const fallbackRole = shift
       ? roleForShiftOrPrimary(shift, employee)
-      : (defaultRoleForEmployeeAtStation(employee, fallbackStation) ??
-        employee?.primary_payroll_role ??
-        null);
+      : hasPrimaryRole
+        ? (defaultRoleForEmployeeAtStation(employee, fallbackStation) ??
+          employee?.primary_payroll_role ??
+          null)
+        : null;
     const existingOverride = cashierOverridesByDay.get(
       shift?.business_date ?? options.businessDate,
     );
+    const compact = !shift && Boolean(options.employeeId) && options.stationCode === undefined;
     setShiftDialog({
       mode: shift ? "edit" : "create",
       shift,
@@ -832,47 +829,8 @@ export function ScheduleRoute() {
       allowanceComment: existingOverride?.comment ?? "",
       allowanceDirty: false,
       allowanceNoneConfirmOpen: false,
+      compact,
     });
-  }
-
-  function openVacationDialog(employee?: VacationRosterRow, period?: VacationPeriodRead) {
-    const today = toIsoDate(new Date());
-    setVacationDialog({
-      mode: period ? "edit" : "create",
-      period: period ?? null,
-      employeeId: employee?.employee_id ?? "",
-      dateStart: period?.date_start ?? today,
-      dateEnd: period?.date_end ?? today,
-      comment: period?.comment ?? "",
-      conflict: null,
-    });
-  }
-
-  function submitVacationDialog(forceRemoveShifts = false) {
-    if (!vacationDialog) {
-      return;
-    }
-    if (!vacationDialog.employeeId) {
-      toast.error("Выберите сотрудника");
-      return;
-    }
-    if (!vacationDialog.dateStart || !vacationDialog.dateEnd) {
-      toast.error("Выберите даты отпуска");
-      return;
-    }
-    if (vacationDialog.dateEnd < vacationDialog.dateStart) {
-      toast.error("Дата окончания не может быть раньше даты начала");
-      return;
-    }
-    const validationError = vacationDialogValidationError(
-      vacationDialog,
-      vacationRosterQuery.data ?? [],
-    );
-    if (validationError) {
-      toast.error(validationError);
-      return;
-    }
-    saveVacationMutation.mutate({ state: vacationDialog, forceRemoveShifts });
   }
 
   function handleEmployeeEmptyCellClick(employee: EmployeeRosterRow, businessDate: string) {
@@ -882,6 +840,11 @@ export function ScheduleRoute() {
       quickCreateShiftMutation.isPending ||
       deleteShiftMutation.isPending
     ) {
+      return;
+    }
+    const hasPrimaryRole = employee.available_roles.some((role) => role.is_primary);
+    if (!hasPrimaryRole) {
+      openShiftDialog({ employeeId: employee.id, businessDate });
       return;
     }
     quickCreateShiftMutation.mutate({
@@ -917,11 +880,18 @@ export function ScheduleRoute() {
       return;
     }
     const employee = roster.find((item) => item.id === shiftDialog.employeeId);
+    const hasPrimaryRole = employee?.available_roles.some((role) => role.is_primary) ?? false;
     const payrollRole =
       shiftDialog.payrollRole ??
-      defaultRoleForEmployeeAtStation(employee, shiftDialog.stationCode) ??
-      employee?.primary_payroll_role ??
-      null;
+      (hasPrimaryRole
+        ? (defaultRoleForEmployeeAtStation(employee, shiftDialog.stationCode) ??
+          employee?.primary_payroll_role ??
+          null)
+        : null);
+    if (!payrollRole) {
+      toast.error("Выберите роль");
+      return;
+    }
     saveShiftMutation.mutate({
       scheduleId: currentSchedule.id,
       payload: {
@@ -1065,6 +1035,18 @@ export function ScheduleRoute() {
     [currentSchedule, schedules],
   );
 
+  function handleScheduleTabChange(value: string) {
+    if (!isScheduleTab(value)) {
+      return;
+    }
+    window.localStorage.setItem(SCHEDULE_ACTIVE_TAB_STORAGE_KEY, value);
+    onNavigate(scheduleTabPath(value));
+  }
+
+  if (isResolvingStoredTab) {
+    return null;
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -1101,474 +1083,433 @@ export function ScheduleRoute() {
         }
       />
 
-      <section className="flex flex-col gap-4 rounded-lg border bg-card p-4">
-        <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_auto] xl:items-end">
-          <div className="grid gap-2 sm:max-w-[520px]">
-            <Label>График</Label>
-            <Select
-              disabled={schedules.length === 0}
-              onValueChange={(value) => setSelectedScheduleId(value)}
-              value={selectedScheduleId ?? undefined}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Выберите график" />
-              </SelectTrigger>
-              <SelectContent>
-                {schedules.map((schedule) => (
-                  <SelectItem key={schedule.id} value={schedule.id}>
-                    {formatDate(schedule.date_start)} — {formatDate(schedule.date_end)} ·{" "}
-                    {statusLabels[schedule.status]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {currentSchedule ? (
-              <>
-                <Badge variant={isDraft ? "outline" : "default"}>
-                  {statusLabels[currentSchedule.status]}
-                </Badge>
-                {isLocked ? (
-                  <Badge className="gap-1" variant="outline">
-                    <Lock size={13} aria-hidden="true" />
-                    Только просмотр
-                  </Badge>
-                ) : null}
-                <span className="text-sm text-muted-foreground">
-                  {currentSchedule.shifts.length} смен
-                </span>
-              </>
-            ) : null}
-          </div>
-        </div>
+      <Tabs value={activeTab} onValueChange={handleScheduleTabChange} className="space-y-5">
+        <TabsList>
+          <TabsTrigger value="schedule">График</TabsTrigger>
+          <TabsTrigger value="shifts-ledger">Учёт смен</TabsTrigger>
+          <TabsTrigger value="vacations">Отпуска</TabsTrigger>
+        </TabsList>
 
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            <SegmentedButton
-              active={viewMode === "employees"}
-              icon={<Users size={16} aria-hidden="true" />}
-              label="По сотрудникам"
-              onClick={() => setViewMode("employees")}
+        <TabsContent className="mt-0 space-y-5" value="schedule">
+          <section className="flex flex-col gap-4 rounded-lg border bg-card p-4">
+            <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_auto] xl:items-end">
+              <div className="grid gap-2 sm:max-w-[520px]">
+                <Label>График</Label>
+                <Select
+                  disabled={schedules.length === 0}
+                  onValueChange={(value) => setSelectedScheduleId(value)}
+                  value={selectedScheduleId ?? undefined}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите график" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {schedules.map((schedule) => (
+                      <SelectItem key={schedule.id} value={schedule.id}>
+                        {formatDate(schedule.date_start)} — {formatDate(schedule.date_end)} ·{" "}
+                        {statusLabels[schedule.status]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {currentSchedule ? (
+                  <>
+                    <Badge variant={isDraft ? "outline" : "default"}>
+                      {statusLabels[currentSchedule.status]}
+                    </Badge>
+                    {isLocked ? (
+                      <Badge className="gap-1" variant="outline">
+                        <Lock size={13} aria-hidden="true" />
+                        Только просмотр
+                      </Badge>
+                    ) : null}
+                    <span className="text-sm text-muted-foreground">
+                      {currentSchedule.shifts.length} смен
+                    </span>
+                  </>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <SegmentedButton
+                  active={viewMode === "employees"}
+                  icon={<Users size={16} aria-hidden="true" />}
+                  label="По сотрудникам"
+                  onClick={() => setViewMode("employees")}
+                />
+                <SegmentedButton
+                  active={viewMode === "stations"}
+                  icon={<CalendarDays size={16} aria-hidden="true" />}
+                  label="По станциям"
+                  onClick={() => setViewMode("stations")}
+                />
+                <SegmentedButton
+                  active={viewMode === "planFact"}
+                  icon={<BarChart3 size={16} aria-hidden="true" />}
+                  label="План-факт"
+                  onClick={() => setViewMode("planFact")}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  disabled={!isDraft || copyWeekMutation.isPending}
+                  onClick={() =>
+                    setCopyDialog({
+                      open: true,
+                      targetMode: "next",
+                      customDate: toIsoDate(addDays(parseIsoDate(selectedWeekStart), 7)),
+                    })
+                  }
+                  variant="outline"
+                >
+                  <Copy size={16} aria-hidden="true" />
+                  Копировать неделю
+                </Button>
+              </div>
+            </div>
+          </section>
+
+          <PeriodToolbar
+            onCustomRangeApply={handlePeriodRangeApply}
+            onNavigate={handlePeriodNavigate}
+            onPresetChange={handlePeriodPresetChange}
+            preset={periodPreset}
+            range={periodRange}
+            title="Период просмотра"
+          />
+
+          {currentSchedule ? (
+            <ScheduleForecastGroup
+              actualRevenueByDay={actualRevenueByDay}
+              collapsed={forecastBudgetCollapsed}
+              costRun={displayedCostRun}
+              days={visibleDays}
+              forecasts={forecastQuery.data ?? []}
+              forceRefreshIiko={forceRefreshIiko}
+              isCostLoading={
+                latestCostQuery.isLoading ||
+                (selectedCostRunId ? selectedCostQuery.isLoading : false)
+              }
+              isCostRecomputing={runCostForecastMutation.isPending}
+              isForecastLoading={forecastQuery.isLoading || warmForecastMutation.isPending}
+              isForecastRecomputing={recomputeForecastMutation.isPending}
+              onCollapsedChange={setForecastBudgetCollapsed}
+              onCostHistoryOpen={() => setCostHistoryOpen(true)}
+              onCostRecompute={() => runCostForecastMutation.mutate()}
+              onForecastCellClick={openForecastDialog}
+              onForceRefreshChange={setForceRefreshIiko}
+              onForecastRecompute={requestForecastRecompute}
+              todayIso={todayIso}
             />
-            <SegmentedButton
-              active={viewMode === "stations"}
-              icon={<CalendarDays size={16} aria-hidden="true" />}
-              label="По станциям"
-              onClick={() => setViewMode("stations")}
+          ) : null}
+
+          {!currentSchedule && !schedulesQuery.isLoading ? (
+            <NoSchedulePeriodGrid
+              days={visibleDays}
+              isLoading={rosterQuery.isLoading}
+              onCreate={() => openCreateDialog(periodRange, periodPreset)}
+              range={periodRange}
+              roster={viewMode === "employees" ? employeeViewRoster : roster}
+              viewMode={viewMode}
             />
-            <SegmentedButton
-              active={viewMode === "planFact"}
-              icon={<BarChart3 size={16} aria-hidden="true" />}
-              label="План-факт"
-              onClick={() => setViewMode("planFact")}
+          ) : viewMode === "planFact" ? (
+            <PlanFactView
+              isLoading={planFactQuery.isLoading}
+              onTableModeChange={setPlanFactTableMode}
+              summary={planFactQuery.data ?? null}
+              tableMode={planFactTableMode}
             />
-            <SegmentedButton
-              active={viewMode === "vacations"}
-              icon={<CalendarDays size={16} aria-hidden="true" />}
-              label="Отпуска"
-              onClick={() => setViewMode("vacations")}
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              disabled={!isDraft || copyWeekMutation.isPending}
-              onClick={() =>
-                setCopyDialog({
-                  open: true,
-                  targetMode: "next",
-                  customDate: toIsoDate(addDays(parseIsoDate(selectedWeekStart), 7)),
+          ) : viewMode === "employees" ? (
+            <EmployeeScheduleGrid
+              days={visibleDays}
+              isLoading={scheduleQuery.isLoading || rosterQuery.isLoading}
+              isLocked={isLocked}
+              ledgerByDay={ledgerByDay}
+              ledgerByEmployeeDay={ledgerByEmployeeDay}
+              onEditShift={(shift) =>
+                openShiftDialog({
+                  businessDate: shift.business_date,
+                  shift,
                 })
               }
-              variant="outline"
-            >
-              <Copy size={16} aria-hidden="true" />
-              Копировать неделю
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      <PeriodToolbar
-        onCustomRangeApply={handlePeriodRangeApply}
-        onNavigate={handlePeriodNavigate}
-        onPresetChange={handlePeriodPresetChange}
-        preset={periodPreset}
-        range={periodRange}
-        title="Период просмотра"
-      />
-
-      {currentSchedule && viewMode !== "vacations" ? (
-        <ScheduleForecastGroup
-          collapsed={forecastSummaryCollapsed}
-          costRun={displayedCostRun}
-          days={visibleDays}
-          forecasts={forecastQuery.data ?? []}
-          forceRefreshIiko={forceRefreshIiko}
-          isCostLoading={
-            latestCostQuery.isLoading || (selectedCostRunId ? selectedCostQuery.isLoading : false)
-          }
-          isCostRecomputing={runCostForecastMutation.isPending}
-          isForecastLoading={forecastQuery.isLoading || warmForecastMutation.isPending}
-          isForecastRecomputing={recomputeForecastMutation.isPending}
-          leadingWidth={leadingWidth}
-          onCollapsedChange={setForecastSummaryCollapsed}
-          onCostHistoryOpen={() => setCostHistoryOpen(true)}
-          onCostRecompute={() => runCostForecastMutation.mutate()}
-          onForecastCellClick={openForecastDialog}
-          onForceRefreshChange={setForceRefreshIiko}
-          onForecastRecompute={requestForecastRecompute}
-        />
-      ) : null}
-
-      {viewMode === "vacations" ? (
-        <VacationsView
-          errorMessage={
-            vacationRosterQuery.isError
-              ? apiErrorMessage(vacationRosterQuery.error, "Не удалось загрузить отпуска")
-              : null
-          }
-          isError={vacationRosterQuery.isError}
-          isLoading={vacationRosterQuery.isLoading}
-          onCreate={() => openVacationDialog()}
-          onAdd={openVacationDialog}
-          onEdit={openVacationDialog}
-          onRetry={() => vacationRosterQuery.refetch()}
-          rows={vacationRosterQuery.data ?? []}
-          year={vacationYear}
-        />
-      ) : !currentSchedule && !schedulesQuery.isLoading ? (
-        <NoSchedulePeriodGrid
-          days={visibleDays}
-          isLoading={rosterQuery.isLoading}
-          onCreate={() => openCreateDialog(periodRange, periodPreset)}
-          range={periodRange}
-          roster={viewMode === "employees" ? employeeViewRoster : roster}
-          viewMode={viewMode}
-        />
-      ) : viewMode === "planFact" ? (
-        <PlanFactView
-          isLoading={planFactQuery.isLoading}
-          onTableModeChange={setPlanFactTableMode}
-          summary={planFactQuery.data ?? null}
-          tableMode={planFactTableMode}
-        />
-      ) : viewMode === "employees" ? (
-        <EmployeeScheduleGrid
-          days={visibleDays}
-          isLoading={scheduleQuery.isLoading || rosterQuery.isLoading}
-          isLocked={isLocked}
-          ledgerByDay={ledgerByDay}
-          ledgerByEmployeeDay={ledgerByEmployeeDay}
-          onEditShift={(shift) =>
-            openShiftDialog({
-              businessDate: shift.business_date,
-              shift,
-            })
-          }
-          onEmptyCellClick={handleEmployeeEmptyCellClick}
-          onFilledCellClick={handleFilledShiftClick}
-          costByShiftId={costEstimatesByShiftId}
-          cashierAllowanceByDay={cashierAllowanceByDay}
-          roster={employeeViewRoster}
-          scheduleRange={currentScheduleRange}
-          shiftByEmployeeDay={shiftByEmployeeDay}
-          today={todayIso}
-          vacationByEmployeeDay={vacationByEmployeeDay}
-        />
-      ) : (
-        <StationScheduleGrid
-          days={visibleDays}
-          isLoading={scheduleQuery.isLoading}
-          isLocked={isLocked}
-          ledgerByDay={ledgerByDay}
-          ledgerByStationDay={ledgerByStationDay}
-          onCellClick={(station, day) =>
-            openShiftDialog({
-              businessDate: day,
-              stationCode: station === "(без станции)" ? null : station,
-            })
-          }
-          onShiftClick={(shift) =>
-            openShiftDialog({
-              businessDate: shift.business_date,
-              shift,
-            })
-          }
-          onShiftDelete={handleFilledShiftClick}
-          costByShiftId={costEstimatesByShiftId}
-          cashierAllowanceByDay={cashierAllowanceByDay}
-          roster={roster}
-          rows={stationRows}
-          scheduleRange={currentScheduleRange}
-          today={todayIso}
-        />
-      )}
-
-      <CreateScheduleDialog
-        draft={createDraft}
-        isSaving={createMutation.isPending}
-        onChange={setCreateDraft}
-        onOpenChange={setCreateOpen}
-        onPeriodRangeApply={handleCreatePeriodRangeApply}
-        onPeriodPresetChange={handleCreatePeriodPresetChange}
-        onSubmit={() => createMutation.mutate(createDraft)}
-        open={createOpen}
-        periodPreset={createPeriodPreset}
-      />
-
-      <ShiftDialog
-        allowanceAssignment={shiftDialogAllowanceAssignment}
-        employees={roster}
-        isAllowanceLoading={shiftDialogAllowanceLoading}
-        isRemovingAllowance={removeCashierAllowanceOverrideMutation.isPending}
-        isSaving={saveShiftMutation.isPending || saveCashierAllowanceOverrideMutation.isPending}
-        onDelete={(shift) => setDeleteTarget(shift)}
-        onRemoveAllowance={() => {
-          if (currentSchedule && shiftDialog?.allowanceOverrideId) {
-            removeCashierAllowanceOverrideMutation.mutate({
-              scheduleId: currentSchedule.id,
-              overrideId: shiftDialog.allowanceOverrideId,
-            });
-          }
-        }}
-        onOpenChange={(open) => {
-          if (!open) {
-            setShiftDialog(null);
-          }
-        }}
-        onSubmit={submitShiftDialog}
-        setValue={setShiftDialog}
-        state={shiftDialog}
-      />
-
-      <VacationDialog
-        employees={vacationRosterQuery.data ?? []}
-        isCancelling={cancelVacationMutation.isPending}
-        isSaving={saveVacationMutation.isPending}
-        onCancelPeriod={(period) => cancelVacationMutation.mutate(period.id)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setVacationDialog(null);
-          }
-        }}
-        onSubmit={() => submitVacationDialog(false)}
-        setValue={setVacationDialog}
-        state={vacationDialog}
-      />
-
-      <AlertDialog
-        open={Boolean(vacationDialog?.conflict)}
-        onOpenChange={(open) =>
-          setVacationDialog((current) =>
-            current ? { ...current, conflict: open ? current.conflict : null } : current,
-          )
-        }
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Есть смены в дни отпуска</AlertDialogTitle>
-            <AlertDialogDescription>
-              {vacationDialog?.conflict
-                ? `Найдено смен: ${vacationDialog.conflict.conflicting_shifts.length}. Можно удалить смены из черновиков и сохранить отпуск. Опубликованный график нужно сначала открыть новой версией.`
-                : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              disabled={saveVacationMutation.isPending}
-              onClick={() =>
-                setVacationDialog((current) => (current ? { ...current, conflict: null } : current))
+              onEmptyCellClick={handleEmployeeEmptyCellClick}
+              onFilledCellClick={handleFilledShiftClick}
+              costByShiftId={costEstimatesByShiftId}
+              cashierAllowanceByDay={cashierAllowanceByDay}
+              roster={employeeViewRoster}
+              scheduleRange={currentScheduleRange}
+              shiftByEmployeeDay={shiftByEmployeeDay}
+              today={todayIso}
+              vacationByEmployeeDay={vacationByEmployeeDay}
+            />
+          ) : (
+            <StationScheduleGrid
+              days={visibleDays}
+              isLoading={scheduleQuery.isLoading}
+              isLocked={isLocked}
+              ledgerByDay={ledgerByDay}
+              ledgerByStationDay={ledgerByStationDay}
+              onCellClick={(station, day) =>
+                openShiftDialog({
+                  businessDate: day,
+                  stationCode: station === "(без станции)" ? null : station,
+                })
               }
-              type="button"
-            >
-              Отмена
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={saveVacationMutation.isPending}
-              onClick={(event) => {
-                event.preventDefault();
-                setVacationDialog((current) =>
-                  current ? { ...current, conflict: null } : current,
-                );
-                submitVacationDialog(true);
-              }}
-              type="button"
-            >
-              Удалить смены
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              onShiftClick={(shift) =>
+                openShiftDialog({
+                  businessDate: shift.business_date,
+                  shift,
+                })
+              }
+              onShiftDelete={handleFilledShiftClick}
+              costByShiftId={costEstimatesByShiftId}
+              cashierAllowanceByDay={cashierAllowanceByDay}
+              roster={roster}
+              rows={stationRows}
+              scheduleRange={currentScheduleRange}
+              today={todayIso}
+            />
+          )}
 
-      <AlertDialog
-        open={Boolean(shiftDialog?.allowanceNoneConfirmOpen)}
-        onOpenChange={(open) =>
-          setShiftDialog((current) =>
-            current ? { ...current, allowanceNoneConfirmOpen: open } : current,
-          )
-        }
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Оставить день без надбавки?</AlertDialogTitle>
-            <AlertDialogDescription>
-              За этот день никто из администраторов не получит надбавку старшего или зама.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Отмена</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(event) => {
-                event.preventDefault();
-                setShiftDialog((current) =>
-                  current ? { ...current, allowanceNoneConfirmOpen: false } : current,
-                );
-                submitShiftDialog(true);
-              }}
-            >
-              Сохранить
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          <CreateScheduleDialog
+            draft={createDraft}
+            isSaving={createMutation.isPending}
+            onChange={setCreateDraft}
+            onOpenChange={setCreateOpen}
+            onPeriodRangeApply={handleCreatePeriodRangeApply}
+            onPeriodPresetChange={handleCreatePeriodPresetChange}
+            onSubmit={() => createMutation.mutate(createDraft)}
+            open={createOpen}
+            periodPreset={createPeriodPreset}
+          />
 
-      <ForecastOverrideDialog
-        isRemoving={removeForecastOverrideMutation.isPending}
-        isSaving={saveForecastOverrideMutation.isPending}
-        onChange={setForecastDialog}
-        onOpenChange={(open) => {
-          if (!open) {
-            setForecastDialog(null);
-          }
-        }}
-        onRemove={removeForecastOverrideFromDialog}
-        onSubmit={submitForecastOverride}
-        state={forecastDialog}
-      />
+          <ShiftDialog
+            allowanceAssignment={shiftDialogAllowanceAssignment}
+            employees={roster}
+            isAllowanceLoading={shiftDialogAllowanceLoading}
+            isRemovingAllowance={removeCashierAllowanceOverrideMutation.isPending}
+            isSaving={saveShiftMutation.isPending || saveCashierAllowanceOverrideMutation.isPending}
+            onDelete={(shift) => setDeleteTarget(shift)}
+            onRemoveAllowance={() => {
+              if (currentSchedule && shiftDialog?.allowanceOverrideId) {
+                removeCashierAllowanceOverrideMutation.mutate({
+                  scheduleId: currentSchedule.id,
+                  overrideId: shiftDialog.allowanceOverrideId,
+                });
+              }
+            }}
+            onOpenChange={(open) => {
+              if (!open) {
+                setShiftDialog(null);
+              }
+            }}
+            onSubmit={submitShiftDialog}
+            setValue={setShiftDialog}
+            state={shiftDialog}
+          />
 
-      <CopyWeekDialog
-        copyDialog={copyDialog}
-        isSaving={copyWeekMutation.isPending}
-        onChange={setCopyDialog}
-        onSubmit={submitCopyWeek}
-        selectedWeekEnd={selectedWeekEnd}
-        selectedWeekStart={selectedWeekStart}
-      />
+          <AlertDialog
+            open={Boolean(shiftDialog?.allowanceNoneConfirmOpen)}
+            onOpenChange={(open) =>
+              setShiftDialog((current) =>
+                current ? { ...current, allowanceNoneConfirmOpen: open } : current,
+              )
+            }
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Оставить день без надбавки?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  За этот день никто из администраторов не получит надбавку старшего или зама.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Отмена</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setShiftDialog((current) =>
+                      current ? { ...current, allowanceNoneConfirmOpen: false } : current,
+                    );
+                    submitShiftDialog(true);
+                  }}
+                >
+                  Сохранить
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
-      <CostHistorySheet
-        currentRunId={displayedCostRun?.id ?? null}
-        isLoading={costRunsQuery.isLoading}
-        onOpenChange={setCostHistoryOpen}
-        onSelectRun={(runId) => setSelectedCostRunId(runId)}
-        open={costHistoryOpen}
-        runs={costRunsQuery.data ?? []}
-      />
+          <ForecastOverrideDialog
+            isRemoving={removeForecastOverrideMutation.isPending}
+            isSaving={saveForecastOverrideMutation.isPending}
+            onChange={setForecastDialog}
+            onOpenChange={(open) => {
+              if (!open) {
+                setForecastDialog(null);
+              }
+            }}
+            onRemove={removeForecastOverrideFromDialog}
+            onSubmit={submitForecastOverride}
+            state={forecastDialog}
+          />
 
-      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={() => setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Удалить смену?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteTarget
-                ? `${deleteTarget.employee_full_name}, ${formatDate(deleteTarget.business_date)}`
-                : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteShiftMutation.isPending}>Отмена</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={deleteShiftMutation.isPending || !deleteTarget}
-              onClick={(event) => {
-                event.preventDefault();
-                if (deleteTarget) {
-                  deleteShiftMutation.mutate(deleteTarget);
-                }
-              }}
-            >
-              Удалить
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          <CopyWeekDialog
+            copyDialog={copyDialog}
+            isSaving={copyWeekMutation.isPending}
+            onChange={setCopyDialog}
+            onSubmit={submitCopyWeek}
+            selectedWeekEnd={selectedWeekEnd}
+            selectedWeekStart={selectedWeekStart}
+          />
 
-      <AlertDialog open={publishOpen} onOpenChange={setPublishOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Опубликовать график?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {currentSchedule
-                ? `Период ${formatDate(currentSchedule.date_start)} — ${formatDate(
-                    currentSchedule.date_end,
-                  )}, ${currentSchedule.shifts.length} смен.`
-                : ""}
-              {hasPublishedOverlap
-                ? " Если в этот период уже есть опубликованный график, он будет помечен как замещённый."
-                : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={publishMutation.isPending}>Отмена</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={publishMutation.isPending}
-              onClick={(event) => {
-                event.preventDefault();
-                publishMutation.mutate();
-              }}
-            >
-              Опубликовать
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          <CostHistorySheet
+            currentRunId={displayedCostRun?.id ?? null}
+            isLoading={costRunsQuery.isLoading}
+            onOpenChange={setCostHistoryOpen}
+            onSelectRun={(runId) => setSelectedCostRunId(runId)}
+            open={costHistoryOpen}
+            runs={costRunsQuery.data ?? []}
+          />
 
-      <AlertDialog open={newVersionOpen} onOpenChange={setNewVersionOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Создать редактируемую копию?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Текущий график остаётся опубликованным. Новая версия откроется как черновик.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={newVersionMutation.isPending}>Отмена</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={newVersionMutation.isPending}
-              onClick={(event) => {
-                event.preventDefault();
-                newVersionMutation.mutate();
-              }}
-            >
-              Создать
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          <AlertDialog open={Boolean(deleteTarget)} onOpenChange={() => setDeleteTarget(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Удалить смену?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {deleteTarget
+                    ? `${deleteTarget.employee_full_name}, ${formatDate(deleteTarget.business_date)}`
+                    : ""}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={deleteShiftMutation.isPending}>
+                  Отмена
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={deleteShiftMutation.isPending || !deleteTarget}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    if (deleteTarget) {
+                      deleteShiftMutation.mutate(deleteTarget);
+                    }
+                  }}
+                >
+                  Удалить
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
-      <AlertDialog open={forceRefreshConfirmOpen} onOpenChange={setForceRefreshConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Принудительно перечитать выручку из iiko?</AlertDialogTitle>
-            <AlertDialogDescription>Может занять до минуты.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={recomputeForecastMutation.isPending}>
-              Отмена
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={recomputeForecastMutation.isPending}
-              onClick={(event) => {
-                event.preventDefault();
-                runForecastRecompute(true);
-              }}
-            >
-              Перечитать
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          <AlertDialog open={publishOpen} onOpenChange={setPublishOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Опубликовать график?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {currentSchedule
+                    ? `Период ${formatDate(currentSchedule.date_start)} — ${formatDate(
+                        currentSchedule.date_end,
+                      )}, ${currentSchedule.shifts.length} смен.`
+                    : ""}
+                  {hasPublishedOverlap
+                    ? " Если в этот период уже есть опубликованный график, он будет помечен как замещённый."
+                    : ""}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={publishMutation.isPending}>Отмена</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={publishMutation.isPending}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    publishMutation.mutate();
+                  }}
+                >
+                  Опубликовать
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog open={newVersionOpen} onOpenChange={setNewVersionOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Создать редактируемую копию?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Текущий график остаётся опубликованным. Новая версия откроется как черновик.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={newVersionMutation.isPending}>
+                  Отмена
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={newVersionMutation.isPending}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    newVersionMutation.mutate();
+                  }}
+                >
+                  Создать
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog open={forceRefreshConfirmOpen} onOpenChange={setForceRefreshConfirmOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Принудительно перечитать выручку из iiko?</AlertDialogTitle>
+                <AlertDialogDescription>Может занять до минуты.</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={recomputeForecastMutation.isPending}>
+                  Отмена
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={recomputeForecastMutation.isPending}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    runForecastRecompute(true);
+                  }}
+                >
+                  Перечитать
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </TabsContent>
+
+        <TabsContent className="mt-0" value="shifts-ledger">
+          <PayrollDailyLedgerRoute embedded />
+        </TabsContent>
+
+        <TabsContent className="mt-0" value="vacations">
+          <VacationsRoute embedded />
+        </TabsContent>
+      </Tabs>
     </div>
   );
+}
+
+function scheduleTabPath(tab: ScheduleActiveTab) {
+  if (tab === "shifts-ledger") {
+    return "/schedule/shifts-ledger";
+  }
+  return tab === "vacations" ? "/schedule/vacations" : "/schedule";
+}
+
+function readStoredScheduleTab() {
+  const value = window.localStorage.getItem(SCHEDULE_ACTIVE_TAB_STORAGE_KEY);
+  return isScheduleTab(value) ? value : null;
+}
+
+function isScheduleTab(value: unknown): value is ScheduleActiveTab {
+  return value === "schedule" || value === "shifts-ledger" || value === "vacations";
 }
 
 const periodPresetLabels: Record<PeriodPreset, string> = {
@@ -1793,7 +1734,7 @@ function NoSchedulePeriodGrid({
     : roster.map((employee) => ({
         id: employee.id,
         title: employee.full_name,
-        subtitle: positionRoleLabel(employee.position, primaryRoleLabelSource(employee)),
+        subtitle: employeeRoleLine(employee, primaryRoleLabelSource(employee)),
       }));
   const minWidth = leadingWidth + days.length * DAY_CELL_WIDTH;
 
@@ -1854,163 +1795,6 @@ function NoSchedulePeriodGrid({
   );
 }
 
-function VacationsView({
-  errorMessage,
-  isError,
-  isLoading,
-  onCreate,
-  onAdd,
-  onEdit,
-  onRetry,
-  rows,
-  year,
-}: {
-  errorMessage: string | null;
-  isError: boolean;
-  isLoading: boolean;
-  onCreate: () => void;
-  onAdd: (employee: VacationRosterRow) => void;
-  onEdit: (employee: VacationRosterRow, period: VacationPeriodRead) => void;
-  onRetry: () => void;
-  rows: VacationRosterRow[];
-  year: number;
-}) {
-  if (isLoading) {
-    return (
-      <section className="rounded-lg border bg-card p-4">
-        <Skeleton className="h-8 w-60" />
-        <div className="mt-4 space-y-2">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <Skeleton className="h-16 w-full" key={index} />
-          ))}
-        </div>
-      </section>
-    );
-  }
-
-  if (isError) {
-    return (
-      <EmptyState
-        icon={<AlertTriangle className="h-5 w-5" aria-hidden="true" />}
-        title="Отпуска не загрузились"
-        description={errorMessage ?? "Не удалось получить список сотрудников для отпусков."}
-        action={
-          <Button onClick={onRetry} size="sm" type="button" variant="outline">
-            <RefreshCw size={15} aria-hidden="true" />
-            Повторить
-          </Button>
-        }
-      />
-    );
-  }
-
-  if (rows.length === 0) {
-    return (
-      <EmptyState
-        icon={<CalendarDays className="h-5 w-5" aria-hidden="true" />}
-        title="Нет сотрудников для отпусков"
-        description="Отпуска доступны для активных поваров и кассиров."
-        action={
-          <Button disabled size="sm" type="button" variant="outline">
-            <Plus size={15} aria-hidden="true" />
-            Новый отпуск
-          </Button>
-        }
-      />
-    );
-  }
-
-  return (
-    <section className="overflow-hidden rounded-lg border bg-card">
-      <div className="flex flex-col gap-2 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="font-medium">Отпуска {year}</div>
-          <div className="mt-1 text-sm text-muted-foreground">
-            Лимит считается по календарному году, без переноса остатка.
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline">{rows.length} сотрудников</Badge>
-          <Button onClick={onCreate} size="sm" type="button">
-            <Plus size={15} aria-hidden="true" />
-            Новый отпуск
-          </Button>
-        </div>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[880px] text-sm">
-          <thead>
-            <tr className="border-b bg-muted/50 text-left text-muted-foreground">
-              <th className="px-4 py-3 font-medium">Сотрудник</th>
-              <th className="px-4 py-3 text-right font-medium">Использовано</th>
-              <th className="px-4 py-3 text-right font-medium">Остаток</th>
-              <th className="px-4 py-3 font-medium">Периоды</th>
-              <th className="px-4 py-3 text-right font-medium">Действие</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr className="border-b last:border-b-0 hover:bg-muted/30" key={row.employee_id}>
-                <td className="px-4 py-3">
-                  <div className="font-medium">{row.employee_full_name}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">{row.position}</div>
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums">
-                  {row.used} из {row.limit}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums">
-                  <span className={cn(row.remaining <= 3 && "text-amber-700")}>
-                    {row.remaining}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  {row.periods.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {row.periods.map((period) => (
-                        <button
-                          className="rounded-md border bg-background px-2 py-1 text-left text-xs hover:bg-muted"
-                          key={period.id}
-                          onClick={() => onEdit(row, period)}
-                          type="button"
-                        >
-                          <span className="font-medium">
-                            {formatShortRange(period.date_start, period.date_end)}
-                          </span>
-                          <span className="ml-2 text-muted-foreground">
-                            {period.days_count} дн.
-                          </span>
-                          <VacationStatusBadge status={period.status} />
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground">Периодов нет</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <Button onClick={() => onAdd(row)} size="sm" type="button" variant="outline">
-                    <Plus size={15} aria-hidden="true" />
-                    Добавить
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function VacationStatusBadge({ status }: { status: VacationPeriodRead["status"] }) {
-  const label = status === "paid" ? "оплачен" : status === "cancelled" ? "отменён" : "план";
-  return (
-    <span className="ml-2 rounded-sm border border-muted-foreground/30 px-1 text-[10px] uppercase text-muted-foreground">
-      {label}
-    </span>
-  );
-}
-
 function PlanFactView({
   isLoading,
   onTableModeChange,
@@ -2064,7 +1848,7 @@ function PlanFactView({
         <EmptyState
           action={
             <Button asChild>
-              <a href="/payroll/runs">
+              <a href="/payroll">
                 <ExternalLink size={16} aria-hidden="true" />К расчётам payroll
               </a>
             </Button>
@@ -2500,6 +2284,7 @@ function CashierAllowancePlanFactCell({ row }: { row: PlanFactDayRowRead }) {
 }
 
 function ScheduleForecastGroup({
+  actualRevenueByDay,
   collapsed,
   costRun,
   days,
@@ -2509,14 +2294,15 @@ function ScheduleForecastGroup({
   isCostRecomputing,
   isForecastLoading,
   isForecastRecomputing,
-  leadingWidth,
   onCollapsedChange,
   onCostHistoryOpen,
   onCostRecompute,
   onForecastCellClick,
   onForceRefreshChange,
   onForecastRecompute,
+  todayIso,
 }: {
+  actualRevenueByDay: Map<string, number>;
   collapsed: boolean;
   costRun: PayrollForecastRunRead | null;
   days: string[];
@@ -2526,562 +2312,585 @@ function ScheduleForecastGroup({
   isCostRecomputing: boolean;
   isForecastLoading: boolean;
   isForecastRecomputing: boolean;
-  leadingWidth: number;
   onCollapsedChange: (collapsed: boolean) => void;
   onCostHistoryOpen: () => void;
   onCostRecompute: () => void;
   onForecastCellClick: (forecast: RevenueForecastRead) => void;
   onForceRefreshChange: (checked: boolean) => void;
   onForecastRecompute: () => void;
+  todayIso: string;
 }) {
-  const revenueSummary = isForecastLoading
-    ? "загрузка"
-    : formatMoneyWithCurrency(totalForecastAmount(forecasts));
-  const costSummary = isCostLoading
-    ? "загрузка"
-    : formatMoneyWithCurrency(costRun?.total_shift_cost_estimate ?? null);
-  const budgetSummary = costRun
-    ? `${formatMoneyWithCurrency(costRun.total_shift_cost_estimate)} · ${formatPercent(
-        costRun.fot_to_revenue_pct,
-      )}`
-    : "—";
-  const summary = `Выручка ${revenueSummary} · Стоимость ${costSummary} · Бюджет ${budgetSummary}`;
+  const forecastByDay = useMemo(
+    () => new Map(forecasts.map((forecast) => [forecast.business_date, forecast])),
+    [forecasts],
+  );
+  const costByDay = useMemo(
+    () => buildCostSummariesByDay(costRun?.estimates ?? []),
+    [costRun?.estimates],
+  );
+  const warningThresholdPct = decimalToNumber(costRun?.fot_warning_threshold_pct ?? null) ?? 28;
+  const totals = useMemo(
+    () =>
+      calculateForecastBudgetTotals({
+        actualRevenueByDay,
+        costByDay,
+        days,
+        forecastByDay,
+        hasCostRun: Boolean(costRun),
+        todayIso,
+      }),
+    [actualRevenueByDay, costByDay, costRun, days, forecastByDay, todayIso],
+  );
+
+  if (days.length === 0) {
+    return null;
+  }
 
   return (
     <section className="overflow-hidden rounded-lg border bg-card">
-      <CollapsibleSectionHeader
+      <ForecastBudgetHeader
+        actions={
+          <ForecastBudgetActions
+            forceRefreshIiko={forceRefreshIiko}
+            hasCostRun={Boolean(costRun)}
+            hasRevenueForecasts={forecasts.length > 0}
+            isCostRecomputing={isCostRecomputing}
+            isForecastRecomputing={isForecastRecomputing}
+            onCostHistoryOpen={onCostHistoryOpen}
+            onCostRecompute={onCostRecompute}
+            onForceRefreshChange={onForceRefreshChange}
+            onForecastRecompute={onForecastRecompute}
+          />
+        }
         collapsed={collapsed}
         onToggle={() => onCollapsedChange(!collapsed)}
-        summary={summary}
+        summary={
+          <ForecastBudgetSummary
+            isCostLoading={isCostLoading}
+            isForecastLoading={isForecastLoading}
+            threshold={warningThresholdPct}
+            totals={totals}
+          />
+        }
         title="Прогнозы и бюджет"
       />
       {collapsed ? null : (
-        <div className="space-y-4 p-3">
-          <RevenueForecastPanel
+        <div className="p-3">
+          <ForecastBudgetTable
+            actualRevenueByDay={actualRevenueByDay}
+            costByDay={costByDay}
+            costRun={costRun}
             days={days}
-            forecasts={forecasts}
-            forceRefreshIiko={forceRefreshIiko}
-            isLoading={isForecastLoading}
-            isRecomputing={isForecastRecomputing}
-            leadingWidth={leadingWidth}
-            onCellClick={onForecastCellClick}
-            onForceRefreshChange={onForceRefreshChange}
-            onRecompute={onForecastRecompute}
+            forecastByDay={forecastByDay}
+            isCostLoading={isCostLoading}
+            isForecastLoading={isForecastLoading}
+            onForecastCellClick={onForecastCellClick}
+            threshold={warningThresholdPct}
+            todayIso={todayIso}
+            totals={totals}
           />
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <CostForecastPanel
-              days={days}
-              isLoading={isCostLoading}
-              isRecomputing={isCostRecomputing}
-              leadingWidth={leadingWidth}
-              onOpenHistory={onCostHistoryOpen}
-              onRecompute={onCostRecompute}
-              run={costRun}
-            />
-            <BudgetSummaryPanel
-              isRecomputing={isCostRecomputing}
-              onOpenHistory={onCostHistoryOpen}
-              onRecompute={onCostRecompute}
-              run={costRun}
-            />
-          </div>
         </div>
       )}
     </section>
   );
 }
 
-function RevenueForecastPanel({
-  days,
-  forecasts,
-  forceRefreshIiko,
-  isLoading,
-  isRecomputing,
-  leadingWidth,
-  onCellClick,
-  onForceRefreshChange,
-  onRecompute,
-}: {
-  days: string[];
-  forecasts: RevenueForecastRead[];
-  forceRefreshIiko: boolean;
-  isLoading: boolean;
-  isRecomputing: boolean;
-  leadingWidth: number;
-  onCellClick: (forecast: RevenueForecastRead) => void;
-  onForceRefreshChange: (checked: boolean) => void;
-  onRecompute: () => void;
-}) {
-  const minWidth = leadingWidth + days.length * DAY_CELL_WIDTH;
-  const forecastByDay = useMemo(
-    () => new Map(forecasts.map((forecast) => [forecast.business_date, forecast])),
-    [forecasts],
-  );
-  const isEmpty = !isLoading && forecasts.length === 0;
-  const totalForecast = totalForecastAmount(forecasts);
-  const summaryValue = isLoading ? "загрузка" : formatMoneyWithCurrency(totalForecast);
+type ForecastBudgetTotals = {
+  revenueSum: number | null;
+  costSum: number | null;
+  fotPct: number | null;
+};
 
-  return (
-    <section className="overflow-hidden rounded-lg border bg-card">
-      <StaticPanelHeader
-        subtitle="Плановая выручка по дням периода"
-        summary={summaryValue}
-        title="Прогноз выручки"
-      />
-      <div className="overflow-x-auto">
-        <table className="border-separate border-spacing-0 text-sm" style={{ minWidth }}>
-          <tbody>
-            <tr>
-              <td
-                className="sticky left-0 z-20 border-b border-r bg-card px-3 py-3 align-top"
-                rowSpan={2}
-                style={{ width: leadingWidth, minWidth: leadingWidth }}
-              >
-                <div className="grid gap-3">
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <input
-                      checked={forceRefreshIiko}
-                      className="h-4 w-4 rounded border-border"
-                      onChange={(event) => onForceRefreshChange(event.target.checked)}
-                      type="checkbox"
-                    />
-                    Force-refresh iiko
-                  </label>
-                  <Button
-                    disabled={isRecomputing}
-                    onClick={onRecompute}
-                    size="sm"
-                    type="button"
-                    variant={isEmpty ? "default" : "outline"}
-                  >
-                    {isRecomputing ? (
-                      <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
-                    ) : (
-                      <RefreshCw size={15} aria-hidden="true" />
-                    )}
-                    {isEmpty ? "Рассчитать прогноз" : "Пересчитать"}
-                  </Button>
-                </div>
-              </td>
-              {days.map((day) => (
-                <td
-                  className="border-b border-r bg-muted/70 px-2 py-2 text-center font-medium text-muted-foreground"
-                  key={day}
-                  style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
-                >
-                  <div>{weekdayLabels[parseIsoDate(day).getDay()]}</div>
-                  <div className="text-base text-foreground">{day.slice(8, 10)}</div>
-                </td>
-              ))}
-            </tr>
-            <tr>
-              {isLoading ? (
-                days.map((day) => (
-                  <td className="border-b border-r p-3" key={day}>
-                    <Skeleton className="h-12 w-full" />
-                  </td>
-                ))
-              ) : isEmpty ? (
-                <td className="border-b border-r px-3 py-4 text-center" colSpan={days.length}>
-                  <Button disabled={isRecomputing} onClick={onRecompute} type="button">
-                    {isRecomputing ? (
-                      <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-                    ) : (
-                      <RefreshCw size={16} aria-hidden="true" />
-                    )}
-                    Рассчитать прогноз
-                  </Button>
-                </td>
-              ) : (
-                days.map((day) => (
-                  <ForecastCell forecast={forecastByDay.get(day)} key={day} onClick={onCellClick} />
-                ))
-              )}
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function ForecastCell({
-  forecast,
-  onClick,
-}: {
-  forecast: RevenueForecastRead | undefined;
-  onClick: (forecast: RevenueForecastRead) => void;
-}) {
-  if (!forecast) {
-    return (
-      <td
-        className="h-[76px] border-b border-r px-2 py-3 text-center"
-        style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
-      >
-        <div className="text-lg font-semibold tabular-nums text-muted-foreground">—</div>
-      </td>
-    );
-  }
-
-  return (
-    <td
-      className="h-[76px] border-b border-r p-1.5 text-center"
-      style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
-    >
-      <button
-        className="flex h-full w-full flex-col items-center justify-center rounded-md px-1.5 hover:bg-primary/5 focus:outline-none focus:ring-2 focus:ring-ring"
-        onClick={() => onClick(forecast)}
-        type="button"
-      >
-        <div className={cn("text-lg font-semibold tabular-nums", forecastAmountClass(forecast))}>
-          {forecast.forecast_amount === null ? "—" : formatMoney(forecast.forecast_amount)}
-        </div>
-        <div className="mt-1 flex min-h-5 items-center justify-center gap-1 text-[11px] leading-4">
-          {forecast.event_review_recommended ? (
-            <span
-              aria-label="Праздничный день"
-              title="Праздничный день, рекомендуем проверить прогноз вручную"
-            >
-              <AlertTriangle className="h-3.5 w-3.5 text-orange-600" aria-hidden="true" />
-            </span>
-          ) : null}
-          {forecastStatusLabel(forecast) ? (
-            <span className={forecastAmountClass(forecast)}>{forecastStatusLabel(forecast)}</span>
-          ) : null}
-        </div>
-      </button>
-    </td>
-  );
-}
-
-function CostForecastPanel({
-  days,
-  isLoading,
-  isRecomputing,
-  leadingWidth,
-  onOpenHistory,
-  onRecompute,
-  run,
-}: {
-  days: string[];
-  isLoading: boolean;
-  isRecomputing: boolean;
-  leadingWidth: number;
-  onOpenHistory: () => void;
-  onRecompute: () => void;
-  run: PayrollForecastRunRead | null;
-}) {
-  const minWidth = leadingWidth + days.length * DAY_CELL_WIDTH;
-  const costByDay = useMemo(() => buildCostSummariesByDay(run?.estimates ?? []), [run?.estimates]);
-  const isEmpty = !isLoading && !run;
-  const summaryValue = isLoading
-    ? "загрузка"
-    : formatMoneyWithCurrency(run?.total_shift_cost_estimate ?? null);
-
-  return (
-    <section className="overflow-hidden rounded-lg border bg-card">
-      <StaticPanelHeader
-        subtitle={run ? `Расчёт от ${formatDateTime(run.run_at)}` : "Стоимость ещё не рассчитана"}
-        summary={summaryValue}
-        title="Стоимость графика"
-      />
-      <div className="overflow-x-auto">
-        <table className="border-separate border-spacing-0 text-sm" style={{ minWidth }}>
-          <tbody>
-            <tr>
-              <td
-                className="sticky left-0 z-20 border-b border-r bg-card px-3 py-3 align-top"
-                rowSpan={2}
-                style={{ width: leadingWidth, minWidth: leadingWidth }}
-              >
-                <div className="grid gap-3">
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      disabled={isRecomputing}
-                      onClick={onRecompute}
-                      size="sm"
-                      type="button"
-                      variant={isEmpty ? "default" : "outline"}
-                    >
-                      {isRecomputing ? (
-                        <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
-                      ) : (
-                        <Calculator size={15} aria-hidden="true" />
-                      )}
-                      {isRecomputing ? "Идёт расчёт..." : isEmpty ? "Рассчитать" : "Пересчитать"}
-                    </Button>
-                    <Button
-                      disabled={!run}
-                      onClick={onOpenHistory}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <History size={15} aria-hidden="true" />
-                      История
-                    </Button>
-                  </div>
-                </div>
-              </td>
-              {days.map((day) => (
-                <td
-                  className="border-b border-r bg-muted/70 px-2 py-2 text-center font-medium text-muted-foreground"
-                  key={day}
-                  style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
-                >
-                  <div>{weekdayLabels[parseIsoDate(day).getDay()]}</div>
-                  <div className="text-base text-foreground">{day.slice(8, 10)}</div>
-                </td>
-              ))}
-            </tr>
-            <tr>
-              {isLoading ? (
-                days.map((day) => (
-                  <td className="border-b border-r p-3" key={day}>
-                    <Skeleton className="h-12 w-full" />
-                  </td>
-                ))
-              ) : isEmpty ? (
-                <td className="border-b border-r px-3 py-4 text-center" colSpan={days.length}>
-                  <Button disabled={isRecomputing} onClick={onRecompute} type="button">
-                    {isRecomputing ? (
-                      <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-                    ) : (
-                      <Calculator size={16} aria-hidden="true" />
-                    )}
-                    Рассчитать стоимость
-                  </Button>
-                  <div className="mt-2 text-xs text-muted-foreground">
-                    Запустите расчёт, чтобы увидеть стоимость смен
-                  </div>
-                </td>
-              ) : (
-                days.map((day) => <CostDayCell day={day} key={day} summary={costByDay.get(day)} />)
-              )}
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function CostDayCell({ day, summary }: { day: string; summary: CostDaySummary | undefined }) {
-  if (!summary) {
-    return (
-      <td
-        className="h-[76px] border-b border-r px-2 py-3 text-center"
-        style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
-        title="Нет смен или расчёт не содержит данных за день"
-      >
-        <div className="text-lg font-semibold tabular-nums text-muted-foreground">—</div>
-      </td>
-    );
-  }
-
-  return (
-    <td
-      className="h-[76px] border-b border-r p-1.5 text-center"
-      style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
-      title={costDayTitle(day, summary)}
-    >
-      <div className="flex h-full w-full flex-col items-center justify-center rounded-md px-1.5">
-        <div
-          className={cn(
-            "text-lg font-semibold tabular-nums",
-            summary.warningCount > 0 ? "text-orange-600" : "text-foreground",
-          )}
-        >
-          {formatMoney(summary.total)}
-        </div>
-        <div className="mt-1 flex min-h-5 flex-wrap items-center justify-center gap-1 text-[11px] leading-4">
-          {summary.warningCount > 0 ? (
-            <>
-              <AlertTriangle className="h-3.5 w-3.5 text-orange-600" aria-hidden="true" />
-              <span className="text-orange-600">проверить</span>
-            </>
-          ) : null}
-          {summary.reasons.slice(0, 2).map((reason) => (
-            <span className={costReasonClass(reason)} key={reason}>
-              {costReasonLabel(reason)}
-            </span>
-          ))}
-        </div>
-      </div>
-    </td>
-  );
-}
-
-function BudgetSummaryPanel({
-  isRecomputing,
-  onOpenHistory,
-  onRecompute,
-  run,
-}: {
-  isRecomputing: boolean;
-  onOpenHistory: () => void;
-  onRecompute: () => void;
-  run: PayrollForecastRunRead | null;
-}) {
-  const fotLevel = run ? fotStatusLevel(run) : "none";
-  const summaryValue = run
-    ? `${formatMoneyWithCurrency(run.total_shift_cost_estimate)} · ${formatPercent(
-        run.fot_to_revenue_pct,
-      )}`
-    : "—";
-
-  return (
-    <section className="overflow-hidden rounded-lg border bg-card">
-      <StaticPanelHeader
-        icon={<Percent className="h-5 w-5 text-muted-foreground" aria-hidden="true" />}
-        subtitle={run ? `Расчёт от ${formatDateTime(run.run_at)}` : "Стоимость ещё не рассчитана"}
-        summary={summaryValue}
-        title="Прогноз бюджета"
-      />
-
-      <div className="p-4 pt-3">
-        {run ? (
-          <div className="grid gap-2 text-sm">
-            <SummaryRow
-              label="Выручка прогноз"
-              value={formatMoneyWithCurrency(run.total_revenue_forecast)}
-            />
-            <SummaryRow
-              label="Стоимость смен"
-              value={formatMoneyWithCurrency(run.total_shift_cost_estimate)}
-            />
-            <SummaryRow
-              className={fotStatusClass(fotLevel)}
-              label="ФОТ % от выручки"
-              title={`Порог: ${formatPercent(run.fot_warning_threshold_pct)}`}
-              value={`${formatPercent(run.fot_to_revenue_pct)} · ${fotStatusText(fotLevel)}`}
-            />
-            <div className="my-1 h-px bg-border" />
-            <SummaryRow label="Смен всего" value={String(run.shifts_total)} />
-            <SummaryRow
-              className={run.shifts_with_warnings > 0 ? "text-orange-600" : undefined}
-              label="С предупреждениями"
-              value={String(run.shifts_with_warnings)}
-            />
-            <SummaryRow label="Автор" value={run.run_by_label ?? "—"} />
-          </div>
-        ) : (
-          <div className="rounded-md border border-dashed px-3 py-5 text-center text-sm text-muted-foreground">
-            Стоимость ещё не рассчитана. Запустите расчёт.
-          </div>
-        )}
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button disabled={isRecomputing} onClick={onRecompute} size="sm" type="button">
-            {isRecomputing ? (
-              <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
-            ) : (
-              <Calculator size={15} aria-hidden="true" />
-            )}
-            {isRecomputing ? "Идёт расчёт..." : run ? "Пересчитать" : "Рассчитать стоимость"}
-          </Button>
-          <Button disabled={!run} onClick={onOpenHistory} size="sm" type="button" variant="outline">
-            <History size={15} aria-hidden="true" />
-            История версий
-          </Button>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function SummaryRow({
-  className,
-  label,
-  title,
-  value,
-}: {
-  className?: string;
-  label: string;
-  title?: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3" title={title}>
-      <span className="text-muted-foreground">{label}</span>
-      <span className={cn("text-right font-medium tabular-nums", className)}>{value}</span>
-    </div>
-  );
-}
-
-function CollapsibleSectionHeader({
+function ForecastBudgetHeader({
+  actions,
   collapsed,
-  icon,
   onToggle,
-  subtitle,
   summary,
   title,
 }: {
+  actions: ReactNode;
   collapsed: boolean;
-  icon?: ReactNode;
   onToggle: () => void;
-  subtitle?: string;
-  summary?: string;
+  summary: ReactNode;
   title: string;
 }) {
   return (
-    <button
-      aria-expanded={!collapsed}
-      className="flex w-full items-center justify-between gap-3 border-b px-4 py-3 text-left hover:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
-      onClick={onToggle}
-      type="button"
+    <div
+      className={cn(
+        "flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between",
+        !collapsed && "border-b",
+      )}
     >
-      <span className="flex min-w-0 flex-1 items-center gap-3">
-        {icon}
-        <span className="min-w-0">
-          <span className="block font-medium">{title}</span>
-          {subtitle ? (
-            <span className="mt-1 block truncate text-xs font-normal text-muted-foreground">
-              {subtitle}
-            </span>
-          ) : null}
-        </span>
-      </span>
-      <span className="flex min-w-0 shrink items-center justify-end gap-2 text-sm text-muted-foreground">
-        {summary ? <span className="truncate tabular-nums">{summary}</span> : null}
+      <button
+        aria-expanded={!collapsed}
+        className="flex min-w-0 items-center gap-2 rounded-sm text-left hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        onClick={onToggle}
+        type="button"
+      >
         {collapsed ? (
           <ChevronDown size={16} aria-hidden="true" />
         ) : (
           <ChevronUp size={16} aria-hidden="true" />
         )}
-      </span>
-    </button>
+        <span className="font-medium">{title}</span>
+      </button>
+      <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
+        {summary}
+        {actions}
+      </div>
+    </div>
   );
 }
 
-function StaticPanelHeader({
-  icon,
-  subtitle,
-  summary,
-  title,
+function ForecastBudgetActions({
+  forceRefreshIiko,
+  hasCostRun,
+  hasRevenueForecasts,
+  isCostRecomputing,
+  isForecastRecomputing,
+  onCostHistoryOpen,
+  onCostRecompute,
+  onForceRefreshChange,
+  onForecastRecompute,
 }: {
-  icon?: ReactNode;
-  subtitle?: string;
-  summary?: string;
-  title: string;
+  forceRefreshIiko: boolean;
+  hasCostRun: boolean;
+  hasRevenueForecasts: boolean;
+  isCostRecomputing: boolean;
+  isForecastRecomputing: boolean;
+  onCostHistoryOpen: () => void;
+  onCostRecompute: () => void;
+  onForceRefreshChange: (checked: boolean) => void;
+  onForecastRecompute: () => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
-      <div className="flex min-w-0 items-start gap-3">
-        {icon}
-        <div className="min-w-0">
-          <div className="font-medium">{title}</div>
-          {subtitle ? (
-            <div className="mt-1 truncate text-xs text-muted-foreground">{subtitle}</div>
-          ) : null}
-        </div>
-      </div>
-      {summary ? (
-        <div className="shrink-0 text-sm font-medium tabular-nums text-muted-foreground">
-          {summary}
-        </div>
-      ) : null}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" type="button" variant="outline">
+          <MoreHorizontal size={16} aria-hidden="true" />
+          Действия
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuItem disabled={isForecastRecomputing} onSelect={onForecastRecompute}>
+          {isForecastRecomputing ? (
+            <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+          ) : (
+            <RefreshCw size={16} aria-hidden="true" />
+          )}
+          {hasRevenueForecasts ? "Пересчитать прогноз" : "Рассчитать прогноз"}
+        </DropdownMenuItem>
+        <DropdownMenuCheckboxItem
+          checked={forceRefreshIiko}
+          onCheckedChange={(checked) => onForceRefreshChange(checked === true)}
+        >
+          Force-refresh iiko
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem disabled={isCostRecomputing} onSelect={onCostRecompute}>
+          {isCostRecomputing ? (
+            <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+          ) : (
+            <Calculator size={16} aria-hidden="true" />
+          )}
+          {hasCostRun ? "Пересчитать стоимость" : "Рассчитать стоимость"}
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled={!hasCostRun} onSelect={onCostHistoryOpen}>
+          <History size={16} aria-hidden="true" />
+          История версий
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ForecastBudgetSummary({
+  isCostLoading,
+  isForecastLoading,
+  threshold,
+  totals,
+}: {
+  isCostLoading: boolean;
+  isForecastLoading: boolean;
+  threshold: number;
+  totals: ForecastBudgetTotals;
+}) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+      <span className="whitespace-nowrap">
+        Выручка{" "}
+        <span className="font-medium tabular-nums text-foreground">
+          {isForecastLoading ? "загрузка" : formatMoneyWithCurrency(totals.revenueSum)}
+        </span>
+      </span>
+      <span>·</span>
+      <span className="whitespace-nowrap">
+        Стоимость{" "}
+        <span className="font-medium tabular-nums text-foreground">
+          {isCostLoading ? "загрузка" : formatMoneyWithCurrency(totals.costSum)}
+        </span>
+      </span>
+      <span>·</span>
+      <span className="whitespace-nowrap">ФОТ</span>
+      {isForecastLoading || isCostLoading ? (
+        <span className="font-medium tabular-nums text-foreground">загрузка</span>
+      ) : (
+        <FotBadge compact threshold={threshold} value={totals.fotPct} />
+      )}
     </div>
+  );
+}
+
+function ForecastBudgetTable({
+  actualRevenueByDay,
+  costByDay,
+  costRun,
+  days,
+  forecastByDay,
+  isCostLoading,
+  isForecastLoading,
+  onForecastCellClick,
+  threshold,
+  todayIso,
+  totals,
+}: {
+  actualRevenueByDay: Map<string, number>;
+  costByDay: Map<string, CostDaySummary>;
+  costRun: PayrollForecastRunRead | null;
+  days: string[];
+  forecastByDay: Map<string, RevenueForecastRead>;
+  isCostLoading: boolean;
+  isForecastLoading: boolean;
+  onForecastCellClick: (forecast: RevenueForecastRead) => void;
+  threshold: number;
+  todayIso: string;
+  totals: ForecastBudgetTotals;
+}) {
+  const minWidth =
+    FORECAST_BUDGET_LEFT_COLUMN_WIDTH +
+    days.length * FORECAST_BUDGET_DAY_COLUMN_WIDTH +
+    FORECAST_BUDGET_TOTAL_COLUMN_WIDTH;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-separate border-spacing-0 text-sm" style={{ minWidth }}>
+        <thead>
+          <tr>
+            <th
+              className="sticky left-0 z-30 border-b border-r bg-muted/90 px-3 py-2 text-left font-medium text-muted-foreground"
+              style={{
+                minWidth: FORECAST_BUDGET_LEFT_COLUMN_WIDTH,
+                width: FORECAST_BUDGET_LEFT_COLUMN_WIDTH,
+              }}
+            >
+              Показатель
+            </th>
+            {days.map((day) => (
+              <ForecastBudgetDayHeader day={day} key={day} />
+            ))}
+            <th
+              className="sticky right-0 z-30 border-b border-l bg-muted/90 px-3 py-2 text-center font-medium text-muted-foreground shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)]"
+              style={{
+                minWidth: FORECAST_BUDGET_TOTAL_COLUMN_WIDTH,
+                width: FORECAST_BUDGET_TOTAL_COLUMN_WIDTH,
+              }}
+            >
+              ИТОГО
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <ForecastBudgetMetricHeader label="Выручка" />
+            {days.map((day) => (
+              <RevenueBudgetCell
+                actualRevenueByDay={actualRevenueByDay}
+                day={day}
+                forecast={forecastByDay.get(day)}
+                isLoading={isForecastLoading}
+                key={day}
+                onClick={onForecastCellClick}
+                todayIso={todayIso}
+              />
+            ))}
+            <ForecastBudgetTotalCell isLoading={isForecastLoading}>
+              {formatMoney(totals.revenueSum)}
+            </ForecastBudgetTotalCell>
+          </tr>
+          <tr>
+            <ForecastBudgetMetricHeader label="Стоимость смен" />
+            {days.map((day) => (
+              <CostBudgetCell
+                day={day}
+                isLoading={isCostLoading}
+                key={day}
+                run={costRun}
+                summary={costByDay.get(day)}
+              />
+            ))}
+            <ForecastBudgetTotalCell isLoading={isCostLoading}>
+              {formatMoney(totals.costSum)}
+            </ForecastBudgetTotalCell>
+          </tr>
+          <tr>
+            <ForecastBudgetMetricHeader label="ФОТ %" />
+            {days.map((day) => {
+              const revenue = getForecastBudgetRevenueAmount({
+                actualRevenueByDay,
+                day,
+                forecastByDay,
+                todayIso,
+              });
+              const cost = costRun ? (costByDay.get(day)?.total ?? 0) : null;
+              const value =
+                revenue !== null && revenue > 0 && cost !== null ? (cost / revenue) * 100 : null;
+              return (
+                <FotBudgetCell
+                  cost={cost}
+                  isLoading={isForecastLoading || isCostLoading}
+                  key={day}
+                  revenue={revenue}
+                  threshold={threshold}
+                  value={value}
+                />
+              );
+            })}
+            <ForecastBudgetTotalCell isLoading={isForecastLoading || isCostLoading}>
+              <FotBadge threshold={threshold} value={totals.fotPct} />
+            </ForecastBudgetTotalCell>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ForecastBudgetDayHeader({ day }: { day: string }) {
+  return (
+    <th
+      className="border-b border-r bg-muted/70 px-2 py-2 text-center font-medium text-muted-foreground"
+      style={{
+        minWidth: FORECAST_BUDGET_DAY_COLUMN_WIDTH,
+        width: FORECAST_BUDGET_DAY_COLUMN_WIDTH,
+      }}
+    >
+      <div className="text-xs">{weekdayLabels[parseIsoDate(day).getDay()]}</div>
+      <div className="text-base leading-5 text-foreground">{day.slice(8, 10)}</div>
+    </th>
+  );
+}
+
+function ForecastBudgetMetricHeader({ label }: { label: string }) {
+  return (
+    <th
+      className="sticky left-0 z-20 border-b border-r bg-card px-3 py-3 text-left font-medium"
+      style={{
+        minWidth: FORECAST_BUDGET_LEFT_COLUMN_WIDTH,
+        width: FORECAST_BUDGET_LEFT_COLUMN_WIDTH,
+      }}
+    >
+      {label}
+    </th>
+  );
+}
+
+function RevenueBudgetCell({
+  actualRevenueByDay,
+  day,
+  forecast,
+  isLoading,
+  onClick,
+  todayIso,
+}: {
+  actualRevenueByDay: Map<string, number>;
+  day: string;
+  forecast: RevenueForecastRead | undefined;
+  isLoading: boolean;
+  onClick: (forecast: RevenueForecastRead) => void;
+  todayIso: string;
+}) {
+  const display = getForecastBudgetRevenueDisplay({
+    actualRevenueByDay,
+    day,
+    forecast,
+    todayIso,
+  });
+  const title = revenueBudgetCellTitle(day, forecast, display);
+  const content = (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-1 rounded-sm px-1.5">
+      <div
+        className={cn("font-semibold tabular-nums", revenueBudgetAmountClass(display, forecast))}
+      >
+        {display.amount === null ? "—" : formatMoney(display.amount)}
+      </div>
+      <div className="min-h-4 max-w-full truncate text-[11px] leading-4 text-muted-foreground">
+        {display.label}
+      </div>
+    </div>
+  );
+
+  return (
+    <td
+      className="h-[64px] border-b border-r p-1.5 text-center align-middle"
+      style={{
+        minWidth: FORECAST_BUDGET_DAY_COLUMN_WIDTH,
+        width: FORECAST_BUDGET_DAY_COLUMN_WIDTH,
+      }}
+      title={title}
+    >
+      {isLoading ? (
+        <Skeleton className="mx-auto h-10 w-full" />
+      ) : forecast ? (
+        <button
+          className="h-full w-full rounded-sm hover:bg-primary/5 focus:outline-none focus:ring-2 focus:ring-ring"
+          onClick={() => onClick(forecast)}
+          type="button"
+        >
+          {content}
+        </button>
+      ) : (
+        content
+      )}
+    </td>
+  );
+}
+
+function CostBudgetCell({
+  day,
+  isLoading,
+  run,
+  summary,
+}: {
+  day: string;
+  isLoading: boolean;
+  run: PayrollForecastRunRead | null;
+  summary: CostDaySummary | undefined;
+}) {
+  const hasWarnings = (summary?.warningCount ?? 0) > 0;
+
+  return (
+    <td
+      className="h-[64px] border-b border-r p-1.5 text-center align-middle"
+      style={{
+        minWidth: FORECAST_BUDGET_DAY_COLUMN_WIDTH,
+        width: FORECAST_BUDGET_DAY_COLUMN_WIDTH,
+      }}
+      title={costBudgetCellTitle(day, summary, run)}
+    >
+      {isLoading ? (
+        <Skeleton className="mx-auto h-10 w-full" />
+      ) : summary ? (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1 rounded-sm px-1.5">
+          <div
+            className={cn(
+              "font-semibold tabular-nums",
+              hasWarnings ? "text-orange-600" : "text-foreground",
+            )}
+          >
+            {formatMoney(summary.total)}
+          </div>
+          <div
+            className={cn(
+              "min-h-4 max-w-full truncate text-[11px] leading-4 text-muted-foreground",
+              hasWarnings && "text-orange-600",
+            )}
+          >
+            {hasWarnings ? "проверить" : `смен: ${summary.estimateCount}`}
+          </div>
+        </div>
+      ) : (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1 rounded-sm px-1.5">
+          <div className="font-semibold tabular-nums text-muted-foreground">—</div>
+          <div className="min-h-4 text-[11px] leading-4 text-muted-foreground">
+            {run ? "нет смен" : "нет расчёта"}
+          </div>
+        </div>
+      )}
+    </td>
+  );
+}
+
+function FotBudgetCell({
+  cost,
+  isLoading,
+  revenue,
+  threshold,
+  value,
+}: {
+  cost: number | null;
+  isLoading: boolean;
+  revenue: number | null;
+  threshold: number;
+  value: number | null;
+}) {
+  return (
+    <td
+      className={cn(
+        "h-[64px] border-b border-r p-1.5 text-center align-middle",
+        fotBudgetCellClass(value, threshold),
+      )}
+      style={{
+        minWidth: FORECAST_BUDGET_DAY_COLUMN_WIDTH,
+        width: FORECAST_BUDGET_DAY_COLUMN_WIDTH,
+      }}
+      title={fotBudgetTitle(revenue, cost, value, threshold)}
+    >
+      {isLoading ? (
+        <Skeleton className="mx-auto h-8 w-full" />
+      ) : (
+        <FotBadge threshold={threshold} value={value} />
+      )}
+    </td>
+  );
+}
+
+function ForecastBudgetTotalCell({
+  children,
+  isLoading,
+}: {
+  children: ReactNode;
+  isLoading: boolean;
+}) {
+  return (
+    <td
+      className="sticky right-0 z-20 h-[64px] border-b border-l bg-card px-2 py-3 text-center align-middle font-semibold tabular-nums shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)]"
+      style={{
+        minWidth: FORECAST_BUDGET_TOTAL_COLUMN_WIDTH,
+        width: FORECAST_BUDGET_TOTAL_COLUMN_WIDTH,
+      }}
+    >
+      {isLoading ? <Skeleton className="mx-auto h-8 w-full" /> : children}
+    </td>
+  );
+}
+
+function FotBadge({
+  compact = false,
+  threshold,
+  value,
+}: {
+  compact?: boolean;
+  threshold: number;
+  value: number | null;
+}) {
+  const level = fotLevelForValue(value, threshold);
+  if (level === "none") {
+    return <span className="tabular-nums text-muted-foreground">—</span>;
+  }
+  const marker = level === "ok" ? "✓" : level === "warning" ? "⚠" : "⚠⚠";
+  return (
+    <Badge
+      className={cn(
+        "rounded-sm px-2 py-0.5 font-mono tabular-nums",
+        compact ? "text-[11px]" : "text-xs",
+        level === "ok" && "border-emerald-200 bg-emerald-50 text-emerald-700",
+        level === "warning" && "border-amber-200 bg-amber-50 text-amber-700",
+        level === "danger" && "border-red-200 bg-red-50 text-red-700",
+      )}
+      variant="outline"
+    >
+      {formatPercent(value)} {marker}
+    </Badge>
   );
 }
 
@@ -3679,9 +3488,7 @@ function StationShiftCard({
         {formatShiftTime(shift)}
       </div>
       <div className={cn("truncate", roleColorClasses(shift.payroll_role).secondaryText)}>
-        {employee
-          ? positionRoleLabel(employee.position, shift.payroll_role)
-          : payrollRoleLabel(shift.payroll_role)}
+        {employee ? employeeRoleLine(employee, shift.payroll_role) : payrollRoleLabel(shift.payroll_role)}
       </div>
       <AllowanceBadge badge={allowanceBadge} />
       {costByShiftId.get(shift.id) ? (
@@ -3740,10 +3547,16 @@ function EmployeeRoleSubtitle({
   payrollRole?: string | null;
 }) {
   const badge = employeeAllowanceFlag(employee);
+  const role = rosterRoleForPayrollRole(employee, payrollRole);
 
   return (
     <div className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-      <span className="truncate">{positionRoleLabel(employee.position, payrollRole)}</span>
+      <span className="truncate">{employeeRoleLine(employee, payrollRole)}</span>
+      {role?.is_substitute ? (
+        <Badge className="h-4 shrink-0 rounded-sm border-sky-200 bg-sky-50 px-1 text-[10px] leading-none text-sky-700 shadow-none">
+          подмена
+        </Badge>
+      ) : null}
       {badge ? <InlineAllowanceBadge role={badge} /> : null}
     </div>
   );
@@ -3753,6 +3566,19 @@ function InlineAllowanceBadge({ role }: { role: "senior" | "deputy_senior" }) {
   return (
     <span className="inline-flex h-4 min-w-5 shrink-0 items-center justify-center rounded-sm border border-muted-foreground/30 px-1 text-[10px] leading-none text-muted-foreground">
       {allowanceRoleShortLabel(role)}
+    </span>
+  );
+}
+
+function RosterRoleSelectLabel({ role }: { role: EmployeeRosterRow["available_roles"][number] }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <span className="truncate">{payrollRoleLabel(role.payroll_role)}</span>
+      {role.is_substitute ? (
+        <Badge className="h-5 shrink-0 rounded-sm border-sky-200 bg-sky-50 px-1.5 text-[10px] leading-none text-sky-700 shadow-none">
+          подмена
+        </Badge>
+      ) : null}
     </span>
   );
 }
@@ -4101,6 +3927,7 @@ function ShiftDialog({
         </DialogHeader>
         {state ? (
           <div className="grid gap-4">
+            {!state.compact ? (
             <div className="grid gap-2">
               <Label>Сотрудник</Label>
               <Select
@@ -4130,12 +3957,18 @@ function ShiftDialog({
                   </SelectItem>
                   {employeeOptions.map((employee) => (
                     <SelectItem key={employee.id} value={employee.id}>
-                      {employee.full_name} · {employee.position}
+                      {employee.full_name} ·{" "}
+                      {employeeRoleLine(
+                        employee,
+                        defaultRoleForEmployeeAtStation(employee, state.stationCode) ??
+                          primaryRoleLabelSource(employee),
+                      )}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+            ) : null}
             <div className="grid gap-2">
               <Label>Роль</Label>
               <Select
@@ -4157,12 +3990,13 @@ function ShiftDialog({
                 <SelectContent>
                   {(selectedEmployee?.available_roles ?? []).map((role) => (
                     <SelectItem key={role.payroll_role} value={role.payroll_role}>
-                      {payrollRoleLabel(role.payroll_role)}
+                      <RosterRoleSelectLabel role={role} />
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+            {!state.compact ? (
             <div className="grid gap-2">
               <Label>Станция</Label>
               <Select
@@ -4198,6 +4032,7 @@ function ShiftDialog({
                 </SelectContent>
               </Select>
             </div>
+            ) : null}
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-2">
                 <Label htmlFor="shift-start">Начало</Label>
@@ -4218,6 +4053,7 @@ function ShiftDialog({
                 />
               </div>
             </div>
+            {!state.compact ? (
             <div className="grid gap-2">
               <Label htmlFor="shift-comment">Комментарий</Label>
               <Textarea
@@ -4226,6 +4062,7 @@ function ShiftDialog({
                 value={state.comment}
               />
             </div>
+            ) : null}
             {showAllowanceSection ? (
               <div className="grid gap-3 rounded-md border p-3">
                 <div className="flex items-start justify-between gap-3">
@@ -4344,159 +4181,6 @@ function ShiftDialog({
               Отмена
             </Button>
             <Button disabled={isSaving} onClick={onSubmit}>
-              {isSaving ? <LoaderCircle className="animate-spin" size={16} /> : null}
-              Сохранить
-            </Button>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function VacationDialog({
-  employees,
-  isCancelling,
-  isSaving,
-  onCancelPeriod,
-  onOpenChange,
-  onSubmit,
-  setValue,
-  state,
-}: {
-  employees: VacationRosterRow[];
-  isCancelling: boolean;
-  isSaving: boolean;
-  onCancelPeriod: (period: VacationPeriodRead) => void;
-  onOpenChange: (open: boolean) => void;
-  onSubmit: () => void;
-  setValue: Dispatch<SetStateAction<VacationDialogState | null>>;
-  state: VacationDialogState | null;
-}) {
-  const selectedEmployee = employees.find((employee) => employee.employee_id === state?.employeeId);
-  const validationError = vacationDialogValidationError(state, employees);
-  const dateEndMax = state?.dateStart
-    ? toIsoDate(addDays(parseIsoDate(state.dateStart), VACATION_MAX_PERIOD_DAYS - 1))
-    : undefined;
-  const selectedDaysCount =
-    state?.dateStart && state.dateEnd && state.dateEnd >= state.dateStart
-      ? vacationDaysCount(state.dateStart, state.dateEnd)
-      : null;
-
-  function patchState(patch: Partial<VacationDialogState>) {
-    setValue((current) => (current ? { ...current, ...patch, conflict: null } : current));
-  }
-
-  return (
-    <Dialog open={Boolean(state)} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {state?.mode === "edit" ? "Редактировать отпуск" : "Новый отпуск"}
-          </DialogTitle>
-          <DialogDescription>
-            {selectedEmployee
-              ? `${selectedEmployee.employee_full_name} · остаток ${selectedEmployee.remaining} дн.`
-              : "Выберите сотрудника и период отпуска."}
-          </DialogDescription>
-        </DialogHeader>
-        {state ? (
-          <div className="grid gap-4">
-            <div className="grid gap-2">
-              <Label>Сотрудник</Label>
-              <Select
-                disabled={state.mode === "edit"}
-                onValueChange={(value) => patchState({ employeeId: value })}
-                value={state.employeeId || undefined}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите сотрудника" />
-                </SelectTrigger>
-                <SelectContent>
-                  {employees.map((employee) => (
-                    <SelectItem key={employee.employee_id} value={employee.employee_id}>
-                      {employee.employee_full_name} · остаток {employee.remaining} дн.
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="vacation-date-start">С</Label>
-                <Input
-                  id="vacation-date-start"
-                  onChange={(event) => patchState({ dateStart: event.target.value })}
-                  type="date"
-                  value={state.dateStart}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="vacation-date-end">По</Label>
-                <Input
-                  id="vacation-date-end"
-                  max={dateEndMax}
-                  min={state.dateStart || undefined}
-                  onChange={(event) => patchState({ dateEnd: event.target.value })}
-                  type="date"
-                  value={state.dateEnd}
-                />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="vacation-comment">Комментарий</Label>
-              <Textarea
-                id="vacation-comment"
-                onChange={(event) => patchState({ comment: event.target.value })}
-                value={state.comment}
-              />
-            </div>
-            <div
-              className={cn(
-                "rounded-md border bg-muted/30 px-3 py-2 text-sm",
-                validationError && "border-destructive/40 bg-destructive/5 text-destructive",
-              )}
-            >
-              <div>
-                {selectedDaysCount !== null
-                  ? `${selectedDaysCount} дн. · ${formatShortRange(state.dateStart, state.dateEnd)}`
-                  : "Выберите период отпуска"}
-              </div>
-              <div className="mt-1 text-xs">
-                Максимум {VACATION_MAX_PERIOD_DAYS} дней за один отпуск. Следующий отпуск — через{" "}
-                {VACATION_MIN_GAP_MONTHS} месяца после предыдущего.
-              </div>
-              {validationError ? (
-                <div className="mt-1 text-xs font-medium">{validationError}</div>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-        <DialogFooter className="gap-2 sm:justify-between sm:space-x-0">
-          <div>
-            {state?.period && state.period.status !== "cancelled" ? (
-              <Button
-                disabled={isSaving || isCancelling}
-                onClick={() => state.period && onCancelPeriod(state.period)}
-                type="button"
-                variant="outline"
-              >
-                Отменить отпуск
-              </Button>
-            ) : null}
-          </div>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button
-              disabled={isSaving || isCancelling}
-              onClick={() => onOpenChange(false)}
-              variant="outline"
-            >
-              Закрыть
-            </Button>
-            <Button
-              disabled={isSaving || isCancelling || Boolean(validationError)}
-              onClick={onSubmit}
-            >
               {isSaving ? <LoaderCircle className="animate-spin" size={16} /> : null}
               Сохранить
             </Button>
@@ -5007,25 +4691,6 @@ function sourceRecord(value: unknown): Record<string, unknown> | null {
   return isRecord(value) ? value : null;
 }
 
-function vacationConflictFromError(error: unknown): VacationConflictResponse | null {
-  if (apiErrorStatus(error) !== 409) {
-    return null;
-  }
-  const data = (error as { response?: { data?: unknown } }).response?.data;
-  if (!isRecord(data) || !Array.isArray(data.conflicting_shifts)) {
-    return null;
-  }
-  return {
-    detail: String(data.detail ?? "На период отпуска уже есть смены"),
-    conflicting_shifts: data.conflicting_shifts.filter(isRecord).map((item) => ({
-      shift_id: String(item.shift_id ?? ""),
-      business_date: String(item.business_date ?? ""),
-      schedule_id: String(item.schedule_id ?? ""),
-      schedule_status: String(item.schedule_status ?? ""),
-    })),
-  };
-}
-
 function shortId(value: unknown) {
   const text = String(value ?? "");
   return text ? text.slice(0, 8) : "—";
@@ -5145,10 +4810,12 @@ function buildCostSummariesByDay(estimates: ShiftCostEstimateRead[]) {
   estimates.forEach((estimate) => {
     const current = index.get(estimate.business_date) ?? {
       total: 0,
+      estimateCount: 0,
       warningCount: 0,
       reasons: [],
     };
     current.total += decimalToNumber(estimate.total_cost_estimate) ?? 0;
+    current.estimateCount += 1;
     if (estimate.quality_status === "requires_review") {
       current.warningCount += 1;
       estimate.quality_reasons.forEach((reason) => {
@@ -5162,14 +4829,225 @@ function buildCostSummariesByDay(estimates: ShiftCostEstimateRead[]) {
   return index;
 }
 
-function totalForecastAmount(forecasts: RevenueForecastRead[]) {
-  if (forecasts.length === 0) {
-    return null;
+type RevenueBudgetDisplay = {
+  amount: number | null;
+  label: string;
+  source: "fact" | "forecast" | "missing";
+};
+
+function indexActualRevenueByDay(rows: PlanFactDayRowRead[]) {
+  const index = new Map<string, number>();
+  rows.forEach((row) => {
+    const amount = decimalToNumber(row.actual_revenue);
+    if (amount !== null) {
+      index.set(row.business_date, amount);
+    }
+  });
+  return index;
+}
+
+function calculateForecastBudgetTotals({
+  actualRevenueByDay,
+  costByDay,
+  days,
+  forecastByDay,
+  hasCostRun,
+  todayIso,
+}: {
+  actualRevenueByDay: Map<string, number>;
+  costByDay: Map<string, CostDaySummary>;
+  days: string[];
+  forecastByDay: Map<string, RevenueForecastRead>;
+  hasCostRun: boolean;
+  todayIso: string;
+}): ForecastBudgetTotals {
+  let revenueSum = 0;
+  let revenueCount = 0;
+  let costSum = 0;
+  days.forEach((day) => {
+    const revenue = getForecastBudgetRevenueAmount({
+      actualRevenueByDay,
+      day,
+      forecastByDay,
+      todayIso,
+    });
+    if (revenue !== null) {
+      revenueSum += revenue;
+      revenueCount += 1;
+    }
+    if (hasCostRun) {
+      costSum += costByDay.get(day)?.total ?? 0;
+    }
+  });
+  const revenueTotal = revenueCount > 0 ? revenueSum : null;
+  const costTotal = hasCostRun ? costSum : null;
+  const fotPct =
+    revenueTotal !== null && revenueTotal > 0 && costTotal !== null
+      ? (costTotal / revenueTotal) * 100
+      : null;
+  return { revenueSum: revenueTotal, costSum: costTotal, fotPct };
+}
+
+function getForecastBudgetRevenueAmount({
+  actualRevenueByDay,
+  day,
+  forecastByDay,
+  todayIso,
+}: {
+  actualRevenueByDay: Map<string, number>;
+  day: string;
+  forecastByDay: Map<string, RevenueForecastRead>;
+  todayIso: string;
+}) {
+  return getForecastBudgetRevenueDisplay({
+    actualRevenueByDay,
+    day,
+    forecast: forecastByDay.get(day),
+    todayIso,
+  }).amount;
+}
+
+function getForecastBudgetRevenueDisplay({
+  actualRevenueByDay,
+  day,
+  forecast,
+  todayIso,
+}: {
+  actualRevenueByDay: Map<string, number>;
+  day: string;
+  forecast: RevenueForecastRead | undefined;
+  todayIso: string;
+}): RevenueBudgetDisplay {
+  const factAmount = day <= todayIso ? actualRevenueByDay.get(day) : undefined;
+  if (factAmount !== undefined) {
+    return { amount: factAmount, label: "факт", source: "fact" };
   }
-  return forecasts.reduce(
-    (total, forecast) => total + (decimalToNumber(forecast.forecast_amount) ?? 0),
-    0,
-  );
+  if (!forecast) {
+    return { amount: null, label: "нет прогноза", source: "missing" };
+  }
+  if (forecast.quality_status === "requires_review" || forecast.forecast_amount === null) {
+    return { amount: null, label: "проверить", source: "missing" };
+  }
+  return {
+    amount: decimalToNumber(forecast.forecast_amount),
+    label: forecast.quality_status === "manual_override" ? "override" : "план",
+    source: "forecast",
+  };
+}
+
+function revenueBudgetAmountClass(
+  display: RevenueBudgetDisplay,
+  forecast: RevenueForecastRead | undefined,
+) {
+  if (display.source === "fact") {
+    return "text-emerald-700";
+  }
+  if (display.source === "missing") {
+    return "text-orange-600";
+  }
+  return forecast ? forecastAmountClass(forecast) : "text-foreground";
+}
+
+function revenueBudgetCellTitle(
+  day: string,
+  forecast: RevenueForecastRead | undefined,
+  display: RevenueBudgetDisplay,
+) {
+  const lines = [formatDate(day)];
+  if (display.source === "fact") {
+    lines.push(`Факт выручки: ${formatMoneyWithCurrency(display.amount)}`);
+    lines.push("Источник: plan-fact / iiko");
+  }
+  if (!forecast) {
+    lines.push("Прогноз выручки не рассчитан");
+    return lines.join("\n");
+  }
+  lines.push(`Прогноз: ${formatMoneyWithCurrency(forecast.forecast_amount)}`);
+  lines.push(`Метод: ${forecast.method_code}`);
+  lines.push(`Статус: ${forecastStatusText(forecast)}`);
+  if (forecast.event_review_recommended) {
+    lines.push("Праздничный день, рекомендуем проверить прогноз вручную");
+  }
+  const history = forecast.history_points.slice(0, 6).map((point) => {
+    const suffix = point.included ? "" : " (исключено)";
+    return `${formatDate(point.date)}: ${formatMoneyWithCurrency(point.amount)}${suffix}`;
+  });
+  if (history.length > 0) {
+    lines.push("История:");
+    lines.push(...history);
+  }
+  if (forecast.computed_at) {
+    lines.push(`Обновлено: ${formatDateTime(forecast.computed_at)}`);
+  }
+  return lines.join("\n");
+}
+
+function costBudgetCellTitle(
+  day: string,
+  summary: CostDaySummary | undefined,
+  run: PayrollForecastRunRead | null,
+) {
+  const lines = [formatDate(day)];
+  if (!run) {
+    lines.push("Стоимость ещё не рассчитана");
+    return lines.join("\n");
+  }
+  lines.push(`Расчёт: payroll_forecast_run #${shortId(run.id)} от ${formatDateTime(run.run_at)}`);
+  if (run.run_by_label) {
+    lines.push(`Автор: ${run.run_by_label}`);
+  }
+  if (!summary) {
+    lines.push("Нет смен или расчёт не содержит данных за день");
+    return lines.join("\n");
+  }
+  lines.push(`Стоимость: ${formatMoneyWithCurrency(summary.total)}`);
+  lines.push(`Смен: ${summary.estimateCount}`);
+  if (summary.warningCount > 0) {
+    lines.push(`Предупреждения: ${summary.warningCount}`);
+  }
+  if (summary.reasons.length > 0) {
+    lines.push(`Причины: ${summary.reasons.map(costReasonLabel).join(", ")}`);
+  }
+  return lines.join("\n");
+}
+
+function fotBudgetCellClass(value: number | null, threshold: number) {
+  const level = fotLevelForValue(value, threshold);
+  if (level === "warning") {
+    return "bg-amber-50";
+  }
+  if (level === "danger") {
+    return "bg-red-50";
+  }
+  return "";
+}
+
+function fotBudgetTitle(
+  revenue: number | null,
+  cost: number | null,
+  value: number | null,
+  threshold: number,
+) {
+  return [
+    "ФОТ % = Стоимость / Выручка x 100",
+    `Выручка: ${formatMoneyWithCurrency(revenue)}`,
+    `Стоимость: ${formatMoneyWithCurrency(cost)}`,
+    `ФОТ: ${formatPercent(value)}`,
+    `Порог: ${formatPercent(threshold)}`,
+  ].join("\n");
+}
+
+function fotLevelForValue(value: number | null, threshold: number): FotStatusLevel {
+  if (value === null) {
+    return "none";
+  }
+  if (value <= threshold) {
+    return "ok";
+  }
+  if (value <= threshold + 4) {
+    return "warning";
+  }
+  return "danger";
 }
 
 function buildStationRows(
@@ -5235,6 +5113,19 @@ function initialScheduleRange(storedPreset: PeriodPreset | null) {
     );
   }
   return rangeForPreset(storedPreset ?? "month", new Date())!;
+}
+
+function readForecastBudgetCollapsedDefault() {
+  const legacyValue =
+    FORECAST_BUDGET_LEGACY_COLLAPSED_KEYS.map((key) => readLocalStorageValue(key, isBoolean)).find(
+      (value) => value !== null,
+    ) ?? false;
+  if (typeof window !== "undefined") {
+    FORECAST_BUDGET_LEGACY_COLLAPSED_KEYS.forEach((key) => {
+      window.localStorage.removeItem(key);
+    });
+  }
+  return legacyValue;
 }
 
 function readStoredSchedulePreset() {
@@ -5431,7 +5322,35 @@ function positionRoleLabel(
         .map((item) => payrollRoleLabel(item.trim()))
         .join(", ")
     : "—";
-  return role === "—" ? position || "—" : `${position || "—"} • ${role}`;
+  return role === "—" ? position || "—" : `${position || "—"} · ${role}`;
+}
+
+function employeeRoleLine(
+  employee: EmployeeRosterRow,
+  payrollRole: string | null | undefined,
+) {
+  const role = rosterRoleForPayrollRole(employee, payrollRole);
+  const roleValue = payrollRole ?? role?.payroll_role ?? null;
+  const roleLabel = roleValue
+    ? roleValue
+        .split(",")
+        .map((item) => payrollRoleLabel(item.trim()))
+        .join(", ")
+    : "—";
+  const substituteSuffix = role?.is_substitute ? " (подмена)" : "";
+  return roleLabel === "—"
+    ? employee.position || "—"
+    : `${employee.position || "—"} · ${roleLabel}${substituteSuffix}`;
+}
+
+function rosterRoleForPayrollRole(
+  employee: EmployeeRosterRow,
+  payrollRole: string | null | undefined,
+) {
+  if (!payrollRole) {
+    return primaryAvailableRole(employee) ?? null;
+  }
+  return employee.available_roles.find((role) => role.payroll_role === payrollRole) ?? null;
 }
 
 function primaryRoleLabelSource(employee: EmployeeRosterRow) {
@@ -5515,81 +5434,6 @@ function eachIsoDate(dateStart: string, dateEnd: string) {
   return days;
 }
 
-function vacationDaysCount(dateStart: string, dateEnd: string) {
-  return eachIsoDate(dateStart, dateEnd).length;
-}
-
-type VacationValidationPeriod = {
-  id: string;
-  date_start: string;
-  date_end: string;
-};
-
-function vacationDialogValidationError(
-  state: VacationDialogState | null,
-  employees: VacationRosterRow[],
-) {
-  if (!state) {
-    return null;
-  }
-  if (!state.employeeId) {
-    return "Выберите сотрудника";
-  }
-  if (!state.dateStart || !state.dateEnd) {
-    return "Выберите даты отпуска";
-  }
-  if (state.dateEnd < state.dateStart) {
-    return "Дата окончания не может быть раньше даты начала";
-  }
-  const daysCount = vacationDaysCount(state.dateStart, state.dateEnd);
-  if (daysCount > VACATION_MAX_PERIOD_DAYS) {
-    return `Один отпуск можно оформить максимум на ${VACATION_MAX_PERIOD_DAYS} дней.`;
-  }
-
-  const employee = employees.find((item) => item.employee_id === state.employeeId);
-  if (!employee) {
-    return "Сотрудник не найден в списке отпусков";
-  }
-
-  const candidateId = state.period?.id ?? "__new_vacation_period__";
-  const candidate: VacationValidationPeriod = {
-    id: candidateId,
-    date_start: state.dateStart,
-    date_end: state.dateEnd,
-  };
-  const periods: VacationValidationPeriod[] = employee.periods
-    .filter((period) => period.status !== "cancelled" && period.id !== state.period?.id)
-    .map((period) => ({
-      id: period.id,
-      date_start: period.date_start,
-      date_end: period.date_end,
-    }));
-  const ordered = [...periods, candidate].sort((left, right) =>
-    left.date_start.localeCompare(right.date_start),
-  );
-
-  for (let index = 1; index < ordered.length; index += 1) {
-    const previous = ordered[index - 1];
-    const next = ordered[index];
-    if (previous.id !== candidateId && next.id !== candidateId) {
-      continue;
-    }
-    const nextAllowedStart = toIsoDate(
-      addMonths(parseIsoDate(previous.date_end), VACATION_MIN_GAP_MONTHS),
-    );
-    if (next.date_start < nextAllowedStart) {
-      if (next.id === candidateId) {
-        return `Следующий отпуск можно начать не раньше ${formatDate(nextAllowedStart)}.`;
-      }
-      return `До следующего отпуска ${formatDate(
-        next.date_start,
-      )} должно пройти ${VACATION_MIN_GAP_MONTHS} месяца.`;
-    }
-  }
-
-  return null;
-}
-
 function startOfTuesdayWeek(value: Date) {
   const date = new Date(value);
   date.setHours(0, 0, 0, 0);
@@ -5601,14 +5445,6 @@ function addDays(value: Date, days: number) {
   const date = new Date(value);
   date.setDate(date.getDate() + days);
   return date;
-}
-
-function addMonths(value: Date, months: number) {
-  const targetMonthIndex = value.getMonth() + months;
-  const targetYear = value.getFullYear() + Math.floor(targetMonthIndex / 12);
-  const targetMonth = ((targetMonthIndex % 12) + 12) % 12;
-  const daysInTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
-  return new Date(targetYear, targetMonth, Math.min(value.getDate(), daysInTargetMonth));
 }
 
 function parseIsoDate(value: string) {
@@ -5706,16 +5542,6 @@ function forecastAmountClass(forecast: RevenueForecastRead) {
   return "text-foreground";
 }
 
-function forecastStatusLabel(forecast: RevenueForecastRead) {
-  if (forecast.quality_status === "manual_override") {
-    return "override";
-  }
-  if (forecast.quality_status === "requires_review" || forecast.forecast_amount === null) {
-    return "requires review";
-  }
-  return "";
-}
-
 function forecastStatusText(forecast: RevenueForecastRead) {
   if (forecast.quality_status === "manual_override") {
     return "Ручной override";
@@ -5736,28 +5562,6 @@ function costReasonLabel(reason: string) {
     overnight_shift: "ночная смена",
   };
   return labels[reason] ?? reason;
-}
-
-function costReasonClass(reason: string) {
-  if (reason === "no_rate" || reason === "no_category" || reason === "no_role") {
-    return "text-red-600";
-  }
-  if (reason === "forecast_missing") {
-    return "text-muted-foreground";
-  }
-  return "text-orange-600";
-}
-
-function costDayTitle(day: string, summary: CostDaySummary) {
-  const reasons = summary.reasons.map(costReasonLabel).join(", ");
-  return [
-    formatDate(day),
-    `Стоимость: ${formatMoneyWithCurrency(summary.total)}`,
-    summary.warningCount > 0 ? `Предупреждения: ${summary.warningCount}` : null,
-    reasons ? `Причины: ${reasons}` : null,
-  ]
-    .filter(Boolean)
-    .join("\n");
 }
 
 function cashierAllowancePlanFactTitle(row: PlanFactDayRowRead) {
@@ -5867,16 +5671,7 @@ function roleColorClasses(role: string) {
 function fotStatusLevel(run: PayrollForecastRunRead): FotStatusLevel {
   const value = decimalToNumber(run.fot_to_revenue_pct);
   const threshold = decimalToNumber(run.fot_warning_threshold_pct) ?? 28;
-  if (value === null) {
-    return "none";
-  }
-  if (value < threshold) {
-    return "ok";
-  }
-  if (value < threshold + 4) {
-    return "warning";
-  }
-  return "danger";
+  return fotLevelForValue(value, threshold);
 }
 
 function fotStatusClass(level: FotStatusLevel) {
@@ -5890,19 +5685,6 @@ function fotStatusClass(level: FotStatusLevel) {
     return "text-red-700";
   }
   return "text-muted-foreground";
-}
-
-function fotStatusText(level: FotStatusLevel) {
-  if (level === "ok") {
-    return "ниже порога";
-  }
-  if (level === "warning") {
-    return "внимание";
-  }
-  if (level === "danger") {
-    return "критично";
-  }
-  return "нет данных";
 }
 
 function runStatusLabel(status: PayrollForecastRunRead["status"]) {
