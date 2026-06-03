@@ -9,13 +9,13 @@ Single-host deployment on Ubuntu 24.04 with Docker Compose and Caddy
 - `Caddyfile` — reverse proxy + automatic HTTPS. Reads `${TEPLO_DOMAIN}`
   from the environment.
 - `.env.prod` — secrets and per-host config (not committed; see
-  `.env.prod.example`).
+  `env.prod.example`).
 
 ## First-time bring-up
 
 ```bash
 cd /opt/teplo/deploy
-cp .env.prod.example .env.prod
+cp env.prod.example .env.prod
 nano .env.prod                       # fill in domain, secrets
 
 # Build images and start everything.
