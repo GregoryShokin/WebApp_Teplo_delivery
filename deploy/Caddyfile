@@ -1,0 +1,26 @@
+# Replace ${TEPLO_DOMAIN} with the real domain via `envsubst` or hand-edit
+# before first start. Caddy obtains a Let's Encrypt certificate
+# automatically on first request as long as DNS A-record points to this
+# server and ports 80/443 are reachable.
+
+{$TEPLO_DOMAIN} {
+    encode zstd gzip
+
+    # API and OAuth callbacks go to the FastAPI container. We use `handle`
+    # (not `handle_path`) so the /api prefix reaches FastAPI untouched.
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+
+    # SPA + static assets from the web container.
+    handle {
+        reverse_proxy web:80
+    }
+
+    log {
+        output file /data/access.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+    }
+}
