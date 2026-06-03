@@ -52,6 +52,8 @@ services:
     image: caddy:2-alpine
     container_name: teplo-caddy
     restart: always
+    environment:
+      TEPLO_DOMAIN: ${TEPLO_DOMAIN}
     ports:
       - "80:80"
       - "443:443"
