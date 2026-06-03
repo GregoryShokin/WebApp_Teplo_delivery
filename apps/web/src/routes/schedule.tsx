@@ -21,6 +21,7 @@ import {
   Plus,
   RefreshCw,
   Send,
+  Trash2,
   Users,
 } from "lucide-react";
 import {
@@ -91,6 +92,7 @@ import {
   createNewVersion,
   createSchedule,
   deleteCashierAllowanceOverride,
+  deleteSchedule,
   deleteShift,
   getEmployeesRoster,
   getForecastRange,
@@ -250,6 +252,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   const [deleteTarget, setDeleteTarget] = useState<ScheduledShiftRead | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
   const [newVersionOpen, setNewVersionOpen] = useState(false);
+  const [deleteScheduleOpen, setDeleteScheduleOpen] = useState(false);
 
   useEffect(() => {
     if (!useStoredTab) {
@@ -581,6 +584,21 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
       queryClient.setQueryData(["schedule", schedule.id], schedule);
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось создать новую версию")),
+  });
+
+  const deleteScheduleMutation = useMutation({
+    mutationFn: () => deleteSchedule(currentSchedule?.id ?? ""),
+    onSuccess: async () => {
+      toast.success("Черновик удалён");
+      setDeleteScheduleOpen(false);
+      const removedId = currentSchedule?.id;
+      if (removedId) {
+        queryClient.removeQueries({ queryKey: ["schedule", removedId] });
+      }
+      setSelectedScheduleId(null);
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось удалить черновик")),
   });
 
   const copyWeekMutation = useMutation({
@@ -1068,16 +1086,32 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
               </Button>
             </InlineTooltip>
             {isDraft ? (
-              <InlineTooltip content="Перевести черновик в действующий план. После публикации график виден в расчётах стоимости, план-факт сверке, payroll. Редактирование возможно только через «Новую версию». Если в этот период уже есть опубликованный график, он будет помечен как замещённый.">
-                <Button disabled={publishMutation.isPending} onClick={() => setPublishOpen(true)}>
-                  {publishMutation.isPending ? (
-                    <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-                  ) : (
-                    <Send size={16} aria-hidden="true" />
-                  )}
-                  Опубликовать
-                </Button>
-              </InlineTooltip>
+              <>
+                <InlineTooltip content="Удалить черновик безвозвратно. Опубликованные графики удалить нельзя — создайте новую версию.">
+                  <Button
+                    disabled={deleteScheduleMutation.isPending}
+                    onClick={() => setDeleteScheduleOpen(true)}
+                    variant="outline"
+                  >
+                    {deleteScheduleMutation.isPending ? (
+                      <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                    ) : (
+                      <Trash2 size={16} aria-hidden="true" />
+                    )}
+                    Удалить черновик
+                  </Button>
+                </InlineTooltip>
+                <InlineTooltip content="Перевести черновик в действующий план. После публикации график виден в расчётах стоимости, план-факт сверке, payroll. Редактирование возможно только через «Новую версию». Если в этот период уже есть опубликованный график, он будет помечен как замещённый.">
+                  <Button disabled={publishMutation.isPending} onClick={() => setPublishOpen(true)}>
+                    {publishMutation.isPending ? (
+                      <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                    ) : (
+                      <Send size={16} aria-hidden="true" />
+                    )}
+                    Опубликовать
+                  </Button>
+                </InlineTooltip>
+              </>
             ) : null}
           </>
         }
@@ -1455,6 +1489,31 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
                   }}
                 >
                   Создать
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog open={deleteScheduleOpen} onOpenChange={setDeleteScheduleOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Удалить черновик графика?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Черновик и все его смены будут удалены безвозвратно. Действие нельзя отменить.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={deleteScheduleMutation.isPending}>
+                  Отмена
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={deleteScheduleMutation.isPending}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    deleteScheduleMutation.mutate();
+                  }}
+                >
+                  Удалить
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
