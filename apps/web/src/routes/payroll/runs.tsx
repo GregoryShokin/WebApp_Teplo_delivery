@@ -42,6 +42,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { EmptyState } from "@/components/ui-app/EmptyState";
 import { PageHeader } from "@/components/ui-app/PageHeader";
+import { PayrollAdjustmentsRoute } from "@/routes/payroll/adjustments";
+import { InventoryAuditsRoute } from "@/routes/payroll/audits";
 import { StatusBadge } from "@/components/ui-app/StatusBadge";
 import {
   type AccumulationFundAccount,
@@ -64,10 +66,20 @@ import {
 import { cn } from "@/lib/utils";
 
 type PayrollRunsRouteProps = {
+  activeTab?: PayrollActiveTab;
+  invalidPath?: boolean;
   onNavigate: (path: string) => void;
 };
 
-export function PayrollRunsRoute({ onNavigate }: PayrollRunsRouteProps) {
+type PayrollActiveTab = "runs" | "fund" | "adjustments" | "audits";
+
+const PAYROLL_ACTIVE_TAB_STORAGE_KEY = "payroll.activeTab";
+
+export function PayrollRunsRoute({
+  activeTab = "runs",
+  invalidPath = false,
+  onNavigate,
+}: PayrollRunsRouteProps) {
   const queryClient = useQueryClient();
   const runsQuery = useQuery({ queryKey: ["payroll-runs"], queryFn: getPayrollRuns });
   const settingsQuery = useQuery({
@@ -144,6 +156,14 @@ export function PayrollRunsRoute({ onNavigate }: PayrollRunsRouteProps) {
       setRecalculatingRunIds((ids) => ids.filter((id) => id !== run.id));
     },
   });
+
+  function handleTabChange(value: string) {
+    if (!isPayrollTab(value)) {
+      return;
+    }
+    window.localStorage.setItem(PAYROLL_ACTIVE_TAB_STORAGE_KEY, value);
+    onNavigate(payrollTabPath(value));
+  }
 
   const tableColumns: Array<DataTableColumn<PayrollRun>> = [
     {
@@ -233,153 +253,186 @@ export function PayrollRunsRoute({ onNavigate }: PayrollRunsRouteProps) {
         description="Еженедельные расчёты вторник-понедельник, выплаты по вторникам."
       />
 
-      <Tabs defaultValue="runs" className="space-y-5">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-5">
         <TabsList>
           <TabsTrigger value="runs">Расчёты</TabsTrigger>
           <TabsTrigger value="fund">Накопительный фонд</TabsTrigger>
+          <TabsTrigger value="adjustments">Премии и штрафы</TabsTrigger>
+          <TabsTrigger value="audits">Ревизии</TabsTrigger>
         </TabsList>
 
-        <TabsContent className="mt-0 space-y-5" value="runs">
-          <section className="grid gap-3 lg:grid-cols-3">
-            <PayrollMetric
-              title="Эта неделя"
-              value={currentRun ? formatMoney(runTotal(currentRun)) : "Не рассчитан"}
-              description={
-                currentRun
-                  ? `Выплата ${currentRun.period ? formatDate(currentRun.period.payroll_date) : "—"}`
-                  : `Выплата ${formatDate(currentWindow.payroll_date)}`
-              }
-              icon={<CalendarClock size={18} aria-hidden="true" />}
-              footer={
-                <div className="flex items-center gap-2">
-                  <StatusBadge
-                    status={currentRun ? normalizeRunStatus(currentRun.status) : "open"}
-                  />
-                  <span className="text-muted-foreground">{formatRatio(currentRatio)}</span>
-                </div>
-              }
-            />
-            <PayrollMetric
-              title="Прошлая неделя"
-              value={previousRun ? formatMoney(runTotal(previousRun)) : "—"}
-              description={
-                previousRun
-                  ? `${formatRatio(previousRatio)} от выручки, цель ${formatRatio(targetRatio)}`
-                  : `Цель ${formatRatio(targetRatio)}`
-              }
-              icon={<Banknote size={18} aria-hidden="true" />}
-              footer={
-                previousRatio === null ? (
-                  <span className="text-muted-foreground">Выручка не загружена</span>
+        {invalidPath ? (
+          <EmptyState
+            title="Раздел не найден"
+            description="Откройте вкладку «Расчёты», «Накопительный фонд», «Премии и штрафы» или «Ревизии»."
+          />
+        ) : (
+          <>
+            <TabsContent className="mt-0 space-y-5" value="runs">
+              <section className="grid gap-3 lg:grid-cols-3">
+                <PayrollMetric
+                  title="Эта неделя"
+                  value={currentRun ? formatMoney(runTotal(currentRun)) : "Не рассчитан"}
+                  description={
+                    currentRun
+                      ? `Выплата ${currentRun.period ? formatDate(currentRun.period.payroll_date) : "—"}`
+                      : `Выплата ${formatDate(currentWindow.payroll_date)}`
+                  }
+                  icon={<CalendarClock size={18} aria-hidden="true" />}
+                  footer={
+                    <div className="flex items-center gap-2">
+                      <StatusBadge
+                        status={currentRun ? normalizeRunStatus(currentRun.status) : "open"}
+                      />
+                      <span className="text-muted-foreground">{formatRatio(currentRatio)}</span>
+                    </div>
+                  }
+                />
+                <PayrollMetric
+                  title="Прошлая неделя"
+                  value={previousRun ? formatMoney(runTotal(previousRun)) : "—"}
+                  description={
+                    previousRun
+                      ? `${formatRatio(previousRatio)} от выручки, цель ${formatRatio(targetRatio)}`
+                      : `Цель ${formatRatio(targetRatio)}`
+                  }
+                  icon={<Banknote size={18} aria-hidden="true" />}
+                  footer={
+                    previousRatio === null ? (
+                      <span className="text-muted-foreground">Выручка не загружена</span>
+                    ) : (
+                      <RatioDelta ratio={previousRatio} target={targetRatio} />
+                    )
+                  }
+                />
+                <PayrollMetric
+                  title="За месяц"
+                  value={formatMoney(monthTotal)}
+                  description={`${monthRuns.length} ${pluralizeRun(monthRuns.length)}`}
+                  icon={<Banknote size={18} aria-hidden="true" />}
+                  footer={
+                    <span className="text-muted-foreground">
+                      Средний ФОТ {formatRatio(monthAverageRatio)}
+                    </span>
+                  }
+                />
+              </section>
+
+              <section className="grid gap-4 rounded-lg border bg-card p-4 md:grid-cols-[1fr_auto] md:items-center">
+                {unfinishedCurrentRun ? (
+                  <>
+                    <div>
+                      <div className="font-semibold">Расчёт за текущий период уже создан</div>
+                      <div className="mt-1 text-sm text-muted-foreground">
+                        {formatPeriodRange(unfinishedCurrentRun.period)} ·{" "}
+                        <StatusBadge status={unfinishedCurrentRun.status} />
+                      </div>
+                    </div>
+                    <Button onClick={() => onNavigate(`/payroll/runs/${unfinishedCurrentRun.id}`)}>
+                      Открыть детали
+                      <ArrowRight size={16} aria-hidden="true" />
+                    </Button>
+                  </>
+                ) : !currentRun ? (
+                  <>
+                    <div>
+                      <div className="font-semibold">Готов к запуску новый расчёт</div>
+                      <div className="mt-1 text-sm text-muted-foreground">
+                        За неделю {formatPeriodRange(currentWindow)}
+                      </div>
+                    </div>
+                    <Button onClick={() => runMutation.mutate()} disabled={runMutation.isPending}>
+                      {runMutation.isPending ? (
+                        <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                      ) : (
+                        <Play size={16} aria-hidden="true" />
+                      )}
+                      Запустить расчёт за неделю {formatShortRange(currentWindow)}
+                    </Button>
+                  </>
                 ) : (
-                  <RatioDelta ratio={previousRatio} target={targetRatio} />
-                )
-              }
-            />
-            <PayrollMetric
-              title="За месяц"
-              value={formatMoney(monthTotal)}
-              description={`${monthRuns.length} ${pluralizeRun(monthRuns.length)}`}
-              icon={<Banknote size={18} aria-hidden="true" />}
-              footer={
-                <span className="text-muted-foreground">
-                  Средний ФОТ {formatRatio(monthAverageRatio)}
-                </span>
-              }
-            />
-          </section>
+                  <>
+                    <div>
+                      <div className="font-semibold">Текущий период закрыт</div>
+                      <div className="mt-1 text-sm text-muted-foreground">
+                        {formatPeriodRange(currentRun.period)}
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => onNavigate(`/payroll/runs/${currentRun.id}`)}
+                      variant="outline"
+                    >
+                      Открыть детали
+                      <ArrowRight size={16} aria-hidden="true" />
+                    </Button>
+                  </>
+                )}
+              </section>
 
-          <section className="grid gap-4 rounded-lg border bg-card p-4 md:grid-cols-[1fr_auto] md:items-center">
-            {unfinishedCurrentRun ? (
-              <>
-                <div>
-                  <div className="font-semibold">Расчёт за текущий период уже создан</div>
-                  <div className="mt-1 text-sm text-muted-foreground">
-                    {formatPeriodRange(unfinishedCurrentRun.period)} ·{" "}
-                    <StatusBadge status={unfinishedCurrentRun.status} />
-                  </div>
+              {runMutation.isError ? (
+                <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {(runMutation.error as Error).message}
                 </div>
-                <Button onClick={() => onNavigate(`/payroll/runs/${unfinishedCurrentRun.id}`)}>
-                  Открыть детали
-                  <ArrowRight size={16} aria-hidden="true" />
-                </Button>
-              </>
-            ) : !currentRun ? (
-              <>
-                <div>
-                  <div className="font-semibold">Готов к запуску новый расчёт</div>
-                  <div className="mt-1 text-sm text-muted-foreground">
-                    За неделю {formatPeriodRange(currentWindow)}
-                  </div>
-                </div>
-                <Button onClick={() => runMutation.mutate()} disabled={runMutation.isPending}>
-                  {runMutation.isPending ? (
-                    <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-                  ) : (
-                    <Play size={16} aria-hidden="true" />
-                  )}
-                  Запустить расчёт за неделю {formatShortRange(currentWindow)}
-                </Button>
-              </>
-            ) : (
-              <>
-                <div>
-                  <div className="font-semibold">Текущий период закрыт</div>
-                  <div className="mt-1 text-sm text-muted-foreground">
-                    {formatPeriodRange(currentRun.period)}
-                  </div>
-                </div>
-                <Button
-                  onClick={() => onNavigate(`/payroll/runs/${currentRun.id}`)}
-                  variant="outline"
-                >
-                  Открыть детали
-                  <ArrowRight size={16} aria-hidden="true" />
-                </Button>
-              </>
-            )}
-          </section>
+              ) : null}
 
-          {runMutation.isError ? (
-            <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {(runMutation.error as Error).message}
-            </div>
-          ) : null}
+              {(runsQuery.data ?? []).length === 0 && !runsQuery.isLoading ? (
+                <EmptyState
+                  icon={<Play className="h-5 w-5" aria-hidden="true" />}
+                  title="Расчётов пока нет"
+                  description="Запустите первый недельный расчёт, чтобы увидеть ведомость и KPI."
+                  action={
+                    <Button onClick={() => runMutation.mutate()} disabled={runMutation.isPending}>
+                      {runMutation.isPending ? (
+                        <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                      ) : (
+                        <Play size={16} aria-hidden="true" />
+                      )}
+                      Запустить расчёт за неделю {formatShortRange(currentWindow)}
+                    </Button>
+                  }
+                />
+              ) : (
+                <DataTable
+                  columns={tableColumns}
+                  rows={runs}
+                  isLoading={runsQuery.isLoading}
+                  getRowKey={(run) => run.id}
+                  onRowClick={(run) => onNavigate(`/payroll/runs/${run.id}`)}
+                  emptyMessage="Расчётов пока нет"
+                />
+              )}
+            </TabsContent>
 
-          {(runsQuery.data ?? []).length === 0 && !runsQuery.isLoading ? (
-            <EmptyState
-              icon={<Play className="h-5 w-5" aria-hidden="true" />}
-              title="Расчётов пока нет"
-              description="Запустите первый недельный расчёт, чтобы увидеть ведомость и KPI."
-              action={
-                <Button onClick={() => runMutation.mutate()} disabled={runMutation.isPending}>
-                  {runMutation.isPending ? (
-                    <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-                  ) : (
-                    <Play size={16} aria-hidden="true" />
-                  )}
-                  Запустить расчёт за неделю {formatShortRange(currentWindow)}
-                </Button>
-              }
-            />
-          ) : (
-            <DataTable
-              columns={tableColumns}
-              rows={runs}
-              isLoading={runsQuery.isLoading}
-              getRowKey={(run) => run.id}
-              onRowClick={(run) => onNavigate(`/payroll/runs/${run.id}`)}
-              emptyMessage="Расчётов пока нет"
-            />
-          )}
-        </TabsContent>
+            <TabsContent className="mt-0" value="fund">
+              <AccumulationFundTab />
+            </TabsContent>
 
-        <TabsContent className="mt-0" value="fund">
-          <AccumulationFundTab />
-        </TabsContent>
+            <TabsContent className="mt-0" value="adjustments">
+              <PayrollAdjustmentsRoute embedded onNavigate={onNavigate} />
+            </TabsContent>
+
+            <TabsContent className="mt-0" value="audits">
+              <InventoryAuditsRoute onNavigate={onNavigate} />
+            </TabsContent>
+          </>
+        )}
       </Tabs>
     </div>
   );
+}
+
+function payrollTabPath(tab: PayrollActiveTab) {
+  if (tab === "fund") {
+    return "/payroll/fund";
+  }
+  if (tab === "audits") {
+    return "/payroll/audits";
+  }
+  return tab === "adjustments" ? "/payroll/adjustments" : "/payroll";
+}
+
+function isPayrollTab(value: unknown): value is PayrollActiveTab {
+  return value === "runs" || value === "fund" || value === "adjustments" || value === "audits";
 }
 
 function PayrollMetric({

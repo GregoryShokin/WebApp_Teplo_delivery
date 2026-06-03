@@ -6,12 +6,10 @@ import { Toaster } from "@/components/ui/sonner";
 import { restoreSession } from "@/lib/api";
 import { getAuthSnapshot } from "@/lib/auth";
 import { DashboardPage } from "@/pages/DashboardPage";
+import { PayrollRoute } from "@/routes/payroll";
 import { LoginRoute } from "@/routes/login";
 import { PayrollConfigurationRoute } from "@/routes/payroll/configuration";
-import { PayrollDailyLedgerRoute } from "@/routes/payroll/daily-ledger";
 import { PayrollRunDetailRoute } from "@/routes/payroll/run-detail";
-import { PayrollRunsRoute } from "@/routes/payroll/runs";
-import { PayrollAdjustmentsRoute } from "@/routes/payroll-adjustments";
 import { ScheduleRoute } from "@/routes/schedule";
 import { SettingsRoute } from "@/routes/settings";
 import { StaffRoute } from "@/routes/staff";
@@ -53,8 +51,33 @@ const routes: AppRoute[] = [
     path: "/payroll",
     children: [
       {
+        path: "",
+        render: ({ navigate }) => (
+          <PayrollRoute activeTab="runs" onNavigate={navigate} useStoredTab />
+        ),
+      },
+      {
+        path: "adjustments",
+        render: ({ navigate }) => <PayrollRoute activeTab="adjustments" onNavigate={navigate} />,
+      },
+      {
+        path: "fund",
+        render: ({ navigate }) => <PayrollRoute activeTab="fund" onNavigate={navigate} />,
+      },
+      {
+        path: "audits",
+        render: ({ navigate }) => <PayrollRoute activeTab="audits" onNavigate={navigate} />,
+      },
+      {
         path: "runs",
-        render: ({ navigate }) => <PayrollRunsRoute onNavigate={navigate} />,
+        render: ({ navigate }) => (
+          <RedirectRoute
+            onNavigate={navigate}
+            storageKey="payroll.activeTab"
+            storageValue="runs"
+            to="/payroll"
+          />
+        ),
       },
       {
         path: "runs/:id",
@@ -64,21 +87,108 @@ const routes: AppRoute[] = [
       },
       {
         path: "daily-ledger",
-        render: () => <PayrollDailyLedgerRoute />,
-      },
-      {
-        path: "adjustments",
-        render: ({ navigate }) => <PayrollAdjustmentsRoute onNavigate={navigate} />,
+        render: ({ navigate }) => (
+          <RedirectRoute
+            onNavigate={navigate}
+            storageKey="schedule.activeTab"
+            storageValue="shifts-ledger"
+            to="/schedule/shifts-ledger"
+          />
+        ),
       },
       {
         path: "configuration",
-        render: ({ navigate }) => <PayrollConfigurationRoute onNavigate={navigate} />,
+        render: ({ navigate }) => <RedirectRoute onNavigate={navigate} to="/source-data" />,
+      },
+      {
+        path: ":unknown",
+        render: ({ navigate }) => (
+          <PayrollRoute activeTab="runs" invalidPath onNavigate={navigate} />
+        ),
       },
     ],
   },
   {
+    path: "/payroll-adjustments",
+    render: ({ navigate }) => (
+      <RedirectRoute onNavigate={navigate} to={withCurrentSearch("/payroll/adjustments")} />
+    ),
+  },
+  {
+    path: "/shifts",
+    children: [
+      {
+        path: "",
+        render: ({ navigate }) => (
+          <RedirectRoute
+            onNavigate={navigate}
+            storageKey="schedule.activeTab"
+            storageValue="shifts-ledger"
+            to="/schedule/shifts-ledger"
+          />
+        ),
+      },
+      {
+        path: "vacations",
+        render: ({ navigate }) => (
+          <RedirectRoute
+            onNavigate={navigate}
+            storageKey="schedule.activeTab"
+            storageValue="vacations"
+            to="/schedule/vacations"
+          />
+        ),
+      },
+      {
+        path: ":unknown",
+        render: ({ navigate }) => (
+          <RedirectRoute
+            onNavigate={navigate}
+            storageKey="schedule.activeTab"
+            storageValue="shifts-ledger"
+            to="/schedule/shifts-ledger"
+          />
+        ),
+      },
+    ],
+  },
+  {
+    path: "/vacations",
+    render: ({ navigate }) => (
+      <RedirectRoute
+        onNavigate={navigate}
+        storageKey="schedule.activeTab"
+        storageValue="vacations"
+        to="/schedule/vacations"
+      />
+    ),
+  },
+  {
     path: "/schedule",
-    render: () => <ScheduleRoute />,
+    children: [
+      {
+        path: "",
+        render: ({ navigate }) => (
+          <ScheduleRoute activeTab="schedule" onNavigate={navigate} useStoredTab />
+        ),
+      },
+      {
+        path: "shifts-ledger",
+        render: ({ navigate }) => <ScheduleRoute activeTab="shifts-ledger" onNavigate={navigate} />,
+      },
+      {
+        path: "vacations",
+        render: ({ navigate }) => <ScheduleRoute activeTab="vacations" onNavigate={navigate} />,
+      },
+      {
+        path: ":unknown",
+        render: ({ navigate }) => <RedirectRoute onNavigate={navigate} to="/schedule" />,
+      },
+    ],
+  },
+  {
+    path: "/source-data",
+    render: ({ navigate }) => <PayrollConfigurationRoute onNavigate={navigate} />,
   },
   {
     path: "/dds",
@@ -177,6 +287,27 @@ export function AppRouter() {
   );
 }
 
+function RedirectRoute({
+  onNavigate,
+  storageKey,
+  storageValue,
+  to,
+}: {
+  onNavigate: Navigate;
+  storageKey?: string;
+  storageValue?: string;
+  to: string;
+}) {
+  useEffect(() => {
+    if (storageKey && storageValue) {
+      window.localStorage.setItem(storageKey, storageValue);
+    }
+    onNavigate(to);
+  }, [onNavigate, storageKey, storageValue, to]);
+
+  return null;
+}
+
 function matchRouteTree(
   appRoutes: AppRoute[],
   pathname: string,
@@ -248,4 +379,8 @@ function matchPattern(pattern: string, pathname: string) {
 function getCurrentPath() {
   const path = window.location.pathname.replace(/\/+$/, "");
   return path || "/";
+}
+
+function withCurrentSearch(path: string) {
+  return `${path}${window.location.search}`;
 }

@@ -153,6 +153,7 @@ def make_role_assignment(
     category: str,
     *,
     is_primary: bool = False,
+    is_substitute: bool = False,
     effective_from: date = date(2026, 1, 1),
     effective_to: date | None = None,
 ) -> EmployeeRoleAssignment:
@@ -162,6 +163,7 @@ def make_role_assignment(
         payroll_role=payroll_role,
         category=category,
         is_primary=is_primary,
+        is_substitute=is_substitute,
         effective_from=effective_from,
         effective_to=effective_to,
     )
@@ -927,7 +929,7 @@ async def test_ledger_matrix_without_payroll_run_uses_current_roles_and_unlocked
     assert all(shift["payroll_locked"] is False for day in employee_days for shift in day["shifts"])
     assert employee_days[0]["date"] == "2026-05-24"
     assert employee_days[0]["available_roles"] == [
-        {"payroll_role": "pizza", "category": "category_2"}
+        {"payroll_role": "pizza", "category": "category_2", "is_substitute": False}
     ]
 
 
@@ -1027,7 +1029,9 @@ def test_patch_shift_ledger_route_allows_unlocked_period(
                 "notes": entry.notes,
                 "is_resolved": entry.is_resolved,
                 "status": "resolved",
-                "available_roles": [{"payroll_role": "pizza", "category": "category_2"}],
+                "available_roles": [
+                    {"payroll_role": "pizza", "category": "category_2", "is_substitute": False}
+                ],
             }
         ]
 
@@ -1070,7 +1074,24 @@ def test_ledger_response_category_is_computed_from_staff_assignment() -> None:
 
     assert row["category"] == "category_2"
     assert row["status"] == "resolved"
-    assert row["available_roles"] == [{"payroll_role": "pizza", "category": "category_2"}]
+    assert row["available_roles"] == [
+        {"payroll_role": "pizza", "category": "category_2", "is_substitute": False}
+    ]
+
+
+def test_ledger_response_serializes_substitute_available_role() -> None:
+    employee = make_employee(position="Управляющий", category=None, default_cooking_station=None)
+    entry = make_shift_ledger_entry(employee.id, date(2026, 5, 28))
+
+    row = shift_ledger_service.serialize_ledger_entry(
+        entry,
+        employee,
+        [LedgerAssignment("sushi", "category_1", is_substitute=True)],
+    )
+
+    assert row["available_roles"] == [
+        {"payroll_role": "sushi", "category": "category_1", "is_substitute": True}
+    ]
 
 
 def test_ledger_response_marks_employee_without_assignments_as_needs_setup() -> None:
@@ -1998,6 +2019,50 @@ def test_fund_accrual_includes_weekday_premium() -> None:
     assert day["weekday_premium"] == 200
     assert Decimal(str(day["base_pay"])) == Decimal("1666.67")
     assert result.lines[0].fund_accrual == 83
+
+
+def test_substitute_shift_skips_seniority_fund_and_deposit() -> None:
+    work_date = date(2026, 5, 22)
+    period = make_period(start=work_date, end=work_date, payroll_date=date(2026, 5, 26))
+    run_id = uuid.uuid4()
+    employee = make_employee(
+        position="Управляющий",
+        category=None,
+        default_cooking_station=None,
+        hire_date=date(2025, 1, 1),
+        tenure_started_at=date(2025, 1, 1),
+    )
+    employee.is_senior = True
+    settings = deposit_settings()
+    settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = {
+        (employee.id, work_date): [
+            make_role_assignment(
+                employee.id,
+                "sushi",
+                "category_2",
+                is_substitute=True,
+            )
+        ]
+    }
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [make_entry(period, employee, work_date, role="Сушист")],
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    line = result.lines[0]
+    day = line.components["days"][0]
+    assert day["is_substitute"] is True
+    assert day["seniority_allowance_pay"] == 0
+    assert day["seniority_allowance_skipped_reason"] == "substitute"
+    assert day["weekday_premium"] == 200
+    assert line.base_pay == 2600
+    assert line.fund_accrual == 0
+    assert line.components["deposit_withholding"] == 0
 
 
 async def test_fund_accrual_creates_transaction() -> None:
@@ -3089,8 +3154,9 @@ class AttendanceLoaderFakeSession:
     Возвращает по очереди: пустой список существующих записей → словарь сотрудников.
     """
 
-    def __init__(self, employees: list[Employee]) -> None:
+    def __init__(self, employees: list[Employee], scalar_results: list[Any] | None = None) -> None:
         self._employees = employees
+        self._scalar_results = scalar_results or []
         self._scalars_calls = 0
         self.added: list[Any] = []
 
@@ -3099,6 +3165,11 @@ class AttendanceLoaderFakeSession:
         if self._scalars_calls == 1:
             return AttendanceLoaderFakeScalarResult([])
         return AttendanceLoaderFakeScalarResult(self._employees)
+
+    async def scalar(self, _stmt: Any) -> Any:
+        if self._scalar_results:
+            return self._scalar_results.pop(0)
+        return None
 
     def add(self, item: Any) -> None:
         self.added.append(item)
@@ -3151,6 +3222,53 @@ async def test_load_attendance_entries_excludes_non_target_positions(
     assert manager.id not in employee_ids
     assert dishwasher.id not in employee_ids
     assert len(entries) == 2
+
+
+async def test_load_attendance_entries_allows_non_target_with_substitute_ledger(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    period = make_period()
+    manager = make_employee(position="Управляющий", category=None, default_cooking_station=None)
+    manager.iiko_id = "iiko-manager-substitute"
+    work_date = period.start_date
+    ledger_entry = make_shift_ledger_entry(
+        manager.id,
+        work_date,
+        payroll_role="sushi",
+        category="category_1",
+        is_resolved=True,
+    )
+    substitute_assignment = make_role_assignment(
+        manager.id,
+        "sushi",
+        "category_1",
+        is_substitute=True,
+    )
+
+    monkeypatch.setattr(
+        "app.services.attendance_loader.load_attendance_rules",
+        lambda *_args, **_kwargs: _async_rules(),
+    )
+
+    session = AttendanceLoaderFakeSession(
+        [manager],
+        scalar_results=[ledger_entry, substitute_assignment],
+    )
+
+    entries = await load_attendance_entries(
+        session,  # type: ignore[arg-type]
+        period,
+        iiko_records=[
+            {
+                "employeeId": manager.iiko_id,
+                "dateFrom": f"{work_date.isoformat()}T09:00:00+03:00",
+                "dateTo": f"{work_date.isoformat()}T18:00:00+03:00",
+            }
+        ],
+    )
+
+    assert [entry.employee_id for entry in entries] == [manager.id]
+    assert session.added[0].employee_id == manager.id
 
 
 async def _async_rules() -> Any:

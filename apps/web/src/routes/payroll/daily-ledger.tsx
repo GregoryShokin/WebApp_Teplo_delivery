@@ -8,7 +8,7 @@ import {
   Lock,
   RefreshCw,
 } from "lucide-react";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +48,11 @@ type SaveRoleVariables = {
 
 type DayHeader = ShiftLedgerMatrix["days"][number];
 
+type PayrollDailyLedgerRouteProps = {
+  embedded?: boolean;
+  headerSlot?: ReactNode;
+};
+
 const COLLAPSED_TIMES_STORAGE_KEY = "daily-ledger-times-collapsed-days";
 const ROLE_COLUMN_WIDTH = 154;
 const TIME_COLUMN_WIDTH = 88;
@@ -56,7 +61,10 @@ const ROLE_COLUMN_CLASS = "w-[154px] min-w-[154px]";
 const TIME_COLUMN_CLASS = "w-[88px] min-w-[88px]";
 const EMPLOYEE_COLUMN_CLASS = "w-[240px] min-w-[240px]";
 
-export function PayrollDailyLedgerRoute() {
+export function PayrollDailyLedgerRoute({
+  embedded = false,
+  headerSlot,
+}: PayrollDailyLedgerRouteProps = {}) {
   const queryClient = useQueryClient();
   const maxDate = todayIsoDate();
   const [selectedDate, setSelectedDate] = useState(maxDate);
@@ -133,7 +141,9 @@ export function PayrollDailyLedgerRoute() {
     },
     onError: (error, variables) => {
       clearRoleOverride(variables.shift.ledger_entry_id);
-      toast.error(isPayrollLockedError(error) ? "ЗП за эту неделю закрыта" : apiErrorMessage(error));
+      toast.error(
+        isPayrollLockedError(error) ? "ЗП за эту неделю закрыта" : apiErrorMessage(error),
+      );
     },
     onSettled: (_entry, _error, variables) => {
       if (variables) {
@@ -223,21 +233,25 @@ export function PayrollDailyLedgerRoute() {
     });
   }
 
+  const buildButton = (
+    <Button onClick={() => buildMutation.mutate()} disabled={buildMutation.isPending}>
+      {buildMutation.isPending ? (
+        <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+      ) : (
+        <RefreshCw size={16} aria-hidden="true" />
+      )}
+      Обновить неделю из iiko
+    </Button>
+  );
+
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Учёт смен"
-        action={
-          <Button onClick={() => buildMutation.mutate()} disabled={buildMutation.isPending}>
-            {buildMutation.isPending ? (
-              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-            ) : (
-              <RefreshCw size={16} aria-hidden="true" />
-            )}
-            Обновить неделю из iiko
-          </Button>
-        }
-      />
+      {embedded ? null : (
+        <>
+          <PageHeader title="Учёт смен — Смены" action={buildButton} />
+          {headerSlot}
+        </>
+      )}
 
       <section className="flex flex-col gap-3 rounded-lg border bg-card p-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -267,6 +281,7 @@ export function PayrollDailyLedgerRoute() {
           </Button>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+          {embedded ? buildButton : null}
           <span>{formatWeekRange(days)}</span>
           <span className="inline-flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-600" aria-hidden="true" />

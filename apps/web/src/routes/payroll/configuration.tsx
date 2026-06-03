@@ -47,6 +47,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { getAuthSnapshot, subscribeAuth } from "@/lib/auth";
 import { EMPLOYEE_CATEGORY_LABELS } from "@/lib/i18n/employee";
+import { InventoryPositionsSection } from "@/routes/payroll/inventory-positions";
 import {
   apiErrorMessage,
   apiErrorStatus,
@@ -157,6 +158,8 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
   const [deductionDraft, setDeductionDraft] = useState<PayrollDeductionCategoryPayload | null>(
     null,
   );
+  const initialTab =
+    new URLSearchParams(window.location.search).get("tab") === "inventory" ? "inventory" : "rates";
   const [terminationReasonDraft, setTerminationReasonDraft] =
     useState<TerminationReasonDraft | null>(null);
 
@@ -363,7 +366,7 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
         </div>
       ) : null}
 
-      <Tabs defaultValue="rates" className="space-y-4">
+      <Tabs defaultValue={initialTab} className="space-y-4">
         <TabsList className="h-auto flex-wrap justify-start">
           <TabsTrigger value="rates">Ставки</TabsTrigger>
           <TabsTrigger value="revenue">Проценты от выручки</TabsTrigger>
@@ -372,6 +375,7 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
           <TabsTrigger value="premiums">Надбавки</TabsTrigger>
           <TabsTrigger value="fund">Накопительный фонд</TabsTrigger>
           <TabsTrigger value="deposits">Депозиты</TabsTrigger>
+          <TabsTrigger value="inventory">Ревизии</TabsTrigger>
         </TabsList>
 
         <TabsContent value="rates" className="mt-0">
@@ -461,6 +465,10 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
 
         <TabsContent value="deposits" className="mt-0">
           <DepositsSettingsTab canWrite={canWrite} />
+        </TabsContent>
+
+        <TabsContent value="inventory" className="mt-0">
+          <InventoryPositionsSection canWrite={canWrite} />
         </TabsContent>
       </Tabs>
 

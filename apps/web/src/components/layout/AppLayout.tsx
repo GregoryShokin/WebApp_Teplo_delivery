@@ -7,7 +7,6 @@ import {
   CalendarClock,
   CalendarDays,
   ChevronDown,
-  ClipboardCheck,
   ClipboardList,
   Flame,
   Home,
@@ -68,11 +67,9 @@ const navGroups: NavGroup[] = [
   {
     title: "Зарплата",
     items: [
-      { label: "Расчёты", href: "/payroll/runs", icon: Banknote },
-      { label: "Премии и штрафы", href: "/payroll/adjustments", icon: ReceiptText },
-      { label: "Учёт смен", href: "/payroll/daily-ledger", icon: ClipboardCheck },
+      { label: "Расчёты", href: "/payroll", icon: Banknote },
       { label: "График сотрудников", href: "/schedule", icon: CalendarDays },
-      { label: "Исходные данные", href: "/payroll/configuration", icon: ClipboardList },
+      { label: "Исходные данные", href: "/source-data", icon: ClipboardList },
     ],
   },
   {
@@ -337,8 +334,16 @@ function isActiveRoute(currentPath: string, href: string) {
   if (href === "/") {
     return currentPath === "/";
   }
-  if (href === "/payroll/runs") {
-    return currentPath === href || currentPath.startsWith("/payroll/runs/");
+  if (href === "/payroll") {
+    return (
+      currentPath === href ||
+      currentPath === "/payroll/fund" ||
+      currentPath === "/payroll/adjustments" ||
+      currentPath.startsWith("/payroll/runs/")
+    );
+  }
+  if (href === "/schedule") {
+    return currentPath === href || currentPath.startsWith("/schedule/");
   }
   return currentPath === href;
 }

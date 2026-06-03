@@ -29,6 +29,7 @@ from app.services.attendance_loader import (
     parse_datetime,
 )
 from app.services.employee_assignments import get_assignments
+from app.services.staff_taxonomy import PAYROLL_ROLE_LABELS
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +45,7 @@ class LedgerAssignment:
     payroll_role: str | None
     category: str | None
     is_primary: bool = False
+    is_substitute: bool = False
 
 
 class ShiftLedgerNotFoundError(LookupError):
@@ -213,7 +215,10 @@ async def list_ledger_matrix(session: AsyncSession, selected_date: date) -> dict
         .where(
             ShiftLedgerEntry.work_date >= start_date,
             ShiftLedgerEntry.work_date <= end_date,
-            Employee.position.in_(("Повар", "Кассир")),
+            or_(
+                Employee.position.in_(("Повар", "Кассир")),
+                ShiftLedgerEntry.payroll_role.in_(tuple(PAYROLL_ROLE_LABELS)),
+            ),
         )
         .order_by(Employee.full_name, ShiftLedgerEntry.work_date, ShiftLedgerEntry.opened_at)
     )
@@ -464,6 +469,7 @@ async def load_primary_assignments(
                 payroll_role=primary.payroll_role,
                 category=primary.category,
                 is_primary=primary.is_primary,
+                is_substitute=primary.is_substitute,
             )
     return assignments
 
@@ -642,18 +648,21 @@ def coerce_assignment(value: Any) -> LedgerAssignment | None:
             payroll_role=value.payroll_role,
             category=value.category,
             is_primary=value.is_primary,
+            is_substitute=value.is_substitute,
         )
     if isinstance(value, Mapping):
         return LedgerAssignment(
             payroll_role=clean_text(value.get("payroll_role") or value.get("role")),
             category=clean_text(value.get("category")),
             is_primary=bool(value.get("is_primary")),
+            is_substitute=bool(value.get("is_substitute")),
         )
     payroll_role = getattr(value, "payroll_role", None) or getattr(value, "role", None)
     return LedgerAssignment(
         payroll_role=clean_text(payroll_role),
         category=clean_text(getattr(value, "category", None)),
         is_primary=bool(getattr(value, "is_primary", False)),
+        is_substitute=bool(getattr(value, "is_substitute", False)),
     )
 
 
@@ -705,11 +714,12 @@ def serialize_shift_summary(entries: list[ShiftLedgerEntry]) -> dict[str, Any]:
     }
 
 
-def serialize_available_roles(assignments: list[LedgerAssignment]) -> list[dict[str, str]]:
+def serialize_available_roles(assignments: list[LedgerAssignment]) -> list[dict[str, Any]]:
     return [
         {
             "payroll_role": assignment.payroll_role,
             "category": assignment.category,
+            "is_substitute": assignment.is_substitute,
         }
         for assignment in assignments
         if assignment.payroll_role is not None and assignment.category is not None

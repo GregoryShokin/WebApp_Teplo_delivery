@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
@@ -16,9 +16,9 @@ from app.models import (
     PayrollForecastRun,
     RevenueForecast,
     ScheduledShift,
-    ShiftLedgerEntry,
     ShiftAllowanceOverride,
     ShiftCostEstimate,
+    ShiftLedgerEntry,
     ShiftSchedule,
     User,
 )
@@ -38,9 +38,9 @@ from app.schemas.shift_schedule import (
     RevenueForecastRecomputeRequest,
     RevenueForecastRecomputeResponse,
     ScheduleCreateRequest,
-    ScheduleLedgerEntryRead,
     ScheduledShiftRead,
     ScheduledShiftUpsertRequest,
+    ScheduleLedgerEntryRead,
     SchedulePatchRequest,
     ScheduleRead,
     ShiftAllowanceOverrideRead,
@@ -52,7 +52,6 @@ from app.services import (
     revenue_forecast_service,
     shift_schedule_service,
 )
-from app.services.staff_taxonomy import default_station_for_payroll_role
 from app.services.seniority_allowance_resolver import (
     CASHIER_POSITION,
     AllowanceAssignment,
@@ -65,6 +64,7 @@ from app.services.seniority_allowance_resolver import (
     resolve_cashier_allowance_recipient,
     upsert_cashier_override,
 )
+from app.services.staff_taxonomy import PAYROLL_ROLE_LABELS, default_station_for_payroll_role
 
 router = APIRouter()
 MAX_FORECAST_RANGE_DAYS = 62
@@ -186,7 +186,10 @@ async def get_schedule_ledger(
         .where(
             ShiftLedgerEntry.work_date >= date_from,
             ShiftLedgerEntry.work_date <= date_to,
-            Employee.position.in_(shift_schedule_service.SCHEDULE_EMPLOYEE_POSITIONS),
+            or_(
+                Employee.position.in_(shift_schedule_service.SCHEDULE_EMPLOYEE_POSITIONS),
+                ShiftLedgerEntry.payroll_role.in_(tuple(PAYROLL_ROLE_LABELS)),
+            ),
         )
         .order_by(ShiftLedgerEntry.work_date, Employee.full_name, ShiftLedgerEntry.opened_at)
     )
@@ -194,7 +197,10 @@ async def get_schedule_ledger(
         _ledger_to_read(entry, employee)
         for entry, employee in result.all()
         if date_from <= entry.work_date <= date_to
-        and employee.position in shift_schedule_service.SCHEDULE_EMPLOYEE_POSITIONS
+        and (
+            employee.position in shift_schedule_service.SCHEDULE_EMPLOYEE_POSITIONS
+            or entry.payroll_role in PAYROLL_ROLE_LABELS
+        )
     ]
 
 

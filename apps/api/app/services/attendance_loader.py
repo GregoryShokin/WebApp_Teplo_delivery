@@ -9,10 +9,16 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AttendanceEntry, Employee, PayrollPeriod
+from app.models import (
+    AttendanceEntry,
+    Employee,
+    EmployeeRoleAssignment,
+    PayrollPeriod,
+    ShiftLedgerEntry,
+)
 from app.services.iiko_sync import _load_source_credential_env
 from app.services.settings_service import SettingNotFoundError, get_setting_model
 
@@ -42,17 +48,35 @@ async def load_attendance_entries(
 ) -> list[AttendanceEntry]:
     # ЗП считаем только для поваров и кассиров; курьеры, управляющий, менеджер
     # и прочие должности из канона имеют отдельные правила оплаты (см. taxonomy.md).
-    existing_entries = (
+    all_existing_entries = (
         await session.scalars(
             select(AttendanceEntry)
             .join(Employee, Employee.id == AttendanceEntry.employee_id)
             .where(
                 AttendanceEntry.period_id == period.id,
-                Employee.position.in_(PAYROLL_TARGET_POSITIONS),
             )
             .order_by(AttendanceEntry.work_date, AttendanceEntry.started_at)
         )
     ).all()
+    employees_for_existing = {
+        employee.id: employee
+        for employee in (
+            await session.scalars(
+                select(Employee).where(
+                    Employee.id.in_({entry.employee_id for entry in all_existing_entries})
+                )
+            )
+        ).all()
+    }
+    existing_entries = [
+        entry
+        for entry in all_existing_entries
+        if await _attendance_entry_is_payroll_relevant(
+            session,
+            entry,
+            employees_for_existing.get(entry.employee_id),
+        )
+    ]
     if existing_entries and iiko_records is None:
         return list(existing_entries)
 
@@ -84,11 +108,10 @@ async def load_attendance_entries(
         employee = employees_by_iiko_id.get(iiko_id)
         if employee is None:
             continue
-        if employee.position not in PAYROLL_TARGET_POSITIONS:
-            continue
-
         entry = build_attendance_entry(record, period, employee, rules)
         if entry.work_date < period.start_date or entry.work_date > period.end_date:
+            continue
+        if not await _attendance_entry_is_payroll_relevant(session, entry, employee):
             continue
         session.add(entry)
         entries.append(entry)
@@ -211,6 +234,41 @@ def is_work_attendance(record: Mapping[str, Any]) -> bool:
     if not attendance_type:
         return True
     return attendance_type.casefold() in {item.casefold() for item in WORK_ATTENDANCE_TYPES}
+
+
+async def _attendance_entry_is_payroll_relevant(
+    session: AsyncSession,
+    entry: AttendanceEntry,
+    employee: Employee | None,
+) -> bool:
+    if employee is None:
+        return False
+    if employee.position in PAYROLL_TARGET_POSITIONS:
+        return True
+
+    ledger_entry = await session.scalar(
+        select(ShiftLedgerEntry).where(
+            ShiftLedgerEntry.employee_id == entry.employee_id,
+            ShiftLedgerEntry.work_date == entry.work_date,
+            ShiftLedgerEntry.payroll_role.is_not(None),
+        )
+    )
+    if ledger_entry is None or ledger_entry.payroll_role is None:
+        return False
+
+    substitute_assignment = await session.scalar(
+        select(EmployeeRoleAssignment).where(
+            EmployeeRoleAssignment.employee_id == entry.employee_id,
+            EmployeeRoleAssignment.payroll_role == ledger_entry.payroll_role,
+            EmployeeRoleAssignment.is_substitute.is_(True),
+            EmployeeRoleAssignment.effective_from <= entry.work_date,
+            or_(
+                EmployeeRoleAssignment.effective_to.is_(None),
+                EmployeeRoleAssignment.effective_to > entry.work_date,
+            ),
+        )
+    )
+    return substitute_assignment is not None
 
 
 def parse_datetime(value: Any) -> datetime | None:

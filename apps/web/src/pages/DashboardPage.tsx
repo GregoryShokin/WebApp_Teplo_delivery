@@ -65,7 +65,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
             icon={<Banknote className="h-5 w-5" aria-hidden="true" />}
             title="Зарплата за эту неделю"
             description="Расчётов пока нет."
-            action={<Button onClick={() => onNavigate("/payroll/runs")}>Перейти к расчётам</Button>}
+            action={<Button onClick={() => onNavigate("/payroll")}>Перейти к расчётам</Button>}
           />
         )}
 

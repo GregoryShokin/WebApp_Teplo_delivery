@@ -338,7 +338,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         action={
           <>
             {run ? <StatusBadge status={run.status} /> : null}
-            <Button onClick={() => onNavigate("/payroll/runs")} title="Назад" variant="outline">
+            <Button onClick={() => onNavigate("/payroll")} title="Назад" variant="outline">
               <ArrowLeft size={16} aria-hidden="true" />
               Назад
             </Button>

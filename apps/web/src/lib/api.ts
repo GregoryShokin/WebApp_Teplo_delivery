@@ -49,6 +49,16 @@ export type AppSettingHistory = {
   changed_by_user_name: string | null;
 };
 
+export type SubstitutePair = {
+  from_position: string;
+  to_position: "Повар" | "Кассир";
+  add_to_schedule: boolean;
+};
+
+export type SubstitutePairsResponse = {
+  pairs: SubstitutePair[];
+};
+
 export type EmployeeStatus = "active" | "inactive" | "requires_setup";
 export type EmployeeCategory =
   | "category_1"
@@ -66,6 +76,7 @@ export type EmployeeRoleAssignment = {
   payroll_role: PayrollRole;
   category: EmployeeCategory;
   is_primary: boolean;
+  is_substitute: boolean;
   effective_from: string;
   effective_to: string | null;
   is_pending: boolean;
@@ -77,12 +88,13 @@ export type EmployeeRoleAssignmentCreate = {
   payroll_role: PayrollRole;
   category: EmployeeCategory;
   is_primary?: boolean;
+  is_substitute?: boolean;
   effective_from?: string | null;
   comment?: string | null;
 };
 
 export type EmployeeRoleAssignmentPatch = Partial<
-  Pick<EmployeeRoleAssignment, "payroll_role" | "category" | "is_primary">
+  Pick<EmployeeRoleAssignment, "payroll_role" | "category" | "is_primary" | "is_substitute">
 > & {
   effective_from?: string | null;
   comment?: string | null;
@@ -108,6 +120,8 @@ export type Employee = {
   tenure_started_at: string | null;
   fire_date: string | null;
   fire_reason: string | null;
+  requires_role_review: boolean;
+  role_review_payload: Record<string, unknown> | null;
   pin_assumed_from_iiko: boolean;
   pin_set_at: string | null;
   iiko_sync_at: string | null;
@@ -126,6 +140,7 @@ export type EmployeePatch = Partial<
     | "default_cooking_station"
     | "is_senior"
     | "is_deputy_senior"
+    | "requires_role_review"
     | "hire_date"
     | "fire_date"
   >
@@ -516,6 +531,151 @@ export type PayrollAdjustmentCategoryPatch = Partial<
   >
 >;
 
+export type InventoryAllocationGroup = "chefs" | "common" | "admins";
+export type InventoryAuditStatus = "draft" | "applied" | "cancelled";
+
+export type InventoryPosition = {
+  id: string;
+  code: string;
+  display_name: string;
+  allocation_group: InventoryAllocationGroup | null;
+  iiko_product_guid: string | null;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type InventoryPositionPayload = {
+  code: string;
+  display_name: string;
+  allocation_group?: InventoryAllocationGroup | null;
+  iiko_product_guid?: string | null;
+  sort_order?: number;
+};
+
+export type InventoryPositionPatch = Partial<
+  Pick<InventoryPosition, "allocation_group" | "is_active" | "sort_order">
+>;
+
+export type IikoProduct = {
+  guid: string;
+  name: string;
+  code: string | null;
+};
+
+export type InventoryPositionsSyncResult = {
+  added: number;
+  updated: number;
+  total: number;
+};
+
+export type IikoCandidate = {
+  document_id: string;
+  document_num: string;
+  items_count: number;
+  total_shortage: string;
+  matched_active_count: number;
+};
+
+export type InventoryAuditItem = {
+  id: string;
+  audit_id: string;
+  position_id: string | null;
+  position_code: string | null;
+  position_display_name: string | null;
+  allocation_group: InventoryAllocationGroup | null;
+  is_considered: boolean;
+  iiko_product_guid: string | null;
+  product_name_snapshot: string;
+  shortage_amount: string;
+  created_at: string | null;
+};
+
+export type InventoryAudit = {
+  id: string;
+  business_date: string;
+  previous_audit_date: string | null;
+  iiko_document_id: string | null;
+  iiko_document_num: string | null;
+  source: "iiko" | "manual";
+  status: InventoryAuditStatus;
+  total_shortage_amount: string;
+  total_shortage_iiko?: string;
+  total_shortage_considered?: string;
+  total_penalty_amount: string;
+  employee_count: number;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  applied_at: string | null;
+  items_skipped_count?: number;
+  items?: InventoryAuditItem[];
+  computation_snapshot?: InventoryComputationSnapshot | null;
+};
+
+export type InventoryComputationSnapshot = {
+  period?: { start?: string; end?: string; previous_audit_date?: string | null };
+  groups?: Record<string, InventoryGroupSnapshot>;
+  employee_penalties?: InventoryEmployeePenalty[];
+  employee_penalties_by_id?: Record<string, string>;
+  skipped_items?: Array<{ item_id?: string; reason?: string }>;
+  warnings?: string[];
+};
+
+export type InventoryGroupSnapshot = {
+  group?: string;
+  total_shortage?: string;
+  sum?: string;
+  rate?: string;
+  rate_reason?: string;
+  rate_percent?: string;
+  penalty?: string;
+  threshold?: string;
+  items?: Array<Record<string, unknown>>;
+  recipients?: Record<
+    string,
+    { total?: string; count?: number; items?: InventoryEmployeePenalty[] }
+  >;
+};
+
+export type InventoryEmployeePenalty = {
+  employee_id: string;
+  full_name: string;
+  position: string | null;
+  amount: string;
+};
+
+export type InventoryComputation = {
+  audit_id: string;
+  total_shortage_amount: string;
+  total_penalty_amount: string;
+  period_start: string;
+  period_end: string;
+  groups: Record<string, InventoryGroupSnapshot>;
+  employee_penalties: InventoryEmployeePenalty[];
+  warnings: string[];
+};
+
+export type InventoryManualAuditPayload = {
+  business_date: string;
+  notes?: string | null;
+  items: Array<{
+    position_id?: string | null;
+    position_code?: string | null;
+    product_name_snapshot?: string | null;
+    shortage_amount: string;
+  }>;
+};
+
+export type InventoryAuditItemPayload = {
+  position_id?: string | null;
+  position_code?: string | null;
+  iiko_product_guid?: string | null;
+  product_name_snapshot?: string | null;
+  shortage_amount: string;
+};
+
 export type ScheduleStatus = "draft" | "published" | "superseded";
 
 export type ScheduledShiftRead = {
@@ -790,6 +950,7 @@ export type EmployeeRosterAvailableRole = {
   payroll_role: string;
   category: string;
   is_primary: boolean;
+  is_substitute: boolean;
   default_station_code: string | null;
 };
 
@@ -799,6 +960,7 @@ export type EmployeeRosterRow = {
   position: "Повар" | "Кассир" | string;
   primary_payroll_role: string | null;
   default_cooking_station: string | null;
+  requires_role_review: boolean;
   available_roles: EmployeeRosterAvailableRole[];
   allowances: {
     senior: boolean;
@@ -861,6 +1023,7 @@ export type ShiftLedgerStatus = "resolved" | "needs_role_selection" | "needs_emp
 export type ShiftLedgerAvailableRole = {
   payroll_role: PayrollRole | string;
   category: EmployeeCategory;
+  is_substitute?: boolean;
 };
 
 export type ShiftLedgerEntry = {
@@ -1168,6 +1331,18 @@ export async function getSettingHistory(key: string): Promise<AppSettingHistory[
 
 export async function updateSetting(key: string, value: unknown): Promise<AppSetting> {
   const response = await api.put<AppSetting>(`/settings/${encodeURIComponent(key)}`, { value });
+  return response.data;
+}
+
+export async function getSubstitutePairs(): Promise<SubstitutePairsResponse> {
+  const response = await api.get<SubstitutePairsResponse>("/settings/substitute-pairs");
+  return response.data;
+}
+
+export async function updateSubstitutePairs(
+  pairs: SubstitutePair[],
+): Promise<SubstitutePairsResponse> {
+  const response = await api.put<SubstitutePairsResponse>("/settings/substitute-pairs", { pairs });
   return response.data;
 }
 
@@ -1759,6 +1934,125 @@ export async function patchPayrollAdjustmentCategory(
     `/payroll/adjustment-categories/${id}`,
     payload,
   );
+  return response.data;
+}
+
+export async function getInventoryPositions(includeInactive = false): Promise<InventoryPosition[]> {
+  const response = await api.get<InventoryPosition[]>("/inventory/positions", {
+    params: { include_inactive: includeInactive || undefined },
+  });
+  return response.data;
+}
+
+export async function createInventoryPosition(
+  payload: InventoryPositionPayload,
+): Promise<InventoryPosition> {
+  const response = await api.post<InventoryPosition>("/inventory/positions", payload);
+  return response.data;
+}
+
+export async function patchInventoryPosition(
+  id: string,
+  payload: InventoryPositionPatch,
+): Promise<InventoryPosition> {
+  const response = await api.patch<InventoryPosition>(`/inventory/positions/${id}`, payload);
+  return response.data;
+}
+
+export async function syncInventoryPositionsFromIiko(): Promise<InventoryPositionsSyncResult> {
+  const response = await api.post<InventoryPositionsSyncResult>("/inventory/positions/sync-iiko");
+  return response.data;
+}
+
+export async function getInventoryIikoProducts(params: {
+  search?: string;
+  refresh?: boolean;
+}): Promise<IikoProduct[]> {
+  const response = await api.get<IikoProduct[]>("/inventory/iiko-products", { params });
+  return response.data;
+}
+
+export async function getInventoryAudits(filters: {
+  dateFrom?: string;
+  dateTo?: string;
+  status?: InventoryAuditStatus | "all";
+} = {}): Promise<InventoryAudit[]> {
+  const response = await api.get<InventoryAudit[]>("/inventory/audits", {
+    params: {
+      date_from: filters.dateFrom || undefined,
+      date_to: filters.dateTo || undefined,
+      status: filters.status && filters.status !== "all" ? filters.status : undefined,
+    },
+  });
+  return response.data;
+}
+
+export async function getInventoryAudit(id: string): Promise<InventoryAudit> {
+  const response = await api.get<InventoryAudit>(`/inventory/audits/${id}`);
+  return response.data;
+}
+
+export async function getIikoCandidates(businessDate: string): Promise<IikoCandidate[]> {
+  const response = await api.get<IikoCandidate[]>("/inventory/audits/iiko-candidates", {
+    params: { business_date: businessDate },
+  });
+  return response.data;
+}
+
+export async function importInventoryAuditFromIiko(payload: {
+  business_date: string;
+  document_id?: string | null;
+}): Promise<InventoryAudit> {
+  const response = await api.post<InventoryAudit>("/inventory/audits/import-iiko", {
+    business_date: payload.business_date,
+    document_id: payload.document_id,
+  });
+  return response.data;
+}
+
+export async function createManualInventoryAudit(
+  payload: InventoryManualAuditPayload,
+): Promise<InventoryAudit> {
+  const response = await api.post<InventoryAudit>("/inventory/audits", payload);
+  return response.data;
+}
+
+export async function addInventoryAuditItem(
+  auditId: string,
+  payload: InventoryAuditItemPayload,
+): Promise<InventoryAudit> {
+  const response = await api.post<InventoryAudit>(`/inventory/audits/${auditId}/items`, payload);
+  return response.data;
+}
+
+export async function patchInventoryAuditItem(
+  auditId: string,
+  itemId: string,
+  payload: Partial<InventoryAuditItemPayload>,
+): Promise<InventoryAudit> {
+  const response = await api.patch<InventoryAudit>(
+    `/inventory/audits/${auditId}/items/${itemId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteInventoryAuditItem(auditId: string, itemId: string): Promise<void> {
+  await api.delete(`/inventory/audits/${auditId}/items/${itemId}`);
+}
+
+export async function computeInventoryAudit(id: string): Promise<InventoryComputation> {
+  const response = await api.post<InventoryComputation>(`/inventory/audits/${id}/compute`);
+  return response.data;
+}
+
+export async function applyInventoryAudit(id: string): Promise<InventoryAudit> {
+  const response = await api.post<InventoryAudit>(`/inventory/audits/${id}/apply`);
+  return response.data;
+}
+
+export async function cancelInventoryAudit(id: string): Promise<InventoryAudit> {
+  const response = await api.post<InventoryAudit>(`/inventory/audits/${id}/cancel`);
   return response.data;
 }
 

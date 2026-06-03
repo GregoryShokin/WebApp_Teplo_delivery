@@ -429,6 +429,13 @@ def calculate_payroll_lines_from_inputs(
         category = group_categories[group_key]
         position = position_for_payroll_entry(settings, employee, work_date)
         is_vacation_day = (employee_id, work_date) in vacation_days
+        is_substitute = is_substitute_payroll_entry(
+            settings,
+            employee,
+            work_date,
+            role,
+            station,
+        )
         coeff = Decimal("0") if is_vacation_day else category_coeff(settings, category, work_date)
         hours = Decimal(minutes) / Decimal(60)
         percent_shift = PercentShift(
@@ -449,6 +456,7 @@ def calculate_payroll_lines_from_inputs(
             "category": category,
             "position": position,
             "station": station,
+            "is_substitute": is_substitute,
             "adjusted_coeff": float(adjusted_coeff),
         }
 
@@ -482,6 +490,13 @@ def calculate_payroll_lines_from_inputs(
         category = group_categories[group_key]
         employee_day_key = (employee_id, work_date)
         is_vacation_day = employee_day_key in vacation_days
+        is_substitute = is_substitute_payroll_entry(
+            settings,
+            employee,
+            work_date,
+            role,
+            station,
+        )
         if is_vacation_day:
             base_pay = Decimal("0")
             seniority_allowance_pay = Decimal("0")
@@ -504,14 +519,18 @@ def calculate_payroll_lines_from_inputs(
                 work_date,
                 station,
             )
-            seniority_allowance_pay, seniority_allowance_metadata = (
-                seniority_allowance_details_for_payroll_entry(
-                    settings,
-                    employee,
-                    minutes,
-                    work_date,
+            if is_substitute:
+                seniority_allowance_pay = Decimal("0")
+                seniority_allowance_metadata = {"seniority_allowance_skipped_reason": "substitute"}
+            else:
+                seniority_allowance_pay, seniority_allowance_metadata = (
+                    seniority_allowance_details_for_payroll_entry(
+                        settings,
+                        employee,
+                        minutes,
+                        work_date,
+                    )
                 )
-            )
             percent_pay = daily_percent_distributions.get(work_date, {}).get(
                 group_key, Decimal("0")
             ) * shift_pay_ratio(minutes)
@@ -528,11 +547,15 @@ def calculate_payroll_lines_from_inputs(
             base_pay_with_premium = base_pay + seniority_allowance_pay + weekday_premium
             fund_excluded = is_fund_currently_excluded(employee, work_date)
             fund_rate = _fund_rate_for_months(settings, tenure_months_on(employee, work_date))
-            fund_accrual = fund_accrual_for_day(
-                settings,
-                employee,
-                work_date,
-                base_pay_with_premium,
+            fund_accrual = (
+                Decimal("0")
+                if is_substitute
+                else fund_accrual_for_day(
+                    settings,
+                    employee,
+                    work_date,
+                    base_pay_with_premium,
+                )
             )
         key = (employee_id, role)
         totals = line_totals.setdefault(
@@ -569,6 +592,7 @@ def calculate_payroll_lines_from_inputs(
                 "vacation_pay": money(vacation_pay),
                 "fund_rate_percent": float((fund_rate * Decimal("100")).quantize(Decimal("0.001"))),
                 "fund_accrual": money(fund_accrual),
+                "is_substitute": is_substitute,
                 **percent_components,
                 **seniority_allowance_metadata,
             }
@@ -597,7 +621,10 @@ def calculate_payroll_lines_from_inputs(
         line_override = line_deposit_override(deposit_overrides, employee_id, role)
         deposit_excluded_for_run = bool(line_override.get("deposit_excluded_for_run", False))
         deposit_exclusion_reason = optional_text(line_override.get("deposit_exclusion_reason"))
-        if deposit_excluded_for_run:
+        is_substitute_line = any(
+            bool(day.get("is_substitute")) for day in totals.get("days", [])
+        )
+        if deposit_excluded_for_run or is_substitute_line:
             deduction = Decimal("0")
         else:
             deduction = deposit_withholding(
@@ -985,6 +1012,26 @@ def category_for_payroll_entry(
         if first is not None:
             return str(first.category)
     return str(employee.category or "")
+
+
+def is_substitute_payroll_entry(
+    settings: Mapping[str, Any],
+    employee: Employee,
+    work_date: date,
+    role: str | None,
+    station: str | None,
+) -> bool:
+    assignments = assignments_for_employee_date(settings, employee.id, work_date)
+    if not assignments:
+        return False
+    assignment_role = assignment_role_for_payroll_context(role, station) or role
+    if not assignment_role:
+        return False
+    return any(
+        getattr(assignment, "payroll_role", None) == assignment_role
+        and bool(getattr(assignment, "is_substitute", False))
+        for assignment in assignments
+    )
 
 
 def position_for_payroll_entry(

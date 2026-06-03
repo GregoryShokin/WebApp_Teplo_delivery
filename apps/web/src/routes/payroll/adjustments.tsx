@@ -10,7 +10,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import {
@@ -69,6 +69,8 @@ import {
 import { cn } from "@/lib/utils";
 
 type PayrollAdjustmentsRouteProps = {
+  embedded?: boolean;
+  headerSlot?: ReactNode;
   onNavigate: (path: string) => void;
 };
 
@@ -90,7 +92,11 @@ const typeLabels: Record<PayrollAdjustmentType, string> = {
 
 const targetPositions = new Set(["Повар", "Кассир"]);
 
-export function PayrollAdjustmentsRoute({ onNavigate }: PayrollAdjustmentsRouteProps) {
+export function PayrollAdjustmentsRoute({
+  embedded = false,
+  headerSlot,
+  onNavigate,
+}: PayrollAdjustmentsRouteProps) {
   void onNavigate;
   const queryClient = useQueryClient();
   const defaultPeriod = useMemo(() => currentPayrollWeek(), []);
@@ -238,13 +244,7 @@ export function PayrollAdjustmentsRoute({ onNavigate }: PayrollAdjustmentsRouteP
       cell: (adjustment) => (
         <div className="flex justify-end">
           {adjustment.is_locked ? (
-            <Button
-              disabled
-              size="icon"
-              title="Период зафиксирован"
-              type="button"
-              variant="ghost"
-            >
+            <Button disabled size="icon" title="Период зафиксирован" type="button" variant="ghost">
               <Lock size={16} aria-hidden="true" />
             </Button>
           ) : (
@@ -276,28 +276,49 @@ export function PayrollAdjustmentsRoute({ onNavigate }: PayrollAdjustmentsRouteP
     },
   ];
 
+  function openCreateDialog() {
+    setEditingAdjustment(null);
+    setDialogOpen(true);
+  }
+
+  const addButton = (
+    <Button onClick={openCreateDialog}>
+      <Plus size={16} aria-hidden="true" />
+      Добавить
+    </Button>
+  );
+
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Премии и штрафы"
-        description="Ручные корректировки для поваров и кассиров."
-        action={
-          <Button
-            onClick={() => {
-              setEditingAdjustment(null);
-              setDialogOpen(true);
-            }}
-          >
-            <Plus size={16} aria-hidden="true" />
-            Добавить
-          </Button>
-        }
-      />
+      {embedded ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold tracking-normal">Премии и штрафы</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Ручные корректировки для поваров и кассиров.
+            </p>
+          </div>
+          {addButton}
+        </div>
+      ) : (
+        <>
+          <PageHeader
+            title="Расчёты ЗП — Премии и штрафы"
+            description="Ручные корректировки для поваров и кассиров."
+            action={addButton}
+          />
+
+          {headerSlot}
+        </>
+      )}
 
       <section className="grid gap-3 rounded-lg border bg-card p-3 lg:grid-cols-[180px_minmax(180px,260px)_150px_150px_1fr] lg:items-end">
         <Label className="grid gap-2">
           <span>Тип</span>
-          <Select onValueChange={(value) => setTypeFilter(value as PayrollAdjustmentType | "all")} value={typeFilter}>
+          <Select
+            onValueChange={(value) => setTypeFilter(value as PayrollAdjustmentType | "all")}
+            value={typeFilter}
+          >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -329,7 +350,11 @@ export function PayrollAdjustmentsRoute({ onNavigate }: PayrollAdjustmentsRouteP
 
         <Label className="grid gap-2">
           <span>С даты</span>
-          <Input onChange={(event) => setDateFrom(event.target.value)} type="date" value={dateFrom} />
+          <Input
+            onChange={(event) => setDateFrom(event.target.value)}
+            type="date"
+            value={dateFrom}
+          />
         </Label>
         <Label className="grid gap-2">
           <span>По дату</span>
@@ -383,13 +408,14 @@ export function PayrollAdjustmentsRoute({ onNavigate }: PayrollAdjustmentsRouteP
             setEditingAdjustment(null);
           }
         }}
-        onSubmit={(payload) =>
-          saveMutation.mutate({ id: editingAdjustment?.id, payload })
-        }
+        onSubmit={(payload) => saveMutation.mutate({ id: editingAdjustment?.id, payload })}
         open={dialogOpen}
       />
 
-      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <AlertDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Удалить корректировку?</AlertDialogTitle>
@@ -434,7 +460,9 @@ function AdjustmentDialog({
   onSubmit: (payload: PayrollAdjustmentPayload) => void;
   open: boolean;
 }) {
-  const [draft, setDraft] = useState<AdjustmentDraft>(() => draftFromAdjustment(adjustment, employees));
+  const [draft, setDraft] = useState<AdjustmentDraft>(() =>
+    draftFromAdjustment(adjustment, employees),
+  );
   const [confirmCreateOpen, setConfirmCreateOpen] = useState(false);
   const [categoryOpen, setCategoryOpen] = useState(false);
   const categoriesQuery = useQuery({
@@ -518,7 +546,9 @@ function AdjustmentDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{adjustment ? "Редактировать корректировку" : "Новая премия / штраф"}</DialogTitle>
+            <DialogTitle>
+              {adjustment ? "Редактировать корректировку" : "Новая премия / штраф"}
+            </DialogTitle>
             <DialogDescription>
               Дата должна относиться к открытому или пересчитываемому периоду ЗП.
             </DialogDescription>
@@ -554,7 +584,9 @@ function AdjustmentDialog({
                 <span>Сотрудник</span>
                 <Select
                   disabled={isPending}
-                  onValueChange={(value) => setDraft((current) => ({ ...current, employee_id: value }))}
+                  onValueChange={(value) =>
+                    setDraft((current) => ({ ...current, employee_id: value }))
+                  }
                   value={draft.employee_id}
                 >
                   <SelectTrigger>
@@ -575,7 +607,9 @@ function AdjustmentDialog({
                 <span>Дата</span>
                 <Input
                   disabled={isPending}
-                  onChange={(event) => setDraft((current) => ({ ...current, work_date: event.target.value }))}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, work_date: event.target.value }))
+                  }
                   type="date"
                   value={draft.work_date}
                 />
@@ -591,7 +625,9 @@ function AdjustmentDialog({
                   value={draft.mode === "custom" ? "__custom__" : draft.category_id}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder={categoriesQuery.isLoading ? "Загрузка..." : "Выберите категорию"} />
+                    <SelectValue
+                      placeholder={categoriesQuery.isLoading ? "Загрузка..." : "Выберите категорию"}
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {categories.map((category) => (
@@ -611,7 +647,9 @@ function AdjustmentDialog({
                   disabled={isPending}
                   inputMode="decimal"
                   min={0}
-                  onChange={(event) => setDraft((current) => ({ ...current, amount: event.target.value }))}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, amount: event.target.value }))
+                  }
                   placeholder={selectedCategory?.default_amount ?? "0"}
                   step="0.01"
                   type="number"
@@ -625,7 +663,9 @@ function AdjustmentDialog({
                 <span>Название</span>
                 <Input
                   disabled={isPending}
-                  onChange={(event) => setDraft((current) => ({ ...current, custom_label: event.target.value }))}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, custom_label: event.target.value }))
+                  }
                   value={draft.custom_label}
                 />
               </Label>
@@ -636,7 +676,9 @@ function AdjustmentDialog({
               <textarea
                 className="min-h-24 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 disabled={isPending}
-                onChange={(event) => setDraft((current) => ({ ...current, comment: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, comment: event.target.value }))
+                }
                 value={draft.comment}
               />
             </Label>
@@ -649,7 +691,12 @@ function AdjustmentDialog({
           </div>
 
           <DialogFooter>
-            <Button disabled={isPending} onClick={() => onOpenChange(false)} type="button" variant="outline">
+            <Button
+              disabled={isPending}
+              onClick={() => onOpenChange(false)}
+              type="button"
+              variant="outline"
+            >
               Отмена
             </Button>
             <Button disabled={!canSubmit} onClick={save} type="button">
@@ -747,7 +794,9 @@ function CategoryDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Добавить категорию</DialogTitle>
-          <DialogDescription>{typeLabels[type]} будет доступна в списке категорий.</DialogDescription>
+          <DialogDescription>
+            {typeLabels[type]} будет доступна в списке категорий.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
           <Label className="grid gap-2">
@@ -774,7 +823,12 @@ function CategoryDialog({
           </Label>
         </div>
         <DialogFooter>
-          <Button disabled={mutation.isPending} onClick={() => onOpenChange(false)} type="button" variant="outline">
+          <Button
+            disabled={mutation.isPending}
+            onClick={() => onOpenChange(false)}
+            type="button"
+            variant="outline"
+          >
             Отмена
           </Button>
           <Button disabled={!canSubmit} onClick={() => mutation.mutate()} type="button">

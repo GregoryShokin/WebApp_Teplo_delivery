@@ -19,6 +19,7 @@ from app.services.payroll_calculator import (
     category_coeff,
     category_for_payroll_entry,
     fund_accrual_for_day,
+    is_substitute_payroll_entry,
     percent_revenue_tiers,
     position_for_payroll_entry,
     role_category_rate,
@@ -105,6 +106,13 @@ async def compute_shift_cost(
     if payroll_role is None:
         quality_reasons.append("no_role")
     else:
+        is_substitute = is_substitute_payroll_entry(
+            normalized_settings,
+            employee,
+            shift.business_date,
+            payroll_role,
+            station_key,
+        )
         category = category_for_payroll_entry(
             normalized_settings,
             employee,
@@ -137,13 +145,19 @@ async def compute_shift_cost(
                     shift.business_date,
                     station_key,
                 )
-                allowance, allowance_metadata = seniority_allowance_details_for_payroll_entry(
-                    normalized_settings,
-                    employee,
-                    min(planned_minutes, FULL_SHIFT_MINUTES),
-                    shift.business_date,
-                )
+                if is_substitute:
+                    allowance = Decimal("0")
+                    allowance_metadata = {"seniority_allowance_skipped_reason": "substitute"}
+                else:
+                    allowance, allowance_metadata = seniority_allowance_details_for_payroll_entry(
+                        normalized_settings,
+                        employee,
+                        min(planned_minutes, FULL_SHIFT_MINUTES),
+                        shift.business_date,
+                    )
                 base_salary += allowance
+    if payroll_role is None:
+        is_substitute = False
 
     weekday_premium = weekday_premium_for_employee_day(
         normalized_settings,
@@ -160,11 +174,15 @@ async def compute_shift_cost(
         same_day_shifts=same_day_shifts,
         quality_reasons=quality_reasons,
     )
-    fund_accrual = fund_accrual_for_day(
-        normalized_settings,
-        employee,
-        shift.business_date,
-        base_salary + weekday_premium,
+    fund_accrual = (
+        Decimal("0")
+        if is_substitute
+        else fund_accrual_for_day(
+            normalized_settings,
+            employee,
+            shift.business_date,
+            base_salary + weekday_premium,
+        )
     )
     total = base_salary + weekday_premium + revenue_percent
     quality_status = "requires_review" if quality_reasons else "ok"
@@ -187,6 +205,7 @@ async def compute_shift_cost(
         "station_label": shift.station_code,
         "category": category or None,
         "position": position_for_payroll_entry(normalized_settings, employee, shift.business_date),
+        "is_substitute": is_substitute,
         "minutes": planned_minutes,
         "planned_hours": money_string(planned_hours),
         "base_salary": money_string(base_salary),

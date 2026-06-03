@@ -121,6 +121,7 @@ class EmployeeRosterAvailableRoleRead(BaseModel):
     payroll_role: str
     category: str
     is_primary: bool
+    is_substitute: bool = False
     default_station_code: str | None = None
 
 
@@ -130,6 +131,7 @@ class EmployeeRosterRow(BaseModel):
     position: str
     primary_payroll_role: str | None = None
     default_cooking_station: str | None = None
+    requires_role_review: bool = False
     available_roles: list[EmployeeRosterAvailableRoleRead] = Field(default_factory=list)
     allowances: EmployeeRosterAllowanceRead
 
