@@ -8,6 +8,7 @@ from app.api.v1.routes.deposits import router as deposits_router
 from app.api.v1.routes.employees import router as employees_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.integrations import router as integrations_router
+from app.api.v1.routes.inventory import router as inventory_router
 from app.api.v1.routes.payroll import router as payroll_router
 from app.api.v1.routes.payroll_adjustments import router as payroll_adjustments_router
 from app.api.v1.routes.settings import router as settings_router
@@ -22,6 +23,7 @@ api_router.include_router(couriers_router, prefix="/couriers", tags=["couriers"]
 api_router.include_router(deposits_router, prefix="/deposits", tags=["deposits"])
 api_router.include_router(employees_router, prefix="/employees", tags=["employees"])
 api_router.include_router(integrations_router, prefix="/integrations", tags=["integrations"])
+api_router.include_router(inventory_router, prefix="/inventory", tags=["inventory"])
 api_router.include_router(accumulation_fund_router, prefix="/payroll/fund", tags=["payroll"])
 api_router.include_router(payroll_router, prefix="/payroll", tags=["payroll"])
 api_router.include_router(payroll_adjustments_router, prefix="/payroll", tags=["payroll"])

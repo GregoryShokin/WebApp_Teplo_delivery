@@ -19,6 +19,7 @@ from app.models.employee import (
     EmployeePositionEvent,
     EmployeeRoleAssignment,
 )
+from app.models.inventory import InventoryAudit, InventoryAuditItem, InventoryAuditPosition
 from app.models.payroll import (
     AccumulationFundAccount,
     AccumulationFundTransaction,
@@ -69,6 +70,9 @@ __all__ = [
     "EmployeePendingIikoAction",
     "EmployeePositionEvent",
     "EmployeeRoleAssignment",
+    "InventoryAudit",
+    "InventoryAuditItem",
+    "InventoryAuditPosition",
     "Location",
     "PayrollDeductionCategory",
     "PayrollAdjustment",

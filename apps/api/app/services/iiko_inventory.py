@@ -34,8 +34,13 @@ def _load_inventory_module() -> ModuleType:
     raise RuntimeError("integrations/iiko/scripts/build_inventory_results.py is not available")
 
 
+async def fetch_inventory_documents(business_date: date) -> list[dict[str, Any]]:
+    return await anyio.to_thread.run_sync(_fetch_inventory_documents_sync, business_date)
+
+
 async def fetch_inventory_document(business_date: date) -> dict[str, Any] | None:
-    return await anyio.to_thread.run_sync(_fetch_inventory_document_sync, business_date)
+    documents = await fetch_inventory_documents(business_date)
+    return documents[0] if documents else None
 
 
 async def fetch_products_catalog(
@@ -54,7 +59,7 @@ async def fetch_products_catalog(
     return products
 
 
-def _fetch_inventory_document_sync(business_date: date) -> dict[str, Any] | None:
+def _fetch_inventory_documents_sync(business_date: date) -> list[dict[str, Any]]:
     inventory = _load_inventory_module()
     inventory.load_local_env()
     client = inventory.IikoClient()
@@ -85,13 +90,15 @@ def _fetch_inventory_document_sync(business_date: date) -> dict[str, Any] | None
         document["items"].append(item)
         document["total_shortage"] += item["shortage_amount"]
 
-    if not documents:
-        return None
-    document = next(iter(documents.values()))
-    document["total_shortage"] = _money(document["total_shortage"])
-    for item in document["items"]:
-        item["shortage_amount"] = _money(item["shortage_amount"])
-    return document
+    result = sorted(
+        documents.values(),
+        key=lambda item: (str(item.get("document_num") or ""), str(item.get("document_id") or "")),
+    )
+    for document in result:
+        document["total_shortage"] = _money(document["total_shortage"])
+        for item in document["items"]:
+            item["shortage_amount"] = _money(item["shortage_amount"])
+    return result
 
 
 def _fetch_products_catalog_sync() -> dict[str, dict[str, str]]:
@@ -102,6 +109,12 @@ def _fetch_products_catalog_sync() -> dict[str, dict[str, str]]:
     payload = json.loads(data.decode("utf-8"))
     products: dict[str, dict[str, str]] = {}
     for row in inventory.product_records_from_payload(payload):
+        product_type = _clean(inventory.value_from(row, ["type", "productType", "product_type"]))
+        if product_type.upper() != "GOODS":
+            continue
+        deleted = _clean(inventory.value_from(row, ["deleted", "isDeleted", "is_deleted"]))
+        if deleted.casefold() in {"true", "1", "yes", "deleted"}:
+            continue
         guid = _clean(inventory.value_from(row, ["id", "product", "productId"]))
         if not guid:
             continue
