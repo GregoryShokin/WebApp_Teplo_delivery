@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -21,6 +21,7 @@ class EmployeeRoleAssignmentRead(BaseModel):
     payroll_role: str
     category: str
     is_primary: bool
+    is_substitute: bool = False
     effective_from: date
     effective_to: date | None = None
     is_pending: bool
@@ -32,16 +33,30 @@ class EmployeeRoleAssignmentCreate(BaseModel):
     payroll_role: str = Field(max_length=64)
     category: str = Field(max_length=64)
     is_primary: bool = False
+    is_substitute: bool = False
     effective_from: date | None = None
     comment: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_substitute_primary(self) -> EmployeeRoleAssignmentCreate:
+        if self.is_substitute and self.is_primary:
+            raise ValueError("Подменная роль не может быть основной")
+        return self
 
 
 class EmployeeRoleAssignmentPatch(BaseModel):
     payroll_role: str | None = Field(default=None, max_length=64)
     category: str | None = Field(default=None, max_length=64)
     is_primary: bool | None = None
+    is_substitute: bool | None = None
     effective_from: date | None = None
     comment: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_substitute_primary(self) -> EmployeeRoleAssignmentPatch:
+        if self.is_substitute is True and self.is_primary is True:
+            raise ValueError("Подменная роль не может быть основной")
+        return self
 
 
 class EmployeePositionEventRead(BaseModel):
@@ -111,6 +126,8 @@ class EmployeeRead(BaseModel):
     tenure_started_at: date | None = None
     fire_date: date | None = None
     fire_reason: str | None = None
+    requires_role_review: bool = False
+    role_review_payload: dict[str, Any] | None = None
     pin_assumed_from_iiko: bool = False
     pin_set_at: datetime | None = None
     iiko_sync_at: datetime | None = None
@@ -120,7 +137,7 @@ class EmployeeRead(BaseModel):
     active_notice: EmployeeNoticeInfo | None = None
 
 
-class DepositDismissAction(str, Enum):
+class DepositDismissAction(StrEnum):
     PAYOUT_FULL = "payout_full"
     PAYOUT_PARTIAL = "payout_partial"
     WRITE_OFF = "write_off"
@@ -385,6 +402,7 @@ class EmployeePatch(BaseModel):
     default_cooking_station: str | None = Field(default=None, max_length=160)
     is_senior: bool | None = None
     is_deputy_senior: bool | None = None
+    requires_role_review: bool | None = None
     hire_date: date | None = None
     fire_date: date | None = None
     pin_code: str | None = None

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.auth import CurrentUser, current_user
 from app.main import create_app
-from app.services import settings_service
+from app.services import iiko_sync, payroll_config, settings_service
 
 
 def _user(*roles: str) -> CurrentUser:
@@ -107,6 +107,55 @@ def test_get_setting_history_missing_key_returns_404(
     response = client.get("/api/v1/settings/missing/history")
 
     assert response.status_code == 404
+
+
+def test_put_substitute_pairs_accepts_request_models(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: list[payroll_config.SubstitutePair] = []
+
+    async def set_substitute_pairs(_session, pairs, _user):
+        normalized = payroll_config._validate_substitute_pairs(pairs)
+        captured.extend(normalized)
+        return normalized
+
+    async def refresh_role_review_for_all_employees(_session, *, force: bool = False) -> None:
+        assert force is True
+
+    monkeypatch.setattr(payroll_config, "set_substitute_pairs", set_substitute_pairs)
+    monkeypatch.setattr(
+        iiko_sync,
+        "refresh_role_review_for_all_employees",
+        refresh_role_review_for_all_employees,
+    )
+    client.app.dependency_overrides[current_user] = lambda: _user("admin")
+
+    response = client.put(
+        "/api/v1/settings/substitute-pairs",
+        json={
+            "pairs": [
+                {
+                    "from_position": "Управляющий",
+                    "to_position": "Повар",
+                    "add_to_schedule": True,
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "pairs": [
+            {
+                "from_position": "Управляющий",
+                "to_position": "Повар",
+                "add_to_schedule": True,
+            }
+        ]
+    }
+    assert [pair.model_dump() for pair in captured] == [
+        {"from_position": "Управляющий", "to_position": "Повар", "add_to_schedule": True}
+    ]
 
 
 def test_validate_setting_value_accepts_nested_percent() -> None:

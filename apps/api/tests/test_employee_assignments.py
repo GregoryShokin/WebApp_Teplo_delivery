@@ -31,6 +31,7 @@ from app.models import (
     PayrollRun,
 )
 from app.schemas.employees import EmployeeRoleAssignmentCreate, EmployeeRoleAssignmentPatch
+from app.services import employee_assignments as employee_assignments_service
 from app.services.employee_assignments import EmployeeAssignmentError, add_role, get_assignments
 from app.services.payroll_config import (
     list_category_coefficients,
@@ -192,6 +193,63 @@ async def test_employee_can_have_multiple_active_assignments(session_factory) ->
     assert {assignment.payroll_role for assignment in assignments} == {"sushi", "pizza"}
 
 
+async def test_substitute_role_uses_configured_pair_without_becoming_primary(
+    session_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    synced_employee_ids: list[uuid.UUID] = []
+
+    async def fake_sync(_session, employee_id: uuid.UUID) -> None:
+        synced_employee_ids.append(employee_id)
+
+    monkeypatch.setattr(
+        employee_assignments_service,
+        "_sync_employee_roles_to_iiko_safely",
+        fake_sync,
+    )
+
+    async with session_factory() as session:
+        employee = await _create_employee(
+            session,
+            position="Управляющий",
+            category=None,
+            default_cooking_station=None,
+        )
+
+        assignment = await add_role(
+            session,
+            employee.id,
+            "sushi",
+            "category_1",
+            is_substitute=True,
+        )
+        assignments = await get_assignments(session, employee.id, date.today())
+
+    assert assignment.is_substitute is True
+    assert assignment.is_primary is False
+    assert [item.payroll_role for item in assignments] == ["sushi"]
+    assert synced_employee_ids == [employee.id]
+
+
+async def test_substitute_role_rejects_unconfigured_pair(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(
+            session,
+            position="Системный администратор",
+            category=None,
+            default_cooking_station=None,
+        )
+
+        with pytest.raises(EmployeeAssignmentError, match="не разрешена"):
+            await add_role(
+                session,
+                employee.id,
+                "administrator",
+                "category_2",
+                is_substitute=True,
+            )
+
+
 async def test_only_one_assignment_is_primary_per_employee(session_factory) -> None:
     async with session_factory() as session:
         employee = await _create_employee(session)
@@ -348,7 +406,7 @@ async def test_patch_with_future_effective_from_creates_pending(session_factory)
     assert rows[1].effective_to is None
 
 
-async def test_delete_pending_restores_previous(session_factory) -> None:
+async def test_cancel_pending_primary_with_previous_succeeds(session_factory) -> None:
     async with session_factory() as session:
         employee = await _create_employee(session)
         today = date.today()
@@ -357,7 +415,7 @@ async def test_delete_pending_restores_previous(session_factory) -> None:
             employee_id=employee.id,
             payroll_role="sushi",
             category="category_1",
-            is_primary=False,
+            is_primary=True,
             effective_from=today,
             effective_to=future,
         )
@@ -365,7 +423,7 @@ async def test_delete_pending_restores_previous(session_factory) -> None:
             employee_id=employee.id,
             payroll_role="sushi",
             category="category_2",
-            is_primary=False,
+            is_primary=True,
             effective_from=future,
         )
         session.add_all([previous, pending])
@@ -379,9 +437,37 @@ async def test_delete_pending_restores_previous(session_factory) -> None:
         )
         persisted_previous = await session.get(EmployeeRoleAssignment, previous.id)
         deleted_pending = await session.get(EmployeeRoleAssignment, pending.id)
+        persisted_employee = await session.get(Employee, employee.id)
 
     assert persisted_previous is not None
     assert persisted_previous.effective_to is None
+    assert persisted_previous.is_primary is True
+    assert deleted_pending is None
+    assert persisted_employee is not None
+    assert persisted_employee.category == "category_1"
+
+
+async def test_cancel_pending_non_primary_succeeds_always(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        pending = EmployeeRoleAssignment(
+            employee_id=employee.id,
+            payroll_role="pizza",
+            category="category_2",
+            is_primary=False,
+            effective_from=date.today() + timedelta(days=7),
+        )
+        session.add(pending)
+        await session.commit()
+
+        await delete_employee_assignment(
+            employee.id,
+            pending.id,
+            session,
+            _finance_manager(),
+        )
+        deleted_pending = await session.get(EmployeeRoleAssignment, pending.id)
+
     assert deleted_pending is None
 
 
@@ -411,7 +497,7 @@ async def test_delete_active_uses_remove_assignment(session_factory) -> None:
     assert persisted.effective_to == today
 
 
-async def test_delete_pending_with_next_pending_chains_correctly(session_factory) -> None:
+async def test_cancel_pending_with_next_pending_chains_correctly(session_factory) -> None:
     async with session_factory() as session:
         employee = await _create_employee(session)
         today = date.today()
@@ -421,7 +507,7 @@ async def test_delete_pending_with_next_pending_chains_correctly(session_factory
             employee_id=employee.id,
             payroll_role="sushi",
             category="category_1",
-            is_primary=False,
+            is_primary=True,
             effective_from=today,
             effective_to=first_date,
         )
@@ -429,7 +515,7 @@ async def test_delete_pending_with_next_pending_chains_correctly(session_factory
             employee_id=employee.id,
             payroll_role="sushi",
             category="category_2",
-            is_primary=False,
+            is_primary=True,
             effective_from=first_date,
             effective_to=second_date,
         )
@@ -437,7 +523,7 @@ async def test_delete_pending_with_next_pending_chains_correctly(session_factory
             employee_id=employee.id,
             payroll_role="sushi",
             category="category_3",
-            is_primary=False,
+            is_primary=True,
             effective_from=second_date,
         )
         session.add_all([previous, first_pending, second_pending])
@@ -455,11 +541,14 @@ async def test_delete_pending_with_next_pending_chains_correctly(session_factory
 
     assert persisted_previous is not None
     assert persisted_previous.effective_to == second_date
+    assert persisted_previous.is_primary is True
     assert deleted_first is None
     assert persisted_second is not None
 
 
-async def test_delete_pending_primary_fails(session_factory) -> None:
+async def test_cancel_pending_primary_without_previous_fails_409_in_russian(
+    session_factory,
+) -> None:
     async with session_factory() as session:
         employee = await _create_employee(session)
         pending = EmployeeRoleAssignment(
@@ -480,8 +569,10 @@ async def test_delete_pending_primary_fails(session_factory) -> None:
                 _finance_manager(),
             )
 
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail == "Choose another primary first"
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == (
+        "Эта роль — единственная основная. Сначала назначьте другую основную роль."
+    )
 
 
 async def test_delete_active_with_future_pending_correctly_handled(session_factory) -> None:

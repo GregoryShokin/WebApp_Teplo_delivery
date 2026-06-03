@@ -117,6 +117,7 @@ APP_MANAGED_FIELDS = {
     "is_deputy_senior",
     "hire_date",
     "fire_date",
+    "requires_role_review",
     "pin_code",
     "roles",
 }
@@ -162,15 +163,15 @@ async def list_employees(
     query = select(Employee).options(selectinload(Employee.role_assignments))
     if status_filter:
         if status_filter not in EMPLOYEE_STATUSES:
-            raise HTTPException(status_code=400, detail="Invalid employee status")
+            raise HTTPException(status_code=400, detail="Некорректный статус сотрудника")
         query = query.where(Employee.status == status_filter)
     if category:
         if category not in EMPLOYEE_CATEGORIES:
-            raise HTTPException(status_code=400, detail="Invalid employee category")
+            raise HTTPException(status_code=400, detail="Некорректная категория сотрудника")
         query = query.where(_active_assignment_exists(today, category=category))
     if cooking_station:
         if cooking_station not in COOKING_STATIONS:
-            raise HTTPException(status_code=400, detail="Invalid cooking station")
+            raise HTTPException(status_code=400, detail="Некорректная станция кухни")
         query = query.where(_active_assignment_exists(today, payroll_role=cooking_station))
     if search:
         query = query.where(Employee.full_name.ilike(f"%{search}%"))
@@ -373,7 +374,7 @@ async def update_employee_dismissal_reason(
 ) -> EmployeeDismissalReason:
     require_finance_manager_plus(actor_context)
     if not payload.model_fields_set:
-        raise HTTPException(status_code=400, detail="Dismissal reason patch is empty")
+        raise HTTPException(status_code=400, detail="Пустое изменение причины увольнения")
 
     reason = await session.get(EmployeeDismissalReason, reason_id)
     if reason is None:
@@ -910,12 +911,18 @@ async def create_employee_assignment(
             payload.payroll_role,
             payload.category,
             is_primary=payload.is_primary,
+            is_substitute=payload.is_substitute,
             effective_from=payload.effective_from,
         )
     except employee_assignment_service.EmployeeAssignmentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except employee_assignment_service.EmployeeAssignmentError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        status_code = (
+            status.HTTP_422_UNPROCESSABLE_ENTITY
+            if payload.is_substitute
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     now = datetime.now(UTC)
     await _add_manual_action(
         session,
@@ -947,11 +954,11 @@ async def patch_employee_assignment(
 ) -> EmployeeRoleAssignment:
     require_finance_manager_plus(actor)
     if not payload.model_fields_set:
-        raise HTTPException(status_code=400, detail="Assignment patch is empty")
+        raise HTTPException(status_code=400, detail="Пустое изменение назначения роли")
     if "payroll_role" in payload.model_fields_set and payload.payroll_role is None:
-        raise HTTPException(status_code=400, detail="payroll_role cannot be null")
+        raise HTTPException(status_code=400, detail="Роль начисления не может быть пустой")
     if "category" in payload.model_fields_set and payload.category is None:
-        raise HTTPException(status_code=400, detail="category cannot be null")
+        raise HTTPException(status_code=400, detail="Категория не может быть пустой")
     assignment_effective_from = (
         payload.effective_from if "effective_from" in payload.model_fields_set else None
     )
@@ -977,12 +984,23 @@ async def patch_employee_assignment(
             ),
             category=payload.category if "category" in payload.model_fields_set else None,
             is_primary=payload.is_primary if "is_primary" in payload.model_fields_set else None,
+            is_substitute=(
+                payload.is_substitute if "is_substitute" in payload.model_fields_set else None
+            ),
             effective_from=assignment_effective_from,
         )
     except employee_assignment_service.EmployeeAssignmentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except employee_assignment_service.EmployeeAssignmentError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        status_code = (
+            status.HTTP_422_UNPROCESSABLE_ENTITY
+            if (
+                payload.is_substitute is True
+                or getattr(assignment_before, "is_substitute", False)
+            )
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     now = datetime.now(UTC)
     await _add_manual_action(
         session,
@@ -1016,11 +1034,17 @@ async def delete_employee_assignment(
     before = _assignment_snapshot(assignment_before)
     try:
         if assignment_before.effective_from > date.today():
-            await employee_assignment_service.cancel_pending_assignment(
-                session,
-                employee_id,
-                assignment_id,
-            )
+            try:
+                await employee_assignment_service.cancel_pending_assignment(
+                    session,
+                    employee_id,
+                    assignment_id,
+                )
+            except employee_assignment_service.PrimaryAssignmentRequiredError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=str(exc),
+                ) from exc
             after = None
         else:
             assignment = await employee_assignment_service.remove_assignment(
@@ -1324,6 +1348,14 @@ async def patch_employee(
             continue
         if field == "full_name":
             employee.full_name = target_full_name
+        elif field == "requires_role_review":
+            employee.requires_role_review = bool(patch.requires_role_review)
+            if patch.requires_role_review is False:
+                review_payload = dict(employee.role_review_payload or {})
+                roles_hash = review_payload.get("iiko_roles_hash")
+                if roles_hash:
+                    review_payload["acknowledged_iiko_roles_hash"] = roles_hash
+                    employee.role_review_payload = review_payload
         elif field in {"category", "default_cooking_station"} and not applies_to_current_snapshot:
             continue
         else:
@@ -1480,7 +1512,7 @@ async def _get_employee_or_404(
     else:
         employee = await session.get(Employee, employee_id)
     if employee is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сотрудник не найден")
     return employee
 
 
@@ -1496,7 +1528,7 @@ async def _attach_active_notices(
     )
     for employee in employees:
         notice = notices.get(employee.id)
-        setattr(employee, "active_notice", _notice_info(notice, today) if notice else None)
+        employee.active_notice = _notice_info(notice, today) if notice else None
 
 
 def _notice_info(
@@ -1537,7 +1569,10 @@ async def _get_assignment_or_404(
         )
     )
     if assignment is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Назначение роли не найдено",
+        )
     return assignment
 
 
@@ -1570,7 +1605,7 @@ def _normalize_patch_payload(payload: dict[str, Any]) -> dict[str, Any]:
         if "default_cooking_station" in normalized:
             raise HTTPException(
                 status_code=400,
-                detail="Use either cooking_station or default_cooking_station",
+                detail="Укажите только cooking_station или default_cooking_station",
             )
         normalized["default_cooking_station"] = normalized.pop("cooking_station")
     return normalized
@@ -1581,21 +1616,21 @@ def _validate_patch_payload(payload: dict[str, Any]) -> None:
     if read_only:
         raise HTTPException(
             status_code=400,
-            detail=f"Read-only fields: {', '.join(sorted(read_only))}",
+            detail=f"Поля только для чтения: {', '.join(sorted(read_only))}",
         )
 
     computed = COMPUTED_FIELDS & payload.keys()
     if computed:
         raise HTTPException(
             status_code=400,
-            detail=f"Computed fields: {', '.join(sorted(computed))}",
+            detail=f"Вычисляемые поля нельзя изменить: {', '.join(sorted(computed))}",
         )
 
     unknown = set(payload) - APP_MANAGED_FIELDS - PATCH_META_FIELDS
     if unknown:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported fields: {', '.join(sorted(unknown))}",
+            detail=f"Неподдерживаемые поля: {', '.join(sorted(unknown))}",
         )
 
     if "full_name" in payload and payload["full_name"] is None:
@@ -1606,11 +1641,14 @@ def _validate_patch_payload(payload: dict[str, Any]) -> None:
             raise HTTPException(status_code=400, detail="Укажите минимум фамилию и имя")
     for premium_field in ("is_senior", "is_deputy_senior"):
         if premium_field in payload and payload[premium_field] is None:
-            raise HTTPException(status_code=400, detail=f"{premium_field} cannot be null")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Поле {premium_field} не может быть пустым",
+            )
 
     category_value = payload.get("category")
     if category_value is not None and category_value not in EMPLOYEE_CATEGORIES:
-        raise HTTPException(status_code=400, detail="Invalid employee category")
+        raise HTTPException(status_code=400, detail="Некорректная категория сотрудника")
 
     position_value = payload.get("position")
     if position_value is not None and canonical_position_name(position_value) is None:
@@ -1618,7 +1656,7 @@ def _validate_patch_payload(payload: dict[str, Any]) -> None:
 
     station_value = payload.get("default_cooking_station")
     if station_value is not None and station_value not in COOKING_STATIONS:
-        raise HTTPException(status_code=400, detail="Invalid cooking station")
+        raise HTTPException(status_code=400, detail="Некорректная станция кухни")
 
 
 async def _resolve_create_iiko_position(
@@ -1994,6 +2032,9 @@ async def _sync_patch_roles(
         employee.id,
         effective_from,
     )
+    active_assignments = [
+        assignment for assignment in active_assignments if not assignment.is_substitute
+    ]
     desired_by_role = {role.payroll_role: role for role in roles}
     active_by_role = {assignment.payroll_role: assignment for assignment in active_assignments}
 
@@ -2059,6 +2100,8 @@ async def _close_invalid_assignments_for_position(
     allowed_roles = set(payroll_roles_for_position(employee.position))
     assignments = await employee_assignment_service.get_assignments(session, employee.id, as_of)
     for assignment in assignments:
+        if assignment.is_substitute:
+            continue
         if assignment.payroll_role in allowed_roles:
             continue
         assignment.is_primary = False
@@ -2067,6 +2110,7 @@ async def _close_invalid_assignments_for_position(
     remaining = [
         assignment
         for assignment in assignments
+        if not assignment.is_substitute
         if assignment.payroll_role in allowed_roles
         and assignment.effective_from <= as_of
         and (assignment.effective_to is None or assignment.effective_to > as_of)
@@ -2120,13 +2164,13 @@ async def _sync_future_assignment_shortcut(
 def _require_owner(actor: CurrentActor) -> None:
     if actor.roles & OWNER_ONLY:
         return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
 
 
 def _require_staff_change_reader(actor: CurrentActor) -> None:
     if actor.roles & STAFF_CHANGE_READERS:
         return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
 
 
 def _date_years_ago(value: date, years: int) -> date:
@@ -2153,6 +2197,8 @@ def _employee_lifecycle_snapshot(employee: Employee) -> dict[str, Any]:
         ),
         "fire_date": employee.fire_date.isoformat() if employee.fire_date else None,
         "fire_reason": employee.fire_reason,
+        "requires_role_review": employee.requires_role_review,
+        "role_review_payload": employee.role_review_payload,
         "pin_set_at": employee.pin_set_at.isoformat() if employee.pin_set_at else None,
         "iiko_sync_at": employee.iiko_sync_at.isoformat() if employee.iiko_sync_at else None,
     }
@@ -2193,6 +2239,7 @@ def _assignment_snapshot(assignment: EmployeeRoleAssignment) -> dict[str, Any]:
         "payroll_role": assignment.payroll_role,
         "category": assignment.category,
         "is_primary": assignment.is_primary,
+        "is_substitute": assignment.is_substitute,
         "effective_from": assignment.effective_from.isoformat(),
         "effective_to": assignment.effective_to.isoformat() if assignment.effective_to else None,
     }

@@ -36,3 +36,17 @@ class AppSettingHistoryRead(BaseModel):
     changed_at: datetime
     changed_by_user_id: uuid.UUID | None = None
     changed_by_user_name: str | None = None
+
+
+class SubstitutePairRead(BaseModel):
+    from_position: str
+    to_position: str
+    add_to_schedule: bool = False
+
+
+class SubstitutePairsRead(BaseModel):
+    pairs: list[SubstitutePairRead]
+
+
+class SubstitutePairsUpdate(BaseModel):
+    pairs: list[SubstitutePairRead] = Field(default_factory=list)

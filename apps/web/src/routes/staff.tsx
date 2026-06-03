@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   Banknote,
   BellOff,
@@ -15,6 +15,7 @@ import {
   List,
   LoaderCircle,
   MoreHorizontal,
+  Pencil,
   Plus,
   Save,
   Search,
@@ -121,6 +122,7 @@ import {
   apiErrorMessage,
   apiErrorStatus,
   cancelEmployeeNotice,
+  createEmployeeAssignment,
   createEmployee,
   dismissEmployee,
   getEmployeeAccumulationFund,
@@ -131,6 +133,7 @@ import {
   getIikoEmployeeRoles,
   getPayrollAdjustments,
   getSettings,
+  getSubstitutePairs,
   patchEmployee,
   patchEmployeeAssignment,
   recordEmployeeNotice,
@@ -138,6 +141,7 @@ import {
   setEmployeeHireDate,
   syncEmployees,
   deleteEmployeeAssignment,
+  type SubstitutePair,
 } from "@/lib/api";
 import { getAuthSnapshot, subscribeAuth } from "@/lib/auth";
 import {
@@ -303,6 +307,10 @@ type PendingAssignmentTarget = {
   employee: Employee;
   assignment: EmployeeRoleAssignment;
 };
+type SubstituteRoleDialogState = {
+  assignment?: EmployeeRoleAssignment;
+  targetPosition?: "Повар" | "Кассир";
+} | null;
 type ViewMode = "grid" | "table";
 type StaffGroupFilter = "all" | "cook" | "staff";
 type StaffTab = "employees" | "changes";
@@ -707,6 +715,7 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
                 <div className="truncate font-medium">{employee.full_name}</div>
+                <RoleReviewMarker employee={employee} />
                 {!employee.hire_date ? (
                   <span
                     aria-label="Дата приёма не указана"
@@ -1526,6 +1535,7 @@ function PendingAssignmentDialog({
       return deleteEmployeeAssignment(employee.id, assignment.id);
     },
     onSuccess: () => {
+      setDeleteConfirmOpen(false);
       toast.success("Запланированное изменение удалено");
       onClose();
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
@@ -1536,6 +1546,7 @@ function PendingAssignmentDialog({
       void queryClient.invalidateQueries({ queryKey: ["employees", "changes"] });
     },
     onError: (error) => {
+      setDeleteConfirmOpen(false);
       toast.error(apiErrorMessage(error, "Не удалось удалить запланированное изменение"));
     },
   });
@@ -1679,8 +1690,7 @@ function PendingAssignmentDialog({
             <AlertDialogCancel disabled={deleteMutation.isPending}>Отмена</AlertDialogCancel>
             <AlertDialogAction
               disabled={!assignment || deleteMutation.isPending}
-              onClick={(event) => {
-                event.preventDefault();
+              onClick={() => {
                 deleteMutation.mutate();
               }}
             >
@@ -1754,7 +1764,12 @@ function StaffGrid({
                 <StatusBadge status={employee.status} />
               </div>
               <div className="min-w-0">
-                <div className="truncate text-lg font-semibold leading-6">{employee.full_name}</div>
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="truncate text-lg font-semibold leading-6">
+                    {employee.full_name}
+                  </div>
+                  <RoleReviewMarker employee={employee} />
+                </div>
                 <div className="mt-1 truncate text-sm text-muted-foreground">
                   {employee.position || "Должность не указана"}
                 </div>
@@ -2948,6 +2963,10 @@ function StaffEditor({
   const [categoryComment, setCategoryComment] = useState("");
   const [premiumTransferConflict, setPremiumTransferConflict] =
     useState<PremiumTransferConflict | null>(null);
+  const [substituteDialog, setSubstituteDialog] =
+    useState<SubstituteRoleDialogState>(null);
+  const [substituteDeleteTarget, setSubstituteDeleteTarget] =
+    useState<EmployeeRoleAssignment | null>(null);
 
   useEffect(() => {
     const nextDraft = toEditorDraft(employee);
@@ -2973,6 +2992,8 @@ function StaffEditor({
     setCategoryComment("");
     setPremiumConfirmActions([]);
     setPremiumTransferConflict(null);
+    setSubstituteDialog(null);
+    setSubstituteDeleteTarget(null);
   }, [employee.id]);
 
   const mutation = useMutation({
@@ -3063,6 +3084,10 @@ function StaffEditor({
     queryKey: ["employees", employee.id, "changes", "latest"],
     queryFn: () => getEmployeeChanges({ employeeId: employee.id }),
     enabled: canViewChangeHistory,
+  });
+  const substitutePairsQuery = useQuery({
+    queryKey: ["substitute-pairs"],
+    queryFn: getSubstitutePairs,
   });
   const depositsQuery = useQuery({
     queryKey: ["deposits"],
@@ -3197,6 +3222,65 @@ function StaffEditor({
       toast.error(apiErrorMessage(error, "Не удалось установить дату приёма"));
     },
   });
+  const substituteSaveMutation = useMutation({
+    mutationFn: ({
+      assignmentId,
+      category,
+      effectiveFrom,
+      payrollRole,
+    }: {
+      assignmentId?: string;
+      payrollRole: PayrollRole;
+      category: EmployeeCategory;
+      effectiveFrom: string;
+    }) => {
+      if (assignmentId) {
+        return patchEmployeeAssignment(employee.id, assignmentId, {
+          payroll_role: payrollRole,
+          category,
+          is_primary: false,
+          is_substitute: true,
+          effective_from: effectiveFrom,
+        });
+      }
+      return createEmployeeAssignment(employee.id, {
+        payroll_role: payrollRole,
+        category,
+        is_primary: false,
+        is_substitute: true,
+        effective_from: effectiveFrom,
+      });
+    },
+    onSuccess: () => {
+      toast.success("Подменная роль сохранена");
+      setSubstituteDialog(null);
+      invalidateStaffEmployeeQueries(queryClient, employee.id);
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось сохранить подменную роль"));
+    },
+  });
+  const substituteDeleteMutation = useMutation({
+    mutationFn: (assignmentId: string) => deleteEmployeeAssignment(employee.id, assignmentId),
+    onSuccess: () => {
+      toast.success("Подменная роль удалена");
+      setSubstituteDeleteTarget(null);
+      invalidateStaffEmployeeQueries(queryClient, employee.id);
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось удалить подменную роль"));
+    },
+  });
+  const roleReviewIgnoreMutation = useMutation({
+    mutationFn: () => patchEmployee(employee.id, { requires_role_review: false }),
+    onSuccess: () => {
+      toast.success("Уточнение скрыто");
+      invalidateStaffEmployeeQueries(queryClient, employee.id);
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось скрыть уточнение"));
+    },
+  });
 
   const trimmedDraftName = draft.full_name.trim();
   const nameIsValid = trimmedDraftName.length > 0;
@@ -3216,6 +3300,15 @@ function StaffEditor({
   const editorRequiresPin = positionRequiresPin(draft.position);
   const showEditorCashierRole = editorPosition === "Кассир";
   const showEditorCookRoles = editorPosition === "Повар";
+  const substitutePairs = substitutePairsQuery.data?.pairs ?? [];
+  const employeeSubstitutePairs = substitutePairs.filter(
+    (pair) => canonicalPosition(pair.from_position) === editorPosition,
+  );
+  const employeeSubstitutes = visibleSubstituteAssignments(employee);
+  const showSubstituteSection =
+    employeeSubstitutePairs.length > 0 ||
+    employeeSubstitutes.length > 0 ||
+    employee.requires_role_review;
   const roleValidation = validateEditorRoles(draft);
   const pinTouched = pinDraftTouched(draft);
   const pinState = employeePinState(employee);
@@ -3410,6 +3503,17 @@ function StaffEditor({
           </div>
         </div>
       </div>
+
+      {employee.requires_role_review ? (
+        <RoleReviewBanner
+          employee={employee}
+          onAddSubstitute={(targetPosition) => setSubstituteDialog({ targetPosition })}
+          onIgnore={() => roleReviewIgnoreMutation.mutate()}
+          onOpenSettings={() => onNavigate?.("/settings")}
+          pairs={employeeSubstitutePairs}
+          isIgnoring={roleReviewIgnoreMutation.isPending}
+        />
+      ) : null}
 
       {employee.hire_date ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3 text-sm">
@@ -3659,6 +3763,16 @@ function StaffEditor({
           <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {roleValidation}
           </div>
+        ) : null}
+
+        {showSubstituteSection ? (
+          <SubstituteRolesSection
+            assignments={employeeSubstitutes}
+            onAdd={(targetPosition) => setSubstituteDialog({ targetPosition })}
+            onDelete={(assignment) => setSubstituteDeleteTarget(assignment)}
+            onEdit={(assignment) => setSubstituteDialog({ assignment })}
+            pairs={employeeSubstitutePairs}
+          />
         ) : null}
 
         <Label className="grid gap-2">
@@ -3978,6 +4092,59 @@ function StaffEditor({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SubstituteRoleDialog
+        isPending={substituteSaveMutation.isPending}
+        onOpenChange={(open) => {
+          if (!open && !substituteSaveMutation.isPending) {
+            setSubstituteDialog(null);
+          }
+        }}
+        onSubmit={(payload) => substituteSaveMutation.mutate(payload)}
+        open={Boolean(substituteDialog)}
+        state={substituteDialog}
+      />
+
+      <AlertDialog
+        open={Boolean(substituteDeleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !substituteDeleteMutation.isPending) {
+            setSubstituteDeleteTarget(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить подменную роль?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {substituteDeleteTarget
+                ? `${payrollRoleLabel(substituteDeleteTarget.payroll_role)} · ${categoryLabel(
+                    substituteDeleteTarget.category,
+                  )}`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={substituteDeleteMutation.isPending}>
+              Отмена
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!substituteDeleteTarget || substituteDeleteMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                if (substituteDeleteTarget) {
+                  substituteDeleteMutation.mutate(substituteDeleteTarget.id);
+                }
+              }}
+            >
+              {substituteDeleteMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : null}
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog
         open={hireDateOpen}
@@ -4380,6 +4547,21 @@ function EmployeeAvatar({ employee }: { employee: Employee }) {
   );
 }
 
+function RoleReviewMarker({ employee }: { employee: Employee }) {
+  if (!employee.requires_role_review) {
+    return null;
+  }
+  return (
+    <span
+      aria-label="У сотрудника в iiko есть дополнительные должности, требуется уточнение"
+      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-700"
+      title="У сотрудника в iiko есть дополнительные должности, требуется уточнение"
+    >
+      <CircleAlert size={14} aria-hidden="true" />
+    </span>
+  );
+}
+
 function CategoryCell({
   employee,
   onPendingClick,
@@ -4412,7 +4594,11 @@ function EmployeeTags({
   onPendingClick?: (assignment: EmployeeRoleAssignment) => void;
 }) {
   const primary = primaryAssignment(employee);
-  const additionalRoles = Math.max(activeAssignments(employee).length - (primary ? 1 : 0), 0);
+  const substituteCount = substituteAssignments(employee).length;
+  const additionalRoles = Math.max(
+    ordinaryAssignments(employee).length - (primary ? 1 : 0),
+    0,
+  );
   const pending = pendingAssignment(employee);
   const roleTag = primary
     ? `${payrollRoleLabel(primary.payroll_role)} · ${categoryLabel(primary.category)}`
@@ -4423,6 +4609,7 @@ function EmployeeTags({
     employee.is_senior ? "Старший" : null,
     employee.is_deputy_senior ? "Зам" : null,
     additionalRoles > 0 ? `+${additionalRoles} ролей` : null,
+    substituteCount > 0 ? `${substituteCount} подмен` : null,
   ].filter((tag): tag is string => Boolean(tag));
 
   if (tags.length === 0 && !roleTag && !employee.active_notice && !pending) {
@@ -4597,6 +4784,387 @@ function StaticField({ label, value }: { label: string; value: string }) {
       </div>
     </div>
   );
+}
+
+function RoleReviewBanner({
+  employee,
+  isIgnoring,
+  onAddSubstitute,
+  onIgnore,
+  onOpenSettings,
+  pairs,
+}: {
+  employee: Employee;
+  isIgnoring: boolean;
+  onAddSubstitute: (targetPosition: "Повар" | "Кассир") => void;
+  onIgnore: () => void;
+  onOpenSettings: () => void;
+  pairs: SubstitutePair[];
+}) {
+  const payload = employee.role_review_payload ?? {};
+  const reason = String(payload.reason ?? "missing_substitute");
+  const extraPositions = reviewExtraPositions(employee);
+  const firstPosition = extraPositions[0] as "Повар" | "Кассир" | undefined;
+  const configured = Boolean(
+    firstPosition && pairs.some((pair) => pair.to_position === firstPosition),
+  );
+
+  return (
+    <section className="grid gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950">
+      <div className="flex items-center gap-2 font-medium">
+        <CircleAlert size={16} aria-hidden="true" />
+        Требуется уточнение
+      </div>
+      <div className="grid gap-1 text-sm text-amber-900">
+        <div>В iiko у этого сотрудника есть дополнительная должность:</div>
+        <div className="font-semibold">{extraPositions.join(", ") || "Не указана"}</div>
+        {reason === "unconfigured_pair" && firstPosition ? (
+          <div>
+            Пара "{employee.position} - {firstPosition}" не настроена.
+          </div>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {reason === "unconfigured_pair" || !configured || !firstPosition ? (
+          <Button
+            className="border-amber-300 bg-background text-amber-950 hover:bg-amber-100"
+            onClick={onOpenSettings}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <SettingsIcon />
+            Добавить пару в Настройках
+          </Button>
+        ) : (
+          <Button
+            className="border-amber-300 bg-background text-amber-950 hover:bg-amber-100"
+            onClick={() => onAddSubstitute(firstPosition)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <Plus size={15} aria-hidden="true" />
+            Добавить как substitute
+          </Button>
+        )}
+        <Button
+          disabled={isIgnoring}
+          onClick={onIgnore}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          {isIgnoring ? (
+            <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+          ) : null}
+          Игнорировать
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function SettingsIcon() {
+  return <ShieldAlert size={15} aria-hidden="true" />;
+}
+
+function SubstituteRolesSection({
+  assignments,
+  onAdd,
+  onDelete,
+  onEdit,
+  pairs,
+}: {
+  assignments: EmployeeRoleAssignment[];
+  onAdd: (targetPosition: "Повар" | "Кассир") => void;
+  onDelete: (assignment: EmployeeRoleAssignment) => void;
+  onEdit: (assignment: EmployeeRoleAssignment) => void;
+  pairs: SubstitutePair[];
+}) {
+  const targets = Array.from(new Set(pairs.map((pair) => pair.to_position)));
+  return (
+    <section className="grid gap-3 rounded-lg border bg-card p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium">Подменные роли</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            Дополнительная роль поверх основной должности. Используется для оплаты за конкретные смены
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {targets.map((target) => (
+            <Button
+              key={target}
+              onClick={() => onAdd(target)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <Plus size={15} aria-hidden="true" />
+              Добавить {target.toLowerCase()}
+            </Button>
+          ))}
+        </div>
+      </div>
+      {targets.length > 0 ? (
+        <div className="text-sm text-muted-foreground">
+          Может выходить как: {targets.join(", ")}
+        </div>
+      ) : null}
+      {assignments.length === 0 ? (
+        <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+          Подменные роли не назначены
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {assignments.map((assignment) => (
+            <div
+              className="grid gap-2 rounded-md border bg-background p-3 sm:grid-cols-[1fr_auto] sm:items-center"
+              key={assignment.id}
+            >
+              <div className="min-w-0 text-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">
+                    {payrollRoleLabel(assignment.payroll_role)}
+                  </span>
+                  <Badge className="rounded-md border-sky-200 bg-sky-50 text-sky-800 shadow-none">
+                    подмена
+                  </Badge>
+                </div>
+                <div className="mt-1 text-muted-foreground">
+                  {categoryLabel(assignment.category)}, с {formatDate(assignment.effective_from)}
+                </div>
+              </div>
+              <div className="flex gap-1">
+                <Button
+                  onClick={() => onEdit(assignment)}
+                  size="icon"
+                  title="Изменить подменную роль"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Pencil size={15} aria-hidden="true" />
+                </Button>
+                <Button
+                  onClick={() => onDelete(assignment)}
+                  size="icon"
+                  title="Удалить подменную роль"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Trash2 size={15} aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SubstituteRoleDialog({
+  isPending,
+  onOpenChange,
+  onSubmit,
+  open,
+  state,
+}: {
+  isPending: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (payload: {
+    assignmentId?: string;
+    payrollRole: PayrollRole;
+    category: EmployeeCategory;
+    effectiveFrom: string;
+  }) => void;
+  open: boolean;
+  state: SubstituteRoleDialogState;
+}) {
+  const assignment = state?.assignment;
+  const assignmentCategory = assignment?.category;
+  const assignmentEffectiveFrom = assignment?.effective_from;
+  const assignmentId = assignment?.id;
+  const assignmentPayrollRole = assignment?.payroll_role;
+  const requestedTargetPosition = state?.targetPosition;
+  const initialTarget =
+    requestedTargetPosition ??
+    (assignmentPayrollRole ? targetPositionForPayrollRole(assignmentPayrollRole) : "Повар");
+  const [targetPosition, setTargetPosition] = useState<"Повар" | "Кассир">(initialTarget);
+  const [payrollRole, setPayrollRole] = useState<PayrollRole>(
+    assignmentPayrollRole ?? roleOptionsForSubstituteTarget(initialTarget)[0],
+  );
+  const [category, setCategory] = useState<EmployeeCategory>(
+    assignmentCategory ?? categoriesForPayrollRole(payrollRole)[0],
+  );
+  const [effectiveFrom, setEffectiveFrom] = useState(
+    assignmentEffectiveFrom ?? todayDateInputValue(),
+  );
+
+  useEffect(() => {
+    const nextTarget =
+      requestedTargetPosition ??
+      (assignmentPayrollRole ? targetPositionForPayrollRole(assignmentPayrollRole) : "Повар");
+    const nextRole = assignmentPayrollRole ?? roleOptionsForSubstituteTarget(nextTarget)[0];
+    setTargetPosition(nextTarget);
+    setPayrollRole(nextRole);
+    setCategory(assignmentCategory ?? categoriesForPayrollRole(nextRole)[0]);
+    setEffectiveFrom(assignmentEffectiveFrom ?? todayDateInputValue());
+  }, [
+    assignmentCategory,
+    assignmentEffectiveFrom,
+    assignmentId,
+    assignmentPayrollRole,
+    requestedTargetPosition,
+  ]);
+
+  const roleOptions = roleOptionsForSubstituteTarget(targetPosition);
+  const categoryOptionsForRole = categoriesForPayrollRole(payrollRole);
+  const canSubmit = Boolean(payrollRole && category && effectiveFrom) && !isPending;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {state?.assignment ? "Изменить подменную роль" : "Добавить подменную роль"}
+          </DialogTitle>
+          <DialogDescription>Подмена оплачивается по ставке выбранной роли.</DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4">
+          <StaticField label="Кого подменяет" value={targetPosition} />
+          <Label className="grid gap-2">
+            <span>Роль</span>
+            <Select
+              disabled={isPending}
+              onValueChange={(value) => {
+                const nextRole = value as PayrollRole;
+                setPayrollRole(nextRole);
+                const categories = categoriesForPayrollRole(nextRole);
+                setCategory((current) =>
+                  categories.includes(current) ? current : categories[0],
+                );
+              }}
+              value={payrollRole}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {roleOptions.map((role) => (
+                  <SelectItem key={role} value={role}>
+                    {PAYROLL_ROLE_LABELS[role]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Label>
+          <Label className="grid gap-2">
+            <span>Категория</span>
+            <Select
+              disabled={isPending}
+              onValueChange={(value) => setCategory(value as EmployeeCategory)}
+              value={category}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {categoryOptionsForRole.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {EMPLOYEE_CATEGORY_LABELS[item]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Label>
+          <Label className="grid gap-2">
+            <span>С даты</span>
+            <Input
+              disabled={isPending}
+              onChange={(event) => setEffectiveFrom(event.target.value)}
+              type="date"
+              value={effectiveFrom}
+            />
+          </Label>
+        </div>
+
+        <DialogFooter>
+          <Button disabled={isPending} onClick={() => onOpenChange(false)} type="button" variant="outline">
+            Отмена
+          </Button>
+          <Button
+            disabled={!canSubmit}
+            onClick={() =>
+              onSubmit({
+                assignmentId: state?.assignment?.id,
+                payrollRole,
+                category,
+                effectiveFrom,
+              })
+            }
+            type="button"
+          >
+            {isPending ? (
+              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+            ) : (
+              <Save size={16} aria-hidden="true" />
+            )}
+            Сохранить
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function invalidateStaffEmployeeQueries(queryClient: QueryClient, employeeId?: string) {
+  void queryClient.invalidateQueries({ queryKey: ["employees"] });
+  void queryClient.invalidateQueries({ queryKey: ["employees-roster"] });
+  void queryClient.invalidateQueries({ queryKey: ["employees", "changes"] });
+  void queryClient.invalidateQueries({ queryKey: ["substitute-pairs"] });
+  if (employeeId) {
+    void queryClient.invalidateQueries({ queryKey: ["employees", employeeId, "assignments"] });
+    void queryClient.invalidateQueries({ queryKey: ["employees", employeeId, "changes"] });
+  }
+}
+
+function visibleSubstituteAssignments(employee: Employee) {
+  return substituteAssignments(employee).filter((assignment) =>
+    Boolean(targetPositionForPayrollRole(assignment.payroll_role)),
+  );
+}
+
+function reviewExtraPositions(employee: Employee): Array<"Повар" | "Кассир"> {
+  const payload = employee.role_review_payload ?? {};
+  const rawPositions =
+    readStringArray(payload.extra_iiko_positions) ??
+    readStringArray(payload.all_extra_iiko_positions) ??
+    [];
+  const positions = rawPositions
+    .map((position) => canonicalPosition(position))
+    .filter((position): position is "Повар" | "Кассир" =>
+      position === "Повар" || position === "Кассир",
+    );
+  return Array.from(new Set(positions));
+}
+
+function readStringArray(value: unknown) {
+  return Array.isArray(value) && value.every((item) => typeof item === "string")
+    ? value
+    : null;
+}
+
+function targetPositionForPayrollRole(
+  payrollRole: PayrollRole | string | null | undefined,
+): "Повар" | "Кассир" {
+  return payrollRole === "administrator" ? "Кассир" : "Повар";
+}
+
+function roleOptionsForSubstituteTarget(targetPosition: "Повар" | "Кассир"): PayrollRole[] {
+  return targetPosition === "Кассир" ? cashierPayrollRoles : cookPayrollRoles;
 }
 
 const canonicalPositionByName = new Map(
@@ -4962,8 +5530,16 @@ function pendingAssignmentTooltip(employee: Employee, assignment: EmployeeRoleAs
 }
 
 function primaryAssignment(employee: Employee) {
-  const assignments = activeAssignments(employee);
+  const assignments = ordinaryAssignments(employee);
   return assignments.find((assignment) => assignment.is_primary) ?? assignments[0] ?? null;
+}
+
+function ordinaryAssignments(employee: Employee) {
+  return activeAssignments(employee).filter((assignment) => !assignment.is_substitute);
+}
+
+function substituteAssignments(employee: Employee) {
+  return activeAssignments(employee).filter((assignment) => assignment.is_substitute);
 }
 
 function payrollRolesForPosition(position: string | null): PayrollRole[] {
@@ -4974,7 +5550,7 @@ function payrollRolesForPosition(position: string | null): PayrollRole[] {
 function toEditorDraft(employee: Employee): StaffEditorDraft {
   return {
     ...toDraft(employee),
-    assignments: activeAssignments(employee).map((assignment) => ({
+    assignments: ordinaryAssignments(employee).map((assignment) => ({
       id: assignment.id,
       draft_id: assignment.id,
       payroll_role: assignment.payroll_role,

@@ -63,6 +63,7 @@ from app.services.iiko_sync import (
     IikoEmployeeRole,
     IikoEmployeeUpdateResult,
     SyncResult,
+    _build_iiko_employee_roles_update_xml,
     _build_iiko_employee_update_xml,
     _enrich_employee_records_with_roles,
     _request_iiko_with_incomplete_read_retry,
@@ -335,6 +336,8 @@ def make_employee(
         fire_reason=fire_reason,
         pin_hash=pin_hash,
         pin_assumed_from_iiko=pin_assumed_from_iiko,
+        requires_role_review=False,
+        role_review_payload=None,
         pin_set_at=SYNC_NOW if pin_hash else None,
         is_senior=False,
         is_deputy_senior=False,
@@ -357,6 +360,7 @@ def make_assignment(employee: Employee, payroll_role: str = "sushi") -> Employee
         payroll_role=payroll_role,
         category="category_2",
         is_primary=True,
+        is_substitute=False,
         effective_from=SYNC_TODAY,
         created_at=SYNC_NOW,
         updated_at=SYNC_NOW,
@@ -3033,6 +3037,78 @@ def test_build_iiko_employee_update_xml_preserves_unrelated_fields() -> None:
     assert values["login"] == "old-login"
     assert values["pinCode"] == "1234"
     assert values["hireDate"] == "2026-05-01"
+
+
+def test_build_iiko_employee_roles_update_xml_sets_main_and_extra_roles() -> None:
+    data = b"""
+    <employee>
+        <id>iiko-update</id>
+        <name>Employee Name</name>
+        <mainRoleId>old-role</mainRoleId>
+        <rolesIds>old-role</rolesIds>
+        <mainRoleCode>OLD</mainRoleCode>
+        <roleCodes>OLD</roleCodes>
+    </employee>
+    """
+    cashier = IikoEmployeeRole(id="role-cashier", name="Кассир", code="CA")
+    cook = IikoEmployeeRole(id="role-cook", name="Повар", code="CO")
+
+    body = _build_iiko_employee_roles_update_xml(
+        data,
+        main_role=cashier,
+        roles=[cashier, cook],
+    )
+    root = ET.fromstring(body)
+    values = {child.tag: child.text for child in root}
+
+    assert values["mainRoleId"] == "role-cashier"
+    assert values["rolesIds"] == "role-cashier,role-cook"
+    assert values["mainRoleCode"] == "CA"
+    assert values["roleCodes"] == "CA,CO"
+    assert values["name"] == "Employee Name"
+
+
+async def test_iiko_extra_role_flags_missing_substitute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    employee = Employee(
+        id=uuid.uuid4(),
+        iiko_id="iiko-extra-role",
+        full_name="Manager With Cook Role",
+        position="Управляющий",
+        status="active",
+        requires_role_review=False,
+        role_review_payload=None,
+    )
+
+    async def fake_pairs(_session: Any) -> list[Any]:
+        return [
+            iiko_sync_service.payroll_config.SubstitutePair(
+                from_position="Управляющий",
+                to_position="Повар",
+            )
+        ]
+
+    async def fake_covered_positions(_session: Any, _employee_id: uuid.UUID) -> set[str]:
+        return set()
+
+    monkeypatch.setattr(iiko_sync_service.payroll_config, "get_substitute_pairs", fake_pairs)
+    monkeypatch.setattr(
+        iiko_sync_service,
+        "_active_substitute_target_positions",
+        fake_covered_positions,
+    )
+
+    await iiko_sync_service.process_employee_extra_roles(
+        object(),  # type: ignore[arg-type]
+        employee,
+        {"extra_iiko_positions": ["Повар"]},
+    )
+
+    assert employee.requires_role_review is True
+    assert employee.role_review_payload is not None
+    assert employee.role_review_payload["reason"] == "missing_substitute"
+    assert employee.role_review_payload["extra_iiko_positions"] == ["Повар"]
 
 
 async def test_employee_sync_endpoint_returns_bad_gateway_for_incomplete_read(

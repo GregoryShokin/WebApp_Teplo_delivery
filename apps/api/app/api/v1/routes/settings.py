@@ -7,8 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CurrentUser, current_user, require_role
 from app.db.session import get_session
-from app.schemas.settings import AppSettingHistoryRead, AppSettingRead, AppSettingUpdate
-from app.services import settings_service
+from app.schemas.settings import (
+    AppSettingHistoryRead,
+    AppSettingRead,
+    AppSettingUpdate,
+    SubstitutePairsRead,
+    SubstitutePairsUpdate,
+)
+from app.services import iiko_sync, payroll_config, settings_service
 
 router = APIRouter()
 
@@ -27,6 +33,32 @@ async def list_settings(
     category: Annotated[str | None, Query()] = None,
 ) -> list[dict]:
     return await settings_service.list_settings(session, category)
+
+
+@router.get("/substitute-pairs", response_model=SubstitutePairsRead)
+async def get_substitute_pairs(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _user: Annotated[CurrentUser, Depends(current_user)],
+) -> SubstitutePairsRead:
+    pairs = await payroll_config.get_substitute_pairs(session)
+    return SubstitutePairsRead(pairs=[pair.model_dump() for pair in pairs])
+
+
+@router.put("/substitute-pairs", response_model=SubstitutePairsRead)
+async def put_substitute_pairs(
+    payload: SubstitutePairsUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[CurrentUser, Depends(require_role("finance_manager", "owner"))],
+) -> SubstitutePairsRead:
+    try:
+        pairs = await payroll_config.set_substitute_pairs(session, payload.pairs, user)
+        await iiko_sync.refresh_role_review_for_all_employees(session, force=True)
+    except payroll_config.PayrollConfigValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return SubstitutePairsRead(pairs=[pair.model_dump() for pair in pairs])
 
 
 @router.get("/{key}", response_model=AppSettingRead)

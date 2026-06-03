@@ -137,6 +137,16 @@ class Employee(Base):
     deposit_excluded_reason: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="source=app_managed"
     )
+    requires_role_review: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="source=app_managed",
+    )
+    role_review_payload: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True, comment="source=app_managed"
+    )
     fund_excluded: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -253,6 +263,12 @@ class EmployeeRoleAssignment(Base):
     payroll_role: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str] = mapped_column(Text, nullable=False)
     is_primary: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    is_substitute: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,

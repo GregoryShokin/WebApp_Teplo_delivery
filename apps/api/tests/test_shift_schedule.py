@@ -20,7 +20,7 @@ from app.models import (
     ShiftLedgerEntry,
     ShiftSchedule,
 )
-from app.services import shift_schedule_service
+from app.services import payroll_config, shift_schedule_service
 from app.services.staff_taxonomy import default_station_for_payroll_role
 
 
@@ -76,6 +76,10 @@ class ShiftScheduleFakeSession:
             return self.employees.get(item_id)
         return None
 
+    async def scalar(self, query: Any) -> Any | None:
+        del query
+        return None
+
     async def scalars(self, query: Any) -> FakeScalarResult:
         entity = query_entity(query)
         if entity is ShiftSchedule:
@@ -83,7 +87,9 @@ class ShiftScheduleFakeSession:
         if entity is ScheduledShift:
             return FakeScalarResult(list(self.shifts.values()))
         if entity is Employee:
-            return FakeScalarResult(list(self.employees.values()))
+            return FakeScalarResult(
+                [employee for employee in self.employees.values() if employee.status == "active"]
+            )
         if entity is EmployeeRoleAssignment:
             return FakeScalarResult(self.assignments)
         return FakeScalarResult([])
@@ -206,6 +212,7 @@ def assignment(
     payroll_role: str = "pizza",
     category: str = "category_2",
     is_primary: bool = True,
+    is_substitute: bool = False,
     effective_from: date = date(2026, 1, 1),
     effective_to: date | None = None,
 ) -> EmployeeRoleAssignment:
@@ -215,6 +222,7 @@ def assignment(
         payroll_role=payroll_role,
         category=category,
         is_primary=is_primary,
+        is_substitute=is_substitute,
         effective_from=effective_from,
         effective_to=effective_to,
     )
@@ -683,14 +691,94 @@ async def test_roster_returns_available_roles_with_primary_flag() -> None:
             "payroll_role": "pizza",
             "category": "category_2",
             "is_primary": True,
+            "is_substitute": False,
             "default_station_code": "Пицца",
         },
         {
             "payroll_role": "sushi",
             "category": "category_3",
             "is_primary": False,
+            "is_substitute": False,
             "default_station_code": "Роллы",
         },
+    ]
+
+
+async def test_roster_hides_admin_with_substitute_role_when_pair_not_added_to_schedule() -> None:
+    manager = employee(position="Управляющий", full_name="Управляющий Подмена")
+    session = ShiftScheduleFakeSession(
+        employees=[manager],
+        assignments=[
+            assignment(
+                manager.id,
+                payroll_role="sushi",
+                category="category_1",
+                is_primary=False,
+                is_substitute=True,
+            )
+        ],
+    )
+
+    roster = await shift_schedule_service.list_employees_roster(session)  # type: ignore[arg-type]
+
+    assert roster == []
+
+
+def test_business_today_uses_location_timezone(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            assert tz == shift_schedule_service.LOCATION_TZ
+            return cls(2026, 6, 3, 0, 30, tzinfo=tz)
+
+    monkeypatch.setattr(shift_schedule_service, "datetime", FakeDateTime)
+
+    assert shift_schedule_service._business_today() == date(2026, 6, 3)
+
+
+async def test_roster_includes_admin_with_substitute_role_when_pair_added_to_schedule(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def get_substitute_pairs(_session):
+        return [
+            payroll_config.SubstitutePair(
+                from_position="Управляющий",
+                to_position="Повар",
+                add_to_schedule=True,
+            )
+        ]
+
+    monkeypatch.setattr(
+        shift_schedule_service.payroll_config,
+        "get_substitute_pairs",
+        get_substitute_pairs,
+    )
+    manager = employee(position="Управляющий", full_name="Управляющий Подмена")
+    session = ShiftScheduleFakeSession(
+        employees=[manager],
+        assignments=[
+            assignment(
+                manager.id,
+                payroll_role="sushi",
+                category="category_1",
+                is_primary=False,
+                is_substitute=True,
+            )
+        ],
+    )
+
+    roster = await shift_schedule_service.list_employees_roster(session)  # type: ignore[arg-type]
+
+    assert [row["full_name"] for row in roster] == ["Управляющий Подмена"]
+    assert roster[0]["primary_payroll_role"] is None
+    assert roster[0]["available_roles"] == [
+        {
+            "payroll_role": "sushi",
+            "category": "category_1",
+            "is_primary": False,
+            "is_substitute": True,
+            "default_station_code": "Роллы",
+        }
     ]
 
 
@@ -758,7 +846,7 @@ def test_ledger_endpoint_returns_entries_in_range() -> None:
     ]
 
 
-def test_ledger_endpoint_filters_payroll_positions() -> None:
+def test_ledger_endpoint_includes_entries_with_payroll_roles() -> None:
     cook = employee(position="Повар", full_name="Повар Факт")
     manager = employee(position="Управляющий", full_name="Управляющий Факт")
     courier = employee(position="Курьер", full_name="Курьер Факт")
@@ -786,7 +874,10 @@ def test_ledger_endpoint_filters_payroll_positions() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert [row["employee_full_name"] for row in response.json()] == ["Повар Факт"]
+    assert [row["employee_full_name"] for row in response.json()] == [
+        "Повар Факт",
+        "Управляющий Факт",
+    ]
 
 
 async def test_shift_interval_longer_than_16h_fails_422() -> None:

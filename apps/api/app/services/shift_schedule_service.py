@@ -14,10 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor
 from app.models import Employee, ScheduledShift, ShiftSchedule
-from app.services import employee_assignments, vacation_service
+from app.services import employee_assignments, payroll_config, vacation_service
 from app.services.staff_taxonomy import (
     PAYROLL_ROLE_LABELS,
     default_station_for_payroll_role,
+    target_position_for_payroll_role,
 )
 
 SCHEDULE_STATUSES = frozenset({"draft", "published", "superseded"})
@@ -424,21 +425,28 @@ async def bulk_copy_week(
 
 
 async def list_employees_roster(session: AsyncSession) -> list[dict[str, Any]]:
-    today = date.today()
+    today = _business_today()
+    substitute_pairs = await payroll_config.get_substitute_pairs(session)
     result = await session.scalars(
         select(Employee)
-        .where(
-            Employee.position.in_(SCHEDULE_EMPLOYEE_POSITIONS),
-            Employee.status == "active",
-        )
+        .where(Employee.status == "active")
         .order_by(Employee.full_name)
     )
     roster: list[dict[str, Any]] = []
     for employee in result.all():
-        if employee.position not in SCHEDULE_EMPLOYEE_POSITIONS or employee.status != "active":
-            continue
         assignments = await employee_assignments.get_assignments(session, employee.id, today)
-        primary = next((assignment for assignment in assignments if assignment.is_primary), None)
+        visible_assignments = [
+            assignment
+            for assignment in assignments
+            if _assignment_visible_in_schedule(employee, assignment, substitute_pairs)
+        ]
+        if employee.position not in SCHEDULE_EMPLOYEE_POSITIONS and not any(
+            assignment.is_substitute for assignment in visible_assignments
+        ):
+            continue
+        primary = next(
+            (assignment for assignment in visible_assignments if assignment.is_primary), None
+        )
         roster.append(
             {
                 "id": employee.id,
@@ -446,16 +454,18 @@ async def list_employees_roster(session: AsyncSession) -> list[dict[str, Any]]:
                 "position": employee.position,
                 "primary_payroll_role": primary.payroll_role if primary else None,
                 "default_cooking_station": employee.default_cooking_station,
+                "requires_role_review": bool(employee.requires_role_review),
                 "available_roles": [
                     {
                         "payroll_role": assignment.payroll_role,
                         "category": assignment.category,
                         "is_primary": bool(assignment.is_primary),
+                        "is_substitute": bool(assignment.is_substitute),
                         "default_station_code": default_station_for_payroll_role(
                             assignment.payroll_role
                         ),
                     }
-                    for assignment in assignments
+                    for assignment in visible_assignments
                 ],
                 "allowances": {
                     "senior": bool(employee.is_senior),
@@ -464,6 +474,28 @@ async def list_employees_roster(session: AsyncSession) -> list[dict[str, Any]]:
             },
         )
     return sorted(roster, key=lambda row: row["full_name"])
+
+
+def _business_today() -> date:
+    return datetime.now(LOCATION_TZ).date()
+
+
+def _assignment_visible_in_schedule(
+    employee: Employee,
+    assignment,
+    substitute_pairs: list[payroll_config.SubstitutePair],
+) -> bool:
+    if not assignment.is_substitute:
+        return True
+    try:
+        target_position = target_position_for_payroll_role(assignment.payroll_role)
+    except KeyError:
+        return False
+    return payroll_config.is_substitute_pair_added_to_schedule(
+        substitute_pairs,
+        employee.position,
+        target_position,
+    )
 
 
 def planned_hours(start: datetime, end: datetime) -> Decimal:
@@ -494,11 +526,6 @@ async def _get_schedulable_employee(session: AsyncSession, employee_id: uuid.UUI
         raise HTTPException(
             status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="В график можно ставить только активных сотрудников",
-        )
-    if employee.position not in SCHEDULE_EMPLOYEE_POSITIONS:
-        raise HTTPException(
-            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="В график можно ставить только Поваров и Кассиров",
         )
     return employee
 

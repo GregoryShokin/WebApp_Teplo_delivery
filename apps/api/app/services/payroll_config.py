@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-from datetime import date
+from collections.abc import Iterable, Mapping
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
+from pydantic import BaseModel
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    AppSetting,
+    AppSettingHistory,
     CategoryCoefficient,
     PayrollDeductionCategory,
     PayrollRate,
@@ -26,8 +29,12 @@ from app.schemas.payroll_config import (
     PayrollRevenueTierBase,
     PayrollSeniorityPremiumBase,
 )
-from app.services.employee_assignments import PAYROLL_ROLE_LABELS
-from app.services.staff_taxonomy import categories_for_payroll_role
+from app.services.staff_taxonomy import (
+    CANONICAL_POSITIONS,
+    PAYROLL_ROLE_LABELS,
+    canonical_position_name,
+    categories_for_payroll_role,
+)
 
 
 class PayrollConfigConflictError(RuntimeError):
@@ -59,6 +66,103 @@ PAYROLL_RATE_CATEGORY_LABELS = {
 }
 VALID_SENIORITY_PREMIUM_POSITIONS = frozenset({"Повар", "Кассир"})
 VALID_SENIORITY_PREMIUM_ROLES = frozenset({"senior", "deputy_senior"})
+SUBSTITUTE_PAIRS_SETTING_KEY = "payroll.substitute_pairs"
+SUBSTITUTE_TARGET_POSITIONS = frozenset({"Повар", "Кассир"})
+DEFAULT_SUBSTITUTE_PAIRS = (
+    {"from_position": "Управляющий", "to_position": "Повар", "add_to_schedule": False},
+    {"from_position": "Менеджер", "to_position": "Кассир", "add_to_schedule": False},
+)
+
+
+class SubstitutePair(BaseModel):
+    from_position: str
+    to_position: str
+    add_to_schedule: bool = False
+
+
+async def get_substitute_pairs(session: AsyncSession) -> list[SubstitutePair]:
+    setting = await session.scalar(
+        select(AppSetting).where(AppSetting.key == SUBSTITUTE_PAIRS_SETTING_KEY)
+    )
+    raw_value = setting.value if setting is not None else list(DEFAULT_SUBSTITUTE_PAIRS)
+    return _validate_substitute_pairs(raw_value)
+
+
+async def set_substitute_pairs(
+    session: AsyncSession,
+    pairs: Iterable[SubstitutePair | dict[str, Any]],
+    actor: Any,
+) -> list[SubstitutePair]:
+    normalized = _validate_substitute_pairs(list(pairs))
+    value = [pair.model_dump() for pair in normalized]
+    setting = await session.scalar(
+        select(AppSetting).where(AppSetting.key == SUBSTITUTE_PAIRS_SETTING_KEY)
+    )
+    old_value = setting.value if setting is not None else None
+    actor_id = getattr(actor, "user_id", None) or getattr(actor, "id", None)
+
+    if setting is None:
+        setting = AppSetting(
+            key=SUBSTITUTE_PAIRS_SETTING_KEY,
+            value=value,
+            value_type="array",
+            category="payroll",
+            display_name="Подменные роли",
+            description="Какие должности могут выходить на смены поваров и кассиров.",
+            widget_type="json",
+            widget_options=None,
+            unit=None,
+            updated_by_user_id=actor_id,
+        )
+        session.add(setting)
+        await session.flush()
+    else:
+        setting.value = value
+        setting.updated_at = datetime.now(UTC)
+        setting.updated_by_user_id = actor_id
+
+    session.add(
+        AppSettingHistory(
+            setting_id=setting.id,
+            old_value=old_value,
+            new_value=value,
+            changed_by_user_id=actor_id,
+        )
+    )
+    await session.commit()
+    return normalized
+
+
+def is_substitute_pair_allowed(
+    pairs: Iterable[SubstitutePair],
+    from_pos: str | None,
+    to_pos: str | None,
+) -> bool:
+    canonical_from = canonical_position_name(from_pos)
+    canonical_to = canonical_position_name(to_pos)
+    if canonical_from is None or canonical_to is None:
+        return False
+    return any(
+        pair.from_position == canonical_from and pair.to_position == canonical_to
+        for pair in pairs
+    )
+
+
+def is_substitute_pair_added_to_schedule(
+    pairs: Iterable[SubstitutePair],
+    from_pos: str | None,
+    to_pos: str | None,
+) -> bool:
+    canonical_from = canonical_position_name(from_pos)
+    canonical_to = canonical_position_name(to_pos)
+    if canonical_from is None or canonical_to is None:
+        return False
+    return any(
+        pair.from_position == canonical_from
+        and pair.to_position == canonical_to
+        and pair.add_to_schedule
+        for pair in pairs
+    )
 
 
 async def list_rates(session: AsyncSession, *, history: bool = False) -> list[PayrollRate]:
@@ -576,6 +680,62 @@ def _validate_seniority_premium_payload(payload: PayrollSeniorityPremiumBase) ->
 def _validate_rate_category(category: str) -> None:
     if category not in VALID_PAYROLL_RATE_CATEGORIES:
         raise PayrollConfigValidationError("Invalid payroll rate category")
+
+
+def _validate_substitute_pairs(raw_pairs: Any) -> list[SubstitutePair]:
+    if not isinstance(raw_pairs, list | tuple):
+        raise PayrollConfigValidationError("Подменные пары должны быть списком")
+
+    normalized: list[SubstitutePair] = []
+    seen: set[tuple[str, str]] = set()
+    for item in raw_pairs:
+        if isinstance(item, SubstitutePair):
+            from_position = item.from_position
+            to_position = item.to_position
+            add_to_schedule = item.add_to_schedule
+        elif isinstance(item, BaseModel):
+            payload = item.model_dump()
+            from_position = str(payload.get("from_position") or "").strip()
+            to_position = str(payload.get("to_position") or "").strip()
+            add_to_schedule = _validate_substitute_pair_bool(
+                payload.get("add_to_schedule", False)
+            )
+        elif isinstance(item, Mapping):
+            from_position = str(item.get("from_position") or "").strip()
+            to_position = str(item.get("to_position") or "").strip()
+            add_to_schedule = _validate_substitute_pair_bool(
+                item.get("add_to_schedule", False)
+            )
+        else:
+            raise PayrollConfigValidationError("Подменная пара должна быть объектом")
+
+        canonical_from = canonical_position_name(from_position)
+        canonical_to = canonical_position_name(to_position)
+        if canonical_from not in CANONICAL_POSITIONS:
+            raise PayrollConfigValidationError("Кто подменяет должен быть канонической должностью")
+        if canonical_to not in SUBSTITUTE_TARGET_POSITIONS:
+            raise PayrollConfigValidationError("Кого подменяет может быть только Повар или Кассир")
+        if canonical_from == canonical_to:
+            raise PayrollConfigValidationError("Должности в подменной паре не должны совпадать")
+
+        key = (canonical_from, canonical_to)
+        if key in seen:
+            raise PayrollConfigValidationError("Подменные пары не должны повторяться")
+        seen.add(key)
+        normalized.append(
+            SubstitutePair(
+                from_position=canonical_from,
+                to_position=canonical_to,
+                add_to_schedule=add_to_schedule,
+            )
+        )
+    return normalized
+
+
+def _validate_substitute_pair_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    raise PayrollConfigValidationError("Флаг добавления в график должен быть true/false")
 
 
 def _validate_revenue_tier_payloads(payloads: list[PayrollRevenueTierBase]) -> None:

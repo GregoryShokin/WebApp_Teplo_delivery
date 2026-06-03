@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from datetime import date
@@ -10,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Employee, EmployeeRoleAssignment, PayrollRoleCategoryAvailability
+from app.services import payroll_config
 from app.services.employee_status import (
     COOKING_STATIONS,
     EMPLOYEE_CATEGORIES,
@@ -23,11 +25,13 @@ from app.services.staff_taxonomy import (
     payroll_role_allows_category,
     payroll_roles_for_position,
     position_allows_payroll_role,
+    target_position_for_payroll_role,
 )
 
 PAYROLL_ROLES = frozenset(PAYROLL_ROLE_LABELS)
 COOK_PAYROLL_ROLES = frozenset({"sushi", "pizza", "shawarma", "prep"})
 STAFF_PAYROLL_ROLES = frozenset({"administrator"})
+logger = logging.getLogger(__name__)
 
 
 class EmployeeAssignmentError(ValueError):
@@ -88,10 +92,7 @@ async def get_assignments_with_pending(
         assignment
         for assignment in result.all()
         if assignment.employee_id == employee_id
-        and (
-            _assignment_active_on(assignment, on_date)
-            or assignment.effective_from > on_date
-        )
+        and (_assignment_active_on(assignment, on_date) or assignment.effective_from > on_date)
     ]
 
 
@@ -159,6 +160,7 @@ async def add_role(
     category: str,
     *,
     is_primary: bool = False,
+    is_substitute: bool = False,
     effective_from: date | None = None,
     commit: bool = True,
 ) -> EmployeeRoleAssignment:
@@ -166,17 +168,23 @@ async def add_role(
     _validate_category(category)
     as_of = effective_from or date.today()
     employee = await _get_employee(session, employee_id)
-    await _ensure_assignment_valid(session, employee, role, category)
+    if is_substitute:
+        if is_primary:
+            raise EmployeeAssignmentError("Подменная роль не может быть основной")
+        await _ensure_substitute_assignment_valid(session, employee, role, category)
+    else:
+        await _ensure_assignment_valid(session, employee, role, category)
     active_assignments = await get_assignments(session, employee_id, as_of)
     if any(assignment.payroll_role == role for assignment in active_assignments):
-        raise EmployeeAssignmentError("Employee already has an active assignment for this role")
+        raise EmployeeAssignmentError("У сотрудника уже есть активное назначение на эту роль")
 
     has_primary = any(assignment.is_primary for assignment in active_assignments)
     assignment = EmployeeRoleAssignment(
         employee_id=employee_id,
         payroll_role=role,
         category=category,
-        is_primary=is_primary or not has_primary,
+        is_primary=False if is_substitute else is_primary or not has_primary,
+        is_substitute=is_substitute,
         effective_from=as_of,
     )
     session.add(assignment)
@@ -188,9 +196,32 @@ async def add_role(
     await _refresh_employee_status(session, employee, as_of)
     if commit:
         await _commit_refresh(session, assignment)
+        if assignment.is_substitute:
+            await _sync_employee_roles_to_iiko_safely(session, employee_id)
     else:
         await session.flush()
     return assignment
+
+
+async def add_substitute_role(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+    payroll_role: str,
+    category: str,
+    *,
+    effective_from: date | None = None,
+    actor: Any | None = None,
+) -> EmployeeRoleAssignment:
+    del actor
+    return await add_role(
+        session,
+        employee_id,
+        payroll_role,
+        category,
+        is_primary=False,
+        is_substitute=True,
+        effective_from=effective_from,
+    )
 
 
 async def ensure_category_available(
@@ -211,6 +242,7 @@ async def update_assignment(
     payroll_role: str | None = None,
     category: str | None = None,
     is_primary: bool | None = None,
+    is_substitute: bool | None = None,
     effective_from: date | None = None,
 ) -> EmployeeRoleAssignment:
     assignment = await _get_assignment(session, employee_id, assignment_id)
@@ -218,6 +250,11 @@ async def update_assignment(
     employee = await _get_employee(session, employee_id)
     target_role = payroll_role or assignment.payroll_role
     target_category = category or assignment.category
+    target_is_substitute = assignment.is_substitute if is_substitute is None else is_substitute
+    target_is_primary = assignment.is_primary if is_primary is None else bool(is_primary)
+
+    if target_is_substitute and target_is_primary:
+        raise EmployeeAssignmentError("Подменная роль не может быть основной")
 
     if payroll_role is not None and payroll_role != assignment.payroll_role:
         _validate_role(payroll_role)
@@ -226,17 +263,26 @@ async def update_assignment(
             item.id != assignment.id and item.payroll_role == payroll_role
             for item in active_assignments
         ):
-            raise EmployeeAssignmentError("Employee already has an active assignment for this role")
+            raise EmployeeAssignmentError("У сотрудника уже есть активное назначение на эту роль")
     if category is not None:
         _validate_category(category)
 
-    await _ensure_assignment_valid(session, employee, target_role, target_category)
+    if target_is_substitute:
+        await _ensure_substitute_assignment_valid(
+            session,
+            employee,
+            target_role,
+            target_category,
+        )
+    else:
+        await _ensure_assignment_valid(session, employee, target_role, target_category)
     if is_primary is False and assignment.is_primary:
-        raise PrimaryAssignmentRequiredError("Choose another primary assignment first")
+        raise PrimaryAssignmentRequiredError("Сначала назначьте другую основную роль")
 
     role_or_category_changed = (
         target_role != assignment.payroll_role or target_category != assignment.category
     )
+    substitute_changed = target_is_substitute != assignment.is_substitute
     effective_from_changed = (
         effective_from is not None and effective_from != assignment.effective_from
     )
@@ -248,9 +294,10 @@ async def update_assignment(
             as_of,
             payroll_role=target_role,
             category=target_category,
-            is_primary=assignment.is_primary if is_primary is None else bool(is_primary),
+            is_primary=target_is_primary,
+            is_substitute=target_is_substitute,
         )
-    elif role_or_category_changed and assignment.effective_from < as_of:
+    elif (role_or_category_changed or substitute_changed) and assignment.effective_from < as_of:
         assignment.effective_to = as_of
         next_assignment = await _next_assignment_for_role_after(
             session,
@@ -263,7 +310,8 @@ async def update_assignment(
             employee_id=employee_id,
             payroll_role=target_role,
             category=target_category,
-            is_primary=assignment.is_primary if is_primary is None else bool(is_primary),
+            is_primary=target_is_primary,
+            is_substitute=target_is_substitute,
             effective_from=as_of,
             effective_to=next_assignment.effective_from if next_assignment is not None else None,
         )
@@ -274,6 +322,8 @@ async def update_assignment(
             assignment.payroll_role = payroll_role
         if category is not None:
             assignment.category = category
+        if is_substitute is not None:
+            assignment.is_substitute = is_substitute
     if is_primary is True:
         await _set_primary_assignment(session, employee_id, assignment, as_of)
 
@@ -281,6 +331,8 @@ async def update_assignment(
         _sync_employee_shortcut(employee, assignment)
     await _refresh_employee_status(session, employee, as_of)
     await _commit_refresh(session, assignment)
+    if assignment.is_substitute or target_is_substitute or substitute_changed:
+        await _sync_employee_roles_to_iiko_safely(session, employee_id)
     return assignment
 
 
@@ -293,8 +345,8 @@ async def cancel_pending_assignment(
     today = date.today()
     if assignment.effective_from <= today:
         raise EmployeeAssignmentError("Только запланированные изменения (будущие) можно удалить")
-    if assignment.is_primary:
-        raise PrimaryAssignmentRequiredError("Choose another primary first")
+    was_primary = assignment.is_primary
+    was_substitute = assignment.is_substitute
 
     previous = await session.scalar(
         select(EmployeeRoleAssignment).where(
@@ -303,6 +355,11 @@ async def cancel_pending_assignment(
             EmployeeRoleAssignment.effective_to == assignment.effective_from,
         )
     )
+    if was_primary and previous is None:
+        raise PrimaryAssignmentRequiredError(
+            "Эта роль — единственная основная. Сначала назначьте другую основную роль."
+        )
+
     next_pending = await _next_assignment_for_role_after(
         session,
         employee_id,
@@ -311,13 +368,19 @@ async def cancel_pending_assignment(
         exclude_assignment_id=assignment.id,
     )
 
+    employee = await _get_employee(session, employee_id)
+    await session.delete(assignment)
+    await session.flush()
+
     if previous is not None:
         previous.effective_to = next_pending.effective_from if next_pending else None
+        if was_primary:
+            _sync_employee_shortcut(employee, previous)
 
-    await session.delete(assignment)
-    employee = await _get_employee(session, employee_id)
     await _refresh_employee_status(session, employee, today)
     await _commit(session)
+    if was_substitute:
+        await _sync_employee_roles_to_iiko_safely(session, employee_id)
 
 
 async def remove_role(
@@ -338,7 +401,7 @@ async def remove_role(
         None,
     )
     if assignment is None:
-        raise EmployeeAssignmentNotFoundError("Assignment not found")
+        raise EmployeeAssignmentNotFoundError("Назначение роли не найдено")
     return await remove_assignment(session, employee_id, assignment.id, effective_to=as_of)
 
 
@@ -351,14 +414,30 @@ async def remove_assignment(
 ) -> EmployeeRoleAssignment:
     assignment = await _get_assignment(session, employee_id, assignment_id)
     if assignment.is_primary:
-        raise PrimaryAssignmentRequiredError("Choose another primary assignment first")
+        raise PrimaryAssignmentRequiredError("Сначала назначьте другую основную роль")
+    was_substitute = assignment.is_substitute
 
     as_of = effective_to or date.today()
     employee = await _get_employee(session, employee_id)
     assignment.effective_to = as_of
     await _refresh_employee_status(session, employee, as_of)
     await _commit_refresh(session, assignment)
+    if was_substitute:
+        await _sync_employee_roles_to_iiko_safely(session, employee_id)
     return assignment
+
+
+async def remove_substitute_role(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+    assignment_id: uuid.UUID,
+    actor: Any | None = None,
+) -> EmployeeRoleAssignment:
+    del actor
+    assignment = await _get_assignment(session, employee_id, assignment_id)
+    if not assignment.is_substitute:
+        raise EmployeeAssignmentError("Назначение не является подменной ролью")
+    return await remove_assignment(session, employee_id, assignment_id)
 
 
 async def sync_primary_from_shortcut(
@@ -504,7 +583,7 @@ async def _refresh_employee_status(
 async def _get_employee(session: AsyncSession, employee_id: uuid.UUID) -> Employee:
     employee = await session.get(Employee, employee_id)
     if employee is None:
-        raise EmployeeAssignmentNotFoundError("Employee not found")
+        raise EmployeeAssignmentNotFoundError("Сотрудник не найден")
     return employee
 
 
@@ -520,7 +599,7 @@ async def _get_assignment(
         )
     )
     if assignment is None:
-        raise EmployeeAssignmentNotFoundError("Assignment not found")
+        raise EmployeeAssignmentNotFoundError("Назначение роли не найдено")
     return assignment
 
 
@@ -571,6 +650,7 @@ async def _move_pending_assignment(
     payroll_role: str,
     category: str,
     is_primary: bool,
+    is_substitute: bool,
 ) -> None:
     previous = await _previous_assignment_for_role_before(
         session,
@@ -592,6 +672,7 @@ async def _move_pending_assignment(
     assignment.payroll_role = payroll_role
     assignment.category = category
     assignment.is_primary = is_primary
+    assignment.is_substitute = is_substitute
     assignment.effective_from = effective_from
 
     next_for_new_role = await _next_assignment_for_role_after(
@@ -624,7 +705,9 @@ async def _commit(session: AsyncSession) -> None:
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()
-        raise EmployeeAssignmentError("Assignment conflicts with existing role history") from exc
+        raise EmployeeAssignmentError(
+            "Назначение конфликтует с существующей историей ролей"
+        ) from exc
 
 
 def _sync_employee_shortcut(employee: Employee, assignment: EmployeeRoleAssignment) -> None:
@@ -645,20 +728,19 @@ def _active_on(on_date: date) -> Any:
 
 
 def _assignment_active_on(assignment: EmployeeRoleAssignment, on_date: date) -> bool:
-    return (
-        assignment.effective_from <= on_date
-        and (assignment.effective_to is None or assignment.effective_to > on_date)
+    return assignment.effective_from <= on_date and (
+        assignment.effective_to is None or assignment.effective_to > on_date
     )
 
 
 def _validate_role(role: str) -> None:
     if role not in PAYROLL_ROLES:
-        raise EmployeeAssignmentError("Invalid payroll role")
+        raise EmployeeAssignmentError("Некорректная роль начисления")
 
 
 def _validate_category(category: str) -> None:
     if category not in EMPLOYEE_CATEGORIES:
-        raise EmployeeAssignmentError("Invalid employee category")
+        raise EmployeeAssignmentError("Некорректная категория сотрудника")
 
 
 async def _ensure_category_available(
@@ -690,6 +772,33 @@ async def _ensure_category_available(
     raise EmployeeAssignmentError(message)
 
 
+async def _ensure_substitute_assignment_valid(
+    session: AsyncSession,
+    employee: Employee,
+    payroll_role: str,
+    category: str,
+) -> None:
+    canonical_position = canonical_position_name(employee.position)
+    if canonical_position is None:
+        raise EmployeeAssignmentError("У сотрудника не задана каноническая должность")
+    if category not in categories_for_payroll_role(payroll_role):
+        raise EmployeeAssignmentError("Категория недоступна для этой роли")
+    await _ensure_category_available(session, payroll_role, category)
+
+    target_position = target_position_for_payroll_role(payroll_role)
+    pairs = await payroll_config.get_substitute_pairs(session)
+    if payroll_config.is_substitute_pair_allowed(
+        pairs,
+        canonical_position,
+        target_position,
+    ):
+        return
+    raise EmployeeAssignmentError(
+        f"Подмена {canonical_position} → {target_position} не разрешена. "
+        "Настройте в Настройках"
+    )
+
+
 async def _ensure_assignment_valid(
     session: AsyncSession,
     employee: Employee,
@@ -706,6 +815,21 @@ async def _ensure_assignment_valid(
     if category not in categories_for_payroll_role(payroll_role):
         raise EmployeeAssignmentError("Категория недоступна для этой роли")
     await _ensure_category_available(session, payroll_role, category)
+
+
+async def _sync_employee_roles_to_iiko_safely(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+) -> None:
+    try:
+        from app.services.iiko_sync import sync_employee_roles_to_iiko
+
+        await sync_employee_roles_to_iiko(session, employee_id)
+    except Exception:  # noqa: BLE001 - iiko sync must not roll back local assignment edits
+        logger.exception(
+            "Failed to sync substitute roles to iiko",
+            extra={"employee_id": employee_id},
+        )
 
 
 def _normalize_position(value: str | None) -> str:

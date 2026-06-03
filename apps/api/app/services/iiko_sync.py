@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import http.client
 import importlib
 import json
@@ -33,13 +34,14 @@ from app.models import (
 )
 from app.services import employee_change_events as employee_change_event_service
 from app.services import employee_effective_events as employee_effective_event_service
+from app.services import payroll_config
 from app.services.employee_status import (
     compute_status,
     is_cook_position,
     is_target_position,
     position_group_for_position,
 )
-from app.services.staff_taxonomy import canonical_position_name
+from app.services.staff_taxonomy import canonical_position_name, target_position_for_payroll_role
 
 ACTIVE_STATUSES = {"active", "enabled", "not_deleted", "not deleted", "не удален", "не удалён"}
 DELETED_STATUSES = {
@@ -308,6 +310,45 @@ async def update_iiko_employee(
     )
 
 
+async def sync_employee_roles_to_iiko(session: AsyncSession, employee_id: uuid.UUID) -> None:
+    employee = await session.get(Employee, employee_id)
+    if employee is None or not employee.iiko_id:
+        return
+
+    canonical_main_position = canonical_position_name(employee.position)
+    if canonical_main_position is None:
+        return
+
+    today = datetime.now(UTC).date()
+    assignments = (
+        await session.scalars(
+            select(EmployeeRoleAssignment).where(
+                EmployeeRoleAssignment.employee_id == employee_id,
+                EmployeeRoleAssignment.is_substitute.is_(True),
+                EmployeeRoleAssignment.effective_from <= today,
+                or_(
+                    EmployeeRoleAssignment.effective_to.is_(None),
+                    EmployeeRoleAssignment.effective_to > today,
+                ),
+            )
+        )
+    ).all()
+    target_positions = {canonical_main_position}
+    for assignment in assignments:
+        try:
+            target_positions.add(target_position_for_payroll_role(assignment.payroll_role))
+        except KeyError:
+            continue
+
+    await _load_source_credential_env(session)
+    await anyio.to_thread.run_sync(
+        _sync_employee_roles_to_iiko_sync,
+        employee.iiko_id,
+        canonical_main_position,
+        tuple(sorted(target_positions)),
+    )
+
+
 def _request_iiko_with_incomplete_read_retry(
     client: Any,
     path: str,
@@ -501,6 +542,66 @@ def _update_iiko_employee_sync(
     )
 
 
+def _sync_employee_roles_to_iiko_sync(
+    iiko_id: str,
+    main_position: str,
+    target_positions: tuple[str, ...],
+) -> None:
+    iiko_id = iiko_id.strip()
+    if not iiko_id:
+        raise IikoEmployeeOperationError("У сотрудника нет iiko id", status_code=400)
+
+    export_employees = _load_export_employees_module()
+    export_employees.load_local_env()
+    client = export_employees.IikoClient()
+    roles = _fetch_iiko_employee_roles_with_client(
+        export_employees,
+        client,
+        include_deleted=True,
+    )
+    main_role = _iiko_employee_role_for_position(roles, main_position)
+    if main_role is None:
+        raise IikoEmployeeOperationError(
+            f"В iiko не найдена роль для должности «{main_position}»",
+            status_code=400,
+        )
+
+    roles_by_position: dict[str, IikoEmployeeRole] = {main_position: main_role}
+    for position in target_positions:
+        role = _iiko_employee_role_for_position(roles, position)
+        if role is None:
+            raise IikoEmployeeOperationError(
+                f"В iiko не найдена роль для должности «{position}»",
+                status_code=400,
+            )
+        roles_by_position[position] = role
+
+    ordered_roles = [
+        roles_by_position[position]
+        for position in [main_position, *sorted(set(target_positions) - {main_position})]
+    ]
+
+    try:
+        _status, data = _request_iiko_with_incomplete_read_retry(
+            client,
+            f"/employees/byId/{iiko_id}",
+        )
+        body = _build_iiko_employee_roles_update_xml(
+            data,
+            main_role=main_role,
+            roles=ordered_roles,
+        )
+        _request_iiko_with_incomplete_read_retry(
+            client,
+            f"/employees/byId/{iiko_id}",
+            method="PUT",
+            raw_body=body,
+            content_type=IIKO_EMPLOYEE_XML_CONTENT_TYPE,
+        )
+    except export_employees.IikoHTTPError as exc:
+        raise _iiko_operation_error("обновить роли сотрудника в iiko", exc) from exc
+
+
 def _build_iiko_employee_xml(
     employee_id: str,
     full_name: str,
@@ -568,6 +669,36 @@ def _build_iiko_employee_update_xml(
         _set_xml_text(employee, "mainRoleCode", role.code or "")
         _set_xml_text(employee, "roleCodes", role.code or "")
 
+    return ET.tostring(employee, encoding="utf-8", xml_declaration=True)
+
+
+def _build_iiko_employee_roles_update_xml(
+    data: bytes,
+    *,
+    main_role: IikoEmployeeRole,
+    roles: Iterable[IikoEmployeeRole],
+) -> bytes:
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError as exc:
+        raise IikoEmployeeOperationError(
+            "iiko вернул карточку сотрудника в неподдерживаемом формате",
+            status_code=502,
+        ) from exc
+
+    employee = _find_employee_xml_element(root)
+    if employee is None:
+        raise IikoEmployeeOperationError("iiko не вернул карточку сотрудника", status_code=502)
+
+    ordered_roles = list(dict.fromkeys(roles))
+    _set_xml_text(employee, "mainRoleId", main_role.id)
+    _set_xml_text(employee, "rolesIds", ",".join(role.id for role in ordered_roles))
+    _set_xml_text(employee, "mainRoleCode", main_role.code or "")
+    _set_xml_text(
+        employee,
+        "roleCodes",
+        ",".join(role.code or "" for role in ordered_roles if role.code),
+    )
     return ET.tostring(employee, encoding="utf-8", xml_declaration=True)
 
 
@@ -774,6 +905,7 @@ async def _apply_employee_records(
     *,
     mode: SyncMode = "incremental",
 ) -> SyncResult:
+    records = list(records)
     existing_by_iiko_id = {
         employee.iiko_id: employee for employee in (await session.scalars(select(Employee))).all()
     }
@@ -832,7 +964,171 @@ async def _apply_employee_records(
             related_agent_action_id=action_id,
         )
 
+    await process_employee_extra_roles_for_records(session, records)
     return plan.result
+
+
+async def process_employee_extra_roles_for_records(
+    session: AsyncSession,
+    records: Iterable[Mapping[str, Any]],
+    *,
+    force: bool = False,
+) -> None:
+    records = list(records)
+    iiko_ids = {_extract_iiko_id(record) for record in records}
+    iiko_ids.discard("")
+    if not iiko_ids:
+        return
+    employees_by_iiko_id = {
+        employee.iiko_id: employee
+        for employee in (
+            await session.scalars(select(Employee).where(Employee.iiko_id.in_(iiko_ids)))
+        ).all()
+    }
+    for record in records:
+        employee = employees_by_iiko_id.get(_extract_iiko_id(record))
+        if employee is None:
+            continue
+        if "extra_iiko_positions" not in record:
+            continue
+        await process_employee_extra_roles(session, employee, record, force=force)
+
+
+async def refresh_role_review_for_all_employees(
+    session: AsyncSession,
+    *,
+    force: bool = True,
+) -> None:
+    employees = (
+        await session.scalars(
+            select(Employee).where(Employee.role_review_payload.is_not(None))
+        )
+    ).all()
+    for employee in employees:
+        payload = employee.role_review_payload or {}
+        if not isinstance(payload, Mapping):
+            continue
+        extra_positions = payload.get("extra_iiko_positions")
+        if not isinstance(extra_positions, list):
+            continue
+        await process_employee_extra_roles(
+            session,
+            employee,
+            {"extra_iiko_positions": extra_positions},
+            force=force,
+        )
+    await session.commit()
+
+
+async def process_employee_extra_roles(
+    session: AsyncSession,
+    employee: Employee,
+    iiko_payload: Mapping[str, Any],
+    *,
+    force: bool = False,
+) -> None:
+    extra_positions = _canonical_extra_positions_from_payload(iiko_payload, employee.position)
+    if not extra_positions:
+        employee.requires_role_review = False
+        employee.role_review_payload = None
+        return
+
+    pairs = await payroll_config.get_substitute_pairs(session)
+    covered_positions = await _active_substitute_target_positions(session, employee.id)
+    unresolved: list[str] = []
+    reasons_by_position: dict[str, str] = {}
+    for position in extra_positions:
+        if not payroll_config.is_substitute_pair_allowed(pairs, employee.position, position):
+            unresolved.append(position)
+            reasons_by_position[position] = "unconfigured_pair"
+        elif position not in covered_positions:
+            unresolved.append(position)
+            reasons_by_position[position] = "missing_substitute"
+
+    if not unresolved:
+        employee.requires_role_review = False
+        employee.role_review_payload = None
+        return
+
+    roles_hash = _iiko_positions_hash(extra_positions)
+    existing_payload = employee.role_review_payload or {}
+    acknowledged_hash = (
+        existing_payload.get("acknowledged_iiko_roles_hash")
+        if isinstance(existing_payload, Mapping)
+        else None
+    )
+    payload = {
+        "extra_iiko_positions": unresolved,
+        "all_extra_iiko_positions": extra_positions,
+        "reason": (
+            "unconfigured_pair"
+            if any(reason == "unconfigured_pair" for reason in reasons_by_position.values())
+            else "missing_substitute"
+        ),
+        "reasons_by_position": reasons_by_position,
+        "iiko_roles_hash": roles_hash,
+    }
+    if acknowledged_hash:
+        payload["acknowledged_iiko_roles_hash"] = acknowledged_hash
+
+    if not force and acknowledged_hash == roles_hash:
+        employee.requires_role_review = False
+        employee.role_review_payload = payload
+        return
+
+    employee.requires_role_review = True
+    employee.role_review_payload = payload
+
+
+async def _active_substitute_target_positions(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+) -> set[str]:
+    today = datetime.now(UTC).date()
+    assignments = (
+        await session.scalars(
+            select(EmployeeRoleAssignment).where(
+                EmployeeRoleAssignment.employee_id == employee_id,
+                EmployeeRoleAssignment.is_substitute.is_(True),
+                EmployeeRoleAssignment.effective_from <= today,
+                or_(
+                    EmployeeRoleAssignment.effective_to.is_(None),
+                    EmployeeRoleAssignment.effective_to > today,
+                ),
+            )
+        )
+    ).all()
+    positions: set[str] = set()
+    for assignment in assignments:
+        try:
+            positions.add(target_position_for_payroll_role(assignment.payroll_role))
+        except KeyError:
+            continue
+    return positions
+
+
+def _canonical_extra_positions_from_payload(
+    payload: Mapping[str, Any],
+    main_position: str | None,
+) -> list[str]:
+    raw_positions = payload.get("extra_iiko_positions") or []
+    if not isinstance(raw_positions, Iterable) or isinstance(raw_positions, str | bytes | Mapping):
+        return []
+    main_canonical = canonical_position_name(main_position)
+    positions: list[str] = []
+    seen: set[str] = set()
+    for item in raw_positions:
+        canonical = canonical_position_name(str(item))
+        if canonical is None or canonical == main_canonical or canonical in seen:
+            continue
+        seen.add(canonical)
+        positions.append(canonical)
+    return positions
+
+
+def _iiko_positions_hash(positions: Iterable[str]) -> str:
+    payload = "|".join(sorted(positions))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _mutation_changed_position(
@@ -1097,17 +1393,78 @@ def _enrich_employee_records_with_roles(
     enriched_records: list[Mapping[str, Any]] = []
     for record in employee_records:
         position = _extract_position(record)
+        main_role_id = _first_text(record, "mainRoleId", "main_role_id", "roleId")
+        main_role_code = _first_text(record, "mainRoleCode", "main_role_code", "roleCode")
         if not position:
-            main_role_id = _first_text(record, "mainRoleId", "main_role_id", "roleId")
-            main_role_code = _first_text(record, "mainRoleCode", "main_role_code", "roleCode")
             position = roles_by_id.get(main_role_id) or roles_by_code.get(main_role_code)
-        if position:
+        extra_positions = _extra_positions_from_iiko_roles(
+            record,
+            roles_by_id=roles_by_id,
+            roles_by_code=roles_by_code,
+            main_role_id=main_role_id,
+            main_role_code=main_role_code,
+            main_position=position,
+        )
+        if position or extra_positions:
             enriched_record = dict(record)
+            if extra_positions:
+                enriched_record["extra_iiko_positions"] = extra_positions
+        if position:
             enriched_record["position"] = position
+            enriched_records.append(enriched_record)
+        elif extra_positions:
             enriched_records.append(enriched_record)
         else:
             enriched_records.append(record)
     return enriched_records
+
+
+def _extra_positions_from_iiko_roles(
+    record: Mapping[str, Any],
+    *,
+    roles_by_id: Mapping[str, str],
+    roles_by_code: Mapping[str, str],
+    main_role_id: str,
+    main_role_code: str,
+    main_position: str | None,
+) -> list[str]:
+    main_canonical = canonical_position_name(main_position)
+    positions: list[str] = []
+    seen: set[str] = set()
+
+    for role_id in _split_iiko_multi_value(_first_text(record, "rolesIds", "roles_ids")):
+        if role_id == main_role_id:
+            continue
+        canonical = canonical_position_name(roles_by_id.get(role_id))
+        if canonical is None or canonical == main_canonical or canonical in seen:
+            continue
+        seen.add(canonical)
+        positions.append(canonical)
+
+    for role_code in _split_iiko_multi_value(_first_text(record, "roleCodes", "role_codes")):
+        if role_code == main_role_code:
+            continue
+        canonical = canonical_position_name(roles_by_code.get(role_code))
+        if canonical is None or canonical == main_canonical or canonical in seen:
+            continue
+        seen.add(canonical)
+        positions.append(canonical)
+
+    raw_extra = record.get("extra_iiko_positions")
+    if isinstance(raw_extra, Iterable) and not isinstance(raw_extra, str | bytes | Mapping):
+        for item in raw_extra:
+            canonical = canonical_position_name(str(item))
+            if canonical is None or canonical == main_canonical or canonical in seen:
+                continue
+            seen.add(canonical)
+            positions.append(canonical)
+    return positions
+
+
+def _split_iiko_multi_value(value: str) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in re.split(r"[,;\s]+", value) if item.strip()]
 
 
 def _extract_position(record: Mapping[str, Any]) -> str | None:
@@ -1328,6 +1685,8 @@ def _employee_snapshot(employee: Employee) -> dict[str, Any]:
         "is_senior": employee.is_senior,
         "is_deputy_senior": employee.is_deputy_senior,
         "status": employee.status,
+        "requires_role_review": employee.requires_role_review,
+        "role_review_payload": employee.role_review_payload,
         "hire_date": employee.hire_date.isoformat() if employee.hire_date else None,
         "fire_date": employee.fire_date.isoformat() if employee.fire_date else None,
         "pin_assumed_from_iiko": employee.pin_assumed_from_iiko,

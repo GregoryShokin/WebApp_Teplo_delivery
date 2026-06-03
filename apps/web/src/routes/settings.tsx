@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Lock, RefreshCw } from "lucide-react";
+import { Eye, LoaderCircle, Lock, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -23,6 +23,14 @@ import { formatJson, getPath } from "@/components/settings-widgets/widget-utils"
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -31,7 +39,16 @@ import {
 } from "@/components/ui/sheet";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { getAuthSnapshot, subscribeAuth } from "@/lib/auth";
-import { getSettingHistory, getSettings, updateSetting, type AppSetting } from "@/lib/api";
+import {
+  getSettingHistory,
+  getSettings,
+  getSubstitutePairs,
+  updateSetting,
+  updateSubstitutePairs,
+  apiErrorMessage,
+  type AppSetting,
+  type SubstitutePair,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type CategoryMeta = {
@@ -75,7 +92,22 @@ const CATEGORY_META: Record<string, CategoryMeta> = {
   },
 };
 
-const HIDDEN_SETTING_KEYS = new Set(["payroll.fund_rates_by_tenure"]);
+const HIDDEN_SETTING_KEYS = new Set([
+  "payroll.fund_rates_by_tenure",
+  "payroll.substitute_pairs",
+]);
+
+const SUBSTITUTE_FROM_POSITIONS = [
+  "Управляющий",
+  "Менеджер",
+  "Системный администратор",
+  "Курьер",
+  "Уборщица",
+  "Посудомойка",
+  "Кассир",
+  "Повар",
+];
+const SUBSTITUTE_TARGET_POSITIONS: SubstitutePair["to_position"][] = ["Повар", "Кассир"];
 
 const LEGACY_CATEGORY_TO_SLUG: Record<string, string> = {
   График: "schedule",
@@ -95,6 +127,7 @@ export function SettingsRoute() {
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
   const [historyKey, setHistoryKey] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, unknown>>({});
+  const [substituteDrafts, setSubstituteDrafts] = useState<SubstitutePair[]>([]);
   const [savingKeys, setSavingKeys] = useState<Set<string>>(() => new Set());
   const saveTimers = useRef<Record<string, ReturnType<typeof window.setTimeout>>>({});
   const developerMode = useMemo(
@@ -105,6 +138,11 @@ export function SettingsRoute() {
   const settingsQuery = useQuery({
     queryKey: ["settings"],
     queryFn: () => getSettings(),
+  });
+
+  const substitutePairsQuery = useQuery({
+    queryKey: ["substitute-pairs"],
+    queryFn: getSubstitutePairs,
   });
 
   const settings = useMemo(
@@ -134,8 +172,8 @@ export function SettingsRoute() {
       await queryClient.invalidateQueries({ queryKey: ["settings"] });
       await queryClient.invalidateQueries({ queryKey: ["settings-history", variables.key] });
     },
-    onError: () => {
-      toast.error("Не удалось сохранить настройку");
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось сохранить настройку"));
     },
     onSettled: (_, __, variables) => {
       if (!variables) {
@@ -148,6 +186,27 @@ export function SettingsRoute() {
       });
     },
   });
+
+  const substitutePairsMutation = useMutation({
+    mutationFn: updateSubstitutePairs,
+    onSuccess: async (result) => {
+      setSubstituteDrafts(result.pairs);
+      toast.success("Пары подмен сохранены");
+      await queryClient.invalidateQueries({ queryKey: ["substitute-pairs"] });
+      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+      await queryClient.invalidateQueries({ queryKey: ["employees"] });
+      await queryClient.invalidateQueries({ queryKey: ["employees-roster"] });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось сохранить пары подмен"));
+    },
+  });
+
+  useEffect(() => {
+    if (substitutePairsQuery.data) {
+      setSubstituteDrafts(substitutePairsQuery.data.pairs);
+    }
+  }, [substitutePairsQuery.data]);
 
   useEffect(() => {
     const timers = saveTimers.current;
@@ -195,6 +254,10 @@ export function SettingsRoute() {
   }, [selectedCategory, settings]);
 
   const isOwner = Boolean(auth.user?.roles.includes("owner"));
+  const showSubstitutePairsPanel = !selectedCategory || selectedCategory === "payroll";
+  const substitutePairs = substitutePairsQuery.data?.pairs ?? [];
+  const substitutePairsDirty = !valuesEqual(substituteDrafts, substitutePairs);
+  const substitutePairsError = validateSubstitutePairs(substituteDrafts);
 
   function handleValueChange(setting: AppSetting, value: unknown) {
     setDrafts((current) => ({ ...current, [setting.key]: value }));
@@ -214,6 +277,7 @@ export function SettingsRoute() {
           <Button
             onClick={() => {
               void queryClient.invalidateQueries({ queryKey: ["settings"] });
+              void queryClient.invalidateQueries({ queryKey: ["substitute-pairs"] });
               if (historyKey) {
                 void queryClient.invalidateQueries({ queryKey: ["settings-history", historyKey] });
               }
@@ -255,6 +319,40 @@ export function SettingsRoute() {
       ) : null}
 
       <div className="space-y-6">
+        {showSubstitutePairsPanel ? (
+          <SubstitutePairsPanel
+            drafts={substituteDrafts}
+            error={substitutePairsError}
+            isDirty={substitutePairsDirty}
+            isLoading={substitutePairsQuery.isLoading}
+            isSaving={substitutePairsMutation.isPending}
+            onAdd={() =>
+              setSubstituteDrafts((current) => [
+                ...current,
+                {
+                  from_position: "Управляющий",
+                  to_position: "Повар",
+                  add_to_schedule: false,
+                },
+              ])
+            }
+            onChange={(index, patch) =>
+              setSubstituteDrafts((current) =>
+                current.map((pair, pairIndex) =>
+                  pairIndex === index ? { ...pair, ...patch } : pair,
+                ),
+              )
+            }
+            onDelete={(index) =>
+              setSubstituteDrafts((current) =>
+                current.filter((_pair, pairIndex) => pairIndex !== index),
+              )
+            }
+            onReset={() => setSubstituteDrafts(substitutePairs)}
+            onSave={() => substitutePairsMutation.mutate(substituteDrafts)}
+          />
+        ) : null}
+
         {groupedSettings.map(([category, items]) => (
           <section className="space-y-3" key={category}>
             <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
@@ -308,6 +406,153 @@ export function SettingsRoute() {
         title={historyKey}
       />
     </div>
+  );
+}
+
+function SubstitutePairsPanel({
+  drafts,
+  error,
+  isDirty,
+  isLoading,
+  isSaving,
+  onAdd,
+  onChange,
+  onDelete,
+  onReset,
+  onSave,
+}: {
+  drafts: SubstitutePair[];
+  error: string | null;
+  isDirty: boolean;
+  isLoading: boolean;
+  isSaving: boolean;
+  onAdd: () => void;
+  onChange: (index: number, patch: Partial<SubstitutePair>) => void;
+  onDelete: (index: number) => void;
+  onReset: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-normal">Подменные смены</h2>
+          <p className="text-sm text-muted-foreground">
+            Какие должности могут выходить в график как повар или кассир.
+          </p>
+        </div>
+        <Button disabled={isLoading || isSaving} onClick={onAdd} size="sm" type="button" variant="outline">
+          <Plus size={15} aria-hidden="true" />
+          Добавить пару
+        </Button>
+      </div>
+
+      <div className="grid gap-3 rounded-lg border bg-card p-4 shadow-sm">
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">Загрузка пар...</div>
+        ) : null}
+
+        {!isLoading && drafts.length === 0 ? (
+          <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+            Пары подмен не настроены.
+          </div>
+        ) : null}
+
+        {drafts.map((pair, index) => (
+          <div
+            className="grid gap-2 rounded-md border bg-background p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_auto] sm:items-end"
+            key={`${pair.from_position}-${pair.to_position}-${index}`}
+          >
+            <div className="grid gap-2">
+              <span className="text-sm font-medium">Кто выходит</span>
+              <Select
+                disabled={isSaving}
+                onValueChange={(value) => onChange(index, { from_position: value })}
+                value={pair.from_position}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SUBSTITUTE_FROM_POSITIONS.map((position) => (
+                    <SelectItem key={position} value={position}>
+                      {position}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <span className="text-sm font-medium">Кого подменяет</span>
+              <Select
+                disabled={isSaving}
+                onValueChange={(value) =>
+                  onChange(index, { to_position: value as SubstitutePair["to_position"] })
+                }
+                value={pair.to_position}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SUBSTITUTE_TARGET_POSITIONS.map((position) => (
+                    <SelectItem key={position} value={position}>
+                      {position}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <span className="text-sm font-medium">Добавить в график</span>
+              <div className="flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3">
+                <Switch
+                  checked={pair.add_to_schedule}
+                  disabled={isSaving}
+                  onCheckedChange={(checked) => onChange(index, { add_to_schedule: checked })}
+                />
+                <span className="text-sm text-muted-foreground">
+                  {pair.add_to_schedule ? "Да" : "Нет"}
+                </span>
+              </div>
+            </div>
+
+            <Button
+              disabled={isSaving}
+              onClick={() => onDelete(index)}
+              size="icon"
+              title="Удалить пару"
+              type="button"
+              variant="ghost"
+            >
+              <Trash2 size={16} aria-hidden="true" />
+            </Button>
+          </div>
+        ))}
+
+        {error ? (
+          <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </div>
+        ) : null}
+
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button disabled={!isDirty || isSaving} onClick={onReset} type="button" variant="outline">
+            Отменить
+          </Button>
+          <Button disabled={!isDirty || Boolean(error) || isSaving} onClick={onSave} type="button">
+            {isSaving ? (
+              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+            ) : (
+              <Save size={16} aria-hidden="true" />
+            )}
+            Сохранить пары
+          </Button>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -568,6 +813,24 @@ function draftValue(drafts: Record<string, unknown>, setting: AppSetting) {
 
 function valuesEqual(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function validateSubstitutePairs(pairs: SubstitutePair[]) {
+  const seen = new Set<string>();
+  for (const pair of pairs) {
+    if (!pair.from_position || !pair.to_position) {
+      return "Заполните обе должности в каждой паре.";
+    }
+    if (pair.from_position === pair.to_position) {
+      return "Должность не может подменять саму себя.";
+    }
+    const key = `${pair.from_position}→${pair.to_position}`;
+    if (seen.has(key)) {
+      return "Одинаковые пары не должны повторяться.";
+    }
+    seen.add(key);
+  }
+  return null;
 }
 
 function formatSettingValue(value: unknown, setting: AppSetting) {

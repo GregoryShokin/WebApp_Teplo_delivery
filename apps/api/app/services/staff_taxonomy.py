@@ -31,6 +31,14 @@ PAYROLL_ROLE_POSITION = {
     "prep": "Повар",
 }
 
+COOK_PAYROLL_ROLES = frozenset({"sushi", "pizza", "shawarma", "prep"})
+CASHIER_PAYROLL_ROLES = frozenset({"administrator"})
+
+PAYROLL_ROLE_TO_TARGET_POSITION = {
+    **{role: "Повар" for role in COOK_PAYROLL_ROLES},
+    **{role: "Кассир" for role in CASHIER_PAYROLL_ROLES},
+}
+
 POSITION_PAYROLL_ROLES = {
     "Кассир": ("administrator",),
     "Повар": ("sushi", "pizza", "shawarma", "prep"),
@@ -127,6 +135,10 @@ def categories_for_payroll_role(payroll_role: str | None) -> tuple[str, ...]:
 
 def payroll_role_allows_category(payroll_role: str, category: str | None) -> bool:
     return category in categories_for_payroll_role(payroll_role)
+
+
+def target_position_for_payroll_role(payroll_role: str) -> str:
+    return PAYROLL_ROLE_TO_TARGET_POSITION[payroll_role]
 
 
 def default_station_for_payroll_role(role: str | None) -> str | None:
