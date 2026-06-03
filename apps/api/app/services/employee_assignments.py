@@ -571,7 +571,11 @@ async def _refresh_employee_status(
     employee: Employee,
     as_of: date,
 ) -> None:
-    active_assignments = await get_assignments(session, employee.id, as_of)
+    # Status reflects the current snapshot, not a back-dated or future
+    # effective date — always compute against today's active assignments.
+    del as_of
+    today = date.today()
+    active_assignments = await get_assignments(session, employee.id, today)
     employee.status = compute_status(
         employee,
         is_iiko_deleted=employee.status == "inactive",

@@ -1247,6 +1247,12 @@ def plan_employee_sync(
                 if employee.fire_date is not None:
                     employee.fire_date = None
                     changed = True
+                # NOTE: assignments are not loaded here (plan_employee_sync is
+                # sync and has no session), so compute_status falls back to the
+                # shortcut path (default_cooking_station + category). If the
+                # shortcut goes stale, employee.status is later refreshed via
+                # employee_assignments._refresh_employee_status on the next
+                # role mutation.
                 computed_status = compute_status(
                     employee,
                     is_iiko_deleted=False,
