@@ -19,6 +19,7 @@ from app.models.dds import (
     DdsArticle,
     DdsArticleAlias,
     OwnAccountsRegistry,
+    ReconciliationCase,
     TransferGroup,
     WalletBalanceSnapshot,
 )
@@ -31,7 +32,12 @@ from app.models.employee import (
     EmployeePositionEvent,
     EmployeeRoleAssignment,
 )
-from app.models.inventory import InventoryAudit, InventoryAuditItem, InventoryAuditPosition
+from app.models.inventory import (
+    InventoryAudit,
+    InventoryAuditEmployeeExclusion,
+    InventoryAuditItem,
+    InventoryAuditPosition,
+)
 from app.models.payroll import (
     AccumulationFundAccount,
     AccumulationFundTransaction,
@@ -90,6 +96,7 @@ __all__ = [
     "EmployeePositionEvent",
     "EmployeeRoleAssignment",
     "InventoryAudit",
+    "InventoryAuditEmployeeExclusion",
     "InventoryAuditItem",
     "InventoryAuditPosition",
     "Location",
@@ -110,6 +117,7 @@ __all__ = [
     "Period",
     "RevenueTier",
     "RevenueForecast",
+    "ReconciliationCase",
     "Role",
     "ShiftLedgerEntry",
     "ShiftAllowanceOverride",

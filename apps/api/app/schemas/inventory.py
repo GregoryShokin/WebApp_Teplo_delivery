@@ -14,6 +14,7 @@ class InventoryPositionCreate(BaseModel):
     code: str = Field(min_length=1, max_length=64)
     display_name: str = Field(min_length=1, max_length=200)
     allocation_group: str | None = None
+    swap_group: str | None = Field(default=None, max_length=64)
     iiko_product_guid: str | None = Field(default=None, max_length=64)
     sort_order: int = 100
 
@@ -23,6 +24,7 @@ class InventoryPositionPatch(BaseModel):
 
     display_name: str | None = Field(default=None, min_length=1, max_length=200)
     allocation_group: str | None = None
+    swap_group: str | None = Field(default=None, max_length=64)
     is_active: bool | None = None
     sort_order: int | None = None
 
@@ -32,6 +34,7 @@ class InventoryPositionRead(BaseModel):
     code: str
     display_name: str
     allocation_group: str | None = None
+    swap_group: str | None = None
     iiko_product_guid: str | None = None
     is_active: bool
     sort_order: int
@@ -89,6 +92,13 @@ class InventoryAuditPatch(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
 
 
+class InventoryAuditEmployeeExclusionPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    excluded: bool
+    reason: str | None = Field(default=None, max_length=500)
+
+
 class InventoryAuditItemCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -107,6 +117,7 @@ class InventoryAuditItemPatch(BaseModel):
     iiko_product_guid: str | None = Field(default=None, max_length=64)
     product_name_snapshot: str | None = Field(default=None, min_length=1, max_length=200)
     shortage_amount: Decimal | None = Field(default=None, ge=0)
+    swap_group_override: str | None = Field(default=None, max_length=64)
 
 
 class InventoryAuditItemRead(BaseModel):
@@ -117,6 +128,11 @@ class InventoryAuditItemRead(BaseModel):
     position_display_name: str | None = None
     allocation_group: str | None = None
     is_considered: bool
+    amount: str
+    swap_group: str | None = None
+    swap_group_default: str | None = None
+    swap_group_override: str | None = None
+    has_swap_group_override: bool = False
     iiko_product_guid: str | None = None
     product_name_snapshot: str
     shortage_amount: str
@@ -144,6 +160,7 @@ class InventoryAuditDetailRead(InventoryAuditListRead):
     total_shortage_iiko: str
     total_shortage_considered: str
     items: list[InventoryAuditItemRead]
+    swap_groups: list[dict[str, Any]] = Field(default_factory=list)
     items_skipped_count: int
     computation_snapshot: dict[str, Any] | None = None
 
@@ -155,5 +172,7 @@ class PenaltyComputationRead(BaseModel):
     period_start: date
     period_end: date
     groups: dict[str, Any]
+    swap_groups: list[dict[str, Any]] = Field(default_factory=list)
     employee_penalties: list[dict[str, Any]]
+    employee_recipients: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str]

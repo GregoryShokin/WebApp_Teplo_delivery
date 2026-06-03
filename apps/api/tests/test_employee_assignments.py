@@ -406,6 +406,47 @@ async def test_patch_with_future_effective_from_creates_pending(session_factory)
     assert rows[1].effective_to is None
 
 
+async def test_patch_active_primary_category_today_closes_previous_before_insert(
+    session_factory,
+) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        today = date.today()
+        assignment = await add_role(
+            session,
+            employee.id,
+            "sushi",
+            "category_2",
+            is_primary=True,
+            effective_from=today - timedelta(days=7),
+        )
+
+        updated = await patch_employee_assignment(
+            employee.id,
+            assignment.id,
+            EmployeeRoleAssignmentPatch(category="category_3", effective_from=today),
+            session,
+            _finance_manager(),
+        )
+        rows = list(
+            (
+                await session.scalars(
+                    select(EmployeeRoleAssignment)
+                    .where(EmployeeRoleAssignment.employee_id == employee.id)
+                    .order_by(EmployeeRoleAssignment.effective_from)
+                )
+            ).all()
+        )
+
+    assert updated.id != assignment.id
+    assert rows[0].category == "category_2"
+    assert rows[0].effective_to == today
+    assert rows[1].category == "category_3"
+    assert rows[1].effective_from == today
+    assert rows[1].effective_to is None
+    assert rows[1].is_primary is True
+
+
 async def test_cancel_pending_primary_with_previous_succeeds(session_factory) -> None:
     async with session_factory() as session:
         employee = await _create_employee(session)

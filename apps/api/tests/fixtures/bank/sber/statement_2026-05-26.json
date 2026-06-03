@@ -1,0 +1,87 @@
+[
+  {
+    "operationId": "sber-20260526-001",
+    "accountNumber": "40702810900000000001",
+    "operationDate": "2026-05-26",
+    "composedDateTime": "2026-05-26T10:12:00+03:00",
+    "direction": "CREDIT",
+    "amountRub": "250000.00",
+    "currencyCode": "RUB",
+    "documentNumber": "101",
+    "paymentPurpose": "Зачисление по операциям торгового эквайринга за 25.05.2026",
+    "rurTransfer": {
+      "payerName": "АО СБЕРБАНК ЭКВАЙРИНГ",
+      "payerInn": "7707083893",
+      "payerAccount": "30232810000000000001",
+      "payerBankBic": "044525225"
+    }
+  },
+  {
+    "operationId": "sber-20260526-002",
+    "accountNumber": "40702810900000000001",
+    "operationDate": "2026-05-26",
+    "composedDateTime": "2026-05-26T14:20:00+03:00",
+    "direction": "DEBIT",
+    "amountRub": "150000.00",
+    "currencyCode": "RUB",
+    "documentNumber": "102",
+    "paymentPurpose": "Перевод собственных средств на расчетный счет в Т-Банке",
+    "rurTransfer": {
+      "payeeName": "ИП Шокина Е.А.",
+      "payeeInn": "616100000001",
+      "payeeAccount": "40702810800000000002",
+      "payeeBankBic": "044525974"
+    }
+  },
+  {
+    "operationId": "sber-20260526-003",
+    "accountNumber": "40702810900000000001",
+    "operationDate": "2026-05-26",
+    "composedDateTime": "2026-05-26T16:05:00+03:00",
+    "direction": "DEBIT",
+    "amountRub": "1200.00",
+    "currencyCode": "RUB",
+    "documentNumber": "103",
+    "paymentPurpose": "Комиссия банка за обслуживание расчетного счета",
+    "rurTransfer": {
+      "payeeName": "ПАО СБЕРБАНК",
+      "payeeInn": "7707083893",
+      "payeeAccount": "47422810000000000001",
+      "payeeBankBic": "044525225"
+    }
+  },
+  {
+    "operationId": "sber-20260526-004",
+    "accountNumber": "40702810900000000001",
+    "operationDate": "2026-05-26",
+    "composedDateTime": "2026-05-26T17:40:00+03:00",
+    "direction": "CREDIT",
+    "amountRub": "4300.00",
+    "currencyCode": "RUB",
+    "documentNumber": "104",
+    "paymentPurpose": "Возврат ошибочно списанной комиссии",
+    "rurTransfer": {
+      "payerName": "ПАО СБЕРБАНК",
+      "payerInn": "7707083893",
+      "payerAccount": "47422810000000000001",
+      "payerBankBic": "044525225"
+    }
+  },
+  {
+    "operationId": "sber-20260526-005",
+    "accountNumber": "40702810900000000001",
+    "operationDate": "2026-05-26",
+    "composedDateTime": "2026-05-26T18:05:00+03:00",
+    "direction": "CREDIT",
+    "amountRub": "8900.00",
+    "currencyCode": "RUB",
+    "documentNumber": "105",
+    "paymentPurpose": "Прочее поступление без подтвержденной статьи",
+    "rurTransfer": {
+      "payerName": "ООО Северный Гость",
+      "payerInn": "7811000000",
+      "payerAccount": "40702810000000000055",
+      "payerBankBic": "044030653"
+    }
+  }
+]

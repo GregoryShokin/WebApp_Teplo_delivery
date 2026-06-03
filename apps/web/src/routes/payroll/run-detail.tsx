@@ -73,6 +73,7 @@ type PayrollRunDetailRouteProps = {
 type SortKey =
   | "name"
   | "hours"
+  | "penalties_total"
   | "deposit_withholding"
   | "deposit_payout"
   | "fund_accrual"
@@ -262,6 +263,26 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
       key: "vacation_pay",
       header: "Отпуск",
       cell: (row) => formatMoney(row.line.vacation_pay),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "penalties_total",
+      header: (
+        <SortButton
+          active={sortKey === "penalties_total"}
+          onClick={() => setSort("penalties_total")}
+        >
+          Штрафы
+        </SortButton>
+      ),
+      cell: (row) => {
+        const total = linePenaltyTotal(row.line);
+        if (total <= 0) {
+          return <span className="text-muted-foreground">0 ₽</span>;
+        }
+        return <span className="text-rose-700">−{formatMoney(total)}</span>;
+      },
       className: "text-right tabular-nums",
       headerClassName: "text-right",
     },
@@ -851,6 +872,9 @@ function compareRows(
   if (sortKey === "hours") {
     return (left.hours - right.hours) * modifier;
   }
+  if (sortKey === "penalties_total") {
+    return (linePenaltyTotal(left.line) - linePenaltyTotal(right.line)) * modifier;
+  }
   if (sortKey === "deposit_withholding") {
     return (left.line.deposit_withholding - right.line.deposit_withholding) * modifier;
   }
@@ -918,6 +942,10 @@ function lineAdjustments(line: PayrollLine) {
     bonuses: adjustmentItems(adjustments.bonuses),
     penalties: adjustmentItems(adjustments.penalties),
   };
+}
+
+function linePenaltyTotal(line: PayrollLine) {
+  return lineAdjustments(line).penalties.reduce((sum, item) => sum + Math.max(item.amount, 0), 0);
 }
 
 function adjustmentItems(value: unknown): AdjustmentComponent[] {

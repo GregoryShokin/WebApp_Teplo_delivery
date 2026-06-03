@@ -34,12 +34,14 @@ class InventoryAuditPosition(Base):
         UniqueConstraint("code", name="uq_inventory_audit_position_code"),
         Index("ix_inventory_audit_position_active", "is_active", "sort_order"),
         Index("ix_inventory_audit_position_guid", "iiko_product_guid"),
+        Index("ix_inventory_audit_position_swap_group", "swap_group"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     code: Mapped[str] = mapped_column(String(64), nullable=False)
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     allocation_group: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    swap_group: Mapped[str | None] = mapped_column(Text, nullable=True)
     iiko_product_guid: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_active: Mapped[bool] = mapped_column(
         Boolean,
@@ -118,6 +120,11 @@ class InventoryAudit(Base):
         cascade="all, delete-orphan",
         order_by=lambda: InventoryAuditItem.created_at,
     )
+    employee_exclusions: Mapped[list[InventoryAuditEmployeeExclusion]] = relationship(
+        back_populates="audit",
+        cascade="all, delete-orphan",
+        order_by=lambda: InventoryAuditEmployeeExclusion.created_at,
+    )
 
 
 class InventoryAuditItem(Base):
@@ -141,9 +148,41 @@ class InventoryAuditItem(Base):
     iiko_product_guid: Mapped[str | None] = mapped_column(String(64), nullable=True)
     product_name_snapshot: Mapped[str] = mapped_column(String(200), nullable=False)
     shortage_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    swap_group_override: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
     audit: Mapped[InventoryAudit] = relationship(back_populates="items")
     position: Mapped[InventoryAuditPosition | None] = relationship()
+
+
+class InventoryAuditEmployeeExclusion(Base):
+    __tablename__ = "inventory_audit_employee_exclusion"
+    __table_args__ = (
+        UniqueConstraint("audit_id", "employee_id", name="uq_inventory_audit_employee_exclusion"),
+        Index("ix_inventory_audit_employee_exclusion_audit", "audit_id"),
+        Index("ix_inventory_audit_employee_exclusion_employee", "employee_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    audit_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("inventory_audit.id", ondelete="CASCADE"), nullable=False
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee.id", ondelete="RESTRICT"), nullable=False
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    audit: Mapped[InventoryAudit] = relationship(back_populates="employee_exclusions")
+    employee: Mapped[Any] = relationship("Employee")

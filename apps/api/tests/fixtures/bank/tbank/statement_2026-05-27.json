@@ -1,0 +1,117 @@
+[
+  {
+    "operationId": "tbank-20260527-001",
+    "accountNumber": "40702810800000000002",
+    "operationDate": "2026-05-27T08:20:00Z",
+    "typeOfOperation": "Credit",
+    "amount": "150000.00",
+    "currency": "RUB",
+    "category": "selfTransferOuter",
+    "documentNumber": "401",
+    "paymentPurpose": "Перевод собственных средств со счета Сбербанка",
+    "payer": {
+      "name": "ИП Шокина Е.А.",
+      "inn": "616100000001",
+      "acct": "40702810900000000001",
+      "bicRu": "044525225"
+    },
+    "receiver": {
+      "name": "ИП Шокина Е.А.",
+      "inn": "616100000001",
+      "acct": "40702810800000000002",
+      "bicRu": "044525974"
+    }
+  },
+  {
+    "operationId": "tbank-20260527-002",
+    "accountNumber": "40702810800000000002",
+    "operationDate": "2026-05-27T09:30:00Z",
+    "typeOfOperation": "Credit",
+    "amount": "60000.00",
+    "currency": "RUB",
+    "category": "selfTransferOuter",
+    "documentNumber": "402",
+    "paymentPurpose": "Перевод собственных средств со счета Сбербанка",
+    "payer": {
+      "name": "ИП Шокина Е.А.",
+      "inn": "616100000001",
+      "acct": "40702810900000000001",
+      "bicRu": "044525225"
+    },
+    "receiver": {
+      "name": "ИП Шокина Е.А.",
+      "inn": "616100000001",
+      "acct": "40702810800000000002",
+      "bicRu": "044525974"
+    }
+  },
+  {
+    "operationId": "tbank-20260527-003",
+    "accountNumber": "40702810800000000002",
+    "operationDate": "2026-05-27T10:10:00Z",
+    "typeOfOperation": "Credit",
+    "amount": "29000.00",
+    "currency": "RUB",
+    "category": "income",
+    "documentNumber": "403",
+    "paymentPurpose": "Зачисление средств по терминалам эквайринга за 26.05.2026",
+    "payer": {
+      "name": "АО \"ТБанк\"",
+      "inn": "7710140679",
+      "acct": "30232810000000000002",
+      "bicRu": "044525974"
+    },
+    "receiver": {
+      "name": "ИП Шокина Е.А.",
+      "inn": "616100000001",
+      "acct": "40702810800000000002",
+      "bicRu": "044525974"
+    }
+  },
+  {
+    "operationId": "tbank-20260527-004",
+    "accountNumber": "40702810800000000002",
+    "operationDate": "2026-05-27T12:00:00Z",
+    "typeOfOperation": "Debit",
+    "amount": "18500.00",
+    "currency": "RUB",
+    "category": "contragentOutcome",
+    "documentNumber": "404",
+    "paymentPurpose": "Оплата поставщику за упаковку",
+    "payer": {
+      "name": "ИП Шокина Е.А.",
+      "inn": "616100000001",
+      "acct": "40702810800000000002",
+      "bicRu": "044525974"
+    },
+    "receiver": {
+      "name": "ООО Суши Принт",
+      "inn": "6164000000",
+      "acct": "40702810000000000041",
+      "bicRu": "046015602"
+    }
+  },
+  {
+    "operationId": "tbank-20260527-005",
+    "accountNumber": "40702810800000000002",
+    "operationDate": "2026-05-27T13:00:00Z",
+    "typeOfOperation": "Debit",
+    "amount": "7300.00",
+    "currency": "RUB",
+    "category": "cardOperation",
+    "documentNumber": "405",
+    "paymentPurpose": "Покупка бизнес-картой без чека",
+    "payer": {
+      "name": "ИП Шокина Е.А.",
+      "inn": "616100000001",
+      "acct": "40702810800000000002",
+      "bicRu": "044525974"
+    },
+    "receiver": {
+      "name": "Розничный магазин",
+      "inn": "",
+      "acct": "",
+      "bicRu": ""
+    }
+  }
+]

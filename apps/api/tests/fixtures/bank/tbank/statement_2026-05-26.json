@@ -1,0 +1,117 @@
+[
+  {
+    "operationId": "tbank-20260526-001",
+    "accountNumber": "40702810800000000002",
+    "operationDate": "2026-05-26T09:45:00Z",
+    "typeOfOperation": "Credit",
+    "amount": "32000.00",
+    "currency": "RUB",
+    "category": "income",
+    "documentNumber": "301",
+    "paymentPurpose": "Зачисление средств по терминалам эквайринга за 25.05.2026",
+    "payer": {
+      "name": "АО \"ТБанк\"",
+      "inn": "7710140679",
+      "acct": "30232810000000000002",
+      "bicRu": "044525974"
+    },
+    "receiver": {
+      "name": "ИП Шокина Е.А.",
+      "inn": "616100000001",
+      "acct": "40702810800000000002",
+      "bicRu": "044525974"
+    }
+  },
+  {
+    "operationId": "tbank-20260526-002",
+    "accountNumber": "40702810800000000002",
+    "operationDate": "2026-05-26T11:00:00Z",
+    "typeOfOperation": "Debit",
+    "amount": "42000.00",
+    "currency": "RUB",
+    "category": "contragentOutcome",
+    "documentNumber": "302",
+    "paymentPurpose": "Оплата поставщику за продукты по счету 77",
+    "payer": {
+      "name": "ИП Шокина Е.А.",
+      "inn": "616100000001",
+      "acct": "40702810800000000002",
+      "bicRu": "044525974"
+    },
+    "receiver": {
+      "name": "ООО Амай",
+      "inn": "6162000000",
+      "acct": "40702810000000000031",
+      "bicRu": "046015602"
+    }
+  },
+  {
+    "operationId": "tbank-20260526-003",
+    "accountNumber": "40702810800000000002",
+    "operationDate": "2026-05-26T12:30:00Z",
+    "typeOfOperation": "Debit",
+    "amount": "9800.00",
+    "currency": "RUB",
+    "category": "tax",
+    "documentNumber": "303",
+    "paymentPurpose": "Налог НДФЛ за сотрудников за май 2026",
+    "payer": {
+      "name": "ИП Шокина Е.А.",
+      "inn": "616100000001",
+      "acct": "40702810800000000002",
+      "bicRu": "044525974"
+    },
+    "receiver": {
+      "name": "УФК по Ростовской области",
+      "inn": "6163000001",
+      "acct": "40102810845370000050",
+      "bicRu": "016015102"
+    }
+  },
+  {
+    "operationId": "tbank-20260526-004",
+    "accountNumber": "40702810800000000002",
+    "operationDate": "2026-05-26T14:00:00Z",
+    "typeOfOperation": "Debit",
+    "amount": "1500.00",
+    "currency": "RUB",
+    "category": "fee",
+    "documentNumber": "304",
+    "paymentPurpose": "Комиссия банка за платежное поручение",
+    "payer": {
+      "name": "ИП Шокина Е.А.",
+      "inn": "616100000001",
+      "acct": "40702810800000000002",
+      "bicRu": "044525974"
+    },
+    "receiver": {
+      "name": "АО \"ТБанк\"",
+      "inn": "7710140679",
+      "acct": "47422810000000000002",
+      "bicRu": "044525974"
+    }
+  },
+  {
+    "operationId": "tbank-20260526-005",
+    "accountNumber": "40702810800000000002",
+    "operationDate": "2026-05-26T15:15:00Z",
+    "typeOfOperation": "Credit",
+    "amount": "5100.00",
+    "currency": "RUB",
+    "category": "refundIn",
+    "documentNumber": "305",
+    "paymentPurpose": "Прочее поступление без подтвержденной статьи",
+    "payer": {
+      "name": "ООО Северный Гость",
+      "inn": "7811000000",
+      "acct": "40702810000000000055",
+      "bicRu": "044030653"
+    },
+    "receiver": {
+      "name": "ИП Шокина Е.А.",
+      "inn": "616100000001",
+      "acct": "40702810800000000002",
+      "bicRu": "044525974"
+    }
+  }
+]

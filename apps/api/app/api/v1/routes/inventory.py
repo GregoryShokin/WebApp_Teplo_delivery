@@ -12,12 +12,18 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
 from app.db.session import get_session
-from app.models import InventoryAudit, InventoryAuditItem, InventoryAuditPosition
+from app.models import (
+    InventoryAudit,
+    InventoryAuditEmployeeExclusion,
+    InventoryAuditItem,
+    InventoryAuditPosition,
+)
 from app.schemas.inventory import (
     IikoInventoryCandidateRead,
     IikoProductRead,
     InventoryAuditCreateManualPayload,
     InventoryAuditDetailRead,
+    InventoryAuditEmployeeExclusionPatch,
     InventoryAuditImportIikoPayload,
     InventoryAuditItemCreate,
     InventoryAuditItemPatch,
@@ -43,9 +49,18 @@ from app.services.inventory_audit_service import (
     decimal_string,
     get_audit_with_items,
     import_audit_from_iiko,
+    item_effective_swap_group,
+    item_has_swap_group_override,
+    item_shortage_amount,
+    item_signed_amount,
+    item_swap_group_override,
     list_iiko_candidates,
+    restore_cancelled_audit,
+    set_employee_exclusion,
     summarize_audit_items,
+    summarize_swap_groups,
     sync_positions_from_iiko,
+    write_swap_override_audit,
 )
 
 router = APIRouter()
@@ -76,11 +91,20 @@ async def create_position(
 ) -> dict[str, Any]:
     require_finance_manager_plus(actor)
     validate_allocation_group(payload.allocation_group)
+    swap_group = clean_swap_group_input(payload.swap_group)
+    await validate_swap_group_allocation(
+        session,
+        swap_group=swap_group,
+        allocation_group=payload.allocation_group,
+        current_position_id=None,
+        current_position_name=payload.display_name.strip(),
+    )
     is_active = payload.allocation_group is not None
     position = InventoryAuditPosition(
         code=payload.code.strip(),
         display_name=payload.display_name.strip(),
         allocation_group=payload.allocation_group,
+        swap_group=swap_group,
         iiko_product_guid=clean_optional_text(payload.iiko_product_guid),
         sort_order=payload.sort_order,
         is_active=is_active,
@@ -118,14 +142,29 @@ async def patch_position(
         )
     target_is_active = updates.get("is_active", position.is_active)
     target_group = updates.get("allocation_group", position.allocation_group)
+    target_swap_group = (
+        clean_swap_group_input(updates["swap_group"])
+        if "swap_group" in updates
+        else getattr(position, "swap_group", None)
+    )
     if target_is_active is True and target_group is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Перед активацией укажите группу распределения штрафа",
         )
+    if "swap_group" in updates or "allocation_group" in updates:
+        await validate_swap_group_allocation(
+            session,
+            swap_group=target_swap_group,
+            allocation_group=target_group,
+            current_position_id=position.id,
+            current_position_name=position.display_name,
+        )
     for field, value in updates.items():
         if field == "allocation_group":
             validate_allocation_group(value)
+        if field == "swap_group":
+            value = clean_swap_group_input(value)
         setattr(position, field, value)
     position.updated_at = datetime.now(UTC)
     await session.commit()
@@ -247,6 +286,21 @@ async def get_audit(
     return audit_payload(result["audit"], include_items=True)
 
 
+@router.get("/audits/{audit_id}/preview", response_model=InventoryAuditDetailRead)
+async def preview_audit(
+    audit_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    require_finance_manager_plus(actor)
+    try:
+        await compute_penalties(session, audit_id)
+        result = await get_audit_with_items(session, audit_id)
+    except InventoryAuditNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return audit_payload(result["audit"], include_items=True)
+
+
 @router.patch("/audits/{audit_id}", response_model=InventoryAuditDetailRead)
 async def patch_audit(
     audit_id: uuid.UUID,
@@ -280,17 +334,18 @@ async def add_audit_item(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Укажите позицию или название товара",
         )
-    amount = payload.shortage_amount
+    shortage_amount = payload.shortage_amount
     session.add(
         InventoryAuditItem(
             audit_id=audit.id,
             position_id=position.id if position else None,
             iiko_product_guid=clean_optional_text(payload.iiko_product_guid),
             product_name_snapshot=name.strip(),
-            shortage_amount=amount,
+            shortage_amount=shortage_amount,
+            amount=-shortage_amount,
         )
     )
-    reset_computation(audit, total=Decimal(str(audit.total_shortage_amount)) + amount)
+    reset_computation(audit, total=Decimal(str(audit.total_shortage_amount)) + shortage_amount)
     await session.commit()
     return audit_payload(await load_audit_or_404(session, audit.id), include_items=True)
 
@@ -311,6 +366,8 @@ async def patch_audit_item(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Позиция не найдена")
 
     updates = payload.model_dump(exclude_unset=True)
+    before_swap_override = getattr(item, "swap_group_override", None)
+    before_effective_swap_group = item_effective_swap_group(item)
     if "position_id" in updates or "position_code" in updates:
         position = await position_from_payload(session, updates)
         item.position_id = position.id if position else None
@@ -322,6 +379,25 @@ async def patch_audit_item(
         item.product_name_snapshot = str(updates["product_name_snapshot"]).strip()
     if "shortage_amount" in updates:
         item.shortage_amount = updates["shortage_amount"]
+        item.amount = -updates["shortage_amount"]
+    if "swap_group_override" in updates:
+        item.swap_group_override = clean_swap_group_override(updates["swap_group_override"])
+        validate_audit_item_swap_override(audit, item)
+        if item.swap_group_override != before_swap_override:
+            await write_swap_override_audit(
+                session,
+                audit=audit,
+                item=item,
+                actor=actor,
+                before={
+                    "swap_group_override": before_swap_override,
+                    "effective_swap_group": before_effective_swap_group,
+                },
+                after={
+                    "swap_group_override": item.swap_group_override,
+                    "effective_swap_group": item_effective_swap_group(item),
+                },
+            )
     reset_computation(audit)
     await session.commit()
     return audit_payload(await load_audit_or_404(session, audit.id), include_items=True)
@@ -345,6 +421,39 @@ async def delete_audit_item(
     reset_computation(audit, total=next_total)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch(
+    "/audits/{audit_id}/employee-exclusions/{employee_id}",
+    response_model=InventoryAuditDetailRead,
+)
+async def patch_audit_employee_exclusion(
+    audit_id: uuid.UUID,
+    employee_id: uuid.UUID,
+    payload: InventoryAuditEmployeeExclusionPatch,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    require_finance_manager_plus(actor)
+    try:
+        audit = await set_employee_exclusion(
+            session,
+            audit_id,
+            employee_id,
+            excluded=payload.excluded,
+            reason=payload.reason,
+            actor=actor,
+        )
+    except InventoryAuditNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InventoryAuditConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except InventoryAuditValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return audit_payload(audit, include_items=True)
 
 
 @router.post("/audits/{audit_id}/compute", response_model=PenaltyComputationRead)
@@ -393,10 +502,31 @@ async def cancel_inventory_audit(
     return audit_payload(audit, include_items=True)
 
 
+@router.post("/audits/{audit_id}/restore-draft", response_model=InventoryAuditDetailRead)
+async def restore_inventory_audit_draft(
+    audit_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    require_finance_manager_plus(actor)
+    try:
+        audit = await restore_cancelled_audit(session, audit_id, actor=actor)
+    except InventoryAuditNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InventoryAuditConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return audit_payload(audit, include_items=True)
+
+
 async def load_audit_or_404(session: AsyncSession, audit_id: uuid.UUID) -> InventoryAudit:
     audit = await session.scalar(
         select(InventoryAudit)
-        .options(selectinload(InventoryAudit.items).selectinload(InventoryAuditItem.position))
+        .options(
+            selectinload(InventoryAudit.items).selectinload(InventoryAuditItem.position),
+            selectinload(InventoryAudit.employee_exclusions).selectinload(
+                InventoryAuditEmployeeExclusion.employee
+            ),
+        )
         .where(InventoryAudit.id == audit_id)
     )
     if audit is None:
@@ -445,7 +575,7 @@ def reset_computation(audit: InventoryAudit, total: Decimal | None = None) -> No
         total
         if total is not None
         else sum(
-            (Decimal(str(item.shortage_amount)) for item in audit.items),
+            (item_shortage_amount(item) for item in audit.items),
             Decimal("0"),
         )
     )
@@ -473,8 +603,20 @@ def audit_payload(audit: InventoryAudit, *, include_items: bool = False) -> dict
     if include_items:
         summary = summarize_audit_items(list(audit.items))
         payload["total_shortage_iiko"] = decimal_string(summary.total_shortage_iiko)
-        payload["total_shortage_considered"] = decimal_string(summary.total_shortage_considered)
+        payload["total_shortage_considered"] = decimal_string(
+            effective_total_shortage_considered(audit, summary.total_shortage_considered)
+        )
         payload["items"] = [item_payload(item) for item in summary.considered_items]
+        snapshot_swap_groups = (
+            audit.computation_snapshot.get("swap_groups")
+            if isinstance(audit.computation_snapshot, dict)
+            else None
+        )
+        payload["swap_groups"] = (
+            snapshot_swap_groups
+            if isinstance(snapshot_swap_groups, list)
+            else summarize_swap_groups(summary.considered_items)
+        )
         payload["items_skipped_count"] = summary.items_skipped_count
         payload["computation_snapshot"] = audit.computation_snapshot
     return payload
@@ -492,6 +634,11 @@ def item_payload(item: InventoryAuditItem) -> dict[str, Any]:
         "is_considered": position is not None
         and position.is_active is True
         and position.allocation_group is not None,
+        "amount": decimal_string(item_signed_amount(item)),
+        "swap_group": item_effective_swap_group(item),
+        "swap_group_default": getattr(position, "swap_group", None) if position else None,
+        "swap_group_override": item_swap_group_override(item),
+        "has_swap_group_override": item_has_swap_group_override(item),
         "iiko_product_guid": item.iiko_product_guid,
         "product_name_snapshot": item.product_name_snapshot,
         "shortage_amount": decimal_string(item.shortage_amount),
@@ -505,6 +652,7 @@ def position_payload(position: InventoryAuditPosition) -> dict[str, Any]:
         "code": position.code,
         "display_name": position.display_name,
         "allocation_group": position.allocation_group,
+        "swap_group": getattr(position, "swap_group", None),
         "iiko_product_guid": position.iiko_product_guid,
         "is_active": position.is_active,
         "sort_order": position.sort_order,
@@ -521,7 +669,9 @@ def computation_payload(computation: Any) -> dict[str, Any]:
         "period_start": computation.period_start,
         "period_end": computation.period_end,
         "groups": computation.groups,
+        "swap_groups": computation.swap_groups,
         "employee_penalties": computation.employee_rows,
+        "employee_recipients": computation.snapshot.get("employee_recipients", []),
         "warnings": computation.warnings,
     }
 
@@ -538,11 +688,113 @@ def snapshot_employee_count(snapshot: dict[str, Any] | None) -> int:
     return 0
 
 
+def effective_total_shortage_considered(
+    audit: InventoryAudit,
+    fallback: Decimal,
+) -> Decimal:
+    snapshot = audit.computation_snapshot
+    if not isinstance(snapshot, dict):
+        return fallback
+    groups = snapshot.get("groups")
+    if not isinstance(groups, dict):
+        return fallback
+    total = Decimal("0")
+    found = False
+    for group in sorted(ALLOCATION_GROUPS):
+        row = groups.get(group)
+        if not isinstance(row, dict):
+            continue
+        total += Decimal(str(row.get("total_shortage") or row.get("sum") or "0"))
+        found = True
+    return total if found else fallback
+
+
 def validate_allocation_group(value: str | None) -> None:
     if value is not None and value not in ALLOCATION_GROUPS:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Некорректная группа распределения",
+        )
+
+
+async def validate_swap_group_allocation(
+    session: AsyncSession,
+    *,
+    swap_group: str | None,
+    allocation_group: str | None,
+    current_position_id: uuid.UUID | None,
+    current_position_name: str,
+) -> None:
+    if swap_group is None:
+        return
+    if allocation_group is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f'Группа пересорта "{swap_group}" содержит позицию без аллокации: '
+                f"{current_position_name}. Приведите аллокацию к единой перед сохранением."
+            ),
+        )
+    stmt = select(InventoryAuditPosition).where(
+        InventoryAuditPosition.swap_group == swap_group,
+    )
+    if current_position_id is not None:
+        stmt = stmt.where(InventoryAuditPosition.id != current_position_id)
+    positions = (await session.scalars(stmt)).all()
+    conflicts = [
+        position
+        for position in positions
+        if getattr(position, "allocation_group", None) != allocation_group
+    ]
+    if not conflicts:
+        return
+    conflict = conflicts[0]
+    detail = (
+        f'Группа пересорта "{swap_group}" содержит позиции с разной аллокацией: \n'
+        f"{current_position_name} ({allocation_group}), "
+        f"{conflict.display_name} ({conflict.allocation_group}). \n"
+        "Приведите аллокацию к единой перед сохранением."
+    )
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+
+def clean_swap_group_input(value: Any) -> str | None:
+    text = clean_optional_text(value)
+    if text is None:
+        return None
+    return text[:64]
+
+
+def clean_swap_group_override(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return ""
+    return text[:64]
+
+
+def validate_audit_item_swap_override(audit: InventoryAudit, item: InventoryAuditItem) -> None:
+    swap_group = item_effective_swap_group(item)
+    if not swap_group:
+        return
+    allocation_group = item.position.allocation_group if item.position else None
+    if allocation_group is None:
+        return
+    for candidate in audit.items:
+        if candidate.id == item.id or item_effective_swap_group(candidate) != swap_group:
+            continue
+        candidate_group = candidate.position.allocation_group if candidate.position else None
+        if candidate_group == allocation_group:
+            continue
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f'Группа пересорта "{swap_group}" содержит позиции с разной аллокацией: \n'
+                f"{item.product_name_snapshot} ({allocation_group}), "
+                f"{candidate.product_name_snapshot} ({candidate_group}). \n"
+                "Приведите аллокацию к единой перед сохранением."
+            ),
         )
 
 

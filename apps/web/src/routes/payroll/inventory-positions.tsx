@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, RefreshCw, Search } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { Info, LoaderCircle, RefreshCw, Search, X } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,7 @@ type InventoryPositionsSectionProps = {
 
 type ActivityFilter = "all" | "active" | "inactive";
 type GroupFilter = InventoryAllocationGroup | "all" | "none";
+type SwapConflictAlert = { message: string; group: string | null; positionId: string } | null;
 
 const groupLabels: Record<InventoryAllocationGroup, string> = {
   chefs: "Кухня",
@@ -38,12 +39,15 @@ const groupLabels: Record<InventoryAllocationGroup, string> = {
 };
 
 const groupOrder: InventoryAllocationGroup[] = ["chefs", "common", "admins"];
+const emptyPositions: InventoryPosition[] = [];
 
 export function InventoryPositionsSection({ canWrite }: InventoryPositionsSectionProps) {
   const queryClient = useQueryClient();
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>("all");
   const [groupFilter, setGroupFilter] = useState<GroupFilter>("all");
   const [search, setSearch] = useState("");
+  const [swapConflict, setSwapConflict] = useState<SwapConflictAlert>(null);
+  const [showSwapConflictOnly, setShowSwapConflictOnly] = useState(false);
 
   const positionsQuery = useQuery({
     queryKey: ["inventory-positions", "all"],
@@ -65,24 +69,55 @@ export function InventoryPositionsSection({ canWrite }: InventoryPositionsSectio
       payload,
     }: {
       position: InventoryPosition;
-      payload: { allocation_group?: InventoryAllocationGroup | null; is_active?: boolean };
+      payload: {
+        allocation_group?: InventoryAllocationGroup | null;
+        swap_group?: string | null;
+        is_active?: boolean;
+      };
     }) => patchInventoryPosition(position.id, payload),
     onSuccess: async () => {
       toast.success("Позиция сохранена");
+      setSwapConflict(null);
+      setShowSwapConflictOnly(false);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["inventory-positions"] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-audits"] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-audit"] }),
       ]);
     },
-    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить позицию")),
+    onError: (error, variables) => {
+      const message = apiErrorMessage(error, "Не удалось сохранить позицию");
+      toast.error(message);
+      if (message.includes("Группа пересорта") && message.includes("разной аллокацией")) {
+        setSwapConflict({
+          message,
+          group: variables.payload.swap_group ?? variables.position.swap_group,
+          positionId: variables.position.id,
+        });
+      }
+    },
   });
 
-  const positions = positionsQuery.data ?? [];
+  const positions = positionsQuery.data ?? emptyPositions;
+  const swapGroupOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(positions.map((position) => position.swap_group).filter(Boolean) as string[]),
+      ).sort((left, right) => left.localeCompare(right, "ru-RU")),
+    [positions],
+  );
   const activeCount = positions.filter((position) => position.is_active).length;
   const visiblePositions = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase("ru-RU");
     return positions.filter((position) => {
+      if (
+        showSwapConflictOnly &&
+        swapConflict &&
+        position.swap_group !== swapConflict.group &&
+        position.id !== swapConflict.positionId
+      ) {
+        return false;
+      }
       if (activityFilter === "active" && !position.is_active) {
         return false;
       }
@@ -102,7 +137,7 @@ export function InventoryPositionsSection({ canWrite }: InventoryPositionsSectio
       }
       return true;
     });
-  }, [activityFilter, groupFilter, positions, search]);
+  }, [activityFilter, groupFilter, positions, search, showSwapConflictOnly, swapConflict]);
 
   const isBusy = syncMutation.isPending || patchMutation.isPending;
 
@@ -212,12 +247,33 @@ export function InventoryPositionsSection({ canWrite }: InventoryPositionsSectio
             </div>
           </div>
 
+          {swapConflict ? (
+            <div className="flex flex-col gap-3 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between">
+              <div className="whitespace-pre-line">{swapConflict.message}</div>
+              <Button
+                onClick={() => setShowSwapConflictOnly((value) => !value)}
+                type="button"
+                variant="outline"
+              >
+                {showSwapConflictOnly ? "Показать все позиции" : "Показать проблемные позиции"}
+              </Button>
+            </div>
+          ) : null}
+
           <div className="overflow-x-auto rounded-md border">
-            <table className="w-full min-w-[720px] text-sm">
+            <table className="w-full min-w-[900px] text-sm">
               <thead>
                 <tr className="border-b bg-muted/35">
                   <HeaderCell>Название (из iiko)</HeaderCell>
                   <HeaderCell className="w-[190px]">Группа</HeaderCell>
+                  <HeaderCell className="w-[260px]">
+                    <span className="inline-flex items-center gap-1.5">
+                      Группа пересорта
+                      <InlineTooltip content="Позиции с одной группой пересорта взаимозачитываются при расчёте штрафа по ревизии. Все члены группы должны иметь одинаковую аллокацию">
+                        <Info size={15} aria-hidden="true" className="text-muted-foreground" />
+                      </InlineTooltip>
+                    </span>
+                  </HeaderCell>
                   <HeaderCell className="w-[120px] text-center">Активна</HeaderCell>
                 </tr>
               </thead>
@@ -228,6 +284,10 @@ export function InventoryPositionsSection({ canWrite }: InventoryPositionsSectio
                       "border-b last:border-b-0",
                       position.is_active && "bg-emerald-50/70",
                       !position.allocation_group && "bg-muted/35 text-muted-foreground",
+                      swapConflict &&
+                        (position.swap_group === swapConflict.group ||
+                          position.id === swapConflict.positionId) &&
+                        "outline outline-2 outline-destructive/40",
                     )}
                     key={position.id}
                   >
@@ -247,6 +307,19 @@ export function InventoryPositionsSection({ canWrite }: InventoryPositionsSectio
                           });
                         }}
                         value={position.allocation_group}
+                      />
+                    </BodyCell>
+                    <BodyCell>
+                      <SwapGroupInput
+                        disabled={!canWrite || isBusy}
+                        options={swapGroupOptions}
+                        value={position.swap_group}
+                        onCommit={(swap_group) =>
+                          patchMutation.mutate({
+                            position,
+                            payload: { swap_group },
+                          })
+                        }
                       />
                     </BodyCell>
                     <BodyCell className="text-center">
@@ -330,6 +403,73 @@ function GroupSelect({
   );
 }
 
+function SwapGroupInput({
+  disabled,
+  onCommit,
+  options,
+  value,
+}: {
+  disabled: boolean;
+  onCommit: (value: string | null) => void;
+  options: string[];
+  value: string | null;
+}) {
+  const [draft, setDraft] = useState(value ?? "");
+  const datalistId = useMemo(() => `swap-groups-${Math.random().toString(36).slice(2)}`, []);
+
+  useEffect(() => {
+    setDraft(value ?? "");
+  }, [value]);
+
+  function commit(nextValue: string) {
+    const normalized = nextValue.trim().slice(0, 64);
+    const current = value ?? "";
+    if (normalized === current) {
+      setDraft(current);
+      return;
+    }
+    onCommit(normalized || null);
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Input
+        className="h-9"
+        disabled={disabled}
+        list={datalistId}
+        maxLength={64}
+        onBlur={() => commit(draft)}
+        onChange={(event) => setDraft(event.target.value.slice(0, 64))}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.currentTarget.blur();
+          }
+        }}
+        placeholder="Например, salmon"
+        value={draft}
+      />
+      <datalist id={datalistId}>
+        {options.map((option) => (
+          <option key={option} value={option} />
+        ))}
+      </datalist>
+      <Button
+        aria-label="Очистить группу пересорта"
+        disabled={disabled || !value}
+        onClick={() => {
+          setDraft("");
+          onCommit(null);
+        }}
+        size="icon"
+        type="button"
+        variant="ghost"
+      >
+        <X size={15} aria-hidden="true" />
+      </Button>
+    </div>
+  );
+}
+
 function HeaderCell({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <th className={cn("p-3 text-left font-medium", className)}>{children}</th>;
 }
@@ -354,5 +494,19 @@ export function InventoryGroupBadge({ group }: { group: InventoryAllocationGroup
     >
       {groupLabels[group]}
     </Badge>
+  );
+}
+
+function InlineTooltip({ children, content }: { children: ReactNode; content: string }) {
+  return (
+    <span className="group relative inline-flex w-fit">
+      {children}
+      <span
+        className="pointer-events-none absolute left-0 top-full z-50 mt-2 hidden w-80 rounded-md border bg-popover px-3 py-2 text-left text-xs leading-5 text-popover-foreground shadow-lg group-hover:block"
+        role="tooltip"
+      >
+        {content}
+      </span>
+    </span>
   );
 }

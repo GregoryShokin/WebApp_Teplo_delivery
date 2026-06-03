@@ -208,7 +208,8 @@ async def list_ledger_for_date(session: AsyncSession, work_date: date) -> list[d
 async def list_ledger_matrix(session: AsyncSession, selected_date: date) -> dict[str, Any]:
     start_date, end_date = ledger_week_bounds(selected_date)
     days = list(iter_dates(start_date, end_date))
-    # Только повара и кассиры попадают в Учёт смен (см. taxonomy.md).
+    # Учёт смен показывает штатных поваров/кассиров, уже размеченные payroll-смены
+    # и нецелевых сотрудников с доступными payroll-ролями для ручного разбора.
     result = await session.execute(
         select(ShiftLedgerEntry, Employee)
         .join(Employee, Employee.id == ShiftLedgerEntry.employee_id)
@@ -218,6 +219,16 @@ async def list_ledger_matrix(session: AsyncSession, selected_date: date) -> dict
             or_(
                 Employee.position.in_(("Повар", "Кассир")),
                 ShiftLedgerEntry.payroll_role.in_(tuple(PAYROLL_ROLE_LABELS)),
+                select(EmployeeRoleAssignment.id)
+                .where(
+                    EmployeeRoleAssignment.employee_id == ShiftLedgerEntry.employee_id,
+                    EmployeeRoleAssignment.effective_from <= ShiftLedgerEntry.work_date,
+                    or_(
+                        EmployeeRoleAssignment.effective_to.is_(None),
+                        EmployeeRoleAssignment.effective_to > ShiftLedgerEntry.work_date,
+                    ),
+                )
+                .exists(),
             ),
         )
         .order_by(Employee.full_name, ShiftLedgerEntry.work_date, ShiftLedgerEntry.opened_at)

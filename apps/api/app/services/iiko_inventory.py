@@ -97,6 +97,7 @@ def _fetch_inventory_documents_sync(business_date: date) -> list[dict[str, Any]]
     for document in result:
         document["total_shortage"] = _money(document["total_shortage"])
         for item in document["items"]:
+            item["amount"] = _money(item["amount"])
             item["shortage_amount"] = _money(item["shortage_amount"])
     return result
 
@@ -162,14 +163,9 @@ def _shortage_item_from_row(
     if amount == 0:
         return None
 
-    # Недостача = либо incoming=false, либо отрицательная sum.
-    is_shortage = (not is_incoming) or amount < 0
-    if not is_shortage:
-        return None
-
-    shortage_amount = abs(amount)
-    if shortage_amount <= 0:
-        return None
+    # В ревизии нам нужны оба знака: недостача < 0, излишек > 0.
+    signed_amount = abs(amount) if is_incoming and amount > 0 else -abs(amount)
+    shortage_amount = abs(signed_amount) if signed_amount < 0 else Decimal("0")
 
     document_id = _clean(inventory.value_from(row, ["documentId", "document_id", "document"]))
     if not document_id:
@@ -191,6 +187,7 @@ def _shortage_item_from_row(
         ),
         "product_guid": product_guid or None,
         "product_name": product_name,
+        "amount": signed_amount,
         "shortage_amount": shortage_amount,
     }
 

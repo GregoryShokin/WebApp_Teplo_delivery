@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,6 +24,7 @@ class BankOperationRead(BaseModel):
     document_number: str | None = None
     classification_status: str
     cashflow_transaction_id: uuid.UUID | None = None
+    transfer_group_id: uuid.UUID | None = None
 
 
 class BankOperationListRead(BaseModel):
@@ -115,6 +117,40 @@ class BankSyncRequest(BaseModel):
     date_to: date = Field(alias="date_to")
 
 
-class BankSyncStubRead(BaseModel):
+class BankSyncQueuedRead(BaseModel):
+    job_id: uuid.UUID
     status: str
     queued_at: datetime
+
+
+class OwnerReviewCaseRead(BaseModel):
+    id: uuid.UUID
+    kind: str
+    status: str
+    provider: str | None = None
+    bank_operation_id: uuid.UUID | None = None
+    payload: dict[str, Any]
+    created_at: datetime
+    operation: BankOperationRead | None = None
+
+
+class OwnerReviewListRead(BaseModel):
+    items: list[OwnerReviewCaseRead]
+    total: int
+
+
+class OwnerReviewClassifyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    article_id: uuid.UUID | None = None
+    counterparty_id: uuid.UUID | None = None
+    action: Literal["set_article", "mark_internal_transfer", "exclude"]
+    remember_as_rule: bool = False
+
+
+class OwnerReviewActionRead(BaseModel):
+    case_id: uuid.UUID
+    status: str
+    bank_operation_id: uuid.UUID | None = None
+    classification_status: str | None = None
+    rule_id: uuid.UUID | None = None

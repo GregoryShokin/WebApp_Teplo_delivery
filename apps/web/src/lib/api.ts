@@ -539,6 +539,7 @@ export type InventoryPosition = {
   code: string;
   display_name: string;
   allocation_group: InventoryAllocationGroup | null;
+  swap_group: string | null;
   iiko_product_guid: string | null;
   is_active: boolean;
   sort_order: number;
@@ -550,12 +551,13 @@ export type InventoryPositionPayload = {
   code: string;
   display_name: string;
   allocation_group?: InventoryAllocationGroup | null;
+  swap_group?: string | null;
   iiko_product_guid?: string | null;
   sort_order?: number;
 };
 
 export type InventoryPositionPatch = Partial<
-  Pick<InventoryPosition, "allocation_group" | "is_active" | "sort_order">
+  Pick<InventoryPosition, "allocation_group" | "swap_group" | "is_active" | "sort_order">
 >;
 
 export type IikoProduct = {
@@ -586,6 +588,11 @@ export type InventoryAuditItem = {
   position_display_name: string | null;
   allocation_group: InventoryAllocationGroup | null;
   is_considered: boolean;
+  amount: string;
+  swap_group: string | null;
+  swap_group_default: string | null;
+  swap_group_override: string | null;
+  has_swap_group_override: boolean;
   iiko_product_guid: string | null;
   product_name_snapshot: string;
   shortage_amount: string;
@@ -611,7 +618,19 @@ export type InventoryAudit = {
   applied_at: string | null;
   items_skipped_count?: number;
   items?: InventoryAuditItem[];
+  swap_groups?: InventorySwapGroupSummary[];
   computation_snapshot?: InventoryComputationSnapshot | null;
+};
+
+export type InventorySwapGroupSummary = {
+  group: string;
+  allocation_group: InventoryAllocationGroup | null;
+  allocation_groups?: string[];
+  net_amount: string;
+  effective_shortage?: string;
+  is_covered: boolean;
+  comment?: string;
+  items: Array<Record<string, unknown>>;
 };
 
 export type InventoryComputationSnapshot = {
@@ -619,7 +638,9 @@ export type InventoryComputationSnapshot = {
   groups?: Record<string, InventoryGroupSnapshot>;
   employee_penalties?: InventoryEmployeePenalty[];
   employee_penalties_by_id?: Record<string, string>;
+  employee_recipients?: InventoryEmployeeRecipient[];
   skipped_items?: Array<{ item_id?: string; reason?: string }>;
+  swap_groups?: InventorySwapGroupSummary[];
   warnings?: string[];
 };
 
@@ -646,6 +667,12 @@ export type InventoryEmployeePenalty = {
   amount: string;
 };
 
+export type InventoryEmployeeRecipient = InventoryEmployeePenalty & {
+  recipient_group?: "chefs" | "admins" | string;
+  is_excluded?: boolean;
+  exclusion_reason?: string | null;
+};
+
 export type InventoryComputation = {
   audit_id: string;
   total_shortage_amount: string;
@@ -653,7 +680,9 @@ export type InventoryComputation = {
   period_start: string;
   period_end: string;
   groups: Record<string, InventoryGroupSnapshot>;
+  swap_groups?: InventorySwapGroupSummary[];
   employee_penalties: InventoryEmployeePenalty[];
+  employee_recipients?: InventoryEmployeeRecipient[];
   warnings: string[];
 };
 
@@ -674,6 +703,7 @@ export type InventoryAuditItemPayload = {
   iiko_product_guid?: string | null;
   product_name_snapshot?: string | null;
   shortage_amount: string;
+  swap_group_override?: string | null;
 };
 
 export type ScheduleStatus = "draft" | "published" | "superseded";
@@ -1988,7 +2018,7 @@ export async function getInventoryAudits(filters: {
 }
 
 export async function getInventoryAudit(id: string): Promise<InventoryAudit> {
-  const response = await api.get<InventoryAudit>(`/inventory/audits/${id}`);
+  const response = await api.get<InventoryAudit>(`/inventory/audits/${id}/preview`);
   return response.data;
 }
 
@@ -2037,6 +2067,18 @@ export async function patchInventoryAuditItem(
   return response.data;
 }
 
+export async function patchInventoryAuditEmployeeExclusion(
+  auditId: string,
+  employeeId: string,
+  payload: { excluded: boolean; reason?: string | null },
+): Promise<InventoryAudit> {
+  const response = await api.patch<InventoryAudit>(
+    `/inventory/audits/${auditId}/employee-exclusions/${employeeId}`,
+    payload,
+  );
+  return response.data;
+}
+
 export async function deleteInventoryAuditItem(auditId: string, itemId: string): Promise<void> {
   await api.delete(`/inventory/audits/${auditId}/items/${itemId}`);
 }
@@ -2053,6 +2095,11 @@ export async function applyInventoryAudit(id: string): Promise<InventoryAudit> {
 
 export async function cancelInventoryAudit(id: string): Promise<InventoryAudit> {
   const response = await api.post<InventoryAudit>(`/inventory/audits/${id}/cancel`);
+  return response.data;
+}
+
+export async function restoreInventoryAuditDraft(id: string): Promise<InventoryAudit> {
+  const response = await api.post<InventoryAudit>(`/inventory/audits/${id}/restore-draft`);
   return response.data;
 }
 

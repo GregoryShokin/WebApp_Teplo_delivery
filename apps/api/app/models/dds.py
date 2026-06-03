@@ -232,6 +232,9 @@ class BankOperation(Base):
     cashflow_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("cashflow_transactions.id"), nullable=True
     )
+    transfer_group_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("transfer_groups.id"), nullable=True
+    )
 
 
 class ClassificationRule(Base):
@@ -287,4 +290,47 @@ class WalletBalanceSnapshot(Base):
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ReconciliationCase(Base):
+    __tablename__ = "reconciliation_cases"
+    __table_args__ = (
+        Index("ix_reconciliation_cases_status", "status"),
+        Index("ix_reconciliation_cases_kind_status", "kind", "status"),
+        Index(
+            "uq_reconciliation_cases_pending_operation_kind",
+            "kind",
+            "bank_operation_id",
+            unique=True,
+            postgresql_where=text("status = 'pending' AND bank_operation_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_reconciliation_cases_pending_invalid_credentials",
+            "kind",
+            "provider",
+            unique=True,
+            postgresql_where=text("status = 'pending' AND kind = 'invalid_credentials'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", server_default="pending"
+    )
+    provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    bank_operation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("bank_operations.id"), nullable=True
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    resolution_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )

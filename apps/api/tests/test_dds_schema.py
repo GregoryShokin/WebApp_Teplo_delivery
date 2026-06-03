@@ -36,6 +36,7 @@ DDS_TABLES = {
     "transfer_groups",
     "classification_rules",
     "wallet_balance_snapshots",
+    "reconciliation_cases",
 }
 
 EXPECTED_COLUMNS = {
@@ -57,6 +58,7 @@ EXPECTED_COLUMNS = {
         "operation_date",
         "classification_status",
         "cashflow_transaction_id",
+        "transfer_group_id",
     },
     "cashflow_transactions": {"wallet_id", "article_id", "transfer_group_id", "source_kind"},
     "classification_rules": {"priority", "action", "article_id", "purpose_pattern"},
@@ -78,6 +80,12 @@ EXPECTED_INDEXES = {
         "ix_cashflow_transactions_article_id",
     },
     "wallet_balance_snapshots": {"uq_wallet_balance_snapshots_wallet_date_source"},
+    "reconciliation_cases": {
+        "ix_reconciliation_cases_status",
+        "ix_reconciliation_cases_kind_status",
+        "uq_reconciliation_cases_pending_operation_kind",
+        "uq_reconciliation_cases_pending_invalid_credentials",
+    },
 }
 
 
@@ -196,7 +204,7 @@ def test_get_dds_articles_returns_seeded_articles(client: TestClient) -> None:
     assert "overdraft_fee" in {row["code"] for row in rows}
 
 
-def test_bank_sync_stub_returns_accepted(client: TestClient) -> None:
+def test_bank_sync_returns_queued(client: TestClient) -> None:
     response = client.post(
         "/api/v1/dds/bank-sync/sber",
         headers={"X-User-Role": "finance_manager"},
@@ -204,7 +212,9 @@ def test_bank_sync_stub_returns_accepted(client: TestClient) -> None:
     )
 
     assert response.status_code == 202
-    assert response.json()["status"] == "not_implemented"
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["job_id"]
 
 
 async def _ping_database(database_url: str) -> None:

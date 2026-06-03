@@ -1311,7 +1311,7 @@ def test_full_12_hour_shift_gets_full_salary_and_percent() -> None:
     assert result.lines[0].percent_pay == 6300
 
 
-def test_11_hour_shift_prorates_salary_and_percent_by_720_minutes() -> None:
+def test_11_hour_shift_prorates_salary_but_keeps_full_single_employee_percent_pool() -> None:
     period = make_period()
     run_id = uuid.uuid4()
     employee = make_employee()
@@ -1328,7 +1328,36 @@ def test_11_hour_shift_prorates_salary_and_percent_by_720_minutes() -> None:
 
     assert result.blocking_issues == []
     assert Decimal(str(result.lines[0].base_pay)) == Decimal("2016.67")
-    assert result.lines[0].percent_pay == 5775
+    assert result.lines[0].percent_pay == 6300
+
+
+def test_short_shift_percent_pool_is_not_prorated_twice() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    full_shift_employee = make_employee()
+    short_shift_employee = make_employee()
+    work_date = date(2026, 5, 20)
+    entries = [
+        make_entry(period, full_shift_employee, work_date, minutes=720),
+        make_entry(period, short_shift_employee, work_date, minutes=360),
+    ]
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {
+            full_shift_employee.id: full_shift_employee,
+            short_shift_employee.id: short_shift_employee,
+        },
+        payroll_settings({work_date.isoformat(): 140000}),
+    )
+
+    assert result.blocking_issues == []
+    percent_by_employee = {line.employee_id: line.percent_pay for line in result.lines}
+    assert percent_by_employee[full_shift_employee.id] == 4200
+    assert percent_by_employee[short_shift_employee.id] == 2100
+    assert sum(percent_by_employee.values()) == 6300
 
 
 def test_weekday_premium_now_in_base_pay() -> None:
@@ -3254,6 +3283,44 @@ async def test_load_attendance_entries_allows_non_target_with_substitute_ledger(
         [manager],
         scalar_results=[ledger_entry, substitute_assignment],
     )
+
+    entries = await load_attendance_entries(
+        session,  # type: ignore[arg-type]
+        period,
+        iiko_records=[
+            {
+                "employeeId": manager.iiko_id,
+                "dateFrom": f"{work_date.isoformat()}T09:00:00+03:00",
+                "dateTo": f"{work_date.isoformat()}T18:00:00+03:00",
+            }
+        ],
+    )
+
+    assert [entry.employee_id for entry in entries] == [manager.id]
+    assert session.added[0].employee_id == manager.id
+
+
+async def test_load_attendance_entries_allows_non_target_with_resolved_manual_ledger(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    period = make_period()
+    manager = make_employee(position="Управляющий", category=None, default_cooking_station=None)
+    manager.iiko_id = "iiko-manager-manual-ledger"
+    work_date = period.start_date
+    ledger_entry = make_shift_ledger_entry(
+        manager.id,
+        work_date,
+        payroll_role="sushi",
+        category="category_1",
+        is_resolved=True,
+    )
+
+    monkeypatch.setattr(
+        "app.services.attendance_loader.load_attendance_rules",
+        lambda *_args, **_kwargs: _async_rules(),
+    )
+
+    session = AttendanceLoaderFakeSession([manager], scalar_results=[ledger_entry])
 
     entries = await load_attendance_entries(
         session,  # type: ignore[arg-type]

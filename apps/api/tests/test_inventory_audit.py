@@ -28,6 +28,7 @@ from app.services.inventory_audit_service import (
     DEFAULT_SETTINGS,
     InventoryAuditConflictError,
     adjustment_comment,
+    adjustment_comment_for_computation,
     audit_penalty_work_date,
     audit_period,
     build_penalty_computation,
@@ -76,6 +77,86 @@ def test_chefs_10000_plus_50pct() -> None:
     assert computation.groups["chefs"]["rate"] == "0.50"
     assert computation.groups["chefs"]["rate_reason"] == "tier_10k_plus"
     assert computation.groups["chefs"]["penalty"] == "7500.00"
+
+
+@pytest.mark.asyncio
+async def test_swap_group_validation_rejects_mixed_allocation() -> None:
+    position = position_for("chefs", swap_group="salmon")
+    conflicting = position_for("admins", swap_group="salmon")
+    session = InventoryRouteSession(position, existing=[conflicting])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await inventory_routes.patch_position(
+            position.id,
+            InventoryPositionPatch(swap_group="salmon"),
+            session,  # type: ignore[arg-type]
+            finance_actor(),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert 'Группа пересорта "salmon" содержит позиции с разной аллокацией' in str(
+        exc_info.value.detail
+    )
+
+
+def test_swap_group_offsets_shortage_within_group() -> None:
+    computation = compute(
+        [
+            swap_item("-10542", "chefs", "salmon", "Сёмга ХК"),
+            swap_item("8895", "chefs", "salmon", "Сёмга СС"),
+        ],
+        chefs=[employee("Cook")],
+    )
+
+    assert computation.swap_groups[0]["net_amount"] == "-1647.00"
+    assert computation.groups["chefs"]["total_shortage"] == "1647.00"
+    assert computation.groups["chefs"]["rate_reason"] == "below_threshold"
+    assert computation.groups["chefs"]["penalty"] == "0.00"
+    assert computation.employee_penalties == {}
+
+
+def test_swap_group_net_positive_no_penalty() -> None:
+    computation = compute(
+        [
+            swap_item("-1000", "chefs", "salmon", "Сёмга ХК"),
+            swap_item("2245", "chefs", "salmon", "Сёмга СС"),
+        ],
+        chefs=[employee("Cook")],
+    )
+
+    assert computation.swap_groups[0]["net_amount"] == "1245.00"
+    assert computation.swap_groups[0]["is_covered"] is True
+    assert computation.groups["chefs"]["total_shortage"] == "0.00"
+    assert computation.groups["chefs"]["penalty"] == "0.00"
+
+
+def test_swap_group_override_excludes_item() -> None:
+    computation = compute(
+        [
+            swap_item("-7000", "chefs", "salmon", "Сёмга ХК", override=""),
+            swap_item("6000", "chefs", "salmon", "Сёмга СС"),
+        ],
+        chefs=[employee("Cook")],
+    )
+
+    assert computation.swap_groups[0]["net_amount"] == "6000.00"
+    assert computation.groups["chefs"]["total_shortage"] == "7000.00"
+    assert computation.groups["chefs"]["penalty"] == "2800.00"
+
+
+def test_swap_group_audit_trail_in_adjustment_comment() -> None:
+    computation = compute(
+        [
+            swap_item("-10542", "chefs", "salmon", "Сёмга ХК"),
+            swap_item("8895", "chefs", "salmon", "Сёмга СС"),
+        ],
+        chefs=[employee("Cook")],
+    )
+
+    comment = adjustment_comment_for_computation(date(2026, 5, 26), computation)
+
+    assert "Пересорт salmon: Сёмга ХК -10 542 ₽, Сёмга СС +8 895 ₽" in comment
+    assert "итог -1 647 ₽" in comment
 
 
 def test_common_always_50pct_low_sum() -> None:
@@ -166,6 +247,31 @@ def test_apply_creates_payroll_adjustments() -> None:
     assert {row["comment"] for row in adjustments} == {"Недостача по ревизии 2026-05-26"}
 
 
+def test_employee_exclusion_redistributes_penalty_to_remaining_recipients() -> None:
+    alpha = employee("Alpha")
+    beta = employee("Beta")
+    gamma = employee("Gamma")
+
+    computation = compute(
+        [item("7000", "chefs")],
+        chefs=[alpha, beta, gamma],
+        employee_exclusions={beta.id: "Не работал с инвентаризацией"},
+    )
+
+    assert computation.employee_penalties == {
+        alpha.id: Decimal("1400.00"),
+        gamma.id: Decimal("1400.00"),
+    }
+    assert computation.groups["chefs"]["recipients"]["chefs"]["count"] == 2
+    recipients = {
+        row["full_name"]: row
+        for row in computation.snapshot["employee_recipients"]
+    }
+    assert recipients["Beta"]["is_excluded"] is True
+    assert recipients["Beta"]["amount"] == "0.00"
+    assert recipients["Beta"]["exclusion_reason"] == "Не работал с инвентаризацией"
+
+
 @pytest.mark.asyncio
 async def test_apply_creates_adjustment_with_next_day_work_date(
     monkeypatch: pytest.MonkeyPatch,
@@ -227,6 +333,61 @@ async def test_apply_creates_adjustment_with_next_day_work_date(
     assert adjustments[0].work_date == date(2026, 5, 26)
     assert adjustments[0].comment == "Недостача по ревизии 2026-05-25"
     assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_restore_cancelled_audit_to_draft_clears_application_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audit = audit_obj()
+    audit.status = "cancelled"
+    audit.applied_at = datetime(2026, 5, 26, tzinfo=UTC)
+    audit.applied_by_user_id = uuid.uuid4()
+    session = ApplyAuditSession()
+    audit_events: list[dict[str, Any]] = []
+
+    async def fake_load_audit(_session: Any, _audit_id: uuid.UUID) -> SimpleNamespace:
+        return audit
+
+    async def fake_write_agent_audit(*_args: Any, **kwargs: Any) -> None:
+        audit_events.append(kwargs["after"])
+
+    monkeypatch.setattr(inventory_audit_service, "_load_audit_or_404", fake_load_audit)
+    monkeypatch.setattr(inventory_audit_service, "_write_agent_audit", fake_write_agent_audit)
+
+    restored = await inventory_audit_service.restore_cancelled_audit(
+        session,  # type: ignore[arg-type]
+        audit.id,
+        actor=finance_actor(),
+    )
+
+    assert restored.status == "draft"
+    assert restored.applied_at is None
+    assert restored.applied_by_user_id is None
+    assert audit_events == [{"from_status": "cancelled", "status": "draft"}]
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_restore_non_cancelled_audit_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    audit = audit_obj()
+    audit.status = "draft"
+    session = ApplyAuditSession()
+
+    async def fake_load_audit(_session: Any, _audit_id: uuid.UUID) -> SimpleNamespace:
+        return audit
+
+    monkeypatch.setattr(inventory_audit_service, "_load_audit_or_404", fake_load_audit)
+
+    with pytest.raises(InventoryAuditConflictError) as exc_info:
+        await inventory_audit_service.restore_cancelled_audit(
+            session,  # type: ignore[arg-type]
+            audit.id,
+            actor=finance_actor(),
+        )
+
+    assert str(exc_info.value) == "Вернуть в черновик можно только отменённую ревизию"
+    assert session.committed is False
 
 
 def test_payroll_run_for_period_includes_previous_monday_audit_penalty() -> None:
@@ -554,6 +715,22 @@ def test_compute_penalties_matches_total_considered() -> None:
     assert penalty_sum == Decimal(payload["total_shortage_considered"]) * Decimal("0.40")
 
 
+def test_get_audit_total_considered_uses_swap_group_net_snapshot() -> None:
+    shortage = detail_item("10543", "chefs", active=True, name="Семга х/к")
+    surplus = detail_item("0", "chefs", active=True, name="Семга с/м")
+    shortage.amount = Decimal("-10543")
+    surplus.amount = Decimal("9895")
+    shortage.position.swap_group = "salmon"
+    surplus.position.swap_group = "salmon"
+    audit = audit_detail_obj([surplus, shortage])
+    computation = compute([surplus, shortage], chefs=[employee("Cook")])
+    audit.computation_snapshot = computation.snapshot
+
+    payload = inventory_routes.audit_payload(audit, include_items=True)
+
+    assert payload["total_shortage_considered"] == "648.00"
+
+
 @pytest.mark.asyncio
 async def test_patch_activate_without_group_fails_422() -> None:
     position = position_for(None, active=False)
@@ -586,6 +763,25 @@ async def test_patch_activate_with_group_succeeds() -> None:
     assert payload["allocation_group"] == "common"
     assert payload["is_active"] is True
     assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_finalized_audit_rejects_override_change() -> None:
+    audit = audit_detail_obj([detail_item("100", "chefs", active=True)])
+    audit.status = "applied"
+    item_row = audit.items[0]
+    session = AuditItemRouteSession(audit)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await inventory_routes.patch_audit_item(
+            audit.id,
+            item_row.id,
+            inventory_routes.InventoryAuditItemPatch(swap_group_override=""),
+            session,  # type: ignore[arg-type]
+            finance_actor(),
+        )
+
+    assert exc_info.value.status_code == 409
 
 
 @pytest.mark.asyncio
@@ -655,6 +851,28 @@ def test_iiko_candidates_returns_all_documents_for_date(monkeypatch: pytest.Monk
     assert [document["document_id"] for document in documents] == ["doc-1", "doc-2"]
     assert [len(document["items"]) for document in documents] == [2, 1]
     assert documents[0]["total_shortage"] == Decimal("1500.00")
+
+
+def test_iiko_inventory_import_keeps_surplus_signed_amount(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        iiko_inventory,
+        "_load_inventory_module",
+        fake_inventory_surplus_documents_module,
+    )
+
+    documents = iiko_inventory._fetch_inventory_documents_sync(date(2026, 5, 26))
+
+    assert len(documents) == 1
+    assert documents[0]["total_shortage"] == Decimal("10543.00")
+    assert [
+        (item["product_name"], item["amount"], item["shortage_amount"])
+        for item in documents[0]["items"]
+    ] == [
+        ("Семга х/к", Decimal("-10543.00"), Decimal("10543.00")),
+        ("Семга SM", Decimal("8895.00"), Decimal("0.00")),
+    ]
 
 
 def test_import_with_document_id_picks_correct_document(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -768,6 +986,7 @@ def compute(
     chefs: list[Any] | None = None,
     admins: list[Any] | None = None,
     settings: dict[str, Decimal] | None = None,
+    employee_exclusions: dict[uuid.UUID, str] | None = None,
 ):
     return build_penalty_computation(
         audit=audit_obj(),
@@ -775,6 +994,7 @@ def compute(
         settings=settings,
         chefs=chefs or [],
         admins=admins or [],
+        employee_exclusions=employee_exclusions,
     )
 
 
@@ -798,6 +1018,27 @@ def item(amount: str, group: str) -> SimpleNamespace:
         product_name_snapshot=position.display_name,
         shortage_amount=Decimal(amount),
     )
+
+
+def swap_item(
+    amount: str,
+    group: str,
+    swap_group: str,
+    name: str,
+    *,
+    override: str | None = None,
+) -> SimpleNamespace:
+    position = position_for(group, swap_group=swap_group)
+    item_row = SimpleNamespace(
+        id=uuid.uuid4(),
+        position=position,
+        product_name_snapshot=name,
+        amount=Decimal(amount),
+        shortage_amount=abs(Decimal(amount)) if Decimal(amount) < 0 else Decimal("0"),
+    )
+    if override is not None:
+        item_row.swap_group_override = override
+    return item_row
 
 
 def detail_item(
@@ -849,12 +1090,14 @@ def position_for(
     *,
     active: bool = True,
     guid: str | None = None,
+    swap_group: str | None = None,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         id=uuid.uuid4(),
         code=f"{group or 'none'}_{uuid.uuid4().hex[:6]}",
         display_name=group or "Позиция",
         allocation_group=group,
+        swap_group=swap_group,
         iiko_product_guid=guid,
         is_active=active,
         sort_order=100,
@@ -872,8 +1115,13 @@ def finance_actor() -> CurrentActor:
 
 
 class InventoryRouteSession:
-    def __init__(self, position: SimpleNamespace) -> None:
+    def __init__(
+        self,
+        position: SimpleNamespace,
+        existing: list[SimpleNamespace] | None = None,
+    ) -> None:
         self.position = position
+        self.existing = existing or []
         self.committed = False
 
     async def get(self, _model: Any, position_id: uuid.UUID) -> SimpleNamespace | None:
@@ -886,6 +1134,21 @@ class InventoryRouteSession:
 
     async def refresh(self, _position: SimpleNamespace) -> None:
         return None
+
+    async def scalars(self, _query: Any) -> FakeScalarResult:
+        return FakeScalarResult(self.existing)
+
+
+class AuditItemRouteSession:
+    def __init__(self, audit: SimpleNamespace) -> None:
+        self.audit = audit
+        self.committed = False
+
+    async def scalar(self, _query: Any) -> SimpleNamespace:
+        return self.audit
+
+    async def commit(self) -> None:
+        self.committed = True
 
 
 class ApplyAuditSession:
@@ -984,18 +1247,40 @@ def fake_inventory_documents_module() -> SimpleNamespace:
     )
 
 
+def fake_inventory_surplus_documents_module() -> SimpleNamespace:
+    rows = [
+        inventory_row("doc-salmon", "0030", "guid-fk", "Семга х/к", "-10543"),
+        inventory_row("doc-salmon", "0030", "guid-sm", "Семга SM", "8895", incoming="true"),
+    ]
+    products = {
+        "guid-fk": {"name": "Семга х/к"},
+        "guid-sm": {"name": "Семга SM"},
+    }
+    return SimpleNamespace(
+        load_local_env=lambda: None,
+        IikoClient=lambda: SimpleNamespace(request=lambda _endpoint, params=None: (200, b"")),
+        inventory_params=lambda _date_from, _date_to: {},
+        parse_store_operations=lambda _data: ("json", rows),
+        load_products=lambda _client, refresh=False: products,
+        parse_iiko_date=lambda value: date.fromisoformat(str(value)),
+        value_from=value_from,
+    )
+
+
 def inventory_row(
     document_id: str,
     document_num: str,
     product_guid: str,
     product_name: str,
     amount: str,
+    *,
+    incoming: str = "false",
 ) -> dict[str, Any]:
     return {
         "documentType": "INCOMING_INVENTORY",
         "type": "INVENTORY_CORRECTION",
         "date": "2026-05-26",
-        "incoming": "false",
+        "incoming": incoming,
         "sum": amount,
         "documentId": document_id,
         "documentNum": document_num,

@@ -37,6 +37,25 @@ services:
     networks:
       - internal
 
+  scheduler:
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile
+    container_name: teplo-scheduler
+    command: python -m app.scheduler_runner
+    restart: always
+    env_file:
+      - ./.env.prod
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../integrations:/app/integrations:ro
+    networks:
+      - internal
+
   web:
     build:
       context: ../apps/web

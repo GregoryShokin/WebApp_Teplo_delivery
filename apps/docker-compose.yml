@@ -25,7 +25,7 @@ services:
       - ../.env
     environment:
       DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
-      TEPLO_ADMIN_EMAIL: admin@teplo.local
+      TEPLO_ADMIN_EMAIL: admin1@teplo.local
       TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
       JWT_SECRET_KEY: change-me-in-local-env-change-me
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
@@ -33,6 +33,29 @@ services:
       BACKEND_CORS_ORIGINS: '["http://localhost:5173","http://127.0.0.1:5173","http://localhost:5174","http://127.0.0.1:5174"]'
     ports:
       - "8000:8000"
+    volumes:
+      - ./api:/app/apps/api
+      - ../integrations:/app/integrations:ro
+      - ../research/scripts:/app/research/scripts:ro
+      - ../research/raw:/app/research/raw
+      - ../research/processed:/app/research/processed
+      - ../research/private:/app/research/private
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  scheduler:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    container_name: teplo-scheduler
+    command: python -m app.scheduler_runner
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
+      TEPLO_BANK_CLIENT_MODE: mock
+      JWT_SECRET_KEY: change-me-in-local-env-change-me
     volumes:
       - ./api:/app/apps/api
       - ../integrations:/app/integrations:ro

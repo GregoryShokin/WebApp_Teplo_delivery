@@ -1,0 +1,87 @@
+[
+  {
+    "operationId": "sber-20260527-001",
+    "accountNumber": "40702810900000000001",
+    "operationDate": "2026-05-27",
+    "composedDateTime": "2026-05-27T10:30:00+03:00",
+    "direction": "CREDIT",
+    "amountRub": "275000.00",
+    "currencyCode": "RUB",
+    "documentNumber": "201",
+    "paymentPurpose": "Зачисление по операциям интернет-эквайринга за 26.05.2026",
+    "rurTransfer": {
+      "payerName": "АО СБЕРБАНК ЭКВАЙРИНГ",
+      "payerInn": "7707083893",
+      "payerAccount": "30232810000000000001",
+      "payerBankBic": "044525225"
+    }
+  },
+  {
+    "operationId": "sber-20260527-002",
+    "accountNumber": "40702810900000000001",
+    "operationDate": "2026-05-27",
+    "composedDateTime": "2026-05-27T13:10:00+03:00",
+    "direction": "DEBIT",
+    "amountRub": "60000.00",
+    "currencyCode": "RUB",
+    "documentNumber": "202",
+    "paymentPurpose": "Перевод собственных средств на расчетный счет в Т-Банке",
+    "rurTransfer": {
+      "payeeName": "ИП Шокина Е.А.",
+      "payeeInn": "616100000001",
+      "payeeAccount": "40702810800000000002",
+      "payeeBankBic": "044525974"
+    }
+  },
+  {
+    "operationId": "sber-20260527-003",
+    "accountNumber": "40702810900000000001",
+    "operationDate": "2026-05-27",
+    "composedDateTime": "2026-05-27T15:00:00+03:00",
+    "direction": "DEBIT",
+    "amountRub": "700.00",
+    "currencyCode": "RUB",
+    "documentNumber": "203",
+    "paymentPurpose": "Плата за пакет услуг РКО",
+    "rurTransfer": {
+      "payeeName": "ПАО СБЕРБАНК",
+      "payeeInn": "7707083893",
+      "payeeAccount": "47422810000000000001",
+      "payeeBankBic": "044525225"
+    }
+  },
+  {
+    "operationId": "sber-20260527-004",
+    "accountNumber": "40702810900000000001",
+    "operationDate": "2026-05-27",
+    "composedDateTime": "2026-05-27T16:45:00+03:00",
+    "direction": "CREDIT",
+    "amountRub": "3400.00",
+    "currencyCode": "RUB",
+    "documentNumber": "204",
+    "paymentPurpose": "Возврат от поставщика по акту сверки",
+    "rurTransfer": {
+      "payerName": "ООО Амай",
+      "payerInn": "6162000000",
+      "payerAccount": "40702810000000000031",
+      "payerBankBic": "046015602"
+    }
+  },
+  {
+    "operationId": "sber-20260527-005",
+    "accountNumber": "40702810900000000001",
+    "operationDate": "2026-05-27",
+    "composedDateTime": "2026-05-27T18:00:00+03:00",
+    "direction": "DEBIT",
+    "amountRub": "5000.00",
+    "currencyCode": "RUB",
+    "documentNumber": "205",
+    "paymentPurpose": "Прочее списание без подтвержденной статьи",
+    "rurTransfer": {
+      "payeeName": "ООО Неразмеченный Сервис",
+      "payeeInn": "6163000000",
+      "payeeAccount": "40702810000000000077",
+      "payeeBankBic": "046015602"
+    }
+  }
+]

@@ -18,6 +18,7 @@ from app.models import (
     AppSetting,
     Employee,
     InventoryAudit,
+    InventoryAuditEmployeeExclusion,
     InventoryAuditItem,
     InventoryAuditPosition,
     PayrollAdjustment,
@@ -34,6 +35,7 @@ from app.services.payroll_adjustment_service import (
 ALLOCATION_GROUPS = {"chefs", "common", "admins"}
 INVENTORY_ADJUSTMENT_CATEGORY_CODE = "inventory_shortage"
 INVENTORY_ADJUSTMENT_COMMENT_PREFIX = "Недостача по ревизии"
+SWAP_GROUP_MAX_LENGTH = 64
 DEFAULT_SETTINGS = {
     "inventory.threshold_zero": Decimal("5000"),
     "inventory.threshold_50pct": Decimal("10000"),
@@ -80,6 +82,7 @@ class PenaltyComputation:
     groups: dict[str, dict[str, Any]]
     employee_penalties: dict[uuid.UUID, Decimal]
     employee_rows: list[dict[str, Any]]
+    swap_groups: list[dict[str, Any]]
     warnings: list[str]
     snapshot: dict[str, Any]
 
@@ -104,42 +107,67 @@ async def import_audit_from_iiko(
     if document is None:
         raise IikoInventoryDocumentNotFoundError("Документ инвентаризации не найден")
 
-    await _ensure_business_date_available(session, business_date)
+    existing_audit = await session.scalar(
+        select(InventoryAudit)
+        .options(selectinload(InventoryAudit.items).selectinload(InventoryAuditItem.position))
+        .where(InventoryAudit.business_date == business_date)
+    )
+    if existing_audit is not None and existing_audit.status != "draft":
+        raise InventoryAuditConflictError("Ревизия за эту дату уже существует")
     positions = await _positions_by_guid(session)
     previous_audit_date = await _previous_audit_date(session, business_date)
     now = datetime.now(UTC)
-    audit = InventoryAudit(
-        business_date=business_date,
-        previous_audit_date=previous_audit_date,
-        iiko_document_id=document.get("document_id"),
-        iiko_document_num=document.get("document_num"),
-        source="iiko",
-        status="draft",
-        total_shortage_amount=_money(document.get("total_shortage", Decimal("0"))),
-        total_penalty_amount=Decimal("0"),
-        created_by_user_id=actor.user_id,
-        created_at=now,
-        updated_at=now,
-    )
-    session.add(audit)
-    await session.flush()
+    if existing_audit is None:
+        audit = InventoryAudit(
+            business_date=business_date,
+            previous_audit_date=previous_audit_date,
+            iiko_document_id=document.get("document_id"),
+            iiko_document_num=document.get("document_num"),
+            source="iiko",
+            status="draft",
+            total_shortage_amount=_money(document.get("total_shortage", Decimal("0"))),
+            total_penalty_amount=Decimal("0"),
+            created_by_user_id=actor.user_id,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(audit)
+        await session.flush()
+        action_type = "inventory_audit_import_iiko"
+    else:
+        audit = existing_audit
+        for item in list(audit.items):
+            await session.delete(item)
+        await session.flush()
+        audit.previous_audit_date = previous_audit_date
+        audit.iiko_document_id = document.get("document_id")
+        audit.iiko_document_num = document.get("document_num")
+        audit.source = "iiko"
+        audit.total_shortage_amount = _money(document.get("total_shortage", Decimal("0")))
+        audit.total_penalty_amount = Decimal("0")
+        audit.computation_snapshot = None
+        audit.updated_at = now
+        action_type = "inventory_audit_reimport_iiko"
 
     for raw_item in document.get("items", []):
         product_guid = raw_item.get("product_guid")
         position = positions.get(str(product_guid)) if product_guid else None
+        shortage_amount = _money(raw_item.get("shortage_amount", Decimal("0")))
+        signed_amount = _money(raw_item.get("amount", -shortage_amount))
         session.add(
             InventoryAuditItem(
                 audit_id=audit.id,
                 position_id=position.id if position is not None else None,
                 iiko_product_guid=product_guid,
                 product_name_snapshot=str(raw_item.get("product_name") or "Позиция iiko"),
-                shortage_amount=_money(raw_item.get("shortage_amount", Decimal("0"))),
+                shortage_amount=shortage_amount,
+                amount=signed_amount,
             )
         )
 
     await _write_agent_audit(
         session,
-        action_type="inventory_audit_import_iiko",
+        action_type=action_type,
         audit=audit,
         actor=actor,
         after={"business_date": business_date.isoformat(), "document": document.get("document_id")},
@@ -270,14 +298,16 @@ async def create_manual_audit(
         )
         if not name:
             raise InventoryAuditValidationError("Укажите позицию или название товара")
-        amount = _money(raw_item.get("shortage_amount", Decimal("0")))
-        total += amount
+        shortage_amount = _money(raw_item.get("shortage_amount", Decimal("0")))
+        signed_amount = _money(raw_item.get("amount", -shortage_amount))
+        total += shortage_amount
         session.add(
             InventoryAuditItem(
                 audit_id=audit.id,
                 position_id=position.id if position is not None else None,
                 product_name_snapshot=str(name).strip(),
-                shortage_amount=amount,
+                shortage_amount=shortage_amount,
+                amount=signed_amount,
             )
         )
     audit.total_shortage_amount = _money(total)
@@ -317,11 +347,11 @@ def summarize_audit_items(items: list[InventoryAuditItem]) -> InventoryAuditItem
     all_items = list(items)
     considered_items = [item for item in all_items if audit_item_is_considered(item)]
     total_shortage_iiko = _money(
-        sum((_decimal(getattr(item, "shortage_amount", 0)) for item in all_items), Decimal("0"))
+        sum((item_shortage_amount(item) for item in all_items), Decimal("0"))
     )
     total_shortage_considered = _money(
         sum(
-            (_decimal(getattr(item, "shortage_amount", 0)) for item in considered_items),
+            (item_shortage_amount(item) for item in considered_items),
             Decimal("0"),
         )
     )
@@ -362,7 +392,7 @@ async def apply_audit_penalties(
 
     computation = await _compute_penalties(session, audit_id, commit=False)
     category = await _get_or_create_inventory_category(session)
-    comment = adjustment_comment(audit.business_date)
+    comment = adjustment_comment_for_computation(audit.business_date, computation)
     now = datetime.now(UTC)
     for employee_id, amount in computation.employee_penalties.items():
         if amount <= 0:
@@ -426,7 +456,7 @@ async def cancel_audit(
                         PayrollAdjustment.type == "penalty",
                         PayrollAdjustment.category_id == category.id,
                         PayrollAdjustment.work_date == adjustment_work_date,
-                        PayrollAdjustment.comment == adjustment_comment(audit.business_date),
+                        PayrollAdjustment.comment.like(f"{adjustment_comment(audit.business_date)}%"),
                     )
                 )
             ).all()
@@ -447,6 +477,116 @@ async def cancel_audit(
     return await _load_audit_or_404(session, audit.id)
 
 
+async def restore_cancelled_audit(
+    session: AsyncSession,
+    audit_id: uuid.UUID,
+    *,
+    actor: CurrentActor,
+) -> InventoryAudit:
+    audit = await _load_audit_or_404(session, audit_id)
+    if audit.status != "cancelled":
+        raise InventoryAuditConflictError("Вернуть в черновик можно только отменённую ревизию")
+
+    now = datetime.now(UTC)
+    audit.status = "draft"
+    audit.applied_at = None
+    audit.applied_by_user_id = None
+    audit.updated_at = now
+    await _write_agent_audit(
+        session,
+        action_type="inventory_audit_restore_draft",
+        audit=audit,
+        actor=actor,
+        after={"from_status": "cancelled", "status": "draft"},
+    )
+    await session.commit()
+    return await _load_audit_or_404(session, audit.id)
+
+
+async def set_employee_exclusion(
+    session: AsyncSession,
+    audit_id: uuid.UUID,
+    employee_id: uuid.UUID,
+    *,
+    excluded: bool,
+    reason: str | None,
+    actor: CurrentActor,
+) -> InventoryAudit:
+    audit = await _load_audit_or_404(session, audit_id)
+    if audit.status != "draft":
+        raise InventoryAuditConflictError("Исключать сотрудников можно только в черновике")
+
+    employee = await session.get(Employee, employee_id)
+    if employee is None:
+        raise InventoryAuditNotFoundError("Сотрудник не найден")
+
+    existing = next(
+        (
+            row
+            for row in audit.employee_exclusions
+            if row.employee_id == employee_id
+        ),
+        None,
+    )
+    before = (
+        {
+            "employee_id": str(employee_id),
+            "full_name": employee.full_name,
+            "reason": existing.reason,
+        }
+        if existing is not None
+        else None
+    )
+
+    if excluded:
+        clean_reason = _clean_optional_text(reason)
+        if clean_reason is None:
+            raise InventoryAuditValidationError("Укажите причину исключения сотрудника")
+        clean_reason = clean_reason[:500]
+        if existing is None:
+            existing = InventoryAuditEmployeeExclusion(
+                id=uuid.uuid4(),
+                audit_id=audit.id,
+                employee_id=employee_id,
+                reason=clean_reason,
+                created_by_user_id=actor.user_id,
+            )
+            session.add(existing)
+        else:
+            existing.reason = clean_reason
+            existing.updated_at = datetime.now(UTC)
+        after: dict[str, Any] = {
+            "employee_id": str(employee_id),
+            "full_name": employee.full_name,
+            "excluded": True,
+            "reason": clean_reason,
+        }
+    else:
+        if existing is not None:
+            await session.delete(existing)
+            audit.employee_exclusions.remove(existing)
+        after = {
+            "employee_id": str(employee_id),
+            "full_name": employee.full_name,
+            "excluded": False,
+        }
+
+    await _write_agent_audit(
+        session,
+        action_type="inventory_employee_exclusion",
+        audit=audit,
+        actor=actor,
+        before=before,
+        after=after,
+        target_table="inventory_audit_employee_exclusion",
+        target_id=existing.id if existing is not None else employee_id,
+    )
+    await session.flush()
+    await _compute_penalties(session, audit.id, commit=False)
+    await session.commit()
+    return await _load_audit_or_404(session, audit.id)
+
+
 def build_penalty_computation(
     *,
     audit: Any,
@@ -454,18 +594,23 @@ def build_penalty_computation(
     settings: dict[str, Decimal] | None,
     chefs: list[Any],
     admins: list[Any],
+    employee_exclusions: dict[uuid.UUID, str] | None = None,
 ) -> PenaltyComputation:
     effective_settings = {**DEFAULT_SETTINGS, **(settings or {})}
+    exclusions = employee_exclusions or {}
+    included_chefs = _included_employees(chefs, exclusions)
+    included_admins = _included_employees(admins, exclusions)
     period_start, period_end = audit_period(audit)
     groups = _group_shortages(items, effective_settings)
     skipped_items = groups.pop("_skipped_items", [])
+    swap_groups = groups.pop("_swap_groups", [])
     employee_penalties: dict[uuid.UUID, Decimal] = defaultdict(lambda: Decimal("0"))
     warnings: list[str] = []
 
     _distribute_group(
         group_key="chefs",
         role_key="chefs",
-        recipients=chefs,
+        recipients=included_chefs,
         amount=_decimal(groups["chefs"]["penalty"]),
         employee_penalties=employee_penalties,
         groups=groups,
@@ -477,7 +622,7 @@ def build_penalty_computation(
     _distribute_group(
         group_key="common",
         role_key="chefs",
-        recipients=chefs,
+        recipients=included_chefs,
         amount=common_half,
         employee_penalties=employee_penalties,
         groups=groups,
@@ -486,7 +631,7 @@ def build_penalty_computation(
     _distribute_group(
         group_key="common",
         role_key="admins",
-        recipients=admins,
+        recipients=included_admins,
         amount=common_penalty - common_half,
         employee_penalties=employee_penalties,
         groups=groups,
@@ -496,7 +641,7 @@ def build_penalty_computation(
     _distribute_group(
         group_key="admins",
         role_key="admins",
-        recipients=admins,
+        recipients=included_admins,
         amount=_decimal(groups["admins"]["penalty"]),
         employee_penalties=employee_penalties,
         groups=groups,
@@ -516,13 +661,26 @@ def build_penalty_computation(
         )
         if amount > 0
     ]
+    employee_recipient_rows = _employee_recipient_rows(
+        chefs=chefs,
+        admins=admins,
+        employee_penalties=employee_penalties,
+        exclusions=exclusions,
+    )
     employee_penalties = {
         employee_id: _money(amount)
         for employee_id, amount in employee_penalties.items()
         if amount > 0
     }
     total_shortage = _money(
-        sum((_decimal(getattr(item, "shortage_amount", 0)) for item in items), Decimal("0"))
+        sum(
+            (
+                _decimal(group["total_shortage"])
+                for group_key, group in groups.items()
+                if group_key in ALLOCATION_GROUPS
+            ),
+            Decimal("0"),
+        )
     )
     total_penalty = _money(
         sum((_decimal(group["penalty"]) for group in groups.values()), Decimal("0"))
@@ -541,7 +699,9 @@ def build_penalty_computation(
             str(employee_id): decimal_string(amount)
             for employee_id, amount in employee_penalties.items()
         },
+        "employee_recipients": employee_recipient_rows,
         "skipped_items": skipped_items,
+        "swap_groups": swap_groups,
         "warnings": warnings,
     }
     return PenaltyComputation(
@@ -553,6 +713,7 @@ def build_penalty_computation(
         groups=groups,
         employee_penalties=employee_penalties,
         employee_rows=employee_rows,
+        swap_groups=swap_groups,
         warnings=warnings,
         snapshot=snapshot,
     )
@@ -621,6 +782,20 @@ def adjustment_comment(business_date: date) -> str:
     return f"{INVENTORY_ADJUSTMENT_COMMENT_PREFIX} {business_date.isoformat()}"
 
 
+def adjustment_comment_for_computation(
+    business_date: date,
+    computation: PenaltyComputation,
+) -> str:
+    lines = [adjustment_comment(business_date)]
+    swap_groups = getattr(computation, "swap_groups", [])
+    lines.extend(
+        str(row["comment"])
+        for row in swap_groups
+        if _decimal(row.get("effective_shortage")) > 0 and row.get("comment")
+    )
+    return "\n".join(lines)
+
+
 def audit_penalty_work_date(business_date: date) -> date:
     return business_date + timedelta(days=1)
 
@@ -652,6 +827,10 @@ async def _compute_penalties(
         settings=settings,
         chefs=chefs,
         admins=admins,
+        employee_exclusions={
+            exclusion.employee_id: exclusion.reason
+            for exclusion in getattr(audit, "employee_exclusions", [])
+        },
     )
     audit.total_shortage_amount = computation.total_shortage_amount
     audit.total_penalty_amount = computation.total_penalty_amount
@@ -670,11 +849,13 @@ def _group_shortages(
 ) -> dict[str, dict[str, Any]]:
     sums = {group: Decimal("0") for group in ALLOCATION_GROUPS}
     item_rows: dict[str, list[dict[str, Any]]] = {group: [] for group in ALLOCATION_GROUPS}
+    swap_items: dict[str, list[dict[str, Any]]] = defaultdict(list)
     unmapped: list[dict[str, Any]] = []
     skipped_items: list[dict[str, Any]] = []
     for item in items:
         position = getattr(item, "position", None)
-        amount = _money(getattr(item, "shortage_amount", Decimal("0")))
+        signed_amount = item_signed_amount(item)
+        shortage_amount = item_shortage_amount(item)
         if position is None:
             skipped_items.append(
                 {
@@ -686,7 +867,8 @@ def _group_shortages(
                 {
                     "item_id": str(getattr(item, "id", "")),
                     "product_name_snapshot": getattr(item, "product_name_snapshot", ""),
-                    "shortage_amount": decimal_string(amount),
+                    "shortage_amount": decimal_string(shortage_amount),
+                    "amount": decimal_string(signed_amount),
                 }
             )
             continue
@@ -701,7 +883,8 @@ def _group_shortages(
                 {
                     "item_id": str(getattr(item, "id", "")),
                     "product_name_snapshot": getattr(item, "product_name_snapshot", ""),
-                    "shortage_amount": decimal_string(amount),
+                    "shortage_amount": decimal_string(shortage_amount),
+                    "amount": decimal_string(signed_amount),
                 }
             )
             continue
@@ -714,14 +897,71 @@ def _group_shortages(
                 }
             )
             continue
-        sums[group] += amount
+        effective_swap_group = item_effective_swap_group(item)
+        row = {
+            "item_id": str(getattr(item, "id", "")),
+            "position_id": str(getattr(position, "id", "")),
+            "position_code": getattr(position, "code", None),
+            "display_name": getattr(position, "display_name", ""),
+            "product_name_snapshot": getattr(item, "product_name_snapshot", ""),
+            "allocation_group": group,
+            "shortage_amount": decimal_string(shortage_amount),
+            "amount": decimal_string(signed_amount),
+            "swap_group": effective_swap_group,
+            "swap_group_default": clean_swap_group(getattr(position, "swap_group", None)),
+            "swap_group_override": item_swap_group_override(item),
+            "has_swap_group_override": item_has_swap_group_override(item),
+        }
+        if effective_swap_group:
+            swap_items[effective_swap_group].append(row)
+            continue
+        if shortage_amount <= 0:
+            continue
+        sums[group] += shortage_amount
         item_rows[group].append(
             {
-                "item_id": str(getattr(item, "id", "")),
-                "position_id": str(getattr(position, "id", "")),
-                "position_code": getattr(position, "code", None),
-                "display_name": getattr(position, "display_name", ""),
-                "shortage_amount": decimal_string(amount),
+                "item_id": row["item_id"],
+                "position_id": row["position_id"],
+                "position_code": row["position_code"],
+                "display_name": row["display_name"],
+                "shortage_amount": row["shortage_amount"],
+                "amount": row["amount"],
+            }
+        )
+
+    swap_groups: list[dict[str, Any]] = []
+    for swap_group, rows in sorted(swap_items.items()):
+        net_amount = _money(sum((_decimal(row["amount"]) for row in rows), Decimal("0")))
+        allocation_groups = sorted({str(row["allocation_group"]) for row in rows})
+        allocation_group = allocation_groups[0] if allocation_groups else None
+        effective_shortage = _money(abs(net_amount)) if net_amount < 0 else Decimal("0")
+        if allocation_group in ALLOCATION_GROUPS and effective_shortage > 0:
+            sums[allocation_group] += effective_shortage
+            item_rows[allocation_group].append(
+                {
+                    "type": "swap_group",
+                    "swap_group": swap_group,
+                    "display_name": f"Пересорт {swap_group}",
+                    "shortage_amount": decimal_string(effective_shortage),
+                    "amount": decimal_string(net_amount),
+                    "net_amount": decimal_string(net_amount),
+                    "items": rows,
+                }
+            )
+        swap_groups.append(
+            {
+                "group": swap_group,
+                "allocation_group": allocation_group,
+                "allocation_groups": allocation_groups,
+                "net_amount": decimal_string(net_amount),
+                "effective_shortage": decimal_string(effective_shortage),
+                "is_covered": net_amount >= 0,
+                "items": rows,
+                "comment": swap_group_comment_line(
+                    swap_group,
+                    rows,
+                    net_amount,
+                ),
             }
         )
 
@@ -751,7 +991,126 @@ def _group_shortages(
         "recipients": {},
     }
     groups["_skipped_items"] = skipped_items
+    groups["_swap_groups"] = swap_groups
     return groups
+
+
+def item_signed_amount(item: Any) -> Decimal:
+    """Signed business amount: shortage < 0, surplus > 0."""
+    if hasattr(item, "amount") and item.amount is not None:
+        return _money(item.amount)
+    shortage_amount = _money(getattr(item, "shortage_amount", Decimal("0")))
+    if shortage_amount < 0:
+        return shortage_amount
+    return _money(-shortage_amount)
+
+
+def item_shortage_amount(item: Any) -> Decimal:
+    signed_amount = item_signed_amount(item)
+    if signed_amount >= 0:
+        return Decimal("0")
+    return _money(abs(signed_amount))
+
+
+def clean_swap_group(value: Any) -> str | None:
+    text = _clean_optional_text(value)
+    if text is None:
+        return None
+    return text[:SWAP_GROUP_MAX_LENGTH]
+
+
+def item_has_swap_group_override(item: Any) -> bool:
+    return getattr(item, "swap_group_override", None) is not None
+
+
+def item_swap_group_override(item: Any) -> str | None:
+    if not item_has_swap_group_override(item):
+        return None
+    value = getattr(item, "swap_group_override", None)
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return ""
+    return text[:SWAP_GROUP_MAX_LENGTH]
+
+
+def item_effective_swap_group(item: Any) -> str | None:
+    override = item_swap_group_override(item)
+    if item_has_swap_group_override(item):
+        return override or None
+    position = getattr(item, "position", None)
+    return clean_swap_group(getattr(position, "swap_group", None)) if position is not None else None
+
+
+def summarize_swap_groups(items: list[Any]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for item in items:
+        position = getattr(item, "position", None)
+        allocation_group = getattr(position, "allocation_group", None)
+        swap_group = item_effective_swap_group(item)
+        if not swap_group or allocation_group not in ALLOCATION_GROUPS:
+            continue
+        grouped[swap_group].append(
+            {
+                "item_id": str(getattr(item, "id", "")),
+                "position_id": str(getattr(position, "id", "")),
+                "position_code": getattr(position, "code", None),
+                "display_name": getattr(position, "display_name", ""),
+                "product_name_snapshot": getattr(item, "product_name_snapshot", ""),
+                "allocation_group": allocation_group,
+                "amount": decimal_string(item_signed_amount(item)),
+                "shortage_amount": decimal_string(item_shortage_amount(item)),
+                "swap_group": swap_group,
+                "swap_group_default": clean_swap_group(getattr(position, "swap_group", None)),
+                "swap_group_override": item_swap_group_override(item),
+                "has_swap_group_override": item_has_swap_group_override(item),
+            }
+        )
+
+    summaries: list[dict[str, Any]] = []
+    for swap_group, rows in sorted(grouped.items()):
+        net_amount = _money(sum((_decimal(row["amount"]) for row in rows), Decimal("0")))
+        allocation_groups = sorted({str(row["allocation_group"]) for row in rows})
+        effective_shortage = _money(abs(net_amount)) if net_amount < 0 else Decimal("0")
+        summaries.append(
+            {
+                "group": swap_group,
+                "allocation_group": allocation_groups[0] if allocation_groups else None,
+                "allocation_groups": allocation_groups,
+                "net_amount": decimal_string(net_amount),
+                "effective_shortage": decimal_string(effective_shortage),
+                "is_covered": net_amount >= 0,
+                "items": rows,
+                "comment": swap_group_comment_line(swap_group, rows, net_amount),
+            }
+        )
+    return summaries
+
+
+def swap_group_comment_line(
+    swap_group: str,
+    rows: list[dict[str, Any]],
+    net_amount: Decimal,
+) -> str:
+    item_details = ", ".join(
+        f"{row.get('product_name_snapshot') or row.get('display_name') or 'Позиция'} "
+        f"{money_comment_amount(_decimal(row.get('amount')))}"
+        for row in rows
+    )
+    return (
+        f"Пересорт {swap_group}: {item_details}, "
+        f"итог {money_comment_amount(net_amount)}"
+    )
+
+
+def money_comment_amount(value: Any) -> str:
+    amount = _money(value)
+    sign = "+" if amount > 0 else ""
+    formatted = f"{abs(amount):,.0f}".replace(",", " ")
+    if amount < 0:
+        return f"-{formatted} ₽"
+    return f"{sign}{formatted} ₽"
 
 
 def threshold_label(
@@ -805,10 +1164,42 @@ def _distribute_group(
         employee_penalties[employee.id] += share
 
 
+def _included_employees(
+    employees: list[Any],
+    exclusions: dict[uuid.UUID, str],
+) -> list[Any]:
+    return [employee for employee in employees if employee.id not in exclusions]
+
+
+def _employee_recipient_rows(
+    *,
+    chefs: list[Any],
+    admins: list[Any],
+    employee_penalties: dict[uuid.UUID, Decimal],
+    exclusions: dict[uuid.UUID, str],
+) -> list[dict[str, Any]]:
+    rows: dict[uuid.UUID, dict[str, Any]] = {}
+    for recipient_group, employees in (("chefs", chefs), ("admins", admins)):
+        for employee in employees:
+            rows[employee.id] = {
+                "employee_id": str(employee.id),
+                "full_name": employee.full_name,
+                "position": employee.position,
+                "recipient_group": recipient_group,
+                "amount": decimal_string(employee_penalties.get(employee.id, Decimal("0"))),
+                "is_excluded": employee.id in exclusions,
+                "exclusion_reason": exclusions.get(employee.id),
+            }
+    return sorted(rows.values(), key=lambda row: str(row["full_name"]))
+
+
 async def _load_audit_or_404(session: AsyncSession, audit_id: uuid.UUID) -> InventoryAudit:
     audit = await session.scalar(
         select(InventoryAudit)
-        .options(selectinload(InventoryAudit.items).selectinload(InventoryAuditItem.position))
+        .options(
+            selectinload(InventoryAudit.items).selectinload(InventoryAuditItem.position),
+            selectinload(InventoryAudit.employee_exclusions),
+        )
         .where(InventoryAudit.id == audit_id)
     )
     if audit is None:
@@ -968,6 +1359,9 @@ async def _write_agent_audit(
     audit: InventoryAudit | None,
     actor: CurrentActor,
     after: dict[str, Any],
+    before: dict[str, Any] | None = None,
+    target_table: str | None = None,
+    target_id: uuid.UUID | None = None,
 ) -> None:
     now = datetime.now(UTC)
     run = AgentRun(
@@ -987,11 +1381,35 @@ async def _write_agent_audit(
         AgentAction(
             agent_run_id=run.id,
             action_type=action_type,
-            target_table="inventory_audit" if audit is not None else "inventory_audit_position",
-            target_id=audit.id if audit is not None else None,
-            before_value=None,
+            target_table=target_table
+            or ("inventory_audit" if audit is not None else "inventory_audit_position"),
+            target_id=target_id
+            if target_id is not None
+            else (audit.id if audit is not None else None),
+            before_value=before,
             after_value=after,
         )
+    )
+
+
+async def write_swap_override_audit(
+    session: AsyncSession,
+    *,
+    audit: InventoryAudit,
+    item: InventoryAuditItem,
+    actor: CurrentActor,
+    before: dict[str, Any],
+    after: dict[str, Any],
+) -> None:
+    await _write_agent_audit(
+        session,
+        action_type="inventory_swap_override",
+        audit=audit,
+        actor=actor,
+        before=before,
+        after=after,
+        target_table="inventory_audit_item",
+        target_id=item.id,
     )
 
 

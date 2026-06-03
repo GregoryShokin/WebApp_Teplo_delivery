@@ -255,6 +255,8 @@ async def _attendance_entry_is_payroll_relevant(
     )
     if ledger_entry is None or ledger_entry.payroll_role is None:
         return False
+    if ledger_entry.source == "manual_correction" and ledger_entry.is_resolved:
+        return True
 
     substitute_assignment = await session.scalar(
         select(EmployeeRoleAssignment).where(
