@@ -10,6 +10,18 @@ from app.models.audit import (
 from app.models.core import Location, Organization, Role, User, UserRole
 from app.models.counterparty import Counterparty, CounterpartyRole
 from app.models.courier import DeliveryOrder
+from app.models.dds import (
+    Account,
+    BankOperation,
+    CashflowTransaction,
+    ClassificationRule,
+    CounterpartyAlias,
+    DdsArticle,
+    DdsArticleAlias,
+    OwnAccountsRegistry,
+    TransferGroup,
+    WalletBalanceSnapshot,
+)
 from app.models.employee import (
     Employee,
     EmployeeAllowanceEvent,
@@ -51,15 +63,22 @@ from app.models.wallet import Wallet
 __all__ = [
     "AgentAction",
     "AgentRun",
+    "Account",
     "AppSetting",
     "AppSettingHistory",
     "AccumulationFundAccount",
     "AccumulationFundTransaction",
     "AttendanceEntry",
+    "BankOperation",
+    "CashflowTransaction",
+    "ClassificationRule",
     "CategoryCoefficient",
     "Counterparty",
+    "CounterpartyAlias",
     "CounterpartyRole",
     "DataSource",
+    "DdsArticle",
+    "DdsArticleAlias",
     "DepositAccount",
     "DepositTransaction",
     "DeliveryOrder",
@@ -78,6 +97,7 @@ __all__ = [
     "PayrollAdjustment",
     "PayrollAdjustmentCategory",
     "Organization",
+    "OwnAccountsRegistry",
     "PayrollLine",
     "PayrollPeriod",
     "PayrollRate",
@@ -99,8 +119,10 @@ __all__ = [
     "SourceCredential",
     "SourceDocument",
     "SourceSnapshot",
+    "TransferGroup",
     "User",
     "UserRole",
     "VacationPeriod",
     "Wallet",
+    "WalletBalanceSnapshot",
 ]

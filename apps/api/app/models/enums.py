@@ -21,7 +21,18 @@ counterparty_role_enum = Enum(
     "partner",
     name="counterparty_role_type",
 )
-wallet_type_enum = Enum("bank_account", "cash", "fund", "deposit", name="wallet_type")
+wallet_type_enum = Enum(
+    "bank_account",
+    "cash",
+    "fund",
+    "deposit",
+    "bank",
+    "cash_register",
+    "cash_safe",
+    "store_cash",
+    "reserve",
+    name="wallet_type",
+)
 period_type_enum = Enum("month", "week", "day", name="period_type")
 period_status_enum = Enum("open", "closed", "finalized", name="period_status")
 data_source_type_enum = Enum(

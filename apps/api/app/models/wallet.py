@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
+from decimal import Decimal
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, Date, ForeignKey, Numeric, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,3 +24,10 @@ class Wallet(Base):
         Boolean, nullable=False, default=True, server_default="true"
     )
     status: Mapped[str] = mapped_column(String(64), nullable=False, default="active")
+    account_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("account.id", ondelete="RESTRICT"), nullable=True
+    )
+    opening_balance: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2), nullable=False, default=Decimal("0"), server_default=text("0")
+    )
+    opening_balance_date: Mapped[date | None] = mapped_column(Date, nullable=True)
