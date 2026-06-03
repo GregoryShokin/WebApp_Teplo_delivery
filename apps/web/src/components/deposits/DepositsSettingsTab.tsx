@@ -300,9 +300,6 @@ export function DepositsSettingsTab({ canWrite }: DepositsSettingsTabProps) {
                 const inputValue = initialBalanceInputs[deposit.id] ?? "";
                 const inputValid =
                   inputValue.trim() !== "" && validNonNegativeDecimalInput(inputValue);
-                const initialBalanceSet = numericValue(deposit.initial_balance) > 0;
-                const lockedTooltip =
-                  "Исторический баланс установлен однократно. Корректировка только через ручную транзакцию в карточке сотрудника";
                 return (
                   <tr key={deposit.id}>
                     <td className="border-b p-3 font-medium">{deposit.full_name}</td>
@@ -315,7 +312,7 @@ export function DepositsSettingsTab({ canWrite }: DepositsSettingsTabProps) {
                     </td>
                     <td className="border-b p-2">
                       <Input
-                        disabled={!canWrite || initialBalanceSet || initialBalanceMutation.isPending}
+                        disabled={!canWrite || initialBalanceMutation.isPending}
                         min={0}
                         onChange={(event) =>
                           setInitialBalanceInputs((current) => ({
@@ -323,37 +320,24 @@ export function DepositsSettingsTab({ canWrite }: DepositsSettingsTabProps) {
                             [deposit.id]: event.target.value,
                           }))
                         }
-                        placeholder={
-                          initialBalanceSet
-                            ? `${formatMoney(deposit.initial_balance)} уже установлено`
-                            : "0"
-                        }
-                        title={initialBalanceSet ? lockedTooltip : undefined}
+                        placeholder="0"
                         type="number"
                         value={inputValue}
                       />
                     </td>
                     <td className="border-b p-2 text-right">
-                      <span
-                        className="inline-flex"
-                        title={initialBalanceSet ? lockedTooltip : undefined}
+                      <Button
+                        disabled={
+                          !canWrite || !inputValid || initialBalanceMutation.isPending
+                        }
+                        onClick={() =>
+                          setPendingInitialBalance({ employee: deposit, amount: inputValue })
+                        }
+                        size="sm"
+                        variant="outline"
                       >
-                        <Button
-                          disabled={
-                            !canWrite ||
-                            initialBalanceSet ||
-                            !inputValid ||
-                            initialBalanceMutation.isPending
-                          }
-                          onClick={() =>
-                            setPendingInitialBalance({ employee: deposit, amount: inputValue })
-                          }
-                          size="sm"
-                          variant="outline"
-                        >
-                          Установить
-                        </Button>
-                      </span>
+                        Установить
+                      </Button>
                     </td>
                   </tr>
                 );

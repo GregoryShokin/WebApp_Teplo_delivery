@@ -277,17 +277,6 @@ async def set_initial_deposit_balance(
     await _get_employee_or_404(session, employee_id)
     now = datetime.now(UTC)
     account = await deposit_service.get_deposit_account(session, employee_id, for_update=True)
-    existing_initial_balance = (
-        decimal(getattr(account, "initial_balance", 0)) if account else Decimal("0")
-    )
-    if existing_initial_balance > 0:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Исторический баланс уже установлен. Используйте корректировку через ручную "
-                "транзакцию."
-            ),
-        )
     before = deposit_service.deposit_account_snapshot(account)
     existing_balance = decimal(account.balance) if account else Decimal("0")
     account = deposit_service.ensure_account(session, employee_id, account, now)
