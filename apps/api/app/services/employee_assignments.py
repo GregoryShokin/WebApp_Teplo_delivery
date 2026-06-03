@@ -297,8 +297,61 @@ async def update_assignment(
             is_primary=target_is_primary,
             is_substitute=target_is_substitute,
         )
+    elif effective_from_changed and as_of < assignment.effective_from:
+        # Back-date: the new effective_from is earlier than the current one.
+        # Treat as "from this date onward the role/category is target_* until a
+        # later explicit change". Drop every assignment of the same role that
+        # starts at or after as_of (the current one included) and close the
+        # previous active assignment of the same role at as_of. The forward
+        # boundary is preserved only when an even later pending change exists.
+        forward_pending_q = select(EmployeeRoleAssignment).where(
+            EmployeeRoleAssignment.employee_id == employee_id,
+            EmployeeRoleAssignment.payroll_role == target_role,
+            EmployeeRoleAssignment.effective_from > assignment.effective_from,
+        )
+        forward_pending = list(await session.scalars(forward_pending_q))
+        next_pending_start = min(
+            (item.effective_from for item in forward_pending),
+            default=None,
+        )
+
+        to_delete_q = select(EmployeeRoleAssignment).where(
+            EmployeeRoleAssignment.employee_id == employee_id,
+            EmployeeRoleAssignment.payroll_role == target_role,
+            EmployeeRoleAssignment.effective_from >= as_of,
+        )
+        to_delete = list(await session.scalars(to_delete_q))
+        for item in to_delete:
+            await session.delete(item)
+        await session.flush()
+
+        prev_q = select(EmployeeRoleAssignment).where(
+            EmployeeRoleAssignment.employee_id == employee_id,
+            EmployeeRoleAssignment.payroll_role == target_role,
+            EmployeeRoleAssignment.effective_from < as_of,
+            or_(
+                EmployeeRoleAssignment.effective_to.is_(None),
+                EmployeeRoleAssignment.effective_to > as_of,
+            ),
+        )
+        for prev in await session.scalars(prev_q):
+            prev.effective_to = as_of
+        await session.flush()
+
+        assignment = EmployeeRoleAssignment(
+            employee_id=employee_id,
+            payroll_role=target_role,
+            category=target_category,
+            is_primary=target_is_primary,
+            is_substitute=target_is_substitute,
+            effective_from=as_of,
+            effective_to=next_pending_start,
+        )
+        session.add(assignment)
+        await session.flush()
     elif (role_or_category_changed or substitute_changed) and assignment.effective_from < as_of:
         assignment.effective_to = as_of
+        await session.flush()
         next_assignment = await _next_assignment_for_role_after(
             session,
             employee_id,

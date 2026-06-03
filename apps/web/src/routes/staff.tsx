@@ -2958,7 +2958,6 @@ function StaffEditor({
   const [premiumConfirmActions, setPremiumConfirmActions] = useState<string[]>([]);
   const [pendingDraftPatch, setPendingDraftPatch] = useState<EmployeePatch | null>(null);
   const [categoryChange, setCategoryChange] = useState<CategoryEffectiveChange | null>(null);
-  const [categoryApplyMode, setCategoryApplyMode] = useState<"today" | "custom">("today");
   const [categoryEffectiveDate, setCategoryEffectiveDate] = useState(todayDateInputValue);
   const [categoryComment, setCategoryComment] = useState("");
   const [premiumTransferConflict, setPremiumTransferConflict] =
@@ -2987,7 +2986,6 @@ function StaffEditor({
     setPremiumConfirmOpen(false);
     setPendingDraftPatch(null);
     setCategoryChange(null);
-    setCategoryApplyMode("today");
     setCategoryEffectiveDate(todayDateInputValue());
     setCategoryComment("");
     setPremiumConfirmActions([]);
@@ -3060,7 +3058,6 @@ function StaffEditor({
         setDraft(nextDraft);
       }
       setCategoryChange(null);
-      setCategoryApplyMode("today");
       setCategoryEffectiveDate(todayDateInputValue());
       setCategoryComment("");
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
@@ -3342,8 +3339,7 @@ function StaffEditor({
   const hireDateIsValid =
     Boolean(hireDateValue) && hireDateValue >= hireDateMin && hireDateValue <= hireDateMax;
   const hireDateCanSubmit = hireDateIsValid && hireDateValue !== (employee.hire_date ?? "");
-  const selectedCategoryEffectiveDate =
-    categoryApplyMode === "today" ? todayDateInputValue() : categoryEffectiveDate;
+  const selectedCategoryEffectiveDate = categoryEffectiveDate;
   const categoryCommentRequired =
     Boolean(selectedCategoryEffectiveDate) &&
     selectedCategoryEffectiveDate < todayDateInputValue();
@@ -3425,7 +3421,6 @@ function StaffEditor({
     }
     if (effectiveCategoryChange) {
       setCategoryChange(effectiveCategoryChange);
-      setCategoryApplyMode("today");
       setCategoryEffectiveDate(todayDateInputValue());
       setCategoryComment("");
       return;
@@ -3992,7 +3987,6 @@ function StaffEditor({
         onOpenChange={(open) => {
           if (!open && !categoryMutation.isPending) {
             setCategoryChange(null);
-            setCategoryApplyMode("today");
             setCategoryEffectiveDate(todayDateInputValue());
             setCategoryComment("");
           }
@@ -4014,37 +4008,15 @@ function StaffEditor({
                 <InfoRow label="Новая" value={categoryLabel(categoryChange.nextCategory)} />
               </div>
 
-              <div className="grid gap-2">
-                <div className="text-sm font-medium">Когда применить?</div>
-                <label className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm">
-                  <input
-                    checked={categoryApplyMode === "today"}
-                    disabled={categoryMutation.isPending}
-                    name="category-effective-date"
-                    onChange={() => setCategoryApplyMode("today")}
-                    type="radio"
-                  />
-                  <span>Сегодня ({formatDate(todayDateInputValue())})</span>
-                </label>
-                <label className="grid gap-2 rounded-md border bg-background px-3 py-2 text-sm">
-                  <span className="flex items-center gap-2">
-                    <input
-                      checked={categoryApplyMode === "custom"}
-                      disabled={categoryMutation.isPending}
-                      name="category-effective-date"
-                      onChange={() => setCategoryApplyMode("custom")}
-                      type="radio"
-                    />
-                    <span>Выбрать дату</span>
-                  </span>
-                  <Input
-                    disabled={categoryApplyMode !== "custom" || categoryMutation.isPending}
-                    onChange={(event) => setCategoryEffectiveDate(event.target.value)}
-                    type="date"
-                    value={categoryEffectiveDate}
-                  />
-                </label>
-              </div>
+              <Label className="grid gap-2">
+                <span className="text-sm font-medium">Применить с даты</span>
+                <Input
+                  disabled={categoryMutation.isPending}
+                  onChange={(event) => setCategoryEffectiveDate(event.target.value)}
+                  type="date"
+                  value={categoryEffectiveDate}
+                />
+              </Label>
 
               <Label className="grid gap-2">
                 <span>{categoryCommentRequired ? "Комментарий" : "Комментарий (опционально)"}</span>

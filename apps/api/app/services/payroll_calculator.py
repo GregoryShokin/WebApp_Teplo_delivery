@@ -533,7 +533,7 @@ def calculate_payroll_lines_from_inputs(
                 )
             percent_pay = daily_percent_distributions.get(work_date, {}).get(
                 group_key, Decimal("0")
-            ) * shift_pay_ratio(minutes)
+            )
             percent_components = daily_percent_components.get(work_date, {})
             weekday_premium = Decimal("0")
             if employee_day_key not in premium_applied_employee_days:
@@ -979,10 +979,9 @@ def category_for_payroll_entry(
     role: str | None,
     station: str | None,
 ) -> str:
-    ledger_entry = ledger_entry_for_employee_date(settings, employee.id, work_date)
-    if ledger_entry is not None:
-        return clean_string(getattr(ledger_entry, "category", None))
-
+    # Live employee role assignments win over the ledger snapshot so that
+    # back-dated category or role changes in the staff page propagate into
+    # the payroll calculation on the next Пересчитать.
     assignments = assignments_for_employee_date(settings, employee.id, work_date)
     if assignments:
         assignment_role = assignment_role_for_payroll_context(role, station)
@@ -1011,7 +1010,20 @@ def category_for_payroll_entry(
         )
         if first is not None:
             return str(first.category)
-    return str(employee.category or "")
+
+    # No active assignment for work_date — fall back to the current value on
+    # the employee card before the stale ledger snapshot, so that staff page
+    # edits win over historical manual_correction rows.
+    if employee.category:
+        return str(employee.category)
+
+    ledger_entry = ledger_entry_for_employee_date(settings, employee.id, work_date)
+    if ledger_entry is not None:
+        ledger_category = clean_string(getattr(ledger_entry, "category", None))
+        if ledger_category:
+            return ledger_category
+
+    return ""
 
 
 def is_substitute_payroll_entry(
