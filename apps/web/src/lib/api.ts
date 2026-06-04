@@ -586,6 +586,45 @@ export type PayrollAdjustmentCategoryPatch = Partial<
   >
 >;
 
+export type DeferredChargeStatus = "pending" | "partially_applied" | "applied" | "cancelled";
+
+export type DeferredChargeSplit = {
+  id: string;
+  split_index: number;
+  amount: string;
+  run_id: string | null;
+  adjustment_id: string | null;
+  applied_at: string | null;
+};
+
+export type DeferredCharge = {
+  id: string;
+  source_audit_id: string;
+  source_item_id: string | null;
+  source_audit_date: string | null;
+  employee_id: string;
+  employee_name: string | null;
+  total_amount: string;
+  splits_count: number;
+  splits_remaining: number;
+  status: DeferredChargeStatus;
+  reason: string;
+  applied_run_ids: string[];
+  created_by_name: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  splits: DeferredChargeSplit[];
+};
+
+export type DeferredChargeCreatePayload = {
+  source_audit_id: string;
+  source_item_id?: string | null;
+  employee_id: string;
+  total_amount: string;
+  splits_count: number;
+  reason: string;
+};
+
 export type InventoryAllocationGroup = "chefs" | "common" | "admins";
 export type InventoryAuditStatus = "draft" | "applied" | "cancelled";
 
@@ -2212,6 +2251,31 @@ export async function patchPayrollAdjustment(
 
 export async function deletePayrollAdjustment(id: string): Promise<void> {
   await api.delete(`/payroll/adjustments/${id}`);
+}
+
+export async function createDeferredCharge(
+  payload: DeferredChargeCreatePayload,
+): Promise<DeferredCharge> {
+  const response = await api.post<DeferredCharge>("/payroll/deferred-charges", payload);
+  return response.data;
+}
+
+export async function listDeferredCharges(
+  filters: {
+    employee_id?: string;
+    status?: DeferredChargeStatus;
+    audit_id?: string;
+  } = {},
+): Promise<DeferredCharge[]> {
+  const response = await api.get<DeferredCharge[]>("/payroll/deferred-charges", {
+    params: filters,
+  });
+  return response.data;
+}
+
+export async function cancelDeferredCharge(chargeId: string): Promise<DeferredCharge> {
+  const response = await api.post<DeferredCharge>(`/payroll/deferred-charges/${chargeId}/cancel`);
+  return response.data;
 }
 
 export async function listSchedules(params?: {

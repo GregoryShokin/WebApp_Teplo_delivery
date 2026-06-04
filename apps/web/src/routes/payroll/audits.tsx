@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -57,20 +58,27 @@ import { InventoryGroupBadge } from "@/routes/payroll/inventory-positions";
 import {
   apiErrorMessage,
   applyInventoryAudit,
+  cancelDeferredCharge,
   cancelInventoryAudit,
   computeInventoryAudit,
+  createDeferredCharge,
   createManualInventoryAudit,
+  getEmployees,
   getAllInventoryAuditExclusions,
   getIikoCandidates,
   getInventoryAudit,
   getInventoryAudits,
   getInventoryPositions,
   importInventoryAuditFromIiko,
+  listDeferredCharges,
   patchInventoryAuditEmployeeExclusion,
   patchInventoryAuditItem,
   patchInventoryAuditItemExclusion,
   restoreInventoryAuditDraft,
+  type DeferredCharge,
+  type DeferredChargeStatus,
   type InventoryAudit,
+  type InventoryAuditExclusionLogRow,
   type InventoryEmployeeRecipient,
   type InventoryAuditItem,
   type InventoryAllocationGroup,
@@ -89,12 +97,12 @@ type ManualRow = {
   shortage_amount: string;
 };
 
-type ConfirmationTarget =
-  | { action: "apply" | "cancel" | "restore"; audit: InventoryAudit }
-  | null;
-type OverrideTarget =
-  | { item: InventoryAuditItem; nextOverride: string | null; label: string }
-  | null;
+type ConfirmationTarget = { action: "apply" | "cancel" | "restore"; audit: InventoryAudit } | null;
+type OverrideTarget = {
+  item: InventoryAuditItem;
+  nextOverride: string | null;
+  label: string;
+} | null;
 type MoveTarget = { item: InventoryAuditItem; value: string } | null;
 type ExclusionTarget = InventoryEmployeeRecipient | null;
 type ItemAmountFilter = "all" | "shortages" | "surpluses";
@@ -117,7 +125,7 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
   const [dateFrom, setDateFrom] = useState(month.start);
   const [dateTo, setDateTo] = useState(month.end);
   const [statusFilter, setStatusFilter] = useState<InventoryAuditStatus | "all">("all");
-  const [subTab, setSubTab] = useState<"audits" | "items" | "employees">("audits");
+  const [subTab, setSubTab] = useState<"audits" | "items" | "employees" | "deferred">("audits");
   const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
@@ -260,7 +268,9 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
     {
       key: "date",
       header: "Дата",
-      cell: (audit) => <div className="min-w-[96px] font-medium">{formatDate(audit.business_date)}</div>,
+      cell: (audit) => (
+        <div className="min-w-[96px] font-medium">{formatDate(audit.business_date)}</div>
+      ),
     },
     {
       key: "shortage",
@@ -317,8 +327,7 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
               size="sm"
               variant="outline"
             >
-              <RotateCcw size={15} aria-hidden="true" />
-              В черновик
+              <RotateCcw size={15} aria-hidden="true" />В черновик
             </Button>
           ) : null}
         </div>
@@ -346,6 +355,7 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
           <TabsTrigger value="audits">Ревизии</TabsTrigger>
           <TabsTrigger value="items">Позиции</TabsTrigger>
           <TabsTrigger value="employees">Сотрудники</TabsTrigger>
+          <TabsTrigger value="deferred">Распределённые</TabsTrigger>
         </TabsList>
 
         <TabsContent className="space-y-5" value="audits">
@@ -446,6 +456,10 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
         <TabsContent value="employees">
           <ExclusionLogTab kind="employees" />
         </TabsContent>
+
+        <TabsContent value="deferred">
+          <DeferredChargesTab />
+        </TabsContent>
       </Tabs>
 
       <Dialog open={importOpen} onOpenChange={handleImportOpenChange}>
@@ -502,7 +516,9 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
                       />
                       <span>
                         <span className="font-medium">
-                          {candidate.document_num ? `#${candidate.document_num}` : candidate.document_id}
+                          {candidate.document_num
+                            ? `#${candidate.document_num}`
+                            : candidate.document_id}
                         </span>
                         <span>
                           {" "}
@@ -552,7 +568,11 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
           <div className="space-y-3">
             <Label className="grid max-w-[180px] gap-2">
               <span>Дата</span>
-              <Input type="date" value={manualDate} onChange={(event) => setManualDate(event.target.value)} />
+              <Input
+                type="date"
+                value={manualDate}
+                onChange={(event) => setManualDate(event.target.value)}
+              />
             </Label>
             <div className="space-y-2">
               {manualRows.map((row, index) => (
@@ -583,7 +603,9 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
                   />
                   <Button
                     onClick={() =>
-                      setManualRows((rows) => rows.filter((_item, itemIndex) => itemIndex !== index))
+                      setManualRows((rows) =>
+                        rows.filter((_item, itemIndex) => itemIndex !== index),
+                      )
                     }
                     size="icon"
                     type="button"
@@ -635,7 +657,10 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={Boolean(confirmation)} onOpenChange={(open) => !open && setConfirmation(null)}>
+      <AlertDialog
+        open={Boolean(confirmation)}
+        onOpenChange={(open) => !open && setConfirmation(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -704,6 +729,7 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
 function ExclusionLogTab({ kind }: { kind: "items" | "employees" }) {
   const [auditDateFrom, setAuditDateFrom] = useState<string>("");
   const [auditDateTo, setAuditDateTo] = useState<string>("");
+  const [deferredTarget, setDeferredTarget] = useState<InventoryAuditExclusionLogRow | null>(null);
   const queryClient = useQueryClient();
 
   const query = useQuery({
@@ -715,7 +741,7 @@ function ExclusionLogTab({ kind }: { kind: "items" | "employees" }) {
       }),
   });
 
-  const rows = kind === "items" ? query.data?.items ?? [] : query.data?.employees ?? [];
+  const rows = kind === "items" ? (query.data?.items ?? []) : (query.data?.employees ?? []);
 
   const itemReturnMutation = useMutation({
     mutationFn: ({ auditId, itemId }: { auditId: string; itemId: string }) =>
@@ -739,28 +765,371 @@ function ExclusionLogTab({ kind }: { kind: "items" | "employees" }) {
   });
 
   return (
+    <>
+      <section className="mt-4 space-y-4 rounded-lg border bg-card p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <PanelTitle title={kind === "items" ? "Исключённые позиции" : "Исключённые сотрудники"} />
+          <div className="grid gap-2 md:grid-cols-2 md:gap-3">
+            <Label>
+              <span className="text-xs text-muted-foreground">Ревизии с</span>
+              <Input
+                className="mt-1"
+                onChange={(event) => setAuditDateFrom(event.target.value)}
+                type="date"
+                value={auditDateFrom}
+              />
+            </Label>
+            <Label>
+              <span className="text-xs text-muted-foreground">по</span>
+              <Input
+                className="mt-1"
+                onChange={(event) => setAuditDateTo(event.target.value)}
+                type="date"
+                value={auditDateTo}
+              />
+            </Label>
+          </div>
+        </div>
+
+        {query.isLoading ? (
+          <div className="px-3 py-4 text-sm text-muted-foreground">Загрузка...</div>
+        ) : rows.length === 0 ? (
+          <div className="rounded-md border px-3 py-6 text-center text-sm text-muted-foreground">
+            {kind === "items" ? "Исключённых позиций нет." : "Исключённых сотрудников нет."}
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead>
+                <tr className="border-b bg-muted/35">
+                  <th className="w-[110px] px-2 py-2 text-left font-medium">Дата ревизии</th>
+                  <th className="px-2 py-2 text-left font-medium">
+                    {kind === "items" ? "Позиция" : "Сотрудник"}
+                  </th>
+                  <th className="px-2 py-2 text-left font-medium">Причина</th>
+                  <th className="w-[130px] px-2 py-2 text-left font-medium">Когда / кто</th>
+                  <th className="w-[110px] px-2 py-2 text-right font-medium">Действие</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => {
+                  const canReturn = row.audit_status === "draft";
+                  const pending =
+                    kind === "items"
+                      ? itemReturnMutation.isPending
+                      : employeeReturnMutation.isPending;
+                  return (
+                    <tr className="border-b last:border-b-0" key={row.id}>
+                      <td className="px-2 py-2 align-top">
+                        {row.audit_business_date ? formatDate(row.audit_business_date) : "—"}
+                        {row.audit_status ? (
+                          <div className="mt-1 text-xs">
+                            <AuditStatusBadge status={row.audit_status} />
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="px-2 py-2 align-top">
+                        {kind === "items" ? (
+                          <>
+                            <div className="font-medium">{row.product_name ?? "—"}</div>
+                            {row.amount ? (
+                              <div className="text-xs text-muted-foreground tabular-nums">
+                                {formatSignedMoney(row.amount)}
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <>
+                            <div className="font-medium">{row.employee_name ?? "—"}</div>
+                            {row.employee_position ? (
+                              <div className="text-xs text-muted-foreground">
+                                {row.employee_position}
+                              </div>
+                            ) : null}
+                          </>
+                        )}
+                      </td>
+                      <td className="px-2 py-2 align-top text-muted-foreground">{row.reason}</td>
+                      <td className="px-2 py-2 align-top text-xs text-muted-foreground">
+                        {row.created_at ? formatDateTime(row.created_at) : "—"}
+                        <div>{row.created_by_name ?? "—"}</div>
+                      </td>
+                      <td className="px-2 py-2 text-right align-top">
+                        {kind === "items" ? (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button disabled={pending} size="sm" type="button" variant="ghost">
+                                Действия
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                disabled={!canReturn || !row.item_id}
+                                onSelect={() => {
+                                  if (row.item_id) {
+                                    itemReturnMutation.mutate({
+                                      auditId: row.audit_id,
+                                      itemId: row.item_id,
+                                    });
+                                  }
+                                }}
+                              >
+                                Вернуть в расчёт
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setDeferredTarget(row)}>
+                              Распределить штраф…
+                            </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ) : (
+                          <Button
+                            disabled={!canReturn || pending}
+                            onClick={() => {
+                              if (row.employee_id) {
+                                employeeReturnMutation.mutate({
+                                  auditId: row.audit_id,
+                                  employeeId: row.employee_id,
+                                });
+                              }
+                            }}
+                            size="sm"
+                            title={
+                              !canReturn ? "Вернуть можно только в черновике ревизии" : undefined
+                            }
+                            type="button"
+                            variant="ghost"
+                          >
+                            Вернуть
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      <DeferredChargeDialog row={deferredTarget} onClose={() => setDeferredTarget(null)} />
+    </>
+  );
+}
+
+function DeferredChargeDialog({
+  onClose,
+  row,
+}: {
+  onClose: () => void;
+  row: InventoryAuditExclusionLogRow | null;
+}) {
+  const queryClient = useQueryClient();
+  const employeesQuery = useQuery({
+    queryKey: ["employees", "deferred-charge-dialog"],
+    queryFn: () => getEmployees({ status: "all" }),
+    staleTime: 60_000,
+  });
+  const [employeeId, setEmployeeId] = useState<string>("");
+  const [amount, setAmount] = useState<string>("0");
+  const [splitsCount, setSplitsCount] = useState<number>(3);
+  const [reason, setReason] = useState<string>("");
+
+  useEffect(() => {
+    if (!row) {
+      return;
+    }
+    setEmployeeId("");
+    setAmount(defaultDeferredAmount(row.amount));
+    setSplitsCount(3);
+    setReason(row.reason ?? "");
+  }, [row]);
+
+  const employeeOptions = useMemo(
+    () =>
+      [...(employeesQuery.data ?? [])].sort((left, right) =>
+        left.full_name.localeCompare(right.full_name, "ru"),
+      ),
+    [employeesQuery.data],
+  );
+  const amountNumber = Number(amount);
+  const perSplitAmount =
+    Number.isFinite(amountNumber) && splitsCount > 0
+      ? `${(amountNumber / splitsCount).toFixed(2)} ₽`
+      : "—";
+  const isValid =
+    row !== null &&
+    employeeId.length > 0 &&
+    Number.isFinite(amountNumber) &&
+    amountNumber > 0 &&
+    splitsCount >= 1 &&
+    splitsCount <= 24 &&
+    reason.trim().length > 0;
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      createDeferredCharge({
+        source_audit_id: row!.audit_id,
+        source_item_id: row!.item_id ?? null,
+        employee_id: employeeId,
+        total_amount: amount,
+        splits_count: splitsCount,
+        reason: reason.trim(),
+    }),
+    onSuccess: async () => {
+      toast.success(`Штраф распределён на ${splitsCount} расчётов ЗП`);
+      onClose();
+      await queryClient.invalidateQueries({ queryKey: ["deferred-charges"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось распределить штраф")),
+  });
+
+  return (
+    <Dialog open={row !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Распределить штраф по расчётам ЗП</DialogTitle>
+          <DialogDescription>
+            Штраф будет делиться равными долями по {splitsCount} {pluralizeRuns(splitsCount)}{" "}
+            начиная со следующего создания payroll-run.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          {row ? (
+            <div className="rounded-md border bg-muted/40 p-3 text-sm">
+              <div className="font-medium">{row.product_name ?? "—"}</div>
+              <div className="text-xs text-muted-foreground">
+                Ревизия {row.audit_business_date ? formatDate(row.audit_business_date) : "—"} ·
+                Сумма {row.amount ? formatSignedMoney(row.amount) : "—"}
+              </div>
+            </div>
+          ) : null}
+          <Label className="grid gap-2">
+            <span>Сотрудник</span>
+            <Select
+              disabled={employeesQuery.isLoading || mutation.isPending}
+              onValueChange={setEmployeeId}
+              value={employeeId}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Выберите сотрудника" />
+              </SelectTrigger>
+              <SelectContent>
+                {employeeOptions.map((employee) => (
+                  <SelectItem key={employee.id} value={employee.id}>
+                    {employee.full_name}
+                    {employee.status === "inactive" ? " · уволен" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Label>
+          <Label className="grid gap-2">
+            <span>Сумма штрафа, ₽</span>
+            <Input
+              disabled={mutation.isPending}
+              inputMode="decimal"
+              onChange={(event) => setAmount(event.target.value)}
+              value={amount}
+            />
+          </Label>
+          <Label className="grid gap-2">
+            <span>Количество расчётов ЗП ({splitsCount})</span>
+            <Input
+              disabled={mutation.isPending}
+              max={24}
+              min={1}
+              onChange={(event) =>
+                setSplitsCount(Math.max(1, Math.min(24, Number(event.target.value) || 1)))
+              }
+              type="number"
+              value={splitsCount}
+            />
+            <span className="text-xs text-muted-foreground">По {perSplitAmount} за расчёт</span>
+          </Label>
+          <Label className="grid gap-2">
+            <span>Причина</span>
+            <Textarea
+              disabled={mutation.isPending}
+              maxLength={500}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Например: распределить недостачу за май на 3 ближайшие зарплаты"
+              rows={3}
+              value={reason}
+            />
+          </Label>
+        </div>
+        <DialogFooter>
+          <Button disabled={mutation.isPending} onClick={onClose} type="button" variant="outline">
+            Отмена
+          </Button>
+          <Button
+            disabled={!isValid || mutation.isPending}
+            onClick={() => mutation.mutate()}
+            type="button"
+          >
+            Распределить
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeferredChargesTab() {
+  const queryClient = useQueryClient();
+  const [statusFilter, setStatusFilter] = useState<DeferredChargeStatus | "all">("all");
+  const [cancelTarget, setCancelTarget] = useState<DeferredCharge | null>(null);
+
+  const query = useQuery({
+    queryKey: ["deferred-charges", { statusFilter }],
+    queryFn: () => listDeferredCharges(statusFilter === "all" ? {} : { status: statusFilter }),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (chargeId: string) => cancelDeferredCharge(chargeId),
+    onSuccess: async () => {
+      toast.success("Распределённый штраф отменён");
+      setCancelTarget(null);
+      await queryClient.invalidateQueries({ queryKey: ["deferred-charges"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отменить распределение")),
+  });
+
+  const rows = query.data ?? [];
+  const appliedCancelSplits = cancelTarget
+    ? cancelTarget.splits_count - cancelTarget.splits_remaining
+    : 0;
+
+  return (
     <section className="mt-4 space-y-4 rounded-lg border bg-card p-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <PanelTitle title={kind === "items" ? "Исключённые позиции" : "Исключённые сотрудники"} />
-        <div className="grid gap-2 md:grid-cols-2 md:gap-3">
-          <Label>
-            <span className="text-xs text-muted-foreground">Ревизии с</span>
-            <Input
-              className="mt-1"
-              onChange={(event) => setAuditDateFrom(event.target.value)}
-              type="date"
-              value={auditDateFrom}
-            />
-          </Label>
-          <Label>
-            <span className="text-xs text-muted-foreground">по</span>
-            <Input
-              className="mt-1"
-              onChange={(event) => setAuditDateTo(event.target.value)}
-              type="date"
-              value={auditDateTo}
-            />
-          </Label>
+        <PanelTitle title="Распределённые штрафы" />
+        <div className="flex flex-wrap rounded-md border p-1">
+          <FilterButton
+            active={statusFilter === "all"}
+            label="Все"
+            onClick={() => setStatusFilter("all")}
+          />
+          <FilterButton
+            active={statusFilter === "pending"}
+            label="Ожидает"
+            onClick={() => setStatusFilter("pending")}
+          />
+          <FilterButton
+            active={statusFilter === "partially_applied"}
+            label="Частично"
+            onClick={() => setStatusFilter("partially_applied")}
+          />
+          <FilterButton
+            active={statusFilter === "applied"}
+            label="Применён"
+            onClick={() => setStatusFilter("applied")}
+          />
+          <FilterButton
+            active={statusFilter === "cancelled"}
+            label="Отменён"
+            onClick={() => setStatusFilter("cancelled")}
+          />
         </div>
       </div>
 
@@ -768,91 +1137,56 @@ function ExclusionLogTab({ kind }: { kind: "items" | "employees" }) {
         <div className="px-3 py-4 text-sm text-muted-foreground">Загрузка...</div>
       ) : rows.length === 0 ? (
         <div className="rounded-md border px-3 py-6 text-center text-sm text-muted-foreground">
-          {kind === "items" ? "Исключённых позиций нет." : "Исключённых сотрудников нет."}
+          Распределённых штрафов нет.
         </div>
       ) : (
         <div className="overflow-x-auto rounded-md border">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[900px] text-sm">
             <thead>
               <tr className="border-b bg-muted/35">
-                <th className="w-[110px] px-2 py-2 text-left font-medium">Дата ревизии</th>
-                <th className="px-2 py-2 text-left font-medium">
-                  {kind === "items" ? "Позиция" : "Сотрудник"}
-                </th>
+                <th className="w-[120px] px-2 py-2 text-left font-medium">Создан</th>
+                <th className="px-2 py-2 text-left font-medium">Сотрудник</th>
+                <th className="w-[110px] px-2 py-2 text-left font-medium">Ревизия</th>
+                <th className="w-[100px] px-2 py-2 text-right font-medium">Сумма</th>
+                <th className="w-[110px] px-2 py-2 text-center font-medium">Доли</th>
+                <th className="w-[140px] px-2 py-2 text-left font-medium">Статус</th>
                 <th className="px-2 py-2 text-left font-medium">Причина</th>
-                <th className="w-[130px] px-2 py-2 text-left font-medium">Когда / кто</th>
-                <th className="w-[110px] px-2 py-2 text-right font-medium">Действие</th>
+                <th className="w-[100px] px-2 py-2 text-right font-medium">Действие</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
-                const canReturn = row.audit_status === "draft";
-                const pending =
-                  kind === "items"
-                    ? itemReturnMutation.isPending
-                    : employeeReturnMutation.isPending;
+              {rows.map((charge) => {
+                const canCancel =
+                  charge.status === "pending" || charge.status === "partially_applied";
                 return (
-                  <tr className="border-b last:border-b-0" key={row.id}>
-                    <td className="px-2 py-2 align-top">
-                      {row.audit_business_date ? formatDate(row.audit_business_date) : "—"}
-                      {row.audit_status ? (
-                        <div className="mt-1 text-xs">
-                          <AuditStatusBadge status={row.audit_status} />
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="px-2 py-2 align-top">
-                      {kind === "items" ? (
-                        <>
-                          <div className="font-medium">{row.product_name ?? "—"}</div>
-                          {row.amount ? (
-                            <div className="text-xs text-muted-foreground tabular-nums">
-                              {formatSignedMoney(row.amount)}
-                            </div>
-                          ) : null}
-                        </>
-                      ) : (
-                        <>
-                          <div className="font-medium">{row.employee_name ?? "—"}</div>
-                          {row.employee_position ? (
-                            <div className="text-xs text-muted-foreground">
-                              {row.employee_position}
-                            </div>
-                          ) : null}
-                        </>
-                      )}
-                    </td>
-                    <td className="px-2 py-2 align-top text-muted-foreground">{row.reason}</td>
+                  <tr className="border-b last:border-b-0" key={charge.id}>
                     <td className="px-2 py-2 align-top text-xs text-muted-foreground">
-                      {row.created_at ? formatDateTime(row.created_at) : "—"}
-                      <div>{row.created_by_name ?? "—"}</div>
+                      {charge.created_at ? formatDateTime(charge.created_at) : "—"}
+                      <div>{charge.created_by_name ?? "—"}</div>
                     </td>
+                    <td className="px-2 py-2 align-top">{charge.employee_name ?? "—"}</td>
+                    <td className="px-2 py-2 align-top text-xs">
+                      {charge.source_audit_date ? formatDate(charge.source_audit_date) : "—"}
+                    </td>
+                    <td className="px-2 py-2 text-right align-top tabular-nums">
+                      {formatMoney(charge.total_amount)}
+                    </td>
+                    <td className="px-2 py-2 text-center align-top">
+                      {charge.splits_count - charge.splits_remaining}/{charge.splits_count}
+                    </td>
+                    <td className="px-2 py-2 align-top">
+                      <DeferredChargeStatusBadge status={charge.status} />
+                    </td>
+                    <td className="px-2 py-2 align-top text-muted-foreground">{charge.reason}</td>
                     <td className="px-2 py-2 text-right align-top">
                       <Button
-                        disabled={!canReturn || pending}
-                        onClick={() => {
-                          if (kind === "items" && row.item_id) {
-                            itemReturnMutation.mutate({
-                              auditId: row.audit_id,
-                              itemId: row.item_id,
-                            });
-                          } else if (kind === "employees" && row.employee_id) {
-                            employeeReturnMutation.mutate({
-                              auditId: row.audit_id,
-                              employeeId: row.employee_id,
-                            });
-                          }
-                        }}
+                        disabled={!canCancel || cancelMutation.isPending}
+                        onClick={() => setCancelTarget(charge)}
                         size="sm"
-                        title={
-                          !canReturn
-                            ? "Вернуть можно только в черновике ревизии"
-                            : undefined
-                        }
                         type="button"
                         variant="ghost"
                       >
-                        Вернуть
+                        Отменить
                       </Button>
                     </td>
                   </tr>
@@ -862,6 +1196,36 @@ function ExclusionLogTab({ kind }: { kind: "items" | "employees" }) {
           </table>
         </div>
       )}
+
+      <AlertDialog
+        open={cancelTarget !== null}
+        onOpenChange={(open) => !open && setCancelTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Отменить распределение штрафа?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {appliedCancelSplits > 0
+                ? "Уже применённые доли не откатываются — они остаются в payroll-расчётах. Остановится только применение будущих долей."
+                : "Этот распределённый штраф ещё не применялся — он будет полностью отменён."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelMutation.isPending}>Не отменять</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={cancelMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                if (cancelTarget) {
+                  cancelMutation.mutate(cancelTarget.id);
+                }
+              }}
+            >
+              Отменить распределение
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
@@ -933,8 +1297,7 @@ function AuditDetail({
       setExclusionReason("");
       await invalidateInventory(queryClient, audit.id);
     },
-    onError: (error) =>
-      toast.error(apiErrorMessage(error, "Не удалось обновить распределение")),
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось обновить распределение")),
   });
   const itemExclusionMutation = useMutation({
     mutationFn: ({
@@ -948,9 +1311,7 @@ function AuditDetail({
     }) => patchInventoryAuditItemExclusion(audit.id, itemId, { excluded, reason }),
     onSuccess: async (_audit, variables) => {
       toast.success(
-        variables.excluded
-          ? "Позиция исключена из расчёта"
-          : "Позиция возвращена в расчёт",
+        variables.excluded ? "Позиция исключена из расчёта" : "Позиция возвращена в расчёт",
       );
       await invalidateInventory(queryClient, audit.id);
       setItemExclusionTarget(null);
@@ -992,8 +1353,7 @@ function AuditDetail({
   const surplusItemsCount = items.filter((item) => Number(item.amount) > 0).length;
   const skippedCount = audit.items_skipped_count ?? 0;
   const totalShortageIiko = audit.total_shortage_iiko ?? audit.total_shortage_amount;
-  const totalShortageConsidered =
-    audit.total_shortage_considered ?? audit.total_shortage_amount;
+  const totalShortageConsidered = audit.total_shortage_considered ?? audit.total_shortage_amount;
   const payrollPeriodStart = payrollPeriodStartForAudit(audit.business_date);
   const isFinalized = audit.status !== "draft";
   const isOverrideDisabled =
@@ -1013,7 +1373,9 @@ function AuditDetail({
           <div className="mt-1 text-sm text-muted-foreground">
             Предыдущая ревизия:{" "}
             {audit.previous_audit_date ? formatDate(audit.previous_audit_date) : "—"}
-            {period?.start && period?.end ? ` · Период ${formatDate(period.start)} — ${formatDate(period.end)}` : ""}
+            {period?.start && period?.end
+              ? ` · Период ${formatDate(period.start)} — ${formatDate(period.end)}`
+              : ""}
           </div>
           <div className="mt-1 text-sm text-muted-foreground">
             Штрафы попадут в payroll-период с {formatDate(payrollPeriodStart)}
@@ -1027,32 +1389,31 @@ function AuditDetail({
             </div>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
-          <Button disabled={isComputing} onClick={() => onCompute(audit)} variant="outline">
-            {isComputing ? (
-              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-            ) : (
-              <RefreshCw size={16} aria-hidden="true" />
-            )}
-            Перерасчёт
-          </Button>
-          {audit.status === "draft" ? (
-            <Button onClick={() => onApply(audit)}>
-              <Check size={16} aria-hidden="true" />
-              Применить
+            <Button disabled={isComputing} onClick={() => onCompute(audit)} variant="outline">
+              {isComputing ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <RefreshCw size={16} aria-hidden="true" />
+              )}
+              Перерасчёт
             </Button>
-          ) : null}
-          {audit.status !== "cancelled" ? (
-            <Button onClick={() => onCancel(audit)} variant="outline">
-              <Trash2 size={16} aria-hidden="true" />
-              Отменить
-            </Button>
-          ) : null}
-          {audit.status === "cancelled" ? (
-            <Button onClick={() => onRestore(audit)} variant="outline">
-              <RotateCcw size={16} aria-hidden="true" />
-              В черновик
-            </Button>
-          ) : null}
+            {audit.status === "draft" ? (
+              <Button onClick={() => onApply(audit)}>
+                <Check size={16} aria-hidden="true" />
+                Применить
+              </Button>
+            ) : null}
+            {audit.status !== "cancelled" ? (
+              <Button onClick={() => onCancel(audit)} variant="outline">
+                <Trash2 size={16} aria-hidden="true" />
+                Отменить
+              </Button>
+            ) : null}
+            {audit.status === "cancelled" ? (
+              <Button onClick={() => onRestore(audit)} variant="outline">
+                <RotateCcw size={16} aria-hidden="true" />В черновик
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -1078,7 +1439,13 @@ function AuditDetail({
               {formatMoney(totalShortageConsidered)}
             </span>
             <span className="text-muted-foreground">
-              ({formatItemsCount(items.length, "активная позиция", "активные позиции", "активных позиций")}
+              (
+              {formatItemsCount(
+                items.length,
+                "активная позиция",
+                "активные позиции",
+                "активных позиций",
+              )}
               {skippedCount > 0 ? `; ${skippedCount} скрыто как неактивные` : ""})
             </span>
           </span>
@@ -1171,7 +1538,8 @@ function AuditDetail({
             </div>
           ) : (
             <div className="rounded-md border px-3 py-4 text-sm text-muted-foreground">
-              Ни одна позиция документа не активна в whitelist. Активируйте нужные в Исходных → Ревизии.
+              Ни одна позиция документа не активна в whitelist. Активируйте нужные в Исходных →
+              Ревизии.
             </div>
           )}
         </div>
@@ -1344,14 +1712,14 @@ function AuditDetail({
             <AlertDialogDescription>
               {itemExclusionTarget?.nextExcluded ? (
                 <>
-                  Позиция <b>{itemExclusionTarget.productName}</b> не попадёт
-                  в недостачи и штрафы этой ревизии. Укажите причину исключения — это
-                  обязательно и будет зафиксировано в журнале.
+                  Позиция <b>{itemExclusionTarget.productName}</b> не попадёт в недостачи и штрафы
+                  этой ревизии. Укажите причину исключения — это обязательно и будет зафиксировано в
+                  журнале.
                 </>
               ) : (
                 <>
-                  Позиция <b>{itemExclusionTarget?.productName}</b> снова будет
-                  учтена в расчёте штрафа.
+                  Позиция <b>{itemExclusionTarget?.productName}</b> снова будет учтена в расчёте
+                  штрафа.
                 </>
               )}
             </AlertDialogDescription>
@@ -1372,9 +1740,7 @@ function AuditDetail({
             </div>
           ) : null}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={itemExclusionMutation.isPending}>
-              Отмена
-            </AlertDialogCancel>
+            <AlertDialogCancel disabled={itemExclusionMutation.isPending}>Отмена</AlertDialogCancel>
             <AlertDialogAction
               disabled={
                 itemExclusionMutation.isPending ||
@@ -1389,9 +1755,7 @@ function AuditDetail({
                 itemExclusionMutation.mutate({
                   itemId: itemExclusionTarget.itemId,
                   excluded: itemExclusionTarget.nextExcluded,
-                  reason: itemExclusionTarget.nextExcluded
-                    ? itemExclusionReason.trim()
-                    : null,
+                  reason: itemExclusionTarget.nextExcluded ? itemExclusionReason.trim() : null,
                 });
               }}
             >
@@ -1408,9 +1772,7 @@ function AuditDetail({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{overrideTarget?.label ?? "Изменить группу"}</AlertDialogTitle>
-            <AlertDialogDescription>
-              Это изменит расчёт штрафа. Применить?
-            </AlertDialogDescription>
+            <AlertDialogDescription>Это изменит расчёт штрафа. Применить?</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Назад</AlertDialogCancel>
@@ -1671,9 +2033,7 @@ function EmployeePenaltyRow({
           </div>
         ) : null}
       </div>
-      <div className="font-medium tabular-nums sm:text-right">
-        {formatMoney(recipient.amount)}
-      </div>
+      <div className="font-medium tabular-nums sm:text-right">{formatMoney(recipient.amount)}</div>
       <div className="flex items-center gap-2 sm:justify-end">
         {loading ? <LoaderCircle className="animate-spin" size={15} aria-hidden="true" /> : null}
         <span className="text-xs text-muted-foreground">Учитывать</span>
@@ -1700,6 +2060,20 @@ function AuditStatusBadge({ status }: { status: InventoryAuditStatus }) {
       {statusLabels[status]}
     </Badge>
   );
+}
+
+function DeferredChargeStatusBadge({ status }: { status: DeferredChargeStatus }) {
+  const label =
+    status === "pending"
+      ? "Ожидает"
+      : status === "partially_applied"
+        ? "Частично применён"
+        : status === "applied"
+          ? "Применён"
+          : "Отменён";
+  const variant: "default" | "secondary" | "outline" =
+    status === "applied" ? "default" : status === "cancelled" ? "outline" : "secondary";
+  return <Badge variant={variant}>{label}</Badge>;
 }
 
 function PanelTitle({ title }: { title: string }) {
@@ -1866,6 +2240,23 @@ function formatSignedMoney(value: string | number | null | undefined) {
     return formatMoney(amount);
   }
   return `+${formatMoney(amount)}`;
+}
+
+function defaultDeferredAmount(value: string | number | null | undefined) {
+  const amount = Math.abs(Number(value ?? 0));
+  return Number.isFinite(amount) ? amount.toFixed(2) : "0";
+}
+
+function pluralizeRuns(count: number) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) {
+    return "расчёт";
+  }
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
+    return "расчёта";
+  }
+  return "расчётов";
 }
 
 function formatItemsCount(count: number, one: string, few: string, many: string) {
