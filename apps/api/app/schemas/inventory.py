@@ -165,6 +165,20 @@ class InventoryAuditListRead(BaseModel):
     applied_at: datetime | None = None
 
 
+class InventoryAuditExclusionLogItem(BaseModel):
+    id: str
+    item_id: str | None = None
+    product_name: str | None = None
+    amount: str | None = None
+    employee_id: str | None = None
+    employee_name: str | None = None
+    employee_position: str | None = None
+    reason: str
+    created_by_name: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
 class InventoryAuditDetailRead(InventoryAuditListRead):
     total_shortage_iiko: str
     total_shortage_considered: str
@@ -172,6 +186,8 @@ class InventoryAuditDetailRead(InventoryAuditListRead):
     swap_groups: list[dict[str, Any]] = Field(default_factory=list)
     items_skipped_count: int
     computation_snapshot: dict[str, Any] | None = None
+    item_exclusions_log: list[InventoryAuditExclusionLogItem] = Field(default_factory=list)
+    employee_exclusions_log: list[InventoryAuditExclusionLogItem] = Field(default_factory=list)
 
 
 class PenaltyComputationRead(BaseModel):

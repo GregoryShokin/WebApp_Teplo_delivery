@@ -601,6 +601,20 @@ export type InventoryAuditItem = {
   created_at: string | null;
 };
 
+export type InventoryAuditExclusionLogItem = {
+  id: string;
+  item_id?: string | null;
+  product_name?: string | null;
+  amount?: string | null;
+  employee_id?: string | null;
+  employee_name?: string | null;
+  employee_position?: string | null;
+  reason: string;
+  created_by_name?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
 export type InventoryAudit = {
   id: string;
   business_date: string;
@@ -620,6 +634,8 @@ export type InventoryAudit = {
   applied_at: string | null;
   items_skipped_count?: number;
   items?: InventoryAuditItem[];
+  item_exclusions_log?: InventoryAuditExclusionLogItem[];
+  employee_exclusions_log?: InventoryAuditExclusionLogItem[];
   swap_groups?: InventorySwapGroupSummary[];
   computation_snapshot?: InventoryComputationSnapshot | null;
 };

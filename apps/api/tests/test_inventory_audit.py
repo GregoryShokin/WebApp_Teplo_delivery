@@ -803,6 +803,72 @@ def test_get_audit_items_skipped_count() -> None:
     assert payload["items_skipped_count"] == 3
 
 
+def test_audit_payload_includes_item_exclusions_log() -> None:
+    created_at = datetime(2026, 5, 26, 12, 30, tzinfo=UTC)
+    item_row = detail_item("7000", "chefs", active=True, name="Лосось")
+    audit = audit_detail_obj([item_row])
+    audit.item_exclusions = [
+        SimpleNamespace(
+            id=uuid.uuid4(),
+            item_id=item_row.id,
+            item=item_row,
+            reason="брак",
+            created_by=SimpleNamespace(full_name="Финансист"),
+            created_at=created_at,
+            updated_at=created_at,
+        )
+    ]
+
+    payload = inventory_routes.audit_payload(audit, include_items=True)
+
+    assert len(payload["item_exclusions_log"]) == 1
+    row = payload["item_exclusions_log"][0]
+    assert row["item_id"] == str(item_row.id)
+    assert row["product_name"] == "Лосось"
+    assert row["amount"] == "-7000.00"
+    assert row["reason"] == "брак"
+    assert row["created_by_name"] == "Финансист"
+    assert row["created_at"] == created_at
+
+
+def test_audit_payload_includes_employee_exclusions_log() -> None:
+    created_at = datetime(2026, 5, 26, 12, 30, tzinfo=UTC)
+    employee_row = employee("Повар Иван", "Повар")
+    audit = audit_detail_obj([detail_item("7000", "chefs", active=True)])
+    audit.employee_exclusions = [
+        SimpleNamespace(
+            id=uuid.uuid4(),
+            employee_id=employee_row.id,
+            employee=employee_row,
+            reason="не участвовал",
+            created_by=SimpleNamespace(full_name="Финансист"),
+            created_at=created_at,
+            updated_at=created_at,
+        )
+    ]
+
+    payload = inventory_routes.audit_payload(audit, include_items=True)
+
+    assert len(payload["employee_exclusions_log"]) == 1
+    row = payload["employee_exclusions_log"][0]
+    assert row["employee_id"] == str(employee_row.id)
+    assert row["employee_name"] == "Повар Иван"
+    assert row["employee_position"] == "Повар"
+    assert row["reason"] == "не участвовал"
+    assert row["created_by_name"] == "Финансист"
+    assert row["created_at"] == created_at
+
+
+def test_exclusions_log_empty_when_no_exclusions() -> None:
+    payload = inventory_routes.audit_payload(
+        audit_detail_obj([detail_item("7000", "chefs", active=True)]),
+        include_items=True,
+    )
+
+    assert payload["item_exclusions_log"] == []
+    assert payload["employee_exclusions_log"] == []
+
+
 def test_remap_migration_links_old_items_by_guid(monkeypatch: pytest.MonkeyPatch) -> None:
     migration_path = (
         Path(__file__).parents[1] / "alembic/versions/0042_remap_inventory_items_to_positions.py"
@@ -1395,6 +1461,11 @@ def install_item_exclusion_fakes(
     audit: SimpleNamespace,
 ) -> None:
     async def fake_load_audit(_session: Any, _audit_id: uuid.UUID) -> SimpleNamespace:
+        items_by_id = {item.id: item for item in getattr(audit, "items", [])}
+        for exclusion in getattr(audit, "item_exclusions", []):
+            if isinstance(exclusion, InventoryAuditItemExclusion):
+                exclusion.item = items_by_id.get(exclusion.item_id)
+                exclusion.created_by = None
         return audit
 
     async def fake_inventory_settings(_session: Any) -> dict[str, Decimal]:

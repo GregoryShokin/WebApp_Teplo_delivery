@@ -191,6 +191,11 @@ class InventoryAuditEmployeeExclusion(Base):
 
     audit: Mapped[InventoryAudit] = relationship(back_populates="employee_exclusions")
     employee: Mapped[Any] = relationship("Employee")
+    created_by: Mapped[Any] = relationship(
+        "User",
+        lazy="raise",
+        foreign_keys=[created_by_user_id],
+    )
 
 
 class InventoryAuditItemExclusion(Base):
@@ -221,3 +226,8 @@ class InventoryAuditItemExclusion(Base):
 
     audit: Mapped[InventoryAudit] = relationship(back_populates="item_exclusions")
     item: Mapped[InventoryAuditItem] = relationship()
+    created_by: Mapped[Any] = relationship(
+        "User",
+        lazy="raise",
+        foreign_keys=[created_by_user_id],
+    )

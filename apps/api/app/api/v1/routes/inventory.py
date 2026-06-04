@@ -16,6 +16,7 @@ from app.models import (
     InventoryAudit,
     InventoryAuditEmployeeExclusion,
     InventoryAuditItem,
+    InventoryAuditItemExclusion,
     InventoryAuditPosition,
 )
 from app.schemas.inventory import (
@@ -562,7 +563,15 @@ async def load_audit_or_404(session: AsyncSession, audit_id: uuid.UUID) -> Inven
             selectinload(InventoryAudit.employee_exclusions).selectinload(
                 InventoryAuditEmployeeExclusion.employee
             ),
-            selectinload(InventoryAudit.item_exclusions),
+            selectinload(InventoryAudit.employee_exclusions).selectinload(
+                InventoryAuditEmployeeExclusion.created_by
+            ),
+            selectinload(InventoryAudit.item_exclusions).selectinload(
+                InventoryAuditItemExclusion.item
+            ),
+            selectinload(InventoryAudit.item_exclusions).selectinload(
+                InventoryAuditItemExclusion.created_by
+            ),
         )
         .where(InventoryAudit.id == audit_id)
     )
@@ -666,6 +675,56 @@ def audit_payload(audit: InventoryAudit, *, include_items: bool = False) -> dict
         )
         payload["items_skipped_count"] = summary.items_skipped_count
         payload["computation_snapshot"] = audit.computation_snapshot
+        payload["item_exclusions_log"] = [
+            {
+                "id": str(exclusion.id),
+                "item_id": str(exclusion.item_id),
+                "product_name": (
+                    getattr(exclusion.item, "product_name_snapshot", None)
+                    if exclusion.item is not None
+                    else None
+                ),
+                "amount": (
+                    decimal_string(item_signed_amount(exclusion.item))
+                    if exclusion.item is not None
+                    else None
+                ),
+                "reason": exclusion.reason,
+                "created_by_name": (
+                    exclusion.created_by.full_name
+                    if exclusion.created_by is not None
+                    else None
+                ),
+                "created_at": exclusion.created_at,
+                "updated_at": exclusion.updated_at,
+            }
+            for exclusion in getattr(audit, "item_exclusions", [])
+        ]
+        payload["employee_exclusions_log"] = [
+            {
+                "id": str(exclusion.id),
+                "employee_id": str(exclusion.employee_id),
+                "employee_name": (
+                    exclusion.employee.full_name
+                    if exclusion.employee is not None
+                    else None
+                ),
+                "employee_position": (
+                    getattr(exclusion.employee, "position", None)
+                    if exclusion.employee is not None
+                    else None
+                ),
+                "reason": exclusion.reason,
+                "created_by_name": (
+                    exclusion.created_by.full_name
+                    if exclusion.created_by is not None
+                    else None
+                ),
+                "created_at": exclusion.created_at,
+                "updated_at": exclusion.updated_at,
+            }
+            for exclusion in getattr(audit, "employee_exclusions", [])
+        ]
     return payload
 
 

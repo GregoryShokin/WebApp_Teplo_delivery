@@ -797,6 +797,8 @@ function AuditDetail({
   const isOverrideDisabled =
     audit.status !== "draft" || overrideMutation.isPending || itemExclusionMutation.isPending;
   const isExclusionDisabled = audit.status !== "draft" || exclusionMutation.isPending;
+  const itemExclusionsLog = audit.item_exclusions_log ?? [];
+  const employeeExclusionsLog = audit.employee_exclusions_log ?? [];
 
   return (
     <section className="space-y-4 rounded-lg border bg-card p-4">
@@ -1018,6 +1020,147 @@ function AuditDetail({
           )}
         </div>
       </div>
+
+      <section className="space-y-3 border-t pt-4">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <PanelTitle title="Журнал исключений" />
+          <span className="text-xs text-muted-foreground">
+            Только в этой ревизии. Возврат меняет расчёт.
+          </span>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-muted-foreground">
+              Исключённые позиции ({itemExclusionsLog.length})
+            </div>
+            {itemExclusionsLog.length ? (
+              <div className="overflow-x-auto rounded-md border">
+                <table className="w-full min-w-[560px] text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/35">
+                      <th className="px-2 py-2 text-left font-medium">Позиция</th>
+                      <th className="px-2 py-2 text-left font-medium">Причина</th>
+                      <th className="px-2 py-2 text-left font-medium w-[120px]">Когда / кто</th>
+                      <th className="px-2 py-2 text-right font-medium w-[88px]">Действие</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {itemExclusionsLog.map((row) => (
+                      <tr className="border-b last:border-b-0" key={row.id}>
+                        <td className="px-2 py-2 align-top">
+                          <div className="font-medium">{row.product_name ?? "—"}</div>
+                          {row.amount ? (
+                            <div className="text-xs text-muted-foreground tabular-nums">
+                              {formatSignedMoney(row.amount)}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td className="px-2 py-2 align-top text-muted-foreground">
+                          {row.reason}
+                        </td>
+                        <td className="px-2 py-2 align-top text-xs text-muted-foreground">
+                          {row.created_at ? formatDateTime(row.created_at) : "—"}
+                          <div>{row.created_by_name ?? "—"}</div>
+                        </td>
+                        <td className="px-2 py-2 text-right align-top">
+                          <Button
+                            disabled={
+                              isFinalized ||
+                              itemExclusionMutation.isPending ||
+                              !row.item_id
+                            }
+                            onClick={() =>
+                              itemExclusionMutation.mutate({
+                                itemId: row.item_id!,
+                                excluded: false,
+                                reason: null,
+                              })
+                            }
+                            size="sm"
+                            type="button"
+                            variant="ghost"
+                          >
+                            Вернуть
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="rounded-md border px-3 py-4 text-sm text-muted-foreground">
+                Нет исключённых позиций.
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-muted-foreground">
+              Исключённые сотрудники ({employeeExclusionsLog.length})
+            </div>
+            {employeeExclusionsLog.length ? (
+              <div className="overflow-x-auto rounded-md border">
+                <table className="w-full min-w-[560px] text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/35">
+                      <th className="px-2 py-2 text-left font-medium">Сотрудник</th>
+                      <th className="px-2 py-2 text-left font-medium">Причина</th>
+                      <th className="px-2 py-2 text-left font-medium w-[120px]">Когда / кто</th>
+                      <th className="px-2 py-2 text-right font-medium w-[88px]">Действие</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employeeExclusionsLog.map((row) => (
+                      <tr className="border-b last:border-b-0" key={row.id}>
+                        <td className="px-2 py-2 align-top">
+                          <div className="font-medium">{row.employee_name ?? "—"}</div>
+                          {row.employee_position ? (
+                            <div className="text-xs text-muted-foreground">
+                              {row.employee_position}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td className="px-2 py-2 align-top text-muted-foreground">
+                          {row.reason}
+                        </td>
+                        <td className="px-2 py-2 align-top text-xs text-muted-foreground">
+                          {row.created_at ? formatDateTime(row.created_at) : "—"}
+                          <div>{row.created_by_name ?? "—"}</div>
+                        </td>
+                        <td className="px-2 py-2 text-right align-top">
+                          <Button
+                            disabled={
+                              isFinalized ||
+                              exclusionMutation.isPending ||
+                              !row.employee_id
+                            }
+                            onClick={() =>
+                              exclusionMutation.mutate({
+                                employeeId: row.employee_id!,
+                                excluded: false,
+                              })
+                            }
+                            size="sm"
+                            type="button"
+                            variant="ghost"
+                          >
+                            Вернуть
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="rounded-md border px-3 py-4 text-sm text-muted-foreground">
+                Нет исключённых сотрудников.
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
 
       <Dialog open={Boolean(moveTarget)} onOpenChange={(open) => !open && setMoveTarget(null)}>
         <DialogContent>
@@ -1629,6 +1772,23 @@ function formatDate(value: string) {
     month: "2-digit",
     year: "numeric",
   }).format(new Date(`${value}T00:00:00`));
+}
+
+function formatDateTime(value: string) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return formatDate(value);
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
 }
 
 function formatMoney(value: string | number | null | undefined) {

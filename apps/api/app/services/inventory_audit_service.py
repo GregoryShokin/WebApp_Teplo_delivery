@@ -1319,8 +1319,18 @@ async def _load_audit_or_404(session: AsyncSession, audit_id: uuid.UUID) -> Inve
         select(InventoryAudit)
         .options(
             selectinload(InventoryAudit.items).selectinload(InventoryAuditItem.position),
-            selectinload(InventoryAudit.employee_exclusions),
-            selectinload(InventoryAudit.item_exclusions),
+            selectinload(InventoryAudit.employee_exclusions).selectinload(
+                InventoryAuditEmployeeExclusion.employee
+            ),
+            selectinload(InventoryAudit.employee_exclusions).selectinload(
+                InventoryAuditEmployeeExclusion.created_by
+            ),
+            selectinload(InventoryAudit.item_exclusions).selectinload(
+                InventoryAuditItemExclusion.item
+            ),
+            selectinload(InventoryAudit.item_exclusions).selectinload(
+                InventoryAuditItemExclusion.created_by
+            ),
         )
         .where(InventoryAudit.id == audit_id)
     )
