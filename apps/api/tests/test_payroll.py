@@ -22,7 +22,6 @@ from app.models import (
     AppSettingHistory,
     AttendanceEntry,
     DeferredAuditCharge,
-    DeferredAuditChargeSplit,
     DepositAccount,
     DepositTransaction,
     Employee,
@@ -36,16 +35,16 @@ from app.models import (
     ShiftLedgerEntry,
 )
 from app.schemas.payroll import DeferredChargeCreate
-from app.services.deferred_audit_charge_service import (
-    cancel_deferred_charge,
-    create_deferred_charge,
-)
 from app.services import shift_ledger as shift_ledger_service
 from app.services.accumulation_fund_service import forfeit_active_fund_on_dismiss
 from app.services.attendance_loader import (
     PAYROLL_TARGET_POSITIONS,
     build_attendance_entry,
     load_attendance_entries,
+)
+from app.services.deferred_audit_charge_service import (
+    cancel_deferred_charge,
+    create_deferred_charge,
 )
 from app.services.payroll_adjustment_service import PayrollAdjustmentLockedError
 from app.services.payroll_calculator import (
@@ -472,14 +471,26 @@ async def fake_mark_vacations_paid(*_args: Any, **_kwargs: Any) -> int:
 
 def patch_runner_for_deferred_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(payroll_routes, "run_payroll", run_payroll)
-    monkeypatch.setattr("app.services.payroll_runner.load_attendance_entries", fake_load_attendance_entries)
-    monkeypatch.setattr("app.services.payroll_runner.collect_blocking_issues", fake_collect_blocking_issues)
+    monkeypatch.setattr(
+        "app.services.payroll_runner.load_attendance_entries",
+        fake_load_attendance_entries,
+    )
+    monkeypatch.setattr(
+        "app.services.payroll_runner.collect_blocking_issues",
+        fake_collect_blocking_issues,
+    )
     monkeypatch.setattr(
         "app.services.payroll_runner.ensure_daily_revenue_cached",
         fake_ensure_daily_revenue_cached,
     )
-    monkeypatch.setattr("app.services.payroll_runner.calculate_payroll_lines", fake_calculate_payroll_lines)
-    monkeypatch.setattr("app.services.payroll_runner.update_deposits_and_fund", fake_update_deposits_and_fund)
+    monkeypatch.setattr(
+        "app.services.payroll_runner.calculate_payroll_lines",
+        fake_calculate_payroll_lines,
+    )
+    monkeypatch.setattr(
+        "app.services.payroll_runner.update_deposits_and_fund",
+        fake_update_deposits_and_fund,
+    )
     monkeypatch.setattr(
         "app.services.payroll_runner.vacation_service.mark_vacations_paid_for_payroll_period",
         fake_mark_vacations_paid,

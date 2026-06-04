@@ -25,8 +25,8 @@ from app.schemas.payroll import (
     DeferredChargeRead,
     PayrollLineDepositOverridePatch,
     PayrollLineRead,
-    PayrollPersonalReportRead,
     PayrollPeriodRead,
+    PayrollPersonalReportRead,
     PayrollRunCreate,
     PayrollRunRead,
 )
