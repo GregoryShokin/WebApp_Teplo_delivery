@@ -1,7 +1,7 @@
 """add deferred charges feature flag setting
 
 Revision ID: 0055_deferred_charges_setting
-Revises: 0054_deferred_audit_charge
+Revises: 0055_deferred_charge_recipients
 Create Date: 2026-06-04
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0055_deferred_charges_setting"
-down_revision = "0054_deferred_audit_charge"
+down_revision = "0055_deferred_charge_recipients"
 branch_labels = None
 depends_on = None
 

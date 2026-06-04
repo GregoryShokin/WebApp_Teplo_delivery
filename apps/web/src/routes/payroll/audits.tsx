@@ -68,6 +68,7 @@ import {
   getInventoryAudit,
   getInventoryAudits,
   getInventoryPositions,
+  getSettings,
   importInventoryAuditFromIiko,
   listDeferredCharges,
   patchInventoryAuditEmployeeExclusion,
@@ -125,6 +126,19 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
   const [dateTo, setDateTo] = useState(month.end);
   const [statusFilter, setStatusFilter] = useState<InventoryAuditStatus | "all">("all");
   const [subTab, setSubTab] = useState<"audits" | "items" | "employees" | "deferred">("audits");
+  const payrollSettingsQuery = useQuery({
+    queryKey: ["settings", "payroll"],
+    queryFn: () => getSettings("payroll"),
+    staleTime: 60_000,
+  });
+  const deferredEnabled =
+    payrollSettingsQuery.data?.find((s) => s.key === "payroll.deferred_charges_enabled")?.value ===
+    true;
+  useEffect(() => {
+    if (!deferredEnabled && subTab === "deferred") {
+      setSubTab("audits");
+    }
+  }, [deferredEnabled, subTab]);
   const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
@@ -354,7 +368,9 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
           <TabsTrigger value="audits">Ревизии</TabsTrigger>
           <TabsTrigger value="items">Позиции</TabsTrigger>
           <TabsTrigger value="employees">Сотрудники</TabsTrigger>
-          <TabsTrigger value="deferred">Распределённые</TabsTrigger>
+          {deferredEnabled ? (
+            <TabsTrigger value="deferred">Распределённые</TabsTrigger>
+          ) : null}
         </TabsList>
 
         <TabsContent className="space-y-5" value="audits">
@@ -449,16 +465,18 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
         </TabsContent>
 
         <TabsContent value="items">
-          <ExclusionLogTab kind="items" />
+          <ExclusionLogTab deferredEnabled={deferredEnabled} kind="items" />
         </TabsContent>
 
         <TabsContent value="employees">
-          <ExclusionLogTab kind="employees" />
+          <ExclusionLogTab deferredEnabled={deferredEnabled} kind="employees" />
         </TabsContent>
 
-        <TabsContent value="deferred">
-          <DeferredChargesTab />
-        </TabsContent>
+        {deferredEnabled ? (
+          <TabsContent value="deferred">
+            <DeferredChargesTab />
+          </TabsContent>
+        ) : null}
       </Tabs>
 
       <Dialog open={importOpen} onOpenChange={handleImportOpenChange}>
@@ -725,7 +743,13 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
   }
 }
 
-function ExclusionLogTab({ kind }: { kind: "items" | "employees" }) {
+function ExclusionLogTab({
+  kind,
+  deferredEnabled,
+}: {
+  kind: "items" | "employees";
+  deferredEnabled: boolean;
+}) {
   const [auditDateFrom, setAuditDateFrom] = useState<string>("");
   const [auditDateTo, setAuditDateTo] = useState<string>("");
   const [deferredTarget, setDeferredTarget] = useState<InventoryAuditExclusionLogRow | null>(null);
@@ -875,9 +899,11 @@ function ExclusionLogTab({ kind }: { kind: "items" | "employees" }) {
                               >
                                 Вернуть в расчёт
                               </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={() => setDeferredTarget(row)}>
-                                Распределить штраф…
-                              </DropdownMenuItem>
+                              {deferredEnabled ? (
+                                <DropdownMenuItem onSelect={() => setDeferredTarget(row)}>
+                                  Распределить штраф…
+                                </DropdownMenuItem>
+                              ) : null}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         ) : (
