@@ -883,7 +883,7 @@ function AuditDetail({
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,520px)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,440px)]">
         <div className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <PanelTitle title="Позиции" />
@@ -907,14 +907,14 @@ function AuditDetail({
           </div>
           {items.length ? (
             <div className="overflow-x-auto rounded-md border">
-              <table className="w-full min-w-[840px] text-sm">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="border-b bg-muted/35">
                     <th className="p-3 text-left font-medium">Позиция</th>
-                    <th className="p-3 text-left font-medium">Группа</th>
-                    <th className="p-3 text-right font-medium">Сумма</th>
-                    <th className="p-3 text-center font-medium">Учёт</th>
-                    <th className="p-3 text-right font-medium">Действия</th>
+                    <th className="px-2 py-3 text-left font-medium w-[110px]">Группа</th>
+                    <th className="px-2 py-3 text-right font-medium w-[110px]">Сумма</th>
+                    <th className="px-2 py-3 text-center font-medium w-[64px]">Учёт</th>
+                    <th className="px-2 py-3 text-right font-medium w-[56px]">Действия</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1281,11 +1281,11 @@ function AuditItemRow({
           ) : null}
         </div>
       </td>
-      <td className="p-3">
+      <td className="px-2 py-3">
         <InventoryGroupBadge group={item.allocation_group} />
       </td>
-      <td className="p-3 text-right tabular-nums">{formatSignedMoney(item.amount)}</td>
-      <td className="p-3 text-center">
+      <td className="px-2 py-3 text-right tabular-nums">{formatSignedMoney(item.amount)}</td>
+      <td className="px-2 py-3 text-center">
         <InlineTooltip
           content={
             item.is_excluded
@@ -1302,7 +1302,7 @@ function AuditItemRow({
           />
         </InlineTooltip>
       </td>
-      <td className="p-3 text-right">
+      <td className="px-2 py-3 text-right">
         {canEditSwapGroup ? (
           <span
             title={
