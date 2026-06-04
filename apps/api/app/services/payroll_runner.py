@@ -28,7 +28,10 @@ from app.services.accumulation_fund_service import (
     payout_fund_accounts_for_year,
 )
 from app.services.attendance_loader import PAYROLL_TARGET_POSITIONS, load_attendance_entries
-from app.services.deferred_audit_charge_service import apply_pending_splits_for_run
+from app.services.deferred_audit_charge_service import (
+    apply_pending_splits_for_run,
+    collapse_deferred_charges_on_dismissal,
+)
 from app.services.iiko_revenue import fetch_daily_revenue
 from app.services.payroll_calculator import (
     DAILY_REVENUE_CONFIG_KEY,
@@ -256,18 +259,7 @@ async def run_payroll(
             period.end_date,
             force_refresh=force_refresh,
         )
-        applied_splits = await apply_pending_splits_for_run(
-            session,
-            run=run,
-            period_end=period.end_date,
-        )
-        deferred_charge_summary = (
-            {"deferred_charges_applied": len(applied_splits)} if applied_splits else {}
-        )
-        if deferred_charge_summary:
-            run.summary = {**(run.summary or {}), **deferred_charge_summary}
-        await session.flush()
-
+        deferred_charge_summary: dict[str, int] = {}
         calculation = await calculate_payroll_lines(
             session,
             period,
@@ -287,6 +279,46 @@ async def run_payroll(
         for line in calculation.lines:
             session.add(line)
         await session.flush()
+
+        applied_splits = await apply_pending_splits_for_run(
+            session,
+            run=run,
+            period_end=period.end_date,
+        )
+        collapsed_recipients = await collapse_dismissed_deferred_charge_recipients(
+            session,
+            period=period,
+            run=run,
+        )
+        deferred_charge_summary = deferred_charge_run_summary(
+            applied_splits_count=len(applied_splits),
+            collapsed_recipients_count=len(collapsed_recipients),
+        )
+        if deferred_charge_summary:
+            run.summary = {**(run.summary or {}), **deferred_charge_summary}
+            await session.flush()
+            await session.execute(
+                text("DELETE FROM payroll_line WHERE run_id = :run_id"),
+                {"run_id": run.id},
+            )
+            calculation = await calculate_payroll_lines(
+                session,
+                period,
+                run.id,
+                entries,
+                line_deposit_overrides=line_deposit_overrides,
+            )
+            if calculation.blocking_issues:
+                run.status = "blocked"
+                run.finished_at = datetime.now(UTC)
+                run.blocking_issues = calculation.blocking_issues
+                run.summary = calculation.summary | deferred_charge_summary
+                await session.commit()
+                await session.refresh(run)
+                return run
+            for line in calculation.lines:
+                session.add(line)
+            await session.flush()
 
         subledger_summary = await update_deposits_and_fund(session, period, run, calculation.lines)
         paid_vacations = await vacation_service.mark_vacations_paid_for_payroll_period(
@@ -312,6 +344,46 @@ async def run_payroll(
         run.summary = {"error": str(exc)[:500]}
         await session.commit()
         raise
+
+
+async def collapse_dismissed_deferred_charge_recipients(
+    session: AsyncSession,
+    *,
+    period: PayrollPeriod,
+    run: PayrollRun,
+) -> list[Any]:
+    dismissed_ids = await session.scalars(
+        select(Employee.id).where(
+            Employee.status == "inactive",
+            Employee.fire_date.is_not(None),
+            Employee.fire_date >= period.start_date,
+            Employee.fire_date <= period.end_date,
+        )
+    )
+    collapsed: list[Any] = []
+    for employee_id in dismissed_ids.all():
+        collapsed.extend(
+            await collapse_deferred_charges_on_dismissal(
+                session,
+                employee_id=employee_id,
+                run=run,
+                period_end=period.end_date,
+            )
+        )
+    return collapsed
+
+
+def deferred_charge_run_summary(
+    *,
+    applied_splits_count: int,
+    collapsed_recipients_count: int,
+) -> dict[str, int]:
+    summary: dict[str, int] = {}
+    if applied_splits_count:
+        summary["deferred_charges_applied"] = applied_splits_count
+    if collapsed_recipients_count:
+        summary["deferred_charge_recipients_collapsed"] = collapsed_recipients_count
+    return summary
 
 
 async def load_line_deposit_overrides(
@@ -573,9 +645,7 @@ async def accrue_fund(
 ) -> Decimal:
     await reset_fund_accruals_for_run(session, run.id)
     lines = list(lines)
-    employee_ids = {
-        line.employee_id for line in lines if decimal(line.fund_accrual) > Decimal("0")
-    }
+    employee_ids = {line.employee_id for line in lines if decimal(line.fund_accrual) > Decimal("0")}
     employees_by_id: dict[uuid.UUID, Employee] = {}
     if employee_ids:
         employees_by_id = {
@@ -746,9 +816,7 @@ async def finalize_payroll_run(
     # До финализации они существовали как «превью» (см. update_deposits_and_fund),
     # сейчас становятся реальными движениями денег.
     run_transactions = (
-        await session.scalars(
-            select(DepositTransaction).where(DepositTransaction.run_id == run.id)
-        )
+        await session.scalars(select(DepositTransaction).where(DepositTransaction.run_id == run.id))
     ).all()
     if run_transactions:
         employee_ids = {tx.employee_id for tx in run_transactions}

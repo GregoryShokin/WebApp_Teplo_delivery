@@ -12,19 +12,27 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import CurrentActor
 from app.models import (
     DeferredAuditCharge,
+    DeferredAuditChargeRecipient,
     DeferredAuditChargeSplit,
     Employee,
     InventoryAudit,
     InventoryAuditItem,
     PayrollAdjustment,
     PayrollAdjustmentCategory,
+    PayrollLine,
     PayrollRun,
 )
 from app.schemas.payroll import DeferredChargeCreate
+from app.services.inventory_audit_service import (
+    _load_period_employees,
+    audit_period,
+    split_amount_evenly,
+)
 
 DEFERRED_AUDIT_CATEGORY_CODE = "audit_deferred"
 DEFERRED_AUDIT_CATEGORY_NAME = "Распределённый штраф ревизии"
 DEFERRED_AUDIT_CREATED_BY_LABEL = "system:deferred_charge"
+DEFERRED_AUDIT_DISMISSAL_CREATED_BY_LABEL = "system:deferred_charge_dismissal"
 PENDING_STATUSES = ("pending", "partially_applied")
 MONEY = Decimal("0.01")
 
@@ -46,37 +54,40 @@ async def create_deferred_charge(
     payload: DeferredChargeCreate,
     actor: CurrentActor,
 ) -> DeferredAuditCharge:
-    audit = await session.get(InventoryAudit, payload.source_audit_id)
-    if audit is None:
-        raise DeferredChargeNotFoundError("Ревизия не найдена")
+    audit = await _load_audit_with_exclusions(session, payload.source_audit_id)
+    item = await _load_audit_item_with_position(session, payload.source_item_id)
+    if item.audit_id != payload.source_audit_id:
+        raise DeferredChargeValidationError("Позиция не относится к выбранной ревизии")
 
-    if payload.source_item_id is not None:
-        item = await session.get(InventoryAuditItem, payload.source_item_id)
-        if item is None:
-            raise DeferredChargeNotFoundError("Позиция ревизии не найдена")
-        if item.audit_id != payload.source_audit_id:
-            raise DeferredChargeValidationError("Позиция не относится к выбранной ревизии")
+    position = getattr(item, "position", None)
+    allocation_group = getattr(position, "allocation_group", None)
+    if position is None or allocation_group is None:
+        raise DeferredChargeValidationError("У позиции нет allocation_group")
+    if allocation_group not in {"chefs", "admins", "common"}:
+        raise DeferredChargeValidationError("Неподдерживаемая группа распределения")
 
-    employee = await session.get(Employee, payload.employee_id)
-    if employee is None:
-        raise DeferredChargeNotFoundError("Сотрудник не найден")
+    recipients, recipient_shares = await _recipient_shares_for_charge(
+        session,
+        audit=audit,
+        allocation_group=allocation_group,
+        total_penalty_amount=payload.total_penalty_amount,
+    )
+    if not recipients:
+        raise DeferredChargeValidationError("Нет получателей штрафа за этот период")
 
-    amounts = split_charge_amount(payload.total_amount, payload.splits_count)
     charge = DeferredAuditCharge(
         source_audit_id=payload.source_audit_id,
         source_item_id=payload.source_item_id,
-        employee_id=payload.employee_id,
-        total_amount=sum(amounts, Decimal("0")),
+        allocation_group=allocation_group,
+        total_penalty_amount=_money(payload.total_penalty_amount),
         splits_count=payload.splits_count,
-        splits_remaining=payload.splits_count,
         status="pending",
         reason=payload.reason.strip(),
-        applied_run_ids=[],
         created_by_user_id=actor.user_id,
     )
-    charge.splits = [
-        DeferredAuditChargeSplit(split_index=index, amount=amount)
-        for index, amount in enumerate(amounts, start=1)
+    charge.recipients = [
+        _build_recipient(employee, recipient_shares[employee.id], payload.splits_count)
+        for employee in recipients
     ]
     session.add(charge)
     await session.flush()
@@ -88,13 +99,10 @@ async def create_deferred_charge(
 async def list_deferred_charges(
     session: AsyncSession,
     *,
-    employee_id: uuid.UUID | None = None,
     status: str | None = None,
     audit_id: uuid.UUID | None = None,
 ) -> list[DeferredAuditCharge]:
     query = select(DeferredAuditCharge).options(*_charge_load_options())
-    if employee_id is not None:
-        query = query.where(DeferredAuditCharge.employee_id == employee_id)
     if status is not None:
         query = query.where(DeferredAuditCharge.status == status)
     if audit_id is not None:
@@ -115,12 +123,13 @@ async def cancel_deferred_charge(
         raise DeferredChargeConflictError("Отложенный штраф уже завершён")
 
     now = datetime.now(UTC)
-    for split in charge.splits:
-        if split.run_id is None:
-            split.applied_at = split.applied_at or now
-            split.adjustment_id = None
+    for recipient in charge.recipients:
+        for split in recipient.splits:
+            if split.run_id is None and split.applied_at is None:
+                split.applied_at = now
+                split.adjustment_id = None
+        recipient.splits_remaining = 0
     charge.status = "cancelled"
-    charge.splits_remaining = 0
     charge.updated_at = now
 
     await session.flush()
@@ -135,83 +144,163 @@ async def apply_pending_splits_for_run(
     period_end: date,
 ) -> list[DeferredAuditChargeSplit]:
     result = await session.scalars(
-        select(DeferredAuditCharge)
-        .options(
-            selectinload(DeferredAuditCharge.splits),
-            selectinload(DeferredAuditCharge.source_audit),
+        select(DeferredAuditChargeRecipient)
+        .options(*_recipient_load_options())
+        .join(DeferredAuditCharge, DeferredAuditChargeRecipient.charge_id == DeferredAuditCharge.id)
+        .where(
+            DeferredAuditChargeRecipient.collapsed_at.is_(None),
+            DeferredAuditChargeRecipient.splits_remaining > 0,
+            DeferredAuditCharge.status.in_(PENDING_STATUSES),
         )
-        .where(DeferredAuditCharge.status.in_(PENDING_STATUSES))
-        .order_by(DeferredAuditCharge.created_at, DeferredAuditCharge.id)
+        .order_by(DeferredAuditChargeRecipient.created_at, DeferredAuditChargeRecipient.id)
         .with_for_update(skip_locked=True)
     )
-    charges = list(result.all())
+    recipients = list(result.all())
     applied: list[DeferredAuditChargeSplit] = []
+    touched_charges: set[DeferredAuditCharge] = set()
     category: PayrollAdjustmentCategory | None = None
     now = datetime.now(UTC)
-    run_id = str(run.id)
 
-    for charge in charges:
-        if run_id in (charge.applied_run_ids or []):
-            continue
-        if any(split.run_id == run.id for split in charge.splits):
-            continue
-
-        split = first_unapplied_split(charge)
-        if split is None:
-            if charge.splits_remaining != 0:
-                charge.splits_remaining = 0
-                charge.status = "applied"
-                charge.updated_at = now
-            continue
-        if split.amount <= 0:
-            raise DeferredChargeValidationError("Доля отложенного штрафа должна быть больше 0")
-
-        if category is None:
-            category = await _get_or_create_deferred_category(session)
-        adjustment = PayrollAdjustment(
-            id=uuid.uuid4(),
-            employee_id=charge.employee_id,
-            work_date=period_end,
-            type="penalty",
-            category_id=category.id,
-            custom_label=None,
-            amount=split.amount,
-            comment=deferred_adjustment_comment(charge, split),
-            created_by_user_id=None,
-            created_by_label=DEFERRED_AUDIT_CREATED_BY_LABEL,
-            created_at=now,
-            updated_at=now,
+    for recipient in recipients:
+        line = await session.scalar(
+            select(PayrollLine)
+            .where(
+                PayrollLine.run_id == run.id,
+                PayrollLine.employee_id == recipient.employee_id,
+            )
+            .limit(1)
         )
-        session.add(adjustment)
+        if line is None:
+            continue
+
+        split = first_unapplied_split(recipient)
+        if split is None:
+            recipient.splits_remaining = 0
+            touched_charges.add(recipient.charge)
+            continue
+
+        if split.amount > 0:
+            if category is None:
+                category = await _get_or_create_deferred_category(session)
+            adjustment = PayrollAdjustment(
+                id=uuid.uuid4(),
+                employee_id=recipient.employee_id,
+                work_date=period_end,
+                type="penalty",
+                category_id=category.id,
+                custom_label=None,
+                amount=split.amount,
+                comment=deferred_adjustment_comment(recipient.charge, split),
+                created_by_user_id=None,
+                created_by_label=DEFERRED_AUDIT_CREATED_BY_LABEL,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(adjustment)
+            split.adjustment_id = adjustment.id
+
         split.run_id = run.id
-        split.adjustment_id = adjustment.id
         split.applied_at = now
-        charge.applied_run_ids = [*(charge.applied_run_ids or []), run_id]
-        charge.splits_remaining = max(0, charge.splits_remaining - 1)
-        charge.status = "applied" if charge.splits_remaining == 0 else "partially_applied"
-        charge.updated_at = now
+        recipient.splits_remaining = max(0, recipient.splits_remaining - 1)
+        touched_charges.add(recipient.charge)
         applied.append(split)
+
+    for charge in touched_charges:
+        await _update_charge_status(charge)
 
     if applied:
         await session.flush()
     return applied
 
 
+async def collapse_deferred_charges_on_dismissal(
+    session: AsyncSession,
+    *,
+    employee_id: uuid.UUID,
+    run: PayrollRun,
+    period_end: date,
+) -> list[DeferredAuditChargeRecipient]:
+    result = await session.scalars(
+        select(DeferredAuditChargeRecipient)
+        .options(*_recipient_load_options())
+        .join(DeferredAuditCharge, DeferredAuditChargeRecipient.charge_id == DeferredAuditCharge.id)
+        .where(
+            DeferredAuditChargeRecipient.employee_id == employee_id,
+            DeferredAuditChargeRecipient.collapsed_at.is_(None),
+            DeferredAuditChargeRecipient.splits_remaining > 0,
+            DeferredAuditCharge.status.in_(PENDING_STATUSES),
+        )
+        .order_by(DeferredAuditChargeRecipient.created_at, DeferredAuditChargeRecipient.id)
+        .with_for_update(skip_locked=True)
+    )
+    recipients = list(result.all())
+    collapsed: list[DeferredAuditChargeRecipient] = []
+    category: PayrollAdjustmentCategory | None = None
+    now = datetime.now(UTC)
+
+    for recipient in recipients:
+        unapplied = [
+            split
+            for split in sorted(recipient.splits, key=lambda item: item.split_index)
+            if split.run_id is None and split.applied_at is None
+        ]
+        if not unapplied:
+            continue
+        total = _money(sum((split.amount for split in unapplied), Decimal("0")))
+        adjustment_id: uuid.UUID | None = None
+        if total > 0:
+            if category is None:
+                category = await _get_or_create_deferred_category(session)
+            adjustment = PayrollAdjustment(
+                id=uuid.uuid4(),
+                employee_id=employee_id,
+                work_date=period_end,
+                type="penalty",
+                category_id=category.id,
+                custom_label=None,
+                amount=total,
+                comment=deferred_dismissal_comment(recipient.charge, len(unapplied)),
+                created_by_user_id=None,
+                created_by_label=DEFERRED_AUDIT_DISMISSAL_CREATED_BY_LABEL,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(adjustment)
+            adjustment_id = adjustment.id
+
+        for split in unapplied:
+            split.run_id = run.id
+            split.adjustment_id = adjustment_id
+            split.applied_at = now
+        recipient.splits_remaining = 0
+        recipient.collapsed_at = now
+        recipient.collapse_run_id = run.id
+        recipient.collapse_adjustment_id = adjustment_id
+        collapsed.append(recipient)
+
+    for charge in {recipient.charge for recipient in collapsed}:
+        await _update_charge_status(charge)
+
+    if collapsed:
+        await session.flush()
+    return collapsed
+
+
 def split_charge_amount(total_amount: Decimal, splits_count: int) -> list[Decimal]:
-    total = total_amount.quantize(MONEY, rounding=ROUND_HALF_UP)
-    base = (total / Decimal(splits_count)).quantize(MONEY, rounding=ROUND_HALF_UP)
+    total = _money(total_amount)
+    base = _money(total / Decimal(splits_count))
     amounts = [base for _index in range(max(0, splits_count - 1))]
-    amounts.append((total - base * Decimal(max(0, splits_count - 1))).quantize(MONEY))
-    if any(amount <= 0 for amount in amounts):
-        raise DeferredChargeValidationError("Каждая доля отложенного штрафа должна быть больше 0")
+    amounts.append(_money(total - base * Decimal(max(0, splits_count - 1))))
     return amounts
 
 
-def first_unapplied_split(charge: DeferredAuditCharge) -> DeferredAuditChargeSplit | None:
+def first_unapplied_split(
+    recipient: DeferredAuditChargeRecipient,
+) -> DeferredAuditChargeSplit | None:
     return next(
         (
             split
-            for split in sorted(charge.splits, key=lambda item: item.split_index)
+            for split in sorted(recipient.splits, key=lambda item: item.split_index)
             if split.run_id is None and split.applied_at is None
         ),
         None,
@@ -228,11 +317,105 @@ def deferred_adjustment_comment(
     )
 
 
+def deferred_dismissal_comment(charge: DeferredAuditCharge, remaining_count: int) -> str:
+    return (
+        f"Распределённый штраф ревизии {source_audit_date_string(charge)}: "
+        f"схлопнут при увольнении, остаток {remaining_count} долей."
+    )
+
+
 def source_audit_date_string(charge: DeferredAuditCharge) -> str:
     audit_date = getattr(getattr(charge, "source_audit", None), "business_date", None)
     if isinstance(audit_date, date):
         return audit_date.isoformat()
     return str(charge.source_audit_id)
+
+
+async def _recipient_shares_for_charge(
+    session: AsyncSession,
+    *,
+    audit: InventoryAudit,
+    allocation_group: str,
+    total_penalty_amount: Decimal,
+) -> tuple[list[Employee], dict[uuid.UUID, Decimal]]:
+    period_start, period_end = audit_period(audit)
+    exclusions = {exclusion.employee_id for exclusion in getattr(audit, "employee_exclusions", [])}
+
+    chefs: list[Employee] = []
+    admins: list[Employee] = []
+    if allocation_group in {"chefs", "common"}:
+        chefs = _included_employees(
+            await _load_period_employees(
+                session,
+                position="Повар",
+                period_start=period_start,
+                period_end=period_end,
+            ),
+            exclusions,
+        )
+    if allocation_group in {"admins", "common"}:
+        admins = _included_employees(
+            await _load_period_employees(
+                session,
+                position="Кассир",
+                period_start=period_start,
+                period_end=period_end,
+            ),
+            exclusions,
+        )
+
+    total = _money(total_penalty_amount)
+    if allocation_group == "chefs":
+        recipients = sorted(chefs, key=lambda employee: employee.full_name)
+        return recipients, split_amount_evenly(total, recipients)
+    if allocation_group == "admins":
+        recipients = sorted(admins, key=lambda employee: employee.full_name)
+        return recipients, split_amount_evenly(total, recipients)
+
+    chefs_amount = _money(total / Decimal("2"))
+    admins_amount = _money(total - chefs_amount)
+    shares = split_amount_evenly(chefs_amount, chefs) | split_amount_evenly(admins_amount, admins)
+    recipients = sorted([*chefs, *admins], key=lambda employee: employee.full_name)
+    return recipients, shares
+
+
+def _included_employees(employees: list[Employee], exclusions: set[uuid.UUID]) -> list[Employee]:
+    return [employee for employee in employees if employee.id not in exclusions]
+
+
+def _build_recipient(
+    employee: Employee,
+    recipient_share: Decimal,
+    splits_count: int,
+) -> DeferredAuditChargeRecipient:
+    amounts = split_charge_amount(recipient_share, splits_count)
+    recipient = DeferredAuditChargeRecipient(
+        employee_id=employee.id,
+        per_split_amount=amounts[0] if amounts else Decimal("0"),
+        splits_remaining=splits_count,
+    )
+    recipient.splits = [
+        DeferredAuditChargeSplit(split_index=index, amount=amount)
+        for index, amount in enumerate(amounts, start=1)
+    ]
+    return recipient
+
+
+async def _update_charge_status(charge: DeferredAuditCharge) -> None:
+    if charge.status == "cancelled":
+        return
+    recipients = list(getattr(charge, "recipients", []) or [])
+    if recipients and all(recipient.splits_remaining == 0 for recipient in recipients):
+        charge.status = "applied"
+    elif any(
+        split.run_id is not None or split.adjustment_id is not None or split.applied_at is not None
+        for recipient in recipients
+        for split in recipient.splits
+    ):
+        charge.status = "partially_applied"
+    else:
+        charge.status = "pending"
+    charge.updated_at = datetime.now(UTC)
 
 
 async def _get_or_create_deferred_category(
@@ -246,6 +429,7 @@ async def _get_or_create_deferred_category(
     if category is not None:
         return category
     category = PayrollAdjustmentCategory(
+        id=uuid.uuid4(),
         type="penalty",
         code=DEFERRED_AUDIT_CATEGORY_CODE,
         display_name=DEFERRED_AUDIT_CATEGORY_NAME,
@@ -255,6 +439,34 @@ async def _get_or_create_deferred_category(
     session.add(category)
     await session.flush()
     return category
+
+
+async def _load_audit_with_exclusions(
+    session: AsyncSession,
+    audit_id: uuid.UUID,
+) -> InventoryAudit:
+    audit = await session.scalar(
+        select(InventoryAudit)
+        .options(selectinload(InventoryAudit.employee_exclusions))
+        .where(InventoryAudit.id == audit_id)
+    )
+    if audit is None:
+        raise DeferredChargeNotFoundError("Ревизия не найдена")
+    return audit
+
+
+async def _load_audit_item_with_position(
+    session: AsyncSession,
+    item_id: uuid.UUID,
+) -> InventoryAuditItem:
+    item = await session.scalar(
+        select(InventoryAuditItem)
+        .options(selectinload(InventoryAuditItem.position))
+        .where(InventoryAuditItem.id == item_id)
+    )
+    if item is None:
+        raise DeferredChargeNotFoundError("Позиция ревизии не найдена")
+    return item
 
 
 async def _load_deferred_charge(
@@ -288,9 +500,29 @@ async def _load_deferred_charge_for_update(
 
 def _charge_load_options() -> tuple[Any, ...]:
     return (
-        selectinload(DeferredAuditCharge.splits),
+        selectinload(DeferredAuditCharge.recipients).selectinload(
+            DeferredAuditChargeRecipient.splits
+        ),
+        selectinload(DeferredAuditCharge.recipients).selectinload(
+            DeferredAuditChargeRecipient.employee
+        ),
         selectinload(DeferredAuditCharge.source_audit),
         selectinload(DeferredAuditCharge.source_item),
-        selectinload(DeferredAuditCharge.employee),
         selectinload(DeferredAuditCharge.created_by),
     )
+
+
+def _recipient_load_options() -> tuple[Any, ...]:
+    return (
+        selectinload(DeferredAuditChargeRecipient.splits),
+        selectinload(DeferredAuditChargeRecipient.charge).selectinload(
+            DeferredAuditCharge.source_audit
+        ),
+        selectinload(DeferredAuditChargeRecipient.charge)
+        .selectinload(DeferredAuditCharge.recipients)
+        .selectinload(DeferredAuditChargeRecipient.splits),
+    )
+
+
+def _money(value: Decimal) -> Decimal:
+    return Decimal(value).quantize(MONEY, rounding=ROUND_HALF_UP)

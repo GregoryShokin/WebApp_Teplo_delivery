@@ -63,7 +63,6 @@ import {
   computeInventoryAudit,
   createDeferredCharge,
   createManualInventoryAudit,
-  getEmployees,
   getAllInventoryAuditExclusions,
   getIikoCandidates,
   getInventoryAudit,
@@ -875,10 +874,10 @@ function ExclusionLogTab({ kind }: { kind: "items" | "employees" }) {
                                 }}
                               >
                                 Вернуть в расчёт
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => setDeferredTarget(row)}>
-                              Распределить штраф…
-                            </DropdownMenuItem>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={() => setDeferredTarget(row)}>
+                                Распределить штраф…
+                              </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         ) : (
@@ -924,13 +923,7 @@ function DeferredChargeDialog({
   row: InventoryAuditExclusionLogRow | null;
 }) {
   const queryClient = useQueryClient();
-  const employeesQuery = useQuery({
-    queryKey: ["employees", "deferred-charge-dialog"],
-    queryFn: () => getEmployees({ status: "all" }),
-    staleTime: 60_000,
-  });
-  const [employeeId, setEmployeeId] = useState<string>("");
-  const [amount, setAmount] = useState<string>("0");
+  const [amount, setAmount] = useState<string>("");
   const [splitsCount, setSplitsCount] = useState<number>(3);
   const [reason, setReason] = useState<string>("");
 
@@ -938,27 +931,15 @@ function DeferredChargeDialog({
     if (!row) {
       return;
     }
-    setEmployeeId("");
-    setAmount(defaultDeferredAmount(row.amount));
+    setAmount("");
     setSplitsCount(3);
     setReason(row.reason ?? "");
   }, [row]);
 
-  const employeeOptions = useMemo(
-    () =>
-      [...(employeesQuery.data ?? [])].sort((left, right) =>
-        left.full_name.localeCompare(right.full_name, "ru"),
-      ),
-    [employeesQuery.data],
-  );
   const amountNumber = Number(amount);
-  const perSplitAmount =
-    Number.isFinite(amountNumber) && splitsCount > 0
-      ? `${(amountNumber / splitsCount).toFixed(2)} ₽`
-      : "—";
   const isValid =
     row !== null &&
-    employeeId.length > 0 &&
+    Boolean(row.item_id) &&
     Number.isFinite(amountNumber) &&
     amountNumber > 0 &&
     splitsCount >= 1 &&
@@ -969,12 +950,11 @@ function DeferredChargeDialog({
     mutationFn: () =>
       createDeferredCharge({
         source_audit_id: row!.audit_id,
-        source_item_id: row!.item_id ?? null,
-        employee_id: employeeId,
-        total_amount: amount,
+        source_item_id: row!.item_id!,
+        total_penalty_amount: amount,
         splits_count: splitsCount,
         reason: reason.trim(),
-    }),
+      }),
     onSuccess: async () => {
       toast.success(`Штраф распределён на ${splitsCount} расчётов ЗП`);
       onClose();
@@ -999,30 +979,10 @@ function DeferredChargeDialog({
               <div className="font-medium">{row.product_name ?? "—"}</div>
               <div className="text-xs text-muted-foreground">
                 Ревизия {row.audit_business_date ? formatDate(row.audit_business_date) : "—"} ·
-                Сумма {row.amount ? formatSignedMoney(row.amount) : "—"}
+                Исключённая сумма {row.amount ? formatSignedMoney(row.amount) : "—"}
               </div>
             </div>
           ) : null}
-          <Label className="grid gap-2">
-            <span>Сотрудник</span>
-            <Select
-              disabled={employeesQuery.isLoading || mutation.isPending}
-              onValueChange={setEmployeeId}
-              value={employeeId}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Выберите сотрудника" />
-              </SelectTrigger>
-              <SelectContent>
-                {employeeOptions.map((employee) => (
-                  <SelectItem key={employee.id} value={employee.id}>
-                    {employee.full_name}
-                    {employee.status === "inactive" ? " · уволен" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Label>
           <Label className="grid gap-2">
             <span>Сумма штрафа, ₽</span>
             <Input
@@ -1044,8 +1004,12 @@ function DeferredChargeDialog({
               type="number"
               value={splitsCount}
             />
-            <span className="text-xs text-muted-foreground">По {perSplitAmount} за расчёт</span>
           </Label>
+          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
+            Бэк определит получателей автоматически по сотрудникам в сменах за период ревизии для
+            группы исключённой позиции. Для каждого получателя будет создано {splitsCount}{" "}
+            {pluralizeRuns(splitsCount)}.
+          </div>
           <Label className="grid gap-2">
             <span>Причина</span>
             <Textarea
@@ -1079,6 +1043,7 @@ function DeferredChargesTab() {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<DeferredChargeStatus | "all">("all");
   const [cancelTarget, setCancelTarget] = useState<DeferredCharge | null>(null);
+  const [detailsTarget, setDetailsTarget] = useState<DeferredCharge | null>(null);
 
   const query = useQuery({
     queryKey: ["deferred-charges", { statusFilter }],
@@ -1096,9 +1061,7 @@ function DeferredChargesTab() {
   });
 
   const rows = query.data ?? [];
-  const appliedCancelSplits = cancelTarget
-    ? cancelTarget.splits_count - cancelTarget.splits_remaining
-    : 0;
+  const appliedCancelSplits = cancelTarget ? deferredChargeAppliedSplits(cancelTarget) : 0;
 
   return (
     <section className="mt-4 space-y-4 rounded-lg border bg-card p-4">
@@ -1145,40 +1108,68 @@ function DeferredChargesTab() {
             <thead>
               <tr className="border-b bg-muted/35">
                 <th className="w-[120px] px-2 py-2 text-left font-medium">Создан</th>
-                <th className="px-2 py-2 text-left font-medium">Сотрудник</th>
+                <th className="px-2 py-2 text-left font-medium">Получатели</th>
                 <th className="w-[110px] px-2 py-2 text-left font-medium">Ревизия</th>
                 <th className="w-[100px] px-2 py-2 text-right font-medium">Сумма</th>
                 <th className="w-[110px] px-2 py-2 text-center font-medium">Доли</th>
                 <th className="w-[140px] px-2 py-2 text-left font-medium">Статус</th>
                 <th className="px-2 py-2 text-left font-medium">Причина</th>
-                <th className="w-[100px] px-2 py-2 text-right font-medium">Действие</th>
+                <th className="w-[170px] px-2 py-2 text-right font-medium">Действие</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((charge) => {
                 const canCancel =
                   charge.status === "pending" || charge.status === "partially_applied";
+                const recipientNames = charge.recipients
+                  .map((recipient) => recipient.employee_name ?? recipient.employee_id)
+                  .join(", ");
+                const totalSplits = deferredChargeTotalSplits(charge);
                 return (
                   <tr className="border-b last:border-b-0" key={charge.id}>
                     <td className="px-2 py-2 align-top text-xs text-muted-foreground">
                       {charge.created_at ? formatDateTime(charge.created_at) : "—"}
                       <div>{charge.created_by_name ?? "—"}</div>
                     </td>
-                    <td className="px-2 py-2 align-top">{charge.employee_name ?? "—"}</td>
+                    <td className="px-2 py-2 align-top">
+                      <InlineTooltip content={recipientNames || "Получателей нет"}>
+                        <button
+                          className="text-left underline-offset-2 hover:underline"
+                          onClick={() => setDetailsTarget(charge)}
+                          type="button"
+                        >
+                          {formatItemsCount(
+                            charge.recipients.length,
+                            "получатель",
+                            "получателя",
+                            "получателей",
+                          )}
+                        </button>
+                      </InlineTooltip>
+                    </td>
                     <td className="px-2 py-2 align-top text-xs">
                       {charge.source_audit_date ? formatDate(charge.source_audit_date) : "—"}
+                      <div className="text-muted-foreground">{charge.source_item_name ?? "—"}</div>
                     </td>
                     <td className="px-2 py-2 text-right align-top tabular-nums">
-                      {formatMoney(charge.total_amount)}
+                      {formatMoney(charge.total_penalty_amount)}
                     </td>
                     <td className="px-2 py-2 text-center align-top">
-                      {charge.splits_count - charge.splits_remaining}/{charge.splits_count}
+                      {deferredChargeAppliedSplits(charge)}/{totalSplits}
                     </td>
                     <td className="px-2 py-2 align-top">
                       <DeferredChargeStatusBadge status={charge.status} />
                     </td>
                     <td className="px-2 py-2 align-top text-muted-foreground">{charge.reason}</td>
                     <td className="px-2 py-2 text-right align-top">
+                      <Button
+                        onClick={() => setDetailsTarget(charge)}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        Детали
+                      </Button>
                       <Button
                         disabled={!canCancel || cancelMutation.isPending}
                         onClick={() => setCancelTarget(charge)}
@@ -1196,6 +1187,8 @@ function DeferredChargesTab() {
           </table>
         </div>
       )}
+
+      <DeferredChargeDetailsDialog charge={detailsTarget} onClose={() => setDetailsTarget(null)} />
 
       <AlertDialog
         open={cancelTarget !== null}
@@ -1227,6 +1220,96 @@ function DeferredChargesTab() {
         </AlertDialogContent>
       </AlertDialog>
     </section>
+  );
+}
+
+function DeferredChargeDetailsDialog({
+  charge,
+  onClose,
+}: {
+  charge: DeferredCharge | null;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={charge !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Детали распределения</DialogTitle>
+          <DialogDescription>
+            {charge
+              ? `${formatMoney(charge.total_penalty_amount)} · ${formatItemsCount(
+                  charge.recipients.length,
+                  "получатель",
+                  "получателя",
+                  "получателей",
+                )} · ${charge.splits_count} ${pluralizeRuns(charge.splits_count)}`
+              : ""}
+          </DialogDescription>
+        </DialogHeader>
+        {charge ? (
+          <div className="space-y-3">
+            <div className="text-sm">
+              <div className="font-medium">{charge.source_item_name ?? "Позиция ревизии"}</div>
+              <div className="text-xs text-muted-foreground">
+                Ревизия {charge.source_audit_date ? formatDate(charge.source_audit_date) : "—"} ·
+                Группа {allocationGroupLabel(charge.allocation_group)}
+              </div>
+            </div>
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full min-w-[680px] text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/35">
+                    <th className="px-2 py-2 text-left font-medium">Получатель</th>
+                    <th className="w-[120px] px-2 py-2 text-right font-medium">Доля</th>
+                    <th className="w-[110px] px-2 py-2 text-center font-medium">Осталось</th>
+                    <th className="w-[170px] px-2 py-2 text-left font-medium">Статус</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {charge.recipients.map((recipient) => (
+                    <tr className="border-b last:border-b-0" key={recipient.id}>
+                      <td className="px-2 py-2 align-top">
+                        <div>{recipient.employee_name ?? recipient.employee_id}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {recipient.employee_position ?? "—"}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {recipient.splits
+                            .map((split) =>
+                              split.applied_at
+                                ? `${split.split_index}: применена`
+                                : `${split.split_index}: ${formatMoney(split.amount)}`,
+                            )
+                            .join(" · ")}
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 text-right align-top tabular-nums">
+                        {formatMoney(recipient.per_split_amount)}
+                      </td>
+                      <td className="px-2 py-2 text-center align-top">
+                        {recipient.splits_remaining}/{charge.splits_count}
+                      </td>
+                      <td className="px-2 py-2 align-top">
+                        {recipient.collapsed_at
+                          ? "Схлопнут при увольнении"
+                          : recipient.splits_remaining === 0
+                            ? "Завершён"
+                            : "В графике"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+        <DialogFooter>
+          <Button onClick={onClose} type="button" variant="outline">
+            Закрыть
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -2076,6 +2159,28 @@ function DeferredChargeStatusBadge({ status }: { status: DeferredChargeStatus })
   return <Badge variant={variant}>{label}</Badge>;
 }
 
+function deferredChargeTotalSplits(charge: DeferredCharge) {
+  return charge.splits_count * charge.recipients.length;
+}
+
+function deferredChargeAppliedSplits(charge: DeferredCharge) {
+  const remaining = charge.recipients.reduce(
+    (sum, recipient) => sum + recipient.splits_remaining,
+    0,
+  );
+  return Math.max(0, deferredChargeTotalSplits(charge) - remaining);
+}
+
+function allocationGroupLabel(group: InventoryAllocationGroup) {
+  if (group === "chefs") {
+    return "повара";
+  }
+  if (group === "admins") {
+    return "кассиры";
+  }
+  return "общая";
+}
+
 function PanelTitle({ title }: { title: string }) {
   return <h4 className="text-sm font-semibold tracking-normal">{title}</h4>;
 }
@@ -2240,11 +2345,6 @@ function formatSignedMoney(value: string | number | null | undefined) {
     return formatMoney(amount);
   }
   return `+${formatMoney(amount)}`;
-}
-
-function defaultDeferredAmount(value: string | number | null | undefined) {
-  const amount = Math.abs(Number(value ?? 0));
-  return Number.isFinite(amount) ? amount.toFixed(2) : "0";
 }
 
 function pluralizeRuns(count: number) {

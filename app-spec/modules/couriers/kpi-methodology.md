@@ -200,7 +200,10 @@ GET /resto/api/employees/attendance
 
 ## 8. Связанные документы
 
+- `app-spec/modules/couriers/deposits.md` — методология депозитов курьеров (MVP)
+- `app-spec/modules/couriers/admin-evaluations.md` — методология оценок админов (MVP)
 - `research/archive/couriers-sheets-discovery/04-kpi-definitions.md` — исходная разведка KPI Google Sheets (до утверждения).
 - `research/archive/couriers-sheets-discovery/06-issues-and-migration-plan.md` — migration plan и целевые БД-сущности.
+- `research/raw/couriers-evaluation/` — разведка текущей системы оценок и депозитов в Google Sheets владельца (2026-06-04).
 - `app-spec/integrations/iiko/courier-service/` — описание старого Python-сервиса (заменяется polling-подходом).
 - `app-spec/modules/staff/payroll/couriers/spec.md` — payroll курьеров (заглушка, не MVP).

@@ -598,19 +598,19 @@ class DeferredAuditCharge(Base):
     __tablename__ = "deferred_audit_charge"
     __table_args__ = (
         CheckConstraint(
+            "total_penalty_amount > 0",
+            name="ck_deferred_charge_total_positive",
+        ),
+        CheckConstraint("splits_count > 0", name="ck_deferred_charge_splits_positive"),
+        CheckConstraint(
             "status in ('pending','partially_applied','applied','cancelled')",
-            name="ck_deferred_audit_charge_status",
+            name="ck_deferred_charge_status",
         ),
         CheckConstraint(
-            "splits_count > 0 AND splits_remaining >= 0 AND splits_remaining <= splits_count",
-            name="ck_deferred_audit_charge_splits",
+            "allocation_group in ('chefs','admins','common')",
+            name="ck_deferred_charge_allocation_group",
         ),
-        CheckConstraint(
-            "total_amount > 0",
-            name="ck_deferred_audit_charge_amount_positive",
-        ),
-        Index("ix_deferred_audit_charge_employee_status", "employee_id", "status"),
-        Index("ix_deferred_audit_charge_audit", "source_audit_id"),
+        Index("ix_deferred_charge_audit", "source_audit_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -620,18 +620,12 @@ class DeferredAuditCharge(Base):
     source_item_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("inventory_audit_item.id", ondelete="SET NULL"), nullable=True
     )
-    employee_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("employee.id", ondelete="RESTRICT"), nullable=False
-    )
-    total_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    allocation_group: Mapped[str] = mapped_column(String(16), nullable=False)
+    total_penalty_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     splits_count: Mapped[int] = mapped_column(nullable=False)
-    splits_remaining: Mapped[int] = mapped_column(nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="pending", server_default="pending"
-    )
-    reason: Mapped[str] = mapped_column(Text, nullable=False)
-    applied_run_ids: Mapped[list[str]] = mapped_column(
-        JSONB, nullable=False, default=list, server_default="[]"
     )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
@@ -645,14 +639,59 @@ class DeferredAuditCharge(Base):
 
     source_audit: Mapped[Any] = relationship("InventoryAudit")
     source_item: Mapped[Any | None] = relationship("InventoryAuditItem")
-    employee: Mapped[Any] = relationship("Employee")
     created_by: Mapped[Any | None] = relationship(
         "User",
         lazy="raise",
         foreign_keys=[created_by_user_id],
     )
-    splits: Mapped[list[DeferredAuditChargeSplit]] = relationship(
+    recipients: Mapped[list[DeferredAuditChargeRecipient]] = relationship(
         back_populates="charge",
+        cascade="all, delete-orphan",
+        order_by=lambda: DeferredAuditChargeRecipient.created_at,
+    )
+
+
+class DeferredAuditChargeRecipient(Base):
+    __tablename__ = "deferred_audit_charge_recipient"
+    __table_args__ = (
+        UniqueConstraint("charge_id", "employee_id", name="uq_deferred_charge_recipient"),
+        CheckConstraint(
+            "per_split_amount >= 0",
+            name="ck_deferred_charge_recipient_amount_non_negative",
+        ),
+        Index("ix_deferred_charge_recipient_employee", "employee_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    charge_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("deferred_audit_charge.id", ondelete="CASCADE"), nullable=False
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee.id", ondelete="RESTRICT"), nullable=False
+    )
+    per_split_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    splits_remaining: Mapped[int] = mapped_column(nullable=False)
+    collapsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    collapse_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payroll_run.id", ondelete="SET NULL"), nullable=True
+    )
+    collapse_adjustment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payroll_adjustment.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    charge: Mapped[DeferredAuditCharge] = relationship(back_populates="recipients")
+    employee: Mapped[Any] = relationship("Employee", lazy="raise")
+    collapse_run: Mapped[PayrollRun | None] = relationship(
+        foreign_keys=[collapse_run_id],
+    )
+    collapse_adjustment: Mapped[PayrollAdjustment | None] = relationship(
+        foreign_keys=[collapse_adjustment_id],
+    )
+    splits: Mapped[list[DeferredAuditChargeSplit]] = relationship(
+        back_populates="recipient",
         cascade="all, delete-orphan",
         order_by=lambda: DeferredAuditChargeSplit.split_index,
     )
@@ -661,14 +700,16 @@ class DeferredAuditCharge(Base):
 class DeferredAuditChargeSplit(Base):
     __tablename__ = "deferred_audit_charge_split"
     __table_args__ = (
-        UniqueConstraint("charge_id", "split_index", name="uq_deferred_charge_split_index"),
-        Index("ix_deferred_charge_split_charge", "charge_id"),
+        UniqueConstraint(
+            "recipient_id", "split_index", name="uq_deferred_charge_split_recipient_index"
+        ),
+        Index("ix_deferred_charge_split_recipient", "recipient_id"),
         Index("ix_deferred_charge_split_run", "run_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    charge_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("deferred_audit_charge.id", ondelete="CASCADE"), nullable=False
+    recipient_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("deferred_audit_charge_recipient.id", ondelete="CASCADE"), nullable=False
     )
     split_index: Mapped[int] = mapped_column(nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
@@ -680,7 +721,7 @@ class DeferredAuditChargeSplit(Base):
     )
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    charge: Mapped[DeferredAuditCharge] = relationship(back_populates="splits")
+    recipient: Mapped[DeferredAuditChargeRecipient] = relationship(back_populates="splits")
     run: Mapped[PayrollRun | None] = relationship()
     adjustment: Mapped[PayrollAdjustment | None] = relationship()
 

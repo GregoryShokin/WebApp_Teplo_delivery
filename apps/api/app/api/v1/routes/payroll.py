@@ -105,14 +105,12 @@ async def create_deferred_charge_endpoint(
 async def list_deferred_charges_endpoint(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
-    employee_id: uuid.UUID | None = None,
     status_filter: Annotated[str | None, Query(alias="status")] = None,
     audit_id: uuid.UUID | None = None,
 ) -> list[dict[str, Any]]:
     require_finance_manager_plus(actor)
     charges = await list_deferred_charges(
         session,
-        employee_id=employee_id,
         status=status_filter,
         audit_id=audit_id,
     )
@@ -296,36 +294,55 @@ def serialize_payroll_line(
 
 def deferred_charge_payload(charge: DeferredAuditCharge) -> dict[str, Any]:
     source_audit = getattr(charge, "source_audit", None)
-    employee = getattr(charge, "employee", None)
+    source_item = getattr(charge, "source_item", None)
     created_by = getattr(charge, "created_by", None)
     return {
         "id": charge.id,
         "source_audit_id": charge.source_audit_id,
         "source_item_id": charge.source_item_id,
-        "source_audit_date": (
-            source_audit.business_date if source_audit is not None else None
+        "source_audit_date": (source_audit.business_date if source_audit is not None else None),
+        "source_item_name": (
+            source_item.product_name_snapshot if source_item is not None else None
         ),
-        "employee_id": charge.employee_id,
-        "employee_name": employee.full_name if employee is not None else None,
-        "total_amount": decimal_string(charge.total_amount),
+        "allocation_group": charge.allocation_group,
+        "total_penalty_amount": decimal_string(charge.total_penalty_amount),
         "splits_count": charge.splits_count,
-        "splits_remaining": charge.splits_remaining,
         "status": charge.status,
         "reason": charge.reason,
-        "applied_run_ids": list(charge.applied_run_ids or []),
         "created_by_name": created_by.full_name if created_by is not None else None,
         "created_at": charge.created_at,
         "updated_at": charge.updated_at,
-        "splits": [
+        "recipients": [
             {
-                "id": split.id,
-                "split_index": split.split_index,
-                "amount": decimal_string(split.amount),
-                "run_id": split.run_id,
-                "adjustment_id": split.adjustment_id,
-                "applied_at": split.applied_at,
+                "id": recipient.id,
+                "employee_id": recipient.employee_id,
+                "employee_name": getattr(getattr(recipient, "employee", None), "full_name", None),
+                "employee_position": getattr(
+                    getattr(recipient, "employee", None), "position", None
+                ),
+                "per_split_amount": decimal_string(recipient.per_split_amount),
+                "splits_remaining": recipient.splits_remaining,
+                "collapsed_at": recipient.collapsed_at,
+                "collapse_run_id": recipient.collapse_run_id,
+                "splits": [
+                    {
+                        "id": split.id,
+                        "split_index": split.split_index,
+                        "amount": decimal_string(split.amount),
+                        "run_id": split.run_id,
+                        "adjustment_id": split.adjustment_id,
+                        "applied_at": split.applied_at,
+                    }
+                    for split in sorted(recipient.splits, key=lambda item: item.split_index)
+                ],
             }
-            for split in sorted(charge.splits, key=lambda item: item.split_index)
+            for recipient in sorted(
+                charge.recipients,
+                key=lambda item: (
+                    getattr(getattr(item, "employee", None), "full_name", "") or "",
+                    str(item.employee_id),
+                ),
+            )
         ],
     }
 

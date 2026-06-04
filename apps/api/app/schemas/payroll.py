@@ -72,9 +72,8 @@ class DeferredChargeCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     source_audit_id: uuid.UUID
-    source_item_id: uuid.UUID | None = None
-    employee_id: uuid.UUID
-    total_amount: Decimal = Field(gt=0)
+    source_item_id: uuid.UUID
+    total_penalty_amount: Decimal = Field(gt=0)
     splits_count: int = Field(ge=1, le=24)
     reason: str = Field(min_length=1, max_length=500)
 
@@ -88,23 +87,33 @@ class DeferredChargeSplitRead(BaseModel):
     applied_at: datetime | None = None
 
 
+class DeferredChargeRecipientRead(BaseModel):
+    id: uuid.UUID
+    employee_id: uuid.UUID
+    employee_name: str | None = None
+    employee_position: str | None = None
+    per_split_amount: str
+    splits_remaining: int
+    collapsed_at: datetime | None = None
+    collapse_run_id: uuid.UUID | None = None
+    splits: list[DeferredChargeSplitRead]
+
+
 class DeferredChargeRead(BaseModel):
     id: uuid.UUID
     source_audit_id: uuid.UUID
     source_item_id: uuid.UUID | None = None
     source_audit_date: date | None = None
-    employee_id: uuid.UUID
-    employee_name: str | None = None
-    total_amount: str
+    source_item_name: str | None = None
+    allocation_group: str
+    total_penalty_amount: str
     splits_count: int
-    splits_remaining: int
     status: str
     reason: str
-    applied_run_ids: list[str]
     created_by_name: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
-    splits: list[DeferredChargeSplitRead]
+    recipients: list[DeferredChargeRecipientRead]
 
 
 class PayrollPersonalReportPeriodRead(BaseModel):

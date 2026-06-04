@@ -597,30 +597,39 @@ export type DeferredChargeSplit = {
   applied_at: string | null;
 };
 
+export type DeferredChargeRecipient = {
+  id: string;
+  employee_id: string;
+  employee_name: string | null;
+  employee_position: string | null;
+  per_split_amount: string;
+  splits_remaining: number;
+  collapsed_at: string | null;
+  collapse_run_id: string | null;
+  splits: DeferredChargeSplit[];
+};
+
 export type DeferredCharge = {
   id: string;
   source_audit_id: string;
   source_item_id: string | null;
   source_audit_date: string | null;
-  employee_id: string;
-  employee_name: string | null;
-  total_amount: string;
+  source_item_name: string | null;
+  allocation_group: "chefs" | "admins" | "common";
+  total_penalty_amount: string;
   splits_count: number;
-  splits_remaining: number;
   status: DeferredChargeStatus;
   reason: string;
-  applied_run_ids: string[];
   created_by_name: string | null;
   created_at: string | null;
   updated_at: string | null;
-  splits: DeferredChargeSplit[];
+  recipients: DeferredChargeRecipient[];
 };
 
 export type DeferredChargeCreatePayload = {
   source_audit_id: string;
-  source_item_id?: string | null;
-  employee_id: string;
-  total_amount: string;
+  source_item_id: string;
+  total_penalty_amount: string;
   splits_count: number;
   reason: string;
 };
@@ -2262,7 +2271,6 @@ export async function createDeferredCharge(
 
 export async function listDeferredCharges(
   filters: {
-    employee_id?: string;
     status?: DeferredChargeStatus;
     audit_id?: string;
   } = {},

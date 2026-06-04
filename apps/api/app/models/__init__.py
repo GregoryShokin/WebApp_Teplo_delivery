@@ -10,6 +10,18 @@ from app.models.audit import (
 from app.models.core import Location, Organization, Role, User, UserRole
 from app.models.counterparty import Counterparty, CounterpartyRole
 from app.models.courier import DeliveryOrder
+from app.models.courier_category import CourierCategory, CourierCategoryAssignment
+from app.models.courier_deposit import (
+    CourierDepositAccount,
+    CourierDepositTransaction,
+    CourierDepositTransactionType,
+)
+from app.models.courier_evaluation import (
+    CourierEvaluation,
+    CourierEvaluationCriterion,
+    CourierEvaluationSource,
+)
+from app.models.courier_schedule import CourierScheduleEntry
 from app.models.dds import (
     Account,
     BankOperation,
@@ -45,6 +57,7 @@ from app.models.payroll import (
     AttendanceEntry,
     CategoryCoefficient,
     DeferredAuditCharge,
+    DeferredAuditChargeRecipient,
     DeferredAuditChargeSplit,
     DepositAccount,
     DepositTransaction,
@@ -85,10 +98,20 @@ __all__ = [
     "Counterparty",
     "CounterpartyAlias",
     "CounterpartyRole",
+    "CourierCategory",
+    "CourierCategoryAssignment",
+    "CourierDepositAccount",
+    "CourierDepositTransaction",
+    "CourierDepositTransactionType",
+    "CourierEvaluation",
+    "CourierEvaluationCriterion",
+    "CourierEvaluationSource",
+    "CourierScheduleEntry",
     "DataSource",
     "DdsArticle",
     "DdsArticleAlias",
     "DeferredAuditCharge",
+    "DeferredAuditChargeRecipient",
     "DeferredAuditChargeSplit",
     "DepositAccount",
     "DepositTransaction",
