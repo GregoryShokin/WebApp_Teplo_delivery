@@ -9,7 +9,12 @@ from app.models.audit import (
 )
 from app.models.core import Location, Organization, Role, User, UserRole
 from app.models.counterparty import Counterparty, CounterpartyRole
-from app.models.courier import DeliveryOrder
+from app.models.courier import (
+    CourierIikoShift,
+    CourierShiftMatch,
+    CourierShiftMatchStatus,
+    DeliveryOrder,
+)
 from app.models.courier_category import CourierCategory, CourierCategoryAssignment
 from app.models.courier_deposit import (
     CourierDepositAccount,
@@ -106,7 +111,10 @@ __all__ = [
     "CourierEvaluation",
     "CourierEvaluationCriterion",
     "CourierEvaluationSource",
+    "CourierIikoShift",
     "CourierScheduleEntry",
+    "CourierShiftMatch",
+    "CourierShiftMatchStatus",
     "DataSource",
     "DdsArticle",
     "DdsArticleAlias",

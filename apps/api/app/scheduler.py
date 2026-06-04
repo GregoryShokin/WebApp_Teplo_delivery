@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -26,11 +28,14 @@ from app.services.banking.exceptions import BankCredentialsError
 from app.services.banking.own_accounts import sync_own_accounts
 from app.services.banking.sber import SberClient
 from app.services.banking.tbank import TbankClient
+from app.services.couriers.iiko_attendance_sync import sync_attendance
+from app.services.couriers.shift_matching import recalculate_matches
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 LEGAL_ENTITY = "ИП Шокина Е.А."
+IIKO_COURIER_JOB_RETRIES = 3
 
 
 @scheduler.scheduled_job(
@@ -45,6 +50,95 @@ LEGAL_ENTITY = "ИП Шокина Е.А."
 async def poll_banks() -> None:
     for provider in ("sber", "tbank"):
         await run_bank_sync_job(provider=provider)
+
+
+@scheduler.scheduled_job(
+    "interval",
+    minutes=30,
+    id="iiko_courier_attendance_sync",
+    max_instances=1,
+    coalesce=True,
+)
+async def iiko_courier_attendance_sync_job() -> None:
+    await run_with_iiko_backoff(run_iiko_courier_attendance_sync_once)
+
+
+@scheduler.scheduled_job(
+    "interval",
+    hours=1,
+    id="iiko_courier_shift_matching",
+    max_instances=1,
+    coalesce=True,
+)
+async def iiko_courier_shift_matching_job() -> None:
+    await run_iiko_courier_shift_matching_once()
+
+
+async def run_iiko_courier_attendance_sync_once() -> dict[str, object]:
+    now = datetime.now(MOSCOW_TZ)
+    date_from = now.date() - timedelta(days=2)
+    date_to = now.date() + timedelta(days=1)
+    async with AsyncSessionLocal() as session:
+        report = await sync_attendance(
+            session,
+            from_date=date_from,
+            to_date=date_to,
+            run_reason="cron",
+        )
+    logger.info("iiko courier attendance sync completed: %s", report.as_dict())
+    return report.as_dict()
+
+
+async def run_iiko_courier_shift_matching_once() -> dict[str, object]:
+    now = datetime.now(MOSCOW_TZ)
+    date_from = now.date() - timedelta(days=2)
+    date_to = now.date() + timedelta(days=1)
+    async with AsyncSessionLocal() as session:
+        report = await recalculate_matches(session, date_from, date_to)
+        await session.commit()
+    logger.info("iiko courier shift matching completed: %s", report.as_dict())
+    return report.as_dict()
+
+
+async def run_with_iiko_backoff(operation: Callable[[], Awaitable[object]]) -> None:
+    for attempt in range(1, IIKO_COURIER_JOB_RETRIES + 1):
+        try:
+            await operation()
+            return
+        except Exception as exc:  # noqa: BLE001 - scheduler must log and survive iiko outages
+            if attempt == IIKO_COURIER_JOB_RETRIES or not is_iiko_retryable_error(exc):
+                logger.exception("iiko courier attendance sync job failed")
+                return
+            delay = 2 ** (attempt - 1)
+            logger.warning(
+                "iiko courier attendance sync retry %s/%s in %ss after: %s",
+                attempt + 1,
+                IIKO_COURIER_JOB_RETRIES,
+                delay,
+                exc,
+            )
+            await asyncio.sleep(delay)
+
+
+def is_iiko_retryable_error(exc: BaseException) -> bool:
+    status = getattr(exc, "status", None)
+    if status in {401, 403, 429}:
+        return True
+    message = str(exc).casefold()
+    return any(
+        marker in message
+        for marker in (
+            "auth",
+            "unauthorized",
+            "forbidden",
+            "rate",
+            "too many",
+            "invalid key",
+            "не авториз",
+            "неверный ключ",
+            "лимит",
+        )
+    )
 
 
 async def run_bank_sync_job(

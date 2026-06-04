@@ -3,13 +3,43 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import Date, DateTime, Index, Numeric, Text, func, text
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
+from sqlalchemy import (
+    Enum as SQLEnum,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+
+
+class CourierShiftMatchStatus(StrEnum):
+    MATCHED = "matched"
+    NO_SHOW = "no_show"
+    HELPING = "helping"
+    SHORT_SHIFT = "short_shift"
+
+
+courier_shift_match_status_enum = SQLEnum(
+    CourierShiftMatchStatus,
+    name="courier_shift_match_status",
+    values_callable=lambda values: [item.value for item in values],
+)
 
 
 class DeliveryOrder(Base):
@@ -42,4 +72,77 @@ class DeliveryOrder(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CourierIikoShift(Base):
+    __tablename__ = "courier_iiko_shift"
+    __table_args__ = (
+        UniqueConstraint(
+            "iiko_employee_id",
+            "opened_at",
+            name="uq_courier_iiko_shift_iiko_employee_opened",
+        ),
+        Index("ix_courier_iiko_shift_employee_opened", "employee_id", "opened_at"),
+        Index("ix_courier_iiko_shift_opened_at", "opened_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    iiko_employee_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employee.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    iiko_role_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attendance_type: Mapped[str] = mapped_column(String(8), nullable=False)
+    imported_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+
+
+class CourierShiftMatch(Base):
+    __tablename__ = "courier_shift_match"
+    __table_args__ = (
+        UniqueConstraint(
+            "courier_employee_id",
+            "work_date",
+            "schedule_entry_id",
+            "iiko_shift_id",
+            name="uq_courier_shift_match_courier_day_plan_fact",
+        ),
+        Index("ix_courier_shift_match_courier_date", "courier_employee_id", "work_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    courier_employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employee.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    work_date: Mapped[date] = mapped_column(Date, nullable=False)
+    schedule_entry_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("courier_schedule_entry.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    iiko_shift_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("courier_iiko_shift.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    status: Mapped[CourierShiftMatchStatus] = mapped_column(
+        courier_shift_match_status_enum,
+        nullable=False,
+    )
+    late_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    worked_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    deliveries_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recalculated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )

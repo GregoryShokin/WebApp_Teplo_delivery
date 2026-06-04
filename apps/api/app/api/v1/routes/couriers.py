@@ -51,6 +51,7 @@ from app.services.couriers import (
     category_service,
     deposit_service,
     evaluation_service,
+    iiko_attendance_sync,
     schedule_service,
 )
 
@@ -112,6 +113,35 @@ async def post_courier_sync(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return result.as_dict()
+
+
+@router.post("/iiko/sync-attendance")
+async def post_iiko_attendance_sync(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    date_from: Annotated[date, Query(alias="from")],
+    date_to: Annotated[date, Query(alias="to")],
+) -> dict[str, Any]:
+    require_manager_plus(actor)
+    ensure_date_range(date_from, date_to)
+    ensure_window(date_from, date_to, max_days=MAX_DELIVERY_WINDOW_DAYS)
+    try:
+        report = await iiko_attendance_sync.sync_attendance(
+            session,
+            from_date=date_from,
+            to_date=date_to,
+            run_reason="manual",
+        )
+    except _http_client.IncompleteRead as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="iiko не отвечает — сервер оборвал соединение. Попробуйте через минуту.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return report.as_dict()
 
 
 @router.get("/deliveries")

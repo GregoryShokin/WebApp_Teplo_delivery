@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import CourierScheduleEntry
 from app.services.couriers.common import get_courier_or_404, get_employee_or_404
+from app.services.couriers.shift_matching import recalculate_matches
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,7 @@ async def upsert_entry(
         entry.planned_end_at = planned_end_at
         entry.comment = comment
     await session.flush()
+    await recalculate_matches(session, work_date, work_date, employee_ids=[courier_id])
     return entry
 
 
