@@ -16,6 +16,7 @@ from app.models import (
     CourierEvaluationCriterion,
     CourierEvaluationSource,
 )
+from app.schemas.couriers import EvaluationMonthlySummary
 from app.services.couriers.common import get_courier_or_404
 from app.services.couriers.permissions import ensure_admin_cashier
 
@@ -130,6 +131,21 @@ async def monthly_aggregate(
     courier_id: uuid.UUID,
     month: date,
 ) -> dict[str, Any]:
+    summary = await get_evaluations_monthly_summary(session, courier_id, month)
+    return {
+        "courier_employee_id": courier_id,
+        "month": month.replace(day=1).strftime("%Y-%m"),
+        **summary.model_dump(),
+    }
+
+
+async def get_evaluations_monthly_summary(
+    session: AsyncSession,
+    courier_id: uuid.UUID,
+    month: date,
+) -> EvaluationMonthlySummary:
+    """score_sum, counts by sign and top-3 criteria for one courier/month."""
+
     month_start = month.replace(day=1)
     month_end = _next_month(month_start)
     result = await session.execute(
@@ -167,15 +183,13 @@ async def monthly_aggregate(
     neutral_count = sum(
         1 for evaluation, _criterion in rows if evaluation.score_snapshot == 0
     )
-    return {
-        "courier_employee_id": courier_id,
-        "month": month_start.strftime("%Y-%m"),
-        "score_sum": score_sum,
-        "positive_count": positive_count,
-        "negative_count": negative_count,
-        "neutral_count": neutral_count,
-        "top_criteria": top_criteria,
-    }
+    return EvaluationMonthlySummary(
+        score_sum=score_sum,
+        positive_count=positive_count,
+        negative_count=negative_count,
+        neutral_count=neutral_count,
+        top_criteria=top_criteria,
+    )
 
 
 async def get_edit_window_minutes(session: AsyncSession) -> int:

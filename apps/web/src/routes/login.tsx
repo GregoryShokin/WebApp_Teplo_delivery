@@ -2,7 +2,7 @@ import { FormEvent, useState } from "react";
 import { LockKeyhole, LogIn } from "lucide-react";
 
 import { Button } from "../components/ui/button";
-import { login } from "../lib/api";
+import { apiErrorMessage, apiErrorStatus, login } from "../lib/api";
 
 type LoginRouteProps = {
   onNavigate: (path: string) => void;
@@ -21,8 +21,15 @@ export function LoginRoute({ onNavigate }: LoginRouteProps) {
     try {
       await login(email, password);
       onNavigate("/settings");
-    } catch {
-      setError("Неверная почта или пароль");
+    } catch (loginError) {
+      const status = apiErrorStatus(loginError);
+      setError(
+        status === 401
+          ? "Неверная почта или пароль"
+          : status === undefined
+            ? "API недоступен: проверьте backend на localhost:8000"
+            : apiErrorMessage(loginError, "Не удалось войти"),
+      );
     } finally {
       setIsSubmitting(false);
     }

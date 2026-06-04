@@ -84,6 +84,8 @@ class CourierDeliveryRecord:
     opened_at: datetime | None
     on_way_at: datetime | None
     closed_at: datetime | None
+    taken_at: datetime | None
+    delivered_at: datetime | None
     way_duration_minutes: Decimal | None
     revenue: Decimal | None
     raw: dict[str, Any]
@@ -396,6 +398,8 @@ def parse_courier_delivery_row(row: Mapping[str, Any]) -> CourierDeliveryRecord 
         opened_at=opened_at,
         on_way_at=on_way_at,
         closed_at=closed_at,
+        taken_at=on_way_at,
+        delivered_at=closed_at,
         way_duration_minutes=way_duration,
         revenue=revenue,
         raw=_jsonable(dict(row)),
@@ -463,6 +467,8 @@ def apply_delivery_record(
     order.opened_at = record.opened_at
     order.on_way_at = record.on_way_at
     order.closed_at = record.closed_at
+    order.taken_at = record.taken_at
+    order.delivered_at = record.delivered_at
     order.way_duration_minutes = record.way_duration_minutes
     order.revenue = record.revenue
     order.raw = record.raw
@@ -499,6 +505,10 @@ def serialize_delivery_order(order: DeliveryOrder, *, include_raw: bool = False)
         "opened_at": order.opened_at.isoformat() if order.opened_at is not None else None,
         "on_way_at": order.on_way_at.isoformat() if order.on_way_at is not None else None,
         "closed_at": order.closed_at.isoformat() if order.closed_at is not None else None,
+        "taken_at": order.taken_at.isoformat() if order.taken_at is not None else None,
+        "delivered_at": (
+            order.delivered_at.isoformat() if order.delivered_at is not None else None
+        ),
         "way_duration_minutes": (
             str(order.way_duration_minutes)
             if order.way_duration_minutes is not None

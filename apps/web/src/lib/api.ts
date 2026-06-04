@@ -367,6 +367,22 @@ export type PayrollPersonalReport = {
     penalty_total: number;
     total_payable: number;
   }>;
+  daily: Array<{
+    date: string;
+    base_pay: number;
+    percent_pay: number;
+    premium: number;
+    vacation_pay: number;
+    fund_accrual: number;
+    deposit_in: number;
+    deposit_out: number;
+    penalty: number;
+    audit_penalty: number;
+    comment: string | null;
+  }>;
+  opening_balance: string;
+  closing_balance: string;
+  shifts_count: number;
   adjustments: Array<{
     id: string;
     type: PayrollAdjustmentType;
@@ -394,6 +410,7 @@ export type PayrollPersonalReport = {
     deposit_withholding: number;
     bonus_total: number;
     penalty_total: number;
+    audit_penalty_total: string;
     total_payable: number;
   };
 };
@@ -1444,6 +1461,7 @@ export type DepositWriteoffPayload = {
 export type CourierDepositStatusFilter = "active" | "fired" | "all";
 export type CourierDepositCategory = "primary" | "secondary";
 export type CourierDepositCategoryFilter = CourierDepositCategory | "all";
+export type CourierListCategoryFilter = CourierDepositCategory | "uncategorized" | "all";
 export type CourierDepositTransactionType = "top_up" | "return" | "forfeit";
 
 export type CourierDepositSettings = {
@@ -1574,6 +1592,101 @@ export type CourierEvaluationMonthlyAggregate = {
   negative_count: number;
   neutral_count: number;
   top_criteria: CourierEvaluationTopCriterion[];
+};
+
+export type KpiThreshold = "green" | "yellow" | "red";
+
+export type KpiValue = {
+  value: number | null;
+  threshold: KpiThreshold | null;
+};
+
+export type CourierKpi = {
+  courier_id: string;
+  courier_name: string;
+  category: CourierDepositCategory | null;
+  speed_minutes: KpiValue;
+  discipline_percent: KpiValue;
+  productivity: KpiValue;
+  help_count: number;
+  deliveries_total: number;
+  shifts_worked: number;
+  shifts_planned: number;
+};
+
+export type CourierEvaluationSummary = {
+  score_sum: number;
+  positive_count: number;
+  negative_count: number;
+  neutral_count: number;
+  top_criteria: CourierEvaluationTopCriterion[];
+};
+
+export type CourierStatisticsRow = {
+  kpi: CourierKpi;
+  evaluations: CourierEvaluationSummary;
+};
+
+export type CourierEvaluationDetail = CourierEvaluation & {
+  criterion_code: string | null;
+  criterion_label: string | null;
+  author_name: string | null;
+};
+
+export type CourierShiftBrief = {
+  id: number;
+  opened_at: string;
+  closed_at: string | null;
+  attendance_type: string;
+  worked_minutes: number | null;
+};
+
+export type CourierDisciplineBreakdown = {
+  planned: number;
+  worked: number;
+  help: number;
+  no_show: number;
+};
+
+export type CourierStatisticsDetail = {
+  courier_iiko_id: string;
+  kpi: CourierKpi;
+  evaluations: CourierEvaluationSummary;
+  latest_evaluations: CourierEvaluationDetail[];
+  last_shift: CourierShiftBrief | null;
+  discipline_breakdown: CourierDisciplineBreakdown;
+};
+
+export type CourierListRow = {
+  employee_id: string;
+  full_name: string;
+  iiko_id: string;
+  status: string;
+  category: CourierDepositCategory | null;
+  category_assigned_at: string | null;
+  open_shift_now: boolean;
+  shifts_in_month: number;
+};
+
+export type CourierListSummary = {
+  active_total: number;
+  primary_total: number;
+  secondary_total: number;
+  fired_this_month: number;
+  uncategorized_total: number;
+};
+
+export type CourierListResponse = {
+  month: string;
+  summary: CourierListSummary;
+  rows: CourierListRow[];
+};
+
+export type CourierCategoryPayload = {
+  category: CourierDepositCategory;
+  effective_from: string;
+  comment?: string | null;
+  actor_id?: string | null;
 };
 
 export type DdsProvider = "sber" | "tbank";
@@ -3072,6 +3185,56 @@ export async function getCourierDeposits(params: {
   category?: CourierDepositCategoryFilter;
 } = {}): Promise<CourierDepositRow[]> {
   const response = await api.get<CourierDepositRow[]>("/couriers/deposits", { params });
+  return response.data;
+}
+
+export async function getCourierList(params: {
+  status?: CourierDepositStatusFilter;
+  category?: CourierListCategoryFilter;
+  month?: string;
+} = {}): Promise<CourierListResponse> {
+  const response = await api.get<CourierListResponse>("/couriers/list", {
+    params: cleanDdsParams(params),
+  });
+  return response.data;
+}
+
+export async function setCourierCategory(
+  employeeId: string,
+  payload: CourierCategoryPayload,
+): Promise<void> {
+  await api.post(`/couriers/${employeeId}/category`, payload);
+}
+
+export async function assignAllActiveCouriersPrimary(payload: {
+  effective_from: string;
+  actor_id?: string | null;
+}): Promise<{ updated: number }> {
+  const response = await api.post<{ updated: number }>(
+    "/couriers/categories/assign-active-primary",
+    payload,
+  );
+  return response.data;
+}
+
+export async function getCourierStatistics(params: {
+  month: string;
+  category?: CourierDepositCategoryFilter;
+}): Promise<CourierStatisticsRow[]> {
+  const response = await api.get<CourierStatisticsRow[]>("/couriers/statistics", {
+    params: cleanDdsParams(params),
+  });
+  return response.data;
+}
+
+export async function getCourierStatisticsDetail(
+  employeeId: string,
+  month: string,
+): Promise<CourierStatisticsDetail> {
+  const response = await api.get<CourierStatisticsDetail>(
+    `/couriers/${employeeId}/statistics`,
+    { params: { month } },
+  );
   return response.data;
 }
 

@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { EmptyState } from "@/components/ui-app/EmptyState";
 import {
@@ -26,15 +27,18 @@ import {
 import { formatDate, formatDateTime, formatMoney } from "./runs";
 
 type PayrollPersonalReportPeriod = PayrollPersonalReport["periods"][number];
+type PayrollPersonalReportDaily = PayrollPersonalReport["daily"][number];
 type PayrollPersonalReportAdjustment = PayrollPersonalReport["adjustments"][number];
 type PayrollPersonalReportDepositTransaction =
   PayrollPersonalReport["deposit_transactions"][number];
+type ReportTableView = "weekly" | "daily";
 
 export function PayrollPersonalReportPageTab() {
   const defaultRange = useMemo(() => defaultPersonalReportRange(), []);
   const [employeeId, setEmployeeId] = useState("");
   const [dateFrom, setDateFrom] = useState(defaultRange.from);
   const [dateTo, setDateTo] = useState(defaultRange.to);
+  const [tableView, setTableView] = useState<ReportTableView>("weekly");
   const [reportParams, setReportParams] = useState<{
     employee_id: string;
     date_from: string;
@@ -93,8 +97,11 @@ export function PayrollPersonalReportPageTab() {
   const hasReportData = Boolean(
     report &&
       (report.periods.length > 0 ||
+        report.daily.length > 0 ||
         report.adjustments.length > 0 ||
-        report.deposit_transactions.length > 0),
+        report.deposit_transactions.length > 0 ||
+        Number(report.opening_balance) !== 0 ||
+        Number(report.closing_balance) !== 0),
   );
   const periodColumns: Array<DataTableColumn<PayrollPersonalReportPeriod>> = [
     {
@@ -183,6 +190,104 @@ export function PayrollPersonalReportPageTab() {
       cell: (row) => row.comment ?? <span className="text-muted-foreground">—</span>,
     },
   ];
+  const dailyColumns: Array<DataTableColumn<PayrollPersonalReportDaily>> = [
+    {
+      key: "date",
+      header: "Дата",
+      cell: (row) => formatDate(row.date),
+      className: "whitespace-nowrap",
+    },
+    {
+      key: "base_pay",
+      header: "Оклад",
+      cell: (row) => formatMoney(row.base_pay),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "percent_pay",
+      header: "Процент",
+      cell: (row) => formatMoney(row.percent_pay),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "premium",
+      header: "Премия",
+      cell: (row) => formatMoney(row.premium),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "vacation_pay",
+      header: "Больничные/отпуск",
+      cell: (row) => formatMoney(row.vacation_pay),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "fund_accrual",
+      header: "Накопительный фонд",
+      cell: (row) => formatMoney(row.fund_accrual),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "deposit_out",
+      header: "Депозит возврат",
+      cell: (row) => formatMoney(row.deposit_out),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "deposit_in",
+      header: "Депозит удержание",
+      cell: (row) => formatMoney(row.deposit_in),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "penalty",
+      header: "Штрафы и удержания",
+      cell: (row) => formatMoney(row.penalty),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "audit_penalty",
+      header: "Штрафы по ревизиям",
+      cell: (row) => formatMoney(row.audit_penalty),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "ndfl",
+      header: "Удержание НДФЛ",
+      cell: () => <span className="text-muted-foreground">—</span>,
+      className: "text-center",
+      headerClassName: "text-center",
+    },
+    {
+      key: "salary_payout",
+      header: "Выплата ЗП",
+      cell: () => <span className="text-muted-foreground">—</span>,
+      className: "text-center",
+      headerClassName: "text-center",
+    },
+    {
+      key: "advance_payout",
+      header: "Выплата аванса",
+      cell: () => <span className="text-muted-foreground">—</span>,
+      className: "text-center",
+      headerClassName: "text-center",
+    },
+    {
+      key: "comment",
+      header: "Комментарий",
+      cell: (row) => row.comment ?? <span className="text-muted-foreground">—</span>,
+      className: "min-w-52",
+    },
+  ];
   const depositColumns: Array<DataTableColumn<PayrollPersonalReportDepositTransaction>> = [
     {
       key: "created_at",
@@ -192,7 +297,7 @@ export function PayrollPersonalReportPageTab() {
     {
       key: "type",
       header: "Тип",
-      cell: (row) => depositTransactionLabel(row.transaction_type),
+      cell: (row) => depositTransactionTypeLabel(row.transaction_type),
     },
     {
       key: "amount",
@@ -286,7 +391,7 @@ export function PayrollPersonalReportPageTab() {
             />
           ) : (
             <>
-              <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <section className="grid gap-3 md:grid-cols-3 2xl:grid-cols-6">
                 <PersonalMetric
                   title="К выплате"
                   value={formatMoney(report.totals.total_payable)}
@@ -298,9 +403,10 @@ export function PayrollPersonalReportPageTab() {
                     report.totals.base_pay +
                       report.totals.premium +
                       report.totals.percent_pay +
-                      report.totals.vacation_pay,
+                      report.totals.vacation_pay +
+                      report.totals.bonus_total,
                   )}
-                  description="Оклад, премия, %, отпуск"
+                  description="Оклад, %, отпуск, премии"
                 />
                 <PersonalMetric
                   title="Удержано"
@@ -312,16 +418,47 @@ export function PayrollPersonalReportPageTab() {
                   value={formatMoney(report.totals.fund_accrual)}
                   description="Накопительный фонд"
                 />
+                <PersonalMetric
+                  title="Долг на конец"
+                  value={formatReportMoney(report.closing_balance)}
+                  description={balanceDescription(report.closing_balance)}
+                />
+                <PersonalMetric
+                  title="Смены"
+                  value={String(report.shifts_count)}
+                  description="Рабочие дни"
+                />
               </section>
 
               <section className="space-y-2">
-                <div className="text-sm font-semibold">Периоды</div>
-                <DataTable
-                  columns={periodColumns}
-                  rows={report.periods}
-                  getRowKey={(row) => `${row.run_id}-${row.role}`}
-                  emptyMessage="Нет начислений за выбранный период"
-                />
+                <Tabs
+                  value={tableView}
+                  onValueChange={(value) => setTableView(value as ReportTableView)}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-sm font-semibold">Детализация</div>
+                    <TabsList>
+                      <TabsTrigger value="weekly">По неделям</TabsTrigger>
+                      <TabsTrigger value="daily">По дням</TabsTrigger>
+                    </TabsList>
+                  </div>
+                  <TabsContent value="weekly">
+                    <DataTable
+                      columns={periodColumns}
+                      rows={report.periods}
+                      getRowKey={(row) => `${row.run_id}-${row.role}`}
+                      emptyMessage="Нет начислений за выбранный период"
+                    />
+                  </TabsContent>
+                  <TabsContent value="daily">
+                    <DataTable
+                      columns={dailyColumns}
+                      rows={report.daily}
+                      getRowKey={(row) => row.date}
+                      emptyMessage="Нет дневной детализации за выбранный период"
+                    />
+                  </TabsContent>
+                </Tabs>
               </section>
 
               <section className="space-y-2">
@@ -343,6 +480,18 @@ export function PayrollPersonalReportPageTab() {
                   emptyMessage="Операций депозита нет"
                 />
               </section>
+
+              {tableView === "daily" ? (
+                <section className="space-y-2">
+                  <div className="text-sm font-semibold">История периодов</div>
+                  <DataTable
+                    columns={periodColumns}
+                    rows={report.periods}
+                    getRowKey={(row) => `${row.run_id}-${row.role}`}
+                    emptyMessage="Нет начислений за выбранный период"
+                  />
+                </section>
+              ) : null}
             </>
           )}
         </div>
@@ -364,7 +513,7 @@ function PersonalMetric({
     <Card className="shadow-none">
       <CardContent className="p-4">
         <div className="text-sm text-muted-foreground">{title}</div>
-        <div className="mt-2 text-2xl font-semibold tabular-nums">{value}</div>
+        <div className="mt-2 break-words text-xl font-semibold tabular-nums">{value}</div>
         <div className="mt-2 text-sm text-muted-foreground">{description}</div>
       </CardContent>
     </Card>
@@ -384,15 +533,34 @@ function adjustmentTypeLabel(type: PayrollPersonalReportAdjustment["type"]) {
   return type === "bonus" ? "Премия" : "Штраф";
 }
 
-function depositTransactionLabel(type: string) {
+function depositTransactionTypeLabel(type: string) {
   const labels: Record<string, string> = {
-    accrual: "Начисление",
-    payout: "Выплата",
-    write_off: "Списание",
-    dismissal_payout: "Выплата при увольнении",
+    accrual: "Удержание (накопление)",
+    payout: "Возврат",
+    dismissal_payout: "Возврат при увольнении",
     dismissal_writeoff: "Списание при увольнении",
+    write_off: "Списание",
   };
   return labels[type] ?? type;
+}
+
+function formatReportMoney(value: number | string | null | undefined) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) {
+    return "—";
+  }
+  return formatMoney(amount);
+}
+
+function balanceDescription(value: string) {
+  const amount = Number(value);
+  if (amount > 0) {
+    return "Должны сотруднику";
+  }
+  if (amount < 0) {
+    return "Сотрудник должен";
+  }
+  return "Расчёт";
 }
 
 function addDays(value: Date, days: number) {

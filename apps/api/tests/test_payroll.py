@@ -75,6 +75,7 @@ from app.services.payroll_percent import (
     compute_daily_percent_pool,
     distribute_percent_pool,
 )
+from app.services.payroll_personal_report import build_personal_report
 from app.services.payroll_runner import (
     PayrollConflictError,
     accrue_fund,
@@ -215,19 +216,27 @@ def make_payroll_line(
     employee_id: uuid.UUID,
     *,
     components: dict[str, Any] | None = None,
+    role: str = "Пиццерист",
+    base_pay: Decimal | None = None,
+    premium: Decimal | None = None,
+    percent_pay: Decimal | None = None,
+    vacation_pay: Decimal | None = None,
+    fund_accrual: Decimal | None = None,
+    deduction: Decimal | None = None,
+    total_payable: Decimal | None = None,
 ) -> PayrollLine:
     return PayrollLine(
         id=uuid.uuid4(),
         run_id=run_id,
         employee_id=employee_id,
-        role="Пиццерист",
-        base_pay=Decimal("10000"),
-        premium=Decimal("1500"),
-        percent_pay=Decimal("750"),
-        vacation_pay=Decimal("0"),
-        fund_accrual=Decimal("500"),
-        deduction=Decimal("250"),
-        total_payable=Decimal("12000"),
+        role=role,
+        base_pay=base_pay if base_pay is not None else Decimal("10000"),
+        premium=premium if premium is not None else Decimal("1500"),
+        percent_pay=percent_pay if percent_pay is not None else Decimal("750"),
+        vacation_pay=vacation_pay if vacation_pay is not None else Decimal("0"),
+        fund_accrual=fund_accrual if fund_accrual is not None else Decimal("500"),
+        deduction=deduction if deduction is not None else Decimal("250"),
+        total_payable=total_payable if total_payable is not None else Decimal("12000"),
         deposit_excluded_for_run=False,
         deposit_exclusion_reason=None,
         components=components or {"days": [], "adjustments": {}},
@@ -1134,13 +1143,18 @@ class PersonalReportFakeSession:
         *,
         employees: list[Employee] | None = None,
         line_rows: list[tuple[PayrollLine, PayrollRun, PayrollPeriod]] | None = None,
+        opening_line_rows: list[tuple[PayrollLine, PayrollRun, PayrollPeriod]] | None = None,
         adjustments: list[PayrollAdjustment] | None = None,
         deposit_transactions: list[DepositTransaction] | None = None,
+        ledger_entries: list[ShiftLedgerEntry] | None = None,
     ) -> None:
         self.employees = {employee.id: employee for employee in employees or []}
         self.line_rows = line_rows or []
+        self.opening_line_rows = opening_line_rows or []
         self.adjustments = adjustments or []
         self.deposit_transactions = deposit_transactions or []
+        self.ledger_entries = ledger_entries or []
+        self.execute_calls = 0
 
     async def get(self, model: Any, object_id: uuid.UUID) -> Any | None:
         if model is Employee:
@@ -1148,7 +1162,12 @@ class PersonalReportFakeSession:
         return None
 
     async def execute(self, _stmt: Any) -> PersonalReportExecuteResult:
-        return PersonalReportExecuteResult(self.line_rows)
+        self.execute_calls += 1
+        if self.execute_calls == 1:
+            return PersonalReportExecuteResult(self.line_rows)
+        if self.execute_calls == 2:
+            return PersonalReportExecuteResult(self.opening_line_rows)
+        return PersonalReportExecuteResult([])
 
     async def scalars(self, query: Any) -> PersonalReportScalarResult:
         entity = query_entity(query)
@@ -1156,6 +1175,8 @@ class PersonalReportFakeSession:
             return PersonalReportScalarResult(self.adjustments)
         if entity is DepositTransaction:
             return PersonalReportScalarResult(self.deposit_transactions)
+        if entity is ShiftLedgerEntry:
+            return PersonalReportScalarResult(self.ledger_entries)
         return PersonalReportScalarResult([])
 
 
@@ -3624,6 +3645,254 @@ def test_personal_report_returns_periods_and_adjustments() -> None:
     assert payload["totals"]["penalty_total"] == 100
     assert payload["totals"]["deposit_withholding"] == 250
     assert payload["deposit_transactions"][0]["transaction_type"] == "accrual"
+
+
+async def test_personal_report_daily_aggregates_correctly() -> None:
+    employee = make_employee()
+    period = make_period(
+        start=date(2026, 5, 19),
+        end=date(2026, 5, 25),
+        payroll_date=date(2026, 5, 26),
+    )
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 5, 26, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    days = [
+        {
+            "date": date(2026, 5, 19 + index).isoformat(),
+            "base_pay": "100.00",
+            "percent_pay": "10.00",
+            "vacation_pay": "0.00",
+            "fund_accrual": "5.00",
+        }
+        for index in range(5)
+    ]
+    line = make_payroll_line(
+        run.id,
+        employee.id,
+        base_pay=Decimal("500.00"),
+        percent_pay=Decimal("50.00"),
+        fund_accrual=Decimal("25.00"),
+        total_payable=Decimal("550.00"),
+        components={"days": days, "deposit_withholding": "0", "adjustments": {}},
+    )
+    bonus = make_adjustment(employee, date(2026, 5, 20), "bonus", Decimal("30.00"))
+    penalty = make_adjustment(employee, date(2026, 5, 21), "penalty", Decimal("20.00"))
+    deposit_accrual = DepositTransaction(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        run_id=run.id,
+        transaction_type="accrual",
+        amount=Decimal("15.00"),
+        created_at=datetime(2026, 5, 22, 10, 0, tzinfo=UTC),
+    )
+    deposit_payout = DepositTransaction(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        run_id=run.id,
+        transaction_type="payout",
+        amount=Decimal("25.00"),
+        created_at=datetime(2026, 5, 23, 10, 0, tzinfo=UTC),
+    )
+    session = PersonalReportFakeSession(
+        employees=[employee],
+        line_rows=[(line, run, period)],
+        adjustments=[bonus, penalty],
+        deposit_transactions=[deposit_accrual, deposit_payout],
+    )
+
+    report = await build_personal_report(
+        session,  # type: ignore[arg-type]
+        employee.id,
+        date(2026, 5, 19),
+        date(2026, 5, 25),
+    )
+
+    assert len(report["daily"]) == 5
+    rows = {row["date"]: row for row in report["daily"]}
+    assert rows[date(2026, 5, 19)]["base_pay"] == 100
+    assert rows[date(2026, 5, 20)]["premium"] == 30
+    assert rows[date(2026, 5, 21)]["penalty"] == 20
+    assert rows[date(2026, 5, 22)]["deposit_in"] == 15
+    assert rows[date(2026, 5, 23)]["deposit_out"] == 25
+
+
+async def test_personal_report_opening_balance_excludes_period_range() -> None:
+    employee = make_employee()
+    previous_period = make_period(
+        start=date(2026, 5, 12),
+        end=date(2026, 5, 18),
+        payroll_date=date(2026, 5, 19),
+    )
+    current_period = make_period(
+        start=date(2026, 5, 19),
+        end=date(2026, 5, 25),
+        payroll_date=date(2026, 5, 26),
+    )
+    previous_run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=previous_period.id,
+        started_at=datetime(2026, 5, 19, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    current_run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=current_period.id,
+        started_at=datetime(2026, 5, 26, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    previous_line = make_payroll_line(
+        previous_run.id,
+        employee.id,
+        total_payable=Decimal("1000.00"),
+    )
+    current_line = make_payroll_line(
+        current_run.id,
+        employee.id,
+        total_payable=Decimal("500.00"),
+    )
+    session = PersonalReportFakeSession(
+        employees=[employee],
+        line_rows=[(current_line, current_run, current_period)],
+        opening_line_rows=[(previous_line, previous_run, previous_period)],
+    )
+
+    report = await build_personal_report(
+        session,  # type: ignore[arg-type]
+        employee.id,
+        date(2026, 5, 19),
+        date(2026, 5, 25),
+    )
+
+    assert report["opening_balance"] == "1000.00"
+    assert report["closing_balance"] == "1500.00"
+
+
+async def test_personal_report_shifts_count_only_working_days() -> None:
+    employee = make_employee()
+    period = make_period(
+        start=date(2026, 5, 19),
+        end=date(2026, 5, 25),
+        payroll_date=date(2026, 5, 26),
+    )
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 5, 26, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    line = make_payroll_line(
+        run.id,
+        employee.id,
+        components={
+            "days": [
+                {
+                    "date": "2026-05-19",
+                    "base_pay": "100.00",
+                    "percent_pay": "0.00",
+                    "vacation_pay": "0.00",
+                    "fund_accrual": "0.00",
+                },
+                {
+                    "date": "2026-05-20",
+                    "base_pay": "0.00",
+                    "percent_pay": "0.00",
+                    "vacation_pay": "200.00",
+                    "fund_accrual": "0.00",
+                },
+                {
+                    "date": "2026-05-21",
+                    "base_pay": "0.00",
+                    "percent_pay": "50.00",
+                    "vacation_pay": "0.00",
+                    "fund_accrual": "0.00",
+                },
+            ],
+            "deposit_withholding": "0",
+            "adjustments": {},
+        },
+    )
+    session = PersonalReportFakeSession(
+        employees=[employee],
+        line_rows=[(line, run, period)],
+    )
+
+    report = await build_personal_report(
+        session,  # type: ignore[arg-type]
+        employee.id,
+        date(2026, 5, 19),
+        date(2026, 5, 25),
+    )
+
+    assert len(report["daily"]) == 3
+    assert report["shifts_count"] == 2
+
+
+async def test_personal_report_separates_audit_penalty() -> None:
+    employee = make_employee()
+    period = make_period(
+        start=date(2026, 5, 19),
+        end=date(2026, 5, 25),
+        payroll_date=date(2026, 5, 26),
+    )
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 5, 26, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    line = make_payroll_line(
+        run.id,
+        employee.id,
+        total_payable=Decimal("0.00"),
+        components={"days": [], "deposit_withholding": "0", "adjustments": {}},
+    )
+    audit_penalty = make_adjustment(
+        employee,
+        date(2026, 5, 20),
+        "penalty",
+        Decimal("100.00"),
+        label="Недостача по ревизии",
+    )
+    audit_penalty.category.code = "inventory_shortage"
+    regular_penalty = make_adjustment(
+        employee,
+        date(2026, 5, 21),
+        "penalty",
+        Decimal("40.00"),
+        label="Штраф",
+    )
+    session = PersonalReportFakeSession(
+        employees=[employee],
+        line_rows=[(line, run, period)],
+        adjustments=[audit_penalty, regular_penalty],
+    )
+
+    report = await build_personal_report(
+        session,  # type: ignore[arg-type]
+        employee.id,
+        date(2026, 5, 19),
+        date(2026, 5, 25),
+    )
+
+    assert report["totals"]["audit_penalty_total"] == "100.00"
+    assert report["totals"]["penalty_total"] == 40
+    rows = {row["date"]: row for row in report["daily"]}
+    assert rows[date(2026, 5, 20)]["audit_penalty"] == 100
+    assert rows[date(2026, 5, 20)]["penalty"] == 0
 
 
 def test_personal_report_date_range_validation() -> None:

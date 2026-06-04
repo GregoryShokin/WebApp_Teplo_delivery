@@ -17,11 +17,22 @@ from app.api.deps import (
     require_manager_plus,
 )
 from app.db.session import get_session
-from app.models import CourierEvaluationCriterion, Employee, User
+from app.models import (
+    CourierCategory,
+    CourierCategoryAssignment,
+    CourierEvaluation,
+    CourierEvaluationCriterion,
+    Employee,
+    User,
+)
 from app.schemas.couriers import (
+    CourierBulkCategoryAssignResponse,
+    CourierBulkPrimaryRequest,
     CourierCategoryAssignmentRead,
     CourierCategoryAssignRequest,
+    CourierCategoryFilter,
     CourierCategoryRow,
+    CourierCategorySetRequest,
     CourierDepositCardRead,
     CourierDepositCategory,
     CourierDepositOpeningUpdate,
@@ -36,8 +47,12 @@ from app.schemas.couriers import (
     CourierEvaluationMonthlyAggregate,
     CourierEvaluationRead,
     CourierEvaluationUpdate,
+    CourierListCategoryFilter,
+    CourierListResponse,
     CourierScheduleEntryRead,
     CourierScheduleUpsert,
+    CourierStatisticsDetail,
+    CourierStatisticsRow,
 )
 from app.services.courier_sync import (
     MOSCOW_TZ,
@@ -52,6 +67,7 @@ from app.services.couriers import (
     deposit_service,
     evaluation_service,
     iiko_attendance_sync,
+    kpi_service,
     schedule_service,
 )
 
@@ -210,6 +226,206 @@ async def get_courier_categories(
             }
         )
     return rows
+
+
+@router.post(
+    "/categories/assign-active-primary",
+    response_model=CourierBulkCategoryAssignResponse,
+)
+async def post_assign_all_active_couriers_primary(
+    payload: CourierBulkPrimaryRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, int]:
+    require_manager_plus(actor)
+    actor_employee_id = await _resolve_actor_employee_id(session, actor, payload.actor_id)
+    couriers = (
+        await session.scalars(
+            select(Employee)
+            .where(Employee.position == "Курьер", Employee.status == "active")
+            .order_by(Employee.full_name)
+        )
+    ).all()
+    for courier in couriers:
+        await category_service.assign_category(
+            session,
+            employee_id=courier.id,
+            category=CourierCategory.PRIMARY,
+            effective_from=payload.effective_from,
+            actor_id=actor_employee_id,
+        )
+    await session.commit()
+    return {"updated": len(couriers)}
+
+
+@router.get("/statistics", response_model=list[CourierStatisticsRow])
+async def get_couriers_statistics(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    category_filter: Annotated[CourierCategoryFilter | None, Query(alias="category")] = None,
+) -> list[dict[str, Any]]:
+    require_manager_plus(actor)
+    month_start = _parse_month(month)
+    kpis = await kpi_service.list_couriers_kpi(
+        session,
+        month_start,
+        None if category_filter in (None, "all") else category_filter,
+    )
+    rows: list[dict[str, Any]] = []
+    for kpi in kpis:
+        rows.append(
+            {
+                "kpi": kpi,
+                "evaluations": await evaluation_service.get_evaluations_monthly_summary(
+                    session,
+                    kpi.courier_id,
+                    month_start,
+                ),
+            }
+        )
+    return rows
+
+
+@router.get("/list", response_model=CourierListResponse)
+async def get_couriers_list(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    status_filter: Annotated[CourierDepositStatus, Query(alias="status")] = "active",
+    category_filter: Annotated[CourierListCategoryFilter, Query(alias="category")] = "all",
+    month: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}$")] = None,
+) -> dict[str, Any]:
+    require_manager_plus(actor)
+    month_start = _parse_month(month) if month else _current_month_start()
+    snapshot_date = kpi_service.category_snapshot_date(month_start)
+    month_end = kpi_service.month_bounds(month_start)[1]
+    couriers = (
+        await session.scalars(
+            select(Employee).where(Employee.position == "Курьер").order_by(Employee.full_name)
+        )
+    ).all()
+    assignments: dict[uuid.UUID, CourierCategoryAssignment | None] = {}
+    for courier in couriers:
+        assignments[courier.id] = await kpi_service.current_assignment(
+            session,
+            courier.id,
+            snapshot_date,
+        )
+
+    active_couriers = [courier for courier in couriers if courier.status == "active"]
+    active_categories = {
+        courier.id: _enum_value(assignments[courier.id].category)
+        if assignments[courier.id] is not None
+        else None
+        for courier in active_couriers
+    }
+    rows = []
+    for courier in couriers:
+        assignment = assignments[courier.id]
+        category = _enum_value(assignment.category) if assignment is not None else None
+        if not _matches_status_filter(courier, status_filter):
+            continue
+        if not _matches_category_filter(category, category_filter):
+            continue
+        rows.append(
+            {
+                "employee_id": courier.id,
+                "full_name": courier.full_name,
+                "iiko_id": courier.iiko_id,
+                "status": courier.status,
+                "category": category,
+                "category_assigned_at": (
+                    assignment.effective_from if assignment is not None else None
+                ),
+                "open_shift_now": await kpi_service.has_open_shift_now(session, courier.id),
+                "shifts_in_month": await kpi_service.month_shift_count(
+                    session,
+                    courier.id,
+                    month_start,
+                ),
+            }
+        )
+
+    return {
+        "month": month_start.strftime("%Y-%m"),
+        "summary": {
+            "active_total": len(active_couriers),
+            "primary_total": sum(
+                1 for category in active_categories.values() if category == "primary"
+            ),
+            "secondary_total": sum(
+                1 for category in active_categories.values() if category == "secondary"
+            ),
+            "fired_this_month": sum(
+                1
+                for courier in couriers
+                if courier.status != "active"
+                and courier.fire_date is not None
+                and month_start <= courier.fire_date < month_end
+            ),
+            "uncategorized_total": sum(
+                1 for category in active_categories.values() if category is None
+            ),
+        },
+        "rows": rows,
+    }
+
+
+@router.get("/{employee_id}/statistics", response_model=CourierStatisticsDetail)
+async def get_courier_statistics_detail(
+    employee_id: uuid.UUID,
+    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    require_manager_plus(actor)
+    month_start = _parse_month(month)
+    courier = await session.get(Employee, employee_id)
+    return {
+        "courier_iiko_id": courier.iiko_id if courier is not None else "",
+        "kpi": await kpi_service.get_courier_kpi(session, employee_id, month_start),
+        "evaluations": await evaluation_service.get_evaluations_monthly_summary(
+            session,
+            employee_id,
+            month_start,
+        ),
+        "latest_evaluations": await _latest_evaluation_payloads(
+            session,
+            employee_id,
+            month_start,
+            limit=20,
+        ),
+        "last_shift": await kpi_service.get_last_shift(session, employee_id, month_start),
+        "discipline_breakdown": await kpi_service.get_discipline_breakdown(
+            session,
+            employee_id,
+            month_start,
+        ),
+    }
+
+
+@router.post(
+    "/{employee_id}/category",
+    response_model=CourierCategoryAssignmentRead,
+)
+async def post_courier_category_assignment(
+    employee_id: uuid.UUID,
+    payload: CourierCategorySetRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    require_manager_plus(actor)
+    actor_employee_id = await _resolve_actor_employee_id(session, actor, payload.actor_id)
+    assignment = await category_service.assign_category(
+        session,
+        employee_id=employee_id,
+        category=payload.category,
+        effective_from=payload.effective_from,
+        actor_id=actor_employee_id,
+    )
+    await session.commit()
+    await session.refresh(assignment)
+    return _category_assignment_payload(assignment)
 
 
 @router.post(
@@ -580,6 +796,64 @@ def _parse_month(value: str) -> date:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="month must be in YYYY-MM format",
         ) from exc
+
+
+def _current_month_start() -> date:
+    return datetime.now(MOSCOW_TZ).date().replace(day=1)
+
+
+def _matches_status_filter(employee: Employee, status_filter: str) -> bool:
+    if status_filter == "all":
+        return True
+    if status_filter == "active":
+        return employee.status == "active"
+    return employee.status != "active"
+
+
+def _matches_category_filter(category: str | None, category_filter: str) -> bool:
+    if category_filter == "all":
+        return True
+    if category_filter == "uncategorized":
+        return category is None
+    return category == category_filter
+
+
+async def _latest_evaluation_payloads(
+    session: AsyncSession,
+    courier_id: uuid.UUID,
+    month: date,
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    month_start, month_end = kpi_service.month_bounds(month)
+    result = await session.execute(
+        select(CourierEvaluation, CourierEvaluationCriterion, Employee)
+        .join(
+            CourierEvaluationCriterion,
+            CourierEvaluationCriterion.id == CourierEvaluation.criterion_id,
+        )
+        .outerjoin(Employee, Employee.id == CourierEvaluation.created_by)
+        .where(
+            CourierEvaluation.courier_employee_id == courier_id,
+            CourierEvaluation.deleted_at.is_(None),
+            CourierEvaluation.evaluated_at >= month_start,
+            CourierEvaluation.evaluated_at < month_end,
+        )
+        .order_by(CourierEvaluation.evaluated_at.desc(), CourierEvaluation.created_at.desc())
+        .limit(limit)
+    )
+    payloads: list[dict[str, Any]] = []
+    for evaluation, criterion, author in result.all():
+        payload = evaluation_service.evaluation_payload(evaluation)
+        payload.update(
+            {
+                "criterion_code": criterion.code,
+                "criterion_label": criterion.label,
+                "author_name": author.full_name if author is not None else None,
+            }
+        )
+        payloads.append(payload)
+    return payloads
 
 
 async def _resolve_actor_employee_id(

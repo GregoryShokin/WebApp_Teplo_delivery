@@ -15,6 +15,18 @@ class CourierCategoryAssignRequest(BaseModel):
     actor_id: uuid.UUID
 
 
+class CourierCategorySetRequest(BaseModel):
+    category: CourierCategory
+    effective_from: date
+    comment: str | None = Field(default=None, max_length=2000)
+    actor_id: uuid.UUID | None = None
+
+
+class CourierBulkPrimaryRequest(BaseModel):
+    effective_from: date
+    actor_id: uuid.UUID | None = None
+
+
 class CourierCategoryAssignmentRead(BaseModel):
     model_config = ConfigDict(use_enum_values=True)
 
@@ -157,6 +169,14 @@ class CourierEvaluationTopCriterion(BaseModel):
     count: int
 
 
+class EvaluationMonthlySummary(BaseModel):
+    score_sum: int
+    positive_count: int
+    negative_count: int
+    neutral_count: int
+    top_criteria: list[CourierEvaluationTopCriterion]
+
+
 class CourierEvaluationMonthlyAggregate(BaseModel):
     courier_employee_id: uuid.UUID
     month: str
@@ -188,3 +208,89 @@ class CourierScheduleUpsert(BaseModel):
 
 CourierDepositStatus = Literal["active", "fired", "all"]
 CourierDepositCategory = Literal["primary", "secondary", "all"]
+
+KpiThreshold = Literal["green", "yellow", "red"]
+CourierCategoryFilter = Literal["primary", "secondary", "all"]
+CourierListCategoryFilter = Literal["primary", "secondary", "uncategorized", "all"]
+
+
+class KpiValue(BaseModel):
+    value: float | int | None
+    threshold: KpiThreshold | None = None
+
+
+class CourierKPI(BaseModel):
+    courier_id: uuid.UUID
+    courier_name: str
+    category: Literal["primary", "secondary"] | None
+    speed_minutes: KpiValue
+    discipline_percent: KpiValue
+    productivity: KpiValue
+    help_count: int
+    deliveries_total: int
+    shifts_worked: int
+    shifts_planned: int
+
+
+class CourierStatisticsRow(BaseModel):
+    kpi: CourierKPI
+    evaluations: EvaluationMonthlySummary
+
+
+class CourierShiftBrief(BaseModel):
+    id: int
+    opened_at: datetime
+    closed_at: datetime | None = None
+    attendance_type: str
+    worked_minutes: int | None = None
+
+
+class CourierEvaluationDetailRead(CourierEvaluationRead):
+    criterion_code: str | None = None
+    criterion_label: str | None = None
+    author_name: str | None = None
+
+
+class CourierDisciplineBreakdown(BaseModel):
+    planned: int
+    worked: int
+    help: int
+    no_show: int
+
+
+class CourierStatisticsDetail(BaseModel):
+    courier_iiko_id: str
+    kpi: CourierKPI
+    evaluations: EvaluationMonthlySummary
+    latest_evaluations: list[CourierEvaluationDetailRead]
+    last_shift: CourierShiftBrief | None = None
+    discipline_breakdown: CourierDisciplineBreakdown
+
+
+class CourierListRow(BaseModel):
+    employee_id: uuid.UUID
+    full_name: str
+    iiko_id: str
+    status: str
+    category: Literal["primary", "secondary"] | None = None
+    category_assigned_at: date | None = None
+    open_shift_now: bool
+    shifts_in_month: int
+
+
+class CourierListSummary(BaseModel):
+    active_total: int
+    primary_total: int
+    secondary_total: int
+    fired_this_month: int
+    uncategorized_total: int
+
+
+class CourierListResponse(BaseModel):
+    month: str
+    summary: CourierListSummary
+    rows: list[CourierListRow]
+
+
+class CourierBulkCategoryAssignResponse(BaseModel):
+    updated: int

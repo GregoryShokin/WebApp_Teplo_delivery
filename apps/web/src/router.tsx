@@ -11,6 +11,8 @@ import { PayrollRoute } from "@/routes/payroll";
 import { DdsRoute } from "@/routes/dds";
 import { LoginRoute } from "@/routes/login";
 import { CourierEvaluationsRoute } from "@/routes/couriers/evaluations";
+import { CourierListRoute } from "@/routes/couriers/list";
+import { CourierStatisticsRoute } from "@/routes/couriers/statistics";
 import { PayrollConfigurationRoute } from "@/routes/payroll/configuration";
 import { PayrollRunDetailRoute } from "@/routes/payroll/run-detail";
 import { ScheduleRoute } from "@/routes/schedule";
@@ -218,11 +220,11 @@ const routes: AppRoute[] = [
       },
       {
         path: "statistics",
-        render: () => <EmptyModule name="Статистика курьеров — скоро" />,
+        render: ({ navigate }) => <CourierStatisticsRoute onNavigate={navigate} />,
       },
       {
         path: "list",
-        render: () => <EmptyModule name="Список курьеров — скоро" />,
+        render: () => <CourierListRoute />,
       },
       {
         path: ":unknown",

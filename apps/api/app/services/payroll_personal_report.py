@@ -186,7 +186,10 @@ async def build_personal_report(
             daily_row["deposit_out"] += money_decimal(transaction.amount)
 
     totals["audit_penalty_total"] = money_string(audit_penalty_total)
-    daily = [serialize_daily_row(row) for row in sorted(daily_rows.values(), key=lambda item: item["date"])]
+    daily = [
+        serialize_daily_row(row)
+        for row in sorted(daily_rows.values(), key=lambda item: item["date"])
+    ]
     shifts_count = sum(
         1
         for row in daily_rows.values()
@@ -249,7 +252,14 @@ def apply_line_days_to_daily_rows(
             daily_row["fund_accrual"] += money_decimal(day.get("fund_accrual"))
         return
 
-    apply_ledger_fallback_to_daily_rows(daily_rows, line, period, date_from, date_to, ledger_by_date)
+    apply_ledger_fallback_to_daily_rows(
+        daily_rows,
+        line,
+        period,
+        date_from,
+        date_to,
+        ledger_by_date,
+    )
 
 
 def apply_ledger_fallback_to_daily_rows(

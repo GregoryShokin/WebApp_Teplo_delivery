@@ -4,8 +4,8 @@ from app.api.v1.payroll_config import router as payroll_config_router
 from app.api.v1.routes.accumulation_fund import router as accumulation_fund_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.couriers import router as couriers_router
-from app.api.v1.routes.deposits import router as deposits_router
 from app.api.v1.routes.dds import router as dds_router
+from app.api.v1.routes.deposits import router as deposits_router
 from app.api.v1.routes.employees import router as employees_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.integrations import router as integrations_router
