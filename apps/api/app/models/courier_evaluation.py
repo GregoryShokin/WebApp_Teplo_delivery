@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import enum
 import uuid
 from datetime import date, datetime
+from enum import StrEnum
 
 from sqlalchemy import (
     Boolean,
@@ -23,7 +23,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 
-class CourierEvaluationSource(str, enum.Enum):
+class CourierEvaluationSource(StrEnum):
     WEB = "web"
     TELEGRAM = "telegram"
     API = "api"

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import enum
 import uuid
 from datetime import date, datetime
+from enum import StrEnum
 
 from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, func, text
 from sqlalchemy import Enum as SQLEnum
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 
-class CourierCategory(str, enum.Enum):
+class CourierCategory(StrEnum):
     PRIMARY = "primary"
     SECONDARY = "secondary"
 

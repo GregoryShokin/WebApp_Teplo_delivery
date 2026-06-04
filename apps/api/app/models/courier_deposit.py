@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import enum
 import uuid
 from datetime import date, datetime
+from enum import StrEnum
 
 from sqlalchemy import BigInteger, CheckConstraint, Date, DateTime, ForeignKey, Integer, Text, func
 from sqlalchemy import Enum as SQLEnum
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 
-class CourierDepositTransactionType(str, enum.Enum):
+class CourierDepositTransactionType(StrEnum):
     TOP_UP = "top_up"
     RETURN = "return"
     FORFEIT = "forfeit"
