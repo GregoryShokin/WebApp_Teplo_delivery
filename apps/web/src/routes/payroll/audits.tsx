@@ -66,6 +66,7 @@ import {
   importInventoryAuditFromIiko,
   patchInventoryAuditEmployeeExclusion,
   patchInventoryAuditItem,
+  patchInventoryAuditItemExclusion,
   restoreInventoryAuditDraft,
   type InventoryAudit,
   type InventoryEmployeeRecipient,
@@ -683,6 +684,13 @@ function AuditDetail({
   const [moveTarget, setMoveTarget] = useState<MoveTarget>(null);
   const [exclusionTarget, setExclusionTarget] = useState<ExclusionTarget>(null);
   const [exclusionReason, setExclusionReason] = useState("");
+  const [itemExclusionTarget, setItemExclusionTarget] = useState<{
+    item: InventoryAuditItem;
+    itemId: string;
+    productName: string;
+    nextExcluded: boolean;
+  } | null>(null);
+  const [itemExclusionReason, setItemExclusionReason] = useState("");
   const [itemAmountFilter, setItemAmountFilter] = useState<ItemAmountFilter>("all");
   const overrideMutation = useMutation({
     mutationFn: ({
@@ -726,6 +734,29 @@ function AuditDetail({
     onError: (error) =>
       toast.error(apiErrorMessage(error, "Не удалось обновить распределение")),
   });
+  const itemExclusionMutation = useMutation({
+    mutationFn: ({
+      itemId,
+      excluded,
+      reason,
+    }: {
+      itemId: string;
+      excluded: boolean;
+      reason?: string | null;
+    }) => patchInventoryAuditItemExclusion(audit.id, itemId, { excluded, reason }),
+    onSuccess: async (_audit, variables) => {
+      toast.success(
+        variables.excluded
+          ? "Позиция исключена из расчёта"
+          : "Позиция возвращена в расчёт",
+      );
+      await invalidateInventory(queryClient, audit.id);
+      setItemExclusionTarget(null);
+      setItemExclusionReason("");
+    },
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, "Не удалось обновить исключение позиции")),
+  });
   const snapshot = audit.computation_snapshot;
   const groups = snapshot?.groups ?? {};
   const penalties = snapshot?.employee_penalties ?? [];
@@ -762,8 +793,9 @@ function AuditDetail({
   const totalShortageConsidered =
     audit.total_shortage_considered ?? audit.total_shortage_amount;
   const payrollPeriodStart = payrollPeriodStartForAudit(audit.business_date);
-  const isFinalized = audit.status === "applied";
-  const isOverrideDisabled = audit.status !== "draft" || overrideMutation.isPending;
+  const isFinalized = audit.status !== "draft";
+  const isOverrideDisabled =
+    audit.status !== "draft" || overrideMutation.isPending || itemExclusionMutation.isPending;
   const isExclusionDisabled = audit.status !== "draft" || exclusionMutation.isPending;
 
   return (
@@ -875,46 +907,59 @@ function AuditDetail({
           </div>
           {items.length ? (
             <div className="overflow-x-auto rounded-md border">
-              <table className="w-full min-w-[760px] text-sm">
+              <table className="w-full min-w-[840px] text-sm">
                 <thead>
                   <tr className="border-b bg-muted/35">
                     <th className="p-3 text-left font-medium">Позиция</th>
                     <th className="p-3 text-left font-medium">Группа</th>
                     <th className="p-3 text-right font-medium">Сумма</th>
+                    <th className="p-3 text-center font-medium">Учёт</th>
                     <th className="p-3 text-right font-medium">Действия</th>
                   </tr>
                 </thead>
                 <tbody>
                   {displayRows.length ? (
                     displayRows.map((row) =>
-                    row.type === "item" ? (
-                      <AuditItemRow
-                        disabled={isOverrideDisabled}
-                        finalized={isFinalized}
-                        item={row.item}
-                        key={row.item.id}
-                        loading={overrideMutation.isPending}
-                        onExclude={(item) =>
-                          setOverrideTarget({
-                            item,
-                            nextOverride: "",
-                            label: "Исключить из группы",
-                          })
-                        }
-                        onMove={(item) =>
-                          setMoveTarget({
-                            item,
-                            value: item.swap_group ?? item.swap_group_default ?? "",
-                          })
-                        }
-                      />
-                    ) : (
-                      <SwapGroupSummaryRow key={`summary-${row.summary.group}`} summary={row.summary} />
-                    ),
+                      row.type === "item" ? (
+                        <AuditItemRow
+                          disabled={isOverrideDisabled}
+                          finalized={isFinalized}
+                          item={row.item}
+                          key={row.item.id}
+                          loading={overrideMutation.isPending || itemExclusionMutation.isPending}
+                          onExclude={(item) =>
+                            setOverrideTarget({
+                              item,
+                              nextOverride: "",
+                              label: "Исключить из группы",
+                            })
+                          }
+                          onMove={(item) =>
+                            setMoveTarget({
+                              item,
+                              value: item.swap_group ?? item.swap_group_default ?? "",
+                            })
+                          }
+                          onToggleInclude={(item, nextExcluded) => {
+                            setItemExclusionTarget({
+                              item,
+                              itemId: item.id,
+                              productName: item.product_name_snapshot,
+                              nextExcluded,
+                            });
+                            setItemExclusionReason(item.exclusion_reason ?? "");
+                          }}
+                        />
+                      ) : (
+                        <SwapGroupSummaryRow
+                          key={`summary-${row.summary.group}`}
+                          summary={row.summary}
+                        />
+                      ),
                     )
                   ) : (
                     <tr>
-                      <td className="p-3 text-sm text-muted-foreground" colSpan={4}>
+                      <td className="p-3 text-sm text-muted-foreground" colSpan={5}>
                         По выбранному фильтру строк нет
                       </td>
                     </tr>
@@ -1079,6 +1124,82 @@ function AuditDetail({
       </Dialog>
 
       <AlertDialog
+        open={itemExclusionTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setItemExclusionTarget(null);
+            setItemExclusionReason("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {itemExclusionTarget?.nextExcluded
+                ? "Исключить позицию из расчёта"
+                : "Вернуть позицию в расчёт"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {itemExclusionTarget?.nextExcluded ? (
+                <>
+                  Позиция <b>{itemExclusionTarget.productName}</b> не попадёт
+                  в недостачи и штрафы этой ревизии. Укажите причину исключения — это
+                  обязательно и будет зафиксировано в журнале.
+                </>
+              ) : (
+                <>
+                  Позиция <b>{itemExclusionTarget?.productName}</b> снова будет
+                  учтена в расчёте штрафа.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {itemExclusionTarget?.nextExcluded ? (
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="item-exclusion-reason">
+                Причина исключения
+              </label>
+              <Textarea
+                id="item-exclusion-reason"
+                value={itemExclusionReason}
+                onChange={(event) => setItemExclusionReason(event.target.value)}
+                placeholder="Например: брак на приёмке, списано документом N…"
+                rows={3}
+                maxLength={500}
+              />
+            </div>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={itemExclusionMutation.isPending}>
+              Отмена
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={
+                itemExclusionMutation.isPending ||
+                (itemExclusionTarget?.nextExcluded === true &&
+                  itemExclusionReason.trim().length === 0)
+              }
+              onClick={(event) => {
+                event.preventDefault();
+                if (!itemExclusionTarget) {
+                  return;
+                }
+                itemExclusionMutation.mutate({
+                  itemId: itemExclusionTarget.itemId,
+                  excluded: itemExclusionTarget.nextExcluded,
+                  reason: itemExclusionTarget.nextExcluded
+                    ? itemExclusionReason.trim()
+                    : null,
+                });
+              }}
+            >
+              {itemExclusionTarget?.nextExcluded ? "Исключить" : "Вернуть"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
         open={Boolean(overrideTarget)}
         onOpenChange={(open) => !open && setOverrideTarget(null)}
       >
@@ -1123,6 +1244,7 @@ function AuditItemRow({
   loading,
   onExclude,
   onMove,
+  onToggleInclude,
 }: {
   disabled: boolean;
   finalized: boolean;
@@ -1130,6 +1252,7 @@ function AuditItemRow({
   loading: boolean;
   onExclude: (item: InventoryAuditItem) => void;
   onMove: (item: InventoryAuditItem) => void;
+  onToggleInclude: (item: InventoryAuditItem, nextExcluded: boolean) => void;
 }) {
   const hasSwapGroup = Boolean(item.swap_group);
   const canEditSwapGroup = Boolean(
@@ -1140,6 +1263,7 @@ function AuditItemRow({
       className={cn(
         "border-b last:border-b-0",
         hasSwapGroup && "bg-slate-50",
+        item.is_excluded && "opacity-60 line-through",
       )}
     >
       <td className="p-3">
@@ -1161,6 +1285,23 @@ function AuditItemRow({
         <InventoryGroupBadge group={item.allocation_group} />
       </td>
       <td className="p-3 text-right tabular-nums">{formatSignedMoney(item.amount)}</td>
+      <td className="p-3 text-center">
+        <InlineTooltip
+          content={
+            item.is_excluded
+              ? `Исключена: ${item.exclusion_reason ?? "без комментария"}`
+              : "Учитывается в расчёте штрафа. Выключи, чтобы исключить."
+          }
+        >
+          <Switch
+            aria-checked={!item.is_excluded}
+            aria-label="Учитывать позицию в расчёте"
+            checked={!item.is_excluded}
+            disabled={disabled || loading || finalized}
+            onCheckedChange={(next) => onToggleInclude(item, !next)}
+          />
+        </InlineTooltip>
+      </td>
       <td className="p-3 text-right">
         {canEditSwapGroup ? (
           <span
@@ -1220,6 +1361,7 @@ function SwapGroupSummaryRow({
       <td className="p-3 text-right font-semibold tabular-nums">
         {covered ? "0 ₽" : formatMoney(summary.effective_shortage ?? summary.net_amount)}
       </td>
+      <td className="p-3" />
       <td className="p-3" />
     </tr>
   );

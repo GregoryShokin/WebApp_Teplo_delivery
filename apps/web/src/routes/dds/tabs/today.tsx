@@ -1,16 +1,74 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, ArrowRight, Landmark, Wallet } from "lucide-react";
+import { AlertCircle, ArrowRight, Banknote, Coins, Lock } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { getDdsBankOperations, getDdsOwnerReview, getDdsWallets } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import {
-  BankSyncButton,
-  formatDdsMoney,
-  isoDateDaysAgo,
-  toIsoDate,
-} from "@/routes/dds/shared";
+  getDdsBankOperations,
+  getDdsOwnerReview,
+  getDdsWallets,
+  type WalletRead,
+} from "@/lib/api";
+import { BankSyncButton, formatDdsMoney } from "@/routes/dds/shared";
+
+type WalletGroupKey = "bank" | "cash" | "reserve";
+
+const GROUP_CONFIG: Array<{
+  key: WalletGroupKey;
+  label: string;
+  description: string;
+  icon: typeof Banknote;
+  accent: string;
+  badgeClass: string;
+  matches: (wallet: WalletRead) => boolean;
+}> = [
+  {
+    key: "bank",
+    label: "Банковские счета",
+    description: "Безналичные деньги в банках",
+    icon: Banknote,
+    accent: "from-sky-50 to-sky-100/60",
+    badgeClass: "border-sky-200 bg-sky-50 text-sky-700",
+    matches: (wallet) => wallet.type === "bank" || wallet.type === "bank_account",
+  },
+  {
+    key: "cash",
+    label: "Кассы",
+    description: "Наличные у администраторов и в сейфе",
+    icon: Coins,
+    accent: "from-amber-50 to-amber-100/60",
+    badgeClass: "border-amber-200 bg-amber-50 text-amber-700",
+    matches: (wallet) =>
+      wallet.type === "cash" ||
+      wallet.type === "cash_safe" ||
+      wallet.type === "cash_register" ||
+      wallet.type === "store_cash",
+  },
+  {
+    key: "reserve",
+    label: "Резервы",
+    description: "Обязательства перед сотрудниками и фонды",
+    icon: Lock,
+    accent: "from-slate-50 to-slate-100/60",
+    badgeClass: "border-slate-200 bg-slate-100 text-slate-700",
+    matches: (wallet) =>
+      wallet.type === "reserve" || wallet.type === "fund" || wallet.type === "deposit",
+  },
+];
+
+const TYPE_LABELS: Record<string, string> = {
+  bank: "Банк",
+  bank_account: "Банк",
+  cash: "Касса",
+  cash_safe: "Сейф",
+  cash_register: "Касса",
+  store_cash: "Торговая касса",
+  reserve: "Резерв",
+  fund: "Фонд",
+  deposit: "Депозит",
+};
 
 export function TodayTab({ onNavigate }: { onNavigate: (path: string) => void }) {
   const walletsQuery = useQuery({ queryKey: ["dds", "wallets"], queryFn: getDdsWallets });
@@ -18,116 +76,175 @@ export function TodayTab({ onNavigate }: { onNavigate: (path: string) => void })
     queryKey: ["dds", "owner-review", "today"],
     queryFn: () => getDdsOwnerReview({ limit: 1, offset: 0 }),
   });
-  const recentOperationsQuery = useQuery({
-    queryKey: ["dds", "operations", "recent"],
-    queryFn: () =>
-      getDdsBankOperations({
-        from: isoDateDaysAgo(7),
-        to: toIsoDate(new Date()),
-        limit: 1,
-        offset: 0,
-      }),
+  const lastOperationQuery = useQuery({
+    queryKey: ["dds", "operations", "latest"],
+    queryFn: () => getDdsBankOperations({ limit: 1, offset: 0 }),
   });
 
   const wallets = walletsQuery.data ?? [];
 
+  const grandTotal = useMemo(
+    () => wallets.reduce((sum, w) => sum + numeric(w.balance), 0),
+    [wallets],
+  );
+
+  const groups = useMemo(() => {
+    const used = new Set<string>();
+    const buckets = GROUP_CONFIG.map((group) => {
+      const items = wallets.filter((w) => {
+        if (used.has(w.id)) return false;
+        if (!group.matches(w)) return false;
+        used.add(w.id);
+        return true;
+      });
+      const total = items.reduce((sum, w) => sum + numeric(w.balance), 0);
+      return { ...group, items, total };
+    });
+    const orphans = wallets.filter((w) => !used.has(w.id));
+    return { buckets, orphans };
+  }, [wallets]);
+
+  const lastImport = lastOperationQuery.data?.items?.[0];
+  const lastImportLabel = lastImport
+    ? `Последняя операция в банке: ${formatDate(lastImport.operation_date)}`
+    : "Импорт ещё не запускался";
+
+  const pendingReview = ownerReviewQuery.data?.total ?? 0;
+
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold tracking-normal">Деньги сегодня</h2>
-          <p className="text-sm text-muted-foreground">
-            Балансы кошельков и быстрые сигналы по банковским операциям.
-          </p>
+          <p className="text-sm text-muted-foreground">{lastImportLabel}</p>
         </div>
         <BankSyncButton />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        {walletsQuery.isLoading
-          ? Array.from({ length: 5 }).map((_, index) => (
-              <Card key={index}>
-                <CardContent className="grid gap-3 p-4">
-                  <div className="h-4 w-28 rounded bg-muted" />
-                  <div className="h-8 w-32 rounded bg-muted" />
-                  <div className="h-3 w-24 rounded bg-muted" />
-                </CardContent>
-              </Card>
-            ))
-          : wallets.map((wallet) => (
-              <Card key={wallet.id}>
-                <CardContent className="grid gap-3 p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">{wallet.name}</div>
-                      <div className="text-xs text-muted-foreground">{wallet.code}</div>
-                    </div>
-                    <Badge variant="outline">{wallet.type}</Badge>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-semibold tabular-nums">
-                      {formatDdsMoney(wallet.balance)}
-                    </div>
-                    <div className="text-xs text-muted-foreground">{wallet.currency}</div>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Начальный баланс {formatDdsMoney(wallet.opening_balance)}
-                  </div>
-                </CardContent>
-              </Card>
+      <Card className="border-emerald-100 bg-gradient-to-br from-emerald-50 to-emerald-100/40">
+        <CardContent className="grid gap-3 p-5 sm:flex sm:items-end sm:justify-between">
+          <div>
+            <div className="text-sm font-medium text-emerald-900/80">Всего на руках</div>
+            <div className="mt-1 text-4xl font-semibold tabular-nums text-emerald-950">
+              {formatDdsMoney(grandTotal)}
+            </div>
+            <div className="mt-2 text-xs text-emerald-900/70">
+              По {wallets.length} {pluralize(wallets.length, "кошельку", "кошелькам", "кошелькам")} —
+              {" "}банки, кассы и резервы вместе.
+            </div>
+          </div>
+          {pendingReview > 0 ? (
+            <button
+              type="button"
+              onClick={() => onNavigate("/dds/owner-review")}
+              className="inline-flex items-center gap-2 self-start rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800 transition hover:bg-orange-100 sm:self-end"
+            >
+              <AlertCircle size={16} aria-hidden="true" />
+              Требует разбора: <span className="font-semibold tabular-nums">{pendingReview}</span>
+              <ArrowRight size={14} aria-hidden="true" />
+            </button>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-3 lg:grid-cols-3">
+        {groups.buckets.map((group) => (
+          <GroupCard key={group.key} group={group} loading={walletsQuery.isLoading} />
+        ))}
+      </div>
+
+      {groups.orphans.length > 0 ? (
+        <Card>
+          <CardContent className="grid gap-2 p-4">
+            <div className="text-sm font-medium">Прочее</div>
+            {groups.orphans.map((wallet) => (
+              <WalletRow key={wallet.id} wallet={wallet} />
             ))}
-      </div>
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        <button
-          className="rounded-lg border bg-card p-4 text-left transition-colors hover:bg-muted/50"
-          onClick={() => onNavigate("/dds/owner-review")}
-          type="button"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-md bg-orange-50 text-orange-700">
-                <AlertCircle size={18} aria-hidden="true" />
-              </span>
-              <div>
-                <div className="text-sm text-muted-foreground">Pending owner review</div>
-                <div className="text-2xl font-semibold tabular-nums">
-                  {ownerReviewQuery.data?.total ?? "—"}
-                </div>
-              </div>
-            </div>
-            <ArrowRight size={18} aria-hidden="true" />
-          </div>
-        </button>
-
-        <button
-          className="rounded-lg border bg-card p-4 text-left transition-colors hover:bg-muted/50"
-          onClick={() => onNavigate("/dds/operations")}
-          type="button"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-md bg-sky-50 text-sky-700">
-                <Landmark size={18} aria-hidden="true" />
-              </span>
-              <div>
-                <div className="text-sm text-muted-foreground">Операций за последние 7 дней</div>
-                <div className="text-2xl font-semibold tabular-nums">
-                  {recentOperationsQuery.data?.total ?? "—"}
-                </div>
-              </div>
-            </div>
-            <ArrowRight size={18} aria-hidden="true" />
-          </div>
-        </button>
-      </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {!walletsQuery.isLoading && wallets.length === 0 ? (
-        <div className="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-          <Wallet size={16} aria-hidden="true" />
-          Кошельки пока не найдены.
+        <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+          Кошельки пока не найдены. Откройте «Доступы» и подключите банки или добавьте кассу.
         </div>
       ) : null}
     </div>
   );
+}
+
+function GroupCard({
+  group,
+  loading,
+}: {
+  group: (typeof GROUP_CONFIG)[number] & { items: WalletRead[]; total: number };
+  loading: boolean;
+}) {
+  const Icon = group.icon;
+  return (
+    <Card className={cn("overflow-hidden border bg-gradient-to-br", group.accent)}>
+      <CardContent className="grid gap-3 p-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-md border bg-background/80">
+              <Icon size={16} aria-hidden="true" />
+            </span>
+            <div>
+              <div className="text-sm font-medium">{group.label}</div>
+              <div className="text-xs text-muted-foreground">{group.description}</div>
+            </div>
+          </div>
+        </div>
+        <div className="text-2xl font-semibold tabular-nums">{formatDdsMoney(group.total)}</div>
+        <div className="grid gap-1 border-t pt-3">
+          {loading ? (
+            <div className="h-10 animate-pulse rounded bg-muted/60" />
+          ) : group.items.length > 0 ? (
+            group.items.map((wallet) => <WalletRow key={wallet.id} wallet={wallet} />)
+          ) : (
+            <div className="text-xs text-muted-foreground">Нет кошельков в группе.</div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function WalletRow({ wallet }: { wallet: WalletRead }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <div className="min-w-0">
+        <div className="truncate font-medium">{wallet.name}</div>
+        <div className="text-xs text-muted-foreground">{TYPE_LABELS[wallet.type] ?? wallet.type}</div>
+      </div>
+      <div className="text-right">
+        <div className="tabular-nums font-medium">{formatDdsMoney(wallet.balance)}</div>
+        {numeric(wallet.opening_balance) > 0 ? (
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            нач. {formatDdsMoney(wallet.opening_balance)}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function numeric(value: string | number | null | undefined) {
+  if (value == null) return 0;
+  const n = typeof value === "string" ? Number(value) : value;
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatDate(iso: string) {
+  const [y, m, d] = iso.split("-");
+  return `${d}.${m}.${y}`;
+}
+
+function pluralize(n: number, one: string, few: string, many: string) {
+  const mod100 = n % 100;
+  const mod10 = n % 10;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
 }

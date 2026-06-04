@@ -593,6 +593,8 @@ export type InventoryAuditItem = {
   swap_group_default: string | null;
   swap_group_override: string | null;
   has_swap_group_override: boolean;
+  is_excluded?: boolean;
+  exclusion_reason?: string | null;
   iiko_product_guid: string | null;
   product_name_snapshot: string;
   shortage_amount: string;
@@ -2470,6 +2472,18 @@ export async function patchInventoryAuditEmployeeExclusion(
 ): Promise<InventoryAudit> {
   const response = await api.patch<InventoryAudit>(
     `/inventory/audits/${auditId}/employee-exclusions/${employeeId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function patchInventoryAuditItemExclusion(
+  auditId: string,
+  itemId: string,
+  payload: { excluded: boolean; reason?: string | null },
+): Promise<InventoryAudit> {
+  const response = await api.patch<InventoryAudit>(
+    `/inventory/audits/${auditId}/items/${itemId}/exclusion`,
     payload,
   );
   return response.data;
