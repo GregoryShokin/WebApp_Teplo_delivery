@@ -7,6 +7,7 @@ import { restoreSession } from "@/lib/api";
 import { getAuthSnapshot } from "@/lib/auth";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { PayrollRoute } from "@/routes/payroll";
+import { DdsRoute } from "@/routes/dds";
 import { LoginRoute } from "@/routes/login";
 import { PayrollConfigurationRoute } from "@/routes/payroll/configuration";
 import { PayrollRunDetailRoute } from "@/routes/payroll/run-detail";
@@ -192,7 +193,44 @@ const routes: AppRoute[] = [
   },
   {
     path: "/dds",
-    render: () => <EmptyModule name="ДДС" />,
+    children: [
+      {
+        path: "",
+        render: ({ navigate }) => <DdsRoute activeTab="today" onNavigate={navigate} useStoredTab />,
+      },
+      {
+        path: "operations",
+        render: ({ navigate }) => <DdsRoute activeTab="operations" onNavigate={navigate} />,
+      },
+      {
+        path: "ledger",
+        render: ({ navigate }) => <DdsRoute activeTab="ledger" onNavigate={navigate} />,
+      },
+      {
+        path: "owner-review",
+        render: ({ navigate }) => <DdsRoute activeTab="owner-review" onNavigate={navigate} />,
+      },
+      {
+        path: "counterparties",
+        render: ({ navigate }) => <DdsRoute activeTab="counterparties" onNavigate={navigate} />,
+      },
+      {
+        path: "articles",
+        render: ({ navigate }) => <DdsRoute activeTab="articles" onNavigate={navigate} />,
+      },
+      {
+        path: "rules",
+        render: ({ navigate }) => <DdsRoute activeTab="rules" onNavigate={navigate} />,
+      },
+      {
+        path: "credentials",
+        render: ({ navigate }) => <DdsRoute activeTab="credentials" onNavigate={navigate} />,
+      },
+      {
+        path: ":unknown",
+        render: ({ navigate }) => <DdsRoute activeTab="today" invalidPath onNavigate={navigate} />,
+      },
+    ],
   },
   {
     path: "/payment-calendar",

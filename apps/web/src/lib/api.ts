@@ -1265,6 +1265,222 @@ export type DepositWriteoffPayload = {
   reason?: string | null;
 };
 
+export type DdsProvider = "sber" | "tbank";
+export type DdsDirection = "in" | "out";
+export type DdsClassificationStatus =
+  | "pending"
+  | "classified"
+  | "internal_transfer"
+  | "needs_review"
+  | "excluded";
+
+export type WalletRead = {
+  id: string;
+  code: string;
+  name: string;
+  type: string;
+  currency: string;
+  is_internal_transfer_eligible: boolean;
+  status: string;
+  account_id: string | null;
+  opening_balance: string;
+  opening_balance_date: string | null;
+  balance: string;
+};
+
+export type BankOperationRead = {
+  id: string;
+  provider: string;
+  provider_operation_id: string;
+  account_id: string | null;
+  operation_date: string;
+  posted_at: string | null;
+  direction: string;
+  amount: string;
+  currency: string;
+  counterparty_name_raw: string | null;
+  counterparty_inn_raw: string | null;
+  counterparty_account_raw: string | null;
+  payment_purpose: string | null;
+  document_number: string | null;
+  classification_status: string;
+  cashflow_transaction_id: string | null;
+  transfer_group_id: string | null;
+  raw_payload: Record<string, unknown> | null;
+};
+
+export type BankOperationsQuery = {
+  from?: string;
+  to?: string;
+  provider?: DdsProvider | "all";
+  classification_status?: DdsClassificationStatus | "all";
+  limit?: number;
+  offset?: number;
+};
+
+export type CashflowTransactionRead = {
+  id: string;
+  wallet_id: string;
+  direction: string;
+  amount: string;
+  operation_date: string;
+  article_id: string | null;
+  counterparty_id: string | null;
+  transfer_group_id: string | null;
+  source_kind: string;
+  source_id: string | null;
+  payment_purpose: string | null;
+  comment: string | null;
+  quality_status: string;
+};
+
+export type CashflowQuery = {
+  from?: string;
+  to?: string;
+  wallet_id?: string;
+  article_id?: string;
+  direction?: DdsDirection | "all";
+  limit?: number;
+  offset?: number;
+};
+
+export type DdsArticleRead = {
+  id: string;
+  code: string;
+  name: string;
+  movement_type: "inflow" | "outflow" | "internal" | string;
+  activity_type: string;
+  parent_id: string | null;
+  is_active: boolean;
+  description: string | null;
+  aliases: DdsAliasRead[];
+};
+
+export type DdsArticleCreate = {
+  code: string;
+  name: string;
+  movement_type: "inflow" | "outflow" | "internal";
+  activity_type: string;
+  parent_id?: string | null;
+  is_active?: boolean;
+  description?: string | null;
+};
+
+export type DdsAliasRead = {
+  id: string;
+  alias: string;
+  source: string | null;
+};
+
+export type DdsAliasCreate = {
+  alias: string;
+  source?: string | null;
+};
+
+export type CounterpartyRead = {
+  id: string;
+  name: string;
+  inn: string | null;
+  type: "legal_entity" | "individual" | "bank" | "tax_authority" | string;
+  status: string;
+  aliases: DdsAliasRead[];
+};
+
+export type CounterpartyCreate = {
+  name: string;
+  inn?: string | null;
+  type?: "legal_entity" | "individual" | "bank" | "tax_authority";
+  status?: string;
+};
+
+export type ClassificationRuleRead = {
+  id: string;
+  name: string;
+  priority: number;
+  is_active: boolean;
+  provider: DdsProvider | null;
+  direction: DdsDirection | null;
+  counterparty_inn_match: string | null;
+  counterparty_name_pattern: string | null;
+  purpose_pattern: string | null;
+  amount_min: string | null;
+  amount_max: string | null;
+  action: "set_article" | "mark_internal_transfer" | "exclude" | string;
+  article_id: string | null;
+  counterparty_id: string | null;
+  comment: string | null;
+};
+
+export type ClassificationRuleCreate = {
+  name: string;
+  priority?: number;
+  is_active?: boolean;
+  provider?: DdsProvider | null;
+  direction?: DdsDirection | null;
+  counterparty_inn_match?: string | null;
+  counterparty_name_pattern?: string | null;
+  purpose_pattern?: string | null;
+  amount_min?: string | null;
+  amount_max?: string | null;
+  action: "set_article" | "mark_internal_transfer" | "exclude";
+  article_id?: string | null;
+  counterparty_id?: string | null;
+  comment?: string | null;
+};
+
+export type OwnerReviewKind =
+  | "unclassified_operation"
+  | "invalid_credentials"
+  | "unmatched_transfer";
+
+export type ReconciliationCaseRead = {
+  id: string;
+  kind: string;
+  status: string;
+  provider: string | null;
+  bank_operation_id: string | null;
+  payload: Record<string, unknown>;
+  created_at: string;
+  operation: BankOperationRead | null;
+};
+
+export type OwnerReviewQuery = {
+  kind?: OwnerReviewKind | "all";
+  limit?: number;
+  offset?: number;
+};
+
+export type ClassifyPayload = {
+  article_id?: string | null;
+  counterparty_id?: string | null;
+  action: "set_article" | "mark_internal_transfer" | "exclude";
+  remember_as_rule: boolean;
+};
+
+export type CredentialRead = {
+  id: string;
+  provider: DdsProvider;
+  credential_kind:
+    | "access_token"
+    | "client_secret"
+    | "bearer_token"
+    | "mtls_cert_path"
+    | "mtls_key_path";
+  is_active: boolean;
+  expires_at: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CredentialCreate = {
+  provider: DdsProvider;
+  credential_kind: CredentialRead["credential_kind"];
+  value: string;
+  expires_at?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
 export const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
   timeout: REQUEST_TIMEOUT_MS,
@@ -1362,6 +1578,186 @@ export async function getSettingHistory(key: string): Promise<AppSettingHistory[
 export async function updateSetting(key: string, value: unknown): Promise<AppSetting> {
   const response = await api.put<AppSetting>(`/settings/${encodeURIComponent(key)}`, { value });
   return response.data;
+}
+
+export async function getDdsWallets(): Promise<WalletRead[]> {
+  const response = await api.get<WalletRead[]>("/dds/wallets");
+  return response.data;
+}
+
+export async function getDdsBankOperations(
+  params: BankOperationsQuery,
+): Promise<{ items: BankOperationRead[]; total: number }> {
+  const response = await api.get<{ items: BankOperationRead[]; total: number }>(
+    "/dds/bank-operations",
+    { params: cleanDdsParams(params) },
+  );
+  return response.data;
+}
+
+export async function getDdsCashflow(
+  params: CashflowQuery,
+): Promise<{ items: CashflowTransactionRead[]; total: number }> {
+  const response = await api.get<{ items: CashflowTransactionRead[]; total: number }>(
+    "/dds/cashflow",
+    { params: cleanDdsParams(params) },
+  );
+  return response.data;
+}
+
+export async function getDdsArticles(): Promise<DdsArticleRead[]> {
+  const response = await api.get<DdsArticleRead[]>("/dds/articles");
+  return response.data;
+}
+
+export async function createDdsArticle(payload: DdsArticleCreate): Promise<DdsArticleRead> {
+  const response = await api.post<DdsArticleRead>("/dds/articles", payload);
+  return response.data;
+}
+
+export async function patchDdsArticle(
+  id: string,
+  payload: Partial<DdsArticleCreate>,
+): Promise<DdsArticleRead> {
+  const response = await api.patch<DdsArticleRead>(`/dds/articles/${id}`, payload);
+  return response.data;
+}
+
+export async function deleteDdsArticle(id: string): Promise<void> {
+  await api.delete(`/dds/articles/${id}`);
+}
+
+export async function createDdsArticleAlias(
+  articleId: string,
+  payload: DdsAliasCreate,
+): Promise<DdsAliasRead> {
+  const response = await api.post<DdsAliasRead>(`/dds/articles/${articleId}/aliases`, payload);
+  return response.data;
+}
+
+export async function deleteDdsArticleAlias(aliasId: string): Promise<void> {
+  await api.delete(`/dds/articles/aliases/${aliasId}`);
+}
+
+export async function getDdsCounterparties(query?: {
+  search?: string;
+}): Promise<CounterpartyRead[]> {
+  const response = await api.get<CounterpartyRead[]>("/dds/counterparties", {
+    params: cleanDdsParams(query ?? {}),
+  });
+  return response.data;
+}
+
+export async function createDdsCounterparty(
+  payload: CounterpartyCreate,
+): Promise<CounterpartyRead> {
+  const response = await api.post<CounterpartyRead>("/dds/counterparties", payload);
+  return response.data;
+}
+
+export async function patchDdsCounterparty(
+  id: string,
+  payload: Partial<CounterpartyCreate>,
+): Promise<CounterpartyRead> {
+  const response = await api.patch<CounterpartyRead>(`/dds/counterparties/${id}`, payload);
+  return response.data;
+}
+
+export async function deleteDdsCounterparty(id: string): Promise<void> {
+  await api.delete(`/dds/counterparties/${id}`);
+}
+
+export async function createDdsCounterpartyAlias(
+  counterpartyId: string,
+  payload: DdsAliasCreate,
+): Promise<DdsAliasRead> {
+  const response = await api.post<DdsAliasRead>(
+    `/dds/counterparties/${counterpartyId}/aliases`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteDdsCounterpartyAlias(aliasId: string): Promise<void> {
+  await api.delete(`/dds/counterparties/aliases/${aliasId}`);
+}
+
+export async function getDdsClassificationRules(): Promise<ClassificationRuleRead[]> {
+  const response = await api.get<ClassificationRuleRead[]>("/dds/classification-rules");
+  return response.data;
+}
+
+export async function createClassificationRule(
+  payload: ClassificationRuleCreate,
+): Promise<ClassificationRuleRead> {
+  const response = await api.post<ClassificationRuleRead>("/dds/classification-rules", payload);
+  return response.data;
+}
+
+export async function patchClassificationRule(
+  id: string,
+  payload: Partial<ClassificationRuleCreate>,
+): Promise<ClassificationRuleRead> {
+  const response = await api.patch<ClassificationRuleRead>(
+    `/dds/classification-rules/${id}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteClassificationRule(id: string): Promise<void> {
+  await api.delete(`/dds/classification-rules/${id}`);
+}
+
+export async function toggleClassificationRule(id: string): Promise<ClassificationRuleRead> {
+  const response = await api.post<ClassificationRuleRead>(`/dds/classification-rules/${id}/toggle`);
+  return response.data;
+}
+
+export async function getDdsOwnerReview(
+  params: OwnerReviewQuery,
+): Promise<{ items: ReconciliationCaseRead[]; total: number }> {
+  const response = await api.get<{ items: ReconciliationCaseRead[]; total: number }>(
+    "/dds/owner-review",
+    { params: cleanDdsParams(params) },
+  );
+  return response.data;
+}
+
+export async function classifyOwnerReviewCase(
+  caseId: string,
+  payload: ClassifyPayload,
+): Promise<void> {
+  await api.post(`/dds/owner-review/${caseId}/classify`, payload);
+}
+
+export async function dismissOwnerReviewCase(caseId: string): Promise<void> {
+  await api.post(`/dds/owner-review/${caseId}/dismiss`);
+}
+
+export async function triggerBankSync(
+  provider: DdsProvider,
+  payload: { date_from: string; date_to: string },
+): Promise<{ job_id: string; status: string }> {
+  const response = await api.post<{ job_id: string; status: string }>(
+    `/dds/bank-sync/${provider}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function getDdsCredentials(): Promise<CredentialRead[]> {
+  const response = await api.get<CredentialRead[]>("/dds/credentials");
+  return response.data;
+}
+
+export async function createDdsCredential(payload: CredentialCreate): Promise<CredentialRead> {
+  const response = await api.post<CredentialRead>("/dds/credentials", payload);
+  return response.data;
+}
+
+export async function deleteDdsCredential(id: string): Promise<void> {
+  await api.delete(`/dds/credentials/${id}`);
 }
 
 export async function getSubstitutePairs(): Promise<SubstitutePairsResponse> {
@@ -2290,6 +2686,17 @@ export async function postDepositWriteoff(
 
 export async function postDepositInitialBalance(employeeId: string, amount: string): Promise<void> {
   await api.post(`/deposits/${employeeId}/initial-balance`, { amount });
+}
+
+function cleanDdsParams(params: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(params).filter(([, value]) => {
+      if (value === undefined || value === null || value === "" || value === "all") {
+        return false;
+      }
+      return true;
+    }),
+  );
 }
 
 export function apiErrorMessage(error: unknown, fallback = "Не удалось выполнить запрос") {

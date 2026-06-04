@@ -26,6 +26,7 @@ from app.schemas.inventory import (
     InventoryAuditEmployeeExclusionPatch,
     InventoryAuditImportIikoPayload,
     InventoryAuditItemCreate,
+    InventoryAuditItemExclusionPatch,
     InventoryAuditItemPatch,
     InventoryAuditListRead,
     InventoryAuditPatch,
@@ -43,6 +44,7 @@ from app.services.inventory_audit_service import (
     InventoryAuditNotFoundError,
     InventoryAuditValidationError,
     apply_audit_penalties,
+    audit_item_is_considered,
     cancel_audit,
     compute_penalties,
     create_manual_audit,
@@ -57,6 +59,7 @@ from app.services.inventory_audit_service import (
     list_iiko_candidates,
     restore_cancelled_audit,
     set_employee_exclusion,
+    set_item_exclusion,
     summarize_audit_items,
     summarize_swap_groups,
     sync_positions_from_iiko,
@@ -456,6 +459,39 @@ async def patch_audit_employee_exclusion(
     return audit_payload(audit, include_items=True)
 
 
+@router.patch(
+    "/audits/{audit_id}/items/{item_id}/exclusion",
+    response_model=InventoryAuditDetailRead,
+)
+async def patch_audit_item_exclusion(
+    audit_id: uuid.UUID,
+    item_id: uuid.UUID,
+    payload: InventoryAuditItemExclusionPatch,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    require_finance_manager_plus(actor)
+    try:
+        audit = await set_item_exclusion(
+            session,
+            audit_id,
+            item_id,
+            excluded=payload.excluded,
+            reason=payload.reason,
+            actor=actor,
+        )
+    except InventoryAuditNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InventoryAuditConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except InventoryAuditValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return audit_payload(audit, include_items=True)
+
+
 @router.post("/audits/{audit_id}/compute", response_model=PenaltyComputationRead)
 async def compute_audit(
     audit_id: uuid.UUID,
@@ -526,6 +562,7 @@ async def load_audit_or_404(session: AsyncSession, audit_id: uuid.UUID) -> Inven
             selectinload(InventoryAudit.employee_exclusions).selectinload(
                 InventoryAuditEmployeeExclusion.employee
             ),
+            selectinload(InventoryAudit.item_exclusions),
         )
         .where(InventoryAudit.id == audit_id)
     )
@@ -601,12 +638,22 @@ def audit_payload(audit: InventoryAudit, *, include_items: bool = False) -> dict
         "applied_at": audit.applied_at,
     }
     if include_items:
-        summary = summarize_audit_items(list(audit.items))
+        item_exclusions = item_exclusion_reasons(audit)
+        excluded_ids = set(item_exclusions)
+        summary = summarize_audit_items(list(audit.items), excluded_ids=excluded_ids)
         payload["total_shortage_iiko"] = decimal_string(summary.total_shortage_iiko)
         payload["total_shortage_considered"] = decimal_string(
             effective_total_shortage_considered(audit, summary.total_shortage_considered)
         )
-        payload["items"] = [item_payload(item) for item in summary.considered_items]
+        visible_items = [
+            item
+            for item in summary.all_items
+            if getattr(item, "id", None) in excluded_ids or audit_item_is_considered(item)
+        ]
+        payload["items"] = [
+            item_payload(item, exclusion_reason=item_exclusions.get(item.id))
+            for item in visible_items
+        ]
         snapshot_swap_groups = (
             audit.computation_snapshot.get("swap_groups")
             if isinstance(audit.computation_snapshot, dict)
@@ -622,8 +669,13 @@ def audit_payload(audit: InventoryAudit, *, include_items: bool = False) -> dict
     return payload
 
 
-def item_payload(item: InventoryAuditItem) -> dict[str, Any]:
+def item_payload(
+    item: InventoryAuditItem,
+    *,
+    exclusion_reason: str | None = None,
+) -> dict[str, Any]:
     position = item.position
+    is_excluded = exclusion_reason is not None
     return {
         "id": item.id,
         "audit_id": item.audit_id,
@@ -631,9 +683,12 @@ def item_payload(item: InventoryAuditItem) -> dict[str, Any]:
         "position_code": position.code if position else None,
         "position_display_name": position.display_name if position else None,
         "allocation_group": position.allocation_group if position else None,
-        "is_considered": position is not None
-        and position.is_active is True
-        and position.allocation_group is not None,
+        "is_considered": audit_item_is_considered(
+            item,
+            excluded_ids={item.id} if is_excluded else None,
+        ),
+        "is_excluded": is_excluded,
+        "exclusion_reason": exclusion_reason,
         "amount": decimal_string(item_signed_amount(item)),
         "swap_group": item_effective_swap_group(item),
         "swap_group_default": getattr(position, "swap_group", None) if position else None,
@@ -643,6 +698,13 @@ def item_payload(item: InventoryAuditItem) -> dict[str, Any]:
         "product_name_snapshot": item.product_name_snapshot,
         "shortage_amount": decimal_string(item.shortage_amount),
         "created_at": item.created_at,
+    }
+
+
+def item_exclusion_reasons(audit: InventoryAudit) -> dict[uuid.UUID, str]:
+    return {
+        exclusion.item_id: exclusion.reason
+        for exclusion in getattr(audit, "item_exclusions", [])
     }
 
 

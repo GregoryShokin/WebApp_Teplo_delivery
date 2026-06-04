@@ -99,6 +99,13 @@ class InventoryAuditEmployeeExclusionPatch(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
 
 
+class InventoryAuditItemExclusionPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    excluded: bool
+    reason: str | None = Field(default=None, max_length=500)
+
+
 class InventoryAuditItemCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -128,6 +135,8 @@ class InventoryAuditItemRead(BaseModel):
     position_display_name: str | None = None
     allocation_group: str | None = None
     is_considered: bool
+    is_excluded: bool = False
+    exclusion_reason: str | None = None
     amount: str
     swap_group: str | None = None
     swap_group_default: str | None = None

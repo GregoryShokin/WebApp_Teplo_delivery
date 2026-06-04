@@ -25,6 +25,7 @@ class BankOperationRead(BaseModel):
     classification_status: str
     cashflow_transaction_id: uuid.UUID | None = None
     transfer_group_id: uuid.UUID | None = None
+    raw_payload: dict[str, Any] | None = None
 
 
 class BankOperationListRead(BaseModel):
@@ -67,6 +68,21 @@ class DdsWalletRead(BaseModel):
     balance: str
 
 
+class DdsAliasCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    alias: str
+    source: str | None = None
+
+
+class DdsAliasRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    alias: str
+    source: str | None = None
+
+
 class DdsArticleRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -78,6 +94,31 @@ class DdsArticleRead(BaseModel):
     parent_id: uuid.UUID | None = None
     is_active: bool
     description: str | None = None
+    aliases: list[DdsAliasRead] = Field(default_factory=list)
+
+
+class DdsArticleCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    name: str
+    movement_type: Literal["inflow", "outflow", "internal"]
+    activity_type: str
+    parent_id: uuid.UUID | None = None
+    is_active: bool = True
+    description: str | None = None
+
+
+class DdsArticlePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str | None = None
+    name: str | None = None
+    movement_type: Literal["inflow", "outflow", "internal"] | None = None
+    activity_type: str | None = None
+    parent_id: uuid.UUID | None = None
+    is_active: bool | None = None
+    description: str | None = None
 
 
 class DdsCounterpartyRead(BaseModel):
@@ -88,6 +129,25 @@ class DdsCounterpartyRead(BaseModel):
     inn: str | None = None
     type: str
     status: str
+    aliases: list[DdsAliasRead] = Field(default_factory=list)
+
+
+class DdsCounterpartyCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    inn: str | None = None
+    type: Literal["legal_entity", "individual", "bank", "tax_authority"] = "legal_entity"
+    status: str = "active"
+
+
+class DdsCounterpartyPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    inn: str | None = None
+    type: Literal["legal_entity", "individual", "bank", "tax_authority"] | None = None
+    status: str | None = None
 
 
 class ClassificationRuleRead(BaseModel):
@@ -108,6 +168,71 @@ class ClassificationRuleRead(BaseModel):
     article_id: uuid.UUID | None = None
     counterparty_id: uuid.UUID | None = None
     comment: str | None = None
+
+
+class ClassificationRuleCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    priority: int = 100
+    is_active: bool = True
+    provider: Literal["sber", "tbank"] | None = None
+    direction: Literal["in", "out"] | None = None
+    counterparty_inn_match: str | None = None
+    counterparty_name_pattern: str | None = None
+    purpose_pattern: str | None = None
+    amount_min: str | None = None
+    amount_max: str | None = None
+    action: Literal["set_article", "mark_internal_transfer", "exclude"]
+    article_id: uuid.UUID | None = None
+    counterparty_id: uuid.UUID | None = None
+    comment: str | None = None
+
+
+class ClassificationRulePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    priority: int | None = None
+    is_active: bool | None = None
+    provider: Literal["sber", "tbank"] | None = None
+    direction: Literal["in", "out"] | None = None
+    counterparty_inn_match: str | None = None
+    counterparty_name_pattern: str | None = None
+    purpose_pattern: str | None = None
+    amount_min: str | None = None
+    amount_max: str | None = None
+    action: Literal["set_article", "mark_internal_transfer", "exclude"] | None = None
+    article_id: uuid.UUID | None = None
+    counterparty_id: uuid.UUID | None = None
+    comment: str | None = None
+
+
+class CredentialRead(BaseModel):
+    id: uuid.UUID
+    provider: str
+    credential_kind: str
+    is_active: bool
+    expires_at: datetime | None
+    metadata: dict[str, Any] | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CredentialCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["sber", "tbank"]
+    credential_kind: Literal[
+        "access_token",
+        "client_secret",
+        "bearer_token",
+        "mtls_cert_path",
+        "mtls_key_path",
+    ]
+    value: str
+    expires_at: datetime | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class BankSyncRequest(BaseModel):

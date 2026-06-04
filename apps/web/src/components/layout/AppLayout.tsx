@@ -75,7 +75,7 @@ const navGroups: NavGroup[] = [
   {
     title: "Финансы",
     items: [
-      { label: "ДДС", href: "/dds", icon: Landmark },
+      { label: "ДДС", href: "/dds", icon: Banknote },
       { label: "Платёжный календарь", href: "/payment-calendar", icon: CalendarClock },
       { label: "Баланс", href: "/balance", icon: ReceiptText },
     ],
@@ -344,6 +344,9 @@ function isActiveRoute(currentPath: string, href: string) {
   }
   if (href === "/schedule") {
     return currentPath === href || currentPath.startsWith("/schedule/");
+  }
+  if (href === "/dds") {
+    return currentPath === href || currentPath.startsWith("/dds/");
   }
   return currentPath === href;
 }

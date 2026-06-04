@@ -125,6 +125,11 @@ class InventoryAudit(Base):
         cascade="all, delete-orphan",
         order_by=lambda: InventoryAuditEmployeeExclusion.created_at,
     )
+    item_exclusions: Mapped[list[InventoryAuditItemExclusion]] = relationship(
+        back_populates="audit",
+        cascade="all, delete-orphan",
+        order_by=lambda: InventoryAuditItemExclusion.created_at,
+    )
 
 
 class InventoryAuditItem(Base):
@@ -186,3 +191,33 @@ class InventoryAuditEmployeeExclusion(Base):
 
     audit: Mapped[InventoryAudit] = relationship(back_populates="employee_exclusions")
     employee: Mapped[Any] = relationship("Employee")
+
+
+class InventoryAuditItemExclusion(Base):
+    __tablename__ = "inventory_audit_item_exclusion"
+    __table_args__ = (
+        UniqueConstraint("audit_id", "item_id", name="uq_inventory_audit_item_exclusion"),
+        Index("ix_inventory_audit_item_exclusion_audit", "audit_id"),
+        Index("ix_inventory_audit_item_exclusion_item", "item_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    audit_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("inventory_audit.id", ondelete="CASCADE"), nullable=False
+    )
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("inventory_audit_item.id", ondelete="CASCADE"), nullable=False
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    audit: Mapped[InventoryAudit] = relationship(back_populates="item_exclusions")
+    item: Mapped[InventoryAuditItem] = relationship()

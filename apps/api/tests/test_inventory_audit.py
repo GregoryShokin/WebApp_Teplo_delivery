@@ -14,15 +14,17 @@ from fastapi import HTTPException
 from app.api.deps import CurrentActor
 from app.api.v1.routes import inventory as inventory_routes
 from app.models import (
+    AgentAction,
     AgentRun,
     AttendanceEntry,
     Employee,
+    InventoryAuditItemExclusion,
     InventoryAuditPosition,
     PayrollAdjustment,
     PayrollAdjustmentCategory,
     PayrollPeriod,
 )
-from app.schemas.inventory import InventoryPositionPatch
+from app.schemas.inventory import InventoryAuditItemExclusionPatch, InventoryPositionPatch
 from app.services import iiko_inventory, inventory_audit_service
 from app.services.inventory_audit_service import (
     DEFAULT_SETTINGS,
@@ -270,6 +272,157 @@ def test_employee_exclusion_redistributes_penalty_to_remaining_recipients() -> N
     assert recipients["Beta"]["is_excluded"] is True
     assert recipients["Beta"]["amount"] == "0.00"
     assert recipients["Beta"]["exclusion_reason"] == "Не работал с инвентаризацией"
+
+
+@pytest.mark.asyncio
+async def test_set_item_exclusion_requires_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    audit = audit_detail_obj([detail_item("7000", "chefs", active=True)])
+    item_row = audit.items[0]
+
+    async def fake_load_audit(_session: Any, _audit_id: uuid.UUID) -> SimpleNamespace:
+        return audit
+
+    monkeypatch.setattr(inventory_audit_service, "_load_audit_or_404", fake_load_audit)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await inventory_routes.patch_audit_item_exclusion(
+            audit.id,
+            item_row.id,
+            InventoryAuditItemExclusionPatch(excluded=True),
+            object(),  # type: ignore[arg-type]
+            finance_actor(),
+        )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "Укажите причину исключения позиции"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("audit_status", ["applied", "cancelled"])
+async def test_set_item_exclusion_only_draft(
+    monkeypatch: pytest.MonkeyPatch,
+    audit_status: str,
+) -> None:
+    audit = audit_detail_obj([detail_item("7000", "chefs", active=True)])
+    audit.status = audit_status
+    item_row = audit.items[0]
+
+    async def fake_load_audit(_session: Any, _audit_id: uuid.UUID) -> SimpleNamespace:
+        return audit
+
+    monkeypatch.setattr(inventory_audit_service, "_load_audit_or_404", fake_load_audit)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await inventory_routes.patch_audit_item_exclusion(
+            audit.id,
+            item_row.id,
+            InventoryAuditItemExclusionPatch(excluded=True, reason="Не участвует"),
+            object(),  # type: ignore[arg-type]
+            finance_actor(),
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "Исключать позиции можно только в черновике"
+
+
+@pytest.mark.asyncio
+async def test_set_item_exclusion_excludes_from_penalty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    excluded_item = detail_item("7000", "chefs", active=True, name="Лосось")
+    remaining_item = detail_item("3000", "admins", active=True, name="Упаковка")
+    audit = audit_detail_obj([excluded_item, remaining_item])
+    session = ItemExclusionServiceSession()
+    install_item_exclusion_fakes(monkeypatch, audit)
+
+    updated = await inventory_audit_service.set_item_exclusion(
+        session,  # type: ignore[arg-type]
+        audit.id,
+        excluded_item.id,
+        excluded=True,
+        reason="Ошибка учета",
+        actor=finance_actor(),
+    )
+
+    assert updated.total_shortage_amount == Decimal("3000.00")
+    assert updated.total_penalty_amount == Decimal("1500.00")
+    assert item_ids_in_penalty_groups(updated.computation_snapshot) == {str(remaining_item.id)}
+    assert updated.computation_snapshot["skipped_items"] == [
+        {
+            "item_id": str(excluded_item.id),
+            "reason": "excluded",
+            "exclusion_reason": "Ошибка учета",
+        }
+    ]
+    payload = inventory_routes.audit_payload(updated, include_items=True)
+    excluded_payload = next(row for row in payload["items"] if row["id"] == excluded_item.id)
+    assert excluded_payload["is_excluded"] is True
+    assert excluded_payload["exclusion_reason"] == "Ошибка учета"
+    assert excluded_payload["is_considered"] is False
+
+
+@pytest.mark.asyncio
+async def test_set_item_exclusion_unset_restores(monkeypatch: pytest.MonkeyPatch) -> None:
+    excluded_item = detail_item("7000", "chefs", active=True, name="Лосось")
+    remaining_item = detail_item("3000", "admins", active=True, name="Упаковка")
+    audit = audit_detail_obj([excluded_item, remaining_item])
+    session = ItemExclusionServiceSession()
+    install_item_exclusion_fakes(monkeypatch, audit)
+
+    await inventory_audit_service.set_item_exclusion(
+        session,  # type: ignore[arg-type]
+        audit.id,
+        excluded_item.id,
+        excluded=True,
+        reason="Ошибка учета",
+        actor=finance_actor(),
+    )
+    restored = await inventory_audit_service.set_item_exclusion(
+        session,  # type: ignore[arg-type]
+        audit.id,
+        excluded_item.id,
+        excluded=False,
+        reason=None,
+        actor=finance_actor(),
+    )
+
+    assert restored.total_shortage_amount == Decimal("10000.00")
+    assert item_ids_in_penalty_groups(restored.computation_snapshot) == {
+        str(excluded_item.id),
+        str(remaining_item.id),
+    }
+    assert restored.computation_snapshot["skipped_items"] == []
+    assert restored.item_exclusions == []
+    assert any(isinstance(item, InventoryAuditItemExclusion) for item in session.deleted)
+
+
+@pytest.mark.asyncio
+async def test_set_item_exclusion_audit_log(monkeypatch: pytest.MonkeyPatch) -> None:
+    excluded_item = detail_item("7000", "chefs", active=True, name="Лосось")
+    audit = audit_detail_obj([excluded_item])
+    session = ItemExclusionServiceSession()
+    install_item_exclusion_fakes(monkeypatch, audit)
+
+    await inventory_audit_service.set_item_exclusion(
+        session,  # type: ignore[arg-type]
+        audit.id,
+        excluded_item.id,
+        excluded=True,
+        reason="Ошибка учета",
+        actor=finance_actor(),
+    )
+
+    actions = [item for item in session.added if isinstance(item, AgentAction)]
+    assert len(actions) == 1
+    assert actions[0].action_type == "inventory_item_exclusion"
+    assert actions[0].target_table == "inventory_audit_item_exclusion"
+    assert actions[0].before_value is None
+    assert actions[0].after_value == {
+        "item_id": str(excluded_item.id),
+        "product_name_snapshot": "Лосось",
+        "excluded": True,
+        "reason": "Ошибка учета",
+    }
 
 
 @pytest.mark.asyncio
@@ -987,6 +1140,7 @@ def compute(
     admins: list[Any] | None = None,
     settings: dict[str, Decimal] | None = None,
     employee_exclusions: dict[uuid.UUID, str] | None = None,
+    item_exclusions: dict[uuid.UUID, str] | None = None,
 ):
     return build_penalty_computation(
         audit=audit_obj(),
@@ -995,6 +1149,7 @@ def compute(
         chefs=chefs or [],
         admins=admins or [],
         employee_exclusions=employee_exclusions,
+        item_exclusions=item_exclusions,
     )
 
 
@@ -1082,6 +1237,8 @@ def audit_detail_obj(items: list[SimpleNamespace]) -> SimpleNamespace:
         updated_at=None,
         applied_at=None,
         items=items,
+        employee_exclusions=[],
+        item_exclusions=[],
     )
 
 
@@ -1163,6 +1320,29 @@ class ApplyAuditSession:
         self.committed = True
 
 
+class ItemExclusionServiceSession:
+    def __init__(self) -> None:
+        self.added: list[Any] = []
+        self.deleted: list[Any] = []
+        self.committed = False
+        self.flushed = False
+
+    def add(self, item: Any) -> None:
+        self.added.append(item)
+
+    async def delete(self, item: Any) -> None:
+        self.deleted.append(item)
+
+    async def flush(self) -> None:
+        self.flushed = True
+        for item in self.added:
+            if isinstance(item, AgentRun) and item.id is None:
+                item.id = uuid.uuid4()
+
+    async def commit(self) -> None:
+        self.committed = True
+
+
 class FakeScalarResult:
     def __init__(self, rows: list[Any]) -> None:
         self._rows = rows
@@ -1208,6 +1388,45 @@ def inventory_position(
         is_active=active,
         sort_order=100,
     )
+
+
+def install_item_exclusion_fakes(
+    monkeypatch: pytest.MonkeyPatch,
+    audit: SimpleNamespace,
+) -> None:
+    async def fake_load_audit(_session: Any, _audit_id: uuid.UUID) -> SimpleNamespace:
+        return audit
+
+    async def fake_inventory_settings(_session: Any) -> dict[str, Decimal]:
+        return DEFAULT_SETTINGS.copy()
+
+    async def fake_load_period_employees(
+        _session: Any,
+        *,
+        position: str,
+        period_start: date,
+        period_end: date,
+    ) -> list[Any]:
+        return []
+
+    monkeypatch.setattr(inventory_audit_service, "_load_audit_or_404", fake_load_audit)
+    monkeypatch.setattr(inventory_audit_service, "_inventory_settings", fake_inventory_settings)
+    monkeypatch.setattr(
+        inventory_audit_service,
+        "_load_period_employees",
+        fake_load_period_employees,
+    )
+
+
+def item_ids_in_penalty_groups(snapshot: dict[str, Any]) -> set[str]:
+    rows: set[str] = set()
+    for group in ("chefs", "common", "admins"):
+        for row in snapshot["groups"][group]["items"]:
+            if "item_id" in row:
+                rows.add(str(row["item_id"]))
+            for nested in row.get("items", []):
+                rows.add(str(nested["item_id"]))
+    return rows
 
 
 def fake_products_module() -> SimpleNamespace:

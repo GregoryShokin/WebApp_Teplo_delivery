@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
@@ -16,8 +16,11 @@ from app.models import (
     CashflowTransaction,
     ClassificationRule,
     Counterparty,
+    CounterpartyAlias,
     DdsArticle,
+    DdsArticleAlias,
     ReconciliationCase,
+    SourceCredential,
     Wallet,
 )
 from app.scheduler import run_bank_sync_job
@@ -26,8 +29,18 @@ from app.schemas.dds import (
     BankSyncQueuedRead,
     BankSyncRequest,
     CashflowTransactionListRead,
+    ClassificationRuleCreate,
+    ClassificationRulePatch,
     ClassificationRuleRead,
+    CredentialCreate,
+    CredentialRead,
+    DdsAliasCreate,
+    DdsAliasRead,
+    DdsArticleCreate,
+    DdsArticlePatch,
     DdsArticleRead,
+    DdsCounterpartyCreate,
+    DdsCounterpartyPatch,
     DdsCounterpartyRead,
     DdsWalletRead,
     OwnerReviewActionRead,
@@ -38,6 +51,7 @@ from app.services.banking.classifier import (
     apply_operation_action,
     close_reconciliation_case,
 )
+from app.services.banking.credentials import set_credential
 from app.services.banking.transfer_matching import find_and_link_transfer_pairs
 
 
@@ -89,6 +103,9 @@ async def list_cashflow(
     date_to: Annotated[date | None, Query(alias="to")] = None,
     wallet_id: UUID | None = None,
     article_id: UUID | None = None,
+    direction: Literal["in", "out"] | None = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict[str, object]:
     conditions = []
     if date_from is not None:
@@ -99,6 +116,8 @@ async def list_cashflow(
         conditions.append(CashflowTransaction.wallet_id == wallet_id)
     if article_id is not None:
         conditions.append(CashflowTransaction.article_id == article_id)
+    if direction is not None:
+        conditions.append(CashflowTransaction.direction == direction)
 
     total = int(
         await session.scalar(
@@ -110,6 +129,8 @@ async def list_cashflow(
         select(CashflowTransaction)
         .where(*conditions)
         .order_by(CashflowTransaction.operation_date.desc(), CashflowTransaction.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     return {"items": [_cashflow_payload(row) for row in rows.all()], "total": total}
 
@@ -125,17 +146,168 @@ async def list_wallets(
 @router.get("/articles", response_model=list[DdsArticleRead])
 async def list_articles(
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> list[DdsArticle]:
+) -> list[dict[str, object]]:
     result = await session.scalars(select(DdsArticle).order_by(DdsArticle.code))
-    return list(result.all())
+    return await _article_payloads(session, result.all())
+
+
+@router.post("/articles", response_model=DdsArticleRead, status_code=status.HTTP_201_CREATED)
+async def create_article(
+    payload: DdsArticleCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    article = DdsArticle(**payload.model_dump())
+    session.add(article)
+    await session.commit()
+    await session.refresh(article)
+    return (await _article_payloads(session, [article]))[0]
+
+
+@router.patch("/articles/{article_id}", response_model=DdsArticleRead)
+async def patch_article(
+    article_id: UUID,
+    payload: DdsArticlePatch,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    article = await _article_or_404(session, article_id)
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(article, key, value)
+    await session.commit()
+    await session.refresh(article)
+    return (await _article_payloads(session, [article]))[0]
+
+
+@router.delete("/articles/{article_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_article(
+    article_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    article = await _article_or_404(session, article_id)
+    article.is_active = False
+    await session.commit()
+
+
+@router.post(
+    "/articles/{article_id}/aliases",
+    response_model=DdsAliasRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_article_alias(
+    article_id: UUID,
+    payload: DdsAliasCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> DdsArticleAlias:
+    await _article_or_404(session, article_id)
+    alias = DdsArticleAlias(
+        article_id=article_id,
+        alias=payload.alias,
+        source=payload.source,
+    )
+    session.add(alias)
+    await session.commit()
+    await session.refresh(alias)
+    return alias
+
+
+@router.delete("/articles/aliases/{alias_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_article_alias(
+    alias_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    alias = await session.get(DdsArticleAlias, alias_id)
+    if alias is None:
+        raise HTTPException(status_code=404, detail="Article alias not found")
+    await session.delete(alias)
+    await session.commit()
 
 
 @router.get("/counterparties", response_model=list[DdsCounterpartyRead])
 async def list_counterparties(
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> list[Counterparty]:
-    result = await session.scalars(select(Counterparty).order_by(Counterparty.name))
-    return list(result.all())
+    search: str | None = None,
+) -> list[dict[str, object]]:
+    conditions = []
+    if search:
+        pattern = f"%{search.strip()}%"
+        conditions.append(or_(Counterparty.name.ilike(pattern), Counterparty.inn.ilike(pattern)))
+    result = await session.scalars(
+        select(Counterparty).where(*conditions).order_by(Counterparty.name)
+    )
+    return await _counterparty_payloads(session, result.all())
+
+
+@router.post(
+    "/counterparties",
+    response_model=DdsCounterpartyRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_counterparty(
+    payload: DdsCounterpartyCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    counterparty = Counterparty(**payload.model_dump())
+    session.add(counterparty)
+    await session.commit()
+    await session.refresh(counterparty)
+    return (await _counterparty_payloads(session, [counterparty]))[0]
+
+
+@router.patch("/counterparties/{counterparty_id}", response_model=DdsCounterpartyRead)
+async def patch_counterparty(
+    counterparty_id: UUID,
+    payload: DdsCounterpartyPatch,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    counterparty = await _counterparty_or_404(session, counterparty_id)
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(counterparty, key, value)
+    await session.commit()
+    await session.refresh(counterparty)
+    return (await _counterparty_payloads(session, [counterparty]))[0]
+
+
+@router.delete("/counterparties/{counterparty_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_counterparty(
+    counterparty_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    counterparty = await _counterparty_or_404(session, counterparty_id)
+    counterparty.status = "inactive"
+    await session.commit()
+
+
+@router.post(
+    "/counterparties/{counterparty_id}/aliases",
+    response_model=DdsAliasRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_counterparty_alias(
+    counterparty_id: UUID,
+    payload: DdsAliasCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CounterpartyAlias:
+    await _counterparty_or_404(session, counterparty_id)
+    alias = CounterpartyAlias(
+        counterparty_id=counterparty_id,
+        alias=payload.alias,
+        source=payload.source,
+    )
+    session.add(alias)
+    await session.commit()
+    await session.refresh(alias)
+    return alias
+
+
+@router.delete("/counterparties/aliases/{alias_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_counterparty_alias(
+    alias_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    alias = await session.get(CounterpartyAlias, alias_id)
+    if alias is None:
+        raise HTTPException(status_code=404, detail="Counterparty alias not found")
+    await session.delete(alias)
+    await session.commit()
 
 
 @router.get("/classification-rules", response_model=list[ClassificationRuleRead])
@@ -146,6 +318,104 @@ async def list_classification_rules(
         select(ClassificationRule).order_by(ClassificationRule.priority, ClassificationRule.name)
     )
     return [_classification_rule_payload(rule) for rule in result.all()]
+
+
+@router.post(
+    "/classification-rules",
+    response_model=ClassificationRuleRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_classification_rule(
+    payload: ClassificationRuleCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    data = _classification_rule_data(payload.model_dump())
+    rule = ClassificationRule(**data)
+    session.add(rule)
+    await session.commit()
+    await session.refresh(rule)
+    return _classification_rule_payload(rule)
+
+
+@router.patch("/classification-rules/{rule_id}", response_model=ClassificationRuleRead)
+async def patch_classification_rule(
+    rule_id: UUID,
+    payload: ClassificationRulePatch,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    rule = await _classification_rule_or_404(session, rule_id)
+    for key, value in _classification_rule_data(payload.model_dump(exclude_unset=True)).items():
+        setattr(rule, key, value)
+    await session.commit()
+    await session.refresh(rule)
+    return _classification_rule_payload(rule)
+
+
+@router.delete("/classification-rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_classification_rule(
+    rule_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    rule = await _classification_rule_or_404(session, rule_id)
+    rule.is_active = False
+    await session.commit()
+
+
+@router.post("/classification-rules/{rule_id}/toggle", response_model=ClassificationRuleRead)
+async def toggle_classification_rule(
+    rule_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    rule = await _classification_rule_or_404(session, rule_id)
+    rule.is_active = not rule.is_active
+    await session.commit()
+    await session.refresh(rule)
+    return _classification_rule_payload(rule)
+
+
+@router.get("/credentials", response_model=list[CredentialRead])
+async def list_credentials(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    is_active: bool | None = True,
+) -> list[dict[str, object]]:
+    conditions = []
+    if is_active is not None:
+        conditions.append(SourceCredential.is_active.is_(is_active))
+    result = await session.scalars(
+        select(SourceCredential)
+        .where(*conditions)
+        .order_by(SourceCredential.provider, SourceCredential.credential_kind)
+    )
+    return [_credential_payload(credential) for credential in result.all()]
+
+
+@router.post("/credentials", response_model=CredentialRead, status_code=status.HTTP_201_CREATED)
+async def create_credential(
+    payload: CredentialCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    credential = await set_credential(
+        session,
+        provider=payload.provider,
+        kind=payload.credential_kind,
+        value=payload.value,
+        expires_at=payload.expires_at,
+        metadata_json=payload.metadata,
+    )
+    return _credential_payload(credential)
+
+
+@router.delete("/credentials/{credential_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_credential(
+    credential_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    credential = await session.get(SourceCredential, credential_id)
+    if credential is None:
+        raise HTTPException(status_code=404, detail="Credential not found")
+    credential.is_active = False
+    credential.status = "inactive"
+    await session.commit()
 
 
 @router.post(
@@ -317,6 +587,89 @@ def _classification_rule_payload(rule: ClassificationRule) -> dict[str, object]:
     }
 
 
+async def _article_payloads(
+    session: AsyncSession, articles: list[DdsArticle]
+) -> list[dict[str, object]]:
+    article_ids = [article.id for article in articles]
+    aliases_by_article: dict[UUID, list[dict[str, object]]] = {
+        article_id: [] for article_id in article_ids
+    }
+    if article_ids:
+        aliases = await session.scalars(
+            select(DdsArticleAlias)
+            .where(DdsArticleAlias.article_id.in_(article_ids))
+            .order_by(DdsArticleAlias.alias)
+        )
+        for alias in aliases.all():
+            aliases_by_article.setdefault(alias.article_id, []).append(
+                {"id": alias.id, "alias": alias.alias, "source": alias.source}
+            )
+    return [
+        {
+            "id": article.id,
+            "code": article.code,
+            "name": article.name,
+            "movement_type": article.movement_type,
+            "activity_type": article.activity_type,
+            "parent_id": article.parent_id,
+            "is_active": article.is_active,
+            "description": article.description,
+            "aliases": aliases_by_article.get(article.id, []),
+        }
+        for article in articles
+    ]
+
+
+async def _counterparty_payloads(
+    session: AsyncSession, counterparties: list[Counterparty]
+) -> list[dict[str, object]]:
+    counterparty_ids = [counterparty.id for counterparty in counterparties]
+    aliases_by_counterparty: dict[UUID, list[dict[str, object]]] = {
+        counterparty_id: [] for counterparty_id in counterparty_ids
+    }
+    if counterparty_ids:
+        aliases = await session.scalars(
+            select(CounterpartyAlias)
+            .where(CounterpartyAlias.counterparty_id.in_(counterparty_ids))
+            .order_by(CounterpartyAlias.alias)
+        )
+        for alias in aliases.all():
+            aliases_by_counterparty.setdefault(alias.counterparty_id, []).append(
+                {"id": alias.id, "alias": alias.alias, "source": alias.source}
+            )
+    return [
+        {
+            "id": counterparty.id,
+            "name": counterparty.name,
+            "inn": counterparty.inn,
+            "type": counterparty.type,
+            "status": counterparty.status,
+            "aliases": aliases_by_counterparty.get(counterparty.id, []),
+        }
+        for counterparty in counterparties
+    ]
+
+
+def _classification_rule_data(data: dict[str, object]) -> dict[str, object]:
+    for amount_key in ("amount_min", "amount_max"):
+        if amount_key in data and data[amount_key] is not None:
+            data[amount_key] = Decimal(str(data[amount_key]))
+    return data
+
+
+def _credential_payload(credential: SourceCredential) -> dict[str, object]:
+    return {
+        "id": credential.id,
+        "provider": credential.provider,
+        "credential_kind": credential.credential_kind,
+        "is_active": credential.is_active,
+        "expires_at": credential.expires_at,
+        "metadata": credential.metadata_json,
+        "created_at": credential.created_at,
+        "updated_at": credential.updated_at,
+    }
+
+
 def _money(value: Decimal | int | None) -> str:
     return f"{Decimal(value or 0):.2f}"
 
@@ -346,6 +699,7 @@ def _bank_operation_payload(operation: BankOperation) -> dict[str, object]:
         "classification_status": operation.classification_status,
         "cashflow_transaction_id": operation.cashflow_transaction_id,
         "transfer_group_id": operation.transfer_group_id,
+        "raw_payload": operation.raw_payload,
     }
 
 
@@ -387,6 +741,29 @@ async def _pending_case_or_404(session: AsyncSession, case_id: UUID) -> Reconcil
     if case is None or case.status != "pending":
         raise HTTPException(status_code=404, detail="Pending review case not found")
     return case
+
+
+async def _article_or_404(session: AsyncSession, article_id: UUID) -> DdsArticle:
+    article = await session.get(DdsArticle, article_id)
+    if article is None:
+        raise HTTPException(status_code=404, detail="DDS article not found")
+    return article
+
+
+async def _counterparty_or_404(session: AsyncSession, counterparty_id: UUID) -> Counterparty:
+    counterparty = await session.get(Counterparty, counterparty_id)
+    if counterparty is None:
+        raise HTTPException(status_code=404, detail="Counterparty not found")
+    return counterparty
+
+
+async def _classification_rule_or_404(
+    session: AsyncSession, rule_id: UUID
+) -> ClassificationRule:
+    rule = await session.get(ClassificationRule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Classification rule not found")
+    return rule
 
 
 def _rule_from_owner_review(

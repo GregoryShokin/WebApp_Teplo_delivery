@@ -20,6 +20,7 @@ from app.models import (
     InventoryAudit,
     InventoryAuditEmployeeExclusion,
     InventoryAuditItem,
+    InventoryAuditItemExclusion,
     InventoryAuditPosition,
     PayrollAdjustment,
     PayrollAdjustmentCategory,
@@ -333,7 +334,11 @@ async def get_audit_with_items(
     audit_id: uuid.UUID,
 ) -> dict[str, Any]:
     audit = await _load_audit_or_404(session, audit_id)
-    summary = summarize_audit_items(list(audit.items))
+    excluded_ids = {
+        exclusion.item_id
+        for exclusion in getattr(audit, "item_exclusions", [])
+    }
+    summary = summarize_audit_items(list(audit.items), excluded_ids=excluded_ids)
     return {
         "audit": audit,
         "items": summary.considered_items,
@@ -343,9 +348,15 @@ async def get_audit_with_items(
     }
 
 
-def summarize_audit_items(items: list[InventoryAuditItem]) -> InventoryAuditItemsSummary:
+def summarize_audit_items(
+    items: list[InventoryAuditItem],
+    *,
+    excluded_ids: set[uuid.UUID] | None = None,
+) -> InventoryAuditItemsSummary:
     all_items = list(items)
-    considered_items = [item for item in all_items if audit_item_is_considered(item)]
+    considered_items = [
+        item for item in all_items if audit_item_is_considered(item, excluded_ids=excluded_ids)
+    ]
     total_shortage_iiko = _money(
         sum((item_shortage_amount(item) for item in all_items), Decimal("0"))
     )
@@ -364,7 +375,13 @@ def summarize_audit_items(items: list[InventoryAuditItem]) -> InventoryAuditItem
     )
 
 
-def audit_item_is_considered(item: Any) -> bool:
+def audit_item_is_considered(
+    item: Any,
+    excluded_ids: set[uuid.UUID] | None = None,
+) -> bool:
+    item_id = getattr(item, "id", None)
+    if item_id is not None and excluded_ids and item_id in excluded_ids:
+        return False
     position = getattr(item, "position", None)
     return (
         position is not None
@@ -587,6 +604,93 @@ async def set_employee_exclusion(
     return await _load_audit_or_404(session, audit.id)
 
 
+async def set_item_exclusion(
+    session: AsyncSession,
+    audit_id: uuid.UUID,
+    item_id: uuid.UUID,
+    *,
+    excluded: bool,
+    reason: str | None,
+    actor: CurrentActor,
+) -> InventoryAudit:
+    audit = await _load_audit_or_404(session, audit_id)
+    if audit.status != "draft":
+        raise InventoryAuditConflictError("Исключать позиции можно только в черновике")
+
+    item = next((row for row in audit.items if row.id == item_id), None)
+    if item is None:
+        raise InventoryAuditNotFoundError("Позиция не найдена")
+
+    existing = next(
+        (
+            row
+            for row in audit.item_exclusions
+            if row.item_id == item_id
+        ),
+        None,
+    )
+    item_label = getattr(item, "product_name_snapshot", "")
+    before = (
+        {
+            "item_id": str(item_id),
+            "product_name_snapshot": item_label,
+            "reason": existing.reason,
+        }
+        if existing is not None
+        else None
+    )
+
+    if excluded:
+        clean_reason = _clean_optional_text(reason)
+        if clean_reason is None:
+            raise InventoryAuditValidationError("Укажите причину исключения позиции")
+        clean_reason = clean_reason[:500]
+        if existing is None:
+            existing = InventoryAuditItemExclusion(
+                id=uuid.uuid4(),
+                audit_id=audit.id,
+                item_id=item_id,
+                reason=clean_reason,
+                created_by_user_id=actor.user_id,
+            )
+            session.add(existing)
+            audit.item_exclusions.append(existing)
+        else:
+            existing.reason = clean_reason
+            existing.updated_at = datetime.now(UTC)
+        after: dict[str, Any] = {
+            "item_id": str(item_id),
+            "product_name_snapshot": item_label,
+            "excluded": True,
+            "reason": clean_reason,
+        }
+    else:
+        if existing is not None:
+            await session.delete(existing)
+            audit.item_exclusions.remove(existing)
+        after = {
+            "item_id": str(item_id),
+            "product_name_snapshot": item_label,
+            "excluded": False,
+            "reason": None,
+        }
+
+    await _write_agent_audit(
+        session,
+        action_type="inventory_item_exclusion",
+        audit=audit,
+        actor=actor,
+        before=before,
+        after=after,
+        target_table="inventory_audit_item_exclusion",
+        target_id=existing.id if existing is not None else item_id,
+    )
+    await session.flush()
+    await _compute_penalties(session, audit.id, commit=False)
+    await session.commit()
+    return await _load_audit_or_404(session, audit.id)
+
+
 def build_penalty_computation(
     *,
     audit: Any,
@@ -595,13 +699,14 @@ def build_penalty_computation(
     chefs: list[Any],
     admins: list[Any],
     employee_exclusions: dict[uuid.UUID, str] | None = None,
+    item_exclusions: dict[uuid.UUID, str] | None = None,
 ) -> PenaltyComputation:
     effective_settings = {**DEFAULT_SETTINGS, **(settings or {})}
     exclusions = employee_exclusions or {}
     included_chefs = _included_employees(chefs, exclusions)
     included_admins = _included_employees(admins, exclusions)
     period_start, period_end = audit_period(audit)
-    groups = _group_shortages(items, effective_settings)
+    groups = _group_shortages(items, effective_settings, item_exclusions=item_exclusions)
     skipped_items = groups.pop("_skipped_items", [])
     swap_groups = groups.pop("_swap_groups", [])
     employee_penalties: dict[uuid.UUID, Decimal] = defaultdict(lambda: Decimal("0"))
@@ -831,6 +936,10 @@ async def _compute_penalties(
             exclusion.employee_id: exclusion.reason
             for exclusion in getattr(audit, "employee_exclusions", [])
         },
+        item_exclusions={
+            exclusion.item_id: exclusion.reason
+            for exclusion in getattr(audit, "item_exclusions", [])
+        },
     )
     audit.total_shortage_amount = computation.total_shortage_amount
     audit.total_penalty_amount = computation.total_penalty_amount
@@ -846,6 +955,8 @@ async def _compute_penalties(
 def _group_shortages(
     items: list[Any],
     settings: dict[str, Decimal],
+    *,
+    item_exclusions: dict[uuid.UUID, str] | None = None,
 ) -> dict[str, dict[str, Any]]:
     sums = {group: Decimal("0") for group in ALLOCATION_GROUPS}
     item_rows: dict[str, list[dict[str, Any]]] = {group: [] for group in ALLOCATION_GROUPS}
@@ -853,6 +964,16 @@ def _group_shortages(
     unmapped: list[dict[str, Any]] = []
     skipped_items: list[dict[str, Any]] = []
     for item in items:
+        item_id = getattr(item, "id", None)
+        if item_id is not None and item_exclusions and item_id in item_exclusions:
+            skipped_items.append(
+                {
+                    "item_id": str(item_id),
+                    "reason": "excluded",
+                    "exclusion_reason": item_exclusions[item_id],
+                }
+            )
+            continue
         position = getattr(item, "position", None)
         signed_amount = item_signed_amount(item)
         shortage_amount = item_shortage_amount(item)
@@ -1199,6 +1320,7 @@ async def _load_audit_or_404(session: AsyncSession, audit_id: uuid.UUID) -> Inve
         .options(
             selectinload(InventoryAudit.items).selectinload(InventoryAuditItem.position),
             selectinload(InventoryAudit.employee_exclusions),
+            selectinload(InventoryAudit.item_exclusions),
         )
         .where(InventoryAudit.id == audit_id)
     )

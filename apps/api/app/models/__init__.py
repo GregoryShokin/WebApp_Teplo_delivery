@@ -36,6 +36,7 @@ from app.models.inventory import (
     InventoryAudit,
     InventoryAuditEmployeeExclusion,
     InventoryAuditItem,
+    InventoryAuditItemExclusion,
     InventoryAuditPosition,
 )
 from app.models.payroll import (
@@ -98,6 +99,7 @@ __all__ = [
     "InventoryAudit",
     "InventoryAuditEmployeeExclusion",
     "InventoryAuditItem",
+    "InventoryAuditItemExclusion",
     "InventoryAuditPosition",
     "Location",
     "PayrollDeductionCategory",
