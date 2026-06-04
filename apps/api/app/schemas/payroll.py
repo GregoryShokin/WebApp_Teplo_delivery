@@ -135,6 +135,20 @@ class PayrollPersonalReportPeriodRead(BaseModel):
     total_payable: float
 
 
+class PayrollPersonalReportDailyRead(BaseModel):
+    date: date
+    base_pay: float
+    percent_pay: float
+    premium: float
+    vacation_pay: float
+    fund_accrual: float
+    deposit_in: float
+    deposit_out: float
+    penalty: float
+    audit_penalty: float
+    comment: str | None = None
+
+
 class PayrollPersonalReportAdjustmentRead(BaseModel):
     id: uuid.UUID
     type: str
@@ -164,6 +178,7 @@ class PayrollPersonalReportTotalsRead(BaseModel):
     deposit_withholding: float
     bonus_total: float
     penalty_total: float
+    audit_penalty_total: str
     total_payable: float
 
 
@@ -174,6 +189,10 @@ class PayrollPersonalReportRead(BaseModel):
     date_from: date
     date_to: date
     periods: list[PayrollPersonalReportPeriodRead]
+    daily: list[PayrollPersonalReportDailyRead]
+    opening_balance: str
+    closing_balance: str
+    shifts_count: int
     adjustments: list[PayrollPersonalReportAdjustmentRead]
     deposit_transactions: list[PayrollPersonalReportDepositTransactionRead]
     totals: PayrollPersonalReportTotalsRead

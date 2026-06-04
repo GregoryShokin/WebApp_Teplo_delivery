@@ -6,9 +6,11 @@ import { Toaster } from "@/components/ui/sonner";
 import { restoreSession } from "@/lib/api";
 import { getAuthSnapshot } from "@/lib/auth";
 import { DashboardPage } from "@/pages/DashboardPage";
+import { CourierDepositsRoute } from "@/routes/couriers/deposits";
 import { PayrollRoute } from "@/routes/payroll";
 import { DdsRoute } from "@/routes/dds";
 import { LoginRoute } from "@/routes/login";
+import { CourierEvaluationsRoute } from "@/routes/couriers/evaluations";
 import { PayrollConfigurationRoute } from "@/routes/payroll/configuration";
 import { PayrollRunDetailRoute } from "@/routes/payroll/run-detail";
 import { ScheduleRoute } from "@/routes/schedule";
@@ -198,6 +200,35 @@ const routes: AppRoute[] = [
   {
     path: "/source-data",
     render: ({ navigate }) => <PayrollConfigurationRoute onNavigate={navigate} />,
+  },
+  {
+    path: "/couriers",
+    children: [
+      {
+        path: "",
+        render: ({ navigate }) => <RedirectRoute onNavigate={navigate} to="/couriers/deposits" />,
+      },
+      {
+        path: "deposits",
+        render: ({ navigate }) => <CourierDepositsRoute onNavigate={navigate} />,
+      },
+      {
+        path: "evaluations",
+        render: () => <CourierEvaluationsRoute />,
+      },
+      {
+        path: "statistics",
+        render: () => <EmptyModule name="Статистика курьеров — скоро" />,
+      },
+      {
+        path: "list",
+        render: () => <EmptyModule name="Список курьеров — скоро" />,
+      },
+      {
+        path: ":unknown",
+        render: ({ navigate }) => <RedirectRoute onNavigate={navigate} to="/couriers/deposits" />,
+      },
+    ],
   },
   {
     path: "/dds",

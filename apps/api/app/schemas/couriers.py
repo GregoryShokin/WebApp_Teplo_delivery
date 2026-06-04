@@ -58,6 +58,7 @@ class CourierDepositTransactionRead(BaseModel):
     transaction_date: date
     comment: str | None = None
     created_by: uuid.UUID
+    created_by_name: str | None = None
     created_at: datetime | None = None
 
 
@@ -122,7 +123,7 @@ class CourierEvaluationCreate(BaseModel):
     criterion_id: int
     evaluated_at: date | None = None
     comment: str | None = Field(default=None, max_length=2000)
-    actor_id: uuid.UUID
+    actor_id: uuid.UUID | None = None
     source: CourierEvaluationSource = CourierEvaluationSource.WEB
 
 
@@ -130,7 +131,7 @@ class CourierEvaluationUpdate(BaseModel):
     criterion_id: int | None = None
     evaluated_at: date | None = None
     comment: str | None = Field(default=None, max_length=2000)
-    actor_id: uuid.UUID
+    actor_id: uuid.UUID | None = None
 
 
 class CourierEvaluationRead(BaseModel):

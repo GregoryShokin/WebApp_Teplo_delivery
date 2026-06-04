@@ -1441,6 +1441,141 @@ export type DepositWriteoffPayload = {
   reason?: string | null;
 };
 
+export type CourierDepositStatusFilter = "active" | "fired" | "all";
+export type CourierDepositCategory = "primary" | "secondary";
+export type CourierDepositCategoryFilter = CourierDepositCategory | "all";
+export type CourierDepositTransactionType = "top_up" | "return" | "forfeit";
+
+export type CourierDepositSettings = {
+  target_amount: number;
+  withhold_primary: number;
+  withhold_secondary: number;
+  auto_withhold_enabled: boolean;
+};
+
+export type CourierDepositSettingsUpdate = Partial<CourierDepositSettings>;
+
+export type CourierDepositTransaction = {
+  id: number | null;
+  account_employee_id: string;
+  transaction_type: CourierDepositTransactionType;
+  amount_cents: number;
+  transaction_date: string;
+  comment: string | null;
+  created_by: string;
+  created_by_name?: string | null;
+  created_at: string | null;
+};
+
+export type CourierDepositRow = {
+  employee_id: string;
+  full_name: string;
+  status: string;
+  category: CourierDepositCategory | null;
+  target_amount_cents: number;
+  opening_balance_cents: number;
+  opening_date: string;
+  balance_cents: number;
+  progress_pct: number;
+  remaining_to_target_cents: number;
+  last_transaction: CourierDepositTransaction | null;
+};
+
+export type CourierDepositAccount = {
+  employee_id: string;
+  target_amount_cents: number;
+  opening_balance_cents: number;
+  opening_date: string;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type CourierDepositCard = {
+  account: CourierDepositAccount;
+  balance_cents: number;
+  transactions: CourierDepositTransaction[];
+};
+
+export type CourierDepositOpeningPayload = {
+  amount_cents: number;
+  opening_date: string;
+  actor_id: string;
+};
+
+export type CourierDepositTransactionPayload = {
+  transaction_type: CourierDepositTransactionType;
+  amount_cents: number;
+  transaction_date: string;
+  comment?: string | null;
+  actor_id: string;
+};
+
+export type CourierEvaluationSource = "web" | "telegram" | "api";
+
+export type CourierEvaluationCriterion = {
+  id: number;
+  code: string;
+  label: string;
+  score: number;
+  is_active: boolean;
+  display_order: number;
+};
+
+export type CourierEvaluation = {
+  id: number | null;
+  courier_employee_id: string;
+  criterion_id: number;
+  score_snapshot: number;
+  comment: string | null;
+  evaluated_at: string;
+  source: CourierEvaluationSource;
+  created_by: string;
+  created_at: string | null;
+  updated_at: string | null;
+  deleted_at: string | null;
+};
+
+export type CourierEvaluationListParams = {
+  courier?: string;
+  author?: string;
+  from?: string;
+  to?: string;
+  criterion?: number;
+};
+
+export type CourierEvaluationPayload = {
+  courier_employee_id: string;
+  criterion_id: number;
+  evaluated_at?: string | null;
+  comment?: string | null;
+  actor_id?: string | null;
+  source?: CourierEvaluationSource;
+};
+
+export type CourierEvaluationPatch = {
+  criterion_id?: number;
+  evaluated_at?: string | null;
+  comment?: string | null;
+  actor_id?: string | null;
+};
+
+export type CourierEvaluationTopCriterion = {
+  criterion_id: number;
+  code: string;
+  label: string;
+  count: number;
+};
+
+export type CourierEvaluationMonthlyAggregate = {
+  courier_employee_id: string;
+  month: string;
+  score_sum: number;
+  positive_count: number;
+  negative_count: number;
+  neutral_count: number;
+  top_criteria: CourierEvaluationTopCriterion[];
+};
+
 export type DdsProvider = "sber" | "tbank";
 export type DdsDirection = "in" | "out";
 export type DdsClassificationStatus =
@@ -2930,6 +3065,99 @@ export async function postDepositWriteoff(
 
 export async function postDepositInitialBalance(employeeId: string, amount: string): Promise<void> {
   await api.post(`/deposits/${employeeId}/initial-balance`, { amount });
+}
+
+export async function getCourierDeposits(params: {
+  status?: CourierDepositStatusFilter;
+  category?: CourierDepositCategoryFilter;
+} = {}): Promise<CourierDepositRow[]> {
+  const response = await api.get<CourierDepositRow[]>("/couriers/deposits", { params });
+  return response.data;
+}
+
+export async function getCourierDepositSettings(): Promise<CourierDepositSettings> {
+  const response = await api.get<CourierDepositSettings>("/couriers/deposits/settings");
+  return response.data;
+}
+
+export async function putCourierDepositSettings(
+  payload: CourierDepositSettingsUpdate,
+): Promise<CourierDepositSettings> {
+  const response = await api.put<CourierDepositSettings>("/couriers/deposits/settings", payload);
+  return response.data;
+}
+
+export async function getCourierDepositCard(employeeId: string): Promise<CourierDepositCard> {
+  const response = await api.get<CourierDepositCard>(`/couriers/${employeeId}/deposit`);
+  return response.data;
+}
+
+export async function putCourierDepositOpening(
+  employeeId: string,
+  payload: CourierDepositOpeningPayload,
+): Promise<CourierDepositCard> {
+  const response = await api.put<CourierDepositCard>(
+    `/couriers/${employeeId}/deposit/opening`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function postCourierDepositTransaction(
+  employeeId: string,
+  payload: CourierDepositTransactionPayload,
+): Promise<CourierDepositTransaction> {
+  const response = await api.post<CourierDepositTransaction>(
+    `/couriers/${employeeId}/deposit/transactions`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function getCourierEvaluationCriteria(): Promise<CourierEvaluationCriterion[]> {
+  const response = await api.get<CourierEvaluationCriterion[]>("/couriers/evaluation-criteria");
+  return response.data;
+}
+
+export async function getCourierEvaluations(
+  params: CourierEvaluationListParams = {},
+): Promise<CourierEvaluation[]> {
+  const response = await api.get<CourierEvaluation[]>("/couriers/evaluations", {
+    params: cleanDdsParams(params),
+  });
+  return response.data;
+}
+
+export async function createCourierEvaluation(
+  payload: CourierEvaluationPayload,
+): Promise<CourierEvaluation> {
+  const response = await api.post<CourierEvaluation>("/couriers/evaluations", payload);
+  return response.data;
+}
+
+export async function patchCourierEvaluation(
+  id: number,
+  payload: CourierEvaluationPatch,
+): Promise<CourierEvaluation> {
+  const response = await api.patch<CourierEvaluation>(`/couriers/evaluations/${id}`, payload);
+  return response.data;
+}
+
+export async function deleteCourierEvaluation(id: number, actorId?: string): Promise<void> {
+  await api.delete(`/couriers/evaluations/${id}`, {
+    params: actorId ? { actor_id: actorId } : undefined,
+  });
+}
+
+export async function getCourierEvaluationMonthlyAggregate(
+  employeeId: string,
+  month: string,
+): Promise<CourierEvaluationMonthlyAggregate> {
+  const response = await api.get<CourierEvaluationMonthlyAggregate>(
+    `/couriers/${employeeId}/evaluations/monthly`,
+    { params: { month } },
+  );
+  return response.data;
 }
 
 function cleanDdsParams(params: Record<string, unknown>) {

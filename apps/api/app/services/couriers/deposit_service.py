@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from fastapi import HTTPException, status
 from sqlalchemy import desc, select
+from sqlalchemy import update as sqlalchemy_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -98,6 +99,13 @@ async def update_deposit_settings(
         setting.value = value
         setting.updated_at = now
         setting.updated_by_user_id = changed_by_user_id
+        if name == "target_amount":
+            await session.execute(
+                sqlalchemy_update(CourierDepositAccount).values(
+                    target_amount_cents=_rub_to_cents(value),
+                    updated_at=now,
+                )
+            )
         session.add(
             AppSettingHistory(
                 setting_id=setting.id,
@@ -263,7 +271,10 @@ def account_payload(account: CourierDepositAccount) -> dict[str, Any]:
     }
 
 
-def transaction_payload(transaction: CourierDepositTransaction) -> dict[str, Any]:
+def transaction_payload(
+    transaction: CourierDepositTransaction,
+    created_by_name: str | None = None,
+) -> dict[str, Any]:
     return {
         "id": transaction.id,
         "account_employee_id": transaction.account_employee_id,
@@ -272,6 +283,7 @@ def transaction_payload(transaction: CourierDepositTransaction) -> dict[str, Any
         "transaction_date": transaction.transaction_date,
         "comment": transaction.comment,
         "created_by": transaction.created_by,
+        "created_by_name": created_by_name,
         "created_at": transaction.created_at,
     }
 

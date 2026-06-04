@@ -3,16 +3,19 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeftRight,
   Banknote,
+  Bike,
   Boxes,
   CalendarClock,
   CalendarDays,
+  ChartNoAxesColumn,
   ChevronDown,
   ClipboardList,
   Flame,
   Home,
-  Landmark,
   LogOut,
   Menu,
+  Package,
+  PlusCircle,
   ReceiptText,
   Settings,
   UsersRound,
@@ -49,6 +52,7 @@ type NavItem = {
   label: string;
   href: string;
   icon: LucideIcon;
+  quickAction?: "courier-evaluation-create";
 };
 
 type NavGroup = {
@@ -70,6 +74,21 @@ const navGroups: NavGroup[] = [
       { label: "Расчёты", href: "/payroll", icon: Banknote },
       { label: "График сотрудников", href: "/schedule", icon: CalendarDays },
       { label: "Исходные данные", href: "/source-data", icon: ClipboardList },
+    ],
+  },
+  {
+    title: "Курьеры",
+    items: [
+      { label: "Депозиты", href: "/couriers/deposits", icon: Bike },
+      { label: "Оценки", href: "/couriers/evaluations", icon: ClipboardList },
+      { label: "Статистика", href: "/couriers/statistics", icon: ChartNoAxesColumn },
+      { label: "Список курьеров", href: "/couriers/list", icon: Package },
+      {
+        label: "+ Отличие",
+        href: "/couriers/evaluations",
+        icon: PlusCircle,
+        quickAction: "courier-evaluation-create",
+      },
     ],
   },
   {
@@ -229,7 +248,7 @@ function SidebarContent({
                       <NavLink
                         currentPath={currentPath}
                         item={item}
-                        key={item.href}
+                        key={`${item.href}-${item.label}`}
                         onNavigate={onNavigate}
                       />
                     ))}
@@ -253,7 +272,7 @@ function NavLink({
   item: NavItem;
   onNavigate: Navigate;
 }) {
-  const isActive = isActiveRoute(currentPath, item.href);
+  const isActive = !item.quickAction && isActiveRoute(currentPath, item.href);
   const Icon = item.icon;
 
   return (
@@ -267,6 +286,10 @@ function NavLink({
       href={item.href}
       onClick={(event) => {
         event.preventDefault();
+        if (item.quickAction === "courier-evaluation-create") {
+          window.sessionStorage.setItem("courierEvaluation.openForm", "1");
+          window.dispatchEvent(new Event("courier-evaluation:create"));
+        }
         onNavigate(item.href);
       }}
     >

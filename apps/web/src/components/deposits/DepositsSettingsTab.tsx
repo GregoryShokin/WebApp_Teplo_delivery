@@ -41,6 +41,7 @@ import {
   validNonNegativeDecimalInput,
   type DepositRulesByKey,
 } from "./deposit-utils";
+import { CourierDepositsSettingsSection } from "./CourierDepositsSettingsSection";
 
 type DepositsSettingsTabProps = {
   canWrite: boolean;
@@ -78,6 +79,9 @@ export function DepositsSettingsTab({ canWrite }: DepositsSettingsTabProps) {
   const [initialBalanceInputs, setInitialBalanceInputs] = useState<Record<string, string>>({});
   const [pendingInitialBalance, setPendingInitialBalance] = useState<PendingInitialBalance | null>(
     null,
+  );
+  const [activeDepositScope, setActiveDepositScope] = useState<"production" | "couriers">(
+    "production",
   );
 
   useEffect(() => {
@@ -159,7 +163,11 @@ export function DepositsSettingsTab({ canWrite }: DepositsSettingsTabProps) {
 
   return (
     <div className="space-y-4">
-      <DepositSummary summary={summary} />
+      <DepositScopeTabs activeScope={activeDepositScope} onChange={setActiveDepositScope} />
+
+      {activeDepositScope === "production" ? (
+        <>
+          <DepositSummary summary={summary} />
 
       <section className="space-y-4 rounded-lg border bg-card p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -393,6 +401,42 @@ export function DepositsSettingsTab({ canWrite }: DepositsSettingsTabProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+        </>
+      ) : (
+        <CourierDepositsSettingsSection canWrite={canWrite} />
+      )}
+    </div>
+  );
+}
+
+function DepositScopeTabs({
+  activeScope,
+  onChange,
+}: {
+  activeScope: "production" | "couriers";
+  onChange: (scope: "production" | "couriers") => void;
+}) {
+  const tabs = [
+    { label: "Производственный персонал", value: "production" },
+    { label: "Курьеры", value: "couriers" },
+  ] as const;
+
+  return (
+    <div className="flex flex-wrap gap-2 border-b pb-3">
+      {tabs.map((tab) => (
+        <button
+          className={
+            activeScope === tab.value
+              ? "rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+              : "rounded-full border bg-background px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          }
+          key={tab.value}
+          onClick={() => onChange(tab.value)}
+          type="button"
+        >
+          {tab.label}
+        </button>
+      ))}
     </div>
   );
 }

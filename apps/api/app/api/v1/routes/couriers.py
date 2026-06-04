@@ -7,7 +7,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -17,7 +17,7 @@ from app.api.deps import (
     require_manager_plus,
 )
 from app.db.session import get_session
-from app.models import CourierEvaluationCriterion, Employee
+from app.models import CourierEvaluationCriterion, Employee, User
 from app.schemas.couriers import (
     CourierCategoryAssignmentRead,
     CourierCategoryAssignRequest,
@@ -290,9 +290,7 @@ async def get_courier_deposit_card(
     return {
         "account": deposit_service.account_payload(account),
         "balance_cents": balance,
-        "transactions": [
-            deposit_service.transaction_payload(transaction) for transaction in transactions
-        ],
+        "transactions": await _deposit_transaction_payloads(session, transactions),
     }
 
 
@@ -304,12 +302,13 @@ async def put_courier_deposit_opening(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
     require_manager_plus(actor)
+    actor_employee_id = await _resolve_actor_employee_id(session, actor, payload.actor_id)
     account = await deposit_service.set_opening_balance(
         session,
         employee_id=employee_id,
         amount_cents=payload.amount_cents,
         opening_date=payload.opening_date,
-        actor_id=payload.actor_id,
+        actor_id=actor_employee_id,
     )
     transactions = await deposit_service.list_transactions(session, employee_id)
     balance = await deposit_service.get_balance(session, employee_id)
@@ -318,9 +317,7 @@ async def put_courier_deposit_opening(
     return {
         "account": deposit_service.account_payload(account),
         "balance_cents": balance,
-        "transactions": [
-            deposit_service.transaction_payload(transaction) for transaction in transactions
-        ],
+        "transactions": await _deposit_transaction_payloads(session, transactions),
     }
 
 
@@ -332,6 +329,7 @@ async def post_courier_deposit_transaction(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
     require_manager_plus(actor)
+    actor_employee_id = await _resolve_actor_employee_id(session, actor, payload.actor_id)
     transaction = await deposit_service.create_transaction(
         session,
         employee_id=employee_id,
@@ -339,11 +337,11 @@ async def post_courier_deposit_transaction(
         amount_cents=payload.amount_cents,
         transaction_date=payload.transaction_date,
         comment=payload.comment,
-        actor_id=payload.actor_id,
+        actor_id=actor_employee_id,
     )
     await session.commit()
     await session.refresh(transaction)
-    return deposit_service.transaction_payload(transaction)
+    return await _deposit_transaction_payload(session, transaction)
 
 
 @router.get("/evaluation-criteria", response_model=list[CourierEvaluationCriterionRead])
@@ -393,13 +391,14 @@ async def post_courier_evaluation(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
     require_manager_plus(actor)
+    actor_employee_id = await _resolve_actor_employee_id(session, actor, payload.actor_id)
     evaluation = await evaluation_service.create_evaluation(
         session,
         courier_id=payload.courier_employee_id,
         criterion_id=payload.criterion_id,
         evaluated_at=payload.evaluated_at,
         comment=payload.comment,
-        actor_id=payload.actor_id,
+        actor_id=actor_employee_id,
         source=payload.source,
     )
     await session.commit()
@@ -416,11 +415,12 @@ async def patch_courier_evaluation(
 ) -> dict[str, Any]:
     require_manager_plus(actor)
     changes = payload.model_dump(exclude_unset=True)
-    actor_id = changes.pop("actor_id")
+    requested_actor_id = changes.pop("actor_id", None)
+    actor_employee_id = await _resolve_actor_employee_id(session, actor, requested_actor_id)
     evaluation = await evaluation_service.update_evaluation(
         session,
         evaluation_id=evaluation_id,
-        actor_id=actor_id,
+        actor_id=actor_employee_id,
         **changes,
     )
     await session.commit()
@@ -433,13 +433,14 @@ async def delete_courier_evaluation(
     evaluation_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
-    actor_id: Annotated[uuid.UUID, Query()],
+    actor_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> dict[str, Any]:
     require_manager_plus(actor)
+    actor_employee_id = await _resolve_actor_employee_id(session, actor, actor_id)
     evaluation = await evaluation_service.delete_evaluation(
         session,
         evaluation_id=evaluation_id,
-        actor_id=actor_id,
+        actor_id=actor_employee_id,
     )
     await session.commit()
     await session.refresh(evaluation)
@@ -540,6 +541,36 @@ def _category_assignment_payload(assignment: Any) -> dict[str, Any]:
     }
 
 
+async def _deposit_transaction_payload(
+    session: AsyncSession,
+    transaction: Any,
+) -> dict[str, Any]:
+    created_by_name = await _employee_name(session, transaction.created_by)
+    return deposit_service.transaction_payload(transaction, created_by_name)
+
+
+async def _deposit_transaction_payloads(
+    session: AsyncSession,
+    transactions: list[Any],
+) -> list[dict[str, Any]]:
+    employee_ids = {transaction.created_by for transaction in transactions}
+    if not employee_ids:
+        return []
+    employees = (
+        await session.scalars(select(Employee).where(Employee.id.in_(employee_ids)))
+    ).all()
+    names = {employee.id: employee.full_name for employee in employees}
+    return [
+        deposit_service.transaction_payload(transaction, names.get(transaction.created_by))
+        for transaction in transactions
+    ]
+
+
+async def _employee_name(session: AsyncSession, employee_id: uuid.UUID) -> str | None:
+    employee = await session.get(Employee, employee_id)
+    return employee.full_name if employee is not None else None
+
+
 def _parse_month(value: str) -> date:
     try:
         year, month = value.split("-", 1)
@@ -549,6 +580,54 @@ def _parse_month(value: str) -> date:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="month must be in YYYY-MM format",
         ) from exc
+
+
+async def _resolve_actor_employee_id(
+    session: AsyncSession,
+    actor: CurrentActor,
+    requested_actor_id: uuid.UUID | None = None,
+) -> uuid.UUID:
+    employee = await _employee_for_actor(session, actor)
+    if employee is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Не удалось определить сотрудника текущего пользователя",
+        )
+    if requested_actor_id is not None and requested_actor_id != employee.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нельзя выполнять действие от имени другого сотрудника",
+        )
+    return employee.id
+
+
+async def _employee_for_actor(
+    session: AsyncSession,
+    actor: CurrentActor,
+) -> Employee | None:
+    if actor.user_id is None:
+        return None
+
+    employee = await session.get(Employee, actor.user_id)
+    if employee is not None:
+        return employee
+
+    user = await session.get(User, actor.user_id)
+    if user is None or not user.full_name.strip():
+        return None
+
+    result = await session.scalars(
+        select(Employee)
+        .where(
+            func.lower(Employee.full_name) == user.full_name.strip().lower(),
+            Employee.status == "active",
+        )
+        .order_by(Employee.full_name)
+    )
+    matches = list(result.all())
+    if len(matches) == 1:
+        return matches[0]
+    return None
 
 
 def _enum_value(value: Any) -> str | None:
