@@ -22,6 +22,7 @@ from app.models import (
 from app.schemas.inventory import (
     IikoInventoryCandidateRead,
     IikoProductRead,
+    InventoryAuditAllExclusionsRead,
     InventoryAuditCreateManualPayload,
     InventoryAuditDetailRead,
     InventoryAuditEmployeeExclusionPatch,
@@ -57,6 +58,7 @@ from app.services.inventory_audit_service import (
     item_shortage_amount,
     item_signed_amount,
     item_swap_group_override,
+    list_all_exclusions,
     list_iiko_candidates,
     restore_cancelled_audit,
     set_employee_exclusion,
@@ -198,6 +200,23 @@ async def list_iiko_products(
         if row["guid"]:
             rows.append(row)
     return sorted(rows, key=lambda item: (item["name"] or "", item["guid"]))[:100]
+
+
+@router.get("/audit-exclusions", response_model=InventoryAuditAllExclusionsRead)
+async def list_audit_exclusions(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    audit_date_from: date | None = None,
+    audit_date_to: date | None = None,
+    employee_id: uuid.UUID | None = None,
+) -> dict[str, Any]:
+    require_finance_manager_plus(actor)
+    return await list_all_exclusions(
+        session,
+        audit_date_from=audit_date_from,
+        audit_date_to=audit_date_to,
+        employee_id=employee_id,
+    )
 
 
 @router.get("/audits", response_model=list[InventoryAuditListRead])

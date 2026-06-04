@@ -670,6 +670,27 @@ export type InventoryAuditExclusionLogItem = {
   updated_at?: string | null;
 };
 
+export type InventoryAuditExclusionLogRow = {
+  id: string;
+  audit_id: string;
+  audit_business_date: string | null;
+  audit_status: InventoryAuditStatus | null;
+  item_id?: string | null;
+  product_name?: string | null;
+  amount?: string | null;
+  employee_id?: string | null;
+  employee_name?: string | null;
+  employee_position?: string | null;
+  reason: string;
+  created_by_name?: string | null;
+  created_at: string | null;
+};
+
+export type InventoryAuditAllExclusions = {
+  items: InventoryAuditExclusionLogRow[];
+  employees: InventoryAuditExclusionLogRow[];
+};
+
 export type InventoryAudit = {
   id: string;
   business_date: string;
@@ -2493,6 +2514,19 @@ export async function getInventoryAudits(
       date_to: filters.dateTo || undefined,
       status: filters.status && filters.status !== "all" ? filters.status : undefined,
     },
+  });
+  return response.data;
+}
+
+export async function getAllInventoryAuditExclusions(
+  filters: {
+    audit_date_from?: string;
+    audit_date_to?: string;
+    employee_id?: string;
+  } = {},
+): Promise<InventoryAuditAllExclusions> {
+  const response = await api.get<InventoryAuditAllExclusions>("/inventory/audit-exclusions", {
+    params: filters,
   });
   return response.data;
 }

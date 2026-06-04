@@ -179,6 +179,27 @@ class InventoryAuditExclusionLogItem(BaseModel):
     updated_at: datetime | None = None
 
 
+class InventoryAuditExclusionLogRow(BaseModel):
+    id: str
+    audit_id: str
+    audit_business_date: date | None = None
+    audit_status: str | None = None
+    item_id: str | None = None
+    product_name: str | None = None
+    amount: str | None = None
+    employee_id: str | None = None
+    employee_name: str | None = None
+    employee_position: str | None = None
+    reason: str
+    created_by_name: str | None = None
+    created_at: datetime | None = None
+
+
+class InventoryAuditAllExclusionsRead(BaseModel):
+    items: list[InventoryAuditExclusionLogRow]
+    employees: list[InventoryAuditExclusionLogRow]
+
+
 class InventoryAuditDetailRead(InventoryAuditListRead):
     total_shortage_iiko: str
     total_shortage_considered: str

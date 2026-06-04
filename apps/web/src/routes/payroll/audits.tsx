@@ -49,6 +49,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { EmptyState } from "@/components/ui-app/EmptyState";
@@ -59,6 +60,7 @@ import {
   cancelInventoryAudit,
   computeInventoryAudit,
   createManualInventoryAudit,
+  getAllInventoryAuditExclusions,
   getIikoCandidates,
   getInventoryAudit,
   getInventoryAudits,
@@ -115,6 +117,7 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
   const [dateFrom, setDateFrom] = useState(month.start);
   const [dateTo, setDateTo] = useState(month.end);
   const [statusFilter, setStatusFilter] = useState<InventoryAuditStatus | "all">("all");
+  const [subTab, setSubTab] = useState<"audits" | "items" | "employees">("audits");
   const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
@@ -325,91 +328,125 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
         <div>
           <h2 className="text-lg font-semibold tracking-normal">Ревизии</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Штрафы по недостачам из iiko и ручных ревизий.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => handleImportOpenChange(true)} type="button">
-            <UploadCloud size={16} aria-hidden="true" />
-            Импорт из iiko
-          </Button>
-          <Button onClick={() => setManualOpen(true)} type="button" variant="outline">
-            <Plus size={16} aria-hidden="true" />
-            Вручную
-          </Button>
-        </div>
       </div>
 
-      <section className="grid gap-3 rounded-lg border bg-card p-3 md:grid-cols-[150px_150px_160px_1fr] md:items-end">
-        <Label className="grid gap-2">
-          <span>С даты</span>
-          <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-        </Label>
-        <Label className="grid gap-2">
-          <span>По дату</span>
-          <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-        </Label>
-        <Label className="grid gap-2">
-          <span>Статус</span>
-          <Select
-            onValueChange={(value) => setStatusFilter(value as InventoryAuditStatus | "all")}
-            value={statusFilter}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Все</SelectItem>
-              <SelectItem value="draft">Черновик</SelectItem>
-              <SelectItem value="applied">Применён</SelectItem>
-              <SelectItem value="cancelled">Отменён</SelectItem>
-            </SelectContent>
-          </Select>
-        </Label>
-      </section>
+      <Tabs
+        className="space-y-4"
+        onValueChange={(value) => setSubTab(value as typeof subTab)}
+        value={subTab}
+      >
+        <TabsList>
+          <TabsTrigger value="audits">Ревизии</TabsTrigger>
+          <TabsTrigger value="items">Позиции</TabsTrigger>
+          <TabsTrigger value="employees">Сотрудники</TabsTrigger>
+        </TabsList>
 
-      {auditsQuery.isLoading ? (
-        <div className="rounded-lg border bg-card px-4 py-8 text-sm text-muted-foreground">
-          Загрузка ревизий...
-        </div>
-      ) : audits.length ? (
-        <DataTable columns={columns} rows={audits} getRowKey={(audit) => audit.id} />
-      ) : (
-        <EmptyState title="Ревизий нет" description="За выбранный период ничего не найдено." />
-      )}
-
-      {selectedAuditId ? (
-        <div ref={auditDetailRef} className="scroll-mt-6">
-          {selectedAuditQuery.isFetching && !selectedAudit ? (
-            <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-8 text-sm text-muted-foreground">
-              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-              Загрузка ревизии...
-            </div>
-          ) : null}
-          {selectedAuditError ? (
-            <div className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between">
-              <div>{selectedAuditError}</div>
-              <Button onClick={() => selectedAuditQuery.refetch()} type="button" variant="outline">
-                Повторить
+        <TabsContent className="space-y-5" value="audits">
+          <section className="grid gap-3 rounded-lg border bg-card p-3 md:grid-cols-[150px_150px_160px_1fr] md:items-end">
+            <Label className="grid gap-2">
+              <span>С даты</span>
+              <Input
+                onChange={(event) => setDateFrom(event.target.value)}
+                type="date"
+                value={dateFrom}
+              />
+            </Label>
+            <Label className="grid gap-2">
+              <span>По дату</span>
+              <Input
+                onChange={(event) => setDateTo(event.target.value)}
+                type="date"
+                value={dateTo}
+              />
+            </Label>
+            <Label className="grid gap-2">
+              <span>Статус</span>
+              <Select
+                onValueChange={(value) => setStatusFilter(value as InventoryAuditStatus | "all")}
+                value={statusFilter}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все</SelectItem>
+                  <SelectItem value="draft">Черновик</SelectItem>
+                  <SelectItem value="applied">Применён</SelectItem>
+                  <SelectItem value="cancelled">Отменён</SelectItem>
+                </SelectContent>
+              </Select>
+            </Label>
+            <div className="flex flex-wrap gap-2 md:justify-end">
+              <Button onClick={() => handleImportOpenChange(true)} type="button">
+                <UploadCloud size={16} aria-hidden="true" />
+                Импорт из iiko
+              </Button>
+              <Button onClick={() => setManualOpen(true)} type="button" variant="outline">
+                <Plus size={16} aria-hidden="true" />
+                Вручную
               </Button>
             </div>
+          </section>
+
+          {auditsQuery.isLoading ? (
+            <div className="rounded-lg border bg-card px-4 py-8 text-sm text-muted-foreground">
+              Загрузка ревизий...
+            </div>
+          ) : audits.length ? (
+            <DataTable columns={columns} rows={audits} getRowKey={(audit) => audit.id} />
+          ) : (
+            <EmptyState title="Ревизий нет" description="За выбранный период ничего не найдено." />
+          )}
+
+          {selectedAuditId ? (
+            <div ref={auditDetailRef} className="scroll-mt-6">
+              {selectedAuditQuery.isFetching && !selectedAudit ? (
+                <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-8 text-sm text-muted-foreground">
+                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                  Загрузка ревизии...
+                </div>
+              ) : null}
+              {selectedAuditError ? (
+                <div className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between">
+                  <div>{selectedAuditError}</div>
+                  <Button
+                    onClick={() => selectedAuditQuery.refetch()}
+                    type="button"
+                    variant="outline"
+                  >
+                    Повторить
+                  </Button>
+                </div>
+              ) : null}
+              {selectedAudit ? (
+                <AuditDetail
+                  audit={selectedAudit}
+                  isComputing={computeMutation.isPending}
+                  onApply={(audit) => setConfirmation({ action: "apply", audit })}
+                  onCancel={(audit) => setConfirmation({ action: "cancel", audit })}
+                  onCompute={(audit) => computeMutation.mutate(audit.id)}
+                  onRestore={(audit) => setConfirmation({ action: "restore", audit })}
+                />
+              ) : null}
+            </div>
           ) : null}
-          {selectedAudit ? (
-            <AuditDetail
-              audit={selectedAudit}
-              isComputing={computeMutation.isPending}
-              onApply={(audit) => setConfirmation({ action: "apply", audit })}
-              onCancel={(audit) => setConfirmation({ action: "cancel", audit })}
-              onCompute={(audit) => computeMutation.mutate(audit.id)}
-              onRestore={(audit) => setConfirmation({ action: "restore", audit })}
-            />
-          ) : null}
-        </div>
-      ) : null}
+        </TabsContent>
+
+        <TabsContent value="items">
+          <ExclusionLogTab kind="items" />
+        </TabsContent>
+
+        <TabsContent value="employees">
+          <ExclusionLogTab kind="employees" />
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={importOpen} onOpenChange={handleImportOpenChange}>
         <DialogContent>
@@ -664,6 +701,171 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
   }
 }
 
+function ExclusionLogTab({ kind }: { kind: "items" | "employees" }) {
+  const [auditDateFrom, setAuditDateFrom] = useState<string>("");
+  const [auditDateTo, setAuditDateTo] = useState<string>("");
+  const queryClient = useQueryClient();
+
+  const query = useQuery({
+    queryKey: ["inventory-exclusions", { auditDateFrom, auditDateTo }],
+    queryFn: () =>
+      getAllInventoryAuditExclusions({
+        audit_date_from: auditDateFrom || undefined,
+        audit_date_to: auditDateTo || undefined,
+      }),
+  });
+
+  const rows = kind === "items" ? query.data?.items ?? [] : query.data?.employees ?? [];
+
+  const itemReturnMutation = useMutation({
+    mutationFn: ({ auditId, itemId }: { auditId: string; itemId: string }) =>
+      patchInventoryAuditItemExclusion(auditId, itemId, { excluded: false, reason: null }),
+    onSuccess: async (_audit, variables) => {
+      toast.success("Позиция возвращена в расчёт");
+      await invalidateInventory(queryClient, variables.auditId);
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось вернуть позицию")),
+  });
+
+  const employeeReturnMutation = useMutation({
+    mutationFn: ({ auditId, employeeId }: { auditId: string; employeeId: string }) =>
+      patchInventoryAuditEmployeeExclusion(auditId, employeeId, { excluded: false }),
+    onSuccess: async (_audit, variables) => {
+      toast.success("Сотрудник возвращён в расчёт");
+      await invalidateInventory(queryClient, variables.auditId);
+    },
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, "Не удалось вернуть сотрудника в расчёт")),
+  });
+
+  return (
+    <section className="mt-4 space-y-4 rounded-lg border bg-card p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <PanelTitle title={kind === "items" ? "Исключённые позиции" : "Исключённые сотрудники"} />
+        <div className="grid gap-2 md:grid-cols-2 md:gap-3">
+          <Label>
+            <span className="text-xs text-muted-foreground">Ревизии с</span>
+            <Input
+              className="mt-1"
+              onChange={(event) => setAuditDateFrom(event.target.value)}
+              type="date"
+              value={auditDateFrom}
+            />
+          </Label>
+          <Label>
+            <span className="text-xs text-muted-foreground">по</span>
+            <Input
+              className="mt-1"
+              onChange={(event) => setAuditDateTo(event.target.value)}
+              type="date"
+              value={auditDateTo}
+            />
+          </Label>
+        </div>
+      </div>
+
+      {query.isLoading ? (
+        <div className="px-3 py-4 text-sm text-muted-foreground">Загрузка...</div>
+      ) : rows.length === 0 ? (
+        <div className="rounded-md border px-3 py-6 text-center text-sm text-muted-foreground">
+          {kind === "items" ? "Исключённых позиций нет." : "Исключённых сотрудников нет."}
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full min-w-[760px] text-sm">
+            <thead>
+              <tr className="border-b bg-muted/35">
+                <th className="w-[110px] px-2 py-2 text-left font-medium">Дата ревизии</th>
+                <th className="px-2 py-2 text-left font-medium">
+                  {kind === "items" ? "Позиция" : "Сотрудник"}
+                </th>
+                <th className="px-2 py-2 text-left font-medium">Причина</th>
+                <th className="w-[130px] px-2 py-2 text-left font-medium">Когда / кто</th>
+                <th className="w-[110px] px-2 py-2 text-right font-medium">Действие</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const canReturn = row.audit_status === "draft";
+                const pending =
+                  kind === "items"
+                    ? itemReturnMutation.isPending
+                    : employeeReturnMutation.isPending;
+                return (
+                  <tr className="border-b last:border-b-0" key={row.id}>
+                    <td className="px-2 py-2 align-top">
+                      {row.audit_business_date ? formatDate(row.audit_business_date) : "—"}
+                      {row.audit_status ? (
+                        <div className="mt-1 text-xs">
+                          <AuditStatusBadge status={row.audit_status} />
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-2 py-2 align-top">
+                      {kind === "items" ? (
+                        <>
+                          <div className="font-medium">{row.product_name ?? "—"}</div>
+                          {row.amount ? (
+                            <div className="text-xs text-muted-foreground tabular-nums">
+                              {formatSignedMoney(row.amount)}
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <>
+                          <div className="font-medium">{row.employee_name ?? "—"}</div>
+                          {row.employee_position ? (
+                            <div className="text-xs text-muted-foreground">
+                              {row.employee_position}
+                            </div>
+                          ) : null}
+                        </>
+                      )}
+                    </td>
+                    <td className="px-2 py-2 align-top text-muted-foreground">{row.reason}</td>
+                    <td className="px-2 py-2 align-top text-xs text-muted-foreground">
+                      {row.created_at ? formatDateTime(row.created_at) : "—"}
+                      <div>{row.created_by_name ?? "—"}</div>
+                    </td>
+                    <td className="px-2 py-2 text-right align-top">
+                      <Button
+                        disabled={!canReturn || pending}
+                        onClick={() => {
+                          if (kind === "items" && row.item_id) {
+                            itemReturnMutation.mutate({
+                              auditId: row.audit_id,
+                              itemId: row.item_id,
+                            });
+                          } else if (kind === "employees" && row.employee_id) {
+                            employeeReturnMutation.mutate({
+                              auditId: row.audit_id,
+                              employeeId: row.employee_id,
+                            });
+                          }
+                        }}
+                        size="sm"
+                        title={
+                          !canReturn
+                            ? "Вернуть можно только в черновике ревизии"
+                            : undefined
+                        }
+                        type="button"
+                        variant="ghost"
+                      >
+                        Вернуть
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AuditDetail({
   audit,
   isComputing,
@@ -797,8 +999,6 @@ function AuditDetail({
   const isOverrideDisabled =
     audit.status !== "draft" || overrideMutation.isPending || itemExclusionMutation.isPending;
   const isExclusionDisabled = audit.status !== "draft" || exclusionMutation.isPending;
-  const itemExclusionsLog = audit.item_exclusions_log ?? [];
-  const employeeExclusionsLog = audit.employee_exclusions_log ?? [];
 
   return (
     <section className="space-y-4 rounded-lg border bg-card p-4">
@@ -1020,147 +1220,6 @@ function AuditDetail({
           )}
         </div>
       </div>
-
-      <section className="space-y-3 border-t pt-4">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <PanelTitle title="Журнал исключений" />
-          <span className="text-xs text-muted-foreground">
-            Только в этой ревизии. Возврат меняет расчёт.
-          </span>
-        </div>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="space-y-2">
-            <div className="text-sm font-medium text-muted-foreground">
-              Исключённые позиции ({itemExclusionsLog.length})
-            </div>
-            {itemExclusionsLog.length ? (
-              <div className="overflow-x-auto rounded-md border">
-                <table className="w-full min-w-[560px] text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/35">
-                      <th className="px-2 py-2 text-left font-medium">Позиция</th>
-                      <th className="px-2 py-2 text-left font-medium">Причина</th>
-                      <th className="px-2 py-2 text-left font-medium w-[120px]">Когда / кто</th>
-                      <th className="px-2 py-2 text-right font-medium w-[88px]">Действие</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {itemExclusionsLog.map((row) => (
-                      <tr className="border-b last:border-b-0" key={row.id}>
-                        <td className="px-2 py-2 align-top">
-                          <div className="font-medium">{row.product_name ?? "—"}</div>
-                          {row.amount ? (
-                            <div className="text-xs text-muted-foreground tabular-nums">
-                              {formatSignedMoney(row.amount)}
-                            </div>
-                          ) : null}
-                        </td>
-                        <td className="px-2 py-2 align-top text-muted-foreground">
-                          {row.reason}
-                        </td>
-                        <td className="px-2 py-2 align-top text-xs text-muted-foreground">
-                          {row.created_at ? formatDateTime(row.created_at) : "—"}
-                          <div>{row.created_by_name ?? "—"}</div>
-                        </td>
-                        <td className="px-2 py-2 text-right align-top">
-                          <Button
-                            disabled={
-                              isFinalized ||
-                              itemExclusionMutation.isPending ||
-                              !row.item_id
-                            }
-                            onClick={() =>
-                              itemExclusionMutation.mutate({
-                                itemId: row.item_id!,
-                                excluded: false,
-                                reason: null,
-                              })
-                            }
-                            size="sm"
-                            type="button"
-                            variant="ghost"
-                          >
-                            Вернуть
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="rounded-md border px-3 py-4 text-sm text-muted-foreground">
-                Нет исключённых позиций.
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <div className="text-sm font-medium text-muted-foreground">
-              Исключённые сотрудники ({employeeExclusionsLog.length})
-            </div>
-            {employeeExclusionsLog.length ? (
-              <div className="overflow-x-auto rounded-md border">
-                <table className="w-full min-w-[560px] text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/35">
-                      <th className="px-2 py-2 text-left font-medium">Сотрудник</th>
-                      <th className="px-2 py-2 text-left font-medium">Причина</th>
-                      <th className="px-2 py-2 text-left font-medium w-[120px]">Когда / кто</th>
-                      <th className="px-2 py-2 text-right font-medium w-[88px]">Действие</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {employeeExclusionsLog.map((row) => (
-                      <tr className="border-b last:border-b-0" key={row.id}>
-                        <td className="px-2 py-2 align-top">
-                          <div className="font-medium">{row.employee_name ?? "—"}</div>
-                          {row.employee_position ? (
-                            <div className="text-xs text-muted-foreground">
-                              {row.employee_position}
-                            </div>
-                          ) : null}
-                        </td>
-                        <td className="px-2 py-2 align-top text-muted-foreground">
-                          {row.reason}
-                        </td>
-                        <td className="px-2 py-2 align-top text-xs text-muted-foreground">
-                          {row.created_at ? formatDateTime(row.created_at) : "—"}
-                          <div>{row.created_by_name ?? "—"}</div>
-                        </td>
-                        <td className="px-2 py-2 text-right align-top">
-                          <Button
-                            disabled={
-                              isFinalized ||
-                              exclusionMutation.isPending ||
-                              !row.employee_id
-                            }
-                            onClick={() =>
-                              exclusionMutation.mutate({
-                                employeeId: row.employee_id!,
-                                excluded: false,
-                              })
-                            }
-                            size="sm"
-                            type="button"
-                            variant="ghost"
-                          >
-                            Вернуть
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="rounded-md border px-3 py-4 text-sm text-muted-foreground">
-                Нет исключённых сотрудников.
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
 
       <Dialog open={Boolean(moveTarget)} onOpenChange={(open) => !open && setMoveTarget(null)}>
         <DialogContent>
@@ -1712,6 +1771,7 @@ async function invalidateInventory(
 ) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ["inventory-audits"] }),
+    queryClient.invalidateQueries({ queryKey: ["inventory-exclusions"] }),
     auditId ? queryClient.invalidateQueries({ queryKey: ["inventory-audit", auditId] }) : null,
   ]);
 }

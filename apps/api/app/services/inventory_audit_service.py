@@ -348,6 +348,115 @@ async def get_audit_with_items(
     }
 
 
+async def list_all_exclusions(
+    session: AsyncSession,
+    *,
+    audit_date_from: date | None = None,
+    audit_date_to: date | None = None,
+    employee_id: uuid.UUID | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    audit_filters = []
+    if audit_date_from is not None:
+        audit_filters.append(InventoryAudit.business_date >= audit_date_from)
+    if audit_date_to is not None:
+        audit_filters.append(InventoryAudit.business_date <= audit_date_to)
+
+    item_q = (
+        select(InventoryAuditItemExclusion)
+        .options(
+            selectinload(InventoryAuditItemExclusion.audit),
+            selectinload(InventoryAuditItemExclusion.item),
+            selectinload(InventoryAuditItemExclusion.created_by),
+        )
+        .join(InventoryAudit, InventoryAuditItemExclusion.audit_id == InventoryAudit.id)
+        .order_by(
+            InventoryAudit.business_date.desc(),
+            InventoryAuditItemExclusion.created_at.desc(),
+        )
+    )
+    for audit_filter in audit_filters:
+        item_q = item_q.where(audit_filter)
+    item_rows = (await session.scalars(item_q)).unique().all()
+
+    emp_q = (
+        select(InventoryAuditEmployeeExclusion)
+        .options(
+            selectinload(InventoryAuditEmployeeExclusion.audit),
+            selectinload(InventoryAuditEmployeeExclusion.employee),
+            selectinload(InventoryAuditEmployeeExclusion.created_by),
+        )
+        .join(InventoryAudit, InventoryAuditEmployeeExclusion.audit_id == InventoryAudit.id)
+        .order_by(
+            InventoryAudit.business_date.desc(),
+            InventoryAuditEmployeeExclusion.created_at.desc(),
+        )
+    )
+    for audit_filter in audit_filters:
+        emp_q = emp_q.where(audit_filter)
+    if employee_id is not None:
+        emp_q = emp_q.where(InventoryAuditEmployeeExclusion.employee_id == employee_id)
+    emp_rows = (await session.scalars(emp_q)).unique().all()
+
+    return {
+        "items": [
+            {
+                "id": str(exclusion.id),
+                "audit_id": str(exclusion.audit_id),
+                "audit_business_date": (
+                    exclusion.audit.business_date if exclusion.audit is not None else None
+                ),
+                "audit_status": exclusion.audit.status if exclusion.audit is not None else None,
+                "item_id": str(exclusion.item_id),
+                "product_name": (
+                    exclusion.item.product_name_snapshot
+                    if exclusion.item is not None
+                    else None
+                ),
+                "amount": (
+                    decimal_string(item_signed_amount(exclusion.item))
+                    if exclusion.item is not None
+                    else None
+                ),
+                "reason": exclusion.reason,
+                "created_by_name": (
+                    exclusion.created_by.full_name
+                    if exclusion.created_by is not None
+                    else None
+                ),
+                "created_at": exclusion.created_at,
+            }
+            for exclusion in item_rows
+        ],
+        "employees": [
+            {
+                "id": str(exclusion.id),
+                "audit_id": str(exclusion.audit_id),
+                "audit_business_date": (
+                    exclusion.audit.business_date if exclusion.audit is not None else None
+                ),
+                "audit_status": exclusion.audit.status if exclusion.audit is not None else None,
+                "employee_id": str(exclusion.employee_id),
+                "employee_name": (
+                    exclusion.employee.full_name if exclusion.employee is not None else None
+                ),
+                "employee_position": (
+                    getattr(exclusion.employee, "position", None)
+                    if exclusion.employee is not None
+                    else None
+                ),
+                "reason": exclusion.reason,
+                "created_by_name": (
+                    exclusion.created_by.full_name
+                    if exclusion.created_by is not None
+                    else None
+                ),
+                "created_at": exclusion.created_at,
+            }
+            for exclusion in emp_rows
+        ],
+    }
+
+
 def summarize_audit_items(
     items: list[InventoryAuditItem],
     *,

@@ -18,6 +18,7 @@ from app.models import (
     AgentRun,
     AttendanceEntry,
     Employee,
+    InventoryAuditEmployeeExclusion,
     InventoryAuditItemExclusion,
     InventoryAuditPosition,
     PayrollAdjustment,
@@ -869,6 +870,94 @@ def test_exclusions_log_empty_when_no_exclusions() -> None:
     assert payload["employee_exclusions_log"] == []
 
 
+@pytest.mark.asyncio
+async def test_list_audit_exclusions_returns_both_sections() -> None:
+    item_audit = exclusion_audit(date(2026, 5, 20))
+    employee_audit = exclusion_audit(date(2026, 5, 27), status="applied")
+    employee_row = employee("Повар Иван", "Повар")
+    session = AuditExclusionsSession(
+        items=[item_exclusion_row(item_audit, name="Лосось", amount="-7000")],
+        employees=[
+            employee_exclusion_row(
+                employee_audit,
+                employee_row,
+                reason="не участвовал",
+            )
+        ],
+    )
+
+    payload = await inventory_routes.list_audit_exclusions(
+        session,  # type: ignore[arg-type]
+        finance_actor(),
+    )
+
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["audit_business_date"] == date(2026, 5, 20)
+    assert payload["items"][0]["product_name"] == "Лосось"
+    assert payload["items"][0]["amount"] == "-7000.00"
+    assert len(payload["employees"]) == 1
+    assert payload["employees"][0]["audit_business_date"] == date(2026, 5, 27)
+    assert payload["employees"][0]["audit_status"] == "applied"
+    assert payload["employees"][0]["employee_name"] == "Повар Иван"
+
+
+@pytest.mark.asyncio
+async def test_list_audit_exclusions_filters_by_audit_date() -> None:
+    old_audit = exclusion_audit(date(2026, 5, 20))
+    matching_audit = exclusion_audit(date(2026, 5, 27))
+    old_employee = employee("Старый сотрудник", "Повар")
+    matching_employee = employee("Новый сотрудник", "Повар")
+    session = AuditExclusionsSession(
+        items=[
+            item_exclusion_row(old_audit, name="Старый товар"),
+            item_exclusion_row(matching_audit, name="Новый товар"),
+        ],
+        employees=[
+            employee_exclusion_row(old_audit, old_employee),
+            employee_exclusion_row(matching_audit, matching_employee),
+        ],
+    )
+
+    payload = await inventory_routes.list_audit_exclusions(
+        session,  # type: ignore[arg-type]
+        finance_actor(),
+        audit_date_from=date(2026, 5, 25),
+        audit_date_to=date(2026, 5, 31),
+    )
+
+    assert [row["product_name"] for row in payload["items"]] == ["Новый товар"]
+    assert [row["employee_name"] for row in payload["employees"]] == ["Новый сотрудник"]
+    assert payload["items"][0]["audit_business_date"] == date(2026, 5, 27)
+    assert payload["employees"][0]["audit_business_date"] == date(2026, 5, 27)
+
+
+@pytest.mark.asyncio
+async def test_list_audit_exclusions_filters_employees_by_employee_id() -> None:
+    audit = exclusion_audit(date(2026, 5, 27))
+    alpha = employee("Alpha", "Повар")
+    beta = employee("Beta", "Кассир")
+    session = AuditExclusionsSession(
+        items=[
+            item_exclusion_row(audit, name="Лосось"),
+            item_exclusion_row(audit, name="Рис"),
+        ],
+        employees=[
+            employee_exclusion_row(audit, alpha),
+            employee_exclusion_row(audit, beta),
+        ],
+    )
+
+    payload = await inventory_routes.list_audit_exclusions(
+        session,  # type: ignore[arg-type]
+        finance_actor(),
+        employee_id=alpha.id,
+    )
+
+    assert [row["product_name"] for row in payload["items"]] == ["Лосось", "Рис"]
+    assert [row["employee_name"] for row in payload["employees"]] == ["Alpha"]
+    assert payload["employees"][0]["employee_id"] == str(alpha.id)
+
+
 def test_remap_migration_links_old_items_by_guid(monkeypatch: pytest.MonkeyPatch) -> None:
     migration_path = (
         Path(__file__).parents[1] / "alembic/versions/0042_remap_inventory_items_to_positions.py"
@@ -1333,6 +1422,57 @@ def employee(name: str, position: str = "Повар") -> SimpleNamespace:
     return SimpleNamespace(id=uuid.uuid4(), full_name=name, position=position)
 
 
+def exclusion_audit(
+    business_date: date,
+    *,
+    status: str = "draft",
+) -> SimpleNamespace:
+    return SimpleNamespace(id=uuid.uuid4(), business_date=business_date, status=status)
+
+
+def item_exclusion_row(
+    audit: SimpleNamespace,
+    *,
+    name: str = "Лосось",
+    amount: str = "-1000",
+    reason: str = "брак",
+) -> SimpleNamespace:
+    item_id = uuid.uuid4()
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        audit_id=audit.id,
+        audit=audit,
+        item_id=item_id,
+        item=SimpleNamespace(
+            id=item_id,
+            product_name_snapshot=name,
+            amount=Decimal(amount),
+            shortage_amount=abs(Decimal(amount)) if Decimal(amount) < 0 else Decimal("0"),
+        ),
+        reason=reason,
+        created_by=SimpleNamespace(full_name="Финансист"),
+        created_at=datetime.combine(audit.business_date, datetime.min.time(), tzinfo=UTC),
+    )
+
+
+def employee_exclusion_row(
+    audit: SimpleNamespace,
+    employee_row: SimpleNamespace,
+    *,
+    reason: str = "не участвовал",
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        audit_id=audit.id,
+        audit=audit,
+        employee_id=employee_row.id,
+        employee=employee_row,
+        reason=reason,
+        created_by=SimpleNamespace(full_name="Финансист"),
+        created_at=datetime.combine(audit.business_date, datetime.min.time(), tzinfo=UTC),
+    )
+
+
 def finance_actor() -> CurrentActor:
     return CurrentActor(roles=frozenset({"finance_manager"}), user_id=uuid.uuid4())
 
@@ -1413,8 +1553,46 @@ class FakeScalarResult:
     def __init__(self, rows: list[Any]) -> None:
         self._rows = rows
 
+    def unique(self) -> FakeScalarResult:
+        return self
+
     def all(self) -> list[Any]:
         return self._rows
+
+
+class AuditExclusionsSession:
+    def __init__(
+        self,
+        *,
+        items: list[SimpleNamespace],
+        employees: list[SimpleNamespace],
+    ) -> None:
+        self.items = items
+        self.employees = employees
+
+    async def scalars(self, query: Any) -> FakeScalarResult:
+        entity = query.column_descriptions[0].get("entity")
+        rows = self.items if entity is InventoryAuditItemExclusion else self.employees
+        filtered = self._filter_rows(list(rows), query)
+        filtered.sort(
+            key=lambda row: (row.audit.business_date, row.created_at),
+            reverse=True,
+        )
+        return FakeScalarResult(filtered)
+
+    def _filter_rows(self, rows: list[SimpleNamespace], query: Any) -> list[SimpleNamespace]:
+        result = rows
+        for criterion in getattr(query, "_where_criteria", ()):
+            left_name = getattr(getattr(criterion, "left", None), "name", None)
+            operator_name = getattr(getattr(criterion, "operator", None), "__name__", "")
+            value = getattr(getattr(criterion, "right", None), "value", None)
+            if left_name == "business_date" and operator_name == "ge":
+                result = [row for row in result if row.audit.business_date >= value]
+            elif left_name == "business_date" and operator_name == "le":
+                result = [row for row in result if row.audit.business_date <= value]
+            elif left_name == "employee_id" and operator_name == "eq":
+                result = [row for row in result if getattr(row, "employee_id", None) == value]
+        return result
 
 
 class InventorySyncSession:
