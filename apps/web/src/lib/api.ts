@@ -398,6 +398,40 @@ export type PayrollPersonalReport = {
   };
 };
 
+export type PayrollAggregate = {
+  date_from: string;
+  date_to: string;
+  employees_count: number;
+  runs_count: number;
+  totals: {
+    base_pay: string;
+    premium: string;
+    percent_pay: string;
+    vacation_pay: string;
+    fund_accrual: string;
+    deduction: string;
+    bonus_total: string;
+    penalty_total: string;
+    deposit_withheld: string;
+    gross: string;
+    total_payable: string;
+  };
+  periods: Array<{
+    period_id: string;
+    period_start: string;
+    period_end: string;
+    run_id: string;
+    run_status: string;
+    lines_count: number;
+    total_payable: string;
+    base_pay: string;
+    premium: string;
+    percent_pay: string;
+    deduction: string;
+    fund_accrual: string;
+  }>;
+};
+
 export type AccumulationFundStatus = "active" | "paid_out" | "forfeited";
 
 export type AccumulationFundSummary = {
@@ -2133,6 +2167,14 @@ export async function getEmployeePayrollReport(params: {
   date_to: string;
 }): Promise<PayrollPersonalReport> {
   const response = await api.get<PayrollPersonalReport>("/payroll/employee-report", { params });
+  return response.data;
+}
+
+export async function getPayrollAggregate(params: {
+  date_from: string;
+  date_to: string;
+}): Promise<PayrollAggregate> {
+  const response = await api.get<PayrollAggregate>("/payroll/aggregate", { params });
   return response.data;
 }
 

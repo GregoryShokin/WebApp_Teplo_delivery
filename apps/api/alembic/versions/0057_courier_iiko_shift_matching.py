@@ -25,6 +25,7 @@ def upgrade() -> None:
         "helping",
         "short_shift",
         name="courier_shift_match_status",
+        create_type=False,
     )
     match_status_enum.create(op.get_bind(), checkfirst=True)
 

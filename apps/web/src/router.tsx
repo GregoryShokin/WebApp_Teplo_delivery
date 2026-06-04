@@ -70,6 +70,14 @@ const routes: AppRoute[] = [
         render: ({ navigate }) => <PayrollRoute activeTab="audits" onNavigate={navigate} />,
       },
       {
+        path: "accruals",
+        render: ({ navigate }) => <PayrollRoute activeTab="accruals" onNavigate={navigate} />,
+      },
+      {
+        path: "personal",
+        render: ({ navigate }) => <PayrollRoute activeTab="personal" onNavigate={navigate} />,
+      },
+      {
         path: "runs",
         render: ({ navigate }) => (
           <RedirectRoute

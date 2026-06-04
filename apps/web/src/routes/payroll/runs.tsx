@@ -42,8 +42,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { EmptyState } from "@/components/ui-app/EmptyState";
 import { PageHeader } from "@/components/ui-app/PageHeader";
+import { PayrollAccrualsTab } from "@/routes/payroll/accruals-tab";
 import { PayrollAdjustmentsRoute } from "@/routes/payroll/adjustments";
 import { InventoryAuditsRoute } from "@/routes/payroll/audits";
+import { PayrollPersonalReportPageTab } from "@/routes/payroll/personal-tab";
 import { StatusBadge } from "@/components/ui-app/StatusBadge";
 import {
   type AccumulationFundAccount,
@@ -71,7 +73,7 @@ type PayrollRunsRouteProps = {
   onNavigate: (path: string) => void;
 };
 
-type PayrollActiveTab = "runs" | "fund" | "adjustments" | "audits";
+type PayrollActiveTab = "runs" | "fund" | "adjustments" | "audits" | "accruals" | "personal";
 
 const PAYROLL_ACTIVE_TAB_STORAGE_KEY = "payroll.activeTab";
 
@@ -254,17 +256,19 @@ export function PayrollRunsRoute({
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-5">
-        <TabsList>
+        <TabsList className="h-auto flex-wrap justify-start">
           <TabsTrigger value="runs">Расчёты</TabsTrigger>
           <TabsTrigger value="fund">Накопительный фонд</TabsTrigger>
           <TabsTrigger value="adjustments">Премии и штрафы</TabsTrigger>
           <TabsTrigger value="audits">Ревизии</TabsTrigger>
+          <TabsTrigger value="accruals">Начисления</TabsTrigger>
+          <TabsTrigger value="personal">Персональный отчёт</TabsTrigger>
         </TabsList>
 
         {invalidPath ? (
           <EmptyState
             title="Раздел не найден"
-            description="Откройте вкладку «Расчёты», «Накопительный фонд», «Премии и штрафы» или «Ревизии»."
+            description="Откройте вкладку «Расчёты», «Накопительный фонд», «Премии и штрафы», «Ревизии», «Начисления» или «Персональный отчёт»."
           />
         ) : (
           <>
@@ -414,6 +418,14 @@ export function PayrollRunsRoute({
             <TabsContent className="mt-0" value="audits">
               <InventoryAuditsRoute onNavigate={onNavigate} />
             </TabsContent>
+
+            <TabsContent className="mt-0 space-y-5" value="accruals">
+              <PayrollAccrualsTab onNavigate={onNavigate} />
+            </TabsContent>
+
+            <TabsContent className="mt-0 space-y-5" value="personal">
+              <PayrollPersonalReportPageTab />
+            </TabsContent>
           </>
         )}
       </Tabs>
@@ -428,11 +440,24 @@ function payrollTabPath(tab: PayrollActiveTab) {
   if (tab === "audits") {
     return "/payroll/audits";
   }
+  if (tab === "accruals") {
+    return "/payroll/accruals";
+  }
+  if (tab === "personal") {
+    return "/payroll/personal";
+  }
   return tab === "adjustments" ? "/payroll/adjustments" : "/payroll";
 }
 
 function isPayrollTab(value: unknown): value is PayrollActiveTab {
-  return value === "runs" || value === "fund" || value === "adjustments" || value === "audits";
+  return (
+    value === "runs" ||
+    value === "fund" ||
+    value === "adjustments" ||
+    value === "audits" ||
+    value === "accruals" ||
+    value === "personal"
+  );
 }
 
 function PayrollMetric({

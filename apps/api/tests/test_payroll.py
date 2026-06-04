@@ -1159,6 +1159,61 @@ class PersonalReportFakeSession:
         return PersonalReportScalarResult([])
 
 
+class PayrollAggregateExecuteResult:
+    def __init__(self, rows: list[tuple[PayrollLine, PayrollRun, PayrollPeriod]]) -> None:
+        self.rows = rows
+
+    def all(self) -> list[tuple[PayrollLine, PayrollRun, PayrollPeriod]]:
+        return self.rows
+
+
+class PayrollAggregateFakeSession:
+    def __init__(self, rows: list[tuple[PayrollLine, PayrollRun, PayrollPeriod]]) -> None:
+        self.rows = rows
+        self.statements: list[Any] = []
+
+    async def execute(self, stmt: Any) -> PayrollAggregateExecuteResult:
+        self.statements.append(stmt)
+        date_from, date_to, statuses = payroll_aggregate_query_filters(stmt)
+        rows = [
+            (line, run, period)
+            for line, run, period in self.rows
+            if (date_to is None or period.start_date <= date_to)
+            and (date_from is None or period.end_date >= date_from)
+            and (not statuses or run.status in statuses)
+        ]
+        return PayrollAggregateExecuteResult(rows)
+
+
+def payroll_aggregate_query_filters(stmt: Any) -> tuple[date | None, date | None, set[str]]:
+    try:
+        params = stmt.compile().params
+    except Exception:  # noqa: BLE001
+        return None, None, set()
+    date_to = next(
+        (
+            value
+            for key, value in params.items()
+            if "start_date" in key and isinstance(value, date)
+        ),
+        None,
+    )
+    date_from = next(
+        (
+            value
+            for key, value in params.items()
+            if "end_date" in key and isinstance(value, date)
+        ),
+        None,
+    )
+    statuses_value = next(
+        (value for key, value in params.items() if "status" in key),
+        (),
+    )
+    statuses = set(statuses_value) if isinstance(statuses_value, (list, tuple, set)) else set()
+    return date_from, date_to, statuses
+
+
 class FundScalarResult:
     def __init__(self, items: list[Any]) -> None:
         self.items = items
@@ -3622,6 +3677,193 @@ def test_personal_report_404_for_unknown_employee() -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Employee not found"
+
+
+def test_payroll_aggregate_returns_totals_for_overlapping_periods() -> None:
+    app = create_app()
+    first_employee_id = uuid.uuid4()
+    second_employee_id = uuid.uuid4()
+    first_period = make_period(
+        start=date(2026, 5, 1),
+        end=date(2026, 5, 7),
+        payroll_date=date(2026, 5, 8),
+    )
+    second_period = make_period(
+        start=date(2026, 5, 8),
+        end=date(2026, 5, 14),
+        payroll_date=date(2026, 5, 15),
+    )
+    outside_period = make_period(
+        start=date(2026, 6, 1),
+        end=date(2026, 6, 7),
+        payroll_date=date(2026, 6, 8),
+    )
+    first_run = make_aggregate_run(first_period, "completed")
+    second_run = make_aggregate_run(second_period, "finalized")
+    outside_run = make_aggregate_run(outside_period, "completed")
+    first_line = make_payroll_line(
+        first_run.id,
+        first_employee_id,
+        components={
+            "days": [],
+            "deposit_withholding": "250",
+            "adjustments": {
+                "bonuses": [{"amount": "300"}],
+                "penalties": [{"amount": "100"}],
+            },
+        },
+    )
+    second_line = make_payroll_line(
+        second_run.id,
+        second_employee_id,
+        components={
+            "days": [],
+            "deposit_withholding": "75",
+            "adjustments": {
+                "bonuses": [{"amount": "200"}],
+                "penalties": [{"amount": "50"}],
+            },
+        },
+    )
+    outside_line = make_payroll_line(
+        outside_run.id,
+        uuid.uuid4(),
+        components={
+            "days": [],
+            "deposit_withholding": "999",
+            "adjustments": {"bonuses": [{"amount": "999"}], "penalties": []},
+        },
+    )
+    session = PayrollAggregateFakeSession(
+        [
+            (outside_line, outside_run, outside_period),
+            (first_line, first_run, first_period),
+            (second_line, second_run, second_period),
+        ]
+    )
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/payroll/aggregate",
+                headers={"X-User-Role": "finance_manager"},
+                params={"date_from": "2026-05-05", "date_to": "2026-05-12"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["employees_count"] == 2
+    assert payload["runs_count"] == 2
+    assert payload["totals"]["base_pay"] == "20000.00"
+    assert payload["totals"]["premium"] == "3000.00"
+    assert payload["totals"]["percent_pay"] == "1500.00"
+    assert payload["totals"]["deduction"] == "500.00"
+    assert payload["totals"]["bonus_total"] == "500.00"
+    assert payload["totals"]["penalty_total"] == "150.00"
+    assert payload["totals"]["deposit_withheld"] == "325.00"
+    assert payload["totals"]["gross"] == "25000.00"
+    assert payload["totals"]["total_payable"] == "24000.00"
+    assert [period["period_id"] for period in payload["periods"]] == [
+        str(second_period.id),
+        str(first_period.id),
+    ]
+
+
+def test_payroll_aggregate_validates_dates() -> None:
+    app = create_app()
+    session = PayrollAggregateFakeSession([])
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/payroll/aggregate",
+                headers={"X-User-Role": "finance_manager"},
+                params={"date_from": "2026-06-01", "date_to": "2026-05-01"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "date_from must be <= date_to"
+    assert session.statements == []
+
+
+def test_payroll_aggregate_excludes_running_blocked_runs() -> None:
+    app = create_app()
+    completed_period = make_period(
+        start=date(2026, 5, 1),
+        end=date(2026, 5, 7),
+        payroll_date=date(2026, 5, 8),
+    )
+    finalized_period = make_period(
+        start=date(2026, 5, 8),
+        end=date(2026, 5, 14),
+        payroll_date=date(2026, 5, 15),
+    )
+    running_period = make_period(
+        start=date(2026, 5, 15),
+        end=date(2026, 5, 21),
+        payroll_date=date(2026, 5, 22),
+    )
+    blocked_period = make_period(
+        start=date(2026, 5, 22),
+        end=date(2026, 5, 28),
+        payroll_date=date(2026, 5, 29),
+    )
+    completed_run = make_aggregate_run(completed_period, "completed")
+    finalized_run = make_aggregate_run(finalized_period, "finalized")
+    running_run = make_aggregate_run(running_period, "running")
+    blocked_run = make_aggregate_run(blocked_period, "blocked")
+    session = PayrollAggregateFakeSession(
+        [
+            (make_payroll_line(completed_run.id, uuid.uuid4()), completed_run, completed_period),
+            (make_payroll_line(finalized_run.id, uuid.uuid4()), finalized_run, finalized_period),
+            (make_payroll_line(running_run.id, uuid.uuid4()), running_run, running_period),
+            (make_payroll_line(blocked_run.id, uuid.uuid4()), blocked_run, blocked_period),
+        ]
+    )
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/payroll/aggregate",
+                headers={"X-User-Role": "finance_manager"},
+                params={"date_from": "2026-05-01", "date_to": "2026-05-31"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["runs_count"] == 2
+    assert payload["totals"]["total_payable"] == "24000.00"
+    assert {period["run_status"] for period in payload["periods"]} == {"completed", "finalized"}
+
+
+def make_aggregate_run(period: PayrollPeriod, status: str) -> PayrollRun:
+    return PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime.combine(period.payroll_date, datetime.min.time(), tzinfo=UTC),
+        finished_at=datetime.combine(period.payroll_date, datetime.min.time(), tzinfo=UTC),
+        status=status,
+        blocking_issues=[],
+        summary={},
+    )
 
 
 def test_patch_payroll_line_deposit_override_updates_line_and_audit() -> None:

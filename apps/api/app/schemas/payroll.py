@@ -179,6 +179,44 @@ class PayrollPersonalReportRead(BaseModel):
     totals: PayrollPersonalReportTotalsRead
 
 
+class PayrollAggregateTotals(BaseModel):
+    base_pay: str
+    premium: str
+    percent_pay: str
+    vacation_pay: str
+    fund_accrual: str
+    deduction: str
+    bonus_total: str
+    penalty_total: str
+    deposit_withheld: str
+    gross: str
+    total_payable: str
+
+
+class PayrollAggregatePeriod(BaseModel):
+    period_id: str
+    period_start: date
+    period_end: date
+    run_id: str
+    run_status: str
+    lines_count: int
+    total_payable: str
+    base_pay: str
+    premium: str
+    percent_pay: str
+    deduction: str
+    fund_accrual: str
+
+
+class PayrollAggregateRead(BaseModel):
+    date_from: date
+    date_to: date
+    employees_count: int
+    runs_count: int
+    totals: PayrollAggregateTotals
+    periods: list[PayrollAggregatePeriod]
+
+
 class ShiftLedgerBuildRequest(BaseModel):
     work_date: date
 

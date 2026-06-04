@@ -23,6 +23,7 @@ from app.models import (
 from app.schemas.payroll import (
     DeferredChargeCreate,
     DeferredChargeRead,
+    PayrollAggregateRead,
     PayrollLineDepositOverridePatch,
     PayrollLineRead,
     PayrollPeriodRead,
@@ -40,6 +41,7 @@ from app.services.deferred_audit_charge_service import (
     list_deferred_charges,
 )
 from app.services.payroll_config import list_enabled_role_categories
+from app.services.payroll_aggregate_service import build_aggregate
 from app.services.payroll_personal_report import build_personal_report
 from app.services.payroll_runner import (
     PayrollConflictError,
@@ -150,6 +152,21 @@ async def get_employee_payroll_report(
         return await build_personal_report(session, employee_id, date_from, date_to)
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/aggregate", response_model=PayrollAggregateRead)
+async def get_payroll_aggregate(
+    date_from: date,
+    date_to: date,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    require_finance_manager_plus(actor)
+    if date_from > date_to:
+        raise HTTPException(status_code=422, detail="date_from must be <= date_to")
+    if (date_to - date_from).days > 730:
+        raise HTTPException(status_code=422, detail="Период не больше 2 лет")
+    return await build_aggregate(session, date_from, date_to)
 
 
 @router.post("/runs", response_model=PayrollRunRead)

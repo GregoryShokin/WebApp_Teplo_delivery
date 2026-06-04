@@ -92,18 +92,25 @@ SETTINGS = [
 
 
 def upgrade() -> None:
-    category_enum = postgresql.ENUM("primary", "secondary", name="courier_category")
+    category_enum = postgresql.ENUM(
+        "primary",
+        "secondary",
+        name="courier_category",
+        create_type=False,
+    )
     transaction_enum = postgresql.ENUM(
         "top_up",
         "return",
         "forfeit",
         name="courier_deposit_transaction_type",
+        create_type=False,
     )
     source_enum = postgresql.ENUM(
         "web",
         "telegram",
         "api",
         name="courier_evaluation_source",
+        create_type=False,
     )
     category_enum.create(op.get_bind(), checkfirst=True)
     transaction_enum.create(op.get_bind(), checkfirst=True)

@@ -27,15 +27,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Sheet,
   SheetContent,
@@ -44,7 +36,6 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { EmptyState } from "@/components/ui-app/EmptyState";
@@ -54,7 +45,6 @@ import {
   apiErrorMessage,
   createPayrollRun,
   finalizePayrollRun,
-  getEmployeePayrollReport,
   getEmployees,
   getPayrollRun,
   getPayrollRunLines,
@@ -63,7 +53,6 @@ import {
   type AppSetting,
   type Employee,
   type PayrollLine,
-  type PayrollPersonalReport,
   type PayrollRun,
 } from "@/lib/api";
 import { getAuthSnapshot } from "@/lib/auth";
@@ -100,15 +89,8 @@ type PayrollLineRowModel = {
   hours: number;
 };
 
-type PayrollRunDetailTab = "summary" | "by-employee" | "personal";
-type PayrollPersonalReportPeriod = PayrollPersonalReport["periods"][number];
-type PayrollPersonalReportAdjustment = PayrollPersonalReport["adjustments"][number];
-type PayrollPersonalReportDepositTransaction =
-  PayrollPersonalReport["deposit_transactions"][number];
-
 export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRouteProps) {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<PayrollRunDetailTab>(() => payrollRunTabFromUrl());
   const [isRecalculateDialogOpen, setIsRecalculateDialogOpen] = useState(false);
 
   const runQuery = useQuery({
@@ -191,12 +173,6 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
       return;
     }
     finalizeMutation.mutate();
-  }
-
-  function handleTabChange(value: string) {
-    const nextTab = normalizePayrollRunTab(value);
-    setActiveTab(nextTab);
-    updatePayrollRunTabUrl(nextTab);
   }
 
   return (
@@ -317,34 +293,18 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         />
       </section>
 
-      <Tabs value={activeTab} onValueChange={handleTabChange} className="mt-6">
-        <TabsList className="h-auto flex-wrap justify-start">
-          <TabsTrigger value="summary">Сводка</TabsTrigger>
-          <TabsTrigger value="by-employee">По сотрудникам</TabsTrigger>
-          <TabsTrigger value="personal">Персональный отчёт</TabsTrigger>
-        </TabsList>
+      {runQuery.isError ? (
+        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {(runQuery.error as Error).message}
+        </div>
+      ) : null}
 
-        {runQuery.isError ? (
-          <div className="mt-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {(runQuery.error as Error).message}
-          </div>
-        ) : null}
-
-        <TabsContent value="summary" className="mt-4 data-[state=inactive]:hidden" forceMount>
-          <PayrollSummaryTab run={run} lines={lines} />
-        </TabsContent>
-        <TabsContent value="by-employee" className="mt-4 data-[state=inactive]:hidden" forceMount>
-          <PayrollByEmployeeTab
-            employeesById={employeesById}
-            isLoading={linesQuery.isLoading || runQuery.isLoading}
-            lines={lines}
-            runStatus={run?.status ?? ""}
-          />
-        </TabsContent>
-        <TabsContent value="personal" className="mt-4 data-[state=inactive]:hidden" forceMount>
-          <PayrollPersonalReportTab employees={employeesQuery.data ?? []} lines={lines} run={run} />
-        </TabsContent>
-      </Tabs>
+      <PayrollByEmployeeTab
+        employeesById={employeesById}
+        isLoading={linesQuery.isLoading || runQuery.isLoading}
+        lines={lines}
+        runStatus={run?.status ?? ""}
+      />
     </div>
   );
 }
@@ -585,412 +545,6 @@ function PayrollByEmployeeTab({
           {selectedLine ? <PayrollLineDrawer row={selectedLine} runStatus={runStatus} /> : null}
         </SheetContent>
       </Sheet>
-    </div>
-  );
-}
-
-function PayrollSummaryTab({ lines, run }: { lines: PayrollLine[]; run: PayrollRun | undefined }) {
-  const metrics = useMemo(() => payrollSummaryMetrics(lines), [lines]);
-  const periodLabel = run?.period ? formatPeriodRange(run.period) : "Текущий расчёт";
-  const deductionRatio = metrics.gross > 0 ? metrics.deduction / metrics.gross : null;
-  const settlementRows = [
-    { metric: "Начислено", amount: formatMoney(metrics.gross) },
-    { metric: "Удержания", amount: formatMoney(metrics.deduction) },
-    { metric: "К выплате", amount: formatMoney(metrics.totalPayable) },
-    { metric: "Доля удержаний", amount: formatRatio(deductionRatio) },
-    { metric: "ФОТ", amount: formatMoney(metrics.gross) },
-  ];
-  const settlementColumns: Array<DataTableColumn<(typeof settlementRows)[number]>> = [
-    {
-      key: "metric",
-      header: "Метрика",
-      cell: (row) => row.metric,
-    },
-    {
-      key: "amount",
-      header: "Сумма",
-      cell: (row) => row.amount,
-      className: "text-right font-medium tabular-nums",
-      headerClassName: "text-right",
-    },
-  ];
-  const structureCards = [
-    { label: "Оклад итого", value: metrics.basePay },
-    { label: "Процент от выручки", value: metrics.percentPay },
-    { label: "Надбавки старшинства", value: metrics.seniorityPremium },
-    { label: "Премии", value: metrics.bonusTotal },
-    { label: "Штрафы", value: metrics.penaltyTotal },
-    { label: "Накопительный фонд", value: metrics.fundAccrual },
-    { label: "Депозит", value: metrics.depositWithholding },
-    { label: "Отпуск", value: metrics.vacationPay },
-  ];
-
-  return (
-    <div className="space-y-4">
-      <section className="grid gap-3 md:grid-cols-3">
-        <KpiCard
-          title="С ненулевой выплатой"
-          value={String(metrics.nonZeroEmployeeCount)}
-          description={periodLabel}
-        />
-        <KpiCard
-          title="Средняя выплата"
-          value={formatMoney(metrics.averagePayable)}
-          description="По ненулевым строкам"
-        />
-        <KpiCard
-          title="Строки с удержаниями"
-          value={`${metrics.penaltyLineCount} / ${metrics.depositLineCount}`}
-          description="Штрафы / депозит"
-        />
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {structureCards.map((item) => (
-            <ComponentValue
-              key={item.label}
-              label={item.label}
-              value={formatMoney(item.value)}
-              strong={item.label === "Премии" || item.label === "Оклад итого"}
-            />
-          ))}
-        </div>
-
-        <DataTable
-          columns={settlementColumns}
-          rows={settlementRows}
-          getRowKey={(row) => row.metric}
-        />
-      </section>
-    </div>
-  );
-}
-
-function PayrollPersonalReportTab({
-  employees,
-  lines,
-  run,
-}: {
-  employees: Employee[];
-  lines: PayrollLine[];
-  run: PayrollRun | undefined;
-}) {
-  const sortedEmployees = useMemo(
-    () => [...employees].sort((left, right) => left.full_name.localeCompare(right.full_name, "ru")),
-    [employees],
-  );
-  const defaultEmployeeId = useMemo(() => {
-    const runEmployeeIds = new Set(lines.map((line) => line.employee_id));
-    return (
-      sortedEmployees.find((employee) => runEmployeeIds.has(employee.id))?.id ??
-      sortedEmployees[0]?.id ??
-      ""
-    );
-  }, [lines, sortedEmployees]);
-  const defaultRange = useMemo(
-    () => defaultPersonalReportRange(run?.period),
-    [run?.period?.end_date, run?.period?.start_date],
-  );
-  const [employeeId, setEmployeeId] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [reportParams, setReportParams] = useState<{
-    employee_id: string;
-    date_from: string;
-    date_to: string;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!employeeId && defaultEmployeeId) {
-      setEmployeeId(defaultEmployeeId);
-    }
-  }, [defaultEmployeeId, employeeId]);
-
-  useEffect(() => {
-    if (!dateFrom) {
-      setDateFrom(defaultRange.from);
-    }
-    if (!dateTo) {
-      setDateTo(defaultRange.to);
-    }
-  }, [dateFrom, dateTo, defaultRange.from, defaultRange.to]);
-
-  const reportQuery = useQuery({
-    queryKey: ["payroll-personal-report", reportParams],
-    queryFn: () => {
-      if (!reportParams) {
-        throw new Error("Report params are not set");
-      }
-      return getEmployeePayrollReport(reportParams);
-    },
-    enabled: reportParams !== null,
-  });
-
-  function buildReport() {
-    if (!employeeId || !dateFrom || !dateTo) {
-      toast.error("Выберите сотрудника и даты");
-      return;
-    }
-    if (dateFrom > dateTo) {
-      toast.error("Дата начала должна быть раньше даты окончания");
-      return;
-    }
-    setReportParams({ employee_id: employeeId, date_from: dateFrom, date_to: dateTo });
-  }
-
-  const report = reportQuery.data;
-  const hasReportData = Boolean(
-    report &&
-    (report.periods.length > 0 ||
-      report.adjustments.length > 0 ||
-      report.deposit_transactions.length > 0),
-  );
-  const periodColumns: Array<DataTableColumn<PayrollPersonalReportPeriod>> = [
-    {
-      key: "period",
-      header: "Период",
-      cell: (row) => `${formatDate(row.period_start)} — ${formatDate(row.period_end)}`,
-    },
-    {
-      key: "role",
-      header: "Роль",
-      cell: (row) => row.role,
-    },
-    {
-      key: "base_pay",
-      header: "Оклад",
-      cell: (row) => formatMoney(row.base_pay),
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "premium",
-      header: "Премия",
-      cell: (row) => formatMoney(row.premium),
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "percent_pay",
-      header: "%",
-      cell: (row) => formatMoney(row.percent_pay),
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "fund_accrual",
-      header: "Фонд",
-      cell: (row) => formatMoney(row.fund_accrual),
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "deduction",
-      header: "Удержано",
-      cell: (row) => formatMoney(row.deduction),
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "total_payable",
-      header: "К выплате",
-      cell: (row) => formatMoney(row.total_payable),
-      className: "text-right font-semibold tabular-nums",
-      headerClassName: "text-right",
-    },
-  ];
-  const adjustmentColumns: Array<DataTableColumn<PayrollPersonalReportAdjustment>> = [
-    {
-      key: "work_date",
-      header: "Дата",
-      cell: (row) => formatDate(row.work_date),
-    },
-    {
-      key: "type",
-      header: "Тип",
-      cell: (row) => (
-        <Badge className="rounded-md border-border bg-background text-foreground shadow-none">
-          {adjustmentTypeLabel(row.type)}
-        </Badge>
-      ),
-    },
-    {
-      key: "category",
-      header: "Категория",
-      cell: (row) => row.category_name,
-    },
-    {
-      key: "amount",
-      header: "Сумма",
-      cell: (row) => formatMoney(row.amount),
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "comment",
-      header: "Комментарий",
-      cell: (row) => row.comment ?? <span className="text-muted-foreground">—</span>,
-    },
-  ];
-  const depositColumns: Array<DataTableColumn<PayrollPersonalReportDepositTransaction>> = [
-    {
-      key: "created_at",
-      header: "Дата",
-      cell: (row) => formatDateTime(row.created_at),
-    },
-    {
-      key: "type",
-      header: "Тип",
-      cell: (row) => depositTransactionLabel(row.transaction_type),
-    },
-    {
-      key: "amount",
-      header: "Сумма",
-      cell: (row) => formatMoney(row.amount),
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-  ];
-
-  return (
-    <div className="space-y-4">
-      <section className="grid gap-3 rounded-lg border bg-card p-3 lg:grid-cols-[minmax(220px,1fr)_160px_160px_auto] lg:items-end">
-        <Label className="grid gap-2">
-          <span>Сотрудник</span>
-          <Select
-            disabled={sortedEmployees.length === 0}
-            onValueChange={setEmployeeId}
-            value={employeeId}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Выберите сотрудника" />
-            </SelectTrigger>
-            <SelectContent>
-              {sortedEmployees.map((employee) => (
-                <SelectItem key={employee.id} value={employee.id}>
-                  {employee.full_name}
-                  {employee.status === "inactive" ? " · уволен" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Label>
-
-        <Label className="grid gap-2">
-          <span>С даты</span>
-          <Input
-            onChange={(event) => setDateFrom(event.target.value)}
-            type="date"
-            value={dateFrom}
-          />
-        </Label>
-        <Label className="grid gap-2">
-          <span>По дату</span>
-          <Input onChange={(event) => setDateTo(event.target.value)} type="date" value={dateTo} />
-        </Label>
-
-        <Button
-          disabled={!employeeId || !dateFrom || !dateTo || reportQuery.isFetching}
-          onClick={buildReport}
-          type="button"
-        >
-          {reportQuery.isFetching ? (
-            <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-          ) : null}
-          Построить
-        </Button>
-      </section>
-
-      {reportQuery.isError ? (
-        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {apiErrorMessage(reportQuery.error, "Не удалось построить отчёт")}
-        </div>
-      ) : null}
-
-      {report ? (
-        <div className="space-y-4">
-          <section className="rounded-lg border bg-card p-4">
-            <div className="font-semibold">{report.employee_name}</div>
-            <div className="mt-1 text-sm text-muted-foreground">
-              {[
-                report.employee_position,
-                `${formatDate(report.date_from)} — ${formatDate(report.date_to)}`,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </div>
-          </section>
-
-          {!hasReportData ? (
-            <EmptyState
-              icon={<AlertTriangle className="h-5 w-5" aria-hidden="true" />}
-              title="Нет начислений за выбранный период"
-              description="По выбранным датам нет строк расчёта, корректировок или депозитных операций."
-            />
-          ) : (
-            <>
-              <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <KpiCard
-                  title="К выплате"
-                  value={formatMoney(report.totals.total_payable)}
-                  description="По найденным периодам"
-                />
-                <KpiCard
-                  title="Начислено"
-                  value={formatMoney(
-                    report.totals.base_pay +
-                      report.totals.premium +
-                      report.totals.percent_pay +
-                      report.totals.vacation_pay,
-                  )}
-                  description="Оклад, премия, %, отпуск"
-                />
-                <KpiCard
-                  title="Удержано"
-                  value={formatMoney(report.totals.deduction)}
-                  description="Штрафы и депозит"
-                />
-                <KpiCard
-                  title="Фонд"
-                  value={formatMoney(report.totals.fund_accrual)}
-                  description="Накопительный фонд"
-                />
-              </section>
-
-              <section className="space-y-2">
-                <div className="text-sm font-semibold">Периоды</div>
-                <DataTable
-                  columns={periodColumns}
-                  rows={report.periods}
-                  getRowKey={(row) => `${row.run_id}-${row.role}`}
-                  emptyMessage="Нет начислений за выбранный период"
-                />
-              </section>
-
-              <section className="space-y-2">
-                <div className="text-sm font-semibold">Премии и штрафы</div>
-                <DataTable
-                  columns={adjustmentColumns}
-                  rows={report.adjustments}
-                  getRowKey={(row) => row.id}
-                  emptyMessage="Корректировок нет"
-                />
-              </section>
-
-              <section className="space-y-2">
-                <div className="text-sm font-semibold">Депозит</div>
-                <DataTable
-                  columns={depositColumns}
-                  rows={report.deposit_transactions}
-                  getRowKey={(row) => row.id}
-                  emptyMessage="Операций депозита нет"
-                />
-              </section>
-            </>
-          )}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -1420,73 +974,6 @@ function linePenaltyTotal(line: PayrollLine) {
   return lineAdjustments(line).penalties.reduce((sum, item) => sum + Math.max(item.amount, 0), 0);
 }
 
-function lineBonusTotal(line: PayrollLine) {
-  return lineAdjustments(line).bonuses.reduce((sum, item) => sum + Math.max(item.amount, 0), 0);
-}
-
-function lineDepositWithholding(line: PayrollLine) {
-  const fromComponents = numericComponent(line.components, "deposit_withholding");
-  return fromComponents ?? line.deposit_withholding;
-}
-
-function lineSeniorityPremiumTotal(line: PayrollLine) {
-  const fromComponents = numericComponent(line.components, "seniority_premium");
-  if (fromComponents !== null) {
-    return fromComponents;
-  }
-  return lineDays(line).reduce((sum, day) => sum + day.seniorityAllowancePay, 0);
-}
-
-function payrollSummaryMetrics(lines: PayrollLine[]) {
-  const nonZeroLines = lines.filter((line) => line.total_payable > 0);
-  const nonZeroTotalPayable = nonZeroLines.reduce((sum, line) => sum + line.total_payable, 0);
-  const totals = lines.reduce(
-    (sum, line) => {
-      const bonusTotal = lineBonusTotal(line);
-      const penaltyTotal = linePenaltyTotal(line);
-      const depositWithholding = lineDepositWithholding(line);
-      sum.basePay += line.base_pay;
-      sum.percentPay += line.percent_pay;
-      sum.seniorityPremium += lineSeniorityPremiumTotal(line);
-      sum.bonusTotal += bonusTotal;
-      sum.penaltyTotal += penaltyTotal;
-      sum.fundAccrual += line.fund_accrual;
-      sum.depositWithholding += depositWithholding;
-      sum.vacationPay += line.vacation_pay;
-      sum.deduction += line.deduction;
-      sum.totalPayable += line.total_payable;
-      sum.gross +=
-        line.base_pay + line.premium + line.percent_pay + line.vacation_pay + line.fund_accrual;
-      if (penaltyTotal > 0) {
-        sum.penaltyLineCount += 1;
-      }
-      if (depositWithholding > 0) {
-        sum.depositLineCount += 1;
-      }
-      return sum;
-    },
-    {
-      averagePayable: 0,
-      basePay: 0,
-      bonusTotal: 0,
-      deduction: 0,
-      depositLineCount: 0,
-      depositWithholding: 0,
-      fundAccrual: 0,
-      gross: 0,
-      nonZeroEmployeeCount: nonZeroLines.length,
-      penaltyLineCount: 0,
-      penaltyTotal: 0,
-      percentPay: 0,
-      seniorityPremium: 0,
-      totalPayable: 0,
-      vacationPay: 0,
-    },
-  );
-  totals.averagePayable = nonZeroLines.length > 0 ? nonZeroTotalPayable / nonZeroLines.length : 0;
-  return totals;
-}
-
 function adjustmentItems(value: unknown): AdjustmentComponent[] {
   if (!Array.isArray(value)) {
     return [];
@@ -1498,14 +985,6 @@ function adjustmentItems(value: unknown): AdjustmentComponent[] {
     amount: Number(item.amount ?? 0),
     comment: typeof item.comment === "string" && item.comment ? item.comment : null,
   }));
-}
-
-function numericComponent(components: Record<string, unknown>, key: string) {
-  if (!(key in components)) {
-    return null;
-  }
-  const value = Number(components[key] ?? 0);
-  return Number.isFinite(value) ? value : null;
 }
 
 function canFinalizeByRole() {
@@ -1556,76 +1035,6 @@ function shouldOpenStaff(type: string) {
 
 function shouldOpenShift(type: string) {
   return type.includes("attendance") || type.includes("shift");
-}
-
-function payrollRunTabFromUrl(): PayrollRunDetailTab {
-  if (typeof window === "undefined") {
-    return "summary";
-  }
-  return normalizePayrollRunTab(new URLSearchParams(window.location.search).get("tab"));
-}
-
-function normalizePayrollRunTab(value: string | null | undefined): PayrollRunDetailTab {
-  if (value === "by-employee" || value === "personal" || value === "summary") {
-    return value;
-  }
-  return "summary";
-}
-
-function updatePayrollRunTabUrl(tab: PayrollRunDetailTab) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  const url = new URL(window.location.href);
-  if (tab === "summary") {
-    url.searchParams.delete("tab");
-  } else {
-    url.searchParams.set("tab", tab);
-  }
-  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
-}
-
-function defaultPersonalReportRange(period: PayrollRun["period"] | null | undefined) {
-  const fallbackEnd = dateInputValue(new Date());
-  const end = period?.end_date ?? fallbackEnd;
-  const startBasis = period?.start_date ?? end;
-  return {
-    from: dateInputValue(addDays(parseIsoDate(startBasis), -90)),
-    to: end,
-  };
-}
-
-function adjustmentTypeLabel(type: PayrollPersonalReportAdjustment["type"]) {
-  return type === "bonus" ? "Премия" : "Штраф";
-}
-
-function depositTransactionLabel(type: string) {
-  const labels: Record<string, string> = {
-    accrual: "Начисление",
-    payout: "Выплата",
-    write_off: "Списание",
-    dismissal_payout: "Выплата при увольнении",
-    dismissal_writeoff: "Списание при увольнении",
-  };
-  return labels[type] ?? type;
-}
-
-function parseIsoDate(value: string) {
-  const [year, month, day] = value.split("-").map(Number);
-  return new Date(year, month - 1, day);
-}
-
-function addDays(value: Date, days: number) {
-  const date = new Date(value);
-  date.setDate(date.getDate() + days);
-  return date;
-}
-
-function dateInputValue(value: Date) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 function formatHours(value: number) {
