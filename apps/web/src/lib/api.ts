@@ -343,6 +343,61 @@ export type PayrollLineDepositOverridePatch = {
   deposit_exclusion_reason?: string | null;
 };
 
+export type PayrollPersonalReport = {
+  employee_id: string;
+  employee_name: string;
+  employee_position: string | null;
+  date_from: string;
+  date_to: string;
+  periods: Array<{
+    period_id: string;
+    run_id: string;
+    run_status: string;
+    role: string;
+    period_start: string;
+    period_end: string;
+    base_pay: number;
+    premium: number;
+    percent_pay: number;
+    vacation_pay: number;
+    fund_accrual: number;
+    deduction: number;
+    deposit_withholding: number;
+    bonus_total: number;
+    penalty_total: number;
+    total_payable: number;
+  }>;
+  adjustments: Array<{
+    id: string;
+    type: PayrollAdjustmentType;
+    work_date: string;
+    category_id: string | null;
+    category_name: string;
+    custom_label: string | null;
+    amount: number;
+    comment: string | null;
+  }>;
+  deposit_transactions: Array<{
+    id: string;
+    transaction_type: string;
+    amount: number;
+    created_at: string;
+    run_id: string | null;
+  }>;
+  totals: {
+    base_pay: number;
+    premium: number;
+    percent_pay: number;
+    vacation_pay: number;
+    fund_accrual: number;
+    deduction: number;
+    deposit_withholding: number;
+    bonus_total: number;
+    penalty_total: number;
+    total_payable: number;
+  };
+};
+
 export type AccumulationFundStatus = "active" | "paid_out" | "forfeited";
 
 export type AccumulationFundSummary = {
@@ -2003,6 +2058,15 @@ export async function getPayrollRunLines(id: string): Promise<PayrollLine[]> {
   return response.data;
 }
 
+export async function getEmployeePayrollReport(params: {
+  employee_id: string;
+  date_from: string;
+  date_to: string;
+}): Promise<PayrollPersonalReport> {
+  const response = await api.get<PayrollPersonalReport>("/payroll/employee-report", { params });
+  return response.data;
+}
+
 export async function patchPayrollLineDepositOverride(
   id: string,
   payload: PayrollLineDepositOverridePatch,
@@ -2416,11 +2480,13 @@ export async function getInventoryIikoProducts(params: {
   return response.data;
 }
 
-export async function getInventoryAudits(filters: {
-  dateFrom?: string;
-  dateTo?: string;
-  status?: InventoryAuditStatus | "all";
-} = {}): Promise<InventoryAudit[]> {
+export async function getInventoryAudits(
+  filters: {
+    dateFrom?: string;
+    dateTo?: string;
+    status?: InventoryAuditStatus | "all";
+  } = {},
+): Promise<InventoryAudit[]> {
   const response = await api.get<InventoryAudit[]>("/inventory/audits", {
     params: {
       date_from: filters.dateFrom || undefined,

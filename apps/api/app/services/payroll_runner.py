@@ -28,6 +28,7 @@ from app.services.accumulation_fund_service import (
     payout_fund_accounts_for_year,
 )
 from app.services.attendance_loader import PAYROLL_TARGET_POSITIONS, load_attendance_entries
+from app.services.deferred_audit_charge_service import apply_pending_splits_for_run
 from app.services.iiko_revenue import fetch_daily_revenue
 from app.services.payroll_calculator import (
     DAILY_REVENUE_CONFIG_KEY,
@@ -255,6 +256,18 @@ async def run_payroll(
             period.end_date,
             force_refresh=force_refresh,
         )
+        applied_splits = await apply_pending_splits_for_run(
+            session,
+            run=run,
+            period_end=period.end_date,
+        )
+        deferred_charge_summary = (
+            {"deferred_charges_applied": len(applied_splits)} if applied_splits else {}
+        )
+        if deferred_charge_summary:
+            run.summary = {**(run.summary or {}), **deferred_charge_summary}
+        await session.flush()
+
         calculation = await calculate_payroll_lines(
             session,
             period,
@@ -266,7 +279,7 @@ async def run_payroll(
             run.status = "blocked"
             run.finished_at = datetime.now(UTC)
             run.blocking_issues = calculation.blocking_issues
-            run.summary = calculation.summary
+            run.summary = calculation.summary | deferred_charge_summary
             await session.commit()
             await session.refresh(run)
             return run
@@ -285,7 +298,10 @@ async def run_payroll(
         run.finished_at = datetime.now(UTC)
         run.blocking_issues = []
         run.summary = (
-            calculation.summary | subledger_summary | {"vacations_marked_paid": paid_vacations}
+            calculation.summary
+            | deferred_charge_summary
+            | subledger_summary
+            | {"vacations_marked_paid": paid_vacations}
         )
         await session.commit()
         await session.refresh(run)

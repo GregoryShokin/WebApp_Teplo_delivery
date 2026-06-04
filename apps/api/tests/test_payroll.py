@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.deps import CurrentActor
 from app.api.v1.routes import payroll as payroll_routes
 from app.api.v1.routes import payroll_adjustments as payroll_adjustment_routes
 from app.api.v1.routes import shifts as shift_routes
@@ -20,16 +21,24 @@ from app.models import (
     AppSetting,
     AppSettingHistory,
     AttendanceEntry,
+    DeferredAuditCharge,
+    DeferredAuditChargeSplit,
     DepositAccount,
     DepositTransaction,
     Employee,
     EmployeeRoleAssignment,
+    InventoryAudit,
     PayrollAdjustment,
     PayrollAdjustmentCategory,
     PayrollLine,
     PayrollPeriod,
     PayrollRun,
     ShiftLedgerEntry,
+)
+from app.schemas.payroll import DeferredChargeCreate
+from app.services.deferred_audit_charge_service import (
+    cancel_deferred_charge,
+    create_deferred_charge,
 )
 from app.services import shift_ledger as shift_ledger_service
 from app.services.accumulation_fund_service import forfeit_active_fund_on_dismiss
@@ -70,6 +79,7 @@ from app.services.payroll_runner import (
     finalize_payroll_run,
     line_deposit_overrides_from_lines,
     payout_previous_year_fund_if_due,
+    run_payroll,
 )
 from app.services.seniority_allowance_service import SENIORITY_ALLOWANCE_MAP_CONFIG_KEY
 from app.services.shift_ledger import AttendanceSnapshot, LedgerAssignment
@@ -246,6 +256,369 @@ def make_adjustment(
     )
     adjustment.category = category
     return adjustment
+
+
+def make_inventory_audit(
+    business_date: date = date(2026, 5, 25),
+    *,
+    total: Decimal = Decimal("1000.00"),
+) -> InventoryAudit:
+    return InventoryAudit(
+        id=uuid.uuid4(),
+        business_date=business_date,
+        previous_audit_date=None,
+        source="manual",
+        status="draft",
+        total_shortage_amount=total,
+        total_penalty_amount=total,
+        computation_snapshot=None,
+        notes=None,
+    )
+
+
+def make_deferred_charge_periods(period_count: int = 3) -> list[PayrollPeriod]:
+    periods: list[PayrollPeriod] = []
+    start = date(2026, 6, 1)
+    for index in range(period_count):
+        period_start = start + timedelta(days=7 * index)
+        periods.append(
+            make_period(
+                start=period_start,
+                end=period_start + timedelta(days=6),
+                payroll_date=period_start + timedelta(days=7),
+            )
+        )
+    return periods
+
+
+async def create_test_deferred_charge(
+    session: Any,
+    *,
+    audit_id: uuid.UUID,
+    employee_id: uuid.UUID,
+    total_amount: Decimal = Decimal("1000.00"),
+    splits_count: int = 3,
+) -> DeferredAuditCharge:
+    return await create_deferred_charge(
+        session,
+        DeferredChargeCreate(
+            source_audit_id=audit_id,
+            employee_id=employee_id,
+            total_amount=total_amount,
+            splits_count=splits_count,
+            reason="Недостача распределяется",
+        ),
+        actor=CurrentActor(roles=frozenset({"finance_manager"}), user_id=uuid.uuid4()),
+    )
+
+
+class DeferredChargeScalarResult:
+    def __init__(self, items: list[Any]) -> None:
+        self.items = items
+
+    def all(self) -> list[Any]:
+        return self.items
+
+
+class DeferredChargeFakeSession:
+    def __init__(
+        self,
+        *,
+        audit: InventoryAudit | None = None,
+        employee: Employee | None = None,
+        periods: list[PayrollPeriod] | None = None,
+    ) -> None:
+        self.audit = audit
+        self.employee = employee
+        self.periods = {period.id: period for period in periods or []}
+        self.charges: list[DeferredAuditCharge] = []
+        self.categories: list[PayrollAdjustmentCategory] = []
+        self.adjustments: list[PayrollAdjustment] = []
+        self.runs: list[PayrollRun] = []
+        self.added: list[Any] = []
+        self.committed = False
+
+    async def get(self, model: Any, object_id: uuid.UUID) -> Any | None:
+        if model is InventoryAudit and self.audit is not None and object_id == self.audit.id:
+            return self.audit
+        if model is Employee and self.employee is not None and object_id == self.employee.id:
+            return self.employee
+        if model is PayrollPeriod:
+            return self.periods.get(object_id)
+        if model is PayrollAdjustment:
+            return next(
+                (adjustment for adjustment in self.adjustments if adjustment.id == object_id),
+                None,
+            )
+        if model is DeferredAuditCharge:
+            return next((charge for charge in self.charges if charge.id == object_id), None)
+        return None
+
+    def add(self, item: Any) -> None:
+        self.added.append(item)
+        if isinstance(item, PayrollAdjustment):
+            self.adjustments.append(item)
+        elif isinstance(item, PayrollAdjustmentCategory):
+            self.categories.append(item)
+        elif isinstance(item, DeferredAuditCharge):
+            self.charges.append(item)
+        elif isinstance(item, PayrollRun):
+            self.runs.append(item)
+
+    async def flush(self) -> None:
+        for item in [*self.added, *self.charges]:
+            if getattr(item, "id", None) is None:
+                item.id = uuid.uuid4()
+            if isinstance(item, DeferredAuditCharge):
+                item.source_audit = self.audit
+                item.employee = self.employee
+                item.created_by = None
+                for split in item.splits:
+                    if split.id is None:
+                        split.id = uuid.uuid4()
+                    split.charge_id = item.id
+                    split.charge = item
+
+    async def commit(self) -> None:
+        self.committed = True
+
+    async def refresh(self, _item: Any) -> None:
+        return None
+
+    async def execute(self, _stmt: Any) -> Any:
+        return PayrollLineExecuteResult([])
+
+    async def scalar(self, query: Any) -> Any:
+        entity = query_entity(query)
+        if entity is DeferredAuditCharge:
+            return self.charges[0] if self.charges else None
+        if entity is PayrollAdjustmentCategory:
+            return next(
+                (category for category in self.categories if category.code == "audit_deferred"),
+                None,
+            )
+        if entity is PayrollRun:
+            return None
+        return None
+
+    async def scalars(self, query: Any) -> DeferredChargeScalarResult:
+        entity = query_entity(query)
+        if entity is DeferredAuditCharge:
+            return DeferredChargeScalarResult(
+                [
+                    charge
+                    for charge in self.charges
+                    if charge.status in {"pending", "partially_applied"}
+                ]
+            )
+        return DeferredChargeScalarResult([])
+
+
+def app_with_deferred_charge_session(session: DeferredChargeFakeSession):
+    app = create_app()
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    return app
+
+
+async def fake_load_attendance_entries(
+    _session: Any,
+    period: PayrollPeriod,
+    *,
+    iiko_records: Any = None,
+) -> list[AttendanceEntry]:
+    employee = _session.employee
+    assert employee is not None
+    return [make_entry(period, employee, period.start_date)]
+
+
+async def fake_collect_blocking_issues(
+    _session: Any,
+    _entries: list[AttendanceEntry],
+    *,
+    period: PayrollPeriod | None = None,
+) -> list[dict[str, Any]]:
+    return []
+
+
+async def fake_ensure_daily_revenue_cached(*_args: Any, **_kwargs: Any) -> dict[date, Decimal]:
+    return {}
+
+
+async def fake_calculate_payroll_lines(
+    _session: Any,
+    _period: PayrollPeriod,
+    _run_id: uuid.UUID,
+    _entries: list[AttendanceEntry],
+    **_kwargs: Any,
+) -> Any:
+    return type(
+        "FakePayrollCalculation",
+        (),
+        {"lines": [], "blocking_issues": [], "summary": {}},
+    )()
+
+
+async def fake_update_deposits_and_fund(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    return {}
+
+
+async def fake_mark_vacations_paid(*_args: Any, **_kwargs: Any) -> int:
+    return 0
+
+
+def patch_runner_for_deferred_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(payroll_routes, "run_payroll", run_payroll)
+    monkeypatch.setattr("app.services.payroll_runner.load_attendance_entries", fake_load_attendance_entries)
+    monkeypatch.setattr("app.services.payroll_runner.collect_blocking_issues", fake_collect_blocking_issues)
+    monkeypatch.setattr(
+        "app.services.payroll_runner.ensure_daily_revenue_cached",
+        fake_ensure_daily_revenue_cached,
+    )
+    monkeypatch.setattr("app.services.payroll_runner.calculate_payroll_lines", fake_calculate_payroll_lines)
+    monkeypatch.setattr("app.services.payroll_runner.update_deposits_and_fund", fake_update_deposits_and_fund)
+    monkeypatch.setattr(
+        "app.services.payroll_runner.vacation_service.mark_vacations_paid_for_payroll_period",
+        fake_mark_vacations_paid,
+    )
+
+
+async def test_create_deferred_charge_splits_correctly(
+) -> None:
+    employee = make_employee()
+    audit = make_inventory_audit()
+    session = DeferredChargeFakeSession(audit=audit, employee=employee)
+
+    with TestClient(app_with_deferred_charge_session(session)) as client:
+        response = client.post(
+            "/api/v1/payroll/deferred-charges",
+            headers={"X-User-Role": "finance_manager"},
+            json={
+                "source_audit_id": str(audit.id),
+                "employee_id": str(employee.id),
+                "total_amount": "1000",
+                "splits_count": 3,
+                "reason": "Распределить штраф",
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_amount"] == "1000.00"
+    assert payload["splits_count"] == 3
+    assert payload["splits_remaining"] == 3
+    assert payload["status"] == "pending"
+    assert [split["amount"] for split in payload["splits"]] == [
+        "333.33",
+        "333.33",
+        "333.34",
+    ]
+
+
+async def test_apply_pending_splits_creates_adjustments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patch_runner_for_deferred_tests(monkeypatch)
+    employee = make_employee()
+    audit = make_inventory_audit()
+    periods = make_deferred_charge_periods()
+    session = DeferredChargeFakeSession(audit=audit, employee=employee, periods=periods)
+    charge = await create_test_deferred_charge(
+        session,
+        audit_id=audit.id,
+        employee_id=employee.id,
+    )
+
+    expected_amounts = [Decimal("333.33"), Decimal("333.33"), Decimal("333.34")]
+    for index, period in enumerate(periods, start=1):
+        run = await run_payroll(session, period.id)  # type: ignore[arg-type]
+        split = next(split for split in charge.splits if split.split_index == index)
+        assert run.status == "completed"
+        assert run.summary["deferred_charges_applied"] == 1
+        assert split.run_id == run.id
+        assert split.adjustment_id is not None
+
+        adjustment = await session.get(PayrollAdjustment, split.adjustment_id)
+        assert adjustment is not None
+        assert adjustment.employee_id == employee.id
+        assert adjustment.work_date == period.end_date
+        assert adjustment.type == "penalty"
+        assert adjustment.amount == expected_amounts[index - 1]
+        assert adjustment.created_by_label == "system:deferred_charge"
+
+    assert charge.status == "applied"
+    assert charge.splits_remaining == 0
+
+
+async def test_cancel_partially_applied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patch_runner_for_deferred_tests(monkeypatch)
+    employee = make_employee()
+    audit = make_inventory_audit()
+    periods = make_deferred_charge_periods(period_count=1)
+    session = DeferredChargeFakeSession(audit=audit, employee=employee, periods=periods)
+    charge = await create_test_deferred_charge(
+        session,
+        audit_id=audit.id,
+        employee_id=employee.id,
+    )
+    await run_payroll(session, periods[0].id)  # type: ignore[arg-type]
+
+    cancelled = await cancel_deferred_charge(
+        session,
+        charge.id,
+        actor=CurrentActor(roles=frozenset({"finance_manager"}), user_id=uuid.uuid4()),
+    )
+
+    assert cancelled.status == "cancelled"
+    assert cancelled.splits_remaining == 0
+    splits = sorted(cancelled.splits, key=lambda split: split.split_index)
+    assert splits[0].run_id is not None
+    assert splits[0].adjustment_id is not None
+    for split in splits[1:]:
+        assert split.run_id is None
+        assert split.adjustment_id is None
+        assert split.applied_at is not None
+
+
+def test_create_validates_audit_employee_existence() -> None:
+    session = DeferredChargeFakeSession()
+    with TestClient(app_with_deferred_charge_session(session)) as client:
+        response = client.post(
+            "/api/v1/payroll/deferred-charges",
+            headers={"X-User-Role": "finance_manager"},
+            json={
+                "source_audit_id": str(uuid.uuid4()),
+                "employee_id": str(uuid.uuid4()),
+                "total_amount": "1000",
+                "splits_count": 3,
+                "reason": "Распределить штраф",
+            },
+        )
+
+    assert response.status_code == 404
+
+
+def test_create_rejects_zero_splits() -> None:
+    session = DeferredChargeFakeSession()
+    with TestClient(app_with_deferred_charge_session(session)) as client:
+        response = client.post(
+            "/api/v1/payroll/deferred-charges",
+            headers={"X-User-Role": "finance_manager"},
+            json={
+                "source_audit_id": str(uuid.uuid4()),
+                "employee_id": str(uuid.uuid4()),
+                "total_amount": "1000",
+                "splits_count": 0,
+                "reason": "Распределить штраф",
+            },
+        )
+
+    assert response.status_code == 422
 
 
 def make_shift_ledger_entry(
@@ -434,6 +807,53 @@ class PayrollLineExecuteResult:
 
     def all(self) -> list[tuple[uuid.UUID, Decimal]]:
         return self.rows
+
+
+class PersonalReportExecuteResult:
+    def __init__(self, rows: list[tuple[PayrollLine, PayrollRun, PayrollPeriod]]) -> None:
+        self.rows = rows
+
+    def all(self) -> list[tuple[PayrollLine, PayrollRun, PayrollPeriod]]:
+        return self.rows
+
+
+class PersonalReportScalarResult:
+    def __init__(self, items: list[Any]) -> None:
+        self.items = items
+
+    def all(self) -> list[Any]:
+        return self.items
+
+
+class PersonalReportFakeSession:
+    def __init__(
+        self,
+        *,
+        employees: list[Employee] | None = None,
+        line_rows: list[tuple[PayrollLine, PayrollRun, PayrollPeriod]] | None = None,
+        adjustments: list[PayrollAdjustment] | None = None,
+        deposit_transactions: list[DepositTransaction] | None = None,
+    ) -> None:
+        self.employees = {employee.id: employee for employee in employees or []}
+        self.line_rows = line_rows or []
+        self.adjustments = adjustments or []
+        self.deposit_transactions = deposit_transactions or []
+
+    async def get(self, model: Any, object_id: uuid.UUID) -> Any | None:
+        if model is Employee:
+            return self.employees.get(object_id)
+        return None
+
+    async def execute(self, _stmt: Any) -> PersonalReportExecuteResult:
+        return PersonalReportExecuteResult(self.line_rows)
+
+    async def scalars(self, query: Any) -> PersonalReportScalarResult:
+        entity = query_entity(query)
+        if entity is PayrollAdjustment:
+            return PersonalReportScalarResult(self.adjustments)
+        if entity is DepositTransaction:
+            return PersonalReportScalarResult(self.deposit_transactions)
+        return PersonalReportScalarResult([])
 
 
 class FundScalarResult:
@@ -2752,6 +3172,163 @@ def test_get_lines_response_defaults_deposit_payout_and_ndfl(
     assert payload[0]["deposit_withholding"] == 0
     assert payload[0]["deposit_payout"] == 0
     assert payload[0]["ndfl_deduction"] == 0
+
+
+def test_personal_report_returns_periods_and_adjustments() -> None:
+    app = create_app()
+    employee = make_employee()
+    employee.full_name = "Иван Тестов"
+    employee.position = "Повар"
+    first_period = make_period(
+        start=date(2026, 5, 19),
+        end=date(2026, 5, 25),
+        payroll_date=date(2026, 5, 26),
+    )
+    second_period = make_period(
+        start=date(2026, 5, 26),
+        end=date(2026, 6, 1),
+        payroll_date=date(2026, 6, 2),
+    )
+    first_run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=first_period.id,
+        started_at=datetime(2026, 5, 26, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    second_run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=second_period.id,
+        started_at=datetime(2026, 6, 2, tzinfo=UTC),
+        status="finalized",
+        blocking_issues=[],
+        summary={},
+    )
+    first_line = make_payroll_line(
+        first_run.id,
+        employee.id,
+        components={
+            "days": [],
+            "deposit_withholding": "250",
+            "adjustments": {
+                "bonuses": [{"amount": "300"}],
+                "penalties": [{"amount": "100"}],
+            },
+        },
+    )
+    second_line = make_payroll_line(
+        second_run.id,
+        employee.id,
+        components={"days": [], "deposit_withholding": "0", "adjustments": {}},
+    )
+    bonus = make_adjustment(employee, date(2026, 5, 20), "bonus", Decimal("300"), label="Премия")
+    penalty = make_adjustment(
+        employee,
+        date(2026, 5, 21),
+        "penalty",
+        Decimal("100"),
+        label="Штраф",
+    )
+    deposit_transaction = DepositTransaction(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        run_id=first_run.id,
+        transaction_type="accrual",
+        amount=Decimal("250"),
+        created_at=datetime(2026, 5, 26, 10, 0, tzinfo=UTC),
+    )
+    session = PersonalReportFakeSession(
+        employees=[employee],
+        line_rows=[(second_line, second_run, second_period), (first_line, first_run, first_period)],
+        adjustments=[bonus, penalty],
+        deposit_transactions=[deposit_transaction],
+    )
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/payroll/employee-report",
+                headers={"X-User-Role": "finance_manager"},
+                params={
+                    "employee_id": str(employee.id),
+                    "date_from": "2026-05-19",
+                    "date_to": "2026-06-01",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["employee_id"] == str(employee.id)
+    assert payload["employee_name"] == "Иван Тестов"
+    assert len(payload["periods"]) == 2
+    assert payload["periods"][0]["period_start"] == "2026-05-26"
+    assert payload["periods"][1]["bonus_total"] == 300
+    assert payload["periods"][1]["penalty_total"] == 100
+    assert len(payload["adjustments"]) == 2
+    assert payload["totals"]["bonus_total"] == 300
+    assert payload["totals"]["penalty_total"] == 100
+    assert payload["totals"]["deposit_withholding"] == 250
+    assert payload["deposit_transactions"][0]["transaction_type"] == "accrual"
+
+
+def test_personal_report_date_range_validation() -> None:
+    app = create_app()
+    employee = make_employee()
+    session = PersonalReportFakeSession(employees=[employee])
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/payroll/employee-report",
+                headers={"X-User-Role": "finance_manager"},
+                params={
+                    "employee_id": str(employee.id),
+                    "date_from": "2026-06-01",
+                    "date_to": "2026-05-19",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "date_from must be <= date_to"
+
+
+def test_personal_report_404_for_unknown_employee() -> None:
+    app = create_app()
+    session = PersonalReportFakeSession()
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/payroll/employee-report",
+                headers={"X-User-Role": "finance_manager"},
+                params={
+                    "employee_id": str(uuid.uuid4()),
+                    "date_from": "2026-05-19",
+                    "date_to": "2026-06-01",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Employee not found"
 
 
 def test_patch_payroll_line_deposit_override_updates_line_and_audit() -> None:

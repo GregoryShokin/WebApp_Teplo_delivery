@@ -34,4 +34,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_column("inventory_audit_item", "amount")
+    # Revision 0049 introduced this column; 0050 only makes the existing
+    # column idempotent/non-null. Leave it in place when downgrading to 0049.
+    return None

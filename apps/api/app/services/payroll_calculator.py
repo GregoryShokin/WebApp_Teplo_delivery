@@ -1011,17 +1011,16 @@ def category_for_payroll_entry(
         if first is not None:
             return str(first.category)
 
-    # No active assignment for work_date — fall back to the current value on
-    # the employee card before the stale ledger snapshot, so that staff page
-    # edits win over historical manual_correction rows.
-    if employee.category:
-        return str(employee.category)
-
     ledger_entry = ledger_entry_for_employee_date(settings, employee.id, work_date)
     if ledger_entry is not None:
         ledger_category = clean_string(getattr(ledger_entry, "category", None))
         if ledger_category:
             return ledger_category
+
+    # No active assignment or ledger category for work_date — fall back to the
+    # current value on the employee card.
+    if employee.category:
+        return str(employee.category)
 
     return ""
 

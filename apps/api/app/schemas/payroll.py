@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PayrollPeriodRead(BaseModel):
@@ -65,6 +66,108 @@ class PayrollLineDepositOverridePatch(BaseModel):
 
     deposit_excluded_for_run: bool
     deposit_exclusion_reason: str | None = None
+
+
+class DeferredChargeCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_audit_id: uuid.UUID
+    source_item_id: uuid.UUID | None = None
+    employee_id: uuid.UUID
+    total_amount: Decimal = Field(gt=0)
+    splits_count: int = Field(ge=1, le=24)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class DeferredChargeSplitRead(BaseModel):
+    id: uuid.UUID
+    split_index: int
+    amount: str
+    run_id: uuid.UUID | None = None
+    adjustment_id: uuid.UUID | None = None
+    applied_at: datetime | None = None
+
+
+class DeferredChargeRead(BaseModel):
+    id: uuid.UUID
+    source_audit_id: uuid.UUID
+    source_item_id: uuid.UUID | None = None
+    source_audit_date: date | None = None
+    employee_id: uuid.UUID
+    employee_name: str | None = None
+    total_amount: str
+    splits_count: int
+    splits_remaining: int
+    status: str
+    reason: str
+    applied_run_ids: list[str]
+    created_by_name: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    splits: list[DeferredChargeSplitRead]
+
+
+class PayrollPersonalReportPeriodRead(BaseModel):
+    period_id: uuid.UUID
+    run_id: uuid.UUID
+    run_status: str
+    role: str
+    period_start: date
+    period_end: date
+    base_pay: float
+    premium: float
+    percent_pay: float
+    vacation_pay: float
+    fund_accrual: float
+    deduction: float
+    deposit_withholding: float
+    bonus_total: float
+    penalty_total: float
+    total_payable: float
+
+
+class PayrollPersonalReportAdjustmentRead(BaseModel):
+    id: uuid.UUID
+    type: str
+    work_date: date
+    category_id: uuid.UUID | None = None
+    category_name: str
+    custom_label: str | None = None
+    amount: float
+    comment: str | None = None
+
+
+class PayrollPersonalReportDepositTransactionRead(BaseModel):
+    id: uuid.UUID
+    transaction_type: str
+    amount: float
+    created_at: datetime
+    run_id: uuid.UUID | None = None
+
+
+class PayrollPersonalReportTotalsRead(BaseModel):
+    base_pay: float
+    premium: float
+    percent_pay: float
+    vacation_pay: float
+    fund_accrual: float
+    deduction: float
+    deposit_withholding: float
+    bonus_total: float
+    penalty_total: float
+    total_payable: float
+
+
+class PayrollPersonalReportRead(BaseModel):
+    employee_id: uuid.UUID
+    employee_name: str
+    employee_position: str | None = None
+    date_from: date
+    date_to: date
+    periods: list[PayrollPersonalReportPeriodRead]
+    adjustments: list[PayrollPersonalReportAdjustmentRead]
+    deposit_transactions: list[PayrollPersonalReportDepositTransactionRead]
+    totals: PayrollPersonalReportTotalsRead
 
 
 class ShiftLedgerBuildRequest(BaseModel):

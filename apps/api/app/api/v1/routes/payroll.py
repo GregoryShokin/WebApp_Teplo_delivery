@@ -2,26 +2,45 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
 from app.db.session import get_session
-from app.models import AgentAction, AgentRun, DepositTransaction, PayrollLine, PayrollRun
+from app.models import (
+    AgentAction,
+    AgentRun,
+    DeferredAuditCharge,
+    DepositTransaction,
+    PayrollLine,
+    PayrollRun,
+)
 from app.schemas.payroll import (
+    DeferredChargeCreate,
+    DeferredChargeRead,
     PayrollLineDepositOverridePatch,
     PayrollLineRead,
+    PayrollPersonalReportRead,
     PayrollPeriodRead,
     PayrollRunCreate,
     PayrollRunRead,
 )
 from app.schemas.payroll_config import PayrollRoleCategoryOptionRead
+from app.services.deferred_audit_charge_service import (
+    DeferredChargeConflictError,
+    DeferredChargeNotFoundError,
+    DeferredChargeValidationError,
+    cancel_deferred_charge,
+    create_deferred_charge,
+    list_deferred_charges,
+)
 from app.services.payroll_config import list_enabled_role_categories
+from app.services.payroll_personal_report import build_personal_report
 from app.services.payroll_runner import (
     PayrollConflictError,
     PayrollNotFoundError,
@@ -61,6 +80,78 @@ async def get_role_categories(
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, list[dict[str, str]]]:
     return await list_enabled_role_categories(session)
+
+
+@router.post("/deferred-charges", response_model=DeferredChargeRead)
+async def create_deferred_charge_endpoint(
+    payload: DeferredChargeCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    require_finance_manager_plus(actor)
+    try:
+        charge = await create_deferred_charge(session, payload, actor=actor)
+    except DeferredChargeNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except DeferredChargeValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return deferred_charge_payload(charge)
+
+
+@router.get("/deferred-charges", response_model=list[DeferredChargeRead])
+async def list_deferred_charges_endpoint(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    employee_id: uuid.UUID | None = None,
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+    audit_id: uuid.UUID | None = None,
+) -> list[dict[str, Any]]:
+    require_finance_manager_plus(actor)
+    charges = await list_deferred_charges(
+        session,
+        employee_id=employee_id,
+        status=status_filter,
+        audit_id=audit_id,
+    )
+    return [deferred_charge_payload(charge) for charge in charges]
+
+
+@router.post("/deferred-charges/{charge_id}/cancel", response_model=DeferredChargeRead)
+async def cancel_deferred_charge_endpoint(
+    charge_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    require_finance_manager_plus(actor)
+    try:
+        charge = await cancel_deferred_charge(session, charge_id, actor=actor)
+    except DeferredChargeNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except DeferredChargeConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return deferred_charge_payload(charge)
+
+
+@router.get("/employee-report", response_model=PayrollPersonalReportRead)
+async def get_employee_payroll_report(
+    employee_id: uuid.UUID,
+    date_from: date,
+    date_to: date,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    require_finance_manager_plus(actor)
+    if date_from > date_to:
+        raise HTTPException(status_code=422, detail="date_from must be <= date_to")
+    if (date_to - date_from).days > 730:
+        raise HTTPException(status_code=422, detail="Период не больше 2 лет")
+    try:
+        return await build_personal_report(session, employee_id, date_from, date_to)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @router.post("/runs", response_model=PayrollRunRead)
@@ -203,6 +294,42 @@ def serialize_payroll_line(
     )
 
 
+def deferred_charge_payload(charge: DeferredAuditCharge) -> dict[str, Any]:
+    source_audit = getattr(charge, "source_audit", None)
+    employee = getattr(charge, "employee", None)
+    created_by = getattr(charge, "created_by", None)
+    return {
+        "id": charge.id,
+        "source_audit_id": charge.source_audit_id,
+        "source_item_id": charge.source_item_id,
+        "source_audit_date": (
+            source_audit.business_date if source_audit is not None else None
+        ),
+        "employee_id": charge.employee_id,
+        "employee_name": employee.full_name if employee is not None else None,
+        "total_amount": decimal_string(charge.total_amount),
+        "splits_count": charge.splits_count,
+        "splits_remaining": charge.splits_remaining,
+        "status": charge.status,
+        "reason": charge.reason,
+        "applied_run_ids": list(charge.applied_run_ids or []),
+        "created_by_name": created_by.full_name if created_by is not None else None,
+        "created_at": charge.created_at,
+        "updated_at": charge.updated_at,
+        "splits": [
+            {
+                "id": split.id,
+                "split_index": split.split_index,
+                "amount": decimal_string(split.amount),
+                "run_id": split.run_id,
+                "adjustment_id": split.adjustment_id,
+                "applied_at": split.applied_at,
+            }
+            for split in sorted(charge.splits, key=lambda item: item.split_index)
+        ],
+    }
+
+
 async def add_payroll_line_deposit_override_action(
     session: AsyncSession,
     *,
@@ -269,3 +396,7 @@ def money_float(value: object) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0
+
+
+def decimal_string(value: object) -> str:
+    return f"{Decimal(str(value)).quantize(Decimal('0.01'))}"
