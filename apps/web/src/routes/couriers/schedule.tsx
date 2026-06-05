@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarRange,
@@ -8,6 +9,7 @@ import {
   CircleOff,
   Clock3,
   Info,
+  Pause,
   Pencil,
   RefreshCw,
   Search,
@@ -58,17 +60,17 @@ import {
   deleteCourierShift,
   getCourierList,
   getCourierScheduleMatched,
-  getEmployees,
   upsertCourierShift,
   type CourierDepositStatusFilter,
   type CourierListRow,
+  type CourierListWorkStatusFilter,
   type CourierScheduleCategory,
   type CourierScheduleMatchedEntry,
-  type Employee,
+  type CourierWorkStatus,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-import { COURIER_STATUS_LABELS, currentMonthKey } from "./utils";
+import { currentMonthKey } from "./utils";
 
 type CourierScheduleActiveTab = "grid" | "list";
 
@@ -77,8 +79,16 @@ type CourierScheduleRouteProps = {
   onNavigate: (path: string) => void;
 };
 
+type ScheduleCourier = {
+  id: string;
+  full_name: string;
+  iiko_id: string;
+  status: string;
+  work_status: CourierWorkStatus | null;
+};
+
 type EditingShift = {
-  courier: Employee;
+  courier: ScheduleCourier;
   dateKey: string;
   entry: CourierScheduleMatchedEntry | null;
 };
@@ -94,6 +104,14 @@ const COURIER_SCHEDULE_ACTIVE_TAB_STORAGE_KEY = "couriers.schedule.activeTab";
 const DEFAULT_START_TIME = "10:00";
 const DEFAULT_END_TIME = "22:00";
 const WEEKDAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+type CourierDirectoryStatusFilter = CourierDepositStatusFilter | "reserve";
+
+const COURIER_DIRECTORY_STATUS_LABELS: Record<CourierDirectoryStatusFilter, string> = {
+  active: "Активные",
+  reserve: "В резерве",
+  fired: "Уволенные",
+  all: "Все",
+};
 
 export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleRouteProps) {
   const queryClient = useQueryClient();
@@ -108,16 +126,18 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
     () => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)),
     [weekStart],
   );
-  const from = toDateKey(weekDays[0]);
-  const to = toDateKey(weekDays[6]);
+  const weekDateKeys = useMemo(() => weekDays.map((day) => toDateKey(day)), [weekDays]);
+  const from = weekDateKeys[0];
+  const to = weekDateKeys[6];
+  const rosterMonth = currentMonthKey();
 
   useEffect(() => {
     window.localStorage.setItem(COURIER_SCHEDULE_ACTIVE_TAB_STORAGE_KEY, activeTab);
   }, [activeTab]);
 
   const couriersQuery = useQuery({
-    queryKey: ["employees", "courier-schedule-roster"],
-    queryFn: () => getEmployees({ status: "active", includePending: true }),
+    queryKey: ["courier-list", "courier-schedule-roster", rosterMonth],
+    queryFn: () => getCourierList({ status: "active", month: rosterMonth }),
     staleTime: 60_000,
     enabled: activeTab === "grid",
   });
@@ -131,10 +151,12 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
 
   const activeCouriers = useMemo(
     () =>
-      (couriersQuery.data ?? [])
-        .filter((employee) => employee.position === "Курьер" && employee.status === "active")
-        .sort((left, right) => left.full_name.localeCompare(right.full_name, "ru")),
-    [couriersQuery.data],
+      sortScheduleCouriers(
+        (couriersQuery.data?.rows ?? []).map(courierListRowToScheduleCourier),
+        matchedQuery.data ?? [],
+        weekDateKeys,
+      ),
+    [couriersQuery.data?.rows, matchedQuery.data, weekDateKeys],
   );
 
   const entriesByCell = useMemo(() => indexEntries(matchedQuery.data ?? []), [matchedQuery.data]);
@@ -189,7 +211,7 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
   }
 
   function openEditor(
-    courier: Employee,
+    courier: ScheduleCourier,
     dateKey: string,
     entry: CourierScheduleMatchedEntry | null,
   ) {
@@ -198,7 +220,7 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
   }
 
   function handleCellClick(
-    courier: Employee,
+    courier: ScheduleCourier,
     dateKey: string,
     entry: CourierScheduleMatchedEntry | null,
   ) {
@@ -256,9 +278,7 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
                 onClick={() =>
                   void Promise.all([
                     queryClient.invalidateQueries({ queryKey: ["courier-schedule-matched"] }),
-                    queryClient.invalidateQueries({
-                      queryKey: ["employees", "courier-schedule-roster"],
-                    }),
+                    queryClient.invalidateQueries({ queryKey: ["courier-list"] }),
                   ])
                 }
                 title="Обновить"
@@ -353,32 +373,43 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
                       ))}
                     </tr>
                   </thead>
-                  <tbody>
-                    {activeCouriers.map((courier) => (
-                      <tr className="border-b last:border-b-0" key={courier.id}>
-                        <th className="sticky left-0 z-10 bg-card px-3 py-2 text-left font-medium">
-                          <div className="truncate">{courier.full_name}</div>
-                          <div className="truncate text-xs font-normal text-muted-foreground">
-                            {courier.iiko_id || "iiko ID не указан"}
-                          </div>
-                        </th>
-                        {weekDays.map((day) => {
-                          const dateKey = toDateKey(day);
-                          const entry = entriesByCell.get(cellKey(courier.id, dateKey)) ?? null;
-                          return (
-                            <td className="p-1.5" key={dateKey}>
-                              <ShiftCell
-                                dateKey={dateKey}
-                                entry={entry}
-                                isPending={upsertMutation.isPending || deleteMutation.isPending}
-                                onClick={() => handleCellClick(courier, dateKey, entry)}
-                                onEdit={() => openEditor(courier, dateKey, entry)}
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
+                  <tbody key={from}>
+                    <AnimatePresence initial={false}>
+                      {activeCouriers.map((courier) => (
+                        <motion.tr
+                          className="border-b last:border-b-0"
+                          key={courier.id}
+                          layout
+                          transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                        >
+                          <th className="sticky left-0 z-10 bg-card px-3 py-2 text-left font-medium">
+                            <div className="truncate">{courier.full_name}</div>
+                            <div className="truncate text-xs font-normal text-muted-foreground">
+                              {courier.iiko_id || "iiko ID не указан"}
+                            </div>
+                            <CourierGridStatusChip
+                              status={courier.status}
+                              workStatus={courier.work_status}
+                            />
+                          </th>
+                          {weekDays.map((day) => {
+                            const dateKey = toDateKey(day);
+                            const entry = entriesByCell.get(cellKey(courier.id, dateKey)) ?? null;
+                            return (
+                              <td className="p-1.5" key={dateKey}>
+                                <ShiftCell
+                                  dateKey={dateKey}
+                                  entry={entry}
+                                  isPending={upsertMutation.isPending || deleteMutation.isPending}
+                                  onClick={() => handleCellClick(courier, dateKey, entry)}
+                                  onEdit={() => openEditor(courier, dateKey, entry)}
+                                />
+                              </td>
+                            );
+                          })}
+                        </motion.tr>
+                      ))}
+                    </AnimatePresence>
                   </tbody>
                 </table>
               </div>
@@ -659,12 +690,12 @@ function LegendDialog({
 
 function CourierDirectoryTab() {
   const queryClient = useQueryClient();
-  const [statusFilter, setStatusFilter] = useState<CourierDepositStatusFilter>("active");
+  const [statusFilter, setStatusFilter] = useState<CourierDirectoryStatusFilter>("active");
   const [search, setSearch] = useState("");
   const month = currentMonthKey();
   const listQuery = useQuery({
     queryKey: ["courier-list", statusFilter, month],
-    queryFn: () => getCourierList({ status: statusFilter, month }),
+    queryFn: () => getCourierList({ ...courierDirectoryListParams(statusFilter), month }),
     staleTime: 30_000,
   });
 
@@ -700,11 +731,16 @@ function CourierDirectoryTab() {
         }
       />
 
-      <section className="grid gap-3 sm:grid-cols-3">
+      <section className="grid gap-3 sm:grid-cols-4">
         <SummaryCard
           isLoading={listQuery.isLoading}
           title="Всего активных"
           value={summary?.active_total}
+        />
+        <SummaryCard
+          isLoading={listQuery.isLoading}
+          title="Курьеров в резерве"
+          value={summary?.reserve_total}
         />
         <SummaryCard
           isLoading={listQuery.isLoading}
@@ -722,7 +758,7 @@ function CourierDirectoryTab() {
         <div className="grid gap-2">
           <Label>Статус</Label>
           <div className="flex rounded-md border bg-background p-1">
-            {(["active", "fired", "all"] as const).map((status) => (
+            {(["active", "reserve", "fired", "all"] as const).map((status) => (
               <button
                 className={cn(
                   "h-8 rounded-sm px-3 text-sm font-medium transition-colors",
@@ -734,7 +770,7 @@ function CourierDirectoryTab() {
                 onClick={() => setStatusFilter(status)}
                 type="button"
               >
-                {COURIER_STATUS_LABELS[status]}
+                {COURIER_DIRECTORY_STATUS_LABELS[status]}
               </button>
             ))}
           </div>
@@ -793,7 +829,9 @@ function CourierDirectoryTab() {
                       <div className="font-medium">{row.full_name}</div>
                     </TableCell>
                     <TableCell className="font-mono text-xs">{row.iiko_id}</TableCell>
-                    <TableCell>{statusLabel(row.status)}</TableCell>
+                    <TableCell>
+                      <CourierStatusChip status={row.status} workStatus={row.work_status} />
+                    </TableCell>
                     <TableCell>
                       <OpenShiftChip open={row.open_shift_now} />
                     </TableCell>
@@ -809,6 +847,19 @@ function CourierDirectoryTab() {
       </section>
     </div>
   );
+}
+
+function courierDirectoryListParams(statusFilter: CourierDirectoryStatusFilter): {
+  status: CourierDepositStatusFilter;
+  work_status: CourierListWorkStatusFilter;
+} {
+  if (statusFilter === "reserve") {
+    return { status: "active", work_status: "reserve" };
+  }
+  if (statusFilter === "active") {
+    return { status: "active", work_status: "working" };
+  }
+  return { status: statusFilter, work_status: "all" };
 }
 
 function SummaryCard({
@@ -833,6 +884,61 @@ function SummaryCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function CourierStatusChip({
+  status,
+  workStatus,
+}: {
+  status: CourierListRow["status"];
+  workStatus: CourierListRow["work_status"];
+}) {
+  if (status === "active" && workStatus === "reserve") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
+        <Pause className="h-3.5 w-3.5" aria-hidden="true" />В резерве
+      </span>
+    );
+  }
+  if (status === "active") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800">
+        <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+        Работает
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
+      <CircleOff className="h-3.5 w-3.5" aria-hidden="true" />
+      Уволен
+    </span>
+  );
+}
+
+function CourierGridStatusChip({
+  status,
+  workStatus,
+}: {
+  status: ScheduleCourier["status"];
+  workStatus: ScheduleCourier["work_status"];
+}) {
+  if (status !== "active") {
+    return (
+      <span className="mt-1 inline-flex h-5 items-center gap-1 rounded-sm border border-border bg-muted px-1.5 text-[11px] font-normal text-muted-foreground">
+        <CircleOff className="h-3 w-3" aria-hidden="true" />
+        Уволен
+      </span>
+    );
+  }
+  if (workStatus !== "reserve") {
+    return null;
+  }
+  return (
+    <span className="mt-1 inline-flex h-5 items-center gap-1 rounded-sm border border-border bg-muted px-1.5 text-[11px] font-normal text-muted-foreground">
+      <Pause className="h-3 w-3" aria-hidden="true" />В резерве
+    </span>
   );
 }
 
@@ -875,7 +981,8 @@ function CourierListSkeleton() {
   return (
     <div className="space-y-3 p-4">
       {Array.from({ length: 6 }).map((_, index) => (
-        <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-3" key={index}>
+        <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-3" key={index}>
+          <Skeleton className="h-10" />
           <Skeleton className="h-10" />
           <Skeleton className="h-10" />
           <Skeleton className="h-10" />
@@ -899,6 +1006,113 @@ function indexEntries(entries: CourierScheduleMatchedEntry[]) {
   return new Map(
     entries.map((entry) => [cellKey(entry.courier_employee_id, entry.work_date), entry]),
   );
+}
+
+function courierListRowToScheduleCourier(row: CourierListRow): ScheduleCourier {
+  return {
+    id: row.employee_id,
+    full_name: row.full_name,
+    iiko_id: row.iiko_id,
+    status: row.status,
+    work_status: row.work_status,
+  };
+}
+
+function sortScheduleCouriers(
+  couriers: ScheduleCourier[],
+  entries: CourierScheduleMatchedEntry[],
+  weekDateKeys: string[],
+) {
+  const weekDates = new Set(weekDateKeys);
+  const entriesByCourier = new Map<string, CourierScheduleMatchedEntry[]>();
+  for (const entry of entries) {
+    if (!weekDates.has(entry.work_date)) {
+      continue;
+    }
+    const courierEntries = entriesByCourier.get(entry.courier_employee_id) ?? [];
+    courierEntries.push(entry);
+    entriesByCourier.set(entry.courier_employee_id, courierEntries);
+  }
+
+  return [...couriers].sort((left, right) =>
+    compareSchedulePriority(
+      schedulePriority(left, entriesByCourier.get(left.id) ?? []),
+      schedulePriority(right, entriesByCourier.get(right.id) ?? []),
+    ),
+  );
+}
+
+type SchedulePriority = {
+  group: 1 | 2 | 3;
+  nearestDate: string;
+  workRank: number;
+  fullName: string;
+  id: string;
+};
+
+function schedulePriority(
+  courier: ScheduleCourier,
+  entries: CourierScheduleMatchedEntry[],
+): SchedulePriority {
+  const nearestPrimary = nearestEntryDate(entries, "primary");
+  if (nearestPrimary) {
+    return priorityPayload(courier, 1, nearestPrimary);
+  }
+  const nearestSecondary = nearestEntryDate(entries, "secondary");
+  if (nearestSecondary) {
+    return priorityPayload(courier, 2, nearestSecondary);
+  }
+  return priorityPayload(courier, 3, "");
+}
+
+function priorityPayload(
+  courier: ScheduleCourier,
+  group: SchedulePriority["group"],
+  nearestDate: string,
+): SchedulePriority {
+  return {
+    group,
+    nearestDate,
+    workRank: courierWorkRank(courier),
+    fullName: courier.full_name,
+    id: courier.id,
+  };
+}
+
+function nearestEntryDate(
+  entries: CourierScheduleMatchedEntry[],
+  category: CourierScheduleCategory,
+) {
+  let nearest: string | null = null;
+  for (const entry of entries) {
+    if (entry.category !== category) {
+      continue;
+    }
+    if (nearest === null || entry.work_date < nearest) {
+      nearest = entry.work_date;
+    }
+  }
+  return nearest;
+}
+
+function courierWorkRank(courier: ScheduleCourier) {
+  if (courier.status !== "active") {
+    return 2;
+  }
+  return courier.work_status === "reserve" ? 1 : 0;
+}
+
+function compareSchedulePriority(left: SchedulePriority, right: SchedulePriority) {
+  if (left.group !== right.group) {
+    return left.group - right.group;
+  }
+  if (left.nearestDate !== right.nearestDate) {
+    return left.nearestDate.localeCompare(right.nearestDate);
+  }
+  if (left.group === 3 && left.workRank !== right.workRank) {
+    return left.workRank - right.workRank;
+  }
+  return left.fullName.localeCompare(right.fullName, "ru") || left.id.localeCompare(right.id);
 }
 
 function cellKey(courierId: string, dateKey: string) {
@@ -1061,16 +1275,6 @@ function formatShortDate(value: string) {
     month: "2-digit",
     year: "numeric",
   }).format(new Date(`${value}T00:00:00`));
-}
-
-function statusLabel(status: CourierListRow["status"]) {
-  if (status === "active") {
-    return "Работает";
-  }
-  if (status === "requires_setup") {
-    return "Резерв";
-  }
-  return "Уволен";
 }
 
 function isCourierScheduleTab(value: string): value is CourierScheduleActiveTab {

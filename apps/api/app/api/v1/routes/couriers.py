@@ -44,6 +44,7 @@ from app.schemas.couriers import (
     CourierScheduleUpsert,
     CourierStatisticsDetail,
     CourierStatisticsRow,
+    CourierWorkStatusFilter,
 )
 from app.services.courier_sync import (
     MOSCOW_TZ,
@@ -221,6 +222,7 @@ async def get_couriers_list(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     status_filter: Annotated[CourierDepositStatus, Query(alias="status")] = "active",
+    work_status_filter: Annotated[CourierWorkStatusFilter, Query(alias="work_status")] = "all",
     month: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}$")] = None,
 ) -> dict[str, Any]:
     require_manager_plus(actor)
@@ -232,10 +234,17 @@ async def get_couriers_list(
         )
     ).all()
     active_couriers = [courier for courier in couriers if courier.status == "active"]
+    work_statuses = await schedule_service.get_work_statuses(
+        session,
+        [courier.id for courier in active_couriers],
+    )
     rows = []
     open_shift_now_total = 0
     for courier in couriers:
+        work_status = work_statuses.get(courier.id) if courier.status == "active" else None
         if not _matches_status_filter(courier, status_filter):
+            continue
+        if not _matches_work_status_filter(courier, work_status, work_status_filter):
             continue
         open_shift_now = await kpi_service.has_open_shift_now(session, courier.id)
         if courier.status == "active" and open_shift_now:
@@ -251,6 +260,7 @@ async def get_couriers_list(
                 "full_name": courier.full_name,
                 "iiko_id": courier.iiko_id,
                 "status": courier.status,
+                "work_status": work_status,
                 "open_shift_now": open_shift_now,
                 "primary_shifts_in_month": primary_count,
                 "secondary_shifts_in_month": secondary_count,
@@ -269,6 +279,9 @@ async def get_couriers_list(
                 and month_start <= courier.fire_date < month_end
             ),
             "open_shift_now_total": open_shift_now_total,
+            "reserve_total": sum(
+                1 for courier in active_couriers if work_statuses.get(courier.id) == "reserve"
+            ),
         },
         "rows": rows,
     }
@@ -691,6 +704,16 @@ def _matches_status_filter(employee: Employee, status_filter: str) -> bool:
     if status_filter == "active":
         return employee.status == "active"
     return employee.status != "active"
+
+
+def _matches_work_status_filter(
+    employee: Employee,
+    work_status: str | None,
+    work_status_filter: str,
+) -> bool:
+    if work_status_filter == "all":
+        return True
+    return employee.status == "active" and work_status == work_status_filter
 
 
 async def _latest_evaluation_payloads(

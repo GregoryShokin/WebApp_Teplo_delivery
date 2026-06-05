@@ -3,11 +3,11 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
-from typing import Literal
+from typing import Literal, cast
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -15,6 +15,7 @@ from app.models import (
     CourierIikoShift,
     CourierScheduleEntry,
     CourierShiftMatch,
+    Employee,
 )
 from app.services.couriers.common import get_courier_or_404, get_employee_or_404
 from app.services.couriers.shift_matching import (
@@ -24,6 +25,7 @@ from app.services.couriers.shift_matching import (
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 ScheduleCategory = Literal["primary", "secondary"]
+WorkStatus = Literal["working", "reserve"]
 DEFAULT_SHIFT_START = time(10, 0)
 DEFAULT_SHIFT_END = time(22, 0)
 DEFAULT_SHIFT_START_SETTING = "couriers.schedule.default_start_time"
@@ -159,6 +161,37 @@ async def get_matrix(
     )
 
 
+async def get_work_statuses(
+    session: AsyncSession,
+    employee_ids: list[uuid.UUID],
+    as_of: datetime | None = None,
+) -> dict[uuid.UUID, WorkStatus]:
+    """Return working if a courier has any iiko shift in the last 14 days, else reserve."""
+    if not employee_ids:
+        return {}
+
+    cutoff = normalize_shift_datetime(as_of or datetime.now(MOSCOW_TZ)) - timedelta(days=14)
+    has_recent_shift = (
+        select(CourierIikoShift.id)
+        .where(
+            CourierIikoShift.employee_id == Employee.id,
+            CourierIikoShift.opened_at >= cutoff,
+        )
+        .exists()
+    )
+    stmt = select(
+        Employee.id,
+        case((has_recent_shift, "working"), else_="reserve").label("work_status"),
+    ).where(Employee.id.in_(employee_ids))
+
+    statuses: dict[uuid.UUID, WorkStatus] = {
+        employee_id: "reserve" for employee_id in employee_ids
+    }
+    for employee_id, work_status in (await session.execute(stmt)).all():
+        statuses[employee_id] = cast(WorkStatus, work_status)
+    return statuses
+
+
 async def list_matched_entries(
     session: AsyncSession,
     filters: ScheduleFilters,
@@ -166,6 +199,13 @@ async def list_matched_entries(
     entries = await list_entries(session, filters)
     matches = await list_matches(session, filters)
     shifts_by_id = await load_iiko_shifts_for_matches(session, matches)
+    courier_ids = {entry.courier_employee_id for entry in entries} | {
+        match.courier_employee_id for match in matches
+    }
+    work_statuses = await get_work_statuses(
+        session,
+        list(courier_ids),
+    )
     matches_by_schedule_id = {
         match.schedule_entry_id: match for match in matches if match.schedule_entry_id is not None
     }
@@ -184,6 +224,9 @@ async def list_matched_entries(
             continue
         if match.schedule_entry_id is None:
             payloads.append(match_only_payload(match, shifts_by_id))
+
+    for payload in payloads:
+        payload["work_status"] = work_statuses.get(payload["courier_employee_id"])
 
     payloads.sort(key=lambda row: (str(row["courier_employee_id"]), row["work_date"]))
     return payloads

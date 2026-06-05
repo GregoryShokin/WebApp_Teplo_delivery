@@ -1463,6 +1463,8 @@ export type CourierDepositCategory = "primary" | "secondary";
 export type CourierDepositCategoryFilter = CourierDepositCategory | "all";
 export type CourierDepositTransactionType = "top_up" | "return" | "forfeit";
 export type CourierScheduleCategory = "primary" | "secondary";
+export type CourierWorkStatus = "working" | "reserve";
+export type CourierListWorkStatusFilter = CourierWorkStatus | "all";
 export type CourierScheduleMatchStatus =
   | "matched_primary"
   | "short_primary"
@@ -1672,6 +1674,7 @@ export type CourierListRow = {
   full_name: string;
   iiko_id: string;
   status: string;
+  work_status: CourierWorkStatus | null;
   open_shift_now: boolean;
   primary_shifts_in_month: number;
   secondary_shifts_in_month: number;
@@ -1681,6 +1684,7 @@ export type CourierListSummary = {
   active_total: number;
   fired_this_month: number;
   open_shift_now_total: number;
+  reserve_total: number;
 };
 
 export type CourierListResponse = {
@@ -1706,6 +1710,7 @@ export type CourierScheduleMatchedEntry = {
   id: number | null;
   courier_employee_id: string;
   work_date: string;
+  work_status: CourierWorkStatus | null;
   category: CourierScheduleCategory | null;
   planned_start_at: string | null;
   planned_end_at: string | null;
@@ -3236,6 +3241,7 @@ export async function getCourierDeposits(
 export async function getCourierList(
   params: {
     status?: CourierDepositStatusFilter;
+    work_status?: CourierListWorkStatusFilter;
     month?: string;
   } = {},
 ): Promise<CourierListResponse> {

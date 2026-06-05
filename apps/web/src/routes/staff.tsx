@@ -3223,6 +3223,7 @@ function StaffEditor({
     mutationFn: ({
       assignmentId,
       category,
+      comment,
       effectiveFrom,
       payrollRole,
     }: {
@@ -3230,7 +3231,9 @@ function StaffEditor({
       payrollRole: PayrollRole;
       category: EmployeeCategory;
       effectiveFrom: string;
+      comment: string;
     }) => {
+      const reason = comment.trim() ? comment.trim() : undefined;
       if (assignmentId) {
         return patchEmployeeAssignment(employee.id, assignmentId, {
           payroll_role: payrollRole,
@@ -3238,6 +3241,7 @@ function StaffEditor({
           is_primary: false,
           is_substitute: true,
           effective_from: effectiveFrom,
+          comment: reason,
         });
       }
       return createEmployeeAssignment(employee.id, {
@@ -3246,6 +3250,7 @@ function StaffEditor({
         is_primary: false,
         is_substitute: true,
         effective_from: effectiveFrom,
+        comment: reason,
       });
     },
     onSuccess: () => {
@@ -4950,6 +4955,7 @@ function SubstituteRoleDialog({
     payrollRole: PayrollRole;
     category: EmployeeCategory;
     effectiveFrom: string;
+    comment: string;
   }) => void;
   open: boolean;
   state: SubstituteRoleDialogState;
@@ -4973,6 +4979,7 @@ function SubstituteRoleDialog({
   const [effectiveFrom, setEffectiveFrom] = useState(
     assignmentEffectiveFrom ?? todayDateInputValue(),
   );
+  const [comment, setComment] = useState("");
 
   useEffect(() => {
     const nextTarget =
@@ -4983,6 +4990,7 @@ function SubstituteRoleDialog({
     setPayrollRole(nextRole);
     setCategory(assignmentCategory ?? categoriesForPayrollRole(nextRole)[0]);
     setEffectiveFrom(assignmentEffectiveFrom ?? todayDateInputValue());
+    setComment("");
   }, [
     assignmentCategory,
     assignmentEffectiveFrom,
@@ -4993,7 +5001,11 @@ function SubstituteRoleDialog({
 
   const roleOptions = roleOptionsForSubstituteTarget(targetPosition);
   const categoryOptionsForRole = categoriesForPayrollRole(payrollRole);
-  const canSubmit = Boolean(payrollRole && category && effectiveFrom) && !isPending;
+  const isBackDated = Boolean(effectiveFrom) && effectiveFrom < todayDateInputValue();
+  const canSubmit =
+    Boolean(payrollRole && category && effectiveFrom) &&
+    (!isBackDated || comment.trim().length > 0) &&
+    !isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -5061,6 +5073,28 @@ function SubstituteRoleDialog({
               value={effectiveFrom}
             />
           </Label>
+          <Label className="grid gap-2">
+            <span>
+              Комментарий
+              {isBackDated ? (
+                <span className="ml-1 text-destructive">*</span>
+              ) : (
+                <span className="ml-1 text-muted-foreground">(необязательно)</span>
+              )}
+            </span>
+            <Textarea
+              disabled={isPending}
+              maxLength={500}
+              onChange={(event) => setComment(event.target.value)}
+              placeholder={
+                isBackDated
+                  ? "Обязателен для изменения задним числом"
+                  : "Например: подмена на время отпуска"
+              }
+              rows={3}
+              value={comment}
+            />
+          </Label>
         </div>
 
         <DialogFooter>
@@ -5075,6 +5109,7 @@ function SubstituteRoleDialog({
                 payrollRole,
                 category,
                 effectiveFrom,
+                comment: comment.trim(),
               })
             }
             type="button"

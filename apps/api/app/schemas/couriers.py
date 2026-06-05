@@ -175,6 +175,7 @@ class CourierScheduleMatchedEntry(BaseModel):
     id: int | None = None
     courier_employee_id: uuid.UUID
     work_date: date
+    work_status: Literal["working", "reserve"] | None = None
     category: Literal["primary", "secondary"] | None = None
     planned_start_at: datetime | None = None
     planned_end_at: datetime | None = None
@@ -203,6 +204,8 @@ class CourierScheduleMatchedEntry(BaseModel):
 
 CourierDepositStatus = Literal["active", "fired", "all"]
 CourierDepositCategory = Literal["primary", "secondary", "all"]
+CourierWorkStatus = Literal["working", "reserve"]
+CourierWorkStatusFilter = Literal["working", "reserve", "all"]
 
 KpiThreshold = Literal["green", "yellow", "red"]
 
@@ -265,6 +268,7 @@ class CourierListRow(BaseModel):
     full_name: str
     iiko_id: str
     status: str
+    work_status: CourierWorkStatus | None
     open_shift_now: bool
     primary_shifts_in_month: int
     secondary_shifts_in_month: int
@@ -274,6 +278,7 @@ class CourierListSummary(BaseModel):
     active_total: int
     fired_this_month: int
     open_shift_now_total: int
+    reserve_total: int
 
 
 class CourierListResponse(BaseModel):
