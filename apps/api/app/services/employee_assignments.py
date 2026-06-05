@@ -565,6 +565,9 @@ def assignment_role_for_payroll_context(role: str | None, station: str | None) -
     station_key = _normalize_ascii(station)
     if station_key in COOKING_STATIONS:
         return station_key
+    role_key = _normalize_ascii(role)
+    if role_key in PAYROLL_ROLES:
+        return role_key
     return assignment_role_from_position(role)
 
 

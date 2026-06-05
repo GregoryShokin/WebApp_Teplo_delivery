@@ -19,15 +19,23 @@ def test_owner_review_classify_creates_cashflow_and_rule(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     case_id, operation_id, article_id = asyncio.run(_setup_case(async_session_factory))
+    payload = {
+        "article_id": str(article_id),
+        "action": "set_article",
+        "remember_as_rule": True,
+    }
+
+    denied_response = client.post(
+        f"/api/v1/dds/owner-review/{case_id}/classify",
+        headers={"X-User-Role": "finance_manager"},
+        json=payload,
+    )
+    assert denied_response.status_code == 403
 
     response = client.post(
         f"/api/v1/dds/owner-review/{case_id}/classify",
-        headers={"X-User-Role": "finance_manager"},
-        json={
-            "article_id": str(article_id),
-            "action": "set_article",
-            "remember_as_rule": True,
-        },
+        headers={"X-User-Role": "admin"},
+        json=payload,
     )
 
     assert response.status_code == 200

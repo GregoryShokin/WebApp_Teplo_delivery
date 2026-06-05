@@ -53,7 +53,11 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    claims = {"email": user.email, "roles": list(user.roles)}
+    claims = {
+        "email": user.email,
+        "roles": list(user.roles),
+        "permissions": list(user.permissions),
+    }
     access_token = create_access_token(str(user.id), claims)
     refresh_token = create_refresh_token(str(user.id), {"email": user.email})
     _set_refresh_cookie(response, refresh_token)
@@ -98,7 +102,12 @@ async def refresh(
         raise unauthorized
 
     access_token = create_access_token(
-        str(user.id), {"email": user.email, "roles": list(user.roles)}
+        str(user.id),
+        {
+            "email": user.email,
+            "roles": list(user.roles),
+            "permissions": list(user.permissions),
+        },
     )
     refresh_token = create_refresh_token(str(user.id), {"email": user.email})
     _set_refresh_cookie(response, refresh_token)

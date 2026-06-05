@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
-from app.models import Role, User, UserRole
+from app.models import Permission, Role, RolePermission, User, UserRole
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,7 @@ class AuthenticatedUser:
     email: str
     full_name: str
     roles: tuple[str, ...]
+    permissions: tuple[str, ...] = ()
 
 
 async def get_user_by_email(session: AsyncSession, email: str) -> User | None:
@@ -39,16 +40,36 @@ async def get_user_role_codes(session: AsyncSession, user_id: uuid.UUID) -> tupl
     return tuple(result.scalars().all())
 
 
+async def get_permission_codes_for_roles(
+    session: AsyncSession, roles: tuple[str, ...] | set[str] | frozenset[str]
+) -> tuple[str, ...]:
+    if not roles:
+        return ()
+
+    role_codes = tuple(roles)
+    result = await session.execute(
+        select(Permission.code)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .join(Role, Role.id == RolePermission.role_id)
+        .where(Role.code.in_(role_codes))
+        .distinct()
+        .order_by(Permission.code)
+    )
+    return tuple(result.scalars().all())
+
+
 async def build_authenticated_user(session: AsyncSession, user: User) -> AuthenticatedUser | None:
     if not user.is_active:
         return None
 
     roles = await get_user_role_codes(session, user.id)
+    permissions = await get_permission_codes_for_roles(session, roles)
     return AuthenticatedUser(
         id=user.id,
         email=user.email,
         full_name=user.full_name,
         roles=roles,
+        permissions=permissions,
     )
 
 

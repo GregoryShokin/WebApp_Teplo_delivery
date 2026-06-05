@@ -9,7 +9,12 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, s
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
+from app.api.deps import (
+    CurrentActor,
+    get_current_actor,
+    require_finance_manager_plus,
+    require_permission,
+)
 from app.db.session import get_session
 from app.models import (
     BankOperation,
@@ -59,10 +64,12 @@ async def require_dds_access(actor: Annotated[CurrentActor, Depends(get_current_
     require_finance_manager_plus(actor)
 
 
-router = APIRouter(dependencies=[Depends(require_dds_access)])
+router = APIRouter()
+DDS_ACCESS = (Depends(require_dds_access),)
+DDS_CLASSIFY_ACCESS = (Depends(require_permission("dds.classify")),)
 
 
-@router.get("/bank-operations", response_model=BankOperationListRead)
+@router.get("/bank-operations", response_model=BankOperationListRead, dependencies=DDS_ACCESS)
 async def list_bank_operations(
     session: Annotated[AsyncSession, Depends(get_session)],
     date_from: Annotated[date | None, Query(alias="from")] = None,
@@ -96,7 +103,7 @@ async def list_bank_operations(
     return {"items": [_bank_operation_payload(row) for row in rows.all()], "total": total}
 
 
-@router.get("/cashflow", response_model=CashflowTransactionListRead)
+@router.get("/cashflow", response_model=CashflowTransactionListRead, dependencies=DDS_ACCESS)
 async def list_cashflow(
     session: Annotated[AsyncSession, Depends(get_session)],
     date_from: Annotated[date | None, Query(alias="from")] = None,
@@ -135,7 +142,7 @@ async def list_cashflow(
     return {"items": [_cashflow_payload(row) for row in rows.all()], "total": total}
 
 
-@router.get("/wallets", response_model=list[DdsWalletRead])
+@router.get("/wallets", response_model=list[DdsWalletRead], dependencies=DDS_ACCESS)
 async def list_wallets(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[dict[str, object]]:
@@ -143,7 +150,7 @@ async def list_wallets(
     return [_wallet_payload(wallet) for wallet in result.all()]
 
 
-@router.get("/articles", response_model=list[DdsArticleRead])
+@router.get("/articles", response_model=list[DdsArticleRead], dependencies=DDS_ACCESS)
 async def list_articles(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[dict[str, object]]:
@@ -151,7 +158,12 @@ async def list_articles(
     return await _article_payloads(session, result.all())
 
 
-@router.post("/articles", response_model=DdsArticleRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/articles",
+    response_model=DdsArticleRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=DDS_ACCESS,
+)
 async def create_article(
     payload: DdsArticleCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -163,7 +175,7 @@ async def create_article(
     return (await _article_payloads(session, [article]))[0]
 
 
-@router.patch("/articles/{article_id}", response_model=DdsArticleRead)
+@router.patch("/articles/{article_id}", response_model=DdsArticleRead, dependencies=DDS_ACCESS)
 async def patch_article(
     article_id: UUID,
     payload: DdsArticlePatch,
@@ -177,7 +189,11 @@ async def patch_article(
     return (await _article_payloads(session, [article]))[0]
 
 
-@router.delete("/articles/{article_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/articles/{article_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=DDS_ACCESS,
+)
 async def delete_article(
     article_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -191,6 +207,7 @@ async def delete_article(
     "/articles/{article_id}/aliases",
     response_model=DdsAliasRead,
     status_code=status.HTTP_201_CREATED,
+    dependencies=DDS_ACCESS,
 )
 async def create_article_alias(
     article_id: UUID,
@@ -209,7 +226,11 @@ async def create_article_alias(
     return alias
 
 
-@router.delete("/articles/aliases/{alias_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/articles/aliases/{alias_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=DDS_ACCESS,
+)
 async def delete_article_alias(
     alias_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -221,7 +242,7 @@ async def delete_article_alias(
     await session.commit()
 
 
-@router.get("/counterparties", response_model=list[DdsCounterpartyRead])
+@router.get("/counterparties", response_model=list[DdsCounterpartyRead], dependencies=DDS_ACCESS)
 async def list_counterparties(
     session: Annotated[AsyncSession, Depends(get_session)],
     search: str | None = None,
@@ -240,6 +261,7 @@ async def list_counterparties(
     "/counterparties",
     response_model=DdsCounterpartyRead,
     status_code=status.HTTP_201_CREATED,
+    dependencies=DDS_ACCESS,
 )
 async def create_counterparty(
     payload: DdsCounterpartyCreate,
@@ -252,7 +274,11 @@ async def create_counterparty(
     return (await _counterparty_payloads(session, [counterparty]))[0]
 
 
-@router.patch("/counterparties/{counterparty_id}", response_model=DdsCounterpartyRead)
+@router.patch(
+    "/counterparties/{counterparty_id}",
+    response_model=DdsCounterpartyRead,
+    dependencies=DDS_ACCESS,
+)
 async def patch_counterparty(
     counterparty_id: UUID,
     payload: DdsCounterpartyPatch,
@@ -266,7 +292,11 @@ async def patch_counterparty(
     return (await _counterparty_payloads(session, [counterparty]))[0]
 
 
-@router.delete("/counterparties/{counterparty_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/counterparties/{counterparty_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=DDS_ACCESS,
+)
 async def delete_counterparty(
     counterparty_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -280,6 +310,7 @@ async def delete_counterparty(
     "/counterparties/{counterparty_id}/aliases",
     response_model=DdsAliasRead,
     status_code=status.HTTP_201_CREATED,
+    dependencies=DDS_ACCESS,
 )
 async def create_counterparty_alias(
     counterparty_id: UUID,
@@ -298,7 +329,11 @@ async def create_counterparty_alias(
     return alias
 
 
-@router.delete("/counterparties/aliases/{alias_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/counterparties/aliases/{alias_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=DDS_ACCESS,
+)
 async def delete_counterparty_alias(
     alias_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -310,7 +345,11 @@ async def delete_counterparty_alias(
     await session.commit()
 
 
-@router.get("/classification-rules", response_model=list[ClassificationRuleRead])
+@router.get(
+    "/classification-rules",
+    response_model=list[ClassificationRuleRead],
+    dependencies=DDS_ACCESS,
+)
 async def list_classification_rules(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[dict[str, object]]:
@@ -324,6 +363,7 @@ async def list_classification_rules(
     "/classification-rules",
     response_model=ClassificationRuleRead,
     status_code=status.HTTP_201_CREATED,
+    dependencies=DDS_ACCESS,
 )
 async def create_classification_rule(
     payload: ClassificationRuleCreate,
@@ -337,7 +377,11 @@ async def create_classification_rule(
     return _classification_rule_payload(rule)
 
 
-@router.patch("/classification-rules/{rule_id}", response_model=ClassificationRuleRead)
+@router.patch(
+    "/classification-rules/{rule_id}",
+    response_model=ClassificationRuleRead,
+    dependencies=DDS_ACCESS,
+)
 async def patch_classification_rule(
     rule_id: UUID,
     payload: ClassificationRulePatch,
@@ -351,7 +395,11 @@ async def patch_classification_rule(
     return _classification_rule_payload(rule)
 
 
-@router.delete("/classification-rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/classification-rules/{rule_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=DDS_ACCESS,
+)
 async def delete_classification_rule(
     rule_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -361,7 +409,11 @@ async def delete_classification_rule(
     await session.commit()
 
 
-@router.post("/classification-rules/{rule_id}/toggle", response_model=ClassificationRuleRead)
+@router.post(
+    "/classification-rules/{rule_id}/toggle",
+    response_model=ClassificationRuleRead,
+    dependencies=DDS_ACCESS,
+)
 async def toggle_classification_rule(
     rule_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -373,7 +425,7 @@ async def toggle_classification_rule(
     return _classification_rule_payload(rule)
 
 
-@router.get("/credentials", response_model=list[CredentialRead])
+@router.get("/credentials", response_model=list[CredentialRead], dependencies=DDS_ACCESS)
 async def list_credentials(
     session: Annotated[AsyncSession, Depends(get_session)],
     is_active: bool | None = True,
@@ -389,7 +441,12 @@ async def list_credentials(
     return [_credential_payload(credential) for credential in result.all()]
 
 
-@router.post("/credentials", response_model=CredentialRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/credentials",
+    response_model=CredentialRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=DDS_ACCESS,
+)
 async def create_credential(
     payload: CredentialCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -405,7 +462,11 @@ async def create_credential(
     return _credential_payload(credential)
 
 
-@router.delete("/credentials/{credential_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/credentials/{credential_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=DDS_ACCESS,
+)
 async def delete_credential(
     credential_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -422,6 +483,7 @@ async def delete_credential(
     "/bank-sync/{provider}",
     response_model=BankSyncQueuedRead,
     status_code=status.HTTP_202_ACCEPTED,
+    dependencies=DDS_ACCESS,
 )
 async def sync_bank_operations(
     provider: Literal["sber", "tbank"],
@@ -439,7 +501,7 @@ async def sync_bank_operations(
     return {"job_id": job_id, "status": "queued", "queued_at": datetime.now(UTC)}
 
 
-@router.get("/owner-review", response_model=OwnerReviewListRead)
+@router.get("/owner-review", response_model=OwnerReviewListRead, dependencies=DDS_ACCESS)
 async def list_owner_review_cases(
     session: Annotated[AsyncSession, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
@@ -482,6 +544,7 @@ async def list_owner_review_cases(
 @router.post(
     "/owner-review/{case_id}/classify",
     response_model=OwnerReviewActionRead,
+    dependencies=DDS_CLASSIFY_ACCESS,
 )
 async def classify_owner_review_case(
     case_id: UUID,
@@ -539,6 +602,7 @@ async def classify_owner_review_case(
 @router.post(
     "/owner-review/{case_id}/dismiss",
     response_model=OwnerReviewActionRead,
+    dependencies=DDS_ACCESS,
 )
 async def dismiss_owner_review_case(
     case_id: UUID,

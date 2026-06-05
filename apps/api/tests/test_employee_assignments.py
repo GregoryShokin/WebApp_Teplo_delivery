@@ -94,6 +94,26 @@ async def session_factory(migrated_db: str):
         await engine.dispose()
 
 
+@pytest.mark.parametrize(
+    ("role", "expected"),
+    [
+        ("sushi", "sushi"),
+        ("pizza", "pizza"),
+        ("shawarma", "shawarma"),
+        ("prep", "prep"),
+        ("administrator", "administrator"),
+    ],
+)
+def test_assignment_role_for_payroll_context_accepts_canonical_roles(
+    role: str,
+    expected: str,
+) -> None:
+    assert (
+        employee_assignments_service.assignment_role_for_payroll_context(role, None)
+        == expected
+    )
+
+
 async def test_post_new_role_creates_additional_assignment(session_factory) -> None:
     async with session_factory() as session:
         employee = await _create_employee(session)

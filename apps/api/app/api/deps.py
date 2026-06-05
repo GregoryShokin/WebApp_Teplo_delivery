@@ -4,16 +4,21 @@ import uuid
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.permissions import ALL_PERMISSION_CODES
+from app.auth.service import get_permission_codes_for_roles
 from app.core.config import get_settings
 from app.core.security import decode_access_token
+from app.db.session import get_session
 
 
 @dataclass(frozen=True)
 class CurrentActor:
     roles: frozenset[str]
     user_id: uuid.UUID | None = None
+    permissions: frozenset[str] = frozenset()
 
 
 ROLE_HIERARCHY = ("manager", "accountant", "finance_manager", "owner", "admin")
@@ -28,6 +33,7 @@ def _split_roles(value: str | None) -> set[str]:
 
 
 async def get_current_actor(
+    session: Annotated[AsyncSession, Depends(get_session)],
     authorization: Annotated[str | None, Header()] = None,
     x_user_role: Annotated[str | None, Header()] = None,
     x_user_roles: Annotated[str | None, Header()] = None,
@@ -55,10 +61,26 @@ async def get_current_actor(
             except ValueError:
                 user_id = None
 
+    permissions: frozenset[str] = frozenset()
     if not roles and get_settings().environment == "local":
         roles.add("finance_manager")
+        permissions = ALL_PERMISSION_CODES
+    elif roles:
+        permissions = frozenset(await get_permission_codes_for_roles(session, roles))
 
-    return CurrentActor(roles=frozenset(roles), user_id=user_id)
+    return CurrentActor(roles=frozenset(roles), user_id=user_id, permissions=permissions)
+
+
+def require_permission(code: str):
+    async def _dep(actor: Annotated[CurrentActor, Depends(get_current_actor)]) -> None:
+        if code in actor.permissions:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permission",
+        )
+
+    return _dep
 
 
 def require_finance_manager_plus(actor: CurrentActor) -> None:

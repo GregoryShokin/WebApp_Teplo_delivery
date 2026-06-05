@@ -7,7 +7,7 @@ from app.models.audit import (
     SourceDocument,
     SourceSnapshot,
 )
-from app.models.core import Location, Organization, Role, User, UserRole
+from app.models.core import Location, Organization, Permission, Role, RolePermission, User, UserRole
 from app.models.counterparty import Counterparty, CounterpartyRole
 from app.models.courier import (
     CourierIikoShift,
@@ -149,10 +149,12 @@ __all__ = [
     "PayrollSeniorityPremium",
     "ParsedDocument",
     "Period",
+    "Permission",
     "RevenueTier",
     "RevenueForecast",
     "ReconciliationCase",
     "Role",
+    "RolePermission",
     "ShiftLedgerEntry",
     "ShiftAllowanceOverride",
     "ShiftCostEstimate",

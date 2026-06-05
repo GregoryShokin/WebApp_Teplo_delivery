@@ -60,6 +60,26 @@ class Role(Base):
     name: Mapped[str] = mapped_column(String(160), nullable=False)
 
 
+class Permission(Base):
+    __tablename__ = "permission"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code: Mapped[str] = mapped_column(String(96), nullable=False, unique=True)
+    module: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
+class RolePermission(Base):
+    __tablename__ = "role_permission"
+
+    role_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("role.id", ondelete="CASCADE"), primary_key=True
+    )
+    permission_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("permission.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
 class UserRole(Base):
     __tablename__ = "user_role"
 

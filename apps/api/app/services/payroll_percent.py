@@ -49,26 +49,26 @@ DEFAULT_REVENUE_TIERS = (
 DEFAULT_CATEGORY_COEFFICIENTS = (
     {
         "category": "category_1",
-        "coefficient": Decimal("3.000"),
+        "coefficient": Decimal("10.000"),
         "effective_from": date(2026, 1, 1),
         "effective_to": None,
     },
     {
         "category": "category_2",
-        "coefficient": Decimal("2.250"),
+        "coefficient": Decimal("7.500"),
         "effective_from": date(2026, 1, 1),
         "effective_to": None,
     },
     {
         "category": "category_3",
-        "coefficient": Decimal("1.500"),
+        "coefficient": Decimal("5.000"),
         "effective_from": date(2026, 1, 1),
         "effective_to": None,
     },
     {
         "category": "category_4",
         "coefficient": Decimal("2.500"),
-        "effective_from": date(2026, 5, 28),
+        "effective_from": date(2026, 1, 1),
         "effective_to": None,
     },
     {
