@@ -19,6 +19,7 @@ from app.models import (
     PayrollPeriod,
     ShiftLedgerEntry,
 )
+from app.services.employee_position_service import position_at
 from app.services.iiko_sync import _load_source_credential_env
 from app.services.settings_service import SettingNotFoundError, get_setting_model
 
@@ -243,7 +244,8 @@ async def _attendance_entry_is_payroll_relevant(
 ) -> bool:
     if employee is None:
         return False
-    if employee.position in PAYROLL_TARGET_POSITIONS:
+    position_on_date = await position_at(session, employee.id, entry.work_date)
+    if position_on_date in PAYROLL_TARGET_POSITIONS:
         return True
 
     ledger_entry = await session.scalar(

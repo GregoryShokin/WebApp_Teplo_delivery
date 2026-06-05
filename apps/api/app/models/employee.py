@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     Boolean,
@@ -17,25 +17,33 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    column,
     func,
+    select,
+    table,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.enums import employee_status_enum
+
+if TYPE_CHECKING:
+    from app.models.employee_position_assignment import EmployeePositionAssignment
+
+_employee_position_assignment = table(
+    "employee_position_assignment",
+    column("employee_id", UUID(as_uuid=True)),
+    column("position", String),
+    column("effective_from", Date),
+    column("effective_to", Date),
+)
 
 
 class Employee(Base):
     __tablename__ = "employee"
     __table_args__ = (
-        CheckConstraint(
-            "position in "
-            "('Кассир', 'Повар', 'Управляющий', 'Системный администратор', "
-            "'Курьер', 'Менеджер', 'Уборщица', 'Посудомойка')",
-            name="ck_employee_position_canonical",
-        ),
         CheckConstraint(
             "category is null or category in "
             "('category_1', 'category_2', 'category_3', 'category_4', 'intern', 'freelancer')",
@@ -58,18 +66,6 @@ class Employee(Base):
             "deposit_withholding_override is null or deposit_withholding_override >= 0",
             name="deposit_withholding_override_non_negative",
         ),
-        Index(
-            "uq_employee_active_senior_per_position",
-            "position",
-            unique=True,
-            postgresql_where=text("is_senior = true and status = 'active'"),
-        ),
-        Index(
-            "uq_employee_active_deputy_senior_per_position",
-            "position",
-            unique=True,
-            postgresql_where=text("is_deputy_senior = true and status = 'active'"),
-        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -80,7 +76,21 @@ class Employee(Base):
         info={"source": "iiko", "read_only": True},
     )
     iiko_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
-    position: Mapped[str] = mapped_column(String(160), nullable=False, comment="source=iiko")
+    position: Mapped[str | None] = column_property(
+        select(_employee_position_assignment.c.position)
+        .where(
+            _employee_position_assignment.c.employee_id == id,
+            _employee_position_assignment.c.effective_from <= func.current_date(),
+            (
+                _employee_position_assignment.c.effective_to.is_(None)
+                | (_employee_position_assignment.c.effective_to >= func.current_date())
+            ),
+        )
+        .order_by(_employee_position_assignment.c.effective_from.desc())
+        .limit(1)
+        .scalar_subquery(),
+        expire_on_flush=False,
+    )
     category: Mapped[str | None] = mapped_column(Text, nullable=True, comment="source=app_managed")
     default_cooking_station: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="source=app_managed"
@@ -147,6 +157,13 @@ class Employee(Base):
     role_review_payload: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB, nullable=True, comment="source=app_managed"
     )
+    requires_position_review: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="source=app_managed",
+    )
     fund_excluded: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -194,6 +211,11 @@ class Employee(Base):
         back_populates="employee",
         cascade="all, delete-orphan",
         order_by=lambda: EmployeePositionEvent.effective_from.desc(),
+    )
+    position_assignments: Mapped[list[EmployeePositionAssignment]] = relationship(
+        back_populates="employee",
+        cascade="all, delete-orphan",
+        order_by="EmployeePositionAssignment.effective_from.desc()",
     )
     allowance_events: Mapped[list[EmployeeAllowanceEvent]] = relationship(
         back_populates="employee",

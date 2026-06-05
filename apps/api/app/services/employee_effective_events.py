@@ -14,6 +14,7 @@ from app.models import (
     EmployeePendingIikoAction,
     EmployeePositionEvent,
 )
+from app.services.employee_position_service import position_at
 from app.services.staff_taxonomy import canonical_position_name, validate_premiums
 
 ALLOWANCE_TYPES = frozenset({"senior", "deputy_senior"})
@@ -36,11 +37,7 @@ async def get_position_on_date(
     employee_id: uuid.UUID,
     on_date: date,
 ) -> str | None:
-    event = await get_position_event_on_date(session, employee_id, on_date)
-    if event is not None:
-        return event.position
-    employee = await session.get(Employee, employee_id)
-    return employee.position if employee is not None else None
+    return await position_at(session, employee_id, on_date)
 
 
 async def get_position_event_on_date(
@@ -87,7 +84,7 @@ async def set_position(
     if canonical_position is None:
         raise EmployeeEffectiveEventError("Должность не входит в канонический список")
 
-    employee = await _get_employee(session, employee_id)
+    await _get_employee(session, employee_id)
     existing = await _position_event_starting_on(session, employee_id, effective_from)
     if existing is not None:
         existing.position = canonical_position
@@ -106,11 +103,6 @@ async def set_position(
             comment=comment,
         )
         session.add(event)
-
-    if effective_from <= date.today():
-        today_event = await get_position_event_on_date(session, employee_id, date.today())
-        if today_event is None or today_event.id == event.id:
-            employee.position = canonical_position
 
     await session.flush()
     return event
@@ -323,7 +315,6 @@ async def apply_due_iiko_actions(
                 if not position:
                     raise EmployeeEffectiveEventError("Pending action has no target position")
                 await update_iiko_employee(session, iiko_id=employee.iiko_id, position=position)
-                employee.position = position
             action.status = "applied"
             action.applied_at = now
             action.last_error = None

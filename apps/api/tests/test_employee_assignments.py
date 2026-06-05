@@ -25,6 +25,7 @@ from app.core.config import get_settings
 from app.models import (
     Employee,
     EmployeeChangeEvent,
+    EmployeePositionAssignment,
     EmployeeRoleAssignment,
     PayrollLine,
     PayrollPeriod,
@@ -32,6 +33,7 @@ from app.models import (
 )
 from app.schemas.employees import EmployeeRoleAssignmentCreate, EmployeeRoleAssignmentPatch
 from app.services import employee_assignments as employee_assignments_service
+from app.services import employee_position_service
 from app.services.employee_assignments import EmployeeAssignmentError, add_role, get_assignments
 from app.services.payroll_config import (
     list_category_coefficients,
@@ -888,6 +890,115 @@ async def test_auxiliary_employee_rejects_role_assignment(session_factory) -> No
     assert str(exc_info.value) == "Роль не соответствует должности сотрудника"
 
 
+async def test_position_at_returns_position_on_date(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session, position=None)
+        session.add_all(
+            [
+                EmployeePositionAssignment(
+                    employee_id=employee.id,
+                    position="Повар",
+                    effective_from=date(2024, 1, 1),
+                    effective_to=date(2024, 12, 31),
+                ),
+                EmployeePositionAssignment(
+                    employee_id=employee.id,
+                    position="Кассир",
+                    effective_from=date(2025, 1, 1),
+                    effective_to=date(2025, 12, 31),
+                ),
+                EmployeePositionAssignment(
+                    employee_id=employee.id,
+                    position="Управляющий",
+                    effective_from=date(2026, 1, 1),
+                ),
+            ]
+        )
+        await session.commit()
+
+        position_2024 = await employee_position_service.position_at(
+            session,
+            employee.id,
+            date(2024, 5, 1),
+        )
+        position_2025 = await employee_position_service.position_at(
+            session,
+            employee.id,
+            date(2025, 5, 1),
+        )
+        position_2026 = await employee_position_service.position_at(
+            session,
+            employee.id,
+            date(2026, 5, 1),
+        )
+
+    assert position_2024 == "Повар"
+    assert position_2025 == "Кассир"
+    assert position_2026 == "Управляющий"
+
+
+async def test_change_position_closes_open_interval(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+
+        assignment = await employee_position_service.change_position(
+            session,
+            employee.id,
+            "Управляющий",
+            effective_from=date(2026, 6, 6),
+            comment="promotion",
+            actor=_finance_manager(),
+        )
+        previous = await session.scalar(
+            select(EmployeePositionAssignment).where(
+                EmployeePositionAssignment.employee_id == employee.id,
+                EmployeePositionAssignment.position == "Повар",
+            )
+        )
+
+    assert assignment.position == "Управляющий"
+    assert previous is not None
+    assert previous.effective_to == date(2026, 6, 5)
+
+
+async def test_change_position_rejects_back_date_before_current_start(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+
+        with pytest.raises(employee_position_service.EmployeePositionError):
+            await employee_position_service.change_position(
+                session,
+                employee.id,
+                "Управляющий",
+                effective_from=date(2025, 12, 31),
+                comment="bad backdate",
+                actor=_finance_manager(),
+            )
+
+
+async def test_change_position_idempotent(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        before_count = await session.scalar(
+            select(text("count(*)")).select_from(EmployeePositionAssignment)
+        )
+
+        assignment = await employee_position_service.change_position(
+            session,
+            employee.id,
+            "Повар",
+            effective_from=date(2026, 6, 6),
+            comment="same",
+            actor=_finance_manager(),
+        )
+        after_count = await session.scalar(
+            select(text("count(*)")).select_from(EmployeePositionAssignment)
+        )
+
+    assert assignment.position == "Повар"
+    assert after_count == before_count
+
+
 async def _create_employee(
     session,
     *,
@@ -912,6 +1023,15 @@ async def _create_employee(
         updated_at=datetime(2026, 5, 1, tzinfo=UTC),
     )
     session.add(employee)
+    if position is not None:
+        session.add(
+            EmployeePositionAssignment(
+                employee_id=employee.id,
+                position=position,
+                effective_from=date(2026, 1, 1),
+                comment="test seed",
+            )
+        )
     await session.commit()
     return employee
 

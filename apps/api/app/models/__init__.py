@@ -48,6 +48,7 @@ from app.models.employee import (
     EmployeePositionEvent,
     EmployeeRoleAssignment,
 )
+from app.models.employee_position_assignment import EmployeePositionAssignment
 from app.models.inventory import (
     InventoryAudit,
     InventoryAuditEmployeeExclusion,
@@ -126,6 +127,7 @@ __all__ = [
     "EmployeeChangeEvent",
     "EmployeeDismissalReason",
     "EmployeePendingIikoAction",
+    "EmployeePositionAssignment",
     "EmployeePositionEvent",
     "EmployeeRoleAssignment",
     "InventoryAudit",

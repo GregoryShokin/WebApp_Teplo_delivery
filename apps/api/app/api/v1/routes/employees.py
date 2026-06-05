@@ -26,6 +26,7 @@ from app.models import (
     EmployeeChangeEvent,
     EmployeeDismissalReason,
     EmployeePendingIikoAction,
+    EmployeePositionAssignment,
     EmployeePositionEvent,
     EmployeeRoleAssignment,
     ShiftLedgerEntry,
@@ -49,6 +50,8 @@ from app.schemas.employees import (
     EmployeePatchRoleAssignment,
     EmployeePendingIikoActionRead,
     EmployeePinChangeRequest,
+    EmployeePositionAssignmentRead,
+    EmployeePositionChange,
     EmployeePositionEventRead,
     EmployeeRead,
     EmployeeRoleAssignmentCreate,
@@ -57,7 +60,7 @@ from app.schemas.employees import (
     IikoEmployeeRoleRead,
     SyncResultRead,
 )
-from app.services import deposit_service, notice_service
+from app.services import deposit_service, employee_position_service, notice_service
 from app.services import employee_assignments as employee_assignment_service
 from app.services import employee_change_events as employee_change_event_service
 from app.services import employee_effective_events as employee_effective_event_service
@@ -605,12 +608,13 @@ async def create_employee(
         employee.iiko_sync_at = now
 
     await session.flush()
-    await employee_effective_event_service.set_position(
+    await employee_position_service.change_position(
         session,
         employee.id,
         canonical_position,
         effective_from=today,
         comment="Initial position",
+        actor=actor,
     )
     if payload.is_senior:
         await employee_effective_event_service.set_allowance(
@@ -654,7 +658,7 @@ async def create_employee(
     employee.status = compute_status(
         employee,
         is_iiko_deleted=False,
-        position_group=position_group_for_position(employee.position),
+        position_group=position_group_for_position(canonical_position),
         assignments=assignments,
     )
     employee.updated_at = now
@@ -1109,6 +1113,106 @@ async def list_employee_position_events(
     return await employee_effective_event_service.list_position_events(session, employee_id)
 
 
+@router.patch(
+    "/{employee_id}/position",
+    response_model=EmployeePositionAssignmentRead,
+)
+async def change_employee_position(
+    employee_id: uuid.UUID,
+    payload: EmployeePositionChange,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    require_finance_manager_plus(actor)
+    employee = await _get_employee_or_404(session, employee_id)
+    today = date.today()
+    if payload.effective_from < today and not payload.comment:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Для изменения задним числом комментарий обязателен",
+        )
+
+    target_position = canonical_position_name(payload.position)
+    if target_position is None:
+        raise HTTPException(status_code=400, detail="Должность не входит в канонический список")
+
+    current_position = await employee_position_service.current_position(session, employee.id)
+    position_changed = current_position != target_position
+    if position_changed and payload.effective_from <= today:
+        try:
+            await update_iiko_employee(
+                session,
+                iiko_id=employee.iiko_id,
+                position=target_position,
+            )
+        except _http_client.IncompleteRead as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="iiko не отвечает — локальные данные не изменены. Попробуйте через минуту.",
+            ) from exc
+        except IikoEmployeeOperationError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    try:
+        assignment = await employee_position_service.change_position(
+            session,
+            employee.id,
+            target_position,
+            effective_from=payload.effective_from,
+            comment=payload.comment,
+            actor=actor,
+        )
+    except employee_position_service.EmployeePositionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    if position_changed and payload.effective_from > today:
+        await employee_effective_event_service.schedule_iiko_position_update(
+            session,
+            employee,
+            position=target_position,
+            effective_on=payload.effective_from,
+            related_entity_type="employee_position_assignment",
+            related_entity_id=assignment.id,
+        )
+
+    if payload.effective_from <= today:
+        employee.position = target_position
+        employee.is_senior, employee.is_deputy_senior = reset_inapplicable_premiums(
+            target_position,
+            is_senior=employee.is_senior,
+            is_deputy_senior=employee.is_deputy_senior,
+        )
+        assignments = await employee_assignment_service.get_assignments(session, employee.id, today)
+        employee.status = compute_status(
+            employee,
+            is_iiko_deleted=employee.status == "inactive",
+            position_group=position_group_for_position(target_position),
+            assignments=assignments,
+        )
+
+    await session.commit()
+    await session.refresh(assignment)
+    return _position_assignment_payload(assignment)
+
+
+@router.get(
+    "/{employee_id}/position-history",
+    response_model=list[EmployeePositionAssignmentRead],
+)
+async def list_position_history_endpoint(
+    employee_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> list[dict[str, Any]]:
+    require_finance_manager_plus(actor)
+    await _get_employee_or_404(session, employee_id)
+    items = await employee_position_service.list_position_history(session, employee_id)
+    return [_position_assignment_payload(item) for item in items]
+
+
 @router.get(
     "/{employee_id}/allowance-events",
     response_model=list[EmployeeAllowanceEventRead],
@@ -1191,15 +1295,16 @@ async def patch_employee(
         target_full_name = patch.full_name
         full_name_changed = target_full_name != employee.full_name
 
+    current_position = await employee_position_service.current_position(session, employee.id)
     position_changed = False
-    target_position = employee.position
+    target_position = current_position
     if "position" in patch.model_fields_set:
         if patch.position is None:
             raise HTTPException(status_code=400, detail="Должность обязательна")
         target_position = canonical_position_name(patch.position)
         if target_position is None:
             raise HTTPException(status_code=400, detail="Должность не входит в канонический список")
-        position_changed = target_position != employee.position
+        position_changed = target_position != current_position
 
     roles_changed = "roles" in patch.model_fields_set and patch.roles is not None
     target_roles = list(patch.roles or []) if roles_changed else None
@@ -1280,25 +1385,28 @@ async def patch_employee(
         except IikoEmployeeOperationError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
-    position_event: EmployeePositionEvent | None = None
+    position_assignment: EmployeePositionAssignment | None = None
     allowance_events: list[EmployeeAllowanceEvent] = []
     try:
         if position_changed:
-            position_event = await employee_effective_event_service.set_position(
+            position_assignment = await employee_position_service.change_position(
                 session,
                 employee.id,
                 target_position,
                 effective_from=effective_from,
-                comment=effective_comment,
+                comment=effective_comment or "через PATCH /employees",
+                actor=actor,
             )
+            if applies_to_current_snapshot:
+                employee.position = target_position
             if effective_from > today:
                 await employee_effective_event_service.schedule_iiko_position_update(
                     session,
                     employee,
                     position=target_position,
                     effective_on=effective_from,
-                    related_entity_type="employee_position_event",
-                    related_entity_id=position_event.id,
+                    related_entity_type="employee_position_assignment",
+                    related_entity_id=position_assignment.id,
                 )
         for field, allowance_type in (
             ("is_senior", "senior"),
@@ -1317,6 +1425,11 @@ async def patch_employee(
             allowance_events.append(event)
     except employee_effective_event_service.EmployeeEffectiveEventNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except employee_position_service.EmployeePositionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     except employee_effective_event_service.EmployeeEffectiveEventError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1362,9 +1475,9 @@ async def patch_employee(
             setattr(employee, field, getattr(patch, field))
 
     if applies_to_current_snapshot:
-        if not is_cook_position(employee.position):
+        if not is_cook_position(target_position):
             employee.default_cooking_station = None
-        if not payroll_roles_for_position(employee.position):
+        if not payroll_roles_for_position(target_position):
             employee.category = None
 
     assignments = None
@@ -1429,26 +1542,28 @@ async def patch_employee(
         ) from exc
 
     employee.is_senior, employee.is_deputy_senior = reset_inapplicable_premiums(
-        employee.position,
+        target_position,
         is_senior=employee.is_senior,
         is_deputy_senior=employee.is_deputy_senior,
     )
     employee.status = compute_status(
         employee,
         is_iiko_deleted=is_iiko_deleted,
-        position_group=position_group_for_position(employee.position),
+        position_group=position_group_for_position(target_position),
         assignments=assignments,
     )
     employee.updated_at = now
     after = _employee_lifecycle_snapshot_with_roles(employee, assignments or [])
-    if position_event is not None and (effective_from != today or not applies_to_current_snapshot):
+    if position_assignment is not None and (
+        effective_from != today or not applies_to_current_snapshot
+    ):
         await _add_manual_action(
             session,
             action_type="schedule_position_change" if effective_from > today else "update_position",
-            target_table="employee_position_event",
-            target_id=position_event.id,
+            target_table="employee_position_assignment",
+            target_id=position_assignment.id,
             before={"position": before.get("position")},
-            after=employee_effective_event_service.position_event_snapshot(position_event),
+            after=_position_assignment_snapshot(position_assignment),
             now=now,
             actor=actor,
             employee_id=employee.id,
@@ -2198,6 +2313,7 @@ def _employee_lifecycle_snapshot(employee: Employee) -> dict[str, Any]:
         "fire_date": employee.fire_date.isoformat() if employee.fire_date else None,
         "fire_reason": employee.fire_reason,
         "requires_role_review": employee.requires_role_review,
+        "requires_position_review": employee.requires_position_review,
         "role_review_payload": employee.role_review_payload,
         "pin_set_at": employee.pin_set_at.isoformat() if employee.pin_set_at else None,
         "iiko_sync_at": employee.iiko_sync_at.isoformat() if employee.iiko_sync_at else None,
@@ -2230,6 +2346,30 @@ def _employee_assignment_snapshot(
     assignment: EmployeeRoleAssignment,
 ) -> dict[str, Any]:
     return _assignment_snapshot(assignment)
+
+
+def _position_assignment_payload(assignment: EmployeePositionAssignment) -> dict[str, Any]:
+    return {
+        "id": assignment.id,
+        "employee_id": assignment.employee_id,
+        "position": assignment.position,
+        "effective_from": assignment.effective_from,
+        "effective_to": assignment.effective_to,
+        "comment": assignment.comment,
+        "created_by_name": None,
+        "created_at": assignment.created_at,
+    }
+
+
+def _position_assignment_snapshot(assignment: EmployeePositionAssignment) -> dict[str, Any]:
+    return {
+        "id": str(assignment.id),
+        "employee_id": str(assignment.employee_id),
+        "position": assignment.position,
+        "effective_from": assignment.effective_from.isoformat(),
+        "effective_to": assignment.effective_to.isoformat() if assignment.effective_to else None,
+        "comment": assignment.comment,
+    }
 
 
 def _assignment_snapshot(assignment: EmployeeRoleAssignment) -> dict[str, Any]:
@@ -2575,7 +2715,10 @@ async def _add_manual_action(
             related_agent_action_id=agent_action.id,
             comment=comment,
         )
-    elif target_table == "employee_position_event" and employee_id is not None:
+    elif (
+        target_table in {"employee_position_event", "employee_position_assignment"}
+        and employee_id is not None
+    ):
         await employee_change_event_service.add_employee_change_event(
             session,
             employee_id=employee_id,

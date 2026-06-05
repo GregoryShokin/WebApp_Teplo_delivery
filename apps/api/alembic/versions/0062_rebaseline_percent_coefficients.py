@@ -1,6 +1,6 @@
 """rebaseline percent category coefficients
 
-Revision ID: 0062_rebaseline_percent_coefficients
+Revision ID: 0062_rebaseline_percent_coeff
 Revises: 0061_rbac_permissions
 Create Date: 2026-06-05
 """
@@ -16,7 +16,7 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0062_rebaseline_percent_coefficients"
+revision = "0062_rebaseline_percent_coeff"
 down_revision = "0061_rbac_permissions"
 branch_labels = None
 depends_on = None

@@ -121,6 +121,7 @@ export type Employee = {
   fire_date: string | null;
   fire_reason: string | null;
   requires_role_review: boolean;
+  requires_position_review?: boolean;
   role_review_payload: Record<string, unknown> | null;
   pin_assumed_from_iiko: boolean;
   pin_set_at: string | null;
@@ -161,6 +162,23 @@ export type EmployeeSyncResult = {
   created: number;
   updated: number;
   deactivated: number;
+};
+
+export type EmployeePositionAssignment = {
+  id: string;
+  employee_id: string;
+  position: string;
+  effective_from: string;
+  effective_to: string | null;
+  comment: string | null;
+  created_by_name: string | null;
+  created_at: string | null;
+};
+
+export type EmployeePositionChangePayload = {
+  position: string;
+  effective_from: string;
+  comment?: string | null;
 };
 
 export type DepositDismissAction = "payout_full" | "payout_partial" | "write_off" | "none";
@@ -507,6 +525,7 @@ export type AccumulationFundEmployee = {
   next_threshold_months: number | null;
   next_threshold_date: string | null;
   next_rate_percent: string | null;
+  fund_exclusion?: FundExclusionRead;
 };
 
 export type AccumulationFundEmployeeDetail = {
@@ -2263,6 +2282,26 @@ export async function getEmployees(filters: {
 
 export async function patchEmployee(id: string, patch: EmployeePatch): Promise<Employee> {
   const response = await api.patch<Employee>(`/employees/${id}`, patch);
+  return response.data;
+}
+
+export async function changeEmployeePosition(
+  employeeId: string,
+  payload: EmployeePositionChangePayload,
+): Promise<EmployeePositionAssignment> {
+  const response = await api.patch<EmployeePositionAssignment>(
+    `/employees/${employeeId}/position`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function getEmployeePositionHistory(
+  employeeId: string,
+): Promise<EmployeePositionAssignment[]> {
+  const response = await api.get<EmployeePositionAssignment[]>(
+    `/employees/${employeeId}/position-history`,
+  );
   return response.data;
 }
 

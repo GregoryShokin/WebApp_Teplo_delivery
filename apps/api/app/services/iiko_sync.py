@@ -21,6 +21,7 @@ import anyio
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import CurrentActor
 from app.db.session import AsyncSessionLocal
 from app.models import (
     AgentAction,
@@ -33,8 +34,7 @@ from app.models import (
     SourceCredential,
 )
 from app.services import employee_change_events as employee_change_event_service
-from app.services import employee_effective_events as employee_effective_event_service
-from app.services import payroll_config
+from app.services import employee_position_service, payroll_config
 from app.services.employee_status import (
     compute_status,
     is_cook_position,
@@ -915,6 +915,22 @@ async def _apply_employee_records(
         session.add(employee)
     await session.flush()
 
+    system_actor = CurrentActor(roles=frozenset(), user_id=None)
+    for mutation in plan.mutations:
+        if mutation.action_type != "create":
+            continue
+        position = canonical_position_name(mutation.employee.position)
+        if position is None:
+            continue
+        await employee_position_service.change_position(
+            session,
+            mutation.employee.id,
+            position,
+            effective_from=sync_today,
+            comment="IIko sync initial position",
+            actor=system_actor,
+        )
+
     if mode == "reset":
         plan.result.ghost_cleaned = await _delete_ghost_employees_without_real_payroll_history(
             session,
@@ -926,14 +942,6 @@ async def _apply_employee_records(
         after = _employee_snapshot(mutation.employee)
         if mutation.note:
             after = {**after, "notes": mutation.note}
-        if _mutation_changed_position(mutation, after):
-            await employee_effective_event_service.set_position(
-                session,
-                mutation.employee.id,
-                str(after["position"]),
-                effective_from=sync_today,
-                comment="IIko sync",
-            )
         action_id = _add_action(
             session,
             agent_run_id,
@@ -1131,18 +1139,6 @@ def _iiko_positions_hash(positions: Iterable[str]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _mutation_changed_position(
-    mutation: EmployeeMutation,
-    after: Mapping[str, Any],
-) -> bool:
-    position = after.get("position")
-    if not position:
-        return False
-    if mutation.action_type == "create":
-        return True
-    return (mutation.before or {}).get("position") != position
-
-
 def plan_employee_sync(
     existing_by_iiko_id: dict[str, Employee],
     records: Iterable[Mapping[str, Any]],
@@ -1219,7 +1215,10 @@ def plan_employee_sync(
                 changed = True
             canonical_position = canonical_position_name(record.position)
             if canonical_position is not None and employee.position != canonical_position:
-                employee.position = canonical_position
+                employee.requires_position_review = True
+                changed = True
+            elif canonical_position is not None and employee.requires_position_review:
+                employee.requires_position_review = False
                 changed = True
             if employee.status != "inactive" or employee.fire_date is None:
                 employee.status = "inactive"
@@ -1232,7 +1231,10 @@ def plan_employee_sync(
                 changed = True
             canonical_position = canonical_position_name(record.position)
             if canonical_position is not None and employee.position != canonical_position:
-                employee.position = canonical_position
+                employee.requires_position_review = True
+                changed = True
+            elif canonical_position is not None and employee.requires_position_review:
+                employee.requires_position_review = False
                 changed = True
             if record.hire_date and employee.hire_date != record.hire_date:
                 employee.hire_date = record.hire_date
@@ -1692,6 +1694,7 @@ def _employee_snapshot(employee: Employee) -> dict[str, Any]:
         "is_deputy_senior": employee.is_deputy_senior,
         "status": employee.status,
         "requires_role_review": employee.requires_role_review,
+        "requires_position_review": employee.requires_position_review,
         "role_review_payload": employee.role_review_payload,
         "hire_date": employee.hire_date.isoformat() if employee.hire_date else None,
         "fire_date": employee.fire_date.isoformat() if employee.fire_date else None,

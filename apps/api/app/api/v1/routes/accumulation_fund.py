@@ -615,6 +615,7 @@ def employee_payload(
             if next_threshold
             else None
         ),
+        "fund_exclusion": _fund_exclusion_payload(employee, today),
     }
 
 

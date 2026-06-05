@@ -122,6 +122,7 @@ import {
   apiErrorMessage,
   apiErrorStatus,
   cancelEmployeeNotice,
+  changeEmployeePosition,
   createEmployeeAssignment,
   createEmployee,
   dismissEmployee,
@@ -2183,6 +2184,11 @@ function EmployeeFundSection({ employee }: { employee: Employee }) {
             <div className="flex min-w-0 items-center gap-2">
               <Banknote size={16} aria-hidden="true" />
               <span>Накопительный фонд</span>
+              {fund?.employee?.fund_exclusion?.is_currently_excluded ? (
+                <Badge variant="outline" className="border-amber-400 bg-amber-50 text-amber-800">
+                  Исключён из фонда
+                </Badge>
+              ) : null}
             </div>
             {fund?.employee ? (
               <span className="shrink-0 text-xs text-muted-foreground">
@@ -2202,6 +2208,21 @@ function EmployeeFundSection({ employee }: { employee: Employee }) {
               </div>
             ) : fund?.employee ? (
               <>
+                {fund.employee.fund_exclusion?.is_currently_excluded ? (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    <div className="font-medium">Сотрудник исключён из накопительного фонда</div>
+                    {fund.employee.fund_exclusion.fund_excluded_until ? (
+                      <div className="text-xs">
+                        До {formatDate(fund.employee.fund_exclusion.fund_excluded_until)}
+                      </div>
+                    ) : null}
+                    {fund.employee.fund_exclusion.fund_excluded_reason ? (
+                      <div className="text-xs">
+                        Причина: {fund.employee.fund_exclusion.fund_excluded_reason}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="grid gap-3 md:grid-cols-3">
                   <EmployeeFundMetric
                     label="Стаж"
@@ -2876,25 +2897,149 @@ function CreateEmployeeDialog({
   );
 }
 
+function ChangeEmployeePositionDialog({
+  currentPosition,
+  employeeName,
+  isPending,
+  onOpenChange,
+  onSubmit,
+  open,
+}: {
+  currentPosition: string | null;
+  employeeName: string;
+  isPending: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (payload: {
+    position: CanonicalPosition;
+    effective_from: string;
+    comment?: string;
+  }) => void;
+  open: boolean;
+}) {
+  const today = todayDateInputValue();
+  const currentCanonical = canonicalPosition(currentPosition);
+  const [position, setPosition] = useState<CanonicalPosition | "">("");
+  const [effectiveFrom, setEffectiveFrom] = useState(today);
+  const [comment, setComment] = useState("");
+  const positionOptions = canonicalPositions.filter((item) => createPositions.has(item));
+  const commentRequired = Boolean(effectiveFrom) && effectiveFrom < today;
+  const canSubmit =
+    Boolean(position) &&
+    Boolean(effectiveFrom) &&
+    (!commentRequired || comment.trim().length > 0) &&
+    !isPending;
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    setPosition(currentCanonical && createPositions.has(currentCanonical) ? currentCanonical : "");
+    setEffectiveFrom(todayDateInputValue());
+    setComment("");
+  }, [currentCanonical, open]);
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canSubmit || !position) {
+      return;
+    }
+    onSubmit({
+      position,
+      effective_from: effectiveFrom,
+      comment: comment.trim() || undefined,
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Изменить должность</DialogTitle>
+          <DialogDescription>{employeeName}</DialogDescription>
+        </DialogHeader>
+
+        <form className="grid gap-4" onSubmit={submit}>
+          <div className="grid gap-2 rounded-md border bg-muted/30 p-3 text-sm">
+            <InfoRow label="Сейчас" value={currentPosition || "Должность не указана"} />
+          </div>
+
+          <Label className="grid gap-2">
+            <span>Новая должность</span>
+            <Select
+              disabled={isPending}
+              onValueChange={(value) => setPosition(value as CanonicalPosition)}
+              value={position || undefined}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Выберите должность" />
+              </SelectTrigger>
+              <SelectContent>
+                {positionOptions.map((item) => (
+                  <SelectItem value={item} key={item}>
+                    {item}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Label>
+
+          <Label className="grid gap-2">
+            <span>Дата изменения</span>
+            <Input
+              disabled={isPending}
+              onChange={(event) => setEffectiveFrom(event.target.value)}
+              type="date"
+              value={effectiveFrom}
+            />
+          </Label>
+
+          <Label className="grid gap-2">
+            <span>{commentRequired ? "Комментарий" : "Комментарий (опционально)"}</span>
+            <Textarea
+              disabled={isPending}
+              maxLength={500}
+              onChange={(event) => setComment(event.target.value)}
+              placeholder={commentRequired ? "Обязателен для задней даты" : ""}
+              value={comment}
+            />
+          </Label>
+
+          <DialogFooter>
+            <Button
+              disabled={isPending}
+              onClick={() => onOpenChange(false)}
+              type="button"
+              variant="outline"
+            >
+              Отмена
+            </Button>
+            <Button disabled={!canSubmit} type="submit">
+              {isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <Save size={16} aria-hidden="true" />
+              )}
+              Применить
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function CashierRoleEditor({
   category,
   disabled,
   onCategoryChange,
-  positionDirty,
 }: {
   category: EmployeeCategory | "";
   disabled: boolean;
   onCategoryChange: (category: EmployeeCategory) => void;
-  positionDirty: boolean;
 }) {
   return (
     <div className="grid gap-3 rounded-lg border bg-card p-4">
       <div className="text-sm font-medium">Роль и категория</div>
-      {positionDirty ? (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Категория сохранится вместе с должностью.
-        </div>
-      ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <StaticField label="Роль" value={PAYROLL_ROLE_LABELS.administrator} />
         <Label className="grid gap-1">
@@ -2954,6 +3099,7 @@ function StaffEditor({
   const [hireDateValue, setHireDateValue] = useState("");
   const [hireDateComment, setHireDateComment] = useState("");
   const [hireDateConfirmOpen, setHireDateConfirmOpen] = useState(false);
+  const [positionDialogOpen, setPositionDialogOpen] = useState(false);
   const [premiumConfirmOpen, setPremiumConfirmOpen] = useState(false);
   const [premiumConfirmActions, setPremiumConfirmActions] = useState<string[]>([]);
   const [pendingDraftPatch, setPendingDraftPatch] = useState<EmployeePatch | null>(null);
@@ -2983,6 +3129,7 @@ function StaffEditor({
     setHireDateValue("");
     setHireDateComment("");
     setHireDateConfirmOpen(false);
+    setPositionDialogOpen(false);
     setPremiumConfirmOpen(false);
     setPendingDraftPatch(null);
     setCategoryChange(null);
@@ -3070,6 +3217,19 @@ function StaffEditor({
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error, "Не удалось изменить категорию"));
+    },
+  });
+  const positionMutation = useMutation({
+    mutationFn: (payload: { position: CanonicalPosition; effective_from: string; comment?: string }) =>
+      changeEmployeePosition(employee.id, payload),
+    onSuccess: () => {
+      toast.success("Должность изменена");
+      setPositionDialogOpen(false);
+      invalidateStaffEmployeeQueries(queryClient, employee.id);
+      void queryClient.invalidateQueries({ queryKey: ["payroll-fund"] });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось изменить должность"));
     },
   });
   const dismissalReasonsQuery = useQuery({
@@ -3289,7 +3449,6 @@ function StaffEditor({
   const dirty =
     JSON.stringify(editorDraftSnapshot(draft)) !==
     JSON.stringify(editorDraftSnapshot(initialDraft));
-  const positionDirty = draft.position !== initialDraft.position;
   const assignments = draft.assignments;
   const cashierAssignment = assignments.find(
     (assignment) => assignment.payroll_role === "administrator",
@@ -3372,23 +3531,6 @@ function StaffEditor({
     setDismissDepositAction(noticeTriggersFullPayout ? "payout_full" : "write_off");
     setDismissDepositAmount("");
   }, [dismissOpen, dismissDepositHasBalance, employee.id, noticeTriggersFullPayout]);
-
-  function setDraftPosition(position: CanonicalPosition) {
-    const applicability = premiumApplicability[position];
-    const requiresPin = positionRequiresPin(position);
-    if (!requiresPin) {
-      setPinOpen(false);
-    }
-    setDraft((current) => ({
-      ...current,
-      position,
-      assignments: assignmentsForPositionChange(current.assignments, position),
-      is_senior: applicability.is_senior ? current.is_senior : false,
-      is_deputy_senior: applicability.is_deputy_senior ? current.is_deputy_senior : false,
-      pin_code: requiresPin ? current.pin_code : "",
-      pin_confirmation: requiresPin ? current.pin_confirmation : "",
-    }));
-  }
 
   function addRole() {
     const payrollRole = roleOptions.find((role) => !activeRoleIds.has(role));
@@ -3515,6 +3657,25 @@ function StaffEditor({
         />
       ) : null}
 
+      {employee.requires_position_review ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <div className="flex min-w-0 items-center gap-2">
+            <CircleAlert size={16} aria-hidden="true" />
+            <span>iiko предлагает другую должность для этого сотрудника.</span>
+          </div>
+          <Button
+            className="border-amber-300 bg-background text-amber-950 hover:bg-amber-100"
+            onClick={() => setPositionDialogOpen(true)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <Pencil size={15} aria-hidden="true" />
+            Применить через диалог
+          </Button>
+        </div>
+      ) : null}
+
       {employee.hire_date ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3 text-sm">
           <div>
@@ -3571,24 +3732,23 @@ function StaffEditor({
           {!nameIsValid ? <span className="text-xs text-destructive">ФИО обязательно</span> : null}
         </Label>
 
-        <Label className="grid gap-2">
-          <span>Должность</span>
-          <Select
-            onValueChange={(value) => setDraftPosition(value as CanonicalPosition)}
-            value={editorPosition ?? undefined}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
+          <div>
+            <div className="text-xs font-medium uppercase text-muted-foreground">Должность</div>
+            <div className="mt-1 text-sm font-medium">
+              {employee.position || "Должность не указана"}
+            </div>
+          </div>
+          <Button
+            disabled={positionMutation.isPending}
+            onClick={() => setPositionDialogOpen(true)}
+            type="button"
+            variant="outline"
           >
-            <SelectTrigger>
-              <SelectValue placeholder="Выберите должность" />
-            </SelectTrigger>
-            <SelectContent>
-              {canonicalPositions.map((position) => (
-                <SelectItem value={position} key={position}>
-                  {position}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Label>
+            <Pencil size={15} aria-hidden="true" />
+            Изменить должность
+          </Button>
+        </div>
 
         {showEditorCashierRole ? (
           <CashierRoleEditor
@@ -3600,7 +3760,6 @@ function StaffEditor({
                 assignments: setCashierAssignmentCategory(current.assignments, category),
               }));
             }}
-            positionDirty={positionDirty}
           />
         ) : null}
 
@@ -3986,6 +4145,15 @@ function StaffEditor({
           </Button>
         ) : null}
       </div>
+
+      <ChangeEmployeePositionDialog
+        currentPosition={employee.position}
+        employeeName={employee.full_name}
+        isPending={positionMutation.isPending}
+        onOpenChange={setPositionDialogOpen}
+        onSubmit={(payload) => positionMutation.mutate(payload)}
+        open={positionDialogOpen}
+      />
 
       <Dialog
         open={Boolean(categoryChange)}
@@ -5753,31 +5921,6 @@ function buildEmployeePatch(initial: StaffEditorDraft, draft: StaffEditorDraft):
     patch.pin_code = draft.pin_code;
   }
   return patch;
-}
-
-function assignmentsForPositionChange(
-  assignments: AssignmentDraft[],
-  position: CanonicalPosition,
-): AssignmentDraft[] {
-  const allowedRoles = positionPayrollRoles[position];
-  if (allowedRoles.length === 0) {
-    return [];
-  }
-  if (position === "Кассир") {
-    const existing = assignments.find((assignment) => assignment.payroll_role === "administrator");
-    return [
-      {
-        id: existing?.id,
-        draft_id: existing?.draft_id ?? newDraftId(),
-        payroll_role: "administrator",
-        category: existing?.category ?? "category_2",
-        is_primary: true,
-      },
-    ];
-  }
-  return ensurePrimaryAssignment(
-    assignments.filter((assignment) => allowedRoles.includes(assignment.payroll_role)),
-  );
 }
 
 function setCashierAssignmentCategory(

@@ -4615,6 +4615,10 @@ async def test_load_attendance_entries_excludes_non_target_positions(
         "app.services.attendance_loader.load_attendance_rules",
         lambda *_args, **_kwargs: _async_rules(),
     )
+    monkeypatch.setattr(
+        "app.services.attendance_loader.position_at",
+        _position_at_from_employees([cook, cashier, courier, manager, dishwasher]),
+    )
 
     iiko_records = [
         {
@@ -4667,6 +4671,10 @@ async def test_load_attendance_entries_allows_non_target_with_substitute_ledger(
         "app.services.attendance_loader.load_attendance_rules",
         lambda *_args, **_kwargs: _async_rules(),
     )
+    monkeypatch.setattr(
+        "app.services.attendance_loader.position_at",
+        _position_at_from_employees([manager]),
+    )
 
     session = AttendanceLoaderFakeSession(
         [manager],
@@ -4708,6 +4716,10 @@ async def test_load_attendance_entries_allows_non_target_with_resolved_manual_le
         "app.services.attendance_loader.load_attendance_rules",
         lambda *_args, **_kwargs: _async_rules(),
     )
+    monkeypatch.setattr(
+        "app.services.attendance_loader.position_at",
+        _position_at_from_employees([manager]),
+    )
 
     session = AttendanceLoaderFakeSession([manager], scalar_results=[ledger_entry])
 
@@ -4725,6 +4737,63 @@ async def test_load_attendance_entries_allows_non_target_with_resolved_manual_le
 
     assert [entry.employee_id for entry in entries] == [manager.id]
     assert session.added[0].employee_id == manager.id
+
+
+async def test_attendance_loader_uses_historical_position(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    period = make_period(start=date(2026, 5, 26), end=date(2026, 6, 10))
+    employee = make_employee(position="Управляющий", category=None, default_cooking_station=None)
+    employee.iiko_id = "iiko-historical-position"
+
+    monkeypatch.setattr(
+        "app.services.attendance_loader.load_attendance_rules",
+        lambda *_args, **_kwargs: _async_rules(),
+    )
+
+    async def historical_position_at(
+        _session: Any,
+        employee_id: uuid.UUID,
+        work_date: date,
+    ) -> str | None:
+        if employee_id != employee.id:
+            return None
+        return "Повар" if work_date <= date(2026, 6, 5) else "Управляющий"
+
+    monkeypatch.setattr("app.services.attendance_loader.position_at", historical_position_at)
+
+    session = AttendanceLoaderFakeSession([employee])
+    entries = await load_attendance_entries(
+        session,  # type: ignore[arg-type]
+        period,
+        iiko_records=[
+            {
+                "employeeId": employee.iiko_id,
+                "dateFrom": "2026-05-28T09:00:00+03:00",
+                "dateTo": "2026-05-28T18:00:00+03:00",
+            },
+            {
+                "employeeId": employee.iiko_id,
+                "dateFrom": "2026-06-10T09:00:00+03:00",
+                "dateTo": "2026-06-10T18:00:00+03:00",
+            },
+        ],
+    )
+
+    assert [entry.work_date for entry in entries] == [date(2026, 5, 28)]
+
+
+def _position_at_from_employees(employees: list[Employee]):
+    by_id = {employee.id: employee.position for employee in employees}
+
+    async def fake_position_at(
+        _session: Any,
+        employee_id: uuid.UUID,
+        _work_date: date,
+    ) -> str | None:
+        return by_id.get(employee_id)
+
+    return fake_position_at
 
 
 async def _async_rules() -> Any:

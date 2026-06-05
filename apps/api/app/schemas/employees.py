@@ -72,6 +72,35 @@ class EmployeePositionEventRead(BaseModel):
     updated_at: datetime
 
 
+class EmployeePositionAssignmentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    employee_id: uuid.UUID
+    position: str
+    effective_from: date
+    effective_to: date | None = None
+    comment: str | None = None
+    created_by_name: str | None = None
+    created_at: datetime | None = None
+
+
+class EmployeePositionChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    position: str = Field(min_length=1, max_length=160)
+    effective_from: date
+    comment: str | None = Field(default=None, max_length=500)
+
+    @field_validator("comment")
+    @classmethod
+    def strip_comment(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        normalized = value.strip()
+        return normalized or None
+
+
 class EmployeeAllowanceEventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -127,6 +156,7 @@ class EmployeeRead(BaseModel):
     fire_date: date | None = None
     fire_reason: str | None = None
     requires_role_review: bool = False
+    requires_position_review: bool = False
     role_review_payload: dict[str, Any] | None = None
     pin_assumed_from_iiko: bool = False
     pin_set_at: datetime | None = None
