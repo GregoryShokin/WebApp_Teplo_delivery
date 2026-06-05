@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -9,11 +9,9 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    CourierCategory,
-    CourierCategoryAssignment,
     CourierIikoShift,
+    CourierScheduleEntry,
     CourierShiftMatch,
-    CourierShiftMatchStatus,
     DeliveryOrder,
     Employee,
 )
@@ -25,7 +23,6 @@ from app.schemas.couriers import (
 )
 from app.services.couriers.common import get_courier_or_404
 from app.services.couriers.shift_matching import (
-    MIN_WORKED_MINUTES,
     MOSCOW_TZ,
     NON_DELIVERY_STATUSES,
 )
@@ -45,16 +42,13 @@ async def get_courier_kpi(
 async def list_couriers_kpi(
     session: AsyncSession,
     month: date,
-    category: str | None = None,
 ) -> list[CourierKPI]:
-    """KPI всех активных курьеров за месяц с опциональным фильтром по категории."""
+    """KPI всех активных курьеров за месяц."""
 
     employees = await _active_couriers(session)
     rows: list[CourierKPI] = []
     for employee in employees:
         row = await _kpi_for_employee(session, employee, month)
-        if category in {"primary", "secondary"} and row.category != category:
-            continue
         rows.append(row)
     return rows
 
@@ -101,14 +95,17 @@ async def get_last_shift(
     )
 
 
-async def month_shift_count(
+async def month_schedule_counts(
     session: AsyncSession,
     courier_id: uuid.UUID,
     month: date,
-) -> int:
+) -> tuple[int, int]:
     month_start, month_end = month_bounds(month)
-    matches = await _shift_matches(session, courier_id, month_start, month_end)
-    return sum(1 for match in matches if _worked_shift(match))
+    schedules = await _schedule_entries(session, courier_id, month_start, month_end)
+    return (
+        sum(1 for schedule in schedules if schedule.category == "primary"),
+        sum(1 for schedule in schedules if schedule.category == "secondary"),
+    )
 
 
 async def has_open_shift_now(session: AsyncSession, courier_id: uuid.UUID) -> bool:
@@ -130,34 +127,6 @@ def month_bounds(month: date) -> tuple[date, date]:
     return month_start, date(month_start.year, month_start.month + 1, 1)
 
 
-def category_snapshot_date(month: date) -> date:
-    month_start, month_end = month_bounds(month)
-    month_last = month_end - timedelta(days=1)
-    today = date.today()
-    if month_start <= today <= month_last:
-        return today
-    return month_last
-
-
-async def current_assignment(
-    session: AsyncSession,
-    employee_id: uuid.UUID,
-    at_date: date,
-) -> CourierCategoryAssignment | None:
-    return await session.scalar(
-        select(CourierCategoryAssignment)
-        .where(
-            CourierCategoryAssignment.employee_id == employee_id,
-            CourierCategoryAssignment.effective_from <= at_date,
-            or_(
-                CourierCategoryAssignment.effective_to.is_(None),
-                CourierCategoryAssignment.effective_to >= at_date,
-            ),
-        )
-        .order_by(CourierCategoryAssignment.effective_from.desc())
-    )
-
-
 async def _active_couriers(session: AsyncSession) -> list[Employee]:
     result = await session.scalars(
         select(Employee)
@@ -173,29 +142,40 @@ async def _kpi_for_employee(
     month: date,
 ) -> CourierKPI:
     month_start, month_end = month_bounds(month)
-    assignment = await current_assignment(session, courier.id, category_snapshot_date(month))
-    category = _enum_value(assignment.category) if assignment is not None else None
     delivery_rows = await _delivery_rows(session, courier.iiko_id, month_start, month_end)
     matches = await _shift_matches(session, courier.id, month_start, month_end)
+    schedules = await _schedule_entries(session, courier.id, month_start, month_end)
     breakdown = _discipline_breakdown(matches)
 
     deliveries_total = len(delivery_rows)
-    shifts_worked = sum(1 for match in matches if _worked_shift(match))
+    primary_shifts_planned = sum(1 for schedule in schedules if schedule.category == "primary")
+    primary_shifts_worked = sum(
+        1 for match in matches if _status_value(match.status) == "matched_primary"
+    )
+    secondary_shifts_worked = sum(
+        1 for match in matches if _status_value(match.status) == "matched_secondary"
+    )
+    primary_productivity_denominator = sum(
+        1
+        for match in matches
+        if _status_value(match.status) in {"matched_primary", "short_primary"}
+    )
+    primary_deliveries = _deliveries_in_primary_shifts(delivery_rows, schedules)
     speed = _speed_value(delivery_rows)
-    discipline = _discipline_value(category, breakdown)
-    productivity = _productivity_value(deliveries_total, shifts_worked)
+    discipline = _discipline_value(primary_shifts_worked, primary_shifts_planned)
+    productivity = _productivity_value(primary_deliveries, primary_productivity_denominator)
 
     return CourierKPI(
         courier_id=courier.id,
         courier_name=courier.full_name,
-        category=category,
         speed_minutes=speed,
         discipline_percent=discipline,
         productivity=productivity,
         help_count=breakdown.help,
         deliveries_total=deliveries_total,
-        shifts_worked=shifts_worked,
-        shifts_planned=breakdown.planned if category == "primary" else 0,
+        primary_shifts_worked=primary_shifts_worked,
+        secondary_shifts_worked=secondary_shifts_worked,
+        primary_shifts_planned=primary_shifts_planned,
     )
 
 
@@ -242,12 +222,35 @@ async def _shift_matches(
     return list(result.all())
 
 
+async def _schedule_entries(
+    session: AsyncSession,
+    courier_id: uuid.UUID,
+    month_start: date,
+    month_end: date,
+) -> list[CourierScheduleEntry]:
+    result = await session.scalars(
+        select(CourierScheduleEntry)
+        .where(
+            CourierScheduleEntry.courier_employee_id == courier_id,
+            CourierScheduleEntry.work_date >= month_start,
+            CourierScheduleEntry.work_date < month_end,
+        )
+        .order_by(CourierScheduleEntry.work_date)
+    )
+    return list(result.all())
+
+
 def _discipline_breakdown(matches: list[CourierShiftMatch]) -> CourierDisciplineBreakdown:
     return CourierDisciplineBreakdown(
-        planned=sum(1 for match in matches if match.schedule_entry_id is not None),
-        worked=sum(1 for match in matches if _worked_shift(match)),
+        planned=sum(
+            1
+            for match in matches
+            if _status_value(match.status)
+            in {"matched_primary", "short_primary", "no_show_primary"}
+        ),
+        worked=sum(1 for match in matches if _status_value(match.status) == "matched_primary"),
         help=sum(1 for match in matches if _helping_shift(match)),
-        no_show=sum(1 for match in matches if _status_value(match.status) == "no_show"),
+        no_show=sum(1 for match in matches if _status_value(match.status) == "no_show_primary"),
     )
 
 
@@ -263,18 +266,53 @@ def _speed_value(delivery_rows: list[DeliveryOrder]) -> KpiValue:
     return KpiValue(value=average, threshold=_speed_threshold(average))
 
 
-def _discipline_value(category: str | None, breakdown: CourierDisciplineBreakdown) -> KpiValue:
-    if category != "primary" or breakdown.planned <= 0:
+def _discipline_value(primary_worked: int, primary_planned: int) -> KpiValue:
+    if primary_planned <= 0:
         return KpiValue(value=None, threshold=None)
-    value = round((breakdown.worked / breakdown.planned) * 100, 1)
+    value = round((primary_worked / primary_planned) * 100, 1)
     return KpiValue(value=value, threshold=_discipline_threshold(value))
 
 
-def _productivity_value(deliveries_total: int, shifts_worked: int) -> KpiValue:
-    if shifts_worked <= 0:
+def _productivity_value(deliveries_total: int, primary_shift_count: int) -> KpiValue:
+    if primary_shift_count <= 0:
         return KpiValue(value=None, threshold=None)
-    value = round(deliveries_total / shifts_worked, 1)
+    value = round(deliveries_total / primary_shift_count, 1)
     return KpiValue(value=value, threshold=_productivity_threshold(value))
+
+
+def _deliveries_in_primary_shifts(
+    delivery_rows: list[DeliveryOrder],
+    schedules: list[CourierScheduleEntry],
+) -> int:
+    primary_windows = [
+        (schedule.planned_start_at, schedule.planned_end_at)
+        for schedule in schedules
+        if schedule.category == "primary"
+    ]
+    if not primary_windows:
+        return 0
+    count = 0
+    for row in delivery_rows:
+        taken_at = getattr(row, "taken_at", None) or row.on_way_at
+        if taken_at is None:
+            continue
+        if any(
+            _datetime_in_window(taken_at, start_at, end_at) for start_at, end_at in primary_windows
+        ):
+            count += 1
+    return count
+
+
+def _datetime_in_window(value: datetime, start_at: datetime, end_at: datetime) -> bool:
+    try:
+        return start_at <= value <= end_at
+    except TypeError:
+        if value.tzinfo is None and start_at.tzinfo is not None:
+            value = value.replace(tzinfo=start_at.tzinfo)
+        elif value.tzinfo is not None and start_at.tzinfo is None:
+            start_at = start_at.replace(tzinfo=value.tzinfo)
+            end_at = end_at.replace(tzinfo=value.tzinfo)
+        return start_at <= value <= end_at
 
 
 def _delivery_minutes(row: DeliveryOrder) -> float | None:
@@ -289,17 +327,8 @@ def _delivery_minutes(row: DeliveryOrder) -> float | None:
     return None
 
 
-def _worked_shift(match: CourierShiftMatch) -> bool:
-    return _status_value(match.status) in {"matched", "helping"} and (
-        match.worked_minutes is not None and match.worked_minutes >= MIN_WORKED_MINUTES
-    )
-
-
 def _helping_shift(match: CourierShiftMatch) -> bool:
-    return (
-        _status_value(match.status) == CourierShiftMatchStatus.HELPING.value
-        and (match.deliveries_count or 0) >= 1
-    )
+    return _status_value(match.status) == "helping" and (match.deliveries_count or 0) >= 1
 
 
 def _speed_threshold(value: float) -> str:
@@ -344,10 +373,4 @@ def _decimal_to_float(value: Decimal | float | int) -> float:
 
 
 def _status_value(value: Any) -> str:
-    return getattr(value, "value", value)
-
-
-def _enum_value(value: CourierCategory | str | None) -> str | None:
-    if value is None:
-        return None
     return getattr(value, "value", value)

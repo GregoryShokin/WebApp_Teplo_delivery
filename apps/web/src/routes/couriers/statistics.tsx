@@ -12,13 +12,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -40,8 +33,6 @@ import {
   apiErrorMessage,
   getCourierStatistics,
   getCourierStatisticsDetail,
-  type CourierDepositCategoryFilter,
-  type CourierKpi,
   type CourierStatisticsDetail,
   type CourierStatisticsRow,
   type KpiValue,
@@ -49,8 +40,6 @@ import {
 import { cn } from "@/lib/utils";
 
 import {
-  categoryBadgeClass,
-  COURIER_CATEGORY_LABELS,
   currentMonthKey,
   formatDate,
   formatDateTime,
@@ -70,12 +59,11 @@ type CourierStatisticsRouteProps = {
 export function CourierStatisticsRoute({ onNavigate }: CourierStatisticsRouteProps) {
   const queryClient = useQueryClient();
   const [month, setMonth] = useState(currentMonthKey);
-  const [categoryFilter, setCategoryFilter] = useState<CourierDepositCategoryFilter>("all");
   const [selectedCourierId, setSelectedCourierId] = useState<string | null>(null);
 
   const statisticsQuery = useQuery({
-    queryKey: ["courier-statistics", month, categoryFilter],
-    queryFn: () => getCourierStatistics({ month, category: categoryFilter }),
+    queryKey: ["courier-statistics", month],
+    queryFn: () => getCourierStatistics({ month }),
     staleTime: 30_000,
   });
 
@@ -100,9 +88,7 @@ export function CourierStatisticsRoute({ onNavigate }: CourierStatisticsRoutePro
         description="KPI и оценки курьеров за период."
         action={
           <Button
-            onClick={() =>
-              void queryClient.invalidateQueries({ queryKey: ["courier-statistics"] })
-            }
+            onClick={() => void queryClient.invalidateQueries({ queryKey: ["courier-statistics"] })}
             title="Обновить"
             variant="outline"
           >
@@ -150,23 +136,6 @@ export function CourierStatisticsRoute({ onNavigate }: CourierStatisticsRoutePro
             </Button>
           </div>
         </div>
-
-        <label className="grid w-48 gap-2">
-          <span className="text-sm font-medium">Категория</span>
-          <Select
-            onValueChange={(value) => setCategoryFilter(value as CourierDepositCategoryFilter)}
-            value={categoryFilter}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Все</SelectItem>
-              <SelectItem value="primary">Primary</SelectItem>
-              <SelectItem value="secondary">Secondary</SelectItem>
-            </SelectContent>
-          </Select>
-        </label>
       </section>
 
       {statisticsQuery.isLoading ? (
@@ -179,7 +148,7 @@ export function CourierStatisticsRoute({ onNavigate }: CourierStatisticsRoutePro
         <EmptyState
           icon={<UsersRound size={18} aria-hidden="true" />}
           title="Курьеры не найдены"
-          description="Измените фильтр категории или проверьте список активных курьеров."
+          description="Проверьте список активных курьеров."
         />
       ) : (
         <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
@@ -231,13 +200,7 @@ export function CourierStatisticsRoute({ onNavigate }: CourierStatisticsRoutePro
   );
 }
 
-function CourierStatCard({
-  onDetails,
-  row,
-}: {
-  onDetails: () => void;
-  row: CourierStatisticsRow;
-}) {
+function CourierStatCard({ onDetails, row }: { onDetails: () => void; row: CourierStatisticsRow }) {
   const empty = isMonthEmpty(row);
   return (
     <Card className="shadow-none">
@@ -245,9 +208,9 @@ function CourierStatCard({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="truncate text-base font-semibold">{row.kpi.courier_name}</h2>
-            <span className={categoryBadgeClass(row.kpi.category)}>
-              {categoryLabel(row.kpi.category)}
-            </span>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Основные смены: {row.kpi.primary_shifts_worked}/{row.kpi.primary_shifts_planned}
+            </div>
           </div>
           <Button onClick={onDetails} size="sm" variant="outline">
             Подробнее
@@ -272,13 +235,9 @@ function CourierStatCard({
             label="Дисциплина"
             suffix={row.kpi.discipline_percent.value === null ? undefined : "%"}
             value={row.kpi.discipline_percent.value}
-            emptyText={row.kpi.category === "primary" ? "нет графика" : "—"}
+            emptyText={row.kpi.primary_shifts_planned > 0 ? "нет явок" : "нет основных"}
             metric={row.kpi.discipline_percent}
-            title={
-              row.kpi.category === "primary"
-                ? undefined
-                : "Дисциплина считается только для primary"
-            }
+            title="Дисциплина считается только по основным сменам"
           />
           <KpiBlock
             label="Производительность"
@@ -319,8 +278,10 @@ function KpiBlock({
     <div className="min-h-[102px] rounded-md border bg-background p-3" title={title}>
       <div className="text-xs font-medium text-muted-foreground">{label}</div>
       <div className="mt-2 flex items-baseline gap-1 text-lg font-semibold">
-        {hasValue ? formatMetric(value) : emptyText ?? "—"}
-        {hasValue && suffix ? <span className="text-xs text-muted-foreground">{suffix}</span> : null}
+        {hasValue ? formatMetric(value) : (emptyText ?? "—")}
+        {hasValue && suffix ? (
+          <span className="text-xs text-muted-foreground">{suffix}</span>
+        ) : null}
       </div>
       {metric ? (
         <div className="mt-2">
@@ -375,9 +336,7 @@ function CourierDetail({
     <div className="space-y-5">
       <SheetHeader>
         <SheetTitle>{kpi.courier_name}</SheetTitle>
-        <SheetDescription>
-          {categoryLabel(kpi.category)} · период {formatMonthLabel(month)}
-        </SheetDescription>
+        <SheetDescription>Период {formatMonthLabel(month)}</SheetDescription>
       </SheetHeader>
 
       <div className="grid gap-2 text-sm">
@@ -398,7 +357,7 @@ function CourierDetail({
           label="Дисциплина"
           suffix={kpi.discipline_percent.value === null ? undefined : "%"}
           value={kpi.discipline_percent.value}
-          emptyText={kpi.category === "primary" ? "нет графика" : "—"}
+          emptyText={kpi.primary_shifts_planned > 0 ? "нет явок" : "нет основных"}
           metric={kpi.discipline_percent}
           note="Считается только для primary"
         />
@@ -461,7 +420,8 @@ function CourierDetail({
                   </span>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {formatDate(evaluation.evaluated_at)} · {evaluation.author_name ?? "Автор не найден"}
+                  {formatDate(evaluation.evaluated_at)} ·{" "}
+                  {evaluation.author_name ?? "Автор не найден"}
                 </div>
               </div>
             ))}
@@ -518,19 +478,13 @@ function DetailSkeleton() {
 function isMonthEmpty(row: CourierStatisticsRow) {
   return (
     row.kpi.deliveries_total === 0 &&
-    row.kpi.shifts_worked === 0 &&
-    row.kpi.shifts_planned === 0 &&
+    row.kpi.primary_shifts_worked === 0 &&
+    row.kpi.secondary_shifts_worked === 0 &&
+    row.kpi.primary_shifts_planned === 0 &&
     row.evaluations.positive_count === 0 &&
     row.evaluations.negative_count === 0 &&
     row.evaluations.neutral_count === 0
   );
-}
-
-function categoryLabel(category: CourierKpi["category"]) {
-  if (!category) {
-    return "Без категории";
-  }
-  return COURIER_CATEGORY_LABELS[category];
 }
 
 function scoreValue(score: number) {

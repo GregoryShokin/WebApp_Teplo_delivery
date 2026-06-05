@@ -8,7 +8,9 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
+    String,
     Text,
     UniqueConstraint,
     func,
@@ -26,11 +28,16 @@ class CourierScheduleEntry(Base):
             "planned_end_at > planned_start_at",
             name="ck_courier_schedule_entry_time_range",
         ),
+        CheckConstraint(
+            "category in ('primary', 'secondary')",
+            name="ck_courier_schedule_entry_category",
+        ),
         UniqueConstraint(
             "courier_employee_id",
             "work_date",
             name="uq_courier_schedule_entry_courier_work_date",
         ),
+        Index("ix_courier_schedule_entry_work_date_category", "work_date", "category"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -40,6 +47,7 @@ class CourierScheduleEntry(Base):
         nullable=False,
     )
     work_date: Mapped[date] = mapped_column(Date, nullable=False)
+    category: Mapped[str] = mapped_column(String(16), nullable=False, default="secondary")
     planned_start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     planned_end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)

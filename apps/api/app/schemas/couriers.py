@@ -6,44 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import CourierCategory, CourierDepositTransactionType, CourierEvaluationSource
-
-
-class CourierCategoryAssignRequest(BaseModel):
-    category: CourierCategory
-    effective_from: date
-    actor_id: uuid.UUID
-
-
-class CourierCategorySetRequest(BaseModel):
-    category: CourierCategory
-    effective_from: date
-    comment: str | None = Field(default=None, max_length=2000)
-    actor_id: uuid.UUID | None = None
-
-
-class CourierBulkPrimaryRequest(BaseModel):
-    effective_from: date
-    actor_id: uuid.UUID | None = None
-
-
-class CourierCategoryAssignmentRead(BaseModel):
-    model_config = ConfigDict(use_enum_values=True)
-
-    id: int | None = None
-    employee_id: uuid.UUID
-    category: CourierCategory
-    effective_from: date
-    effective_to: date | None = None
-    created_by: uuid.UUID
-    created_at: datetime | None = None
-
-
-class CourierCategoryRow(BaseModel):
-    employee_id: uuid.UUID
-    full_name: str
-    status: str
-    category: str | None = None
+from app.models import CourierDepositTransactionType, CourierEvaluationSource
 
 
 class CourierDepositSettingsRead(BaseModel):
@@ -191,6 +154,7 @@ class CourierScheduleEntryRead(BaseModel):
     id: int | None = None
     courier_employee_id: uuid.UUID
     work_date: date
+    category: Literal["primary", "secondary"]
     planned_start_at: datetime
     planned_end_at: datetime
     comment: str | None = None
@@ -200,18 +164,47 @@ class CourierScheduleEntryRead(BaseModel):
 
 
 class CourierScheduleUpsert(BaseModel):
-    planned_start_at: datetime
-    planned_end_at: datetime
+    category: Literal["primary", "secondary"]
+    planned_start_at: datetime | None = None
+    planned_end_at: datetime | None = None
     comment: str | None = Field(default=None, max_length=2000)
-    actor_id: uuid.UUID
+    actor_id: uuid.UUID | None = None
+
+
+class CourierScheduleMatchedEntry(BaseModel):
+    id: int | None = None
+    courier_employee_id: uuid.UUID
+    work_date: date
+    category: Literal["primary", "secondary"] | None = None
+    planned_start_at: datetime | None = None
+    planned_end_at: datetime | None = None
+    comment: str | None = None
+    status: (
+        Literal[
+            "matched_primary",
+            "short_primary",
+            "no_show_primary",
+            "matched_secondary",
+            "short_secondary",
+            "no_show_secondary",
+            "helping",
+            "not_counted",
+            "not_started",
+        ]
+        | None
+    ) = None
+    late_minutes: int | None = None
+    worked_minutes: int | None = None
+    deliveries_count: int | None = None
+    iiko_shift_id: int | None = None
+    opened_at: datetime | None = None
+    closed_at: datetime | None = None
 
 
 CourierDepositStatus = Literal["active", "fired", "all"]
 CourierDepositCategory = Literal["primary", "secondary", "all"]
 
 KpiThreshold = Literal["green", "yellow", "red"]
-CourierCategoryFilter = Literal["primary", "secondary", "all"]
-CourierListCategoryFilter = Literal["primary", "secondary", "uncategorized", "all"]
 
 
 class KpiValue(BaseModel):
@@ -222,14 +215,14 @@ class KpiValue(BaseModel):
 class CourierKPI(BaseModel):
     courier_id: uuid.UUID
     courier_name: str
-    category: Literal["primary", "secondary"] | None
     speed_minutes: KpiValue
     discipline_percent: KpiValue
     productivity: KpiValue
     help_count: int
     deliveries_total: int
-    shifts_worked: int
-    shifts_planned: int
+    primary_shifts_worked: int
+    secondary_shifts_worked: int
+    primary_shifts_planned: int
 
 
 class CourierStatisticsRow(BaseModel):
@@ -272,25 +265,18 @@ class CourierListRow(BaseModel):
     full_name: str
     iiko_id: str
     status: str
-    category: Literal["primary", "secondary"] | None = None
-    category_assigned_at: date | None = None
     open_shift_now: bool
-    shifts_in_month: int
+    primary_shifts_in_month: int
+    secondary_shifts_in_month: int
 
 
 class CourierListSummary(BaseModel):
     active_total: int
-    primary_total: int
-    secondary_total: int
     fired_this_month: int
-    uncategorized_total: int
+    open_shift_now_total: int
 
 
 class CourierListResponse(BaseModel):
     month: str
     summary: CourierListSummary
     rows: list[CourierListRow]
-
-
-class CourierBulkCategoryAssignResponse(BaseModel):
-    updated: int

@@ -17,10 +17,10 @@ MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 def test_shift_matching_covers_plan_fact_status_matrix_and_open_shift() -> None:
     courier_id = uuid.uuid4()
     schedules = [
-        schedule(1, courier_id, date(2026, 6, 1)),
-        schedule(2, courier_id, date(2026, 6, 2)),
-        schedule(3, courier_id, date(2026, 6, 3)),
-        schedule(4, courier_id, date(2026, 6, 7)),
+        schedule(1, courier_id, date(2026, 6, 1), category="primary"),
+        schedule(2, courier_id, date(2026, 6, 2), category="primary"),
+        schedule(3, courier_id, date(2026, 6, 3), category="primary"),
+        schedule(4, courier_id, date(2026, 6, 7), category="secondary"),
     ]
     shifts = [
         shift(1, courier_id, date(2026, 6, 1), opened_hour=10, opened_minute=5, hours=8),
@@ -42,17 +42,17 @@ def test_shift_matching_covers_plan_fact_status_matrix_and_open_shift() -> None:
     )
 
     by_date = {match.work_date: match for match in matches}
-    assert by_date[date(2026, 6, 1)].status == CourierShiftMatchStatus.MATCHED
+    assert by_date[date(2026, 6, 1)].status == CourierShiftMatchStatus.MATCHED_PRIMARY
     assert by_date[date(2026, 6, 1)].late_minutes == 5
     assert by_date[date(2026, 6, 1)].worked_minutes == 480
-    assert by_date[date(2026, 6, 2)].status == CourierShiftMatchStatus.SHORT_SHIFT
-    assert by_date[date(2026, 6, 3)].status == CourierShiftMatchStatus.NO_SHOW
+    assert by_date[date(2026, 6, 2)].status == CourierShiftMatchStatus.SHORT_PRIMARY
+    assert by_date[date(2026, 6, 3)].status == CourierShiftMatchStatus.NO_SHOW_PRIMARY
     assert by_date[date(2026, 6, 4)].status == CourierShiftMatchStatus.HELPING
     assert by_date[date(2026, 6, 4)].deliveries_count == 1
-    assert by_date[date(2026, 6, 5)].status == CourierShiftMatchStatus.MATCHED
+    assert by_date[date(2026, 6, 5)].status == CourierShiftMatchStatus.NOT_COUNTED
     assert by_date[date(2026, 6, 5)].schedule_entry_id is None
     assert date(2026, 6, 6) not in by_date
-    assert by_date[date(2026, 6, 7)].status == CourierShiftMatchStatus.SHORT_SHIFT
+    assert by_date[date(2026, 6, 7)].status == CourierShiftMatchStatus.SHORT_SECONDARY
     assert by_date[date(2026, 6, 7)].worked_minutes is None
     assert len(matches) == 6
 
@@ -61,11 +61,14 @@ def schedule(
     row_id: int,
     courier_id: uuid.UUID,
     work_date: date,
+    *,
+    category: str,
 ) -> CourierScheduleEntry:
     return CourierScheduleEntry(
         id=row_id,
         courier_employee_id=courier_id,
         work_date=work_date,
+        category=category,
         planned_start_at=datetime(
             work_date.year,
             work_date.month,

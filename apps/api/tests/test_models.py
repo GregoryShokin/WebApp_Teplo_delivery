@@ -37,7 +37,6 @@ EXPECTED_TABLES = {
     "employee_change_event",
     "employee_dismissal_reason",
     "delivery_order",
-    "courier_category_assignment",
     "courier_deposit_account",
     "courier_deposit_transaction",
     "courier_evaluation_criterion",
@@ -95,8 +94,6 @@ def test_all_models_import() -> None:
         "EmployeeDismissalReason",
         "EmployeeRoleAssignment",
         "DeliveryOrder",
-        "CourierCategory",
-        "CourierCategoryAssignment",
         "CourierDepositAccount",
         "CourierDepositTransaction",
         "CourierDepositTransactionType",
@@ -302,9 +299,7 @@ def test_shift_schedule_tables_are_declared() -> None:
     override_columns = models.ShiftAllowanceOverride.__table__.c
     schedule_indexes = {index.name for index in models.ShiftSchedule.__table__.indexes}
     shift_indexes = {index.name for index in models.ScheduledShift.__table__.indexes}
-    override_indexes = {
-        index.name for index in models.ShiftAllowanceOverride.__table__.indexes
-    }
+    override_indexes = {index.name for index in models.ShiftAllowanceOverride.__table__.indexes}
     schedule_constraints = {
         constraint.name for constraint in models.ShiftSchedule.__table__.constraints
     }

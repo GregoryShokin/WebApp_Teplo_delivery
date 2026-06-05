@@ -18,7 +18,6 @@ from app.models import (
     CourierDepositTransactionType,
     Employee,
 )
-from app.services.couriers import category_service
 from app.services.couriers.common import get_courier_or_404, get_employee_or_404
 
 DepositStatusFilter = Literal["active", "fired", "all"]
@@ -230,11 +229,6 @@ async def list_couriers_with_balances(
         if not _matches_status(employee, resolved_filters.status):
             continue
 
-        current_category = await category_service.get_current_category(session, employee.id)
-        category_value = _enum_value(current_category)
-        if resolved_filters.category != "all" and category_value != resolved_filters.category:
-            continue
-
         account = await ensure_account(session, employee.id)
         balance = await get_balance(session, employee.id)
         last_transaction = await _last_transaction(session, employee.id)
@@ -244,7 +238,7 @@ async def list_couriers_with_balances(
                 "employee_id": employee.id,
                 "full_name": employee.full_name,
                 "status": employee.status,
-                "category": category_value,
+                "category": None,
                 "target_amount_cents": target,
                 "opening_balance_cents": account.opening_balance_cents,
                 "opening_date": account.opening_date,

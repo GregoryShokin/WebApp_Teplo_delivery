@@ -1194,9 +1194,10 @@ def role_category_rate_from_versions(
             continue
 
         item_station = normalized_key(item.get("station"))
-        if item_station and item_station != normalized_station:
-            continue
-        if item_station and not normalized_station:
+        # Если у ставки задана станция, а в query станция тоже задана и не совпадает — отсекаем.
+        # Если у ставки задана станция, а query пустой — НЕ отсекаем, понижаем приоритет через
+        # station_score ниже (fallback на ставку «без точной привязки к станции»).
+        if item_station and normalized_station and item_station != normalized_station:
             continue
 
         effective_from = date_or_none(item.get("effective_from"))

@@ -29,10 +29,14 @@ from app.db.base import Base
 
 
 class CourierShiftMatchStatus(StrEnum):
-    MATCHED = "matched"
-    NO_SHOW = "no_show"
+    MATCHED_PRIMARY = "matched_primary"
+    SHORT_PRIMARY = "short_primary"
+    NO_SHOW_PRIMARY = "no_show_primary"
+    MATCHED_SECONDARY = "matched_secondary"
+    SHORT_SECONDARY = "short_secondary"
+    NO_SHOW_SECONDARY = "no_show_secondary"
     HELPING = "helping"
-    SHORT_SHIFT = "short_shift"
+    NOT_COUNTED = "not_counted"
 
 
 courier_shift_match_status_enum = SQLEnum(
@@ -62,9 +66,7 @@ class DeliveryOrder(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    way_duration_minutes: Mapped[Decimal | None] = mapped_column(
-        Numeric(10, 2), nullable=True
-    )
+    way_duration_minutes: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     revenue: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     raw: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")

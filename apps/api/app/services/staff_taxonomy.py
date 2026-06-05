@@ -55,7 +55,7 @@ ROLE_CATEGORIES = {
     "sushi": ("category_1", "category_2", "category_3", "intern"),
     "pizza": ("category_1", "category_2", "category_3", "intern"),
     "shawarma": ("category_3", "category_4", "intern"),
-    "prep": ("category_3",),
+    "prep": ("category_3", "intern"),
 }
 
 EMPLOYEE_CATEGORIES = (
@@ -93,6 +93,7 @@ PAYROLL_ROLE_ALIASES = {
     **{label: role for role, label in PAYROLL_ROLE_LABELS.items()},
     "Касса": "administrator",
 }
+
 
 def normalize_position(position: str | None) -> str:
     return _normalize_position(position)

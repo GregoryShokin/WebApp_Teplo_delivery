@@ -1461,8 +1461,18 @@ export type DepositWriteoffPayload = {
 export type CourierDepositStatusFilter = "active" | "fired" | "all";
 export type CourierDepositCategory = "primary" | "secondary";
 export type CourierDepositCategoryFilter = CourierDepositCategory | "all";
-export type CourierListCategoryFilter = CourierDepositCategory | "uncategorized" | "all";
 export type CourierDepositTransactionType = "top_up" | "return" | "forfeit";
+export type CourierScheduleCategory = "primary" | "secondary";
+export type CourierScheduleMatchStatus =
+  | "matched_primary"
+  | "short_primary"
+  | "no_show_primary"
+  | "matched_secondary"
+  | "short_secondary"
+  | "no_show_secondary"
+  | "helping"
+  | "not_counted"
+  | "not_started";
 
 export type CourierDepositSettings = {
   target_amount: number;
@@ -1604,14 +1614,14 @@ export type KpiValue = {
 export type CourierKpi = {
   courier_id: string;
   courier_name: string;
-  category: CourierDepositCategory | null;
   speed_minutes: KpiValue;
   discipline_percent: KpiValue;
   productivity: KpiValue;
   help_count: number;
   deliveries_total: number;
-  shifts_worked: number;
-  shifts_planned: number;
+  primary_shifts_worked: number;
+  secondary_shifts_worked: number;
+  primary_shifts_planned: number;
 };
 
 export type CourierEvaluationSummary = {
@@ -1662,18 +1672,15 @@ export type CourierListRow = {
   full_name: string;
   iiko_id: string;
   status: string;
-  category: CourierDepositCategory | null;
-  category_assigned_at: string | null;
   open_shift_now: boolean;
-  shifts_in_month: number;
+  primary_shifts_in_month: number;
+  secondary_shifts_in_month: number;
 };
 
 export type CourierListSummary = {
   active_total: number;
-  primary_total: number;
-  secondary_total: number;
   fired_this_month: number;
-  uncategorized_total: number;
+  open_shift_now_total: number;
 };
 
 export type CourierListResponse = {
@@ -1682,11 +1689,41 @@ export type CourierListResponse = {
   rows: CourierListRow[];
 };
 
-export type CourierCategoryPayload = {
-  category: CourierDepositCategory;
-  effective_from: string;
+export type CourierScheduleEntry = {
+  id: number | null;
+  courier_employee_id: string;
+  work_date: string;
+  category: CourierScheduleCategory;
+  planned_start_at: string;
+  planned_end_at: string;
+  comment: string | null;
+  created_by: string;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type CourierScheduleMatchedEntry = {
+  id: number | null;
+  courier_employee_id: string;
+  work_date: string;
+  category: CourierScheduleCategory | null;
+  planned_start_at: string | null;
+  planned_end_at: string | null;
+  comment: string | null;
+  status: CourierScheduleMatchStatus | null;
+  late_minutes: number | null;
+  worked_minutes: number | null;
+  deliveries_count: number | null;
+  iiko_shift_id: number | null;
+  opened_at: string | null;
+  closed_at: string | null;
+};
+
+export type CourierScheduleUpsertPayload = {
+  category: CourierScheduleCategory;
+  planned_start_at?: string | null;
+  planned_end_at?: string | null;
   comment?: string | null;
-  actor_id?: string | null;
 };
 
 export type DdsProvider = "sber" | "tbank";
@@ -2202,14 +2239,20 @@ export async function getEmployees(filters: {
   cookingStation?: CookingStation;
   includePending?: boolean;
 }): Promise<Employee[]> {
-  const response = await api.get<Employee[]>("/employees/", {
-    params: {
-      status: filters.status === "all" ? undefined : filters.status,
-      category: filters.category,
-      cooking_station: filters.cookingStation,
-      include_pending: filters.includePending || undefined,
-    },
-  });
+  const params: Record<string, string | boolean> = {};
+  if (filters.status && filters.status !== "all") {
+    params.status = filters.status;
+  }
+  if (filters.category) {
+    params.category = filters.category;
+  }
+  if (filters.cookingStation) {
+    params.cooking_station = filters.cookingStation;
+  }
+  if (filters.includePending) {
+    params.include_pending = true;
+  }
+  const response = await api.get<Employee[]>("/employees/", { params });
   return response.data;
 }
 
@@ -3180,46 +3223,30 @@ export async function postDepositInitialBalance(employeeId: string, amount: stri
   await api.post(`/deposits/${employeeId}/initial-balance`, { amount });
 }
 
-export async function getCourierDeposits(params: {
-  status?: CourierDepositStatusFilter;
-  category?: CourierDepositCategoryFilter;
-} = {}): Promise<CourierDepositRow[]> {
+export async function getCourierDeposits(
+  params: {
+    status?: CourierDepositStatusFilter;
+    category?: CourierDepositCategoryFilter;
+  } = {},
+): Promise<CourierDepositRow[]> {
   const response = await api.get<CourierDepositRow[]>("/couriers/deposits", { params });
   return response.data;
 }
 
-export async function getCourierList(params: {
-  status?: CourierDepositStatusFilter;
-  category?: CourierListCategoryFilter;
-  month?: string;
-} = {}): Promise<CourierListResponse> {
+export async function getCourierList(
+  params: {
+    status?: CourierDepositStatusFilter;
+    month?: string;
+  } = {},
+): Promise<CourierListResponse> {
   const response = await api.get<CourierListResponse>("/couriers/list", {
     params: cleanDdsParams(params),
   });
   return response.data;
 }
 
-export async function setCourierCategory(
-  employeeId: string,
-  payload: CourierCategoryPayload,
-): Promise<void> {
-  await api.post(`/couriers/${employeeId}/category`, payload);
-}
-
-export async function assignAllActiveCouriersPrimary(payload: {
-  effective_from: string;
-  actor_id?: string | null;
-}): Promise<{ updated: number }> {
-  const response = await api.post<{ updated: number }>(
-    "/couriers/categories/assign-active-primary",
-    payload,
-  );
-  return response.data;
-}
-
 export async function getCourierStatistics(params: {
   month: string;
-  category?: CourierDepositCategoryFilter;
 }): Promise<CourierStatisticsRow[]> {
   const response = await api.get<CourierStatisticsRow[]>("/couriers/statistics", {
     params: cleanDdsParams(params),
@@ -3227,14 +3254,49 @@ export async function getCourierStatistics(params: {
   return response.data;
 }
 
+export async function getCourierSchedule(
+  from: string,
+  to: string,
+): Promise<CourierScheduleEntry[]> {
+  const response = await api.get<CourierScheduleEntry[]>("/couriers/schedule", {
+    params: { from, to },
+  });
+  return response.data;
+}
+
+export async function getCourierScheduleMatched(
+  from: string,
+  to: string,
+): Promise<CourierScheduleMatchedEntry[]> {
+  const response = await api.get<CourierScheduleMatchedEntry[]>("/couriers/schedule/matched", {
+    params: { from, to },
+  });
+  return response.data;
+}
+
+export async function upsertCourierShift(
+  employeeId: string,
+  workDate: string,
+  payload: CourierScheduleUpsertPayload,
+): Promise<CourierScheduleEntry> {
+  const response = await api.put<CourierScheduleEntry>(
+    `/couriers/${employeeId}/schedule/${workDate}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteCourierShift(employeeId: string, workDate: string): Promise<void> {
+  await api.delete(`/couriers/${employeeId}/schedule/${workDate}`);
+}
+
 export async function getCourierStatisticsDetail(
   employeeId: string,
   month: string,
 ): Promise<CourierStatisticsDetail> {
-  const response = await api.get<CourierStatisticsDetail>(
-    `/couriers/${employeeId}/statistics`,
-    { params: { month } },
-  );
+  const response = await api.get<CourierStatisticsDetail>(`/couriers/${employeeId}/statistics`, {
+    params: { month },
+  });
   return response.data;
 }
 

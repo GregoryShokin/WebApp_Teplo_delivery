@@ -37,25 +37,42 @@ NON_DELIVERY_STATUSES = {
 
 @dataclass(slots=True)
 class MatchRecalculationReport:
-    matched: int = 0
-    no_show: int = 0
+    matched_primary: int = 0
+    short_primary: int = 0
+    no_show_primary: int = 0
+    matched_secondary: int = 0
+    short_secondary: int = 0
+    no_show_secondary: int = 0
     helping: int = 0
-    short_shift: int = 0
+    not_counted: int = 0
     inserted: int = 0
     updated: int = 0
     deleted: int = 0
 
     @property
     def total(self) -> int:
-        return self.matched + self.no_show + self.helping + self.short_shift
+        return (
+            self.matched_primary
+            + self.short_primary
+            + self.no_show_primary
+            + self.matched_secondary
+            + self.short_secondary
+            + self.no_show_secondary
+            + self.helping
+            + self.not_counted
+        )
 
     def as_dict(self) -> dict[str, int]:
         return {
             "total": self.total,
-            "matched": self.matched,
-            "no_show": self.no_show,
+            "matched_primary": self.matched_primary,
+            "short_primary": self.short_primary,
+            "no_show_primary": self.no_show_primary,
+            "matched_secondary": self.matched_secondary,
+            "short_secondary": self.short_secondary,
+            "no_show_secondary": self.no_show_secondary,
             "helping": self.helping,
-            "short_shift": self.short_shift,
+            "not_counted": self.not_counted,
             "inserted": self.inserted,
             "updated": self.updated,
             "deleted": self.deleted,
@@ -113,18 +130,14 @@ def build_shift_matches(
                         work_date=work_date,
                         schedule_entry_id=schedule.id,
                         iiko_shift_id=None,
-                        status=CourierShiftMatchStatus.NO_SHOW,
+                        status=no_show_status(schedule),
                         recalculated_at=recalculated_at,
                     )
                 )
                 continue
 
             worked_minutes = worked_minutes_for_shift(shift)
-            status = (
-                CourierShiftMatchStatus.MATCHED
-                if worked_minutes is not None and worked_minutes >= MIN_WORKED_MINUTES
-                else CourierShiftMatchStatus.SHORT_SHIFT
-            )
+            status = planned_shift_status(schedule, worked_minutes)
             matches.append(
                 make_match(
                     courier_id=courier_id,
@@ -150,7 +163,7 @@ def build_shift_matches(
             status = (
                 CourierShiftMatchStatus.HELPING
                 if deliveries_count >= 1
-                else CourierShiftMatchStatus.MATCHED
+                else CourierShiftMatchStatus.NOT_COUNTED
             )
             matches.append(
                 make_match(
@@ -180,9 +193,9 @@ async def recalculate_matches(
     requested_employees = set(employee_ids or [])
     schedules = await load_schedules(session, from_date, to_date, requested_employees)
     shifts = await load_iiko_shifts(session, from_date, to_date, requested_employees)
-    employee_ids_for_counts = {
-        schedule.courier_employee_id for schedule in schedules
-    } | {shift.employee_id for shift in shifts if shift.employee_id is not None}
+    employee_ids_for_counts = {schedule.courier_employee_id for schedule in schedules} | {
+        shift.employee_id for shift in shifts if shift.employee_id is not None
+    }
     employees = await load_employees(session, employee_ids_for_counts)
     delivery_counts = await load_delivery_counts(session, employees, from_date, to_date)
 
@@ -326,15 +339,48 @@ async def clear_matches_for_deleted_schedule_entry(
 def report_for_matches(matches: Sequence[CourierShiftMatch]) -> MatchRecalculationReport:
     report = MatchRecalculationReport()
     for match in matches:
-        if match.status == CourierShiftMatchStatus.MATCHED:
-            report.matched += 1
-        elif match.status == CourierShiftMatchStatus.NO_SHOW:
-            report.no_show += 1
+        if match.status == CourierShiftMatchStatus.MATCHED_PRIMARY:
+            report.matched_primary += 1
+        elif match.status == CourierShiftMatchStatus.SHORT_PRIMARY:
+            report.short_primary += 1
+        elif match.status == CourierShiftMatchStatus.NO_SHOW_PRIMARY:
+            report.no_show_primary += 1
+        elif match.status == CourierShiftMatchStatus.MATCHED_SECONDARY:
+            report.matched_secondary += 1
+        elif match.status == CourierShiftMatchStatus.SHORT_SECONDARY:
+            report.short_secondary += 1
+        elif match.status == CourierShiftMatchStatus.NO_SHOW_SECONDARY:
+            report.no_show_secondary += 1
         elif match.status == CourierShiftMatchStatus.HELPING:
             report.helping += 1
-        elif match.status == CourierShiftMatchStatus.SHORT_SHIFT:
-            report.short_shift += 1
+        elif match.status == CourierShiftMatchStatus.NOT_COUNTED:
+            report.not_counted += 1
     return report
+
+
+def planned_shift_status(
+    schedule: CourierScheduleEntry,
+    worked_minutes: int | None,
+) -> CourierShiftMatchStatus:
+    if worked_minutes is not None and worked_minutes >= MIN_WORKED_MINUTES:
+        return (
+            CourierShiftMatchStatus.MATCHED_PRIMARY
+            if schedule.category == "primary"
+            else CourierShiftMatchStatus.MATCHED_SECONDARY
+        )
+    return (
+        CourierShiftMatchStatus.SHORT_PRIMARY
+        if schedule.category == "primary"
+        else CourierShiftMatchStatus.SHORT_SECONDARY
+    )
+
+
+def no_show_status(schedule: CourierScheduleEntry) -> CourierShiftMatchStatus:
+    return (
+        CourierShiftMatchStatus.NO_SHOW_PRIMARY
+        if schedule.category == "primary"
+        else CourierShiftMatchStatus.NO_SHOW_SECONDARY
+    )
 
 
 def pop_best_shift_for_schedule(

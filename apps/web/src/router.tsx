@@ -11,7 +11,7 @@ import { PayrollRoute } from "@/routes/payroll";
 import { DdsRoute } from "@/routes/dds";
 import { LoginRoute } from "@/routes/login";
 import { CourierEvaluationsRoute } from "@/routes/couriers/evaluations";
-import { CourierListRoute } from "@/routes/couriers/list";
+import { CourierScheduleRoute } from "@/routes/couriers/schedule";
 import { CourierStatisticsRoute } from "@/routes/couriers/statistics";
 import { PayrollConfigurationRoute } from "@/routes/payroll/configuration";
 import { PayrollRunDetailRoute } from "@/routes/payroll/run-detail";
@@ -223,8 +223,38 @@ const routes: AppRoute[] = [
         render: ({ navigate }) => <CourierStatisticsRoute onNavigate={navigate} />,
       },
       {
-        path: "list",
-        render: () => <CourierListRoute />,
+        path: "schedule",
+        children: [
+          {
+            path: "",
+            render: ({ navigate }) => (
+              <RedirectRoute
+                onNavigate={navigate}
+                storageKey="couriers.schedule.activeTab"
+                storageValue="grid"
+                to="/couriers/schedule/grid"
+              />
+            ),
+          },
+          {
+            path: "grid",
+            render: ({ navigate }) => (
+              <CourierScheduleRoute activeTab="grid" onNavigate={navigate} />
+            ),
+          },
+          {
+            path: "list",
+            render: ({ navigate }) => (
+              <CourierScheduleRoute activeTab="list" onNavigate={navigate} />
+            ),
+          },
+          {
+            path: ":unknown",
+            render: ({ navigate }) => (
+              <RedirectRoute onNavigate={navigate} to="/couriers/schedule/grid" />
+            ),
+          },
+        ],
       },
       {
         path: ":unknown",

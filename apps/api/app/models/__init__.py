@@ -15,7 +15,6 @@ from app.models.courier import (
     CourierShiftMatchStatus,
     DeliveryOrder,
 )
-from app.models.courier_category import CourierCategory, CourierCategoryAssignment
 from app.models.courier_deposit import (
     CourierDepositAccount,
     CourierDepositTransaction,
@@ -103,8 +102,6 @@ __all__ = [
     "Counterparty",
     "CounterpartyAlias",
     "CounterpartyRole",
-    "CourierCategory",
-    "CourierCategoryAssignment",
     "CourierDepositAccount",
     "CourierDepositTransaction",
     "CourierDepositTransactionType",
