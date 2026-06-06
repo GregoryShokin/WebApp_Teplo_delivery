@@ -8,7 +8,7 @@ from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.permissions import ALL_PERMISSION_CODES
-from app.auth.service import get_permission_codes_for_roles
+from app.auth.service import get_permission_codes_for_roles, get_user_by_id, get_user_role_codes
 from app.core.config import get_settings
 from app.core.security import decode_access_token
 from app.db.session import get_session
@@ -38,7 +38,9 @@ async def get_current_actor(
     x_user_role: Annotated[str | None, Header()] = None,
     x_user_roles: Annotated[str | None, Header()] = None,
 ) -> CurrentActor:
-    roles = _split_roles(x_user_roles) | _split_roles(x_user_role)
+    header_roles = _split_roles(x_user_roles) | _split_roles(x_user_role)
+    roles = set(header_roles)
+    token_roles: set[str] = set()
     user_id: uuid.UUID | None = None
 
     if authorization and authorization.lower().startswith("bearer "):
@@ -51,9 +53,9 @@ async def get_current_actor(
             ) from exc
         claim_roles = claims.get("roles") or claims.get("role") or []
         if isinstance(claim_roles, str):
-            roles |= _split_roles(claim_roles)
+            token_roles |= _split_roles(claim_roles)
         else:
-            roles |= {str(role) for role in claim_roles}
+            token_roles |= {str(role) for role in claim_roles}
         subject = claims.get("sub")
         if subject:
             try:
@@ -61,8 +63,18 @@ async def get_current_actor(
             except ValueError:
                 user_id = None
 
+    if user_id is not None:
+        db_user = await get_user_by_id(session, user_id)
+        if db_user is not None:
+            roles |= set(await get_user_role_codes(session, user_id))
+        else:
+            roles |= token_roles
+    else:
+        roles |= token_roles
+
     permissions: frozenset[str] = frozenset()
-    if not roles and get_settings().environment == "local":
+    has_explicit_actor = bool(authorization or header_roles)
+    if not roles and get_settings().environment == "local" and not has_explicit_actor:
         roles.add("finance_manager")
         permissions = ALL_PERMISSION_CODES
     elif roles:

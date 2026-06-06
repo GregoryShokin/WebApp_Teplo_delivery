@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
+from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import (
     AgentAction,
@@ -56,19 +56,25 @@ from app.services.payroll_runner import (
 )
 
 router = APIRouter()
+PAYROLL_READ_ACCESS = (Depends(require_permission("payroll.read")),)
+PAYROLL_RUNS_WRITE_ACCESS = (Depends(require_permission("payroll.runs.write")),)
+PAYROLL_RUNS_FINALIZE_ACCESS = (Depends(require_permission("payroll.runs.finalize")),)
 
 
-@router.post("/periods/auto-create-next", response_model=PayrollPeriodRead)
+@router.post(
+    "/periods/auto-create-next",
+    response_model=PayrollPeriodRead,
+    dependencies=PAYROLL_RUNS_WRITE_ACCESS,
+)
 async def post_auto_create_next_period(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict:
-    require_finance_manager_plus(actor)
     period = await auto_create_next_period(session)
     return serialize_period(period)
 
 
-@router.get("/runs", response_model=list[PayrollRunRead])
+@router.get("/runs", response_model=list[PayrollRunRead], dependencies=PAYROLL_READ_ACCESS)
 async def get_runs(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -76,7 +82,11 @@ async def get_runs(
     return await list_runs(session)
 
 
-@router.get("/role-categories", response_model=dict[str, list[PayrollRoleCategoryOptionRead]])
+@router.get(
+    "/role-categories",
+    response_model=dict[str, list[PayrollRoleCategoryOptionRead]],
+    dependencies=PAYROLL_READ_ACCESS,
+)
 async def get_role_categories(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -84,13 +94,16 @@ async def get_role_categories(
     return await list_enabled_role_categories(session)
 
 
-@router.post("/deferred-charges", response_model=DeferredChargeRead)
+@router.post(
+    "/deferred-charges",
+    response_model=DeferredChargeRead,
+    dependencies=PAYROLL_RUNS_WRITE_ACCESS,
+)
 async def create_deferred_charge_endpoint(
     payload: DeferredChargeCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     try:
         charge = await create_deferred_charge(session, payload, actor=actor)
     except DeferredChargeNotFoundError as exc:
@@ -103,14 +116,17 @@ async def create_deferred_charge_endpoint(
     return deferred_charge_payload(charge)
 
 
-@router.get("/deferred-charges", response_model=list[DeferredChargeRead])
+@router.get(
+    "/deferred-charges",
+    response_model=list[DeferredChargeRead],
+    dependencies=PAYROLL_READ_ACCESS,
+)
 async def list_deferred_charges_endpoint(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     status_filter: Annotated[str | None, Query(alias="status")] = None,
     audit_id: uuid.UUID | None = None,
 ) -> list[dict[str, Any]]:
-    require_finance_manager_plus(actor)
     charges = await list_deferred_charges(
         session,
         status=status_filter,
@@ -119,13 +135,16 @@ async def list_deferred_charges_endpoint(
     return [deferred_charge_payload(charge) for charge in charges]
 
 
-@router.post("/deferred-charges/{charge_id}/cancel", response_model=DeferredChargeRead)
+@router.post(
+    "/deferred-charges/{charge_id}/cancel",
+    response_model=DeferredChargeRead,
+    dependencies=PAYROLL_RUNS_WRITE_ACCESS,
+)
 async def cancel_deferred_charge_endpoint(
     charge_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     try:
         charge = await cancel_deferred_charge(session, charge_id, actor=actor)
     except DeferredChargeNotFoundError as exc:
@@ -135,7 +154,11 @@ async def cancel_deferred_charge_endpoint(
     return deferred_charge_payload(charge)
 
 
-@router.get("/employee-report", response_model=PayrollPersonalReportRead)
+@router.get(
+    "/employee-report",
+    response_model=PayrollPersonalReportRead,
+    dependencies=PAYROLL_READ_ACCESS,
+)
 async def get_employee_payroll_report(
     employee_id: uuid.UUID,
     date_from: date,
@@ -143,7 +166,6 @@ async def get_employee_payroll_report(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     if date_from > date_to:
         raise HTTPException(status_code=422, detail="date_from must be <= date_to")
     if (date_to - date_from).days > 730:
@@ -154,14 +176,13 @@ async def get_employee_payroll_report(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
-@router.get("/aggregate", response_model=PayrollAggregateRead)
+@router.get("/aggregate", response_model=PayrollAggregateRead, dependencies=PAYROLL_READ_ACCESS)
 async def get_payroll_aggregate(
     date_from: date,
     date_to: date,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     if date_from > date_to:
         raise HTTPException(status_code=422, detail="date_from must be <= date_to")
     if (date_to - date_from).days > 730:
@@ -169,13 +190,12 @@ async def get_payroll_aggregate(
     return await build_aggregate(session, date_from, date_to)
 
 
-@router.post("/runs", response_model=PayrollRunRead)
+@router.post("/runs", response_model=PayrollRunRead, dependencies=PAYROLL_RUNS_WRITE_ACCESS)
 async def post_run(
     payload: PayrollRunCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict:
-    require_finance_manager_plus(actor)
     period_id = payload.period_id
     if period_id is None:
         period = await auto_create_next_period(session)
@@ -190,7 +210,11 @@ async def post_run(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
-@router.get("/runs/{run_id}", response_model=PayrollRunRead)
+@router.get(
+    "/runs/{run_id}",
+    response_model=PayrollRunRead,
+    dependencies=PAYROLL_READ_ACCESS,
+)
 async def get_run_detail(
     run_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -202,7 +226,11 @@ async def get_run_detail(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
-@router.get("/runs/{run_id}/lines", response_model=list[PayrollLineRead])
+@router.get(
+    "/runs/{run_id}/lines",
+    response_model=list[PayrollLineRead],
+    dependencies=PAYROLL_READ_ACCESS,
+)
 async def get_lines(
     run_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -218,14 +246,17 @@ async def get_lines(
     return [serialize_payroll_line(line, payouts_by_employee) for line in lines]
 
 
-@router.patch("/lines/{line_id}", response_model=PayrollLineRead)
+@router.patch(
+    "/lines/{line_id}",
+    response_model=PayrollLineRead,
+    dependencies=PAYROLL_RUNS_WRITE_ACCESS,
+)
 async def patch_line_deposit_override(
     line_id: uuid.UUID,
     payload: PayrollLineDepositOverridePatch,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> PayrollLineRead:
-    require_finance_manager_plus(actor)
     line = await session.get(PayrollLine, line_id)
     if line is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payroll line not found")
@@ -256,13 +287,16 @@ async def patch_line_deposit_override(
     return serialize_payroll_line(line, payouts)
 
 
-@router.post("/runs/{run_id}/finalize", response_model=PayrollRunRead)
+@router.post(
+    "/runs/{run_id}/finalize",
+    response_model=PayrollRunRead,
+    dependencies=PAYROLL_RUNS_FINALIZE_ACCESS,
+)
 async def post_finalize(
     run_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict:
-    require_finance_manager_plus(actor)
     try:
         run = await finalize_payroll_run(session, run_id)
         return await get_run(session, run.id)

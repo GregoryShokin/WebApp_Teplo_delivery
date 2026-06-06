@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_manager_plus
+from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import ShiftLedgerEntry
 from app.schemas.payroll import (
@@ -31,47 +31,53 @@ from app.services.shift_ledger import (
 )
 
 router = APIRouter()
+SHIFTS_READ_ACCESS = (Depends(require_permission("shifts.read")),)
+SHIFTS_WRITE_ACCESS = (Depends(require_permission("shifts.write")),)
 
 
-@router.get("/ledger", response_model=list[ShiftLedgerEntryRead])
+@router.get("/ledger", response_model=list[ShiftLedgerEntryRead], dependencies=SHIFTS_READ_ACCESS)
 async def get_shift_ledger(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     work_date: Annotated[date, Query(alias="date")],
 ) -> list[dict]:
-    require_manager_plus(actor)
     return await list_ledger_for_date(session, work_date)
 
 
-@router.get("/ledger/matrix", response_model=ShiftLedgerMatrixRead)
+@router.get("/ledger/matrix", response_model=ShiftLedgerMatrixRead, dependencies=SHIFTS_READ_ACCESS)
 async def get_shift_ledger_matrix(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     selected_date: Annotated[date, Query(alias="date")],
 ) -> dict:
-    require_manager_plus(actor)
     ensure_not_future(selected_date)
     return await list_ledger_matrix(session, selected_date)
 
 
-@router.post("/ledger/build", response_model=list[ShiftLedgerEntryRead])
+@router.post(
+    "/ledger/build",
+    response_model=list[ShiftLedgerEntryRead],
+    dependencies=SHIFTS_WRITE_ACCESS,
+)
 async def post_build_shift_ledger(
     payload: ShiftLedgerBuildRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> list[dict]:
-    require_manager_plus(actor)
     await build_ledger_for_date(session, payload.work_date)
     return await list_ledger_for_date(session, payload.work_date)
 
 
-@router.post("/ledger/build-week", response_model=ShiftLedgerMatrixRead)
+@router.post(
+    "/ledger/build-week",
+    response_model=ShiftLedgerMatrixRead,
+    dependencies=SHIFTS_WRITE_ACCESS,
+)
 async def post_build_shift_ledger_week(
     payload: ShiftLedgerBuildRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict:
-    require_manager_plus(actor)
     ensure_not_future(payload.work_date)
     start_date, end_date = ledger_week_bounds(payload.work_date)
     for work_date in iter_dates(start_date, end_date):
@@ -79,14 +85,17 @@ async def post_build_shift_ledger_week(
     return await list_ledger_matrix(session, payload.work_date)
 
 
-@router.patch("/ledger/{entry_id}", response_model=ShiftLedgerEntryRead)
+@router.patch(
+    "/ledger/{entry_id}",
+    response_model=ShiftLedgerEntryRead,
+    dependencies=SHIFTS_WRITE_ACCESS,
+)
 async def patch_shift_ledger_entry(
     entry_id: uuid.UUID,
     payload: ShiftLedgerPatch,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict:
-    require_manager_plus(actor)
     entry = await session.get(ShiftLedgerEntry, entry_id)
     if entry is None:
         raise HTTPException(

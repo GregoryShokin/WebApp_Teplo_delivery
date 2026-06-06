@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.payroll_config import router as payroll_config_router
+from app.api.v1.routes.access_control import router as access_control_router
 from app.api.v1.routes.accumulation_fund import router as accumulation_fund_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.couriers import router as couriers_router
@@ -19,6 +20,7 @@ from app.api.v1.routes.vacations import router as vacations_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
+api_router.include_router(access_control_router, prefix="/access-control", tags=["access-control"])
 api_router.include_router(health_router, tags=["health"])
 api_router.include_router(couriers_router, prefix="/couriers", tags=["couriers"])
 api_router.include_router(deposits_router, prefix="/deposits", tags=["deposits"])

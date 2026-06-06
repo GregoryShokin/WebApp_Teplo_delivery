@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
+from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import (
     InventoryAudit,
@@ -70,9 +70,16 @@ from app.services.inventory_audit_service import (
 )
 
 router = APIRouter()
+INVENTORY_READ_ACCESS = (Depends(require_permission("inventory.read")),)
+INVENTORY_WRITE_ACCESS = (Depends(require_permission("inventory.write")),)
+INVENTORY_AUDITS_WRITE_ACCESS = (Depends(require_permission("inventory.audits.write")),)
 
 
-@router.get("/positions", response_model=list[InventoryPositionRead])
+@router.get(
+    "/positions",
+    response_model=list[InventoryPositionRead],
+    dependencies=INVENTORY_READ_ACCESS,
+)
 async def list_positions(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -89,13 +96,16 @@ async def list_positions(
     return [position_payload(position) for position in positions]
 
 
-@router.post("/positions", response_model=InventoryPositionRead)
+@router.post(
+    "/positions",
+    response_model=InventoryPositionRead,
+    dependencies=INVENTORY_WRITE_ACCESS,
+)
 async def create_position(
     payload: InventoryPositionCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     validate_allocation_group(payload.allocation_group)
     swap_group = clean_swap_group_input(payload.swap_group)
     await validate_swap_group_allocation(
@@ -121,24 +131,30 @@ async def create_position(
     return position_payload(position)
 
 
-@router.post("/positions/sync-iiko", response_model=InventoryPositionsSyncRead)
+@router.post(
+    "/positions/sync-iiko",
+    response_model=InventoryPositionsSyncRead,
+    dependencies=INVENTORY_WRITE_ACCESS,
+)
 async def sync_positions_iiko(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, int]:
-    require_finance_manager_plus(actor)
     result = await sync_positions_from_iiko(session, actor=actor)
     return {"added": result.added, "updated": result.updated, "total": result.total}
 
 
-@router.patch("/positions/{position_id}", response_model=InventoryPositionRead)
+@router.patch(
+    "/positions/{position_id}",
+    response_model=InventoryPositionRead,
+    dependencies=INVENTORY_WRITE_ACCESS,
+)
 async def patch_position(
     position_id: uuid.UUID,
     payload: InventoryPositionPatch,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     position = await position_or_404(session, position_id)
     updates = payload.model_dump(exclude_unset=True)
     if "display_name" in updates:
@@ -178,7 +194,11 @@ async def patch_position(
     return position_payload(position)
 
 
-@router.get("/iiko-products", response_model=list[IikoProductRead])
+@router.get(
+    "/iiko-products",
+    response_model=list[IikoProductRead],
+    dependencies=INVENTORY_READ_ACCESS,
+)
 async def list_iiko_products(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -202,7 +222,11 @@ async def list_iiko_products(
     return sorted(rows, key=lambda item: (item["name"] or "", item["guid"]))[:100]
 
 
-@router.get("/audit-exclusions", response_model=InventoryAuditAllExclusionsRead)
+@router.get(
+    "/audit-exclusions",
+    response_model=InventoryAuditAllExclusionsRead,
+    dependencies=INVENTORY_READ_ACCESS,
+)
 async def list_audit_exclusions(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -210,7 +234,6 @@ async def list_audit_exclusions(
     audit_date_to: date | None = None,
     employee_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     return await list_all_exclusions(
         session,
         audit_date_from=audit_date_from,
@@ -219,7 +242,11 @@ async def list_audit_exclusions(
     )
 
 
-@router.get("/audits", response_model=list[InventoryAuditListRead])
+@router.get(
+    "/audits",
+    response_model=list[InventoryAuditListRead],
+    dependencies=INVENTORY_READ_ACCESS,
+)
 async def list_audits(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -238,7 +265,11 @@ async def list_audits(
     return [audit_payload(audit) for audit in audits]
 
 
-@router.get("/audits/iiko-candidates", response_model=list[IikoInventoryCandidateRead])
+@router.get(
+    "/audits/iiko-candidates",
+    response_model=list[IikoInventoryCandidateRead],
+    dependencies=INVENTORY_READ_ACCESS,
+)
 async def iiko_audit_candidates(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -247,13 +278,16 @@ async def iiko_audit_candidates(
     return await list_iiko_candidates(session, business_date=business_date)
 
 
-@router.post("/audits/import-iiko", response_model=InventoryAuditDetailRead)
+@router.post(
+    "/audits/import-iiko",
+    response_model=InventoryAuditDetailRead,
+    dependencies=INVENTORY_WRITE_ACCESS,
+)
 async def import_iiko_audit(
     payload: InventoryAuditImportIikoPayload,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     try:
         audit = await import_audit_from_iiko(
             session,
@@ -271,13 +305,16 @@ async def import_iiko_audit(
     return audit_payload(audit, include_items=True)
 
 
-@router.post("/audits", response_model=InventoryAuditDetailRead)
+@router.post(
+    "/audits",
+    response_model=InventoryAuditDetailRead,
+    dependencies=INVENTORY_WRITE_ACCESS,
+)
 async def create_audit(
     payload: InventoryAuditCreateManualPayload,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     try:
         audit = await create_manual_audit(
             session,
@@ -296,7 +333,11 @@ async def create_audit(
     return audit_payload(audit, include_items=True)
 
 
-@router.get("/audits/{audit_id}", response_model=InventoryAuditDetailRead)
+@router.get(
+    "/audits/{audit_id}",
+    response_model=InventoryAuditDetailRead,
+    dependencies=INVENTORY_READ_ACCESS,
+)
 async def get_audit(
     audit_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -309,13 +350,16 @@ async def get_audit(
     return audit_payload(result["audit"], include_items=True)
 
 
-@router.get("/audits/{audit_id}/preview", response_model=InventoryAuditDetailRead)
+@router.get(
+    "/audits/{audit_id}/preview",
+    response_model=InventoryAuditDetailRead,
+    dependencies=INVENTORY_READ_ACCESS,
+)
 async def preview_audit(
     audit_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     try:
         await compute_penalties(session, audit_id)
         result = await get_audit_with_items(session, audit_id)
@@ -324,14 +368,17 @@ async def preview_audit(
     return audit_payload(result["audit"], include_items=True)
 
 
-@router.patch("/audits/{audit_id}", response_model=InventoryAuditDetailRead)
+@router.patch(
+    "/audits/{audit_id}",
+    response_model=InventoryAuditDetailRead,
+    dependencies=INVENTORY_WRITE_ACCESS,
+)
 async def patch_audit(
     audit_id: uuid.UUID,
     payload: InventoryAuditPatch,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     audit = await load_audit_or_404(session, audit_id)
     audit.notes = clean_optional_text(payload.notes)
     await session.commit()
@@ -340,14 +387,17 @@ async def patch_audit(
     return audit_payload(audit, include_items=True)
 
 
-@router.post("/audits/{audit_id}/items", response_model=InventoryAuditDetailRead)
+@router.post(
+    "/audits/{audit_id}/items",
+    response_model=InventoryAuditDetailRead,
+    dependencies=INVENTORY_WRITE_ACCESS,
+)
 async def add_audit_item(
     audit_id: uuid.UUID,
     payload: InventoryAuditItemCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     audit = await load_audit_or_404(session, audit_id)
     ensure_draft(audit)
     position = await position_from_payload(session, payload.model_dump())
@@ -373,7 +423,11 @@ async def add_audit_item(
     return audit_payload(await load_audit_or_404(session, audit.id), include_items=True)
 
 
-@router.patch("/audits/{audit_id}/items/{item_id}", response_model=InventoryAuditDetailRead)
+@router.patch(
+    "/audits/{audit_id}/items/{item_id}",
+    response_model=InventoryAuditDetailRead,
+    dependencies=INVENTORY_WRITE_ACCESS,
+)
 async def patch_audit_item(
     audit_id: uuid.UUID,
     item_id: uuid.UUID,
@@ -381,7 +435,6 @@ async def patch_audit_item(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     audit = await load_audit_or_404(session, audit_id)
     ensure_draft(audit)
     item = next((candidate for candidate in audit.items if candidate.id == item_id), None)
@@ -426,14 +479,17 @@ async def patch_audit_item(
     return audit_payload(await load_audit_or_404(session, audit.id), include_items=True)
 
 
-@router.delete("/audits/{audit_id}/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/audits/{audit_id}/items/{item_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=INVENTORY_WRITE_ACCESS,
+)
 async def delete_audit_item(
     audit_id: uuid.UUID,
     item_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Response:
-    require_finance_manager_plus(actor)
     audit = await load_audit_or_404(session, audit_id)
     ensure_draft(audit)
     item = next((candidate for candidate in audit.items if candidate.id == item_id), None)
@@ -449,6 +505,7 @@ async def delete_audit_item(
 @router.patch(
     "/audits/{audit_id}/employee-exclusions/{employee_id}",
     response_model=InventoryAuditDetailRead,
+    dependencies=INVENTORY_WRITE_ACCESS,
 )
 async def patch_audit_employee_exclusion(
     audit_id: uuid.UUID,
@@ -457,7 +514,6 @@ async def patch_audit_employee_exclusion(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     try:
         audit = await set_employee_exclusion(
             session,
@@ -482,6 +538,7 @@ async def patch_audit_employee_exclusion(
 @router.patch(
     "/audits/{audit_id}/items/{item_id}/exclusion",
     response_model=InventoryAuditDetailRead,
+    dependencies=INVENTORY_WRITE_ACCESS,
 )
 async def patch_audit_item_exclusion(
     audit_id: uuid.UUID,
@@ -490,7 +547,6 @@ async def patch_audit_item_exclusion(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     try:
         audit = await set_item_exclusion(
             session,
@@ -512,13 +568,16 @@ async def patch_audit_item_exclusion(
     return audit_payload(audit, include_items=True)
 
 
-@router.post("/audits/{audit_id}/compute", response_model=PenaltyComputationRead)
+@router.post(
+    "/audits/{audit_id}/compute",
+    response_model=PenaltyComputationRead,
+    dependencies=INVENTORY_AUDITS_WRITE_ACCESS,
+)
 async def compute_audit(
     audit_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     try:
         computation = await compute_penalties(session, audit_id)
     except InventoryAuditNotFoundError as exc:
@@ -526,13 +585,16 @@ async def compute_audit(
     return computation_payload(computation)
 
 
-@router.post("/audits/{audit_id}/apply", response_model=InventoryAuditDetailRead)
+@router.post(
+    "/audits/{audit_id}/apply",
+    response_model=InventoryAuditDetailRead,
+    dependencies=INVENTORY_AUDITS_WRITE_ACCESS,
+)
 async def apply_audit(
     audit_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     try:
         audit = await apply_audit_penalties(session, audit_id, actor=actor)
     except InventoryAuditNotFoundError as exc:
@@ -542,13 +604,16 @@ async def apply_audit(
     return audit_payload(audit, include_items=True)
 
 
-@router.post("/audits/{audit_id}/cancel", response_model=InventoryAuditDetailRead)
+@router.post(
+    "/audits/{audit_id}/cancel",
+    response_model=InventoryAuditDetailRead,
+    dependencies=INVENTORY_AUDITS_WRITE_ACCESS,
+)
 async def cancel_inventory_audit(
     audit_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     try:
         audit = await cancel_audit(session, audit_id, actor=actor)
     except InventoryAuditNotFoundError as exc:
@@ -558,13 +623,16 @@ async def cancel_inventory_audit(
     return audit_payload(audit, include_items=True)
 
 
-@router.post("/audits/{audit_id}/restore-draft", response_model=InventoryAuditDetailRead)
+@router.post(
+    "/audits/{audit_id}/restore-draft",
+    response_model=InventoryAuditDetailRead,
+    dependencies=INVENTORY_AUDITS_WRITE_ACCESS,
+)
 async def restore_inventory_audit_draft(
     audit_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     try:
         audit = await restore_cancelled_audit(session, audit_id, actor=actor)
     except InventoryAuditNotFoundError as exc:

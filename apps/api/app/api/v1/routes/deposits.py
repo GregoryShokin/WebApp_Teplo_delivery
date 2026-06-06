@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
+from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import DepositAccount, DepositTransaction, Employee
 from app.services import deposit_service
@@ -24,6 +24,8 @@ from app.services.payroll_calculator import (
 )
 
 router = APIRouter()
+DEPOSITS_READ_ACCESS = (Depends(require_permission("deposits.read")),)
+DEPOSITS_WRITE_ACCESS = (Depends(require_permission("deposits.write")),)
 
 
 class DepositEmployeeRead(BaseModel):
@@ -88,7 +90,7 @@ class DepositOperationRead(BaseModel):
     transaction: DepositTransactionRead
 
 
-@router.get("", response_model=list[DepositEmployeeRead])
+@router.get("", response_model=list[DepositEmployeeRead], dependencies=DEPOSITS_READ_ACCESS)
 async def list_deposits(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -113,7 +115,11 @@ async def list_deposits(
     ]
 
 
-@router.get("/{employee_id}/transactions", response_model=list[DepositTransactionRead])
+@router.get(
+    "/{employee_id}/transactions",
+    response_model=list[DepositTransactionRead],
+    dependencies=DEPOSITS_READ_ACCESS,
+)
 async def get_deposit_transactions(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -128,14 +134,17 @@ async def get_deposit_transactions(
     return [deposit_service.transaction_payload(transaction) for transaction in result.all()]
 
 
-@router.patch("/{employee_id}/config", response_model=DepositConfigRead)
+@router.patch(
+    "/{employee_id}/config",
+    response_model=DepositConfigRead,
+    dependencies=DEPOSITS_WRITE_ACCESS,
+)
 async def patch_deposit_config(
     employee_id: uuid.UUID,
     payload: DepositConfigPatch,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     employee = await _get_employee_or_404(session, employee_id)
     before = _deposit_config_snapshot(employee)
 
@@ -160,14 +169,17 @@ async def patch_deposit_config(
     return _deposit_config_snapshot(employee)
 
 
-@router.post("/{employee_id}/payout", response_model=DepositOperationRead)
+@router.post(
+    "/{employee_id}/payout",
+    response_model=DepositOperationRead,
+    dependencies=DEPOSITS_WRITE_ACCESS,
+)
 async def payout_deposit(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     payload: Annotated[DepositPayoutRequest | None, Body()] = None,
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     payload = payload or DepositPayoutRequest()
     await _get_employee_or_404(session, employee_id)
     now = datetime.now(UTC)
@@ -216,14 +228,17 @@ async def payout_deposit(
     return _operation_payload(account, transaction)
 
 
-@router.post("/{employee_id}/writeoff", response_model=DepositOperationRead)
+@router.post(
+    "/{employee_id}/writeoff",
+    response_model=DepositOperationRead,
+    dependencies=DEPOSITS_WRITE_ACCESS,
+)
 async def writeoff_deposit(
     employee_id: uuid.UUID,
     payload: DepositWriteoffRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     await _get_employee_or_404(session, employee_id)
     now = datetime.now(UTC)
     account = await deposit_service.get_deposit_account(session, employee_id, for_update=True)
@@ -266,14 +281,17 @@ async def writeoff_deposit(
     return _operation_payload(account, transaction)
 
 
-@router.post("/{employee_id}/initial-balance", response_model=DepositOperationRead)
+@router.post(
+    "/{employee_id}/initial-balance",
+    response_model=DepositOperationRead,
+    dependencies=DEPOSITS_WRITE_ACCESS,
+)
 async def set_initial_deposit_balance(
     employee_id: uuid.UUID,
     payload: DepositInitialBalanceRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     await _get_employee_or_404(session, employee_id)
     now = datetime.now(UTC)
     account = await deposit_service.get_deposit_account(session, employee_id, for_update=True)

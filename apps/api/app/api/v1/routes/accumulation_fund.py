@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import extract, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
+from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import (
     AccumulationFundAccount,
@@ -37,6 +37,8 @@ from app.services.payroll_calculator import (
 )
 
 router = APIRouter()
+FUND_READ_ACCESS = (Depends(require_permission("accumulation_fund.read")),)
+FUND_WRITE_ACCESS = (Depends(require_permission("accumulation_fund.write")),)
 FUND_TIERS_SETTING_KEY = "payroll.fund_rates_by_tenure"
 MONEY = Decimal("0.01")
 FUND_TARGET_POSITIONS_ERROR = "Накопительный фонд ведётся только для Поваров и Кассиров"
@@ -120,7 +122,7 @@ class FundRosterRow(BaseModel):
     fund_account: FundRosterAccount | None = None
 
 
-@router.get("/tiers", response_model=FundTiersRead)
+@router.get("/tiers", response_model=FundTiersRead, dependencies=FUND_READ_ACCESS)
 async def get_fund_tiers(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -133,13 +135,12 @@ async def get_fund_tiers(
     )
 
 
-@router.put("/tiers", response_model=FundTiersRead)
+@router.put("/tiers", response_model=FundTiersRead, dependencies=FUND_WRITE_ACCESS)
 async def put_fund_tiers(
     payload: FundTiersWrite,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> FundTiersRead:
-    require_finance_manager_plus(actor)
     tiers = _validate_and_sort_fund_tiers(payload.tiers)
     setting = await _get_fund_tiers_setting(session)
     if setting is None:
@@ -183,7 +184,11 @@ async def put_fund_tiers(
     )
 
 
-@router.get("/initial-balance-roster", response_model=list[FundRosterRow])
+@router.get(
+    "/initial-balance-roster",
+    response_model=list[FundRosterRow],
+    dependencies=FUND_READ_ACCESS,
+)
 async def get_initial_balance_roster(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -254,14 +259,17 @@ async def get_initial_balance_roster(
     )
 
 
-@router.post("/{employee_id}/initial-balance", response_model=FundInitialBalanceRead)
+@router.post(
+    "/{employee_id}/initial-balance",
+    response_model=FundInitialBalanceRead,
+    dependencies=FUND_WRITE_ACCESS,
+)
 async def set_fund_initial_balance(
     employee_id: uuid.UUID,
     payload: FundInitialBalanceRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> FundInitialBalanceRead:
-    require_finance_manager_plus(actor)
     employee = await session.scalar(
         select(Employee).where(Employee.id == employee_id).with_for_update()
     )
@@ -357,14 +365,17 @@ async def set_fund_initial_balance(
     )
 
 
-@router.patch("/{employee_id}/exclusion", response_model=FundExclusionRead)
+@router.patch(
+    "/{employee_id}/exclusion",
+    response_model=FundExclusionRead,
+    dependencies=FUND_WRITE_ACCESS,
+)
 async def patch_fund_exclusion(
     employee_id: uuid.UUID,
     payload: FundExclusionPatch,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> FundExclusionRead:
-    require_finance_manager_plus(actor)
     employee = await _get_employee_or_404(session, employee_id)
     if employee.position not in PAYROLL_TARGET_POSITIONS:
         raise HTTPException(status_code=422, detail=FUND_TARGET_POSITIONS_ERROR)
@@ -391,7 +402,7 @@ async def patch_fund_exclusion(
     return _fund_exclusion_payload(employee, date.today())
 
 
-@router.get("/summary")
+@router.get("/summary", dependencies=FUND_READ_ACCESS)
 async def get_fund_summary(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -449,7 +460,7 @@ async def get_fund_summary(
     }
 
 
-@router.get("")
+@router.get("", dependencies=FUND_READ_ACCESS)
 async def list_fund_accounts(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -473,14 +484,13 @@ async def list_fund_accounts(
     ]
 
 
-@router.post("/payout/{year}")
+@router.post("/payout/{year}", dependencies=FUND_WRITE_ACCESS)
 async def post_fund_payout(
     year: int,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     payload: Annotated[FundPayoutRequest | None, Body()] = None,
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     payload = payload or FundPayoutRequest()
     result = await payout_fund_accounts_for_year(
         session,
@@ -496,7 +506,7 @@ async def post_fund_payout(
     }
 
 
-@router.get("/{employee_id}")
+@router.get("/{employee_id}", dependencies=FUND_READ_ACCESS)
 async def get_employee_fund(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],

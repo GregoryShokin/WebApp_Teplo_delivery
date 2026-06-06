@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
+from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import (
     Employee,
@@ -67,10 +67,16 @@ from app.services.seniority_allowance_resolver import (
 from app.services.staff_taxonomy import PAYROLL_ROLE_LABELS, default_station_for_payroll_role
 
 router = APIRouter()
+SCHEDULE_READ_ACCESS = (Depends(require_permission("schedule.read")),)
+SCHEDULE_WRITE_ACCESS = (Depends(require_permission("schedule.write")),)
 MAX_FORECAST_RANGE_DAYS = 62
 
 
-@router.get("/employees-roster", response_model=list[EmployeeRosterRow])
+@router.get(
+    "/employees-roster",
+    response_model=list[EmployeeRosterRow],
+    dependencies=SCHEDULE_READ_ACCESS,
+)
 async def get_employees_roster(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -79,8 +85,13 @@ async def get_employees_roster(
     return await shift_schedule_service.list_employees_roster(session)
 
 
-@router.get("", response_model=list[ScheduleRead])
-@router.get("/", response_model=list[ScheduleRead], include_in_schema=False)
+@router.get("", response_model=list[ScheduleRead], dependencies=SCHEDULE_READ_ACCESS)
+@router.get(
+    "/",
+    response_model=list[ScheduleRead],
+    include_in_schema=False,
+    dependencies=SCHEDULE_READ_ACCESS,
+)
 async def get_schedules(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -98,7 +109,11 @@ async def get_schedules(
     return [_schedule_to_read(schedule) for schedule in schedules]
 
 
-@router.get("/forecast", response_model=list[RevenueForecastRead])
+@router.get(
+    "/forecast",
+    response_model=list[RevenueForecastRead],
+    dependencies=SCHEDULE_READ_ACCESS,
+)
 async def get_forecast_range(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -116,13 +131,16 @@ async def get_forecast_range(
     return [_forecast_to_read(forecast, labels) for forecast in forecasts]
 
 
-@router.post("/forecast/recompute", response_model=RevenueForecastRecomputeResponse)
+@router.post(
+    "/forecast/recompute",
+    response_model=RevenueForecastRecomputeResponse,
+    dependencies=SCHEDULE_WRITE_ACCESS,
+)
 async def post_recompute_forecast(
     payload: RevenueForecastRecomputeRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> RevenueForecastRecomputeResponse:
-    require_finance_manager_plus(actor)
     recomputed = await revenue_forecast_service.compute_forecast_for_range(
         session,
         payload.date_from,
@@ -132,14 +150,17 @@ async def post_recompute_forecast(
     return RevenueForecastRecomputeResponse(recomputed=len(recomputed))
 
 
-@router.post("/forecast/{business_date}/override", response_model=RevenueForecastRead)
+@router.post(
+    "/forecast/{business_date}/override",
+    response_model=RevenueForecastRead,
+    dependencies=SCHEDULE_WRITE_ACCESS,
+)
 async def post_forecast_override(
     business_date: date,
     payload: RevenueForecastOverrideRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> RevenueForecastRead:
-    require_finance_manager_plus(actor)
     forecast = await revenue_forecast_service.apply_manual_override(
         session,
         business_date,
@@ -151,13 +172,16 @@ async def post_forecast_override(
     return _forecast_to_read(forecast, labels)
 
 
-@router.delete("/forecast/{business_date}/override", response_model=RevenueForecastRead)
+@router.delete(
+    "/forecast/{business_date}/override",
+    response_model=RevenueForecastRead,
+    dependencies=SCHEDULE_WRITE_ACCESS,
+)
 async def delete_forecast_override(
     business_date: date,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> RevenueForecastRead:
-    require_finance_manager_plus(actor)
     forecast = await revenue_forecast_service.remove_manual_override(
         session,
         business_date,
@@ -167,7 +191,11 @@ async def delete_forecast_override(
     return _forecast_to_read(forecast, labels)
 
 
-@router.get("/ledger", response_model=list[ScheduleLedgerEntryRead])
+@router.get(
+    "/ledger",
+    response_model=list[ScheduleLedgerEntryRead],
+    dependencies=SCHEDULE_READ_ACCESS,
+)
 async def get_schedule_ledger(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -204,14 +232,18 @@ async def get_schedule_ledger(
     ]
 
 
-@router.post("", response_model=ScheduleRead)
-@router.post("/", response_model=ScheduleRead, include_in_schema=False)
+@router.post("", response_model=ScheduleRead, dependencies=SCHEDULE_WRITE_ACCESS)
+@router.post(
+    "/",
+    response_model=ScheduleRead,
+    include_in_schema=False,
+    dependencies=SCHEDULE_WRITE_ACCESS,
+)
 async def post_schedule(
     payload: ScheduleCreateRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> ScheduleRead:
-    require_finance_manager_plus(actor)
     schedule = await shift_schedule_service.create_schedule(
         session,
         date_start=payload.date_start,
@@ -222,7 +254,11 @@ async def post_schedule(
     return _schedule_to_read(schedule)
 
 
-@router.get("/{schedule_id}", response_model=ScheduleRead)
+@router.get(
+    "/{schedule_id}",
+    response_model=ScheduleRead,
+    dependencies=SCHEDULE_READ_ACCESS,
+)
 async def get_schedule(
     schedule_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -239,7 +275,11 @@ async def get_schedule(
     )
 
 
-@router.get("/{schedule_id}/plan-fact", response_model=PlanFactSummaryRead)
+@router.get(
+    "/{schedule_id}/plan-fact",
+    response_model=PlanFactSummaryRead,
+    dependencies=SCHEDULE_READ_ACCESS,
+)
 async def get_plan_fact(
     schedule_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -254,6 +294,7 @@ async def get_plan_fact(
 @router.get(
     "/{schedule_id}/cashier-allowance-overrides",
     response_model=list[ShiftAllowanceOverrideRead],
+    dependencies=SCHEDULE_READ_ACCESS,
 )
 async def get_cashier_allowance_overrides(
     schedule_id: uuid.UUID,
@@ -276,6 +317,7 @@ async def get_cashier_allowance_overrides(
 @router.post(
     "/{schedule_id}/cashier-allowance-overrides",
     response_model=ShiftAllowanceOverrideRead,
+    dependencies=SCHEDULE_WRITE_ACCESS,
 )
 async def post_cashier_allowance_override(
     schedule_id: uuid.UUID,
@@ -283,7 +325,6 @@ async def post_cashier_allowance_override(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> ShiftAllowanceOverrideRead:
-    require_finance_manager_plus(actor)
     await _validate_cashier_override_request(session, schedule_id, payload)
     override = await upsert_cashier_override(
         session,
@@ -300,6 +341,7 @@ async def post_cashier_allowance_override(
 @router.patch(
     "/{schedule_id}/cashier-allowance-overrides/{override_id}",
     response_model=ShiftAllowanceOverrideRead,
+    dependencies=SCHEDULE_WRITE_ACCESS,
 )
 async def patch_cashier_allowance_override(
     schedule_id: uuid.UUID,
@@ -308,7 +350,6 @@ async def patch_cashier_allowance_override(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> ShiftAllowanceOverrideRead:
-    require_finance_manager_plus(actor)
     await _validate_cashier_override_request(session, schedule_id, payload)
     override = await patch_cashier_override(
         session,
@@ -326,6 +367,7 @@ async def patch_cashier_allowance_override(
 @router.delete(
     "/{schedule_id}/cashier-allowance-overrides/{override_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=SCHEDULE_WRITE_ACCESS,
 )
 async def delete_cashier_allowance_override(
     schedule_id: uuid.UUID,
@@ -333,7 +375,6 @@ async def delete_cashier_allowance_override(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Response:
-    require_finance_manager_plus(actor)
     await _ensure_schedule_exists(session, schedule_id)
     await delete_cashier_override(
         session,
@@ -346,6 +387,7 @@ async def delete_cashier_allowance_override(
 @router.get(
     "/{schedule_id}/cashier-allowance-resolve",
     response_model=AllowanceAssignmentRead,
+    dependencies=SCHEDULE_READ_ACCESS,
 )
 async def get_cashier_allowance_resolve(
     schedule_id: uuid.UUID,
@@ -379,13 +421,16 @@ async def get_cashier_allowance_resolve(
     )
 
 
-@router.post("/{schedule_id}/cost-forecast", response_model=PayrollForecastRunRead)
+@router.post(
+    "/{schedule_id}/cost-forecast",
+    response_model=PayrollForecastRunRead,
+    dependencies=SCHEDULE_WRITE_ACCESS,
+)
 async def post_cost_forecast(
     schedule_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> PayrollForecastRunRead:
-    require_finance_manager_plus(actor)
     run = await payroll_forecast_run_service.create_forecast_run(
         session,
         shift_schedule_id=schedule_id,
@@ -398,6 +443,7 @@ async def post_cost_forecast(
 @router.get(
     "/{schedule_id}/cost-forecast/latest",
     response_model=PayrollForecastRunRead | None,
+    dependencies=SCHEDULE_READ_ACCESS,
 )
 async def get_latest_cost_forecast(
     schedule_id: uuid.UUID,
@@ -413,7 +459,11 @@ async def get_latest_cost_forecast(
     return await _payroll_forecast_run_to_read(session, run, estimates=estimates)
 
 
-@router.get("/{schedule_id}/cost-forecast/runs", response_model=list[PayrollForecastRunRead])
+@router.get(
+    "/{schedule_id}/cost-forecast/runs",
+    response_model=list[PayrollForecastRunRead],
+    dependencies=SCHEDULE_READ_ACCESS,
+)
 async def get_cost_forecast_runs(
     schedule_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],

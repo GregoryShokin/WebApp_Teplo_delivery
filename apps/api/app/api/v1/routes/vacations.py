@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
+from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import Employee, User, VacationPeriod
 from app.schemas.vacations import (
@@ -24,10 +24,17 @@ from app.services import vacation_service
 from app.services.vacation_service import UNSET, VacationShiftConflictError
 
 router = APIRouter()
+VACATIONS_READ_ACCESS = (Depends(require_permission("vacations.read")),)
+VACATIONS_WRITE_ACCESS = (Depends(require_permission("vacations.write")),)
 
 
-@router.get("", response_model=list[VacationPeriodRead])
-@router.get("/", response_model=list[VacationPeriodRead], include_in_schema=False)
+@router.get("", response_model=list[VacationPeriodRead], dependencies=VACATIONS_READ_ACCESS)
+@router.get(
+    "/",
+    response_model=list[VacationPeriodRead],
+    include_in_schema=False,
+    dependencies=VACATIONS_READ_ACCESS,
+)
 async def get_vacations(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -45,7 +52,7 @@ async def get_vacations(
     return await _periods_to_read(session, periods)
 
 
-@router.get("/balance", response_model=VacationBalanceRead)
+@router.get("/balance", response_model=VacationBalanceRead, dependencies=VACATIONS_READ_ACCESS)
 async def get_vacation_balance(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -69,7 +76,7 @@ async def get_vacation_balance(
     )
 
 
-@router.get("/roster", response_model=list[VacationRosterRow])
+@router.get("/roster", response_model=list[VacationRosterRow], dependencies=VACATIONS_READ_ACCESS)
 async def get_vacation_roster(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -115,14 +122,18 @@ async def get_vacation_roster(
     return rows
 
 
-@router.post("", response_model=VacationPeriodRead)
-@router.post("/", response_model=VacationPeriodRead, include_in_schema=False)
+@router.post("", response_model=VacationPeriodRead, dependencies=VACATIONS_WRITE_ACCESS)
+@router.post(
+    "/",
+    response_model=VacationPeriodRead,
+    include_in_schema=False,
+    dependencies=VACATIONS_WRITE_ACCESS,
+)
 async def post_vacation(
     payload: VacationPeriodCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> VacationPeriodRead | JSONResponse:
-    require_finance_manager_plus(actor)
     try:
         period = await vacation_service.create_vacation_period(
             session,
@@ -138,14 +149,17 @@ async def post_vacation(
     return (await _periods_to_read(session, [period]))[0]
 
 
-@router.patch("/{period_id}", response_model=VacationPeriodRead)
+@router.patch(
+    "/{period_id}",
+    response_model=VacationPeriodRead,
+    dependencies=VACATIONS_WRITE_ACCESS,
+)
 async def patch_vacation(
     period_id: uuid.UUID,
     payload: VacationPeriodPatch,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> VacationPeriodRead | JSONResponse:
-    require_finance_manager_plus(actor)
     comment = payload.comment if "comment" in payload.model_fields_set else UNSET
     try:
         period = await vacation_service.update_vacation_period(
@@ -162,13 +176,16 @@ async def patch_vacation(
     return (await _periods_to_read(session, [period]))[0]
 
 
-@router.post("/{period_id}/cancel", response_model=VacationPeriodRead)
+@router.post(
+    "/{period_id}/cancel",
+    response_model=VacationPeriodRead,
+    dependencies=VACATIONS_WRITE_ACCESS,
+)
 async def post_vacation_cancel(
     period_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> VacationPeriodRead:
-    require_finance_manager_plus(actor)
     period = await vacation_service.cancel_vacation_period(session, period_id, actor=actor)
     return (await _periods_to_read(session, [period]))[0]
 
