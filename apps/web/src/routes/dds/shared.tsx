@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { apiErrorMessage, triggerBankSync, type DdsProvider } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/routes/payroll/runs";
 
@@ -234,6 +235,7 @@ export function PaginationControls({
 
 export function BankSyncButton({ variant = "outline" }: { variant?: "default" | "outline" }) {
   const queryClient = useQueryClient();
+  const permissions = usePermissions();
   const [isOpen, setIsOpen] = useState(false);
   const [provider, setProvider] = useState<DdsProvider>("sber");
   const [dateFrom, setDateFrom] = useState(isoDateDaysAgo(7));
@@ -253,6 +255,10 @@ export function BankSyncButton({ variant = "outline" }: { variant?: "default" | 
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось запустить синхронизацию")),
   });
+
+  if (!permissions.canPerformAction("finance.cashflow.sync")) {
+    return null;
+  }
 
   return (
     <>

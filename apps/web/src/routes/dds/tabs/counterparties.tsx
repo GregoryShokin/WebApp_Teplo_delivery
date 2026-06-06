@@ -48,7 +48,7 @@ import { badgeMutedClass, compactText } from "@/routes/dds/shared";
 
 type CounterpartyType = NonNullable<CounterpartyCreate["type"]>;
 
-export function CounterpartiesTab() {
+export function CounterpartiesTab({ canEdit }: { canEdit: boolean }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -113,10 +113,12 @@ export function CounterpartiesTab() {
             onChange={(event) => setSearch(event.target.value)}
           />
         </div>
-        <Button onClick={() => setIsCreateOpen(true)}>
-          <Plus size={16} aria-hidden="true" />
-          Добавить
-        </Button>
+        {canEdit ? (
+          <Button onClick={() => setIsCreateOpen(true)}>
+            <Plus size={16} aria-hidden="true" />
+            Добавить
+          </Button>
+        ) : null}
       </div>
 
       <DataTable
@@ -128,8 +130,9 @@ export function CounterpartiesTab() {
         emptyMessage="Контрагенты не найдены"
       />
 
-      <CounterpartyDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} />
+      <CounterpartyDialog open={canEdit && isCreateOpen} onOpenChange={setIsCreateOpen} />
       <CounterpartySheet
+        canEdit={canEdit}
         counterparty={selected}
         onClose={() => setSelectedId(null)}
         onDelete={(counterparty) => setDeleteTarget(counterparty)}
@@ -214,10 +217,12 @@ function CounterpartyDialog({
 }
 
 function CounterpartySheet({
+  canEdit,
   counterparty,
   onClose,
   onDelete,
 }: {
+  canEdit: boolean;
   counterparty: CounterpartyRead | null;
   onClose: () => void;
   onDelete: (counterparty: CounterpartyRead) => void;
@@ -281,6 +286,7 @@ function CounterpartySheet({
         {counterparty ? (
           <div className="mt-5 space-y-5">
             <CounterpartyForm
+              disabled={!canEdit}
               inn={inn}
               name={name}
               onInnChange={setInn}
@@ -288,35 +294,43 @@ function CounterpartySheet({
               onTypeChange={setType}
               type={type}
             />
-            <div className="flex flex-wrap gap-2">
-              <Button disabled={!name.trim() || patchMutation.isPending} onClick={() => patchMutation.mutate()}>
-                {patchMutation.isPending ? (
-                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-                ) : null}
-                Сохранить
-              </Button>
-              <Button onClick={() => onDelete(counterparty)} variant="outline">
-                <Trash2 size={16} aria-hidden="true" />
-                Удалить
-              </Button>
-            </div>
-
-            <div className="space-y-3 border-t pt-5">
-              <h3 className="text-sm font-semibold">Aliases</h3>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Новое имя или паттерн"
-                  value={alias}
-                  onChange={(event) => setAlias(event.target.value)}
-                />
+            {canEdit ? (
+              <div className="flex flex-wrap gap-2">
                 <Button
-                  disabled={!alias.trim() || aliasMutation.isPending}
-                  onClick={() => aliasMutation.mutate()}
-                  variant="outline"
+                  disabled={!name.trim() || patchMutation.isPending}
+                  onClick={() => patchMutation.mutate()}
                 >
-                  Добавить
+                  {patchMutation.isPending ? (
+                    <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                  ) : null}
+                  Сохранить
+                </Button>
+                <Button onClick={() => onDelete(counterparty)} variant="outline">
+                  <Trash2 size={16} aria-hidden="true" />
+                  Удалить
                 </Button>
               </div>
+            ) : null}
+
+            {canEdit || counterparty.aliases.length > 0 ? (
+            <div className="space-y-3 border-t pt-5">
+              <h3 className="text-sm font-semibold">Aliases</h3>
+              {canEdit ? (
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Новое имя или паттерн"
+                    value={alias}
+                    onChange={(event) => setAlias(event.target.value)}
+                  />
+                  <Button
+                    disabled={!alias.trim() || aliasMutation.isPending}
+                    onClick={() => aliasMutation.mutate()}
+                    variant="outline"
+                  >
+                    Добавить
+                  </Button>
+                </div>
+              ) : null}
               <div className="grid gap-2">
                 {counterparty.aliases.map((item) => (
                   <div
@@ -324,18 +338,21 @@ function CounterpartySheet({
                     key={item.id}
                   >
                     <span className="min-w-0 truncate">{item.alias}</span>
-                    <Button
-                      onClick={() => deleteAliasMutation.mutate(item.id)}
-                      size="icon"
-                      title="Удалить alias"
-                      variant="ghost"
-                    >
-                      <Trash2 size={15} aria-hidden="true" />
-                    </Button>
+                    {canEdit ? (
+                      <Button
+                        onClick={() => deleteAliasMutation.mutate(item.id)}
+                        size="icon"
+                        title="Удалить alias"
+                        variant="ghost"
+                      >
+                        <Trash2 size={15} aria-hidden="true" />
+                      </Button>
+                    ) : null}
                   </div>
                 ))}
               </div>
             </div>
+            ) : null}
           </div>
         ) : null}
       </SheetContent>
@@ -344,6 +361,7 @@ function CounterpartySheet({
 }
 
 function CounterpartyForm({
+  disabled = false,
   inn,
   name,
   onInnChange,
@@ -351,6 +369,7 @@ function CounterpartyForm({
   onTypeChange,
   type,
 }: {
+  disabled?: boolean;
   inn: string;
   name: string;
   onInnChange: (value: string) => void;
@@ -362,15 +381,27 @@ function CounterpartyForm({
     <div className="grid gap-4">
       <div className="grid gap-2">
         <Label>Название</Label>
-        <Input value={name} onChange={(event) => onNameChange(event.target.value)} />
+        <Input
+          disabled={disabled}
+          value={name}
+          onChange={(event) => onNameChange(event.target.value)}
+        />
       </div>
       <div className="grid gap-2">
         <Label>ИНН</Label>
-        <Input value={inn} onChange={(event) => onInnChange(event.target.value)} />
+        <Input
+          disabled={disabled}
+          value={inn}
+          onChange={(event) => onInnChange(event.target.value)}
+        />
       </div>
       <div className="grid gap-2">
         <Label>Тип</Label>
-        <Select value={type} onValueChange={(value) => onTypeChange(value as CounterpartyType)}>
+        <Select
+          disabled={disabled}
+          value={type}
+          onValueChange={(value) => onTypeChange(value as CounterpartyType)}
+        >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>

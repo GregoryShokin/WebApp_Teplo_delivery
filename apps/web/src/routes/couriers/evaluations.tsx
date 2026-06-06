@@ -69,7 +69,8 @@ import {
   type CourierEvaluationSource,
   type Employee,
 } from "@/lib/api";
-import { getAuthSnapshot, subscribeAuth, type AuthUser } from "@/lib/auth";
+import type { AuthUser } from "@/lib/auth";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 type PeriodPreset = "today" | "week" | "current-month" | "previous-month" | "custom";
@@ -101,7 +102,7 @@ const sourceOptions: Array<{ value: CourierEvaluationSource; label: string }> = 
 
 export function CourierEvaluationsRoute() {
   const queryClient = useQueryClient();
-  const [auth, setAuth] = useState(getAuthSnapshot);
+  const permissions = usePermissions();
   const [period, setPeriod] = useState<PeriodPreset>("current-month");
   const [customFrom, setCustomFrom] = useState(startOfCurrentMonth());
   const [customTo, setCustomTo] = useState(todayInput());
@@ -118,13 +119,6 @@ export function CourierEvaluationsRoute() {
   const [form, setForm] = useState<EvaluationFormState>(emptyForm());
   const [permissionBlocked, setPermissionBlocked] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<CourierEvaluation | null>(null);
-
-  useEffect(() => {
-    const unsubscribe = subscribeAuth(setAuth);
-    return () => {
-      unsubscribe();
-    };
-  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 10_000);
@@ -177,10 +171,11 @@ export function CourierEvaluationsRoute() {
   );
   const authorOptions = useMemo(() => getAuthorOptions(evaluations, employees), [employees, evaluations]);
   const currentEmployee = useMemo(
-    () => resolveCurrentEmployee(auth.user, employees),
-    [auth.user, employees],
+    () => resolveCurrentEmployee(permissions.snapshot.user, employees),
+    [permissions.snapshot.user, employees],
   );
-  const canCreate = Boolean(currentEmployee && isAdminCashier(currentEmployee));
+  const canEditEvaluations = permissions.canPerformAction("couriers.evaluations.edit");
+  const canCreate = Boolean(currentEmployee && canEditEvaluations);
   const hasForbiddenRead =
     apiErrorStatus(criteriaQuery.error) === 403 ||
     apiErrorStatus(evaluationsQuery.error) === 403 ||
@@ -277,6 +272,10 @@ export function CourierEvaluationsRoute() {
   });
 
   function openCreateForm() {
+    if (!canEditEvaluations) {
+      toast.error("Нет права добавлять оценки курьеров");
+      return;
+    }
     setFormMode("create");
     setEditingEvaluation(null);
     setForm(emptyForm());
@@ -350,7 +349,7 @@ export function CourierEvaluationsRoute() {
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <Button
               className="h-12 justify-center text-base sm:h-11"
-              disabled={hasForbiddenRead}
+              disabled={hasForbiddenRead || !canEditEvaluations}
               onClick={openCreateForm}
               size="lg"
             >
@@ -377,7 +376,7 @@ export function CourierEvaluationsRoute() {
         <EmptyState
           icon={<UserRoundCheck className="h-5 w-5" aria-hidden="true" />}
           title="Недостаточно прав"
-          description="Эту страницу могут открывать только просматривать. Поставить оценку могут только администраторы смены (Кассир + admin)."
+          description="Оценки курьеров доступны только пользователям с правом просмотра."
         />
       ) : (
         <>
@@ -412,10 +411,12 @@ export function CourierEvaluationsRoute() {
               title="Оценки не найдены"
               description="Попробуйте изменить фильтры или поставьте первую оценку."
               action={
+                canEditEvaluations ? (
                 <Button disabled={!canCreate} onClick={openCreateForm}>
                   <Plus aria-hidden="true" />
                   Поставить отличие
                 </Button>
+                ) : undefined
               }
             />
           ) : (
@@ -426,6 +427,7 @@ export function CourierEvaluationsRoute() {
                   courier={employeeById.get(evaluation.courier_employee_id)}
                   evaluation={evaluation}
                   isMine={currentEmployee?.id === evaluation.created_by}
+                  canEdit={canEditEvaluations}
                   key={evaluation.id ?? `${evaluation.created_by}-${evaluation.created_at}`}
                   nowMs={nowMs}
                   onDelete={() => setPendingDelete(evaluation)}
@@ -701,6 +703,7 @@ function EvaluationCard({
   courier,
   evaluation,
   isMine,
+  canEdit,
   nowMs,
   onDelete,
   onEdit,
@@ -710,11 +713,12 @@ function EvaluationCard({
   courier?: Employee;
   evaluation: CourierEvaluation;
   isMine: boolean;
+  canEdit: boolean;
   nowMs: number;
   onDelete: () => void;
   onEdit: () => void;
 }) {
-  const editable = isMine && isEditWindowOpen(evaluation, nowMs);
+  const editable = canEdit && isMine && isEditWindowOpen(evaluation, nowMs);
   const countdown = editCountdownText(evaluation, nowMs);
   const score = evaluation.score_snapshot;
   const tone = scoreTone(score);
@@ -763,14 +767,16 @@ function EvaluationCard({
 
       <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
         <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
-        {isMine ? (
+        {canEdit && isMine ? (
           editable ? (
             <span>{countdown}</span>
           ) : (
             <span>Окно редактирования закрыто</span>
           )
-        ) : (
+        ) : canEdit ? (
           <span>Только автор может изменить оценку</span>
+        ) : (
+          <span>Режим просмотра</span>
         )}
       </div>
     </article>

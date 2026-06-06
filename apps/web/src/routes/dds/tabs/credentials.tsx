@@ -64,7 +64,7 @@ const kindLabels: Record<CredentialKind, string> = {
   mtls_key_path: "mTLS key path",
 };
 
-export function CredentialsTab() {
+export function CredentialsTab({ canManage }: { canManage: boolean }) {
   const queryClient = useQueryClient();
   const credentialsQuery = useQuery({
     queryKey: ["dds", "credentials"],
@@ -113,7 +113,8 @@ export function CredentialsTab() {
       key: "actions",
       header: "",
       className: "text-right",
-      cell: (credential) => (
+      cell: (credential) =>
+        canManage ? (
         <div className="flex justify-end gap-2">
           <Button
             onClick={(event) => {
@@ -141,7 +142,7 @@ export function CredentialsTab() {
             <Trash2 size={15} aria-hidden="true" />
           </Button>
         </div>
-      ),
+        ) : null,
     },
   ];
 
@@ -152,15 +153,17 @@ export function CredentialsTab() {
           <h2 className="text-lg font-semibold tracking-normal">Доступы банков</h2>
           <p className="text-sm text-muted-foreground">Активные токены без показа секретного значения.</p>
         </div>
-        <Button
-          onClick={() => {
-            const pair = missingPairs[0] ?? { provider: "sber", credential_kind: "access_token" };
-            setDialogState({ mode: "create", ...pair });
-          }}
-        >
-          <Plus size={16} aria-hidden="true" />
-          Добавить credential
-        </Button>
+        {canManage ? (
+          <Button
+            onClick={() => {
+              const pair = missingPairs[0] ?? { provider: "sber", credential_kind: "access_token" };
+              setDialogState({ mode: "create", ...pair });
+            }}
+          >
+            <Plus size={16} aria-hidden="true" />
+            Добавить credential
+          </Button>
+        ) : null}
       </div>
 
       <DataTable
@@ -171,7 +174,7 @@ export function CredentialsTab() {
         emptyMessage="Активные credentials не найдены"
       />
 
-      {missingPairs.length > 0 ? (
+      {canManage && missingPairs.length > 0 ? (
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2 text-sm font-semibold">
@@ -210,7 +213,10 @@ export function CredentialsTab() {
         </CardContent>
       </Card>
 
-      <CredentialDialog state={dialogState} onOpenChange={(open) => !open && setDialogState(null)} />
+      <CredentialDialog
+        state={canManage ? dialogState : null}
+        onOpenChange={(open) => !open && setDialogState(null)}
+      />
 
       <AlertDialog open={Boolean(deleteTarget)} onOpenChange={() => setDeleteTarget(null)}>
         <AlertDialogContent>

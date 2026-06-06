@@ -9,6 +9,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.auth.permissions import (
+    DEFAULT_ROLE_PERMISSIONS,
+    LEGACY_PERMISSION_CODES,
+    MODULE_ORDER,
+    VISIBLE_PERMISSION_CODES,
+)
 from app.core.security import create_access_token
 from app.models import (
     Organization,
@@ -22,24 +28,25 @@ from app.models import (
 )
 
 READ_GUARD_CASES = (
-    "/api/v1/dds/wallets",
-    "/api/v1/payroll/runs",
-    "/api/v1/schedule",
-    "/api/v1/shifts/ledger?date=2026-06-01",
-    "/api/v1/inventory/positions",
-    "/api/v1/employees",
-    "/api/v1/couriers/list",
-    "/api/v1/deposits",
-    "/api/v1/vacations",
-    "/api/v1/payroll/fund/tiers",
+    ("/api/v1/dds/wallets", False),
+    ("/api/v1/payroll/runs", False),
+    ("/api/v1/schedule", True),
+    ("/api/v1/shifts/ledger?date=2026-06-01", True),
+    ("/api/v1/inventory/positions", True),
+    ("/api/v1/employees", False),
+    ("/api/v1/couriers/list", True),
+    ("/api/v1/deposits", False),
+    ("/api/v1/vacations", False),
+    ("/api/v1/payroll/fund/tiers", False),
 )
 
 
-@pytest.mark.parametrize("path", READ_GUARD_CASES)
-def test_migrated_read_guards_require_permissions(
+@pytest.mark.parametrize(("path", "cashier_allowed"), READ_GUARD_CASES)
+def test_migrated_read_guards_follow_passport_defaults(
     client: TestClient,
     async_session_factory: async_sessionmaker[AsyncSession],
     path: str,
+    cashier_allowed: bool,
 ) -> None:
     admin_headers = _headers_for_admin(async_session_factory)
     cashier_headers = _headers_for_user(
@@ -51,7 +58,7 @@ def test_migrated_read_guards_require_permissions(
     denied = client.get(path, headers=cashier_headers)
     allowed = client.get(path, headers=admin_headers)
 
-    assert denied.status_code == 403
+    assert denied.status_code == (200 if cashier_allowed else 403)
     assert allowed.status_code == 200
 
 
@@ -91,28 +98,32 @@ def test_put_role_permissions_updates_set_and_writes_events(
 
     response = client.put(
         f"/api/v1/access-control/roles/{manager_id}/permissions",
-        json={"permission_codes": ["dds.read", "inventory.write"]},
+        json={"permission_codes": ["finance.cashflow.read", "accounting.inventory_directory.edit"]},
         headers=admin_headers,
     )
     assert response.status_code == 200
-    assert response.json()["permission_codes"] == ["dds.read", "inventory.write"]
+    assert set(response.json()["permission_codes"]) == {
+        "finance.cashflow.read",
+        "accounting.inventory_directory.edit",
+    }
     assert _run(_role_permission_codes(async_session_factory, "manager")) == {
-        "dds.read",
-        "inventory.write",
+        "finance.cashflow.read",
+        "accounting.inventory_directory.edit",
     }
 
     response = client.put(
         f"/api/v1/access-control/roles/{manager_id}/permissions",
-        json={"permission_codes": ["dds.read"]},
+        json={"permission_codes": ["finance.cashflow.read"]},
         headers=admin_headers,
     )
     assert response.status_code == 200
-    assert _run(_role_permission_codes(async_session_factory, "manager")) == {"dds.read"}
-    assert sorted(_run(_role_permission_events(async_session_factory, "manager"))) == [
-        ("added", "dds.read"),
-        ("added", "inventory.write"),
-        ("removed", "inventory.write"),
-    ]
+    assert _run(_role_permission_codes(async_session_factory, "manager")) == {
+        "finance.cashflow.read"
+    }
+    events = set(_run(_role_permission_events(async_session_factory, "manager")))
+    assert ("added", "finance.cashflow.read") in events
+    assert ("added", "accounting.inventory_directory.edit") in events
+    assert ("removed", "accounting.inventory_directory.edit") in events
 
     fixed = client.put(
         f"/api/v1/access-control/roles/{owner_id}/permissions",
@@ -120,6 +131,55 @@ def test_put_role_permissions_updates_set_and_writes_events(
         headers=admin_headers,
     )
     assert fixed.status_code == 400
+
+
+def test_access_control_permissions_api_returns_visible_passport_catalog(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    response = client.get(
+        "/api/v1/access-control/permissions",
+        headers=_headers_for_admin(async_session_factory),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [group["module"] for group in payload] == list(MODULE_ORDER)
+    returned_codes = {
+        permission["code"]
+        for group in payload
+        for permission in group["permissions"]
+    }
+    assert returned_codes == VISIBLE_PERMISSION_CODES
+    assert returned_codes.isdisjoint(LEGACY_PERMISSION_CODES)
+    assert any(
+        permission["description"] == "Смотреть администрацию"
+        for group in payload
+        for permission in group["permissions"]
+    )
+
+
+def test_access_control_roles_api_returns_passport_defaults(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    response = client.get(
+        "/api/v1/access-control/roles",
+        headers=_headers_for_admin(async_session_factory),
+    )
+
+    assert response.status_code == 200
+    roles = {role["code"]: role for role in response.json()}
+    assert set(roles) == {"owner", "manager", "office_manager", "cashier"}
+    assert roles["owner"]["is_editable"] is False
+    assert set(roles["owner"]["permission_codes"]) == VISIBLE_PERMISSION_CODES
+    assert set(roles["manager"]["permission_codes"]) == DEFAULT_ROLE_PERMISSIONS["manager"]
+    assert set(roles["office_manager"]["permission_codes"]) == DEFAULT_ROLE_PERMISSIONS[
+        "office_manager"
+    ]
+    assert set(roles["cashier"]["permission_codes"]) == DEFAULT_ROLE_PERMISSIONS["cashier"]
+    assert "staff.administration.read" not in roles["manager"]["permission_codes"]
+    assert "staff.administration.edit" not in roles["manager"]["permission_codes"]
 
 
 def test_assign_and_revoke_user_role_write_audit_events(

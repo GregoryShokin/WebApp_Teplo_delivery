@@ -18,9 +18,11 @@ from app.api.v1.routes.employees import (
     create_employee,
     create_employee_dismissal_reason,
     dismiss_employee,
+    get_employee,
     list_employee_changes,
     list_employee_dismissal_reasons,
     list_employees,
+    list_iiko_employee_roles,
     patch_employee,
     reinstate_employee,
     set_employee_hire_date,
@@ -40,7 +42,7 @@ from app.models import (
     EmployeeChangeEvent,
     EmployeeDismissalReason,
     EmployeePendingIikoAction,
-    EmployeePositionEvent,
+    EmployeePositionAssignment,
     EmployeeRoleAssignment,
     ShiftLedgerEntry,
 )
@@ -82,6 +84,14 @@ class FakeScalarResult:
 
     def all(self) -> list[Any]:
         return self._rows
+
+
+class FakeExecuteResult:
+    def __init__(self, rows: list[Any]) -> None:
+        self._rows = rows
+
+    def scalars(self) -> FakeScalarResult:
+        return FakeScalarResult(self._rows)
 
 
 def make_dismissal_reason(
@@ -156,6 +166,8 @@ class FakeSession:
         deposit_accounts: list[DepositAccount] | None = None,
         deposit_transactions: list[DepositTransaction] | None = None,
         fund_accounts: list[AccumulationFundAccount] | None = None,
+        pending_iiko_actions: list[EmployeePendingIikoAction] | None = None,
+        position_assignments: list[EmployeePositionAssignment] | None = None,
     ) -> None:
         self.employees = employees
         self.shift_entries = shift_entries or []
@@ -167,6 +179,8 @@ class FakeSession:
         self.deposit_transactions = deposit_transactions or []
         self.fund_accounts = fund_accounts or []
         self.fund_transactions: list[AccumulationFundTransaction] = []
+        self.pending_iiko_actions = pending_iiko_actions or []
+        self.position_assignments = position_assignments or []
         self.committed = False
         self.added: list[Any] = []
         self.deleted: list[Any] = []
@@ -200,8 +214,9 @@ class FakeSession:
         if isinstance(item, Employee) and item in self.employees:
             self.employees.remove(item)
 
-    async def execute(self, query: Any) -> None:
+    async def execute(self, query: Any) -> FakeExecuteResult:
         self.executed.append(query)
+        return FakeExecuteResult([])
 
     def add(self, item: Any) -> None:
         self.added.append(item)
@@ -224,9 +239,14 @@ class FakeSession:
             self.change_events.append(item)
         if isinstance(item, EmployeeDismissalReason) and item not in self.dismissal_reasons:
             self.dismissal_reasons.append(item)
+        if isinstance(item, EmployeePendingIikoAction) and item not in self.pending_iiko_actions:
+            self.pending_iiko_actions.append(item)
+        if isinstance(item, EmployeePositionAssignment) and item not in self.position_assignments:
+            self.position_assignments.append(item)
 
     async def scalar(self, _query: Any) -> Any | None:
         sql = str(_query.compile(compile_kwargs={"literal_binds": True}))
+        normalized_sql = sql.lstrip()
         if "employee_dismissal_reason" in sql:
             return next(
                 (
@@ -245,10 +265,35 @@ class FakeSession:
                 ),
                 None,
             )
+        if normalized_sql.startswith("SELECT employee_position_assignment."):
+            employee = next(
+                (
+                    employee
+                    for employee in self.employees
+                    if employee.id.hex in sql or str(employee.id) in sql
+                ),
+                None,
+            )
+            assignment = next(
+                (
+                    assignment
+                    for assignment in self.position_assignments
+                    if employee is not None
+                    and assignment.employee_id == employee.id
+                    and assignment.effective_to is None
+                ),
+                None,
+            )
+            if normalized_sql.startswith("SELECT employee_position_assignment.position"):
+                if assignment is not None:
+                    return assignment.position
+                return employee.position if employee is not None else None
+            return assignment
         return None
 
     async def scalars(self, query: Any) -> FakeScalarResult:
         sql = str(query.compile(compile_kwargs={"literal_binds": True}))
+        normalized_sql = sql.lstrip()
         if "deposit_transaction" in sql:
             return FakeScalarResult(list(self.deposit_transactions))
         if "accumulation_fund_account" in sql:
@@ -283,6 +328,16 @@ class FakeSession:
                 events = [event for event in events if value_getter(event) in sql]
             events.sort(key=lambda event: event.changed_at, reverse=True)
             return FakeScalarResult(events)
+        if "employee_pending_iiko_action" in sql:
+            actions = list(self.pending_iiko_actions)
+            if "employee_pending_iiko_action.status = 'pending'" in sql:
+                actions = [action for action in actions if action.status == "pending"]
+            actions.sort(key=lambda action: (action.effective_on, action.created_at))
+            return FakeScalarResult(actions)
+        if normalized_sql.startswith("SELECT employee_position_assignment."):
+            assignments = list(self.position_assignments)
+            assignments.sort(key=lambda assignment: assignment.effective_from, reverse=True)
+            return FakeScalarResult(assignments)
         if "shift_ledger_entry" in sql:
             entries = [entry for entry in self.shift_entries if entry.closed_at is None]
             return FakeScalarResult(entries)
@@ -338,6 +393,7 @@ def make_employee(
         pin_assumed_from_iiko=pin_assumed_from_iiko,
         requires_role_review=False,
         role_review_payload=None,
+        requires_position_review=False,
         pin_set_at=SYNC_NOW if pin_hash else None,
         is_senior=False,
         is_deputy_senior=False,
@@ -677,11 +733,11 @@ async def test_sync_logs_noncanonical_position_as_skipped_not_error() -> None:
 
 
 async def test_list_employee_changes_filters_by_employee_source_status_type() -> None:
-    employee_id = uuid.uuid4()
-    other_employee_id = uuid.uuid4()
+    employee = make_employee(iiko_id="iiko-history-match", full_name="History Match")
+    other_employee = make_employee(iiko_id="iiko-history-other", full_name="History Other")
     matching = EmployeeChangeEvent(
         id=uuid.uuid4(),
-        employee_id=employee_id,
+        employee_id=employee.id,
         changed_at=datetime(2026, 5, 29, 12, 0, tzinfo=UTC),
         change_type="dismiss",
         source="app",
@@ -693,12 +749,12 @@ async def test_list_employee_changes_filters_by_employee_source_status_type() ->
         created_at=datetime(2026, 5, 29, 12, 0, tzinfo=UTC),
     )
     session = FakeSession(
-        [],
+        [employee, other_employee],
         change_events=[
             matching,
             EmployeeChangeEvent(
                 id=uuid.uuid4(),
-                employee_id=employee_id,
+                employee_id=employee.id,
                 changed_at=datetime(2026, 5, 29, 13, 0, tzinfo=UTC),
                 change_type="dismiss",
                 source="iiko_sync",
@@ -711,7 +767,7 @@ async def test_list_employee_changes_filters_by_employee_source_status_type() ->
             ),
             EmployeeChangeEvent(
                 id=uuid.uuid4(),
-                employee_id=other_employee_id,
+                employee_id=other_employee.id,
                 changed_at=datetime(2026, 5, 29, 14, 0, tzinfo=UTC),
                 change_type="dismiss",
                 source="app",
@@ -728,7 +784,7 @@ async def test_list_employee_changes_filters_by_employee_source_status_type() ->
     rows = await list_employee_changes(
         session,  # type: ignore[arg-type]
         CurrentActor(roles=frozenset({"manager"})),
-        employee_id=employee_id,
+        employee_id=employee.id,
         change_type="dismiss",
         source="app",
         event_status="success",
@@ -1080,8 +1136,15 @@ async def test_patch_employee_full_name_iiko_error_keeps_local_state(
     assert session.committed is False
 
 
-async def test_patch_employee_category_manager_returns_403() -> None:
-    session = FakeSession([make_employee(iiko_id="iiko-5", full_name="Manager Forbidden")])
+async def test_patch_employee_category_manager_for_administration_returns_403() -> None:
+    employee = make_employee(
+        iiko_id="iiko-5",
+        full_name="Manager Forbidden",
+        position="Управляющий",
+        category=None,
+        default_cooking_station=None,
+    )
+    session = FakeSession([employee])
 
     with pytest.raises(HTTPException) as exc_info:
         await patch_employee(
@@ -1114,6 +1177,28 @@ async def test_patch_employee_category_finance_manager_ok() -> None:
 
     assert updated.category == "category_2"
     assert updated.status == "requires_setup"
+    assert session.committed is True
+
+
+async def test_patch_employee_category_manager_ok_for_production() -> None:
+    employee = make_employee(
+        iiko_id="iiko-manager-production",
+        full_name="Manager Production",
+        status="requires_setup",
+        position="Повар",
+        category=None,
+        default_cooking_station=None,
+    )
+    session = FakeSession([employee])
+
+    updated = await patch_employee(
+        employee.id,
+        {"category": "category_2"},
+        session,  # type: ignore[arg-type]
+        CurrentActor(roles=frozenset({"manager"})),
+    )
+
+    assert updated.category == "category_2"
     assert session.committed is True
 
 
@@ -1278,14 +1363,16 @@ async def test_future_position_change_schedules_iiko_without_immediate_call(
         CurrentActor(roles=frozenset({"finance_manager"})),
     )
 
-    position_events = [item for item in session.added if isinstance(item, EmployeePositionEvent)]
+    position_assignments = [
+        item for item in session.added if isinstance(item, EmployeePositionAssignment)
+    ]
     pending_actions = [
         item for item in session.added if isinstance(item, EmployeePendingIikoAction)
     ]
     change_events = [item for item in session.added if isinstance(item, EmployeeChangeEvent)]
     assert calls == []
     assert updated.position == "Повар"
-    assert position_events[0].position == "Кассир"
+    assert position_assignments[0].position == "Кассир"
     assert pending_actions[0].action_type == "update_position"
     assert pending_actions[0].payload["position"] == "Кассир"
     assert any(event.change_type == "update_position" for event in change_events)
@@ -2433,8 +2520,14 @@ async def test_dismiss_employee_without_role_returns_403() -> None:
     assert employee.status == "active"
 
 
-async def test_dismiss_employee_manager_returns_403() -> None:
-    employee = make_employee(iiko_id="iiko-20", full_name="Manager Denied")
+async def test_dismiss_employee_manager_for_administration_returns_403() -> None:
+    employee = make_employee(
+        iiko_id="iiko-20",
+        full_name="Manager Denied",
+        position="Управляющий",
+        category=None,
+        default_cooking_station=None,
+    )
     session = FakeSession([employee])
 
     with pytest.raises(HTTPException) as exc_info:
@@ -2935,6 +3028,162 @@ async def test_get_filter_status_requires_setup_returns_only_unconfigured() -> N
     employees = await list_employees(session, status_filter="requires_setup")  # type: ignore[arg-type]
 
     assert [employee.iiko_id for employee in employees] == ["iiko-7"]
+
+
+async def test_list_employees_manager_filters_administration() -> None:
+    employees = [
+        make_employee(
+            iiko_id="iiko-admin-owner",
+            full_name="Admin Owner",
+            position="Управляющий",
+            category=None,
+            default_cooking_station=None,
+        ),
+        make_employee(
+            iiko_id="iiko-admin-manager",
+            full_name="Admin Manager",
+            position="Менеджер",
+            category=None,
+            default_cooking_station=None,
+        ),
+        make_employee(iiko_id="iiko-cook", full_name="Cook", position="Повар"),
+        make_employee(iiko_id="iiko-cashier", full_name="Cashier", position="Кассир"),
+        make_employee(
+            iiko_id="iiko-helper",
+            full_name="Helper",
+            position="Уборщица",
+            category=None,
+            default_cooking_station=None,
+            pin_hash=None,
+        ),
+        make_employee(
+            iiko_id="iiko-courier",
+            full_name="Courier",
+            position="Курьер",
+            category=None,
+            default_cooking_station=None,
+        ),
+    ]
+    session = FakeSession(employees)
+
+    rows = await list_employees(
+        session,  # type: ignore[arg-type]
+        actor=CurrentActor(roles=frozenset({"manager"})),
+    )
+
+    assert {row.iiko_id for row in rows} == {
+        "iiko-cook",
+        "iiko-cashier",
+        "iiko-helper",
+        "iiko-courier",
+    }
+
+
+async def test_get_employee_manager_for_administration_returns_403() -> None:
+    employee = make_employee(
+        iiko_id="iiko-admin-detail",
+        full_name="Admin Detail",
+        position="Управляющий",
+        category=None,
+        default_cooking_station=None,
+    )
+    session = FakeSession([employee])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_employee(
+            employee.id,
+            session,  # type: ignore[arg-type]
+            CurrentActor(roles=frozenset({"manager"})),
+        )
+
+    assert exc_info.value.status_code == 403
+
+
+async def test_list_employee_changes_manager_filters_administration() -> None:
+    cook = make_employee(iiko_id="iiko-history-cook", full_name="Cook History")
+    admin = make_employee(
+        iiko_id="iiko-history-admin",
+        full_name="Admin History",
+        position="Управляющий",
+        category=None,
+        default_cooking_station=None,
+    )
+    cook_event = EmployeeChangeEvent(
+        id=uuid.uuid4(),
+        employee_id=cook.id,
+        changed_at=datetime(2026, 5, 29, 12, 0, tzinfo=UTC),
+        change_type="update",
+        source="app",
+        actor_label="manager",
+        status="success",
+        summary="Повар обновлён",
+        payroll_impact=True,
+        payroll_impact_metadata={},
+        created_at=datetime(2026, 5, 29, 12, 0, tzinfo=UTC),
+    )
+    admin_event = EmployeeChangeEvent(
+        id=uuid.uuid4(),
+        employee_id=admin.id,
+        changed_at=datetime(2026, 5, 29, 13, 0, tzinfo=UTC),
+        change_type="update",
+        source="app",
+        actor_label="office_manager",
+        status="success",
+        summary="Администрация обновлена",
+        payroll_impact=True,
+        payroll_impact_metadata={},
+        created_at=datetime(2026, 5, 29, 13, 0, tzinfo=UTC),
+    )
+    session = FakeSession([cook, admin], change_events=[cook_event, admin_event])
+
+    rows = await list_employee_changes(
+        session,  # type: ignore[arg-type]
+        CurrentActor(roles=frozenset({"manager"})),
+    )
+
+    assert rows == [cook_event]
+
+
+async def test_list_employee_changes_manager_for_administration_detail_returns_403() -> None:
+    admin = make_employee(
+        iiko_id="iiko-history-admin-detail",
+        full_name="Admin History Detail",
+        position="Управляющий",
+        category=None,
+        default_cooking_station=None,
+    )
+    session = FakeSession([admin])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await list_employee_changes(
+            session,  # type: ignore[arg-type]
+            CurrentActor(roles=frozenset({"manager"})),
+            employee_id=admin.id,
+        )
+
+    assert exc_info.value.status_code == 403
+
+
+async def test_list_iiko_employee_roles_manager_hides_administration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_iiko_roles(_session: Any) -> list[IikoEmployeeRole]:
+        return [
+            IikoEmployeeRole(id="role-cook", name="Повар"),
+            IikoEmployeeRole(id="role-cashier", name="Кассир"),
+            IikoEmployeeRole(id="role-courier", name="Курьер"),
+            IikoEmployeeRole(id="role-manager", name="Менеджер"),
+            IikoEmployeeRole(id="role-director", name="Управляющий"),
+        ]
+
+    monkeypatch.setattr(employee_routes, "get_iiko_employee_roles", fake_iiko_roles)
+
+    rows = await list_iiko_employee_roles(
+        FakeSession([]),  # type: ignore[arg-type]
+        CurrentActor(roles=frozenset({"manager"})),
+    )
+
+    assert [row.name for row in rows] == ["Повар", "Кассир", "Курьер"]
 
 
 def test_list_employees_without_trailing_slash_returns_200() -> None:

@@ -9,7 +9,18 @@ from sqlalchemy import delete, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.api.deps import CurrentActor, get_current_actor, require_permission
+from app.api.deps import CurrentActor, ensure_any_permission, ensure_permission, get_current_actor
+from app.auth.permissions import (
+    ACCESS_ROLE_CODES,
+    EDITABLE_ROLE_CODES,
+    LEGACY_PERMISSION_CODES,
+    MODULE_ORDER_INDEX,
+    PERMISSION_CODE_ORDER,
+    VISIBLE_PERMISSION_CODES,
+    expand_permission_codes,
+    normalize_permission_codes_for_storage,
+    permission_is_granted,
+)
 from app.core.security import hash_password
 from app.db.session import get_session
 from app.models import (
@@ -35,23 +46,78 @@ from app.schemas.access_control import (
 
 router = APIRouter()
 
-ACCESS_ROLE_CODES = ("owner", "manager", "office_manager", "cashier")
-EDITABLE_ROLE_CODES = frozenset({"manager", "office_manager", "cashier"})
-ROLES_WRITE_ACCESS = (Depends(require_permission("access_control.roles.write")),)
-USERS_WRITE_ACCESS = (Depends(require_permission("access_control.users.write")),)
+
+async def _require_users_read(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    ensure_permission(actor, "settings.users.read")
+
+
+async def _require_users_create(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    ensure_permission(actor, "settings.users.create")
+
+
+async def _require_users_edit(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    ensure_permission(actor, "settings.users.edit")
+
+
+async def _require_access_assign(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    ensure_permission(actor, "settings.access.assign")
+
+
+async def _require_roles_read(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    ensure_any_permission(
+        actor,
+        (
+            "settings.users.read",
+            "settings.access.assign",
+            "settings.roles.edit",
+        ),
+    )
+
+
+async def _require_roles_edit(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    ensure_permission(actor, "settings.roles.edit")
+
+
+async def _require_access_audit_read(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    ensure_permission(actor, "settings.access_audit.read")
+
+
+USERS_READ_ACCESS = (Depends(_require_users_read),)
+USERS_CREATE_ACCESS = (Depends(_require_users_create),)
+USERS_EDIT_ACCESS = (Depends(_require_users_edit),)
+ACCESS_ASSIGN_ACCESS = (Depends(_require_access_assign),)
+ROLES_READ_ACCESS = (Depends(_require_roles_read),)
+ROLES_EDIT_ACCESS = (Depends(_require_roles_edit),)
+ACCESS_AUDIT_READ_ACCESS = (Depends(_require_access_audit_read),)
 
 
 @router.get(
     "/permissions",
     response_model=list[PermissionModuleRead],
-    dependencies=ROLES_WRITE_ACCESS,
+    dependencies=ROLES_EDIT_ACCESS,
 )
 async def list_permissions(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[dict[str, object]]:
-    rows = (
-        await session.scalars(select(Permission).order_by(Permission.module, Permission.code))
-    ).all()
+    rows = (await session.scalars(select(Permission))).all()
+    rows = sorted(
+        (permission for permission in rows if permission.code in VISIBLE_PERMISSION_CODES),
+        key=_permission_sort_key,
+    )
     grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
     for permission in rows:
         grouped[permission.module].append(
@@ -63,7 +129,7 @@ async def list_permissions(
     ]
 
 
-@router.get("/roles", response_model=list[RoleAccessRead], dependencies=ROLES_WRITE_ACCESS)
+@router.get("/roles", response_model=list[RoleAccessRead], dependencies=ROLES_READ_ACCESS)
 async def list_roles(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[dict[str, object]]:
@@ -75,7 +141,7 @@ async def list_roles(
 @router.put(
     "/roles/{role_id}/permissions",
     response_model=RoleAccessRead,
-    dependencies=ROLES_WRITE_ACCESS,
+    dependencies=ROLES_EDIT_ACCESS,
 )
 async def put_role_permissions(
     role_id: uuid.UUID,
@@ -89,7 +155,7 @@ async def put_role_permissions(
     if role.code not in EDITABLE_ROLE_CODES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Role is fixed")
 
-    requested_codes = set(payload.permission_codes)
+    requested_codes = set(normalize_permission_codes_for_storage(payload.permission_codes))
     permissions = (
         await session.scalars(
             select(Permission).where(Permission.code.in_(requested_codes)).order_by(Permission.code)
@@ -112,6 +178,12 @@ async def put_role_permissions(
     requested_permission_ids = {permission.id for permission in permissions}
     added_ids = requested_permission_ids - current_permission_ids
     removed_ids = current_permission_ids - requested_permission_ids
+    await _ensure_role_permission_update_not_self_lockout(
+        session,
+        actor=actor,
+        role=role,
+        requested_codes=requested_codes,
+    )
 
     for permission_id in added_ids:
         session.add(RolePermission(role_id=role.id, permission_id=permission_id))
@@ -144,7 +216,7 @@ async def put_role_permissions(
     return _role_payload(role, sorted(requested_codes))
 
 
-@router.get("/users", response_model=list[AccessUserRead], dependencies=USERS_WRITE_ACCESS)
+@router.get("/users", response_model=list[AccessUserRead], dependencies=USERS_READ_ACCESS)
 async def list_users(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[dict[str, object]]:
@@ -157,7 +229,7 @@ async def list_users(
     "/users",
     response_model=AccessUserRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=USERS_WRITE_ACCESS,
+    dependencies=USERS_CREATE_ACCESS,
 )
 async def create_user(
     payload: AccessUserCreate,
@@ -183,7 +255,7 @@ async def create_user(
 @router.patch(
     "/users/{user_id}",
     response_model=AccessUserRead,
-    dependencies=USERS_WRITE_ACCESS,
+    dependencies=USERS_EDIT_ACCESS,
 )
 async def patch_user(
     user_id: uuid.UUID,
@@ -207,6 +279,16 @@ async def patch_user(
     if "full_name" in payload.model_fields_set and payload.full_name is not None:
         user.full_name = payload.full_name.strip()
     if "is_active" in payload.model_fields_set and payload.is_active is not None:
+        if (
+            payload.is_active is False
+            and user.is_active
+            and await _user_has_role(session, user.id, "owner")
+            and await _owner_holder_count(session) <= 1
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot deactivate the last active owner",
+            )
         user.is_active = payload.is_active
 
     await session.commit()
@@ -218,7 +300,7 @@ async def patch_user(
 @router.post(
     "/users/{user_id}/roles",
     response_model=AccessUserRead,
-    dependencies=USERS_WRITE_ACCESS,
+    dependencies=ACCESS_ASSIGN_ACCESS,
 )
 async def assign_user_role(
     user_id: uuid.UUID,
@@ -251,7 +333,7 @@ async def assign_user_role(
 @router.delete(
     "/users/{user_id}/roles/{role_code}",
     response_model=AccessUserRead,
-    dependencies=USERS_WRITE_ACCESS,
+    dependencies=ACCESS_ASSIGN_ACCESS,
 )
 async def revoke_user_role(
     user_id: uuid.UUID,
@@ -271,6 +353,7 @@ async def revoke_user_role(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot revoke the last owner role",
         )
+    await _ensure_user_role_revoke_not_self_lockout(session, actor=actor, role=role, user=user)
 
     await session.delete(user_role)
     session.add(
@@ -286,7 +369,11 @@ async def revoke_user_role(
     return _user_payload(user, roles_by_user.get(user.id, []))
 
 
-@router.get("/audit", response_model=list[AccessAuditEventRead], dependencies=ROLES_WRITE_ACCESS)
+@router.get(
+    "/audit",
+    response_model=list[AccessAuditEventRead],
+    dependencies=ACCESS_AUDIT_READ_ACCESS,
+)
 async def list_audit_events(
     session: Annotated[AsyncSession, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
@@ -368,11 +455,13 @@ async def _role_permission_codes(
         select(RolePermission.role_id, Permission.code)
         .join(Permission, Permission.id == RolePermission.permission_id)
         .where(RolePermission.role_id.in_(role_ids))
-        .order_by(Permission.code)
     )
     grouped: dict[uuid.UUID, list[str]] = defaultdict(list)
     for role_id, permission_code in rows:
-        grouped[role_id].append(permission_code)
+        if permission_code not in LEGACY_PERMISSION_CODES:
+            grouped[role_id].append(permission_code)
+    for codes in grouped.values():
+        codes.sort(key=lambda code: PERMISSION_CODE_ORDER.get(code, 10_000))
     return grouped
 
 
@@ -400,8 +489,19 @@ def _role_payload(role: Role, permission_codes: list[str]) -> dict[str, object]:
         "code": role.code,
         "name": role.name,
         "is_editable": role.code in EDITABLE_ROLE_CODES,
-        "permission_codes": sorted(permission_codes),
+        "permission_codes": sorted(
+            permission_codes,
+            key=lambda code: PERMISSION_CODE_ORDER.get(code, 10_000),
+        ),
     }
+
+
+def _permission_sort_key(permission: Permission) -> tuple[int, int, str]:
+    return (
+        MODULE_ORDER_INDEX.get(permission.module, 10_000),
+        PERMISSION_CODE_ORDER.get(permission.code, 10_000),
+        permission.code,
+    )
 
 
 def _user_payload(user: User, role_codes: list[str]) -> dict[str, object]:
@@ -458,7 +558,91 @@ async def _owner_holder_count(session: AsyncSession) -> int:
         await session.scalar(
             select(func.count(distinct(UserRole.user_id)))
             .join(Role, Role.id == UserRole.role_id)
-            .where(Role.code == "owner")
+            .join(User, User.id == UserRole.user_id)
+            .where(Role.code == "owner", User.is_active.is_(True))
         )
         or 0
+    )
+
+
+async def _user_has_role(session: AsyncSession, user_id: uuid.UUID, role_code: str) -> bool:
+    return bool(
+        await session.scalar(
+            select(UserRole.user_id)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(UserRole.user_id == user_id, Role.code == role_code)
+            .limit(1)
+        )
+    )
+
+
+async def _role_codes_for_user(session: AsyncSession, user_id: uuid.UUID) -> set[str]:
+    return set(
+        await session.scalars(
+            select(Role.code)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(UserRole.user_id == user_id)
+        )
+    )
+
+
+async def _permission_codes_for_role_codes(
+    session: AsyncSession,
+    role_codes: set[str],
+) -> frozenset[str]:
+    if not role_codes:
+        return frozenset()
+    codes = (
+        await session.scalars(
+            select(Permission.code)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(Role, Role.id == RolePermission.role_id)
+            .where(Role.code.in_(role_codes))
+        )
+    ).all()
+    return expand_permission_codes(codes)
+
+
+async def _ensure_user_role_revoke_not_self_lockout(
+    session: AsyncSession,
+    *,
+    actor: CurrentActor,
+    role: Role,
+    user: User,
+) -> None:
+    if actor.user_id is None or actor.user_id != user.id:
+        return
+
+    remaining_role_codes = await _role_codes_for_user(session, user.id)
+    remaining_role_codes.discard(role.code)
+    remaining_permissions = await _permission_codes_for_role_codes(session, remaining_role_codes)
+    if permission_is_granted("settings.access.assign", remaining_permissions):
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Cannot revoke your own access-management permission",
+    )
+
+
+async def _ensure_role_permission_update_not_self_lockout(
+    session: AsyncSession,
+    *,
+    actor: CurrentActor,
+    role: Role,
+    requested_codes: set[str],
+) -> None:
+    if actor.user_id is None or role.code not in actor.roles:
+        return
+
+    other_role_codes = set(actor.roles)
+    other_role_codes.discard(role.code)
+    remaining_permissions = set(await _permission_codes_for_role_codes(session, other_role_codes))
+    remaining_permissions.update(requested_codes)
+    if permission_is_granted("settings.roles.edit", remaining_permissions):
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Cannot remove your own role-permission editor access",
     )

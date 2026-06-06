@@ -67,8 +67,11 @@ from app.services.seniority_allowance_resolver import (
 from app.services.staff_taxonomy import PAYROLL_ROLE_LABELS, default_station_for_payroll_role
 
 router = APIRouter()
-SCHEDULE_READ_ACCESS = (Depends(require_permission("schedule.read")),)
-SCHEDULE_WRITE_ACCESS = (Depends(require_permission("schedule.write")),)
+SCHEDULE_READ_ACCESS = (Depends(require_permission("source.schedule.read")),)
+SCHEDULE_EDIT_ACCESS = (Depends(require_permission("source.schedule.edit")),)
+REVENUE_READ_ACCESS = (Depends(require_permission("source.revenue.read")),)
+REVENUE_EDIT_ACCESS = (Depends(require_permission("source.revenue.edit")),)
+PAYROLL_SOURCE_DATA_READ_ACCESS = (Depends(require_permission("payroll.source_data.read")),)
 MAX_FORECAST_RANGE_DAYS = 62
 
 
@@ -112,7 +115,7 @@ async def get_schedules(
 @router.get(
     "/forecast",
     response_model=list[RevenueForecastRead],
-    dependencies=SCHEDULE_READ_ACCESS,
+    dependencies=REVENUE_READ_ACCESS,
 )
 async def get_forecast_range(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -134,7 +137,7 @@ async def get_forecast_range(
 @router.post(
     "/forecast/recompute",
     response_model=RevenueForecastRecomputeResponse,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=REVENUE_EDIT_ACCESS,
 )
 async def post_recompute_forecast(
     payload: RevenueForecastRecomputeRequest,
@@ -153,7 +156,7 @@ async def post_recompute_forecast(
 @router.post(
     "/forecast/{business_date}/override",
     response_model=RevenueForecastRead,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=REVENUE_EDIT_ACCESS,
 )
 async def post_forecast_override(
     business_date: date,
@@ -175,7 +178,7 @@ async def post_forecast_override(
 @router.delete(
     "/forecast/{business_date}/override",
     response_model=RevenueForecastRead,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=REVENUE_EDIT_ACCESS,
 )
 async def delete_forecast_override(
     business_date: date,
@@ -232,12 +235,12 @@ async def get_schedule_ledger(
     ]
 
 
-@router.post("", response_model=ScheduleRead, dependencies=SCHEDULE_WRITE_ACCESS)
+@router.post("", response_model=ScheduleRead, dependencies=SCHEDULE_EDIT_ACCESS)
 @router.post(
     "/",
     response_model=ScheduleRead,
     include_in_schema=False,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=SCHEDULE_EDIT_ACCESS,
 )
 async def post_schedule(
     payload: ScheduleCreateRequest,
@@ -317,7 +320,7 @@ async def get_cashier_allowance_overrides(
 @router.post(
     "/{schedule_id}/cashier-allowance-overrides",
     response_model=ShiftAllowanceOverrideRead,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=SCHEDULE_EDIT_ACCESS,
 )
 async def post_cashier_allowance_override(
     schedule_id: uuid.UUID,
@@ -341,7 +344,7 @@ async def post_cashier_allowance_override(
 @router.patch(
     "/{schedule_id}/cashier-allowance-overrides/{override_id}",
     response_model=ShiftAllowanceOverrideRead,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=SCHEDULE_EDIT_ACCESS,
 )
 async def patch_cashier_allowance_override(
     schedule_id: uuid.UUID,
@@ -367,7 +370,7 @@ async def patch_cashier_allowance_override(
 @router.delete(
     "/{schedule_id}/cashier-allowance-overrides/{override_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=SCHEDULE_EDIT_ACCESS,
 )
 async def delete_cashier_allowance_override(
     schedule_id: uuid.UUID,
@@ -424,7 +427,7 @@ async def get_cashier_allowance_resolve(
 @router.post(
     "/{schedule_id}/cost-forecast",
     response_model=PayrollForecastRunRead,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=SCHEDULE_EDIT_ACCESS,
 )
 async def post_cost_forecast(
     schedule_id: uuid.UUID,
@@ -443,7 +446,7 @@ async def post_cost_forecast(
 @router.get(
     "/{schedule_id}/cost-forecast/latest",
     response_model=PayrollForecastRunRead | None,
-    dependencies=SCHEDULE_READ_ACCESS,
+    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
 )
 async def get_latest_cost_forecast(
     schedule_id: uuid.UUID,
@@ -462,7 +465,7 @@ async def get_latest_cost_forecast(
 @router.get(
     "/{schedule_id}/cost-forecast/runs",
     response_model=list[PayrollForecastRunRead],
-    dependencies=SCHEDULE_READ_ACCESS,
+    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
 )
 async def get_cost_forecast_runs(
     schedule_id: uuid.UUID,
@@ -478,7 +481,7 @@ async def get_cost_forecast_runs(
 @router.get(
     "/{schedule_id}/cost-forecast/runs/{run_id}",
     response_model=PayrollForecastRunRead,
-    dependencies=SCHEDULE_READ_ACCESS,
+    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
 )
 async def get_cost_forecast_run(
     schedule_id: uuid.UUID,
@@ -500,7 +503,7 @@ async def get_cost_forecast_run(
 @router.patch(
     "/{schedule_id}",
     response_model=ScheduleRead,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=SCHEDULE_EDIT_ACCESS,
 )
 async def patch_schedule(
     schedule_id: uuid.UUID,
@@ -520,7 +523,7 @@ async def patch_schedule(
 @router.post(
     "/{schedule_id}/publish",
     response_model=ScheduleRead,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=SCHEDULE_EDIT_ACCESS,
 )
 async def post_publish_schedule(
     schedule_id: uuid.UUID,
@@ -534,7 +537,7 @@ async def post_publish_schedule(
 @router.post(
     "/{schedule_id}/new-version",
     response_model=ScheduleRead,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=SCHEDULE_EDIT_ACCESS,
 )
 async def post_new_version(
     schedule_id: uuid.UUID,
@@ -548,7 +551,7 @@ async def post_new_version(
 @router.delete(
     "/{schedule_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=SCHEDULE_EDIT_ACCESS,
 )
 async def delete_schedule(
     schedule_id: uuid.UUID,
@@ -562,7 +565,7 @@ async def delete_schedule(
 @router.post(
     "/{schedule_id}/shifts",
     response_model=ScheduledShiftRead,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=SCHEDULE_EDIT_ACCESS,
 )
 async def post_shift(
     schedule_id: uuid.UUID,
@@ -589,7 +592,7 @@ async def post_shift(
 @router.patch(
     "/{schedule_id}/shifts/{shift_id}",
     response_model=ScheduledShiftRead,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=SCHEDULE_EDIT_ACCESS,
 )
 async def patch_shift(
     schedule_id: uuid.UUID,
@@ -618,7 +621,7 @@ async def patch_shift(
 @router.delete(
     "/{schedule_id}/shifts/{shift_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=SCHEDULE_EDIT_ACCESS,
 )
 async def delete_shift(
     schedule_id: uuid.UUID,
@@ -638,7 +641,7 @@ async def delete_shift(
 @router.post(
     "/{schedule_id}/copy-week",
     response_model=CopyWeekResponse,
-    dependencies=SCHEDULE_WRITE_ACCESS,
+    dependencies=SCHEDULE_EDIT_ACCESS,
 )
 async def post_copy_week(
     schedule_id: uuid.UUID,

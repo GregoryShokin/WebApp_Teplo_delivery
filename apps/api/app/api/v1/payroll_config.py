@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor
+from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
 from app.schemas.payroll_config import (
     PayrollCategoryCoefficientBase,
@@ -45,17 +45,15 @@ from app.services.payroll_config import (
 )
 
 router = APIRouter()
-
-PAYROLL_CONFIG_WRITERS = frozenset({"finance_manager", "owner", "admin"})
-
-
-def require_payroll_config_writer(actor: CurrentActor) -> None:
-    if actor.roles & PAYROLL_CONFIG_WRITERS:
-        return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+PAYROLL_SOURCE_DATA_READ_ACCESS = (Depends(require_permission("payroll.source_data.read")),)
+PAYROLL_RULES_CONFIGURE_ACCESS = (Depends(require_permission("payroll.rules.configure")),)
 
 
-@router.get("/rates", response_model=list[PayrollRateCellRead])
+@router.get(
+    "/rates",
+    response_model=list[PayrollRateCellRead],
+    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+)
 async def get_rates(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -67,14 +65,21 @@ async def get_rates(
     return await list_rate_matrix(session, include_disabled=include_disabled)
 
 
-@router.post("/rates", response_model=PayrollRateRead)
-@router.put("/rates", response_model=PayrollRateRead)
+@router.post(
+    "/rates",
+    response_model=PayrollRateRead,
+    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+)
+@router.put(
+    "/rates",
+    response_model=PayrollRateRead,
+    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+)
 async def put_rate(
     payload: PayrollRateBase,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ):
-    require_payroll_config_writer(actor)
     try:
         return await create_rate_version(session, payload)
     except PayrollConfigConflictError as exc:
@@ -83,7 +88,11 @@ async def put_rate(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
-@router.get("/availability", response_model=list[PayrollRoleCategoryAvailabilityRead])
+@router.get(
+    "/availability",
+    response_model=list[PayrollRoleCategoryAvailabilityRead],
+    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+)
 async def get_availability(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -94,6 +103,7 @@ async def get_availability(
 @router.put(
     "/availability/{position_group}/{category}",
     response_model=PayrollRoleCategoryAvailabilityRead,
+    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
 )
 async def put_availability(
     position_group: str,
@@ -102,7 +112,6 @@ async def put_availability(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ):
-    require_payroll_config_writer(actor)
     try:
         return await set_role_category_availability(
             session,
@@ -116,7 +125,11 @@ async def put_availability(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
-@router.get("/revenue-share", response_model=list[PayrollRevenueShareRead])
+@router.get(
+    "/revenue-share",
+    response_model=list[PayrollRevenueShareRead],
+    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+)
 async def get_revenue_share(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -125,13 +138,16 @@ async def get_revenue_share(
     return await list_revenue_shares(session, history=history)
 
 
-@router.put("/revenue-share", response_model=PayrollRevenueShareRead)
+@router.put(
+    "/revenue-share",
+    response_model=PayrollRevenueShareRead,
+    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+)
 async def put_revenue_share(
     payload: PayrollRevenueShareBase,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ):
-    require_payroll_config_writer(actor)
     try:
         return await create_revenue_share_version(session, payload)
     except PayrollConfigConflictError as exc:
@@ -143,7 +159,11 @@ async def put_revenue_share(
         ) from exc
 
 
-@router.get("/revenue-tiers", response_model=list[PayrollRevenueTierRead])
+@router.get(
+    "/revenue-tiers",
+    response_model=list[PayrollRevenueTierRead],
+    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+)
 async def get_revenue_tiers(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -152,13 +172,16 @@ async def get_revenue_tiers(
     return await list_revenue_tiers(session, history=history)
 
 
-@router.put("/revenue-tiers", response_model=list[PayrollRevenueTierRead])
+@router.put(
+    "/revenue-tiers",
+    response_model=list[PayrollRevenueTierRead],
+    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+)
 async def put_revenue_tiers(
     payload: list[PayrollRevenueTierBase],
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ):
-    require_payroll_config_writer(actor)
     try:
         return await replace_revenue_tier_versions(session, payload)
     except PayrollConfigConflictError as exc:
@@ -170,7 +193,11 @@ async def put_revenue_tiers(
         ) from exc
 
 
-@router.get("/category-coefficients", response_model=list[PayrollCategoryCoefficientRead])
+@router.get(
+    "/category-coefficients",
+    response_model=list[PayrollCategoryCoefficientRead],
+    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+)
 async def get_category_coefficients(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -179,13 +206,16 @@ async def get_category_coefficients(
     return await list_category_coefficients(session, history=history)
 
 
-@router.put("/category-coefficients", response_model=list[PayrollCategoryCoefficientRead])
+@router.put(
+    "/category-coefficients",
+    response_model=list[PayrollCategoryCoefficientRead],
+    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+)
 async def put_category_coefficients(
     payload: list[PayrollCategoryCoefficientBase],
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ):
-    require_payroll_config_writer(actor)
     try:
         return await replace_category_coefficient_versions(session, payload)
     except PayrollConfigConflictError as exc:
@@ -197,7 +227,11 @@ async def put_category_coefficients(
         ) from exc
 
 
-@router.get("/deductions", response_model=list[PayrollDeductionCategoryRead])
+@router.get(
+    "/deductions",
+    response_model=list[PayrollDeductionCategoryRead],
+    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+)
 async def get_deductions(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -206,13 +240,16 @@ async def get_deductions(
     return await list_deduction_categories(session, history=history)
 
 
-@router.put("/deductions", response_model=PayrollDeductionCategoryRead)
+@router.put(
+    "/deductions",
+    response_model=PayrollDeductionCategoryRead,
+    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+)
 async def put_deduction(
     payload: PayrollDeductionCategoryBase,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ):
-    require_payroll_config_writer(actor)
     try:
         return await create_deduction_category_version(session, payload)
     except PayrollConfigConflictError as exc:
@@ -224,7 +261,11 @@ async def put_deduction(
         ) from exc
 
 
-@router.get("/seniority-premium", response_model=list[PayrollSeniorityPremiumRead])
+@router.get(
+    "/seniority-premium",
+    response_model=list[PayrollSeniorityPremiumRead],
+    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+)
 async def get_seniority_premium(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -233,14 +274,21 @@ async def get_seniority_premium(
     return await list_seniority_premiums(session, history=history)
 
 
-@router.post("/seniority-premium", response_model=PayrollSeniorityPremiumRead)
-@router.put("/seniority-premium", response_model=PayrollSeniorityPremiumRead)
+@router.post(
+    "/seniority-premium",
+    response_model=PayrollSeniorityPremiumRead,
+    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+)
+@router.put(
+    "/seniority-premium",
+    response_model=PayrollSeniorityPremiumRead,
+    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+)
 async def put_seniority_premium(
     payload: PayrollSeniorityPremiumBase,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ):
-    require_payroll_config_writer(actor)
     try:
         return await create_seniority_premium_version(session, payload)
     except PayrollConfigConflictError as exc:

@@ -24,8 +24,8 @@ from app.services.payroll_calculator import (
 )
 
 router = APIRouter()
-DEPOSITS_READ_ACCESS = (Depends(require_permission("deposits.read")),)
-DEPOSITS_WRITE_ACCESS = (Depends(require_permission("deposits.write")),)
+DEPOSITS_READ_ACCESS = (Depends(require_permission("payroll.production_deposits.read")),)
+DEPOSITS_EDIT_ACCESS = (Depends(require_permission("payroll.production_deposits.edit")),)
 
 
 class DepositEmployeeRead(BaseModel):
@@ -137,7 +137,7 @@ async def get_deposit_transactions(
 @router.patch(
     "/{employee_id}/config",
     response_model=DepositConfigRead,
-    dependencies=DEPOSITS_WRITE_ACCESS,
+    dependencies=DEPOSITS_EDIT_ACCESS,
 )
 async def patch_deposit_config(
     employee_id: uuid.UUID,
@@ -172,7 +172,7 @@ async def patch_deposit_config(
 @router.post(
     "/{employee_id}/payout",
     response_model=DepositOperationRead,
-    dependencies=DEPOSITS_WRITE_ACCESS,
+    dependencies=DEPOSITS_EDIT_ACCESS,
 )
 async def payout_deposit(
     employee_id: uuid.UUID,
@@ -231,7 +231,7 @@ async def payout_deposit(
 @router.post(
     "/{employee_id}/writeoff",
     response_model=DepositOperationRead,
-    dependencies=DEPOSITS_WRITE_ACCESS,
+    dependencies=DEPOSITS_EDIT_ACCESS,
 )
 async def writeoff_deposit(
     employee_id: uuid.UUID,
@@ -284,7 +284,7 @@ async def writeoff_deposit(
 @router.post(
     "/{employee_id}/initial-balance",
     response_model=DepositOperationRead,
-    dependencies=DEPOSITS_WRITE_ACCESS,
+    dependencies=DEPOSITS_EDIT_ACCESS,
 )
 async def set_initial_deposit_balance(
     employee_id: uuid.UUID,
@@ -295,6 +295,14 @@ async def set_initial_deposit_balance(
     await _get_employee_or_404(session, employee_id)
     now = datetime.now(UTC)
     account = await deposit_service.get_deposit_account(session, employee_id, for_update=True)
+    if account is not None and decimal(getattr(account, "initial_balance", 0)) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Исторический баланс уже установлен. Используйте корректировку через "
+                "ручную транзакцию."
+            ),
+        )
     before = deposit_service.deposit_account_snapshot(account)
     existing_balance = decimal(account.balance) if account else Decimal("0")
     account = deposit_service.ensure_account(session, employee_id, account, now)

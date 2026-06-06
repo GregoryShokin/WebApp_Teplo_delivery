@@ -9,7 +9,7 @@ import {
   Play,
   RefreshCw,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import {
@@ -65,6 +65,7 @@ import {
   type PayrollPeriod,
   type PayrollRun,
 } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 type PayrollRunsRouteProps = {
@@ -83,6 +84,26 @@ export function PayrollRunsRoute({
   onNavigate,
 }: PayrollRunsRouteProps) {
   const queryClient = useQueryClient();
+  const permissions = usePermissions();
+  const canStartRuns = permissions.canPerformAction("payroll.runs.start");
+  const canRecalculateRuns = permissions.canPerformAction("payroll.runs.recalculate");
+  const canEditFund = permissions.canPerformAction("payroll.fund.edit");
+  const visibleTabs = [
+    permissions.canOpenSection("payroll.runs") ? { value: "runs", label: "Расчёты" } : null,
+    permissions.canOpenSection("payroll.fund")
+      ? { value: "fund", label: "Накопительный фонд" }
+      : null,
+    permissions.canOpenSection("payroll.adjustments")
+      ? { value: "adjustments", label: "Премии и штрафы" }
+      : null,
+    permissions.canOpenSection("payroll.audits") ? { value: "audits", label: "Ревизии" } : null,
+    permissions.canOpenSection("payroll.accruals")
+      ? { value: "accruals", label: "Начисления" }
+      : null,
+    permissions.canOpenSection("payroll.personal")
+      ? { value: "personal", label: "Персональный отчёт" }
+      : null,
+  ].filter((tab): tab is { value: PayrollActiveTab; label: string } => Boolean(tab));
   const runsQuery = useQuery({ queryKey: ["payroll-runs"], queryFn: getPayrollRuns });
   const settingsQuery = useQuery({
     queryKey: ["settings", "payroll-target-ratio"],
@@ -122,6 +143,12 @@ export function PayrollRunsRoute({
   const previousRatio = previousRun ? runPayrollRatio(previousRun, previousLines) : null;
   const unfinishedCurrentRun =
     currentRun && !isFinalStatus(currentRun.status) ? currentRun : undefined;
+
+  useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.some((tab) => tab.value === activeTab)) {
+      onNavigate(payrollTabPath(visibleTabs[0].value));
+    }
+  }, [activeTab, onNavigate, visibleTabs]);
 
   const runMutation = useMutation({
     mutationFn: async () => {
@@ -214,23 +241,25 @@ export function PayrollRunsRoute({
         const isRecalculating = recalculatingRunIds.includes(run.id);
         return (
           <div className="flex flex-wrap justify-end gap-2">
-            <Button
-              disabled={isRecalculating}
-              onClick={(event) => {
-                event.stopPropagation();
-                recalculateRunMutation.mutate(run);
-              }}
-              size="sm"
-              title="Пересчитать ЗП за этот период"
-              variant="outline"
-            >
-              {isRecalculating ? (
-                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-              ) : (
-                <RefreshCw size={16} aria-hidden="true" />
-              )}
-              Пересчитать
-            </Button>
+            {canRecalculateRuns ? (
+              <Button
+                disabled={isRecalculating}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  recalculateRunMutation.mutate(run);
+                }}
+                size="sm"
+                title="Пересчитать ЗП за этот период"
+                variant="outline"
+              >
+                {isRecalculating ? (
+                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                ) : (
+                  <RefreshCw size={16} aria-hidden="true" />
+                )}
+                Пересчитать
+              </Button>
+            ) : null}
             <Button
               onClick={(event) => {
                 event.stopPropagation();
@@ -255,14 +284,19 @@ export function PayrollRunsRoute({
         description="Еженедельные расчёты вторник-понедельник, выплаты по вторникам."
       />
 
+      {visibleTabs.length === 0 ? (
+        <EmptyState
+          title="Недостаточно прав"
+          description="Нет доступных вкладок зарплаты для текущего профиля."
+        />
+      ) : (
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-5">
         <TabsList className="h-auto flex-wrap justify-start">
-          <TabsTrigger value="runs">Расчёты</TabsTrigger>
-          <TabsTrigger value="fund">Накопительный фонд</TabsTrigger>
-          <TabsTrigger value="adjustments">Премии и штрафы</TabsTrigger>
-          <TabsTrigger value="audits">Ревизии</TabsTrigger>
-          <TabsTrigger value="accruals">Начисления</TabsTrigger>
-          <TabsTrigger value="personal">Персональный отчёт</TabsTrigger>
+          {visibleTabs.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value}>
+              {tab.label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         {invalidPath ? (
@@ -272,6 +306,7 @@ export function PayrollRunsRoute({
           />
         ) : (
           <>
+            {permissions.canOpenSection("payroll.runs") ? (
             <TabsContent className="mt-0 space-y-5" value="runs">
               <section className="grid gap-3 lg:grid-cols-3">
                 <PayrollMetric
@@ -345,6 +380,7 @@ export function PayrollRunsRoute({
                         За неделю {formatPeriodRange(currentWindow)}
                       </div>
                     </div>
+                    {canStartRuns ? (
                     <Button onClick={() => runMutation.mutate()} disabled={runMutation.isPending}>
                       {runMutation.isPending ? (
                         <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
@@ -353,6 +389,7 @@ export function PayrollRunsRoute({
                       )}
                       Запустить расчёт за неделю {formatShortRange(currentWindow)}
                     </Button>
+                    ) : null}
                   </>
                 ) : (
                   <>
@@ -385,6 +422,7 @@ export function PayrollRunsRoute({
                   title="Расчётов пока нет"
                   description="Запустите первый недельный расчёт, чтобы увидеть ведомость и KPI."
                   action={
+                    canStartRuns ? (
                     <Button onClick={() => runMutation.mutate()} disabled={runMutation.isPending}>
                       {runMutation.isPending ? (
                         <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
@@ -393,6 +431,7 @@ export function PayrollRunsRoute({
                       )}
                       Запустить расчёт за неделю {formatShortRange(currentWindow)}
                     </Button>
+                    ) : undefined
                   }
                 />
               ) : (
@@ -406,29 +445,41 @@ export function PayrollRunsRoute({
                 />
               )}
             </TabsContent>
+            ) : null}
 
-            <TabsContent className="mt-0" value="fund">
-              <AccumulationFundTab />
-            </TabsContent>
+            {permissions.canOpenSection("payroll.fund") ? (
+              <TabsContent className="mt-0" value="fund">
+                <AccumulationFundTab canEdit={canEditFund} />
+              </TabsContent>
+            ) : null}
 
-            <TabsContent className="mt-0" value="adjustments">
-              <PayrollAdjustmentsRoute embedded onNavigate={onNavigate} />
-            </TabsContent>
+            {permissions.canOpenSection("payroll.adjustments") ? (
+              <TabsContent className="mt-0" value="adjustments">
+                <PayrollAdjustmentsRoute embedded onNavigate={onNavigate} />
+              </TabsContent>
+            ) : null}
 
-            <TabsContent className="mt-0" value="audits">
-              <InventoryAuditsRoute onNavigate={onNavigate} />
-            </TabsContent>
+            {permissions.canOpenSection("payroll.audits") ? (
+              <TabsContent className="mt-0" value="audits">
+                <InventoryAuditsRoute onNavigate={onNavigate} />
+              </TabsContent>
+            ) : null}
 
-            <TabsContent className="mt-0 space-y-5" value="accruals">
-              <PayrollAccrualsTab onNavigate={onNavigate} />
-            </TabsContent>
+            {permissions.canOpenSection("payroll.accruals") ? (
+              <TabsContent className="mt-0 space-y-5" value="accruals">
+                <PayrollAccrualsTab onNavigate={onNavigate} />
+              </TabsContent>
+            ) : null}
 
-            <TabsContent className="mt-0 space-y-5" value="personal">
-              <PayrollPersonalReportPageTab />
-            </TabsContent>
+            {permissions.canOpenSection("payroll.personal") ? (
+              <TabsContent className="mt-0 space-y-5" value="personal">
+                <PayrollPersonalReportPageTab />
+              </TabsContent>
+            ) : null}
           </>
         )}
       </Tabs>
+      )}
     </div>
   );
 }
@@ -492,7 +543,7 @@ function PayrollMetric({
   );
 }
 
-function AccumulationFundTab() {
+function AccumulationFundTab({ canEdit }: { canEdit: boolean }) {
   const queryClient = useQueryClient();
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
@@ -564,14 +615,16 @@ function AccumulationFundTab() {
             </SelectContent>
           </Select>
         </div>
-        <Button disabled={payoutDisabled} onClick={() => setConfirmOpen(true)} variant="outline">
-          {payoutMutation.isPending ? (
-            <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-          ) : (
-            <Banknote size={16} aria-hidden="true" />
-          )}
-          Выплатить фонд за {payoutYear}
-        </Button>
+        {canEdit ? (
+          <Button disabled={payoutDisabled} onClick={() => setConfirmOpen(true)} variant="outline">
+            {payoutMutation.isPending ? (
+              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+            ) : (
+              <Banknote size={16} aria-hidden="true" />
+            )}
+            Выплатить фонд за {payoutYear}
+          </Button>
+        ) : null}
       </div>
 
       <div className="grid gap-3 rounded-lg border bg-card p-4 md:grid-cols-2 xl:grid-cols-5">

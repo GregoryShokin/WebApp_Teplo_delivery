@@ -31,8 +31,9 @@ from app.services.shift_ledger import (
 )
 
 router = APIRouter()
-SHIFTS_READ_ACCESS = (Depends(require_permission("shifts.read")),)
-SHIFTS_WRITE_ACCESS = (Depends(require_permission("shifts.write")),)
+SHIFTS_READ_ACCESS = (Depends(require_permission("source.shift_ledger.read")),)
+SHIFTS_INPUT_ACCESS = (Depends(require_permission("source.shift_ledger.input")),)
+SHIFTS_CORRECT_ACCESS = (Depends(require_permission("source.shift_ledger.correct")),)
 
 
 @router.get("/ledger", response_model=list[ShiftLedgerEntryRead], dependencies=SHIFTS_READ_ACCESS)
@@ -57,7 +58,7 @@ async def get_shift_ledger_matrix(
 @router.post(
     "/ledger/build",
     response_model=list[ShiftLedgerEntryRead],
-    dependencies=SHIFTS_WRITE_ACCESS,
+    dependencies=SHIFTS_INPUT_ACCESS,
 )
 async def post_build_shift_ledger(
     payload: ShiftLedgerBuildRequest,
@@ -71,7 +72,7 @@ async def post_build_shift_ledger(
 @router.post(
     "/ledger/build-week",
     response_model=ShiftLedgerMatrixRead,
-    dependencies=SHIFTS_WRITE_ACCESS,
+    dependencies=SHIFTS_INPUT_ACCESS,
 )
 async def post_build_shift_ledger_week(
     payload: ShiftLedgerBuildRequest,
@@ -88,7 +89,7 @@ async def post_build_shift_ledger_week(
 @router.patch(
     "/ledger/{entry_id}",
     response_model=ShiftLedgerEntryRead,
-    dependencies=SHIFTS_WRITE_ACCESS,
+    dependencies=SHIFTS_CORRECT_ACCESS,
 )
 async def patch_shift_ledger_entry(
     entry_id: uuid.UUID,

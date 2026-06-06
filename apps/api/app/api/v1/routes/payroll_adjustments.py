@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_permission
+from app.api.deps import CurrentActor, ensure_permission, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import Employee, PayrollAdjustment, PayrollAdjustmentCategory
 from app.schemas.payroll_adjustments import (
@@ -28,8 +28,9 @@ from app.services.payroll_adjustment_service import (
 )
 
 router = APIRouter()
-PAYROLL_READ_ACCESS = (Depends(require_permission("payroll.read")),)
-PAYROLL_ADJUSTMENTS_WRITE_ACCESS = (Depends(require_permission("payroll.adjustments.write")),)
+PAYROLL_ACCRUALS_READ_ACCESS = (Depends(require_permission("payroll.accruals.read")),)
+PAYROLL_SOURCE_DATA_READ_ACCESS = (Depends(require_permission("payroll.source_data.read")),)
+PAYROLL_RULES_CONFIGURE_ACCESS = (Depends(require_permission("payroll.rules.configure")),)
 
 ADJUSTMENT_TYPES = {"bonus", "penalty"}
 ADJUSTMENT_EMPLOYEE_POSITIONS = {"Повар", "Кассир"}
@@ -39,7 +40,7 @@ UNPROCESSABLE_STATUS = 422
 @router.get(
     "/adjustments",
     response_model=list[PayrollAdjustmentRead],
-    dependencies=PAYROLL_READ_ACCESS,
+    dependencies=PAYROLL_ACCRUALS_READ_ACCESS,
 )
 async def list_adjustments(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -94,15 +95,15 @@ async def list_adjustments(
 @router.post(
     "/adjustments",
     response_model=PayrollAdjustmentRead,
-    dependencies=PAYROLL_ADJUSTMENTS_WRITE_ACCESS,
 )
 async def create_adjustment(
     payload: PayrollAdjustmentCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    employee = await get_adjustment_employee(session, payload.employee_id)
     validate_adjustment_type(payload.type)
+    require_adjustment_type_permission(actor, payload.type)
+    employee = await get_adjustment_employee(session, payload.employee_id)
     validate_adjustment_target(employee)
     validate_adjustment_date(payload.work_date)
     validate_category_xor(payload.category_id, payload.custom_label)
@@ -136,7 +137,6 @@ async def create_adjustment(
 @router.patch(
     "/adjustments/{adjustment_id}",
     response_model=PayrollAdjustmentRead,
-    dependencies=PAYROLL_ADJUSTMENTS_WRITE_ACCESS,
 )
 async def patch_adjustment(
     adjustment_id: uuid.UUID,
@@ -152,6 +152,7 @@ async def patch_adjustment(
     next_work_date = updates.get("work_date", adjustment.work_date)
     next_type = updates.get("type", adjustment.type)
     validate_adjustment_type(next_type)
+    require_adjustment_type_permission(actor, next_type)
     validate_adjustment_date(next_work_date)
     employee = await get_adjustment_employee(session, next_employee_id)
     validate_adjustment_target(employee)
@@ -195,7 +196,6 @@ async def patch_adjustment(
 @router.delete(
     "/adjustments/{adjustment_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=PAYROLL_ADJUSTMENTS_WRITE_ACCESS,
 )
 async def delete_adjustment(
     adjustment_id: uuid.UUID,
@@ -203,6 +203,7 @@ async def delete_adjustment(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Response:
     adjustment = await get_adjustment_or_404(session, adjustment_id)
+    require_adjustment_type_permission(actor, adjustment.type)
     await ensure_date_unlocked(session, adjustment.work_date)
     await session.delete(adjustment)
     await session.commit()
@@ -212,7 +213,7 @@ async def delete_adjustment(
 @router.get(
     "/adjustment-categories",
     response_model=list[PayrollAdjustmentCategoryRead],
-    dependencies=PAYROLL_READ_ACCESS,
+    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
 )
 async def list_adjustment_categories(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -239,7 +240,7 @@ async def list_adjustment_categories(
 @router.post(
     "/adjustment-categories",
     response_model=PayrollAdjustmentCategoryRead,
-    dependencies=PAYROLL_ADJUSTMENTS_WRITE_ACCESS,
+    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
 )
 async def create_adjustment_category(
     payload: PayrollAdjustmentCategoryCreate,
@@ -268,7 +269,7 @@ async def create_adjustment_category(
 @router.patch(
     "/adjustment-categories/{category_id}",
     response_model=PayrollAdjustmentCategoryRead,
-    dependencies=PAYROLL_ADJUSTMENTS_WRITE_ACCESS,
+    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
 )
 async def patch_adjustment_category(
     category_id: uuid.UUID,
@@ -337,6 +338,14 @@ async def ensure_date_unlocked(session: AsyncSession, work_date: date) -> None:
 def validate_adjustment_type(value: str) -> None:
     if value not in ADJUSTMENT_TYPES:
         raise HTTPException(status_code=UNPROCESSABLE_STATUS, detail="Некорректный тип")
+
+
+def require_adjustment_type_permission(actor: CurrentActor, adjustment_type: str) -> None:
+    permission_by_type = {
+        "bonus": "payroll.bonuses.add",
+        "penalty": "payroll.penalties.add",
+    }
+    ensure_permission(actor, permission_by_type[adjustment_type])
 
 
 def validate_adjustment_target(employee: Employee) -> None:

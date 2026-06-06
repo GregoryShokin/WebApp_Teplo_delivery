@@ -135,7 +135,7 @@ async def write_setting(
     session: AsyncSession,
     key: str,
     value: Any,
-    changed_by_user_id: uuid.UUID,
+    changed_by_user_id: uuid.UUID | None,
 ) -> dict[str, Any]:
     setting = await get_setting_model(session, key)
     validate_setting_value(setting, value)
@@ -155,7 +155,7 @@ async def write_setting(
     await session.commit()
     await session.refresh(setting)
 
-    user = await session.get(User, changed_by_user_id)
+    user = await session.get(User, changed_by_user_id) if changed_by_user_id is not None else None
     return serialize_setting(setting, user)
 
 

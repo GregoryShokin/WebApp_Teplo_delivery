@@ -37,8 +37,8 @@ from app.services.payroll_calculator import (
 )
 
 router = APIRouter()
-FUND_READ_ACCESS = (Depends(require_permission("accumulation_fund.read")),)
-FUND_WRITE_ACCESS = (Depends(require_permission("accumulation_fund.write")),)
+FUND_READ_ACCESS = (Depends(require_permission("payroll.fund.read")),)
+FUND_EDIT_ACCESS = (Depends(require_permission("payroll.fund.edit")),)
 FUND_TIERS_SETTING_KEY = "payroll.fund_rates_by_tenure"
 MONEY = Decimal("0.01")
 FUND_TARGET_POSITIONS_ERROR = "Накопительный фонд ведётся только для Поваров и Кассиров"
@@ -135,7 +135,7 @@ async def get_fund_tiers(
     )
 
 
-@router.put("/tiers", response_model=FundTiersRead, dependencies=FUND_WRITE_ACCESS)
+@router.put("/tiers", response_model=FundTiersRead, dependencies=FUND_EDIT_ACCESS)
 async def put_fund_tiers(
     payload: FundTiersWrite,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -262,7 +262,7 @@ async def get_initial_balance_roster(
 @router.post(
     "/{employee_id}/initial-balance",
     response_model=FundInitialBalanceRead,
-    dependencies=FUND_WRITE_ACCESS,
+    dependencies=FUND_EDIT_ACCESS,
 )
 async def set_fund_initial_balance(
     employee_id: uuid.UUID,
@@ -368,7 +368,7 @@ async def set_fund_initial_balance(
 @router.patch(
     "/{employee_id}/exclusion",
     response_model=FundExclusionRead,
-    dependencies=FUND_WRITE_ACCESS,
+    dependencies=FUND_EDIT_ACCESS,
 )
 async def patch_fund_exclusion(
     employee_id: uuid.UUID,
@@ -484,7 +484,7 @@ async def list_fund_accounts(
     ]
 
 
-@router.post("/payout/{year}", dependencies=FUND_WRITE_ACCESS)
+@router.post("/payout/{year}", dependencies=FUND_EDIT_ACCESS)
 async def post_fund_payout(
     year: int,
     session: Annotated[AsyncSession, Depends(get_session)],

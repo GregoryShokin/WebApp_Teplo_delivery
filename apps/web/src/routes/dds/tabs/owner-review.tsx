@@ -41,7 +41,7 @@ import {
 
 const LIMIT = 20;
 
-export function OwnerReviewTab() {
+export function OwnerReviewTab({ canClassify }: { canClassify: boolean }) {
   const [kind, setKind] = useState<OwnerReviewKind | "all">("all");
   const [offset, setOffset] = useState(0);
   const ownerReviewQuery = useQuery({
@@ -91,6 +91,7 @@ export function OwnerReviewTab() {
           : (ownerReviewQuery.data?.items ?? []).map((item) => (
               <OwnerReviewCard
                 articles={articlesQuery.data ?? []}
+                canClassify={canClassify}
                 counterparties={counterpartiesQuery.data ?? []}
                 item={item}
                 key={item.id}
@@ -116,10 +117,12 @@ export function OwnerReviewTab() {
 
 function OwnerReviewCard({
   articles,
+  canClassify,
   counterparties,
   item,
 }: {
   articles: DdsArticleRead[];
+  canClassify: boolean;
   counterparties: CounterpartyRead[];
   item: ReconciliationCaseRead;
 }) {
@@ -193,7 +196,10 @@ function OwnerReviewCard({
   }
 
   const isBusy =
-    classifyMutation.isPending || dismissMutation.isPending || createCounterpartyMutation.isPending;
+    !canClassify ||
+    classifyMutation.isPending ||
+    dismissMutation.isPending ||
+    createCounterpartyMutation.isPending;
 
   return (
     <Card>
@@ -233,7 +239,7 @@ function OwnerReviewCard({
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
           <div className="grid gap-2">
             <Label>Статья ДДС</Label>
-            <Select value={articleId} onValueChange={setArticleId}>
+            <Select disabled={!canClassify} value={articleId} onValueChange={setArticleId}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -249,7 +255,7 @@ function OwnerReviewCard({
           </div>
           <div className="grid gap-2">
             <Label>Контрагент</Label>
-            <Select value={counterpartyId} onValueChange={setCounterpartyId}>
+            <Select disabled={!canClassify} value={counterpartyId} onValueChange={setCounterpartyId}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -264,17 +270,19 @@ function OwnerReviewCard({
               </SelectContent>
             </Select>
           </div>
-          <Button
-            onClick={() => setIsCreateCounterpartyOpen((value) => !value)}
-            type="button"
-            variant="outline"
-          >
-            <Plus size={16} aria-hidden="true" />
-            Создать нового
-          </Button>
+          {canClassify ? (
+            <Button
+              onClick={() => setIsCreateCounterpartyOpen((value) => !value)}
+              type="button"
+              variant="outline"
+            >
+              <Plus size={16} aria-hidden="true" />
+              Создать нового
+            </Button>
+          ) : null}
         </div>
 
-        {isCreateCounterpartyOpen ? (
+        {canClassify && isCreateCounterpartyOpen ? (
           <div className="grid gap-3 rounded-lg border bg-muted/30 p-3 md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-end">
             <div className="grid gap-2">
               <Label htmlFor={`counterparty-name-${item.id}`}>Название</Label>
@@ -308,6 +316,7 @@ function OwnerReviewCard({
           <input
             checked={rememberAsRule}
             className="mt-1 h-4 w-4"
+            disabled={!canClassify}
             onChange={(event) => setRememberAsRule(event.target.checked)}
             type="checkbox"
           />
@@ -320,6 +329,7 @@ function OwnerReviewCard({
           </span>
         </label>
 
+        {canClassify ? (
         <div className="flex flex-wrap gap-2">
           <Button disabled={isBusy} onClick={() => classify("set_article")}>
             {classifyMutation.isPending ? (
@@ -337,6 +347,11 @@ function OwnerReviewCard({
             Отложить
           </Button>
         </div>
+        ) : (
+          <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            Режим просмотра. Классификация и создание контрагентов скрыты.
+          </div>
+        )}
       </CardFooter>
     </Card>
   );

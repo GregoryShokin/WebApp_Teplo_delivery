@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.permissions import ALL_PERMISSION_CODES
+from app.auth.permissions import ALL_PERMISSION_CODES, permission_is_granted
 from app.auth.service import get_permission_codes_for_roles, get_user_by_id, get_user_role_codes
 from app.core.config import get_settings
 from app.core.security import decode_access_token
@@ -19,6 +20,7 @@ class CurrentActor:
     roles: frozenset[str]
     user_id: uuid.UUID | None = None
     permissions: frozenset[str] = frozenset()
+    permissions_loaded: bool = False
 
 
 ROLE_HIERARCHY = ("manager", "accountant", "finance_manager", "owner", "admin")
@@ -66,6 +68,11 @@ async def get_current_actor(
     if user_id is not None:
         db_user = await get_user_by_id(session, user_id)
         if db_user is not None:
+            if not db_user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Inactive user",
+                )
             roles |= set(await get_user_role_codes(session, user_id))
         else:
             roles |= token_roles
@@ -80,19 +87,37 @@ async def get_current_actor(
     elif roles:
         permissions = frozenset(await get_permission_codes_for_roles(session, roles))
 
-    return CurrentActor(roles=frozenset(roles), user_id=user_id, permissions=permissions)
+    return CurrentActor(
+        roles=frozenset(roles),
+        user_id=user_id,
+        permissions=permissions,
+        permissions_loaded=True,
+    )
 
 
 def require_permission(code: str):
     async def _dep(actor: Annotated[CurrentActor, Depends(get_current_actor)]) -> None:
-        if code in actor.permissions:
-            return
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permission",
-        )
+        ensure_permission(actor, code)
 
     return _dep
+
+
+def ensure_permission(actor: CurrentActor, code: str) -> None:
+    if permission_is_granted(code, actor.permissions):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Insufficient permission",
+    )
+
+
+def ensure_any_permission(actor: CurrentActor, codes: Iterable[str]) -> None:
+    if any(permission_is_granted(code, actor.permissions) for code in codes):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Insufficient permission",
+    )
 
 
 def require_finance_manager_plus(actor: CurrentActor) -> None:

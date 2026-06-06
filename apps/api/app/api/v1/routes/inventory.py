@@ -70,9 +70,17 @@ from app.services.inventory_audit_service import (
 )
 
 router = APIRouter()
-INVENTORY_READ_ACCESS = (Depends(require_permission("inventory.read")),)
-INVENTORY_WRITE_ACCESS = (Depends(require_permission("inventory.write")),)
-INVENTORY_AUDITS_WRITE_ACCESS = (Depends(require_permission("inventory.audits.write")),)
+INVENTORY_READ_ACCESS = (Depends(require_permission("accounting.inventory.read")),)
+INVENTORY_DIRECTORY_EDIT_ACCESS = (
+    Depends(require_permission("accounting.inventory_directory.edit")),
+)
+INVENTORY_CONDUCT_ACCESS = (Depends(require_permission("accounting.inventory.conduct")),)
+INVENTORY_FINALIZE_AND_PENALTY_ACCESS = (
+    Depends(require_permission("accounting.inventory.finalize")),
+    Depends(require_permission("accounting.audit_penalties.add")),
+)
+AUDITS_READ_ACCESS = (Depends(require_permission("accounting.audits.read")),)
+AUDIT_PENALTIES_ACCESS = (Depends(require_permission("accounting.audit_penalties.add")),)
 
 
 @router.get(
@@ -99,7 +107,7 @@ async def list_positions(
 @router.post(
     "/positions",
     response_model=InventoryPositionRead,
-    dependencies=INVENTORY_WRITE_ACCESS,
+    dependencies=INVENTORY_DIRECTORY_EDIT_ACCESS,
 )
 async def create_position(
     payload: InventoryPositionCreate,
@@ -134,7 +142,7 @@ async def create_position(
 @router.post(
     "/positions/sync-iiko",
     response_model=InventoryPositionsSyncRead,
-    dependencies=INVENTORY_WRITE_ACCESS,
+    dependencies=INVENTORY_DIRECTORY_EDIT_ACCESS,
 )
 async def sync_positions_iiko(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -147,7 +155,7 @@ async def sync_positions_iiko(
 @router.patch(
     "/positions/{position_id}",
     response_model=InventoryPositionRead,
-    dependencies=INVENTORY_WRITE_ACCESS,
+    dependencies=INVENTORY_DIRECTORY_EDIT_ACCESS,
 )
 async def patch_position(
     position_id: uuid.UUID,
@@ -225,7 +233,7 @@ async def list_iiko_products(
 @router.get(
     "/audit-exclusions",
     response_model=InventoryAuditAllExclusionsRead,
-    dependencies=INVENTORY_READ_ACCESS,
+    dependencies=AUDITS_READ_ACCESS,
 )
 async def list_audit_exclusions(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -245,7 +253,7 @@ async def list_audit_exclusions(
 @router.get(
     "/audits",
     response_model=list[InventoryAuditListRead],
-    dependencies=INVENTORY_READ_ACCESS,
+    dependencies=AUDITS_READ_ACCESS,
 )
 async def list_audits(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -268,7 +276,7 @@ async def list_audits(
 @router.get(
     "/audits/iiko-candidates",
     response_model=list[IikoInventoryCandidateRead],
-    dependencies=INVENTORY_READ_ACCESS,
+    dependencies=AUDITS_READ_ACCESS,
 )
 async def iiko_audit_candidates(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -281,7 +289,7 @@ async def iiko_audit_candidates(
 @router.post(
     "/audits/import-iiko",
     response_model=InventoryAuditDetailRead,
-    dependencies=INVENTORY_WRITE_ACCESS,
+    dependencies=INVENTORY_CONDUCT_ACCESS,
 )
 async def import_iiko_audit(
     payload: InventoryAuditImportIikoPayload,
@@ -308,7 +316,7 @@ async def import_iiko_audit(
 @router.post(
     "/audits",
     response_model=InventoryAuditDetailRead,
-    dependencies=INVENTORY_WRITE_ACCESS,
+    dependencies=INVENTORY_CONDUCT_ACCESS,
 )
 async def create_audit(
     payload: InventoryAuditCreateManualPayload,
@@ -336,7 +344,7 @@ async def create_audit(
 @router.get(
     "/audits/{audit_id}",
     response_model=InventoryAuditDetailRead,
-    dependencies=INVENTORY_READ_ACCESS,
+    dependencies=AUDITS_READ_ACCESS,
 )
 async def get_audit(
     audit_id: uuid.UUID,
@@ -353,7 +361,7 @@ async def get_audit(
 @router.get(
     "/audits/{audit_id}/preview",
     response_model=InventoryAuditDetailRead,
-    dependencies=INVENTORY_READ_ACCESS,
+    dependencies=AUDITS_READ_ACCESS,
 )
 async def preview_audit(
     audit_id: uuid.UUID,
@@ -371,7 +379,7 @@ async def preview_audit(
 @router.patch(
     "/audits/{audit_id}",
     response_model=InventoryAuditDetailRead,
-    dependencies=INVENTORY_WRITE_ACCESS,
+    dependencies=INVENTORY_CONDUCT_ACCESS,
 )
 async def patch_audit(
     audit_id: uuid.UUID,
@@ -390,7 +398,7 @@ async def patch_audit(
 @router.post(
     "/audits/{audit_id}/items",
     response_model=InventoryAuditDetailRead,
-    dependencies=INVENTORY_WRITE_ACCESS,
+    dependencies=INVENTORY_CONDUCT_ACCESS,
 )
 async def add_audit_item(
     audit_id: uuid.UUID,
@@ -426,7 +434,7 @@ async def add_audit_item(
 @router.patch(
     "/audits/{audit_id}/items/{item_id}",
     response_model=InventoryAuditDetailRead,
-    dependencies=INVENTORY_WRITE_ACCESS,
+    dependencies=INVENTORY_CONDUCT_ACCESS,
 )
 async def patch_audit_item(
     audit_id: uuid.UUID,
@@ -482,7 +490,7 @@ async def patch_audit_item(
 @router.delete(
     "/audits/{audit_id}/items/{item_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=INVENTORY_WRITE_ACCESS,
+    dependencies=INVENTORY_CONDUCT_ACCESS,
 )
 async def delete_audit_item(
     audit_id: uuid.UUID,
@@ -505,7 +513,7 @@ async def delete_audit_item(
 @router.patch(
     "/audits/{audit_id}/employee-exclusions/{employee_id}",
     response_model=InventoryAuditDetailRead,
-    dependencies=INVENTORY_WRITE_ACCESS,
+    dependencies=INVENTORY_CONDUCT_ACCESS,
 )
 async def patch_audit_employee_exclusion(
     audit_id: uuid.UUID,
@@ -538,7 +546,7 @@ async def patch_audit_employee_exclusion(
 @router.patch(
     "/audits/{audit_id}/items/{item_id}/exclusion",
     response_model=InventoryAuditDetailRead,
-    dependencies=INVENTORY_WRITE_ACCESS,
+    dependencies=INVENTORY_CONDUCT_ACCESS,
 )
 async def patch_audit_item_exclusion(
     audit_id: uuid.UUID,
@@ -571,7 +579,7 @@ async def patch_audit_item_exclusion(
 @router.post(
     "/audits/{audit_id}/compute",
     response_model=PenaltyComputationRead,
-    dependencies=INVENTORY_AUDITS_WRITE_ACCESS,
+    dependencies=AUDIT_PENALTIES_ACCESS,
 )
 async def compute_audit(
     audit_id: uuid.UUID,
@@ -588,7 +596,7 @@ async def compute_audit(
 @router.post(
     "/audits/{audit_id}/apply",
     response_model=InventoryAuditDetailRead,
-    dependencies=INVENTORY_AUDITS_WRITE_ACCESS,
+    dependencies=INVENTORY_FINALIZE_AND_PENALTY_ACCESS,
 )
 async def apply_audit(
     audit_id: uuid.UUID,
@@ -607,7 +615,7 @@ async def apply_audit(
 @router.post(
     "/audits/{audit_id}/cancel",
     response_model=InventoryAuditDetailRead,
-    dependencies=INVENTORY_AUDITS_WRITE_ACCESS,
+    dependencies=INVENTORY_CONDUCT_ACCESS,
 )
 async def cancel_inventory_audit(
     audit_id: uuid.UUID,
@@ -626,7 +634,7 @@ async def cancel_inventory_audit(
 @router.post(
     "/audits/{audit_id}/restore-draft",
     response_model=InventoryAuditDetailRead,
-    dependencies=INVENTORY_AUDITS_WRITE_ACCESS,
+    dependencies=INVENTORY_CONDUCT_ACCESS,
 )
 async def restore_inventory_audit_draft(
     audit_id: uuid.UUID,

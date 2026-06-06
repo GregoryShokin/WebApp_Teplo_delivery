@@ -38,6 +38,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { RoleBadge } from "@/components/ui-app/RoleBadge";
 import { clearSession, getAuthSnapshot, subscribeAuth, type AuthUser } from "@/lib/auth";
 import { logout } from "@/lib/api";
+import { usePermissions, type AppAction, type AppSection } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 type Navigate = (path: string) => void;
@@ -53,6 +54,8 @@ type NavItem = {
   href: string;
   icon: LucideIcon;
   quickAction?: "courier-evaluation-create";
+  requiredAction?: AppAction;
+  section?: AppSection;
 };
 
 type NavGroup = {
@@ -66,48 +69,65 @@ const navGroups: NavGroup[] = [
   },
   {
     title: "Кадры",
-    items: [{ label: "Штат", href: "/staff", icon: UsersRound }],
+    items: [{ label: "Штат", href: "/staff", icon: UsersRound, section: "staff" }],
   },
   {
     title: "Зарплата",
     items: [
-      { label: "Расчёты", href: "/payroll", icon: Banknote },
-      { label: "График сотрудников", href: "/schedule", icon: CalendarDays },
-      { label: "Исходные данные", href: "/source-data", icon: ClipboardList },
+      { label: "Расчёты", href: "/payroll", icon: Banknote, section: "payroll" },
+      { label: "График сотрудников", href: "/schedule", icon: CalendarDays, section: "schedule" },
+      { label: "Исходные данные", href: "/source-data", icon: ClipboardList, section: "source-data" },
     ],
   },
   {
     title: "Курьеры",
     items: [
-      { label: "Депозиты", href: "/couriers/deposits", icon: Bike },
-      { label: "Оценки", href: "/couriers/evaluations", icon: ClipboardList },
-      { label: "Статистика", href: "/couriers/statistics", icon: ChartNoAxesColumn },
-      { label: "График", href: "/couriers/schedule", icon: CalendarRange },
+      { label: "Депозиты", href: "/couriers/deposits", icon: Bike, section: "couriers.deposits" },
+      {
+        label: "Оценки",
+        href: "/couriers/evaluations",
+        icon: ClipboardList,
+        section: "couriers.evaluations",
+      },
+      {
+        label: "Статистика",
+        href: "/couriers/statistics",
+        icon: ChartNoAxesColumn,
+        section: "couriers.statistics",
+      },
+      { label: "График", href: "/couriers/schedule", icon: CalendarRange, section: "couriers.schedule" },
       {
         label: "+ Отличие",
         href: "/couriers/evaluations",
         icon: PlusCircle,
         quickAction: "courier-evaluation-create",
+        requiredAction: "couriers.evaluations.edit",
+        section: "couriers.evaluations",
       },
     ],
   },
   {
     title: "Финансы",
     items: [
-      { label: "ДДС", href: "/dds", icon: Banknote },
-      { label: "Платёжный календарь", href: "/payment-calendar", icon: CalendarClock },
-      { label: "Баланс", href: "/balance", icon: ReceiptText },
+      { label: "ДДС", href: "/dds", icon: Banknote, section: "finance.dds" },
+      {
+        label: "Платёжный календарь",
+        href: "/payment-calendar",
+        icon: CalendarClock,
+        section: "finance.payment-calendar",
+      },
+      { label: "Баланс", href: "/balance", icon: ReceiptText, section: "finance.balance" },
     ],
   },
   {
     title: "Учёт",
     items: [
-      { label: "Учёт ОС", href: "/fixed-assets", icon: Boxes },
-      { label: "Учёт ДЗ/КЗ", href: "/dz-kz", icon: ArrowLeftRight },
+      { label: "Учёт ОС", href: "/fixed-assets", icon: Boxes, section: "accounting.fixed-assets" },
+      { label: "Учёт ДЗ/КЗ", href: "/dz-kz", icon: ArrowLeftRight, section: "accounting.dz-kz" },
     ],
   },
   {
-    items: [{ label: "Настройки", href: "/settings", icon: Settings }],
+    items: [{ label: "Настройки", href: "/settings", icon: Settings, section: "settings" }],
   },
 ];
 
@@ -178,6 +198,7 @@ function SidebarContent({
   currentPath: string;
   onNavigate: Navigate;
 }) {
+  const permissions = usePermissions();
   const initialOpen = useMemo(
     () =>
       Object.fromEntries(
@@ -186,6 +207,20 @@ function SidebarContent({
     [],
   );
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(initialOpen);
+  const visibleGroups = useMemo(
+    () =>
+      navGroups
+        .map((group) => ({
+          ...group,
+          items: group.items.filter(
+            (item) =>
+              (!item.section || permissions.canOpenSection(item.section)) &&
+              (!item.requiredAction || permissions.canPerformAction(item.requiredAction)),
+          ),
+        }))
+        .filter((group) => group.items.length > 0),
+    [permissions],
+  );
 
   return (
     <div className="flex h-full min-h-screen flex-col">
@@ -205,7 +240,7 @@ function SidebarContent({
 
       <ScrollArea className="flex-1">
         <nav className="grid gap-3 px-3 py-4">
-          {navGroups.map((group, index) => {
+          {visibleGroups.map((group, index) => {
             if (!group.title) {
               return (
                 <div className="grid gap-1" key={group.items[0].href}>

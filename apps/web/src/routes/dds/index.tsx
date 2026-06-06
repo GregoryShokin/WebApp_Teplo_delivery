@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { getDdsOwnerReview } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { ArticlesTab } from "@/routes/dds/tabs/articles";
 import { CounterpartiesTab } from "@/routes/dds/tabs/counterparties";
 import { CredentialsTab } from "@/routes/dds/tabs/credentials";
@@ -34,10 +35,13 @@ export function DdsRoute({
   onNavigate,
   useStoredTab = false,
 }: DdsRouteProps) {
+  const permissions = usePermissions();
+  const visibleTabs = DDS_TABS.filter((tab) => canOpenDdsTab(tab.value, permissions));
   const [isResolvingStoredTab, setIsResolvingStoredTab] = useState(useStoredTab);
   const ownerReviewQuery = useQuery({
     queryKey: ["dds", "owner-review", "badge"],
     queryFn: () => getDdsOwnerReview({ limit: 1, offset: 0 }),
+    enabled: visibleTabs.some((tab) => tab.value === "owner-review"),
   });
 
   useEffect(() => {
@@ -59,6 +63,16 @@ export function DdsRoute({
     }
     window.localStorage.setItem(DDS_ACTIVE_TAB_STORAGE_KEY, activeTab);
   }, [activeTab, isResolvingStoredTab]);
+
+  useEffect(() => {
+    if (
+      !isResolvingStoredTab &&
+      visibleTabs.length > 0 &&
+      !visibleTabs.some((tab) => tab.value === activeTab)
+    ) {
+      onNavigate(ddsTabPath(visibleTabs[0].value));
+    }
+  }, [activeTab, isResolvingStoredTab, onNavigate, visibleTabs]);
 
   if (isResolvingStoredTab) {
     return null;
@@ -85,7 +99,7 @@ export function DdsRoute({
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-5">
         <TabsList className="h-auto flex-wrap justify-start">
-          {DDS_TABS.map((tab) => (
+          {visibleTabs.map((tab) => (
             <TabsTrigger className="gap-2" key={tab.value} value={tab.value}>
               {tab.label}
               {tab.value === "owner-review" && ownerReviewQuery.data?.total ? (
@@ -96,13 +110,23 @@ export function DdsRoute({
             </TabsTrigger>
           ))}
         </TabsList>
-        {renderTab(activeTab, onNavigate)}
+        {visibleTabs.length === 0 ? (
+          <div className="rounded-lg border bg-card px-4 py-8 text-sm text-muted-foreground">
+            Нет доступных вкладок финансов для текущего профиля.
+          </div>
+        ) : (
+          renderTab(activeTab, onNavigate, permissions)
+        )}
       </Tabs>
     </div>
   );
 }
 
-function renderTab(activeTab: DdsActiveTab, onNavigate: (path: string) => void) {
+function renderTab(
+  activeTab: DdsActiveTab,
+  onNavigate: (path: string) => void,
+  permissions: ReturnType<typeof usePermissions>,
+) {
   if (activeTab === "operations") {
     return <OperationsTab />;
   }
@@ -110,21 +134,47 @@ function renderTab(activeTab: DdsActiveTab, onNavigate: (path: string) => void) 
     return <LedgerTab />;
   }
   if (activeTab === "owner-review") {
-    return <OwnerReviewTab />;
+    return <OwnerReviewTab canClassify={permissions.canPerformAction("finance.cashflow.classify")} />;
   }
   if (activeTab === "counterparties") {
-    return <CounterpartiesTab />;
+    return <CounterpartiesTab canEdit={permissions.canPerformAction("finance.counterparties.edit")} />;
   }
   if (activeTab === "articles") {
-    return <ArticlesTab />;
+    return <ArticlesTab canEdit={permissions.canPerformAction("finance.cashflow.classify")} />;
   }
   if (activeTab === "rules") {
-    return <RulesTab />;
+    return <RulesTab canManage={permissions.canPerformAction("finance.rules.manage")} />;
   }
   if (activeTab === "credentials") {
-    return <CredentialsTab />;
+    return <CredentialsTab canManage={permissions.canPerformAction("finance.cashflow.sync")} />;
   }
   return <TodayTab onNavigate={onNavigate} />;
+}
+
+function canOpenDdsTab(tab: DdsActiveTab, permissions: ReturnType<typeof usePermissions>) {
+  if (tab === "today") {
+    return permissions.hasAnyPermission([
+      "finance.wallets.read",
+      "finance.store_cash.read",
+      "finance.cashflow.read",
+    ]);
+  }
+  if (tab === "operations" || tab === "ledger" || tab === "articles") {
+    return permissions.hasPermission("finance.cashflow.read");
+  }
+  if (tab === "owner-review") {
+    return permissions.hasAnyPermission([
+      "finance.owner_review.prepare",
+      "finance.cashflow.classify",
+    ]);
+  }
+  if (tab === "counterparties") {
+    return permissions.hasPermission("finance.counterparties.read");
+  }
+  if (tab === "rules") {
+    return permissions.canPerformAction("finance.rules.manage");
+  }
+  return permissions.canPerformAction("finance.cashflow.sync");
 }
 
 function readStoredDdsTab() {

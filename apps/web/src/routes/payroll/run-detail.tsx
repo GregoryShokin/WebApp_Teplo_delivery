@@ -54,7 +54,7 @@ import {
   type Employee,
   type PayrollLine,
 } from "@/lib/api";
-import { getAuthSnapshot } from "@/lib/auth";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import {
   formatDate,
@@ -92,6 +92,9 @@ const LEGACY_RECALC_MESSAGE = "Это импортированный перио�
 
 export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRouteProps) {
   const queryClient = useQueryClient();
+  const permissions = usePermissions();
+  const canRecalculate = permissions.canPerformAction("payroll.runs.recalculate");
+  const canFinalizeRuns = permissions.canPerformAction("payroll.runs.finalize");
   const [isRecalculateDialogOpen, setIsRecalculateDialogOpen] = useState(false);
 
   const runQuery = useQuery({
@@ -130,13 +133,12 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const blockers = run?.blocking_issues ?? [];
   const isLegacyRun = Boolean(run?.is_imported_legacy);
   const isFinal = run ? isFinalStatus(run.status) : false;
-  const canManagePayroll = canFinalizeByRole();
   const canFinalize =
     Boolean(run) &&
     run?.status === "completed" &&
     blockers.length === 0 &&
     !isFinal &&
-    canManagePayroll;
+    canFinalizeRuns;
 
   const finalizeMutation = useMutation({
     mutationFn: () => finalizePayrollRun(runId),
@@ -196,7 +198,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
               <ArrowLeft size={16} aria-hidden="true" />
               Назад
             </Button>
-            {isLegacyRun ? (
+            {canRecalculate && isLegacyRun ? (
               <Button
                 aria-disabled="true"
                 className="cursor-not-allowed opacity-50"
@@ -207,7 +209,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
                 <RefreshCw size={16} aria-hidden="true" />
                 Пересчитать
               </Button>
-            ) : (
+            ) : canRecalculate ? (
               <AlertDialog
                 open={isRecalculateDialogOpen}
                 onOpenChange={(open) => {
@@ -267,15 +269,17 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
-            )}
-            <Button onClick={finalize} disabled={!canFinalize || finalizeMutation.isPending}>
-              {finalizeMutation.isPending ? (
-                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-              ) : (
-                <CheckCircle2 size={16} aria-hidden="true" />
-              )}
-              Финализировать
-            </Button>
+            ) : null}
+            {canFinalizeRuns ? (
+              <Button onClick={finalize} disabled={!canFinalize || finalizeMutation.isPending}>
+                {finalizeMutation.isPending ? (
+                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                ) : (
+                  <CheckCircle2 size={16} aria-hidden="true" />
+                )}
+                Финализировать
+              </Button>
+            ) : null}
           </>
         }
       />
@@ -749,6 +753,8 @@ function PayrollLineDrawer({ row, runStatus }: { row: PayrollLineRowModel; runSt
 
 function DepositOverrideControl({ line, runStatus }: { line: PayrollLine; runStatus: string }) {
   const queryClient = useQueryClient();
+  const permissions = usePermissions();
+  const canEditDeposit = permissions.hasPermission("payroll.production_deposits.edit");
   const [reason, setReason] = useState(line.deposit_exclusion_reason ?? "");
   const disabledReason = "Ведомость зафинализирована, изменения невозможны";
   const isFinal = isFinalStatus(runStatus);
@@ -794,7 +800,7 @@ function DepositOverrideControl({ line, runStatus }: { line: PayrollLine; runSta
         <span title={isFinal ? disabledReason : undefined}>
           <Switch
             checked={line.deposit_excluded_for_run}
-            disabled={isFinal || mutation.isPending}
+            disabled={!canEditDeposit || isFinal || mutation.isPending}
             onCheckedChange={(checked) => {
               mutation.mutate({
                 deposit_excluded_for_run: checked,
@@ -815,14 +821,14 @@ function DepositOverrideControl({ line, runStatus }: { line: PayrollLine; runSta
         <div className="space-y-2">
           <Label htmlFor={`deposit-exclusion-reason-${line.id}`}>Причина</Label>
           <Textarea
-            disabled={isFinal || mutation.isPending}
+            disabled={!canEditDeposit || isFinal || mutation.isPending}
             id={`deposit-exclusion-reason-${line.id}`}
             onChange={(event) => setReason(event.target.value)}
             placeholder="Необязательно"
             value={reason}
           />
           <Button
-            disabled={isFinal || mutation.isPending}
+            disabled={!canEditDeposit || isFinal || mutation.isPending}
             onClick={saveReason}
             size="sm"
             type="button"
@@ -1002,14 +1008,6 @@ function adjustmentItems(value: unknown): AdjustmentComponent[] {
     amount: Number(item.amount ?? 0),
     comment: typeof item.comment === "string" && item.comment ? item.comment : null,
   }));
-}
-
-function canFinalizeByRole() {
-  const user = getAuthSnapshot().user;
-  if (!user) {
-    return true;
-  }
-  return user.roles.some((role) => ["finance_manager", "owner", "admin"].includes(role));
 }
 
 function isFinalStatus(status: string) {

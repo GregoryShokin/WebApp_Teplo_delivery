@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from app.api.deps import CurrentActor, get_current_actor
 from app.db.session import get_session
 from app.main import create_app
 from app.models import AgentAction, DepositAccount, DepositTransaction, Employee
@@ -113,7 +114,19 @@ def app_with_session(session: DepositFakeSession):
     async def override_session():
         yield session
 
+    async def override_actor():
+        return CurrentActor(
+            roles=frozenset({"test"}),
+            permissions=frozenset(
+                {
+                    "payroll.production_deposits.read",
+                    "payroll.production_deposits.edit",
+                }
+            ),
+        )
+
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_current_actor] = override_actor
     return app
 
 

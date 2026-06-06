@@ -144,7 +144,6 @@ import {
   deleteEmployeeAssignment,
   type SubstitutePair,
 } from "@/lib/api";
-import { getAuthSnapshot, subscribeAuth } from "@/lib/auth";
 import {
   COOKING_STATION_LABELS,
   EMPLOYEE_CHANGE_FIELD_LABELS,
@@ -158,6 +157,7 @@ import {
   type EmployeePinState,
   PAYROLL_ROLE_LABELS,
 } from "@/lib/i18n/employee";
+import { PERMISSION_GROUPS, usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 type StaffStatusFilter = EmployeeStatus | "current" | "all";
@@ -383,7 +383,6 @@ const defaultChangeFilters: EmployeeChangeFiltersState = {
   onlyRetroactive: false,
   includeSystemMigrations: false,
 };
-const staffChangeReaderRoles = ["manager", "finance_manager", "owner", "admin", "system_admin"];
 const dismissalReasonDefinitions: Array<Omit<DismissalReasonOption, "key" | "id">> = [
   { code: "voluntary", label: "По собственному желанию", requires_comment: false },
   { code: "no_show", label: "Не вышел на смену", requires_comment: false },
@@ -396,10 +395,10 @@ const dismissalReasonDefinitions: Array<Omit<DismissalReasonOption, "key" | "id"
 
 export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void }) {
   const queryClient = useQueryClient();
-  const auth = useAuthSnapshot();
-  const canViewChanges = canViewEmployeeChanges(auth.user?.roles);
-  const canManageStaff =
-    !auth.user || hasAnyRole(auth.user.roles, ["finance_manager", "owner", "admin"]);
+  const permissions = usePermissions();
+  const canViewChanges = permissions.hasAnyPermission(PERMISSION_GROUPS.staffHistoryRead);
+  const canCreateStaff = permissions.hasAnyPermission(PERMISSION_GROUPS.staffCreate);
+  const canImportStaff = permissions.canPerformAction("staff.import");
   const [activeTab, setActiveTab] = useState<StaffTab>("employees");
   const [status, setStatus] = useState<StaffStatusFilter>("current");
   const [category, setCategory] = useState<EmployeeCategory | "all">("all");
@@ -595,18 +594,38 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
     () => secondaryFilterOptionsForPositionFilter(positionFilter),
     [positionFilter],
   );
+  const visiblePositionFilterOptions = useMemo(
+    () =>
+      positionFilterOptions.filter(
+        (option) =>
+          option.value === "all" ||
+          option.positions?.some((position) => canReadStaffPosition(position, permissions)),
+      ),
+    [permissions],
+  );
+  const allowedCreatePositions = useMemo(
+    () => new Set(canonicalPositions.filter((position) => canCreateStaffPosition(position, permissions))),
+    [permissions],
+  );
+
+  useEffect(() => {
+    if (!visiblePositionFilterOptions.some((option) => option.value === positionFilter)) {
+      setPositionFilter("all");
+      setSecondaryFilter("all");
+    }
+  }, [positionFilter, visiblePositionFilterOptions]);
 
   const positionFilterCounts = useMemo(
     () =>
       Object.fromEntries(
-        positionFilterOptions.map((option) => [
+        visiblePositionFilterOptions.map((option) => [
           option.value,
           employeesBeforePositionFilter.filter((employee) =>
             employeeMatchesPositionFilter(employee, option.value),
           ).length,
         ]),
       ) as Record<StaffPositionFilter, number>,
-    [employeesBeforePositionFilter],
+    [employeesBeforePositionFilter, visiblePositionFilterOptions],
   );
 
   const employeesBeforeSecondaryFilter = useMemo(
@@ -792,7 +811,7 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
             >
               Открыть
             </Button>
-            {canManageStaff ? (
+            {canEditStaffEmployee(employee, permissions) ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -823,7 +842,7 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
         ),
       },
     ],
-    [canManageStaff],
+    [permissions],
   );
 
   const changeColumns = useMemo<Array<DataTableColumn<EmployeeChangeEvent>>>(
@@ -896,18 +915,22 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
         action={
           activeTab === "employees" ? (
             <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={() => setCreateOpen(true)} variant="outline">
-                <UserPlus size={16} aria-hidden="true" />
-                Создать сотрудника
-              </Button>
-              <Button onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}>
-                {syncMutation.isPending ? (
-                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-                ) : (
-                  <DatabaseZap size={16} aria-hidden="true" />
-                )}
-                Загрузить из iiko
-              </Button>
+              {canCreateStaff ? (
+                <Button onClick={() => setCreateOpen(true)} variant="outline">
+                  <UserPlus size={16} aria-hidden="true" />
+                  Создать сотрудника
+                </Button>
+              ) : null}
+              {canImportStaff ? (
+                <Button onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}>
+                  {syncMutation.isPending ? (
+                    <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                  ) : (
+                    <DatabaseZap size={16} aria-hidden="true" />
+                  )}
+                  Загрузить из iiko
+                </Button>
+              ) : null}
             </div>
           ) : undefined
         }
@@ -939,7 +962,7 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
             <Tabs onValueChange={handlePositionFilterChange} value={positionFilter}>
               <div className="-mx-1 overflow-x-auto px-1">
                 <TabsList className="inline-flex h-10 min-w-max justify-start">
-                  {positionFilterOptions.map((option) => (
+                  {visiblePositionFilterOptions.map((option) => (
                     <TabsTrigger
                       className="whitespace-nowrap"
                       value={option.value}
@@ -1099,6 +1122,7 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
               title="Сотрудники не загружены."
               description="Нажмите «Загрузить из iiko» для синхронизации."
               action={
+                canImportStaff ? (
                 <Button
                   className="h-11 px-5"
                   onClick={() => syncMutation.mutate()}
@@ -1111,6 +1135,7 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
                   )}
                   Загрузить из iiko
                 </Button>
+                ) : undefined
               }
             />
           ) : viewMode === "grid" ? (
@@ -1236,6 +1261,7 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
       </Sheet>
 
       <CreateEmployeeDialog
+        allowedPositions={allowedCreatePositions}
         isPending={createMutation.isPending}
         onCreate={(payload) => createMutation.mutate(payload)}
         onOpenChange={setCreateOpen}
@@ -2444,6 +2470,7 @@ function createRoleRow(isPrimary = false): CreateEmployeeRoleRow {
 }
 
 function CreateEmployeeDialog({
+  allowedPositions,
   isPending,
   onCreate,
   onOpenChange,
@@ -2452,6 +2479,7 @@ function CreateEmployeeDialog({
   rolesError,
   rolesLoading,
 }: {
+  allowedPositions: ReadonlySet<CanonicalPosition>;
   isPending: boolean;
   onCreate: (payload: EmployeeCreatePayload) => void;
   onOpenChange: (open: boolean) => void;
@@ -2475,9 +2503,9 @@ function CreateEmployeeDialog({
           return false;
         }
         const position = canonicalPosition(role.name);
-        return Boolean(position && createPositions.has(position));
+        return Boolean(position && createPositions.has(position) && allowedPositions.has(position));
       }),
-    [roles],
+    [allowedPositions, roles],
   );
   const selectedIikoRole = useMemo(
     () => filteredRoles.find((role) => role.id === iikoRoleId) ?? null,
@@ -3082,8 +3110,9 @@ function StaffEditor({
   onShowChanges: (employeeId: string) => void;
 }) {
   const queryClient = useQueryClient();
-  const auth = useAuthSnapshot();
-  const canViewChangeHistory = canViewEmployeeChanges(auth.user?.roles);
+  const permissions = usePermissions();
+  const canEditEmployee = canEditStaffEmployee(employee, permissions);
+  const canViewChangeHistory = canReadStaffEmployeeHistory(employee, permissions);
   const [initialDraft, setInitialDraft] = useState<StaffEditorDraft>(() => toEditorDraft(employee));
   const [draft, setDraft] = useState<StaffEditorDraft>(() => toEditorDraft(employee));
   const [dismissOpen, setDismissOpen] = useState(false);
@@ -3477,6 +3506,7 @@ function StaffEditor({
   const pinMatches = draft.pin_code === draft.pin_confirmation;
   const pinIsValid = !pinTouched || (pinFormatValid && pinMatches);
   const canSaveDraft =
+    canEditEmployee &&
     dirty &&
     nameIsValid &&
     !roleValidation &&
@@ -3491,13 +3521,10 @@ function StaffEditor({
     (!isDepositTargetPosition(employee.position) || !depositsQuery.isLoading) &&
     !dismissalReasonsQuery.isLoading &&
     !dismissMutation.isPending;
-  const canDismiss =
-    !auth.user || hasAnyRole(auth.user.roles, ["finance_manager", "owner", "admin"]);
-  const canReinstate = hasAnyRole(auth.user?.roles, ["owner"]);
+  const canDismiss = canDismissStaffEmployee(employee, permissions);
+  const canReinstate = canReinstateStaffEmployee(employee, permissions);
   const canDismissStatus = employee.status === "active" || employee.status === "requires_setup";
-  const canManageHireDate =
-    (!auth.user || hasAnyRole(auth.user.roles, ["finance_manager", "owner", "admin"])) &&
-    employee.status !== "inactive";
+  const canManageHireDate = canEditEmployee && employee.status !== "inactive";
   const hireDateMin = dateInputYearsAgo(10);
   const hireDateMax = todayDateInputValue();
   const hireDateIsValid =
@@ -3616,6 +3643,7 @@ function StaffEditor({
             <Button disabled={mutation.isPending} onClick={onClose} type="button" variant="outline">
               Отмена
             </Button>
+            {canEditEmployee ? (
             <Button disabled={!canSaveDraft} onClick={saveDraft} type="button">
               {mutation.isPending ? (
                 <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
@@ -3624,6 +3652,7 @@ function StaffEditor({
               )}
               Сохранить
             </Button>
+            ) : null}
           </div>
         </div>
       </SheetHeader>
@@ -3648,6 +3677,7 @@ function StaffEditor({
 
       {employee.requires_role_review ? (
         <RoleReviewBanner
+          canEdit={canEditEmployee}
           employee={employee}
           onAddSubstitute={(targetPosition) => setSubstituteDialog({ targetPosition })}
           onIgnore={() => roleReviewIgnoreMutation.mutate()}
@@ -3726,6 +3756,7 @@ function StaffEditor({
           <span>Имя</span>
           <Input
             autoComplete="off"
+            disabled={!canEditEmployee || mutation.isPending}
             onChange={(event) => setDraft({ ...draft, full_name: event.target.value })}
             value={draft.full_name}
           />
@@ -3739,21 +3770,23 @@ function StaffEditor({
               {employee.position || "Должность не указана"}
             </div>
           </div>
-          <Button
-            disabled={positionMutation.isPending}
-            onClick={() => setPositionDialogOpen(true)}
-            type="button"
-            variant="outline"
-          >
-            <Pencil size={15} aria-hidden="true" />
-            Изменить должность
-          </Button>
+          {canEditEmployee ? (
+            <Button
+              disabled={positionMutation.isPending}
+              onClick={() => setPositionDialogOpen(true)}
+              type="button"
+              variant="outline"
+            >
+              <Pencil size={15} aria-hidden="true" />
+              Изменить должность
+            </Button>
+          ) : null}
         </div>
 
         {showEditorCashierRole ? (
           <CashierRoleEditor
             category={cashierCategoryValue}
-            disabled={mutation.isPending}
+            disabled={!canEditEmployee || mutation.isPending}
             onCategoryChange={(category) => {
               setDraft((current) => ({
                 ...current,
@@ -3769,7 +3802,9 @@ function StaffEditor({
               <div className="text-sm font-medium">Роли и категории</div>
               <Button
                 disabled={
-                  mutation.isPending || roleOptions.every((role) => activeRoleIds.has(role))
+                  !canEditEmployee ||
+                  mutation.isPending ||
+                  roleOptions.every((role) => activeRoleIds.has(role))
                 }
                 onClick={addRole}
                 size="sm"
@@ -3801,7 +3836,7 @@ function StaffEditor({
                       <label className="flex h-10 items-center gap-2 text-sm">
                         <input
                           checked={assignment.is_primary}
-                          disabled={assignment.is_primary || mutation.isPending}
+                          disabled={assignment.is_primary || !canEditEmployee || mutation.isPending}
                           name="edit-primary-role"
                           onChange={() =>
                             setDraft((current) => ({
@@ -3819,7 +3854,7 @@ function StaffEditor({
 
                       {canChooseRole ? (
                         <Select
-                          disabled={mutation.isPending}
+                          disabled={!canEditEmployee || mutation.isPending}
                           onValueChange={(value) => {
                             const payrollRole = value as PayrollRole;
                             const nextCategories = categoriesForPayrollRole(payrollRole);
@@ -3866,7 +3901,7 @@ function StaffEditor({
                         />
                       ) : (
                         <Select
-                          disabled={mutation.isPending || rowCategories.length === 0}
+                          disabled={!canEditEmployee || mutation.isPending || rowCategories.length === 0}
                           onValueChange={(value) =>
                             setDraft((current) => ({
                               ...current,
@@ -3893,7 +3928,7 @@ function StaffEditor({
                       )}
 
                       <Button
-                        disabled={assignment.is_primary || mutation.isPending}
+                        disabled={assignment.is_primary || !canEditEmployee || mutation.isPending}
                         onClick={() =>
                           setDraft((current) => ({
                             ...current,
@@ -3927,6 +3962,7 @@ function StaffEditor({
         {showSubstituteSection ? (
           <SubstituteRolesSection
             assignments={employeeSubstitutes}
+            canEdit={canEditEmployee}
             onAdd={(targetPosition) => setSubstituteDialog({ targetPosition })}
             onDelete={(assignment) => setSubstituteDeleteTarget(assignment)}
             onEdit={(assignment) => setSubstituteDialog({ assignment })}
@@ -3952,6 +3988,7 @@ function StaffEditor({
                 <span>Старший</span>
                 <input
                   checked={draft.is_senior}
+                  disabled={!canEditEmployee || mutation.isPending}
                   onChange={(event) => setDraft({ ...draft, is_senior: event.target.checked })}
                   type="checkbox"
                 />
@@ -3962,6 +3999,7 @@ function StaffEditor({
                 <span>Зам старшего</span>
                 <input
                   checked={draft.is_deputy_senior}
+                  disabled={!canEditEmployee || mutation.isPending}
                   onChange={(event) =>
                     setDraft({ ...draft, is_deputy_senior: event.target.checked })
                   }
@@ -4012,6 +4050,7 @@ function StaffEditor({
                   <span>ПИН</span>
                   <Input
                     autoComplete="off"
+                    disabled={!canEditEmployee || mutation.isPending}
                     inputMode="numeric"
                     maxLength={4}
                     onChange={(event) =>
@@ -4029,6 +4068,7 @@ function StaffEditor({
                   <span>Подтвердите ПИН</span>
                   <Input
                     autoComplete="off"
+                    disabled={!canEditEmployee || mutation.isPending}
                     inputMode="numeric"
                     maxLength={4}
                     onChange={(event) =>
@@ -4065,6 +4105,7 @@ function StaffEditor({
                 </Button>
               </div>
             ) : (
+              canEditEmployee ? (
               <Button
                 className="w-fit"
                 onClick={() => setPinOpen(true)}
@@ -4074,6 +4115,7 @@ function StaffEditor({
                 <KeyRound size={16} aria-hidden="true" />
                 {EMPLOYEE_PIN_BUTTON_LABELS[pinState]}
               </Button>
+              ) : null
             )}
           </div>
         ) : null}
@@ -4932,6 +4974,7 @@ function StaticField({ label, value }: { label: string; value: string }) {
 }
 
 function RoleReviewBanner({
+  canEdit,
   employee,
   isIgnoring,
   onAddSubstitute,
@@ -4939,6 +4982,7 @@ function RoleReviewBanner({
   onOpenSettings,
   pairs,
 }: {
+  canEdit: boolean;
   employee: Employee;
   isIgnoring: boolean;
   onAddSubstitute: (targetPosition: "Повар" | "Кассир") => void;
@@ -4969,6 +5013,7 @@ function RoleReviewBanner({
           </div>
         ) : null}
       </div>
+      {canEdit ? (
       <div className="flex flex-wrap gap-2">
         {reason === "unconfigured_pair" || !configured || !firstPosition ? (
           <Button
@@ -5006,6 +5051,7 @@ function RoleReviewBanner({
           Игнорировать
         </Button>
       </div>
+      ) : null}
     </section>
   );
 }
@@ -5016,12 +5062,14 @@ function SettingsIcon() {
 
 function SubstituteRolesSection({
   assignments,
+  canEdit,
   onAdd,
   onDelete,
   onEdit,
   pairs,
 }: {
   assignments: EmployeeRoleAssignment[];
+  canEdit: boolean;
   onAdd: (targetPosition: "Повар" | "Кассир") => void;
   onDelete: (assignment: EmployeeRoleAssignment) => void;
   onEdit: (assignment: EmployeeRoleAssignment) => void;
@@ -5037,6 +5085,7 @@ function SubstituteRolesSection({
             Дополнительная роль поверх основной должности. Используется для оплаты за конкретные смены
           </div>
         </div>
+        {canEdit ? (
         <div className="flex flex-wrap gap-2">
           {targets.map((target) => (
             <Button
@@ -5051,6 +5100,7 @@ function SubstituteRolesSection({
             </Button>
           ))}
         </div>
+        ) : null}
       </div>
       {targets.length > 0 ? (
         <div className="text-sm text-muted-foreground">
@@ -5081,6 +5131,7 @@ function SubstituteRolesSection({
                   {categoryLabel(assignment.category)}, с {formatDate(assignment.effective_from)}
                 </div>
               </div>
+              {canEdit ? (
               <div className="flex gap-1">
                 <Button
                   onClick={() => onEdit(assignment)}
@@ -5101,6 +5152,7 @@ function SubstituteRolesSection({
                   <Trash2 size={15} aria-hidden="true" />
                 </Button>
               </div>
+              ) : null}
             </div>
           ))}
         </div>
@@ -5452,12 +5504,81 @@ function statusFilterLabel(status: StaffStatusFilter) {
   return EMPLOYEE_STATUS_LABELS[status];
 }
 
-function hasAnyRole(roles: string[] | undefined, allowedRoles: readonly string[]) {
-  return Boolean(roles?.some((role) => allowedRoles.includes(role)));
+type StaffPermissions = ReturnType<typeof usePermissions>;
+
+function canReadStaffPosition(position: CanonicalPosition, permissions: StaffPermissions) {
+  const area = staffAreaForPosition(position);
+  if (area === "administration") return permissions.hasPermission("staff.administration.read");
+  if (area === "cooks") return permissions.hasAnyPermission(["staff.cooks.read", "staff.production.read"]);
+  if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.read", "staff.production.read"]);
+  if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.read", "staff.production.read"]);
+  if (area === "couriers") return permissions.hasPermission("staff.couriers.read");
+  return false;
 }
 
-function canViewEmployeeChanges(roles: string[] | undefined) {
-  return roles === undefined || hasAnyRole(roles, staffChangeReaderRoles);
+function canCreateStaffPosition(position: CanonicalPosition, permissions: StaffPermissions) {
+  const area = staffAreaForPosition(position);
+  if (area === "administration") return permissions.hasPermission("staff.administration.create");
+  if (area === "cooks") return permissions.hasPermission("staff.cooks.create");
+  if (area === "cashiers") return permissions.hasPermission("staff.cashiers.create");
+  if (area === "couriers") return permissions.hasPermission("staff.couriers.create");
+  return false;
+}
+
+function canEditStaffEmployee(employee: Employee, permissions: StaffPermissions) {
+  const area = staffAreaForEmployee(employee);
+  if (area === "administration") return permissions.hasPermission("staff.administration.edit");
+  if (area === "cooks") return permissions.hasAnyPermission(["staff.cooks.edit", "staff.production.edit"]);
+  if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.edit", "staff.production.edit"]);
+  if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.edit", "staff.production.edit"]);
+  if (area === "couriers") return permissions.hasPermission("staff.couriers.edit");
+  return false;
+}
+
+function canDismissStaffEmployee(employee: Employee, permissions: StaffPermissions) {
+  const area = staffAreaForEmployee(employee);
+  if (area === "administration") return permissions.hasPermission("staff.administration.dismiss");
+  if (area === "cooks") return permissions.hasAnyPermission(["staff.cooks.dismiss", "staff.production.dismiss"]);
+  if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.dismiss", "staff.production.dismiss"]);
+  if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.dismiss", "staff.production.dismiss"]);
+  if (area === "couriers") return permissions.hasPermission("staff.couriers.dismiss");
+  return false;
+}
+
+function canReinstateStaffEmployee(employee: Employee, permissions: StaffPermissions) {
+  const area = staffAreaForEmployee(employee);
+  if (area === "administration") return permissions.hasPermission("staff.administration.reinstate");
+  if (area === "cooks") return permissions.hasAnyPermission(["staff.cooks.reinstate", "staff.production.reinstate"]);
+  if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.reinstate", "staff.production.reinstate"]);
+  if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.reinstate", "staff.production.reinstate"]);
+  if (area === "couriers") return permissions.hasPermission("staff.couriers.reinstate");
+  return false;
+}
+
+function canReadStaffEmployeeHistory(employee: Employee, permissions: StaffPermissions) {
+  const area = staffAreaForEmployee(employee);
+  if (area === "administration") return permissions.hasPermission("staff.administration.history.read");
+  if (area === "cooks") return permissions.hasAnyPermission(["staff.cooks.history.read", "staff.production.history.read"]);
+  if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.history.read", "staff.production.history.read"]);
+  if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.history.read", "staff.production.history.read"]);
+  if (area === "couriers") return permissions.hasPermission("staff.couriers.history.read");
+  return false;
+}
+
+function staffAreaForEmployee(employee: Employee) {
+  return staffAreaForPosition(canonicalPosition(employee.position));
+}
+
+function staffAreaForPosition(position: CanonicalPosition | null): "administration" | "cooks" | "cashiers" | "auxiliary" | "couriers" | null {
+  if (!position) return null;
+  if (position === "Управляющий" || position === "Менеджер" || position === "Системный администратор") {
+    return "administration";
+  }
+  if (position === "Повар") return "cooks";
+  if (position === "Кассир") return "cashiers";
+  if (position === "Курьер") return "couriers";
+  if (auxiliaryPositions.has(position)) return "auxiliary";
+  return null;
 }
 
 function dateTimeFilterStart(value: string) {
@@ -6416,17 +6537,4 @@ function isPayrollRole(value: string): value is PayrollRole {
 
 function isEmployeeStatus(value: string): value is EmployeeStatus {
   return value in EMPLOYEE_STATUS_LABELS;
-}
-
-function useAuthSnapshot() {
-  const [auth, setAuth] = useState(getAuthSnapshot);
-
-  useEffect(() => {
-    const unsubscribe = subscribeAuth(setAuth);
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  return auth;
 }

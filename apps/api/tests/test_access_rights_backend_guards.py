@@ -1,0 +1,263 @@
+from __future__ import annotations
+
+import asyncio
+import uuid
+
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.core.security import create_access_token
+from app.models import Organization, Permission, Role, RolePermission, User, UserRole
+
+
+def test_courier_schedule_read_and_edit_are_independent(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    read_headers = _headers_for_permissions(
+        async_session_factory,
+        "courier-schedule-read@test.local",
+        ["couriers.schedule.read"],
+    )
+    edit_headers = _headers_for_permissions(
+        async_session_factory,
+        "courier-schedule-edit@test.local",
+        ["couriers.schedule.edit"],
+    )
+
+    allowed_read = client.get(
+        "/api/v1/couriers/schedule",
+        params={"from": "2026-06-01", "to": "2026-06-01"},
+        headers=read_headers,
+    )
+    denied_write = client.put(
+        f"/api/v1/couriers/{uuid.uuid4()}/schedule/2026-06-01",
+        json={"category": "primary"},
+        headers=read_headers,
+    )
+    denied_read = client.get(
+        "/api/v1/couriers/schedule",
+        params={"from": "2026-06-01", "to": "2026-06-01"},
+        headers=edit_headers,
+    )
+
+    assert allowed_read.status_code == 200
+    assert denied_write.status_code == 403
+    assert denied_read.status_code == 403
+
+
+def test_courier_deposit_read_edit_and_configure_are_independent(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    read_headers = _headers_for_permissions(
+        async_session_factory,
+        "courier-deposit-read@test.local",
+        ["couriers.deposits.read"],
+    )
+    edit_headers = _headers_for_permissions(
+        async_session_factory,
+        "courier-deposit-edit@test.local",
+        ["couriers.deposits.edit"],
+    )
+    configure_headers = _headers_for_permissions(
+        async_session_factory,
+        "courier-deposit-configure@test.local",
+        ["couriers.deposits.configure"],
+    )
+
+    allowed_read = client.get("/api/v1/couriers/deposits", headers=read_headers)
+    denied_edit = client.post(
+        f"/api/v1/couriers/{uuid.uuid4()}/deposit/transactions",
+        json={
+            "transaction_type": "top_up",
+            "amount_cents": 1000,
+            "transaction_date": "2026-06-01",
+            "actor_id": str(uuid.uuid4()),
+        },
+        headers=read_headers,
+    )
+    denied_read = client.get("/api/v1/couriers/deposits", headers=edit_headers)
+    allowed_configure = client.get(
+        "/api/v1/couriers/deposits/settings",
+        headers=configure_headers,
+    )
+    denied_configure = client.put(
+        "/api/v1/couriers/deposits/settings",
+        json={"target_amount": 500000},
+        headers=read_headers,
+    )
+
+    assert allowed_read.status_code == 200
+    assert denied_edit.status_code == 403
+    assert denied_read.status_code == 403
+    assert allowed_configure.status_code == 200
+    assert denied_configure.status_code == 403
+
+
+def test_payroll_finalize_is_separate_from_read_and_calculate(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    read_headers = _headers_for_permissions(
+        async_session_factory,
+        "payroll-runs-read@test.local",
+        ["payroll.runs.read"],
+    )
+    start_headers = _headers_for_permissions(
+        async_session_factory,
+        "payroll-runs-start@test.local",
+        ["payroll.runs.start"],
+    )
+    finalize_headers = _headers_for_permissions(
+        async_session_factory,
+        "payroll-runs-finalize@test.local",
+        ["payroll.runs.finalize"],
+    )
+
+    allowed_read = client.get("/api/v1/payroll/runs", headers=read_headers)
+    denied_finalize_without_finalize = client.post(
+        f"/api/v1/payroll/runs/{uuid.uuid4()}/finalize",
+        headers=start_headers,
+    )
+    denied_read_with_finalize_only = client.get(
+        "/api/v1/payroll/runs",
+        headers=finalize_headers,
+    )
+    denied_calculate_with_finalize_only = client.post(
+        "/api/v1/payroll/runs",
+        json={},
+        headers=finalize_headers,
+    )
+
+    assert allowed_read.status_code == 200
+    assert denied_finalize_without_finalize.status_code == 403
+    assert denied_read_with_finalize_only.status_code == 403
+    assert denied_calculate_with_finalize_only.status_code == 403
+
+
+def test_bonus_and_penalty_permissions_are_separate(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    bonus_headers = _headers_for_permissions(
+        async_session_factory,
+        "payroll-bonus@test.local",
+        ["payroll.bonuses.add"],
+    )
+    penalty_headers = _headers_for_permissions(
+        async_session_factory,
+        "payroll-penalty@test.local",
+        ["payroll.penalties.add"],
+    )
+    base_payload = {
+        "employee_id": str(uuid.uuid4()),
+        "work_date": "2026-06-01",
+        "category_id": str(uuid.uuid4()),
+        "amount": "100.00",
+    }
+
+    denied_penalty = client.post(
+        "/api/v1/payroll/adjustments",
+        json={**base_payload, "type": "penalty"},
+        headers=bonus_headers,
+    )
+    denied_bonus = client.post(
+        "/api/v1/payroll/adjustments",
+        json={**base_payload, "type": "bonus"},
+        headers=penalty_headers,
+    )
+
+    assert denied_penalty.status_code == 403
+    assert denied_bonus.status_code == 403
+
+
+def test_dds_cashflow_rules_connections_and_wallets_are_independent(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    cashflow_read_headers = _headers_for_permissions(
+        async_session_factory,
+        "dds-cashflow-read@test.local",
+        ["finance.cashflow.read"],
+    )
+    cashflow_edit_headers = _headers_for_permissions(
+        async_session_factory,
+        "dds-cashflow-edit@test.local",
+        ["finance.cashflow.edit"],
+    )
+    rules_headers = _headers_for_permissions(
+        async_session_factory,
+        "dds-rules@test.local",
+        ["finance.classification_rules.manage"],
+    )
+    integrations_headers = _headers_for_permissions(
+        async_session_factory,
+        "dds-integrations@test.local",
+        ["finance.cashflow.integrations.manage"],
+    )
+    wallets_headers = _headers_for_permissions(
+        async_session_factory,
+        "dds-wallets@test.local",
+        ["finance.wallets.read"],
+    )
+
+    assert client.get("/api/v1/dds/cashflow", headers=cashflow_read_headers).status_code == 200
+    assert client.get("/api/v1/dds/credentials", headers=cashflow_read_headers).status_code == 403
+    assert client.get("/api/v1/dds/credentials", headers=cashflow_edit_headers).status_code == 403
+    assert client.get("/api/v1/dds/credentials", headers=integrations_headers).status_code == 200
+    assert client.get("/api/v1/dds/classification-rules", headers=rules_headers).status_code == 200
+    assert client.get("/api/v1/dds/wallets", headers=cashflow_read_headers).status_code == 403
+    assert client.get("/api/v1/dds/wallets", headers=wallets_headers).status_code == 200
+
+
+def _headers_for_permissions(
+    session_factory: async_sessionmaker[AsyncSession],
+    email: str,
+    permission_codes: list[str],
+) -> dict[str, str]:
+    user_id = asyncio.run(_create_user_with_permissions(session_factory, email, permission_codes))
+    return {"Authorization": f"Bearer {create_access_token(str(user_id))}"}
+
+
+async def _create_user_with_permissions(
+    session_factory: async_sessionmaker[AsyncSession],
+    email: str,
+    permission_codes: list[str],
+) -> uuid.UUID:
+    async with session_factory() as session:
+        existing_user_id = await session.scalar(select(User.id).where(User.email == email))
+        if existing_user_id is not None:
+            return existing_user_id
+
+        organization_id = await session.scalar(select(Organization.id).limit(1))
+        assert organization_id is not None
+        permissions = (
+            await session.scalars(select(Permission).where(Permission.code.in_(permission_codes)))
+        ).all()
+        assert {permission.code for permission in permissions} == set(permission_codes)
+
+        role = Role(
+            code=f"test_{uuid.uuid4().hex[:24]}",
+            name=f"Test role {email}",
+        )
+        user = User(
+            email=email,
+            full_name=email,
+            hashed_password="sha256$unused",
+            is_active=True,
+        )
+        session.add_all([role, user])
+        await session.flush()
+        for permission in permissions:
+            session.add(RolePermission(role_id=role.id, permission_id=permission.id))
+        session.add(
+            UserRole(
+                user_id=user.id,
+                role_id=role.id,
+                organization_id=organization_id,
+            )
+        )
+        await session.commit()
+        return user.id

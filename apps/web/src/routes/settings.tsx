@@ -48,7 +48,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { PageHeader } from "@/components/ui-app/PageHeader";
-import { getAuthSnapshot, hasAuthPermission, subscribeAuth } from "@/lib/auth";
+import { usePermissions } from "@/lib/permissions";
 import {
   getSettingHistory,
   getSettings,
@@ -137,7 +137,7 @@ const LEGACY_CATEGORY_TO_SLUG: Record<string, string> = {
 
 export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
   const queryClient = useQueryClient();
-  const auth = useAuthSnapshot();
+  const permissions = usePermissions();
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
   const [historyKey, setHistoryKey] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, unknown>>({});
@@ -267,14 +267,17 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
       );
   }, [selectedCategory, settings]);
 
-  const isOwner = Boolean(auth.user?.roles.includes("owner"));
-  const canOpenAccessControl = hasAuthPermission("access_control.users.write", auth);
+  const canOpenAccessControl = permissions.canOpenSection("access-control");
+  const canWriteSettings = permissions.canPerformAction("settings.edit");
   const showSubstitutePairsPanel = !selectedCategory || selectedCategory === "payroll";
   const substitutePairs = substitutePairsQuery.data?.pairs ?? [];
   const substitutePairsDirty = !valuesEqual(substituteDrafts, substitutePairs);
   const substitutePairsError = validateSubstitutePairs(substituteDrafts);
 
   function handleValueChange(setting: AppSetting, value: unknown) {
+    if (!canWriteSettings) {
+      return;
+    }
     setDrafts((current) => ({ ...current, [setting.key]: value }));
     window.clearTimeout(saveTimers.current[setting.key]);
     saveTimers.current[setting.key] = window.setTimeout(() => {
@@ -361,7 +364,8 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
 
       <div className="space-y-6">
         {showSubstitutePairsPanel ? (
-          <SubstitutePairsPanel
+            <SubstitutePairsPanel
+            canWrite={canWriteSettings}
             drafts={substituteDrafts}
             error={substitutePairsError}
             isDirty={substitutePairsDirty}
@@ -409,11 +413,10 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
             <div className="grid gap-3">
               {items.map((setting) => {
                 const value = draftValue(drafts, setting);
-                const locked = setting.is_critical && !isOwner;
                 return (
                   <SettingCard
                     developerMode={developerMode}
-                    disabled={locked}
+                    disabled={!canWriteSettings}
                     isSaving={savingKeys.has(setting.key)}
                     key={setting.key}
                     onChange={(nextValue) => handleValueChange(setting, nextValue)}
@@ -451,6 +454,7 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
 }
 
 function SubstitutePairsPanel({
+  canWrite,
   drafts,
   error,
   isDirty,
@@ -462,6 +466,7 @@ function SubstitutePairsPanel({
   onReset,
   onSave,
 }: {
+  canWrite: boolean;
   drafts: SubstitutePair[];
   error: string | null;
   isDirty: boolean;
@@ -482,10 +487,18 @@ function SubstitutePairsPanel({
             Какие должности могут выходить в график как повар или кассир.
           </p>
         </div>
-        <Button disabled={isLoading || isSaving} onClick={onAdd} size="sm" type="button" variant="outline">
-          <Plus size={15} aria-hidden="true" />
-          Добавить пару
-        </Button>
+        {canWrite ? (
+          <Button
+            disabled={isLoading || isSaving}
+            onClick={onAdd}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <Plus size={15} aria-hidden="true" />
+            Добавить пару
+          </Button>
+        ) : null}
       </div>
 
       <div className="grid gap-3 rounded-lg border bg-card p-4 shadow-sm">
@@ -507,7 +520,7 @@ function SubstitutePairsPanel({
             <div className="grid gap-2">
               <span className="text-sm font-medium">Кто выходит</span>
               <Select
-                disabled={isSaving}
+                disabled={!canWrite || isSaving}
                 onValueChange={(value) => onChange(index, { from_position: value })}
                 value={pair.from_position}
               >
@@ -527,7 +540,7 @@ function SubstitutePairsPanel({
             <div className="grid gap-2">
               <span className="text-sm font-medium">Кого подменяет</span>
               <Select
-                disabled={isSaving}
+                disabled={!canWrite || isSaving}
                 onValueChange={(value) =>
                   onChange(index, { to_position: value as SubstitutePair["to_position"] })
                 }
@@ -551,7 +564,7 @@ function SubstitutePairsPanel({
               <div className="flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3">
                 <Switch
                   checked={pair.add_to_schedule}
-                  disabled={isSaving}
+                  disabled={!canWrite || isSaving}
                   onCheckedChange={(checked) => onChange(index, { add_to_schedule: checked })}
                 />
                 <span className="text-sm text-muted-foreground">
@@ -560,16 +573,18 @@ function SubstitutePairsPanel({
               </div>
             </div>
 
-            <Button
-              disabled={isSaving}
-              onClick={() => onDelete(index)}
-              size="icon"
-              title="Удалить пару"
-              type="button"
-              variant="ghost"
-            >
-              <Trash2 size={16} aria-hidden="true" />
-            </Button>
+            {canWrite ? (
+              <Button
+                disabled={isSaving}
+                onClick={() => onDelete(index)}
+                size="icon"
+                title="Удалить пару"
+                type="button"
+                variant="ghost"
+              >
+                <Trash2 size={16} aria-hidden="true" />
+              </Button>
+            ) : null}
           </div>
         ))}
 
@@ -579,6 +594,7 @@ function SubstitutePairsPanel({
           </div>
         ) : null}
 
+        {canWrite ? (
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button disabled={!isDirty || isSaving} onClick={onReset} type="button" variant="outline">
             Отменить
@@ -592,6 +608,7 @@ function SubstitutePairsPanel({
             Сохранить пары
           </Button>
         </div>
+        ) : null}
       </div>
     </section>
   );
@@ -814,19 +831,6 @@ function CategoryButton({
       {children}
     </button>
   );
-}
-
-function useAuthSnapshot() {
-  const [auth, setAuth] = useState(getAuthSnapshot);
-
-  useEffect(() => {
-    const unsubscribe = subscribeAuth(setAuth);
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  return auth;
 }
 
 function normalizeCategory(category: string) {

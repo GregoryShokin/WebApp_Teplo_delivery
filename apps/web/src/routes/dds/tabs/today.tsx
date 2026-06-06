@@ -5,6 +5,7 @@ import { AlertCircle, ArrowRight, Banknote, Coins, Lock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { usePermissions } from "@/lib/permissions";
 import {
   getDdsBankOperations,
   getDdsOwnerReview,
@@ -71,10 +72,16 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export function TodayTab({ onNavigate }: { onNavigate: (path: string) => void }) {
+  const permissions = usePermissions();
+  const canOpenOwnerReview = permissions.hasAnyPermission([
+    "finance.owner_review.prepare",
+    "finance.cashflow.classify",
+  ]);
   const walletsQuery = useQuery({ queryKey: ["dds", "wallets"], queryFn: getDdsWallets });
   const ownerReviewQuery = useQuery({
     queryKey: ["dds", "owner-review", "today"],
     queryFn: () => getDdsOwnerReview({ limit: 1, offset: 0 }),
+    enabled: canOpenOwnerReview,
   });
   const lastOperationQuery = useQuery({
     queryKey: ["dds", "operations", "latest"],
@@ -109,7 +116,7 @@ export function TodayTab({ onNavigate }: { onNavigate: (path: string) => void })
     ? `Последняя операция в банке: ${formatDate(lastImport.operation_date)}`
     : "Импорт ещё не запускался";
 
-  const pendingReview = ownerReviewQuery.data?.total ?? 0;
+  const pendingReview = canOpenOwnerReview ? (ownerReviewQuery.data?.total ?? 0) : 0;
 
   return (
     <div className="space-y-5">

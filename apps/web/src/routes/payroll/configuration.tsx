@@ -45,8 +45,8 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/ui-app/PageHeader";
-import { getAuthSnapshot, subscribeAuth } from "@/lib/auth";
 import { EMPLOYEE_CATEGORY_LABELS } from "@/lib/i18n/employee";
+import { usePermissions } from "@/lib/permissions";
 import { InventoryPositionsSection } from "@/routes/payroll/inventory-positions";
 import {
   apiErrorMessage,
@@ -146,12 +146,8 @@ type PendingFundExclusion = {
 export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRouteProps) {
   void onNavigate;
   const queryClient = useQueryClient();
-  const auth = useAuthSnapshot();
-  const canWrite = Boolean(
-    auth.user?.roles.some(
-      (role) => role === "finance_manager" || role === "owner" || role === "admin",
-    ),
-  );
+  const permissions = usePermissions();
+  const canWrite = permissions.canPerformAction("payroll.source-data.edit");
   const [advanced, setAdvanced] = useState(false);
   const [pendingRate, setPendingRate] = useState<PendingRate | null>(null);
   const [historyDrawer, setHistoryDrawer] = useState<HistoryDrawer>(null);
@@ -2362,19 +2358,6 @@ function formatFundPercent(value: string | null) {
     return "—";
   }
   return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 }).format(percent)}%`;
-}
-
-function useAuthSnapshot() {
-  const [auth, setAuth] = useState(getAuthSnapshot);
-
-  useEffect(() => {
-    const unsubscribe = subscribeAuth(setAuth);
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  return auth;
 }
 
 async function invalidatePayrollConfig(queryClient: ReturnType<typeof useQueryClient>) {

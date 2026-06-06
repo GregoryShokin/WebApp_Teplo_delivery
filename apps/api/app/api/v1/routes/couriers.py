@@ -58,10 +58,18 @@ from app.services.couriers import (
 )
 
 router = APIRouter()
-COURIERS_READ_ACCESS = (Depends(require_permission("couriers.read")),)
-COURIERS_SCHEDULE_WRITE_ACCESS = (Depends(require_permission("couriers.schedule.write")),)
-COURIERS_ASSESS_WRITE_ACCESS = (Depends(require_permission("couriers.assess.write")),)
-COURIERS_DEPOSITS_WRITE_ACCESS = (Depends(require_permission("couriers.deposits.write")),)
+COURIERS_LIST_READ_ACCESS = (Depends(require_permission("couriers.list.read")),)
+COURIERS_STATISTICS_READ_ACCESS = (Depends(require_permission("couriers.statistics.read")),)
+COURIERS_SCHEDULE_READ_ACCESS = (Depends(require_permission("couriers.schedule.read")),)
+COURIERS_SCHEDULE_EDIT_ACCESS = (Depends(require_permission("couriers.schedule.edit")),)
+COURIERS_SHIFTS_SYNC_ACCESS = (Depends(require_permission("couriers.shifts.sync")),)
+COURIERS_EVALUATIONS_READ_ACCESS = (Depends(require_permission("couriers.evaluations.read")),)
+COURIERS_EVALUATIONS_EDIT_ACCESS = (Depends(require_permission("couriers.evaluations.edit")),)
+COURIERS_DEPOSITS_READ_ACCESS = (Depends(require_permission("couriers.deposits.read")),)
+COURIERS_DEPOSITS_EDIT_ACCESS = (Depends(require_permission("couriers.deposits.edit")),)
+COURIERS_DEPOSITS_CONFIGURE_ACCESS = (
+    Depends(require_permission("couriers.deposits.configure")),
+)
 CourierSyncMode = Literal["hot", "cold", "custom"]
 MAX_DELIVERY_WINDOW_DAYS = 92
 
@@ -72,7 +80,7 @@ class CourierSyncRequest(BaseModel):
     date_to: date | None = None
 
 
-@router.post("/sync", dependencies=COURIERS_SCHEDULE_WRITE_ACCESS)
+@router.post("/sync", dependencies=COURIERS_SHIFTS_SYNC_ACCESS)
 async def post_courier_sync(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -120,7 +128,7 @@ async def post_courier_sync(
     return result.as_dict()
 
 
-@router.post("/iiko/sync-attendance", dependencies=COURIERS_SCHEDULE_WRITE_ACCESS)
+@router.post("/iiko/sync-attendance", dependencies=COURIERS_SHIFTS_SYNC_ACCESS)
 async def post_iiko_attendance_sync(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -148,7 +156,7 @@ async def post_iiko_attendance_sync(
     return report.as_dict()
 
 
-@router.get("/deliveries", dependencies=COURIERS_READ_ACCESS)
+@router.get("/deliveries", dependencies=COURIERS_STATISTICS_READ_ACCESS)
 async def get_courier_deliveries(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -170,7 +178,7 @@ async def get_courier_deliveries(
     )
 
 
-@router.get("/shifts", dependencies=COURIERS_READ_ACCESS)
+@router.get("/shifts", dependencies=COURIERS_STATISTICS_READ_ACCESS)
 async def get_courier_shifts(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -191,7 +199,7 @@ async def get_courier_shifts(
 @router.get(
     "/statistics",
     response_model=list[CourierStatisticsRow],
-    dependencies=COURIERS_READ_ACCESS,
+    dependencies=COURIERS_STATISTICS_READ_ACCESS,
 )
 async def get_couriers_statistics(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -215,7 +223,7 @@ async def get_couriers_statistics(
     return rows
 
 
-@router.get("/list", response_model=CourierListResponse, dependencies=COURIERS_READ_ACCESS)
+@router.get("/list", response_model=CourierListResponse, dependencies=COURIERS_LIST_READ_ACCESS)
 async def get_couriers_list(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -287,7 +295,7 @@ async def get_couriers_list(
 @router.get(
     "/{employee_id}/statistics",
     response_model=CourierStatisticsDetail,
-    dependencies=COURIERS_READ_ACCESS,
+    dependencies=COURIERS_STATISTICS_READ_ACCESS,
 )
 async def get_courier_statistics_detail(
     employee_id: uuid.UUID,
@@ -323,7 +331,7 @@ async def get_courier_statistics_detail(
 @router.get(
     "/deposits",
     response_model=list[CourierDepositRow],
-    dependencies=COURIERS_READ_ACCESS,
+    dependencies=COURIERS_DEPOSITS_READ_ACCESS,
 )
 async def get_courier_deposits(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -345,7 +353,7 @@ async def get_courier_deposits(
 @router.get(
     "/deposits/settings",
     response_model=CourierDepositSettingsRead,
-    dependencies=COURIERS_READ_ACCESS,
+    dependencies=COURIERS_DEPOSITS_CONFIGURE_ACCESS,
 )
 async def get_courier_deposit_settings(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -357,7 +365,7 @@ async def get_courier_deposit_settings(
 @router.put(
     "/deposits/settings",
     response_model=CourierDepositSettingsRead,
-    dependencies=COURIERS_DEPOSITS_WRITE_ACCESS,
+    dependencies=COURIERS_DEPOSITS_CONFIGURE_ACCESS,
 )
 async def put_courier_deposit_settings(
     payload: CourierDepositSettingsUpdate,
@@ -373,7 +381,7 @@ async def put_courier_deposit_settings(
 @router.get(
     "/{employee_id}/deposit",
     response_model=CourierDepositCardRead,
-    dependencies=COURIERS_READ_ACCESS,
+    dependencies=COURIERS_DEPOSITS_READ_ACCESS,
 )
 async def get_courier_deposit_card(
     employee_id: uuid.UUID,
@@ -394,7 +402,7 @@ async def get_courier_deposit_card(
 @router.put(
     "/{employee_id}/deposit/opening",
     response_model=CourierDepositCardRead,
-    dependencies=COURIERS_DEPOSITS_WRITE_ACCESS,
+    dependencies=COURIERS_DEPOSITS_EDIT_ACCESS,
 )
 async def put_courier_deposit_opening(
     employee_id: uuid.UUID,
@@ -424,7 +432,7 @@ async def put_courier_deposit_opening(
 @router.post(
     "/{employee_id}/deposit/transactions",
     response_model=CourierDepositTransactionRead,
-    dependencies=COURIERS_DEPOSITS_WRITE_ACCESS,
+    dependencies=COURIERS_DEPOSITS_EDIT_ACCESS,
 )
 async def post_courier_deposit_transaction(
     employee_id: uuid.UUID,
@@ -450,7 +458,7 @@ async def post_courier_deposit_transaction(
 @router.get(
     "/evaluation-criteria",
     response_model=list[CourierEvaluationCriterionRead],
-    dependencies=COURIERS_READ_ACCESS,
+    dependencies=COURIERS_EVALUATIONS_READ_ACCESS,
 )
 async def get_courier_evaluation_criteria(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -467,7 +475,7 @@ async def get_courier_evaluation_criteria(
 @router.get(
     "/evaluations",
     response_model=list[CourierEvaluationRead],
-    dependencies=COURIERS_READ_ACCESS,
+    dependencies=COURIERS_EVALUATIONS_READ_ACCESS,
 )
 async def get_courier_evaluations(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -496,7 +504,7 @@ async def get_courier_evaluations(
 @router.post(
     "/evaluations",
     response_model=CourierEvaluationRead,
-    dependencies=COURIERS_ASSESS_WRITE_ACCESS,
+    dependencies=COURIERS_EVALUATIONS_EDIT_ACCESS,
 )
 async def post_courier_evaluation(
     payload: CourierEvaluationCreate,
@@ -521,7 +529,7 @@ async def post_courier_evaluation(
 @router.patch(
     "/evaluations/{evaluation_id}",
     response_model=CourierEvaluationRead,
-    dependencies=COURIERS_ASSESS_WRITE_ACCESS,
+    dependencies=COURIERS_EVALUATIONS_EDIT_ACCESS,
 )
 async def patch_courier_evaluation(
     evaluation_id: int,
@@ -546,7 +554,7 @@ async def patch_courier_evaluation(
 @router.delete(
     "/evaluations/{evaluation_id}",
     response_model=CourierEvaluationRead,
-    dependencies=COURIERS_ASSESS_WRITE_ACCESS,
+    dependencies=COURIERS_EVALUATIONS_EDIT_ACCESS,
 )
 async def delete_courier_evaluation(
     evaluation_id: int,
@@ -568,7 +576,7 @@ async def delete_courier_evaluation(
 @router.get(
     "/{employee_id}/evaluations/monthly",
     response_model=CourierEvaluationMonthlyAggregate,
-    dependencies=COURIERS_READ_ACCESS,
+    dependencies=COURIERS_EVALUATIONS_READ_ACCESS,
 )
 async def get_courier_evaluation_monthly(
     employee_id: uuid.UUID,
@@ -582,7 +590,7 @@ async def get_courier_evaluation_monthly(
 @router.get(
     "/schedule",
     response_model=list[CourierScheduleEntryRead],
-    dependencies=COURIERS_READ_ACCESS,
+    dependencies=COURIERS_SCHEDULE_READ_ACCESS,
 )
 async def get_courier_schedule(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -606,7 +614,7 @@ async def get_courier_schedule(
 @router.get(
     "/schedule/matched",
     response_model=list[CourierScheduleMatchedEntry],
-    dependencies=COURIERS_READ_ACCESS,
+    dependencies=COURIERS_SCHEDULE_READ_ACCESS,
 )
 async def get_courier_schedule_matched(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -629,7 +637,7 @@ async def get_courier_schedule_matched(
 @router.put(
     "/{employee_id}/schedule/{work_date}",
     response_model=CourierScheduleEntryRead,
-    dependencies=COURIERS_SCHEDULE_WRITE_ACCESS,
+    dependencies=COURIERS_SCHEDULE_EDIT_ACCESS,
 )
 async def put_courier_schedule_entry(
     employee_id: uuid.UUID,
@@ -657,7 +665,7 @@ async def put_courier_schedule_entry(
 @router.delete(
     "/{employee_id}/schedule/{work_date}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=COURIERS_SCHEDULE_WRITE_ACCESS,
+    dependencies=COURIERS_SCHEDULE_EDIT_ACCESS,
 )
 async def delete_courier_schedule_entry(
     employee_id: uuid.UUID,

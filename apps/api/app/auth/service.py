@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.permissions import expand_permission_codes
 from app.core.security import verify_password
 from app.models import Permission, Role, RolePermission, User, UserRole
 
@@ -55,7 +56,7 @@ async def get_permission_codes_for_roles(
         .distinct()
         .order_by(Permission.code)
     )
-    return tuple(result.scalars().all())
+    return tuple(sorted(expand_permission_codes(result.scalars().all())))
 
 
 async def build_authenticated_user(session: AsyncSession, user: User) -> AuthenticatedUser | None:

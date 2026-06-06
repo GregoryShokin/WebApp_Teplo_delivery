@@ -81,6 +81,7 @@ import {
   type AccessUserCreatePayload,
   type AccessUserPatchPayload,
 } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 const ACCESS_QUERY_KEY = ["access-control"] as const;
@@ -89,20 +90,6 @@ const ROLES_QUERY_KEY = [...ACCESS_QUERY_KEY, "roles"] as const;
 const PERMISSIONS_QUERY_KEY = [...ACCESS_QUERY_KEY, "permissions"] as const;
 const AUDIT_QUERY_KEY = [...ACCESS_QUERY_KEY, "audit"] as const;
 const AUDIT_PAGE_SIZE = 50;
-
-const MODULE_LABELS: Record<string, string> = {
-  access_control: "Доступы",
-  balance: "Баланс",
-  couriers: "Курьеры",
-  dds: "ДДС",
-  employees: "Сотрудники",
-  fixed_assets: "Учёт ОС",
-  payroll: "Зарплата",
-  payment_calendar: "Платёжный календарь",
-  schedule: "График",
-  settings: "Настройки",
-  staff: "Штат",
-};
 
 const ACTION_LABELS: Record<string, string> = {
   added: "добавлено",
@@ -143,6 +130,15 @@ type PendingRoleRevoke = {
 
 export function AccessControlRoute() {
   const queryClient = useQueryClient();
+  const permissions = usePermissions();
+  const canViewUsers = permissions.hasPermission("settings.users.read");
+  const canCreateUsers = permissions.hasPermission("settings.users.create");
+  const canEditUsers = permissions.hasPermission("settings.users.edit");
+  const canAssignAccess = permissions.hasPermission("settings.access.assign");
+  const canViewRoles = permissions.hasPermission("settings.roles.edit");
+  const canEditRoles = permissions.hasPermission("settings.roles.edit");
+  const canViewAudit = permissions.hasPermission("settings.access_audit.read");
+  const defaultTab = canViewUsers ? "users" : canViewRoles ? "roles" : "audit";
 
   return (
     <div className="space-y-5">
@@ -162,27 +158,53 @@ export function AccessControlRoute() {
         }
       />
 
-      <Tabs defaultValue="users">
+      {!canViewUsers && !canViewRoles && !canViewAudit ? (
+        <EmptyState
+          icon={<ShieldCheck size={18} aria-hidden="true" />}
+          title="Недостаточно прав"
+          description="Раздел доступов скрыт для текущего профиля."
+        />
+      ) : (
+      <Tabs defaultValue={defaultTab}>
         <TabsList className="grid w-full grid-cols-3 sm:w-auto">
-          <TabsTrigger value="users">Пользователи</TabsTrigger>
-          <TabsTrigger value="roles">Права должностей</TabsTrigger>
-          <TabsTrigger value="audit">Аудит</TabsTrigger>
+          {canViewUsers ? <TabsTrigger value="users">Пользователи</TabsTrigger> : null}
+          {canViewRoles ? <TabsTrigger value="roles">Права должностей</TabsTrigger> : null}
+          {canViewAudit ? <TabsTrigger value="audit">Аудит</TabsTrigger> : null}
         </TabsList>
-        <TabsContent className="mt-4" value="users">
-          <UsersTab />
-        </TabsContent>
-        <TabsContent className="mt-4" value="roles">
-          <RolePermissionsTab />
-        </TabsContent>
-        <TabsContent className="mt-4" value="audit">
-          <AuditTab />
-        </TabsContent>
+        {canViewUsers ? (
+          <TabsContent className="mt-4" value="users">
+            <UsersTab
+              canAssignAccess={canAssignAccess}
+              canCreateUsers={canCreateUsers}
+              canEditUsers={canEditUsers}
+            />
+          </TabsContent>
+        ) : null}
+        {canViewRoles ? (
+          <TabsContent className="mt-4" value="roles">
+            <RolePermissionsTab canEditRoles={canEditRoles} />
+          </TabsContent>
+        ) : null}
+        {canViewAudit ? (
+          <TabsContent className="mt-4" value="audit">
+            <AuditTab />
+          </TabsContent>
+        ) : null}
       </Tabs>
+      )}
     </div>
   );
 }
 
-function UsersTab() {
+function UsersTab({
+  canAssignAccess,
+  canCreateUsers,
+  canEditUsers,
+}: {
+  canAssignAccess: boolean;
+  canCreateUsers: boolean;
+  canEditUsers: boolean;
+}) {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateUserForm>(() => emptyCreateForm());
@@ -262,7 +284,8 @@ function UsersTab() {
   });
 
   const columns = useMemo<Array<DataTableColumn<AccessUser>>>(
-    () => [
+    () => {
+      const baseColumns: Array<DataTableColumn<AccessUser>> = [
       {
         key: "email",
         header: "Email",
@@ -317,23 +340,27 @@ function UsersTab() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onSelect={() =>
-                  setEditState({
-                    user,
-                    full_name: user.full_name,
-                    is_active: user.is_active,
-                  })
-                }
-              >
-                <Pencil size={15} aria-hidden="true" />
-                Редактировать
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setRolesUserId(user.id)}>
-                <UserCog size={15} aria-hidden="true" />
-                Должности
-              </DropdownMenuItem>
-              {user.is_active ? (
+              {canEditUsers ? (
+                <DropdownMenuItem
+                  onSelect={() =>
+                    setEditState({
+                      user,
+                      full_name: user.full_name,
+                      is_active: user.is_active,
+                    })
+                  }
+                >
+                  <Pencil size={15} aria-hidden="true" />
+                  Редактировать
+                </DropdownMenuItem>
+              ) : null}
+              {canAssignAccess ? (
+                <DropdownMenuItem onSelect={() => setRolesUserId(user.id)}>
+                  <UserCog size={15} aria-hidden="true" />
+                  Должности
+                </DropdownMenuItem>
+              ) : null}
+              {canEditUsers && user.is_active ? (
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
                   onSelect={() =>
@@ -351,7 +378,7 @@ function UsersTab() {
                   <UserMinus size={15} aria-hidden="true" />
                   Заблокировать
                 </DropdownMenuItem>
-              ) : (
+              ) : canEditUsers ? (
                 <DropdownMenuItem
                   onSelect={() =>
                     patchMutation.mutate({
@@ -364,13 +391,17 @@ function UsersTab() {
                   <CheckCircle2 size={15} aria-hidden="true" />
                   Активировать
                 </DropdownMenuItem>
-              )}
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         ),
       },
-    ],
-    [patchMutation, roleByCode],
+    ];
+      return canAssignAccess || canEditUsers
+        ? baseColumns
+        : baseColumns.filter((column) => column.key !== "actions");
+    },
+    [canAssignAccess, canEditUsers, patchMutation, roleByCode],
   );
 
   function handleCreateSubmit(event: FormEvent<HTMLFormElement>) {
@@ -420,10 +451,12 @@ function UsersTab() {
             Учётные записи, статус доступа и назначенные должности.
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)} type="button">
-          <Plus size={16} aria-hidden="true" />
-          Добавить пользователя
-        </Button>
+        {canCreateUsers ? (
+          <Button onClick={() => setCreateOpen(true)} type="button">
+            <Plus size={16} aria-hidden="true" />
+            Добавить пользователя
+          </Button>
+        ) : null}
       </div>
 
       {usersQuery.isError ? (
@@ -595,7 +628,8 @@ function UsersTab() {
             <div className="grid gap-2">
               {roles.map((role) => {
                 const checked = rolesDialogUser.role_codes.includes(role.code);
-                const disabled = assignRoleMutation.isPending || revokeRoleMutation.isPending;
+                const disabled =
+                  !canAssignAccess || assignRoleMutation.isPending || revokeRoleMutation.isPending;
                 return (
                   <label
                     className={cn(
@@ -703,7 +737,7 @@ function UsersTab() {
   );
 }
 
-function RolePermissionsTab() {
+function RolePermissionsTab({ canEditRoles }: { canEditRoles: boolean }) {
   const queryClient = useQueryClient();
   const [selectedRoleId, setSelectedRoleId] = useState<string | undefined>();
   const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
@@ -725,7 +759,11 @@ function RolePermissionsTab() {
     [selectedRole?.permission_codes],
   );
   const serverCodesKey = useMemo(() => serverCodes.slice().sort().join("|"), [serverCodes]);
-  const isReadOnly = !selectedRole || !selectedRole.is_editable;
+  const isReadOnly = !canEditRoles || !selectedRole || !selectedRole.is_editable;
+  const developerMode = useMemo(
+    () => import.meta.env.DEV || window.localStorage.getItem("teplo:developer-mode") === "1",
+    [],
+  );
   const isDirty = selectedRole ? !sameCodeSet(selectedCodes, serverCodes) : false;
 
   const updatePermissionsMutation = useMutation({
@@ -807,7 +845,9 @@ function RolePermissionsTab() {
           {selectedRole ? (
             <div className="rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
               {selectedRole.is_editable
-                ? "Должность редактируется."
+                ? canEditRoles
+                  ? "Должность редактируется."
+                  : "Режим просмотра. Изменять права должностей нельзя."
                 : "Полный доступ, не редактируется."}
             </div>
           ) : null}
@@ -863,6 +903,7 @@ function RolePermissionsTab() {
           {selectedRole && permissionGroups.length > 0 ? (
             <PermissionsAccordion
               disabled={isReadOnly || updatePermissionsMutation.isPending}
+              developerMode={developerMode}
               groups={permissionGroups}
               selectedCodes={selectedCodes}
               onToggle={togglePermission}
@@ -876,11 +917,13 @@ function RolePermissionsTab() {
 
 function PermissionsAccordion({
   disabled,
+  developerMode,
   groups,
   selectedCodes,
   onToggle,
 }: {
   disabled: boolean;
+  developerMode: boolean;
   groups: AccessPermissionModule[];
   selectedCodes: string[];
   onToggle: (code: string, checked: boolean) => void;
@@ -893,36 +936,53 @@ function PermissionsAccordion({
         <AccordionItem key={group.module} open={index < 3} value={group.module}>
           <AccordionTrigger>
             <span className="min-w-0">
-              <span className="block truncate">{moduleLabel(group.module)}</span>
+              <span className="block truncate">{group.module}</span>
               <span className="block text-xs font-normal text-muted-foreground">
                 {group.permissions.length} прав
               </span>
             </span>
           </AccordionTrigger>
           <AccordionContent>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {group.permissions.map((permission) => (
-                <label
-                  className={cn(
-                    "flex items-start gap-3 rounded-md border bg-card px-3 py-2",
-                    disabled && "opacity-70",
-                  )}
-                  key={permission.code}
-                >
-                  <Checkbox
-                    checked={selected.has(permission.code)}
-                    disabled={disabled}
-                    onChange={(event) =>
-                      onToggle(permission.code, event.currentTarget.checked)
-                    }
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium">{permission.description}</span>
-                    <span className="block break-all text-xs text-muted-foreground">
-                      {permission.code}
-                    </span>
-                  </span>
-                </label>
+            <div className="grid gap-4">
+              {groupPermissionsByArea(group).map((area) => (
+                <section className="grid gap-2" key={area.label}>
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold">{area.label}</h3>
+                    <Badge variant="outline">
+                      {area.permissions.filter((permission) => selected.has(permission.code)).length}
+                      /{area.permissions.length}
+                    </Badge>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {area.permissions.map((permission) => (
+                      <label
+                        className={cn(
+                          "flex items-start gap-3 rounded-md border bg-card px-3 py-2",
+                          disabled && "opacity-70",
+                        )}
+                        key={permission.code}
+                      >
+                        <Checkbox
+                          checked={selected.has(permission.code)}
+                          disabled={disabled}
+                          onChange={(event) =>
+                            onToggle(permission.code, event.currentTarget.checked)
+                          }
+                        />
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium">
+                            {permission.description}
+                          </span>
+                          {developerMode ? (
+                            <span className="block break-all text-xs text-muted-foreground">
+                              {permission.code}
+                            </span>
+                          ) : null}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           </AccordionContent>
@@ -1072,8 +1132,91 @@ function sameCodeSet(left: string[], right: string[]) {
   return left.every((code) => rightSet.has(code));
 }
 
-function moduleLabel(module: string) {
-  return MODULE_LABELS[module] ?? module.replace(/_/g, " ");
+type PermissionAreaGroup = {
+  label: string;
+  permissions: AccessPermissionModule["permissions"];
+};
+
+function groupPermissionsByArea(module: AccessPermissionModule): PermissionAreaGroup[] {
+  const areas = new Map<string, AccessPermissionModule["permissions"]>();
+  module.permissions.forEach((permission) => {
+    const label = permissionAreaLabel(permission.code, module.module);
+    const permissions = areas.get(label) ?? [];
+    permissions.push(permission);
+    areas.set(label, permissions);
+  });
+  return Array.from(areas.entries()).map(([label, permissions]) => ({ label, permissions }));
+}
+
+function permissionAreaLabel(code: string, module: string) {
+  if (code.startsWith("staff.administration.")) return "Администрация";
+  if (code.startsWith("staff.cooks.")) return "Повара";
+  if (code.startsWith("staff.cashiers.")) return "Кассиры";
+  if (code.startsWith("staff.auxiliary.")) return "Вспомогательный персонал";
+  if (code.startsWith("staff.couriers.")) return "Курьеры в Штате";
+  if (code.startsWith("staff.production.")) return "Производственный персонал";
+
+  if (code.startsWith("couriers.list.")) return "Список курьеров";
+  if (code.startsWith("couriers.statistics.")) return "Статистика";
+  if (code.startsWith("couriers.schedule.") || code.startsWith("couriers.shifts.")) {
+    return "График и смены";
+  }
+  if (code.startsWith("couriers.evaluations.")) return "Оценки";
+  if (code.startsWith("couriers.deposits.")) return "Депозиты";
+
+  if (code.startsWith("payroll.runs.")) return "Расчёты зарплаты";
+  if (code.startsWith("payroll.accruals.")) return "Начисления";
+  if (code.startsWith("payroll.personal_reports.")) return "Персональные отчёты";
+  if (
+    code.startsWith("payroll.adjustments.") ||
+    code.startsWith("payroll.bonuses.") ||
+    code.startsWith("payroll.penalties.")
+  ) {
+    return "Премии, штрафы и корректировки";
+  }
+  if (code.startsWith("payroll.revisions.") || code.startsWith("payroll.revision_penalties.")) {
+    return "Ревизии";
+  }
+  if (code.startsWith("payroll.vacations.")) return "Отпуска";
+  if (code.startsWith("payroll.fund.")) return "Накопительный фонд";
+  if (code.startsWith("payroll.production_deposits.")) return "Депозиты производства";
+  if (code.startsWith("payroll.source_data.") || code.startsWith("payroll.rules.")) {
+    return "Исходные данные и правила";
+  }
+
+  if (code.startsWith("source.schedule.")) return "График смен";
+  if (code.startsWith("source.shift_ledger.")) return "Учёт смен и выручки";
+  if (code.startsWith("source.revenue.")) return "Выручка";
+  if (code.startsWith("source.import") || code.startsWith("source.import_errors.")) {
+    return "Загрузки и ошибки";
+  }
+
+  if (code.startsWith("finance.cashflow.")) return "Движение денег";
+  if (code.startsWith("finance.classification_rules.")) return "Правила классификации";
+  if (code.startsWith("finance.balance.")) return "Баланс";
+  if (code.startsWith("finance.wallets.")) return "Кошельки и остатки";
+  if (code.startsWith("finance.store_cash.")) return "Торговая касса";
+  if (code.startsWith("finance.payment_calendar.")) return "Платёжный календарь";
+  if (code.startsWith("finance.counterparties.")) return "Контрагенты";
+  if (code.startsWith("finance.owner_review.")) return "Проверка собственником";
+
+  if (code.startsWith("accounting.inventory")) return "Инвентаризации";
+  if (code.startsWith("accounting.audits.") || code.startsWith("accounting.audit_penalties.")) {
+    return "Ревизии";
+  }
+  if (code.startsWith("accounting.fixed_assets.")) return "Основные средства";
+  if (code.startsWith("accounting.suppliers.")) return "Поставщики";
+  if (code.startsWith("accounting.periods.")) return "Закрытие периода";
+
+  if (code.startsWith("settings.general.")) return "Общие настройки";
+  if (code.startsWith("settings.integrations.")) return "Обмен данными";
+  if (code.startsWith("settings.users.")) return "Пользователи";
+  if (code.startsWith("settings.access.")) return "Доступы пользователей";
+  if (code.startsWith("settings.roles.")) return "Права должностей";
+  if (code.startsWith("settings.access_audit.")) return "Журнал доступов";
+  if (code.startsWith("settings.action_audit.")) return "Журнал действий";
+
+  return module;
 }
 
 function formatDateTimeRu(value: string) {

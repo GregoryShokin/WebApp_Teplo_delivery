@@ -49,7 +49,7 @@ import { MovementBadge, badgeMutedClass, compactText } from "@/routes/dds/shared
 
 type MovementType = DdsArticleCreate["movement_type"];
 
-export function ArticlesTab() {
+export function ArticlesTab({ canEdit }: { canEdit: boolean }) {
   const queryClient = useQueryClient();
   const articlesQuery = useQuery({ queryKey: ["dds", "articles"], queryFn: getDdsArticles });
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -106,12 +106,14 @@ export function ArticlesTab() {
 
   return (
     <div className="space-y-5">
-      <div className="flex justify-end">
-        <Button onClick={() => setIsCreateOpen(true)}>
-          <Plus size={16} aria-hidden="true" />
-          Добавить
-        </Button>
-      </div>
+      {canEdit ? (
+        <div className="flex justify-end">
+          <Button onClick={() => setIsCreateOpen(true)}>
+            <Plus size={16} aria-hidden="true" />
+            Добавить
+          </Button>
+        </div>
+      ) : null}
 
       {articlesQuery.isLoading ? (
         <DataTable columns={columns} rows={[]} isLoading />
@@ -139,10 +141,15 @@ export function ArticlesTab() {
         </div>
       )}
 
-      <ArticleDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} articles={articlesQuery.data ?? []} />
+      <ArticleDialog
+        articles={articlesQuery.data ?? []}
+        open={canEdit && isCreateOpen}
+        onOpenChange={setIsCreateOpen}
+      />
       <ArticleSheet
         article={selected}
         articles={articlesQuery.data ?? []}
+        canEdit={canEdit}
         onClose={() => setSelectedId(null)}
         onDelete={setDeleteTarget}
       />
@@ -218,11 +225,13 @@ function ArticleDialog({
 function ArticleSheet({
   article,
   articles,
+  canEdit,
   onClose,
   onDelete,
 }: {
   article: DdsArticleRead | null;
   articles: DdsArticleRead[];
+  canEdit: boolean;
   onClose: () => void;
   onDelete: (article: DdsArticleRead) => void;
 }) {
@@ -288,31 +297,41 @@ function ArticleSheet({
         </SheetHeader>
         {article ? (
           <div className="mt-5 space-y-5">
-            <ArticleForm articles={articles.filter((item) => item.id !== article.id)} draft={draft} onDraftChange={setDraft} />
-            <div className="flex flex-wrap gap-2">
-              <Button disabled={patchMutation.isPending} onClick={() => patchMutation.mutate()}>
-                {patchMutation.isPending ? (
-                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-                ) : null}
-                Сохранить
-              </Button>
-              <Button onClick={() => onDelete(article)} variant="outline">
-                <Trash2 size={16} aria-hidden="true" />
-                Удалить
-              </Button>
-            </div>
-            <div className="space-y-3 border-t pt-5">
-              <h3 className="text-sm font-semibold">Aliases</h3>
-              <div className="flex gap-2">
-                <Input value={alias} onChange={(event) => setAlias(event.target.value)} />
-                <Button
-                  disabled={!alias.trim() || aliasMutation.isPending}
-                  onClick={() => aliasMutation.mutate()}
-                  variant="outline"
-                >
-                  Добавить
+            <ArticleForm
+              articles={articles.filter((item) => item.id !== article.id)}
+              disabled={!canEdit}
+              draft={draft}
+              onDraftChange={setDraft}
+            />
+            {canEdit ? (
+              <div className="flex flex-wrap gap-2">
+                <Button disabled={patchMutation.isPending} onClick={() => patchMutation.mutate()}>
+                  {patchMutation.isPending ? (
+                    <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                  ) : null}
+                  Сохранить
+                </Button>
+                <Button onClick={() => onDelete(article)} variant="outline">
+                  <Trash2 size={16} aria-hidden="true" />
+                  Удалить
                 </Button>
               </div>
+            ) : null}
+            {canEdit || article.aliases.length > 0 ? (
+            <div className="space-y-3 border-t pt-5">
+              <h3 className="text-sm font-semibold">Aliases</h3>
+              {canEdit ? (
+                <div className="flex gap-2">
+                  <Input value={alias} onChange={(event) => setAlias(event.target.value)} />
+                  <Button
+                    disabled={!alias.trim() || aliasMutation.isPending}
+                    onClick={() => aliasMutation.mutate()}
+                    variant="outline"
+                  >
+                    Добавить
+                  </Button>
+                </div>
+              ) : null}
               <div className="grid gap-2">
                 {article.aliases.map((item) => (
                   <div
@@ -320,18 +339,21 @@ function ArticleSheet({
                     key={item.id}
                   >
                     <span className="min-w-0 truncate">{item.alias}</span>
-                    <Button
-                      onClick={() => deleteAliasMutation.mutate(item.id)}
-                      size="icon"
-                      title="Удалить alias"
-                      variant="ghost"
-                    >
-                      <Trash2 size={15} aria-hidden="true" />
-                    </Button>
+                    {canEdit ? (
+                      <Button
+                        onClick={() => deleteAliasMutation.mutate(item.id)}
+                        size="icon"
+                        title="Удалить alias"
+                        variant="ghost"
+                      >
+                        <Trash2 size={15} aria-hidden="true" />
+                      </Button>
+                    ) : null}
                   </div>
                 ))}
               </div>
             </div>
+            ) : null}
           </div>
         ) : null}
       </SheetContent>
@@ -351,10 +373,12 @@ type ArticleDraft = {
 
 function ArticleForm({
   articles,
+  disabled = false,
   draft,
   onDraftChange,
 }: {
   articles: DdsArticleRead[];
+  disabled?: boolean;
   draft: ArticleDraft;
   onDraftChange: (draft: ArticleDraft) => void;
 }) {
@@ -365,16 +389,25 @@ function ArticleForm({
     <div className="grid gap-4">
       <div className="grid gap-2">
         <Label>Код</Label>
-        <Input value={draft.code} onChange={(event) => setField("code", event.target.value)} />
+        <Input
+          disabled={disabled}
+          value={draft.code}
+          onChange={(event) => setField("code", event.target.value)}
+        />
       </div>
       <div className="grid gap-2">
         <Label>Название</Label>
-        <Input value={draft.name} onChange={(event) => setField("name", event.target.value)} />
+        <Input
+          disabled={disabled}
+          value={draft.name}
+          onChange={(event) => setField("name", event.target.value)}
+        />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="grid gap-2">
           <Label>Тип движения</Label>
           <Select
+            disabled={disabled}
             value={draft.movement_type}
             onValueChange={(value) => setField("movement_type", value as MovementType)}
           >
@@ -391,6 +424,7 @@ function ArticleForm({
         <div className="grid gap-2">
           <Label>Activity type</Label>
           <Input
+            disabled={disabled}
             value={draft.activity_type}
             onChange={(event) => setField("activity_type", event.target.value)}
           />
@@ -398,7 +432,11 @@ function ArticleForm({
       </div>
       <div className="grid gap-2">
         <Label>Родитель</Label>
-        <Select value={draft.parent_id} onValueChange={(value) => setField("parent_id", value)}>
+        <Select
+          disabled={disabled}
+          value={draft.parent_id}
+          onValueChange={(value) => setField("parent_id", value)}
+        >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
@@ -415,6 +453,7 @@ function ArticleForm({
       <div className="grid gap-2">
         <Label>Описание</Label>
         <Input
+          disabled={disabled}
           value={draft.description}
           onChange={(event) => setField("description", event.target.value)}
         />
@@ -423,6 +462,7 @@ function ArticleForm({
         <input
           checked={draft.is_active}
           className="h-4 w-4"
+          disabled={disabled}
           onChange={(event) => setField("is_active", event.target.checked)}
           type="checkbox"
         />

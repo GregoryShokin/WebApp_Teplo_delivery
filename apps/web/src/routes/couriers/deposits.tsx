@@ -84,7 +84,8 @@ import {
   type CourierDepositTransactionType,
   type Employee,
 } from "@/lib/api";
-import { getAuthSnapshot, subscribeAuth, type AuthUser } from "@/lib/auth";
+import type { AuthUser } from "@/lib/auth";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 type CourierDepositsRouteProps = {
@@ -99,12 +100,8 @@ type PendingOperation = {
 export function CourierDepositsRoute({ onNavigate }: CourierDepositsRouteProps) {
   void onNavigate;
   const queryClient = useQueryClient();
-  const auth = useAuthSnapshot();
-  const canWrite = Boolean(
-    auth.user?.roles.some((role) =>
-      ["manager", "accountant", "finance_manager", "owner", "admin"].includes(role),
-    ),
-  );
+  const permissions = usePermissions();
+  const canWrite = permissions.canPerformAction("couriers.deposits.edit");
   const [statusFilter, setStatusFilter] = useState<CourierDepositStatusFilter>("active");
   const [categoryFilter, setCategoryFilter] = useState<CourierDepositCategoryFilter>("all");
   const [search, setSearch] = useState("");
@@ -122,8 +119,8 @@ export function CourierDepositsRoute({ onNavigate }: CourierDepositsRouteProps) 
     staleTime: 60_000,
   });
   const currentEmployee = useMemo(
-    () => resolveCurrentEmployee(auth.user, employeesQuery.data ?? []),
-    [auth.user, employeesQuery.data],
+    () => resolveCurrentEmployee(permissions.snapshot.user, employeesQuery.data ?? []),
+    [permissions.snapshot.user, employeesQuery.data],
   );
   const actorId = currentEmployee?.id ?? null;
 
@@ -153,7 +150,7 @@ export function CourierDepositsRoute({ onNavigate }: CourierDepositsRouteProps) 
 
       {!canWrite ? (
         <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-          Режим просмотра. Операции доступны менеджеру, бухгалтеру, финансовому менеджеру и владельцу.
+          Режим просмотра. Балансы и история доступны, операции скрыты без права редактировать депозиты курьеров.
         </div>
       ) : null}
       {canWrite && !actorId ? (
@@ -289,31 +286,33 @@ export function CourierDepositsRoute({ onNavigate }: CourierDepositsRouteProps) 
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button disabled={!canWrite || !actorId} size="sm">
-                            <Plus size={16} aria-hidden="true" />
-                            Операция
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => setPendingOperation({ row, type: "top_up" })}
-                          >
-                            Пополнение
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => setPendingOperation({ row, type: "return" })}
-                          >
-                            Возврат
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => setPendingOperation({ row, type: "forfeit" })}
-                          >
-                            Списание
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      {canWrite ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button disabled={!actorId} size="sm">
+                              <Plus size={16} aria-hidden="true" />
+                              Операция
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => setPendingOperation({ row, type: "top_up" })}
+                            >
+                              Пополнение
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => setPendingOperation({ row, type: "return" })}
+                            >
+                              Возврат
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => setPendingOperation({ row, type: "forfeit" })}
+                            >
+                              Списание
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : null}
                       <Button onClick={() => setHistoryCourier(row)} size="sm" variant="outline">
                         <History size={16} aria-hidden="true" />
                         История
@@ -622,17 +621,4 @@ function resolveCurrentEmployee(user: AuthUser | null, employees: Employee[]) {
 
 function normalizeName(value: string) {
   return value.trim().toLocaleLowerCase("ru").replace(/\s+/g, " ");
-}
-
-function useAuthSnapshot() {
-  const [auth, setAuth] = useState(getAuthSnapshot);
-
-  useEffect(() => {
-    const unsubscribe = subscribeAuth(setAuth);
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  return auth;
 }

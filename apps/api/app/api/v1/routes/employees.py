@@ -13,7 +13,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentActor, get_current_actor, require_permission
+from app.api.deps import CurrentActor, get_current_actor
 from app.core.security import hash_password
 from app.db.session import get_session
 from app.models import (
@@ -88,6 +88,18 @@ from app.services.iiko_sync import (
 )
 from app.services.payroll_calculator import decimal
 from app.services.shift_ledger import ledger_entry_snapshot
+from app.services.staff_access import (
+    StaffAction,
+    StaffArea,
+    can_access_position,
+    employee_access_filter,
+    employee_ids_with_staff_access,
+    ensure_any_staff_access,
+    ensure_employee_access,
+    ensure_position_access,
+    ensure_staff_area_access,
+    filter_employees_by_staff_access,
+)
 from app.services.staff_taxonomy import (
     PAYROLL_ROLE_LABELS,
     canonical_position_name,
@@ -99,10 +111,53 @@ from app.services.staff_taxonomy import (
 )
 
 router = APIRouter()
-STAFF_READ_ACCESS = (Depends(require_permission("staff.read")),)
-STAFF_WRITE_ACCESS = (Depends(require_permission("staff.write")),)
-STAFF_DISMISS_ACCESS = (Depends(require_permission("staff.dismiss")),)
-STAFF_REINSTATE_ACCESS = (Depends(require_permission("staff.reinstate")),)
+
+
+async def _require_staff_read(actor: Annotated[CurrentActor, Depends(get_current_actor)]) -> None:
+    ensure_any_staff_access(actor, StaffAction.READ)
+
+
+async def _require_staff_history(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    ensure_any_staff_access(actor, StaffAction.HISTORY_READ)
+
+
+async def _require_staff_create(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    ensure_any_staff_access(actor, StaffAction.CREATE)
+
+
+async def _require_staff_edit(actor: Annotated[CurrentActor, Depends(get_current_actor)]) -> None:
+    ensure_any_staff_access(actor, StaffAction.EDIT)
+
+
+async def _require_staff_dismiss(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    ensure_any_staff_access(actor, StaffAction.DISMISS)
+
+
+async def _require_staff_reinstate(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    ensure_any_staff_access(actor, StaffAction.REINSTATE)
+
+
+async def _require_staff_administration_edit(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    ensure_staff_area_access(actor, StaffArea.ADMINISTRATION, StaffAction.EDIT)
+
+
+STAFF_READ_ACCESS = (Depends(_require_staff_read),)
+STAFF_HISTORY_ACCESS = (Depends(_require_staff_history),)
+STAFF_CREATE_ACCESS = (Depends(_require_staff_create),)
+STAFF_WRITE_ACCESS = (Depends(_require_staff_edit),)
+STAFF_DISMISS_ACCESS = (Depends(_require_staff_dismiss),)
+STAFF_REINSTATE_ACCESS = (Depends(_require_staff_reinstate),)
+STAFF_SYNC_ACCESS = (Depends(_require_staff_administration_edit),)
 MONEY_STEP = Decimal("0.01")
 
 READ_ONLY_FIELDS = {
@@ -168,9 +223,12 @@ async def list_employees(
     cooking_station: Annotated[str | None, Query(alias="cooking_station")] = None,
     search: str | None = None,
     include_pending: bool = False,
+    actor: Annotated[CurrentActor | None, Depends(get_current_actor)] = None,
 ) -> list[Employee] | list[EmployeeRead]:
     today = date.today()
     query = select(Employee).options(selectinload(Employee.role_assignments))
+    if actor is not None:
+        query = query.where(employee_access_filter(actor, StaffAction.READ))
     if status_filter:
         if status_filter not in EMPLOYEE_STATUSES:
             raise HTTPException(status_code=400, detail="Некорректный статус сотрудника")
@@ -188,6 +246,8 @@ async def list_employees(
 
     result = await session.scalars(query.order_by(Employee.full_name))
     employees = list(result.all())
+    if actor is not None:
+        employees = filter_employees_by_staff_access(employees, actor, StaffAction.READ)
     await _attach_active_notices(session, employees, today)
     if include_pending:
         rows: list[EmployeeRead] = []
@@ -207,7 +267,7 @@ async def list_employees(
     return employees
 
 
-@router.post("/sync", response_model=SyncResultRead, dependencies=STAFF_WRITE_ACCESS)
+@router.post("/sync", response_model=SyncResultRead, dependencies=STAFF_SYNC_ACCESS)
 async def trigger_employee_sync(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -226,7 +286,7 @@ async def trigger_employee_sync(
 @router.get(
     "/iiko-roles",
     response_model=list[IikoEmployeeRoleRead],
-    dependencies=STAFF_READ_ACCESS,
+    dependencies=STAFF_CREATE_ACCESS,
 )
 async def list_iiko_employee_roles(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -251,13 +311,14 @@ async def list_iiko_employee_roles(
         )
         for role in roles
         if is_create_position(role.name)
+        and can_access_position(actor, role.name, StaffAction.CREATE)
     ]
 
 
 @router.get(
     "/changes",
     response_model=list[EmployeeChangeEventRead],
-    dependencies=STAFF_READ_ACCESS,
+    dependencies=STAFF_HISTORY_ACCESS,
 )
 async def list_employee_changes(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -293,9 +354,25 @@ async def list_employee_changes(
         include_system_migrations=include_system_migrations,
     )
 
+    if filters.employee_id is not None:
+        await _get_employee_or_404(
+            session,
+            filters.employee_id,
+            actor=actor_context,
+            action=StaffAction.HISTORY_READ,
+        )
+
     query = select(EmployeeChangeEvent)
     if filters.employee_id is not None:
         query = query.where(EmployeeChangeEvent.employee_id == filters.employee_id)
+    elif actor_context is not None:
+        query = query.where(
+            EmployeeChangeEvent.employee_id.in_(
+                select(Employee.id).where(
+                    employee_access_filter(actor_context, StaffAction.HISTORY_READ)
+                )
+            )
+        )
     if filters.changed_from is not None:
         query = query.where(EmployeeChangeEvent.changed_at >= filters.changed_from)
     if filters.changed_to is not None:
@@ -333,7 +410,15 @@ async def list_employee_changes(
     result = await session.scalars(
         query.order_by(EmployeeChangeEvent.changed_at.desc(), EmployeeChangeEvent.created_at.desc())
     )
-    return list(result.all())
+    rows = list(result.all())
+    if filters.employee_id is None and actor_context is not None:
+        rows = _filter_change_events_by_staff_access(
+            rows,
+            session,
+            actor_context,
+            StaffAction.HISTORY_READ,
+        )
+    return rows
 
 
 @router.get(
@@ -428,7 +513,12 @@ async def record_employee_notice(
     payload: Annotated[EmployeeNoticeRequest | None, Body()] = None,
 ) -> EmployeeNoticeActionRead:
     payload = payload or EmployeeNoticeRequest()
-    await _get_employee_or_404(session, employee_id)
+    await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.EDIT,
+    )
     try:
         event = await notice_service.record_notice(
             session,
@@ -455,7 +545,12 @@ async def cancel_employee_notice(
     payload: Annotated[EmployeeNoticeCancelRequest | None, Body()] = None,
 ) -> EmployeeNoticeActionRead:
     payload = payload or EmployeeNoticeCancelRequest()
-    await _get_employee_or_404(session, employee_id)
+    await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.EDIT,
+    )
     try:
         event = await notice_service.cancel_notice(
             session,
@@ -480,7 +575,12 @@ async def set_employee_hire_date(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Employee:
-    employee = await _get_employee_or_404(session, employee_id)
+    employee = await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.EDIT,
+    )
     if employee.status == "inactive":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -525,7 +625,13 @@ async def set_employee_hire_date(
     await session.commit()
     await session.refresh(employee)
     if isinstance(session, AsyncSession):
-        return await _get_employee_or_404(session, employee_id, include_assignments=True)
+        return await _get_employee_or_404(
+            session,
+            employee_id,
+            include_assignments=True,
+            actor=actor,
+            action=StaffAction.READ,
+        )
     return employee
 
 
@@ -533,14 +639,14 @@ async def set_employee_hire_date(
     "",
     response_model=EmployeeRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=STAFF_WRITE_ACCESS,
+    dependencies=STAFF_CREATE_ACCESS,
 )
 @router.post(
     "/",
     response_model=EmployeeRead,
     status_code=status.HTTP_201_CREATED,
     include_in_schema=False,
-    dependencies=STAFF_WRITE_ACCESS,
+    dependencies=STAFF_CREATE_ACCESS,
 )
 async def create_employee(
     payload: EmployeeCreateRequest,
@@ -555,6 +661,7 @@ async def create_employee(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Выбранная должность iiko недоступна для создания сотрудника",
             )
+        ensure_position_access(actor, canonical_position, StaffAction.CREATE)
         _validate_premium_flags(
             canonical_position,
             is_senior=payload.is_senior,
@@ -712,7 +819,13 @@ async def create_employee(
 
     await session.commit()
     await session.refresh(employee)
-    return await _get_employee_or_404(session, employee.id, include_assignments=True)
+    return await _get_employee_or_404(
+        session,
+        employee.id,
+        include_assignments=True,
+        actor=actor,
+        action=StaffAction.READ,
+    )
 
 
 @router.post(
@@ -727,7 +840,12 @@ async def dismiss_employee(
     payload: Annotated[EmployeeDismissRequest | None, Body()] = None,
 ) -> Employee:
     dismiss_payload = payload or EmployeeDismissRequest()
-    employee = await _get_employee_or_404(session, employee_id)
+    employee = await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.DISMISS,
+    )
     if employee.status == "inactive" or employee.fire_date is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Сотрудник уже уволен")
     try:
@@ -805,7 +923,13 @@ async def dismiss_employee(
     await session.commit()
     await session.refresh(employee)
     if isinstance(session, AsyncSession):
-        return await _get_employee_or_404(session, employee_id, include_assignments=True)
+        return await _get_employee_or_404(
+            session,
+            employee_id,
+            include_assignments=True,
+            actor=actor,
+            action=StaffAction.READ,
+        )
     return employee
 
 
@@ -819,7 +943,12 @@ async def reinstate_employee(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Employee:
-    employee = await _get_employee_or_404(session, employee_id)
+    employee = await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.REINSTATE,
+    )
     before = _employee_lifecycle_snapshot(employee)
     now = datetime.now(UTC)
     employee.fire_date = None
@@ -854,7 +983,13 @@ async def reinstate_employee(
     await session.commit()
     await session.refresh(employee)
     if isinstance(session, AsyncSession):
-        return await _get_employee_or_404(session, employee_id, include_assignments=True)
+        return await _get_employee_or_404(
+            session,
+            employee_id,
+            include_assignments=True,
+            actor=actor,
+            action=StaffAction.READ,
+        )
     return employee
 
 
@@ -869,7 +1004,12 @@ async def change_employee_pin(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Employee:
-    employee = await _get_employee_or_404(session, employee_id)
+    employee = await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.EDIT,
+    )
     before = _employee_lifecycle_snapshot(employee)
     now = datetime.now(UTC)
     employee.pin_hash = hash_password(payload.pin_code)
@@ -903,7 +1043,13 @@ async def change_employee_pin(
     await session.commit()
     await session.refresh(employee)
     if isinstance(session, AsyncSession):
-        return await _get_employee_or_404(session, employee_id, include_assignments=True)
+        return await _get_employee_or_404(
+            session,
+            employee_id,
+            include_assignments=True,
+            actor=actor,
+            action=StaffAction.READ,
+        )
     return employee
 
 
@@ -915,10 +1061,16 @@ async def change_employee_pin(
 async def list_employee_assignments(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
     on_date: date | None = None,
     include_pending: bool = False,
 ) -> list[EmployeeRoleAssignment]:
-    await _get_employee_or_404(session, employee_id)
+    await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.READ,
+    )
     if include_pending:
         return await employee_assignment_service.get_assignments_with_pending(
             session,
@@ -943,7 +1095,12 @@ async def create_employee_assignment(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> EmployeeRoleAssignment:
-    await _get_employee_or_404(session, employee_id)
+    await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.ASSIGN_ROLES_CATEGORIES,
+    )
     if (
         payload.effective_from is not None
         and payload.effective_from < date.today()
@@ -1002,6 +1159,12 @@ async def patch_employee_assignment(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> EmployeeRoleAssignment:
+    await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.ASSIGN_ROLES_CATEGORIES,
+    )
     if not payload.model_fields_set:
         raise HTTPException(status_code=400, detail="Пустое изменение назначения роли")
     if "payroll_role" in payload.model_fields_set and payload.payroll_role is None:
@@ -1079,6 +1242,12 @@ async def delete_employee_assignment(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> None:
+    await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.ASSIGN_ROLES_CATEGORIES,
+    )
     assignment_before = await _get_assignment_or_404(session, employee_id, assignment_id)
     before = _assignment_snapshot(assignment_before)
     try:
@@ -1128,15 +1297,26 @@ async def list_pending_iiko_actions(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> list[EmployeePendingIikoAction]:
-    result = await session.scalars(
+    query = (
         select(EmployeePendingIikoAction)
         .where(EmployeePendingIikoAction.status == "pending")
+        .where(
+            EmployeePendingIikoAction.employee_id.in_(
+                select(Employee.id).where(employee_access_filter(actor, StaffAction.READ))
+            )
+        )
         .order_by(EmployeePendingIikoAction.effective_on, EmployeePendingIikoAction.created_at)
     )
-    return list(result.all())
+    result = await session.scalars(query)
+    return _filter_pending_iiko_actions_by_staff_access(
+        list(result.all()),
+        session,
+        actor,
+        StaffAction.READ,
+    )
 
 
-@router.post("/iiko-actions/apply-due", dependencies=STAFF_WRITE_ACCESS)
+@router.post("/iiko-actions/apply-due", dependencies=STAFF_SYNC_ACCESS)
 async def apply_due_iiko_actions(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -1148,13 +1328,19 @@ async def apply_due_iiko_actions(
 @router.get(
     "/{employee_id}/position-events",
     response_model=list[EmployeePositionEventRead],
-    dependencies=STAFF_READ_ACCESS,
+    dependencies=STAFF_HISTORY_ACCESS,
 )
 async def list_employee_position_events(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> list[EmployeePositionEvent]:
-    await _get_employee_or_404(session, employee_id)
+    await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.HISTORY_READ,
+    )
     return await employee_effective_event_service.list_position_events(session, employee_id)
 
 
@@ -1169,7 +1355,12 @@ async def change_employee_position(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    employee = await _get_employee_or_404(session, employee_id)
+    employee = await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.EDIT,
+    )
     today = date.today()
     if payload.effective_from < today and not payload.comment:
         raise HTTPException(
@@ -1180,6 +1371,7 @@ async def change_employee_position(
     target_position = canonical_position_name(payload.position)
     if target_position is None:
         raise HTTPException(status_code=400, detail="Должность не входит в канонический список")
+    ensure_position_access(actor, target_position, StaffAction.EDIT)
 
     current_position = await employee_position_service.current_position(session, employee.id)
     position_changed = current_position != target_position
@@ -1246,14 +1438,19 @@ async def change_employee_position(
 @router.get(
     "/{employee_id}/position-history",
     response_model=list[EmployeePositionAssignmentRead],
-    dependencies=STAFF_READ_ACCESS,
+    dependencies=STAFF_HISTORY_ACCESS,
 )
 async def list_position_history_endpoint(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> list[dict[str, Any]]:
-    await _get_employee_or_404(session, employee_id)
+    await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.HISTORY_READ,
+    )
     items = await employee_position_service.list_position_history(session, employee_id)
     return [_position_assignment_payload(item) for item in items]
 
@@ -1261,13 +1458,19 @@ async def list_position_history_endpoint(
 @router.get(
     "/{employee_id}/allowance-events",
     response_model=list[EmployeeAllowanceEventRead],
-    dependencies=STAFF_READ_ACCESS,
+    dependencies=STAFF_HISTORY_ACCESS,
 )
 async def list_employee_allowance_events(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> list[EmployeeAllowanceEvent]:
-    await _get_employee_or_404(session, employee_id)
+    await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.HISTORY_READ,
+    )
     return await employee_effective_event_service.list_allowance_events(session, employee_id)
 
 
@@ -1275,8 +1478,15 @@ async def list_employee_allowance_events(
 async def get_employee(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor | None, Depends(get_current_actor)] = None,
 ) -> Employee:
-    employee = await _get_employee_or_404(session, employee_id, include_assignments=True)
+    employee = await _get_employee_or_404(
+        session,
+        employee_id,
+        include_assignments=True,
+        actor=actor,
+        action=StaffAction.READ,
+    )
     await _attach_active_notices(session, [employee], date.today())
     return employee
 
@@ -1302,7 +1512,12 @@ async def patch_employee(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=exc.errors(include_context=False),
         ) from exc
-    employee = await _get_employee_or_404(session, employee_id)
+    employee = await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.EDIT,
+    )
     if "hire_date" in patch.model_fields_set:
         raise HTTPException(
             status_code=(
@@ -1354,8 +1569,26 @@ async def patch_employee(
         if target_position is None:
             raise HTTPException(status_code=400, detail="Должность не входит в канонический список")
         position_changed = target_position != current_position
+        ensure_position_access(actor, target_position, StaffAction.EDIT)
 
     roles_changed = "roles" in patch.model_fields_set and patch.roles is not None
+    role_or_category_fields = {
+        "roles",
+        "category",
+        "default_cooking_station",
+    }
+    if role_or_category_fields & patch.model_fields_set:
+        ensure_employee_access(
+            actor,
+            employee,
+            StaffAction.ASSIGN_ROLES_CATEGORIES,
+        )
+        if target_position is not None:
+            ensure_position_access(
+                actor,
+                target_position,
+                StaffAction.ASSIGN_ROLES_CATEGORIES,
+            )
     target_roles = list(patch.roles or []) if roles_changed else None
     target_category = patch.category if "category" in patch.model_fields_set else employee.category
     target_default_cooking_station = (
@@ -1657,7 +1890,13 @@ async def patch_employee(
     await session.commit()
     await session.refresh(employee)
     if isinstance(session, AsyncSession):
-        return await _get_employee_or_404(session, employee_id, include_assignments=True)
+        return await _get_employee_or_404(
+            session,
+            employee_id,
+            include_assignments=True,
+            actor=actor,
+            action=StaffAction.READ,
+        )
     return employee
 
 
@@ -1666,6 +1905,8 @@ async def _get_employee_or_404(
     employee_id: uuid.UUID,
     *,
     include_assignments: bool = False,
+    actor: CurrentActor | None = None,
+    action: StaffAction = StaffAction.READ,
 ) -> Employee:
     if include_assignments and isinstance(session, AsyncSession):
         employee = await session.scalar(
@@ -1677,7 +1918,52 @@ async def _get_employee_or_404(
         employee = await session.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сотрудник не найден")
+    if actor is not None:
+        ensure_employee_access(actor, employee, action)
     return employee
+
+
+def _filter_change_events_by_staff_access(
+    events: list[EmployeeChangeEvent],
+    session: AsyncSession,
+    actor: CurrentActor,
+    action: StaffAction,
+) -> list[EmployeeChangeEvent]:
+    allowed_employee_ids = _session_employee_ids_with_staff_access(session, actor, action)
+    if allowed_employee_ids is None:
+        return events
+    return [
+        event
+        for event in events
+        if event.employee_id is not None and event.employee_id in allowed_employee_ids
+    ]
+
+
+def _filter_pending_iiko_actions_by_staff_access(
+    actions: list[EmployeePendingIikoAction],
+    session: AsyncSession,
+    actor: CurrentActor,
+    action: StaffAction,
+) -> list[EmployeePendingIikoAction]:
+    allowed_employee_ids = _session_employee_ids_with_staff_access(session, actor, action)
+    if allowed_employee_ids is None:
+        return actions
+    return [
+        action_item
+        for action_item in actions
+        if action_item.employee_id in allowed_employee_ids
+    ]
+
+
+def _session_employee_ids_with_staff_access(
+    session: AsyncSession,
+    actor: CurrentActor,
+    action: StaffAction,
+) -> frozenset[uuid.UUID] | None:
+    employees = getattr(session, "employees", None)
+    if employees is None:
+        return None
+    return employee_ids_with_staff_access(employees, actor, action)
 
 
 async def _attach_active_notices(

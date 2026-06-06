@@ -60,7 +60,7 @@ type RuleDraft = {
   purpose_pattern: string;
 };
 
-export function RulesTab() {
+export function RulesTab({ canManage }: { canManage: boolean }) {
   const queryClient = useQueryClient();
   const rulesQuery = useQuery({
     queryKey: ["dds", "classification-rules"],
@@ -139,7 +139,8 @@ export function RulesTab() {
       key: "actions",
       header: "",
       className: "text-right",
-      cell: (rule) => (
+      cell: (rule) =>
+        canManage ? (
         <div className="flex justify-end gap-1">
           <Button
             onClick={(event) => {
@@ -175,18 +176,20 @@ export function RulesTab() {
             <Trash2 size={15} aria-hidden="true" />
           </Button>
         </div>
-      ),
+        ) : null,
     },
   ];
 
   return (
     <div className="space-y-5">
-      <div className="flex justify-end">
+      {canManage ? (
+        <div className="flex justify-end">
         <Button onClick={() => setIsCreateOpen(true)}>
           <Plus size={16} aria-hidden="true" />
           Добавить правило
         </Button>
       </div>
+      ) : null}
 
       <DataTable
         columns={columns}
@@ -200,12 +203,12 @@ export function RulesTab() {
       <RuleDialog
         articles={articlesQuery.data ?? []}
         onOpenChange={setIsCreateOpen}
-        open={isCreateOpen}
+        open={canManage && isCreateOpen}
       />
       <RuleDialog
         articles={articlesQuery.data ?? []}
         onOpenChange={(open) => !open && setEditingRule(null)}
-        open={Boolean(editingRule)}
+        open={canManage && Boolean(editingRule)}
         rule={editingRule}
       />
 

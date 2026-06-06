@@ -8,11 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import CurrentActor, require_permission
-from app.auth.permissions import ALL_PERMISSION_CODES
+from app.auth.permissions import ALL_PERMISSION_CODES, DEFAULT_ROLE_PERMISSIONS
 from app.models import Permission, Role, RolePermission
 
 
-def test_rbac_seed_grants_only_owner_and_admin(
+def test_rbac_seed_grants_passport_defaults(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     role_permissions, permission_codes = asyncio.run(
@@ -22,8 +22,11 @@ def test_rbac_seed_grants_only_owner_and_admin(
     assert permission_codes == ALL_PERMISSION_CODES
     assert role_permissions["owner"] == ALL_PERMISSION_CODES
     assert role_permissions["admin"] == ALL_PERMISSION_CODES
-    assert role_permissions["manager"] == frozenset()
-    assert role_permissions["cashier"] == frozenset()
+    assert role_permissions["manager"] == DEFAULT_ROLE_PERMISSIONS["manager"]
+    assert role_permissions["office_manager"] == DEFAULT_ROLE_PERMISSIONS["office_manager"]
+    assert role_permissions["cashier"] == DEFAULT_ROLE_PERMISSIONS["cashier"]
+    assert "staff.administration.read" not in role_permissions["manager"]
+    assert "staff.administration.edit" not in role_permissions["manager"]
 
 
 def test_require_permission_allows_matching_permission_and_denies_missing() -> None:
@@ -33,7 +36,7 @@ def test_require_permission_allows_matching_permission_and_denies_missing() -> N
         dependency(
             CurrentActor(
                 roles=frozenset({"cashier"}),
-                permissions=frozenset({"dds.classify"}),
+                permissions=frozenset({"finance.cashflow.classify"}),
             )
         )
     )
@@ -47,7 +50,7 @@ def test_require_permission_allows_matching_permission_and_denies_missing() -> N
 async def _load_seeded_permissions(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> tuple[dict[str, frozenset[str]], frozenset[str]]:
-    role_codes = ("owner", "admin", "manager", "cashier")
+    role_codes = ("owner", "admin", "manager", "office_manager", "cashier")
     role_permissions: dict[str, set[str]] = {code: set() for code in role_codes}
 
     async with session_factory() as session:

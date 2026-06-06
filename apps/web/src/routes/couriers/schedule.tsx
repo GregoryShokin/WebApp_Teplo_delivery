@@ -68,6 +68,7 @@ import {
   type CourierScheduleMatchedEntry,
   type CourierWorkStatus,
 } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 import { currentMonthKey } from "./utils";
@@ -115,6 +116,8 @@ const COURIER_DIRECTORY_STATUS_LABELS: Record<CourierDirectoryStatusFilter, stri
 
 export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleRouteProps) {
   const queryClient = useQueryClient();
+  const permissions = usePermissions();
+  const canEditSchedule = permissions.canPerformAction("couriers.schedule.edit");
   const [weekStart, setWeekStart] = useState(() => startOfMondayWeek(new Date()));
   const [primaryMode, setPrimaryMode] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
@@ -215,6 +218,9 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
     dateKey: string,
     entry: CourierScheduleMatchedEntry | null,
   ) {
+    if (!canEditSchedule) {
+      return;
+    }
     setEditingShift({ courier, dateKey, entry });
     setForm(formFromEntry(entry, primaryMode ? "primary" : "secondary"));
   }
@@ -224,6 +230,9 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
     dateKey: string,
     entry: CourierScheduleMatchedEntry | null,
   ) {
+    if (!canEditSchedule) {
+      return;
+    }
     if (entry?.category) {
       deleteMutation.mutate({ courierId: courier.id, workDate: dateKey });
       return;
@@ -318,21 +327,29 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
               <Button onClick={() => setWeekStart(startOfMondayWeek(new Date()))} variant="outline">
                 Текущая
               </Button>
-              <Button
-                className={cn(primaryMode && "bg-teal-600 text-white hover:bg-teal-700")}
-                onClick={() => setPrimaryMode((current) => !current)}
-                title="Режим основных"
-                variant={primaryMode ? "default" : "outline"}
-              >
-                <Sparkles size={16} aria-hidden="true" />
-                Режим основных
-              </Button>
+              {canEditSchedule ? (
+                <Button
+                  className={cn(primaryMode && "bg-teal-600 text-white hover:bg-teal-700")}
+                  onClick={() => setPrimaryMode((current) => !current)}
+                  title="Режим основных"
+                  variant={primaryMode ? "default" : "outline"}
+                >
+                  <Sparkles size={16} aria-hidden="true" />
+                  Режим основных
+                </Button>
+              ) : null}
               <Button onClick={() => setLegendOpen(true)} variant="outline">
                 <Info size={16} aria-hidden="true" />
                 Легенда
               </Button>
             </div>
           </section>
+
+          {!canEditSchedule ? (
+            <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              Режим просмотра. Создание, удаление и редактирование смен скрыты.
+            </div>
+          ) : null}
 
           <section className="overflow-hidden rounded-md border bg-card">
             {couriersQuery.isLoading || matchedQuery.isLoading ? (
@@ -401,6 +418,7 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
                                   dateKey={dateKey}
                                   entry={entry}
                                   isPending={upsertMutation.isPending || deleteMutation.isPending}
+                                  readOnly={!canEditSchedule}
                                   onClick={() => handleCellClick(courier, dateKey, entry)}
                                   onEdit={() => openEditor(courier, dateKey, entry)}
                                 />
@@ -428,7 +446,7 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
         isSaving={upsertMutation.isPending}
         onCancel={() => setEditingShift(null)}
         onDelete={() => {
-          if (editingShift?.entry?.category) {
+          if (canEditSchedule && editingShift?.entry?.category) {
             setDeleteTarget(editingShift);
           }
         }}
@@ -452,6 +470,7 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
+              disabled={!canEditSchedule}
               onClick={() => {
                 if (deleteTarget) {
                   deleteMutation.mutate({
@@ -474,12 +493,14 @@ function ShiftCell({
   dateKey,
   entry,
   isPending,
+  readOnly,
   onClick,
   onEdit,
 }: {
   dateKey: string;
   entry: CourierScheduleMatchedEntry | null;
   isPending: boolean;
+  readOnly: boolean;
   onClick: () => void;
   onEdit: () => void;
 }) {
@@ -494,11 +515,12 @@ function ShiftCell({
       className={cn(
         "group relative flex h-16 w-full items-center justify-center rounded-md border text-lg font-semibold tabular-nums transition-colors",
         cellClass(entry, dateKey),
-        isPending && "pointer-events-none opacity-70",
+        (isPending || readOnly) && "pointer-events-none",
+        isPending && "opacity-70",
       )}
       onClick={onClick}
-      role="button"
-      tabIndex={0}
+      role={readOnly ? undefined : "button"}
+      tabIndex={readOnly ? undefined : 0}
       title={cellTitle(entry)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -514,7 +536,7 @@ function ShiftCell({
           aria-hidden="true"
         />
       ) : null}
-      {hasEdit ? (
+      {hasEdit && !readOnly ? (
         <button
           className="absolute right-1 top-1 rounded-sm bg-background/85 p-1 text-foreground opacity-0 shadow-sm transition-opacity hover:bg-background group-hover:opacity-100 focus:opacity-100"
           onClick={(event) => {

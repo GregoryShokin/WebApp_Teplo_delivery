@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_permission
+from app.api.deps import CurrentActor, ensure_permission, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import (
     AgentAction,
@@ -56,15 +56,27 @@ from app.services.payroll_runner import (
 )
 
 router = APIRouter()
-PAYROLL_READ_ACCESS = (Depends(require_permission("payroll.read")),)
-PAYROLL_RUNS_WRITE_ACCESS = (Depends(require_permission("payroll.runs.write")),)
+PAYROLL_RUNS_READ_ACCESS = (Depends(require_permission("payroll.runs.read")),)
+PAYROLL_RUNS_START_ACCESS = (Depends(require_permission("payroll.runs.start")),)
 PAYROLL_RUNS_FINALIZE_ACCESS = (Depends(require_permission("payroll.runs.finalize")),)
+PAYROLL_ACCRUALS_READ_ACCESS = (Depends(require_permission("payroll.accruals.read")),)
+PAYROLL_PERSONAL_REPORTS_READ_ACCESS = (
+    Depends(require_permission("payroll.personal_reports.read")),
+)
+PAYROLL_REVISIONS_READ_ACCESS = (Depends(require_permission("payroll.revisions.read")),)
+PAYROLL_REVISION_PENALTIES_ACCESS = (
+    Depends(require_permission("payroll.revision_penalties.add")),
+)
+PAYROLL_PRODUCTION_DEPOSITS_EDIT_ACCESS = (
+    Depends(require_permission("payroll.production_deposits.edit")),
+)
+PAYROLL_SOURCE_DATA_READ_ACCESS = (Depends(require_permission("payroll.source_data.read")),)
 
 
 @router.post(
     "/periods/auto-create-next",
     response_model=PayrollPeriodRead,
-    dependencies=PAYROLL_RUNS_WRITE_ACCESS,
+    dependencies=PAYROLL_RUNS_START_ACCESS,
 )
 async def post_auto_create_next_period(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -74,7 +86,7 @@ async def post_auto_create_next_period(
     return serialize_period(period)
 
 
-@router.get("/runs", response_model=list[PayrollRunRead], dependencies=PAYROLL_READ_ACCESS)
+@router.get("/runs", response_model=list[PayrollRunRead], dependencies=PAYROLL_RUNS_READ_ACCESS)
 async def get_runs(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -85,7 +97,7 @@ async def get_runs(
 @router.get(
     "/role-categories",
     response_model=dict[str, list[PayrollRoleCategoryOptionRead]],
-    dependencies=PAYROLL_READ_ACCESS,
+    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
 )
 async def get_role_categories(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -97,7 +109,7 @@ async def get_role_categories(
 @router.post(
     "/deferred-charges",
     response_model=DeferredChargeRead,
-    dependencies=PAYROLL_RUNS_WRITE_ACCESS,
+    dependencies=PAYROLL_REVISION_PENALTIES_ACCESS,
 )
 async def create_deferred_charge_endpoint(
     payload: DeferredChargeCreate,
@@ -119,7 +131,7 @@ async def create_deferred_charge_endpoint(
 @router.get(
     "/deferred-charges",
     response_model=list[DeferredChargeRead],
-    dependencies=PAYROLL_READ_ACCESS,
+    dependencies=PAYROLL_REVISIONS_READ_ACCESS,
 )
 async def list_deferred_charges_endpoint(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -138,7 +150,7 @@ async def list_deferred_charges_endpoint(
 @router.post(
     "/deferred-charges/{charge_id}/cancel",
     response_model=DeferredChargeRead,
-    dependencies=PAYROLL_RUNS_WRITE_ACCESS,
+    dependencies=PAYROLL_REVISION_PENALTIES_ACCESS,
 )
 async def cancel_deferred_charge_endpoint(
     charge_id: uuid.UUID,
@@ -157,7 +169,7 @@ async def cancel_deferred_charge_endpoint(
 @router.get(
     "/employee-report",
     response_model=PayrollPersonalReportRead,
-    dependencies=PAYROLL_READ_ACCESS,
+    dependencies=PAYROLL_PERSONAL_REPORTS_READ_ACCESS,
 )
 async def get_employee_payroll_report(
     employee_id: uuid.UUID,
@@ -176,7 +188,11 @@ async def get_employee_payroll_report(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
-@router.get("/aggregate", response_model=PayrollAggregateRead, dependencies=PAYROLL_READ_ACCESS)
+@router.get(
+    "/aggregate",
+    response_model=PayrollAggregateRead,
+    dependencies=PAYROLL_ACCRUALS_READ_ACCESS,
+)
 async def get_payroll_aggregate(
     date_from: date,
     date_to: date,
@@ -190,12 +206,16 @@ async def get_payroll_aggregate(
     return await build_aggregate(session, date_from, date_to)
 
 
-@router.post("/runs", response_model=PayrollRunRead, dependencies=PAYROLL_RUNS_WRITE_ACCESS)
+@router.post("/runs", response_model=PayrollRunRead)
 async def post_run(
     payload: PayrollRunCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict:
+    ensure_permission(
+        actor,
+        "payroll.runs.recalculate" if payload.force_refresh else "payroll.runs.start",
+    )
     period_id = payload.period_id
     if period_id is None:
         period = await auto_create_next_period(session)
@@ -213,7 +233,7 @@ async def post_run(
 @router.get(
     "/runs/{run_id}",
     response_model=PayrollRunRead,
-    dependencies=PAYROLL_READ_ACCESS,
+    dependencies=PAYROLL_RUNS_READ_ACCESS,
 )
 async def get_run_detail(
     run_id: uuid.UUID,
@@ -229,7 +249,7 @@ async def get_run_detail(
 @router.get(
     "/runs/{run_id}/lines",
     response_model=list[PayrollLineRead],
-    dependencies=PAYROLL_READ_ACCESS,
+    dependencies=PAYROLL_ACCRUALS_READ_ACCESS,
 )
 async def get_lines(
     run_id: uuid.UUID,
@@ -249,7 +269,7 @@ async def get_lines(
 @router.patch(
     "/lines/{line_id}",
     response_model=PayrollLineRead,
-    dependencies=PAYROLL_RUNS_WRITE_ACCESS,
+    dependencies=PAYROLL_PRODUCTION_DEPOSITS_EDIT_ACCESS,
 )
 async def patch_line_deposit_override(
     line_id: uuid.UUID,

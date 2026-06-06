@@ -24,8 +24,8 @@ from app.services import vacation_service
 from app.services.vacation_service import UNSET, VacationShiftConflictError
 
 router = APIRouter()
-VACATIONS_READ_ACCESS = (Depends(require_permission("vacations.read")),)
-VACATIONS_WRITE_ACCESS = (Depends(require_permission("vacations.write")),)
+VACATIONS_READ_ACCESS = (Depends(require_permission("payroll.vacations.read")),)
+VACATIONS_EDIT_ACCESS = (Depends(require_permission("payroll.vacations.edit")),)
 
 
 @router.get("", response_model=list[VacationPeriodRead], dependencies=VACATIONS_READ_ACCESS)
@@ -122,12 +122,12 @@ async def get_vacation_roster(
     return rows
 
 
-@router.post("", response_model=VacationPeriodRead, dependencies=VACATIONS_WRITE_ACCESS)
+@router.post("", response_model=VacationPeriodRead, dependencies=VACATIONS_EDIT_ACCESS)
 @router.post(
     "/",
     response_model=VacationPeriodRead,
     include_in_schema=False,
-    dependencies=VACATIONS_WRITE_ACCESS,
+    dependencies=VACATIONS_EDIT_ACCESS,
 )
 async def post_vacation(
     payload: VacationPeriodCreate,
@@ -152,7 +152,7 @@ async def post_vacation(
 @router.patch(
     "/{period_id}",
     response_model=VacationPeriodRead,
-    dependencies=VACATIONS_WRITE_ACCESS,
+    dependencies=VACATIONS_EDIT_ACCESS,
 )
 async def patch_vacation(
     period_id: uuid.UUID,
@@ -179,7 +179,7 @@ async def patch_vacation(
 @router.post(
     "/{period_id}/cancel",
     response_model=VacationPeriodRead,
-    dependencies=VACATIONS_WRITE_ACCESS,
+    dependencies=VACATIONS_EDIT_ACCESS,
 )
 async def post_vacation_cancel(
     period_id: uuid.UUID,
