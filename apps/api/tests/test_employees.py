@@ -3195,7 +3195,7 @@ def test_list_employees_without_trailing_slash_returns_200() -> None:
     app.dependency_overrides[get_session] = override_session
 
     with TestClient(app, follow_redirects=False) as client:
-        response = client.get("/api/v1/employees")
+        response = client.get("/api/v1/employees", headers={"X-User-Role": "manager"})
 
     assert response.status_code == 200
     assert response.json() == []

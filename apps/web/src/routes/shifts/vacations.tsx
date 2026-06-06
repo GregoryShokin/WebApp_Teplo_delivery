@@ -47,6 +47,7 @@ import {
   type VacationPeriodRead,
   type VacationRosterRow,
 } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 type VacationsRouteProps = {
@@ -76,6 +77,8 @@ const VACATION_YEAR_STORAGE_KEY = "shifts.vacations.year";
 
 export function VacationsRoute({ embedded = false, headerSlot }: VacationsRouteProps) {
   const queryClient = useQueryClient();
+  const permissions = usePermissions();
+  const canEditVacations = permissions.hasPermission("payroll.vacations.edit");
   const [year, setYear] = useState(readStoredVacationYear);
   const [vacationDialog, setVacationDialog] = useState<VacationDialogState | null>(null);
 
@@ -215,6 +218,7 @@ export function VacationsRoute({ embedded = false, headerSlot }: VacationsRouteP
         onAdd={openVacationDialog}
         onEdit={openVacationDialog}
         onRetry={() => vacationRosterQuery.refetch()}
+        canEdit={canEditVacations}
         rows={vacationRosterQuery.data ?? []}
         year={year}
       />
@@ -223,6 +227,7 @@ export function VacationsRoute({ embedded = false, headerSlot }: VacationsRouteP
         employees={vacationRosterQuery.data ?? []}
         isCancelling={cancelVacationMutation.isPending}
         isSaving={saveVacationMutation.isPending}
+        canEdit={canEditVacations}
         onCancelPeriod={(period) => cancelVacationMutation.mutate(period.id)}
         onOpenChange={(open) => {
           if (!open) {
@@ -282,6 +287,7 @@ export function VacationsRoute({ embedded = false, headerSlot }: VacationsRouteP
 }
 
 function VacationsView({
+  canEdit,
   errorMessage,
   isError,
   isLoading,
@@ -292,6 +298,7 @@ function VacationsView({
   rows,
   year,
 }: {
+  canEdit: boolean;
   errorMessage: string | null;
   isError: boolean;
   isLoading: boolean;
@@ -358,10 +365,12 @@ function VacationsView({
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="outline">{rows.length} сотрудников</Badge>
-          <Button onClick={onCreate} size="sm" type="button">
-            <Plus size={15} aria-hidden="true" />
-            Новый отпуск
-          </Button>
+          {canEdit ? (
+            <Button onClick={onCreate} size="sm" type="button">
+              <Plus size={15} aria-hidden="true" />
+              Новый отпуск
+            </Button>
+          ) : null}
         </div>
       </div>
       <div className="overflow-x-auto">
@@ -396,6 +405,7 @@ function VacationsView({
                       {row.periods.map((period) => (
                         <button
                           className="rounded-md border bg-background px-2 py-1 text-left text-xs hover:bg-muted"
+                          disabled={!canEdit}
                           key={period.id}
                           onClick={() => onEdit(row, period)}
                           type="button"
@@ -415,10 +425,12 @@ function VacationsView({
                   )}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <Button onClick={() => onAdd(row)} size="sm" type="button" variant="outline">
-                    <Plus size={15} aria-hidden="true" />
-                    Добавить
-                  </Button>
+                  {canEdit ? (
+                    <Button onClick={() => onAdd(row)} size="sm" type="button" variant="outline">
+                      <Plus size={15} aria-hidden="true" />
+                      Добавить
+                    </Button>
+                  ) : null}
                 </td>
               </tr>
             ))}
@@ -439,6 +451,7 @@ function VacationStatusBadge({ status }: { status: VacationPeriodRead["status"] 
 }
 
 function VacationDialog({
+  canEdit,
   employees,
   isCancelling,
   isSaving,
@@ -448,6 +461,7 @@ function VacationDialog({
   setValue,
   state,
 }: {
+  canEdit: boolean;
   employees: VacationRosterRow[];
   isCancelling: boolean;
   isSaving: boolean;
@@ -558,7 +572,7 @@ function VacationDialog({
         ) : null}
         <DialogFooter className="gap-2 sm:justify-between sm:space-x-0">
           <div>
-            {state?.period && state.period.status !== "cancelled" ? (
+            {canEdit && state?.period && state.period.status !== "cancelled" ? (
               <Button
                 disabled={isSaving || isCancelling}
                 onClick={() => state.period && onCancelPeriod(state.period)}
@@ -578,7 +592,7 @@ function VacationDialog({
               Закрыть
             </Button>
             <Button
-              disabled={isSaving || isCancelling || Boolean(validationError)}
+              disabled={!canEdit || isSaving || isCancelling || Boolean(validationError)}
               onClick={onSubmit}
             >
               {isSaving ? <LoaderCircle className="animate-spin" size={16} /> : null}

@@ -310,6 +310,7 @@ def test_get_deliveries_filters_by_date_and_courier_iiko_id() -> None:
     with TestClient(app_with_session(session)) as client:
         response = client.get(
             "/api/v1/couriers/deliveries",
+            headers={"X-User-Role": "manager"},
             params={
                 "date_from": "2026-05-28",
                 "date_to": "2026-05-28",
@@ -334,6 +335,7 @@ def test_get_shifts_returns_courier_shifts_for_period() -> None:
     with TestClient(app_with_session(session)) as client:
         response = client.get(
             "/api/v1/couriers/shifts",
+            headers={"X-User-Role": "manager"},
             params={"date_from": "2026-05-28", "date_to": "2026-05-28"},
         )
 

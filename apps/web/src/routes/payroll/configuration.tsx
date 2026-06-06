@@ -127,6 +127,15 @@ type TerminationReasonDraft = {
 };
 
 type HistoryDrawer = "rates" | null;
+type SourceDataTabValue =
+  | "rates"
+  | "revenue"
+  | "deductions"
+  | "termination"
+  | "premiums"
+  | "fund"
+  | "deposits"
+  | "inventory";
 type FundTierDraft = {
   id: string;
   minMonths: string;
@@ -147,50 +156,135 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
   void onNavigate;
   const queryClient = useQueryClient();
   const permissions = usePermissions();
-  const canWrite = permissions.canPerformAction("payroll.source-data.edit");
+  const canReadRates = permissions.hasPermission("source.rates.read");
+  const canWriteRates = permissions.hasPermission("source.rates.edit");
+  const canReadRevenuePercent = permissions.hasPermission("source.revenue_percent.read");
+  const canWriteRevenuePercent = permissions.hasPermission("source.revenue_percent.edit");
+  const canReadDeductions = permissions.hasPermission("source.deductions.read");
+  const canWriteDeductions = permissions.hasPermission("source.deductions.edit");
+  const canReadDismissalReasons = permissions.hasPermission("source.dismissal_reasons.read");
+  const canWriteDismissalReasons = permissions.hasPermission("source.dismissal_reasons.edit");
+  const canReadAllowances = permissions.hasPermission("source.allowances.read");
+  const canWriteAllowances = permissions.hasPermission("source.allowances.edit");
+  const canReadFundSettings = permissions.hasPermission("source.fund_settings.read");
+  const canWriteFundSettings = permissions.hasPermission("source.fund_settings.edit");
+  const canReadDepositSettings = permissions.hasPermission("source.deposit_settings.read");
+  const canWriteDepositSettings = permissions.hasPermission("source.deposit_settings.edit");
+  const canReadRevisionSettings = permissions.hasPermission("source.revision_settings.read");
+  const canWriteRevisionSettings = permissions.hasPermission("source.revision_settings.edit");
+  const sourceTabs = useMemo(
+    () =>
+      [
+        canReadRates ? { value: "rates", label: "Ставки", canWrite: canWriteRates } : null,
+        canReadRevenuePercent
+          ? { value: "revenue", label: "Проценты от выручки", canWrite: canWriteRevenuePercent }
+          : null,
+        canReadDeductions
+          ? { value: "deductions", label: "Удержания", canWrite: canWriteDeductions }
+          : null,
+        canReadDismissalReasons
+          ? {
+              value: "termination",
+              label: "Причины увольнения",
+              canWrite: canWriteDismissalReasons,
+            }
+          : null,
+        canReadAllowances
+          ? { value: "premiums", label: "Надбавки", canWrite: canWriteAllowances }
+          : null,
+        canReadFundSettings
+          ? { value: "fund", label: "Накопительный фонд", canWrite: canWriteFundSettings }
+          : null,
+        canReadDepositSettings
+          ? { value: "deposits", label: "Депозиты", canWrite: canWriteDepositSettings }
+          : null,
+        canReadRevisionSettings
+          ? { value: "inventory", label: "Ревизии", canWrite: canWriteRevisionSettings }
+          : null,
+      ].filter(
+        (tab): tab is { value: SourceDataTabValue; label: string; canWrite: boolean } =>
+          Boolean(tab),
+      ),
+    [
+      canReadAllowances,
+      canReadDeductions,
+      canReadDepositSettings,
+      canReadDismissalReasons,
+      canReadFundSettings,
+      canReadRates,
+      canReadRevenuePercent,
+      canReadRevisionSettings,
+      canWriteAllowances,
+      canWriteDeductions,
+      canWriteDepositSettings,
+      canWriteDismissalReasons,
+      canWriteFundSettings,
+      canWriteRates,
+      canWriteRevenuePercent,
+      canWriteRevisionSettings,
+    ],
+  );
   const [advanced, setAdvanced] = useState(false);
   const [pendingRate, setPendingRate] = useState<PendingRate | null>(null);
   const [historyDrawer, setHistoryDrawer] = useState<HistoryDrawer>(null);
   const [deductionDraft, setDeductionDraft] = useState<PayrollDeductionCategoryPayload | null>(
     null,
   );
-  const initialTab =
-    new URLSearchParams(window.location.search).get("tab") === "inventory" ? "inventory" : "rates";
+  const requestedTab = resolveSourceDataTab(new URLSearchParams(window.location.search).get("tab"));
+  const [activeTab, setActiveTab] = useState<SourceDataTabValue>(requestedTab);
+  const visibleActiveTab = sourceTabs.some((tab) => tab.value === activeTab)
+    ? activeTab
+    : sourceTabs[0]?.value;
+  const activeTabCanWrite =
+    sourceTabs.find((tab) => tab.value === visibleActiveTab)?.canWrite ?? false;
   const [terminationReasonDraft, setTerminationReasonDraft] =
     useState<TerminationReasonDraft | null>(null);
+
+  useEffect(() => {
+    if (visibleActiveTab && visibleActiveTab !== activeTab) {
+      setActiveTab(visibleActiveTab);
+    }
+  }, [activeTab, visibleActiveTab]);
 
   const ratesQuery = useQuery({
     queryKey: ["payroll-config", "rates"],
     queryFn: () => getPayrollRates(false, true),
+    enabled: canReadRates,
   });
   const ratesHistoryQuery = useQuery({
     queryKey: ["payroll-config", "rates", "history"],
     queryFn: () => getPayrollRates(true),
-    enabled: historyDrawer === "rates",
+    enabled: canReadRates && historyDrawer === "rates",
   });
   const revenueTiersQuery = useQuery({
     queryKey: ["payroll-config", "revenue-tiers"],
     queryFn: () => getPayrollRevenueTiers(),
+    enabled: canReadRevenuePercent,
   });
   const categoryCoefficientsQuery = useQuery({
     queryKey: ["payroll-config", "category-coefficients"],
     queryFn: () => getPayrollCategoryCoefficients(),
+    enabled: canReadRevenuePercent,
   });
   const deductionsQuery = useQuery({
     queryKey: ["payroll-config", "deductions"],
     queryFn: () => getPayrollDeductions(),
+    enabled: canReadDeductions,
   });
   const premiumsQuery = useQuery({
     queryKey: ["payroll-config", "seniority-premium"],
     queryFn: () => getPayrollSeniorityPremiums(),
+    enabled: canReadAllowances,
   });
   const premiumsHistoryQuery = useQuery({
     queryKey: ["payroll-config", "seniority-premium", "history"],
     queryFn: () => getPayrollSeniorityPremiums(true),
+    enabled: canReadAllowances,
   });
   const terminationReasonsQuery = useQuery({
     queryKey: ["employees", "dismissal-reasons", "all"],
     queryFn: () => getEmployeeDismissalReasons(true),
+    enabled: canReadDismissalReasons,
   });
 
   const rateMutation = useMutation({
@@ -344,9 +438,9 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
         }
       />
 
-      {!canWrite ? (
+      {visibleActiveTab && !activeTabCanWrite ? (
         <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-          Режим просмотра. Изменения доступны финансовому менеджеру и владельцу.
+          Режим просмотра. Для изменений нужен доступ на редактирование выбранной вкладки.
         </div>
       ) : null}
 
@@ -362,111 +456,134 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
         </div>
       ) : null}
 
-      <Tabs defaultValue={initialTab} className="space-y-4">
-        <TabsList className="h-auto flex-wrap justify-start">
-          <TabsTrigger value="rates">Ставки</TabsTrigger>
-          <TabsTrigger value="revenue">Проценты от выручки</TabsTrigger>
-          <TabsTrigger value="deductions">Удержания</TabsTrigger>
-          <TabsTrigger value="termination">Причины увольнения</TabsTrigger>
-          <TabsTrigger value="premiums">Надбавки</TabsTrigger>
-          <TabsTrigger value="fund">Накопительный фонд</TabsTrigger>
-          <TabsTrigger value="deposits">Депозиты</TabsTrigger>
-          <TabsTrigger value="inventory">Ревизии</TabsTrigger>
-        </TabsList>
+      {visibleActiveTab ? (
+        <Tabs
+          value={visibleActiveTab}
+          onValueChange={(value) => setActiveTab(value as SourceDataTabValue)}
+          className="space-y-4"
+        >
+          <TabsList className="h-auto flex-wrap justify-start">
+            {sourceTabs.map((tab) => (
+              <TabsTrigger key={tab.value} value={tab.value}>
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
-        <TabsContent value="rates" className="mt-0">
-          <RatesSection
-            advanced={advanced}
-            canWrite={canWrite}
-            onOpenHistory={() => setHistoryDrawer("rates")}
-            onPendingRate={setPendingRate}
-            rates={rates}
-          />
-        </TabsContent>
+          {canReadRates ? (
+            <TabsContent value="rates" className="mt-0">
+              <RatesSection
+                advanced={advanced}
+                canWrite={canWriteRates}
+                onOpenHistory={() => setHistoryDrawer("rates")}
+                onPendingRate={setPendingRate}
+                rates={rates}
+              />
+            </TabsContent>
+          ) : null}
 
-        <TabsContent value="revenue" className="mt-0">
-          <RevenuePercentSection
-            advanced={advanced}
-            categoryCoefficients={categoryCoefficients}
-            canWrite={canWrite}
-            isSavingCoefficients={categoryCoefficientsMutation.isPending}
-            isSavingTiers={revenueTiersMutation.isPending}
-            onSaveCoefficients={(payload) => categoryCoefficientsMutation.mutate(payload)}
-            onSaveTiers={(payload) => revenueTiersMutation.mutate(payload)}
-            revenueTiers={revenueTiers}
-          />
-        </TabsContent>
+          {canReadRevenuePercent ? (
+            <TabsContent value="revenue" className="mt-0">
+              <RevenuePercentSection
+                advanced={advanced}
+                categoryCoefficients={categoryCoefficients}
+                canWrite={canWriteRevenuePercent}
+                isSavingCoefficients={categoryCoefficientsMutation.isPending}
+                isSavingTiers={revenueTiersMutation.isPending}
+                onSaveCoefficients={(payload) => categoryCoefficientsMutation.mutate(payload)}
+                onSaveTiers={(payload) => revenueTiersMutation.mutate(payload)}
+                revenueTiers={revenueTiers}
+              />
+            </TabsContent>
+          ) : null}
 
-        <TabsContent value="deductions" className="mt-0">
-          <DeductionsSection
-            advanced={advanced}
-            canWrite={canWrite}
-            deductions={deductions}
-            onAdd={() =>
-              setDeductionDraft({
-                code: "",
-                display_name: "",
-                description: "",
-                type: "withholding",
-                default_amount: null,
-                effective_from: todayKey(),
-                effective_to: null,
-              })
-            }
-            onEdit={setDeductionDraft}
-          />
-        </TabsContent>
+          {canReadDeductions ? (
+            <TabsContent value="deductions" className="mt-0">
+              <DeductionsSection
+                advanced={advanced}
+                canWrite={canWriteDeductions}
+                deductions={deductions}
+                onAdd={() =>
+                  setDeductionDraft({
+                    code: "",
+                    display_name: "",
+                    description: "",
+                    type: "withholding",
+                    default_amount: null,
+                    effective_from: todayKey(),
+                    effective_to: null,
+                  })
+                }
+                onEdit={setDeductionDraft}
+              />
+            </TabsContent>
+          ) : null}
 
-        <TabsContent value="termination" className="mt-0">
-          <TerminationReasonsSection
-            advanced={advanced}
-            canWrite={canWrite}
-            onAdd={() =>
-              setTerminationReasonDraft({
-                code: "",
-                label: "",
-                requires_comment: false,
-                is_active: true,
-                sort_order: nextSortOrder(terminationReasons),
-              })
-            }
-            onEdit={(reason) =>
-              setTerminationReasonDraft({
-                id: reason.id,
-                code: reason.code,
-                label: reason.label,
-                requires_comment: reason.requires_comment,
-                is_active: reason.is_active,
-                sort_order: reason.sort_order,
-              })
-            }
-            reasons={terminationReasons}
-          />
-        </TabsContent>
+          {canReadDismissalReasons ? (
+            <TabsContent value="termination" className="mt-0">
+              <TerminationReasonsSection
+                advanced={advanced}
+                canWrite={canWriteDismissalReasons}
+                onAdd={() =>
+                  setTerminationReasonDraft({
+                    code: "",
+                    label: "",
+                    requires_comment: false,
+                    is_active: true,
+                    sort_order: nextSortOrder(terminationReasons),
+                  })
+                }
+                onEdit={(reason) =>
+                  setTerminationReasonDraft({
+                    id: reason.id,
+                    code: reason.code,
+                    label: reason.label,
+                    requires_comment: reason.requires_comment,
+                    is_active: reason.is_active,
+                    sort_order: reason.sort_order,
+                  })
+                }
+                reasons={terminationReasons}
+              />
+            </TabsContent>
+          ) : null}
 
-        <TabsContent value="premiums" className="mt-0">
-          <PremiumsSection
-            advanced={advanced}
-            canWrite={canWrite}
-            history={premiumsHistory}
-            isSaving={premiumMutation.isPending}
-            onSave={(payloads) => premiumMutation.mutate(payloads)}
-            premiums={premiums}
-          />
-        </TabsContent>
+          {canReadAllowances ? (
+            <TabsContent value="premiums" className="mt-0">
+              <PremiumsSection
+                advanced={advanced}
+                canWrite={canWriteAllowances}
+                history={premiumsHistory}
+                isSaving={premiumMutation.isPending}
+                onSave={(payloads) => premiumMutation.mutate(payloads)}
+                premiums={premiums}
+              />
+            </TabsContent>
+          ) : null}
 
-        <TabsContent value="fund" className="mt-0">
-          <FundSection canWrite={canWrite} />
-        </TabsContent>
+          {canReadFundSettings ? (
+            <TabsContent value="fund" className="mt-0">
+              <FundSection canWrite={canWriteFundSettings} />
+            </TabsContent>
+          ) : null}
 
-        <TabsContent value="deposits" className="mt-0">
-          <DepositsSettingsTab canWrite={canWrite} />
-        </TabsContent>
+          {canReadDepositSettings ? (
+            <TabsContent value="deposits" className="mt-0">
+              <DepositsSettingsTab canWrite={canWriteDepositSettings} />
+            </TabsContent>
+          ) : null}
 
-        <TabsContent value="inventory" className="mt-0">
-          <InventoryPositionsSection canWrite={canWrite} />
-        </TabsContent>
-      </Tabs>
+          {canReadRevisionSettings ? (
+            <TabsContent value="inventory" className="mt-0">
+              <InventoryPositionsSection canWrite={canWriteRevisionSettings} />
+            </TabsContent>
+          ) : null}
+        </Tabs>
+      ) : (
+        <div className="rounded-md border bg-card px-4 py-8 text-sm text-muted-foreground">
+          Нет доступных вкладок исходных данных.
+        </div>
+      )}
 
       <RateConfirmDialog
         isSaving={rateMutation.isPending}
@@ -2623,6 +2740,22 @@ function todayKey() {
   const month = `${today.getMonth() + 1}`.padStart(2, "0");
   const day = `${today.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function resolveSourceDataTab(value: string | null): SourceDataTabValue {
+  if (
+    value === "rates" ||
+    value === "revenue" ||
+    value === "deductions" ||
+    value === "termination" ||
+    value === "premiums" ||
+    value === "fund" ||
+    value === "deposits" ||
+    value === "inventory"
+  ) {
+    return value;
+  }
+  return "rates";
 }
 
 function formatMoney(value: number | string | null) {

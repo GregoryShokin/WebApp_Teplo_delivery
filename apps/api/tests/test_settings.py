@@ -8,7 +8,9 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from app.auth import CurrentUser, current_user
+from app.api.deps import CurrentActor, get_current_actor
+from app.auth import CurrentUser
+from app.auth.permissions import ALL_PERMISSION_CODES
 from app.main import create_app
 from app.services import iiko_sync, payroll_config, settings_service
 
@@ -19,6 +21,18 @@ def _user(*roles: str) -> CurrentUser:
         email="owner@teplo.local",
         full_name="Owner",
         roles=tuple(roles),
+    )
+
+
+def _actor(
+    *roles: str,
+    permissions: set[str] | frozenset[str] = frozenset(),
+) -> CurrentActor:
+    return CurrentActor(
+        roles=frozenset(roles),
+        user_id=uuid.uuid4(),
+        permissions=frozenset(permissions),
+        permissions_loaded=True,
     )
 
 
@@ -58,7 +72,10 @@ def test_get_setting_by_key_authorized_returns_value(
         return _setting(key, 5000)
 
     monkeypatch.setattr(settings_service, "get_setting", get_setting)
-    client.app.dependency_overrides[current_user] = lambda: _user("accountant")
+    client.app.dependency_overrides[get_current_actor] = lambda: _actor(
+        "manager",
+        permissions={"settings.general.read"},
+    )
 
     response = client.get("/api/v1/settings/fixed_asset_threshold")
 
@@ -86,7 +103,10 @@ def test_get_setting_history_authorized_returns_entries(
         ]
 
     monkeypatch.setattr(settings_service, "get_setting_history", get_setting_history)
-    client.app.dependency_overrides[current_user] = lambda: _user("owner")
+    client.app.dependency_overrides[get_current_actor] = lambda: _actor(
+        "owner",
+        permissions=ALL_PERMISSION_CODES,
+    )
 
     response = client.get("/api/v1/settings/fixed_asset_threshold/history")
 
@@ -102,7 +122,10 @@ def test_get_setting_history_missing_key_returns_404(
         raise settings_service.SettingNotFoundError(key)
 
     monkeypatch.setattr(settings_service, "get_setting_history", get_setting_history)
-    client.app.dependency_overrides[current_user] = lambda: _user("owner")
+    client.app.dependency_overrides[get_current_actor] = lambda: _actor(
+        "owner",
+        permissions=ALL_PERMISSION_CODES,
+    )
 
     response = client.get("/api/v1/settings/missing/history")
 
@@ -128,7 +151,10 @@ def test_put_substitute_pairs_accepts_request_models(
         "refresh_role_review_for_all_employees",
         refresh_role_review_for_all_employees,
     )
-    client.app.dependency_overrides[current_user] = lambda: _user("admin")
+    client.app.dependency_overrides[get_current_actor] = lambda: _actor(
+        "admin",
+        permissions=ALL_PERMISSION_CODES,
+    )
 
     response = client.put(
         "/api/v1/settings/substitute-pairs",

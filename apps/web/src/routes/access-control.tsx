@@ -1174,16 +1174,35 @@ function permissionAreaLabel(code: string, module: string) {
   ) {
     return "Премии, штрафы и корректировки";
   }
-  if (code.startsWith("payroll.revisions.") || code.startsWith("payroll.revision_penalties.")) {
-    return "Ревизии";
-  }
   if (code.startsWith("payroll.vacations.")) return "Отпуска";
   if (code.startsWith("payroll.fund.")) return "Накопительный фонд";
   if (code.startsWith("payroll.production_deposits.")) return "Депозиты производства";
-  if (code.startsWith("payroll.source_data.") || code.startsWith("payroll.rules.")) {
-    return "Исходные данные и правила";
+  if (code === "revisions.read") return "Просмотр";
+  if (code.startsWith("revisions.import") || code.startsWith("revisions.create")) {
+    return "Создание и импорт";
   }
+  if (code.startsWith("revisions.drafts.")) return "Черновик";
+  if (code.startsWith("revisions.items.") || code.startsWith("revisions.employees.")) {
+    return "Исключения";
+  }
+  if (
+    code.startsWith("revisions.finalize") ||
+    code.startsWith("revisions.cancel") ||
+    code.startsWith("revisions.restore_draft")
+  ) {
+    return "Статус ревизии";
+  }
+  if (code.startsWith("revisions.deferrals.")) return "Распределение списаний";
+  if (code.startsWith("revisions.rules.")) return "Правила распределения";
 
+  if (code.startsWith("source.rates.")) return "Ставки";
+  if (code.startsWith("source.revenue_percent.")) return "Проценты от выручки";
+  if (code.startsWith("source.deductions.")) return "Удержания";
+  if (code.startsWith("source.dismissal_reasons.")) return "Причины увольнения";
+  if (code.startsWith("source.allowances.")) return "Надбавки";
+  if (code.startsWith("source.fund_settings.")) return "Накопительный фонд";
+  if (code.startsWith("source.deposit_settings.")) return "Депозиты";
+  if (code.startsWith("source.revision_settings.")) return "Ревизии";
   if (code.startsWith("source.schedule.")) return "График смен";
   if (code.startsWith("source.shift_ledger.")) return "Учёт смен и выручки";
   if (code.startsWith("source.revenue.")) return "Выручка";
@@ -1201,9 +1220,6 @@ function permissionAreaLabel(code: string, module: string) {
   if (code.startsWith("finance.owner_review.")) return "Проверка собственником";
 
   if (code.startsWith("accounting.inventory")) return "Инвентаризации";
-  if (code.startsWith("accounting.audits.") || code.startsWith("accounting.audit_penalties.")) {
-    return "Ревизии";
-  }
   if (code.startsWith("accounting.fixed_assets.")) return "Основные средства";
   if (code.startsWith("accounting.suppliers.")) return "Поставщики";
   if (code.startsWith("accounting.periods.")) return "Закрытие периода";

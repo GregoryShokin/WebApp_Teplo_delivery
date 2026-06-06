@@ -12,6 +12,7 @@ MODULE_ORDER: tuple[str, ...] = (
     "Штат",
     "Курьеры",
     "Зарплата",
+    "Ревизии",
     "Исходные данные",
     "Финансы",
     "Учёт",
@@ -99,8 +100,6 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ("payroll.adjustments.edit", "Зарплата", "Редактировать корректировки зарплаты"),
     ("payroll.bonuses.add", "Зарплата", "Начислять премии сотрудникам"),
     ("payroll.penalties.add", "Зарплата", "Начислять штрафы сотрудникам"),
-    ("payroll.revisions.read", "Зарплата", "Смотреть ревизии в зарплате"),
-    ("payroll.revision_penalties.add", "Зарплата", "Начислять штрафы по ревизии"),
     ("payroll.vacations.read", "Зарплата", "Смотреть отпуска сотрудников"),
     ("payroll.vacations.edit", "Зарплата", "Редактировать отпуска сотрудников"),
     ("payroll.fund.read", "Зарплата", "Смотреть фонд накопления"),
@@ -115,9 +114,78 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Зарплата",
         "Редактировать депозиты производственного персонала",
     ),
-    ("payroll.source_data.read", "Зарплата", "Смотреть исходные данные зарплаты"),
-    ("payroll.source_data.edit", "Зарплата", "Редактировать исходные данные зарплаты"),
-    ("payroll.rules.configure", "Зарплата", "Настраивать правила зарплаты"),
+    ("revisions.read", "Ревизии", "Смотреть ревизии"),
+    ("revisions.import", "Ревизии", "Импортировать ревизию"),
+    ("revisions.create", "Ревизии", "Создавать ревизию вручную"),
+    ("revisions.drafts.edit", "Ревизии", "Редактировать черновик ревизии"),
+    ("revisions.items.exclude", "Ревизии", "Исключать позиции из ревизии"),
+    (
+        "revisions.employees.exclude",
+        "Ревизии",
+        "Исключать сотрудников из распределения",
+    ),
+    ("revisions.finalize", "Ревизии", "Финализировать ревизию"),
+    ("revisions.cancel", "Ревизии", "Отменять ревизию"),
+    ("revisions.restore_draft", "Ревизии", "Возвращать ревизию в черновик"),
+    (
+        "revisions.deferrals.read",
+        "Ревизии",
+        "Смотреть распределение списаний ревизий",
+    ),
+    (
+        "revisions.deferrals.manage",
+        "Ревизии",
+        "Распределять списание по нескольким зарплатам",
+    ),
+    (
+        "revisions.rules.manage",
+        "Ревизии",
+        "Управлять правилами распределения ревизий",
+    ),
+    ("source.rates.read", "Исходные данные", "Смотреть ставки"),
+    ("source.rates.edit", "Исходные данные", "Редактировать ставки"),
+    ("source.revenue_percent.read", "Исходные данные", "Смотреть проценты от выручки"),
+    (
+        "source.revenue_percent.edit",
+        "Исходные данные",
+        "Редактировать проценты от выручки",
+    ),
+    ("source.deductions.read", "Исходные данные", "Смотреть удержания"),
+    ("source.deductions.edit", "Исходные данные", "Редактировать удержания"),
+    (
+        "source.dismissal_reasons.read",
+        "Исходные данные",
+        "Смотреть причины увольнения",
+    ),
+    (
+        "source.dismissal_reasons.edit",
+        "Исходные данные",
+        "Редактировать причины увольнения",
+    ),
+    ("source.allowances.read", "Исходные данные", "Смотреть надбавки"),
+    ("source.allowances.edit", "Исходные данные", "Редактировать надбавки"),
+    (
+        "source.fund_settings.read",
+        "Исходные данные",
+        "Смотреть настройки накопительного фонда",
+    ),
+    (
+        "source.fund_settings.edit",
+        "Исходные данные",
+        "Редактировать настройки накопительного фонда",
+    ),
+    ("source.deposit_settings.read", "Исходные данные", "Смотреть настройки депозитов"),
+    (
+        "source.deposit_settings.edit",
+        "Исходные данные",
+        "Редактировать настройки депозитов",
+    ),
+    ("source.revision_settings.read", "Исходные данные", "Смотреть настройки ревизий"),
+    (
+        "source.revision_settings.edit",
+        "Исходные данные",
+        "Редактировать настройки ревизий",
+    ),
     ("source.schedule.read", "Исходные данные", "Смотреть график смен"),
     ("source.schedule.edit", "Исходные данные", "Редактировать график смен"),
     ("source.shift_ledger.read", "Исходные данные", "Смотреть учёт смен и выручки"),
@@ -167,8 +235,6 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ),
     ("accounting.inventory.conduct", "Учёт", "Проводить инвентаризацию"),
     ("accounting.inventory.finalize", "Учёт", "Финализировать инвентаризацию"),
-    ("accounting.audits.read", "Учёт", "Смотреть ревизии"),
-    ("accounting.audit_penalties.add", "Учёт", "Начислять штрафы по ревизии"),
     ("accounting.fixed_assets.read", "Учёт", "Смотреть основные средства"),
     ("accounting.fixed_assets.edit", "Учёт", "Редактировать основные средства"),
     ("accounting.suppliers.read", "Учёт", "Смотреть взаиморасчёты с поставщиками"),
@@ -197,6 +263,11 @@ LEGACY_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ("dds.rules.write", "Финансы", "Управлять правилами классификации денег"),
     ("payroll.read", "Зарплата", "Смотреть персональные отчёты сотрудников"),
     ("payroll.runs.write", "Зарплата", "Запускать расчёт зарплаты"),
+    ("payroll.source_data.read", "Исходные данные", "Смотреть исходные данные зарплаты"),
+    ("payroll.source_data.edit", "Исходные данные", "Редактировать исходные данные зарплаты"),
+    ("payroll.rules.configure", "Исходные данные", "Настраивать правила зарплаты"),
+    ("payroll.revisions.read", "Ревизии", "Смотреть распределение списаний ревизий"),
+    ("payroll.revision_penalties.add", "Ревизии", "Распределять списание по нескольким зарплатам"),
     ("payroll.adjustments.write", "Зарплата", "Редактировать корректировки зарплаты"),
     ("schedule.read", "Исходные данные", "Смотреть график смен"),
     ("schedule.write", "Исходные данные", "Редактировать график смен"),
@@ -205,6 +276,8 @@ LEGACY_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ("inventory.read", "Учёт", "Смотреть инвентаризации"),
     ("inventory.write", "Учёт", "Редактировать справочник инвентаризации"),
     ("inventory.audits.write", "Учёт", "Проводить инвентаризацию"),
+    ("accounting.audits.read", "Ревизии", "Смотреть ревизии"),
+    ("accounting.audit_penalties.add", "Ревизии", "Финализировать ревизию"),
     ("staff.read", "Штат", "Смотреть администрацию"),
     ("staff.write", "Штат", "Редактировать администрацию"),
     ("staff.dismiss", "Штат", "Увольнять администрацию"),
@@ -245,6 +318,31 @@ PERMISSION_CODE_ORDER = {
 }
 MODULE_ORDER_INDEX = {module: index for index, module in enumerate(MODULE_ORDER)}
 
+SOURCE_DATA_TAB_READ_PERMISSION_CODES = frozenset(
+    {
+        "source.rates.read",
+        "source.revenue_percent.read",
+        "source.deductions.read",
+        "source.dismissal_reasons.read",
+        "source.allowances.read",
+        "source.fund_settings.read",
+        "source.deposit_settings.read",
+        "source.revision_settings.read",
+    }
+)
+SOURCE_DATA_TAB_EDIT_PERMISSION_CODES = frozenset(
+    {
+        "source.rates.edit",
+        "source.revenue_percent.edit",
+        "source.deductions.edit",
+        "source.dismissal_reasons.edit",
+        "source.allowances.edit",
+        "source.fund_settings.edit",
+        "source.deposit_settings.edit",
+        "source.revision_settings.edit",
+    }
+)
+
 LEGACY_PERMISSION_ALIASES: dict[str, frozenset[str]] = {
     "dds.read": frozenset(
         {
@@ -269,11 +367,15 @@ LEGACY_PERMISSION_ALIASES: dict[str, frozenset[str]] = {
             "payroll.runs.read",
             "payroll.accruals.read",
             "payroll.personal_reports.read",
-            "payroll.revisions.read",
             "payroll.production_deposits.read",
-            "payroll.source_data.read",
+            *SOURCE_DATA_TAB_READ_PERMISSION_CODES,
         }
     ),
+    "payroll.source_data.read": SOURCE_DATA_TAB_READ_PERMISSION_CODES,
+    "payroll.source_data.edit": SOURCE_DATA_TAB_EDIT_PERMISSION_CODES,
+    "payroll.rules.configure": SOURCE_DATA_TAB_EDIT_PERMISSION_CODES,
+    "payroll.revisions.read": frozenset({"revisions.deferrals.read"}),
+    "payroll.revision_penalties.add": frozenset({"revisions.deferrals.manage"}),
     "payroll.runs.write": frozenset({"payroll.runs.start", "payroll.runs.recalculate"}),
     "payroll.runs.finalize": frozenset({"payroll.runs.finalize"}),
     "payroll.adjustments.write": frozenset(
@@ -281,24 +383,34 @@ LEGACY_PERMISSION_ALIASES: dict[str, frozenset[str]] = {
             "payroll.adjustments.edit",
             "payroll.bonuses.add",
             "payroll.penalties.add",
-            "payroll.rules.configure",
+            "source.deductions.edit",
         }
     ),
     "schedule.read": frozenset({"source.schedule.read"}),
     "schedule.write": frozenset({"source.schedule.edit"}),
     "shifts.read": frozenset({"source.shift_ledger.read"}),
     "shifts.write": frozenset({"source.shift_ledger.input", "source.shift_ledger.correct"}),
-    "inventory.read": frozenset({"accounting.inventory.read", "accounting.audits.read"}),
+    "inventory.read": frozenset({"accounting.inventory.read", "revisions.read"}),
     "inventory.write": frozenset(
-        {"accounting.inventory_directory.edit", "accounting.inventory.conduct"}
+        {
+            "accounting.inventory_directory.edit",
+            "revisions.create",
+            "revisions.drafts.edit",
+            "revisions.import",
+        }
     ),
     "inventory.audits.write": frozenset(
         {
-            "accounting.inventory.conduct",
-            "accounting.inventory.finalize",
-            "accounting.audit_penalties.add",
+            "revisions.create",
+            "revisions.drafts.edit",
+            "revisions.import",
+            "revisions.items.exclude",
+            "revisions.employees.exclude",
+            "revisions.finalize",
         }
     ),
+    "accounting.audits.read": frozenset({"revisions.read"}),
+    "accounting.audit_penalties.add": frozenset({"revisions.finalize"}),
     "staff.read": frozenset(
         {"staff.administration.read", "staff.administration.history.read"}
     ),
@@ -390,13 +502,18 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "payroll.adjustments.edit",
         "payroll.bonuses.add",
         "payroll.penalties.add",
-        "payroll.revisions.read",
-        "payroll.revision_penalties.add",
         "payroll.vacations.read",
         "payroll.vacations.edit",
         "payroll.production_deposits.read",
         "payroll.production_deposits.edit",
-        "payroll.source_data.read",
+        "source.rates.read",
+        "source.revenue_percent.read",
+        "source.deductions.read",
+        "source.dismissal_reasons.read",
+        "source.allowances.read",
+        "source.fund_settings.read",
+        "source.deposit_settings.read",
+        "source.revision_settings.read",
         "source.schedule.read",
         "source.schedule.edit",
         "source.shift_ledger.read",
@@ -409,10 +526,13 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "finance.store_cash.read",
         "finance.store_cash.enter",
         "accounting.inventory.read",
-        "accounting.inventory.conduct",
-        "accounting.inventory.finalize",
-        "accounting.audits.read",
-        "accounting.audit_penalties.add",
+        "revisions.read",
+        "revisions.import",
+        "revisions.create",
+        "revisions.drafts.edit",
+        "revisions.items.exclude",
+        "revisions.employees.exclude",
+        "revisions.deferrals.read",
         "settings.general.read",
     }
 )
@@ -421,6 +541,16 @@ OFFICE_MANAGER_DEFAULT_PERMISSIONS = frozenset(
     VISIBLE_PERMISSION_CODES
     - {
         "payroll.runs.reopen",
+        "revisions.import",
+        "revisions.create",
+        "revisions.drafts.edit",
+        "revisions.items.exclude",
+        "revisions.employees.exclude",
+        "revisions.finalize",
+        "revisions.cancel",
+        "revisions.restore_draft",
+        "revisions.deferrals.manage",
+        "revisions.rules.manage",
         "settings.users.read",
         "settings.users.create",
         "settings.users.edit",
@@ -444,7 +574,6 @@ CASHIER_DEFAULT_PERMISSIONS = frozenset(
         "finance.store_cash.read",
         "finance.store_cash.enter",
         "accounting.inventory.read",
-        "accounting.inventory.conduct",
     }
 )
 

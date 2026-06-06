@@ -7,8 +7,10 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.deps import CurrentActor, get_current_actor
 from app.api.v1.routes import auth as auth_routes
-from app.auth import CurrentUser, current_user
+from app.auth import CurrentUser
+from app.auth.permissions import ALL_PERMISSION_CODES
 from app.core.security import create_access_token, hash_password, verify_password
 from app.main import create_app
 from app.services import settings_service
@@ -29,6 +31,19 @@ def _user(*roles: str) -> CurrentUser:
         email="user@teplo.local",
         full_name="Test User",
         roles=tuple(roles),
+    )
+
+
+def _actor(
+    *roles: str,
+    permissions: set[str] | frozenset[str] = frozenset(),
+    user_id: uuid.UUID | None = None,
+) -> CurrentActor:
+    return CurrentActor(
+        roles=frozenset(roles),
+        user_id=user_id or uuid.uuid4(),
+        permissions=frozenset(permissions),
+        permissions_loaded=True,
     )
 
 
@@ -180,7 +195,10 @@ def test_protected_endpoint_with_expired_token_returns_401(client: TestClient) -
 def test_get_settings_authorized_returns_ok(
     client: TestClient, fake_settings: dict[str, Any]
 ) -> None:
-    client.app.dependency_overrides[current_user] = lambda: _user("accountant")
+    client.app.dependency_overrides[get_current_actor] = lambda: _actor(
+        "manager",
+        permissions={"settings.general.read"},
+    )
 
     response = client.get("/api/v1/settings", params={"category": "fixed_assets"})
 
@@ -193,7 +211,10 @@ def test_get_settings_authorized_returns_ok(
 def test_get_settings_authorized_returns_display_metadata(
     client: TestClient, fake_settings: dict[str, Any]
 ) -> None:
-    client.app.dependency_overrides[current_user] = lambda: _user("accountant")
+    client.app.dependency_overrides[get_current_actor] = lambda: _actor(
+        "manager",
+        permissions={"settings.general.read"},
+    )
 
     response = client.get("/api/v1/settings", params={"category": "payment_calendar"})
 
@@ -205,7 +226,10 @@ def test_get_settings_authorized_returns_display_metadata(
 
 
 def test_put_setting_manager_returns_403(client: TestClient, fake_settings: dict[str, Any]) -> None:
-    client.app.dependency_overrides[current_user] = lambda: _user("manager")
+    client.app.dependency_overrides[get_current_actor] = lambda: _actor(
+        "manager",
+        permissions={"settings.general.read"},
+    )
 
     response = client.put(
         "/api/v1/settings/payment_calendar.auto_match_tolerance",
@@ -219,7 +243,11 @@ def test_put_setting_finance_manager_non_critical_updates_history(
     client: TestClient, fake_settings: dict[str, Any]
 ) -> None:
     user = _user("finance_manager")
-    client.app.dependency_overrides[current_user] = lambda: user
+    client.app.dependency_overrides[get_current_actor] = lambda: _actor(
+        "finance_manager",
+        permissions=ALL_PERMISSION_CODES,
+        user_id=user.id,
+    )
 
     response = client.put(
         "/api/v1/settings/payment_calendar.auto_match_tolerance",
@@ -236,7 +264,10 @@ def test_put_setting_finance_manager_non_critical_updates_history(
 def test_put_setting_finance_manager_critical_returns_403(
     client: TestClient, fake_settings: dict[str, Any]
 ) -> None:
-    client.app.dependency_overrides[current_user] = lambda: _user("finance_manager")
+    client.app.dependency_overrides[get_current_actor] = lambda: _actor(
+        "finance_manager",
+        permissions=ALL_PERMISSION_CODES,
+    )
 
     response = client.put(
         "/api/v1/settings/fixed_assets.capitalization_threshold_rub",
@@ -249,7 +280,10 @@ def test_put_setting_finance_manager_critical_returns_403(
 def test_put_setting_owner_can_update_critical(
     client: TestClient, fake_settings: dict[str, Any]
 ) -> None:
-    client.app.dependency_overrides[current_user] = lambda: _user("owner")
+    client.app.dependency_overrides[get_current_actor] = lambda: _actor(
+        "owner",
+        permissions=ALL_PERMISSION_CODES,
+    )
 
     response = client.put(
         "/api/v1/settings/fixed_assets.capitalization_threshold_rub",

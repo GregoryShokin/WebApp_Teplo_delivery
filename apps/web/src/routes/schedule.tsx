@@ -140,6 +140,7 @@ import {
   type PeriodRange,
 } from "@/lib/date-presets";
 import { PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
+import { usePermissions } from "@/lib/permissions";
 import { sortEmployeesByRoleAndName } from "@/lib/role-sort";
 import { cn } from "@/lib/utils";
 
@@ -225,6 +226,26 @@ const statusLabels: Record<ScheduleRead["status"], string> = {
 
 export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: ScheduleRouteProps) {
   const queryClient = useQueryClient();
+  const permissions = usePermissions();
+  const canViewSchedule = permissions.hasPermission("source.schedule.read");
+  const canEditSchedule = permissions.hasPermission("source.schedule.edit");
+  const canViewShiftLedger = permissions.hasPermission("source.shift_ledger.read");
+  const canViewVacations = permissions.hasPermission("payroll.vacations.read");
+  const canViewRevenue = permissions.hasPermission("source.revenue.read");
+  const canEditRevenue = permissions.hasPermission("source.revenue.edit");
+  const canViewPayrollSourceData = permissions.hasPermission("source.rates.read");
+  const canViewForecastBudget = canViewRevenue || canViewPayrollSourceData;
+  const firstAllowedTab = canViewSchedule
+    ? "schedule"
+    : canViewShiftLedger
+      ? "shifts-ledger"
+      : canViewVacations
+        ? "vacations"
+        : null;
+  const canViewActiveTab =
+    (activeTab === "schedule" && canViewSchedule) ||
+    (activeTab === "shifts-ledger" && canViewShiftLedger) ||
+    (activeTab === "vacations" && canViewVacations);
   const [isResolvingStoredTab, setIsResolvingStoredTab] = useState(useStoredTab);
   const storedPeriodPreset = useMemo(readStoredSchedulePreset, []);
   const [periodPreset, setPeriodPreset] = useLocalStorageState<PeriodPreset>(
@@ -273,6 +294,12 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     }
     window.localStorage.setItem(SCHEDULE_ACTIVE_TAB_STORAGE_KEY, activeTab);
   }, [activeTab, isResolvingStoredTab]);
+
+  useEffect(() => {
+    if (!isResolvingStoredTab && firstAllowedTab && !canViewActiveTab) {
+      onNavigate(scheduleTabPath(firstAllowedTab));
+    }
+  }, [activeTab, canViewActiveTab, firstAllowedTab, isResolvingStoredTab, onNavigate]);
   const [forceRefreshIiko, setForceRefreshIiko] = useState(false);
   const [forceRefreshConfirmOpen, setForceRefreshConfirmOpen] = useState(false);
   const [selectedCostRunId, setSelectedCostRunId] = useState<string | null>(null);
@@ -307,15 +334,17 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
         date_from: scheduleWindow.from,
         date_to: scheduleWindow.to,
       }),
+    enabled: canViewSchedule,
   });
   const rosterQuery = useQuery({
     queryKey: ["employees-roster"],
     queryFn: getEmployeesRoster,
+    enabled: canViewSchedule,
   });
   const scheduleQuery = useQuery({
     queryKey: ["schedule", selectedScheduleId],
     queryFn: () => getSchedule(selectedScheduleId ?? ""),
-    enabled: Boolean(selectedScheduleId),
+    enabled: Boolean(selectedScheduleId && canViewSchedule),
   });
   const ledgerQuery = useQuery({
     queryKey: ["schedule-ledger", forecastRange.from, forecastRange.to],
@@ -324,10 +353,12 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
         date_from: forecastRange.from,
         date_to: forecastRange.to,
       }),
+    enabled: canViewSchedule,
   });
   const vacationRosterQuery = useQuery({
     queryKey: ["vacations-roster", vacationYear],
     queryFn: () => getVacationRoster(vacationYear),
+    enabled: canViewVacations,
   });
   const forecastQuery = useQuery({
     queryKey: ["forecast", forecastRange.from, forecastRange.to],
@@ -336,27 +367,27 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
         date_from: forecastRange.from,
         date_to: forecastRange.to,
       }),
-    enabled: Boolean(selectedScheduleId),
+    enabled: Boolean(selectedScheduleId && canViewRevenue),
   });
   const latestCostQuery = useQuery({
     queryKey: ["cost-forecast", selectedScheduleId, "latest"],
     queryFn: () => getLatestRun(selectedScheduleId ?? ""),
-    enabled: Boolean(selectedScheduleId),
+    enabled: Boolean(selectedScheduleId && canViewPayrollSourceData),
   });
   const selectedCostQuery = useQuery({
     queryKey: ["cost-forecast", selectedScheduleId, selectedCostRunId],
     queryFn: () => getRun(selectedScheduleId ?? "", selectedCostRunId ?? ""),
-    enabled: Boolean(selectedScheduleId && selectedCostRunId),
+    enabled: Boolean(selectedScheduleId && selectedCostRunId && canViewPayrollSourceData),
   });
   const costRunsQuery = useQuery({
     queryKey: ["cost-forecast", selectedScheduleId, "runs"],
     queryFn: () => listRuns(selectedScheduleId ?? ""),
-    enabled: Boolean(selectedScheduleId && costHistoryOpen),
+    enabled: Boolean(selectedScheduleId && costHistoryOpen && canViewPayrollSourceData),
   });
   const planFactQuery = useQuery({
     queryKey: ["plan-fact", selectedScheduleId],
     queryFn: () => getPlanFact(selectedScheduleId ?? ""),
-    enabled: Boolean(selectedScheduleId),
+    enabled: Boolean(selectedScheduleId && canViewSchedule),
   });
 
   const schedules = useMemo(
@@ -378,7 +409,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   const cashierOverridesQuery = useQuery({
     queryKey: ["cashier-allowance-overrides", selectedScheduleId],
     queryFn: () => listCashierAllowanceOverrides(selectedScheduleId ?? ""),
-    enabled: Boolean(selectedScheduleId),
+    enabled: Boolean(selectedScheduleId && canViewSchedule),
   });
   const cashierAllowanceResolveDays = useMemo(
     () => findCashierAllowanceResolveDays(currentSchedule?.shifts ?? [], roster),
@@ -389,7 +420,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
       queryKey: ["cashier-allowance-resolve", selectedScheduleId, businessDate],
       queryFn: () =>
         resolveCashierAllowance(selectedScheduleId ?? "", { business_date: businessDate }),
-      enabled: Boolean(selectedScheduleId),
+      enabled: Boolean(selectedScheduleId && canViewSchedule),
     })),
   });
   const cashierAllowanceByDay = useMemo(
@@ -418,7 +449,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     [displayedCostRun?.estimates],
   );
   const isDraft = currentSchedule?.status === "draft";
-  const isLocked = currentSchedule != null && !isDraft;
+  const isLocked = currentSchedule != null && (!isDraft || !canEditSchedule);
   const selectedWeekStart = toIsoDate(startOfTuesdayWeek(parseIsoDate(periodRange.from)));
   const selectedWeekEnd = toIsoDate(addDays(parseIsoDate(selectedWeekStart), 6));
   const shiftDialogAllowanceAssignment = shiftDialog
@@ -691,7 +722,11 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   });
 
   useEffect(() => {
-    if (!currentSchedule || warmedScheduleIds.current.has(currentSchedule.id)) {
+    if (
+      !canEditRevenue ||
+      !currentSchedule ||
+      warmedScheduleIds.current.has(currentSchedule.id)
+    ) {
       return;
     }
     warmedScheduleIds.current.add(currentSchedule.id);
@@ -700,7 +735,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
       date_to: currentSchedule.date_end,
       force_refresh_iiko: false,
     });
-  }, [currentSchedule, warmForecastMutation]);
+  }, [canEditRevenue, currentSchedule, warmForecastMutation]);
 
   useEffect(() => {
     setSelectedCostRunId(null);
@@ -758,6 +793,9 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   }
 
   function openCreateDialog(initialRange?: PeriodRange, initialPreset: PeriodPreset = "month") {
+    if (!canEditSchedule) {
+      return;
+    }
     const draftRange = initialRange ?? rangeForPreset("month", new Date())!;
     setCreatePeriodPreset(initialPreset);
     setCreateDraft(defaultScheduleDraft(draftRange));
@@ -808,7 +846,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     stationCode?: string | null;
     shift?: ScheduledShiftRead;
   }) {
-    if (!currentSchedule || isLocked) {
+    if (!currentSchedule || isLocked || !canEditSchedule) {
       return;
     }
     const shift = options.shift ?? null;
@@ -855,6 +893,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     if (
       !currentSchedule ||
       isLocked ||
+      !canEditSchedule ||
       quickCreateShiftMutation.isPending ||
       deleteShiftMutation.isPending
     ) {
@@ -876,6 +915,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     if (
       !currentSchedule ||
       isLocked ||
+      !canEditSchedule ||
       quickCreateShiftMutation.isPending ||
       deleteShiftMutation.isPending
     ) {
@@ -885,7 +925,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   }
 
   function submitShiftDialog(allowNoneConfirmed = false) {
-    if (!currentSchedule || !shiftDialog || !shiftDialog.employeeId) {
+    if (!canEditSchedule || !currentSchedule || !shiftDialog || !shiftDialog.employeeId) {
       toast.error("Выберите сотрудника");
       return;
     }
@@ -930,7 +970,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   }
 
   function submitCashierAllowanceOverride(state: ShiftDialogState) {
-    if (!currentSchedule || !state.allowanceDirty || state.mode !== "edit") {
+    if (!canEditSchedule || !currentSchedule || !state.allowanceDirty || state.mode !== "edit") {
       return;
     }
     if (state.allowanceSelection === "auto") {
@@ -957,6 +997,9 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   }
 
   function submitCopyWeek() {
+    if (!canEditSchedule) {
+      return;
+    }
     const toDate =
       copyDialog.targetMode === "next"
         ? toIsoDate(addDays(parseIsoDate(selectedWeekStart), 7))
@@ -965,6 +1008,9 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   }
 
   function requestForecastRecompute() {
+    if (!canEditRevenue) {
+      return;
+    }
     if (forceRefreshIiko) {
       setForceRefreshConfirmOpen(true);
       return;
@@ -973,6 +1019,9 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   }
 
   function runForecastRecompute(forceRefresh: boolean) {
+    if (!canEditRevenue) {
+      return;
+    }
     recomputeForecastMutation.mutate({
       date_from: forecastRange.from,
       date_to: forecastRange.to,
@@ -981,6 +1030,9 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   }
 
   function openForecastDialog(forecast: RevenueForecastRead) {
+    if (!canEditRevenue) {
+      return;
+    }
     setForecastDialog({
       forecast,
       amount: amountInputValue(forecast.manual_override_amount),
@@ -990,7 +1042,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   }
 
   function submitForecastOverride() {
-    if (!forecastDialog) {
+    if (!canEditRevenue || !forecastDialog) {
       return;
     }
     const amount = parseAmountInput(forecastDialog.amount);
@@ -1065,65 +1117,78 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     return null;
   }
 
+  if (!firstAllowedTab) {
+    return (
+      <EmptyState
+        icon={<Lock className="h-5 w-5" aria-hidden="true" />}
+        title="Недостаточно прав"
+        description="График, учёт смен и отпуска недоступны для текущего профиля."
+      />
+    );
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader
         title="График сотрудников"
         action={
-          <>
-            <Button onClick={() => openCreateDialog()} variant="outline">
-              <Plus size={16} aria-hidden="true" />
-              Создать график
-            </Button>
-            <InlineTooltip content="Создать редактируемую копию опубликованного графика. Текущий остаётся опубликованным до публикации копии.">
-              <Button
-                disabled={!currentSchedule || currentSchedule.status !== "published"}
-                onClick={() => setNewVersionOpen(true)}
-                variant="outline"
-              >
-                <Copy size={16} aria-hidden="true" />
-                Новая версия
+          canEditSchedule ? (
+            <>
+              <Button onClick={() => openCreateDialog()} variant="outline">
+                <Plus size={16} aria-hidden="true" />
+                Создать график
               </Button>
-            </InlineTooltip>
-            {isDraft ? (
-              <>
-                <InlineTooltip content="Удалить черновик безвозвратно. Опубликованные графики удалить нельзя — создайте новую версию.">
-                  <Button
-                    disabled={deleteScheduleMutation.isPending}
-                    onClick={() => setDeleteScheduleOpen(true)}
-                    variant="outline"
-                  >
-                    {deleteScheduleMutation.isPending ? (
-                      <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-                    ) : (
-                      <Trash2 size={16} aria-hidden="true" />
-                    )}
-                    Удалить черновик
-                  </Button>
-                </InlineTooltip>
-                <InlineTooltip content="Перевести черновик в действующий план. После публикации график виден в расчётах стоимости, план-факт сверке, payroll. Редактирование возможно только через «Новую версию». Если в этот период уже есть опубликованный график, он будет помечен как замещённый.">
-                  <Button disabled={publishMutation.isPending} onClick={() => setPublishOpen(true)}>
-                    {publishMutation.isPending ? (
-                      <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-                    ) : (
-                      <Send size={16} aria-hidden="true" />
-                    )}
-                    Опубликовать
-                  </Button>
-                </InlineTooltip>
-              </>
-            ) : null}
-          </>
+              <InlineTooltip content="Создать редактируемую копию опубликованного графика. Текущий остаётся опубликованным до публикации копии.">
+                <Button
+                  disabled={!currentSchedule || currentSchedule.status !== "published"}
+                  onClick={() => setNewVersionOpen(true)}
+                  variant="outline"
+                >
+                  <Copy size={16} aria-hidden="true" />
+                  Новая версия
+                </Button>
+              </InlineTooltip>
+              {isDraft ? (
+                <>
+                  <InlineTooltip content="Удалить черновик безвозвратно. Опубликованные графики удалить нельзя — создайте новую версию.">
+                    <Button
+                      disabled={deleteScheduleMutation.isPending}
+                      onClick={() => setDeleteScheduleOpen(true)}
+                      variant="outline"
+                    >
+                      {deleteScheduleMutation.isPending ? (
+                        <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                      ) : (
+                        <Trash2 size={16} aria-hidden="true" />
+                      )}
+                      Удалить черновик
+                    </Button>
+                  </InlineTooltip>
+                  <InlineTooltip content="Перевести черновик в действующий план. После публикации график виден в расчётах стоимости, план-факт сверке, payroll. Редактирование возможно только через «Новую версию». Если в этот период уже есть опубликованный график, он будет помечен как замещённый.">
+                    <Button disabled={publishMutation.isPending} onClick={() => setPublishOpen(true)}>
+                      {publishMutation.isPending ? (
+                        <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                      ) : (
+                        <Send size={16} aria-hidden="true" />
+                      )}
+                      Опубликовать
+                    </Button>
+                  </InlineTooltip>
+                </>
+              ) : null}
+            </>
+          ) : null
         }
       />
 
       <Tabs value={activeTab} onValueChange={handleScheduleTabChange} className="space-y-5">
         <TabsList>
-          <TabsTrigger value="schedule">График</TabsTrigger>
-          <TabsTrigger value="shifts-ledger">Учёт смен</TabsTrigger>
-          <TabsTrigger value="vacations">Отпуска</TabsTrigger>
+          {canViewSchedule ? <TabsTrigger value="schedule">График</TabsTrigger> : null}
+          {canViewShiftLedger ? <TabsTrigger value="shifts-ledger">Учёт смен</TabsTrigger> : null}
+          {canViewVacations ? <TabsTrigger value="vacations">Отпуска</TabsTrigger> : null}
         </TabsList>
 
+        {canViewSchedule ? (
         <TabsContent className="mt-0 space-y-5" value="schedule">
           <section className="flex flex-col gap-4 rounded-lg border bg-card p-4">
             <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_auto] xl:items-end">
@@ -1189,20 +1254,22 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
                 />
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  disabled={!isDraft || copyWeekMutation.isPending}
-                  onClick={() =>
-                    setCopyDialog({
-                      open: true,
-                      targetMode: "next",
-                      customDate: toIsoDate(addDays(parseIsoDate(selectedWeekStart), 7)),
-                    })
-                  }
-                  variant="outline"
-                >
-                  <Copy size={16} aria-hidden="true" />
-                  Копировать неделю
-                </Button>
+                {canEditSchedule ? (
+                  <Button
+                    disabled={!isDraft || copyWeekMutation.isPending}
+                    onClick={() =>
+                      setCopyDialog({
+                        open: true,
+                        targetMode: "next",
+                        customDate: toIsoDate(addDays(parseIsoDate(selectedWeekStart), 7)),
+                      })
+                    }
+                    variant="outline"
+                  >
+                    <Copy size={16} aria-hidden="true" />
+                    Копировать неделю
+                  </Button>
+                ) : null}
               </div>
             </div>
           </section>
@@ -1216,7 +1283,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
             title="Период просмотра"
           />
 
-          {currentSchedule ? (
+          {currentSchedule && canViewForecastBudget ? (
             <ScheduleForecastGroup
               actualRevenueByDay={actualRevenueByDay}
               collapsed={forecastBudgetCollapsed}
@@ -1231,9 +1298,15 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
               isCostRecomputing={runCostForecastMutation.isPending}
               isForecastLoading={forecastQuery.isLoading || warmForecastMutation.isPending}
               isForecastRecomputing={recomputeForecastMutation.isPending}
+              canEditCost={canEditSchedule && canViewPayrollSourceData}
+              canEditRevenue={canEditRevenue}
               onCollapsedChange={setForecastBudgetCollapsed}
               onCostHistoryOpen={() => setCostHistoryOpen(true)}
-              onCostRecompute={() => runCostForecastMutation.mutate()}
+              onCostRecompute={() => {
+                if (canEditSchedule && canViewPayrollSourceData) {
+                  runCostForecastMutation.mutate();
+                }
+              }}
               onForecastCellClick={openForecastDialog}
               onForceRefreshChange={setForceRefreshIiko}
               onForecastRecompute={requestForecastRecompute}
@@ -1246,6 +1319,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
               days={visibleDays}
               isLoading={rosterQuery.isLoading}
               onCreate={() => openCreateDialog(periodRange, periodPreset)}
+              canCreate={canEditSchedule}
               range={periodRange}
               roster={viewMode === "employees" ? employeeViewRoster : roster}
               viewMode={viewMode}
@@ -1542,14 +1616,19 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
             </AlertDialogContent>
           </AlertDialog>
         </TabsContent>
+        ) : null}
 
-        <TabsContent className="mt-0" value="shifts-ledger">
-          <PayrollDailyLedgerRoute embedded />
-        </TabsContent>
+        {canViewShiftLedger ? (
+          <TabsContent className="mt-0" value="shifts-ledger">
+            <PayrollDailyLedgerRoute embedded />
+          </TabsContent>
+        ) : null}
 
-        <TabsContent className="mt-0" value="vacations">
-          <VacationsRoute embedded />
-        </TabsContent>
+        {canViewVacations ? (
+          <TabsContent className="mt-0" value="vacations">
+            <VacationsRoute embedded />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </div>
   );
@@ -1772,6 +1851,7 @@ function DatePopoverInput({
 }
 
 function NoSchedulePeriodGrid({
+  canCreate,
   days,
   isLoading,
   onCreate,
@@ -1779,6 +1859,7 @@ function NoSchedulePeriodGrid({
   roster,
   viewMode,
 }: {
+  canCreate: boolean;
   days: string[];
   isLoading: boolean;
   onCreate: () => void;
@@ -1806,10 +1887,12 @@ function NoSchedulePeriodGrid({
             {formatRange(range.from, range.to)}
           </div>
         </div>
-        <Button onClick={onCreate} type="button">
-          <Plus size={16} aria-hidden="true" />
-          Создать график на {formatShortRange(range.from, range.to)}
-        </Button>
+        {canCreate ? (
+          <Button onClick={onCreate} type="button">
+            <Plus size={16} aria-hidden="true" />
+            Создать график на {formatShortRange(range.from, range.to)}
+          </Button>
+        ) : null}
       </div>
       <div className="overflow-x-auto">
         <table className="border-separate border-spacing-0 text-sm" style={{ minWidth }}>
@@ -2353,6 +2436,8 @@ function ScheduleForecastGroup({
   isCostRecomputing,
   isForecastLoading,
   isForecastRecomputing,
+  canEditCost,
+  canEditRevenue,
   onCollapsedChange,
   onCostHistoryOpen,
   onCostRecompute,
@@ -2371,6 +2456,8 @@ function ScheduleForecastGroup({
   isCostRecomputing: boolean;
   isForecastLoading: boolean;
   isForecastRecomputing: boolean;
+  canEditCost: boolean;
+  canEditRevenue: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
   onCostHistoryOpen: () => void;
   onCostRecompute: () => void;
@@ -2410,6 +2497,8 @@ function ScheduleForecastGroup({
       <ForecastBudgetHeader
         actions={
           <ForecastBudgetActions
+            canEditCost={canEditCost}
+            canEditRevenue={canEditRevenue}
             forceRefreshIiko={forceRefreshIiko}
             hasCostRun={Boolean(costRun)}
             hasRevenueForecasts={forecasts.length > 0}
@@ -2443,6 +2532,7 @@ function ScheduleForecastGroup({
             forecastByDay={forecastByDay}
             isCostLoading={isCostLoading}
             isForecastLoading={isForecastLoading}
+            canEditRevenue={canEditRevenue}
             onForecastCellClick={onForecastCellClick}
             threshold={warningThresholdPct}
             todayIso={todayIso}
@@ -2502,6 +2592,8 @@ function ForecastBudgetHeader({
 }
 
 function ForecastBudgetActions({
+  canEditCost,
+  canEditRevenue,
   forceRefreshIiko,
   hasCostRun,
   hasRevenueForecasts,
@@ -2512,6 +2604,8 @@ function ForecastBudgetActions({
   onForceRefreshChange,
   onForecastRecompute,
 }: {
+  canEditCost: boolean;
+  canEditRevenue: boolean;
   forceRefreshIiko: boolean;
   hasCostRun: boolean;
   hasRevenueForecasts: boolean;
@@ -2522,6 +2616,11 @@ function ForecastBudgetActions({
   onForceRefreshChange: (checked: boolean) => void;
   onForecastRecompute: () => void;
 }) {
+  const hasActions = canEditRevenue || canEditCost || hasCostRun;
+  if (!hasActions) {
+    return null;
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -2531,29 +2630,35 @@ function ForecastBudgetActions({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuItem disabled={isForecastRecomputing} onSelect={onForecastRecompute}>
-          {isForecastRecomputing ? (
-            <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-          ) : (
-            <RefreshCw size={16} aria-hidden="true" />
-          )}
-          {hasRevenueForecasts ? "Пересчитать прогноз" : "Рассчитать прогноз"}
-        </DropdownMenuItem>
-        <DropdownMenuCheckboxItem
-          checked={forceRefreshIiko}
-          onCheckedChange={(checked) => onForceRefreshChange(checked === true)}
-        >
-          Force-refresh iiko
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem disabled={isCostRecomputing} onSelect={onCostRecompute}>
-          {isCostRecomputing ? (
-            <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-          ) : (
-            <Calculator size={16} aria-hidden="true" />
-          )}
-          {hasCostRun ? "Пересчитать стоимость" : "Рассчитать стоимость"}
-        </DropdownMenuItem>
+        {canEditRevenue ? (
+          <>
+            <DropdownMenuItem disabled={isForecastRecomputing} onSelect={onForecastRecompute}>
+              {isForecastRecomputing ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <RefreshCw size={16} aria-hidden="true" />
+              )}
+              {hasRevenueForecasts ? "Пересчитать прогноз" : "Рассчитать прогноз"}
+            </DropdownMenuItem>
+            <DropdownMenuCheckboxItem
+              checked={forceRefreshIiko}
+              onCheckedChange={(checked) => onForceRefreshChange(checked === true)}
+            >
+              Force-refresh iiko
+            </DropdownMenuCheckboxItem>
+          </>
+        ) : null}
+        {canEditRevenue && canEditCost ? <DropdownMenuSeparator /> : null}
+        {canEditCost ? (
+          <DropdownMenuItem disabled={isCostRecomputing} onSelect={onCostRecompute}>
+            {isCostRecomputing ? (
+              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+            ) : (
+              <Calculator size={16} aria-hidden="true" />
+            )}
+            {hasCostRun ? "Пересчитать стоимость" : "Рассчитать стоимость"}
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem disabled={!hasCostRun} onSelect={onCostHistoryOpen}>
           <History size={16} aria-hidden="true" />
           История версий
@@ -2602,6 +2707,7 @@ function ForecastBudgetSummary({
 
 function ForecastBudgetTable({
   actualRevenueByDay,
+  canEditRevenue,
   costByDay,
   costRun,
   days,
@@ -2614,6 +2720,7 @@ function ForecastBudgetTable({
   totals,
 }: {
   actualRevenueByDay: Map<string, number>;
+  canEditRevenue: boolean;
   costByDay: Map<string, CostDaySummary>;
   costRun: PayrollForecastRunRead | null;
   days: string[];
@@ -2668,6 +2775,7 @@ function ForecastBudgetTable({
                 forecast={forecastByDay.get(day)}
                 isLoading={isForecastLoading}
                 key={day}
+                canEdit={canEditRevenue}
                 onClick={onForecastCellClick}
                 todayIso={todayIso}
               />
@@ -2755,6 +2863,7 @@ function ForecastBudgetMetricHeader({ label }: { label: string }) {
 
 function RevenueBudgetCell({
   actualRevenueByDay,
+  canEdit,
   day,
   forecast,
   isLoading,
@@ -2762,6 +2871,7 @@ function RevenueBudgetCell({
   todayIso,
 }: {
   actualRevenueByDay: Map<string, number>;
+  canEdit: boolean;
   day: string;
   forecast: RevenueForecastRead | undefined;
   isLoading: boolean;
@@ -2799,7 +2909,7 @@ function RevenueBudgetCell({
     >
       {isLoading ? (
         <Skeleton className="mx-auto h-10 w-full" />
-      ) : forecast ? (
+      ) : forecast && canEdit ? (
         <button
           className="h-full w-full rounded-sm hover:bg-primary/5 focus:outline-none focus:ring-2 focus:ring-ring"
           onClick={() => onClick(forecast)}

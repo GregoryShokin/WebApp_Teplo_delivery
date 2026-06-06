@@ -216,11 +216,15 @@ def test_payroll_configuration_tables_are_declared() -> None:
     assert premium_columns.percent_of_base.nullable is True
 
 
-def test_employee_active_seniority_unique_indexes_are_declared() -> None:
+def test_position_assignment_open_index_is_declared() -> None:
     indexes = {index.name: index for index in models.Employee.__table__.indexes}
+    assignment_indexes = {
+        index.name: index for index in models.EmployeePositionAssignment.__table__.indexes
+    }
 
-    assert indexes["uq_employee_active_senior_per_position"].unique is True
-    assert indexes["uq_employee_active_deputy_senior_per_position"].unique is True
+    assert "uq_employee_active_senior_per_position" not in indexes
+    assert "uq_employee_active_deputy_senior_per_position" not in indexes
+    assert assignment_indexes["uq_employee_position_assignment_one_open"].unique is True
 
 
 def test_percent_methodology_is_additive_for_existing_payroll_runs() -> None:

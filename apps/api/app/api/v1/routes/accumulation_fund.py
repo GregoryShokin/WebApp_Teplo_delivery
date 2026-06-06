@@ -39,6 +39,8 @@ from app.services.payroll_calculator import (
 router = APIRouter()
 FUND_READ_ACCESS = (Depends(require_permission("payroll.fund.read")),)
 FUND_EDIT_ACCESS = (Depends(require_permission("payroll.fund.edit")),)
+SOURCE_FUND_SETTINGS_READ_ACCESS = (Depends(require_permission("source.fund_settings.read")),)
+SOURCE_FUND_SETTINGS_EDIT_ACCESS = (Depends(require_permission("source.fund_settings.edit")),)
 FUND_TIERS_SETTING_KEY = "payroll.fund_rates_by_tenure"
 MONEY = Decimal("0.01")
 FUND_TARGET_POSITIONS_ERROR = "Накопительный фонд ведётся только для Поваров и Кассиров"
@@ -122,7 +124,7 @@ class FundRosterRow(BaseModel):
     fund_account: FundRosterAccount | None = None
 
 
-@router.get("/tiers", response_model=FundTiersRead, dependencies=FUND_READ_ACCESS)
+@router.get("/tiers", response_model=FundTiersRead, dependencies=SOURCE_FUND_SETTINGS_READ_ACCESS)
 async def get_fund_tiers(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -135,7 +137,7 @@ async def get_fund_tiers(
     )
 
 
-@router.put("/tiers", response_model=FundTiersRead, dependencies=FUND_EDIT_ACCESS)
+@router.put("/tiers", response_model=FundTiersRead, dependencies=SOURCE_FUND_SETTINGS_EDIT_ACCESS)
 async def put_fund_tiers(
     payload: FundTiersWrite,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -187,7 +189,7 @@ async def put_fund_tiers(
 @router.get(
     "/initial-balance-roster",
     response_model=list[FundRosterRow],
-    dependencies=FUND_READ_ACCESS,
+    dependencies=SOURCE_FUND_SETTINGS_READ_ACCESS,
 )
 async def get_initial_balance_roster(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -262,7 +264,7 @@ async def get_initial_balance_roster(
 @router.post(
     "/{employee_id}/initial-balance",
     response_model=FundInitialBalanceRead,
-    dependencies=FUND_EDIT_ACCESS,
+    dependencies=SOURCE_FUND_SETTINGS_EDIT_ACCESS,
 )
 async def set_fund_initial_balance(
     employee_id: uuid.UUID,
@@ -368,7 +370,7 @@ async def set_fund_initial_balance(
 @router.patch(
     "/{employee_id}/exclusion",
     response_model=FundExclusionRead,
-    dependencies=FUND_EDIT_ACCESS,
+    dependencies=SOURCE_FUND_SETTINGS_EDIT_ACCESS,
 )
 async def patch_fund_exclusion(
     employee_id: uuid.UUID,

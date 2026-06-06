@@ -212,6 +212,91 @@ def test_dds_cashflow_rules_connections_and_wallets_are_independent(
     assert client.get("/api/v1/dds/wallets", headers=wallets_headers).status_code == 200
 
 
+def test_schedule_revenue_and_cost_data_are_not_opened_by_schedule_read(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    schedule_read_headers = _headers_for_permissions(
+        async_session_factory,
+        "source-schedule-read@test.local",
+        ["source.schedule.read"],
+    )
+    revenue_read_headers = _headers_for_permissions(
+        async_session_factory,
+        "source-revenue-read@test.local",
+        ["source.revenue.read"],
+    )
+    source_rates_read_headers = _headers_for_permissions(
+        async_session_factory,
+        "source-rates-read@test.local",
+        ["source.rates.read"],
+    )
+
+    denied_forecast = client.get(
+        "/api/v1/schedule/forecast",
+        params={"date_from": "2026-06-01", "date_to": "2026-06-01"},
+        headers=schedule_read_headers,
+    )
+    allowed_forecast = client.get(
+        "/api/v1/schedule/forecast",
+        params={"date_from": "2026-06-01", "date_to": "2026-06-01"},
+        headers=revenue_read_headers,
+    )
+    denied_cost = client.get(
+        f"/api/v1/schedule/{uuid.uuid4()}/cost-forecast/latest",
+        headers=schedule_read_headers,
+    )
+    allowed_cost_after_permission = client.get(
+        f"/api/v1/schedule/{uuid.uuid4()}/cost-forecast/latest",
+        headers=source_rates_read_headers,
+    )
+
+    assert denied_forecast.status_code == 403
+    assert allowed_forecast.status_code == 200
+    assert denied_cost.status_code == 403
+    assert allowed_cost_after_permission.status_code == 404
+
+
+def test_settings_read_and_edit_are_permission_based(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    no_settings_headers = _headers_for_permissions(
+        async_session_factory,
+        "no-settings@test.local",
+        ["couriers.list.read"],
+    )
+    settings_read_headers = _headers_for_permissions(
+        async_session_factory,
+        "settings-read@test.local",
+        ["settings.general.read"],
+    )
+    settings_edit_headers = _headers_for_permissions(
+        async_session_factory,
+        "settings-edit@test.local",
+        ["settings.general.edit"],
+    )
+
+    assert client.get("/api/v1/settings", headers=no_settings_headers).status_code == 403
+    assert client.get("/api/v1/settings", headers=settings_read_headers).status_code == 200
+    assert (
+        client.put(
+            "/api/v1/settings/unknown-test-key",
+            json={"value": "x"},
+            headers=settings_read_headers,
+        ).status_code
+        == 403
+    )
+    assert (
+        client.put(
+            "/api/v1/settings/unknown-test-key",
+            json={"value": "x"},
+            headers=settings_edit_headers,
+        ).status_code
+        == 404
+    )
+
+
 def _headers_for_permissions(
     session_factory: async_sessionmaker[AsyncSession],
     email: str,

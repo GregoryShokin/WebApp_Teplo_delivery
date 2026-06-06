@@ -5,7 +5,13 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
-from app.models import AttendanceEntry, Employee, PayrollPeriod, PayrollSeniorityPremium
+from app.models import (
+    AttendanceEntry,
+    Employee,
+    EmployeePositionAssignment,
+    PayrollPeriod,
+    PayrollSeniorityPremium,
+)
 from app.schemas.payroll_config import PayrollSeniorityPremiumBase
 from app.services.payroll_calculator import calculate_payroll_lines_from_inputs
 from app.services.payroll_config import create_seniority_premium_version
@@ -283,8 +289,12 @@ async def test_seniority_premium_versioning() -> None:
     assert session.committed is True
 
 
-def test_db_unique_constraint_blocks_direct_two_active_seniors() -> None:
+def test_position_assignment_open_index_is_declared_after_position_versioning() -> None:
     indexes = {index.name: index for index in Employee.__table__.indexes}
+    assignment_indexes = {
+        index.name: index for index in EmployeePositionAssignment.__table__.indexes
+    }
 
-    assert indexes["uq_employee_active_senior_per_position"].unique is True
-    assert indexes["uq_employee_active_deputy_senior_per_position"].unique is True
+    assert "uq_employee_active_senior_per_position" not in indexes
+    assert "uq_employee_active_deputy_senior_per_position" not in indexes
+    assert assignment_indexes["uq_employee_position_assignment_one_open"].unique is True

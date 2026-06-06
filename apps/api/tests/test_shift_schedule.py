@@ -823,6 +823,7 @@ def test_ledger_endpoint_returns_entries_in_range() -> None:
         with TestClient(app) as client:
             response = client.get(
                 "/api/v1/schedule/ledger",
+                headers={"X-User-Role": "manager"},
                 params={"date_from": "2026-06-01", "date_to": "2026-06-03"},
             )
     finally:
@@ -868,6 +869,7 @@ def test_ledger_endpoint_includes_entries_with_payroll_roles() -> None:
         with TestClient(app) as client:
             response = client.get(
                 "/api/v1/schedule/ledger",
+                headers={"X-User-Role": "manager"},
                 params={"date_from": "2026-06-01", "date_to": "2026-06-03"},
             )
     finally:

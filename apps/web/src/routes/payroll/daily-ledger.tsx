@@ -38,6 +38,7 @@ import {
   type ShiftLedgerMatrixShift,
 } from "@/lib/api";
 import { PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 type SaveRoleVariables = {
@@ -66,6 +67,9 @@ export function PayrollDailyLedgerRoute({
   headerSlot,
 }: PayrollDailyLedgerRouteProps = {}) {
   const queryClient = useQueryClient();
+  const permissions = usePermissions();
+  const canInputLedger = permissions.hasPermission("source.shift_ledger.input");
+  const canCorrectLedger = permissions.hasPermission("source.shift_ledger.correct");
   const maxDate = todayIsoDate();
   const [selectedDate, setSelectedDate] = useState(maxDate);
   const [expandedEmployees, setExpandedEmployees] = useState<Record<string, boolean>>({});
@@ -165,7 +169,7 @@ export function PayrollDailyLedgerRoute({
   }
 
   function saveRole(shift: ShiftLedgerMatrixShift, payrollRole: string) {
-    if (shift.payroll_locked) {
+    if (!canCorrectLedger || shift.payroll_locked) {
       return;
     }
     const currentRole = roleValue(shift, roleOverrides);
@@ -234,7 +238,7 @@ export function PayrollDailyLedgerRoute({
   }
 
   const buildButton = (
-    <Button onClick={() => buildMutation.mutate()} disabled={buildMutation.isPending}>
+    <Button disabled={!canInputLedger || buildMutation.isPending} onClick={() => buildMutation.mutate()}>
       {buildMutation.isPending ? (
         <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
       ) : (
@@ -248,7 +252,7 @@ export function PayrollDailyLedgerRoute({
     <div className="space-y-5">
       {embedded ? null : (
         <>
-          <PageHeader title="Учёт смен — Смены" action={buildButton} />
+          <PageHeader title="Учёт смен — Смены" action={canInputLedger ? buildButton : null} />
           {headerSlot}
         </>
       )}
@@ -281,7 +285,7 @@ export function PayrollDailyLedgerRoute({
           </Button>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-          {embedded ? buildButton : null}
+          {embedded && canInputLedger ? buildButton : null}
           <span>{formatWeekRange(days)}</span>
           <span className="inline-flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-600" aria-hidden="true" />
@@ -302,6 +306,7 @@ export function PayrollDailyLedgerRoute({
           employees={employees}
           expandedEmployees={expandedEmployees}
           isLoading={matrixQuery.isLoading}
+          canCorrect={canCorrectLedger}
           onRoleChange={saveRole}
           onToggleTimeColumns={toggleDay}
           onToggleEmployee={(employeeId) =>
@@ -319,6 +324,7 @@ export function PayrollDailyLedgerRoute({
 }
 
 function ShiftLedgerMatrixTable({
+  canCorrect,
   collapsedTimeDayDates,
   days,
   employees,
@@ -330,6 +336,7 @@ function ShiftLedgerMatrixTable({
   roleOverrides,
   savingIds,
 }: {
+  canCorrect: boolean;
   collapsedTimeDayDates: Set<string>;
   days: DayHeader[];
   employees: ShiftLedgerMatrixEmployee[];
@@ -458,6 +465,7 @@ function ShiftLedgerMatrixTable({
               employees.map((employee) => (
                 <Fragment key={employee.id}>
                   <SummaryRow
+                    canCorrect={canCorrect}
                     collapsedTimeDayDates={collapsedTimeDayDates}
                     employee={employee}
                     expanded={Boolean(expandedEmployees[employee.id])}
@@ -468,6 +476,7 @@ function ShiftLedgerMatrixTable({
                   />
                   {expandedEmployees[employee.id] ? (
                     <DetailRows
+                      canCorrect={canCorrect}
                       collapsedTimeDayDates={collapsedTimeDayDates}
                       employee={employee}
                       onRoleChange={onRoleChange}
@@ -486,6 +495,7 @@ function ShiftLedgerMatrixTable({
 }
 
 function SummaryRow({
+  canCorrect,
   collapsedTimeDayDates,
   employee,
   expanded,
@@ -494,6 +504,7 @@ function SummaryRow({
   roleOverrides,
   savingIds,
 }: {
+  canCorrect: boolean;
   collapsedTimeDayDates: Set<string>;
   employee: ShiftLedgerMatrixEmployee;
   expanded: boolean;
@@ -533,6 +544,7 @@ function SummaryRow({
           <Fragment key={day.date}>
             <td className={cn(ROLE_COLUMN_CLASS, bodyCellClassName)}>
               <SummaryRoleCell
+                canCorrect={canCorrect}
                 day={day}
                 onRoleChange={onRoleChange}
                 roleOverrides={roleOverrides}
@@ -561,12 +573,14 @@ function SummaryRow({
 }
 
 function DetailRows({
+  canCorrect,
   collapsedTimeDayDates,
   employee,
   onRoleChange,
   roleOverrides,
   savingIds,
 }: {
+  canCorrect: boolean;
   collapsedTimeDayDates: Set<string>;
   employee: ShiftLedgerMatrixEmployee;
   onRoleChange: (shift: ShiftLedgerMatrixShift, payrollRole: string) => void;
@@ -592,6 +606,7 @@ function DetailRows({
               {shift ? (
                 <RoleSelectCell
                   availableRoles={day.available_roles}
+                  canCorrect={canCorrect}
                   isSaving={Boolean(savingIds[shift.ledger_entry_id])}
                   onChange={(payrollRole) => onRoleChange(shift, payrollRole)}
                   shift={shift}
@@ -623,11 +638,13 @@ function DetailRows({
 }
 
 function SummaryRoleCell({
+  canCorrect,
   day,
   onRoleChange,
   roleOverrides,
   savingIds,
 }: {
+  canCorrect: boolean;
   day: ShiftLedgerMatrixDay;
   onRoleChange: (shift: ShiftLedgerMatrixShift, payrollRole: string) => void;
   roleOverrides: Record<string, string>;
@@ -648,6 +665,7 @@ function SummaryRoleCell({
   return (
     <RoleSelectCell
       availableRoles={day.available_roles}
+      canCorrect={canCorrect}
       isSaving={Boolean(savingIds[shift.ledger_entry_id])}
       onChange={(payrollRole) => onRoleChange(shift, payrollRole)}
       shift={shift}
@@ -658,18 +676,20 @@ function SummaryRoleCell({
 
 function RoleSelectCell({
   availableRoles,
+  canCorrect,
   isSaving,
   onChange,
   shift,
   value,
 }: {
   availableRoles: ShiftLedgerAvailableRole[];
+  canCorrect: boolean;
   isSaving: boolean;
   onChange: (payrollRole: string) => void;
   shift: ShiftLedgerMatrixShift;
   value: string;
 }) {
-  if (shift.payroll_locked) {
+  if (!canCorrect || shift.payroll_locked) {
     return <LockedRoleSelect value={value} />;
   }
 

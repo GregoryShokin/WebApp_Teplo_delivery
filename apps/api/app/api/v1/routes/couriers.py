@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_permission
+from app.api.deps import CurrentActor, get_current_actor, require_any_permission, require_permission
 from app.db.session import get_session
 from app.models import (
     CourierEvaluation,
@@ -67,8 +67,19 @@ COURIERS_EVALUATIONS_READ_ACCESS = (Depends(require_permission("couriers.evaluat
 COURIERS_EVALUATIONS_EDIT_ACCESS = (Depends(require_permission("couriers.evaluations.edit")),)
 COURIERS_DEPOSITS_READ_ACCESS = (Depends(require_permission("couriers.deposits.read")),)
 COURIERS_DEPOSITS_EDIT_ACCESS = (Depends(require_permission("couriers.deposits.edit")),)
-COURIERS_DEPOSITS_CONFIGURE_ACCESS = (
-    Depends(require_permission("couriers.deposits.configure")),
+COURIERS_DEPOSITS_SETTINGS_READ_ACCESS = (
+    Depends(
+        require_any_permission(
+            ("couriers.deposits.configure", "source.deposit_settings.read")
+        )
+    ),
+)
+COURIERS_DEPOSITS_SETTINGS_EDIT_ACCESS = (
+    Depends(
+        require_any_permission(
+            ("couriers.deposits.configure", "source.deposit_settings.edit")
+        )
+    ),
 )
 CourierSyncMode = Literal["hot", "cold", "custom"]
 MAX_DELIVERY_WINDOW_DAYS = 92
@@ -353,7 +364,7 @@ async def get_courier_deposits(
 @router.get(
     "/deposits/settings",
     response_model=CourierDepositSettingsRead,
-    dependencies=COURIERS_DEPOSITS_CONFIGURE_ACCESS,
+    dependencies=COURIERS_DEPOSITS_SETTINGS_READ_ACCESS,
 )
 async def get_courier_deposit_settings(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -365,7 +376,7 @@ async def get_courier_deposit_settings(
 @router.put(
     "/deposits/settings",
     response_model=CourierDepositSettingsRead,
-    dependencies=COURIERS_DEPOSITS_CONFIGURE_ACCESS,
+    dependencies=COURIERS_DEPOSITS_SETTINGS_EDIT_ACCESS,
 )
 async def put_courier_deposit_settings(
     payload: CourierDepositSettingsUpdate,

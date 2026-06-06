@@ -16,6 +16,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import CurrentActor, get_current_actor
 from app.core.security import hash_password
 from app.db.session import get_session
+from app.auth.permissions import permission_is_granted
 from app.models import (
     AgentAction,
     AgentRun,
@@ -151,6 +152,22 @@ async def _require_staff_administration_edit(
     ensure_staff_area_access(actor, StaffArea.ADMINISTRATION, StaffAction.EDIT)
 
 
+async def _require_dismissal_reasons_read(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    if permission_is_granted("source.dismissal_reasons.read", actor.permissions):
+        return
+    ensure_any_staff_access(actor, StaffAction.READ)
+
+
+async def _require_dismissal_reasons_edit(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    if permission_is_granted("source.dismissal_reasons.edit", actor.permissions):
+        return
+    ensure_any_staff_access(actor, StaffAction.EDIT)
+
+
 STAFF_READ_ACCESS = (Depends(_require_staff_read),)
 STAFF_HISTORY_ACCESS = (Depends(_require_staff_history),)
 STAFF_CREATE_ACCESS = (Depends(_require_staff_create),)
@@ -158,6 +175,8 @@ STAFF_WRITE_ACCESS = (Depends(_require_staff_edit),)
 STAFF_DISMISS_ACCESS = (Depends(_require_staff_dismiss),)
 STAFF_REINSTATE_ACCESS = (Depends(_require_staff_reinstate),)
 STAFF_SYNC_ACCESS = (Depends(_require_staff_administration_edit),)
+DISMISSAL_REASONS_READ_ACCESS = (Depends(_require_dismissal_reasons_read),)
+DISMISSAL_REASONS_EDIT_ACCESS = (Depends(_require_dismissal_reasons_edit),)
 MONEY_STEP = Decimal("0.01")
 
 READ_ONLY_FIELDS = {
@@ -424,7 +443,7 @@ async def list_employee_changes(
 @router.get(
     "/dismissal-reasons",
     response_model=list[EmployeeDismissalReasonRead],
-    dependencies=STAFF_READ_ACCESS,
+    dependencies=DISMISSAL_REASONS_READ_ACCESS,
 )
 async def list_employee_dismissal_reasons(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -441,7 +460,7 @@ async def list_employee_dismissal_reasons(
     "/dismissal-reasons",
     response_model=EmployeeDismissalReasonRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=STAFF_WRITE_ACCESS,
+    dependencies=DISMISSAL_REASONS_EDIT_ACCESS,
 )
 async def create_employee_dismissal_reason(
     payload: EmployeeDismissalReasonCreate,
@@ -471,7 +490,7 @@ async def create_employee_dismissal_reason(
 @router.patch(
     "/dismissal-reasons/{reason_id}",
     response_model=EmployeeDismissalReasonRead,
-    dependencies=STAFF_WRITE_ACCESS,
+    dependencies=DISMISSAL_REASONS_EDIT_ACCESS,
 )
 async def update_employee_dismissal_reason(
     reason_id: uuid.UUID,

@@ -69,9 +69,10 @@ from app.services.staff_taxonomy import PAYROLL_ROLE_LABELS, default_station_for
 router = APIRouter()
 SCHEDULE_READ_ACCESS = (Depends(require_permission("source.schedule.read")),)
 SCHEDULE_EDIT_ACCESS = (Depends(require_permission("source.schedule.edit")),)
+SHIFT_LEDGER_READ_ACCESS = (Depends(require_permission("source.shift_ledger.read")),)
 REVENUE_READ_ACCESS = (Depends(require_permission("source.revenue.read")),)
 REVENUE_EDIT_ACCESS = (Depends(require_permission("source.revenue.edit")),)
-PAYROLL_SOURCE_DATA_READ_ACCESS = (Depends(require_permission("payroll.source_data.read")),)
+SOURCE_RATES_READ_ACCESS = (Depends(require_permission("source.rates.read")),)
 MAX_FORECAST_RANGE_DAYS = 62
 
 
@@ -197,7 +198,7 @@ async def delete_forecast_override(
 @router.get(
     "/ledger",
     response_model=list[ScheduleLedgerEntryRead],
-    dependencies=SCHEDULE_READ_ACCESS,
+    dependencies=SHIFT_LEDGER_READ_ACCESS,
 )
 async def get_schedule_ledger(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -446,7 +447,7 @@ async def post_cost_forecast(
 @router.get(
     "/{schedule_id}/cost-forecast/latest",
     response_model=PayrollForecastRunRead | None,
-    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+    dependencies=SOURCE_RATES_READ_ACCESS,
 )
 async def get_latest_cost_forecast(
     schedule_id: uuid.UUID,
@@ -465,7 +466,7 @@ async def get_latest_cost_forecast(
 @router.get(
     "/{schedule_id}/cost-forecast/runs",
     response_model=list[PayrollForecastRunRead],
-    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+    dependencies=SOURCE_RATES_READ_ACCESS,
 )
 async def get_cost_forecast_runs(
     schedule_id: uuid.UUID,
@@ -481,7 +482,7 @@ async def get_cost_forecast_runs(
 @router.get(
     "/{schedule_id}/cost-forecast/runs/{run_id}",
     response_model=PayrollForecastRunRead,
-    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+    dependencies=SOURCE_RATES_READ_ACCESS,
 )
 async def get_cost_forecast_run(
     schedule_id: uuid.UUID,

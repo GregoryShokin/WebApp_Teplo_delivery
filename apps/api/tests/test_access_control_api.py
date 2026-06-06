@@ -124,6 +124,13 @@ def test_put_role_permissions_updates_set_and_writes_events(
     assert ("added", "finance.cashflow.read") in events
     assert ("added", "accounting.inventory_directory.edit") in events
     assert ("removed", "accounting.inventory_directory.edit") in events
+    manager_headers = _headers_for_user(
+        async_session_factory,
+        "manager-after-custom-permissions@test.local",
+        ["manager"],
+    )
+    staff_response = client.get("/api/v1/employees", headers=manager_headers)
+    assert staff_response.status_code == 403
 
     fixed = client.put(
         f"/api/v1/access-control/roles/{owner_id}/permissions",
@@ -212,6 +219,87 @@ def test_assign_and_revoke_user_role_write_audit_events(
     assert any(event["type"] == "user_role" for event in audit.json())
 
 
+def test_access_control_routes_use_split_permissions(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    target_id = _run(_create_user(async_session_factory, "split-target@test.local", []))
+    manager_id = _run(_role_id(async_session_factory, "manager"))
+    users_read_headers = _headers_for_permissions(
+        async_session_factory,
+        "users-read-only@test.local",
+        ["settings.users.read"],
+    )
+    users_create_headers = _headers_for_permissions(
+        async_session_factory,
+        "users-create-only@test.local",
+        ["settings.users.create"],
+    )
+    access_assign_headers = _headers_for_permissions(
+        async_session_factory,
+        "access-assign-only@test.local",
+        ["settings.access.assign"],
+    )
+    roles_edit_headers = _headers_for_permissions(
+        async_session_factory,
+        "roles-edit-only@test.local",
+        ["settings.roles.edit"],
+    )
+    audit_headers = _headers_for_permissions(
+        async_session_factory,
+        "access-audit-only@test.local",
+        ["settings.access_audit.read"],
+    )
+
+    assert client.get("/api/v1/access-control/users", headers=users_read_headers).status_code == 200
+    assert (
+        client.post(
+            "/api/v1/access-control/users",
+            json={
+                "email": f"blocked-{uuid.uuid4().hex}@test.local",
+                "full_name": "Blocked",
+                "password": "password123",
+                "is_active": True,
+            },
+            headers=users_read_headers,
+        ).status_code
+        == 403
+    )
+    assert client.get("/api/v1/access-control/users", headers=users_create_headers).status_code == 403
+    assert (
+        client.post(
+            "/api/v1/access-control/users",
+            json={
+                "email": f"created-{uuid.uuid4().hex}@test.local",
+                "full_name": "Created",
+                "password": "password123",
+                "is_active": True,
+            },
+            headers=users_create_headers,
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            f"/api/v1/access-control/users/{target_id}/roles",
+            json={"role_code": "manager"},
+            headers=access_assign_headers,
+        ).status_code
+        == 200
+    )
+    assert client.get("/api/v1/access-control/permissions", headers=audit_headers).status_code == 403
+    assert client.get("/api/v1/access-control/audit", headers=audit_headers).status_code == 200
+    assert client.get("/api/v1/access-control/permissions", headers=roles_edit_headers).status_code == 200
+    assert (
+        client.put(
+            f"/api/v1/access-control/roles/{manager_id}/permissions",
+            json={"permission_codes": ["finance.cashflow.read"]},
+            headers=audit_headers,
+        ).status_code
+        == 403
+    )
+
+
 def test_self_lockout_guards(
     client: TestClient,
     async_session_factory: async_sessionmaker[AsyncSession],
@@ -228,9 +316,68 @@ def test_self_lockout_guards(
         json={"is_active": False},
         headers=admin_headers,
     )
+    deactivate_last_owner = client.patch(
+        f"/api/v1/access-control/users/{owner_user_id}",
+        json={"is_active": False},
+        headers=admin_headers,
+    )
 
     assert revoke_last_owner.status_code == 400
     assert deactivate_self.status_code == 400
+    assert deactivate_last_owner.status_code == 400
+
+
+def test_self_lockout_rejects_own_access_role_and_permission_removal(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    admin_headers = _headers_for_admin(async_session_factory)
+    first_owner_id = _run(_create_user(async_session_factory, "self-owner@test.local", ["owner"]))
+    _run(_create_user(async_session_factory, "backup-owner@test.local", ["owner"]))
+    manager_id = _run(_role_id(async_session_factory, "manager"))
+
+    revoke_self_owner = client.delete(
+        f"/api/v1/access-control/users/{first_owner_id}/roles/owner",
+        headers={"Authorization": f"Bearer {create_access_token(str(first_owner_id))}"},
+    )
+    grant_manager_role_editor = client.put(
+        f"/api/v1/access-control/roles/{manager_id}/permissions",
+        json={"permission_codes": ["settings.roles.edit"]},
+        headers=admin_headers,
+    )
+    assert grant_manager_role_editor.status_code == 200
+    manager_user_id = _run(
+        _create_user(async_session_factory, "self-manager-role-editor@test.local", ["manager"])
+    )
+    remove_own_role_editor = client.put(
+        f"/api/v1/access-control/roles/{manager_id}/permissions",
+        json={"permission_codes": ["finance.cashflow.read"]},
+        headers={"Authorization": f"Bearer {create_access_token(str(manager_user_id))}"},
+    )
+
+    assert revoke_self_owner.status_code == 400
+    assert remove_own_role_editor.status_code == 400
+
+
+def test_inactive_user_token_is_rejected(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    admin_headers = _headers_for_admin(async_session_factory)
+    user_id = _run(_create_user(async_session_factory, "inactive-token@test.local", ["cashier"]))
+
+    deactivated = client.patch(
+        f"/api/v1/access-control/users/{user_id}",
+        json={"is_active": False},
+        headers=admin_headers,
+    )
+    response = client.get(
+        "/api/v1/couriers/list",
+        headers={"Authorization": f"Bearer {create_access_token(str(user_id))}"},
+    )
+
+    assert deactivated.status_code == 200
+    assert response.status_code == 401
 
 
 def _headers_for_admin(
@@ -246,6 +393,15 @@ def _headers_for_user(
     role_codes: Sequence[str],
 ) -> dict[str, str]:
     user_id = _run(_create_user(session_factory, email, role_codes))
+    return {"Authorization": f"Bearer {create_access_token(str(user_id))}"}
+
+
+def _headers_for_permissions(
+    session_factory: async_sessionmaker[AsyncSession],
+    email: str,
+    permission_codes: Sequence[str],
+) -> dict[str, str]:
+    user_id = _run(_create_user_with_permissions(session_factory, email, permission_codes))
     return {"Authorization": f"Bearer {create_access_token(str(user_id))}"}
 
 
@@ -289,6 +445,47 @@ async def _create_user(
                     organization_id=organization_id,
                 )
             )
+        await session.commit()
+        return user.id
+
+
+async def _create_user_with_permissions(
+    session_factory: async_sessionmaker[AsyncSession],
+    email: str,
+    permission_codes: Sequence[str],
+) -> uuid.UUID:
+    async with session_factory() as session:
+        existing = await session.scalar(select(User).where(User.email == email))
+        if existing is not None:
+            return existing.id
+        organization_id = await session.scalar(select(Organization.id).limit(1))
+        assert organization_id is not None
+        permissions = (
+            await session.scalars(select(Permission).where(Permission.code.in_(permission_codes)))
+        ).all()
+        assert {permission.code for permission in permissions} == set(permission_codes)
+
+        role = Role(
+            code=f"test_{uuid.uuid4().hex[:24]}",
+            name=f"Test role {email}",
+        )
+        user = User(
+            email=email,
+            full_name=email,
+            hashed_password="sha256$unused",
+            is_active=True,
+        )
+        session.add_all([role, user])
+        await session.flush()
+        for permission in permissions:
+            session.add(RolePermission(role_id=role.id, permission_id=permission.id))
+        session.add(
+            UserRole(
+                user_id=user.id,
+                role_id=role.id,
+                organization_id=organization_id,
+            )
+        )
         await session.commit()
         return user.id
 

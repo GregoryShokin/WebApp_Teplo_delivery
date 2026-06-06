@@ -45,14 +45,24 @@ from app.services.payroll_config import (
 )
 
 router = APIRouter()
-PAYROLL_SOURCE_DATA_READ_ACCESS = (Depends(require_permission("payroll.source_data.read")),)
-PAYROLL_RULES_CONFIGURE_ACCESS = (Depends(require_permission("payroll.rules.configure")),)
+SOURCE_RATES_READ_ACCESS = (Depends(require_permission("source.rates.read")),)
+SOURCE_RATES_EDIT_ACCESS = (Depends(require_permission("source.rates.edit")),)
+SOURCE_REVENUE_PERCENT_READ_ACCESS = (
+    Depends(require_permission("source.revenue_percent.read")),
+)
+SOURCE_REVENUE_PERCENT_EDIT_ACCESS = (
+    Depends(require_permission("source.revenue_percent.edit")),
+)
+SOURCE_DEDUCTIONS_READ_ACCESS = (Depends(require_permission("source.deductions.read")),)
+SOURCE_DEDUCTIONS_EDIT_ACCESS = (Depends(require_permission("source.deductions.edit")),)
+SOURCE_ALLOWANCES_READ_ACCESS = (Depends(require_permission("source.allowances.read")),)
+SOURCE_ALLOWANCES_EDIT_ACCESS = (Depends(require_permission("source.allowances.edit")),)
 
 
 @router.get(
     "/rates",
     response_model=list[PayrollRateCellRead],
-    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+    dependencies=SOURCE_RATES_READ_ACCESS,
 )
 async def get_rates(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -68,12 +78,12 @@ async def get_rates(
 @router.post(
     "/rates",
     response_model=PayrollRateRead,
-    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+    dependencies=SOURCE_RATES_EDIT_ACCESS,
 )
 @router.put(
     "/rates",
     response_model=PayrollRateRead,
-    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+    dependencies=SOURCE_RATES_EDIT_ACCESS,
 )
 async def put_rate(
     payload: PayrollRateBase,
@@ -91,7 +101,7 @@ async def put_rate(
 @router.get(
     "/availability",
     response_model=list[PayrollRoleCategoryAvailabilityRead],
-    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+    dependencies=SOURCE_RATES_READ_ACCESS,
 )
 async def get_availability(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -103,7 +113,7 @@ async def get_availability(
 @router.put(
     "/availability/{position_group}/{category}",
     response_model=PayrollRoleCategoryAvailabilityRead,
-    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+    dependencies=SOURCE_RATES_EDIT_ACCESS,
 )
 async def put_availability(
     position_group: str,
@@ -128,7 +138,7 @@ async def put_availability(
 @router.get(
     "/revenue-share",
     response_model=list[PayrollRevenueShareRead],
-    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+    dependencies=SOURCE_REVENUE_PERCENT_READ_ACCESS,
 )
 async def get_revenue_share(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -141,7 +151,7 @@ async def get_revenue_share(
 @router.put(
     "/revenue-share",
     response_model=PayrollRevenueShareRead,
-    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+    dependencies=SOURCE_REVENUE_PERCENT_EDIT_ACCESS,
 )
 async def put_revenue_share(
     payload: PayrollRevenueShareBase,
@@ -162,7 +172,7 @@ async def put_revenue_share(
 @router.get(
     "/revenue-tiers",
     response_model=list[PayrollRevenueTierRead],
-    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+    dependencies=SOURCE_REVENUE_PERCENT_READ_ACCESS,
 )
 async def get_revenue_tiers(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -175,7 +185,7 @@ async def get_revenue_tiers(
 @router.put(
     "/revenue-tiers",
     response_model=list[PayrollRevenueTierRead],
-    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+    dependencies=SOURCE_REVENUE_PERCENT_EDIT_ACCESS,
 )
 async def put_revenue_tiers(
     payload: list[PayrollRevenueTierBase],
@@ -196,7 +206,7 @@ async def put_revenue_tiers(
 @router.get(
     "/category-coefficients",
     response_model=list[PayrollCategoryCoefficientRead],
-    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+    dependencies=SOURCE_REVENUE_PERCENT_READ_ACCESS,
 )
 async def get_category_coefficients(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -209,7 +219,7 @@ async def get_category_coefficients(
 @router.put(
     "/category-coefficients",
     response_model=list[PayrollCategoryCoefficientRead],
-    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+    dependencies=SOURCE_REVENUE_PERCENT_EDIT_ACCESS,
 )
 async def put_category_coefficients(
     payload: list[PayrollCategoryCoefficientBase],
@@ -230,7 +240,7 @@ async def put_category_coefficients(
 @router.get(
     "/deductions",
     response_model=list[PayrollDeductionCategoryRead],
-    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+    dependencies=SOURCE_DEDUCTIONS_READ_ACCESS,
 )
 async def get_deductions(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -243,7 +253,7 @@ async def get_deductions(
 @router.put(
     "/deductions",
     response_model=PayrollDeductionCategoryRead,
-    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+    dependencies=SOURCE_DEDUCTIONS_EDIT_ACCESS,
 )
 async def put_deduction(
     payload: PayrollDeductionCategoryBase,
@@ -264,7 +274,7 @@ async def put_deduction(
 @router.get(
     "/seniority-premium",
     response_model=list[PayrollSeniorityPremiumRead],
-    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+    dependencies=SOURCE_ALLOWANCES_READ_ACCESS,
 )
 async def get_seniority_premium(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -277,12 +287,12 @@ async def get_seniority_premium(
 @router.post(
     "/seniority-premium",
     response_model=PayrollSeniorityPremiumRead,
-    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+    dependencies=SOURCE_ALLOWANCES_EDIT_ACCESS,
 )
 @router.put(
     "/seniority-premium",
     response_model=PayrollSeniorityPremiumRead,
-    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+    dependencies=SOURCE_ALLOWANCES_EDIT_ACCESS,
 )
 async def put_seniority_premium(
     payload: PayrollSeniorityPremiumBase,

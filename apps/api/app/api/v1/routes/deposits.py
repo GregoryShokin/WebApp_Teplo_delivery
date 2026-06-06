@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_permission
+from app.api.deps import CurrentActor, get_current_actor, require_any_permission
 from app.db.session import get_session
 from app.models import DepositAccount, DepositTransaction, Employee
 from app.services import deposit_service
@@ -24,8 +24,20 @@ from app.services.payroll_calculator import (
 )
 
 router = APIRouter()
-DEPOSITS_READ_ACCESS = (Depends(require_permission("payroll.production_deposits.read")),)
-DEPOSITS_EDIT_ACCESS = (Depends(require_permission("payroll.production_deposits.edit")),)
+DEPOSITS_READ_ACCESS = (
+    Depends(
+        require_any_permission(
+            ("payroll.production_deposits.read", "source.deposit_settings.read")
+        )
+    ),
+)
+DEPOSITS_EDIT_ACCESS = (
+    Depends(
+        require_any_permission(
+            ("payroll.production_deposits.edit", "source.deposit_settings.edit")
+        )
+    ),
+)
 
 
 class DepositEmployeeRead(BaseModel):

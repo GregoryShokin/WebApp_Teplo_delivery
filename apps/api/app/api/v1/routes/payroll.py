@@ -63,14 +63,14 @@ PAYROLL_ACCRUALS_READ_ACCESS = (Depends(require_permission("payroll.accruals.rea
 PAYROLL_PERSONAL_REPORTS_READ_ACCESS = (
     Depends(require_permission("payroll.personal_reports.read")),
 )
-PAYROLL_REVISIONS_READ_ACCESS = (Depends(require_permission("payroll.revisions.read")),)
-PAYROLL_REVISION_PENALTIES_ACCESS = (
-    Depends(require_permission("payroll.revision_penalties.add")),
+REVISION_DEFERRALS_READ_ACCESS = (Depends(require_permission("revisions.deferrals.read")),)
+REVISION_DEFERRALS_MANAGE_ACCESS = (
+    Depends(require_permission("revisions.deferrals.manage")),
 )
 PAYROLL_PRODUCTION_DEPOSITS_EDIT_ACCESS = (
     Depends(require_permission("payroll.production_deposits.edit")),
 )
-PAYROLL_SOURCE_DATA_READ_ACCESS = (Depends(require_permission("payroll.source_data.read")),)
+SOURCE_RATES_READ_ACCESS = (Depends(require_permission("source.rates.read")),)
 
 
 @router.post(
@@ -97,7 +97,7 @@ async def get_runs(
 @router.get(
     "/role-categories",
     response_model=dict[str, list[PayrollRoleCategoryOptionRead]],
-    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+    dependencies=SOURCE_RATES_READ_ACCESS,
 )
 async def get_role_categories(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -109,7 +109,7 @@ async def get_role_categories(
 @router.post(
     "/deferred-charges",
     response_model=DeferredChargeRead,
-    dependencies=PAYROLL_REVISION_PENALTIES_ACCESS,
+    dependencies=REVISION_DEFERRALS_MANAGE_ACCESS,
 )
 async def create_deferred_charge_endpoint(
     payload: DeferredChargeCreate,
@@ -131,7 +131,7 @@ async def create_deferred_charge_endpoint(
 @router.get(
     "/deferred-charges",
     response_model=list[DeferredChargeRead],
-    dependencies=PAYROLL_REVISIONS_READ_ACCESS,
+    dependencies=REVISION_DEFERRALS_READ_ACCESS,
 )
 async def list_deferred_charges_endpoint(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -150,7 +150,7 @@ async def list_deferred_charges_endpoint(
 @router.post(
     "/deferred-charges/{charge_id}/cancel",
     response_model=DeferredChargeRead,
-    dependencies=PAYROLL_REVISION_PENALTIES_ACCESS,
+    dependencies=REVISION_DEFERRALS_MANAGE_ACCESS,
 )
 async def cancel_deferred_charge_endpoint(
     charge_id: uuid.UUID,

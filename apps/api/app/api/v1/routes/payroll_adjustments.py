@@ -29,8 +29,8 @@ from app.services.payroll_adjustment_service import (
 
 router = APIRouter()
 PAYROLL_ACCRUALS_READ_ACCESS = (Depends(require_permission("payroll.accruals.read")),)
-PAYROLL_SOURCE_DATA_READ_ACCESS = (Depends(require_permission("payroll.source_data.read")),)
-PAYROLL_RULES_CONFIGURE_ACCESS = (Depends(require_permission("payroll.rules.configure")),)
+SOURCE_DEDUCTIONS_READ_ACCESS = (Depends(require_permission("source.deductions.read")),)
+SOURCE_DEDUCTIONS_EDIT_ACCESS = (Depends(require_permission("source.deductions.edit")),)
 
 ADJUSTMENT_TYPES = {"bonus", "penalty"}
 ADJUSTMENT_EMPLOYEE_POSITIONS = {"Повар", "Кассир"}
@@ -213,7 +213,7 @@ async def delete_adjustment(
 @router.get(
     "/adjustment-categories",
     response_model=list[PayrollAdjustmentCategoryRead],
-    dependencies=PAYROLL_SOURCE_DATA_READ_ACCESS,
+    dependencies=SOURCE_DEDUCTIONS_READ_ACCESS,
 )
 async def list_adjustment_categories(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -240,7 +240,7 @@ async def list_adjustment_categories(
 @router.post(
     "/adjustment-categories",
     response_model=PayrollAdjustmentCategoryRead,
-    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+    dependencies=SOURCE_DEDUCTIONS_EDIT_ACCESS,
 )
 async def create_adjustment_category(
     payload: PayrollAdjustmentCategoryCreate,
@@ -269,7 +269,7 @@ async def create_adjustment_category(
 @router.patch(
     "/adjustment-categories/{category_id}",
     response_model=PayrollAdjustmentCategoryRead,
-    dependencies=PAYROLL_RULES_CONFIGURE_ACCESS,
+    dependencies=SOURCE_DEDUCTIONS_EDIT_ACCESS,
 )
 async def patch_adjustment_category(
     category_id: uuid.UUID,
