@@ -13,7 +13,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentActor, get_current_actor, require_finance_manager_plus
+from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.core.security import hash_password
 from app.db.session import get_session
 from app.models import (
@@ -99,9 +99,11 @@ from app.services.staff_taxonomy import (
 )
 
 router = APIRouter()
+STAFF_READ_ACCESS = (Depends(require_permission("staff.read")),)
+STAFF_WRITE_ACCESS = (Depends(require_permission("staff.write")),)
+STAFF_DISMISS_ACCESS = (Depends(require_permission("staff.dismiss")),)
+STAFF_REINSTATE_ACCESS = (Depends(require_permission("staff.reinstate")),)
 MONEY_STEP = Decimal("0.01")
-OWNER_ONLY = frozenset({"owner"})
-STAFF_CHANGE_READERS = frozenset({"manager", "finance_manager", "owner", "admin", "system_admin"})
 
 READ_ONLY_FIELDS = {
     "id",
@@ -152,8 +154,13 @@ class DismissDepositDecision:
     balance: Decimal
 
 
-@router.get("", response_model=list[EmployeeRead])
-@router.get("/", response_model=list[EmployeeRead], include_in_schema=False)
+@router.get("", response_model=list[EmployeeRead], dependencies=STAFF_READ_ACCESS)
+@router.get(
+    "/",
+    response_model=list[EmployeeRead],
+    include_in_schema=False,
+    dependencies=STAFF_READ_ACCESS,
+)
 async def list_employees(
     session: Annotated[AsyncSession, Depends(get_session)],
     status_filter: Annotated[str | None, Query(alias="status")] = None,
@@ -200,13 +207,12 @@ async def list_employees(
     return employees
 
 
-@router.post("/sync", response_model=SyncResultRead)
+@router.post("/sync", response_model=SyncResultRead, dependencies=STAFF_WRITE_ACCESS)
 async def trigger_employee_sync(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     mode: Annotated[Literal["incremental", "reset"], Query()] = "incremental",
 ) -> dict[str, int]:
-    require_finance_manager_plus(actor)
     try:
         result = await sync_employees(session, run_reason="manual", mode=mode)
     except _http_client.IncompleteRead as exc:
@@ -217,12 +223,15 @@ async def trigger_employee_sync(
     return result.as_dict()
 
 
-@router.get("/iiko-roles", response_model=list[IikoEmployeeRoleRead])
+@router.get(
+    "/iiko-roles",
+    response_model=list[IikoEmployeeRoleRead],
+    dependencies=STAFF_READ_ACCESS,
+)
 async def list_iiko_employee_roles(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> list[IikoEmployeeRoleRead]:
-    require_finance_manager_plus(actor)
     try:
         roles = await get_iiko_employee_roles(session)
     except _http_client.IncompleteRead as exc:
@@ -245,7 +254,11 @@ async def list_iiko_employee_roles(
     ]
 
 
-@router.get("/changes", response_model=list[EmployeeChangeEventRead])
+@router.get(
+    "/changes",
+    response_model=list[EmployeeChangeEventRead],
+    dependencies=STAFF_READ_ACCESS,
+)
 async def list_employee_changes(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor_context: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -265,7 +278,6 @@ async def list_employee_changes(
     only_requires_review: bool = False,
     include_system_migrations: bool = False,
 ) -> list[EmployeeChangeEvent]:
-    _require_staff_change_reader(actor_context)
     filters = EmployeeChangeEventFilter(
         employee_id=employee_id,
         changed_from=changed_from,
@@ -324,13 +336,16 @@ async def list_employee_changes(
     return list(result.all())
 
 
-@router.get("/dismissal-reasons", response_model=list[EmployeeDismissalReasonRead])
+@router.get(
+    "/dismissal-reasons",
+    response_model=list[EmployeeDismissalReasonRead],
+    dependencies=STAFF_READ_ACCESS,
+)
 async def list_employee_dismissal_reasons(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor_context: Annotated[CurrentActor, Depends(get_current_actor)],
     include_inactive: bool = False,
 ) -> list[EmployeeDismissalReason]:
-    _require_staff_change_reader(actor_context)
     return await employee_change_event_service.list_dismissal_reasons(
         session,
         include_inactive=include_inactive,
@@ -341,13 +356,13 @@ async def list_employee_dismissal_reasons(
     "/dismissal-reasons",
     response_model=EmployeeDismissalReasonRead,
     status_code=status.HTTP_201_CREATED,
+    dependencies=STAFF_WRITE_ACCESS,
 )
 async def create_employee_dismissal_reason(
     payload: EmployeeDismissalReasonCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor_context: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> EmployeeDismissalReason:
-    require_finance_manager_plus(actor_context)
     code = payload.code or f"custom_{uuid.uuid4().hex[:12]}"
     existing = await session.scalar(
         select(EmployeeDismissalReason).where(EmployeeDismissalReason.code == code)
@@ -368,14 +383,17 @@ async def create_employee_dismissal_reason(
     return reason
 
 
-@router.patch("/dismissal-reasons/{reason_id}", response_model=EmployeeDismissalReasonRead)
+@router.patch(
+    "/dismissal-reasons/{reason_id}",
+    response_model=EmployeeDismissalReasonRead,
+    dependencies=STAFF_WRITE_ACCESS,
+)
 async def update_employee_dismissal_reason(
     reason_id: uuid.UUID,
     payload: EmployeeDismissalReasonUpdate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor_context: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> EmployeeDismissalReason:
-    require_finance_manager_plus(actor_context)
     if not payload.model_fields_set:
         raise HTTPException(status_code=400, detail="Пустое изменение причины увольнения")
 
@@ -401,6 +419,7 @@ async def update_employee_dismissal_reason(
     "/{employee_id}/notice",
     response_model=EmployeeNoticeActionRead,
     status_code=status.HTTP_201_CREATED,
+    dependencies=STAFF_WRITE_ACCESS,
 )
 async def record_employee_notice(
     employee_id: uuid.UUID,
@@ -408,7 +427,6 @@ async def record_employee_notice(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     payload: Annotated[EmployeeNoticeRequest | None, Body()] = None,
 ) -> EmployeeNoticeActionRead:
-    require_finance_manager_plus(actor)
     payload = payload or EmployeeNoticeRequest()
     await _get_employee_or_404(session, employee_id)
     try:
@@ -425,14 +443,17 @@ async def record_employee_notice(
     return _notice_action_payload(event, date.today())
 
 
-@router.delete("/{employee_id}/notice", response_model=EmployeeNoticeActionRead)
+@router.delete(
+    "/{employee_id}/notice",
+    response_model=EmployeeNoticeActionRead,
+    dependencies=STAFF_WRITE_ACCESS,
+)
 async def cancel_employee_notice(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     payload: Annotated[EmployeeNoticeCancelRequest | None, Body()] = None,
 ) -> EmployeeNoticeActionRead:
-    require_finance_manager_plus(actor)
     payload = payload or EmployeeNoticeCancelRequest()
     await _get_employee_or_404(session, employee_id)
     try:
@@ -448,14 +469,17 @@ async def cancel_employee_notice(
     return _notice_action_payload(event, date.today())
 
 
-@router.post("/{employee_id}/hire-date", response_model=EmployeeRead)
+@router.post(
+    "/{employee_id}/hire-date",
+    response_model=EmployeeRead,
+    dependencies=STAFF_WRITE_ACCESS,
+)
 async def set_employee_hire_date(
     employee_id: uuid.UUID,
     payload: EmployeeHireDateRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Employee:
-    require_finance_manager_plus(actor)
     employee = await _get_employee_or_404(session, employee_id)
     if employee.status == "inactive":
         raise HTTPException(
@@ -505,19 +529,24 @@ async def set_employee_hire_date(
     return employee
 
 
-@router.post("", response_model=EmployeeRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=EmployeeRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=STAFF_WRITE_ACCESS,
+)
 @router.post(
     "/",
     response_model=EmployeeRead,
     status_code=status.HTTP_201_CREATED,
     include_in_schema=False,
+    dependencies=STAFF_WRITE_ACCESS,
 )
 async def create_employee(
     payload: EmployeeCreateRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Employee:
-    require_finance_manager_plus(actor)
     try:
         iiko_role = await _resolve_create_iiko_position(session, payload.iiko_role_id)
         canonical_position = canonical_position_name(iiko_role.name)
@@ -686,14 +715,17 @@ async def create_employee(
     return await _get_employee_or_404(session, employee.id, include_assignments=True)
 
 
-@router.post("/{employee_id}/dismiss", response_model=EmployeeRead)
+@router.post(
+    "/{employee_id}/dismiss",
+    response_model=EmployeeRead,
+    dependencies=STAFF_DISMISS_ACCESS,
+)
 async def dismiss_employee(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     payload: Annotated[EmployeeDismissRequest | None, Body()] = None,
 ) -> Employee:
-    require_finance_manager_plus(actor)
     dismiss_payload = payload or EmployeeDismissRequest()
     employee = await _get_employee_or_404(session, employee_id)
     if employee.status == "inactive" or employee.fire_date is not None:
@@ -777,13 +809,16 @@ async def dismiss_employee(
     return employee
 
 
-@router.post("/{employee_id}/reinstate", response_model=EmployeeRead)
+@router.post(
+    "/{employee_id}/reinstate",
+    response_model=EmployeeRead,
+    dependencies=STAFF_REINSTATE_ACCESS,
+)
 async def reinstate_employee(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Employee:
-    _require_owner(actor)
     employee = await _get_employee_or_404(session, employee_id)
     before = _employee_lifecycle_snapshot(employee)
     now = datetime.now(UTC)
@@ -823,14 +858,17 @@ async def reinstate_employee(
     return employee
 
 
-@router.post("/{employee_id}/pin", response_model=EmployeeRead)
+@router.post(
+    "/{employee_id}/pin",
+    response_model=EmployeeRead,
+    dependencies=STAFF_WRITE_ACCESS,
+)
 async def change_employee_pin(
     employee_id: uuid.UUID,
     payload: EmployeePinChangeRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Employee:
-    require_finance_manager_plus(actor)
     employee = await _get_employee_or_404(session, employee_id)
     before = _employee_lifecycle_snapshot(employee)
     now = datetime.now(UTC)
@@ -869,7 +907,11 @@ async def change_employee_pin(
     return employee
 
 
-@router.get("/{employee_id}/assignments", response_model=list[EmployeeRoleAssignmentRead])
+@router.get(
+    "/{employee_id}/assignments",
+    response_model=list[EmployeeRoleAssignmentRead],
+    dependencies=STAFF_READ_ACCESS,
+)
 async def list_employee_assignments(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -890,14 +932,17 @@ async def list_employee_assignments(
     )
 
 
-@router.post("/{employee_id}/assignments", response_model=EmployeeRoleAssignmentRead)
+@router.post(
+    "/{employee_id}/assignments",
+    response_model=EmployeeRoleAssignmentRead,
+    dependencies=STAFF_WRITE_ACCESS,
+)
 async def create_employee_assignment(
     employee_id: uuid.UUID,
     payload: EmployeeRoleAssignmentCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> EmployeeRoleAssignment:
-    require_finance_manager_plus(actor)
     await _get_employee_or_404(session, employee_id)
     if (
         payload.effective_from is not None
@@ -948,6 +993,7 @@ async def create_employee_assignment(
 @router.patch(
     "/{employee_id}/assignments/{assignment_id}",
     response_model=EmployeeRoleAssignmentRead,
+    dependencies=STAFF_WRITE_ACCESS,
 )
 async def patch_employee_assignment(
     employee_id: uuid.UUID,
@@ -956,7 +1002,6 @@ async def patch_employee_assignment(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> EmployeeRoleAssignment:
-    require_finance_manager_plus(actor)
     if not payload.model_fields_set:
         raise HTTPException(status_code=400, detail="Пустое изменение назначения роли")
     if "payroll_role" in payload.model_fields_set and payload.payroll_role is None:
@@ -1026,6 +1071,7 @@ async def patch_employee_assignment(
 @router.delete(
     "/{employee_id}/assignments/{assignment_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=STAFF_WRITE_ACCESS,
 )
 async def delete_employee_assignment(
     employee_id: uuid.UUID,
@@ -1033,7 +1079,6 @@ async def delete_employee_assignment(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> None:
-    require_finance_manager_plus(actor)
     assignment_before = await _get_assignment_or_404(session, employee_id, assignment_id)
     before = _assignment_snapshot(assignment_before)
     try:
@@ -1077,12 +1122,12 @@ async def delete_employee_assignment(
 @router.get(
     "/iiko-actions/pending",
     response_model=list[EmployeePendingIikoActionRead],
+    dependencies=STAFF_READ_ACCESS,
 )
 async def list_pending_iiko_actions(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> list[EmployeePendingIikoAction]:
-    require_finance_manager_plus(actor)
     result = await session.scalars(
         select(EmployeePendingIikoAction)
         .where(EmployeePendingIikoAction.status == "pending")
@@ -1091,19 +1136,19 @@ async def list_pending_iiko_actions(
     return list(result.all())
 
 
-@router.post("/iiko-actions/apply-due")
+@router.post("/iiko-actions/apply-due", dependencies=STAFF_WRITE_ACCESS)
 async def apply_due_iiko_actions(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     today: date | None = None,
 ) -> dict[str, int]:
-    require_finance_manager_plus(actor)
     return await employee_effective_event_service.apply_due_iiko_actions(session, today=today)
 
 
 @router.get(
     "/{employee_id}/position-events",
     response_model=list[EmployeePositionEventRead],
+    dependencies=STAFF_READ_ACCESS,
 )
 async def list_employee_position_events(
     employee_id: uuid.UUID,
@@ -1116,6 +1161,7 @@ async def list_employee_position_events(
 @router.patch(
     "/{employee_id}/position",
     response_model=EmployeePositionAssignmentRead,
+    dependencies=STAFF_WRITE_ACCESS,
 )
 async def change_employee_position(
     employee_id: uuid.UUID,
@@ -1123,7 +1169,6 @@ async def change_employee_position(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_finance_manager_plus(actor)
     employee = await _get_employee_or_404(session, employee_id)
     today = date.today()
     if payload.effective_from < today and not payload.comment:
@@ -1201,13 +1246,13 @@ async def change_employee_position(
 @router.get(
     "/{employee_id}/position-history",
     response_model=list[EmployeePositionAssignmentRead],
+    dependencies=STAFF_READ_ACCESS,
 )
 async def list_position_history_endpoint(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> list[dict[str, Any]]:
-    require_finance_manager_plus(actor)
     await _get_employee_or_404(session, employee_id)
     items = await employee_position_service.list_position_history(session, employee_id)
     return [_position_assignment_payload(item) for item in items]
@@ -1216,6 +1261,7 @@ async def list_position_history_endpoint(
 @router.get(
     "/{employee_id}/allowance-events",
     response_model=list[EmployeeAllowanceEventRead],
+    dependencies=STAFF_READ_ACCESS,
 )
 async def list_employee_allowance_events(
     employee_id: uuid.UUID,
@@ -1225,7 +1271,7 @@ async def list_employee_allowance_events(
     return await employee_effective_event_service.list_allowance_events(session, employee_id)
 
 
-@router.get("/{employee_id}", response_model=EmployeeRead)
+@router.get("/{employee_id}", response_model=EmployeeRead, dependencies=STAFF_READ_ACCESS)
 async def get_employee(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -1235,14 +1281,17 @@ async def get_employee(
     return employee
 
 
-@router.patch("/{employee_id}", response_model=EmployeeRead)
+@router.patch(
+    "/{employee_id}",
+    response_model=EmployeeRead,
+    dependencies=STAFF_WRITE_ACCESS,
+)
 async def patch_employee(
     employee_id: uuid.UUID,
     payload: Annotated[dict[str, Any], Body()],
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Employee:
-    require_finance_manager_plus(actor)
     normalized_payload = _normalize_patch_payload(payload)
     _validate_patch_payload(normalized_payload)
 
@@ -2274,18 +2323,6 @@ async def _sync_future_assignment_shortcut(
         effective_from=effective_from,
         commit=False,
     )
-
-
-def _require_owner(actor: CurrentActor) -> None:
-    if actor.roles & OWNER_ONLY:
-        return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
-
-
-def _require_staff_change_reader(actor: CurrentActor) -> None:
-    if actor.roles & STAFF_CHANGE_READERS:
-        return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
 
 
 def _date_years_ago(value: date, years: int) -> date:

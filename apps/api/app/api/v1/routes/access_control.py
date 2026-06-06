@@ -423,7 +423,10 @@ async def _user_or_404(session: AsyncSession, user_id: uuid.UUID) -> User:
 
 async def _assignable_role_or_400(session: AsyncSession, role_code: str) -> Role:
     if role_code not in ACCESS_ROLE_CODES:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Role is not assignable")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Role is not assignable",
+        )
     role = await session.scalar(select(Role).where(Role.code == role_code))
     if role is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
@@ -439,9 +442,14 @@ async def _organization_id_for_user_role(
     )
     if organization_id is not None:
         return organization_id
-    organization_id = await session.scalar(select(Organization.id).order_by(Organization.name).limit(1))
+    organization_id = await session.scalar(
+        select(Organization.id).order_by(Organization.name).limit(1)
+    )
     if organization_id is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Organization not found")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Organization not found",
+        )
     return organization_id
 
 

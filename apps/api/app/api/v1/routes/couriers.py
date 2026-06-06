@@ -10,12 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import (
-    CurrentActor,
-    get_current_actor,
-    require_finance_manager_plus,
-    require_manager_plus,
-)
+from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import (
     CourierEvaluation,
@@ -63,6 +58,10 @@ from app.services.couriers import (
 )
 
 router = APIRouter()
+COURIERS_READ_ACCESS = (Depends(require_permission("couriers.read")),)
+COURIERS_SCHEDULE_WRITE_ACCESS = (Depends(require_permission("couriers.schedule.write")),)
+COURIERS_ASSESS_WRITE_ACCESS = (Depends(require_permission("couriers.assess.write")),)
+COURIERS_DEPOSITS_WRITE_ACCESS = (Depends(require_permission("couriers.deposits.write")),)
 CourierSyncMode = Literal["hot", "cold", "custom"]
 MAX_DELIVERY_WINDOW_DAYS = 92
 
@@ -73,7 +72,7 @@ class CourierSyncRequest(BaseModel):
     date_to: date | None = None
 
 
-@router.post("/sync")
+@router.post("/sync", dependencies=COURIERS_SCHEDULE_WRITE_ACCESS)
 async def post_courier_sync(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -82,7 +81,6 @@ async def post_courier_sync(
     date_from: Annotated[date | None, Query()] = None,
     date_to: Annotated[date | None, Query()] = None,
 ) -> dict[str, int]:
-    require_finance_manager_plus(actor)
     resolved_mode = mode or (payload.mode if payload is not None else "hot")
     resolved_date_from = (
         date_from if date_from is not None else (payload.date_from if payload is not None else None)
@@ -122,14 +120,13 @@ async def post_courier_sync(
     return result.as_dict()
 
 
-@router.post("/iiko/sync-attendance")
+@router.post("/iiko/sync-attendance", dependencies=COURIERS_SCHEDULE_WRITE_ACCESS)
 async def post_iiko_attendance_sync(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     date_from: Annotated[date, Query(alias="from")],
     date_to: Annotated[date, Query(alias="to")],
 ) -> dict[str, Any]:
-    require_manager_plus(actor)
     ensure_date_range(date_from, date_to)
     ensure_window(date_from, date_to, max_days=MAX_DELIVERY_WINDOW_DAYS)
     try:
@@ -151,7 +148,7 @@ async def post_iiko_attendance_sync(
     return report.as_dict()
 
 
-@router.get("/deliveries")
+@router.get("/deliveries", dependencies=COURIERS_READ_ACCESS)
 async def get_courier_deliveries(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -161,7 +158,6 @@ async def get_courier_deliveries(
     limit: Annotated[int, Query(gt=0, le=1000)] = 200,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[dict[str, Any]]:
-    require_manager_plus(actor)
     ensure_date_range(date_from, date_to)
     ensure_window(date_from, date_to, max_days=MAX_DELIVERY_WINDOW_DAYS)
     return await list_courier_deliveries(
@@ -174,7 +170,7 @@ async def get_courier_deliveries(
     )
 
 
-@router.get("/shifts")
+@router.get("/shifts", dependencies=COURIERS_READ_ACCESS)
 async def get_courier_shifts(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -182,7 +178,6 @@ async def get_courier_shifts(
     date_to: Annotated[date, Query()],
     employee_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> list[dict[str, Any]]:
-    require_manager_plus(actor)
     ensure_date_range(date_from, date_to)
     ensure_window(date_from, date_to, max_days=MAX_DELIVERY_WINDOW_DAYS)
     return await list_courier_shifts(
@@ -193,13 +188,16 @@ async def get_courier_shifts(
     )
 
 
-@router.get("/statistics", response_model=list[CourierStatisticsRow])
+@router.get(
+    "/statistics",
+    response_model=list[CourierStatisticsRow],
+    dependencies=COURIERS_READ_ACCESS,
+)
 async def get_couriers_statistics(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
 ) -> list[dict[str, Any]]:
-    require_manager_plus(actor)
     month_start = _parse_month(month)
     kpis = await kpi_service.list_couriers_kpi(session, month_start)
     rows: list[dict[str, Any]] = []
@@ -217,7 +215,7 @@ async def get_couriers_statistics(
     return rows
 
 
-@router.get("/list", response_model=CourierListResponse)
+@router.get("/list", response_model=CourierListResponse, dependencies=COURIERS_READ_ACCESS)
 async def get_couriers_list(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -225,7 +223,6 @@ async def get_couriers_list(
     work_status_filter: Annotated[CourierWorkStatusFilter, Query(alias="work_status")] = "all",
     month: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}$")] = None,
 ) -> dict[str, Any]:
-    require_manager_plus(actor)
     month_start = _parse_month(month) if month else _current_month_start()
     month_end = kpi_service.month_bounds(month_start)[1]
     couriers = (
@@ -287,14 +284,17 @@ async def get_couriers_list(
     }
 
 
-@router.get("/{employee_id}/statistics", response_model=CourierStatisticsDetail)
+@router.get(
+    "/{employee_id}/statistics",
+    response_model=CourierStatisticsDetail,
+    dependencies=COURIERS_READ_ACCESS,
+)
 async def get_courier_statistics_detail(
     employee_id: uuid.UUID,
     month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_manager_plus(actor)
     month_start = _parse_month(month)
     courier = await session.get(Employee, employee_id)
     return {
@@ -320,14 +320,17 @@ async def get_courier_statistics_detail(
     }
 
 
-@router.get("/deposits", response_model=list[CourierDepositRow])
+@router.get(
+    "/deposits",
+    response_model=list[CourierDepositRow],
+    dependencies=COURIERS_READ_ACCESS,
+)
 async def get_courier_deposits(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     status_filter: Annotated[CourierDepositStatus, Query(alias="status")] = "active",
     category_filter: Annotated[CourierDepositCategory, Query(alias="category")] = "all",
 ) -> list[dict[str, Any]]:
-    require_manager_plus(actor)
     rows = await deposit_service.list_couriers_with_balances(
         session,
         deposit_service.CourierDepositFilters(
@@ -339,35 +342,44 @@ async def get_courier_deposits(
     return rows
 
 
-@router.get("/deposits/settings", response_model=CourierDepositSettingsRead)
+@router.get(
+    "/deposits/settings",
+    response_model=CourierDepositSettingsRead,
+    dependencies=COURIERS_READ_ACCESS,
+)
 async def get_courier_deposit_settings(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, int | bool]:
-    require_manager_plus(actor)
     return await deposit_service.get_deposit_settings(session)
 
 
-@router.put("/deposits/settings", response_model=CourierDepositSettingsRead)
+@router.put(
+    "/deposits/settings",
+    response_model=CourierDepositSettingsRead,
+    dependencies=COURIERS_DEPOSITS_WRITE_ACCESS,
+)
 async def put_courier_deposit_settings(
     payload: CourierDepositSettingsUpdate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, int | bool]:
-    require_manager_plus(actor)
     values = payload.model_dump(exclude_unset=True, exclude_none=True)
     updated = await deposit_service.update_deposit_settings(session, values, actor.user_id)
     await session.commit()
     return updated
 
 
-@router.get("/{employee_id}/deposit", response_model=CourierDepositCardRead)
+@router.get(
+    "/{employee_id}/deposit",
+    response_model=CourierDepositCardRead,
+    dependencies=COURIERS_READ_ACCESS,
+)
 async def get_courier_deposit_card(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_manager_plus(actor)
     account = await deposit_service.ensure_account(session, employee_id)
     transactions = await deposit_service.list_transactions(session, employee_id)
     balance = await deposit_service.get_balance(session, employee_id)
@@ -379,14 +391,17 @@ async def get_courier_deposit_card(
     }
 
 
-@router.put("/{employee_id}/deposit/opening", response_model=CourierDepositCardRead)
+@router.put(
+    "/{employee_id}/deposit/opening",
+    response_model=CourierDepositCardRead,
+    dependencies=COURIERS_DEPOSITS_WRITE_ACCESS,
+)
 async def put_courier_deposit_opening(
     employee_id: uuid.UUID,
     payload: CourierDepositOpeningUpdate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_manager_plus(actor)
     actor_employee_id = await _resolve_actor_employee_id(session, actor, payload.actor_id)
     account = await deposit_service.set_opening_balance(
         session,
@@ -406,14 +421,17 @@ async def put_courier_deposit_opening(
     }
 
 
-@router.post("/{employee_id}/deposit/transactions", response_model=CourierDepositTransactionRead)
+@router.post(
+    "/{employee_id}/deposit/transactions",
+    response_model=CourierDepositTransactionRead,
+    dependencies=COURIERS_DEPOSITS_WRITE_ACCESS,
+)
 async def post_courier_deposit_transaction(
     employee_id: uuid.UUID,
     payload: CourierDepositTransactionCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_manager_plus(actor)
     actor_employee_id = await _resolve_actor_employee_id(session, actor, payload.actor_id)
     transaction = await deposit_service.create_transaction(
         session,
@@ -429,12 +447,15 @@ async def post_courier_deposit_transaction(
     return await _deposit_transaction_payload(session, transaction)
 
 
-@router.get("/evaluation-criteria", response_model=list[CourierEvaluationCriterionRead])
+@router.get(
+    "/evaluation-criteria",
+    response_model=list[CourierEvaluationCriterionRead],
+    dependencies=COURIERS_READ_ACCESS,
+)
 async def get_courier_evaluation_criteria(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> list[CourierEvaluationCriterion]:
-    require_manager_plus(actor)
     result = await session.scalars(
         select(CourierEvaluationCriterion)
         .where(CourierEvaluationCriterion.is_active.is_(True))
@@ -443,7 +464,11 @@ async def get_courier_evaluation_criteria(
     return list(result.all())
 
 
-@router.get("/evaluations", response_model=list[CourierEvaluationRead])
+@router.get(
+    "/evaluations",
+    response_model=list[CourierEvaluationRead],
+    dependencies=COURIERS_READ_ACCESS,
+)
 async def get_courier_evaluations(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -453,7 +478,6 @@ async def get_courier_evaluations(
     date_to: Annotated[date | None, Query(alias="to")] = None,
     criterion: Annotated[int | None, Query()] = None,
 ) -> list[dict[str, Any]]:
-    require_manager_plus(actor)
     if date_from is not None and date_to is not None:
         ensure_date_range(date_from, date_to)
     evaluations = await evaluation_service.list_evaluations(
@@ -469,13 +493,16 @@ async def get_courier_evaluations(
     return [evaluation_service.evaluation_payload(evaluation) for evaluation in evaluations]
 
 
-@router.post("/evaluations", response_model=CourierEvaluationRead)
+@router.post(
+    "/evaluations",
+    response_model=CourierEvaluationRead,
+    dependencies=COURIERS_ASSESS_WRITE_ACCESS,
+)
 async def post_courier_evaluation(
     payload: CourierEvaluationCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_manager_plus(actor)
     actor_employee_id = await _resolve_actor_employee_id(session, actor, payload.actor_id)
     evaluation = await evaluation_service.create_evaluation(
         session,
@@ -491,14 +518,17 @@ async def post_courier_evaluation(
     return evaluation_service.evaluation_payload(evaluation)
 
 
-@router.patch("/evaluations/{evaluation_id}", response_model=CourierEvaluationRead)
+@router.patch(
+    "/evaluations/{evaluation_id}",
+    response_model=CourierEvaluationRead,
+    dependencies=COURIERS_ASSESS_WRITE_ACCESS,
+)
 async def patch_courier_evaluation(
     evaluation_id: int,
     payload: CourierEvaluationUpdate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_manager_plus(actor)
     changes = payload.model_dump(exclude_unset=True)
     requested_actor_id = changes.pop("actor_id", None)
     actor_employee_id = await _resolve_actor_employee_id(session, actor, requested_actor_id)
@@ -513,14 +543,17 @@ async def patch_courier_evaluation(
     return evaluation_service.evaluation_payload(evaluation)
 
 
-@router.delete("/evaluations/{evaluation_id}", response_model=CourierEvaluationRead)
+@router.delete(
+    "/evaluations/{evaluation_id}",
+    response_model=CourierEvaluationRead,
+    dependencies=COURIERS_ASSESS_WRITE_ACCESS,
+)
 async def delete_courier_evaluation(
     evaluation_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     actor_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> dict[str, Any]:
-    require_manager_plus(actor)
     actor_employee_id = await _resolve_actor_employee_id(session, actor, actor_id)
     evaluation = await evaluation_service.delete_evaluation(
         session,
@@ -535,6 +568,7 @@ async def delete_courier_evaluation(
 @router.get(
     "/{employee_id}/evaluations/monthly",
     response_model=CourierEvaluationMonthlyAggregate,
+    dependencies=COURIERS_READ_ACCESS,
 )
 async def get_courier_evaluation_monthly(
     employee_id: uuid.UUID,
@@ -542,11 +576,14 @@ async def get_courier_evaluation_monthly(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_manager_plus(actor)
     return await evaluation_service.monthly_aggregate(session, employee_id, _parse_month(month))
 
 
-@router.get("/schedule", response_model=list[CourierScheduleEntryRead])
+@router.get(
+    "/schedule",
+    response_model=list[CourierScheduleEntryRead],
+    dependencies=COURIERS_READ_ACCESS,
+)
 async def get_courier_schedule(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -554,7 +591,6 @@ async def get_courier_schedule(
     date_to: Annotated[date, Query(alias="to")],
     courier: Annotated[uuid.UUID | None, Query()] = None,
 ) -> list[dict[str, Any]]:
-    require_manager_plus(actor)
     ensure_date_range(date_from, date_to)
     entries = await schedule_service.list_entries(
         session,
@@ -567,7 +603,11 @@ async def get_courier_schedule(
     return [schedule_service.entry_payload(entry) for entry in entries]
 
 
-@router.get("/schedule/matched", response_model=list[CourierScheduleMatchedEntry])
+@router.get(
+    "/schedule/matched",
+    response_model=list[CourierScheduleMatchedEntry],
+    dependencies=COURIERS_READ_ACCESS,
+)
 async def get_courier_schedule_matched(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
@@ -575,7 +615,6 @@ async def get_courier_schedule_matched(
     date_to: Annotated[date, Query(alias="to")],
     courier: Annotated[uuid.UUID | None, Query()] = None,
 ) -> list[dict[str, Any]]:
-    require_manager_plus(actor)
     ensure_date_range(date_from, date_to)
     return await schedule_service.list_matched_entries(
         session,
@@ -587,7 +626,11 @@ async def get_courier_schedule_matched(
     )
 
 
-@router.put("/{employee_id}/schedule/{work_date}", response_model=CourierScheduleEntryRead)
+@router.put(
+    "/{employee_id}/schedule/{work_date}",
+    response_model=CourierScheduleEntryRead,
+    dependencies=COURIERS_SCHEDULE_WRITE_ACCESS,
+)
 async def put_courier_schedule_entry(
     employee_id: uuid.UUID,
     work_date: date,
@@ -595,7 +638,6 @@ async def put_courier_schedule_entry(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    require_manager_plus(actor)
     actor_employee_id = await _resolve_actor_employee_id(session, actor, payload.actor_id)
     entry = await schedule_service.upsert_entry(
         session,
@@ -612,7 +654,11 @@ async def put_courier_schedule_entry(
     return schedule_service.entry_payload(entry)
 
 
-@router.delete("/{employee_id}/schedule/{work_date}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{employee_id}/schedule/{work_date}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=COURIERS_SCHEDULE_WRITE_ACCESS,
+)
 async def delete_courier_schedule_entry(
     employee_id: uuid.UUID,
     work_date: date,
@@ -620,7 +666,6 @@ async def delete_courier_schedule_entry(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
     actor_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> None:
-    require_manager_plus(actor)
     actor_employee_id = await _resolve_actor_employee_id(session, actor, actor_id)
     await schedule_service.delete_entry(
         session,

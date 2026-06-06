@@ -54,7 +54,6 @@ from app.services.banking.classifier import (
 from app.services.banking.credentials import set_credential
 from app.services.banking.transfer_matching import find_and_link_transfer_pairs
 
-
 router = APIRouter()
 DDS_READ_ACCESS = (Depends(require_permission("dds.read")),)
 DDS_WRITE_ACCESS = (Depends(require_permission("dds.write")),)
@@ -168,7 +167,11 @@ async def create_article(
     return (await _article_payloads(session, [article]))[0]
 
 
-@router.patch("/articles/{article_id}", response_model=DdsArticleRead, dependencies=DDS_WRITE_ACCESS)
+@router.patch(
+    "/articles/{article_id}",
+    response_model=DdsArticleRead,
+    dependencies=DDS_WRITE_ACCESS,
+)
 async def patch_article(
     article_id: UUID,
     payload: DdsArticlePatch,

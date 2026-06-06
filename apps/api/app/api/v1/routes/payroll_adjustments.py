@@ -295,7 +295,10 @@ async def get_adjustment_or_404(
 ) -> PayrollAdjustment:
     adjustment = await session.get(PayrollAdjustment, adjustment_id)
     if adjustment is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Корректировка не найдена")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Корректировка не найдена",
+        )
     return adjustment
 
 

@@ -478,6 +478,7 @@ async def get_cost_forecast_runs(
 @router.get(
     "/{schedule_id}/cost-forecast/runs/{run_id}",
     response_model=PayrollForecastRunRead,
+    dependencies=SCHEDULE_READ_ACCESS,
 )
 async def get_cost_forecast_run(
     schedule_id: uuid.UUID,
@@ -496,14 +497,17 @@ async def get_cost_forecast_run(
     return await _payroll_forecast_run_to_read(session, run, estimates=estimates)
 
 
-@router.patch("/{schedule_id}", response_model=ScheduleRead)
+@router.patch(
+    "/{schedule_id}",
+    response_model=ScheduleRead,
+    dependencies=SCHEDULE_WRITE_ACCESS,
+)
 async def patch_schedule(
     schedule_id: uuid.UUID,
     payload: SchedulePatchRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> ScheduleRead:
-    require_finance_manager_plus(actor)
     schedule = await shift_schedule_service.update_schedule(
         session,
         schedule_id,
@@ -513,47 +517,59 @@ async def patch_schedule(
     return _schedule_to_read(schedule)
 
 
-@router.post("/{schedule_id}/publish", response_model=ScheduleRead)
+@router.post(
+    "/{schedule_id}/publish",
+    response_model=ScheduleRead,
+    dependencies=SCHEDULE_WRITE_ACCESS,
+)
 async def post_publish_schedule(
     schedule_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> ScheduleRead:
-    require_finance_manager_plus(actor)
     schedule = await shift_schedule_service.publish_schedule(session, schedule_id, actor=actor)
     return _schedule_to_read(schedule)
 
 
-@router.post("/{schedule_id}/new-version", response_model=ScheduleRead)
+@router.post(
+    "/{schedule_id}/new-version",
+    response_model=ScheduleRead,
+    dependencies=SCHEDULE_WRITE_ACCESS,
+)
 async def post_new_version(
     schedule_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> ScheduleRead:
-    require_finance_manager_plus(actor)
     schedule = await shift_schedule_service.create_new_version(session, schedule_id, actor=actor)
     return _schedule_to_read(schedule)
 
 
-@router.delete("/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{schedule_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=SCHEDULE_WRITE_ACCESS,
+)
 async def delete_schedule(
     schedule_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Response:
-    require_finance_manager_plus(actor)
     await shift_schedule_service.delete_schedule(session, schedule_id, actor=actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/{schedule_id}/shifts", response_model=ScheduledShiftRead)
+@router.post(
+    "/{schedule_id}/shifts",
+    response_model=ScheduledShiftRead,
+    dependencies=SCHEDULE_WRITE_ACCESS,
+)
 async def post_shift(
     schedule_id: uuid.UUID,
     payload: ScheduledShiftUpsertRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> ScheduledShiftRead:
-    require_finance_manager_plus(actor)
     shift = await shift_schedule_service.upsert_shift(
         session,
         schedule_id,
@@ -570,7 +586,11 @@ async def post_shift(
     return _shift_to_read(shift, employee)
 
 
-@router.patch("/{schedule_id}/shifts/{shift_id}", response_model=ScheduledShiftRead)
+@router.patch(
+    "/{schedule_id}/shifts/{shift_id}",
+    response_model=ScheduledShiftRead,
+    dependencies=SCHEDULE_WRITE_ACCESS,
+)
 async def patch_shift(
     schedule_id: uuid.UUID,
     shift_id: uuid.UUID,
@@ -578,7 +598,6 @@ async def patch_shift(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> ScheduledShiftRead:
-    require_finance_manager_plus(actor)
     shift = await shift_schedule_service.update_shift(
         session,
         schedule_id,
@@ -599,6 +618,7 @@ async def patch_shift(
 @router.delete(
     "/{schedule_id}/shifts/{shift_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=SCHEDULE_WRITE_ACCESS,
 )
 async def delete_shift(
     schedule_id: uuid.UUID,
@@ -606,7 +626,6 @@ async def delete_shift(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Response:
-    require_finance_manager_plus(actor)
     await shift_schedule_service.delete_shift(
         session,
         shift_id,
@@ -616,14 +635,17 @@ async def delete_shift(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/{schedule_id}/copy-week", response_model=CopyWeekResponse)
+@router.post(
+    "/{schedule_id}/copy-week",
+    response_model=CopyWeekResponse,
+    dependencies=SCHEDULE_WRITE_ACCESS,
+)
 async def post_copy_week(
     schedule_id: uuid.UUID,
     payload: CopyWeekRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> CopyWeekResponse:
-    require_finance_manager_plus(actor)
     copied = await shift_schedule_service.bulk_copy_week(
         session,
         schedule_id,
