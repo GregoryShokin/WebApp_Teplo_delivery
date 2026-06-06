@@ -193,6 +193,12 @@ export function PayrollAccrualsTab({ onNavigate }: PayrollAccrualsTabProps) {
           value={formatAggregateMoney(totals?.deposit_withheld)}
           description="Выделено из удержаний"
         />
+        <AccrualMetric
+          title="НДФЛ удержано"
+          value={formatAggregateMoney(totals?.ndfl_total)}
+          description="По импортированным строкам"
+          tone="warning"
+        />
       </section>
 
       {aggregate && aggregate.periods.length === 0 && !aggregateQuery.isFetching ? (

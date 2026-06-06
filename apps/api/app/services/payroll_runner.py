@@ -188,6 +188,18 @@ async def run_payroll(
     period = await session.get(PayrollPeriod, period_id)
     if period is None:
         raise PayrollNotFoundError("Payroll period not found")
+    imported_run = await session.scalar(
+        select(PayrollRun)
+        .where(
+            PayrollRun.period_id == period.id,
+            PayrollRun.is_imported_legacy.is_(True),
+        )
+        .limit(1)
+    )
+    if imported_run is not None:
+        raise PayrollConflictError(
+            "Это импортированный период — пересчёт затрёт исторические данные"
+        )
     if period.status == "finalized":
         raise PayrollConflictError("Payroll period is finalized")
 
@@ -906,6 +918,7 @@ def serialize_run(run: PayrollRun, period: PayrollPeriod | None = None) -> dict[
         "status": run.status,
         "blocking_issues": run.blocking_issues or [],
         "summary": run.summary or {},
+        "is_imported_legacy": bool(getattr(run, "is_imported_legacy", False)),
     }
     if period is not None:
         data["period"] = serialize_period(period)

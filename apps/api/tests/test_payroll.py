@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import csv
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -39,6 +41,7 @@ from app.models import (
     ShiftLedgerEntry,
 )
 from app.schemas.payroll import DeferredChargeCreate
+from app.scripts.import_legacy_payroll import import_csv_with_session
 from app.services import deferred_audit_charge_service as deferred_charge_service
 from app.services import shift_ledger as shift_ledger_service
 from app.services.accumulation_fund_service import forfeit_active_fund_on_dismiss
@@ -221,6 +224,7 @@ def make_payroll_line(
     premium: Decimal | None = None,
     percent_pay: Decimal | None = None,
     vacation_pay: Decimal | None = None,
+    ndfl_withheld: Decimal | None = None,
     fund_accrual: Decimal | None = None,
     deduction: Decimal | None = None,
     total_payable: Decimal | None = None,
@@ -234,6 +238,7 @@ def make_payroll_line(
         premium=premium if premium is not None else Decimal("1500"),
         percent_pay=percent_pay if percent_pay is not None else Decimal("750"),
         vacation_pay=vacation_pay if vacation_pay is not None else Decimal("0"),
+        ndfl_withheld=ndfl_withheld if ndfl_withheld is not None else Decimal("0"),
         fund_accrual=fund_accrual if fund_accrual is not None else Decimal("500"),
         deduction=deduction if deduction is not None else Decimal("250"),
         total_payable=total_payable if total_payable is not None else Decimal("12000"),
@@ -271,6 +276,217 @@ def make_adjustment(
     )
     adjustment.category = category
     return adjustment
+
+
+class LegacyImportScalarResult:
+    def __init__(self, items: list[Any]) -> None:
+        self._items = items
+
+    def all(self) -> list[Any]:
+        return self._items
+
+
+class LegacyImportFakeSession:
+    def __init__(
+        self,
+        employees: list[Employee],
+        *,
+        assignments: list[EmployeeRoleAssignment] | None = None,
+    ) -> None:
+        self.employees = employees
+        self.assignments = assignments or []
+        self.categories: list[PayrollAdjustmentCategory] = []
+        self.periods: list[PayrollPeriod] = []
+        self.runs: list[PayrollRun] = []
+        self.lines: list[PayrollLine] = []
+        self.adjustments: list[PayrollAdjustment] = []
+        self.deposits: list[DepositTransaction] = []
+        self.executed: list[Any] = []
+
+    async def scalar(self, query: Any) -> Any:
+        entity = query_entity(query)
+        if entity is PayrollAdjustmentCategory:
+            code = query_bound_value(query, "code")
+            return next((category for category in self.categories if category.code == code), None)
+        if entity is PayrollPeriod:
+            start_date = query_bound_value(query, "start_date")
+            end_date = query_bound_value(query, "end_date")
+            return next(
+                (
+                    period
+                    for period in self.periods
+                    if period.start_date == start_date and period.end_date == end_date
+                ),
+                None,
+            )
+        if entity is PayrollRun:
+            period_id = query_bound_value(query, "period_id")
+            return next(
+                (run for run in self.runs if run.period_id == period_id and run.is_imported_legacy),
+                None,
+            )
+        if entity is EmployeeRoleAssignment:
+            employee_id = query_bound_value(query, "employee_id")
+            return next(
+                (
+                    assignment
+                    for assignment in self.assignments
+                    if assignment.employee_id == employee_id
+                ),
+                None,
+            )
+        return None
+
+    async def scalars(self, query: Any) -> LegacyImportScalarResult:
+        entity = query_entity(query)
+        if entity is Employee:
+            return LegacyImportScalarResult(self.employees)
+        if entity is PayrollAdjustmentCategory:
+            return LegacyImportScalarResult(self.categories)
+        return LegacyImportScalarResult([])
+
+    def add(self, item: Any) -> None:
+        if isinstance(item, PayrollAdjustmentCategory):
+            self.categories.append(item)
+        elif isinstance(item, PayrollPeriod):
+            self.periods.append(item)
+        elif isinstance(item, PayrollRun):
+            self.runs.append(item)
+        elif isinstance(item, PayrollLine):
+            self.lines.append(item)
+        elif isinstance(item, PayrollAdjustment):
+            self.adjustments.append(item)
+        elif isinstance(item, DepositTransaction):
+            self.deposits.append(item)
+
+    async def flush(self) -> None:
+        return None
+
+    async def execute(self, statement: Any) -> None:
+        self.executed.append(statement)
+
+
+def legacy_payroll_row(
+    work_date: str,
+    amount: str,
+    employee_name: str,
+    payment_type: str,
+    *,
+    description: str = "",
+    department: str = "Производство Черникова",
+    year: str = "2026",
+) -> dict[str, str]:
+    return {
+        "Date": work_date,
+        "Amount": amount,
+        "Employee Name": employee_name,
+        "Position": "Повар",
+        "Department": department,
+        "Payment Type": payment_type,
+        "Description": description,
+        "Year": year,
+    }
+
+
+def write_legacy_payroll_csv(tmp_path: Path, rows: list[dict[str, str]]) -> Path:
+    path = tmp_path / "legacy-payroll.csv"
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=[
+                "Date",
+                "Amount",
+                "Employee Name",
+                "Position",
+                "Department",
+                "Payment Type",
+                "Description",
+                "Year",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
+
+
+async def test_legacy_import_basic(tmp_path: Path) -> None:
+    employee = make_employee()
+    employee.full_name = "Иван Импортов"
+    session = LegacyImportFakeSession([employee])
+    csv_path = write_legacy_payroll_csv(
+        tmp_path,
+        [
+            legacy_payroll_row("03.06.2026", "5,000", employee.full_name, "Оклад"),
+            legacy_payroll_row(
+                "03.06.2026",
+                "1000",
+                employee.full_name,
+                "Премия",
+                description="За смену",
+            ),
+            legacy_payroll_row("03.06.2026", "500", employee.full_name, "НДФЛ Начислено"),
+        ],
+    )
+
+    summary = await import_csv_with_session(session, csv_path)  # type: ignore[arg-type]
+
+    assert summary.runs_created == 1
+    assert summary.lines_created == 1
+    assert summary.adjustments_created == 1
+    assert len(session.periods) == 1
+    assert session.periods[0].start_date == date(2026, 6, 2)
+    assert session.periods[0].end_date == date(2026, 6, 8)
+    assert session.runs[0].status == "finalized"
+    assert session.runs[0].is_imported_legacy is True
+    line = session.lines[0]
+    assert line.base_pay == Decimal("5000.00")
+    assert line.ndfl_withheld == Decimal("500.00")
+    assert line.total_payable == Decimal("5500.00")
+    assert line.components["days"][0]["ndfl_withheld"] == "500.00"
+    adjustment = session.adjustments[0]
+    assert adjustment.type == "bonus"
+    assert adjustment.amount == Decimal("1000.00")
+    assert adjustment.comment == "За смену"
+    assert adjustment.created_by_label == "import:legacy"
+
+
+async def test_legacy_import_unknown_employee_skipped(tmp_path: Path) -> None:
+    employee = make_employee()
+    employee.full_name = "Иван Импортов"
+    session = LegacyImportFakeSession([employee])
+    csv_path = write_legacy_payroll_csv(
+        tmp_path,
+        [legacy_payroll_row("03.06.2026", "5000", "Неизвестный Сотрудник", "Оклад")],
+    )
+
+    summary = await import_csv_with_session(session, csv_path)  # type: ignore[arg-type]
+
+    assert summary.unmatched_employees == {"Неизвестный Сотрудник"}
+    assert summary.lines_created == 0
+    assert session.periods == []
+    assert session.runs == []
+
+
+async def test_legacy_import_period_grouping(tmp_path: Path) -> None:
+    employee = make_employee()
+    employee.full_name = "Иван Импортов"
+    session = LegacyImportFakeSession([employee])
+    csv_path = write_legacy_payroll_csv(
+        tmp_path,
+        [
+            legacy_payroll_row("02.06.2026", "1000", employee.full_name, "Оклад"),
+            legacy_payroll_row("08.06.2026", "2000", employee.full_name, "Оклад"),
+        ],
+    )
+
+    summary = await import_csv_with_session(session, csv_path)  # type: ignore[arg-type]
+
+    assert summary.runs_created == 1
+    assert summary.lines_created == 1
+    assert session.periods[0].start_date == date(2026, 6, 2)
+    assert session.periods[0].end_date == date(2026, 6, 8)
+    assert session.lines[0].base_pay == Decimal("3000.00")
+    assert session.lines[0].total_payable == Decimal("3000.00")
 
 
 def make_inventory_audit(
@@ -1212,19 +1428,11 @@ def payroll_aggregate_query_filters(stmt: Any) -> tuple[date | None, date | None
     except Exception:  # noqa: BLE001
         return None, None, set()
     date_to = next(
-        (
-            value
-            for key, value in params.items()
-            if "start_date" in key and isinstance(value, date)
-        ),
+        (value for key, value in params.items() if "start_date" in key and isinstance(value, date)),
         None,
     )
     date_from = next(
-        (
-            value
-            for key, value in params.items()
-            if "end_date" in key and isinstance(value, date)
-        ),
+        (value for key, value in params.items() if "end_date" in key and isinstance(value, date)),
         None,
     )
     statuses_value = next(

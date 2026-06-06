@@ -33,6 +33,7 @@ async def build_aggregate(
     percent_pay = Decimal("0")
     vacation_pay = Decimal("0")
     fund_accrual = Decimal("0")
+    ndfl_total = Decimal("0")
     deduction = Decimal("0")
     total_payable = Decimal("0")
     bonus_total = Decimal("0")
@@ -48,6 +49,7 @@ async def build_aggregate(
         percent_pay += money_decimal(line.percent_pay)
         vacation_pay += money_decimal(line.vacation_pay)
         fund_accrual += money_decimal(line.fund_accrual)
+        ndfl_total += money_decimal(getattr(line, "ndfl_withheld", 0))
         deduction += money_decimal(line.deduction)
         total_payable += money_decimal(line.total_payable)
         employee_ids.add(str(line.employee_id))
@@ -101,6 +103,7 @@ async def build_aggregate(
             "bonus_total": money_string(bonus_total),
             "penalty_total": money_string(penalty_total),
             "deposit_withheld": money_string(deposit_withheld),
+            "ndfl_total": money_string(ndfl_total),
             "gross": money_string(gross),
             "total_payable": money_string(total_payable),
         },

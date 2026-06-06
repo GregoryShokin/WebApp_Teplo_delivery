@@ -9,11 +9,46 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import PayrollAdjustment, PayrollPeriod, PayrollRun
+from app.models import PayrollAdjustment, PayrollAdjustmentCategory, PayrollPeriod, PayrollRun
+
+LEGACY_CATEGORIES = [
+    {"code": "premium", "type": "bonus", "display_name": "Премия", "sort_order": 10},
+    {
+        "code": "audit_penalty",
+        "type": "penalty",
+        "display_name": "Штраф по ревизии",
+        "sort_order": 20,
+    },
+    {
+        "code": "manual_penalty",
+        "type": "penalty",
+        "display_name": "Удержание/штраф",
+        "sort_order": 30,
+    },
+]
 
 
 class PayrollAdjustmentLockedError(ValueError):
     pass
+
+
+async def ensure_legacy_categories(session: AsyncSession) -> None:
+    for spec in LEGACY_CATEGORIES:
+        existing = await session.scalar(
+            select(PayrollAdjustmentCategory).where(PayrollAdjustmentCategory.code == spec["code"])
+        )
+        if existing is None:
+            session.add(
+                PayrollAdjustmentCategory(
+                    id=uuid.uuid4(),
+                    code=spec["code"],
+                    type=spec["type"],
+                    display_name=spec["display_name"],
+                    sort_order=spec["sort_order"],
+                    is_active=True,
+                )
+            )
+    await session.flush()
 
 
 async def assert_date_not_locked(session: AsyncSession, work_date: date) -> None:

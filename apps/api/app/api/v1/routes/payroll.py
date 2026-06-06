@@ -40,8 +40,8 @@ from app.services.deferred_audit_charge_service import (
     create_deferred_charge,
     list_deferred_charges,
 )
-from app.services.payroll_config import list_enabled_role_categories
 from app.services.payroll_aggregate_service import build_aggregate
+from app.services.payroll_config import list_enabled_role_categories
 from app.services.payroll_personal_report import build_personal_report
 from app.services.payroll_runner import (
     PayrollConflictError,
@@ -300,11 +300,13 @@ def serialize_payroll_line(
     payouts_by_employee: dict[uuid.UUID, float],
 ) -> PayrollLineRead:
     components = line.components if isinstance(line.components, dict) else {}
+    if getattr(line, "ndfl_withheld", None) is None:
+        line.ndfl_withheld = Decimal("0")
     return PayrollLineRead.model_validate(line).model_copy(
         update={
             "deposit_withholding": money_float(components.get("deposit_withholding", 0)),
             "deposit_payout": payouts_by_employee.get(line.employee_id, 0),
-            "ndfl_deduction": 0,
+            "ndfl_deduction": money_float(getattr(line, "ndfl_withheld", 0)),
         }
     )
 

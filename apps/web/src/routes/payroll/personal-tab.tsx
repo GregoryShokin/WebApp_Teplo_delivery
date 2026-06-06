@@ -96,12 +96,12 @@ export function PayrollPersonalReportPageTab() {
   const report = reportQuery.data;
   const hasReportData = Boolean(
     report &&
-      (report.periods.length > 0 ||
-        report.daily.length > 0 ||
-        report.adjustments.length > 0 ||
-        report.deposit_transactions.length > 0 ||
-        Number(report.opening_balance) !== 0 ||
-        Number(report.closing_balance) !== 0),
+    (report.periods.length > 0 ||
+      report.daily.length > 0 ||
+      report.adjustments.length > 0 ||
+      report.deposit_transactions.length > 0 ||
+      Number(report.opening_balance) !== 0 ||
+      Number(report.closing_balance) !== 0),
   );
   const periodColumns: Array<DataTableColumn<PayrollPersonalReportPeriod>> = [
     {
@@ -139,6 +139,13 @@ export function PayrollPersonalReportPageTab() {
       key: "fund_accrual",
       header: "Фонд",
       cell: (row) => formatMoney(row.fund_accrual),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "ndfl_withheld",
+      header: "НДФЛ",
+      cell: (row) => formatMoney(row.ndfl_withheld),
       className: "text-right tabular-nums",
       headerClassName: "text-right",
     },
@@ -263,9 +270,9 @@ export function PayrollPersonalReportPageTab() {
     {
       key: "ndfl",
       header: "Удержание НДФЛ",
-      cell: () => <span className="text-muted-foreground">—</span>,
-      className: "text-center",
-      headerClassName: "text-center",
+      cell: (row) => formatMoney(row.ndfl_withheld),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
     },
     {
       key: "salary_payout",

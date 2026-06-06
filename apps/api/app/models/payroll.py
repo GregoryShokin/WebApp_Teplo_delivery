@@ -131,6 +131,12 @@ class PayrollRun(Base):
     summary: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )
+    is_imported_legacy: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
 
 
 class PayrollLine(Base):
@@ -152,6 +158,9 @@ class PayrollLine(Base):
     premium: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     percent_pay: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     vacation_pay: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    ndfl_withheld: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
     fund_accrual: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     deduction: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     total_payable: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)

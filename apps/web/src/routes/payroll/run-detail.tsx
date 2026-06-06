@@ -53,7 +53,6 @@ import {
   type AppSetting,
   type Employee,
   type PayrollLine,
-  type PayrollRun,
 } from "@/lib/api";
 import { getAuthSnapshot } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -88,6 +87,8 @@ type PayrollLineRowModel = {
   employeeName: string;
   hours: number;
 };
+
+const LEGACY_RECALC_MESSAGE = "Это импортированный период — пересчёт затрёт исторические данные";
 
 export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRouteProps) {
   const queryClient = useQueryClient();
@@ -127,6 +128,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const employeeCount = new Set(lines.map((line) => line.employee_id)).size;
   const totalHours = lines.reduce((sum, line) => sum + lineHours(line), 0);
   const blockers = run?.blocking_issues ?? [];
+  const isLegacyRun = Boolean(run?.is_imported_legacy);
   const isFinal = run ? isFinalStatus(run.status) : false;
   const canManagePayroll = canFinalizeByRole();
   const canFinalize =
@@ -179,6 +181,13 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
     <div className="space-y-5">
       <PageHeader
         title={run ? formatPeriodRange(run.period) : "Расчёт ЗП"}
+        titleAccessory={
+          isLegacyRun ? (
+            <Badge className="rounded-md border-sky-200 bg-sky-50 text-sm text-sky-800 shadow-none">
+              Импортирован из выгрузки
+            </Badge>
+          ) : null
+        }
         description={run ? runMeta(run) : "Загрузка расчёта"}
         action={
           <>
@@ -187,54 +196,31 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
               <ArrowLeft size={16} aria-hidden="true" />
               Назад
             </Button>
-            <AlertDialog
-              open={isRecalculateDialogOpen}
-              onOpenChange={(open) => {
-                if (!recalculateMutation.isPending) {
-                  setIsRecalculateDialogOpen(open);
-                }
-              }}
-            >
-              <AlertDialogTrigger asChild>
-                <Button
-                  disabled={!run || recalculateMutation.isPending}
-                  title="Пересчитать"
-                  variant="outline"
-                >
-                  {recalculateMutation.isPending ? (
-                    <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-                  ) : (
-                    <RefreshCw size={16} aria-hidden="true" />
-                  )}
-                  Пересчитать
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>
-                    Пересчитать расчёт за {run ? formatPeriodRange(run.period) : "период"}?
-                  </AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Текущие линии расчёта будут пересозданы, ручные корректировки в журнале смен НЕ
-                    потеряются.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel
-                    disabled={recalculateMutation.isPending}
-                    onClick={() => setIsRecalculateDialogOpen(false)}
-                    type="button"
-                  >
-                    Отмена
-                  </AlertDialogCancel>
-                  <AlertDialogAction
+            {isLegacyRun ? (
+              <Button
+                aria-disabled="true"
+                className="cursor-not-allowed opacity-50"
+                onClick={() => window.alert(LEGACY_RECALC_MESSAGE)}
+                title={LEGACY_RECALC_MESSAGE}
+                variant="outline"
+              >
+                <RefreshCw size={16} aria-hidden="true" />
+                Пересчитать
+              </Button>
+            ) : (
+              <AlertDialog
+                open={isRecalculateDialogOpen}
+                onOpenChange={(open) => {
+                  if (!recalculateMutation.isPending) {
+                    setIsRecalculateDialogOpen(open);
+                  }
+                }}
+              >
+                <AlertDialogTrigger asChild>
+                  <Button
                     disabled={!run || recalculateMutation.isPending}
-                    onClick={() => {
-                      if (run) {
-                        recalculateMutation.mutate(run.period_id);
-                      }
-                    }}
-                    type="button"
+                    title="Пересчитать"
+                    variant="outline"
                   >
                     {recalculateMutation.isPending ? (
                       <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
@@ -242,10 +228,46 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
                       <RefreshCw size={16} aria-hidden="true" />
                     )}
                     Пересчитать
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      Пересчитать расчёт за {run ? formatPeriodRange(run.period) : "период"}?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Текущие линии расчёта будут пересозданы, ручные корректировки в журнале смен
+                      НЕ потеряются.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel
+                      disabled={recalculateMutation.isPending}
+                      onClick={() => setIsRecalculateDialogOpen(false)}
+                      type="button"
+                    >
+                      Отмена
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      disabled={!run || recalculateMutation.isPending}
+                      onClick={() => {
+                        if (run) {
+                          recalculateMutation.mutate(run.period_id);
+                        }
+                      }}
+                      type="button"
+                    >
+                      {recalculateMutation.isPending ? (
+                        <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                      ) : (
+                        <RefreshCw size={16} aria-hidden="true" />
+                      )}
+                      Пересчитать
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
             <Button onClick={finalize} disabled={!canFinalize || finalizeMutation.isPending}>
               {finalizeMutation.isPending ? (
                 <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
@@ -474,15 +496,10 @@ function PayrollByEmployeeTab({
       key: "ndfl_deduction",
       header: (
         <SortButton active={sortKey === "ndfl_deduction"} onClick={() => setSort("ndfl_deduction")}>
-          <span className="inline-flex items-center gap-1">
-            НДФЛ
-            <Badge className="rounded-sm border-amber-200 bg-amber-50 px-1 py-0 text-[10px] normal-case text-amber-800 shadow-none">
-              заглушка
-            </Badge>
-          </span>
+          НДФЛ
         </SortButton>
       ),
-      cell: (row) => formatMoney(row.line.ndfl_deduction),
+      cell: (row) => formatMoney(row.line.ndfl_withheld),
       className: "text-right tabular-nums",
       headerClassName: "text-right",
     },
@@ -909,7 +926,7 @@ function compareRows(
     return (left.line.fund_accrual - right.line.fund_accrual) * modifier;
   }
   if (sortKey === "ndfl_deduction") {
-    return (left.line.ndfl_deduction - right.line.ndfl_deduction) * modifier;
+    return (left.line.ndfl_withheld - right.line.ndfl_withheld) * modifier;
   }
   if (sortKey === "total") {
     return (left.line.total_payable - right.line.total_payable) * modifier;

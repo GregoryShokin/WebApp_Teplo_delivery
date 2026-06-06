@@ -36,6 +36,7 @@ class PayrollRunRead(BaseModel):
     status: str
     blocking_issues: list[dict[str, Any]]
     summary: dict[str, Any]
+    is_imported_legacy: bool = False
     period: PayrollPeriodRead | None = None
 
 
@@ -50,6 +51,7 @@ class PayrollLineRead(BaseModel):
     premium: float
     percent_pay: float
     vacation_pay: float
+    ndfl_withheld: float = 0
     fund_accrual: float
     deduction: float
     deposit_withholding: float = 0
@@ -127,6 +129,7 @@ class PayrollPersonalReportPeriodRead(BaseModel):
     premium: float
     percent_pay: float
     vacation_pay: float
+    ndfl_withheld: float
     fund_accrual: float
     deduction: float
     deposit_withholding: float
@@ -141,6 +144,7 @@ class PayrollPersonalReportDailyRead(BaseModel):
     percent_pay: float
     premium: float
     vacation_pay: float
+    ndfl_withheld: float
     fund_accrual: float
     deposit_in: float
     deposit_out: float
@@ -173,6 +177,7 @@ class PayrollPersonalReportTotalsRead(BaseModel):
     premium: float
     percent_pay: float
     vacation_pay: float
+    ndfl_withheld: float
     fund_accrual: float
     deduction: float
     deposit_withholding: float
@@ -208,6 +213,7 @@ class PayrollAggregateTotals(BaseModel):
     bonus_total: str
     penalty_total: str
     deposit_withheld: str
+    ndfl_total: str
     gross: str
     total_payable: str
 

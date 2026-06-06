@@ -333,6 +333,7 @@ export type PayrollRun = {
   status: string;
   blocking_issues: Array<Record<string, unknown>>;
   summary: Record<string, unknown>;
+  is_imported_legacy: boolean;
   period: PayrollPeriod | null;
 };
 
@@ -345,6 +346,7 @@ export type PayrollLine = {
   premium: number;
   percent_pay: number;
   vacation_pay: number;
+  ndfl_withheld: number;
   fund_accrual: number;
   deduction: number;
   deposit_withholding: number;
@@ -378,6 +380,7 @@ export type PayrollPersonalReport = {
     premium: number;
     percent_pay: number;
     vacation_pay: number;
+    ndfl_withheld: number;
     fund_accrual: number;
     deduction: number;
     deposit_withholding: number;
@@ -391,6 +394,7 @@ export type PayrollPersonalReport = {
     percent_pay: number;
     premium: number;
     vacation_pay: number;
+    ndfl_withheld: number;
     fund_accrual: number;
     deposit_in: number;
     deposit_out: number;
@@ -423,6 +427,7 @@ export type PayrollPersonalReport = {
     premium: number;
     percent_pay: number;
     vacation_pay: number;
+    ndfl_withheld: number;
     fund_accrual: number;
     deduction: number;
     deposit_withholding: number;
@@ -448,6 +453,7 @@ export type PayrollAggregate = {
     bonus_total: string;
     penalty_total: string;
     deposit_withheld: string;
+    ndfl_total: string;
     gross: string;
     total_payable: string;
   };

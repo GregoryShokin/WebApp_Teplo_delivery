@@ -22,7 +22,12 @@ from app.models import (
 from app.services.payroll_runner import PayrollNotFoundError
 
 RUN_STATUSES = ("completed", "finalized", "final")
-AUDIT_PENALTY_CATEGORY_CODES = {"inventory_shortage", "inventory_audit_penalty", "audit_deferred"}
+AUDIT_PENALTY_CATEGORY_CODES = {
+    "inventory_shortage",
+    "inventory_audit_penalty",
+    "audit_deferred",
+    "audit_penalty",
+}
 MONEY = Decimal("0.01")
 
 
@@ -104,6 +109,7 @@ async def build_personal_report(
         "premium": 0.0,
         "percent_pay": 0.0,
         "vacation_pay": 0.0,
+        "ndfl_withheld": 0.0,
         "fund_accrual": 0.0,
         "deduction": 0.0,
         "deposit_withholding": 0.0,
@@ -130,6 +136,7 @@ async def build_personal_report(
             "premium": money_float(line.premium),
             "percent_pay": money_float(line.percent_pay),
             "vacation_pay": money_float(line.vacation_pay),
+            "ndfl_withheld": money_float(getattr(line, "ndfl_withheld", 0)),
             "fund_accrual": money_float(line.fund_accrual),
             "deduction": money_float(line.deduction),
             "deposit_withholding": deposit_withholding,
@@ -249,6 +256,7 @@ def apply_line_days_to_daily_rows(
             daily_row["base_pay"] += money_decimal(day.get("base_pay"))
             daily_row["percent_pay"] += money_decimal(day.get("percent_pay"))
             daily_row["vacation_pay"] += money_decimal(day.get("vacation_pay"))
+            daily_row["ndfl_withheld"] += money_decimal(day.get("ndfl_withheld"))
             daily_row["fund_accrual"] += money_decimal(day.get("fund_accrual"))
         return
 
@@ -296,6 +304,7 @@ def apply_ledger_fallback_to_daily_rows(
         daily_row["base_pay"] += money_decimal(line.base_pay) * weight
         daily_row["percent_pay"] += money_decimal(line.percent_pay) * weight
         daily_row["vacation_pay"] += money_decimal(line.vacation_pay) * weight
+        daily_row["ndfl_withheld"] += money_decimal(getattr(line, "ndfl_withheld", 0)) * weight
         daily_row["fund_accrual"] += money_decimal(line.fund_accrual) * weight
 
 
@@ -321,6 +330,7 @@ def daily_report_row(rows: dict[date, dict[str, Any]], work_date: date) -> dict[
             "percent_pay": Decimal("0"),
             "premium": Decimal("0"),
             "vacation_pay": Decimal("0"),
+            "ndfl_withheld": Decimal("0"),
             "fund_accrual": Decimal("0"),
             "deposit_in": Decimal("0"),
             "deposit_out": Decimal("0"),
@@ -339,6 +349,7 @@ def serialize_daily_row(row: dict[str, Any]) -> dict[str, Any]:
         "percent_pay": money_float(row["percent_pay"]),
         "premium": money_float(row["premium"]),
         "vacation_pay": money_float(row["vacation_pay"]),
+        "ndfl_withheld": money_float(row["ndfl_withheld"]),
         "fund_accrual": money_float(row["fund_accrual"]),
         "deposit_in": money_float(row["deposit_in"]),
         "deposit_out": money_float(row["deposit_out"]),

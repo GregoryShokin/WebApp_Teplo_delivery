@@ -170,9 +170,9 @@ async def calculate_payroll_lines(
         session,
         (entry.work_date for entry in entries),
     )
-    settings[CASHIER_ALLOWANCE_ASSIGNMENTS_CONFIG_KEY] = (
-        await load_cashier_allowance_assignments_for_entries(session, entries)
-    )
+    settings[
+        CASHIER_ALLOWANCE_ASSIGNMENTS_CONFIG_KEY
+    ] = await load_cashier_allowance_assignments_for_entries(session, entries)
     settings[SHIFT_LEDGER_CONFIG_KEY] = await load_shift_ledger_for_entries(session, entries)
     settings[PAYROLL_ADJUSTMENTS_CONFIG_KEY] = await load_adjustments_for_period(
         session,
@@ -610,10 +610,7 @@ def calculate_payroll_lines_from_inputs(
     deposit_overrides = line_deposit_overrides or {}
     for (employee_id, role), totals in line_totals.items():
         total_before_deduction = (
-            totals["base_pay"]
-            + totals["premium"]
-            + totals["percent_pay"]
-            + totals["vacation_pay"]
+            totals["base_pay"] + totals["premium"] + totals["percent_pay"] + totals["vacation_pay"]
         )
         manual_deduction = totals.get("manual_deduction", Decimal("0"))
         current_deposit_balance = running_deposit_balances.get(employee_id, Decimal("0"))
@@ -621,9 +618,7 @@ def calculate_payroll_lines_from_inputs(
         line_override = line_deposit_override(deposit_overrides, employee_id, role)
         deposit_excluded_for_run = bool(line_override.get("deposit_excluded_for_run", False))
         deposit_exclusion_reason = optional_text(line_override.get("deposit_exclusion_reason"))
-        is_substitute_line = any(
-            bool(day.get("is_substitute")) for day in totals.get("days", [])
-        )
+        is_substitute_line = any(bool(day.get("is_substitute")) for day in totals.get("days", []))
         if deposit_excluded_for_run or is_substitute_line:
             deduction = Decimal("0")
         else:
@@ -647,6 +642,7 @@ def calculate_payroll_lines_from_inputs(
                 premium=money(totals["premium"]),
                 percent_pay=money(totals["percent_pay"]),
                 vacation_pay=money(totals["vacation_pay"]),
+                ndfl_withheld=Decimal("0"),
                 fund_accrual=money(totals["fund_accrual"]),
                 deduction=money(totals["deduction"]),
                 total_payable=money(total_payable),
@@ -760,11 +756,7 @@ def adjustment_target_role(
     while current <= period.end_date:
         assignments = assignments_for_employee_date(settings, employee_id, current)
         primary = next(
-            (
-                assignment
-                for assignment in assignments
-                if getattr(assignment, "is_primary", False)
-            ),
+            (assignment for assignment in assignments if getattr(assignment, "is_primary", False)),
             None,
         )
         if primary is not None:
@@ -956,9 +948,7 @@ def vacation_days_from_settings(settings: Mapping[str, Any]) -> set[tuple[uuid.U
                 else uuid.UUID(str(employee_value))
             )
             work_date = (
-                date_value
-                if isinstance(date_value, date)
-                else date.fromisoformat(str(date_value))
+                date_value if isinstance(date_value, date) else date.fromisoformat(str(date_value))
             )
         except (TypeError, ValueError):
             continue
@@ -988,10 +978,7 @@ def category_for_payroll_entry(
         if assignment_role:
             for assignment in assignments:
                 category = getattr(assignment, "category", None)
-                if (
-                    getattr(assignment, "payroll_role", None) == assignment_role
-                    and category
-                ):
+                if getattr(assignment, "payroll_role", None) == assignment_role and category:
                     return str(category)
         primary = next(
             (
@@ -1083,9 +1070,7 @@ def allowance_flags_for_payroll_entry(
         return fallback
     return {
         "is_senior": bool(value.get("is_senior", fallback["is_senior"])),
-        "is_deputy_senior": bool(
-            value.get("is_deputy_senior", fallback["is_deputy_senior"])
-        ),
+        "is_deputy_senior": bool(value.get("is_deputy_senior", fallback["is_deputy_senior"])),
     }
 
 
