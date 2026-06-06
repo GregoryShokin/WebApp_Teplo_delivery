@@ -87,7 +87,6 @@ export const PERMISSION_GROUPS = {
     "staff.cashiers.read",
     "staff.auxiliary.read",
     "staff.couriers.read",
-    "staff.production.read",
   ],
   staffCreate: [
     "staff.administration.create",
@@ -101,7 +100,6 @@ export const PERMISSION_GROUPS = {
     "staff.cashiers.edit",
     "staff.auxiliary.edit",
     "staff.couriers.edit",
-    "staff.production.edit",
   ],
   staffDismiss: [
     "staff.administration.dismiss",
@@ -109,7 +107,6 @@ export const PERMISSION_GROUPS = {
     "staff.cashiers.dismiss",
     "staff.auxiliary.dismiss",
     "staff.couriers.dismiss",
-    "staff.production.dismiss",
   ],
   staffReinstate: [
     "staff.administration.reinstate",
@@ -117,7 +114,6 @@ export const PERMISSION_GROUPS = {
     "staff.cashiers.reinstate",
     "staff.auxiliary.reinstate",
     "staff.couriers.reinstate",
-    "staff.production.reinstate",
   ],
   staffHistoryRead: [
     "staff.administration.history.read",
@@ -125,7 +121,6 @@ export const PERMISSION_GROUPS = {
     "staff.cashiers.history.read",
     "staff.auxiliary.history.read",
     "staff.couriers.history.read",
-    "staff.production.history.read",
   ],
   couriersRead: [
     "couriers.list.read",

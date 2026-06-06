@@ -34,7 +34,6 @@ class StaffAction(StrEnum):
     REINSTATE = "reinstate"
     HISTORY_READ = "history.read"
     ASSIGN_ROLES_CATEGORIES = "assign_roles_categories"
-    ASSIGN_ALLOWANCES = "assign_allowances"
 
 
 SPECIFIC_STAFF_AREAS: tuple[StaffArea, ...] = (
@@ -43,24 +42,6 @@ SPECIFIC_STAFF_AREAS: tuple[StaffArea, ...] = (
     StaffArea.CASHIERS,
     StaffArea.AUXILIARY,
     StaffArea.COURIERS,
-)
-PRODUCTION_STAFF_AREAS = frozenset(
-    {
-        StaffArea.COOKS,
-        StaffArea.CASHIERS,
-        StaffArea.AUXILIARY,
-    }
-)
-PRODUCTION_STAFF_ACTIONS = frozenset(
-    {
-        StaffAction.READ,
-        StaffAction.EDIT,
-        StaffAction.DISMISS,
-        StaffAction.REINSTATE,
-        StaffAction.HISTORY_READ,
-        StaffAction.ASSIGN_ROLES_CATEGORIES,
-        StaffAction.ASSIGN_ALLOWANCES,
-    }
 )
 
 AREA_PERMISSION_SEGMENTS = {
@@ -226,21 +207,11 @@ def _staff_area_permission_is_granted(
     area: StaffArea,
     action: StaffAction,
 ) -> bool:
-    if permission_is_granted(_area_permission_code(area, action), permission_codes):
-        return True
-    return (
-        area in PRODUCTION_STAFF_AREAS
-        and action in PRODUCTION_STAFF_ACTIONS
-        and permission_is_granted(_production_permission_code(action), permission_codes)
-    )
+    return permission_is_granted(_area_permission_code(area, action), permission_codes)
 
 
 def _area_permission_code(area: StaffArea, action: StaffAction) -> str:
     return f"staff.{AREA_PERMISSION_SEGMENTS[area]}.{action.value}"
-
-
-def _production_permission_code(action: StaffAction) -> str:
-    return f"staff.production.{action.value}"
 
 
 def _positions_for_areas(areas: Iterable[StaffArea]) -> frozenset[str]:

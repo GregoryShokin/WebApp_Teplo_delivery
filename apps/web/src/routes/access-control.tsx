@@ -1154,7 +1154,6 @@ function permissionAreaLabel(code: string, module: string) {
   if (code.startsWith("staff.cashiers.")) return "Кассиры";
   if (code.startsWith("staff.auxiliary.")) return "Вспомогательный персонал";
   if (code.startsWith("staff.couriers.")) return "Курьеры в Штате";
-  if (code.startsWith("staff.production.")) return "Производственный персонал";
 
   if (code.startsWith("couriers.list.")) return "Список курьеров";
   if (code.startsWith("couriers.statistics.")) return "Статистика";

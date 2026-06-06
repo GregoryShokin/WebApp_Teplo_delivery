@@ -5509,9 +5509,9 @@ type StaffPermissions = ReturnType<typeof usePermissions>;
 function canReadStaffPosition(position: CanonicalPosition, permissions: StaffPermissions) {
   const area = staffAreaForPosition(position);
   if (area === "administration") return permissions.hasPermission("staff.administration.read");
-  if (area === "cooks") return permissions.hasAnyPermission(["staff.cooks.read", "staff.production.read"]);
-  if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.read", "staff.production.read"]);
-  if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.read", "staff.production.read"]);
+  if (area === "cooks") return permissions.hasAnyPermission(["staff.cooks.read"]);
+  if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.read"]);
+  if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.read"]);
   if (area === "couriers") return permissions.hasPermission("staff.couriers.read");
   return false;
 }
@@ -5528,9 +5528,9 @@ function canCreateStaffPosition(position: CanonicalPosition, permissions: StaffP
 function canEditStaffEmployee(employee: Employee, permissions: StaffPermissions) {
   const area = staffAreaForEmployee(employee);
   if (area === "administration") return permissions.hasPermission("staff.administration.edit");
-  if (area === "cooks") return permissions.hasAnyPermission(["staff.cooks.edit", "staff.production.edit"]);
-  if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.edit", "staff.production.edit"]);
-  if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.edit", "staff.production.edit"]);
+  if (area === "cooks") return permissions.hasAnyPermission(["staff.cooks.edit"]);
+  if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.edit"]);
+  if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.edit"]);
   if (area === "couriers") return permissions.hasPermission("staff.couriers.edit");
   return false;
 }
@@ -5538,9 +5538,9 @@ function canEditStaffEmployee(employee: Employee, permissions: StaffPermissions)
 function canDismissStaffEmployee(employee: Employee, permissions: StaffPermissions) {
   const area = staffAreaForEmployee(employee);
   if (area === "administration") return permissions.hasPermission("staff.administration.dismiss");
-  if (area === "cooks") return permissions.hasAnyPermission(["staff.cooks.dismiss", "staff.production.dismiss"]);
-  if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.dismiss", "staff.production.dismiss"]);
-  if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.dismiss", "staff.production.dismiss"]);
+  if (area === "cooks") return permissions.hasAnyPermission(["staff.cooks.dismiss"]);
+  if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.dismiss"]);
+  if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.dismiss"]);
   if (area === "couriers") return permissions.hasPermission("staff.couriers.dismiss");
   return false;
 }
@@ -5548,9 +5548,9 @@ function canDismissStaffEmployee(employee: Employee, permissions: StaffPermissio
 function canReinstateStaffEmployee(employee: Employee, permissions: StaffPermissions) {
   const area = staffAreaForEmployee(employee);
   if (area === "administration") return permissions.hasPermission("staff.administration.reinstate");
-  if (area === "cooks") return permissions.hasAnyPermission(["staff.cooks.reinstate", "staff.production.reinstate"]);
-  if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.reinstate", "staff.production.reinstate"]);
-  if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.reinstate", "staff.production.reinstate"]);
+  if (area === "cooks") return permissions.hasAnyPermission(["staff.cooks.reinstate"]);
+  if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.reinstate"]);
+  if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.reinstate"]);
   if (area === "couriers") return permissions.hasPermission("staff.couriers.reinstate");
   return false;
 }
@@ -5558,9 +5558,9 @@ function canReinstateStaffEmployee(employee: Employee, permissions: StaffPermiss
 function canReadStaffEmployeeHistory(employee: Employee, permissions: StaffPermissions) {
   const area = staffAreaForEmployee(employee);
   if (area === "administration") return permissions.hasPermission("staff.administration.history.read");
-  if (area === "cooks") return permissions.hasAnyPermission(["staff.cooks.history.read", "staff.production.history.read"]);
-  if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.history.read", "staff.production.history.read"]);
-  if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.history.read", "staff.production.history.read"]);
+  if (area === "cooks") return permissions.hasAnyPermission(["staff.cooks.history.read"]);
+  if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.history.read"]);
+  if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.history.read"]);
   if (area === "couriers") return permissions.hasPermission("staff.couriers.history.read");
   return false;
 }
