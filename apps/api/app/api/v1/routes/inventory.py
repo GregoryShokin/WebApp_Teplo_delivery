@@ -70,10 +70,6 @@ from app.services.inventory_audit_service import (
 )
 
 router = APIRouter()
-INVENTORY_READ_ACCESS = (Depends(require_permission("accounting.inventory.read")),)
-INVENTORY_DIRECTORY_EDIT_ACCESS = (
-    Depends(require_permission("accounting.inventory_directory.edit")),
-)
 SOURCE_REVISION_SETTINGS_READ_ACCESS = (
     Depends(require_permission("source.revision_settings.read")),
 )

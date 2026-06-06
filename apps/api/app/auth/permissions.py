@@ -227,14 +227,6 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Финансы",
         "Разбирать операции для проверки собственником",
     ),
-    ("accounting.inventory.read", "Учёт", "Смотреть инвентаризации"),
-    (
-        "accounting.inventory_directory.edit",
-        "Учёт",
-        "Редактировать справочник инвентаризации",
-    ),
-    ("accounting.inventory.conduct", "Учёт", "Проводить инвентаризацию"),
-    ("accounting.inventory.finalize", "Учёт", "Финализировать инвентаризацию"),
     ("accounting.fixed_assets.read", "Учёт", "Смотреть основные средства"),
     ("accounting.fixed_assets.edit", "Учёт", "Редактировать основные средства"),
     ("accounting.suppliers.read", "Учёт", "Смотреть взаиморасчёты с поставщиками"),
@@ -276,8 +268,6 @@ LEGACY_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ("inventory.read", "Учёт", "Смотреть инвентаризации"),
     ("inventory.write", "Учёт", "Редактировать справочник инвентаризации"),
     ("inventory.audits.write", "Учёт", "Проводить инвентаризацию"),
-    ("accounting.audits.read", "Ревизии", "Смотреть ревизии"),
-    ("accounting.audit_penalties.add", "Ревизии", "Финализировать ревизию"),
     ("staff.read", "Штат", "Смотреть администрацию"),
     ("staff.write", "Штат", "Редактировать администрацию"),
     ("staff.dismiss", "Штат", "Увольнять администрацию"),
@@ -390,10 +380,9 @@ LEGACY_PERMISSION_ALIASES: dict[str, frozenset[str]] = {
     "schedule.write": frozenset({"source.schedule.edit"}),
     "shifts.read": frozenset({"source.shift_ledger.read"}),
     "shifts.write": frozenset({"source.shift_ledger.input", "source.shift_ledger.correct"}),
-    "inventory.read": frozenset({"accounting.inventory.read", "revisions.read"}),
+    "inventory.read": frozenset({"revisions.read"}),
     "inventory.write": frozenset(
         {
-            "accounting.inventory_directory.edit",
             "revisions.create",
             "revisions.drafts.edit",
             "revisions.import",
@@ -409,8 +398,6 @@ LEGACY_PERMISSION_ALIASES: dict[str, frozenset[str]] = {
             "revisions.finalize",
         }
     ),
-    "accounting.audits.read": frozenset({"revisions.read"}),
-    "accounting.audit_penalties.add": frozenset({"revisions.finalize"}),
     "staff.read": frozenset(
         {"staff.administration.read", "staff.administration.history.read"}
     ),
@@ -525,7 +512,6 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "source.import_errors.review",
         "finance.store_cash.read",
         "finance.store_cash.enter",
-        "accounting.inventory.read",
         "revisions.read",
         "revisions.import",
         "revisions.create",
@@ -573,7 +559,6 @@ CASHIER_DEFAULT_PERMISSIONS = frozenset(
         "source.shift_ledger.input",
         "finance.store_cash.read",
         "finance.store_cash.enter",
-        "accounting.inventory.read",
     }
 )
 

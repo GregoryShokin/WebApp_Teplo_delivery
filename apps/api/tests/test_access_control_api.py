@@ -98,17 +98,17 @@ def test_put_role_permissions_updates_set_and_writes_events(
 
     response = client.put(
         f"/api/v1/access-control/roles/{manager_id}/permissions",
-        json={"permission_codes": ["finance.cashflow.read", "accounting.inventory_directory.edit"]},
+        json={"permission_codes": ["finance.cashflow.read", "accounting.fixed_assets.edit"]},
         headers=admin_headers,
     )
     assert response.status_code == 200
     assert set(response.json()["permission_codes"]) == {
         "finance.cashflow.read",
-        "accounting.inventory_directory.edit",
+        "accounting.fixed_assets.edit",
     }
     assert _run(_role_permission_codes(async_session_factory, "manager")) == {
         "finance.cashflow.read",
-        "accounting.inventory_directory.edit",
+        "accounting.fixed_assets.edit",
     }
 
     response = client.put(
@@ -122,8 +122,8 @@ def test_put_role_permissions_updates_set_and_writes_events(
     }
     events = set(_run(_role_permission_events(async_session_factory, "manager")))
     assert ("added", "finance.cashflow.read") in events
-    assert ("added", "accounting.inventory_directory.edit") in events
-    assert ("removed", "accounting.inventory_directory.edit") in events
+    assert ("added", "accounting.fixed_assets.edit") in events
+    assert ("removed", "accounting.fixed_assets.edit") in events
     manager_headers = _headers_for_user(
         async_session_factory,
         "manager-after-custom-permissions@test.local",
