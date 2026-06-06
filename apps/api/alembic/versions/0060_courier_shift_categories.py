@@ -77,7 +77,7 @@ def upgrade() -> None:
         ),
     )
     op.create_check_constraint(
-        "ck_courier_schedule_entry_category",
+        op.f("ck_courier_schedule_entry_category"),
         "courier_schedule_entry",
         "category in ('primary', 'secondary')",
     )
@@ -98,7 +98,7 @@ def downgrade() -> None:
         table_name="courier_schedule_entry",
     )
     op.drop_constraint(
-        "ck_courier_schedule_entry_category",
+        op.f("ck_courier_schedule_entry_category"),
         "courier_schedule_entry",
         type_="check",
     )
