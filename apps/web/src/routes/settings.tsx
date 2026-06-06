@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, LoaderCircle, Lock, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import {
+  ArrowRight,
+  Eye,
+  LoaderCircle,
+  Lock,
+  Plus,
+  RefreshCw,
+  Save,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -38,7 +48,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { PageHeader } from "@/components/ui-app/PageHeader";
-import { getAuthSnapshot, subscribeAuth } from "@/lib/auth";
+import { getAuthSnapshot, hasAuthPermission, subscribeAuth } from "@/lib/auth";
 import {
   getSettingHistory,
   getSettings,
@@ -54,6 +64,10 @@ import { cn } from "@/lib/utils";
 type CategoryMeta = {
   label: string;
   description: string;
+};
+
+type SettingsRouteProps = {
+  onNavigate?: (path: string) => void;
 };
 
 const CATEGORY_ORDER = [
@@ -121,7 +135,7 @@ const LEGACY_CATEGORY_TO_SLUG: Record<string, string> = {
   "Учёт ДЗ/КЗ": "dz_kz",
 };
 
-export function SettingsRoute() {
+export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
   const queryClient = useQueryClient();
   const auth = useAuthSnapshot();
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
@@ -254,6 +268,7 @@ export function SettingsRoute() {
   }, [selectedCategory, settings]);
 
   const isOwner = Boolean(auth.user?.roles.includes("owner"));
+  const canOpenAccessControl = hasAuthPermission("access_control.users.write", auth);
   const showSubstitutePairsPanel = !selectedCategory || selectedCategory === "payroll";
   const substitutePairs = substitutePairsQuery.data?.pairs ?? [];
   const substitutePairsDirty = !valuesEqual(substituteDrafts, substitutePairs);
@@ -290,6 +305,32 @@ export function SettingsRoute() {
           </Button>
         }
       />
+
+      {canOpenAccessControl ? (
+        <button
+          className="group flex w-full items-center justify-between gap-4 rounded-lg border bg-card p-4 text-left shadow-sm transition-colors hover:bg-muted/50"
+          onClick={() => onNavigate?.("/access-control")}
+          type="button"
+        >
+          <span className="flex min-w-0 items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground">
+              <ShieldCheck size={18} aria-hidden="true" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-base font-semibold tracking-normal">
+                Доступы и полномочия
+              </span>
+              <span className="mt-1 block text-sm leading-6 text-muted-foreground">
+                Пользователи, должности, права и аудит изменений.
+              </span>
+            </span>
+          </span>
+          <ArrowRight
+            className="h-5 w-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+            aria-hidden="true"
+          />
+        </button>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         <CategoryButton active={!selectedCategory} onClick={() => setSelectedCategory(undefined)}>

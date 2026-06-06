@@ -10,6 +10,7 @@ import { CourierDepositsRoute } from "@/routes/couriers/deposits";
 import { PayrollRoute } from "@/routes/payroll";
 import { DdsRoute } from "@/routes/dds";
 import { LoginRoute } from "@/routes/login";
+import { AccessControlRoute } from "@/routes/access-control";
 import { CourierEvaluationsRoute } from "@/routes/couriers/evaluations";
 import { CourierScheduleRoute } from "@/routes/couriers/schedule";
 import { CourierStatisticsRoute } from "@/routes/couriers/statistics";
@@ -204,6 +205,10 @@ const routes: AppRoute[] = [
     render: ({ navigate }) => <PayrollConfigurationRoute onNavigate={navigate} />,
   },
   {
+    path: "/access-control",
+    render: () => <AccessControlRoute />,
+  },
+  {
     path: "/couriers",
     children: [
       {
@@ -321,7 +326,7 @@ const routes: AppRoute[] = [
   },
   {
     path: "/settings",
-    render: () => <SettingsRoute />,
+    render: ({ navigate }) => <SettingsRoute onNavigate={navigate} />,
   },
 ];
 
