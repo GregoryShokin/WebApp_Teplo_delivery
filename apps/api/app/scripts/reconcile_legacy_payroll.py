@@ -14,10 +14,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import csv
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -27,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
 from app.models import (
+    AccumulationFundTransaction,
     DepositTransaction,
     Employee,
     PayrollAdjustment,
@@ -37,9 +37,10 @@ from app.models import (
 )
 from app.scripts.import_legacy_payroll import (
     DEPARTMENT_NAME,
+    LEGACY_FUND_COMMENT_PREFIX,
     PAYMENT_TYPE_MAP,
-    REQUIRED_COLUMNS,
     clean,
+    iter_legacy_csv_rows,
     money,
     money_string,
     parse_amount,
@@ -50,12 +51,7 @@ from app.scripts.import_legacy_payroll import (
 AggregateKey = tuple[date, str, str]
 PaymentTypeMapping = str | tuple[str, str] | tuple[str, str, str]
 
-EXPECTED_SKIPPED_PAYMENT_TYPES = {
-    "Больничные и отпуска и пособия",
-    "Депозит списание",
-    "Накопительный фонд",
-    "Списание накоплений",
-}
+EXPECTED_SKIPPED_PAYMENT_TYPES: set[str] = set()
 LINE_BUCKETS = ("base_pay", "percent_pay", "vacation_pay", "ndfl_withheld")
 TOLERANCE = Decimal("0.01")
 SEPARATOR = "=" * 60
@@ -120,43 +116,37 @@ def read_csv_expected(path: Path, filters: ReconcileFilters) -> CsvReadResult:
     aggregate: defaultdict[AggregateKey, Decimal] = defaultdict(lambda: Decimal("0"))
     result = CsvReadResult(aggregate={})
 
-    with path.open("r", encoding="utf-8-sig", newline="") as file:
-        reader = csv.DictReader(file)
-        missing_columns = REQUIRED_COLUMNS - set(reader.fieldnames or [])
-        if missing_columns:
-            raise ValueError(f"CSV missing columns: {', '.join(sorted(missing_columns))}")
+    for _, row in iter_legacy_csv_rows(path):
+        if clean(row.get("Department")) != DEPARTMENT_NAME:
+            continue
 
-        for row in reader:
-            if clean(row.get("Department")) != DEPARTMENT_NAME:
-                continue
+        employee_name = clean(row.get("Employee Name"))
+        work_date = parse_date(row["Date"])
+        period_start, period_end = payroll_period_for_date(work_date)
+        if filters.employee and employee_name != filters.employee:
+            continue
+        if filters.week_start and period_start != filters.week_start:
+            continue
 
-            employee_name = clean(row.get("Employee Name"))
-            work_date = parse_date(row["Date"])
-            period_start, period_end = payroll_period_for_date(work_date)
-            if filters.employee and employee_name != filters.employee:
-                continue
-            if filters.week_start and period_start != filters.week_start:
-                continue
+        amount = parse_amount(row["Amount"])
+        payment_type = clean(row.get("Payment Type"))
+        result.employee_rows[employee_name] += 1
+        result.periods.add((period_start, period_end))
 
-            amount = parse_amount(row["Amount"])
-            payment_type = clean(row.get("Payment Type"))
-            result.employee_rows[employee_name] += 1
-            result.periods.add((period_start, period_end))
+        if payment_type in EXPECTED_SKIPPED_PAYMENT_TYPES:
+            add_payment_type_stats(result.expected_skipped, payment_type, amount)
+            continue
 
-            if payment_type in EXPECTED_SKIPPED_PAYMENT_TYPES:
-                add_payment_type_stats(result.expected_skipped, payment_type, amount)
-                continue
+        mapping = PAYMENT_TYPE_MAP.get(payment_type)
+        if mapping is None:
+            add_payment_type_stats(result.unexpected_skipped, payment_type or "<blank>", amount)
+            continue
 
-            mapping = PAYMENT_TYPE_MAP.get(payment_type)
-            if mapping is None:
-                add_payment_type_stats(result.unexpected_skipped, payment_type or "<blank>", amount)
-                continue
-
-            bucket = bucket_for_mapping(mapping)
-            expected_amount = amount_for_mapping(mapping, amount)
-            aggregate[(period_start, employee_name, bucket)] += expected_amount
-            result.relevant_rows += 1
-            result.relevant_amount += expected_amount
+        bucket = bucket_for_mapping(mapping)
+        expected_amount = amount_for_mapping(mapping, amount)
+        aggregate[(period_start, employee_name, bucket)] += expected_amount
+        result.relevant_rows += 1
+        result.relevant_amount += expected_amount
 
     result.aggregate = quantized_aggregate(aggregate)
     result.relevant_amount = money(result.relevant_amount)
@@ -182,6 +172,9 @@ def bucket_for_mapping(mapping: PaymentTypeMapping) -> str:
     if mapping[0] == "deposit":
         _, transaction_type = mapping
         return f"deposit:{transaction_type}"
+    if mapping[0] == "fund":
+        _, transaction_type = mapping
+        return f"fund:{transaction_type}"
     raise ValueError(f"Unsupported payment mapping: {mapping!r}")
 
 
@@ -207,6 +200,7 @@ async def read_db_actual(session: AsyncSession, filters: ReconcileFilters) -> Db
         result,
     )
     await add_deposit_aggregates(session, filters, aggregate, result)
+    await add_fund_aggregates(session, filters, legacy_periods, aggregate, result)
 
     result.aggregate = quantized_aggregate(aggregate)
     result.amount = money(result.amount)
@@ -357,6 +351,55 @@ async def add_deposit_aggregates(
     for period_start, period_end, employee_name, transaction_type, raw_amount in rows:
         amount = decimal_value(raw_amount)
         bucket = f"deposit:{transaction_type}"
+        result.periods.add((period_start, period_end))
+        result.records_count += 1
+        result.amount += amount
+        if amount:
+            aggregate[(period_start, employee_name, bucket)] += amount
+
+
+async def add_fund_aggregates(
+    session: AsyncSession,
+    filters: ReconcileFilters,
+    legacy_periods: list[tuple[date, date]],
+    aggregate: defaultdict[AggregateKey, Decimal],
+    result: DbReadResult,
+) -> None:
+    if not legacy_periods:
+        return
+
+    first_date = min(period_start for period_start, _ in legacy_periods)
+    last_date = max(period_end for _, period_end in legacy_periods)
+    first_at = datetime.combine(first_date, time.min, tzinfo=UTC)
+    last_at = datetime.combine(last_date + timedelta(days=1), time.min, tzinfo=UTC)
+    query = (
+        select(
+            AccumulationFundTransaction.created_at,
+            Employee.full_name,
+            AccumulationFundTransaction.transaction_type,
+            AccumulationFundTransaction.amount,
+        )
+        .select_from(AccumulationFundTransaction)
+        .join(Employee, AccumulationFundTransaction.employee_id == Employee.id)
+        .where(
+            AccumulationFundTransaction.transaction_type.in_(("accrual", "payout")),
+            AccumulationFundTransaction.comment.like(f"{LEGACY_FUND_COMMENT_PREFIX}%"),
+            AccumulationFundTransaction.created_at >= first_at,
+            AccumulationFundTransaction.created_at < last_at,
+        )
+    )
+    if filters.employee:
+        query = query.where(Employee.full_name == filters.employee)
+
+    rows = (await session.execute(query)).all()
+    for created_at, employee_name, transaction_type, raw_amount in rows:
+        work_date = created_at.date()
+        period_start, period_end = payroll_period_for_date(work_date)
+        if filters.week_start and period_start != filters.week_start:
+            continue
+
+        amount = decimal_value(raw_amount)
+        bucket = f"fund:{transaction_type}"
         result.periods.add((period_start, period_end))
         result.records_count += 1
         result.amount += amount

@@ -22,6 +22,55 @@ export type LoginResponse = {
   user: AuthUser;
 };
 
+export type AccessPermission = {
+  code: string;
+  description: string;
+};
+
+export type AccessPermissionModule = {
+  module: string;
+  permissions: AccessPermission[];
+};
+
+export type AccessRole = {
+  id: string;
+  code: string;
+  name: string;
+  is_editable: boolean;
+  permission_codes: string[];
+};
+
+export type AccessUser = {
+  id: string;
+  email: string;
+  full_name: string;
+  is_active: boolean;
+  role_codes: string[];
+};
+
+export type AccessUserCreatePayload = {
+  email: string;
+  full_name: string;
+  password: string;
+  is_active: boolean;
+};
+
+export type AccessUserPatchPayload = Partial<Pick<AccessUser, "full_name" | "is_active">>;
+
+export type AccessAuditEvent = {
+  type: string;
+  actor_email: string | null;
+  role_code: string | null;
+  permission_code: string | null;
+  action: string;
+  created_at: string;
+};
+
+export type AccessAuditParams = {
+  limit?: number;
+  offset?: number;
+};
+
 export type AppSetting = {
   id: string;
   key: string;
@@ -2068,6 +2117,57 @@ export async function getSettingHistory(key: string): Promise<AppSettingHistory[
 
 export async function updateSetting(key: string, value: unknown): Promise<AppSetting> {
   const response = await api.put<AppSetting>(`/settings/${encodeURIComponent(key)}`, { value });
+  return response.data;
+}
+
+export async function getAccessPermissions(): Promise<AccessPermissionModule[]> {
+  const response = await api.get<AccessPermissionModule[]>("/access-control/permissions");
+  return response.data;
+}
+
+export async function getAccessRoles(): Promise<AccessRole[]> {
+  const response = await api.get<AccessRole[]>("/access-control/roles");
+  return response.data;
+}
+
+export async function updateRolePermissions(
+  roleId: string,
+  codes: string[],
+): Promise<AccessRole> {
+  const response = await api.put<AccessRole>(`/access-control/roles/${roleId}/permissions`, {
+    permission_codes: codes,
+  });
+  return response.data;
+}
+
+export async function getAccessUsers(): Promise<AccessUser[]> {
+  const response = await api.get<AccessUser[]>("/access-control/users");
+  return response.data;
+}
+
+export async function createAccessUser(payload: AccessUserCreatePayload): Promise<AccessUser> {
+  const response = await api.post<AccessUser>("/access-control/users", payload);
+  return response.data;
+}
+
+export async function patchAccessUser(
+  userId: string,
+  payload: AccessUserPatchPayload,
+): Promise<AccessUser> {
+  const response = await api.patch<AccessUser>(`/access-control/users/${userId}`, payload);
+  return response.data;
+}
+
+export async function assignUserRole(userId: string, roleCode: string): Promise<void> {
+  await api.post(`/access-control/users/${userId}/roles`, { role_code: roleCode });
+}
+
+export async function revokeUserRole(userId: string, roleCode: string): Promise<void> {
+  await api.delete(`/access-control/users/${userId}/roles/${encodeURIComponent(roleCode)}`);
+}
+
+export async function getAccessAudit(params: AccessAuditParams = {}): Promise<AccessAuditEvent[]> {
+  const response = await api.get<AccessAuditEvent[]>("/access-control/audit", { params });
   return response.data;
 }
 

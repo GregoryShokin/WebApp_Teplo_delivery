@@ -15,13 +15,15 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
 from app.models import (
+    AccumulationFundAccount,
+    AccumulationFundTransaction,
     DepositTransaction,
     Employee,
     EmployeeRoleAssignment,
@@ -35,20 +37,25 @@ from app.services.payroll_adjustment_service import ensure_legacy_categories
 
 DEPARTMENT_NAME = "Производство Черникова"
 MONEY = Decimal("0.01")
+LEGACY_FUND_COMMENT_PREFIX = "[legacy_import]"
 
 PAYMENT_TYPE_MAP: dict[str, str | tuple[str, str] | tuple[str, str, str]] = {
     "Оклад": "base_pay",
     "Процент": "percent_pay",
     "Больничные и отпуска": "vacation_pay",
+    "Больничные и отпуска и пособия": "vacation_pay",
     "НДФЛ Начислено": "ndfl_withheld",
     "Премия": ("adjustment", "bonus", "premium"),
     "Штрафы по ревизиям": ("adjustment", "penalty", "audit_penalty"),
     "Штрафы и удержания": ("adjustment", "penalty", "manual_penalty"),
     "Депозит удержание": ("deposit", "accrual"),
     "Депозит возврат": ("deposit", "payout"),
+    "Депозит списание": ("deposit", "write_off"),
+    "Накопительный фонд": ("fund", "accrual"),
+    "Списание накоплений": ("fund", "payout"),
 }
 
-REQUIRED_COLUMNS = {
+LEGACY_CSV_COLUMNS = [
     "Date",
     "Amount",
     "Employee Name",
@@ -57,7 +64,8 @@ REQUIRED_COLUMNS = {
     "Payment Type",
     "Description",
     "Year",
-}
+]
+REQUIRED_COLUMNS = set(LEGACY_CSV_COLUMNS)
 
 
 @dataclass(slots=True)
@@ -77,6 +85,14 @@ class LegacyDepositRow:
 
 
 @dataclass(slots=True)
+class LegacyFundRow:
+    transaction_type: str
+    amount: Decimal
+    work_date: date
+    comment: str | None
+
+
+@dataclass(slots=True)
 class LegacyEmployeeBucket:
     base_pay: Decimal = Decimal("0")
     percent_pay: Decimal = Decimal("0")
@@ -84,6 +100,7 @@ class LegacyEmployeeBucket:
     ndfl_withheld: Decimal = Decimal("0")
     adjustments: list[LegacyAdjustmentRow] = field(default_factory=list)
     deposits: list[LegacyDepositRow] = field(default_factory=list)
+    funds: list[LegacyFundRow] = field(default_factory=list)
     days: dict[date, dict[str, Decimal]] = field(default_factory=dict)
 
 
@@ -100,6 +117,9 @@ class WeeklyImportSummary:
     penalty_total: Decimal = Decimal("0")
     deposit_accrual: Decimal = Decimal("0")
     deposit_payout: Decimal = Decimal("0")
+    deposit_write_off: Decimal = Decimal("0")
+    fund_accrual: Decimal = Decimal("0")
+    fund_payout: Decimal = Decimal("0")
     ndfl_withheld: Decimal = Decimal("0")
     total_payable: Decimal = Decimal("0")
 
@@ -111,6 +131,7 @@ class LegacyImportSummary:
     lines_created: int = 0
     adjustments_created: int = 0
     deposits_created: int = 0
+    funds_created: int = 0
     skipped_departments: int = 0
     unmatched_employees: set[str] = field(default_factory=set)
     unknown_payment_types: set[str] = field(default_factory=set)
@@ -151,6 +172,34 @@ def payroll_period_for_date(value: date) -> tuple[date, date]:
     return start, start + timedelta(days=6)
 
 
+def iter_legacy_csv_rows(path: Path) -> Iterator[tuple[int, dict[str, str]]]:
+    with path.open("r", encoding="utf-8-sig", newline="") as file:
+        reader = csv.reader(file)
+        first_row = next(reader, None)
+        if first_row is None:
+            return
+
+        if REQUIRED_COLUMNS.issubset(set(first_row)):
+            dict_reader = csv.DictReader(file, fieldnames=first_row)
+            for line_no, row in enumerate(dict_reader, start=2):
+                yield line_no, row
+            return
+
+        yield 1, legacy_row_from_values(first_row, line_no=1)
+        for line_no, row in enumerate(reader, start=2):
+            if not any(clean(value) for value in row):
+                continue
+            yield line_no, legacy_row_from_values(row, line_no=line_no)
+
+
+def legacy_row_from_values(values: list[str], *, line_no: int) -> dict[str, str]:
+    if len(values) != len(LEGACY_CSV_COLUMNS):
+        raise ValueError(
+            f"CSV line {line_no} has {len(values)} columns, expected {len(LEGACY_CSV_COLUMNS)}"
+        )
+    return dict(zip(LEGACY_CSV_COLUMNS, values, strict=True))
+
+
 async def import_csv_with_session(
     session: AsyncSession,
     path: Path,
@@ -165,6 +214,7 @@ async def import_csv_with_session(
         return summary
 
     now = datetime.now(UTC)
+    fund_account_ids_to_recalculate: set[uuid.UUID] = set()
     grouped_by_period: dict[tuple[date, date], dict[uuid.UUID, LegacyEmployeeBucket]] = defaultdict(
         dict
     )
@@ -186,7 +236,9 @@ async def import_csv_with_session(
             summary.runs_created += 1
 
         employee_ids = set(employee_buckets)
-        await clear_existing_legacy_rows(session, run, period, employee_ids)
+        fund_account_ids_to_recalculate.update(
+            await clear_existing_legacy_rows(session, run, period, employee_ids)
+        )
 
         weekly_summary = WeeklyImportSummary(
             period_start=period_start,
@@ -234,6 +286,27 @@ async def import_csv_with_session(
                 )
                 summary.deposits_created += 1
 
+            for fund in bucket.funds:
+                year = fund.work_date.year
+                account = await get_or_create_fund_account(session, employee_id, year)
+                amount = money(fund.amount)
+                update_fund_account_from_transaction(account, fund.transaction_type, amount)
+                session.add(
+                    AccumulationFundTransaction(
+                        id=uuid.uuid4(),
+                        account_id=account.id,
+                        employee_id=employee_id,
+                        year=year,
+                        run_id=run.id,
+                        transaction_type=fund.transaction_type,
+                        amount=amount,
+                        comment=legacy_fund_comment(fund.comment),
+                        created_at=datetime.combine(fund.work_date, time.min, tzinfo=UTC),
+                    )
+                )
+                fund_account_ids_to_recalculate.add(account.id)
+                summary.funds_created += 1
+
             add_bucket_to_weekly_summary(weekly_summary, bucket, line.total_payable)
 
         run.summary = {
@@ -248,17 +321,29 @@ async def import_csv_with_session(
             "penalty_total": money_string(weekly_summary.penalty_total),
             "deposit_accrual": money_string(weekly_summary.deposit_accrual),
             "deposit_payout": money_string(weekly_summary.deposit_payout),
+            "deposit_write_off": money_string(weekly_summary.deposit_write_off),
+            "fund_accrual": money_string(weekly_summary.fund_accrual),
+            "fund_payout": money_string(weekly_summary.fund_payout),
             "ndfl_withheld": money_string(weekly_summary.ndfl_withheld),
             "total_payable": money_string(weekly_summary.total_payable),
         }
         summary.weekly.append(weekly_summary)
         await session.flush()
 
+    await recalculate_fund_accounts(session, fund_account_ids_to_recalculate)
     return summary
 
 
-async def import_csv(path: Path, dry_run: bool = False) -> LegacyImportSummary:
+async def import_csv(
+    path: Path,
+    dry_run: bool = False,
+    *,
+    reset: bool = False,
+) -> LegacyImportSummary:
     async with AsyncSessionLocal() as session:
+        if reset:
+            reset_count = await reset_legacy_import(session)
+            print(f"Reset: removed {reset_count} legacy runs and dependencies")
         summary = await import_csv_with_session(session, path)
         if dry_run:
             await session.rollback()
@@ -276,43 +361,38 @@ def read_legacy_buckets(
     buckets: dict[tuple[date, date, uuid.UUID], LegacyEmployeeBucket] = defaultdict(
         LegacyEmployeeBucket
     )
-    with path.open("r", encoding="utf-8-sig", newline="") as file:
-        reader = csv.DictReader(file)
-        missing_columns = REQUIRED_COLUMNS - set(reader.fieldnames or [])
-        if missing_columns:
-            raise ValueError(f"CSV missing columns: {', '.join(sorted(missing_columns))}")
-        for line_no, row in enumerate(reader, start=2):
-            if clean(row.get("Department")) != DEPARTMENT_NAME:
-                summary.skipped_departments += 1
-                continue
-            employee_name = clean(row.get("Employee Name"))
-            employee = employees_by_name.get(employee_name)
-            if employee is None:
-                if employee_name:
-                    summary.unmatched_employees.add(employee_name)
-                continue
+    for line_no, row in iter_legacy_csv_rows(path):
+        if clean(row.get("Department")) != DEPARTMENT_NAME:
+            summary.skipped_departments += 1
+            continue
+        employee_name = clean(row.get("Employee Name"))
+        employee = employees_by_name.get(employee_name)
+        if employee is None:
+            if employee_name:
+                summary.unmatched_employees.add(employee_name)
+            continue
 
-            work_date = parse_date(row["Date"])
-            year_value = clean(row.get("Year"))
-            if year_value and year_value.isdigit() and int(year_value) != work_date.year:
-                summary.year_mismatches.append(f"line {line_no}: {year_value} != {work_date.year}")
+        work_date = parse_date(row["Date"])
+        year_value = clean(row.get("Year"))
+        if year_value and year_value.isdigit() and int(year_value) != work_date.year:
+            summary.year_mismatches.append(f"line {line_no}: {year_value} != {work_date.year}")
 
-            payment_type = clean(row.get("Payment Type"))
-            mapping = PAYMENT_TYPE_MAP.get(payment_type)
-            if mapping is None:
-                summary.unknown_payment_types.add(payment_type or "<blank>")
-                continue
+        payment_type = clean(row.get("Payment Type"))
+        mapping = PAYMENT_TYPE_MAP.get(payment_type)
+        if mapping is None:
+            summary.unknown_payment_types.add(payment_type or "<blank>")
+            continue
 
-            amount = parse_amount(row["Amount"])
-            period_start, period_end = payroll_period_for_date(work_date)
-            bucket = buckets[(period_start, period_end, employee.id)]
-            apply_row_to_bucket(
-                bucket,
-                work_date=work_date,
-                amount=amount,
-                mapping=mapping,
-                description=clean(row.get("Description")) or None,
-            )
+        amount = parse_amount(row["Amount"])
+        period_start, period_end = payroll_period_for_date(work_date)
+        bucket = buckets[(period_start, period_end, employee.id)]
+        apply_row_to_bucket(
+            bucket,
+            work_date=work_date,
+            amount=amount,
+            mapping=mapping,
+            description=clean(row.get("Description")) or None,
+        )
     return dict(buckets)
 
 
@@ -351,6 +431,16 @@ def apply_row_to_bucket(
                 transaction_type=transaction_type,
                 amount=amount,
                 work_date=work_date,
+            )
+        )
+    elif mapping[0] == "fund":
+        _, transaction_type = mapping
+        bucket.funds.append(
+            LegacyFundRow(
+                transaction_type=transaction_type,
+                amount=amount,
+                work_date=work_date,
+                comment=description,
             )
         )
 
@@ -449,9 +539,10 @@ async def clear_existing_legacy_rows(
     run: PayrollRun,
     period: PayrollPeriod,
     employee_ids: set[uuid.UUID],
-) -> None:
+) -> set[uuid.UUID]:
     await session.execute(delete(PayrollLine).where(PayrollLine.run_id == run.id))
     await session.execute(delete(DepositTransaction).where(DepositTransaction.run_id == run.id))
+    fund_account_ids: set[uuid.UUID] = set()
     if employee_ids:
         await session.execute(
             delete(PayrollAdjustment).where(
@@ -461,6 +552,164 @@ async def clear_existing_legacy_rows(
                 PayrollAdjustment.work_date <= period.end_date,
             )
         )
+        start_at = datetime.combine(period.start_date, time.min, tzinfo=UTC)
+        end_at = datetime.combine(period.end_date + timedelta(days=1), time.min, tzinfo=UTC)
+        fund_filter = (
+            AccumulationFundTransaction.comment.like(f"{LEGACY_FUND_COMMENT_PREFIX}%"),
+            AccumulationFundTransaction.employee_id.in_(employee_ids),
+            AccumulationFundTransaction.created_at >= start_at,
+            AccumulationFundTransaction.created_at < end_at,
+        )
+        fund_account_ids = {
+            account_id
+            for account_id in (
+                await session.scalars(
+                    select(AccumulationFundTransaction.account_id).where(*fund_filter)
+                )
+            ).all()
+            if account_id is not None
+        }
+        await session.execute(delete(AccumulationFundTransaction).where(*fund_filter))
+    return fund_account_ids
+
+
+async def reset_legacy_import(session: AsyncSession) -> int:
+    legacy_runs = (
+        await session.scalars(select(PayrollRun).where(PayrollRun.is_imported_legacy.is_(True)))
+    ).all()
+    legacy_run_ids = [run.id for run in legacy_runs]
+    legacy_period_ids = [run.period_id for run in legacy_runs]
+
+    fund_account_ids = {
+        account_id
+        for account_id in (
+            await session.scalars(
+                select(AccumulationFundTransaction.account_id).where(
+                    AccumulationFundTransaction.comment.like(f"{LEGACY_FUND_COMMENT_PREFIX}%")
+                )
+            )
+        ).all()
+        if account_id is not None
+    }
+
+    if legacy_run_ids:
+        await session.execute(
+            delete(DepositTransaction).where(DepositTransaction.run_id.in_(legacy_run_ids))
+        )
+    await session.execute(
+        delete(PayrollAdjustment).where(PayrollAdjustment.created_by_label == "import:legacy")
+    )
+    await session.execute(
+        delete(AccumulationFundTransaction).where(
+            AccumulationFundTransaction.comment.like(f"{LEGACY_FUND_COMMENT_PREFIX}%")
+        )
+    )
+    if legacy_run_ids:
+        await session.execute(delete(PayrollLine).where(PayrollLine.run_id.in_(legacy_run_ids)))
+        await session.execute(delete(PayrollRun).where(PayrollRun.id.in_(legacy_run_ids)))
+    if legacy_period_ids:
+        await session.execute(
+            delete(PayrollPeriod).where(
+                PayrollPeriod.id.in_(legacy_period_ids),
+                ~exists().where(PayrollRun.period_id == PayrollPeriod.id),
+            )
+        )
+    if fund_account_ids:
+        await session.execute(
+            delete(AccumulationFundAccount).where(
+                AccumulationFundAccount.id.in_(fund_account_ids),
+                ~exists().where(
+                    AccumulationFundTransaction.account_id == AccumulationFundAccount.id
+                ),
+            )
+        )
+        await recalculate_fund_accounts(session, fund_account_ids)
+    await session.flush()
+    return len(legacy_run_ids)
+
+
+async def get_or_create_fund_account(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+    year: int,
+) -> AccumulationFundAccount:
+    account = await session.scalar(
+        select(AccumulationFundAccount).where(
+            AccumulationFundAccount.employee_id == employee_id,
+            AccumulationFundAccount.year == year,
+        )
+    )
+    if account is not None:
+        return account
+    account = AccumulationFundAccount(
+        id=uuid.uuid4(),
+        employee_id=employee_id,
+        year=year,
+        accumulated_amount=Decimal("0"),
+        paid_out_amount=Decimal("0"),
+        forfeited_amount=Decimal("0"),
+        status="active",
+    )
+    session.add(account)
+    await session.flush()
+    return account
+
+
+def update_fund_account_from_transaction(
+    account: AccumulationFundAccount,
+    transaction_type: str,
+    amount: Decimal,
+) -> None:
+    if transaction_type == "accrual":
+        account.accumulated_amount = decimal_value(account.accumulated_amount) + amount
+        account.status = "active"
+    elif transaction_type == "payout":
+        account.paid_out_amount = decimal_value(account.paid_out_amount) + amount
+
+
+async def recalculate_fund_accounts(
+    session: AsyncSession,
+    account_ids: set[uuid.UUID],
+) -> None:
+    account_ids = {account_id for account_id in account_ids if account_id is not None}
+    if not account_ids:
+        return
+    await session.flush()
+    accounts = (
+        await session.scalars(
+            select(AccumulationFundAccount).where(AccumulationFundAccount.id.in_(account_ids))
+        )
+    ).all()
+    if not accounts:
+        return
+    transactions = (
+        await session.scalars(
+            select(AccumulationFundTransaction).where(
+                AccumulationFundTransaction.account_id.in_(account_ids)
+            )
+        )
+    ).all()
+    totals: dict[uuid.UUID, dict[str, Decimal]] = defaultdict(
+        lambda: {
+            "accumulated_amount": Decimal("0"),
+            "paid_out_amount": Decimal("0"),
+            "forfeited_amount": Decimal("0"),
+        }
+    )
+    for transaction in transactions:
+        amount = decimal_value(transaction.amount)
+        account_totals = totals[transaction.account_id]
+        if transaction.transaction_type in {"accrual", "initial_balance"}:
+            account_totals["accumulated_amount"] += amount
+        elif transaction.transaction_type == "payout":
+            account_totals["paid_out_amount"] += amount
+        elif transaction.transaction_type == "forfeit":
+            account_totals["forfeited_amount"] += amount
+    for account in accounts:
+        account_totals = totals[account.id]
+        account.accumulated_amount = money(account_totals["accumulated_amount"])
+        account.paid_out_amount = money(account_totals["paid_out_amount"])
+        account.forfeited_amount = money(account_totals["forfeited_amount"])
 
 
 async def get_role_for_date(
@@ -605,26 +854,55 @@ def add_bucket_to_weekly_summary(
         (money(item.amount) for item in bucket.deposits if item.transaction_type == "payout"),
         Decimal("0"),
     )
+    summary.deposit_write_off += sum(
+        (money(item.amount) for item in bucket.deposits if item.transaction_type == "write_off"),
+        Decimal("0"),
+    )
+    summary.fund_accrual += sum(
+        (money(item.amount) for item in bucket.funds if item.transaction_type == "accrual"),
+        Decimal("0"),
+    )
+    summary.fund_payout += sum(
+        (money(item.amount) for item in bucket.funds if item.transaction_type == "payout"),
+        Decimal("0"),
+    )
     summary.total_payable += money(total_payable)
 
 
 def clean(value: Any) -> str:
-    return str(value or "").strip()
+    return " ".join(str(value or "").replace("\u00a0", " ").split())
 
 
 def money(value: Decimal) -> Decimal:
     return value.quantize(MONEY)
 
 
+def decimal_value(value: Any) -> Decimal:
+    if value is None:
+        return Decimal("0")
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
+
 def money_string(value: Decimal) -> str:
     return f"{money(value):.2f}"
+
+
+def legacy_fund_comment(description: str | None) -> str:
+    return (
+        f"{LEGACY_FUND_COMMENT_PREFIX} {description}"
+        if description
+        else LEGACY_FUND_COMMENT_PREFIX
+    )
 
 
 def print_report(summary: LegacyImportSummary, *, dry_run: bool) -> None:
     prefix = "DRY RUN: would import" if dry_run else "Imported"
     print(
         f"{prefix} {summary.runs_created} runs, {summary.lines_created} lines, "
-        f"{summary.adjustments_created} adjustments, {summary.deposits_created} deposits"
+        f"{summary.adjustments_created} adjustments, {summary.deposits_created} deposits, "
+        f"{summary.funds_created} fund transactions"
     )
     if summary.skipped_departments:
         print(f"Skipped by department: {summary.skipped_departments}")
@@ -654,8 +932,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("csv_path", type=Path)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Удалить все is_imported_legacy записи перед импортом",
+    )
     args = parser.parse_args()
-    asyncio.run(import_csv(args.csv_path, dry_run=args.dry_run))
+    asyncio.run(import_csv(args.csv_path, dry_run=args.dry_run, reset=args.reset))
 
 
 if __name__ == "__main__":

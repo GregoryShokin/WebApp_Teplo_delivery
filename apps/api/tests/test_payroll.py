@@ -41,7 +41,11 @@ from app.models import (
     ShiftLedgerEntry,
 )
 from app.schemas.payroll import DeferredChargeCreate
-from app.scripts.import_legacy_payroll import import_csv_with_session
+from app.scripts.import_legacy_payroll import (
+    LEGACY_FUND_COMMENT_PREFIX,
+    import_csv_with_session,
+    reset_legacy_import,
+)
 from app.services import deferred_audit_charge_service as deferred_charge_service
 from app.services import shift_ledger as shift_ledger_service
 from app.services.accumulation_fund_service import forfeit_active_fund_on_dismiss
@@ -301,6 +305,8 @@ class LegacyImportFakeSession:
         self.lines: list[PayrollLine] = []
         self.adjustments: list[PayrollAdjustment] = []
         self.deposits: list[DepositTransaction] = []
+        self.fund_accounts: list[AccumulationFundAccount] = []
+        self.fund_transactions: list[AccumulationFundTransaction] = []
         self.executed: list[Any] = []
 
     async def scalar(self, query: Any) -> Any:
@@ -335,6 +341,17 @@ class LegacyImportFakeSession:
                 ),
                 None,
             )
+        if entity is AccumulationFundAccount:
+            employee_id = query_bound_value(query, "employee_id")
+            year = query_bound_value(query, "year")
+            return next(
+                (
+                    account
+                    for account in self.fund_accounts
+                    if account.employee_id == employee_id and account.year == year
+                ),
+                None,
+            )
         return None
 
     async def scalars(self, query: Any) -> LegacyImportScalarResult:
@@ -343,6 +360,22 @@ class LegacyImportFakeSession:
             return LegacyImportScalarResult(self.employees)
         if entity is PayrollAdjustmentCategory:
             return LegacyImportScalarResult(self.categories)
+        if entity is PayrollRun:
+            return LegacyImportScalarResult(
+                [run for run in self.runs if run.is_imported_legacy]
+            )
+        if entity is AccumulationFundTransaction:
+            if query_selected_name(query) == "account_id":
+                return LegacyImportScalarResult(
+                    [
+                        transaction.account_id
+                        for transaction in self.fund_transactions
+                        if (transaction.comment or "").startswith(LEGACY_FUND_COMMENT_PREFIX)
+                    ]
+                )
+            return LegacyImportScalarResult(self.fund_transactions)
+        if entity is AccumulationFundAccount:
+            return LegacyImportScalarResult(self.fund_accounts)
         return LegacyImportScalarResult([])
 
     def add(self, item: Any) -> None:
@@ -358,12 +391,51 @@ class LegacyImportFakeSession:
             self.adjustments.append(item)
         elif isinstance(item, DepositTransaction):
             self.deposits.append(item)
+        elif isinstance(item, AccumulationFundAccount):
+            self.fund_accounts.append(item)
+        elif isinstance(item, AccumulationFundTransaction):
+            self.fund_transactions.append(item)
 
     async def flush(self) -> None:
         return None
 
-    async def execute(self, statement: Any) -> None:
+    async def execute(self, statement: Any) -> LegacyImportScalarResult:
         self.executed.append(statement)
+        table_name = getattr(getattr(statement, "table", None), "name", "")
+        legacy_run_ids = {run.id for run in self.runs if run.is_imported_legacy}
+        if table_name == "payroll_line":
+            self.lines = [line for line in self.lines if line.run_id not in legacy_run_ids]
+        elif table_name == "deposit_transaction":
+            self.deposits = [
+                deposit for deposit in self.deposits if deposit.run_id not in legacy_run_ids
+            ]
+        elif table_name == "payroll_adjustment":
+            self.adjustments = [
+                adjustment
+                for adjustment in self.adjustments
+                if adjustment.created_by_label != "import:legacy"
+            ]
+        elif table_name == "accumulation_fund_transaction":
+            self.fund_transactions = [
+                transaction
+                for transaction in self.fund_transactions
+                if not (transaction.comment or "").startswith(LEGACY_FUND_COMMENT_PREFIX)
+            ]
+        elif table_name == "payroll_run":
+            self.runs = [run for run in self.runs if not run.is_imported_legacy]
+        elif table_name == "payroll_period":
+            run_period_ids = {run.period_id for run in self.runs}
+            self.periods = [period for period in self.periods if period.id in run_period_ids]
+        elif table_name == "accumulation_fund_account":
+            account_ids_with_transactions = {
+                transaction.account_id for transaction in self.fund_transactions
+            }
+            self.fund_accounts = [
+                account
+                for account in self.fund_accounts
+                if account.id in account_ids_with_transactions
+            ]
+        return LegacyImportScalarResult([])
 
 
 def legacy_payroll_row(
@@ -406,6 +478,26 @@ def write_legacy_payroll_csv(tmp_path: Path, rows: list[dict[str, str]]) -> Path
         )
         writer.writeheader()
         writer.writerows(rows)
+    return path
+
+
+def write_headerless_legacy_payroll_csv(tmp_path: Path, rows: list[dict[str, str]]) -> Path:
+    path = tmp_path / "legacy-payroll-headerless.csv"
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.writer(file)
+        for row in rows:
+            writer.writerow(
+                [
+                    row["Date"],
+                    row["Amount"],
+                    row["Employee Name"],
+                    row["Position"],
+                    row["Department"],
+                    row["Payment Type"],
+                    row["Description"],
+                    row["Year"],
+                ]
+            )
     return path
 
 
@@ -487,6 +579,239 @@ async def test_legacy_import_period_grouping(tmp_path: Path) -> None:
     assert session.periods[0].end_date == date(2026, 6, 8)
     assert session.lines[0].base_pay == Decimal("3000.00")
     assert session.lines[0].total_payable == Decimal("3000.00")
+
+
+async def test_legacy_import_headerless_csv(tmp_path: Path) -> None:
+    employee = make_employee()
+    employee.full_name = "Иван Импортов"
+    session = LegacyImportFakeSession([employee])
+    csv_path = write_headerless_legacy_payroll_csv(
+        tmp_path,
+        [legacy_payroll_row("03.06.2026", "5000", employee.full_name, "Оклад")],
+    )
+
+    summary = await import_csv_with_session(session, csv_path)  # type: ignore[arg-type]
+
+    assert summary.lines_created == 1
+    assert session.lines[0].base_pay == Decimal("5000.00")
+
+
+async def test_legacy_import_fund_accrual(tmp_path: Path) -> None:
+    employee = make_employee()
+    employee.full_name = "Иван Импортов"
+    session = LegacyImportFakeSession([employee])
+    csv_path = write_legacy_payroll_csv(
+        tmp_path,
+        [
+            legacy_payroll_row(
+                "03.06.2026",
+                "1000",
+                employee.full_name,
+                "Накопительный фонд",
+                description="Фонд за смену",
+            )
+        ],
+    )
+
+    summary = await import_csv_with_session(session, csv_path)  # type: ignore[arg-type]
+
+    assert summary.funds_created == 1
+    assert len(session.fund_accounts) == 1
+    assert len(session.fund_transactions) == 1
+    account = session.fund_accounts[0]
+    transaction = session.fund_transactions[0]
+    assert account.employee_id == employee.id
+    assert account.year == 2026
+    assert account.accumulated_amount == Decimal("1000.00")
+    assert account.paid_out_amount == Decimal("0.00")
+    assert transaction.account_id == account.id
+    assert transaction.employee_id == employee.id
+    assert transaction.year == 2026
+    assert transaction.transaction_type == "accrual"
+    assert transaction.amount == Decimal("1000.00")
+    assert transaction.comment == f"{LEGACY_FUND_COMMENT_PREFIX} Фонд за смену"
+
+
+async def test_legacy_import_fund_payout(tmp_path: Path) -> None:
+    employee = make_employee()
+    employee.full_name = "Иван Импортов"
+    session = LegacyImportFakeSession([employee])
+    csv_path = write_legacy_payroll_csv(
+        tmp_path,
+        [
+            legacy_payroll_row(
+                "03.06.2026",
+                "500",
+                employee.full_name,
+                "Списание накоплений",
+            )
+        ],
+    )
+
+    summary = await import_csv_with_session(session, csv_path)  # type: ignore[arg-type]
+
+    assert summary.funds_created == 1
+    account = session.fund_accounts[0]
+    transaction = session.fund_transactions[0]
+    assert account.accumulated_amount == Decimal("0.00")
+    assert account.paid_out_amount == Decimal("500.00")
+    assert transaction.transaction_type == "payout"
+    assert transaction.amount == Decimal("500.00")
+    assert transaction.comment == LEGACY_FUND_COMMENT_PREFIX
+
+
+async def test_legacy_import_deposit_writeoff(tmp_path: Path) -> None:
+    employee = make_employee()
+    employee.full_name = "Иван Импортов"
+    session = LegacyImportFakeSession([employee])
+    csv_path = write_legacy_payroll_csv(
+        tmp_path,
+        [
+            legacy_payroll_row(
+                "03.06.2026",
+                "750",
+                employee.full_name,
+                "Депозит списание",
+            )
+        ],
+    )
+
+    summary = await import_csv_with_session(session, csv_path)  # type: ignore[arg-type]
+
+    assert summary.deposits_created == 1
+    assert len(session.deposits) == 1
+    assert session.deposits[0].transaction_type == "write_off"
+    assert session.deposits[0].amount == Decimal("750.00")
+
+
+async def test_legacy_import_normalizes_nbsp_payment_type(tmp_path: Path) -> None:
+    employee = make_employee()
+    employee.full_name = "Иван Импортов"
+    session = LegacyImportFakeSession([employee])
+    csv_path = write_legacy_payroll_csv(
+        tmp_path,
+        [
+            legacy_payroll_row(
+                "03.06.2026",
+                "300",
+                employee.full_name,
+                "Штрафы и\u00a0удержания",
+            )
+        ],
+    )
+
+    summary = await import_csv_with_session(session, csv_path)  # type: ignore[arg-type]
+
+    assert summary.unknown_payment_types == set()
+    assert summary.adjustments_created == 1
+    assert session.adjustments[0].type == "penalty"
+    assert session.adjustments[0].amount == Decimal("300.00")
+
+
+async def test_legacy_reset_removes_only_legacy() -> None:
+    employee = make_employee()
+    session = LegacyImportFakeSession([employee])
+    period = make_period()
+    session.periods.append(period)
+    legacy_run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 6, 9, tzinfo=UTC),
+        finished_at=datetime(2026, 6, 9, tzinfo=UTC),
+        status="finalized",
+        blocking_issues=[],
+        summary={},
+        is_imported_legacy=True,
+    )
+    regular_run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 6, 10, tzinfo=UTC),
+        finished_at=datetime(2026, 6, 10, tzinfo=UTC),
+        status="finalized",
+        blocking_issues=[],
+        summary={},
+        is_imported_legacy=False,
+    )
+    session.runs.extend([legacy_run, regular_run])
+    session.lines.extend(
+        [
+            make_payroll_line(legacy_run.id, employee.id),
+            make_payroll_line(regular_run.id, employee.id),
+        ]
+    )
+    legacy_adjustment = make_adjustment(employee, period.start_date, "bonus", Decimal("100"))
+    legacy_adjustment.created_by_label = "import:legacy"
+    regular_adjustment = make_adjustment(employee, period.start_date, "bonus", Decimal("200"))
+    session.adjustments.extend([legacy_adjustment, regular_adjustment])
+    session.deposits.extend(
+        [
+            DepositTransaction(
+                id=uuid.uuid4(),
+                employee_id=employee.id,
+                run_id=legacy_run.id,
+                transaction_type="write_off",
+                amount=Decimal("300"),
+                created_at=datetime(2026, 6, 3, tzinfo=UTC),
+            ),
+            DepositTransaction(
+                id=uuid.uuid4(),
+                employee_id=employee.id,
+                run_id=regular_run.id,
+                transaction_type="accrual",
+                amount=Decimal("400"),
+                created_at=datetime(2026, 6, 3, tzinfo=UTC),
+            ),
+        ]
+    )
+    fund_account = AccumulationFundAccount(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        year=2026,
+        accumulated_amount=Decimal("1000"),
+        paid_out_amount=Decimal("0"),
+        forfeited_amount=Decimal("0"),
+        status="active",
+    )
+    session.fund_accounts.append(fund_account)
+    session.fund_transactions.extend(
+        [
+            AccumulationFundTransaction(
+                id=uuid.uuid4(),
+                account_id=fund_account.id,
+                employee_id=employee.id,
+                year=2026,
+                run_id=legacy_run.id,
+                transaction_type="accrual",
+                amount=Decimal("600"),
+                comment=f"{LEGACY_FUND_COMMENT_PREFIX} legacy",
+                created_at=datetime(2026, 6, 3, tzinfo=UTC),
+            ),
+            AccumulationFundTransaction(
+                id=uuid.uuid4(),
+                account_id=fund_account.id,
+                employee_id=employee.id,
+                year=2026,
+                run_id=regular_run.id,
+                transaction_type="accrual",
+                amount=Decimal("400"),
+                comment="regular",
+                created_at=datetime(2026, 6, 3, tzinfo=UTC),
+            ),
+        ]
+    )
+
+    removed = await reset_legacy_import(session)  # type: ignore[arg-type]
+
+    assert removed == 1
+    assert session.runs == [regular_run]
+    assert [line.run_id for line in session.lines] == [regular_run.id]
+    assert session.adjustments == [regular_adjustment]
+    assert [deposit.run_id for deposit in session.deposits] == [regular_run.id]
+    assert session.periods == [period]
+    assert [transaction.comment for transaction in session.fund_transactions] == ["regular"]
+    assert session.fund_accounts == [fund_account]
+    assert fund_account.accumulated_amount == Decimal("400.00")
 
 
 def make_inventory_audit(
@@ -4675,6 +5000,13 @@ def query_entity(query: Any) -> Any | None:
     if not descriptions:
         return None
     return descriptions[0].get("entity")
+
+
+def query_selected_name(query: Any) -> str | None:
+    descriptions = getattr(query, "column_descriptions", None) or []
+    if not descriptions:
+        return None
+    return descriptions[0].get("name")
 
 
 def query_bound_value(query: Any, column_name: str) -> Any | None:
