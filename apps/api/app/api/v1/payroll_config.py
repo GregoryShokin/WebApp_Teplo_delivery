@@ -87,7 +87,7 @@ async def put_rate(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ):
     try:
-        return await create_rate_version(session, payload)
+        return await create_rate_version(session, payload, actor_user_id=actor.user_id)
     except PayrollConfigConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except PayrollConfigValidationError as exc:

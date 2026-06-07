@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Annotated, Any
 
@@ -20,11 +20,14 @@ from app.models import (
     PayrollLine,
     PayrollPayment,
     PayrollRun,
+    PayrollRunEvent,
+    User,
 )
 from app.schemas.payroll import (
     DeferredChargeCreate,
     DeferredChargeRead,
     PayrollAggregateRead,
+    PayrollAuditEventRead,
     PayrollLineDepositOverridePatch,
     PayrollLineRead,
     PayrollPaymentMarkRequest,
@@ -110,6 +113,53 @@ async def get_runs(
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> list[dict]:
     return await list_runs(session)
+
+
+@router.get(
+    "/audit-events",
+    response_model=list[PayrollAuditEventRead],
+    dependencies=PAYROLL_RUNS_FINALIZE_ACCESS,
+)
+async def get_audit_events(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    action: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[dict[str, Any]]:
+    statement = (
+        select(PayrollRunEvent, User.full_name)
+        .outerjoin(User, User.id == PayrollRunEvent.actor_user_id)
+        .order_by(PayrollRunEvent.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    if action is not None:
+        statement = statement.where(PayrollRunEvent.action == action)
+    if date_from is not None:
+        statement = statement.where(
+            PayrollRunEvent.created_at >= datetime.combine(date_from, time.min, tzinfo=UTC)
+        )
+    if date_to is not None:
+        statement = statement.where(
+            PayrollRunEvent.created_at
+            < datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=UTC)
+        )
+
+    rows = (await session.execute(statement)).all()
+    return [
+        {
+            "id": event.id,
+            "action": event.action,
+            "actor": actor_name,
+            "reason": event.reason,
+            "payload": event.payload,
+            "created_at": event.created_at,
+        }
+        for event, actor_name in rows
+    ]
 
 
 @router.get(

@@ -188,7 +188,8 @@ def test_put_payroll_rate_creates_new_version_and_preserves_old(
 ) -> None:
     store = [_rate(amount=2200, effective_from=date(2026, 1, 1))]
 
-    async def fake_create_rate_version(_session, payload):
+    async def fake_create_rate_version(_session, payload, *, actor_user_id=None):
+        assert actor_user_id is None
         store[0]["effective_to"] = payload.effective_from
         created = {
             "id": uuid.uuid4(),
@@ -297,7 +298,8 @@ def test_put_payroll_rate_allows_inactive_null_amount(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_create_rate_version(_session, payload):
+    async def fake_create_rate_version(_session, payload, *, actor_user_id=None):
+        assert actor_user_id is None
         return {
             "id": uuid.uuid4(),
             **payload.model_dump(),

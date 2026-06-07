@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, ensure_permission, get_current_actor, require_permission
 from app.db.session import get_session
-from app.models import Employee, PayrollAdjustment, PayrollAdjustmentCategory
+from app.models import Employee, PayrollAdjustment, PayrollAdjustmentCategory, PayrollRunEvent
 from app.schemas.payroll_adjustments import (
     PayrollAdjustmentCategoryCreate,
     PayrollAdjustmentCategoryPatch,
@@ -119,11 +119,22 @@ async def create_adjustment(
         custom_label=clean_optional_text(payload.custom_label),
         amount=payload.amount,
         comment=clean_optional_text(payload.comment),
+        created_by_user_id=actor.user_id,
         created_by_label=actor_label(actor),
         created_at=now,
         updated_at=now,
     )
     session.add(adjustment)
+    await session.flush()
+    add_adjustment_event(
+        session,
+        action="adjustment.created",
+        actor_user_id=actor.user_id,
+        adjustment_id=adjustment.id,
+        employee_id=adjustment.employee_id,
+        before=None,
+        after=adjustment_audit_snapshot(adjustment),
+    )
     await session.commit()
     await session.refresh(adjustment)
     return adjustment_payload(
@@ -146,6 +157,7 @@ async def patch_adjustment(
 ) -> dict[str, Any]:
     adjustment = await get_adjustment_or_404(session, adjustment_id)
     await ensure_date_unlocked(session, adjustment.work_date)
+    before = adjustment_audit_snapshot(adjustment)
 
     updates = payload.model_dump(exclude_unset=True)
     next_employee_id = updates.get("employee_id", adjustment.employee_id)
@@ -182,6 +194,16 @@ async def patch_adjustment(
     if "comment" in updates:
         adjustment.comment = clean_optional_text(updates["comment"])
     adjustment.updated_at = datetime.now(UTC)
+    after = adjustment_audit_snapshot(adjustment)
+    add_adjustment_event(
+        session,
+        action="adjustment.updated",
+        actor_user_id=actor.user_id,
+        adjustment_id=adjustment.id,
+        employee_id=adjustment.employee_id,
+        before=before,
+        after=after,
+    )
 
     await session.commit()
     await session.refresh(adjustment)
@@ -205,6 +227,16 @@ async def delete_adjustment(
     adjustment = await get_adjustment_or_404(session, adjustment_id)
     require_adjustment_type_permission(actor, adjustment.type)
     await ensure_date_unlocked(session, adjustment.work_date)
+    before = adjustment_audit_snapshot(adjustment)
+    add_adjustment_event(
+        session,
+        action="adjustment.deleted",
+        actor_user_id=actor.user_id,
+        adjustment_id=adjustment.id,
+        employee_id=adjustment.employee_id,
+        before=before,
+        after=None,
+    )
     await session.delete(adjustment)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -415,6 +447,51 @@ def category_payload(category: PayrollAdjustmentCategory) -> dict[str, Any]:
         "sort_order": category.sort_order,
         "created_at": category.created_at,
         "updated_at": category.updated_at,
+    }
+
+
+def add_adjustment_event(
+    session: AsyncSession,
+    *,
+    action: str,
+    actor_user_id: uuid.UUID | None,
+    adjustment_id: uuid.UUID,
+    employee_id: uuid.UUID,
+    before: dict[str, Any] | None,
+    after: dict[str, Any] | None,
+) -> None:
+    session.add(
+        PayrollRunEvent(
+            run_id=None,
+            period_id=None,
+            action=action,
+            actor_user_id=actor_user_id,
+            payload={
+                "adjustment_id": str(adjustment_id),
+                "employee_id": str(employee_id),
+                "before": before,
+                "after": after,
+            },
+        )
+    )
+
+
+def adjustment_audit_snapshot(adjustment: PayrollAdjustment) -> dict[str, Any]:
+    return {
+        "id": str(adjustment.id),
+        "employee_id": str(adjustment.employee_id),
+        "work_date": adjustment.work_date.isoformat(),
+        "type": adjustment.type,
+        "category_id": str(adjustment.category_id) if adjustment.category_id is not None else None,
+        "custom_label": adjustment.custom_label,
+        "amount": decimal_string(adjustment.amount),
+        "comment": adjustment.comment,
+        "created_by_user_id": (
+            str(adjustment.created_by_user_id)
+            if adjustment.created_by_user_id is not None
+            else None
+        ),
+        "created_by_label": adjustment.created_by_label,
     }
 
 

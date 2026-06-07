@@ -5458,6 +5458,9 @@ class PayrollAdjustmentFakeSession:
     async def commit(self) -> None:
         self.committed = True
 
+    async def flush(self) -> None:
+        return None
+
     async def refresh(self, _item: Any) -> None:
         return None
 

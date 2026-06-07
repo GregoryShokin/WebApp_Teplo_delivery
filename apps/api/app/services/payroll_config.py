@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterable, Mapping
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -18,6 +19,7 @@ from app.models import (
     PayrollRate,
     PayrollRevenueShare,
     PayrollRoleCategoryAvailability,
+    PayrollRunEvent,
     PayrollSeniorityPremium,
     RevenueTier,
 )
@@ -295,6 +297,8 @@ async def set_role_category_availability(
 async def create_rate_version(
     session: AsyncSession,
     payload: PayrollRateBase,
+    *,
+    actor_user_id: uuid.UUID | None = None,
 ) -> PayrollRate:
     _validate_rate_payload(payload)
     _validate_effective_range(payload.effective_from, payload.effective_to)
@@ -312,11 +316,48 @@ async def create_rate_version(
         natural_filters,
         payload.effective_from,
     )
+    old_amount = (
+        existing.amount
+        if existing is not None
+        else await _find_rate_amount_before(session, natural_filters, payload.effective_from)
+    )
     if existing is not None:
-        return await _update_rate_version(session, existing, payload)
-    await _close_previous_versions(session, PayrollRate, natural_filters, payload.effective_from)
-    record = PayrollRate(**payload.model_dump())
-    return await _insert_version(session, record)
+        record = existing
+        record.station = payload.station
+        record.rate_type = payload.rate_type
+        record.amount = payload.amount
+        record.is_active = payload.is_active
+        record.effective_to = payload.effective_to
+    else:
+        await _close_previous_versions(session, PayrollRate, natural_filters, payload.effective_from)
+        record = PayrollRate(**payload.model_dump())
+        session.add(record)
+
+    try:
+        await session.flush()
+        session.add(
+            PayrollRunEvent(
+                run_id=None,
+                period_id=None,
+                action="rate.changed",
+                actor_user_id=actor_user_id,
+                payload={
+                    "position_group": payload.position_group,
+                    "category": payload.category,
+                    "station": payload.station,
+                    "old_amount": _money_text_or_none(old_amount),
+                    "new_amount": _money_text_or_none(payload.amount),
+                    "effective_from": payload.effective_from.isoformat(),
+                    "rate_id": str(record.id),
+                },
+            )
+        )
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise PayrollConfigConflictError("Version already exists for this effective date") from exc
+    await session.refresh(record)
+    return record
 
 
 async def list_revenue_shares(
@@ -515,6 +556,24 @@ async def _find_existing_version(
     )
 
 
+async def _find_rate_amount_before(
+    session: AsyncSession,
+    natural_filters: Iterable[Any],
+    effective_from: date,
+) -> Decimal | None:
+    rate = await session.scalar(
+        select(PayrollRate)
+        .where(
+            *natural_filters,
+            PayrollRate.effective_from < effective_from,
+            or_(PayrollRate.effective_to.is_(None), PayrollRate.effective_to > effective_from),
+        )
+        .order_by(PayrollRate.effective_from.desc(), PayrollRate.created_at.desc())
+        .limit(1)
+    )
+    return rate.amount if rate is not None else None
+
+
 async def _close_previous_versions(
     session: AsyncSession,
     model: type[Any],
@@ -688,6 +747,12 @@ def _validate_seniority_premium_payload(payload: PayrollSeniorityPremiumBase) ->
 def _validate_rate_category(category: str) -> None:
     if category not in VALID_PAYROLL_RATE_CATEGORIES:
         raise PayrollConfigValidationError("Invalid payroll rate category")
+
+
+def _money_text_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    return f"{Decimal(str(value)).quantize(Decimal('0.01'))}"
 
 
 def _validate_substitute_pairs(raw_pairs: Any) -> list[SubstitutePair]:

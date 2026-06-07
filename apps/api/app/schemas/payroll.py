@@ -87,6 +87,15 @@ class PayrollRunRead(BaseModel):
     period: PayrollPeriodRead | None = None
 
 
+class PayrollAuditEventRead(BaseModel):
+    id: uuid.UUID
+    action: str
+    actor: str | None = None
+    reason: str | None = None
+    payload: dict[str, Any]
+    created_at: datetime
+
+
 class PayrollLineRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
