@@ -110,6 +110,9 @@ class PayrollCalculationResult:
     summary: dict[str, Any]
 
 
+_MISSING_CONFIG_VALUE = object()
+
+
 async def calculate_payroll_lines(
     session: AsyncSession,
     period: PayrollPeriod,
@@ -994,10 +997,17 @@ def category_for_payroll_entry(
     role: str | None,
     station: str | None,
 ) -> str:
+    assignments_value = employee_date_config_value(
+        settings,
+        EMPLOYEE_ASSIGNMENTS_CONFIG_KEY,
+        employee.id,
+        work_date,
+    )
+    assignments_loaded_for_day = assignments_value is not _MISSING_CONFIG_VALUE
     # Live employee role assignments win over the ledger snapshot so that
     # back-dated category or role changes in the staff page propagate into
     # the payroll calculation on the next Пересчитать.
-    assignments = assignments_for_employee_date(settings, employee.id, work_date)
+    assignments = assignments_from_config_value(assignments_value)
     if assignments:
         assignment_role = assignment_role_for_payroll_context(role, station)
         if assignment_role:
@@ -1028,6 +1038,9 @@ def category_for_payroll_entry(
         ledger_category = clean_string(getattr(ledger_entry, "category", None))
         if ledger_category:
             return ledger_category
+
+    if assignments_loaded_for_day:
+        return ""
 
     # No active assignment or ledger category for work_date — fall back to the
     # current value on the employee card.
@@ -1085,17 +1098,19 @@ def allowance_flags_for_payroll_entry(
     }
     if work_date is None:
         return fallback
-    allowances_by_day = settings.get(EMPLOYEE_ALLOWANCES_CONFIG_KEY)
-    if not isinstance(allowances_by_day, Mapping):
+    value = employee_date_config_value(
+        settings,
+        EMPLOYEE_ALLOWANCES_CONFIG_KEY,
+        employee.id,
+        work_date,
+    )
+    if value is _MISSING_CONFIG_VALUE:
         return fallback
-    value = allowances_by_day.get((employee.id, work_date))
-    if value is None:
-        value = allowances_by_day.get((str(employee.id), work_date.isoformat()))
     if not isinstance(value, Mapping):
-        return fallback
+        return {"is_senior": False, "is_deputy_senior": False}
     return {
-        "is_senior": bool(value.get("is_senior", fallback["is_senior"])),
-        "is_deputy_senior": bool(value.get("is_deputy_senior", fallback["is_deputy_senior"])),
+        "is_senior": bool(value.get("is_senior", False)),
+        "is_deputy_senior": bool(value.get("is_deputy_senior", False)),
     }
 
 
@@ -1104,13 +1119,8 @@ def ledger_entry_for_employee_date(
     employee_id: uuid.UUID,
     work_date: date,
 ) -> Any | None:
-    ledger_by_day = settings.get(SHIFT_LEDGER_CONFIG_KEY)
-    if not isinstance(ledger_by_day, Mapping):
-        return None
-    value = ledger_by_day.get((employee_id, work_date))
-    if value is None:
-        value = ledger_by_day.get((str(employee_id), work_date.isoformat()))
-    return value
+    value = employee_date_config_value(settings, SHIFT_LEDGER_CONFIG_KEY, employee_id, work_date)
+    return None if value is _MISSING_CONFIG_VALUE else value
 
 
 def assignments_for_employee_date(
@@ -1118,13 +1128,35 @@ def assignments_for_employee_date(
     employee_id: uuid.UUID,
     work_date: date,
 ) -> list[Any]:
-    assignments_by_day = settings.get(EMPLOYEE_ASSIGNMENTS_CONFIG_KEY)
-    if not isinstance(assignments_by_day, Mapping):
-        return []
-    value = assignments_by_day.get((employee_id, work_date))
-    if value is None:
-        value = assignments_by_day.get((str(employee_id), work_date.isoformat()))
+    value = employee_date_config_value(
+        settings,
+        EMPLOYEE_ASSIGNMENTS_CONFIG_KEY,
+        employee_id,
+        work_date,
+    )
+    return assignments_from_config_value(value)
+
+
+def assignments_from_config_value(value: Any) -> list[Any]:
     return list(value) if isinstance(value, Iterable) and not isinstance(value, str | bytes) else []
+
+
+def employee_date_config_value(
+    settings: Mapping[str, Any],
+    config_key: str,
+    employee_id: uuid.UUID,
+    work_date: date,
+) -> Any:
+    values_by_day = settings.get(config_key)
+    if not isinstance(values_by_day, Mapping):
+        return _MISSING_CONFIG_VALUE
+    tuple_key = (employee_id, work_date)
+    if tuple_key in values_by_day:
+        return values_by_day[tuple_key]
+    string_key = (str(employee_id), work_date.isoformat())
+    if string_key in values_by_day:
+        return values_by_day[string_key]
+    return _MISSING_CONFIG_VALUE
 
 
 def role_category_rate_exists(

@@ -1170,7 +1170,7 @@ async def test_patch_employee_category_finance_manager_ok() -> None:
 
     updated = await patch_employee(
         employee.id,
-        {"category": "category_2"},
+        {"category": "category_2", "effective_from": date.today()},
         session,  # type: ignore[arg-type]
         CurrentActor(roles=frozenset({"finance_manager"})),
     )
@@ -1193,7 +1193,7 @@ async def test_patch_employee_category_manager_ok_for_production() -> None:
 
     updated = await patch_employee(
         employee.id,
-        {"category": "category_2"},
+        {"category": "category_2", "effective_from": date.today()},
         session,  # type: ignore[arg-type]
         CurrentActor(roles=frozenset({"manager"})),
     )
@@ -1215,7 +1215,7 @@ async def test_patch_employee_cooking_station_finishes_cook_setup() -> None:
 
     updated = await patch_employee(
         employee.id,
-        {"default_cooking_station": "sushi"},
+        {"default_cooking_station": "sushi", "effective_from": date.today()},
         session,  # type: ignore[arg-type]
         CurrentActor(roles=frozenset({"finance_manager"})),
     )
@@ -1237,7 +1237,7 @@ async def test_patch_employee_category_null_requires_setup() -> None:
 
     updated = await patch_employee(
         employee.id,
-        {"category": None},
+        {"category": None, "effective_from": date.today()},
         session,  # type: ignore[arg-type]
         CurrentActor(roles=frozenset({"finance_manager"})),
     )
@@ -1259,7 +1259,7 @@ async def test_patch_employee_cashier_category_makes_active_without_station() ->
 
     updated = await patch_employee(
         employee.id,
-        {"category": "category_2"},
+        {"category": "category_2", "effective_from": date.today()},
         session,  # type: ignore[arg-type]
         CurrentActor(roles=frozenset({"finance_manager"})),
     )
@@ -1306,7 +1306,7 @@ async def test_patch_position_cook_to_cashier_updates_iiko_and_rebuilds_assignme
 
     updated = await patch_employee(
         employee.id,
-        {"position": "Кассир", "category": "category_2"},
+        {"position": "Кассир", "category": "category_2", "effective_from": date.today()},
         session,  # type: ignore[arg-type]
         CurrentActor(roles=frozenset({"finance_manager"})),
     )
@@ -1392,7 +1392,7 @@ async def test_patch_employee_cashier_cooking_station_returns_400() -> None:
     with pytest.raises(HTTPException) as exc_info:
         await patch_employee(
             employee.id,
-            {"cooking_station": "sushi"},
+            {"cooking_station": "sushi", "effective_from": date.today()},
             session,  # type: ignore[arg-type]
             CurrentActor(roles=frozenset({"finance_manager"})),
         )
@@ -1415,7 +1415,7 @@ async def test_patch_employee_rejects_deputy_senior_for_courier() -> None:
     with pytest.raises(HTTPException) as exc_info:
         await patch_employee(
             employee.id,
-            {"is_deputy_senior": True},
+            {"is_deputy_senior": True, "effective_from": date.today()},
             session,  # type: ignore[arg-type]
             CurrentActor(roles=frozenset({"finance_manager"})),
         )
@@ -1686,7 +1686,7 @@ async def test_patch_employee_pin_code_null_does_not_change_pin() -> None:
 
     updated = await patch_employee(
         employee.id,
-        {"pin_code": None, "category": "category_3"},
+        {"pin_code": None, "category": "category_3", "effective_from": date.today()},
         session,  # type: ignore[arg-type]
         CurrentActor(roles=frozenset({"finance_manager"})),
     )
@@ -2363,7 +2363,7 @@ async def test_assign_second_senior_fails_409_with_existing() -> None:
     with pytest.raises(HTTPException) as exc_info:
         await patch_employee(
             target.id,
-            {"is_senior": True},
+            {"is_senior": True, "effective_from": date.today()},
             session,  # type: ignore[arg-type]
             CurrentActor(roles=frozenset({"finance_manager"})),
         )
@@ -2381,7 +2381,7 @@ async def test_assign_second_senior_with_transfer_succeeds() -> None:
 
     updated = await patch_employee(
         target.id,
-        {"is_senior": True, "transfer_from_existing": True},
+        {"is_senior": True, "transfer_from_existing": True, "effective_from": date.today()},
         session,  # type: ignore[arg-type]
         CurrentActor(roles=frozenset({"finance_manager"})),
     )
@@ -2404,7 +2404,7 @@ async def test_patch_employee_iiko_deleted_stays_inactive() -> None:
 
     updated = await patch_employee(
         employee.id,
-        {"category": "category_1"},
+        {"category": "category_1", "effective_from": date.today()},
         session,  # type: ignore[arg-type]
         CurrentActor(roles=frozenset({"finance_manager"})),
     )

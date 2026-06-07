@@ -14,9 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentActor, get_current_actor
+from app.auth.permissions import permission_is_granted
 from app.core.security import hash_password
 from app.db.session import get_session
-from app.auth.permissions import permission_is_granted
 from app.models import (
     AgentAction,
     AgentRun,
@@ -210,6 +210,18 @@ PAYROLL_EFFECTIVE_FIELDS = {
     "is_senior",
     "is_deputy_senior",
     "roles",
+}
+DIRECT_EFFECTIVE_DATE_REQUIRED_FIELDS = {
+    "category",
+    "default_cooking_station",
+    "is_senior",
+    "is_deputy_senior",
+}
+ASSIGNMENT_EFFECTIVE_DATE_REQUIRED_FIELDS = {
+    "payroll_role",
+    "category",
+    "is_primary",
+    "is_substitute",
 }
 
 
@@ -1190,6 +1202,13 @@ async def patch_employee_assignment(
         raise HTTPException(status_code=400, detail="Роль начисления не может быть пустой")
     if "category" in payload.model_fields_set and payload.category is None:
         raise HTTPException(status_code=400, detail="Категория не может быть пустой")
+    if ASSIGNMENT_EFFECTIVE_DATE_REQUIRED_FIELDS & payload.model_fields_set and (
+        "effective_from" not in payload.model_fields_set or payload.effective_from is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Для изменения назначения укажите дату применения",
+        )
     assignment_effective_from = (
         payload.effective_from if "effective_from" in payload.model_fields_set else None
     )
@@ -1225,10 +1244,7 @@ async def patch_employee_assignment(
     except employee_assignment_service.EmployeeAssignmentError as exc:
         status_code = (
             status.HTTP_422_UNPROCESSABLE_ENTITY
-            if (
-                payload.is_substitute is True
-                or getattr(assignment_before, "is_substitute", False)
-            )
+            if (payload.is_substitute is True or getattr(assignment_before, "is_substitute", False))
             else status.HTTP_400_BAD_REQUEST
         )
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
@@ -1608,6 +1624,17 @@ async def patch_employee(
                 target_position,
                 StaffAction.ASSIGN_ROLES_CATEGORIES,
             )
+    direct_effective_date_required_fields = DIRECT_EFFECTIVE_DATE_REQUIRED_FIELDS & (
+        patch.model_fields_set
+        - ({"category", "default_cooking_station"} if "roles" in patch.model_fields_set else set())
+    )
+    if direct_effective_date_required_fields and (
+        "effective_from" not in patch.model_fields_set or patch.effective_from is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Для изменения категории или надбавок укажите дату применения",
+        )
     target_roles = list(patch.roles or []) if roles_changed else None
     target_category = patch.category if "category" in patch.model_fields_set else employee.category
     target_default_cooking_station = (
@@ -1641,7 +1668,7 @@ async def patch_employee(
         or ("is_senior" in patch.model_fields_set and bool(target_is_senior))
         or ("is_deputy_senior" in patch.model_fields_set and bool(target_is_deputy_senior))
     ):
-        await _ensure_or_transfer_premium_capacity(
+        transferred_allowance_events = await _ensure_or_transfer_premium_capacity(
             session,
             target_position,
             is_senior=bool(target_is_senior),
@@ -1651,6 +1678,8 @@ async def patch_employee(
             effective_from=effective_from,
             comment=effective_comment,
         )
+    else:
+        transferred_allowance_events = []
 
     await _validate_patch_assignment_shortcut(
         session,
@@ -1687,7 +1716,9 @@ async def patch_employee(
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     position_assignment: EmployeePositionAssignment | None = None
-    allowance_events: list[EmployeeAllowanceEvent] = []
+    allowance_events: list[tuple[uuid.UUID, EmployeeAllowanceEvent]] = list(
+        transferred_allowance_events
+    )
     try:
         if position_changed:
             position_assignment = await employee_position_service.change_position(
@@ -1723,7 +1754,7 @@ async def patch_employee(
                 effective_from=effective_from,
                 comment=effective_comment,
             )
-            allowance_events.append(event)
+            allowance_events.append((employee.id, event))
     except employee_effective_event_service.EmployeeEffectiveEventNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except employee_position_service.EmployeePositionError as exc:
@@ -1782,12 +1813,42 @@ async def patch_employee(
             employee.category = None
 
     assignments = None
+    shortcut_assignment_before_model: EmployeeRoleAssignment | None = None
+    shortcut_assignment_before: dict[str, Any] | None = None
+    shortcut_assignment_after: EmployeeRoleAssignment | None = None
+    shortcut_changed = {
+        "category",
+        "default_cooking_station",
+        "position",
+    } & patch.model_fields_set
     try:
-        shortcut_changed = {
-            "category",
-            "default_cooking_station",
-            "position",
-        } & patch.model_fields_set
+        if (
+            target_roles is None
+            and shortcut_changed
+            and (
+                applies_to_current_snapshot
+                or ({"category", "default_cooking_station"} & patch.model_fields_set)
+            )
+        ):
+            before_effective_assignments = await employee_assignment_service.get_assignments(
+                session,
+                employee.id,
+                effective_from,
+            )
+            before_effective_primary = next(
+                (
+                    assignment
+                    for assignment in before_effective_assignments
+                    if assignment.is_primary
+                ),
+                before_effective_assignments[0] if before_effective_assignments else None,
+            )
+            shortcut_assignment_before_model = before_effective_primary
+            shortcut_assignment_before = (
+                _assignment_snapshot(before_effective_primary)
+                if before_effective_primary is not None
+                else None
+            )
         if target_roles is not None and applies_to_current_snapshot:
             await _sync_patch_roles(
                 session,
@@ -1798,18 +1859,20 @@ async def patch_employee(
         elif position_changed and applies_to_current_snapshot:
             await _close_invalid_assignments_for_position(session, employee, today)
         if target_roles is None and shortcut_changed and applies_to_current_snapshot:
-            await employee_assignment_service.sync_primary_from_shortcut(
-                session,
-                employee,
-                effective_from=effective_from,
-                commit=False,
+            shortcut_assignment_after = (
+                await employee_assignment_service.sync_primary_from_shortcut(
+                    session,
+                    employee,
+                    effective_from=effective_from,
+                    commit=False,
+                )
             )
         elif (
             target_roles is None
             and shortcut_changed
             and ({"category", "default_cooking_station"} & patch.model_fields_set)
         ):
-            await _sync_future_assignment_shortcut(
+            shortcut_assignment_after = await _sync_future_assignment_shortcut(
                 session,
                 employee,
                 position=target_position,
@@ -1870,9 +1933,40 @@ async def patch_employee(
             employee_id=employee.id,
             comment=effective_comment,
         )
-    for allowance_event in allowance_events:
-        if effective_from == today and applies_to_current_snapshot:
-            continue
+    handled_lifecycle_fields: set[str] = set()
+    if shortcut_assignment_after is not None:
+        shortcut_assignment_after_snapshot = _assignment_snapshot(shortcut_assignment_after)
+        if shortcut_assignment_before != shortcut_assignment_after_snapshot:
+            await _add_manual_action(
+                session,
+                action_type="update_role_assignment",
+                target_table="employee_role_assignment",
+                target_id=shortcut_assignment_after.id,
+                before=shortcut_assignment_before,
+                after=shortcut_assignment_after_snapshot,
+                now=now,
+                actor=actor,
+                employee_id=employee.id,
+                comment=effective_comment,
+            )
+        handled_lifecycle_fields.update({"category", "default_cooking_station", "roles"})
+    elif shortcut_assignment_before_model is not None:
+        shortcut_assignment_after_snapshot = _assignment_snapshot(shortcut_assignment_before_model)
+        if shortcut_assignment_before != shortcut_assignment_after_snapshot:
+            await _add_manual_action(
+                session,
+                action_type="remove_role_assignment",
+                target_table="employee_role_assignment",
+                target_id=shortcut_assignment_before_model.id,
+                before=shortcut_assignment_before,
+                after=shortcut_assignment_after_snapshot,
+                now=now,
+                actor=actor,
+                employee_id=employee.id,
+                comment=effective_comment,
+            )
+        handled_lifecycle_fields.update({"category", "default_cooking_station", "roles"})
+    for allowance_employee_id, allowance_event in allowance_events:
         await _add_manual_action(
             session,
             action_type="set_allowance" if allowance_event.is_enabled else "unset_allowance",
@@ -1882,9 +1976,11 @@ async def patch_employee(
             after=employee_effective_event_service.allowance_event_snapshot(allowance_event),
             now=now,
             actor=actor,
-            employee_id=employee.id,
+            employee_id=allowance_employee_id,
             comment=effective_comment,
         )
+    if allowance_events:
+        handled_lifecycle_fields.update({"is_senior", "is_deputy_senior"})
     if pin_action_type and pin_audit_after is not None:
         await _add_employee_lifecycle_action(
             session,
@@ -1895,7 +1991,7 @@ async def patch_employee(
             now=now,
             actor=actor,
         )
-    if _snapshots_differ_ignoring_fields(before, after, {"pin_set_at"}):
+    if _snapshots_differ_ignoring_fields(before, after, {"pin_set_at"} | handled_lifecycle_fields):
         await _add_employee_lifecycle_action(
             session,
             action_type="update",
@@ -1968,9 +2064,7 @@ def _filter_pending_iiko_actions_by_staff_access(
     if allowed_employee_ids is None:
         return actions
     return [
-        action_item
-        for action_item in actions
-        if action_item.employee_id in allowed_employee_ids
+        action_item for action_item in actions if action_item.employee_id in allowed_employee_ids
     ]
 
 
@@ -2341,10 +2435,10 @@ async def _ensure_or_transfer_premium_capacity(
     transfer_from_existing: bool,
     effective_from: date,
     comment: str | None,
-) -> None:
+) -> list[tuple[uuid.UUID, EmployeeAllowanceEvent]]:
     canonical_position = canonical_position_name(position)
     if canonical_position not in {"Повар", "Кассир"}:
-        return
+        return []
 
     requested = {
         "is_senior": is_senior,
@@ -2354,6 +2448,7 @@ async def _ensure_or_transfer_premium_capacity(
         "is_senior": "senior",
         "is_deputy_senior": "deputy_senior",
     }
+    transferred_events: list[tuple[uuid.UUID, EmployeeAllowanceEvent]] = []
 
     for field, should_be_enabled in requested.items():
         if not should_be_enabled:
@@ -2372,7 +2467,7 @@ async def _ensure_or_transfer_premium_capacity(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=_premium_conflict_detail(field, canonical_position, existing),
             )
-        await employee_effective_event_service.set_allowance(
+        event = await employee_effective_event_service.set_allowance(
             session,
             existing.id,
             allowance_type_by_field[field],
@@ -2380,6 +2475,8 @@ async def _ensure_or_transfer_premium_capacity(
             effective_from=effective_from,
             comment=comment or "Перенос надбавки другому сотруднику",
         )
+        transferred_events.append((existing.id, event))
+    return transferred_events
 
 
 async def _active_premium_holders(
@@ -2607,10 +2704,10 @@ async def _sync_future_assignment_shortcut(
     category: str | None,
     default_cooking_station: str | None,
     effective_from: date,
-) -> None:
+) -> EmployeeRoleAssignment | None:
     canonical_position = canonical_position_name(position)
     if canonical_position is None or category is None:
-        return
+        return None
 
     payroll_role: str | None = None
     if canonical_position == "Кассир":
@@ -2618,9 +2715,9 @@ async def _sync_future_assignment_shortcut(
     elif canonical_position == "Повар":
         payroll_role = default_cooking_station
     if payroll_role is None:
-        return
+        return None
 
-    await employee_assignment_service.set_primary(
+    return await employee_assignment_service.set_primary(
         session,
         employee.id,
         payroll_role,

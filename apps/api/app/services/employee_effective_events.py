@@ -118,6 +118,19 @@ async def get_allowances_on_date(
         "is_senior": bool(employee.is_senior) if employee is not None else False,
         "is_deputy_senior": bool(employee.is_deputy_senior) if employee is not None else False,
     }
+    event_types = set(
+        (
+            await session.scalars(
+                select(EmployeeAllowanceEvent.allowance_type).where(
+                    EmployeeAllowanceEvent.employee_id == employee_id
+                )
+            )
+        ).all()
+    )
+    for allowance_type in event_types:
+        field = ALLOWANCE_FIELD_BY_TYPE.get(allowance_type)
+        if field is not None:
+            result[field] = False
     events = await get_allowance_events_on_date(session, employee_id, on_date)
     for event in events:
         field = ALLOWANCE_FIELD_BY_TYPE[event.allowance_type]

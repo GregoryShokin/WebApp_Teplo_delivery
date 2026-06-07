@@ -3132,6 +3132,8 @@ function StaffEditor({
   const [premiumConfirmOpen, setPremiumConfirmOpen] = useState(false);
   const [premiumConfirmActions, setPremiumConfirmActions] = useState<string[]>([]);
   const [pendingDraftPatch, setPendingDraftPatch] = useState<EmployeePatch | null>(null);
+  const [premiumEffectiveDate, setPremiumEffectiveDate] = useState(todayDateInputValue);
+  const [premiumComment, setPremiumComment] = useState("");
   const [categoryChange, setCategoryChange] = useState<CategoryEffectiveChange | null>(null);
   const [categoryEffectiveDate, setCategoryEffectiveDate] = useState(todayDateInputValue);
   const [categoryComment, setCategoryComment] = useState("");
@@ -3161,6 +3163,8 @@ function StaffEditor({
     setPositionDialogOpen(false);
     setPremiumConfirmOpen(false);
     setPendingDraftPatch(null);
+    setPremiumEffectiveDate(todayDateInputValue());
+    setPremiumComment("");
     setCategoryChange(null);
     setCategoryEffectiveDate(todayDateInputValue());
     setCategoryComment("");
@@ -3539,6 +3543,13 @@ function StaffEditor({
     Boolean(selectedCategoryEffectiveDate) &&
     (!categoryCommentRequired || categoryComment.trim().length > 0) &&
     !categoryMutation.isPending;
+  const premiumCommentRequired =
+    Boolean(premiumEffectiveDate) && premiumEffectiveDate < todayDateInputValue();
+  const canApplyPremiumChange =
+    Boolean(pendingDraftPatch) &&
+    Boolean(premiumEffectiveDate) &&
+    (!premiumCommentRequired || premiumComment.trim().length > 0) &&
+    !mutation.isPending;
 
   useEffect(() => {
     onDirtyChange(dirty);
@@ -3603,6 +3614,8 @@ function StaffEditor({
     if (premiumActions.length > 0) {
       setPremiumConfirmActions(premiumActions);
       setPendingDraftPatch(patch);
+      setPremiumEffectiveDate(todayDateInputValue());
+      setPremiumComment("");
       setPremiumConfirmOpen(true);
       return;
     }
@@ -4633,41 +4646,85 @@ function StaffEditor({
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={premiumConfirmOpen} onOpenChange={setPremiumConfirmOpen}>
+      <Dialog
+        open={premiumConfirmOpen}
+        onOpenChange={(open) => {
+          setPremiumConfirmOpen(open);
+          if (!open && !mutation.isPending) {
+            setPendingDraftPatch(null);
+            setPremiumEffectiveDate(todayDateInputValue());
+            setPremiumComment("");
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Подтвердите изменение надбавок</DialogTitle>
             <DialogDescription>
-              Изменение будет сохранено в карточке сотрудника и попадёт в историю штата.
+              Изменение будет сохранено с выбранной даты и попадёт в историю штата.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-2 text-sm">
-            {premiumConfirmActions.map((action) => (
-              <div className="rounded-md border bg-muted/30 px-3 py-2" key={action}>
-                {action}
-              </div>
-            ))}
+          <div className="grid gap-4">
+            <div className="grid gap-2 text-sm">
+              {premiumConfirmActions.map((action) => (
+                <div className="rounded-md border bg-muted/30 px-3 py-2" key={action}>
+                  {action}
+                </div>
+              ))}
+            </div>
+
+            <Label className="grid gap-2">
+              <span className="text-sm font-medium">Применить с даты</span>
+              <Input
+                disabled={mutation.isPending}
+                onChange={(event) => setPremiumEffectiveDate(event.target.value)}
+                type="date"
+                value={premiumEffectiveDate}
+              />
+            </Label>
+
+            <Label className="grid gap-2">
+              <span>{premiumCommentRequired ? "Комментарий" : "Комментарий (опционально)"}</span>
+              <Textarea
+                disabled={mutation.isPending}
+                maxLength={1000}
+                onChange={(event) => setPremiumComment(event.target.value)}
+                placeholder={premiumCommentRequired ? "Обязателен для задней даты" : ""}
+                value={premiumComment}
+              />
+            </Label>
           </div>
 
           <DialogFooter>
             <Button
               disabled={mutation.isPending}
-              onClick={() => setPremiumConfirmOpen(false)}
+              onClick={() => {
+                setPremiumConfirmOpen(false);
+                setPendingDraftPatch(null);
+                setPremiumEffectiveDate(todayDateInputValue());
+                setPremiumComment("");
+              }}
               type="button"
               variant="outline"
             >
               Отмена
             </Button>
             <Button
-              disabled={!pendingDraftPatch || mutation.isPending}
+              disabled={!canApplyPremiumChange}
               onClick={() => {
                 if (!pendingDraftPatch) {
                   return;
                 }
-                mutation.mutate(pendingDraftPatch);
+                mutation.mutate({
+                  ...pendingDraftPatch,
+                  effective_from: premiumEffectiveDate,
+                  comment: premiumComment.trim() || undefined,
+                });
                 setPremiumConfirmOpen(false);
                 setPendingDraftPatch(null);
+                setPremiumEffectiveDate(todayDateInputValue());
+                setPremiumComment("");
               }}
               type="button"
             >

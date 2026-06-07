@@ -28,6 +28,7 @@ from app.models import (
     DepositAccount,
     DepositTransaction,
     Employee,
+    EmployeeAllowanceEvent,
     EmployeeRoleAssignment,
     InventoryAudit,
     InventoryAuditEmployeeExclusion,
@@ -80,6 +81,7 @@ from app.services.payroll_calculator import (
     deposit_withholding,
     employee_deposit_target,
     fund_accrual_for_day,
+    load_employee_allowances_for_entries,
     tenure_months_on,
 )
 from app.services.payroll_percent import (
@@ -367,9 +369,7 @@ class LegacyImportFakeSession:
         if entity is PayrollAdjustmentCategory:
             return LegacyImportScalarResult(self.categories)
         if entity is PayrollRun:
-            return LegacyImportScalarResult(
-                [run for run in self.runs if run.is_imported_legacy]
-            )
+            return LegacyImportScalarResult([run for run in self.runs if run.is_imported_legacy])
         if entity is AccumulationFundTransaction:
             if query_selected_name(query) == "account_id":
                 return LegacyImportScalarResult(
@@ -3470,6 +3470,35 @@ def test_payroll_calculator_uses_assignment_category_by_work_date() -> None:
     assert result.lines[0].components["days"][0]["weekday_premium"] == 200
 
 
+def test_payroll_calculator_does_not_use_current_category_when_assignment_source_loaded() -> None:
+    period = make_period(
+        start=date(2026, 6, 1),
+        end=date(2026, 6, 7),
+        payroll_date=date(2026, 6, 8),
+    )
+    run_id = uuid.uuid4()
+    employee = make_employee(
+        position="Повар",
+        category="category_2",
+        default_cooking_station="pizza",
+    )
+    work_date = date(2026, 6, 1)
+    entry = make_entry(period, employee, work_date, role="Пиццерист", station="pizza")
+    settings = payroll_settings()
+    settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = {(employee.id, work_date): []}
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.lines == []
+    assert result.blocking_issues[0]["type"] == "needs_setup"
+
+
 def test_payroll_calculator_uses_allowance_events_by_work_date() -> None:
     period = make_period(
         start=date(2026, 6, 1),
@@ -3505,6 +3534,57 @@ def test_payroll_calculator_uses_allowance_events_by_work_date() -> None:
     assert result.blocking_issues == []
     assert result.lines[0].base_pay == 4900
     assert [day["base_pay"] for day in result.lines[0].components["days"]] == [2200, 2700]
+
+
+async def test_payroll_loads_allowance_events_as_source_of_truth(async_session_factory) -> None:
+    period = make_period(
+        start=date(2026, 6, 1),
+        end=date(2026, 6, 7),
+        payroll_date=date(2026, 6, 8),
+    )
+    run_id = uuid.uuid4()
+    employee = make_employee(position="Повар", category="category_2")
+    employee.is_senior = True
+    first_day = date(2026, 6, 1)
+    second_day = date(2026, 6, 2)
+    entries = [
+        make_entry(period, employee, first_day),
+        make_entry(period, employee, second_day),
+    ]
+
+    async with async_session_factory() as session:
+        session.add(employee)
+        session.add(
+            EmployeeAllowanceEvent(
+                employee_id=employee.id,
+                allowance_type="senior",
+                is_enabled=True,
+                effective_from=second_day,
+            )
+        )
+        await session.commit()
+        allowances_by_day = await load_employee_allowances_for_entries(session, entries)
+
+    settings = payroll_settings()
+    settings[EMPLOYEE_ALLOWANCES_CONFIG_KEY] = allowances_by_day
+    settings[SENIORITY_ALLOWANCE_MAP_CONFIG_KEY] = {
+        first_day: {("Повар", "senior"): Decimal("500")},
+        second_day: {("Повар", "senior"): Decimal("500")},
+    }
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    assert [day["seniority_allowance_pay"] for day in result.lines[0].components["days"]] == [
+        0,
+        500,
+    ]
 
 
 def test_payroll_calculator_uses_shift_ledger_role_and_category() -> None:

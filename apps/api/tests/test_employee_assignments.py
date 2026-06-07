@@ -14,6 +14,7 @@ from app.api.v1.routes.employees import (
     delete_employee_assignment,
     list_employee_assignments,
     list_employee_changes,
+    patch_employee,
     patch_employee_assignment,
 )
 from app.models import (
@@ -223,7 +224,7 @@ async def test_only_one_assignment_is_primary_per_employee(session_factory) -> N
         await patch_employee_assignment(
             employee.id,
             pizza.id,
-            EmployeeRoleAssignmentPatch(is_primary=True),
+            EmployeeRoleAssignmentPatch(is_primary=True, effective_from=date.today()),
             session,
             _finance_manager(),
         )
@@ -723,6 +724,72 @@ async def test_backdated_assignment_over_finalized_payroll_requires_review_witho
     assert str(persisted_line.base_pay) == "1000.00"
 
 
+async def test_backdated_seniority_over_finalized_payroll_requires_review_without_mutating_line(
+    session_factory,
+) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        period = PayrollPeriod(
+            id=uuid.uuid4(),
+            period_type="week",
+            start_date=date(2026, 5, 18),
+            end_date=date(2026, 5, 24),
+            payroll_date=date(2026, 5, 25),
+            status="finalized",
+        )
+        run = PayrollRun(
+            id=uuid.uuid4(),
+            period_id=period.id,
+            started_at=datetime(2026, 5, 25, 10, 0, tzinfo=UTC),
+            finished_at=datetime(2026, 5, 25, 10, 5, tzinfo=UTC),
+            status="finalized",
+            blocking_issues=[],
+            summary={},
+        )
+        line = PayrollLine(
+            id=uuid.uuid4(),
+            run_id=run.id,
+            employee_id=employee.id,
+            role="sushi",
+            base_pay=Decimal("1000.00"),
+            premium=Decimal("0.00"),
+            percent_pay=Decimal("0.00"),
+            vacation_pay=Decimal("0.00"),
+            fund_accrual=Decimal("0.00"),
+            deduction=Decimal("0.00"),
+            total_payable=Decimal("1000.00"),
+            components={"days": []},
+        )
+        session.add_all([period, run])
+        await session.flush()
+        session.add(line)
+        await session.commit()
+
+        updated = await patch_employee(
+            employee.id,
+            {
+                "is_senior": True,
+                "effective_from": date(2026, 5, 20),
+                "comment": "Исправление старшинства за закрытую неделю",
+            },
+            session,
+            _finance_manager(),
+        )
+        event = await session.scalar(
+            select(EmployeeChangeEvent).where(
+                EmployeeChangeEvent.employee_id == employee.id,
+                EmployeeChangeEvent.change_type == "set_senior",
+            )
+        )
+        persisted_line = await session.get(PayrollLine, line.id)
+
+    assert updated.is_senior is True
+    assert event is not None
+    assert event.status == "requires_review"
+    assert event.payroll_impact_metadata["correction_pending"] is True
+    assert str(persisted_line.base_pay) == "1000.00"
+
+
 async def test_delete_primary_assignment_without_replacement_returns_400(
     session_factory,
 ) -> None:
@@ -794,7 +861,7 @@ async def test_patch_shawarma_assignment_allows_category_4(session_factory) -> N
         updated = await patch_employee_assignment(
             employee.id,
             assignment.id,
-            EmployeeRoleAssignmentPatch(category="category_4"),
+            EmployeeRoleAssignmentPatch(category="category_4", effective_from=date.today()),
             session,
             _finance_manager(),
         )
@@ -811,7 +878,7 @@ async def test_patch_non_shawarma_assignment_rejects_category_4(session_factory)
             await patch_employee_assignment(
                 employee.id,
                 assignment.id,
-                EmployeeRoleAssignmentPatch(category="category_4"),
+                EmployeeRoleAssignmentPatch(category="category_4", effective_from=date.today()),
                 session,
                 _finance_manager(),
             )
