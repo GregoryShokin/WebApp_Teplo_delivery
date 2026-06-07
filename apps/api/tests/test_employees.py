@@ -294,6 +294,10 @@ class FakeSession:
     async def scalars(self, query: Any) -> FakeScalarResult:
         sql = str(query.compile(compile_kwargs={"literal_binds": True}))
         normalized_sql = sql.lstrip()
+        if "payroll_period" in sql:
+            # Предохранитель закрытого периода: в этих тестах нет finalized-периодов,
+            # поэтому конфликтов нет.
+            return FakeScalarResult([])
         if "deposit_transaction" in sql:
             return FakeScalarResult(list(self.deposit_transactions))
         if "accumulation_fund_account" in sql:

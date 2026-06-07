@@ -122,13 +122,17 @@ async def change_position(
             f"{current.effective_from}"
         )
 
-    await ensure_no_closed_payroll_conflict(
-        session,
-        [(effective_from, None)],
-        acknowledge_closed_period=acknowledge_closed_period,
-    )
+    # Предохранитель закрытого периода нужен только при реальной смене должности
+    # существующего сотрудника. У нового сотрудника (current is None) прошлого
+    # payroll нет — корректировать нечего, и FakeSession в тестах создания такой
+    # запрос не обслуживает.
+    if current is not None:
+        await ensure_no_closed_payroll_conflict(
+            session,
+            [(effective_from, None)],
+            acknowledge_closed_period=acknowledge_closed_period,
+        )
 
-    if current:
         current.effective_to = effective_from - timedelta(days=1)
 
     new_assignment = EmployeePositionAssignment(
