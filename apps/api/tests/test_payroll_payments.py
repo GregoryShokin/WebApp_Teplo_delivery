@@ -68,6 +68,37 @@ async def test_mark_payment_on_finalized_run_creates_snapshot_and_serializes_lin
         assert {line.paid_method for line in lines} == {"business_card"}
 
 
+async def test_mark_payment_uses_total_payable_after_ndfl(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        _period, run, employees = await create_payroll_run(
+            session,
+            status="finalized",
+            period_status="finalized",
+            employee_line_totals=[[Decimal("870")]],
+        )
+        line = await session.scalar(select(PayrollLine).where(PayrollLine.run_id == run.id))
+        assert line is not None
+        line.base_pay = Decimal("1000.00")
+        line.ndfl_withheld = Decimal("130.00")
+        line.total_payable = Decimal("870.00")
+        await session.commit()
+
+        payment = await mark_payment(
+            session,
+            run.id,
+            employees[0].id,
+            paid_at=date(2026, 5, 27),
+            method="business_card",
+            actor_user_id=actor.id,
+        )
+
+        assert payment.amount == Decimal("870.00")
+        assert payment.amount_account == Decimal("870.00")
+
+
 async def test_mark_payment_on_not_finalized_run_returns_409(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

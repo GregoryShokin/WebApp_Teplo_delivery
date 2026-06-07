@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date
-from decimal import ROUND_FLOOR, Decimal
+from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import and_, or_, select
@@ -62,6 +62,9 @@ FULL_SHIFT_MINUTES = Decimal(12 * 60)
 DEFAULT_WEEKDAY_PREMIUM_AMOUNT = Decimal("200")
 DEFAULT_WEEKDAY_PREMIUM_THRESHOLD_HOURS = Decimal("8")
 WEEKDAY_PREMIUM_WEEKDAYS = {4, 5}
+PAYROLL_NDFL_CONFIG_KEY = "payroll.ndfl"
+DEFAULT_NDFL_RATE = Decimal("0.13")
+NDFL_ROUNDING = "round_half_up_to_kopeck"
 CATEGORY_RULE_KEY_BY_APP_CATEGORY = {
     "category_1": "1",
     "category_2": "2",
@@ -80,8 +83,13 @@ PAYROLL_SETTING_KEYS = {
     "payroll.deposit_auto_withholding_enabled",
     "payroll.deposit_fund_payment_date",
     "payroll.deposit_write_offs",
+    PAYROLL_NDFL_CONFIG_KEY,
 }
-OPTIONAL_PAYROLL_SETTING_KEYS = {"payroll.daily_revenue_by_date", "payroll.deposit_write_offs"}
+OPTIONAL_PAYROLL_SETTING_KEYS = {
+    "payroll.daily_revenue_by_date",
+    "payroll.deposit_write_offs",
+    PAYROLL_NDFL_CONFIG_KEY,
+}
 DAILY_REVENUE_CONFIG_KEY = "payroll.daily_revenue_by_date"
 PAYROLL_RATE_CONFIG_KEY = "payroll.role_category_rates_by_date"
 PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY = "payroll_rate_snapshot"
@@ -641,8 +649,16 @@ def calculate_payroll_lines_from_inputs(
             totals["base_pay"] + totals["premium"] + totals["percent_pay"] + totals["vacation_pay"]
         )
         manual_deduction = totals.get("manual_deduction", Decimal("0"))
+        ndfl = calculate_ndfl_for_line(settings, employees[employee_id], role, totals)
+        totals["ndfl_withheld"] = ndfl["withheld"]
+        totals["ndfl_taxable_base"] = ndfl["taxable_base"]
+        totals["ndfl_components"] = ndfl["components"]
+        apply_ndfl_to_day_components(totals, ndfl)
         current_deposit_balance = running_deposit_balances.get(employee_id, Decimal("0"))
-        deposit_base = max(total_before_deduction - manual_deduction, Decimal("0"))
+        deposit_base = max(
+            total_before_deduction - manual_deduction - ndfl["withheld"],
+            Decimal("0"),
+        )
         line_override = line_deposit_override(deposit_overrides, employee_id, role)
         deposit_excluded_for_run = bool(line_override.get("deposit_excluded_for_run", False))
         deposit_exclusion_reason = optional_text(line_override.get("deposit_exclusion_reason"))
@@ -659,8 +675,8 @@ def calculate_payroll_lines_from_inputs(
         running_deposit_balances[employee_id] = current_deposit_balance + deduction
         totals["deposit_withholding"] = deduction
         totals["deduction"] = manual_deduction + deduction
-        total_payable = total_before_deduction - deduction
-        total_payable -= manual_deduction
+        total_payable = total_before_deduction - ndfl["withheld"] - deduction - manual_deduction
+        total_payable = max(total_payable, Decimal("0"))
         lines.append(
             PayrollLine(
                 run_id=run_id,
@@ -670,7 +686,7 @@ def calculate_payroll_lines_from_inputs(
                 premium=money(totals["premium"]),
                 percent_pay=money(totals["percent_pay"]),
                 vacation_pay=money(totals["vacation_pay"]),
-                ndfl_withheld=Decimal("0"),
+                ndfl_withheld=ndfl["withheld"],
                 fund_accrual=money(totals["fund_accrual"]),
                 deduction=money(totals["deduction"]),
                 total_payable=money(total_payable),
@@ -679,12 +695,378 @@ def calculate_payroll_lines_from_inputs(
                 components={
                     "days": totals["days"],
                     "deposit_withholding": money(deduction),
+                    "ndfl_withheld": money(ndfl["withheld"]),
+                    "ndfl": ndfl["components"],
                     "adjustments": totals["adjustments"],
                 },
             )
         )
 
     return PayrollCalculationResult(lines=lines, blocking_issues=[], summary=summarize_lines(lines))
+
+
+def calculate_ndfl_for_line(
+    settings: Mapping[str, Any],
+    employee: Employee,
+    role: str,
+    totals: Mapping[str, Any],
+) -> dict[str, Any]:
+    config = ndfl_config(settings)
+    taxable_base, components = ndfl_taxable_base_components(config, totals)
+    applies = ndfl_applies_to_line(config, employee, role, totals)
+    rate = ndfl_rate(config)
+    withheld = (
+        ndfl_money(taxable_base * rate)
+        if applies and taxable_base > 0 and rate > 0
+        else Decimal("0")
+    )
+    gross_accruals = (
+        decimal(totals.get("base_pay"))
+        + decimal(totals.get("premium"))
+        + decimal(totals.get("percent_pay"))
+        + decimal(totals.get("vacation_pay"))
+    )
+    withheld = min(withheld, max(gross_accruals, Decimal("0")))
+    return {
+        "withheld": withheld,
+        "taxable_base": taxable_base if applies else Decimal("0"),
+        "components": {
+            "enabled": bool(config.get("enabled", False)),
+            "applied": applies,
+            "rate": str(rate),
+            "base": money_string(taxable_base if applies else Decimal("0")),
+            "withheld": money_string(withheld),
+            "rounding": NDFL_ROUNDING,
+            "base_config": ndfl_base_config_payload(config),
+            "base_components": components,
+        },
+    }
+
+
+def ndfl_config(settings: Mapping[str, Any]) -> Mapping[str, Any]:
+    value = settings.get(PAYROLL_NDFL_CONFIG_KEY)
+    return value if isinstance(value, Mapping) else {}
+
+
+def ndfl_applies_to_line(
+    config: Mapping[str, Any],
+    employee: Employee,
+    role: str,
+    totals: Mapping[str, Any],
+) -> bool:
+    if not bool(config.get("enabled", False)):
+        return False
+
+    employee_id = str(employee.id)
+    role_keys = normalized_role_keys(role)
+    category_keys = ndfl_line_category_keys(employee, totals)
+
+    if employee_id in string_config_values(config.get("excluded_employee_ids")):
+        return False
+    if role_keys & normalized_config_values(config.get("excluded_roles")):
+        return False
+    if category_keys & normalized_category_config_values(config.get("excluded_categories")):
+        return False
+
+    if employee_id in string_config_values(config.get("employee_ids")):
+        return True
+    if role_keys & normalized_config_values(config.get("roles")):
+        return True
+    if category_keys & normalized_category_config_values(config.get("categories")):
+        return True
+    return bool(config.get("default_employee_enabled", config.get("default_enabled", False)))
+
+
+def ndfl_line_category_keys(employee: Employee, totals: Mapping[str, Any]) -> set[str]:
+    result = normalized_category_keys(getattr(employee, "category", None))
+    days = totals.get("days")
+    if isinstance(days, Iterable) and not isinstance(days, str | bytes):
+        for day in days:
+            if isinstance(day, Mapping):
+                result.update(normalized_category_keys(day.get("category")))
+    return {key for key in result if key}
+
+
+def ndfl_rate(config: Mapping[str, Any]) -> Decimal:
+    value = config.get("rate", DEFAULT_NDFL_RATE)
+    try:
+        if "rate_percent" in config:
+            value = decimal(config.get("rate_percent")) / Decimal("100")
+        rate = decimal(value)
+    except (InvalidOperation, ValueError):
+        return Decimal("0")
+    if rate < 0 or rate > 1:
+        return Decimal("0")
+    return rate
+
+
+def ndfl_taxable_base_components(
+    config: Mapping[str, Any],
+    totals: Mapping[str, Any],
+) -> tuple[Decimal, dict[str, Any]]:
+    base_pay = decimal(totals.get("base_pay"))
+    seniority = ndfl_seniority_allowance_total(totals)
+    premium = decimal(totals.get("premium"))
+    percent_pay = decimal(totals.get("percent_pay"))
+    vacation_pay = decimal(totals.get("vacation_pay"))
+    manual_penalties = decimal(totals.get("manual_deduction"))
+
+    include_base_pay = ndfl_base_component_enabled(config, "base_pay", default=True)
+    include_seniority = ndfl_base_component_enabled(config, "seniority_allowance", default=True)
+    include_premium = ndfl_base_component_enabled(config, "premium", default=True)
+    include_manual_bonuses = ndfl_base_component_enabled(config, "manual_bonuses", default=True)
+    include_percent_pay = ndfl_base_component_enabled(config, "percent_pay", default=True)
+    include_vacation_pay = ndfl_base_component_enabled(config, "vacation_pay", default=True)
+    include_manual_penalties = ndfl_base_component_enabled(
+        config,
+        "manual_penalties",
+        default=False,
+    )
+
+    taxable_base_pay = Decimal("0")
+    if include_base_pay:
+        taxable_base_pay = (
+            base_pay if include_seniority else max(base_pay - seniority, Decimal("0"))
+        )
+    elif include_seniority:
+        taxable_base_pay = seniority
+
+    taxable_premium = premium if include_premium and include_manual_bonuses else Decimal("0")
+    taxable_percent_pay = percent_pay if include_percent_pay else Decimal("0")
+    taxable_vacation_pay = vacation_pay if include_vacation_pay else Decimal("0")
+    taxable_manual_penalties = -manual_penalties if include_manual_penalties else Decimal("0")
+
+    raw_base = (
+        taxable_base_pay
+        + taxable_premium
+        + taxable_percent_pay
+        + taxable_vacation_pay
+        + taxable_manual_penalties
+    )
+    taxable_base = max(raw_base, Decimal("0"))
+    return taxable_base, {
+        "base_pay": ndfl_component_payload(base_pay, taxable_base_pay),
+        "seniority_allowance": ndfl_component_payload(
+            seniority,
+            seniority if include_seniority else Decimal("0"),
+            included_in="base_pay",
+        ),
+        "premium": ndfl_component_payload(premium, taxable_premium),
+        "manual_bonuses": ndfl_component_payload(
+            premium,
+            taxable_premium,
+            included_in="premium",
+        ),
+        "percent_pay": ndfl_component_payload(percent_pay, taxable_percent_pay),
+        "vacation_pay": ndfl_component_payload(vacation_pay, taxable_vacation_pay),
+        "manual_penalties": ndfl_component_payload(
+            manual_penalties,
+            taxable_manual_penalties,
+            policy="excluded_by_default" if not include_manual_penalties else "subtracts_base",
+        ),
+    }
+
+
+def ndfl_component_payload(
+    amount: Decimal,
+    taxable_amount: Decimal,
+    *,
+    included_in: str | None = None,
+    policy: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "amount": money_string(amount),
+        "taxable_amount": money_string(taxable_amount),
+    }
+    if included_in is not None:
+        payload["included_in"] = included_in
+    if policy is not None:
+        payload["policy"] = policy
+    return payload
+
+
+def ndfl_base_config_payload(config: Mapping[str, Any]) -> dict[str, bool]:
+    return {
+        "base_pay": ndfl_base_component_enabled(config, "base_pay", default=True),
+        "premium": ndfl_base_component_enabled(config, "premium", default=True),
+        "percent_pay": ndfl_base_component_enabled(config, "percent_pay", default=True),
+        "vacation_pay": ndfl_base_component_enabled(config, "vacation_pay", default=True),
+        "manual_bonuses": ndfl_base_component_enabled(config, "manual_bonuses", default=True),
+        "manual_penalties": ndfl_base_component_enabled(
+            config,
+            "manual_penalties",
+            default=False,
+        ),
+        "seniority_allowance": ndfl_base_component_enabled(
+            config,
+            "seniority_allowance",
+            default=True,
+        ),
+    }
+
+
+def ndfl_seniority_allowance_total(totals: Mapping[str, Any]) -> Decimal:
+    days = totals.get("days")
+    if not isinstance(days, Iterable) or isinstance(days, str | bytes):
+        return Decimal("0")
+    return sum(
+        (
+            decimal(day.get("seniority_allowance_pay"))
+            for day in days
+            if isinstance(day, Mapping)
+        ),
+        Decimal("0"),
+    )
+
+
+def apply_ndfl_to_day_components(totals: Mapping[str, Any], ndfl: Mapping[str, Any]) -> None:
+    days = totals.get("days")
+    if not isinstance(days, list):
+        return
+    withheld = decimal(ndfl.get("withheld"))
+    taxable_base = decimal(ndfl.get("taxable_base"))
+    config = ndfl_config_from_components(ndfl.get("components"))
+    bonus_by_date = ndfl_adjustment_amounts_by_date(totals, "bonuses")
+    penalty_by_date = ndfl_adjustment_amounts_by_date(totals, "penalties")
+    day_bases = [
+        ndfl_day_taxable_base(config, day, bonus_by_date, penalty_by_date)
+        if isinstance(day, dict)
+        else Decimal("0")
+        for day in days
+    ]
+    if taxable_base <= 0:
+        day_bases = [Decimal("0") for _day in days]
+
+    day_base_total = sum(day_bases, Decimal("0"))
+    if day_bases and taxable_base > day_base_total:
+        day_bases[0] += taxable_base - day_base_total
+        day_base_total = taxable_base
+
+    allocated = Decimal("0")
+    last_index = len(days) - 1
+    for index, day in enumerate(days):
+        if not isinstance(day, dict):
+            continue
+        day_base = max(day_bases[index], Decimal("0"))
+        if withheld <= 0 or taxable_base <= 0:
+            day_withheld = Decimal("0")
+        elif index == last_index:
+            day_withheld = withheld - allocated
+        elif day_base_total > 0:
+            day_withheld = ndfl_money(withheld * day_base / day_base_total)
+            allocated += day_withheld
+        else:
+            day_withheld = Decimal("0")
+        day["ndfl_taxable_base"] = money(day_base)
+        day["ndfl_withheld"] = money(day_withheld)
+
+
+def ndfl_config_from_components(components: Any) -> Mapping[str, Any]:
+    if not isinstance(components, Mapping):
+        return {}
+    base_config = components.get("base_config")
+    return {"base": base_config} if isinstance(base_config, Mapping) else {}
+
+
+def ndfl_day_taxable_base(
+    config: Mapping[str, Any],
+    day: Mapping[str, Any],
+    bonus_by_date: Mapping[date, Decimal],
+    penalty_by_date: Mapping[date, Decimal],
+) -> Decimal:
+    work_date = date_or_none(day.get("date"))
+    base_pay = decimal(day.get("base_pay"))
+    seniority = decimal(day.get("seniority_allowance_pay"))
+    percent_pay = decimal(day.get("percent_pay"))
+    vacation_pay = decimal(day.get("vacation_pay"))
+    bonus = bonus_by_date.get(work_date, Decimal("0")) if work_date is not None else Decimal("0")
+    penalty = (
+        penalty_by_date.get(work_date, Decimal("0")) if work_date is not None else Decimal("0")
+    )
+
+    total = Decimal("0")
+    if ndfl_base_component_enabled(config, "base_pay", default=True):
+        total += base_pay
+        if not ndfl_base_component_enabled(config, "seniority_allowance", default=True):
+            total -= seniority
+    elif ndfl_base_component_enabled(config, "seniority_allowance", default=True):
+        total += seniority
+    if ndfl_base_component_enabled(config, "percent_pay", default=True):
+        total += percent_pay
+    if ndfl_base_component_enabled(config, "vacation_pay", default=True):
+        total += vacation_pay
+    if (
+        ndfl_base_component_enabled(config, "premium", default=True)
+        and ndfl_base_component_enabled(config, "manual_bonuses", default=True)
+    ):
+        total += bonus
+    if ndfl_base_component_enabled(config, "manual_penalties", default=False):
+        total -= penalty
+    return max(total, Decimal("0"))
+
+
+def ndfl_adjustment_amounts_by_date(
+    totals: Mapping[str, Any],
+    key: str,
+) -> dict[date, Decimal]:
+    adjustments = totals.get("adjustments")
+    if not isinstance(adjustments, Mapping):
+        return {}
+    items = adjustments.get(key)
+    if not isinstance(items, list):
+        return {}
+    result: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        work_date = date_or_none(item.get("work_date"))
+        if work_date is None:
+            continue
+        result[work_date] += decimal(item.get("amount"))
+    return dict(result)
+
+
+def ndfl_base_component_enabled(
+    config: Mapping[str, Any],
+    key: str,
+    *,
+    default: bool,
+) -> bool:
+    base_config = config.get("base")
+    if not isinstance(base_config, Mapping):
+        base_config = config.get("include")
+    if not isinstance(base_config, Mapping):
+        return default
+    return bool(base_config.get(key, default))
+
+
+def ndfl_money(value: Any) -> Decimal:
+    return decimal(value).quantize(MONEY, rounding=ROUND_HALF_UP)
+
+
+def normalized_config_values(value: Any) -> set[str]:
+    return {normalized_key(item) for item in iterable_config_values(value) if normalized_key(item)}
+
+
+def normalized_category_config_values(value: Any) -> set[str]:
+    result: set[str] = set()
+    for item in iterable_config_values(value):
+        result.update(normalized_category_keys(item))
+    return {key for key in result if key}
+
+
+def string_config_values(value: Any) -> set[str]:
+    return {str(item) for item in iterable_config_values(value) if str(item)}
+
+
+def iterable_config_values(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    if isinstance(value, Iterable):
+        return list(value)
+    return [value]
 
 
 def line_deposit_override(
@@ -1744,6 +2126,9 @@ def summarize_lines(lines: Iterable[PayrollLine]) -> dict[str, Any]:
         "premium": money(sum((decimal(line.premium) for line in lines), Decimal("0"))),
         "percent_pay": money(sum((decimal(line.percent_pay) for line in lines), Decimal("0"))),
         "vacation_pay": money(sum((decimal(line.vacation_pay) for line in lines), Decimal("0"))),
+        "ndfl_withheld": money(
+            sum((decimal(getattr(line, "ndfl_withheld", 0)) for line in lines), Decimal("0"))
+        ),
         "fund_accrual": money(sum((decimal(line.fund_accrual) for line in lines), Decimal("0"))),
         "deduction": money(sum((decimal(line.deduction) for line in lines), Decimal("0"))),
         "total_payable": money(sum((decimal(line.total_payable) for line in lines), Decimal("0"))),

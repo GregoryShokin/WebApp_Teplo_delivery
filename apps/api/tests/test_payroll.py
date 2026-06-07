@@ -71,6 +71,7 @@ from app.services.payroll_calculator import (
     EMPLOYEE_ALLOWANCES_CONFIG_KEY,
     EMPLOYEE_ASSIGNMENTS_CONFIG_KEY,
     PAYROLL_ADJUSTMENTS_CONFIG_KEY,
+    PAYROLL_NDFL_CONFIG_KEY,
     PAYROLL_RATE_CONFIG_KEY,
     PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY,
     SHIFT_LEDGER_CONFIG_KEY,
@@ -3207,6 +3208,188 @@ def test_manual_penalty_increases_deduction() -> None:
     assert result.lines[0].components["adjustments"]["penalties"][0]["amount"] == "500.00"
 
 
+def test_ndfl_disabled_by_default_keeps_current_math() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    work_date = date(2026, 5, 20)
+    entry = make_entry(period, employee, work_date)
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        payroll_settings({work_date.isoformat(): 140000}),
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].base_pay == 2200
+    assert result.lines[0].percent_pay == 6300
+    assert result.lines[0].ndfl_withheld == Decimal("0")
+    assert result.lines[0].total_payable == 8500
+    assert result.summary["ndfl_withheld"] == 0
+
+
+def test_ndfl_enabled_for_category_reduces_total_payable() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(category="category_2")
+    work_date = date(2026, 5, 20)
+    settings = payroll_settings()
+    settings[PAYROLL_NDFL_CONFIG_KEY] = {
+        "enabled": True,
+        "rate": "0.13",
+        "categories": ["category_2"],
+    }
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [make_entry(period, employee, work_date)],
+        {employee.id: employee},
+        settings,
+    )
+
+    line = result.lines[0]
+    assert result.blocking_issues == []
+    assert line.base_pay == 2200
+    assert line.ndfl_withheld == Decimal("286.00")
+    assert line.total_payable == 1914
+    assert line.deduction == 0
+    assert line.components["deposit_withholding"] == 0
+    assert line.components["ndfl"]["applied"] is True
+    assert line.components["ndfl"]["base"] == "2200.00"
+    assert line.components["days"][0]["ndfl_taxable_base"] == 2200
+    assert line.components["days"][0]["ndfl_withheld"] == 286
+    assert result.summary["ndfl_withheld"] == 286
+    assert result.summary["total_payable"] == 1914
+
+
+def test_ndfl_base_includes_configured_accrual_components() -> None:
+    period = make_period(
+        start=date(2026, 6, 1),
+        end=date(2026, 6, 7),
+        payroll_date=date(2026, 6, 8),
+    )
+    run_id = uuid.uuid4()
+    employee = make_employee(position="Повар", category="category_2")
+    shift_day = date(2026, 6, 1)
+    vacation_day = date(2026, 6, 2)
+    bonus = make_adjustment(employee, shift_day, "bonus", Decimal("100"), label="Премия")
+    settings = payroll_settings({shift_day.isoformat(): 140000})
+    settings[PAYROLL_NDFL_CONFIG_KEY] = {
+        "enabled": True,
+        "rate": "0.13",
+        "categories": ["2"],
+    }
+    settings[PAYROLL_ADJUSTMENTS_CONFIG_KEY] = {(employee.id, shift_day): [bonus]}
+    settings[VACATION_DAYS_CONFIG_KEY] = {(employee.id, vacation_day): None}
+    settings[VACATION_DAILY_AMOUNT_CONFIG_KEY] = Decimal("1000")
+    settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = {
+        (employee.id, vacation_day): [
+            make_role_assignment(employee.id, "Пиццерист", "category_2", is_primary=True)
+        ]
+    }
+    settings[EMPLOYEE_ALLOWANCES_CONFIG_KEY] = {
+        (employee.id, shift_day): {"is_senior": True, "is_deputy_senior": False},
+        (employee.id, vacation_day): {"is_senior": False, "is_deputy_senior": False},
+    }
+    settings[SENIORITY_ALLOWANCE_MAP_CONFIG_KEY] = {
+        shift_day: {("Повар", "senior"): Decimal("500")}
+    }
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [make_entry(period, employee, shift_day)],
+        {employee.id: employee},
+        settings,
+    )
+
+    line = result.lines[0]
+    ndfl = line.components["ndfl"]
+    assert result.blocking_issues == []
+    assert line.base_pay == 2700
+    assert line.premium == 100
+    assert line.percent_pay == 6300
+    assert line.vacation_pay == 1000
+    assert line.fund_accrual == 0
+    assert ndfl["base"] == "10100.00"
+    assert ndfl["base_components"]["base_pay"]["taxable_amount"] == "2700.00"
+    assert ndfl["base_components"]["seniority_allowance"]["taxable_amount"] == "500.00"
+    assert ndfl["base_components"]["premium"]["taxable_amount"] == "100.00"
+    assert ndfl["base_components"]["manual_bonuses"]["included_in"] == "premium"
+    assert ndfl["base_components"]["percent_pay"]["taxable_amount"] == "6300.00"
+    assert ndfl["base_components"]["vacation_pay"]["taxable_amount"] == "1000.00"
+    assert ndfl["base_components"]["manual_penalties"]["taxable_amount"] == "0.00"
+    assert line.ndfl_withheld == Decimal("1313.00")
+    assert line.total_payable == 8787
+    assert sum(Decimal(str(day["ndfl_withheld"])) for day in line.components["days"]) == Decimal(
+        "1313"
+    )
+
+
+def test_ndfl_rounds_half_up_to_kopeck() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    settings = payroll_settings()
+    settings["payroll.role_category_rates"]["Пиццерист"]["category_2"] = Decimal("100.50")
+    settings[PAYROLL_NDFL_CONFIG_KEY] = {
+        "enabled": True,
+        "rate": "0.13",
+        "default_employee_enabled": True,
+    }
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [make_entry(period, employee, period.start_date)],
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.lines[0].base_pay == 100.5
+    assert result.lines[0].ndfl_withheld == Decimal("13.07")
+    assert Decimal(str(result.lines[0].total_payable)) == Decimal("87.43")
+    assert result.lines[0].components["ndfl"]["rounding"] == "round_half_up_to_kopeck"
+
+
+def test_ndfl_and_manual_penalty_do_not_make_negative_payable() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    work_date = period.start_date
+    penalty = make_adjustment(employee, work_date, "penalty", Decimal("200"), label="Штраф")
+    settings = payroll_settings()
+    settings["payroll.role_category_rates"]["Пиццерист"]["category_2"] = Decimal("100")
+    settings[PAYROLL_ADJUSTMENTS_CONFIG_KEY] = {(employee.id, work_date): [penalty]}
+    settings[PAYROLL_NDFL_CONFIG_KEY] = {
+        "enabled": True,
+        "rate": "0.13",
+        "default_employee_enabled": True,
+    }
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [make_entry(period, employee, work_date)],
+        {employee.id: employee},
+        settings,
+    )
+
+    line = result.lines[0]
+    assert line.ndfl_withheld == Decimal("13.00")
+    assert line.deduction == 200
+    assert line.total_payable == 0
+    assert line.components["ndfl"]["base"] == "100.00"
+    assert (
+        line.components["ndfl"]["base_components"]["manual_penalties"]["policy"]
+        == "excluded_by_default"
+    )
+
+
 def test_adjustment_for_employee_with_two_roles_goes_to_primary() -> None:
     period = make_period()
     run_id = uuid.uuid4()
@@ -4499,6 +4682,7 @@ def test_get_lines_response_enriches_deposit_fields(monkeypatch: pytest.MonkeyPa
     line = make_payroll_line(
         run_id,
         employee_id,
+        ndfl_withheld=Decimal("130.00"),
         components={"days": [], "deposit_withholding": "750.25", "adjustments": {}},
     )
     session = PayrollLineRouteFakeSession([(employee_id, Decimal("1250.50"))])
@@ -4525,7 +4709,8 @@ def test_get_lines_response_enriches_deposit_fields(monkeypatch: pytest.MonkeyPa
     payload = response.json()
     assert payload[0]["deposit_withholding"] == 750.25
     assert payload[0]["deposit_payout"] == 1250.5
-    assert payload[0]["ndfl_deduction"] == 0
+    assert payload[0]["ndfl_withheld"] == 130
+    assert payload[0]["ndfl_deduction"] == 130
     assert len(session.statements) == 1
 
 
@@ -4687,6 +4872,7 @@ async def test_personal_report_daily_aggregates_correctly() -> None:
             "percent_pay": "10.00",
             "vacation_pay": "0.00",
             "fund_accrual": "5.00",
+            "ndfl_withheld": "2.60",
         }
         for index in range(5)
     ]
@@ -4695,8 +4881,9 @@ async def test_personal_report_daily_aggregates_correctly() -> None:
         employee.id,
         base_pay=Decimal("500.00"),
         percent_pay=Decimal("50.00"),
+        ndfl_withheld=Decimal("13.00"),
         fund_accrual=Decimal("25.00"),
-        total_payable=Decimal("550.00"),
+        total_payable=Decimal("537.00"),
         components={"days": days, "deposit_withholding": "0", "adjustments": {}},
     )
     bonus = make_adjustment(employee, date(2026, 5, 20), "bonus", Decimal("30.00"))
@@ -4738,6 +4925,10 @@ async def test_personal_report_daily_aggregates_correctly() -> None:
     assert rows[date(2026, 5, 21)]["penalty"] == 20
     assert rows[date(2026, 5, 22)]["deposit_in"] == 15
     assert rows[date(2026, 5, 23)]["deposit_out"] == 25
+    assert rows[date(2026, 5, 19)]["ndfl_withheld"] == 2.6
+    assert report["periods"][0]["ndfl_withheld"] == 13
+    assert report["totals"]["ndfl_withheld"] == 13
+    assert report["totals"]["total_payable"] == 537
 
 
 async def test_personal_report_opening_balance_excludes_period_range() -> None:

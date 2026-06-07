@@ -100,6 +100,35 @@ async def test_split_validates_bounds_status_and_legacy(
         assert legacy.value.status_code == 409
 
 
+async def test_payout_split_uses_total_payable_after_ndfl(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        _period, run, employees = await create_payroll_run(
+            session,
+            employee_line_totals=[[Decimal("870")]],
+        )
+        line = await session.scalar(select(PayrollLine).where(PayrollLine.run_id == run.id))
+        assert line is not None
+        line.base_pay = Decimal("1000.00")
+        line.ndfl_withheld = Decimal("130.00")
+        line.total_payable = Decimal("870.00")
+        await session.commit()
+
+        payment = await set_payout_split(
+            session,
+            run.id,
+            employees[0].id,
+            amount_cash=Decimal("100"),
+            actor_user_id=actor.id,
+        )
+
+        assert payment.amount == Decimal("870.00")
+        assert payment.amount_cash == Decimal("100.00")
+        assert payment.amount_account == Decimal("770.00")
+
+
 async def test_split_on_paid_payment_returns_409(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

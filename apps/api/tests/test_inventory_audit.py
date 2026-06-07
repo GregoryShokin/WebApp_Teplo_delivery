@@ -18,7 +18,6 @@ from app.models import (
     AgentRun,
     AttendanceEntry,
     Employee,
-    InventoryAuditEmployeeExclusion,
     InventoryAuditItemExclusion,
     InventoryAuditPosition,
     PayrollAdjustment,
@@ -35,6 +34,8 @@ from app.services.inventory_audit_service import (
     audit_penalty_work_date,
     audit_period,
     build_penalty_computation,
+    group_penalty_rate,
+    lookup_rate,
     sync_positions_from_iiko,
 )
 from app.services.payroll_calculator import (
@@ -51,6 +52,56 @@ def test_seed_whitelist_has_41_positions() -> None:
     spec.loader.exec_module(module)
 
     assert len(module.SEED_POSITIONS) == 41
+
+
+@pytest.mark.parametrize(
+    ("shortage_sum", "expected_rate"),
+    [
+        (Decimal("4999.99"), Decimal("0")),
+        (Decimal("5000"), Decimal("0.40")),
+        (Decimal("9999.99"), Decimal("0.40")),
+        (Decimal("10000"), Decimal("0.50")),
+    ],
+)
+def test_lookup_rate_uses_chefs_thresholds(
+    shortage_sum: Decimal,
+    expected_rate: Decimal,
+) -> None:
+    assert lookup_rate(shortage_sum) == expected_rate
+
+
+@pytest.mark.parametrize(
+    ("shortage_sum", "expected_rate", "expected_reason"),
+    [
+        (Decimal("4999.99"), Decimal("0"), "below_threshold"),
+        (Decimal("5000"), Decimal("0.40"), "tier_5k_10k"),
+        (Decimal("9999.99"), Decimal("0.40"), "tier_5k_10k"),
+        (Decimal("10000"), Decimal("0.50"), "tier_10k_plus"),
+    ],
+)
+def test_group_penalty_rate_chefs_thresholds(
+    shortage_sum: Decimal,
+    expected_rate: Decimal,
+    expected_reason: str,
+) -> None:
+    assert group_penalty_rate("chefs", shortage_sum) == (expected_rate, expected_reason)
+
+
+@pytest.mark.parametrize("group", ["common", "admins"])
+@pytest.mark.parametrize(
+    "shortage_sum",
+    [
+        Decimal("4999.99"),
+        Decimal("5000"),
+        Decimal("9999.99"),
+        Decimal("10000"),
+    ],
+)
+def test_group_penalty_rate_common_and_admins_fixed_50pct(
+    group: str,
+    shortage_sum: Decimal,
+) -> None:
+    assert group_penalty_rate(group, shortage_sum) == (Decimal("0.50"), "fixed_50pct")
 
 
 def test_chefs_below_5000_zero_rate() -> None:
