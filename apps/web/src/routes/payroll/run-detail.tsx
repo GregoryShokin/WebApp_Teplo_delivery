@@ -8,6 +8,7 @@ import {
   ExternalLink,
   LoaderCircle,
   RefreshCw,
+  Undo2,
   Search,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
@@ -50,6 +51,7 @@ import {
   getPayrollRunLines,
   getSettings,
   patchPayrollLineDepositOverride,
+  unfinalizePayrollRun,
   type AppSetting,
   type Employee,
   type PayrollLine,
@@ -95,7 +97,10 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const permissions = usePermissions();
   const canRecalculate = permissions.canPerformAction("payroll.runs.recalculate");
   const canFinalizeRuns = permissions.canPerformAction("payroll.runs.finalize");
+  const canReopenRuns = permissions.canPerformAction("payroll.runs.reopen");
   const [isRecalculateDialogOpen, setIsRecalculateDialogOpen] = useState(false);
+  const [isUnfinalizeDialogOpen, setIsUnfinalizeDialogOpen] = useState(false);
+  const [unfinalizeReason, setUnfinalizeReason] = useState("");
 
   const runQuery = useQuery({
     queryKey: ["payroll-run", runId],
@@ -139,6 +144,8 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
     blockers.length === 0 &&
     !isFinal &&
     canFinalizeRuns;
+  const canUnfinalize = Boolean(run) && isFinal && canReopenRuns && !isLegacyRun;
+  const canSubmitUnfinalize = unfinalizeReason.trim().length > 0;
 
   const finalizeMutation = useMutation({
     mutationFn: () => finalizePayrollRun(runId),
@@ -148,6 +155,22 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
       await queryClient.invalidateQueries({ queryKey: ["payroll-runs"] });
     },
     onError: (mutationError) => toast.error((mutationError as Error).message),
+  });
+
+  const unfinalizeMutation = useMutation({
+    mutationFn: (reason: string) => unfinalizePayrollRun(runId, reason),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["payroll-run", runId] }),
+        queryClient.invalidateQueries({ queryKey: ["payroll-runs"] }),
+      ]);
+      setIsUnfinalizeDialogOpen(false);
+      setUnfinalizeReason("");
+      toast.success("Ведомость возвращена в работу");
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось вернуть ведомость в работу"));
+    },
   });
 
   const recalculateMutation = useMutation({
@@ -279,6 +302,70 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
                 )}
                 Финализировать
               </Button>
+            ) : null}
+            {canUnfinalize ? (
+              <AlertDialog
+                open={isUnfinalizeDialogOpen}
+                onOpenChange={(open) => {
+                  if (!unfinalizeMutation.isPending) {
+                    setIsUnfinalizeDialogOpen(open);
+                    if (!open) {
+                      setUnfinalizeReason("");
+                    }
+                  }
+                }}
+              >
+                <AlertDialogTrigger asChild>
+                  <Button disabled={unfinalizeMutation.isPending} title="Вернуть в работу">
+                    {unfinalizeMutation.isPending ? (
+                      <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                    ) : (
+                      <Undo2 size={16} aria-hidden="true" />
+                    )}
+                    Вернуть в работу
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Вернуть ведомость в работу?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Откат разблокирует ведомость для пересчёта. Укажите причину.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <div className="space-y-2">
+                    <Label htmlFor="payroll-unfinalize-reason">Причина</Label>
+                    <Textarea
+                      disabled={unfinalizeMutation.isPending}
+                      id="payroll-unfinalize-reason"
+                      onChange={(event) => setUnfinalizeReason(event.target.value)}
+                      placeholder="Например: забыли премию за смену"
+                      value={unfinalizeReason}
+                    />
+                  </div>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={unfinalizeMutation.isPending} type="button">
+                      Отмена
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      disabled={!canSubmitUnfinalize || unfinalizeMutation.isPending}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        if (canSubmitUnfinalize) {
+                          unfinalizeMutation.mutate(unfinalizeReason.trim());
+                        }
+                      }}
+                      type="button"
+                    >
+                      {unfinalizeMutation.isPending ? (
+                        <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                      ) : (
+                        <Undo2 size={16} aria-hidden="true" />
+                      )}
+                      Вернуть в работу
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             ) : null}
           </>
         }

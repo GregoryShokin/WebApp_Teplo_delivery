@@ -5054,7 +5054,8 @@ def test_finalize_request_finance_manager_returns_ok(monkeypatch: pytest.MonkeyP
     client = TestClient(app)
     run_id = uuid.uuid4()
 
-    async def fake_finalize(_session, _run_id):
+    async def fake_finalize(_session, _run_id, *, finalized_by_user_id=None):
+        assert finalized_by_user_id is None
         return PayrollRun(
             id=run_id,
             period_id=uuid.uuid4(),

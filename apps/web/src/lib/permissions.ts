@@ -43,6 +43,7 @@ export type AppAction =
   | "payroll.runs.start"
   | "payroll.runs.recalculate"
   | "payroll.runs.finalize"
+  | "payroll.runs.reopen"
   | "payroll.fund.edit"
   | "payroll.adjustments.edit"
   | "payroll.source-data.edit"
@@ -257,6 +258,7 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "payroll.runs.start": ["payroll.runs.start"],
   "payroll.runs.recalculate": ["payroll.runs.recalculate"],
   "payroll.runs.finalize": ["payroll.runs.finalize"],
+  "payroll.runs.reopen": ["payroll.runs.reopen"],
   "payroll.fund.edit": ["payroll.fund.edit"],
   "payroll.adjustments.edit": [
     "payroll.adjustments.edit",

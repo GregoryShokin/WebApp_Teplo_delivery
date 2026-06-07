@@ -139,6 +139,33 @@ class PayrollRun(Base):
     )
 
 
+class PayrollRunEvent(Base):
+    __tablename__ = "payroll_run_event"
+    __table_args__ = (
+        Index("ix_payroll_run_event_run_created_at", "run_id", "created_at"),
+        Index("ix_payroll_run_event_created_at", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payroll_run.id", ondelete="SET NULL"), nullable=True
+    )
+    period_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payroll_period.id", ondelete="SET NULL"), nullable=True
+    )
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class PayrollLine(Base):
     __tablename__ = "payroll_line"
     __table_args__ = (

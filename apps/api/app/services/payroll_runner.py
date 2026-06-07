@@ -21,6 +21,7 @@ from app.models import (
     PayrollLine,
     PayrollPeriod,
     PayrollRun,
+    PayrollRunEvent,
 )
 from app.services import vacation_service
 from app.services.accumulation_fund_service import (
@@ -823,13 +824,116 @@ async def finalize_payroll_run(
         raise PayrollConflictError("Payroll period is already finalized")
 
     now = datetime.now(UTC)
+    previous_run_status = run.status
+    previous_period_status = period.status
+    previous_finalized_at = period.finalized_at
+    previous_finalized_by_user_id = period.finalized_by_user_id
 
-    # Применяем deposit-транзакции этого run'а к balance счетов.
-    # До финализации они существовали как «превью» (см. update_deposits_and_fund),
-    # сейчас становятся реальными движениями денег.
+    deposit_payload = await apply_deposit_transactions_to_balances(session, run, now, reverse=False)
+
+    run.status = "finalized"
+    run.finished_at = run.finished_at or now
+    period.status = "finalized"
+    period.finalized_at = now
+    period.finalized_by_user_id = finalized_by_user_id
+    session.add(
+        PayrollRunEvent(
+            run_id=run.id,
+            period_id=period.id,
+            action="finalize",
+            actor_user_id=finalized_by_user_id,
+            payload=payroll_run_event_payload(
+                run_status_before=previous_run_status,
+                run_status_after=run.status,
+                period_status_before=previous_period_status,
+                period_status_after=period.status,
+                finalized_at_before=previous_finalized_at,
+                finalized_at_after=period.finalized_at,
+                finalized_by_user_id_before=previous_finalized_by_user_id,
+                finalized_by_user_id_after=period.finalized_by_user_id,
+                deposit_payload=deposit_payload,
+            ),
+        )
+    )
+    await session.commit()
+    await session.refresh(run)
+    return run
+
+
+async def unfinalize_payroll_run(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    *,
+    reason: str,
+    actor_user_id: uuid.UUID | None,
+) -> PayrollRun:
+    run = await session.get(PayrollRun, run_id)
+    if run is None:
+        raise PayrollNotFoundError("Payroll run not found")
+    if run.is_imported_legacy:
+        raise PayrollConflictError("Импортированную ведомость нельзя откатывать")
+    if run.status != "finalized":
+        raise PayrollConflictError("Ведомость не финализирована")
+    clean_reason = reason.strip()
+    if not clean_reason:
+        raise PayrollConflictError("Нужна причина отката")
+
+    period = await session.get(PayrollPeriod, run.period_id)
+    if period is None:
+        raise PayrollNotFoundError("Payroll period not found")
+
+    now = datetime.now(UTC)
+    previous_run_status = run.status
+    previous_period_status = period.status
+    previous_finalized_at = period.finalized_at
+    previous_finalized_by_user_id = period.finalized_by_user_id
+
+    deposit_payload = await apply_deposit_transactions_to_balances(session, run, now, reverse=True)
+
+    run.status = "completed"
+    period.status = "open"
+    period.finalized_at = None
+    period.finalized_by_user_id = None
+    session.add(
+        PayrollRunEvent(
+            run_id=run.id,
+            period_id=period.id,
+            action="unfinalize",
+            reason=clean_reason,
+            actor_user_id=actor_user_id,
+            payload=payroll_run_event_payload(
+                run_status_before=previous_run_status,
+                run_status_after=run.status,
+                period_status_before=previous_period_status,
+                period_status_after=period.status,
+                finalized_at_before=previous_finalized_at,
+                finalized_at_after=period.finalized_at,
+                finalized_by_user_id_before=previous_finalized_by_user_id,
+                finalized_by_user_id_after=period.finalized_by_user_id,
+                deposit_payload=deposit_payload,
+            ),
+        )
+    )
+    await session.commit()
+    await session.refresh(run)
+    return run
+
+
+async def apply_deposit_transactions_to_balances(
+    session: AsyncSession,
+    run: PayrollRun,
+    now: datetime,
+    *,
+    reverse: bool,
+) -> dict[str, Any]:
+    # До finalize deposit-транзакции являются превью; эта функция переводит их
+    # в движение balance или применяет точную обратную операцию при reopen.
     run_transactions = (
         await session.scalars(select(DepositTransaction).where(DepositTransaction.run_id == run.id))
     ).all()
+    balance_delta_total = Decimal("0")
+    balance_abs_delta_total = Decimal("0")
+    deltas: list[dict[str, Any]] = []
     if run_transactions:
         employee_ids = {tx.employee_id for tx in run_transactions}
         accounts = await get_deposit_accounts(session, employee_ids)
@@ -844,21 +948,62 @@ async def finalize_payroll_run(
                 session.add(account)
                 accounts[tx.employee_id] = account
                 await session.flush()
-            delta = decimal(tx.amount)
-            if tx.transaction_type == "accrual":
-                account.balance = decimal(account.balance) + delta
-            else:
-                account.balance = decimal(account.balance) - delta
-            account.last_updated = now
 
-    run.status = "finalized"
-    run.finished_at = run.finished_at or now
-    period.status = "finalized"
-    period.finalized_at = now
-    period.finalized_by_user_id = finalized_by_user_id
-    await session.commit()
-    await session.refresh(run)
-    return run
+            amount = decimal(tx.amount)
+            delta = amount if tx.transaction_type == "accrual" else -amount
+            if reverse:
+                delta = -delta
+            account.balance = decimal(account.balance) + delta
+            account.last_updated = now
+            balance_delta_total += delta
+            balance_abs_delta_total += abs(delta)
+            deltas.append(
+                {
+                    "transaction_id": str(tx.id),
+                    "employee_id": str(tx.employee_id),
+                    "transaction_type": tx.transaction_type,
+                    "amount": money_text(amount),
+                    "balance_delta": money_text(delta),
+                }
+            )
+
+    return {
+        "deposit_transaction_count": len(run_transactions),
+        "deposit_balance_delta_total": money_text(balance_delta_total),
+        "deposit_balance_abs_delta_total": money_text(balance_abs_delta_total),
+        "deposit_balance_deltas": deltas,
+    }
+
+
+def payroll_run_event_payload(
+    *,
+    run_status_before: str,
+    run_status_after: str,
+    period_status_before: str,
+    period_status_after: str,
+    finalized_at_before: datetime | None,
+    finalized_at_after: datetime | None,
+    finalized_by_user_id_before: uuid.UUID | None,
+    finalized_by_user_id_after: uuid.UUID | None,
+    deposit_payload: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "run_status": {"before": run_status_before, "after": run_status_after},
+        "period_status": {"before": period_status_before, "after": period_status_after},
+        "period_finalized_at": {
+            "before": finalized_at_before.isoformat() if finalized_at_before else None,
+            "after": finalized_at_after.isoformat() if finalized_at_after else None,
+        },
+        "period_finalized_by_user_id": {
+            "before": str(finalized_by_user_id_before) if finalized_by_user_id_before else None,
+            "after": str(finalized_by_user_id_after) if finalized_by_user_id_after else None,
+        },
+        **deposit_payload,
+    }
+
+
+def money_text(value: Any) -> str:
+    return f"{decimal(value).quantize(Decimal('0.01'))}"
 
 
 async def list_runs(session: AsyncSession) -> list[dict[str, Any]]:

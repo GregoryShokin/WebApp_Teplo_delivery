@@ -2632,6 +2632,11 @@ export async function finalizePayrollRun(id: string): Promise<PayrollRun> {
   return response.data;
 }
 
+export async function unfinalizePayrollRun(id: string, reason: string): Promise<PayrollRun> {
+  const response = await api.post<PayrollRun>(`/payroll/runs/${id}/unfinalize`, { reason });
+  return response.data;
+}
+
 export async function getAccumulationFundSummary(year: number): Promise<AccumulationFundSummary> {
   const response = await api.get<AccumulationFundSummary>("/payroll/fund/summary", {
     params: { year },

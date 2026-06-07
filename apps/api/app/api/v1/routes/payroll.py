@@ -30,6 +30,7 @@ from app.schemas.payroll import (
     PayrollPersonalReportRead,
     PayrollRunCreate,
     PayrollRunRead,
+    PayrollRunUnfinalize,
 )
 from app.schemas.payroll_config import PayrollRoleCategoryOptionRead
 from app.services.deferred_audit_charge_service import (
@@ -53,12 +54,14 @@ from app.services.payroll_runner import (
     list_runs,
     run_payroll,
     serialize_period,
+    unfinalize_payroll_run,
 )
 
 router = APIRouter()
 PAYROLL_RUNS_READ_ACCESS = (Depends(require_permission("payroll.runs.read")),)
 PAYROLL_RUNS_START_ACCESS = (Depends(require_permission("payroll.runs.start")),)
 PAYROLL_RUNS_FINALIZE_ACCESS = (Depends(require_permission("payroll.runs.finalize")),)
+PAYROLL_RUNS_REOPEN_ACCESS = (Depends(require_permission("payroll.runs.reopen")),)
 PAYROLL_ACCRUALS_READ_ACCESS = (Depends(require_permission("payroll.accruals.read")),)
 PAYROLL_PERSONAL_REPORTS_READ_ACCESS = (
     Depends(require_permission("payroll.personal_reports.read")),
@@ -318,7 +321,36 @@ async def post_finalize(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict:
     try:
-        run = await finalize_payroll_run(session, run_id)
+        run = await finalize_payroll_run(
+            session,
+            run_id,
+            finalized_by_user_id=actor.user_id,
+        )
+        return await get_run(session, run.id)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/runs/{run_id}/unfinalize",
+    response_model=PayrollRunRead,
+    dependencies=PAYROLL_RUNS_REOPEN_ACCESS,
+)
+async def post_unfinalize(
+    run_id: uuid.UUID,
+    payload: PayrollRunUnfinalize,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict:
+    try:
+        run = await unfinalize_payroll_run(
+            session,
+            run_id,
+            reason=payload.reason,
+            actor_user_id=actor.user_id,
+        )
         return await get_run(session, run.id)
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

@@ -26,6 +26,12 @@ class PayrollRunCreate(BaseModel):
     force_refresh: bool = False
 
 
+class PayrollRunUnfinalize(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str
+
+
 class PayrollRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
