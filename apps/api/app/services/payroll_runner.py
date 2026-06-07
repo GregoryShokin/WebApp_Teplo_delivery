@@ -36,11 +36,13 @@ from app.services.deferred_audit_charge_service import (
 from app.services.iiko_revenue import fetch_daily_revenue
 from app.services.payroll_calculator import (
     DAILY_REVENUE_CONFIG_KEY,
+    PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY,
     calculate_payroll_lines,
     decimal,
     deduplicate_issues,
     money,
     needs_setup_issue,
+    payroll_rate_snapshot_payload,
     summarize_lines,
 )
 
@@ -222,7 +224,9 @@ async def run_payroll(
         .limit(1)
     )
     line_deposit_overrides: dict[tuple[uuid.UUID, str], dict[str, Any]] = {}
+    frozen_rate_versions: list[Mapping[str, Any]] | None = None
     if existing_run is not None:
+        frozen_rate_versions = locked_payroll_rate_versions_from_summary(existing_run.summary)
         line_deposit_overrides = await load_line_deposit_overrides(session, existing_run.id)
         # Очищаем линии прошлой попытки расчёта — они будут пересозданы.
         await session.execute(
@@ -261,7 +265,11 @@ async def run_payroll(
             run.status = "blocked"
             run.finished_at = datetime.now(UTC)
             run.blocking_issues = blocking_issues
-            run.summary = {"blocking_issue_count": len(blocking_issues)}
+            run.summary = payroll_summary_with_rate_snapshot(
+                {"blocking_issue_count": len(blocking_issues)},
+                frozen_rate_versions,
+                locked=frozen_rate_versions is not None,
+            )
             await session.commit()
             await session.refresh(run)
             return run
@@ -295,12 +303,17 @@ async def run_payroll(
             run.id,
             entries,
             line_deposit_overrides=line_deposit_overrides,
+            rate_versions_override=frozen_rate_versions,
         )
         if calculation.blocking_issues:
             run.status = "blocked"
             run.finished_at = datetime.now(UTC)
             run.blocking_issues = calculation.blocking_issues
-            run.summary = calculation.summary | deferred_charge_summary
+            run.summary = payroll_summary_with_rate_snapshot(
+                calculation.summary | deferred_charge_summary,
+                frozen_rate_versions,
+                locked=frozen_rate_versions is not None,
+            )
             await session.commit()
             await session.refresh(run)
             return run
@@ -336,12 +349,17 @@ async def run_payroll(
                 run.id,
                 entries,
                 line_deposit_overrides=line_deposit_overrides,
+                rate_versions_override=frozen_rate_versions,
             )
             if calculation.blocking_issues:
                 run.status = "blocked"
                 run.finished_at = datetime.now(UTC)
                 run.blocking_issues = calculation.blocking_issues
-                run.summary = calculation.summary | deferred_charge_summary
+                run.summary = payroll_summary_with_rate_snapshot(
+                    calculation.summary | deferred_charge_summary,
+                    frozen_rate_versions,
+                    locked=frozen_rate_versions is not None,
+                )
                 await session.commit()
                 await session.refresh(run)
                 return run
@@ -358,12 +376,14 @@ async def run_payroll(
         run.status = "completed"
         run.finished_at = datetime.now(UTC)
         run.blocking_issues = []
-        run.summary = (
+        run.summary = payroll_summary_with_rate_snapshot(
             calculation.summary
             | deferred_charge_summary
             | subledger_summary
             | attendance_warning_summary
-            | {"vacations_marked_paid": paid_vacations}
+            | {"vacations_marked_paid": paid_vacations},
+            frozen_rate_versions,
+            locked=frozen_rate_versions is not None,
         )
         await session.commit()
         await session.refresh(run)
@@ -414,6 +434,47 @@ def deferred_charge_run_summary(
     if collapsed_recipients_count:
         summary["deferred_charge_recipients_collapsed"] = collapsed_recipients_count
     return summary
+
+
+def locked_payroll_rate_versions_from_summary(
+    summary: Mapping[str, Any] | None,
+) -> list[Mapping[str, Any]] | None:
+    if not isinstance(summary, Mapping):
+        return None
+    snapshot = summary.get(PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY)
+    if not isinstance(snapshot, Mapping) or not bool(snapshot.get("locked")):
+        return None
+    rates = snapshot.get("rates")
+    if not isinstance(rates, list):
+        return None
+    return [dict(rate) for rate in rates if isinstance(rate, Mapping)]
+
+
+def payroll_summary_with_rate_snapshot(
+    summary: Mapping[str, Any],
+    rate_versions: Iterable[Mapping[str, Any]] | None = None,
+    *,
+    locked: bool,
+) -> dict[str, Any]:
+    result = dict(summary)
+    if rate_versions is not None:
+        result[PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY] = payroll_rate_snapshot_payload(
+            rate_versions,
+            locked=locked,
+        )
+        return result
+
+    snapshot = result.get(PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY)
+    if isinstance(snapshot, Mapping):
+        rates = snapshot.get("rates")
+        if isinstance(rates, list):
+            result[PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY] = payroll_rate_snapshot_payload(
+                (rate for rate in rates if isinstance(rate, Mapping)),
+                locked=locked or bool(snapshot.get("locked")),
+            )
+            return result
+
+    return result
 
 
 async def load_line_deposit_overrides(
@@ -872,6 +933,7 @@ async def finalize_payroll_run(
 
     deposit_payload = await apply_deposit_transactions_to_balances(session, run, now, reverse=False)
 
+    run.summary = payroll_summary_with_rate_snapshot(run.summary or {}, locked=True)
     run.status = "finalized"
     run.finished_at = run.finished_at or now
     period.status = "finalized"

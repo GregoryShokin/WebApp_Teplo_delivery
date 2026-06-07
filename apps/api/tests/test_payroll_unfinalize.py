@@ -19,12 +19,14 @@ from app.models import (
     Employee,
     PayrollLine,
     PayrollPeriod,
+    PayrollRate,
     PayrollRun,
     PayrollRunEvent,
     User,
 )
 from app.schemas.payroll import PayrollRunUnfinalize
 from app.services import payroll_runner
+from app.services.payroll_calculator import PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY
 from app.services.payroll_runner import (
     finalize_payroll_run,
     run_payroll,
@@ -87,6 +89,127 @@ async def test_unfinalize_allows_recompute_for_period(
 
         assert recomputed.status == "completed"
         assert period.status == "open"
+
+
+async def test_finalize_locks_rate_snapshot_and_rate_changes_do_not_rewrite_line_components(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        period, run, employee, _account = await create_payroll_run_with_deposit(session)
+        rate_id = uuid.uuid4()
+        rate_snapshot = {
+            "source": "payroll_rate",
+            "id": str(rate_id),
+            "position_group": "Пиццерист",
+            "category": "category_2",
+            "station": None,
+            "rate_type": "daily",
+            "amount": "2200.00",
+            "effective_from": "2026-01-01",
+            "effective_to": None,
+        }
+        run.summary = {
+            PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY: {
+                "locked": False,
+                "rates": [dict(rate_snapshot)],
+            }
+        }
+        rate = PayrollRate(
+            id=rate_id,
+            position_group="Пиццерист",
+            category="category_2",
+            station=None,
+            rate_type="daily",
+            amount=Decimal("2200.00"),
+            is_active=True,
+            effective_from=date(2026, 1, 1),
+            effective_to=None,
+        )
+        line = PayrollLine(
+            id=uuid.uuid4(),
+            run_id=run.id,
+            employee_id=employee.id,
+            role="Пиццерист",
+            base_pay=Decimal("2200.00"),
+            premium=Decimal("0"),
+            percent_pay=Decimal("0"),
+            vacation_pay=Decimal("0"),
+            ndfl_withheld=Decimal("0"),
+            fund_accrual=Decimal("0"),
+            deduction=Decimal("0"),
+            total_payable=Decimal("2200.00"),
+            components={
+                "days": [
+                    {
+                        "date": period.start_date.isoformat(),
+                        "kind": "shift",
+                        "payroll_rate": dict(rate_snapshot),
+                    }
+                ],
+                "adjustments": {},
+            },
+        )
+        session.add_all([rate, line])
+        await session.commit()
+
+        await finalize_payroll_run(session, run.id, finalized_by_user_id=actor.id)
+        rate.amount = Decimal("9999.00")
+        await session.commit()
+        await session.refresh(run)
+        await session.refresh(line)
+
+        snapshot = run.summary[PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY]
+        assert snapshot["locked"] is True
+        assert snapshot["rates"][0]["amount"] == "2200.00"
+        assert line.components["days"][0]["payroll_rate"]["amount"] == "2200.00"
+
+
+async def test_unfinalize_recalculate_uses_locked_rate_snapshot(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        rate_snapshot = {
+            "source": "payroll_rate",
+            "id": str(uuid.uuid4()),
+            "position_group": "Пиццерист",
+            "category": "category_2",
+            "station": None,
+            "rate_type": "daily",
+            "amount": "2200.00",
+            "effective_from": "2026-01-01",
+            "effective_to": None,
+        }
+        period, run, employee, _account = await create_payroll_run_with_deposit(
+            session,
+            summary={
+                PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY: {
+                    "locked": False,
+                    "rates": [dict(rate_snapshot)],
+                }
+            },
+        )
+        await finalize_payroll_run(session, run.id, finalized_by_user_id=actor.id)
+        await unfinalize_payroll_run(
+            session,
+            run.id,
+            reason="Исправить посещаемость",
+            actor_user_id=actor.id,
+        )
+        captured_rate_overrides: list[Any] = []
+        await patch_runner_recompute(
+            monkeypatch,
+            employee.id,
+            captured_rate_overrides=captured_rate_overrides,
+        )
+
+        recomputed = await run_payroll(session, period.id, force_refresh=True)
+
+        assert captured_rate_overrides == [[rate_snapshot]]
+        assert recomputed.summary[PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY]["locked"] is True
+        assert recomputed.summary[PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY]["rates"] == [rate_snapshot]
 
 
 @pytest.mark.parametrize(
@@ -234,6 +357,7 @@ async def create_payroll_run_with_deposit(
     account_balance: Decimal = Decimal("5000"),
     transaction_type: str = "accrual",
     transaction_amount: Decimal = Decimal("1000"),
+    summary: dict[str, Any] | None = None,
 ) -> tuple[PayrollPeriod, PayrollRun, Employee, DepositAccount]:
     employee = Employee(
         id=uuid.uuid4(),
@@ -265,7 +389,7 @@ async def create_payroll_run_with_deposit(
         finished_at=datetime(2026, 5, 26, 1, tzinfo=UTC),
         status=run_status,
         blocking_issues=[],
-        summary={},
+        summary=summary or {},
         is_imported_legacy=is_legacy,
     )
     account = DepositAccount(
@@ -296,6 +420,7 @@ async def patch_runner_recompute(
     employee_id: uuid.UUID,
     *,
     deposit_transaction_amount: Decimal | None = None,
+    captured_rate_overrides: list[Any] | None = None,
 ) -> None:
     async def fake_load_attendance_entries(*_args: Any, **_kwargs: Any) -> list[Any]:
         return []
@@ -313,6 +438,8 @@ async def patch_runner_recompute(
         _entries: list[Any],
         **_kwargs: Any,
     ) -> SimpleNamespace:
+        if captured_rate_overrides is not None:
+            captured_rate_overrides.append(_kwargs.get("rate_versions_override"))
         return SimpleNamespace(
             lines=[
                 PayrollLine(

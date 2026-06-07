@@ -71,6 +71,7 @@ from app.services.payroll_calculator import (
     EMPLOYEE_ASSIGNMENTS_CONFIG_KEY,
     PAYROLL_ADJUSTMENTS_CONFIG_KEY,
     PAYROLL_RATE_CONFIG_KEY,
+    PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY,
     SHIFT_LEDGER_CONFIG_KEY,
     VACATION_DAILY_AMOUNT_CONFIG_KEY,
     VACATION_DAYS_CONFIG_KEY,
@@ -92,8 +93,8 @@ from app.services.payroll_runner import (
     accrue_fund,
     apply_deposit_write_offs_to_accounts,
     apply_fund_payouts_if_due,
-    compute_next_payroll_period_dates,
     collect_attendance_warnings,
+    compute_next_payroll_period_dates,
     ensure_daily_revenue_cached,
     finalize_payroll_run,
     line_deposit_overrides_from_lines,
@@ -3247,9 +3248,11 @@ def test_payroll_calculator_prefers_versioned_rate_configuration() -> None:
     employee = make_employee()
     entry = make_entry(period, employee, period.start_date)
     settings = payroll_settings()
+    rate_id = str(uuid.uuid4())
     del settings["payroll.role_category_rates"]
     settings[PAYROLL_RATE_CONFIG_KEY] = [
         {
+            "id": rate_id,
             "position_group": "Пиццерист",
             "category": "category_2",
             "station": None,
@@ -3270,6 +3273,93 @@ def test_payroll_calculator_prefers_versioned_rate_configuration() -> None:
 
     assert result.blocking_issues == []
     assert result.lines[0].base_pay == 3100
+    assert result.lines[0].components["days"][0]["payroll_rate"] == {
+        "source": "payroll_rate",
+        "id": rate_id,
+        "position_group": "Пиццерист",
+        "category": "category_2",
+        "station": None,
+        "rate_type": "daily",
+        "amount": "3100.00",
+        "effective_from": "2026-01-01",
+        "effective_to": None,
+    }
+
+
+def test_payroll_calculator_uses_rate_versions_by_work_date_inside_week() -> None:
+    period = make_period(
+        start=date(2026, 6, 1),
+        end=date(2026, 6, 7),
+        payroll_date=date(2026, 6, 8),
+    )
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    first_rate_id = str(uuid.uuid4())
+    second_rate_id = str(uuid.uuid4())
+    entries = [
+        make_entry(period, employee, date(2026, 6, 3)),
+        make_entry(period, employee, date(2026, 6, 4)),
+    ]
+    settings = payroll_settings()
+    del settings["payroll.role_category_rates"]
+    settings[PAYROLL_RATE_CONFIG_KEY] = [
+        {
+            "id": first_rate_id,
+            "position_group": "Пиццерист",
+            "category": "category_2",
+            "station": None,
+            "rate_type": "daily",
+            "amount": Decimal("2200"),
+            "effective_from": date(2026, 1, 1),
+            "effective_to": date(2026, 6, 4),
+        },
+        {
+            "id": second_rate_id,
+            "position_group": "Пиццерист",
+            "category": "category_2",
+            "station": None,
+            "rate_type": "daily",
+            "amount": Decimal("2600"),
+            "effective_from": date(2026, 6, 4),
+            "effective_to": None,
+        },
+    ]
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {employee.id: employee},
+        settings,
+    )
+
+    days = result.lines[0].components["days"]
+    assert result.blocking_issues == []
+    assert result.lines[0].base_pay == 4800
+    assert [day["base_pay"] for day in days] == [2200, 2600]
+    assert [day["payroll_rate"]["id"] for day in days] == [first_rate_id, second_rate_id]
+    assert [day["payroll_rate"]["effective_to"] for day in days] == ["2026-06-04", None]
+
+
+def test_legacy_role_category_rates_still_work_without_versioned_rates() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    entry = make_entry(period, employee, period.start_date)
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        payroll_settings(),
+    )
+
+    day = result.lines[0].components["days"][0]
+    assert result.blocking_issues == []
+    assert result.lines[0].base_pay == 2200
+    assert day["payroll_rate"]["source"] == "legacy_setting"
+    assert day["payroll_rate"]["amount"] == "2200.00"
 
 
 def test_payroll_calculator_uses_assignment_category_for_shift_station() -> None:
@@ -5335,6 +5425,7 @@ def query_bound_value(query: Any, column_name: str) -> Any | None:
 
 async def test_finalize_without_issues_sets_status_finalized() -> None:
     period = make_period()
+    rate_id = str(uuid.uuid4())
     run = PayrollRun(
         id=uuid.uuid4(),
         period_id=period.id,
@@ -5342,7 +5433,23 @@ async def test_finalize_without_issues_sets_status_finalized() -> None:
         finished_at=datetime(2026, 5, 27, 1, tzinfo=UTC),
         status="completed",
         blocking_issues=[],
-        summary={},
+        summary={
+            PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY: {
+                "locked": False,
+                "rates": [
+                    {
+                        "id": rate_id,
+                        "position_group": "Пиццерист",
+                        "category": "category_2",
+                        "station": None,
+                        "rate_type": "daily",
+                        "amount": "2200.00",
+                        "effective_from": "2026-01-01",
+                        "effective_to": None,
+                    }
+                ],
+            }
+        },
     )
     session = FinalizeFakeSession(run, period)
 
@@ -5350,6 +5457,8 @@ async def test_finalize_without_issues_sets_status_finalized() -> None:
 
     assert finalized.status == "finalized"
     assert period.status == "finalized"
+    assert finalized.summary[PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY]["locked"] is True
+    assert finalized.summary[PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY]["rates"][0]["id"] == rate_id
     assert session.committed is True
 
 

@@ -84,6 +84,7 @@ PAYROLL_SETTING_KEYS = {
 OPTIONAL_PAYROLL_SETTING_KEYS = {"payroll.daily_revenue_by_date", "payroll.deposit_write_offs"}
 DAILY_REVENUE_CONFIG_KEY = "payroll.daily_revenue_by_date"
 PAYROLL_RATE_CONFIG_KEY = "payroll.role_category_rates_by_date"
+PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY = "payroll_rate_snapshot"
 EMPLOYEE_ASSIGNMENTS_CONFIG_KEY = "employee.role_assignments_by_date"
 EMPLOYEE_POSITIONS_CONFIG_KEY = "employee.positions_by_date"
 EMPLOYEE_ALLOWANCES_CONFIG_KEY = "employee.allowances_by_date"
@@ -115,6 +116,7 @@ async def calculate_payroll_lines(
     run_id: uuid.UUID,
     entries: Iterable[AttendanceEntry],
     line_deposit_overrides: Mapping[tuple[uuid.UUID, str], Mapping[str, Any]] | None = None,
+    rate_versions_override: Iterable[Mapping[str, Any]] | None = None,
 ) -> PayrollCalculationResult:
     entries = list(entries)
     vacation_days = await vacation_service.vacation_days_for_payroll_period(
@@ -136,11 +138,16 @@ async def calculate_payroll_lines(
     settings[VACATION_DAILY_AMOUNT_CONFIG_KEY] = await vacation_service.vacation_daily_amount(
         session
     )
-    settings[PAYROLL_RATE_CONFIG_KEY] = await load_payroll_rate_versions(
-        session,
-        period.start_date,
-        period.end_date,
+    rate_versions = (
+        list(rate_versions_override)
+        if rate_versions_override is not None
+        else await load_payroll_rate_versions(
+            session,
+            period.start_date,
+            period.end_date,
+        )
     )
+    settings[PAYROLL_RATE_CONFIG_KEY] = rate_versions
     settings[REVENUE_TIER_CONFIG_KEY] = await load_revenue_tier_versions(
         session,
         period.start_date,
@@ -181,7 +188,7 @@ async def calculate_payroll_lines(
         period_end=period.end_date,
     )
     deposit_balances = await load_deposit_balances_for_employees(session, employee_ids)
-    return calculate_payroll_lines_from_inputs(
+    result = calculate_payroll_lines_from_inputs(
         period,
         run_id,
         entries,
@@ -190,6 +197,13 @@ async def calculate_payroll_lines(
         deposit_balances=deposit_balances,
         line_deposit_overrides=line_deposit_overrides,
     )
+    result.summary = result.summary | {
+        PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY: payroll_rate_snapshot_payload(
+            rate_versions,
+            locked=False,
+        )
+    }
+    return result
 
 
 async def load_payroll_settings(session: AsyncSession) -> dict[str, Any]:
@@ -232,6 +246,7 @@ async def load_payroll_rate_versions(
     )
     return [
         {
+            "id": str(rate.id),
             "position_group": rate.position_group,
             "category": rate.category,
             "station": rate.station,
@@ -498,6 +513,7 @@ def calculate_payroll_lines_from_inputs(
             station,
         )
         if is_vacation_day:
+            rate_details = None
             base_pay = Decimal("0")
             seniority_allowance_pay = Decimal("0")
             seniority_allowance_metadata = {}
@@ -557,6 +573,13 @@ def calculate_payroll_lines_from_inputs(
                     base_pay_with_premium,
                 )
             )
+            rate_details = role_category_rate_details(
+                settings,
+                role,
+                category,
+                work_date,
+                station,
+            )
         key = (employee_id, role)
         totals = line_totals.setdefault(
             key,
@@ -586,6 +609,8 @@ def calculate_payroll_lines_from_inputs(
                 "kind": "vacation" if is_vacation_day else "shift",
                 "base_pay": money(base_pay_with_premium),
                 "base_pay_shift": money(base_pay),
+                "base_rate": money(rate_details["amount"]) if rate_details else 0,
+                "payroll_rate": payroll_rate_component(rate_details),
                 "seniority_allowance_pay": money(seniority_allowance_pay),
                 "weekday_premium": money(weekday_premium),
                 "percent_pay": money(percent_pay),
@@ -1109,7 +1134,7 @@ def role_category_rate_exists(
     work_date: date | None = None,
     station: str | None = None,
 ) -> bool:
-    return role_category_rate(settings, role, category, work_date, station) is not None
+    return role_category_rate_details(settings, role, category, work_date, station) is not None
 
 
 def role_category_rate(
@@ -1119,10 +1144,29 @@ def role_category_rate(
     work_date: date | None = None,
     station: str | None = None,
 ) -> Decimal | None:
+    details = role_category_rate_details(settings, role, category, work_date, station)
+    if details is None:
+        return None
+    return decimal_or_none(details.get("amount"))
+
+
+def role_category_rate_details(
+    settings: Mapping[str, Any],
+    role: str,
+    category: str,
+    work_date: date | None = None,
+    station: str | None = None,
+) -> dict[str, Any] | None:
     if category_rule_key(category) == "6":
         return None
 
-    versioned_rate = role_category_rate_from_versions(settings, role, category, work_date, station)
+    versioned_rate = role_category_rate_details_from_versions(
+        settings,
+        role,
+        category,
+        work_date,
+        station,
+    )
     if versioned_rate is not None:
         return versioned_rate
 
@@ -1149,7 +1193,19 @@ def role_category_rate(
             )
             if value is not None:
                 break
-    return decimal_or_none(value)
+    amount = decimal_or_none(value)
+    if amount is None:
+        return None
+    return {
+        "source": "legacy_setting",
+        "position_group": role,
+        "category": category,
+        "station": station,
+        "rate_type": "daily",
+        "amount": amount,
+        "effective_from": None,
+        "effective_to": None,
+    }
 
 
 def role_category_rate_from_versions(
@@ -1159,11 +1215,24 @@ def role_category_rate_from_versions(
     work_date: date | None,
     station: str | None,
 ) -> Decimal | None:
+    details = role_category_rate_details_from_versions(settings, role, category, work_date, station)
+    if details is None:
+        return None
+    return decimal_or_none(details.get("amount"))
+
+
+def role_category_rate_details_from_versions(
+    settings: Mapping[str, Any],
+    role: str,
+    category: str,
+    work_date: date | None,
+    station: str | None,
+) -> dict[str, Any] | None:
     rates = settings.get(PAYROLL_RATE_CONFIG_KEY)
     if not isinstance(rates, list):
         return None
 
-    candidates: list[tuple[int, date, Decimal]] = []
+    candidates: list[tuple[int, date, Decimal, Mapping[str, Any], date | None, date | None]] = []
     normalized_roles = normalized_role_keys(role)
     normalized_categories = normalized_category_keys(category)
     normalized_station = normalized_key(station)
@@ -1197,12 +1266,25 @@ def role_category_rate_from_versions(
         if amount is None:
             continue
         station_score = 1 if item_station else 0
-        candidates.append((station_score, effective_from or date.min, amount))
+        candidates.append(
+            (station_score, effective_from or date.min, amount, item, effective_from, effective_to)
+        )
 
     if not candidates:
         return None
     candidates.sort(key=lambda candidate: (candidate[0], candidate[1]), reverse=True)
-    return candidates[0][2]
+    _station_score, _effective_sort, amount, item, effective_from, effective_to = candidates[0]
+    return {
+        "source": str(item.get("source") or "payroll_rate"),
+        "id": optional_string(item.get("id") or item.get("payroll_rate_id")),
+        "position_group": str(item.get("position_group") or role),
+        "category": str(item.get("category") or category),
+        "station": optional_string(item.get("station")),
+        "rate_type": str(item.get("rate_type") or "daily"),
+        "amount": amount,
+        "effective_from": effective_from,
+        "effective_to": effective_to,
+    }
 
 
 def category_coeff(settings: Mapping[str, Any], category: str, work_date: date) -> Decimal:
@@ -1668,10 +1750,54 @@ def money_string(value: Any) -> str:
     return f"{decimal(value).quantize(MONEY)}"
 
 
+def payroll_rate_snapshot_payload(
+    rates: Iterable[Mapping[str, Any]],
+    *,
+    locked: bool,
+) -> dict[str, Any]:
+    return {
+        "locked": locked,
+        "rates": [serialize_payroll_rate_snapshot(rate) for rate in rates],
+    }
+
+
+def payroll_rate_component(rate: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if rate is None:
+        return None
+    return serialize_payroll_rate_snapshot(rate)
+
+
+def serialize_payroll_rate_snapshot(rate: Mapping[str, Any]) -> dict[str, Any]:
+    amount = decimal_or_none(rate.get("amount"))
+    return {
+        "source": str(rate.get("source") or "payroll_rate"),
+        "id": optional_string(rate.get("id") or rate.get("payroll_rate_id")),
+        "position_group": optional_string(rate.get("position_group")),
+        "category": optional_string(rate.get("category")),
+        "station": optional_string(rate.get("station")),
+        "rate_type": str(rate.get("rate_type") or "daily"),
+        "amount": money_string(amount) if amount is not None else None,
+        "effective_from": optional_date_string(rate.get("effective_from")),
+        "effective_to": optional_date_string(rate.get("effective_to")),
+    }
+
+
 def date_string(value: Any) -> str:
     if isinstance(value, date):
         return value.isoformat()
     return str(value or "")
+
+
+def optional_date_string(value: Any) -> str | None:
+    parsed = date_or_none(value)
+    return parsed.isoformat() if parsed is not None else None
+
+
+def optional_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def normalized_key(value: Any) -> str:
