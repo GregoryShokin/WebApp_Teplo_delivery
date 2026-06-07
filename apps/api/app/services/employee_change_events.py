@@ -682,7 +682,7 @@ async def _augment_payroll_impact_metadata(
     if not isinstance(session, AsyncSession):
         return metadata
 
-    range_end = effective_to or effective_from
+    range_end = effective_to or (today if today >= effective_from else effective_from)
     finalized_periods = list(
         (
             await session.scalars(

@@ -114,8 +114,13 @@ import {
   type DepositDismissAction,
   type IikoEmployeeRole,
   type EmployeePatch,
+  type EmployeePositionAssignment,
+  type EmployeePositionAssignmentDeletePayload,
+  type EmployeePositionAssignmentPatch,
+  type EmployeePositionChangePayload,
   type EmployeeRoleAssignment,
   type EmployeeStatus,
+  type PayrollImpactWarning,
   type PayrollRole,
   type PayrollAdjustment,
   apiErrorDetail,
@@ -130,6 +135,7 @@ import {
   getDeposits,
   getEmployeeChanges,
   getEmployeeDismissalReasons,
+  getEmployeePositionHistory,
   getEmployees,
   getIikoEmployeeRoles,
   getPayrollAdjustments,
@@ -137,11 +143,13 @@ import {
   getSubstitutePairs,
   patchEmployee,
   patchEmployeeAssignment,
+  patchEmployeePositionAssignment,
   recordEmployeeNotice,
   reinstateEmployee,
   setEmployeeHireDate,
   syncEmployees,
   deleteEmployeeAssignment,
+  deleteEmployeePositionAssignment,
   type SubstitutePair,
 } from "@/lib/api";
 import {
@@ -304,6 +312,40 @@ type CategoryEffectiveChange = {
   currentCategory: EmployeeCategory;
   nextCategory: EmployeeCategory;
 };
+type PositionAssignmentEditState = {
+  assignment: EmployeePositionAssignment;
+  position: CanonicalPosition | "";
+  effectiveFrom: string;
+  comment: string;
+} | null;
+type PositionAssignmentDeleteState = {
+  assignment: EmployeePositionAssignment;
+  comment: string;
+} | null;
+type ClosedPayrollPeriod = {
+  id: string;
+  start_date: string;
+  end_date: string;
+  label?: string;
+};
+type PendingClosedPeriodAction =
+  | {
+      type: "change-position";
+      payload: EmployeePositionChangePayload;
+      periods: ClosedPayrollPeriod[];
+    }
+  | {
+      type: "patch-assignment";
+      assignmentId: string;
+      payload: EmployeePositionAssignmentPatch;
+      periods: ClosedPayrollPeriod[];
+    }
+  | {
+      type: "delete-assignment";
+      assignmentId: string;
+      payload: EmployeePositionAssignmentDeletePayload;
+      periods: ClosedPayrollPeriod[];
+    };
 type PendingAssignmentTarget = {
   employee: Employee;
   assignment: EmployeeRoleAssignment;
@@ -3056,6 +3098,88 @@ function ChangeEmployeePositionDialog({
   );
 }
 
+function PositionHistorySection({
+  assignments,
+  canEdit,
+  isError,
+  isLoading,
+  onDelete,
+  onEdit,
+}: {
+  assignments: EmployeePositionAssignment[];
+  canEdit: boolean;
+  isError: boolean;
+  isLoading: boolean;
+  onDelete: (assignment: EmployeePositionAssignment) => void;
+  onEdit: (assignment: EmployeePositionAssignment) => void;
+}) {
+  return (
+    <div className="grid gap-3 rounded-lg border bg-card p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm font-medium">История должностей</div>
+        {isLoading ? (
+          <LoaderCircle className="animate-spin text-muted-foreground" size={16} aria-hidden="true" />
+        ) : null}
+      </div>
+      {isError ? (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          Не удалось загрузить историю должностей
+        </div>
+      ) : null}
+      {!isLoading && assignments.length === 0 && !isError ? (
+        <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+          История должностей пуста
+        </div>
+      ) : null}
+      {assignments.length > 0 ? (
+        <div className="grid gap-2">
+          {assignments.map((assignment) => (
+            <div
+              className="grid gap-2 rounded-md border bg-background p-3 sm:grid-cols-[1fr_auto] sm:items-center"
+              key={assignment.id}
+            >
+              <div className="min-w-0 text-sm">
+                <div className="font-medium">{assignment.position}</div>
+                <div className="mt-1 text-muted-foreground">
+                  {formatDate(assignment.effective_from)} -{" "}
+                  {assignment.effective_to ? formatDate(assignment.effective_to) : "сейчас"}
+                </div>
+                {assignment.comment ? (
+                  <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                    {assignment.comment}
+                  </div>
+                ) : null}
+              </div>
+              {canEdit ? (
+                <div className="flex gap-1">
+                  <Button
+                    onClick={() => onEdit(assignment)}
+                    size="icon"
+                    title="Исправить интервал"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Pencil size={15} aria-hidden="true" />
+                  </Button>
+                  <Button
+                    onClick={() => onDelete(assignment)}
+                    size="icon"
+                    title="Удалить интервал"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Trash2 size={15} aria-hidden="true" />
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function CashierRoleEditor({
   category,
   disabled,
@@ -3129,6 +3253,13 @@ function StaffEditor({
   const [hireDateComment, setHireDateComment] = useState("");
   const [hireDateConfirmOpen, setHireDateConfirmOpen] = useState(false);
   const [positionDialogOpen, setPositionDialogOpen] = useState(false);
+  const [positionAssignmentEdit, setPositionAssignmentEdit] =
+    useState<PositionAssignmentEditState>(null);
+  const [positionAssignmentDelete, setPositionAssignmentDelete] =
+    useState<PositionAssignmentDeleteState>(null);
+  const [closedPeriodAction, setClosedPeriodAction] =
+    useState<PendingClosedPeriodAction | null>(null);
+  const [closedPeriodAcknowledged, setClosedPeriodAcknowledged] = useState(false);
   const [premiumConfirmOpen, setPremiumConfirmOpen] = useState(false);
   const [premiumConfirmActions, setPremiumConfirmActions] = useState<string[]>([]);
   const [pendingDraftPatch, setPendingDraftPatch] = useState<EmployeePatch | null>(null);
@@ -3161,6 +3292,10 @@ function StaffEditor({
     setHireDateComment("");
     setHireDateConfirmOpen(false);
     setPositionDialogOpen(false);
+    setPositionAssignmentEdit(null);
+    setPositionAssignmentDelete(null);
+    setClosedPeriodAction(null);
+    setClosedPeriodAcknowledged(false);
     setPremiumConfirmOpen(false);
     setPendingDraftPatch(null);
     setPremiumEffectiveDate(todayDateInputValue());
@@ -3253,16 +3388,88 @@ function StaffEditor({
     },
   });
   const positionMutation = useMutation({
-    mutationFn: (payload: { position: CanonicalPosition; effective_from: string; comment?: string }) =>
-      changeEmployeePosition(employee.id, payload),
-    onSuccess: () => {
+    mutationFn: (payload: EmployeePositionChangePayload) => changeEmployeePosition(employee.id, payload),
+    onSuccess: (assignment) => {
       toast.success("Должность изменена");
+      showPayrollWarnings(assignment.warnings);
       setPositionDialogOpen(false);
+      setClosedPeriodAction(null);
+      setClosedPeriodAcknowledged(false);
       invalidateStaffEmployeeQueries(queryClient, employee.id);
       void queryClient.invalidateQueries({ queryKey: ["payroll-fund"] });
     },
-    onError: (error) => {
+    onError: (error, payload) => {
+      const conflict = closedPayrollConflictFromError(error);
+      if (conflict && !payload.acknowledge_closed_period) {
+        setClosedPeriodAction({ type: "change-position", payload, periods: conflict.periods });
+        setClosedPeriodAcknowledged(false);
+        return;
+      }
       toast.error(apiErrorMessage(error, "Не удалось изменить должность"));
+    },
+  });
+  const positionAssignmentPatchMutation = useMutation({
+    mutationFn: ({
+      assignmentId,
+      payload,
+    }: {
+      assignmentId: string;
+      payload: EmployeePositionAssignmentPatch;
+    }) => patchEmployeePositionAssignment(employee.id, assignmentId, payload),
+    onSuccess: (assignment) => {
+      toast.success("Интервал должности изменён");
+      showPayrollWarnings(assignment.warnings);
+      setPositionAssignmentEdit(null);
+      setClosedPeriodAction(null);
+      setClosedPeriodAcknowledged(false);
+      invalidateStaffEmployeeQueries(queryClient, employee.id);
+      void queryClient.invalidateQueries({ queryKey: ["payroll-fund"] });
+    },
+    onError: (error, variables) => {
+      const conflict = closedPayrollConflictFromError(error);
+      if (conflict && !variables.payload.acknowledge_closed_period) {
+        setClosedPeriodAction({
+          type: "patch-assignment",
+          assignmentId: variables.assignmentId,
+          payload: variables.payload,
+          periods: conflict.periods,
+        });
+        setClosedPeriodAcknowledged(false);
+        return;
+      }
+      toast.error(apiErrorMessage(error, "Не удалось изменить интервал должности"));
+    },
+  });
+  const positionAssignmentDeleteMutation = useMutation({
+    mutationFn: ({
+      assignmentId,
+      payload,
+    }: {
+      assignmentId: string;
+      payload: EmployeePositionAssignmentDeletePayload;
+    }) => deleteEmployeePositionAssignment(employee.id, assignmentId, payload),
+    onSuccess: (result) => {
+      toast.success("Интервал должности удалён");
+      showPayrollWarnings(result.warnings);
+      setPositionAssignmentDelete(null);
+      setClosedPeriodAction(null);
+      setClosedPeriodAcknowledged(false);
+      invalidateStaffEmployeeQueries(queryClient, employee.id);
+      void queryClient.invalidateQueries({ queryKey: ["payroll-fund"] });
+    },
+    onError: (error, variables) => {
+      const conflict = closedPayrollConflictFromError(error);
+      if (conflict && !variables.payload.acknowledge_closed_period) {
+        setClosedPeriodAction({
+          type: "delete-assignment",
+          assignmentId: variables.assignmentId,
+          payload: variables.payload,
+          periods: conflict.periods,
+        });
+        setClosedPeriodAcknowledged(false);
+        return;
+      }
+      toast.error(apiErrorMessage(error, "Не удалось удалить интервал должности"));
     },
   });
   const dismissalReasonsQuery = useQuery({
@@ -3274,6 +3481,11 @@ function StaffEditor({
     queryKey: ["employees", employee.id, "changes", "latest"],
     queryFn: () => getEmployeeChanges({ employeeId: employee.id }),
     enabled: canViewChangeHistory,
+  });
+  const positionHistoryQuery = useQuery({
+    queryKey: ["employees", employee.id, "position-history"],
+    queryFn: () => getEmployeePositionHistory(employee.id),
+    enabled: canViewChangeHistory || canEditEmployee,
   });
   const substitutePairsQuery = useQuery({
     queryKey: ["substitute-pairs"],
@@ -3543,6 +3755,23 @@ function StaffEditor({
     Boolean(selectedCategoryEffectiveDate) &&
     (!categoryCommentRequired || categoryComment.trim().length > 0) &&
     !categoryMutation.isPending;
+  const positionAssignmentEditEffectiveFrom = positionAssignmentEdit?.effectiveFrom ?? "";
+  const positionAssignmentEditCommentRequired =
+    Boolean(positionAssignmentEditEffectiveFrom) &&
+    positionAssignmentEditEffectiveFrom < todayDateInputValue();
+  const canApplyPositionAssignmentEdit =
+    Boolean(positionAssignmentEdit?.position) &&
+    Boolean(positionAssignmentEditEffectiveFrom) &&
+    (!positionAssignmentEditCommentRequired ||
+      Boolean(positionAssignmentEdit?.comment.trim())) &&
+    !positionAssignmentPatchMutation.isPending;
+  const canDeletePositionAssignment =
+    Boolean(positionAssignmentDelete?.comment.trim()) &&
+    !positionAssignmentDeleteMutation.isPending;
+  const closedPeriodActionPending =
+    positionMutation.isPending ||
+    positionAssignmentPatchMutation.isPending ||
+    positionAssignmentDeleteMutation.isPending;
   const premiumCommentRequired =
     Boolean(premiumEffectiveDate) && premiumEffectiveDate < todayDateInputValue();
   const canApplyPremiumChange =
@@ -3640,6 +3869,71 @@ function StaffEditor({
     setHireDateComment("");
     setHireDateConfirmOpen(false);
     setHireDateOpen(true);
+  }
+
+  function openPositionAssignmentEdit(assignment: EmployeePositionAssignment) {
+    setPositionAssignmentEdit({
+      assignment,
+      position: canonicalPosition(assignment.position) ?? "",
+      effectiveFrom: assignment.effective_from,
+      comment: "",
+    });
+  }
+
+  function submitPositionAssignmentEdit() {
+    if (!positionAssignmentEdit || !canApplyPositionAssignmentEdit) {
+      return;
+    }
+    positionAssignmentPatchMutation.mutate({
+      assignmentId: positionAssignmentEdit.assignment.id,
+      payload: {
+        position: positionAssignmentEdit.position || undefined,
+        effective_from: positionAssignmentEdit.effectiveFrom,
+        comment: positionAssignmentEdit.comment.trim() || undefined,
+      },
+    });
+  }
+
+  function submitPositionAssignmentDelete() {
+    if (!positionAssignmentDelete || !canDeletePositionAssignment) {
+      return;
+    }
+    positionAssignmentDeleteMutation.mutate({
+      assignmentId: positionAssignmentDelete.assignment.id,
+      payload: {
+        comment: positionAssignmentDelete.comment.trim(),
+      },
+    });
+  }
+
+  function confirmClosedPeriodAction() {
+    if (!closedPeriodAction || !closedPeriodAcknowledged) {
+      return;
+    }
+    if (closedPeriodAction.type === "change-position") {
+      positionMutation.mutate({
+        ...closedPeriodAction.payload,
+        acknowledge_closed_period: true,
+      });
+      return;
+    }
+    if (closedPeriodAction.type === "patch-assignment") {
+      positionAssignmentPatchMutation.mutate({
+        assignmentId: closedPeriodAction.assignmentId,
+        payload: {
+          ...closedPeriodAction.payload,
+          acknowledge_closed_period: true,
+        },
+      });
+      return;
+    }
+    positionAssignmentDeleteMutation.mutate({
+      assignmentId: closedPeriodAction.assignmentId,
+      payload: {
+        ...closedPeriodAction.payload,
+        acknowledge_closed_period: true,
+      },
+    });
   }
 
   return (
@@ -3795,6 +4089,17 @@ function StaffEditor({
             </Button>
           ) : null}
         </div>
+
+        {canViewChangeHistory || canEditEmployee ? (
+          <PositionHistorySection
+            assignments={positionHistoryQuery.data ?? []}
+            canEdit={canEditEmployee}
+            isError={positionHistoryQuery.isError}
+            isLoading={positionHistoryQuery.isLoading}
+            onDelete={(assignment) => setPositionAssignmentDelete({ assignment, comment: "" })}
+            onEdit={openPositionAssignmentEdit}
+          />
+        ) : null}
 
         {showEditorCashierRole ? (
           <CashierRoleEditor
@@ -4209,6 +4514,228 @@ function StaffEditor({
         onSubmit={(payload) => positionMutation.mutate(payload)}
         open={positionDialogOpen}
       />
+
+      <Dialog
+        open={Boolean(positionAssignmentEdit)}
+        onOpenChange={(open) => {
+          if (!open && !positionAssignmentPatchMutation.isPending) {
+            setPositionAssignmentEdit(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Исправить интервал</DialogTitle>
+            <DialogDescription>{employee.full_name}</DialogDescription>
+          </DialogHeader>
+
+          {positionAssignmentEdit ? (
+            <div className="grid gap-4">
+              <div className="grid gap-2 rounded-md border bg-muted/30 p-3 text-sm">
+                <InfoRow
+                  label="Интервал"
+                  value={`${formatDate(positionAssignmentEdit.assignment.effective_from)} - ${
+                    positionAssignmentEdit.assignment.effective_to
+                      ? formatDate(positionAssignmentEdit.assignment.effective_to)
+                      : "сейчас"
+                  }`}
+                />
+              </div>
+
+              <Label className="grid gap-2">
+                <span>Должность</span>
+                <Select
+                  disabled={positionAssignmentPatchMutation.isPending}
+                  onValueChange={(value) =>
+                    setPositionAssignmentEdit((current) =>
+                      current ? { ...current, position: value as CanonicalPosition } : current,
+                    )
+                  }
+                  value={positionAssignmentEdit.position || undefined}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите должность" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {canonicalPositions.map((item) => (
+                      <SelectItem value={item} key={item}>
+                        {item}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Label>
+
+              <Label className="grid gap-2">
+                <span>Дата начала</span>
+                <Input
+                  disabled={positionAssignmentPatchMutation.isPending}
+                  onChange={(event) =>
+                    setPositionAssignmentEdit((current) =>
+                      current ? { ...current, effectiveFrom: event.target.value } : current,
+                    )
+                  }
+                  type="date"
+                  value={positionAssignmentEdit.effectiveFrom}
+                />
+              </Label>
+
+              <Label className="grid gap-2">
+                <span>
+                  {positionAssignmentEditCommentRequired
+                    ? "Комментарий"
+                    : "Комментарий (опционально)"}
+                </span>
+                <Textarea
+                  disabled={positionAssignmentPatchMutation.isPending}
+                  maxLength={500}
+                  onChange={(event) =>
+                    setPositionAssignmentEdit((current) =>
+                      current ? { ...current, comment: event.target.value } : current,
+                    )
+                  }
+                  placeholder={
+                    positionAssignmentEditCommentRequired ? "Обязателен для задней даты" : ""
+                  }
+                  value={positionAssignmentEdit.comment}
+                />
+              </Label>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button
+              disabled={positionAssignmentPatchMutation.isPending}
+              onClick={() => setPositionAssignmentEdit(null)}
+              type="button"
+              variant="outline"
+            >
+              Отмена
+            </Button>
+            <Button
+              disabled={!canApplyPositionAssignmentEdit}
+              onClick={submitPositionAssignmentEdit}
+              type="button"
+            >
+              {positionAssignmentPatchMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <Save size={16} aria-hidden="true" />
+              )}
+              Применить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={Boolean(positionAssignmentDelete)}
+        onOpenChange={(open) => {
+          if (!open && !positionAssignmentDeleteMutation.isPending) {
+            setPositionAssignmentDelete(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить интервал должности?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {positionAssignmentDelete
+                ? `${positionAssignmentDelete.assignment.position}, с ${formatDate(
+                    positionAssignmentDelete.assignment.effective_from,
+                  )}`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Label className="grid gap-2 text-left">
+            <span>Комментарий</span>
+            <Textarea
+              disabled={positionAssignmentDeleteMutation.isPending}
+              maxLength={500}
+              onChange={(event) =>
+                setPositionAssignmentDelete((current) =>
+                  current ? { ...current, comment: event.target.value } : current,
+                )
+              }
+              value={positionAssignmentDelete?.comment ?? ""}
+            />
+          </Label>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={positionAssignmentDeleteMutation.isPending}>
+              Отмена
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!canDeletePositionAssignment}
+              onClick={(event) => {
+                event.preventDefault();
+                submitPositionAssignmentDelete();
+              }}
+            >
+              {positionAssignmentDeleteMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <Trash2 size={16} aria-hidden="true" />
+              )}
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={Boolean(closedPeriodAction)}
+        onOpenChange={(open) => {
+          if (!open && !closedPeriodActionPending) {
+            setClosedPeriodAction(null);
+            setClosedPeriodAcknowledged(false);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Затронута закрытая неделя</AlertDialogTitle>
+            <AlertDialogDescription>
+              Изменение можно сохранить только с подтверждением корректировки ведомости.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="grid gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+            <div className="font-medium">Периоды</div>
+            <div className="grid gap-1">
+              {(closedPeriodAction?.periods ?? []).map((period) => (
+                <div key={period.id}>
+                  {formatDate(period.start_date)} - {formatDate(period.end_date)}
+                </div>
+              ))}
+            </div>
+            <label className="flex items-start gap-2">
+              <input
+                checked={closedPeriodAcknowledged}
+                disabled={closedPeriodActionPending}
+                onChange={(event) => setClosedPeriodAcknowledged(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Понимаю, потребуется корректировка ведомости</span>
+            </label>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={closedPeriodActionPending}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!closedPeriodAcknowledged || closedPeriodActionPending}
+              onClick={(event) => {
+                event.preventDefault();
+                confirmClosedPeriodAction();
+              }}
+            >
+              {closedPeriodActionPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <ShieldAlert size={16} aria-hidden="true" />
+              )}
+              Подтвердить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog
         open={Boolean(categoryChange)}
@@ -5412,7 +5939,59 @@ function invalidateStaffEmployeeQueries(queryClient: QueryClient, employeeId?: s
   if (employeeId) {
     void queryClient.invalidateQueries({ queryKey: ["employees", employeeId, "assignments"] });
     void queryClient.invalidateQueries({ queryKey: ["employees", employeeId, "changes"] });
+    void queryClient.invalidateQueries({ queryKey: ["employees", employeeId, "position-history"] });
   }
+}
+
+function closedPayrollConflictFromError(
+  error: unknown,
+): { message: string; periods: ClosedPayrollPeriod[] } | null {
+  if (apiErrorStatus(error) !== 409) {
+    return null;
+  }
+  const detail = apiErrorDetail(error);
+  if (!detail || typeof detail !== "object") {
+    return null;
+  }
+  const record = detail as {
+    code?: unknown;
+    message?: unknown;
+    periods?: unknown;
+  };
+  if (record.code !== "closed_payroll_period" || !Array.isArray(record.periods)) {
+    return null;
+  }
+  const periods = record.periods.filter(isClosedPayrollPeriod);
+  if (periods.length === 0) {
+    return null;
+  }
+  return {
+    message:
+      typeof record.message === "string"
+        ? record.message
+        : "Изменение затрагивает закрытую неделю",
+    periods,
+  };
+}
+
+function isClosedPayrollPeriod(value: unknown): value is ClosedPayrollPeriod {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === "string" &&
+    typeof record.start_date === "string" &&
+    typeof record.end_date === "string"
+  );
+}
+
+function showPayrollWarnings(warnings: PayrollImpactWarning[] | undefined) {
+  warnings?.forEach((warning) => {
+    if (warning.message) {
+      toast.warning(warning.message);
+    }
+  });
 }
 
 function visibleSubstituteAssignments(employee: Employee) {

@@ -199,6 +199,7 @@ export type EmployeePatch = Partial<
   effective_from?: string | null;
   comment?: string | null;
   transfer_from_existing?: boolean;
+  acknowledge_closed_period?: boolean;
   roles?: Array<{
     id?: string | null;
     payroll_role: PayrollRole;
@@ -222,12 +223,37 @@ export type EmployeePositionAssignment = {
   comment: string | null;
   created_by_name: string | null;
   created_at: string | null;
+  warnings?: PayrollImpactWarning[];
 };
 
 export type EmployeePositionChangePayload = {
   position: string;
   effective_from: string;
   comment?: string | null;
+  acknowledge_closed_period?: boolean;
+};
+
+export type PayrollImpactWarning = {
+  code: string;
+  message: string;
+  periods?: Array<{
+    id: string;
+    start_date: string;
+    end_date: string;
+    label?: string;
+  }>;
+};
+
+export type EmployeePositionAssignmentPatch = {
+  position?: string | null;
+  effective_from?: string | null;
+  comment?: string | null;
+  acknowledge_closed_period?: boolean;
+};
+
+export type EmployeePositionAssignmentDeletePayload = {
+  comment?: string | null;
+  acknowledge_closed_period?: boolean;
 };
 
 export type DepositDismissAction = "payout_full" | "payout_partial" | "write_off" | "none";
@@ -2472,6 +2498,30 @@ export async function getEmployeePositionHistory(
 ): Promise<EmployeePositionAssignment[]> {
   const response = await api.get<EmployeePositionAssignment[]>(
     `/employees/${employeeId}/position-history`,
+  );
+  return response.data;
+}
+
+export async function patchEmployeePositionAssignment(
+  employeeId: string,
+  assignmentId: string,
+  payload: EmployeePositionAssignmentPatch,
+): Promise<EmployeePositionAssignment> {
+  const response = await api.patch<EmployeePositionAssignment>(
+    `/employees/${employeeId}/position-assignments/${assignmentId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteEmployeePositionAssignment(
+  employeeId: string,
+  assignmentId: string,
+  payload: EmployeePositionAssignmentDeletePayload,
+): Promise<{ ok: boolean; warnings?: PayrollImpactWarning[] }> {
+  const response = await api.delete<{ ok: boolean; warnings?: PayrollImpactWarning[] }>(
+    `/employees/${employeeId}/position-assignments/${assignmentId}`,
+    { data: payload },
   );
   return response.data;
 }

@@ -51,6 +51,8 @@ from app.schemas.employees import (
     EmployeePatchRoleAssignment,
     EmployeePendingIikoActionRead,
     EmployeePinChangeRequest,
+    EmployeePositionAssignmentDelete,
+    EmployeePositionAssignmentPatch,
     EmployeePositionAssignmentRead,
     EmployeePositionChange,
     EmployeePositionEventRead,
@@ -200,7 +202,12 @@ APP_MANAGED_FIELDS = {
     "pin_code",
     "roles",
 }
-PATCH_META_FIELDS = {"effective_from", "comment", "transfer_from_existing"}
+PATCH_META_FIELDS = {
+    "effective_from",
+    "comment",
+    "transfer_from_existing",
+    "acknowledge_closed_period",
+}
 COMPUTED_FIELDS = {"status"}
 ALLOWED_CREATE_PAYROLL_ROLES = frozenset(PAYROLL_ROLE_LABELS)
 PAYROLL_EFFECTIVE_FIELDS = {
@@ -1410,20 +1417,15 @@ async def change_employee_position(
 
     current_position = await employee_position_service.current_position(session, employee.id)
     position_changed = current_position != target_position
-    if position_changed and payload.effective_from <= today:
-        try:
-            await update_iiko_employee(
-                session,
-                iiko_id=employee.iiko_id,
-                position=target_position,
-            )
-        except _http_client.IncompleteRead as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="iiko не отвечает — локальные данные не изменены. Попробуйте через минуту.",
-            ) from exc
-        except IikoEmployeeOperationError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    before_assignment = await session.scalar(
+        select(EmployeePositionAssignment).where(
+            EmployeePositionAssignment.employee_id == employee.id,
+            EmployeePositionAssignment.effective_to.is_(None),
+        )
+    )
+    before_assignment_snapshot = (
+        _position_assignment_snapshot(before_assignment) if before_assignment is not None else None
+    )
 
     try:
         assignment = await employee_position_service.change_position(
@@ -1433,12 +1435,32 @@ async def change_employee_position(
             effective_from=payload.effective_from,
             comment=payload.comment,
             actor=actor,
+            acknowledge_closed_period=payload.acknowledge_closed_period,
         )
+    except employee_position_service.ClosedPayrollPeriodConflict as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail) from exc
     except employee_position_service.EmployeePositionError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
+
+    if position_changed and payload.effective_from <= today:
+        try:
+            await update_iiko_employee(
+                session,
+                iiko_id=employee.iiko_id,
+                position=target_position,
+            )
+        except _http_client.IncompleteRead as exc:
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="iiko не отвечает — локальные данные не изменены. Попробуйте через минуту.",
+            ) from exc
+        except IikoEmployeeOperationError as exc:
+            await session.rollback()
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     if position_changed and payload.effective_from > today:
         await employee_effective_event_service.schedule_iiko_position_update(
@@ -1465,9 +1487,207 @@ async def change_employee_position(
             assignments=assignments,
         )
 
+    warnings = (
+        await employee_position_service.payroll_recalculation_warnings(
+            session,
+            [(payload.effective_from, assignment.effective_to)],
+        )
+        if position_changed
+        else []
+    )
+    if position_changed:
+        await _add_manual_action(
+            session,
+            action_type=(
+                "schedule_position_change"
+                if payload.effective_from > today
+                else "update_position"
+            ),
+            target_table="employee_position_assignment",
+            target_id=assignment.id,
+            before=before_assignment_snapshot,
+            after=_position_assignment_snapshot(assignment),
+            now=datetime.now(UTC),
+            actor=actor,
+            employee_id=employee.id,
+            comment=payload.comment,
+        )
+
     await session.commit()
     await session.refresh(assignment)
-    return _position_assignment_payload(assignment)
+    return _position_assignment_payload(assignment, warnings=warnings)
+
+
+@router.patch(
+    "/{employee_id}/position-assignments/{assignment_id}",
+    response_model=EmployeePositionAssignmentRead,
+    dependencies=STAFF_WRITE_ACCESS,
+)
+async def patch_employee_position_assignment(
+    employee_id: uuid.UUID,
+    assignment_id: uuid.UUID,
+    payload: EmployeePositionAssignmentPatch,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    employee = await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.EDIT,
+    )
+    if not ({"position", "effective_from", "comment"} & payload.model_fields_set):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Нет изменений для интервала должности",
+        )
+    today = date.today()
+    if (
+        payload.effective_from is not None
+        and payload.effective_from < today
+        and not payload.comment
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Для изменения задним числом комментарий обязателен",
+        )
+    if payload.position is not None:
+        target_position = canonical_position_name(payload.position)
+        if target_position is None:
+            raise HTTPException(status_code=400, detail="Должность не входит в канонический список")
+        ensure_position_access(actor, target_position, StaffAction.EDIT)
+
+    previous_current_position = await employee_position_service.current_position(
+        session,
+        employee.id,
+    )
+    try:
+        result = await employee_position_service.replace_position_assignment(
+            session,
+            employee.id,
+            assignment_id,
+            position=payload.position,
+            effective_from=payload.effective_from,
+            comment=payload.comment,
+            actor=actor,
+            acknowledge_closed_period=payload.acknowledge_closed_period,
+        )
+    except employee_position_service.ClosedPayrollPeriodConflict as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail) from exc
+    except employee_position_service.EmployeePositionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    current_position = await employee_position_service.current_position(session, employee.id)
+    await _sync_iiko_position_after_history_edit(
+        session,
+        employee,
+        previous_current_position=previous_current_position,
+        current_position=current_position,
+    )
+    await _refresh_employee_current_position_state(session, employee, today)
+    if result.assignment is not None:
+        await _sync_pending_iiko_position_assignment(session, employee, result.assignment, today)
+
+    await _add_manual_action(
+        session,
+        action_type="update_position_assignment",
+        target_table="employee_position_assignment",
+        target_id=assignment_id,
+        before=result.before,
+        after=result.after,
+        now=datetime.now(UTC),
+        actor=actor,
+        employee_id=employee.id,
+        comment=payload.comment,
+    )
+    await session.commit()
+    if result.assignment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Интервал должности удалён",
+        )
+    await session.refresh(result.assignment)
+    return _position_assignment_payload(result.assignment, warnings=result.warnings)
+
+
+@router.delete(
+    "/{employee_id}/position-assignments/{assignment_id}",
+    dependencies=STAFF_WRITE_ACCESS,
+)
+async def delete_employee_position_assignment(
+    employee_id: uuid.UUID,
+    assignment_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    payload: Annotated[EmployeePositionAssignmentDelete | None, Body()] = None,
+    comment: Annotated[str | None, Query()] = None,
+    acknowledge_closed_period: Annotated[bool | None, Query()] = None,
+) -> dict[str, Any]:
+    employee = await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.EDIT,
+    )
+    resolved_comment = payload.comment if payload is not None else None
+    if resolved_comment is None:
+        resolved_comment = comment.strip() if comment else None
+    resolved_acknowledgement = bool(payload.acknowledge_closed_period) if payload else False
+    if acknowledge_closed_period is not None:
+        resolved_acknowledgement = acknowledge_closed_period
+    if not resolved_comment:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Комментарий обязателен",
+        )
+
+    previous_current_position = await employee_position_service.current_position(
+        session,
+        employee.id,
+    )
+    try:
+        result = await employee_position_service.delete_position_assignment(
+            session,
+            employee.id,
+            assignment_id,
+            comment=resolved_comment,
+            actor=actor,
+            acknowledge_closed_period=resolved_acknowledgement,
+        )
+    except employee_position_service.ClosedPayrollPeriodConflict as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail) from exc
+    except employee_position_service.EmployeePositionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    current_position = await employee_position_service.current_position(session, employee.id)
+    await _sync_iiko_position_after_history_edit(
+        session,
+        employee,
+        previous_current_position=previous_current_position,
+        current_position=current_position,
+    )
+    await _refresh_employee_current_position_state(session, employee, date.today())
+    await _cancel_pending_iiko_position_assignment(session, employee.id, assignment_id)
+    await _add_manual_action(
+        session,
+        action_type="delete_position_assignment",
+        target_table="employee_position_assignment",
+        target_id=assignment_id,
+        before=result.before,
+        after=result.after,
+        now=datetime.now(UTC),
+        actor=actor,
+        employee_id=employee.id,
+        comment=resolved_comment,
+    )
+    await session.commit()
+    return {"ok": True, "warnings": result.warnings}
 
 
 @router.get(
@@ -1698,6 +1918,33 @@ async def patch_employee(
                 detail="Изменение ролей задним числом или будущей датой пока не поддерживается",
             )
 
+    if position_changed:
+        current_open_assignment = await session.scalar(
+            select(EmployeePositionAssignment).where(
+                EmployeePositionAssignment.employee_id == employee.id,
+                EmployeePositionAssignment.effective_to.is_(None),
+            )
+        )
+        if (
+            current_open_assignment is not None
+            and effective_from <= current_open_assignment.effective_from
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Новая дата {effective_from} должна быть после начала текущей должности "
+                    f"{current_open_assignment.effective_from}"
+                ),
+            )
+        try:
+            await employee_position_service.ensure_no_closed_payroll_conflict(
+                session,
+                [(effective_from, None)],
+                acknowledge_closed_period=patch.acknowledge_closed_period,
+            )
+        except employee_position_service.ClosedPayrollPeriodConflict as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail) from exc
+
     should_update_iiko_position_now = position_changed and applies_to_current_snapshot
     if full_name_changed or should_update_iiko_position_now:
         try:
@@ -1728,6 +1975,7 @@ async def patch_employee(
                 effective_from=effective_from,
                 comment=effective_comment or "через PATCH /employees",
                 actor=actor,
+                acknowledge_closed_period=patch.acknowledge_closed_period,
             )
             if applies_to_current_snapshot:
                 employee.position = target_position
@@ -1757,6 +2005,8 @@ async def patch_employee(
             allowance_events.append((employee.id, event))
     except employee_effective_event_service.EmployeeEffectiveEventNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except employee_position_service.ClosedPayrollPeriodConflict as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail) from exc
     except employee_position_service.EmployeePositionError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -2036,6 +2286,122 @@ async def _get_employee_or_404(
     if actor is not None:
         ensure_employee_access(actor, employee, action)
     return employee
+
+
+async def _sync_iiko_position_after_history_edit(
+    session: AsyncSession,
+    employee: Employee,
+    *,
+    previous_current_position: str | None,
+    current_position: str | None,
+) -> None:
+    if current_position is None or current_position == previous_current_position:
+        return
+    try:
+        await update_iiko_employee(
+            session,
+            iiko_id=employee.iiko_id,
+            position=current_position,
+        )
+    except _http_client.IncompleteRead as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="iiko не отвечает — локальные данные не изменены. Попробуйте через минуту.",
+        ) from exc
+    except IikoEmployeeOperationError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+async def _refresh_employee_current_position_state(
+    session: AsyncSession,
+    employee: Employee,
+    today: date,
+) -> str | None:
+    current_position = await employee_position_service.current_position(session, employee.id)
+    if current_position is None:
+        return None
+    employee.position = current_position
+    employee.is_senior, employee.is_deputy_senior = reset_inapplicable_premiums(
+        current_position,
+        is_senior=employee.is_senior,
+        is_deputy_senior=employee.is_deputy_senior,
+    )
+    assignments = await employee_assignment_service.get_assignments(session, employee.id, today)
+    employee.status = compute_status(
+        employee,
+        is_iiko_deleted=employee.status == "inactive",
+        position_group=position_group_for_position(current_position),
+        assignments=assignments,
+    )
+    return current_position
+
+
+async def _sync_pending_iiko_position_assignment(
+    session: AsyncSession,
+    employee: Employee,
+    assignment: EmployeePositionAssignment,
+    today: date,
+) -> None:
+    pending_actions = await _pending_iiko_position_assignment_actions(
+        session,
+        employee.id,
+        assignment.id,
+    )
+    for action in pending_actions:
+        if action.effective_on != assignment.effective_from:
+            action.status = "cancelled"
+            action.last_error = "Интервал должности изменён"
+    if assignment.effective_from > today:
+        await employee_effective_event_service.schedule_iiko_position_update(
+            session,
+            employee,
+            position=assignment.position,
+            effective_on=assignment.effective_from,
+            related_entity_type="employee_position_assignment",
+            related_entity_id=assignment.id,
+        )
+    else:
+        for action in pending_actions:
+            if action.status == "pending":
+                action.status = "cancelled"
+                action.last_error = "Интервал должности применён текущей датой"
+
+
+async def _cancel_pending_iiko_position_assignment(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+    assignment_id: uuid.UUID,
+) -> None:
+    for action in await _pending_iiko_position_assignment_actions(
+        session,
+        employee_id,
+        assignment_id,
+    ):
+        action.status = "cancelled"
+        action.last_error = "Интервал должности удалён"
+
+
+async def _pending_iiko_position_assignment_actions(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+    assignment_id: uuid.UUID,
+) -> list[EmployeePendingIikoAction]:
+    return list(
+        (
+            await session.scalars(
+                select(EmployeePendingIikoAction).where(
+                    EmployeePendingIikoAction.employee_id == employee_id,
+                    EmployeePendingIikoAction.action_type == "update_position",
+                    EmployeePendingIikoAction.status == "pending",
+                    EmployeePendingIikoAction.related_entity_type
+                    == "employee_position_assignment",
+                    EmployeePendingIikoAction.related_entity_id == assignment_id,
+                )
+            )
+        ).all()
+    )
 
 
 def _filter_change_events_by_staff_access(
@@ -2787,7 +3153,11 @@ def _employee_assignment_snapshot(
     return _assignment_snapshot(assignment)
 
 
-def _position_assignment_payload(assignment: EmployeePositionAssignment) -> dict[str, Any]:
+def _position_assignment_payload(
+    assignment: EmployeePositionAssignment,
+    *,
+    warnings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     return {
         "id": assignment.id,
         "employee_id": assignment.employee_id,
@@ -2797,6 +3167,7 @@ def _position_assignment_payload(assignment: EmployeePositionAssignment) -> dict
         "comment": assignment.comment,
         "created_by_name": None,
         "created_at": assignment.created_at,
+        "warnings": warnings or [],
     }
 
 
@@ -3169,8 +3540,10 @@ async def _add_manual_action(
             related_entity_type=target_table,
             related_entity_id=target_id,
             change_type="update_position",
-            effective_from=_date_from_payload(after, "effective_from"),
-            effective_to=_date_from_payload(after, "effective_to"),
+            effective_from=_date_from_payload(after, "effective_from")
+            or _date_from_payload(before, "effective_from"),
+            effective_to=_date_from_payload(after, "effective_to")
+            or _date_from_payload(before, "effective_to"),
             summary="Изменена должность",
             before_value=before,
             after_value=after,

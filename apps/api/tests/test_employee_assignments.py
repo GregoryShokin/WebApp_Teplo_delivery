@@ -10,12 +10,15 @@ from sqlalchemy import select, text
 
 from app.api.deps import CurrentActor
 from app.api.v1.routes.employees import (
+    change_employee_position,
     create_employee_assignment,
     delete_employee_assignment,
+    delete_employee_position_assignment,
     list_employee_assignments,
     list_employee_changes,
     patch_employee,
     patch_employee_assignment,
+    patch_employee_position_assignment,
 )
 from app.models import (
     Employee,
@@ -26,7 +29,13 @@ from app.models import (
     PayrollPeriod,
     PayrollRun,
 )
-from app.schemas.employees import EmployeeRoleAssignmentCreate, EmployeeRoleAssignmentPatch
+from app.schemas.employees import (
+    EmployeePositionAssignmentDelete,
+    EmployeePositionAssignmentPatch,
+    EmployeePositionChange,
+    EmployeeRoleAssignmentCreate,
+    EmployeeRoleAssignmentPatch,
+)
 from app.services import employee_assignments as employee_assignments_service
 from app.services import employee_position_service
 from app.services.employee_assignments import EmployeeAssignmentError, add_role, get_assignments
@@ -1012,6 +1021,243 @@ async def test_change_position_idempotent(session_factory) -> None:
     assert after_count == before_count
 
 
+async def test_change_position_over_finalized_payroll_requires_acknowledgement(
+    session_factory,
+) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        await _create_finalized_payroll_line(session, employee)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await change_employee_position(
+                employee.id,
+                EmployeePositionChange(
+                    position="Кассир",
+                    effective_from=date(2026, 5, 20),
+                    comment="Исправление должности",
+                ),
+                session,
+                _finance_manager(),
+            )
+
+        persisted_open = await session.scalar(
+            select(EmployeePositionAssignment).where(
+                EmployeePositionAssignment.employee_id == employee.id,
+                EmployeePositionAssignment.effective_to.is_(None),
+            )
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "closed_payroll_period"
+    assert exc_info.value.detail["periods"][0]["start_date"] == "2026-05-18"
+    assert persisted_open.position == "Повар"
+
+
+async def test_change_position_over_finalized_ack_creates_review_event_without_line_mutation(
+    session_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_update_iiko_employee(*_args, **_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(
+        "app.api.v1.routes.employees.update_iiko_employee",
+        fake_update_iiko_employee,
+    )
+
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        line = await _create_finalized_payroll_line(session, employee)
+
+        updated = await change_employee_position(
+            employee.id,
+            EmployeePositionChange(
+                position="Кассир",
+                effective_from=date(2026, 5, 20),
+                comment="Исправление должности",
+                acknowledge_closed_period=True,
+            ),
+            session,
+            _finance_manager(),
+        )
+        event = await session.scalar(
+            select(EmployeeChangeEvent).where(
+                EmployeeChangeEvent.employee_id == employee.id,
+                EmployeeChangeEvent.change_type == "update_position",
+            )
+        )
+        persisted_line = await session.get(PayrollLine, line.id)
+
+    assert updated["position"] == "Кассир"
+    assert event is not None
+    assert event.status == "requires_review"
+    assert event.payroll_impact_metadata["correction_pending"] is True
+    assert event.payroll_impact_metadata["closed_payroll_periods"][0]["start_date"] == "2026-05-18"
+    assert str(persisted_line.base_pay) == "1000.00"
+
+
+async def test_patch_position_assignment_recalculates_neighbor_dates(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        middle = await employee_position_service.change_position(
+            session,
+            employee.id,
+            "Кассир",
+            effective_from=date(2026, 3, 1),
+            comment="middle",
+            actor=_finance_manager(),
+        )
+        await employee_position_service.change_position(
+            session,
+            employee.id,
+            "Управляющий",
+            effective_from=date(2026, 5, 1),
+            comment="current",
+            actor=_finance_manager(),
+        )
+        await session.commit()
+
+        updated = await patch_employee_position_assignment(
+            employee.id,
+            middle.id,
+            EmployeePositionAssignmentPatch(
+                position="Менеджер",
+                effective_from=date(2026, 2, 15),
+                comment="Исправление интервала",
+            ),
+            session,
+            _finance_manager(),
+        )
+        history = list(
+            (
+                await session.scalars(
+                    select(EmployeePositionAssignment)
+                    .where(EmployeePositionAssignment.employee_id == employee.id)
+                    .order_by(EmployeePositionAssignment.effective_from)
+                )
+            ).all()
+        )
+
+    assert updated["position"] == "Менеджер"
+    assert [(item.position, item.effective_from, item.effective_to) for item in history] == [
+        ("Повар", date(2026, 1, 1), date(2026, 2, 14)),
+        ("Менеджер", date(2026, 2, 15), date(2026, 4, 30)),
+        ("Управляющий", date(2026, 5, 1), None),
+    ]
+    assert sum(1 for item in history if item.effective_to is None) == 1
+
+
+async def test_delete_position_assignment_stitches_neighbors(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        middle = await employee_position_service.change_position(
+            session,
+            employee.id,
+            "Кассир",
+            effective_from=date(2026, 3, 1),
+            comment="middle",
+            actor=_finance_manager(),
+        )
+        await employee_position_service.change_position(
+            session,
+            employee.id,
+            "Управляющий",
+            effective_from=date(2026, 5, 1),
+            comment="current",
+            actor=_finance_manager(),
+        )
+        await session.commit()
+
+        result = await delete_employee_position_assignment(
+            employee.id,
+            middle.id,
+            session,
+            _finance_manager(),
+            EmployeePositionAssignmentDelete(comment="Лишний интервал"),
+        )
+        history = list(
+            (
+                await session.scalars(
+                    select(EmployeePositionAssignment)
+                    .where(EmployeePositionAssignment.employee_id == employee.id)
+                    .order_by(EmployeePositionAssignment.effective_from)
+                )
+            ).all()
+        )
+
+    assert result["ok"] is True
+    assert [(item.position, item.effective_from, item.effective_to) for item in history] == [
+        ("Повар", date(2026, 1, 1), date(2026, 4, 30)),
+        ("Управляющий", date(2026, 5, 1), None),
+    ]
+    assert sum(1 for item in history if item.effective_to is None) == 1
+
+
+async def test_replace_and_delete_position_assignment_over_finalized_payroll_require_ack(
+    session_factory,
+) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+        middle = await employee_position_service.change_position(
+            session,
+            employee.id,
+            "Кассир",
+            effective_from=date(2026, 5, 20),
+            comment="middle",
+            actor=_finance_manager(),
+        )
+        await employee_position_service.change_position(
+            session,
+            employee.id,
+            "Управляющий",
+            effective_from=date(2026, 6, 1),
+            comment="current",
+            actor=_finance_manager(),
+        )
+        await _create_finalized_payroll_line(session, employee)
+
+        with pytest.raises(HTTPException) as patch_exc:
+            await patch_employee_position_assignment(
+                employee.id,
+                middle.id,
+                EmployeePositionAssignmentPatch(
+                    position="Менеджер",
+                    effective_from=date(2026, 5, 19),
+                    comment="Исправление",
+                ),
+                session,
+                _finance_manager(),
+            )
+        with pytest.raises(HTTPException) as delete_exc:
+            await delete_employee_position_assignment(
+                employee.id,
+                middle.id,
+                session,
+                _finance_manager(),
+                EmployeePositionAssignmentDelete(comment="Удалить ошибку"),
+            )
+
+    assert patch_exc.value.status_code == 409
+    assert delete_exc.value.status_code == 409
+
+
+async def test_change_position_forward_regression(session_factory) -> None:
+    async with session_factory() as session:
+        employee = await _create_employee(session)
+
+        assignment = await employee_position_service.change_position(
+            session,
+            employee.id,
+            "Кассир",
+            effective_from=date(2026, 6, 6),
+            comment="forward",
+            actor=_finance_manager(),
+        )
+
+    assert assignment.position == "Кассир"
+    assert assignment.effective_from == date(2026, 6, 6)
+
+
 async def _create_employee(
     session,
     *,
@@ -1047,6 +1293,45 @@ async def _create_employee(
         )
     await session.commit()
     return employee
+
+
+async def _create_finalized_payroll_line(session, employee: Employee) -> PayrollLine:
+    period = PayrollPeriod(
+        id=uuid.uuid4(),
+        period_type="week",
+        start_date=date(2026, 5, 18),
+        end_date=date(2026, 5, 24),
+        payroll_date=date(2026, 5, 25),
+        status="finalized",
+    )
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 5, 25, 10, 0, tzinfo=UTC),
+        finished_at=datetime(2026, 5, 25, 10, 5, tzinfo=UTC),
+        status="finalized",
+        blocking_issues=[],
+        summary={},
+    )
+    line = PayrollLine(
+        id=uuid.uuid4(),
+        run_id=run.id,
+        employee_id=employee.id,
+        role="sushi",
+        base_pay=Decimal("1000.00"),
+        premium=Decimal("0.00"),
+        percent_pay=Decimal("0.00"),
+        vacation_pay=Decimal("0.00"),
+        fund_accrual=Decimal("0.00"),
+        deduction=Decimal("0.00"),
+        total_payable=Decimal("1000.00"),
+        components={"days": []},
+    )
+    session.add_all([period, run])
+    await session.flush()
+    session.add(line)
+    await session.commit()
+    return line
 
 
 def _finance_manager() -> CurrentActor:

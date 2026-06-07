@@ -83,6 +83,7 @@ class EmployeePositionAssignmentRead(BaseModel):
     comment: str | None = None
     created_by_name: str | None = None
     created_at: datetime | None = None
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class EmployeePositionChange(BaseModel):
@@ -91,6 +92,39 @@ class EmployeePositionChange(BaseModel):
     position: str = Field(min_length=1, max_length=160)
     effective_from: date
     comment: str | None = Field(default=None, max_length=500)
+    acknowledge_closed_period: bool = False
+
+    @field_validator("comment")
+    @classmethod
+    def strip_comment(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        normalized = value.strip()
+        return normalized or None
+
+
+class EmployeePositionAssignmentPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    position: str | None = Field(default=None, min_length=1, max_length=160)
+    effective_from: date | None = None
+    comment: str | None = Field(default=None, max_length=500)
+    acknowledge_closed_period: bool = False
+
+    @field_validator("comment")
+    @classmethod
+    def strip_comment(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        normalized = value.strip()
+        return normalized or None
+
+
+class EmployeePositionAssignmentDelete(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    comment: str | None = Field(default=None, max_length=500)
+    acknowledge_closed_period: bool = False
 
     @field_validator("comment")
     @classmethod
@@ -440,6 +474,7 @@ class EmployeePatch(BaseModel):
     effective_from: date | None = None
     comment: str | None = Field(default=None, max_length=1000)
     transfer_from_existing: bool = False
+    acknowledge_closed_period: bool = False
 
     @field_validator("full_name")
     @classmethod
