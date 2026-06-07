@@ -49,7 +49,7 @@ def test_shift_matching_covers_plan_fact_status_matrix_and_open_shift() -> None:
     assert by_date[date(2026, 6, 3)].status == CourierShiftMatchStatus.NO_SHOW_PRIMARY
     assert by_date[date(2026, 6, 4)].status == CourierShiftMatchStatus.HELPING
     assert by_date[date(2026, 6, 4)].deliveries_count == 1
-    assert by_date[date(2026, 6, 5)].status == CourierShiftMatchStatus.NOT_COUNTED
+    assert by_date[date(2026, 6, 5)].status == CourierShiftMatchStatus.HELPING
     assert by_date[date(2026, 6, 5)].schedule_entry_id is None
     assert date(2026, 6, 6) not in by_date
     assert by_date[date(2026, 6, 7)].status == CourierShiftMatchStatus.SHORT_SECONDARY

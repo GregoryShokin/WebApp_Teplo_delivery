@@ -15,7 +15,6 @@ import {
   Home,
   LogOut,
   Menu,
-  PlusCircle,
   ReceiptText,
   Settings,
   UsersRound,
@@ -38,7 +37,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { RoleBadge } from "@/components/ui-app/RoleBadge";
 import { clearSession, getAuthSnapshot, subscribeAuth, type AuthUser } from "@/lib/auth";
 import { logout } from "@/lib/api";
-import { usePermissions, type AppAction, type AppSection } from "@/lib/permissions";
+import { usePermissions, type AppSection } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 type Navigate = (path: string) => void;
@@ -53,8 +52,6 @@ type NavItem = {
   label: string;
   href: string;
   icon: LucideIcon;
-  quickAction?: "courier-evaluation-create";
-  requiredAction?: AppAction;
   section?: AppSection;
 };
 
@@ -96,14 +93,6 @@ const navGroups: NavGroup[] = [
         section: "couriers.statistics",
       },
       { label: "График", href: "/couriers/schedule", icon: CalendarRange, section: "couriers.schedule" },
-      {
-        label: "+ Отличие",
-        href: "/couriers/evaluations",
-        icon: PlusCircle,
-        quickAction: "courier-evaluation-create",
-        requiredAction: "couriers.evaluations.edit",
-        section: "couriers.evaluations",
-      },
     ],
   },
   {
@@ -213,9 +202,7 @@ function SidebarContent({
         .map((group) => ({
           ...group,
           items: group.items.filter(
-            (item) =>
-              (!item.section || permissions.canOpenSection(item.section)) &&
-              (!item.requiredAction || permissions.canPerformAction(item.requiredAction)),
+            (item) => !item.section || permissions.canOpenSection(item.section),
           ),
         }))
         .filter((group) => group.items.length > 0),
@@ -307,7 +294,7 @@ function NavLink({
   item: NavItem;
   onNavigate: Navigate;
 }) {
-  const isActive = !item.quickAction && isActiveRoute(currentPath, item.href);
+  const isActive = isActiveRoute(currentPath, item.href);
   const Icon = item.icon;
 
   return (
@@ -321,10 +308,6 @@ function NavLink({
       href={item.href}
       onClick={(event) => {
         event.preventDefault();
-        if (item.quickAction === "courier-evaluation-create") {
-          window.sessionStorage.setItem("courierEvaluation.openForm", "1");
-          window.dispatchEvent(new Event("courier-evaluation:create"));
-        }
         onNavigate(item.href);
       }}
     >

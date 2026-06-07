@@ -328,7 +328,7 @@ def _delivery_minutes(row: DeliveryOrder) -> float | None:
 
 
 def _helping_shift(match: CourierShiftMatch) -> bool:
-    return _status_value(match.status) == "helping" and (match.deliveries_count or 0) >= 1
+    return _status_value(match.status) == "helping"
 
 
 def _speed_threshold(value: float) -> str:

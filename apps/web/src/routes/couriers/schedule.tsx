@@ -8,6 +8,7 @@ import {
   ChevronRight,
   CircleOff,
   Clock3,
+  Download,
   Info,
   Pause,
   Pencil,
@@ -60,6 +61,7 @@ import {
   deleteCourierShift,
   getCourierList,
   getCourierScheduleMatched,
+  syncCourierAttendance,
   upsertCourierShift,
   type CourierDepositStatusFilter,
   type CourierListRow,
@@ -118,6 +120,7 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
   const queryClient = useQueryClient();
   const permissions = usePermissions();
   const canEditSchedule = permissions.canPerformAction("couriers.schedule.edit");
+  const canSyncShifts = permissions.canPerformAction("couriers.shifts.sync");
   const [weekStart, setWeekStart] = useState(() => startOfMondayWeek(new Date()));
   const [primaryMode, setPrimaryMode] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
@@ -163,6 +166,21 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
   );
 
   const entriesByCell = useMemo(() => indexEntries(matchedQuery.data ?? []), [matchedQuery.data]);
+
+  const syncAttendanceMutation = useMutation({
+    mutationFn: () => syncCourierAttendance(from, to),
+    onSuccess: async (report) => {
+      await invalidateCourierSchedule(queryClient);
+      const changedRecords = report.new + report.updated;
+      const errorsSuffix = report.errors.length > 0 ? `, ошибок: ${report.errors.length}` : "";
+      toast.success(
+        `iiko смены обновлены: ${changedRecords} записей, ${report.matched_couriers} фактов${errorsSuffix}`,
+      );
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось загрузить смены из iiko"));
+    },
+  });
 
   const upsertMutation = useMutation({
     mutationFn: (payload: {
@@ -238,7 +256,7 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
       return;
     }
     if (entry?.status === "helping") {
-      toast("Помощь без плана. Чтобы запланировать — нажмите карандашик");
+      toast("Помощь без плана: есть iiko-смена, плана на день нет");
       return;
     }
     if (entry?.status === "not_counted") {
@@ -283,19 +301,27 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
             title="График курьеров"
             description="Расписание смен с разделением на основные и второстепенные."
             action={
-              <Button
-                onClick={() =>
-                  void Promise.all([
-                    queryClient.invalidateQueries({ queryKey: ["courier-schedule-matched"] }),
-                    queryClient.invalidateQueries({ queryKey: ["courier-list"] }),
-                  ])
-                }
-                title="Обновить"
-                variant="outline"
-              >
-                <RefreshCw size={16} aria-hidden="true" />
-                Обновить
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                {canSyncShifts ? (
+                  <Button
+                    disabled={syncAttendanceMutation.isPending}
+                    onClick={() => syncAttendanceMutation.mutate()}
+                    title="Запросить фактические смены из iiko за выбранную неделю"
+                    variant="outline"
+                  >
+                    <Download size={16} aria-hidden="true" />
+                    {syncAttendanceMutation.isPending ? "iiko..." : "Смены iiko"}
+                  </Button>
+                ) : null}
+                <Button
+                  onClick={() => void invalidateCourierSchedule(queryClient)}
+                  title="Обновить"
+                  variant="outline"
+                >
+                  <RefreshCw size={16} aria-hidden="true" />
+                  Обновить
+                </Button>
+              </div>
             }
           />
 
@@ -688,7 +714,7 @@ function LegendDialog({
     ["bg-sky-500 text-white", "Факт совпал с secondary"],
     ["bg-rose-500 text-white", "Primary без факта в прошлом"],
     ["bg-slate-400 text-white", "Secondary без факта в прошлом"],
-    ["bg-yellow-400 text-yellow-950", "Помощь без плана"],
+    ["bg-violet-500 text-white", "Помощь без плана"],
   ];
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -1165,7 +1191,7 @@ function cellClass(entry: CourierScheduleMatchedEntry | null, dateKey: string) {
     return "border-border bg-background text-muted-foreground hover:bg-muted/60";
   }
   if (entry.status === "helping") {
-    return "border-yellow-500 bg-yellow-400 text-yellow-950 hover:bg-yellow-300";
+    return "border-violet-600 bg-violet-500 text-white hover:bg-violet-600";
   }
   if (entry.status === "not_counted") {
     return "border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-200";
@@ -1200,7 +1226,7 @@ function cellTitle(entry: CourierScheduleMatchedEntry | null) {
     return "";
   }
   if (entry.status === "helping") {
-    return "Помощь без плана. Чтобы запланировать — нажмите карандашик";
+    return "Помощь без плана: есть iiko-смена, плана на день нет";
   }
   if (entry.status === "not_counted") {
     return "Факт без плана и без доставок";

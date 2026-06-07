@@ -160,18 +160,13 @@ def build_shift_matches(
             if worked_minutes is None or worked_minutes < MIN_WORKED_MINUTES:
                 continue
             deliveries_count = delivery_counts.get((courier_id, work_date), 0)
-            status = (
-                CourierShiftMatchStatus.HELPING
-                if deliveries_count >= 1
-                else CourierShiftMatchStatus.NOT_COUNTED
-            )
             matches.append(
                 make_match(
                     courier_id=courier_id,
                     work_date=work_date,
                     schedule_entry_id=None,
                     iiko_shift_id=shift.id,
-                    status=status,
+                    status=CourierShiftMatchStatus.HELPING,
                     worked_minutes=worked_minutes,
                     deliveries_count=deliveries_count,
                     recalculated_at=recalculated_at,

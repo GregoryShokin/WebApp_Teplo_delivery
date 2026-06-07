@@ -45,6 +45,7 @@ export type AppAction =
   | "payroll.runs.finalize"
   | "payroll.runs.reopen"
   | "payroll.runs.mark_paid"
+  | "payroll.runs.bank_draft"
   | "payroll.fund.edit"
   | "payroll.adjustments.edit"
   | "payroll.source-data.edit"
@@ -146,6 +147,7 @@ export const PERMISSION_GROUPS = {
     "payroll.runs.finalize",
     "payroll.runs.reopen",
     "payroll.runs.mark_paid",
+    "payroll.runs.bank_draft",
     "payroll.adjustments.edit",
     "payroll.bonuses.add",
     "payroll.penalties.add",
@@ -262,6 +264,7 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "payroll.runs.finalize": ["payroll.runs.finalize"],
   "payroll.runs.reopen": ["payroll.runs.reopen"],
   "payroll.runs.mark_paid": ["payroll.runs.mark_paid"],
+  "payroll.runs.bank_draft": ["payroll.runs.bank_draft"],
   "payroll.fund.edit": ["payroll.fund.edit"],
   "payroll.adjustments.edit": [
     "payroll.adjustments.edit",

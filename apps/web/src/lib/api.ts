@@ -387,6 +387,8 @@ export type PayrollRun = {
 };
 
 export type PayrollPaymentMethod = "business_card" | "cash" | "transfer" | "other";
+export type PayrollPayoutStatus = "pending" | "planned" | "draft_created" | "paid";
+export type PayrollPayoutDeltaClassification = "unchanged" | "topup" | "overpay";
 
 export type PayrollPaymentPayload = {
   paid_at: string;
@@ -399,6 +401,22 @@ export type MarkPayrollPaymentPayload = PayrollPaymentPayload & {
 
 export type MarkAllPayrollPaymentsResponse = {
   marked_count: number;
+};
+
+export type PayrollPayoutDelta = {
+  employee_id: string;
+  previous_amount: number | string;
+  new_amount: number | string;
+  delta: number | string;
+  classification: PayrollPayoutDeltaClassification;
+};
+
+export type PayrollPayoutDraftsResponse = {
+  drafts_count: number;
+};
+
+export type PayrollPayoutApplyDeltasResponse = {
+  applied_count: number;
 };
 
 export type PayrollLine = {
@@ -423,6 +441,11 @@ export type PayrollLine = {
   paid_amount: number | null;
   paid_at: string | null;
   paid_method: PayrollPaymentMethod | null;
+  amount_cash: number;
+  amount_account: number;
+  payout_status: PayrollPayoutStatus;
+  draft_status: string | null;
+  overpaid_amount: number;
   components: Record<string, unknown>;
 };
 
@@ -1817,6 +1840,15 @@ export type CourierScheduleMatchedEntry = {
   closed_at: string | null;
 };
 
+export type CourierAttendanceSyncResult = {
+  total_records: number;
+  matched_couriers: number;
+  new: number;
+  updated: number;
+  unresolved_employees: number;
+  errors: string[];
+};
+
 export type CourierScheduleUpsertPayload = {
   category: CourierScheduleCategory;
   planned_start_at?: string | null;
@@ -2668,6 +2700,41 @@ export async function markAllPayrollPayments(
   return response.data;
 }
 
+export async function setPayoutSplit(
+  runId: string,
+  employeeId: string,
+  amountCash: number,
+): Promise<PayrollLine> {
+  const response = await api.patch<PayrollLine>(
+    `/payroll/runs/${runId}/payouts/${employeeId}/split`,
+    { amount_cash: amountCash },
+  );
+  return response.data;
+}
+
+export async function createPayoutDrafts(runId: string): Promise<PayrollPayoutDraftsResponse> {
+  const response = await api.post<PayrollPayoutDraftsResponse>(
+    `/payroll/runs/${runId}/payouts/drafts`,
+  );
+  return response.data;
+}
+
+export async function getPayoutDeltas(runId: string): Promise<PayrollPayoutDelta[]> {
+  const response = await api.get<PayrollPayoutDelta[]>(
+    `/payroll/runs/${runId}/payouts/deltas`,
+  );
+  return response.data;
+}
+
+export async function applyPayoutDeltas(
+  runId: string,
+): Promise<PayrollPayoutApplyDeltasResponse> {
+  const response = await api.post<PayrollPayoutApplyDeltasResponse>(
+    `/payroll/runs/${runId}/payouts/apply-deltas`,
+  );
+  return response.data;
+}
+
 export async function finalizePayrollRun(id: string): Promise<PayrollRun> {
   const response = await api.post<PayrollRun>(`/payroll/runs/${id}/finalize`);
   return response.data;
@@ -3468,6 +3535,20 @@ export async function getCourierScheduleMatched(
   const response = await api.get<CourierScheduleMatchedEntry[]>("/couriers/schedule/matched", {
     params: { from, to },
   });
+  return response.data;
+}
+
+export async function syncCourierAttendance(
+  from: string,
+  to: string,
+): Promise<CourierAttendanceSyncResult> {
+  const response = await api.post<CourierAttendanceSyncResult>(
+    "/couriers/iiko/sync-attendance",
+    null,
+    {
+      params: { from, to },
+    },
+  );
   return response.data;
 }
 
