@@ -1,28 +1,20 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
 from datetime import UTC, date, datetime
-from pathlib import Path
 
 import pytest
 from alembic.config import Config
+from conftest_guard import TEST_DATABASE_URL
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 import app.models as models
 from alembic import command
-from app.core.config import get_settings
 from app.db.base import Base
 from app.models.enums import quality_status_enum
-
-API_DIR = Path(__file__).resolve().parents[1]
-TEST_DATABASE_URL = os.environ.get(
-    "TEPLO_TEST_DATABASE_URL",
-    os.environ.get("DATABASE_URL", "postgresql+asyncpg://teplo:teplo@localhost:5432/teplo"),
-)
 
 EXPECTED_TABLES = {
     "organization",
@@ -408,49 +400,28 @@ def test_quality_status_enum_values_are_canonical() -> None:
     ]
 
 
-async def _ping_database(url: str) -> None:
-    engine = create_async_engine(url)
+def _reset_test_schema() -> None:
+    asyncio.run(_reset_test_schema_async())
+
+
+async def _reset_test_schema_async() -> None:
+    engine = create_async_engine(TEST_DATABASE_URL)
     try:
-        async with engine.connect() as conn:
-            await conn.execute(text("select 1"))
+        async with engine.begin() as conn:
+            await conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            await conn.execute(text("CREATE SCHEMA public"))
+            await conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
     finally:
         await engine.dispose()
 
 
-@pytest.fixture()
-def postgres_available() -> None:
-    try:
-        asyncio.run(_ping_database(TEST_DATABASE_URL))
-    except Exception as exc:
-        pytest.skip(f"PostgreSQL test database is not available: {exc}")
-
-
-@pytest.fixture()
-def alembic_cfg(monkeypatch: pytest.MonkeyPatch) -> Config:
-    monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL)
-    monkeypatch.setenv("TEPLO_ADMIN_PASSWORD", "test-admin-password")
-    get_settings.cache_clear()
-
-    cfg = Config(str(API_DIR / "alembic.ini"))
-    cfg.set_main_option("script_location", str(API_DIR / "alembic"))
-    cfg.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
-    return cfg
-
-
-@pytest.fixture()
-def migrated_db(alembic_cfg: Config, postgres_available: None) -> str:
-    command.downgrade(alembic_cfg, "base")
+def test_migrations_upgrade_from_clean_schema(
+    alembic_cfg: Config,
+    postgres_available: None,
+) -> None:
+    _reset_test_schema()
     command.upgrade(alembic_cfg, "head")
-    try:
-        yield TEST_DATABASE_URL
-    finally:
-        command.downgrade(alembic_cfg, "base")
-
-
-def test_migrations_upgrade_and_downgrade(alembic_cfg: Config, postgres_available: None) -> None:
-    command.downgrade(alembic_cfg, "base")
-    command.upgrade(alembic_cfg, "head")
-    command.downgrade(alembic_cfg, "base")
+    _reset_test_schema()
 
 
 async def test_migration_renames_existing_shaurma_to_hot_section(
@@ -460,7 +431,7 @@ async def test_migration_renames_existing_shaurma_to_hot_section(
     employee_id = uuid.uuid4()
     schedule_id = uuid.uuid4()
     shift_id = uuid.uuid4()
-    command.downgrade(alembic_cfg, "base")
+    await _reset_test_schema_async()
     command.upgrade(alembic_cfg, "0037_shift_allowance_override")
 
     engine = create_async_engine(TEST_DATABASE_URL)
@@ -556,7 +527,7 @@ async def test_migration_renames_existing_shaurma_to_hot_section(
             )
     finally:
         await engine.dispose()
-        command.downgrade(alembic_cfg, "base")
+        await _reset_test_schema_async()
 
     assert shaurma_rows == 0
     assert station_code == "Горячий цех"
@@ -568,7 +539,7 @@ async def test_pin_origin_migration_backfills_iiko_employees_without_local_pin(
 ) -> None:
     assumed_id = uuid.uuid4()
     local_id = uuid.uuid4()
-    command.downgrade(alembic_cfg, "base")
+    await _reset_test_schema_async()
     command.upgrade(alembic_cfg, "0024_employee_effective_events")
 
     engine = create_async_engine(TEST_DATABASE_URL)
@@ -614,7 +585,7 @@ async def test_pin_origin_migration_backfills_iiko_employees_without_local_pin(
             ).all()
     finally:
         await engine.dispose()
-        command.downgrade(alembic_cfg, "base")
+        await _reset_test_schema_async()
 
     assert rows == [("iiko-assumed", True), ("iiko-local", False)]
 
@@ -629,7 +600,7 @@ async def test_employee_role_assignment_backfill_from_legacy_shortcuts(
     postgres_available: None,
 ) -> None:
     employee_id = uuid.uuid4()
-    command.downgrade(alembic_cfg, "base")
+    await _reset_test_schema_async()
     command.upgrade(alembic_cfg, "0012_weekday_payroll_premium")
 
     engine = create_async_engine(TEST_DATABASE_URL)
@@ -682,7 +653,7 @@ async def test_employee_role_assignment_backfill_from_legacy_shortcuts(
             ).all()
     finally:
         await engine.dispose()
-        command.downgrade(alembic_cfg, "base")
+        await _reset_test_schema_async()
 
     assert rows == [("sushi", "category_1", True)]
 
@@ -906,7 +877,7 @@ async def test_cleanup_non_canonical_employee_migration_deletes_dependents(
     assignment_id = uuid.uuid4()
     attendance_id = uuid.uuid4()
     ledger_id = uuid.uuid4()
-    command.downgrade(alembic_cfg, "base")
+    await _reset_test_schema_async()
     command.upgrade(alembic_cfg, "0019_taxonomy_align")
 
     engine = create_async_engine(TEST_DATABASE_URL)
@@ -1085,7 +1056,7 @@ async def test_cleanup_non_canonical_employee_migration_deletes_dependents(
             }
     finally:
         await engine.dispose()
-        command.downgrade(alembic_cfg, "base")
+        await _reset_test_schema_async()
 
     assert counts == {
         "employee": 0,
@@ -1106,8 +1077,8 @@ async def test_employee_iiko_id_unique_constraint_raises_integrity_error(
             async with engine.begin() as conn:
                 await conn.execute(
                     text(
-                        "insert into employee (id, full_name, iiko_id, position, status) "
-                        "values (:id, :full_name, :iiko_id, 'Повар', 'active')"
+                        "insert into employee (id, full_name, iiko_id, status) "
+                        "values (:id, :full_name, :iiko_id, 'active')"
                     ),
                     {
                         "id": uuid.uuid4(),
@@ -1117,8 +1088,8 @@ async def test_employee_iiko_id_unique_constraint_raises_integrity_error(
                 )
                 await conn.execute(
                     text(
-                        "insert into employee (id, full_name, iiko_id, position, status) "
-                        "values (:id, :full_name, :iiko_id, 'Повар', 'active')"
+                        "insert into employee (id, full_name, iiko_id, status) "
+                        "values (:id, :full_name, :iiko_id, 'active')"
                     ),
                     {
                         "id": uuid.uuid4(),

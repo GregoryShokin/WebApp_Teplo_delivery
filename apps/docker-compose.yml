@@ -25,6 +25,7 @@ services:
       - ../.env
     environment:
       DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
+      TEPLO_TEST_DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo_test
       TEPLO_ADMIN_EMAIL: admin1@teplo.local
       TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
       JWT_SECRET_KEY: change-me-in-local-env-change-me

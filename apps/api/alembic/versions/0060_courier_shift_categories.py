@@ -36,6 +36,7 @@ OLD_MATCH_STATUSES = ("matched", "no_show", "helping", "short_shift")
 
 SCHEDULE_SETTINGS = [
     {
+        "id": "313b2d68-c721-4817-aa69-6c78328f757b",
         "key": "couriers.schedule.default_start_time",
         "value": '"10:00"',
         "display_name": "Начало смены курьера по умолчанию",
@@ -44,6 +45,7 @@ SCHEDULE_SETTINGS = [
         ),
     },
     {
+        "id": "90a64d86-5284-44f8-b808-c9cfb2104f2e",
         "key": "couriers.schedule.default_end_time",
         "value": '"22:00"',
         "display_name": "Конец смены курьера по умолчанию",
@@ -86,13 +88,13 @@ def upgrade() -> None:
         "courier_schedule_entry",
         ["work_date", "category"],
     )
-    _replace_match_status_enum(OLD_MATCH_STATUSES, NEW_MATCH_STATUSES, _upgrade_status_case())
+    _upgrade_match_status_enum()
     _seed_schedule_settings()
 
 
 def downgrade() -> None:
     _delete_schedule_settings()
-    _replace_match_status_enum(NEW_MATCH_STATUSES, OLD_MATCH_STATUSES, _downgrade_status_case())
+    _downgrade_match_status_enum()
     op.drop_index(
         "ix_courier_schedule_entry_work_date_category",
         table_name="courier_schedule_entry",
@@ -107,84 +109,122 @@ def downgrade() -> None:
 
 
 def _replace_match_status_enum(
-    old_values: tuple[str, ...],
-    new_values: tuple[str, ...],
-    status_case_sql: str,
+    *,
+    temp_enum_name: str,
+    temp_column_name: str,
+    temp_values: tuple[str, ...],
+    populate_sql: tuple[str, ...],
 ) -> None:
     conn = op.get_bind()
     temp_enum = postgresql.ENUM(
-        *new_values,
-        name="courier_shift_match_status_new",
+        *temp_values,
+        name=temp_enum_name,
         create_type=False,
     )
     temp_enum.create(conn, checkfirst=True)
-    op.execute(
-        sa.text(
-            f"""
-            alter table courier_shift_match
-            alter column status type courier_shift_match_status_new
-            using ({status_case_sql})::courier_shift_match_status_new
+
+    op.add_column(
+        "courier_shift_match",
+        sa.Column(temp_column_name, temp_enum, nullable=True),
+    )
+
+    for statement in populate_sql:
+        op.execute(statement)
+    op.drop_column("courier_shift_match", "status")
+    op.execute("DROP TYPE courier_shift_match_status")
+    op.execute(f"ALTER TYPE {temp_enum_name} RENAME TO courier_shift_match_status")
+    op.alter_column(
+        "courier_shift_match",
+        temp_column_name,
+        new_column_name="status",
+    )
+    op.alter_column(
+        "courier_shift_match",
+        "status",
+        nullable=False,
+    )
+
+
+def _upgrade_match_status_enum() -> None:
+    _replace_match_status_enum(
+        temp_enum_name="courier_shift_match_status_new",
+        temp_column_name="status_new",
+        temp_values=NEW_MATCH_STATUSES,
+        populate_sql=(
             """
-        )
+                UPDATE courier_shift_match m
+                SET status_new = (
+                    CASE
+                        WHEN m.status::text = 'matched' AND s.category = 'primary'
+                            THEN 'matched_primary'::courier_shift_match_status_new
+                        WHEN m.status::text = 'matched'
+                            THEN 'matched_secondary'::courier_shift_match_status_new
+                        WHEN m.status::text = 'no_show' AND s.category = 'primary'
+                            THEN 'no_show_primary'::courier_shift_match_status_new
+                        WHEN m.status::text = 'no_show'
+                            THEN 'no_show_secondary'::courier_shift_match_status_new
+                        WHEN m.status::text = 'short_shift' AND s.category = 'primary'
+                            THEN 'short_primary'::courier_shift_match_status_new
+                        WHEN m.status::text = 'short_shift'
+                            THEN 'short_secondary'::courier_shift_match_status_new
+                        WHEN m.status::text = 'helping'
+                            THEN 'helping'::courier_shift_match_status_new
+                        ELSE 'not_counted'::courier_shift_match_status_new
+                    END
+                )
+                FROM courier_schedule_entry s
+                WHERE s.id = m.schedule_entry_id
+            """,
+            """
+                UPDATE courier_shift_match
+                SET status_new = (
+                    CASE
+                        WHEN status::text = 'matched' AND schedule_entry_id IS NULL
+                            THEN 'not_counted'::courier_shift_match_status_new
+                        WHEN status::text = 'matched'
+                            THEN 'matched_secondary'::courier_shift_match_status_new
+                        WHEN status::text = 'no_show'
+                            THEN 'no_show_secondary'::courier_shift_match_status_new
+                        WHEN status::text = 'short_shift'
+                            THEN 'short_secondary'::courier_shift_match_status_new
+                        WHEN status::text = 'helping'
+                            THEN 'helping'::courier_shift_match_status_new
+                        ELSE 'not_counted'::courier_shift_match_status_new
+                    END
+                )
+                WHERE status_new IS NULL
+            """,
+        ),
     )
-    postgresql.ENUM(*old_values, name="courier_shift_match_status").drop(
-        conn,
-        checkfirst=True,
+
+
+def _downgrade_match_status_enum() -> None:
+    _replace_match_status_enum(
+        temp_enum_name="courier_shift_match_status_old",
+        temp_column_name="status_old",
+        temp_values=OLD_MATCH_STATUSES,
+        populate_sql=(
+            """
+                UPDATE courier_shift_match
+                SET status_old = (
+                    CASE
+                        WHEN status::text IN (
+                            'matched_primary',
+                            'matched_secondary',
+                            'not_counted'
+                        ) THEN 'matched'::courier_shift_match_status_old
+                        WHEN status::text IN ('no_show_primary', 'no_show_secondary')
+                            THEN 'no_show'::courier_shift_match_status_old
+                        WHEN status::text IN ('short_primary', 'short_secondary')
+                            THEN 'short_shift'::courier_shift_match_status_old
+                        WHEN status::text = 'helping'
+                            THEN 'helping'::courier_shift_match_status_old
+                        ELSE 'matched'::courier_shift_match_status_old
+                    END
+                )
+            """,
+        ),
     )
-    op.execute("alter type courier_shift_match_status_new rename to courier_shift_match_status")
-
-
-def _upgrade_status_case() -> str:
-    return """
-        case
-            when status::text = 'matched' and schedule_entry_id is null then 'not_counted'
-            when status::text = 'matched'
-                and exists (
-                    select 1
-                    from courier_schedule_entry schedule
-                    where schedule.id = courier_shift_match.schedule_entry_id
-                      and schedule.category = 'primary'
-                )
-                then 'matched_primary'
-            when status::text = 'matched' then 'matched_secondary'
-            when status::text = 'no_show'
-                and exists (
-                    select 1
-                    from courier_schedule_entry schedule
-                    where schedule.id = courier_shift_match.schedule_entry_id
-                      and schedule.category = 'primary'
-                )
-                then 'no_show_primary'
-            when status::text = 'no_show' then 'no_show_secondary'
-            when status::text = 'short_shift'
-                and exists (
-                    select 1
-                    from courier_schedule_entry schedule
-                    where schedule.id = courier_shift_match.schedule_entry_id
-                      and schedule.category = 'primary'
-                )
-                then 'short_primary'
-            when status::text = 'short_shift' then 'short_secondary'
-            when status::text = 'helping' then 'helping'
-            else 'not_counted'
-        end
-    """
-
-
-def _downgrade_status_case() -> str:
-    return """
-        case
-            when status::text in (
-                'matched_primary',
-                'matched_secondary',
-                'not_counted'
-            ) then 'matched'
-            when status::text in ('no_show_primary', 'no_show_secondary') then 'no_show'
-            when status::text in ('short_primary', 'short_secondary') then 'short_shift'
-            when status::text = 'helping' then 'helping'
-            else 'matched'
-        end
-    """
 
 
 def _seed_schedule_settings() -> None:
@@ -193,6 +233,7 @@ def _seed_schedule_settings() -> None:
             sa.text(
                 """
                 insert into app_setting (
+                    id,
                     key,
                     value,
                     value_type,
@@ -205,6 +246,7 @@ def _seed_schedule_settings() -> None:
                     updated_at
                 )
                 values (
+                    (:id)::uuid,
                     :key,
                     (:value)::jsonb,
                     'string',

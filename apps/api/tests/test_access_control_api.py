@@ -32,7 +32,7 @@ READ_GUARD_CASES = (
     ("/api/v1/payroll/runs", False),
     ("/api/v1/schedule", True),
     ("/api/v1/shifts/ledger?date=2026-06-01", True),
-    ("/api/v1/inventory/positions", True),
+    ("/api/v1/inventory/positions", False),
     ("/api/v1/employees", False),
     ("/api/v1/couriers/list", True),
     ("/api/v1/deposits", False),
@@ -153,9 +153,7 @@ def test_access_control_permissions_api_returns_visible_passport_catalog(
     payload = response.json()
     assert [group["module"] for group in payload] == list(MODULE_ORDER)
     returned_codes = {
-        permission["code"]
-        for group in payload
-        for permission in group["permissions"]
+        permission["code"] for group in payload for permission in group["permissions"]
     }
     assert returned_codes == VISIBLE_PERMISSION_CODES
     assert returned_codes.isdisjoint(LEGACY_PERMISSION_CODES)
@@ -181,9 +179,10 @@ def test_access_control_roles_api_returns_passport_defaults(
     assert roles["owner"]["is_editable"] is False
     assert set(roles["owner"]["permission_codes"]) == VISIBLE_PERMISSION_CODES
     assert set(roles["manager"]["permission_codes"]) == DEFAULT_ROLE_PERMISSIONS["manager"]
-    assert set(roles["office_manager"]["permission_codes"]) == DEFAULT_ROLE_PERMISSIONS[
-        "office_manager"
-    ]
+    assert (
+        set(roles["office_manager"]["permission_codes"])
+        == DEFAULT_ROLE_PERMISSIONS["office_manager"]
+    )
     assert set(roles["cashier"]["permission_codes"]) == DEFAULT_ROLE_PERMISSIONS["cashier"]
     assert "staff.administration.read" not in roles["manager"]["permission_codes"]
     assert "staff.administration.edit" not in roles["manager"]["permission_codes"]
@@ -265,7 +264,9 @@ def test_access_control_routes_use_split_permissions(
         ).status_code
         == 403
     )
-    assert client.get("/api/v1/access-control/users", headers=users_create_headers).status_code == 403
+    assert (
+        client.get("/api/v1/access-control/users", headers=users_create_headers).status_code == 403
+    )
     assert (
         client.post(
             "/api/v1/access-control/users",
@@ -287,9 +288,14 @@ def test_access_control_routes_use_split_permissions(
         ).status_code
         == 200
     )
-    assert client.get("/api/v1/access-control/permissions", headers=audit_headers).status_code == 403
+    assert (
+        client.get("/api/v1/access-control/permissions", headers=audit_headers).status_code == 403
+    )
     assert client.get("/api/v1/access-control/audit", headers=audit_headers).status_code == 200
-    assert client.get("/api/v1/access-control/permissions", headers=roles_edit_headers).status_code == 200
+    assert (
+        client.get("/api/v1/access-control/permissions", headers=roles_edit_headers).status_code
+        == 200
+    )
     assert (
         client.put(
             f"/api/v1/access-control/roles/{manager_id}/permissions",
@@ -425,9 +431,7 @@ async def _create_user(
             return existing.id
         organization_id = await session.scalar(select(Organization.id).limit(1))
         assert organization_id is not None
-        roles = (
-            await session.scalars(select(Role).where(Role.code.in_(tuple(role_codes))))
-        ).all()
+        roles = (await session.scalars(select(Role).where(Role.code.in_(tuple(role_codes))))).all()
         assert {role.code for role in roles} == set(role_codes)
         user = User(
             email=email,

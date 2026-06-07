@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-import asyncio
-import os
 import uuid
 from datetime import UTC, date, datetime, timedelta
-from pathlib import Path
 
 import pytest
-from alembic.config import Config
 from fastapi import HTTPException
 from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from alembic import command
 from app.api.deps import CurrentActor
 from app.api.v1.routes.employees import (
     create_employee_assignment,
@@ -21,7 +15,6 @@ from app.api.v1.routes.employees import (
     list_employee_changes,
     patch_employee_assignment,
 )
-from app.core.config import get_settings
 from app.models import (
     Employee,
     EmployeeChangeEvent,
@@ -41,59 +34,10 @@ from app.services.payroll_config import (
     list_role_category_availability,
 )
 
-API_DIR = Path(__file__).resolve().parents[1]
-TEST_DATABASE_URL = os.environ.get(
-    "TEPLO_TEST_DATABASE_URL",
-    os.environ.get("DATABASE_URL", "postgresql+asyncpg://teplo:teplo@localhost:5432/teplo"),
-)
-
-
-async def _ping_database(url: str) -> None:
-    engine = create_async_engine(url)
-    try:
-        async with engine.connect() as conn:
-            await conn.execute(text("select 1"))
-    finally:
-        await engine.dispose()
-
 
 @pytest.fixture()
-def postgres_available() -> None:
-    try:
-        asyncio.run(_ping_database(TEST_DATABASE_URL))
-    except Exception as exc:
-        pytest.skip(f"PostgreSQL test database is not available: {exc}")
-
-
-@pytest.fixture()
-def alembic_cfg(monkeypatch: pytest.MonkeyPatch) -> Config:
-    monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL)
-    monkeypatch.setenv("TEPLO_ADMIN_PASSWORD", "test-admin-password")
-    get_settings.cache_clear()
-
-    cfg = Config(str(API_DIR / "alembic.ini"))
-    cfg.set_main_option("script_location", str(API_DIR / "alembic"))
-    cfg.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
-    return cfg
-
-
-@pytest.fixture()
-def migrated_db(alembic_cfg: Config, postgres_available: None) -> str:
-    command.downgrade(alembic_cfg, "base")
-    command.upgrade(alembic_cfg, "head")
-    try:
-        yield TEST_DATABASE_URL
-    finally:
-        command.downgrade(alembic_cfg, "base")
-
-
-@pytest.fixture()
-async def session_factory(migrated_db: str):
-    engine = create_async_engine(migrated_db)
-    try:
-        yield async_sessionmaker(engine, expire_on_commit=False)
-    finally:
-        await engine.dispose()
+def session_factory(async_session_factory):
+    return async_session_factory
 
 
 @pytest.mark.parametrize(
@@ -110,10 +54,7 @@ def test_assignment_role_for_payroll_context_accepts_canonical_roles(
     role: str,
     expected: str,
 ) -> None:
-    assert (
-        employee_assignments_service.assignment_role_for_payroll_context(role, None)
-        == expected
-    )
+    assert employee_assignments_service.assignment_role_for_payroll_context(role, None) == expected
 
 
 async def test_post_new_role_creates_additional_assignment(session_factory) -> None:
