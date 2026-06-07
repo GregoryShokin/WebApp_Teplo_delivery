@@ -195,7 +195,7 @@ def build_attendance_entry(
     else:
         end_local = ended_at.astimezone(MOSCOW_TZ)
         if end_local.date() != work_date:
-            quality_status = "quality_review"
+            quality_status = "review_warning"
             notes.append("cross_midnight")
 
     minutes_worked = max(0, int((ended_at - started_at).total_seconds() // 60))

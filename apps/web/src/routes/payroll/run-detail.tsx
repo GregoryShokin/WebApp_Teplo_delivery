@@ -168,6 +168,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const employeeCount = new Set(lines.map((line) => line.employee_id)).size;
   const totalHours = lines.reduce((sum, line) => sum + lineHours(line), 0);
   const blockers = run?.blocking_issues ?? [];
+  const attendanceWarnings = run?.summary.attendance_warnings ?? [];
   const isLegacyRun = Boolean(run?.is_imported_legacy);
   const isFinal = run ? isFinalStatus(run.status) : false;
   const canFinalize =
@@ -546,6 +547,27 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
               <div className="mt-3 grid gap-2">
                 {blockers.map((issue, index) => (
                   <BlockingIssue issue={issue} key={index} onNavigate={onNavigate} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {attendanceWarnings.length > 0 ? (
+        <section className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-yellow-900">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold">Требует проверки (не блокирует финализацию)</div>
+              <div className="mt-3 grid gap-2">
+                {attendanceWarnings.map((warning, index) => (
+                  <div
+                    className="rounded-md border border-yellow-200 bg-white/70 px-3 py-2 text-sm"
+                    key={`${warning.employee_id}-${warning.work_date}-${index}`}
+                  >
+                    Смена через полночь: {warning.employee_name}, {warning.work_date}
+                  </div>
                 ))}
               </div>
             </div>

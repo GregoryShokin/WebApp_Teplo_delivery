@@ -381,9 +381,23 @@ export type PayrollRun = {
   finished_at: string | null;
   status: string;
   blocking_issues: Array<Record<string, unknown>>;
-  summary: Record<string, unknown>;
+  summary: PayrollRunSummary;
   is_imported_legacy: boolean;
   period: PayrollPeriod | null;
+};
+
+export type PayrollAttendanceWarning = {
+  type: string;
+  employee_id: string;
+  employee_name: string;
+  work_date: string;
+  quality_status: string;
+  notes: string | null;
+};
+
+export type PayrollRunSummary = Record<string, unknown> & {
+  attendance_warnings?: PayrollAttendanceWarning[];
+  attendance_warning_count?: number;
 };
 
 export type PayrollPaymentMethod = "business_card" | "cash" | "transfer" | "other";

@@ -265,6 +265,22 @@ async def run_payroll(
             await session.commit()
             await session.refresh(run)
             return run
+        employee_ids = {entry.employee_id for entry in entries}
+        employees = (
+            {
+                employee.id: employee
+                for employee in (
+                    await session.scalars(select(Employee).where(Employee.id.in_(employee_ids)))
+                ).all()
+            }
+            if employee_ids
+            else {}
+        )
+        attendance_warnings = collect_attendance_warnings(entries, employees)
+        attendance_warning_summary = {
+            "attendance_warnings": attendance_warnings,
+            "attendance_warning_count": len(attendance_warnings),
+        }
 
         await ensure_daily_revenue_cached(
             session,
@@ -346,6 +362,7 @@ async def run_payroll(
             calculation.summary
             | deferred_charge_summary
             | subledger_summary
+            | attendance_warning_summary
             | {"vacations_marked_paid": paid_vacations}
         )
         await session.commit()
@@ -469,7 +486,7 @@ async def collect_blocking_issues(
             continue
         if employee.status == "requires_setup":
             issues.append(needs_setup_issue(employee))
-        if entry.quality_status != "ok":
+        if entry.quality_status == "quality_review":
             issues.append(
                 {
                     "type": "attendance_quality_review",
@@ -491,6 +508,30 @@ async def collect_blocking_issues(
                 }
             )
     return deduplicate_issues(issues)
+
+
+def collect_attendance_warnings(
+    entries: Iterable[AttendanceEntry],
+    employees: Mapping[uuid.UUID, Employee],
+) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = []
+    for entry in entries:
+        if entry.quality_status != "review_warning":
+            continue
+        employee = employees.get(entry.employee_id)
+        if employee is None:
+            continue
+        warnings.append(
+            {
+                "type": "attendance_review_warning",
+                "employee_id": str(employee.id),
+                "employee_name": employee.full_name,
+                "work_date": entry.work_date.isoformat(),
+                "quality_status": entry.quality_status,
+                "notes": entry.notes,
+            }
+        )
+    return warnings
 
 
 async def update_deposits_and_fund(

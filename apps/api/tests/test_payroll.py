@@ -93,6 +93,7 @@ from app.services.payroll_runner import (
     apply_deposit_write_offs_to_accounts,
     apply_fund_payouts_if_due,
     compute_next_payroll_period_dates,
+    collect_attendance_warnings,
     ensure_daily_revenue_cached,
     finalize_payroll_run,
     line_deposit_overrides_from_lines,
@@ -1136,6 +1137,22 @@ class DeferredChargeFakeSession:
         return DeferredChargeScalarResult([])
 
 
+class PayrollQualityFakeSession(DeferredChargeFakeSession):
+    async def scalars(self, query: Any) -> DeferredChargeScalarResult:
+        entity = query_entity(query)
+        if entity is Employee:
+            if query_selected_name(query) == "id":
+                return DeferredChargeScalarResult(
+                    [
+                        employee.id
+                        for employee in self.employees
+                        if employee.status == "inactive" and employee.fire_date is not None
+                    ]
+                )
+            return DeferredChargeScalarResult(self.employees)
+        return await super().scalars(query)
+
+
 def app_with_deferred_charge_session(session: DeferredChargeFakeSession):
     app = create_app()
 
@@ -1206,6 +1223,29 @@ def patch_runner_for_deferred_tests(monkeypatch: pytest.MonkeyPatch) -> None:
         "app.services.payroll_runner.collect_blocking_issues",
         fake_collect_blocking_issues,
     )
+    monkeypatch.setattr(
+        "app.services.payroll_runner.ensure_daily_revenue_cached",
+        fake_ensure_daily_revenue_cached,
+    )
+    monkeypatch.setattr(
+        "app.services.payroll_runner.calculate_payroll_lines",
+        fake_calculate_payroll_lines,
+    )
+    monkeypatch.setattr(
+        "app.services.payroll_runner.update_deposits_and_fund",
+        fake_update_deposits_and_fund,
+    )
+    monkeypatch.setattr(
+        "app.services.payroll_runner.vacation_service.mark_vacations_paid_for_payroll_period",
+        fake_mark_vacations_paid,
+    )
+
+
+def patch_runner_for_quality_tests(
+    monkeypatch: pytest.MonkeyPatch,
+    load_entries: Any,
+) -> None:
+    monkeypatch.setattr("app.services.payroll_runner.load_attendance_entries", load_entries)
     monkeypatch.setattr(
         "app.services.payroll_runner.ensure_daily_revenue_cached",
         fake_ensure_daily_revenue_cached,
@@ -2049,6 +2089,132 @@ def test_closed_shift_over_12_hours_is_capped_without_quality_review() -> None:
     assert entry.minutes_worked == 12 * 60
     assert entry.quality_status == "ok"
     assert "capped_to_12h_from_780min" in (entry.notes or "")
+
+
+def test_cross_midnight_shift_is_warning_capped_on_open_date() -> None:
+    period = make_period()
+    employee = make_employee()
+
+    entry = build_attendance_entry(
+        {
+            "employeeId": employee.iiko_id,
+            "dateFrom": "2026-05-19T20:00:00+03:00",
+            "dateTo": "2026-05-20T09:30:00+03:00",
+        },
+        period,
+        employee,
+    )
+
+    assert entry.work_date == date(2026, 5, 19)
+    assert entry.minutes_worked == 12 * 60
+    assert entry.quality_status == "review_warning"
+    assert "cross_midnight" in (entry.notes or "")
+    assert "capped_to_12h_from_810min" in (entry.notes or "")
+
+
+async def test_cross_midnight_warning_does_not_block_payroll_and_finalize(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    period = make_period(
+        start=date(2026, 6, 1),
+        end=date(2026, 6, 7),
+        payroll_date=date(2026, 6, 8),
+    )
+    employee = make_employee()
+    employee.full_name = "Ночная Смена"
+    entry = build_attendance_entry(
+        {
+            "employeeId": employee.iiko_id,
+            "dateFrom": "2026-06-01T20:00:00+03:00",
+            "dateTo": "2026-06-02T09:30:00+03:00",
+        },
+        period,
+        employee,
+    )
+
+    async def fake_load_quality_attendance(*_args: Any, **_kwargs: Any) -> list[AttendanceEntry]:
+        return [entry]
+
+    patch_runner_for_quality_tests(monkeypatch, fake_load_quality_attendance)
+    session = PayrollQualityFakeSession(employees=[employee], periods=[period])
+
+    run = await run_payroll(session, period.id)  # type: ignore[arg-type]
+
+    assert run.status == "completed"
+    assert run.blocking_issues == []
+    assert run.summary["attendance_warning_count"] == 1
+    assert run.summary["attendance_warnings"] == [
+        {
+            "type": "attendance_review_warning",
+            "employee_id": str(employee.id),
+            "employee_name": "Ночная Смена",
+            "work_date": "2026-06-01",
+            "quality_status": "review_warning",
+            "notes": "cross_midnight;capped_to_12h_from_810min",
+        }
+    ]
+
+    finalized = await finalize_payroll_run(FinalizeFakeSession(run, period), run.id)  # type: ignore[arg-type]
+
+    assert finalized.status == "finalized"
+
+
+async def test_ended_before_started_attendance_still_blocks_payroll(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    period = make_period(
+        start=date(2026, 6, 1),
+        end=date(2026, 6, 7),
+        payroll_date=date(2026, 6, 8),
+    )
+    employee = make_employee()
+    entry = build_attendance_entry(
+        {
+            "employeeId": employee.iiko_id,
+            "dateFrom": "2026-06-01T11:00:00+03:00",
+            "dateTo": "2026-06-01T10:00:00+03:00",
+        },
+        period,
+        employee,
+    )
+
+    async def fake_load_broken_attendance(*_args: Any, **_kwargs: Any) -> list[AttendanceEntry]:
+        return [entry]
+
+    patch_runner_for_quality_tests(monkeypatch, fake_load_broken_attendance)
+    session = PayrollQualityFakeSession(employees=[employee], periods=[period])
+
+    run = await run_payroll(session, period.id)  # type: ignore[arg-type]
+
+    assert entry.quality_status == "quality_review"
+    assert "ended_before_started" in (entry.notes or "")
+    assert run.status == "blocked"
+    assert run.blocking_issues[0]["type"] == "attendance_quality_review"
+
+
+def test_collect_attendance_warnings_returns_review_warning_only() -> None:
+    period = make_period()
+    employee = make_employee()
+    warning_entry = make_entry(
+        period,
+        employee,
+        period.start_date,
+        quality_status="review_warning",
+    )
+    warning_entry.notes = "cross_midnight"
+    ok_entry = make_entry(period, employee, period.start_date + timedelta(days=1))
+
+    assert collect_attendance_warnings([ok_entry], {employee.id: employee}) == []
+    assert collect_attendance_warnings([warning_entry, ok_entry], {employee.id: employee}) == [
+        {
+            "type": "attendance_review_warning",
+            "employee_id": str(employee.id),
+            "employee_name": employee.full_name,
+            "work_date": period.start_date.isoformat(),
+            "quality_status": "review_warning",
+            "notes": "cross_midnight",
+        }
+    ]
 
 
 async def test_load_shift_ledger_iiko_snapshots_skips_unknown_iiko_employee() -> None:
