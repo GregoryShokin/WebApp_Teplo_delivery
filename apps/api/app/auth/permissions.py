@@ -86,6 +86,11 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ("payroll.runs.recalculate", "Зарплата", "Пересчитывать зарплату"),
     ("payroll.runs.finalize", "Зарплата", "Финализировать расчёт зарплаты"),
     ("payroll.runs.reopen", "Зарплата", "Возвращать расчёт зарплаты в работу"),
+    (
+        "payroll.runs.mark_paid",
+        "Зарплата",
+        "Отмечать выплаты по ведомости",
+    ),
     ("payroll.accruals.read", "Зарплата", "Смотреть начисления сотрудников"),
     ("payroll.personal_reports.read", "Зарплата", "Смотреть персональные отчёты сотрудников"),
     ("payroll.adjustments.edit", "Зарплата", "Редактировать корректировки зарплаты"),
@@ -358,7 +363,7 @@ LEGACY_PERMISSION_ALIASES: dict[str, frozenset[str]] = {
     "payroll.revisions.read": frozenset({"revisions.deferrals.read"}),
     "payroll.revision_penalties.add": frozenset({"revisions.deferrals.manage"}),
     "payroll.runs.write": frozenset({"payroll.runs.start", "payroll.runs.recalculate"}),
-    "payroll.runs.finalize": frozenset({"payroll.runs.finalize"}),
+    "payroll.runs.finalize": frozenset({"payroll.runs.finalize", "payroll.runs.mark_paid"}),
     "payroll.adjustments.write": frozenset(
         {
             "payroll.adjustments.edit",
@@ -389,9 +394,7 @@ LEGACY_PERMISSION_ALIASES: dict[str, frozenset[str]] = {
             "revisions.finalize",
         }
     ),
-    "staff.read": frozenset(
-        {"staff.administration.read", "staff.administration.history.read"}
-    ),
+    "staff.read": frozenset({"staff.administration.read", "staff.administration.history.read"}),
     "staff.write": frozenset({"staff.administration.edit"}),
     "staff.dismiss": frozenset({"staff.administration.dismiss"}),
     "staff.reinstate": frozenset({"staff.administration.reinstate"}),
@@ -406,9 +409,7 @@ LEGACY_PERMISSION_ALIASES: dict[str, frozenset[str]] = {
     ),
     "couriers.schedule.write": frozenset({"couriers.schedule.edit", "couriers.shifts.sync"}),
     "couriers.assess.write": frozenset({"couriers.evaluations.edit"}),
-    "couriers.deposits.write": frozenset(
-        {"couriers.deposits.edit", "couriers.deposits.configure"}
-    ),
+    "couriers.deposits.write": frozenset({"couriers.deposits.edit", "couriers.deposits.configure"}),
     "couriers.metrics.read": frozenset({"couriers.statistics.read"}),
     "couriers.deposits.withhold": frozenset({"couriers.deposits.edit"}),
     "couriers.deposits.return": frozenset({"couriers.deposits.edit"}),
@@ -428,9 +429,7 @@ LEGACY_PERMISSION_ALIASES: dict[str, frozenset[str]] = {
             "settings.access.assign",
         }
     ),
-    "access_control.roles.write": frozenset(
-        {"settings.roles.edit", "settings.access_audit.read"}
-    ),
+    "access_control.roles.write": frozenset({"settings.roles.edit", "settings.access_audit.read"}),
 }
 
 MANAGER_DEFAULT_PERMISSIONS = frozenset(
@@ -471,6 +470,7 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "couriers.deposits.edit",
         "couriers.deposits.configure",
         "payroll.runs.read",
+        "payroll.runs.mark_paid",
         "payroll.accruals.read",
         "payroll.adjustments.edit",
         "payroll.bonuses.add",

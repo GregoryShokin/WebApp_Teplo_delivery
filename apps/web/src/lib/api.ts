@@ -386,6 +386,21 @@ export type PayrollRun = {
   period: PayrollPeriod | null;
 };
 
+export type PayrollPaymentMethod = "business_card" | "cash" | "transfer" | "other";
+
+export type PayrollPaymentPayload = {
+  paid_at: string;
+  method: PayrollPaymentMethod;
+};
+
+export type MarkPayrollPaymentPayload = PayrollPaymentPayload & {
+  employee_id: string;
+};
+
+export type MarkAllPayrollPaymentsResponse = {
+  marked_count: number;
+};
+
 export type PayrollLine = {
   id: string;
   run_id: string;
@@ -404,6 +419,10 @@ export type PayrollLine = {
   total_payable: number;
   deposit_excluded_for_run: boolean;
   deposit_exclusion_reason: string | null;
+  payment_status: "paid" | "pending";
+  paid_amount: number | null;
+  paid_at: string | null;
+  paid_method: PayrollPaymentMethod | null;
   components: Record<string, unknown>;
 };
 
@@ -2624,6 +2643,28 @@ export async function patchPayrollLineDepositOverride(
   payload: PayrollLineDepositOverridePatch,
 ): Promise<PayrollLine> {
   const response = await api.patch<PayrollLine>(`/payroll/lines/${id}`, payload);
+  return response.data;
+}
+
+export async function markPayrollPayment(
+  runId: string,
+  payload: MarkPayrollPaymentPayload,
+): Promise<void> {
+  await api.post(`/payroll/runs/${runId}/payments`, payload);
+}
+
+export async function unmarkPayrollPayment(runId: string, employeeId: string): Promise<void> {
+  await api.delete(`/payroll/runs/${runId}/payments/${employeeId}`);
+}
+
+export async function markAllPayrollPayments(
+  runId: string,
+  payload: PayrollPaymentPayload,
+): Promise<MarkAllPayrollPaymentsResponse> {
+  const response = await api.post<MarkAllPayrollPaymentsResponse>(
+    `/payroll/runs/${runId}/payments/mark-all`,
+    payload,
+  );
   return response.data;
 }
 

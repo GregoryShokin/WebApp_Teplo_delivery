@@ -18,6 +18,7 @@ from app.models import (
     DeferredAuditCharge,
     DepositTransaction,
     PayrollLine,
+    PayrollPayment,
     PayrollRun,
 )
 from app.schemas.payroll import (
@@ -26,6 +27,9 @@ from app.schemas.payroll import (
     PayrollAggregateRead,
     PayrollLineDepositOverridePatch,
     PayrollLineRead,
+    PayrollPaymentMarkRequest,
+    PayrollPaymentsMarkAllRequest,
+    PayrollPaymentsMarkAllResponse,
     PayrollPeriodRead,
     PayrollPersonalReportRead,
     PayrollRunCreate,
@@ -43,6 +47,7 @@ from app.services.deferred_audit_charge_service import (
 )
 from app.services.payroll_aggregate_service import build_aggregate
 from app.services.payroll_config import list_enabled_role_categories
+from app.services.payroll_payments import mark_all_payments, mark_payment, unmark_payment
 from app.services.payroll_personal_report import build_personal_report
 from app.services.payroll_runner import (
     PayrollConflictError,
@@ -62,14 +67,13 @@ PAYROLL_RUNS_READ_ACCESS = (Depends(require_permission("payroll.runs.read")),)
 PAYROLL_RUNS_START_ACCESS = (Depends(require_permission("payroll.runs.start")),)
 PAYROLL_RUNS_FINALIZE_ACCESS = (Depends(require_permission("payroll.runs.finalize")),)
 PAYROLL_RUNS_REOPEN_ACCESS = (Depends(require_permission("payroll.runs.reopen")),)
+PAYROLL_RUNS_MARK_PAID_ACCESS = (Depends(require_permission("payroll.runs.mark_paid")),)
 PAYROLL_ACCRUALS_READ_ACCESS = (Depends(require_permission("payroll.accruals.read")),)
 PAYROLL_PERSONAL_REPORTS_READ_ACCESS = (
     Depends(require_permission("payroll.personal_reports.read")),
 )
 REVISION_DEFERRALS_READ_ACCESS = (Depends(require_permission("revisions.deferrals.read")),)
-REVISION_DEFERRALS_MANAGE_ACCESS = (
-    Depends(require_permission("revisions.deferrals.manage")),
-)
+REVISION_DEFERRALS_MANAGE_ACCESS = (Depends(require_permission("revisions.deferrals.manage")),)
 PAYROLL_PRODUCTION_DEPOSITS_EDIT_ACCESS = (
     Depends(require_permission("payroll.production_deposits.edit")),
 )
@@ -266,7 +270,12 @@ async def get_lines(
     payouts_by_employee = await get_deposit_payouts_by_employee(
         session, run_id, (line.employee_id for line in lines)
     )
-    return [serialize_payroll_line(line, payouts_by_employee) for line in lines]
+    payments_by_employee = await get_payments_by_employee(
+        session, run_id, (line.employee_id for line in lines)
+    )
+    return [
+        serialize_payroll_line(line, payouts_by_employee, payments_by_employee) for line in lines
+    ]
 
 
 @router.patch(
@@ -307,7 +316,8 @@ async def patch_line_deposit_override(
     await session.commit()
     await session.refresh(line)
     payouts = await get_deposit_payouts_by_employee(session, line.run_id, [line.employee_id])
-    return serialize_payroll_line(line, payouts)
+    payments = await get_payments_by_employee(session, line.run_id, [line.employee_id])
+    return serialize_payroll_line(line, payouts, payments)
 
 
 @router.post(
@@ -358,6 +368,82 @@ async def post_unfinalize(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
+@router.post(
+    "/runs/{run_id}/payments",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=PAYROLL_RUNS_MARK_PAID_ACCESS,
+)
+async def post_mark_payment(
+    run_id: uuid.UUID,
+    payload: PayrollPaymentMarkRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    try:
+        await mark_payment(
+            session,
+            run_id,
+            payload.employee_id,
+            paid_at=payload.paid_at,
+            method=payload.method,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/runs/{run_id}/payments/{employee_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=PAYROLL_RUNS_MARK_PAID_ACCESS,
+)
+async def delete_mark_payment(
+    run_id: uuid.UUID,
+    employee_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    try:
+        await unmark_payment(
+            session,
+            run_id,
+            employee_id,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/runs/{run_id}/payments/mark-all",
+    response_model=PayrollPaymentsMarkAllResponse,
+    dependencies=PAYROLL_RUNS_MARK_PAID_ACCESS,
+)
+async def post_mark_all_payments(
+    run_id: uuid.UUID,
+    payload: PayrollPaymentsMarkAllRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollPaymentsMarkAllResponse:
+    try:
+        marked_count = await mark_all_payments(
+            session,
+            run_id,
+            paid_at=payload.paid_at,
+            method=payload.method,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return PayrollPaymentsMarkAllResponse(marked_count=marked_count)
+
+
 async def get_deposit_payouts_by_employee(
     session: AsyncSession,
     run_id: uuid.UUID,
@@ -381,18 +467,41 @@ async def get_deposit_payouts_by_employee(
     return {employee_id: money_float(amount) for employee_id, amount in result.all()}
 
 
+async def get_payments_by_employee(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    employee_ids: Iterable[uuid.UUID],
+) -> dict[uuid.UUID, PayrollPayment]:
+    unique_employee_ids = list(set(employee_ids))
+    if not unique_employee_ids:
+        return {}
+    result = await session.scalars(
+        select(PayrollPayment).where(
+            PayrollPayment.run_id == run_id,
+            PayrollPayment.employee_id.in_(unique_employee_ids),
+        )
+    )
+    return {payment.employee_id: payment for payment in result.all()}
+
+
 def serialize_payroll_line(
     line: PayrollLine,
     payouts_by_employee: dict[uuid.UUID, float],
+    payments_by_employee: dict[uuid.UUID, PayrollPayment] | None = None,
 ) -> PayrollLineRead:
     components = line.components if isinstance(line.components, dict) else {}
     if getattr(line, "ndfl_withheld", None) is None:
         line.ndfl_withheld = Decimal("0")
+    payment = (payments_by_employee or {}).get(line.employee_id)
     return PayrollLineRead.model_validate(line).model_copy(
         update={
             "deposit_withholding": money_float(components.get("deposit_withholding", 0)),
             "deposit_payout": payouts_by_employee.get(line.employee_id, 0),
             "ndfl_deduction": money_float(getattr(line, "ndfl_withheld", 0)),
+            "payment_status": "paid" if payment is not None else "pending",
+            "paid_amount": money_float(payment.amount) if payment is not None else None,
+            "paid_at": payment.paid_at if payment is not None else None,
+            "paid_method": payment.method if payment is not None else None,
         }
     )
 

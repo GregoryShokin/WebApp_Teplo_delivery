@@ -44,6 +44,7 @@ export type AppAction =
   | "payroll.runs.recalculate"
   | "payroll.runs.finalize"
   | "payroll.runs.reopen"
+  | "payroll.runs.mark_paid"
   | "payroll.fund.edit"
   | "payroll.adjustments.edit"
   | "payroll.source-data.edit"
@@ -144,6 +145,7 @@ export const PERMISSION_GROUPS = {
     "payroll.runs.recalculate",
     "payroll.runs.finalize",
     "payroll.runs.reopen",
+    "payroll.runs.mark_paid",
     "payroll.adjustments.edit",
     "payroll.bonuses.add",
     "payroll.penalties.add",
@@ -259,6 +261,7 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "payroll.runs.recalculate": ["payroll.runs.recalculate"],
   "payroll.runs.finalize": ["payroll.runs.finalize"],
   "payroll.runs.reopen": ["payroll.runs.reopen"],
+  "payroll.runs.mark_paid": ["payroll.runs.mark_paid"],
   "payroll.fund.edit": ["payroll.fund.edit"],
   "payroll.adjustments.edit": [
     "payroll.adjustments.edit",
@@ -308,6 +311,7 @@ const LEGACY_PERMISSION_ALIASES: Record<PermissionCode, readonly PermissionCode[
   "payroll.revisions.read": ["revisions.deferrals.read"],
   "payroll.revision_penalties.add": ["revisions.deferrals.manage"],
   "payroll.runs.write": ["payroll.runs.start", "payroll.runs.recalculate"],
+  "payroll.runs.finalize": ["payroll.runs.finalize", "payroll.runs.mark_paid"],
   "payroll.adjustments.write": [
     "payroll.adjustments.edit",
     "payroll.bonuses.add",

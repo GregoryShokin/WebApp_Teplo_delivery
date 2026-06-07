@@ -32,6 +32,25 @@ class PayrollRunUnfinalize(BaseModel):
     reason: str
 
 
+class PayrollPaymentMarkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    employee_id: uuid.UUID
+    paid_at: date
+    method: str
+
+
+class PayrollPaymentsMarkAllRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    paid_at: date
+    method: str
+
+
+class PayrollPaymentsMarkAllResponse(BaseModel):
+    marked_count: int
+
+
 class PayrollRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -66,6 +85,10 @@ class PayrollLineRead(BaseModel):
     total_payable: float
     deposit_excluded_for_run: bool = False
     deposit_exclusion_reason: str | None = None
+    payment_status: str = "pending"
+    paid_amount: float | None = None
+    paid_at: date | None = None
+    paid_method: str | None = None
     components: dict[str, Any]
 
 

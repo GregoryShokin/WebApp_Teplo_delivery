@@ -166,6 +166,36 @@ class PayrollRunEvent(Base):
     )
 
 
+class PayrollPayment(Base):
+    __tablename__ = "payroll_payment"
+    __table_args__ = (
+        CheckConstraint("amount >= 0", name="ck_payroll_payment_amount_non_negative"),
+        CheckConstraint(
+            "method in ('business_card', 'cash', 'transfer', 'other')",
+            name="ck_payroll_payment_method",
+        ),
+        UniqueConstraint("run_id", "employee_id", name="uq_payroll_payment_run_employee"),
+        Index("ix_payroll_payment_run_id", "run_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("payroll_run.id", ondelete="CASCADE"), nullable=False
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee.id", ondelete="RESTRICT"), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    paid_at: Mapped[date] = mapped_column(Date, nullable=False)
+    method: Mapped[str] = mapped_column(String(32), nullable=False)
+    paid_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class PayrollLine(Base):
     __tablename__ = "payroll_line"
     __table_args__ = (

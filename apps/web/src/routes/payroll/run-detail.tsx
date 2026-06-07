@@ -28,7 +28,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Sheet,
   SheetContent,
@@ -50,11 +58,16 @@ import {
   getPayrollRun,
   getPayrollRunLines,
   getSettings,
+  markAllPayrollPayments,
+  markPayrollPayment,
   patchPayrollLineDepositOverride,
+  unmarkPayrollPayment,
   unfinalizePayrollRun,
   type AppSetting,
   type Employee,
   type PayrollLine,
+  type PayrollPaymentMethod,
+  type PayrollPaymentPayload,
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -91,6 +104,12 @@ type PayrollLineRowModel = {
 };
 
 const LEGACY_RECALC_MESSAGE = "Это импортированный период — пересчёт затрёт исторические данные";
+const PAYMENT_METHOD_OPTIONS: Array<{ value: PayrollPaymentMethod; label: string }> = [
+  { value: "business_card", label: "Бизнес-карта" },
+  { value: "cash", label: "Наличные" },
+  { value: "transfer", label: "Перевод" },
+  { value: "other", label: "Другое" },
+];
 
 export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRouteProps) {
   const queryClient = useQueryClient();
@@ -98,6 +117,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const canRecalculate = permissions.canPerformAction("payroll.runs.recalculate");
   const canFinalizeRuns = permissions.canPerformAction("payroll.runs.finalize");
   const canReopenRuns = permissions.canPerformAction("payroll.runs.reopen");
+  const canMarkPaid = permissions.canPerformAction("payroll.runs.mark_paid");
   const [isRecalculateDialogOpen, setIsRecalculateDialogOpen] = useState(false);
   const [isUnfinalizeDialogOpen, setIsUnfinalizeDialogOpen] = useState(false);
   const [unfinalizeReason, setUnfinalizeReason] = useState("");
@@ -145,6 +165,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
     !isFinal &&
     canFinalizeRuns;
   const canUnfinalize = Boolean(run) && isFinal && canReopenRuns && !isLegacyRun;
+  const canManagePayments = Boolean(run) && run?.status === "finalized" && canMarkPaid && !isLegacyRun;
   const canSubmitUnfinalize = unfinalizeReason.trim().length > 0;
 
   const finalizeMutation = useMutation({
@@ -187,6 +208,24 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
     onError: (error) => {
       setIsRecalculateDialogOpen(false);
       toast.error(payrollRecalculateErrorMessage(error));
+    },
+  });
+
+  const markAllPaymentsMutation = useMutation({
+    mutationFn: (payload: PayrollPaymentPayload) => markAllPayrollPayments(runId, payload),
+    onSuccess: async (response) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["payroll-run", runId] }),
+        queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", runId] }),
+      ]);
+      toast.success(
+        response.marked_count > 0
+          ? `Отмечено выплат: ${response.marked_count}`
+          : "Все выплаты уже отмечены",
+      );
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось отметить выплаты"));
     },
   });
 
@@ -303,6 +342,27 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
                 Финализировать
               </Button>
             ) : null}
+            {canManagePayments ? (
+              <PaymentMarkDialog
+                confirmLabel="Отметить все"
+                description="Дата и способ будут применены ко всем неоплаченным сотрудникам ведомости."
+                isPending={markAllPaymentsMutation.isPending}
+                onSubmit={async (payload) => {
+                  await markAllPaymentsMutation.mutateAsync(payload);
+                }}
+                title="Отметить все выплаты?"
+                trigger={
+                  <Button disabled={markAllPaymentsMutation.isPending} title="Отметить все выплаченными">
+                    {markAllPaymentsMutation.isPending ? (
+                      <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                    ) : (
+                      <CheckCircle2 size={16} aria-hidden="true" />
+                    )}
+                    Отметить все выплаченными
+                  </Button>
+                }
+              />
+            ) : null}
             {canUnfinalize ? (
               <AlertDialog
                 open={isUnfinalizeDialogOpen}
@@ -413,6 +473,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
       ) : null}
 
       <PayrollByEmployeeTab
+        canManagePayments={canManagePayments}
         employeesById={employeesById}
         isLoading={linesQuery.isLoading || runQuery.isLoading}
         lines={lines}
@@ -423,11 +484,13 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
 }
 
 function PayrollByEmployeeTab({
+  canManagePayments,
   employeesById,
   isLoading,
   lines,
   runStatus,
 }: {
+  canManagePayments: boolean;
   employeesById: Map<string, Employee>;
   isLoading: boolean;
   lines: PayrollLine[];
@@ -605,6 +668,18 @@ function PayrollByEmployeeTab({
       className: "text-right font-semibold tabular-nums",
       headerClassName: "text-right",
     },
+    {
+      key: "payment",
+      header: "Выплата",
+      cell: (row) => (
+        <PaymentCell
+          canManagePayments={canManagePayments}
+          employeeName={row.employeeName}
+          line={row.line}
+        />
+      ),
+      className: "min-w-[210px]",
+    },
   ];
 
   return (
@@ -705,6 +780,222 @@ function SortButton({
       {children}
       <ArrowUpDown size={13} aria-hidden="true" />
     </button>
+  );
+}
+
+function PaymentCell({
+  canManagePayments,
+  employeeName,
+  line,
+}: {
+  canManagePayments: boolean;
+  employeeName: string;
+  line: PayrollLine;
+}) {
+  const queryClient = useQueryClient();
+  const isPaid = line.payment_status === "paid";
+  const markMutation = useMutation({
+    mutationFn: (payload: PayrollPaymentPayload) =>
+      markPayrollPayment(line.run_id, {
+        employee_id: line.employee_id,
+        ...payload,
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["payroll-run", line.run_id] }),
+        queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", line.run_id] }),
+      ]);
+      toast.success("Выплата отмечена");
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось отметить выплату"));
+    },
+  });
+  const unmarkMutation = useMutation({
+    mutationFn: () => unmarkPayrollPayment(line.run_id, line.employee_id),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["payroll-run", line.run_id] }),
+        queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", line.run_id] }),
+      ]);
+      toast.success("Отметка выплаты отменена");
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось отменить отметку"));
+    },
+  });
+  const isPending = markMutation.isPending || unmarkMutation.isPending;
+
+  return (
+    <div className="flex min-w-[190px] flex-col items-start gap-2">
+      {isPaid ? (
+        <Badge className="rounded-md border-emerald-200 bg-emerald-50 text-emerald-800 shadow-none">
+          Выплачено {line.paid_at ? formatDate(line.paid_at) : ""}
+        </Badge>
+      ) : (
+        <Badge className="rounded-md border-border bg-muted text-muted-foreground shadow-none">
+          Ожидает
+        </Badge>
+      )}
+      {isPaid && line.paid_method ? (
+        <span className="text-xs text-muted-foreground">
+          {paymentMethodLabel(line.paid_method)}
+          {line.paid_amount !== null ? ` · ${formatMoney(line.paid_amount)}` : ""}
+        </span>
+      ) : null}
+      {canManagePayments ? (
+        isPaid ? (
+          <Button
+            disabled={isPending}
+            onClick={(event) => {
+              event.stopPropagation();
+              unmarkMutation.mutate();
+            }}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {unmarkMutation.isPending ? (
+              <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+            ) : (
+              <Undo2 size={15} aria-hidden="true" />
+            )}
+            Отменить отметку
+          </Button>
+        ) : (
+          <PaymentMarkDialog
+            confirmLabel="Отметить"
+            description="Зафиксируется дата, способ и текущая сумма к выплате по сотруднику."
+            isPending={markMutation.isPending}
+            onSubmit={async (payload) => {
+              await markMutation.mutateAsync(payload);
+            }}
+            title={`Отметить выплату: ${employeeName}`}
+            trigger={
+              <Button
+                disabled={isPending}
+                onClick={(event) => event.stopPropagation()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {markMutation.isPending ? (
+                  <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+                ) : (
+                  <CheckCircle2 size={15} aria-hidden="true" />
+                )}
+                Выплачено
+              </Button>
+            }
+          />
+        )
+      ) : null}
+    </div>
+  );
+}
+
+function PaymentMarkDialog({
+  confirmLabel,
+  description,
+  isPending,
+  onSubmit,
+  title,
+  trigger,
+}: {
+  confirmLabel: string;
+  description: string;
+  isPending: boolean;
+  onSubmit: (payload: PayrollPaymentPayload) => Promise<void>;
+  title: string;
+  trigger: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [paidAt, setPaidAt] = useState(todayDateInputValue);
+  const [method, setMethod] = useState<PayrollPaymentMethod>("business_card");
+  const canSubmit = paidAt.trim().length > 0;
+
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (isPending) {
+          return;
+        }
+        setOpen(nextOpen);
+        if (nextOpen) {
+          setPaidAt(todayDateInputValue());
+          setMethod("business_card");
+        }
+      }}
+    >
+      <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
+      <AlertDialogContent onClick={(event) => event.stopPropagation()}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="payroll-payment-paid-at">Дата выплаты</Label>
+            <Input
+              disabled={isPending}
+              id="payroll-payment-paid-at"
+              onChange={(event) => setPaidAt(event.target.value)}
+              type="date"
+              value={paidAt}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="payroll-payment-method">Способ</Label>
+            <Select
+              disabled={isPending}
+              onValueChange={(value) => setMethod(value as PayrollPaymentMethod)}
+              value={method}
+            >
+              <SelectTrigger id="payroll-payment-method">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAYMENT_METHOD_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isPending} type="button">
+            Отмена
+          </AlertDialogCancel>
+          <AlertDialogAction
+            disabled={!canSubmit || isPending}
+            onClick={async (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              if (!canSubmit) {
+                return;
+              }
+              try {
+                await onSubmit({ paid_at: paidAt, method });
+                setOpen(false);
+              } catch {
+                // Toast is handled by the mutation's onError.
+              }
+            }}
+            type="button"
+          >
+            {isPending ? (
+              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+            ) : (
+              <CheckCircle2 size={16} aria-hidden="true" />
+            )}
+            {confirmLabel}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -979,6 +1270,16 @@ function AdjustmentList({ items, title }: { items: AdjustmentComponent[]; title:
 function cleanOptionalText(value: string) {
   const cleaned = value.trim();
   return cleaned ? cleaned : null;
+}
+
+function paymentMethodLabel(method: PayrollPaymentMethod) {
+  return PAYMENT_METHOD_OPTIONS.find((option) => option.value === method)?.label ?? "Другое";
+}
+
+function todayDateInputValue() {
+  const value = new Date();
+  value.setMinutes(value.getMinutes() - value.getTimezoneOffset());
+  return value.toISOString().slice(0, 10);
 }
 
 function runMeta(run: {
