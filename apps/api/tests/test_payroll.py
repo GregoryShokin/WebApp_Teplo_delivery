@@ -46,6 +46,10 @@ from app.scripts.import_legacy_payroll import (
     import_csv_with_session,
     reset_legacy_import,
 )
+from app.scripts.import_staff_from_payroll_sheet import (
+    FUND_EXPORT_INITIAL_BALANCE_COMMENT,
+    sync_fund,
+)
 from app.services import deferred_audit_charge_service as deferred_charge_service
 from app.services import shift_ledger as shift_ledger_service
 from app.services.accumulation_fund_service import forfeit_active_fund_on_dismiss
@@ -632,7 +636,7 @@ async def test_legacy_import_fund_accrual(tmp_path: Path) -> None:
     assert transaction.comment == f"{LEGACY_FUND_COMMENT_PREFIX} Фонд за смену"
 
 
-async def test_legacy_import_fund_payout(tmp_path: Path) -> None:
+async def test_legacy_import_fund_writeoff_is_forfeit(tmp_path: Path) -> None:
     employee = make_employee()
     employee.full_name = "Иван Импортов"
     session = LegacyImportFakeSession([employee])
@@ -654,10 +658,68 @@ async def test_legacy_import_fund_payout(tmp_path: Path) -> None:
     account = session.fund_accounts[0]
     transaction = session.fund_transactions[0]
     assert account.accumulated_amount == Decimal("0.00")
-    assert account.paid_out_amount == Decimal("500.00")
-    assert transaction.transaction_type == "payout"
+    assert account.paid_out_amount == Decimal("0")
+    assert account.forfeited_amount == Decimal("500.00")
+    assert account.status == "forfeited"
+    assert transaction.transaction_type == "forfeit"
     assert transaction.amount == Decimal("500.00")
     assert transaction.comment == LEGACY_FUND_COMMENT_PREFIX
+
+
+async def test_staff_sheet_import_removes_export_fund_initial_balance() -> None:
+    employee = make_employee()
+    account = AccumulationFundAccount(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        year=2026,
+        accumulated_amount=Decimal("2750"),
+        paid_out_amount=Decimal("0"),
+        forfeited_amount=Decimal("0"),
+        status="active",
+    )
+    initial_balance = AccumulationFundTransaction(
+        id=uuid.uuid4(),
+        account_id=account.id,
+        employee_id=employee.id,
+        year=2026,
+        run_id=None,
+        transaction_type="initial_balance",
+        amount=Decimal("2000"),
+        comment=FUND_EXPORT_INITIAL_BALANCE_COMMENT,
+        created_at=datetime(2026, 6, 5, tzinfo=UTC),
+    )
+    shift_accrual = AccumulationFundTransaction(
+        id=uuid.uuid4(),
+        account_id=account.id,
+        employee_id=employee.id,
+        year=2026,
+        run_id=uuid.uuid4(),
+        transaction_type="accrual",
+        amount=Decimal("750"),
+        comment="Фонд за смену",
+        created_at=datetime(2026, 6, 5, tzinfo=UTC),
+    )
+    session = FundFakeSession(
+        employees=[employee],
+        accounts=[account],
+        transactions=[initial_balance, shift_accrual],
+    )
+
+    result = await sync_fund(
+        session,  # type: ignore[arg-type]
+        employee,
+        accumulated=Decimal("2000"),
+        forfeited=Decimal("0"),
+        year=2026,
+        now=datetime(2026, 6, 7, tzinfo=UTC),
+    )
+
+    assert result == {"initial_balances_removed": 1, "export_balances_skipped": 1}
+    assert session.transactions == [shift_accrual]
+    assert account.accumulated_amount == Decimal("750.00")
+    assert account.paid_out_amount == Decimal("0.00")
+    assert account.forfeited_amount == Decimal("0.00")
+    assert account.status == "active"
 
 
 async def test_legacy_import_deposit_writeoff(tmp_path: Path) -> None:
@@ -1811,6 +1873,30 @@ class FundFakeSession:
         sql = str(query.compile(compile_kwargs={"literal_binds": True}))
         if entity is AccumulationFundTransaction:
             transactions = list(self.transactions)
+            employee_id = query_bound_value(query, "employee_id")
+            account_id = query_bound_value(query, "account_id")
+            year = query_bound_value(query, "year")
+            comment = query_bound_value(query, "comment")
+            if employee_id is not None:
+                transactions = [
+                    transaction
+                    for transaction in transactions
+                    if transaction.employee_id == employee_id
+                ]
+            if account_id is not None:
+                transactions = [
+                    transaction
+                    for transaction in transactions
+                    if transaction.account_id == account_id
+                ]
+            if year is not None:
+                transactions = [
+                    transaction for transaction in transactions if transaction.year == year
+                ]
+            if comment is not None:
+                transactions = [
+                    transaction for transaction in transactions if transaction.comment == comment
+                ]
             if "transaction_type = 'payout'" in sql:
                 transactions = [
                     transaction
@@ -1829,11 +1915,38 @@ class FundFakeSession:
                     for transaction in transactions
                     if transaction.transaction_type == "accrual"
                 ]
+            if "transaction_type = 'initial_balance'" in sql:
+                transactions = [
+                    transaction
+                    for transaction in transactions
+                    if transaction.transaction_type == "initial_balance"
+                ]
+            if FUND_EXPORT_INITIAL_BALANCE_COMMENT in sql:
+                transactions = [
+                    transaction
+                    for transaction in transactions
+                    if transaction.comment == FUND_EXPORT_INITIAL_BALANCE_COMMENT
+                ]
             return FundScalarResult(transactions)
         if entity is AccumulationFundAccount:
             accounts = list(self.accounts.values())
             if "status = 'active'" in sql:
                 accounts = [account for account in accounts if account.status == "active"]
+            if "employee.status != 'active'" in sql or "employee.fire_date IS NOT NULL" in sql:
+                accounts = [
+                    account
+                    for account in accounts
+                    if (employee := self.employees.get(account.employee_id)) is not None
+                    and (employee.status != "active" or employee.fire_date is not None)
+                ]
+            if "employee.status = 'active'" in sql and "employee.fire_date IS NULL" in sql:
+                accounts = [
+                    account
+                    for account in accounts
+                    if (employee := self.employees.get(account.employee_id)) is not None
+                    and employee.status == "active"
+                    and employee.fire_date is None
+                ]
             return FundScalarResult(accounts)
         if entity is Employee:
             return FundScalarResult(list(self.employees.values()))
@@ -3644,10 +3757,10 @@ def test_reinstate_resets_tenure_but_not_fund() -> None:
 
 
 async def test_payout_january_15_triggered_by_period() -> None:
-    employee_id = uuid.uuid4()
+    employee = make_employee()
     account = AccumulationFundAccount(
         id=uuid.uuid4(),
-        employee_id=employee_id,
+        employee_id=employee.id,
         year=2025,
         accumulated_amount=Decimal("5000"),
         paid_out_amount=Decimal("0"),
@@ -3667,7 +3780,7 @@ async def test_payout_january_15_triggered_by_period() -> None:
         blocking_issues=[],
         summary={},
     )
-    session = FundFakeSession(accounts=[account])
+    session = FundFakeSession(employees=[employee], accounts=[account])
 
     paid = await payout_previous_year_fund_if_due(session, period, run)  # type: ignore[arg-type]
     repeat = await payout_previous_year_fund_if_due(
@@ -3680,6 +3793,42 @@ async def test_payout_january_15_triggered_by_period() -> None:
     assert repeat == Decimal("0")
     assert account.status == "paid_out"
     assert session.transactions[0].transaction_type == "payout"
+
+
+async def test_payout_january_15_forfeits_dismissed_employee() -> None:
+    employee = make_employee(status="inactive")
+    employee.fire_date = date(2025, 12, 20)
+    account = AccumulationFundAccount(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        year=2025,
+        accumulated_amount=Decimal("5000"),
+        paid_out_amount=Decimal("0"),
+        forfeited_amount=Decimal("0"),
+        status="active",
+    )
+    period = make_period(
+        start=date(2026, 1, 13),
+        end=date(2026, 1, 19),
+        payroll_date=date(2026, 1, 20),
+    )
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 1, 20, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    session = FundFakeSession(employees=[employee], accounts=[account])
+
+    paid = await payout_previous_year_fund_if_due(session, period, run)  # type: ignore[arg-type]
+
+    assert paid == Decimal("0")
+    assert account.status == "forfeited"
+    assert account.paid_out_amount == Decimal("0")
+    assert account.forfeited_amount == Decimal("5000")
+    assert session.transactions[0].transaction_type == "forfeit"
 
 
 async def test_january_payout_includes_pre_exclusion_accruals() -> None:
@@ -3721,17 +3870,17 @@ async def test_january_payout_includes_pre_exclusion_accruals() -> None:
 
 
 def test_manual_payout_endpoint() -> None:
-    employee_id = uuid.uuid4()
+    employee = make_employee()
     account = AccumulationFundAccount(
         id=uuid.uuid4(),
-        employee_id=employee_id,
+        employee_id=employee.id,
         year=2025,
         accumulated_amount=Decimal("5000"),
         paid_out_amount=Decimal("0"),
         forfeited_amount=Decimal("0"),
         status="active",
     )
-    session = FundFakeSession(accounts=[account])
+    session = FundFakeSession(employees=[employee], accounts=[account])
     app = create_app()
 
     async def override_session():

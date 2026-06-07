@@ -382,7 +382,7 @@ async def add_fund_aggregates(
         .select_from(AccumulationFundTransaction)
         .join(Employee, AccumulationFundTransaction.employee_id == Employee.id)
         .where(
-            AccumulationFundTransaction.transaction_type.in_(("accrual", "payout")),
+            AccumulationFundTransaction.transaction_type.in_(("accrual", "payout", "forfeit")),
             AccumulationFundTransaction.comment.like(f"{LEGACY_FUND_COMMENT_PREFIX}%"),
             AccumulationFundTransaction.created_at >= first_at,
             AccumulationFundTransaction.created_at < last_at,

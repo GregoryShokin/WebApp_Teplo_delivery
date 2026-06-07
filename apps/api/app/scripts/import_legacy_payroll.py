@@ -11,11 +11,12 @@ import asyncio
 import csv
 import uuid
 from collections import defaultdict
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from sqlalchemy import delete, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,7 +53,7 @@ PAYMENT_TYPE_MAP: dict[str, str | tuple[str, str] | tuple[str, str, str]] = {
     "Депозит возврат": ("deposit", "payout"),
     "Депозит списание": ("deposit", "write_off"),
     "Накопительный фонд": ("fund", "accrual"),
-    "Списание накоплений": ("fund", "payout"),
+    "Списание накоплений": ("fund", "forfeit"),
 }
 
 LEGACY_CSV_COLUMNS = [
@@ -119,7 +120,7 @@ class WeeklyImportSummary:
     deposit_payout: Decimal = Decimal("0")
     deposit_write_off: Decimal = Decimal("0")
     fund_accrual: Decimal = Decimal("0")
-    fund_payout: Decimal = Decimal("0")
+    fund_forfeit: Decimal = Decimal("0")
     ndfl_withheld: Decimal = Decimal("0")
     total_payable: Decimal = Decimal("0")
 
@@ -323,7 +324,7 @@ async def import_csv_with_session(
             "deposit_payout": money_string(weekly_summary.deposit_payout),
             "deposit_write_off": money_string(weekly_summary.deposit_write_off),
             "fund_accrual": money_string(weekly_summary.fund_accrual),
-            "fund_payout": money_string(weekly_summary.fund_payout),
+            "fund_forfeit": money_string(weekly_summary.fund_forfeit),
             "ndfl_withheld": money_string(weekly_summary.ndfl_withheld),
             "total_payable": money_string(weekly_summary.total_payable),
         }
@@ -662,9 +663,26 @@ def update_fund_account_from_transaction(
 ) -> None:
     if transaction_type == "accrual":
         account.accumulated_amount = decimal_value(account.accumulated_amount) + amount
-        account.status = "active"
     elif transaction_type == "payout":
         account.paid_out_amount = decimal_value(account.paid_out_amount) + amount
+    elif transaction_type == "forfeit":
+        account.forfeited_amount = decimal_value(account.forfeited_amount) + amount
+    sync_fund_account_status(account)
+
+
+def sync_fund_account_status(account: AccumulationFundAccount) -> None:
+    accumulated = decimal_value(account.accumulated_amount)
+    paid_out = decimal_value(account.paid_out_amount)
+    forfeited = decimal_value(account.forfeited_amount)
+    outstanding = accumulated - paid_out - forfeited
+    if outstanding > 0 or (accumulated == 0 and paid_out == 0 and forfeited == 0):
+        account.status = "active"
+    elif forfeited > 0:
+        account.status = "forfeited"
+    elif paid_out > 0:
+        account.status = "paid_out"
+    else:
+        account.status = "active"
 
 
 async def recalculate_fund_accounts(
@@ -710,6 +728,7 @@ async def recalculate_fund_accounts(
         account.accumulated_amount = money(account_totals["accumulated_amount"])
         account.paid_out_amount = money(account_totals["paid_out_amount"])
         account.forfeited_amount = money(account_totals["forfeited_amount"])
+        sync_fund_account_status(account)
 
 
 async def get_role_for_date(
@@ -862,8 +881,8 @@ def add_bucket_to_weekly_summary(
         (money(item.amount) for item in bucket.funds if item.transaction_type == "accrual"),
         Decimal("0"),
     )
-    summary.fund_payout += sum(
-        (money(item.amount) for item in bucket.funds if item.transaction_type == "payout"),
+    summary.fund_forfeit += sum(
+        (money(item.amount) for item in bucket.funds if item.transaction_type == "forfeit"),
         Decimal("0"),
     )
     summary.total_payable += money(total_payable)

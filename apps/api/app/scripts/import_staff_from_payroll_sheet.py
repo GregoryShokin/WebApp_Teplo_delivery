@@ -32,6 +32,7 @@ from app.services.staff_taxonomy import target_position_for_payroll_role
 
 MONEY = Decimal("0.01")
 DEFAULT_RATE_EFFECTIVE_FROM = date(2026, 1, 1)
+FUND_EXPORT_INITIAL_BALANCE_COMMENT = "Импорт из Расчет зарплат NEW / Выгрузка"
 
 ROLE_BY_SHEET_VALUE = {
     "администратор": "administrator",
@@ -209,7 +210,8 @@ async def apply_source(
         "deposit_accounts_updated": 0,
         "deposit_transactions_created": 0,
         "fund_accounts_updated": 0,
-        "fund_transactions_upserted": 0,
+        "fund_initial_balances_removed": 0,
+        "fund_export_balances_skipped": 0,
         "missing_employees": [],
         "deposit_dismissal_notes": [],
     }
@@ -271,7 +273,8 @@ async def apply_source(
                 now=now,
             )
             summary["fund_accounts_updated"] += 1
-            summary["fund_transactions_upserted"] += fund_result["transactions_upserted"]
+            summary["fund_initial_balances_removed"] += fund_result["initial_balances_removed"]
+            summary["fund_export_balances_skipped"] += fund_result["export_balances_skipped"]
 
             after = await db_snapshot(session, employee, fund_year)
             session.add(
@@ -441,60 +444,74 @@ async def sync_fund(
     year: int,
     now: datetime,
 ) -> dict[str, int]:
-    account = await session.scalar(
-        select(AccumulationFundAccount)
-        .where(
-            AccumulationFundAccount.employee_id == employee.id,
-            AccumulationFundAccount.year == year,
-        )
-        .with_for_update()
-    )
-    if account is None:
-        account = AccumulationFundAccount(
-            id=uuid.uuid4(),
-            employee_id=employee.id,
-            year=year,
-            accumulated_amount=Decimal("0"),
-            paid_out_amount=Decimal("0"),
-            forfeited_amount=Decimal("0"),
-            status="active",
-        )
-        session.add(account)
-
-    account.accumulated_amount = accumulated.quantize(MONEY)
-    account.forfeited_amount = forfeited.quantize(MONEY)
-    account.status = "forfeited" if forfeited > 0 and forfeited >= accumulated else "active"
-    account.paid_out_amount = Decimal("0")
-    account.paid_out_at = None
-    account.forfeited_at = now if account.status == "forfeited" else None
-    account.forfeit_reason = "Импорт из листа Выгрузка" if account.status == "forfeited" else None
-
-    transaction = await session.scalar(
-        select(AccumulationFundTransaction).where(
-            AccumulationFundTransaction.employee_id == employee.id,
-            AccumulationFundTransaction.year == year,
-            AccumulationFundTransaction.transaction_type == "initial_balance",
-        )
-    )
-    if transaction is None:
-        session.add(
-            AccumulationFundTransaction(
-                id=uuid.uuid4(),
-                account_id=account.id,
-                employee_id=employee.id,
-                year=year,
-                run_id=None,
-                transaction_type="initial_balance",
-                amount=account.accumulated_amount,
-                comment="Импорт из Расчет зарплат NEW / Выгрузка",
-                created_at=now,
+    transactions = (
+        await session.scalars(
+            select(AccumulationFundTransaction).where(
+                AccumulationFundTransaction.employee_id == employee.id,
+                AccumulationFundTransaction.year == year,
+                AccumulationFundTransaction.transaction_type == "initial_balance",
+                AccumulationFundTransaction.comment == FUND_EXPORT_INITIAL_BALANCE_COMMENT,
             )
         )
-    else:
-        transaction.account_id = account.id
-        transaction.amount = account.accumulated_amount
-        transaction.comment = "Импорт из Расчет зарплат NEW / Выгрузка"
-    return {"transactions_upserted": 1}
+    ).all()
+    account_ids = {transaction.account_id for transaction in transactions}
+    for transaction in transactions:
+        await session.delete(transaction)
+    if transactions:
+        await session.flush()
+    for account_id in account_ids:
+        await recalculate_fund_account(session, account_id, now)
+
+    return {
+        "initial_balances_removed": len(transactions),
+        "export_balances_skipped": int(accumulated > 0 or forfeited > 0),
+    }
+
+
+async def recalculate_fund_account(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    now: datetime,
+) -> None:
+    account = await session.get(AccumulationFundAccount, account_id)
+    if account is None:
+        return
+    transactions = (
+        await session.scalars(
+            select(AccumulationFundTransaction).where(
+                AccumulationFundTransaction.account_id == account_id
+            )
+        )
+    ).all()
+    accumulated = Decimal("0")
+    paid_out = Decimal("0")
+    forfeited = Decimal("0")
+    for transaction in transactions:
+        amount = transaction.amount.quantize(MONEY)
+        if transaction.transaction_type in {"accrual", "initial_balance"}:
+            accumulated += amount
+        elif transaction.transaction_type == "payout":
+            paid_out += amount
+        elif transaction.transaction_type == "forfeit":
+            forfeited += amount
+
+    account.accumulated_amount = accumulated.quantize(MONEY)
+    account.paid_out_amount = paid_out.quantize(MONEY)
+    account.forfeited_amount = forfeited.quantize(MONEY)
+    outstanding = account.accumulated_amount - account.paid_out_amount - account.forfeited_amount
+    if outstanding > 0 or (account.accumulated_amount == 0 and account.forfeited_amount == 0):
+        account.status = "active"
+        if account.paid_out_amount == 0:
+            account.paid_out_at = None
+        if account.forfeited_amount == 0:
+            account.forfeited_at = None
+            account.forfeit_reason = None
+    elif account.forfeited_amount > 0:
+        account.status = "forfeited"
+        account.forfeited_at = account.forfeited_at or now
+        account.forfeit_reason = account.forfeit_reason or "Списание накопительного фонда"
+    elif account.paid_out_amount > 0:
+        account.status = "paid_out"
 
 
 async def ensure_prep_intern_setup(session: AsyncSession) -> None:

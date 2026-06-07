@@ -505,6 +505,8 @@ async def post_fund_payout(
         "year": result.year,
         "paid_out_count": result.paid_out_count,
         "total_paid_out": decimal_string(result.total_paid_out),
+        "forfeited_count": result.forfeited_count,
+        "total_forfeited": decimal_string(result.total_forfeited),
     }
 
 
