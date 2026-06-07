@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Teplo PostgreSQL backup daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+Unit=teplo-backup.service
+
+[Install]
+WantedBy=timers.target

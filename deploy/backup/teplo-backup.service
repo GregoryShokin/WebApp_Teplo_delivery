@@ -1,0 +1,12 @@
+[Unit]
+Description=Teplo PostgreSQL backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+Environment=BACKUP_DIR=/opt/teplo/backups
+Environment=RETENTION_DAYS=14
+EnvironmentFile=-/etc/default/teplo-backup
+UMask=0077
+ExecStart=/opt/teplo/deploy/backup/pg_backup.sh
