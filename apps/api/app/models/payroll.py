@@ -394,6 +394,10 @@ class PayrollRate(Base):
         ),
         CheckConstraint("amount >= 0", name="ck_payroll_rate_amount_non_negative"),
         CheckConstraint(
+            "(is_active = false) OR (amount IS NOT NULL)",
+            name="ck_payroll_rate_active_amount",
+        ),
+        CheckConstraint(
             "effective_to is null or effective_to > effective_from",
             name="ck_payroll_rate_effective_range",
         ),

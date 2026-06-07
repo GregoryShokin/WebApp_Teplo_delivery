@@ -6,9 +6,18 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.v1 import payroll_config as payroll_config_routes
 from app.main import create_app
+from app.models import PayrollRate
+from app.schemas.payroll_config import PayrollRateBase
+from app.services.payroll_config import (
+    PayrollConfigValidationError,
+    create_rate_version,
+)
 
 
 @pytest.fixture()
@@ -24,6 +33,7 @@ def _rate(
     amount: float | None,
     effective_from: date,
     effective_to: date | None = None,
+    is_active: bool = True,
 ) -> dict[str, Any]:
     return {
         "id": uuid.uuid4(),
@@ -32,7 +42,7 @@ def _rate(
         "station": None,
         "rate_type": "daily",
         "amount": amount,
-        "is_active": True,
+        "is_active": is_active,
         "effective_from": effective_from,
         "effective_to": effective_to,
         "created_at": datetime(2026, 5, 27, 10, 0, tzinfo=UTC),
@@ -239,7 +249,51 @@ def test_put_payroll_rate_manager_returns_403(
     assert response.status_code == 403
 
 
-def test_put_payroll_rate_allows_null_amount(
+def test_put_payroll_rate_active_null_amount_returns_422(client: TestClient) -> None:
+    response = client.put(
+        "/api/v1/payroll/config/rates",
+        headers={"X-User-Role": "finance_manager"},
+        json={
+            "position_group": "Шаурмист",
+            "category": "category_1",
+            "station": "shawarma",
+            "rate_type": "daily",
+            "amount": None,
+            "is_active": True,
+            "effective_from": "2026-06-01",
+            "effective_to": None,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Активная ставка требует сумму > 0" in str(response.json()["detail"])
+
+
+@pytest.mark.parametrize("amount", [0, -100])
+def test_put_payroll_rate_active_non_positive_amount_returns_422(
+    client: TestClient,
+    amount: float,
+) -> None:
+    response = client.put(
+        "/api/v1/payroll/config/rates",
+        headers={"X-User-Role": "finance_manager"},
+        json={
+            "position_group": "Шаурмист",
+            "category": "category_1",
+            "station": "shawarma",
+            "rate_type": "daily",
+            "amount": amount,
+            "is_active": True,
+            "effective_from": "2026-06-01",
+            "effective_to": None,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Активная ставка требует сумму > 0" in str(response.json()["detail"])
+
+
+def test_put_payroll_rate_allows_inactive_null_amount(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -261,7 +315,7 @@ def test_put_payroll_rate_allows_null_amount(
             "station": "shawarma",
             "rate_type": "daily",
             "amount": None,
-            "is_active": True,
+            "is_active": False,
             "effective_from": "2026-06-01",
             "effective_to": None,
         },
@@ -269,10 +323,11 @@ def test_put_payroll_rate_allows_null_amount(
 
     assert response.status_code == 200
     assert response.json()["amount"] is None
+    assert response.json()["is_active"] is False
 
 
 @pytest.mark.parametrize("method", ["post", "put"])
-def test_write_payroll_rate_invalid_category_returns_400(
+def test_write_payroll_rate_invalid_category_returns_422(
     client: TestClient,
     method: str,
 ) -> None:
@@ -291,7 +346,103 @@ def test_write_payroll_rate_invalid_category_returns_400(
         },
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("amount", [None, 0])
+async def test_create_rate_version_active_without_positive_amount_raises(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    amount: float | None,
+) -> None:
+    payload = PayrollRateBase.model_construct(
+        position_group="QA ставка",
+        category="category_1",
+        station=None,
+        rate_type="daily",
+        amount=amount,
+        is_active=True,
+        effective_from=date(2026, 6, 1),
+        effective_to=None,
+    )
+
+    async with async_session_factory() as session:
+        with pytest.raises(PayrollConfigValidationError, match="Активная ставка требует сумму > 0"):
+            await create_rate_version(session, payload)
+
+
+async def test_create_rate_version_closes_previous_version_and_keeps_new_active(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    first_payload = PayrollRateBase(
+        position_group="QA ставка",
+        category="category_1",
+        station=None,
+        rate_type="daily",
+        amount=2200,
+        is_active=True,
+        effective_from=date(2026, 1, 1),
+        effective_to=None,
+    )
+    second_payload = PayrollRateBase(
+        position_group="QA ставка",
+        category="category_1",
+        station=None,
+        rate_type="daily",
+        amount=2500,
+        is_active=True,
+        effective_from=date(2026, 6, 1),
+        effective_to=None,
+    )
+
+    async with async_session_factory() as session:
+        first = await create_rate_version(session, first_payload)
+        second = await create_rate_version(session, second_payload)
+
+        rows = list(
+            (
+                await session.scalars(
+                    select(PayrollRate)
+                    .where(
+                        PayrollRate.position_group == "QA ставка",
+                        PayrollRate.category == "category_1",
+                    )
+                    .order_by(PayrollRate.effective_from)
+                )
+            ).all()
+        )
+
+    assert len(rows) == 2
+    assert rows[0].id == first.id
+    assert rows[0].effective_to == date(2026, 6, 1)
+    assert rows[0].is_active is True
+    assert rows[1].id == second.id
+    assert rows[1].effective_from == date(2026, 6, 1)
+    assert rows[1].effective_to is None
+    assert rows[1].is_active is True
+    assert rows[1].amount == 2500
+
+
+async def test_payroll_rate_active_null_amount_is_rejected_by_db(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        session.add(
+            PayrollRate(
+                position_group="QA DB constraint",
+                category="category_1",
+                station=None,
+                rate_type="daily",
+                amount=None,
+                is_active=True,
+                effective_from=date(2026, 6, 1),
+                effective_to=None,
+            )
+        )
+
+        with pytest.raises(IntegrityError):
+            await session.commit()
+
+        await session.rollback()
 
 
 def test_get_payroll_availability_returns_matrix(

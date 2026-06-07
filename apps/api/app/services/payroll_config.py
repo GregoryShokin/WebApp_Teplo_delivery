@@ -143,8 +143,7 @@ def is_substitute_pair_allowed(
     if canonical_from is None or canonical_to is None:
         return False
     return any(
-        pair.from_position == canonical_from and pair.to_position == canonical_to
-        for pair in pairs
+        pair.from_position == canonical_from and pair.to_position == canonical_to for pair in pairs
     )
 
 
@@ -643,7 +642,7 @@ async def _ensure_rate_shell(
             station=station,
             rate_type="daily",
             amount=None,
-            is_active=True,
+            is_active=False,
             effective_from=date.today(),
             effective_to=None,
         )
@@ -668,6 +667,15 @@ def _current_filter(model: type[Any], as_of: date) -> Any:
 
 def _validate_rate_payload(payload: PayrollRateBase) -> None:
     _validate_rate_category(payload.category)
+    _validate_active_rate_amount(payload.is_active, payload.amount)
+
+
+def _validate_active_rate_amount(is_active: bool, amount: Any) -> None:
+    normalized_amount = Decimal(str(amount)) if amount is not None else None
+    if is_active is True and (normalized_amount is None or normalized_amount <= 0):
+        raise PayrollConfigValidationError("Активная ставка требует сумму > 0")
+    if normalized_amount is not None and normalized_amount < 0:
+        raise PayrollConfigValidationError("Сумма ставки не может быть отрицательной")
 
 
 def _validate_seniority_premium_payload(payload: PayrollSeniorityPremiumBase) -> None:
@@ -697,15 +705,11 @@ def _validate_substitute_pairs(raw_pairs: Any) -> list[SubstitutePair]:
             payload = item.model_dump()
             from_position = str(payload.get("from_position") or "").strip()
             to_position = str(payload.get("to_position") or "").strip()
-            add_to_schedule = _validate_substitute_pair_bool(
-                payload.get("add_to_schedule", False)
-            )
+            add_to_schedule = _validate_substitute_pair_bool(payload.get("add_to_schedule", False))
         elif isinstance(item, Mapping):
             from_position = str(item.get("from_position") or "").strip()
             to_position = str(item.get("to_position") or "").strip()
-            add_to_schedule = _validate_substitute_pair_bool(
-                item.get("add_to_schedule", False)
-            )
+            add_to_schedule = _validate_substitute_pair_bool(item.get("add_to_schedule", False))
         else:
             raise PayrollConfigValidationError("Подменная пара должна быть объектом")
 

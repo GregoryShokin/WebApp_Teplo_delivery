@@ -95,6 +95,7 @@ type PendingRate = {
   amount: string;
   effective_from: string;
   effective_to: string | null;
+  is_active: boolean;
   is_enabled: boolean;
 };
 
@@ -103,6 +104,7 @@ type RateSaveRequest = {
   amount: number | null;
   effective_from: string;
   effective_to: string | null;
+  is_active: boolean;
   is_enabled: boolean;
 };
 
@@ -298,7 +300,7 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
         station: request.record.station,
         rate_type: request.record.rate_type,
         amount: request.amount,
-        is_active: true,
+        is_active: request.is_active,
         effective_from: request.effective_from,
         effective_to: request.effective_to,
       });
@@ -308,7 +310,7 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
       setPendingRate(null);
       await invalidatePayrollConfig(queryClient);
     },
-    onError: () => toast.error("Не удалось сохранить ставку"),
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить ставку")),
   });
 
   const revenueTiersMutation = useMutation({
@@ -739,6 +741,7 @@ function RatesSection({
                                 amount: rate.amount === null ? "" : String(rate.amount),
                                 effective_from: todayKey(),
                                 effective_to: null,
+                                is_active: rate.is_active && rate.is_enabled,
                                 is_enabled: rate.is_enabled,
                               })
                             }
@@ -1973,77 +1976,168 @@ function RateConfirmDialog({
   pendingRate: PendingRate | null;
   setPendingRate: (value: PendingRate | null) => void;
 }) {
+  const [versionConfirmOpen, setVersionConfirmOpen] = useState(false);
   const record = pendingRate?.record;
   const parsedAmount = pendingRate ? parseRateAmount(pendingRate.amount) : undefined;
-  const amountIsValid = parsedAmount !== undefined;
+  const amountError = pendingRate ? rateAmountError(pendingRate) : null;
+  const effectiveFromError =
+    pendingRate && pendingRate.effective_from.trim() === "" ? "Укажите дату начала действия" : null;
+  const saveDisabledReason = amountError ?? effectiveFromError ?? (isSaving ? "Ставка сохраняется" : null);
+  const canSubmit = Boolean(pendingRate) && !amountError && !effectiveFromError && !isSaving;
+  const isExistingRate = Boolean(record?.id);
+
+  const submit = () => {
+    if (!pendingRate || amountError || effectiveFromError) {
+      return;
+    }
+    const amount = pendingRate.is_active ? Number(pendingRate.amount) : (parsedAmount ?? null);
+    onConfirm({
+      record: pendingRate.record,
+      amount,
+      effective_from: pendingRate.effective_from,
+      effective_to: pendingRate.effective_to,
+      is_active: pendingRate.is_active,
+      is_enabled: pendingRate.is_enabled,
+    });
+    setVersionConfirmOpen(false);
+  };
+
   return (
-    <Dialog onOpenChange={onOpenChange} open={Boolean(pendingRate)}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {record?.is_enabled ? "Ставка категории" : "Включить категорию и задать ставку"}
-          </DialogTitle>
-          <DialogDescription>
-            Сохранение обновит доступность комбинации и создаст новую версию ставки с выбранной
-            даты.
-          </DialogDescription>
-        </DialogHeader>
-        {pendingRate && record ? (
-          <div className="grid gap-4">
-            <div className="rounded-md bg-muted px-3 py-2 text-sm">
-              {record.position_group}, {categoryLabel(record.category)}
+    <Fragment>
+      <Dialog
+        onOpenChange={(open) => {
+          if (!open) {
+            setVersionConfirmOpen(false);
+          }
+          onOpenChange(open);
+        }}
+        open={Boolean(pendingRate)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {record?.is_enabled ? "Ставка категории" : "Включить категорию и задать ставку"}
+            </DialogTitle>
+            <DialogDescription>
+              Ставка вступит в силу с выбранной даты: сохранение создаст новую версию, прошлые
+              периоды не меняются.
+            </DialogDescription>
+          </DialogHeader>
+          {pendingRate && record ? (
+            <div className="grid gap-4">
+              <div className="rounded-md bg-muted px-3 py-2 text-sm">
+                {record.position_group}, {categoryLabel(record.category)}
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="rate-amount">Ставка</Label>
+                <Input
+                  aria-invalid={Boolean(amountError)}
+                  id="rate-amount"
+                  min={0}
+                  onChange={(event) =>
+                    setPendingRate({ ...pendingRate, amount: event.target.value })
+                  }
+                  step="1"
+                  type="number"
+                  value={pendingRate.amount}
+                />
+                {amountError ? (
+                  <div className="text-sm text-destructive">{amountError}</div>
+                ) : (
+                  <div className="text-xs text-muted-foreground">
+                    Для отключённой ставки можно оставить пусто: сохранится placeholder.
+                  </div>
+                )}
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="rate-effective-from">Дата начала действия</Label>
+                <Input
+                  aria-invalid={Boolean(effectiveFromError)}
+                  id="rate-effective-from"
+                  onChange={(event) =>
+                    setPendingRate({ ...pendingRate, effective_from: event.target.value })
+                  }
+                  type="date"
+                  value={pendingRate.effective_from}
+                />
+                {effectiveFromError ? (
+                  <div className="text-sm text-destructive">{effectiveFromError}</div>
+                ) : (
+                  <div className="text-xs text-muted-foreground">
+                    Ставка вступит в силу с этой даты (создастся новая версия, прошлые периоды не
+                    меняются).
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-3">
+                <div className="grid gap-1">
+                  <Label>Активная ставка</Label>
+                  <div className="text-xs text-muted-foreground">
+                    Выключенная ставка сохранится без суммы и не попадёт в расчёт.
+                  </div>
+                </div>
+                <BooleanWidget
+                  onChange={(value) => {
+                    const isActive = Boolean(value);
+                    setPendingRate({
+                      ...pendingRate,
+                      amount: isActive ? pendingRate.amount : "",
+                      is_active: isActive,
+                      is_enabled: isActive,
+                    });
+                  }}
+                  value={pendingRate.is_active}
+                />
+              </div>
             </div>
-            <LabeledInput
-              label="Ставка"
-              onChange={(value) => setPendingRate({ ...pendingRate, amount: String(value) })}
-              type="number"
-              value={pendingRate.amount}
-            />
-            {!amountIsValid ? (
-              <div className="text-sm text-destructive">Введите неотрицательное число.</div>
-            ) : null}
-            <LabeledInput
-              label="Дата начала действия"
-              onChange={(value) =>
-                setPendingRate({ ...pendingRate, effective_from: String(value) })
-              }
-              type="date"
-              value={pendingRate.effective_from}
-            />
-            <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-3">
-              <Label>Включить эту комбинацию</Label>
-              <BooleanWidget
-                onChange={(value) => setPendingRate({ ...pendingRate, is_enabled: Boolean(value) })}
-                value={pendingRate.is_enabled}
-              />
-            </div>
-          </div>
-        ) : null}
-        <DialogFooter>
-          <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
-            Отмена
-          </Button>
-          <Button
-            disabled={!pendingRate || !amountIsValid || isSaving}
-            onClick={() => {
-              if (!pendingRate || parsedAmount === undefined) {
-                return;
-              }
-              onConfirm({
-                record: pendingRate.record,
-                amount: parsedAmount,
-                effective_from: pendingRate.effective_from,
-                effective_to: pendingRate.effective_to,
-                is_enabled: pendingRate.is_enabled,
-              });
-            }}
-          >
-            <Save size={16} aria-hidden="true" />
-            Сохранить
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          ) : null}
+          <DialogFooter>
+            <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
+              Отмена
+            </Button>
+            <span className="inline-flex" title={saveDisabledReason ?? undefined}>
+              <Button
+                disabled={!canSubmit}
+                onClick={() => {
+                  if (!canSubmit) {
+                    return;
+                  }
+                  if (isExistingRate) {
+                    setVersionConfirmOpen(true);
+                    return;
+                  }
+                  submit();
+                }}
+              >
+                <Save size={16} aria-hidden="true" />
+                {isSaving ? "Сохраняем..." : "Сохранить"}
+              </Button>
+            </span>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog onOpenChange={setVersionConfirmOpen} open={versionConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Создать новую версию ставки?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingRate
+                ? `Это создаст новую версию ставки с ${formatDateOnly(
+                    pendingRate.effective_from,
+                  )}. Прошлые ведомости не изменятся. Продолжить?`
+                : "Это создаст новую версию ставки. Прошлые ведомости не изменятся. Продолжить?"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction disabled={!canSubmit} onClick={submit}>
+              Продолжить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Fragment>
   );
 }
 
@@ -2527,7 +2621,7 @@ function emptyRateCell(rates: PayrollRate[], position: string, category: string)
     station,
     rate_type: "daily",
     amount: null,
-    is_active: true,
+    is_active: false,
     is_enabled: false,
     effective_from: null,
     effective_to: null,
@@ -2552,6 +2646,17 @@ function parseRateAmount(value: string): number | null | undefined {
     return undefined;
   }
   return amount;
+}
+
+function rateAmountError(rate: PendingRate) {
+  const parsedAmount = parseRateAmount(rate.amount);
+  if (rate.is_active && (parsedAmount === null || parsedAmount === undefined || parsedAmount <= 0)) {
+    return "Активная ставка требует сумму > 0";
+  }
+  if (!rate.is_active && parsedAmount === undefined) {
+    return "Сумма должна быть неотрицательной или пустой";
+  }
+  return null;
 }
 
 function buildRevenueTierPayloads(
@@ -2730,10 +2835,6 @@ function groupSeniorityAllowanceHistory(history: PayrollSeniorityPremium[]) {
     }));
 }
 
-function seniorityRoleLabel(role: PayrollSeniorityPremium["role"]) {
-  return role === "senior" ? "Старший" : "Заместитель старшего";
-}
-
 function todayKey() {
   const today = new Date();
   const year = today.getFullYear();
@@ -2771,13 +2872,6 @@ function formatMoney(value: number | string | null) {
     style: "currency",
     currency: "RUB",
   }).format(numberValue);
-}
-
-function formatPercent(value: number) {
-  return new Intl.NumberFormat("ru-RU", {
-    maximumFractionDigits: 2,
-    style: "percent",
-  }).format(value);
 }
 
 function formatDate(value: string) {

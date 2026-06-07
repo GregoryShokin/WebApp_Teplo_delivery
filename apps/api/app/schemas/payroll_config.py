@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class PayrollRateBase(BaseModel):
@@ -12,10 +12,18 @@ class PayrollRateBase(BaseModel):
     category: str
     station: str | None = None
     rate_type: str = Field(default="daily", pattern="^(daily|hourly|monthly)$")
-    amount: float | None = Field(default=None, ge=0)
+    amount: float | None = None
     is_active: bool = True
     effective_from: date
     effective_to: date | None = None
+
+    @model_validator(mode="after")
+    def validate_active_amount(self) -> PayrollRateBase:
+        if self.is_active is True and (self.amount is None or self.amount <= 0):
+            raise ValueError("Активная ставка требует сумму > 0")
+        if self.amount is not None and self.amount < 0:
+            raise ValueError("Сумма ставки не может быть отрицательной")
+        return self
 
 
 class PayrollRateRead(PayrollRateBase):

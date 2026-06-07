@@ -165,7 +165,7 @@ def _ensure_admin_category_4_rate_shell() -> None:
                 "station": None,
                 "rate_type": "daily",
                 "amount": None,
-                "is_active": True,
+                "is_active": False,
                 "effective_from": EFFECTIVE_FROM,
                 "effective_to": None,
             }

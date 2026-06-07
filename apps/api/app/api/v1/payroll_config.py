@@ -47,12 +47,8 @@ from app.services.payroll_config import (
 router = APIRouter()
 SOURCE_RATES_READ_ACCESS = (Depends(require_permission("source.rates.read")),)
 SOURCE_RATES_EDIT_ACCESS = (Depends(require_permission("source.rates.edit")),)
-SOURCE_REVENUE_PERCENT_READ_ACCESS = (
-    Depends(require_permission("source.revenue_percent.read")),
-)
-SOURCE_REVENUE_PERCENT_EDIT_ACCESS = (
-    Depends(require_permission("source.revenue_percent.edit")),
-)
+SOURCE_REVENUE_PERCENT_READ_ACCESS = (Depends(require_permission("source.revenue_percent.read")),)
+SOURCE_REVENUE_PERCENT_EDIT_ACCESS = (Depends(require_permission("source.revenue_percent.edit")),)
 SOURCE_DEDUCTIONS_READ_ACCESS = (Depends(require_permission("source.deductions.read")),)
 SOURCE_DEDUCTIONS_EDIT_ACCESS = (Depends(require_permission("source.deductions.edit")),)
 SOURCE_ALLOWANCES_READ_ACCESS = (Depends(require_permission("source.allowances.read")),)
@@ -95,7 +91,10 @@ async def put_rate(
     except PayrollConfigConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except PayrollConfigValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get(
