@@ -3702,6 +3702,9 @@ function StaffEditor({
   const activeRoleIds = new Set(assignments.map((assignment) => assignment.payroll_role));
   const roleOptions = payrollRolesForPosition(draft.position);
   const editorPosition = canonicalPosition(draft.position);
+  const positionUnsaved =
+    canonicalPosition(draft.position) !== canonicalPosition(initialDraft.position);
+  const substituteAddDisabledReason = positionUnsaved ? "Сначала сохраните должность" : null;
   const editorPremiumOptions = editorPosition ? premiumApplicability[editorPosition] : null;
   const editorRequiresPin = positionRequiresPin(draft.position);
   const showEditorCashierRole = editorPosition === "Кассир";
@@ -3984,6 +3987,7 @@ function StaffEditor({
 
       {employee.requires_role_review ? (
         <RoleReviewBanner
+          addDisabledReason={substituteAddDisabledReason}
           canEdit={canEditEmployee}
           employee={employee}
           onAddSubstitute={(targetPosition) => setSubstituteDialog({ targetPosition })}
@@ -4279,6 +4283,7 @@ function StaffEditor({
 
         {showSubstituteSection ? (
           <SubstituteRolesSection
+            addDisabledReason={substituteAddDisabledReason}
             assignments={employeeSubstitutes}
             canEdit={canEditEmployee}
             onAdd={(targetPosition) => setSubstituteDialog({ targetPosition })}
@@ -5558,6 +5563,7 @@ function StaticField({ label, value }: { label: string; value: string }) {
 }
 
 function RoleReviewBanner({
+  addDisabledReason,
   canEdit,
   employee,
   isIgnoring,
@@ -5566,6 +5572,7 @@ function RoleReviewBanner({
   onOpenSettings,
   pairs,
 }: {
+  addDisabledReason?: string | null;
   canEdit: boolean;
   employee: Employee;
   isIgnoring: boolean;
@@ -5581,6 +5588,7 @@ function RoleReviewBanner({
   const configured = Boolean(
     firstPosition && pairs.some((pair) => pair.to_position === firstPosition),
   );
+  const addDisabled = Boolean(addDisabledReason);
 
   return (
     <section className="grid gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950">
@@ -5598,43 +5606,55 @@ function RoleReviewBanner({
         ) : null}
       </div>
       {canEdit ? (
-      <div className="flex flex-wrap gap-2">
-        {reason === "unconfigured_pair" || !configured || !firstPosition ? (
+        <div className="flex flex-wrap gap-2">
+          {reason === "unconfigured_pair" || !configured || !firstPosition ? (
+            <Button
+              className="border-amber-300 bg-background text-amber-950 hover:bg-amber-100"
+              onClick={onOpenSettings}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <SettingsIcon />
+              Добавить пару в Настройках
+            </Button>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                className="border-amber-300 bg-background text-amber-950 hover:bg-amber-100"
+                disabled={addDisabled}
+                onClick={() => {
+                  if (addDisabled) {
+                    return;
+                  }
+                  onAddSubstitute(firstPosition);
+                }}
+                size="sm"
+                title={addDisabledReason ?? undefined}
+                type="button"
+                variant="outline"
+              >
+                <Plus size={15} aria-hidden="true" />
+                Добавить как substitute
+              </Button>
+              {addDisabledReason ? (
+                <span className="text-xs text-amber-800">{addDisabledReason}</span>
+              ) : null}
+            </div>
+          )}
           <Button
-            className="border-amber-300 bg-background text-amber-950 hover:bg-amber-100"
-            onClick={onOpenSettings}
+            disabled={isIgnoring}
+            onClick={onIgnore}
             size="sm"
             type="button"
-            variant="outline"
+            variant="ghost"
           >
-            <SettingsIcon />
-            Добавить пару в Настройках
+            {isIgnoring ? (
+              <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+            ) : null}
+            Игнорировать
           </Button>
-        ) : (
-          <Button
-            className="border-amber-300 bg-background text-amber-950 hover:bg-amber-100"
-            onClick={() => onAddSubstitute(firstPosition)}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <Plus size={15} aria-hidden="true" />
-            Добавить как substitute
-          </Button>
-        )}
-        <Button
-          disabled={isIgnoring}
-          onClick={onIgnore}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          {isIgnoring ? (
-            <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
-          ) : null}
-          Игнорировать
-        </Button>
-      </div>
+        </div>
       ) : null}
     </section>
   );
@@ -5645,6 +5665,7 @@ function SettingsIcon() {
 }
 
 function SubstituteRolesSection({
+  addDisabledReason,
   assignments,
   canEdit,
   onAdd,
@@ -5652,6 +5673,7 @@ function SubstituteRolesSection({
   onEdit,
   pairs,
 }: {
+  addDisabledReason?: string | null;
   assignments: EmployeeRoleAssignment[];
   canEdit: boolean;
   onAdd: (targetPosition: "Повар" | "Кассир") => void;
@@ -5660,6 +5682,7 @@ function SubstituteRolesSection({
   pairs: SubstitutePair[];
 }) {
   const targets = Array.from(new Set(pairs.map((pair) => pair.to_position)));
+  const addDisabled = Boolean(addDisabledReason);
   return (
     <section className="grid gap-3 rounded-lg border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -5670,20 +5693,30 @@ function SubstituteRolesSection({
           </div>
         </div>
         {canEdit ? (
-        <div className="flex flex-wrap gap-2">
-          {targets.map((target) => (
-            <Button
-              key={target}
-              onClick={() => onAdd(target)}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <Plus size={15} aria-hidden="true" />
-              Добавить {target.toLowerCase()}
-            </Button>
-          ))}
-        </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {targets.map((target) => (
+              <Button
+                disabled={addDisabled}
+                key={target}
+                onClick={() => {
+                  if (addDisabled) {
+                    return;
+                  }
+                  onAdd(target);
+                }}
+                size="sm"
+                title={addDisabledReason ?? undefined}
+                type="button"
+                variant="outline"
+              >
+                <Plus size={15} aria-hidden="true" />
+                Добавить {target.toLowerCase()}
+              </Button>
+            ))}
+            {addDisabledReason ? (
+              <span className="text-xs text-muted-foreground">{addDisabledReason}</span>
+            ) : null}
+          </div>
         ) : null}
       </div>
       {targets.length > 0 ? (
@@ -5716,26 +5749,26 @@ function SubstituteRolesSection({
                 </div>
               </div>
               {canEdit ? (
-              <div className="flex gap-1">
-                <Button
-                  onClick={() => onEdit(assignment)}
-                  size="icon"
-                  title="Изменить подменную роль"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Pencil size={15} aria-hidden="true" />
-                </Button>
-                <Button
-                  onClick={() => onDelete(assignment)}
-                  size="icon"
-                  title="Удалить подменную роль"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Trash2 size={15} aria-hidden="true" />
-                </Button>
-              </div>
+                <div className="flex gap-1">
+                  <Button
+                    onClick={() => onEdit(assignment)}
+                    size="icon"
+                    title="Изменить подменную роль"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Pencil size={15} aria-hidden="true" />
+                  </Button>
+                  <Button
+                    onClick={() => onDelete(assignment)}
+                    size="icon"
+                    title="Удалить подменную роль"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Trash2 size={15} aria-hidden="true" />
+                  </Button>
+                </div>
               ) : null}
             </div>
           ))}
