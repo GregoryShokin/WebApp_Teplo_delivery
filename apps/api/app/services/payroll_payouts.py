@@ -325,7 +325,10 @@ async def _payment_rows_with_totals(
         .group_by(PayrollPayment.id, Employee.id)
         .order_by(Employee.full_name, PayrollPayment.employee_id)
     )
-    return [(payment, employee, _money(new_amount)) for payment, employee, new_amount in result.all()]
+    return [
+        (payment, employee, _money(new_amount))
+        for payment, employee, new_amount in result.all()
+    ]
 
 
 def _set_payment_total(payment: PayrollPayment, new_amount: Decimal) -> None:

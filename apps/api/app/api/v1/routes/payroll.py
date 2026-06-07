@@ -27,13 +27,13 @@ from app.schemas.payroll import (
     PayrollAggregateRead,
     PayrollLineDepositOverridePatch,
     PayrollLineRead,
+    PayrollPaymentMarkRequest,
+    PayrollPaymentsMarkAllRequest,
+    PayrollPaymentsMarkAllResponse,
     PayrollPayoutApplyDeltasResponse,
     PayrollPayoutDeltaRead,
     PayrollPayoutDraftsResponse,
     PayrollPayoutSplitPatch,
-    PayrollPaymentMarkRequest,
-    PayrollPaymentsMarkAllRequest,
-    PayrollPaymentsMarkAllResponse,
     PayrollPeriodRead,
     PayrollPersonalReportRead,
     PayrollRunCreate,
@@ -52,13 +52,13 @@ from app.services.deferred_audit_charge_service import (
 from app.services.payroll_aggregate_service import build_aggregate
 from app.services.payroll_config import list_enabled_role_categories
 from app.services.payroll_payments import mark_all_payments, mark_payment, unmark_payment
-from app.services.payroll_personal_report import build_personal_report
 from app.services.payroll_payouts import (
     apply_payout_deltas,
     create_or_update_drafts,
     get_payout_deltas,
     set_payout_split,
 )
+from app.services.payroll_personal_report import build_personal_report
 from app.services.payroll_runner import (
     PayrollConflictError,
     PayrollNotFoundError,
@@ -575,6 +575,8 @@ async def get_payments_by_employee(
 ) -> dict[uuid.UUID, PayrollPayment]:
     unique_employee_ids = list(set(employee_ids))
     if not unique_employee_ids:
+        return {}
+    if not hasattr(session, "scalars"):
         return {}
     result = await session.scalars(
         select(PayrollPayment).where(

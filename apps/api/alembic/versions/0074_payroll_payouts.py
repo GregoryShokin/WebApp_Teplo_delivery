@@ -51,7 +51,7 @@ def upgrade() -> None:
     )
     op.add_column(
         "payroll_payment",
-        sa.Column("draft_document_id", sa.String(length=64), nullable=True),
+        sa.Column("draft_document_id", sa.String(length=96), nullable=True),
     )
     op.add_column(
         "payroll_payment",
@@ -70,7 +70,9 @@ def upgrade() -> None:
             server_default="0",
         ),
     )
-    op.execute("update payroll_payment set amount_account = amount, amount_cash = 0, status = 'paid'")
+    op.execute(
+        "update payroll_payment set amount_account = amount, amount_cash = 0, status = 'paid'"
+    )
 
     op.drop_constraint("ck_payroll_payment_method", "payroll_payment", type_="check")
     op.alter_column("payroll_payment", "paid_at", existing_type=sa.Date(), nullable=True)

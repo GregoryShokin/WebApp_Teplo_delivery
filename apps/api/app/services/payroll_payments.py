@@ -212,7 +212,10 @@ async def _unpaid_employee_payment_rows(
         .group_by(PayrollLine.employee_id, PayrollPayment.id)
         .order_by(PayrollLine.employee_id)
     )
-    return [(employee_id, Decimal(amount), payment) for employee_id, amount, payment in result.all()]
+    return [
+        (employee_id, Decimal(amount), payment)
+        for employee_id, amount, payment in result.all()
+    ]
 
 
 def _initial_split_for_method(amount: Decimal, method: str) -> dict[str, Decimal]:

@@ -208,7 +208,7 @@ class PayrollPayment(Base):
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="paid", server_default="paid"
     )
-    draft_document_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    draft_document_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
     draft_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
     draft_synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
