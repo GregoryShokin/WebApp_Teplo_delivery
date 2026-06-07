@@ -27,7 +27,7 @@ def test_owner_review_classify_creates_cashflow_and_rule(
 
     denied_response = client.post(
         f"/api/v1/dds/owner-review/{case_id}/classify",
-        headers={"X-User-Role": "finance_manager"},
+        headers={"X-User-Role": "manager"},
         json=payload,
     )
     assert denied_response.status_code == 403

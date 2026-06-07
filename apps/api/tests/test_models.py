@@ -773,28 +773,28 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
         await engine.dispose()
 
     assert counts == {
-        "role": 5,
+        "role": 7,
         "data_source": 6,
         "organization": 1,
         "location": 2,
         "user": 1,
-        "app_setting": 27,
-        "app_setting_history": 26,
+        "app_setting": 37,
+        "app_setting_history": 25,
         "payroll_rate": 22,
-        "payroll_role_category_availability": 30,
-        "enabled_payroll_role_category_availability": 16,
+        "payroll_role_category_availability": 42,
+        "enabled_payroll_role_category_availability": 17,
         "payroll_revenue_share": 4,
         "revenue_tier": 4,
         "category_coefficient": 6,
         "current_category_coefficient": 6,
         "current_category_2_coefficient": "7.500",
         "payroll_deduction_category": 4,
-        "payroll_adjustment_category": 6,
-        "payroll_seniority_premium": 2,
+        "payroll_adjustment_category": 7,
+        "payroll_seniority_premium": 4,
         "employee_dismissal_reason": 7,
         "invalid_payroll_rate_category": 0,
         "invalid_employee_category": 0,
-        "inactive_payroll_rate_placeholder": 6,
+        "inactive_payroll_rate_placeholder": 5,
     }
 
 
@@ -833,7 +833,7 @@ async def test_seeded_settings_have_display_metadata(migrated_db: str) -> None:
     )
     assert weekday_premium == (
         "payroll",
-        {"friday": 200, "saturday": 200},
+        {"amount": 200, "threshold_hours": 8.0},
         "weekday_premium",
         "₽",
     )

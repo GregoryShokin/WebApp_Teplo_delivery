@@ -8,7 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import CurrentActor, require_permission
-from app.auth.permissions import ALL_PERMISSION_CODES, DEFAULT_ROLE_PERMISSIONS
+from app.auth.permissions import (
+    ALL_PERMISSION_CODES,
+    DEFAULT_ROLE_PERMISSIONS,
+    permission_is_granted,
+)
 from app.models import Permission, Role, RolePermission
 
 
@@ -45,6 +49,14 @@ def test_require_permission_allows_matching_permission_and_denies_missing() -> N
         asyncio.run(dependency(CurrentActor(roles=frozenset({"cashier"}))))
 
     assert exc_info.value.status_code == 403
+
+
+def test_split_permission_does_not_expand_to_legacy_siblings() -> None:
+    granted_codes = {"settings.users.read"}
+
+    assert permission_is_granted("settings.users.read", granted_codes)
+    assert not permission_is_granted("settings.users.create", granted_codes)
+    assert not permission_is_granted("settings.access.assign", granted_codes)
 
 
 async def _load_seeded_permissions(

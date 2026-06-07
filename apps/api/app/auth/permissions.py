@@ -560,8 +560,6 @@ def expand_permission_codes(codes: Iterable[str]) -> frozenset[str]:
     for legacy_code, replacement_codes in LEGACY_PERMISSION_ALIASES.items():
         if legacy_code in expanded:
             expanded.update(replacement_codes)
-        if expanded & replacement_codes:
-            expanded.add(legacy_code)
     return frozenset(expanded)
 
 
@@ -576,7 +574,13 @@ def normalize_permission_codes_for_storage(codes: Iterable[str]) -> frozenset[st
 
 
 def permission_is_granted(required_code: str, granted_codes: Iterable[str]) -> bool:
-    return required_code in expand_permission_codes(granted_codes)
+    expanded_codes = expand_permission_codes(granted_codes)
+    if required_code in expanded_codes:
+        return True
+    replacement_codes = LEGACY_PERMISSION_ALIASES.get(required_code)
+    if replacement_codes is None:
+        return False
+    return replacement_codes <= expanded_codes
 
 
 def _validate_catalog() -> None:

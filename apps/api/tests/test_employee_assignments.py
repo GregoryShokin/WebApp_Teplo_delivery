@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from fastapi import HTTPException
@@ -293,6 +294,7 @@ async def test_get_with_include_pending_returns_future(session_factory) -> None:
         assignments = await list_employee_assignments(
             employee.id,
             session,
+            _finance_manager(),
             on_date=today,
             include_pending=True,
         )
@@ -331,6 +333,7 @@ async def test_get_without_include_pending_returns_only_active(session_factory) 
         assignments = await list_employee_assignments(
             employee.id,
             session,
+            _finance_manager(),
             on_date=today,
             include_pending=False,
         )
@@ -680,16 +683,18 @@ async def test_backdated_assignment_over_finalized_payroll_requires_review_witho
             run_id=run.id,
             employee_id=employee.id,
             role="sushi",
-            base_pay=1000,
-            premium=0,
-            percent_pay=0,
-            vacation_pay=0,
-            fund_accrual=0,
-            deduction=0,
-            total_payable=1000,
+            base_pay=Decimal("1000.00"),
+            premium=Decimal("0.00"),
+            percent_pay=Decimal("0.00"),
+            vacation_pay=Decimal("0.00"),
+            fund_accrual=Decimal("0.00"),
+            deduction=Decimal("0.00"),
+            total_payable=Decimal("1000.00"),
             components={"days": []},
         )
-        session.add_all([period, run, line])
+        session.add_all([period, run])
+        await session.flush()
+        session.add(line)
         await session.commit()
 
         updated = await patch_employee_assignment(
