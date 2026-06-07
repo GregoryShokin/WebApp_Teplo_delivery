@@ -46,6 +46,12 @@ class AccountMeta(BaseModel):
     legal_entity_inn: str | None = None
 
 
+class PaymentDraftResult(BaseModel):
+    document_id: str
+    status: str
+    provider_ref: str | None = None
+
+
 class BankClient(Protocol):
     provider: str
 
@@ -55,6 +61,16 @@ class BankClient(Protocol):
         ...
 
     async def fetch_account_metadata(self) -> list[AccountMeta]:
+        ...
+
+    async def create_payment_draft(
+        self,
+        *,
+        document_id: str,
+        amount: Decimal,
+        purpose: str,
+        recipient_name: str,
+    ) -> PaymentDraftResult:
         ...
 
 

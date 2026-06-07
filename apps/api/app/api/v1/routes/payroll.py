@@ -27,6 +27,10 @@ from app.schemas.payroll import (
     PayrollAggregateRead,
     PayrollLineDepositOverridePatch,
     PayrollLineRead,
+    PayrollPayoutApplyDeltasResponse,
+    PayrollPayoutDeltaRead,
+    PayrollPayoutDraftsResponse,
+    PayrollPayoutSplitPatch,
     PayrollPaymentMarkRequest,
     PayrollPaymentsMarkAllRequest,
     PayrollPaymentsMarkAllResponse,
@@ -49,6 +53,12 @@ from app.services.payroll_aggregate_service import build_aggregate
 from app.services.payroll_config import list_enabled_role_categories
 from app.services.payroll_payments import mark_all_payments, mark_payment, unmark_payment
 from app.services.payroll_personal_report import build_personal_report
+from app.services.payroll_payouts import (
+    apply_payout_deltas,
+    create_or_update_drafts,
+    get_payout_deltas,
+    set_payout_split,
+)
 from app.services.payroll_runner import (
     PayrollConflictError,
     PayrollNotFoundError,
@@ -68,6 +78,7 @@ PAYROLL_RUNS_START_ACCESS = (Depends(require_permission("payroll.runs.start")),)
 PAYROLL_RUNS_FINALIZE_ACCESS = (Depends(require_permission("payroll.runs.finalize")),)
 PAYROLL_RUNS_REOPEN_ACCESS = (Depends(require_permission("payroll.runs.reopen")),)
 PAYROLL_RUNS_MARK_PAID_ACCESS = (Depends(require_permission("payroll.runs.mark_paid")),)
+PAYROLL_RUNS_BANK_DRAFT_ACCESS = (Depends(require_permission("payroll.runs.bank_draft")),)
 PAYROLL_ACCRUALS_READ_ACCESS = (Depends(require_permission("payroll.accruals.read")),)
 PAYROLL_PERSONAL_REPORTS_READ_ACCESS = (
     Depends(require_permission("payroll.personal_reports.read")),
@@ -368,6 +379,96 @@ async def post_unfinalize(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
+@router.patch(
+    "/runs/{run_id}/payouts/{employee_id}/split",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=PAYROLL_RUNS_BANK_DRAFT_ACCESS,
+)
+async def patch_payout_split(
+    run_id: uuid.UUID,
+    employee_id: uuid.UUID,
+    payload: PayrollPayoutSplitPatch,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    try:
+        await set_payout_split(
+            session,
+            run_id,
+            employee_id,
+            amount_cash=payload.amount_cash,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/runs/{run_id}/payouts/drafts",
+    response_model=PayrollPayoutDraftsResponse,
+    dependencies=PAYROLL_RUNS_BANK_DRAFT_ACCESS,
+)
+async def post_payout_drafts(
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollPayoutDraftsResponse:
+    try:
+        drafts_count = await create_or_update_drafts(
+            session,
+            run_id,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return PayrollPayoutDraftsResponse(drafts_count=drafts_count)
+
+
+@router.get(
+    "/runs/{run_id}/payouts/deltas",
+    response_model=list[PayrollPayoutDeltaRead],
+    dependencies=PAYROLL_RUNS_BANK_DRAFT_ACCESS,
+)
+async def get_payout_delta_list(
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> list[dict[str, Any]]:
+    try:
+        return await get_payout_deltas(session, run_id)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/runs/{run_id}/payouts/apply-deltas",
+    response_model=PayrollPayoutApplyDeltasResponse,
+    dependencies=PAYROLL_RUNS_BANK_DRAFT_ACCESS,
+)
+async def post_apply_payout_deltas(
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollPayoutApplyDeltasResponse:
+    try:
+        applied_count = await apply_payout_deltas(
+            session,
+            run_id,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return PayrollPayoutApplyDeltasResponse(applied_count=applied_count)
+
+
 @router.post(
     "/runs/{run_id}/payments",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -493,15 +594,23 @@ def serialize_payroll_line(
     if getattr(line, "ndfl_withheld", None) is None:
         line.ndfl_withheld = Decimal("0")
     payment = (payments_by_employee or {}).get(line.employee_id)
+    is_paid = payment is not None and payment.status == "paid"
     return PayrollLineRead.model_validate(line).model_copy(
         update={
             "deposit_withholding": money_float(components.get("deposit_withholding", 0)),
             "deposit_payout": payouts_by_employee.get(line.employee_id, 0),
             "ndfl_deduction": money_float(getattr(line, "ndfl_withheld", 0)),
-            "payment_status": "paid" if payment is not None else "pending",
-            "paid_amount": money_float(payment.amount) if payment is not None else None,
-            "paid_at": payment.paid_at if payment is not None else None,
-            "paid_method": payment.method if payment is not None else None,
+            "payment_status": "paid" if is_paid else "pending",
+            "amount_cash": money_float(payment.amount_cash) if payment is not None else 0,
+            "amount_account": money_float(payment.amount_account) if payment is not None else 0,
+            "payout_status": payment.status if payment is not None else "pending",
+            "draft_status": payment.draft_status if payment is not None else None,
+            "overpaid_amount": money_float(payment.overpaid_amount)
+            if payment is not None
+            else 0,
+            "paid_amount": money_float(payment.amount) if is_paid else None,
+            "paid_at": payment.paid_at if is_paid else None,
+            "paid_method": payment.method if is_paid else None,
         }
     )
 

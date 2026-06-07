@@ -6,7 +6,6 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import delete, func, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import PayrollLine, PayrollPayment, PayrollRun, PayrollRunEvent
@@ -28,30 +27,32 @@ async def mark_payment(
     _validate_method(method)
     amount = await _employee_payable_amount(session, run_id, employee_id)
 
-    payment_id = uuid.uuid4()
-    stmt = (
-        pg_insert(PayrollPayment)
-        .values(
-            id=payment_id,
+    payment = await session.scalar(
+        select(PayrollPayment).where(
+            PayrollPayment.run_id == run_id,
+            PayrollPayment.employee_id == employee_id,
+        )
+    )
+    if payment is None:
+        payment = PayrollPayment(
+            id=uuid.uuid4(),
             run_id=run_id,
             employee_id=employee_id,
             amount=amount,
             paid_at=paid_at,
             method=method,
             paid_by_user_id=actor_user_id,
+            status="paid",
+            **_initial_split_for_method(amount, method),
         )
-        .on_conflict_do_update(
-            index_elements=[PayrollPayment.run_id, PayrollPayment.employee_id],
-            set_={
-                "amount": amount,
-                "paid_at": paid_at,
-                "method": method,
-                "paid_by_user_id": actor_user_id,
-            },
-        )
-        .returning(PayrollPayment.id)
-    )
-    payment_id = (await session.execute(stmt)).scalar_one()
+        session.add(payment)
+    else:
+        payment.amount = amount
+        _reconcile_split_for_paid(payment, amount, method)
+        payment.paid_at = paid_at
+        payment.method = method
+        payment.paid_by_user_id = actor_user_id
+        payment.status = "paid"
     _add_payment_event(
         session,
         run=run,
@@ -65,9 +66,6 @@ async def mark_payment(
         },
     )
     await session.commit()
-    payment = await session.get(PayrollPayment, payment_id)
-    if payment is None:
-        raise PayrollNotFoundError("Payroll payment not found")
     await session.refresh(payment)
     return payment
 
@@ -86,7 +84,7 @@ async def unmark_payment(
             PayrollPayment.employee_id == employee_id,
         )
     )
-    if payment is None:
+    if payment is None or payment.status != "paid":
         raise PayrollNotFoundError("Payroll payment not found")
 
     await session.execute(delete(PayrollPayment).where(PayrollPayment.id == payment.id))
@@ -115,33 +113,42 @@ async def mark_all_payments(
 ) -> int:
     run = await _get_payment_run(session, run_id)
     _validate_method(method)
-    rows = await _unpaid_employee_amounts(session, run_id)
+    rows = await _unpaid_employee_payment_rows(session, run_id)
     if not rows:
         return 0
 
-    values = [
-        {
-            "id": uuid.uuid4(),
-            "run_id": run_id,
-            "employee_id": employee_id,
-            "amount": amount,
-            "paid_at": paid_at,
-            "method": method,
-            "paid_by_user_id": actor_user_id,
-        }
-        for employee_id, amount in rows
-    ]
-    await session.execute(pg_insert(PayrollPayment).values(values))
+    for employee_id, amount, payment in rows:
+        if payment is None:
+            session.add(
+                PayrollPayment(
+                    id=uuid.uuid4(),
+                    run_id=run_id,
+                    employee_id=employee_id,
+                    amount=amount,
+                    paid_at=paid_at,
+                    method=method,
+                    paid_by_user_id=actor_user_id,
+                    status="paid",
+                    **_initial_split_for_method(amount, method),
+                )
+            )
+            continue
+        payment.amount = amount
+        _reconcile_split_for_paid(payment, amount, method)
+        payment.paid_at = paid_at
+        payment.method = method
+        payment.paid_by_user_id = actor_user_id
+        payment.status = "paid"
     _add_payment_event(
         session,
         run=run,
         action="payment_marked",
         actor_user_id=actor_user_id,
         payload={
-            "employee_ids": [str(employee_id) for employee_id, _amount in rows],
+            "employee_ids": [str(employee_id) for employee_id, _amount, _payment in rows],
             "count": len(rows),
             "amount_total": money_text(
-                sum((amount for _employee_id, amount in rows), Decimal("0"))
+                sum((amount for _employee_id, amount, _payment in rows), Decimal("0"))
             ),
             "method": method,
             "paid_at": paid_at.isoformat(),
@@ -183,25 +190,51 @@ async def _employee_payable_amount(
     return Decimal(amount)
 
 
-async def _unpaid_employee_amounts(
+async def _unpaid_employee_payment_rows(
     session: AsyncSession,
     run_id: uuid.UUID,
-) -> list[tuple[uuid.UUID, Decimal]]:
-    existing_payment = (
-        select(PayrollPayment.id)
-        .where(
-            PayrollPayment.run_id == run_id,
-            PayrollPayment.employee_id == PayrollLine.employee_id,
-        )
-        .exists()
-    )
+) -> list[tuple[uuid.UUID, Decimal, PayrollPayment | None]]:
     result = await session.execute(
-        select(PayrollLine.employee_id, func.sum(PayrollLine.total_payable))
-        .where(PayrollLine.run_id == run_id, ~existing_payment)
-        .group_by(PayrollLine.employee_id)
+        select(
+            PayrollLine.employee_id,
+            func.sum(PayrollLine.total_payable),
+            PayrollPayment,
+        )
+        .outerjoin(
+            PayrollPayment,
+            (PayrollPayment.run_id == PayrollLine.run_id)
+            & (PayrollPayment.employee_id == PayrollLine.employee_id),
+        )
+        .where(
+            PayrollLine.run_id == run_id,
+            (PayrollPayment.id.is_(None)) | (PayrollPayment.status != "paid"),
+        )
+        .group_by(PayrollLine.employee_id, PayrollPayment.id)
         .order_by(PayrollLine.employee_id)
     )
-    return [(employee_id, Decimal(amount)) for employee_id, amount in result.all()]
+    return [(employee_id, Decimal(amount), payment) for employee_id, amount, payment in result.all()]
+
+
+def _initial_split_for_method(amount: Decimal, method: str) -> dict[str, Decimal]:
+    if method == "cash":
+        return {"amount_cash": amount, "amount_account": Decimal("0")}
+    return {"amount_cash": Decimal("0"), "amount_account": amount}
+
+
+def _reconcile_split_for_paid(payment: PayrollPayment, amount: Decimal, method: str) -> None:
+    amount_cash = Decimal(payment.amount_cash or 0)
+    amount_account = Decimal(payment.amount_account or 0)
+    if amount_cash == 0 and amount_account == 0:
+        split = _initial_split_for_method(amount, method)
+        payment.amount_cash = split["amount_cash"]
+        payment.amount_account = split["amount_account"]
+        return
+    if amount_cash == 0 and method == "cash":
+        payment.amount_cash = amount
+        payment.amount_account = Decimal("0")
+        return
+    payment.amount_cash = min(amount_cash, amount)
+    payment.amount_account = amount - payment.amount_cash
 
 
 def _add_payment_event(

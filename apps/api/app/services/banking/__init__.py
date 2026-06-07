@@ -1,4 +1,9 @@
-from app.services.banking.base import AccountMeta, BankClient, NormalizedBankOperation
+from app.services.banking.base import (
+    AccountMeta,
+    BankClient,
+    NormalizedBankOperation,
+    PaymentDraftResult,
+)
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 from app.services.banking.sber import SberClient
 from app.services.banking.tbank import TbankClient
@@ -9,6 +14,7 @@ __all__ = [
     "BankCredentialsError",
     "BankFetchError",
     "NormalizedBankOperation",
+    "PaymentDraftResult",
     "SberClient",
     "TbankClient",
 ]

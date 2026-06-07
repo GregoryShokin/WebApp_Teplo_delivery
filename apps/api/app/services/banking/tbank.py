@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -11,6 +12,7 @@ from app.core.config import Settings, get_settings
 from app.services.banking.base import (
     AccountMeta,
     NormalizedBankOperation,
+    PaymentDraftResult,
     clean_digits,
     configured_account_metadata,
     date_range,
@@ -63,6 +65,25 @@ class TbankClient:
         if self.settings.teplo_bank_client_mode == "mock":
             return await self._fetch_mock_statement(date_from=date_from, date_to=date_to)
         return await self._fetch_live_statement(date_from=date_from, date_to=date_to)
+
+    async def create_payment_draft(
+        self,
+        *,
+        document_id: str,
+        amount: Decimal,
+        purpose: str,
+        recipient_name: str,
+    ) -> PaymentDraftResult:
+        if self.settings.teplo_bank_client_mode == "mock":
+            return PaymentDraftResult(
+                document_id=document_id,
+                status="created",
+                provider_ref=f"mock-{document_id}",
+            )
+
+        # Stage 2 live constants: POST https://secured-openapi.tbank.ru/api/v1/payment/create,
+        # Authorization: Bearer <token>, payment key: documentId.
+        raise NotImplementedError("T-Bank payment draft (live) — этап 2")
 
     async def _fetch_mock_statement(
         self, *, date_from: date, date_to: date

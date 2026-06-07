@@ -91,6 +91,11 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Зарплата",
         "Отмечать выплаты по ведомости",
     ),
+    (
+        "payroll.runs.bank_draft",
+        "Зарплата",
+        "Формировать банковские черновики выплат",
+    ),
     ("payroll.accruals.read", "Зарплата", "Смотреть начисления сотрудников"),
     ("payroll.personal_reports.read", "Зарплата", "Смотреть персональные отчёты сотрудников"),
     ("payroll.adjustments.edit", "Зарплата", "Редактировать корректировки зарплаты"),
@@ -363,7 +368,9 @@ LEGACY_PERMISSION_ALIASES: dict[str, frozenset[str]] = {
     "payroll.revisions.read": frozenset({"revisions.deferrals.read"}),
     "payroll.revision_penalties.add": frozenset({"revisions.deferrals.manage"}),
     "payroll.runs.write": frozenset({"payroll.runs.start", "payroll.runs.recalculate"}),
-    "payroll.runs.finalize": frozenset({"payroll.runs.finalize", "payroll.runs.mark_paid"}),
+    "payroll.runs.finalize": frozenset(
+        {"payroll.runs.finalize", "payroll.runs.mark_paid", "payroll.runs.bank_draft"}
+    ),
     "payroll.adjustments.write": frozenset(
         {
             "payroll.adjustments.edit",
@@ -471,6 +478,7 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "couriers.deposits.configure",
         "payroll.runs.read",
         "payroll.runs.mark_paid",
+        "payroll.runs.bank_draft",
         "payroll.accruals.read",
         "payroll.adjustments.edit",
         "payroll.bonuses.add",

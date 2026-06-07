@@ -51,6 +51,28 @@ class PayrollPaymentsMarkAllResponse(BaseModel):
     marked_count: int
 
 
+class PayrollPayoutSplitPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount_cash: Decimal
+
+
+class PayrollPayoutDraftsResponse(BaseModel):
+    drafts_count: int
+
+
+class PayrollPayoutApplyDeltasResponse(BaseModel):
+    applied_count: int
+
+
+class PayrollPayoutDeltaRead(BaseModel):
+    employee_id: uuid.UUID
+    previous_amount: Decimal
+    new_amount: Decimal
+    delta: Decimal
+    classification: str
+
+
 class PayrollRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -86,6 +108,11 @@ class PayrollLineRead(BaseModel):
     deposit_excluded_for_run: bool = False
     deposit_exclusion_reason: str | None = None
     payment_status: str = "pending"
+    amount_cash: float = 0
+    amount_account: float = 0
+    payout_status: str = "pending"
+    draft_status: str | None = None
+    overpaid_amount: float = 0
     paid_amount: float | None = None
     paid_at: date | None = None
     paid_method: str | None = None

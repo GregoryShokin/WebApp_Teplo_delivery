@@ -170,8 +170,21 @@ class PayrollPayment(Base):
     __tablename__ = "payroll_payment"
     __table_args__ = (
         CheckConstraint("amount >= 0", name="ck_payroll_payment_amount_non_negative"),
+        CheckConstraint("amount_cash >= 0", name="ck_payroll_payment_amount_cash_non_negative"),
         CheckConstraint(
-            "method in ('business_card', 'cash', 'transfer', 'other')",
+            "amount_account >= 0",
+            name="ck_payroll_payment_amount_account_non_negative",
+        ),
+        CheckConstraint(
+            "overpaid_amount >= 0",
+            name="ck_payroll_payment_overpaid_amount_non_negative",
+        ),
+        CheckConstraint(
+            "status in ('planned', 'draft_created', 'paid')",
+            name="ck_payroll_payment_status",
+        ),
+        CheckConstraint(
+            "method is null or method in ('business_card', 'cash', 'transfer', 'other')",
             name="ck_payroll_payment_method",
         ),
         UniqueConstraint("run_id", "employee_id", name="uq_payroll_payment_run_employee"),
@@ -186,8 +199,25 @@ class PayrollPayment(Base):
         ForeignKey("employee.id", ondelete="RESTRICT"), nullable=False
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
-    paid_at: Mapped[date] = mapped_column(Date, nullable=False)
-    method: Mapped[str] = mapped_column(String(32), nullable=False)
+    amount_cash: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
+    amount_account: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="paid", server_default="paid"
+    )
+    draft_document_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    draft_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    draft_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    overpaid_amount: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
+    paid_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     paid_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )
