@@ -778,7 +778,7 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
         "organization": 1,
         "location": 2,
         "user": 1,
-        "app_setting": 37,
+        "app_setting": 38,
         "app_setting_history": 25,
         "payroll_rate": 22,
         "payroll_role_category_availability": 42,
@@ -794,7 +794,7 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
         "employee_dismissal_reason": 7,
         "invalid_payroll_rate_category": 0,
         "invalid_employee_category": 0,
-        "inactive_payroll_rate_placeholder": 5,
+        "inactive_payroll_rate_placeholder": 6,
     }
 
 
