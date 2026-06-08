@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -10,6 +11,8 @@ from test_payroll_payouts import (
     create_payroll_run,
 )
 
+from app.api.deps import CurrentActor
+from app.api.v1.routes import payroll as payroll_routes
 from app.models import AppSetting, PayrollBankDraft, PayrollLine, PayrollRunEvent
 from app.services.payroll_payouts import (
     PAYOUT_REQUISITES_KEY,
@@ -18,6 +21,40 @@ from app.services.payroll_payouts import (
     get_run_payout_delta,
     set_payout_split,
 )
+
+
+async def test_run_delta_routes_call_run_level_services(monkeypatch) -> None:
+    run_id = uuid.uuid4()
+    actor_id = uuid.uuid4()
+    session = object()
+    actor = CurrentActor(roles=frozenset({"manager"}), user_id=actor_id)
+    calls: list[tuple[str, uuid.UUID, object]] = []
+
+    async def fake_get_run_payout_delta(fake_session, fake_run_id):
+        calls.append(("get", fake_run_id, fake_session))
+        return {
+            "run_id": fake_run_id,
+            "document_id": "teplo-payroll-test",
+            "previous_amount": Decimal("1000.00"),
+            "new_amount": Decimal("1250.00"),
+            "delta": Decimal("250.00"),
+            "classification": "topup",
+        }
+
+    async def fake_apply_run_payout_delta(fake_session, fake_run_id, *, actor_user_id):
+        calls.append(("apply", fake_run_id, fake_session))
+        assert actor_user_id == actor_id
+        return 1
+
+    monkeypatch.setattr(payroll_routes, "get_run_payout_delta", fake_get_run_payout_delta)
+    monkeypatch.setattr(payroll_routes, "apply_run_payout_delta", fake_apply_run_payout_delta)
+
+    delta = await payroll_routes.get_run_bank_draft_delta(run_id, session, actor)
+    applied = await payroll_routes.post_apply_run_bank_draft_delta(run_id, session, actor)
+
+    assert delta["classification"] == "topup"
+    assert applied.applied_count == 1
+    assert calls == [("get", run_id, session), ("apply", run_id, session)]
 
 
 async def test_create_run_draft_sums_account_parts_into_one_bank_draft(

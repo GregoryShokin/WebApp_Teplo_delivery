@@ -11,6 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.db.session import AsyncSessionLocal
 from app.models import (
     Account,
@@ -36,6 +37,7 @@ scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 LEGAL_ENTITY = "ИП Шокина Е.А."
 IIKO_COURIER_JOB_RETRIES = 3
+SUPPORTED_BANK_PROVIDERS = ("sber", "tbank")
 
 
 @scheduler.scheduled_job(
@@ -48,7 +50,7 @@ IIKO_COURIER_JOB_RETRIES = 3
     coalesce=True,
 )
 async def poll_banks() -> None:
-    for provider in ("sber", "tbank"):
+    for provider in _bank_sync_providers():
         await run_bank_sync_job(provider=provider)
 
 
@@ -226,6 +228,20 @@ def _client_for_provider(provider: str, session: AsyncSession) -> SberClient | T
     if provider == "tbank":
         return TbankClient(session)
     raise ValueError(f"Unsupported bank provider: {provider}")
+
+
+def _bank_sync_providers() -> tuple[str, ...]:
+    providers: list[str] = []
+    for raw_provider in get_settings().bank_sync_providers.split(","):
+        provider = raw_provider.strip().casefold()
+        if not provider:
+            continue
+        if provider not in SUPPORTED_BANK_PROVIDERS:
+            logger.warning("Ignoring unsupported bank sync provider: %s", provider)
+            continue
+        if provider not in providers:
+            providers.append(provider)
+    return tuple(providers) or ("tbank",)
 
 
 async def _default_sync_period(session: AsyncSession, provider: str) -> tuple[date, date]:

@@ -59,10 +59,12 @@ from app.services.payroll_config import list_enabled_role_categories
 from app.services.payroll_payments import mark_all_payments, mark_payment, unmark_payment
 from app.services.payroll_payouts import (
     apply_payout_deltas,
+    apply_run_payout_delta,
     create_or_update_drafts,
     create_or_update_run_draft,
     get_payout_deltas,
     get_run_bank_draft,
+    get_run_payout_delta,
     set_payout_split,
 )
 from app.services.payroll_personal_report import build_personal_report
@@ -504,6 +506,51 @@ async def get_run_bank_draft_endpoint(
     if draft is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bank draft not found")
     return draft
+
+
+@router.get(
+    "/runs/{run_id}/bank-draft/delta",
+    response_model=PayrollPayoutDeltaRead,
+    dependencies=PAYROLL_RUNS_BANK_DRAFT_ACCESS,
+)
+async def get_run_bank_draft_delta(
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    try:
+        return await get_run_payout_delta(session, run_id)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/runs/{run_id}/bank-draft/apply-delta",
+    response_model=PayrollPayoutApplyDeltasResponse,
+    dependencies=PAYROLL_RUNS_BANK_DRAFT_ACCESS,
+)
+async def post_apply_run_bank_draft_delta(
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollPayoutApplyDeltasResponse:
+    try:
+        applied_count = await apply_run_payout_delta(
+            session,
+            run_id,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except BankCredentialsError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    except BankFetchError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return PayrollPayoutApplyDeltasResponse(applied_count=applied_count)
 
 
 @router.post(

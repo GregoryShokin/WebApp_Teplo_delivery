@@ -16,6 +16,8 @@ fi
 cd "$script_dir"
 errors=()
 warnings=()
+integrations_env_file="$script_dir/.env.integrations"
+integrations_status=()
 
 if [[ ! -f "$env_file" ]]; then
   echo "Missing $env_file. Run ./init-prod-env.sh first or copy env.prod.example." >&2
@@ -26,8 +28,10 @@ file_mode() {
   stat -c "%a" "$1" 2>/dev/null || stat -f "%Lp" "$1"
 }
 
-env_value() {
-  local key="$1"
+env_value_from() {
+  local file="$1"
+  local key="$2"
+  [[ -f "$file" ]] || return 0
   awk -v key="$key" '
     /^[[:space:]]*#/ { next }
     /^[[:space:]]*$/ { next }
@@ -46,7 +50,17 @@ env_value() {
         exit
       }
     }
-  ' "$env_file"
+  ' "$file"
+}
+
+env_value() {
+  local key="$1"
+  env_value_from "$env_file" "$key"
+}
+
+integrations_env_value() {
+  local key="$1"
+  env_value_from "$integrations_env_file" "$key"
 }
 
 is_placeholder() {
@@ -68,6 +82,35 @@ require_value() {
   fi
 }
 
+require_integrations_value() {
+  local key="$1"
+  local value
+  value="$(integrations_env_value "$key")"
+  if [[ -z "$value" ]]; then
+    integrations_status+=("$key=missing")
+    errors+=("$key is missing or empty in .env.integrations")
+    return
+  fi
+  integrations_status+=("$key=set")
+  if is_placeholder "$value"; then
+    errors+=("$key in .env.integrations still looks like a placeholder")
+  fi
+}
+
+optional_integrations_value() {
+  local key="$1"
+  local value
+  value="$(integrations_env_value "$key")"
+  if [[ -z "$value" ]]; then
+    integrations_status+=("$key=missing")
+    return
+  fi
+  integrations_status+=("$key=set")
+  if is_placeholder "$value"; then
+    warnings+=("$key in .env.integrations still looks like a placeholder")
+  fi
+}
+
 require_equal() {
   local key="$1"
   local expected="$2"
@@ -78,11 +121,50 @@ require_equal() {
   fi
 }
 
+require_integrations_number() {
+  local key="$1"
+  local value
+  value="$(integrations_env_value "$key")"
+  if [[ -z "$value" ]]; then
+    integrations_status+=("$key=missing")
+    errors+=("$key is missing or empty in .env.integrations")
+    return
+  fi
+  integrations_status+=("$key=set")
+  if ! [[ "$value" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    errors+=("$key in .env.integrations must be numeric seconds")
+  fi
+}
+
+optional_integrations_number() {
+  local key="$1"
+  local value
+  value="$(integrations_env_value "$key")"
+  if [[ -z "$value" ]]; then
+    integrations_status+=("$key=missing")
+    return
+  fi
+  integrations_status+=("$key=set")
+  if ! [[ "$value" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    errors+=("$key in .env.integrations must be numeric seconds")
+  fi
+}
+
 mode="$(file_mode "$env_file")"
 case "$mode" in
   400|600) ;;
   *) warnings+=("$env_file mode is $mode; recommended mode is 600") ;;
 esac
+
+if [[ ! -f "$integrations_env_file" ]]; then
+  errors+=(".env.integrations is missing; copy env.integrations.example to .env.integrations")
+else
+  integrations_mode="$(file_mode "$integrations_env_file")"
+  case "$integrations_mode" in
+    400|600) ;;
+    *) warnings+=(".env.integrations mode is $integrations_mode; recommended mode is 600") ;;
+  esac
+fi
 
 require_value TEPLO_DOMAIN
 require_value POSTGRES_DB
@@ -96,6 +178,23 @@ require_equal ENVIRONMENT production
 require_equal AUTH_COOKIE_SECURE true
 require_equal TEPLO_BANK_CLIENT_MODE live
 
+if [[ -f "$integrations_env_file" ]]; then
+  require_integrations_value IIKO_SERVER_BASE_URL
+  require_integrations_value IIKO_SERVER_LOGIN
+  require_integrations_value IIKO_SERVER_PASSWORD
+  optional_integrations_number IIKO_SERVER_TIMEOUT_SECONDS
+
+  optional_integrations_value TBANK_API_BASE_URL
+  optional_integrations_value TBANK_PAYMENT_BASE_URL
+  require_integrations_value TBANK_API_ACCESS_TOKEN
+  optional_integrations_value TBANK_API_ACCOUNT_NUMBER
+  optional_integrations_number TBANK_API_TIMEOUT_SECONDS
+
+  if [[ -z "$(integrations_env_value TBANK_API_ACCOUNT_NUMBER)" ]]; then
+    warnings+=("TBANK_API_ACCOUNT_NUMBER is missing; T-Bank payment draft creation needs a payer account")
+  fi
+fi
+
 jwt_secret="$(env_value JWT_SECRET_KEY)"
 if [[ ${#jwt_secret} -lt 64 ]]; then
   errors+=("JWT_SECRET_KEY should be at least 64 characters")
@@ -107,6 +206,10 @@ fi
 
 if ((${#warnings[@]} > 0)); then
   printf 'WARN: %s\n' "${warnings[@]}"
+fi
+
+if ((${#integrations_status[@]} > 0)); then
+  printf 'INTEGRATION: %s\n' "${integrations_status[@]}"
 fi
 
 if ((${#errors[@]} > 0)); then

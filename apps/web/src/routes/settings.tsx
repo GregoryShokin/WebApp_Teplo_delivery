@@ -32,6 +32,7 @@ import {
 import { formatJson, getPath } from "@/components/settings-widgets/widget-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -110,6 +111,7 @@ const HIDDEN_SETTING_KEYS = new Set([
   "payroll.fund_rates_by_tenure",
   "payroll.substitute_pairs",
 ]);
+const BANK_PAYOUT_REQUISITES_KEY = "payroll.bank_payout_requisites";
 
 const SUBSTITUTE_FROM_POSITIONS = [
   "Управляющий",
@@ -706,6 +708,12 @@ function RenderSettingWidget({
     value,
   };
 
+  if (setting.key === BANK_PAYOUT_REQUISITES_KEY) {
+    return (
+      <BankPayoutRequisitesWidget disabled={disabled} onChange={onChange} value={value} />
+    );
+  }
+
   switch (setting.widget_type) {
     case "percent":
       return <PercentWidget {...props} />;
@@ -735,6 +743,98 @@ function RenderSettingWidget({
     default:
       return <JsonWidget {...props} />;
   }
+}
+
+type BankPayoutRequisitesDraft = {
+  recipientName: string;
+  inn: string;
+  kpp: string;
+  bankAcnt: string;
+  bankBik: string;
+  corrAccount: string;
+  executionOrder: string;
+};
+
+const BANK_PAYOUT_REQUISITE_FIELDS: Array<{
+  key: keyof BankPayoutRequisitesDraft;
+  label: string;
+  required?: boolean;
+  numeric?: boolean;
+}> = [
+  { key: "recipientName", label: "Получатель", required: true },
+  { key: "inn", label: "ИНН", required: true },
+  { key: "kpp", label: "КПП" },
+  { key: "bankAcnt", label: "Счёт", required: true, numeric: true },
+  { key: "bankBik", label: "БИК", required: true, numeric: true },
+  { key: "corrAccount", label: "Корр-счёт", required: true, numeric: true },
+  { key: "executionOrder", label: "Очерёдность платежа", numeric: true },
+];
+
+function BankPayoutRequisitesWidget({
+  disabled,
+  onChange,
+  value,
+}: {
+  disabled: boolean;
+  onChange: (value: unknown) => void;
+  value: unknown;
+}) {
+  const [draft, setDraft] = useState(() => bankPayoutRequisitesDraft(value));
+  const error = validateBankPayoutRequisites(draft);
+  const isDirty = !valuesEqual(bankPayoutRequisitesDraft(value), draft);
+
+  useEffect(() => {
+    setDraft(bankPayoutRequisitesDraft(value));
+  }, [value]);
+
+  function updateField(key: keyof BankPayoutRequisitesDraft, nextValue: string) {
+    setDraft((current) => ({ ...current, [key]: nextValue }));
+  }
+
+  function save() {
+    if (error) {
+      return;
+    }
+    onChange(bankPayoutRequisitesPayload(value, draft));
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        {BANK_PAYOUT_REQUISITE_FIELDS.map((field) => {
+          const inputId = `bank-payout-requisites-${field.key}`;
+          return (
+            <div className="space-y-2" key={field.key}>
+              <Label htmlFor={inputId}>
+                {field.label}
+                {field.required ? <span className="text-destructive"> *</span> : null}
+              </Label>
+              <Input
+                disabled={disabled}
+                id={inputId}
+                inputMode={field.numeric ? "numeric" : undefined}
+                onChange={(event) => updateField(field.key, event.target.value)}
+                value={draft[field.key]}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {error ? (
+        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
+
+      <div className="flex justify-end">
+        <Button disabled={disabled || Boolean(error) || !isDirty} onClick={save} type="button">
+          <Save size={16} aria-hidden="true" />
+          Сохранить реквизиты
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function HistorySheet({
@@ -858,6 +958,70 @@ function draftValue(drafts: Record<string, unknown>, setting: AppSetting) {
 
 function valuesEqual(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function bankPayoutRequisitesDraft(value: unknown): BankPayoutRequisitesDraft {
+  const record = plainRecord(value);
+  return {
+    recipientName: stringValue(record.recipientName ?? record.recipient_name),
+    inn: stringValue(record.inn ?? record.recipientInn),
+    kpp: stringValue(record.kpp ?? record.recipientKpp ?? "0"),
+    bankAcnt: stringValue(record.bankAcnt ?? record.bank_acnt),
+    bankBik: stringValue(record.bankBik ?? record.bank_bik ?? record.bik),
+    corrAccount: stringValue(
+      record.corrAccount ??
+        record.recipientCorrAccountNumber ??
+        record.corr_account ??
+        record.correspondent_account,
+    ),
+    executionOrder: stringValue(record.executionOrder ?? record.execution_order ?? 5),
+  };
+}
+
+function bankPayoutRequisitesPayload(
+  value: unknown,
+  draft: BankPayoutRequisitesDraft,
+): Record<string, unknown> {
+  return {
+    ...plainRecord(value),
+    recipientName: draft.recipientName.trim(),
+    inn: draft.inn.trim(),
+    kpp: draft.kpp.trim() || "0",
+    bankAcnt: draft.bankAcnt.trim(),
+    bankBik: draft.bankBik.trim(),
+    corrAccount: draft.corrAccount.trim(),
+    executionOrder: Number(draft.executionOrder.trim() || 5),
+  };
+}
+
+function validateBankPayoutRequisites(draft: BankPayoutRequisitesDraft) {
+  const requiredFields = BANK_PAYOUT_REQUISITE_FIELDS.filter((field) => field.required);
+  for (const field of requiredFields) {
+    if (!draft[field.key].trim()) {
+      return `Заполните поле «${field.label}».`;
+    }
+  }
+  for (const field of BANK_PAYOUT_REQUISITE_FIELDS.filter((item) => item.numeric)) {
+    const value = draft[field.key].trim();
+    if (value && !/^\d+$/.test(value)) {
+      return `Поле «${field.label}» должно содержать только цифры.`;
+    }
+  }
+  const executionOrder = Number(draft.executionOrder.trim() || 5);
+  if (!Number.isInteger(executionOrder) || executionOrder < 1 || executionOrder > 5) {
+    return "Очерёдность платежа должна быть числом от 1 до 5.";
+  }
+  return null;
+}
+
+function plainRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function stringValue(value: unknown) {
+  return value === null || value === undefined ? "" : String(value);
 }
 
 function validateSubstitutePairs(pairs: SubstitutePair[]) {

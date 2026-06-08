@@ -451,6 +451,28 @@ export type PayrollPayoutDelta = {
   classification: PayrollPayoutDeltaClassification;
 };
 
+export type RunPayoutDelta = {
+  run_id: string;
+  document_id: string | null;
+  previous_amount: number | string;
+  new_amount: number | string;
+  delta: number | string;
+  classification: PayrollPayoutDeltaClassification;
+};
+
+export type PayrollBankDraft = {
+  id: string;
+  run_id: string;
+  document_id: string;
+  amount: number | string;
+  status: "created" | "updated" | "paid" | "failed" | string;
+  provider_ref: string | null;
+  payload: Record<string, unknown>;
+  last_error: string | null;
+  synced_at: string | null;
+  created_at: string;
+};
+
 export type PayrollPayoutDraftsResponse = {
   drafts_count: number;
 };
@@ -2779,6 +2801,30 @@ export async function setPayoutSplit(
 export async function createPayoutDrafts(runId: string): Promise<PayrollPayoutDraftsResponse> {
   const response = await api.post<PayrollPayoutDraftsResponse>(
     `/payroll/runs/${runId}/payouts/drafts`,
+  );
+  return response.data;
+}
+
+export async function createRunBankDraft(runId: string): Promise<PayrollBankDraft> {
+  const response = await api.post<PayrollBankDraft>(`/payroll/runs/${runId}/bank-draft`);
+  return response.data;
+}
+
+export async function getRunBankDraft(runId: string): Promise<PayrollBankDraft> {
+  const response = await api.get<PayrollBankDraft>(`/payroll/runs/${runId}/bank-draft`);
+  return response.data;
+}
+
+export async function getRunPayoutDelta(runId: string): Promise<RunPayoutDelta> {
+  const response = await api.get<RunPayoutDelta>(`/payroll/runs/${runId}/bank-draft/delta`);
+  return response.data;
+}
+
+export async function applyRunPayoutDelta(
+  runId: string,
+): Promise<PayrollPayoutApplyDeltasResponse> {
+  const response = await api.post<PayrollPayoutApplyDeltasResponse>(
+    `/payroll/runs/${runId}/bank-draft/apply-delta`,
   );
   return response.data;
 }

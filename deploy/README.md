@@ -10,6 +10,8 @@ Single-host deployment on Ubuntu 24.04 with Docker Compose and Caddy
   from the environment.
 - `.env.prod` — secrets and per-host config (not committed; see
   `env.prod.example`).
+- `.env.integrations` — integration secrets for `api` and `scheduler` (not
+  committed; see `env.integrations.example`).
 - `SECRETS.md` — production secret procedure: `.env.prod`, file secrets,
   bank credentials, checks and rotation.
 - `secrets/` — host-only file secrets mounted read-only to
@@ -21,6 +23,7 @@ Single-host deployment on Ubuntu 24.04 with Docker Compose and Caddy
 cd /opt/teplo/deploy
 TEPLO_DOMAIN=app.company.ru TEPLO_ADMIN_EMAIL=admin@company.ru ./init-prod-env.sh
 nano .env.prod                       # fill in domain/account fallbacks if needed
+nano .env.integrations               # fill integration tokens if needed
 ./check-prod-secrets.sh
 
 # Build images and start everything.

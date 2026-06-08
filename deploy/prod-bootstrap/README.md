@@ -24,9 +24,10 @@
    ```bash
    cd /opt/teplo/deploy
    TEPLO_DOMAIN=<боевой-домен> TEPLO_ADMIN_EMAIL=<боевой-email> ./init-prod-env.sh
+   nano .env.integrations
    ./check-prod-secrets.sh
    ```
-   Детали по `.env.prod`, Sber/T-Bank credentials и mTLS файлам — в
+   Детали по `.env.prod`, `.env.integrations`, Sber/T-Bank credentials и mTLS файлам — в
    `deploy/SECRETS.md`.
 
 1. **Свежий дамп dev** (источник правды):

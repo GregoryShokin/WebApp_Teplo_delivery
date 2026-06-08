@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     employee_sync_enabled: bool = True
     employee_sync_interval_hours: int = 6
     teplo_bank_client_mode: Literal["mock", "live"] = "mock"
+    bank_sync_providers: str = "tbank"
     bank_client_timeout_seconds: float = 90
 
     sber_api_base_url: str = "https://fintech.sberbank.ru:9443/fintech/api"
@@ -56,6 +57,7 @@ class Settings(BaseSettings):
     tbank_api_base_url: str = "https://business.tbank.ru/openapi"
     tbank_api_account_number: str | None = None
     tbank_payment_base_url: str = "https://secured-openapi.tbank.ru"
+    tbank_api_timeout_seconds: float = 90
 
     @model_validator(mode="after")
     def validate_production_settings(self) -> Settings:

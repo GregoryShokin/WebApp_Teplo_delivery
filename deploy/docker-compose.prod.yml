@@ -27,6 +27,7 @@ services:
     restart: always
     env_file:
       - ./.env.prod
+      - ./.env.integrations
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     depends_on:
@@ -47,6 +48,7 @@ services:
     restart: always
     env_file:
       - ./.env.prod
+      - ./.env.integrations
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     depends_on:

@@ -111,7 +111,7 @@ class TbankClient:
                 "Accept": "application/json",
                 "Content-Type": "application/json",
             },
-            timeout=self.settings.bank_client_timeout_seconds,
+            timeout=self.settings.tbank_api_timeout_seconds,
         ) as client:
             response = await client.post(
                 PAYMENT_DRAFT_PATH,
@@ -175,7 +175,7 @@ class TbankClient:
                 "Authorization": f"Bearer {token}",
                 "Accept": "application/json",
             },
-            timeout=self.settings.bank_client_timeout_seconds,
+            timeout=self.settings.tbank_api_timeout_seconds,
         ) as client:
             for account_number in account_numbers:
                 cursor = ""

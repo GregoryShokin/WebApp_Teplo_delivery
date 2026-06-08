@@ -2,10 +2,15 @@
 .env.*
 !.env.example
 ENV
+deploy/.env.prod
+deploy/.env.integrations
 
 # Local exports and raw source files with business data.
 research/raw/
 research/private/
+**/credentials/
+**/private/
+**/raw/
 integrations/sber/credentials/
 integrations/*/credentials/
 integrations/*/private/

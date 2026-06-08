@@ -19,6 +19,7 @@ if [[ -e "$env_file" ]]; then
   echo "Refusing to overwrite existing $env_file" >&2
   exit 1
 fi
+integrations_env_file="$script_dir/.env.integrations"
 
 domain="${TEPLO_DOMAIN:-}"
 admin_email="${TEPLO_ADMIN_EMAIL:-admin@teplo.local}"
@@ -69,13 +70,16 @@ JWT_REFRESH_TOKEN_EXPIRE_DAYS=90
 BACKEND_CORS_ORIGINS=[]
 
 TEPLO_BANK_CLIENT_MODE=live
-SBER_API_ACCOUNT_NUMBER=
-SBER_API_CA_BUNDLE_PATH=
-TBANK_API_ACCOUNT_NUMBER=
 EOF
 
 chmod 600 "$env_file"
 
+if [[ ! -e "$integrations_env_file" ]]; then
+  cp env.integrations.example "$integrations_env_file"
+  chmod 600 "$integrations_env_file"
+fi
+
 echo "Created $env_file with mode 600."
+echo "Created .env.integrations with mode 600."
 echo "Created secrets/sber for Sber mTLS files; mount path inside containers is /run/secrets/teplo/sber."
-echo "Next: fill bank account numbers if needed, then run ./check-prod-secrets.sh $env_file."
+echo "Next: fill integration tokens if needed, then run ./check-prod-secrets.sh $env_file."
