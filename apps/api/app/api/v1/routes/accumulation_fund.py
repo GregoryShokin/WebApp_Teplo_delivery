@@ -309,9 +309,7 @@ async def set_fund_initial_balance(
             .limit(1)
         )
     ).all()
-    if account is not None and (
-        decimal(account.accumulated_amount) > 0 or existing_transactions
-    ):
+    if account is not None and (decimal(account.accumulated_amount) > 0 or existing_transactions):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Начальный баланс фонда уже установлен",
@@ -424,9 +422,9 @@ async def get_fund_summary(
     active_accounts = [account for account in accounts if account.status == "active"]
     payout_transactions = (
         await session.scalars(
-            select(AccumulationFundTransaction).join(
-                Employee, Employee.id == AccumulationFundTransaction.employee_id
-            ).where(
+            select(AccumulationFundTransaction)
+            .join(Employee, Employee.id == AccumulationFundTransaction.employee_id)
+            .where(
                 AccumulationFundTransaction.transaction_type == "payout",
                 extract("year", AccumulationFundTransaction.created_at) == year,
                 Employee.position.in_(PAYROLL_TARGET_POSITIONS),
@@ -435,9 +433,9 @@ async def get_fund_summary(
     ).all()
     forfeit_transactions = (
         await session.scalars(
-            select(AccumulationFundTransaction).join(
-                Employee, Employee.id == AccumulationFundTransaction.employee_id
-            ).where(
+            select(AccumulationFundTransaction)
+            .join(Employee, Employee.id == AccumulationFundTransaction.employee_id)
+            .where(
                 AccumulationFundTransaction.transaction_type == "forfeit",
                 extract("year", AccumulationFundTransaction.created_at) == year,
                 Employee.position.in_(PAYROLL_TARGET_POSITIONS),

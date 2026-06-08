@@ -174,15 +174,9 @@ async def get_evaluations_monthly_summary(
         }
         for criterion_id, count in criterion_counts.most_common(3)
     ]
-    positive_count = sum(
-        1 for evaluation, _criterion in rows if evaluation.score_snapshot > 0
-    )
-    negative_count = sum(
-        1 for evaluation, _criterion in rows if evaluation.score_snapshot < 0
-    )
-    neutral_count = sum(
-        1 for evaluation, _criterion in rows if evaluation.score_snapshot == 0
-    )
+    positive_count = sum(1 for evaluation, _criterion in rows if evaluation.score_snapshot > 0)
+    negative_count = sum(1 for evaluation, _criterion in rows if evaluation.score_snapshot < 0)
+    neutral_count = sum(1 for evaluation, _criterion in rows if evaluation.score_snapshot == 0)
     return EvaluationMonthlySummary(
         score_sum=score_sum,
         positive_count=positive_count,

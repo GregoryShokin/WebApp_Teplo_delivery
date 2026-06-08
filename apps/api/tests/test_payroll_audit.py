@@ -111,9 +111,7 @@ async def test_adjustment_update_and_delete_create_audit_events(
         events = (
             await session.scalars(
                 select(PayrollRunEvent).where(
-                    PayrollRunEvent.action.in_(
-                        ("adjustment.updated", "adjustment.deleted")
-                    )
+                    PayrollRunEvent.action.in_(("adjustment.updated", "adjustment.deleted"))
                 )
             )
         ).all()

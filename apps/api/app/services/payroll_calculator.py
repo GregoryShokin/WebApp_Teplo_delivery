@@ -910,11 +910,7 @@ def ndfl_seniority_allowance_total(totals: Mapping[str, Any]) -> Decimal:
     if not isinstance(days, Iterable) or isinstance(days, str | bytes):
         return Decimal("0")
     return sum(
-        (
-            decimal(day.get("seniority_allowance_pay"))
-            for day in days
-            if isinstance(day, Mapping)
-        ),
+        (decimal(day.get("seniority_allowance_pay")) for day in days if isinstance(day, Mapping)),
         Decimal("0"),
     )
 
@@ -995,9 +991,8 @@ def ndfl_day_taxable_base(
         total += percent_pay
     if ndfl_base_component_enabled(config, "vacation_pay", default=True):
         total += vacation_pay
-    if (
-        ndfl_base_component_enabled(config, "premium", default=True)
-        and ndfl_base_component_enabled(config, "manual_bonuses", default=True)
+    if ndfl_base_component_enabled(config, "premium", default=True) and ndfl_base_component_enabled(
+        config, "manual_bonuses", default=True
     ):
         total += bonus
     if ndfl_base_component_enabled(config, "manual_penalties", default=False):

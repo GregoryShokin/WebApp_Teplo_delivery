@@ -1008,9 +1008,7 @@ async def refresh_role_review_for_all_employees(
     force: bool = True,
 ) -> None:
     employees = (
-        await session.scalars(
-            select(Employee).where(Employee.role_review_payload.is_not(None))
-        )
+        await session.scalars(select(Employee).where(Employee.role_review_payload.is_not(None)))
     ).all()
     for employee in employees:
         payload = employee.role_review_payload or {}

@@ -24,7 +24,9 @@ def upgrade() -> None:
     )
     op.add_column(
         "employee",
-        sa.Column("pin_set_at", sa.DateTime(timezone=True), nullable=True, comment="source=app_managed"),
+        sa.Column(
+            "pin_set_at", sa.DateTime(timezone=True), nullable=True, comment="source=app_managed"
+        ),
     )
 
 

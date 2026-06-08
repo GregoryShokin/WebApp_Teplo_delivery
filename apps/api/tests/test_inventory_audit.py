@@ -317,10 +317,7 @@ def test_employee_exclusion_redistributes_penalty_to_remaining_recipients() -> N
         gamma.id: Decimal("1400.00"),
     }
     assert computation.groups["chefs"]["recipients"]["chefs"]["count"] == 2
-    recipients = {
-        row["full_name"]: row
-        for row in computation.snapshot["employee_recipients"]
-    }
+    recipients = {row["full_name"]: row for row in computation.snapshot["employee_recipients"]}
     assert recipients["Beta"]["is_excluded"] is True
     assert recipients["Beta"]["amount"] == "0.00"
     assert recipients["Beta"]["exclusion_reason"] == "Не работал с инвентаризацией"

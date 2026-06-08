@@ -41,7 +41,8 @@ def upgrade() -> None:
                 'boolean',
                 'payroll',
                 'Распределение штрафов ревизии по нескольким ЗП',
-                'Если включено, на странице Ревизии появляется подвкладка «Распределённые» и пункт меню «Распределить штраф…» на исключённой позиции.',
+                'Если включено, на странице Ревизии появляется подвкладка «Распределённые» '
+                    || 'и пункт меню «Распределить штраф…» на исключённой позиции.',
                 'boolean',
                 null,
                 null,
@@ -54,6 +55,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "delete from app_setting where key = 'payroll.deferred_charges_enabled'"
-    )
+    op.execute("delete from app_setting where key = 'payroll.deferred_charges_enabled'")

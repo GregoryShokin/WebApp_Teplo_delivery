@@ -5,8 +5,19 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, String
-from sqlalchemy import UniqueConstraint, func, text
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -36,9 +47,7 @@ class PayrollForecastRun(Base):
     rule_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="draft")
     total_revenue_forecast: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
-    total_shift_cost_estimate: Mapped[Decimal | None] = mapped_column(
-        Numeric(14, 2), nullable=True
-    )
+    total_shift_cost_estimate: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     fot_to_revenue_pct: Mapped[Decimal | None] = mapped_column(Numeric(8, 5), nullable=True)
     shifts_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     shifts_with_warnings: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

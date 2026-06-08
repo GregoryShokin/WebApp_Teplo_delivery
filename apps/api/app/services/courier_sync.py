@@ -248,12 +248,16 @@ async def list_courier_deliveries(
     )
     if courier_iiko_id:
         query = query.where(DeliveryOrder.courier_iiko_id == courier_iiko_id)
-    query = query.order_by(
-        DeliveryOrder.work_date,
-        DeliveryOrder.opened_at,
-        DeliveryOrder.order_number,
-        DeliveryOrder.iiko_order_id,
-    ).limit(limit).offset(offset)
+    query = (
+        query.order_by(
+            DeliveryOrder.work_date,
+            DeliveryOrder.opened_at,
+            DeliveryOrder.order_number,
+            DeliveryOrder.iiko_order_id,
+        )
+        .limit(limit)
+        .offset(offset)
+    )
     result = await session.scalars(query)
     return [serialize_delivery_order(order) for order in result.all()]
 
@@ -362,9 +366,8 @@ def parse_courier_delivery_row(row: Mapping[str, Any]) -> CourierDeliveryRecord 
         or parse_datetime_value(first_value(row, "Delivery.CloseTime", "delivery_closed_at"))
         or parse_datetime_value(first_value(row, "CloseTime", "closed_at"))
     )
-    work_date = (
-        parse_date_value(first_value(row, "OpenDate.Typed", "work_date"))
-        or (opened_at.astimezone(MOSCOW_TZ).date() if opened_at is not None else None)
+    work_date = parse_date_value(first_value(row, "OpenDate.Typed", "work_date")) or (
+        opened_at.astimezone(MOSCOW_TZ).date() if opened_at is not None else None
     )
     if work_date is None:
         return None
@@ -510,9 +513,7 @@ def serialize_delivery_order(order: DeliveryOrder, *, include_raw: bool = False)
             order.delivered_at.isoformat() if order.delivered_at is not None else None
         ),
         "way_duration_minutes": (
-            str(order.way_duration_minutes)
-            if order.way_duration_minutes is not None
-            else None
+            str(order.way_duration_minutes) if order.way_duration_minutes is not None else None
         ),
         "revenue": str(order.revenue) if order.revenue is not None else None,
         "created_at": order.created_at.isoformat() if order.created_at is not None else None,

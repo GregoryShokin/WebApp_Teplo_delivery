@@ -69,16 +69,12 @@ COURIERS_DEPOSITS_READ_ACCESS = (Depends(require_permission("couriers.deposits.r
 COURIERS_DEPOSITS_EDIT_ACCESS = (Depends(require_permission("couriers.deposits.edit")),)
 COURIERS_DEPOSITS_SETTINGS_READ_ACCESS = (
     Depends(
-        require_any_permission(
-            ("couriers.deposits.configure", "source.deposit_settings.read")
-        )
+        require_any_permission(("couriers.deposits.configure", "source.deposit_settings.read"))
     ),
 )
 COURIERS_DEPOSITS_SETTINGS_EDIT_ACCESS = (
     Depends(
-        require_any_permission(
-            ("couriers.deposits.configure", "source.deposit_settings.edit")
-        )
+        require_any_permission(("couriers.deposits.configure", "source.deposit_settings.edit"))
     ),
 )
 CourierSyncMode = Literal["hot", "cold", "custom"]

@@ -329,7 +329,9 @@ async def create_rate_version(
         record.is_active = payload.is_active
         record.effective_to = payload.effective_to
     else:
-        await _close_previous_versions(session, PayrollRate, natural_filters, payload.effective_from)
+        await _close_previous_versions(
+            session, PayrollRate, natural_filters, payload.effective_from
+        )
         record = PayrollRate(**payload.model_dump())
         session.add(record)
 

@@ -99,10 +99,9 @@ def position_group_for_position(position: str | None) -> PositionGroup:
 def _assignment_matches_position(assignment: object, position: str) -> bool:
     category = getattr(assignment, "category", None)
     payroll_role = getattr(assignment, "payroll_role", None)
-    return (
-        payroll_role in payroll_roles_for_position(position)
-        and category in categories_for_payroll_role(payroll_role)
-    )
+    return payroll_role in payroll_roles_for_position(
+        position
+    ) and category in categories_for_payroll_role(payroll_role)
 
 
 def _shortcut_role_for_employee(employee: Employee) -> str | None:

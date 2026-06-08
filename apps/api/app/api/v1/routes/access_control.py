@@ -124,8 +124,7 @@ async def list_permissions(
             {"code": permission.code, "description": permission.description}
         )
     return [
-        {"module": module, "permissions": permissions}
-        for module, permissions in grouped.items()
+        {"module": module, "permissions": permissions} for module, permissions in grouped.items()
     ]
 
 
@@ -170,9 +169,7 @@ async def put_role_permissions(
         )
 
     current_rows = (
-        await session.scalars(
-            select(RolePermission).where(RolePermission.role_id == role.id)
-        )
+        await session.scalars(select(RolePermission).where(RolePermission.role_id == role.id))
     ).all()
     current_permission_ids = {row.permission_id for row in current_rows}
     requested_permission_ids = {permission.id for permission in permissions}
@@ -438,9 +435,7 @@ async def list_audit_events(
 
 
 async def _access_roles(session: AsyncSession) -> list[Role]:
-    roles = (
-        await session.scalars(select(Role).where(Role.code.in_(ACCESS_ROLE_CODES)))
-    ).all()
+    roles = (await session.scalars(select(Role).where(Role.code.in_(ACCESS_ROLE_CODES)))).all()
     by_code = {role.code: role for role in roles}
     return [by_code[code] for code in ACCESS_ROLE_CODES if code in by_code]
 

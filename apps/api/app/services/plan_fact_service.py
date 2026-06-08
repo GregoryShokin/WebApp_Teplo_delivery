@@ -179,11 +179,7 @@ async def compute_plan_fact(
         threshold,
     )
     planned = _build_planned_totals(planned_metrics)
-    actual = (
-        _build_actual_totals(by_date, actual_cost)
-        if fact_availability != "none"
-        else None
-    )
+    actual = _build_actual_totals(by_date, actual_cost) if fact_availability != "none" else None
     deviation = _build_summary_deviation(planned, actual) if actual is not None else None
 
     return PlanFactSummary(
@@ -263,11 +259,7 @@ async def _load_cost_estimates(
         .where(ShiftCostEstimate.forecast_run_id == forecast_run_id)
         .order_by(ShiftCostEstimate.business_date, ShiftCostEstimate.employee_id)
     )
-    return [
-        estimate
-        for estimate in result.all()
-        if estimate.forecast_run_id == forecast_run_id
-    ]
+    return [estimate for estimate in result.all() if estimate.forecast_run_id == forecast_run_id]
 
 
 async def _load_revenue_forecasts(
@@ -284,9 +276,7 @@ async def _load_revenue_forecasts(
         .order_by(RevenueForecast.business_date)
     )
     return [
-        forecast
-        for forecast in result.all()
-        if date_start <= forecast.business_date <= date_end
+        forecast for forecast in result.all() if date_start <= forecast.business_date <= date_end
     ]
 
 
@@ -452,9 +442,9 @@ def _build_ledger_metrics(
             if period.start_date <= entry.work_date <= period.end_date:
                 key = (period.id, entry.employee_id)
                 minutes_by_period_employee[key] += minutes
-                minutes_by_period_employee_day[
-                    (period.id, entry.employee_id, entry.work_date)
-                ] += minutes
+                minutes_by_period_employee_day[(period.id, entry.employee_id, entry.work_date)] += (
+                    minutes
+                )
                 break
 
     return {
@@ -539,9 +529,7 @@ def _build_day_row(
         else None
     )
     planned_revenue = (
-        _optional_money(forecast_by_day[day].forecast_amount)
-        if day in forecast_by_day
-        else None
+        _optional_money(forecast_by_day[day].forecast_amount) if day in forecast_by_day else None
     )
     actual_shifts = len(ledger_metrics["employee_ids_by_day"].get(day, set()))
     actual_hours = _minutes_to_hours_or_none(ledger_metrics["minutes_by_day"].get(day, 0))
@@ -555,14 +543,10 @@ def _build_day_row(
     cost_pct = _deviation_pct(actual_cost_value, planned_cost)
     revenue_pct = _deviation_pct(actual_revenue, planned_revenue)
     planned_cashier_allowance = (
-        assignment_to_dict(cashier_allowance["planned"])
-        if cashier_allowance is not None
-        else None
+        assignment_to_dict(cashier_allowance["planned"]) if cashier_allowance is not None else None
     )
     actual_cashier_allowance = (
-        assignment_to_dict(cashier_allowance["actual"])
-        if cashier_allowance is not None
-        else None
+        assignment_to_dict(cashier_allowance["actual"]) if cashier_allowance is not None else None
     )
     deviation_flags: list[str] = []
     if (
@@ -925,10 +909,7 @@ def _has_fact(
     revenue: Decimal | None,
 ) -> bool:
     return (
-        shifts > 0
-        or (hours is not None and hours > 0)
-        or cost is not None
-        or revenue is not None
+        shifts > 0 or (hours is not None and hours > 0) or cost is not None or revenue is not None
     )
 
 

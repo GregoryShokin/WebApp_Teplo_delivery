@@ -26,9 +26,7 @@ async def test_tbank_mock_statement_normalizes_operations(monkeypatch: pytest.Mo
     assert acquiring.direction == "in"
     assert acquiring.amount == Decimal("32000.00")
     assert acquiring.counterparty_name_raw == 'АО "ТБанк"'
-    assert "Зачисление средств по терминалам эквайринга" in (
-        acquiring.payment_purpose or ""
-    )
+    assert "Зачисление средств по терминалам эквайринга" in (acquiring.payment_purpose or "")
 
     tax = next(
         operation

@@ -57,11 +57,9 @@ class BankClient(Protocol):
 
     async def fetch_statement(
         self, *, date_from: date, date_to: date
-    ) -> list[NormalizedBankOperation]:
-        ...
+    ) -> list[NormalizedBankOperation]: ...
 
-    async def fetch_account_metadata(self) -> list[AccountMeta]:
-        ...
+    async def fetch_account_metadata(self) -> list[AccountMeta]: ...
 
     async def create_payment_draft(
         self,
@@ -71,8 +69,7 @@ class BankClient(Protocol):
         purpose: str,
         requisites: dict[str, Any],
         payer_account: str,
-    ) -> PaymentDraftResult:
-        ...
+    ) -> PaymentDraftResult: ...
 
 
 def settings() -> Settings:

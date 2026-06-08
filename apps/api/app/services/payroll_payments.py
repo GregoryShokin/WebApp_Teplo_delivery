@@ -213,8 +213,7 @@ async def _unpaid_employee_payment_rows(
         .order_by(PayrollLine.employee_id)
     )
     return [
-        (employee_id, Decimal(amount), payment)
-        for employee_id, amount, payment in result.all()
+        (employee_id, Decimal(amount), payment) for employee_id, amount, payment in result.all()
     ]
 
 

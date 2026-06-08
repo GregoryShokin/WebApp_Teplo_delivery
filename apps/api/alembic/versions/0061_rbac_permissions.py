@@ -111,9 +111,7 @@ def _seed_roles() -> None:
     )
     rows = [{"id": uuid.uuid4(), "code": code, "name": name} for code, name in ADDED_ROLES]
     op.get_bind().execute(
-        postgresql.insert(role_table)
-        .values(rows)
-        .on_conflict_do_nothing(index_elements=["code"])
+        postgresql.insert(role_table).values(rows).on_conflict_do_nothing(index_elements=["code"])
     )
 
 

@@ -235,11 +235,7 @@ async def _find_forecast(session: AsyncSession, business_date: date) -> RevenueF
         select(RevenueForecast).where(RevenueForecast.business_date == business_date)
     )
     return next(
-        (
-            forecast
-            for forecast in result.all()
-            if forecast.business_date == business_date
-        ),
+        (forecast for forecast in result.all() if forecast.business_date == business_date),
         None,
     )
 
@@ -255,11 +251,7 @@ async def _get_forecasts_between(
         .where(RevenueForecast.business_date <= date_to)
         .order_by(RevenueForecast.business_date)
     )
-    return [
-        forecast
-        for forecast in result.all()
-        if date_from <= forecast.business_date <= date_to
-    ]
+    return [forecast for forecast in result.all() if date_from <= forecast.business_date <= date_to]
 
 
 def _new_forecast(business_date: date) -> RevenueForecast:
@@ -311,10 +303,7 @@ def _is_fresh(forecast: RevenueForecast | None, fresh_after: datetime) -> bool:
 
 
 def _date_range(date_from: date, date_to: date) -> list[date]:
-    return [
-        date_from + timedelta(days=offset)
-        for offset in range((date_to - date_from).days + 1)
-    ]
+    return [date_from + timedelta(days=offset) for offset in range((date_to - date_from).days + 1)]
 
 
 def _money(amount: Decimal) -> Decimal:

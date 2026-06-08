@@ -57,9 +57,7 @@ from app.services.banking.transfer_matching import find_and_link_transfer_pairs
 router = APIRouter()
 DDS_READ_ACCESS = (Depends(require_permission("finance.cashflow.read")),)
 DDS_EDIT_ACCESS = (Depends(require_permission("finance.cashflow.edit")),)
-DDS_RULES_MANAGE_ACCESS = (
-    Depends(require_permission("finance.classification_rules.manage")),
-)
+DDS_RULES_MANAGE_ACCESS = (Depends(require_permission("finance.classification_rules.manage")),)
 DDS_CLASSIFY_ACCESS = (Depends(require_permission("finance.cashflow.classify")),)
 DDS_INTEGRATIONS_MANAGE_ACCESS = (
     Depends(require_permission("finance.cashflow.integrations.manage")),
@@ -67,9 +65,7 @@ DDS_INTEGRATIONS_MANAGE_ACCESS = (
 DDS_WALLETS_READ_ACCESS = (Depends(require_permission("finance.wallets.read")),)
 DDS_COUNTERPARTIES_READ_ACCESS = (Depends(require_permission("finance.counterparties.read")),)
 DDS_COUNTERPARTIES_EDIT_ACCESS = (Depends(require_permission("finance.counterparties.edit")),)
-DDS_OWNER_REVIEW_PREPARE_ACCESS = (
-    Depends(require_permission("finance.owner_review.prepare")),
-)
+DDS_OWNER_REVIEW_PREPARE_ACCESS = (Depends(require_permission("finance.owner_review.prepare")),)
 
 
 @router.get("/bank-operations", response_model=BankOperationListRead, dependencies=DDS_READ_ACCESS)
@@ -525,9 +521,7 @@ async def list_owner_review_cases(
     session: Annotated[AsyncSession, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
-    kind: Literal[
-        "unclassified_operation", "invalid_credentials", "unmatched_transfer"
-    ]
+    kind: Literal["unclassified_operation", "invalid_credentials", "unmatched_transfer"]
     | None = None,
 ) -> dict[str, object]:
     allowed_kinds = ("unclassified_operation", "invalid_credentials", "unmatched_transfer")
@@ -840,9 +834,7 @@ async def _counterparty_or_404(session: AsyncSession, counterparty_id: UUID) -> 
     return counterparty
 
 
-async def _classification_rule_or_404(
-    session: AsyncSession, rule_id: UUID
-) -> ClassificationRule:
+async def _classification_rule_or_404(session: AsyncSession, rule_id: UUID) -> ClassificationRule:
     rule = await session.get(ClassificationRule, rule_id)
     if rule is None:
         raise HTTPException(status_code=404, detail="Classification rule not found")
@@ -853,8 +845,8 @@ def _rule_from_owner_review(
     operation: BankOperation, payload: OwnerReviewClassifyRequest
 ) -> ClassificationRule:
     purpose_pattern = _short_pattern(operation.payment_purpose)
-    counterparty_pattern = None if operation.counterparty_inn_raw else _short_pattern(
-        operation.counterparty_name_raw
+    counterparty_pattern = (
+        None if operation.counterparty_inn_raw else _short_pattern(operation.counterparty_name_raw)
     )
     return ClassificationRule(
         name=f"Owner review {operation.provider} {operation.provider_operation_id}",

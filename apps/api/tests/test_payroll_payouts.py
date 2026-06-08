@@ -661,9 +661,7 @@ async def events_for_run(
         stmt = stmt.where(PayrollRunEvent.action == action)
     return list(
         (
-            await session.scalars(
-                stmt.order_by(PayrollRunEvent.created_at, PayrollRunEvent.action)
-            )
+            await session.scalars(stmt.order_by(PayrollRunEvent.created_at, PayrollRunEvent.action))
         ).all()
     )
 

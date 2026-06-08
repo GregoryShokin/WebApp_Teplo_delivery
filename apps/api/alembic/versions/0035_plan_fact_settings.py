@@ -54,6 +54,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "delete from app_setting where key = 'schedule.plan_fact_warning_threshold_pct'"
-    )
+    op.execute("delete from app_setting where key = 'schedule.plan_fact_warning_threshold_pct'")

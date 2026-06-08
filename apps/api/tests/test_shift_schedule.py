@@ -586,9 +586,7 @@ async def test_new_version_clones_shifts() -> None:
         actor=actor(),
     )
 
-    cloned_shifts = [
-        item for item in session.shifts.values() if item.shift_schedule_id == clone.id
-    ]
+    cloned_shifts = [item for item in session.shifts.values() if item.shift_schedule_id == clone.id]
     assert clone.status == "draft"
     assert source.status == "published"
     assert len(cloned_shifts) == 10

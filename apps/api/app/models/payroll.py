@@ -210,9 +210,7 @@ class PayrollPayment(Base):
     )
     draft_document_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
     draft_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
-    draft_synced_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    draft_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     overpaid_amount: Mapped[Decimal] = mapped_column(
         Numeric(14, 2), nullable=False, default=0, server_default="0"
     )

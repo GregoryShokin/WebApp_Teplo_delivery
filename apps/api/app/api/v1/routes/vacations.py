@@ -198,9 +198,7 @@ async def _periods_to_read(
         return []
     employee_ids = {period.employee_id for period in periods}
     user_ids = {
-        period.created_by_user_id
-        for period in periods
-        if period.created_by_user_id is not None
+        period.created_by_user_id for period in periods if period.created_by_user_id is not None
     }
     employees = {
         employee.id: employee

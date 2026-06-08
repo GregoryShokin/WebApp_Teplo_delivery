@@ -1499,9 +1499,7 @@ async def change_employee_position(
         await _add_manual_action(
             session,
             action_type=(
-                "schedule_position_change"
-                if payload.effective_from > today
-                else "update_position"
+                "schedule_position_change" if payload.effective_from > today else "update_position"
             ),
             target_table="employee_position_assignment",
             target_id=assignment.id,
@@ -2395,8 +2393,7 @@ async def _pending_iiko_position_assignment_actions(
                     EmployeePendingIikoAction.employee_id == employee_id,
                     EmployeePendingIikoAction.action_type == "update_position",
                     EmployeePendingIikoAction.status == "pending",
-                    EmployeePendingIikoAction.related_entity_type
-                    == "employee_position_assignment",
+                    EmployeePendingIikoAction.related_entity_type == "employee_position_assignment",
                     EmployeePendingIikoAction.related_entity_id == assignment_id,
                 )
             )

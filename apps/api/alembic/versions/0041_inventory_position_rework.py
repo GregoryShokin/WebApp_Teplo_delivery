@@ -31,8 +31,7 @@ def upgrade() -> None:
         nullable=True,
     )
     op.execute(
-        "UPDATE inventory_audit_position SET allocation_group='common' "
-        "WHERE allocation_group='soy'"
+        "UPDATE inventory_audit_position SET allocation_group='common' WHERE allocation_group='soy'"
     )
     op.create_check_constraint(
         "ck_inventory_audit_position_group",
@@ -48,8 +47,7 @@ def downgrade() -> None:
         type_="check",
     )
     op.execute(
-        "UPDATE inventory_audit_position SET allocation_group='soy' "
-        "WHERE allocation_group='common'"
+        "UPDATE inventory_audit_position SET allocation_group='soy' WHERE allocation_group='common'"
     )
     op.create_check_constraint(
         "ck_inventory_audit_position_group",

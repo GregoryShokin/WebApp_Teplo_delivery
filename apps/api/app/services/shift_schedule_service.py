@@ -428,9 +428,7 @@ async def list_employees_roster(session: AsyncSession) -> list[dict[str, Any]]:
     today = _business_today()
     substitute_pairs = await payroll_config.get_substitute_pairs(session)
     result = await session.scalars(
-        select(Employee)
-        .where(Employee.status == "active")
-        .order_by(Employee.full_name)
+        select(Employee).where(Employee.status == "active").order_by(Employee.full_name)
     )
     roster: list[dict[str, Any]] = []
     for employee in result.all():
@@ -581,8 +579,7 @@ async def _resolve_shift_fields(
             raise HTTPException(
                 status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=(
-                    "У сотрудника нет основной роли на эту дату. "
-                    "Назначьте основную роль в Штате."
+                    "У сотрудника нет основной роли на эту дату. Назначьте основную роль в Штате."
                 ),
             )
         resolved_role = primary.payroll_role

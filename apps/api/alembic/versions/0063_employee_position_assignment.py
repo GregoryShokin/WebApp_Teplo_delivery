@@ -93,7 +93,13 @@ def upgrade() -> None:
 
     op.execute(
         """
-        INSERT INTO employee_position_assignment (id, employee_id, position, effective_from, comment)
+        INSERT INTO employee_position_assignment (
+            id,
+            employee_id,
+            position,
+            effective_from,
+            comment
+        )
         SELECT
             gen_random_uuid(),
             e.id,

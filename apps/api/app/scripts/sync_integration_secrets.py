@@ -4,13 +4,14 @@ import argparse
 import asyncio
 import os
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
 from app.models import SourceCredential
-from app.services.banking.credentials import set_credential
+from app.services.banking.credentials import CredentialKind, Provider, set_credential
 
 IIKO_ENV_KEYS = (
     "IIKO_SERVER_BASE_URL",
@@ -21,12 +22,36 @@ IIKO_ENV_KEYS = (
 
 @dataclass(frozen=True)
 class CredentialSpec:
-    provider: str
-    kind: str
+    provider: Provider
+    kind: CredentialKind
     env_name: str
 
 
+@dataclass(frozen=True)
+class ActiveCredential:
+    value: str
+    metadata_json: dict[str, Any] | None
+
+
+@dataclass(frozen=True)
+class CheckStatus:
+    iiko_state: str
+    tbank_env_state: str
+    tbank_db_state: str
+
+    @property
+    def exit_code(self) -> int:
+        return (
+            0
+            if self.iiko_state == "set"
+            and self.tbank_env_state == "set"
+            and self.tbank_db_state == "set"
+            else 1
+        )
+
+
 TBANK_BEARER_TOKEN = CredentialSpec("tbank", "bearer_token", "TBANK_API_ACCESS_TOKEN")
+TBANK_ACCOUNT_NUMBER_ENV = "TBANK_API_ACCOUNT_NUMBER"
 
 
 def _env(name: str) -> str:
@@ -52,7 +77,86 @@ async def _active_credential_values(session: AsyncSession) -> dict[tuple[str, st
     }
 
 
-async def check() -> int:
+async def _active_credentials(session: AsyncSession) -> dict[tuple[str, str], ActiveCredential]:
+    rows = await session.scalars(
+        select(SourceCredential).where(SourceCredential.is_active.is_(True))
+    )
+    return {
+        (row.provider, row.credential_kind): ActiveCredential(
+            value=row.value_encrypted,
+            metadata_json=row.metadata_json,
+        )
+        for row in rows.all()
+        if row.provider and row.credential_kind
+    }
+
+
+def _tbank_metadata() -> dict[str, Any] | None:
+    account_number = _env(TBANK_ACCOUNT_NUMBER_ENV)
+    if not account_number:
+        return None
+    return {"account_number": account_number}
+
+
+async def _update_active_metadata(
+    *,
+    provider: Provider,
+    kind: CredentialKind,
+    value: str,
+    metadata_json: dict[str, Any] | None,
+) -> bool:
+    async with AsyncSessionLocal() as session, session.begin():
+        credential = await session.scalar(
+            select(SourceCredential).where(
+                SourceCredential.provider == provider,
+                SourceCredential.credential_kind == kind,
+                SourceCredential.is_active.is_(True),
+            )
+        )
+        if credential is None or credential.value_encrypted != value:
+            return False
+        credential.metadata_json = metadata_json
+    return True
+
+
+async def _sync_tbank_bearer_token() -> str:
+    async with AsyncSessionLocal() as session:
+        active = await _active_credentials(session)
+
+    value = _env(TBANK_BEARER_TOKEN.env_name)
+    if not value:
+        return "missing"
+
+    metadata_json = _tbank_metadata()
+    active_credential = active.get((TBANK_BEARER_TOKEN.provider, TBANK_BEARER_TOKEN.kind))
+    if active_credential is None:
+        status = "created"
+    elif active_credential.value == value:
+        if active_credential.metadata_json == metadata_json:
+            return "unchanged"
+        if await _update_active_metadata(
+            provider=TBANK_BEARER_TOKEN.provider,
+            kind=TBANK_BEARER_TOKEN.kind,
+            value=value,
+            metadata_json=metadata_json,
+        ):
+            return "updated"
+        status = "updated"
+    else:
+        status = "updated"
+
+    async with AsyncSessionLocal() as session:
+        await set_credential(
+            session,
+            provider=TBANK_BEARER_TOKEN.provider,
+            kind=TBANK_BEARER_TOKEN.kind,
+            value=value,
+            metadata_json=metadata_json,
+        )
+    return status
+
+
+async def _check_status() -> CheckStatus:
     async with AsyncSessionLocal() as session:
         active = await _active_credential_values(session)
 
@@ -61,41 +165,24 @@ async def check() -> int:
     db_state = (
         "set" if active.get((TBANK_BEARER_TOKEN.provider, TBANK_BEARER_TOKEN.kind)) else "missing"
     )
-    print(f"iiko_env={iiko_state}")
-    print(f"tbank_bearer_token=env:{env_state} db:{db_state}")
-    return 0 if iiko_state == "set" and env_state == "set" and db_state == "set" else 1
+    return CheckStatus(
+        iiko_state=iiko_state,
+        tbank_env_state=env_state,
+        tbank_db_state=db_state,
+    )
+
+
+async def check() -> int:
+    status = await _check_status()
+    print(f"iiko_env={status.iiko_state}")
+    print(f"tbank_bearer_token=env:{status.tbank_env_state} db:{status.tbank_db_state}")
+    return status.exit_code
 
 
 async def sync() -> int:
-    changed: list[str] = []
-    skipped: list[str] = []
-
-    async with AsyncSessionLocal() as session:
-        active = await _active_credential_values(session)
-
-    value = _env(TBANK_BEARER_TOKEN.env_name)
-    if not value:
-        skipped.append(
-            f"{TBANK_BEARER_TOKEN.provider}/{TBANK_BEARER_TOKEN.kind}: "
-            f"missing {TBANK_BEARER_TOKEN.env_name}"
-        )
-    elif active.get((TBANK_BEARER_TOKEN.provider, TBANK_BEARER_TOKEN.kind)) == value:
-        skipped.append(f"{TBANK_BEARER_TOKEN.provider}/{TBANK_BEARER_TOKEN.kind}: unchanged")
-    else:
-        async with AsyncSessionLocal() as session:
-            await set_credential(
-                session,
-                provider=TBANK_BEARER_TOKEN.provider,  # type: ignore[arg-type]
-                kind=TBANK_BEARER_TOKEN.kind,  # type: ignore[arg-type]
-                value=value,
-            )
-        changed.append(f"{TBANK_BEARER_TOKEN.provider}/{TBANK_BEARER_TOKEN.kind}")
-
-    for item in changed:
-        print(f"synced {item}")
-    for item in skipped:
-        print(f"skipped {item}")
-    return await check()
+    print(f"iiko_env={'set' if _iiko_is_configured() else 'missing'}")
+    print(f"tbank_bearer_token={await _sync_tbank_bearer_token()}")
+    return (await _check_status()).exit_code
 
 
 def parse_args() -> argparse.Namespace:

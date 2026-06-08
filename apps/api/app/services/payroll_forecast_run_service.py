@@ -297,12 +297,12 @@ async def _load_pricing_settings(
         session,
         (shift.business_date for shift, _employee in shift_rows),
     )
-    settings[CASHIER_ALLOWANCE_ASSIGNMENTS_CONFIG_KEY] = (
-        await _load_cashier_allowance_assignments_for_schedule(
-            session,
-            shift_schedule_id,
-            shift_rows,
-        )
+    settings[
+        CASHIER_ALLOWANCE_ASSIGNMENTS_CONFIG_KEY
+    ] = await _load_cashier_allowance_assignments_for_schedule(
+        session,
+        shift_schedule_id,
+        shift_rows,
     )
     return settings
 

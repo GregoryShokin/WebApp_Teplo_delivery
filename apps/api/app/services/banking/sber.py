@@ -130,9 +130,7 @@ class SberClient:
                         page += 1
         return operations
 
-    async def _get_json(
-        self, client: httpx.AsyncClient, path: str, params: dict[str, Any]
-    ) -> Any:
+    async def _get_json(self, client: httpx.AsyncClient, path: str, params: dict[str, Any]) -> Any:
         response = await client.get(path, params=params)
         if response.status_code == 401:
             raise BankCredentialsError(self.provider, "Sber access token is invalid or expired")

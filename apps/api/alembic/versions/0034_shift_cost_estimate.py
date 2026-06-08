@@ -194,9 +194,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "delete from app_setting where key = 'schedule.fot_warning_threshold_pct'"
-    )
+    op.execute("delete from app_setting where key = 'schedule.fot_warning_threshold_pct'")
     op.drop_index("ix_shift_cost_estimate_employee_date", table_name="shift_cost_estimate")
     op.drop_index("ix_shift_cost_estimate_run", table_name="shift_cost_estimate")
     op.drop_table("shift_cost_estimate")

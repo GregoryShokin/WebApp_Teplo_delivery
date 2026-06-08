@@ -91,7 +91,10 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_employee_default_cooking_station_value",
         "employee",
-        f"default_cooking_station is null or default_cooking_station in {_sql_values(STATION_VALUES)}",
+        (
+            f"default_cooking_station is null or default_cooking_station in "
+            f"{_sql_values(STATION_VALUES)}"
+        ),
     )
 
 

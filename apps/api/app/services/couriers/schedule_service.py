@@ -184,9 +184,7 @@ async def get_work_statuses(
         case((has_recent_shift, "working"), else_="reserve").label("work_status"),
     ).where(Employee.id.in_(employee_ids))
 
-    statuses: dict[uuid.UUID, WorkStatus] = {
-        employee_id: "reserve" for employee_id in employee_ids
-    }
+    statuses: dict[uuid.UUID, WorkStatus] = {employee_id: "reserve" for employee_id in employee_ids}
     for employee_id, work_status in (await session.execute(stmt)).all():
         statuses[employee_id] = cast(WorkStatus, work_status)
     return statuses

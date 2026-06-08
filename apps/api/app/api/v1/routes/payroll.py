@@ -763,9 +763,7 @@ def serialize_payroll_line(
             "amount_account": money_float(payment.amount_account) if payment is not None else 0,
             "payout_status": payment.status if payment is not None else "pending",
             "draft_status": payment.draft_status if payment is not None else None,
-            "overpaid_amount": money_float(payment.overpaid_amount)
-            if payment is not None
-            else 0,
+            "overpaid_amount": money_float(payment.overpaid_amount) if payment is not None else 0,
             "paid_amount": money_float(payment.amount) if is_paid else None,
             "paid_at": payment.paid_at if is_paid else None,
             "paid_method": payment.method if is_paid else None,

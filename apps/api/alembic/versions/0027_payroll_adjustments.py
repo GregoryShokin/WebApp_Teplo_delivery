@@ -32,9 +32,15 @@ def upgrade() -> None:
         sa.Column("default_amount", sa.Numeric(14, 2), nullable=True),
         sa.Column("is_active", sa.Boolean(), server_default=sa.text("true"), nullable=False),
         sa.Column("sort_order", sa.Integer(), server_default=sa.text("0"), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.CheckConstraint("type in ('bonus', 'penalty')", name="ck_payroll_adjustment_category_type"),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.CheckConstraint(
+            "type in ('bonus', 'penalty')", name="ck_payroll_adjustment_category_type"
+        ),
         sa.CheckConstraint(
             "default_amount is null or default_amount >= 0",
             name="ck_payroll_adjustment_category_default_amount_non_negative",
@@ -54,15 +60,21 @@ def upgrade() -> None:
         sa.Column("comment", sa.Text(), nullable=True),
         sa.Column("created_by_user_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("created_by_label", sa.String(length=160), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint("type in ('bonus', 'penalty')", name="ck_payroll_adjustment_type"),
         sa.CheckConstraint("amount > 0", name="ck_payroll_adjustment_amount_positive"),
         sa.CheckConstraint(
             "category_id is not null or custom_label is not null",
             name="ck_payroll_adjustment_category_or_custom",
         ),
-        sa.ForeignKeyConstraint(["category_id"], ["payroll_adjustment_category.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["category_id"], ["payroll_adjustment_category.id"], ondelete="SET NULL"
+        ),
         sa.ForeignKeyConstraint(["created_by_user_id"], ["user.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["employee_id"], ["employee.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),

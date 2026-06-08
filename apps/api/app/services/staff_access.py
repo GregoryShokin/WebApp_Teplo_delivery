@@ -53,9 +53,7 @@ AREA_PERMISSION_SEGMENTS = {
 }
 
 POSITIONS_BY_AREA = {
-    StaffArea.ADMINISTRATION: frozenset(
-        {"Управляющий", "Менеджер", "Системный администратор"}
-    ),
+    StaffArea.ADMINISTRATION: frozenset({"Управляющий", "Менеджер", "Системный администратор"}),
     StaffArea.COOKS: frozenset({"Повар"}),
     StaffArea.CASHIERS: frozenset({"Кассир"}),
     StaffArea.AUXILIARY: frozenset(AUXILIARY_POSITIONS),
@@ -184,11 +182,7 @@ def filter_employees_by_staff_access(
     actor: Any | None,
     action: StaffAction,
 ) -> list[Employee]:
-    return [
-        employee
-        for employee in employees
-        if can_access_employee(actor, employee, action)
-    ]
+    return [employee for employee in employees if can_access_employee(actor, employee, action)]
 
 
 def employee_ids_with_staff_access(
@@ -197,8 +191,7 @@ def employee_ids_with_staff_access(
     action: StaffAction,
 ) -> frozenset[Any]:
     return frozenset(
-        employee.id
-        for employee in filter_employees_by_staff_access(employees, actor, action)
+        employee.id for employee in filter_employees_by_staff_access(employees, actor, action)
     )
 
 

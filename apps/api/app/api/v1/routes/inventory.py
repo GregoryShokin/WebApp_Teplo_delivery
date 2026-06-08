@@ -790,9 +790,7 @@ def audit_payload(audit: InventoryAudit, *, include_items: bool = False) -> dict
                 ),
                 "reason": exclusion.reason,
                 "created_by_name": (
-                    exclusion.created_by.full_name
-                    if exclusion.created_by is not None
-                    else None
+                    exclusion.created_by.full_name if exclusion.created_by is not None else None
                 ),
                 "created_at": exclusion.created_at,
                 "updated_at": exclusion.updated_at,
@@ -804,9 +802,7 @@ def audit_payload(audit: InventoryAudit, *, include_items: bool = False) -> dict
                 "id": str(exclusion.id),
                 "employee_id": str(exclusion.employee_id),
                 "employee_name": (
-                    exclusion.employee.full_name
-                    if exclusion.employee is not None
-                    else None
+                    exclusion.employee.full_name if exclusion.employee is not None else None
                 ),
                 "employee_position": (
                     getattr(exclusion.employee, "position", None)
@@ -815,9 +811,7 @@ def audit_payload(audit: InventoryAudit, *, include_items: bool = False) -> dict
                 ),
                 "reason": exclusion.reason,
                 "created_by_name": (
-                    exclusion.created_by.full_name
-                    if exclusion.created_by is not None
-                    else None
+                    exclusion.created_by.full_name if exclusion.created_by is not None else None
                 ),
                 "created_at": exclusion.created_at,
                 "updated_at": exclusion.updated_at,
@@ -861,8 +855,7 @@ def item_payload(
 
 def item_exclusion_reasons(audit: InventoryAudit) -> dict[uuid.UUID, str]:
     return {
-        exclusion.item_id: exclusion.reason
-        for exclusion in getattr(audit, "item_exclusions", [])
+        exclusion.item_id: exclusion.reason for exclusion in getattr(audit, "item_exclusions", [])
     }
 
 

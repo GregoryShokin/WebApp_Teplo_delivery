@@ -910,9 +910,7 @@ def money_string(value: Decimal) -> str:
 
 def legacy_fund_comment(description: str | None) -> str:
     return (
-        f"{LEGACY_FUND_COMMENT_PREFIX} {description}"
-        if description
-        else LEGACY_FUND_COMMENT_PREFIX
+        f"{LEGACY_FUND_COMMENT_PREFIX} {description}" if description else LEGACY_FUND_COMMENT_PREFIX
     )
 
 

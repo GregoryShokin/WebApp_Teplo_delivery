@@ -334,10 +334,7 @@ async def get_audit_with_items(
     audit_id: uuid.UUID,
 ) -> dict[str, Any]:
     audit = await _load_audit_or_404(session, audit_id)
-    excluded_ids = {
-        exclusion.item_id
-        for exclusion in getattr(audit, "item_exclusions", [])
-    }
+    excluded_ids = {exclusion.item_id for exclusion in getattr(audit, "item_exclusions", [])}
     summary = summarize_audit_items(list(audit.items), excluded_ids=excluded_ids)
     return {
         "audit": audit,
@@ -408,9 +405,7 @@ async def list_all_exclusions(
                 "audit_status": exclusion.audit.status if exclusion.audit is not None else None,
                 "item_id": str(exclusion.item_id),
                 "product_name": (
-                    exclusion.item.product_name_snapshot
-                    if exclusion.item is not None
-                    else None
+                    exclusion.item.product_name_snapshot if exclusion.item is not None else None
                 ),
                 "amount": (
                     decimal_string(item_signed_amount(exclusion.item))
@@ -419,9 +414,7 @@ async def list_all_exclusions(
                 ),
                 "reason": exclusion.reason,
                 "created_by_name": (
-                    exclusion.created_by.full_name
-                    if exclusion.created_by is not None
-                    else None
+                    exclusion.created_by.full_name if exclusion.created_by is not None else None
                 ),
                 "created_at": exclusion.created_at,
             }
@@ -446,9 +439,7 @@ async def list_all_exclusions(
                 ),
                 "reason": exclusion.reason,
                 "created_by_name": (
-                    exclusion.created_by.full_name
-                    if exclusion.created_by is not None
-                    else None
+                    exclusion.created_by.full_name if exclusion.created_by is not None else None
                 ),
                 "created_at": exclusion.created_at,
             }
@@ -582,7 +573,9 @@ async def cancel_audit(
                         PayrollAdjustment.type == "penalty",
                         PayrollAdjustment.category_id == category.id,
                         PayrollAdjustment.work_date == adjustment_work_date,
-                        PayrollAdjustment.comment.like(f"{adjustment_comment(audit.business_date)}%"),
+                        PayrollAdjustment.comment.like(
+                            f"{adjustment_comment(audit.business_date)}%"
+                        ),
                     )
                 )
             ).all()
@@ -647,11 +640,7 @@ async def set_employee_exclusion(
         raise InventoryAuditNotFoundError("Сотрудник не найден")
 
     existing = next(
-        (
-            row
-            for row in audit.employee_exclusions
-            if row.employee_id == employee_id
-        ),
+        (row for row in audit.employee_exclusions if row.employee_id == employee_id),
         None,
     )
     before = (
@@ -731,11 +720,7 @@ async def set_item_exclusion(
         raise InventoryAuditNotFoundError("Позиция не найдена")
 
     existing = next(
-        (
-            row
-            for row in audit.item_exclusions
-            if row.item_id == item_id
-        ),
+        (row for row in audit.item_exclusions if row.item_id == item_id),
         None,
     )
     item_label = getattr(item, "product_name_snapshot", "")
@@ -1328,10 +1313,7 @@ def swap_group_comment_line(
         f"{money_comment_amount(_decimal(row.get('amount')))}"
         for row in rows
     )
-    return (
-        f"Пересорт {swap_group}: {item_details}, "
-        f"итог {money_comment_amount(net_amount)}"
-    )
+    return f"Пересорт {swap_group}: {item_details}, итог {money_comment_amount(net_amount)}"
 
 
 def money_comment_amount(value: Any) -> str:

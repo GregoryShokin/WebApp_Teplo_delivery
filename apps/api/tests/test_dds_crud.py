@@ -34,9 +34,12 @@ def test_dds_articles_counterparties_and_rules_crud(client: TestClient) -> None:
         json={"alias": "stage3 article alias"},
     )
     assert article_alias.status_code == 201
-    assert client.delete(
-        f"/api/v1/dds/articles/aliases/{article_alias.json()['id']}", headers=headers
-    ).status_code == 204
+    assert (
+        client.delete(
+            f"/api/v1/dds/articles/aliases/{article_alias.json()['id']}", headers=headers
+        ).status_code
+        == 204
+    )
 
     counterparty_response = client.post(
         "/api/v1/dds/counterparties",
@@ -60,10 +63,13 @@ def test_dds_articles_counterparties_and_rules_crud(client: TestClient) -> None:
         json={"alias": "stage3 counterparty alias"},
     )
     assert counterparty_alias.status_code == 201
-    assert client.delete(
-        f"/api/v1/dds/counterparties/aliases/{counterparty_alias.json()['id']}",
-        headers=headers,
-    ).status_code == 204
+    assert (
+        client.delete(
+            f"/api/v1/dds/counterparties/aliases/{counterparty_alias.json()['id']}",
+            headers=headers,
+        ).status_code
+        == 204
+    )
 
     rule_response = client.post(
         "/api/v1/dds/classification-rules",
@@ -96,12 +102,16 @@ def test_dds_articles_counterparties_and_rules_crud(client: TestClient) -> None:
     assert toggled_rule.status_code == 200
     assert toggled_rule.json()["is_active"] is False
 
-    assert client.delete(
-        f"/api/v1/dds/classification-rules/{rule['id']}", headers=headers
-    ).status_code == 204
-    assert client.delete(
-        f"/api/v1/dds/counterparties/{counterparty['id']}", headers=headers
-    ).status_code == 204
-    assert client.delete(
-        f"/api/v1/dds/articles/{article['id']}", headers=headers
-    ).status_code == 204
+    assert (
+        client.delete(f"/api/v1/dds/classification-rules/{rule['id']}", headers=headers).status_code
+        == 204
+    )
+    assert (
+        client.delete(
+            f"/api/v1/dds/counterparties/{counterparty['id']}", headers=headers
+        ).status_code
+        == 204
+    )
+    assert (
+        client.delete(f"/api/v1/dds/articles/{article['id']}", headers=headers).status_code == 204
+    )

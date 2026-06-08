@@ -26,16 +26,12 @@ from app.services.payroll_calculator import (
 router = APIRouter()
 DEPOSITS_READ_ACCESS = (
     Depends(
-        require_any_permission(
-            ("payroll.production_deposits.read", "source.deposit_settings.read")
-        )
+        require_any_permission(("payroll.production_deposits.read", "source.deposit_settings.read"))
     ),
 )
 DEPOSITS_EDIT_ACCESS = (
     Depends(
-        require_any_permission(
-            ("payroll.production_deposits.edit", "source.deposit_settings.edit")
-        )
+        require_any_permission(("payroll.production_deposits.edit", "source.deposit_settings.edit"))
     ),
 )
 

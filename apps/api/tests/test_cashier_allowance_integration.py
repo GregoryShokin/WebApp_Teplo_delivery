@@ -130,9 +130,7 @@ def test_payroll_cashier_only_recipient_gets_allowance() -> None:
         {senior.id: senior, deputy.id: deputy},
         payroll_settings(work_date, assignment),
     )
-    day_by_employee = {
-        line.employee_id: line.components["days"][0] for line in result.lines
-    }
+    day_by_employee = {line.employee_id: line.components["days"][0] for line in result.lines}
 
     assert day_by_employee[senior.id]["seniority_allowance_pay"] == 500
     assert day_by_employee[deputy.id]["seniority_allowance_pay"] == 0
@@ -152,9 +150,7 @@ def test_payroll_chef_both_get_allowance_independently() -> None:
         {senior.id: senior, deputy.id: deputy},
         payroll_settings(work_date),
     )
-    day_by_employee = {
-        line.employee_id: line.components["days"][0] for line in result.lines
-    }
+    day_by_employee = {line.employee_id: line.components["days"][0] for line in result.lines}
 
     assert day_by_employee[senior.id]["seniority_allowance_pay"] == 600
     assert day_by_employee[deputy.id]["seniority_allowance_pay"] == 400
@@ -177,9 +173,7 @@ def test_payroll_cashier_plan_priority_deputy() -> None:
         {senior.id: senior, deputy.id: deputy},
         payroll_settings(work_date, assignment),
     )
-    day_by_employee = {
-        line.employee_id: line.components["days"][0] for line in result.lines
-    }
+    day_by_employee = {line.employee_id: line.components["days"][0] for line in result.lines}
 
     assert day_by_employee[senior.id]["seniority_allowance_pay"] == 0
     assert day_by_employee[deputy.id]["seniority_allowance_pay"] == 300

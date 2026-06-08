@@ -854,8 +854,7 @@ async def _ensure_substitute_assignment_valid(
     ):
         return
     raise EmployeeAssignmentError(
-        f"Подмена {canonical_position} → {target_position} не разрешена. "
-        "Настройте в Настройках"
+        f"Подмена {canonical_position} → {target_position} не разрешена. Настройте в Настройках"
     )
 
 

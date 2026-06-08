@@ -45,12 +45,8 @@ class AttendanceSyncSession:
 
     async def scalar(self, query: Any) -> CourierIikoShift | None:
         params = query.compile().params
-        iiko_employee_id = next(
-            value for value in params.values() if isinstance(value, str)
-        )
-        opened_at = next(
-            value for value in params.values() if isinstance(value, datetime)
-        )
+        iiko_employee_id = next(value for value in params.values() if isinstance(value, str))
+        opened_at = next(value for value in params.values() if isinstance(value, datetime))
         return next(
             (
                 shift

@@ -434,9 +434,7 @@ async def _effective_allowances(
     flags = await get_allowances_on_date(session, employee.id, business_date)
     return {
         "is_senior": bool(flags.get("is_senior", employee.is_senior)),
-        "is_deputy_senior": bool(
-            flags.get("is_deputy_senior", employee.is_deputy_senior)
-        ),
+        "is_deputy_senior": bool(flags.get("is_deputy_senior", employee.is_deputy_senior)),
     }
 
 

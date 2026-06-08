@@ -230,9 +230,7 @@ async def delete_position_assignment(
 
     before_by_id = _states_by_id(assignments)
     states = [
-        _assignment_state(assignment)
-        for assignment in assignments
-        if assignment.id != target.id
+        _assignment_state(assignment) for assignment in assignments if assignment.id != target.id
     ]
     if target == assignments[0]:
         states[0]["effective_from"] = target.effective_from

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -135,7 +135,9 @@ def deposit_account_snapshot(account: DepositAccount | None) -> dict[str, Any] |
 def transaction_payload(transaction: DepositTransaction) -> dict[str, Any]:
     return {
         "id": str(transaction.id) if transaction.id is not None else None,
-        "employee_id": str(transaction.employee_id) if transaction.employee_id is not None else None,
+        "employee_id": str(transaction.employee_id)
+        if transaction.employee_id is not None
+        else None,
         "run_id": str(transaction.run_id) if transaction.run_id is not None else None,
         "transaction_type": transaction.transaction_type,
         "amount": decimal_string(transaction.amount),

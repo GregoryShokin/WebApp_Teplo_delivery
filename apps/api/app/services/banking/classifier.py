@@ -113,9 +113,7 @@ async def apply_operation_action(
             return
         transaction = None
         if operation.cashflow_transaction_id is not None:
-            transaction = await session.get(
-                CashflowTransaction, operation.cashflow_transaction_id
-            )
+            transaction = await session.get(CashflowTransaction, operation.cashflow_transaction_id)
         if transaction is None:
             transaction = CashflowTransaction(
                 wallet_id=wallet.id,
@@ -234,9 +232,7 @@ async def _rule_matches(
     return True
 
 
-async def _counterparty_is_own_account(
-    session: AsyncSession, operation: BankOperation
-) -> bool:
+async def _counterparty_is_own_account(session: AsyncSession, operation: BankOperation) -> bool:
     account_number = clean_digits(operation.counterparty_account_raw)
     inn = clean_digits(operation.counterparty_inn_raw)
     if not account_number and not inn:
@@ -252,9 +248,7 @@ async def _counterparty_is_own_account(
     return await session.scalar(query) is not None
 
 
-async def _wallet_for_operation(
-    session: AsyncSession, operation: BankOperation
-) -> Wallet | None:
+async def _wallet_for_operation(session: AsyncSession, operation: BankOperation) -> Wallet | None:
     if operation.account_id is not None:
         wallet = await session.scalar(
             select(Wallet).where(

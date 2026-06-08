@@ -42,9 +42,10 @@ def upgrade() -> None:
                        || jsonb_build_object(
                            'threshold_hours',
                            coalesce(widget_options -> 'threshold_hours', '8.0'::jsonb)
-                       ),
+                   ),
                    display_name = 'Надбавка пт/сб',
-                   description = 'Фиксированная надбавка за смену в пятницу и субботу при минимальной длительности',
+                   description = 'Фиксированная надбавка за смену в пятницу и субботу '
+                       || 'при минимальной длительности',
                    widget_type = 'weekday_premium',
                    unit = '₽'
              where key = 'payroll.weekday_premium'

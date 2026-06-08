@@ -40,32 +40,38 @@ def upgrade() -> None:
     )
 
     conn = op.get_bind()
-    allowance = conn.execute(
-        sa.text(
-            """
+    allowance = (
+        conn.execute(
+            sa.text(
+                """
             select
                 coalesce((value::jsonb ->> 'senior')::numeric, 500) as senior_amount,
                 coalesce((value::jsonb ->> 'deputy_senior')::numeric, 300) as deputy_amount
             from app_setting
             where key = 'payroll.allowances'
             """
+            )
         )
-    ).mappings().first()
-    senior_amount = Decimal(str(allowance["senior_amount"])) if allowance else Decimal("500")
-    deputy_amount = (
-        Decimal(str(allowance["deputy_amount"])) if allowance else Decimal("300")
+        .mappings()
+        .first()
     )
+    senior_amount = Decimal(str(allowance["senior_amount"])) if allowance else Decimal("500")
+    deputy_amount = Decimal(str(allowance["deputy_amount"])) if allowance else Decimal("300")
 
-    legacy_rows = conn.execute(
-        sa.text(
-            """
+    legacy_rows = (
+        conn.execute(
+            sa.text(
+                """
             select role, percent_of_base, effective_from, effective_to
             from payroll_seniority_premium
             where position is null
             order by role, effective_from
             """
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     payroll_seniority_premium = sa.table(
         "payroll_seniority_premium",
         sa.column("id", postgresql.UUID(as_uuid=True)),
@@ -235,8 +241,7 @@ def downgrade() -> None:
         )
     )
     op.execute(
-        "update payroll_seniority_premium "
-        "set percent_of_base = 0 where percent_of_base is null"
+        "update payroll_seniority_premium set percent_of_base = 0 where percent_of_base is null"
     )
     op.alter_column("payroll_seniority_premium", "percent_of_base", nullable=False)
     op.drop_column("payroll_seniority_premium", "amount")
