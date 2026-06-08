@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, ArrowRight, Banknote, Coins, Lock } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/lib/permissions";

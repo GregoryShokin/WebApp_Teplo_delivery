@@ -1093,15 +1093,6 @@ function resolveCurrentEmployee(user: AuthUser | null, employees: Employee[]) {
   );
 }
 
-function isAdminCashier(employee: Employee) {
-  if (employee.position !== "Кассир") {
-    return false;
-  }
-  return employee.assignments.some((assignment) =>
-    ["admin", "administrator"].includes(String(assignment.payroll_role)),
-  );
-}
-
 function getAuthorOptions(evaluations: CourierEvaluation[], employees: Employee[]) {
   const employeeById = indexById(employees);
   const authorIds = new Set(evaluations.map((evaluation) => evaluation.created_by));
