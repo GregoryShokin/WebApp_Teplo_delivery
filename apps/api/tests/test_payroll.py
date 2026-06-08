@@ -2574,6 +2574,52 @@ async def test_ledger_matrix_marks_days_locked_through_latest_completed_run() ->
     )
 
 
+async def test_get_latest_locked_payroll_date_ignores_future_finalized_periods(
+    async_session_factory,
+) -> None:
+    # Битый legacy-период с end_date в будущем (например, год 2175) не должен
+    # задирать latest_locked_date и блокировать весь табель целиком.
+    today = shift_ledger_service.ledger_today()
+    past_period = make_period(
+        start=today - timedelta(days=13),
+        end=today - timedelta(days=7),
+        payroll_date=today - timedelta(days=6),
+    )
+    future_period = make_period(
+        start=today + timedelta(days=3650),
+        end=today + timedelta(days=3656),
+        payroll_date=today + timedelta(days=3657),
+    )
+    async with async_session_factory() as session:
+        session.add_all([past_period, future_period])
+        session.add(
+            PayrollRun(
+                id=uuid.uuid4(),
+                period_id=past_period.id,
+                started_at=datetime(2026, 1, 1, tzinfo=UTC),
+                status="finalized",
+                blocking_issues=[],
+                summary={},
+            )
+        )
+        session.add(
+            PayrollRun(
+                id=uuid.uuid4(),
+                period_id=future_period.id,
+                started_at=datetime(2026, 1, 1, tzinfo=UTC),
+                status="finalized",
+                blocking_issues=[],
+                summary={},
+            )
+        )
+        await session.commit()
+
+    async with async_session_factory() as session:
+        latest = await shift_ledger_service.get_latest_locked_payroll_date(session)
+
+    assert latest == past_period.end_date
+
+
 def test_patch_shift_ledger_route_rejects_locked_period_without_audit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

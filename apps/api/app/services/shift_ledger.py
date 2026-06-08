@@ -455,11 +455,20 @@ async def get_latest_locked_payroll_date(session: AsyncSession) -> date | None:
     # Замораживаем ячейки роли в Учёте смен ТОЛЬКО для зафинализированных периодов.
     # `completed` означает «расчёт прошёл без блокеров», но ещё не выплачен — менеджер
     # должен иметь возможность поправить роль и пересчитать.
+    #
+    # Игнорируем финализированные периоды с end_date в будущем: payroll не может быть
+    # финализирован за ещё не наступившие дни. Это защита от битых legacy-дат
+    # (например, год 2175), из-за которых max(end_date) уезжал в будущее и блокировал
+    # весь табель целиком.
+    today = ledger_today()
     return await session.scalar(
         select(func.max(PayrollPeriod.end_date))
         .select_from(PayrollRun)
         .join(PayrollPeriod, PayrollPeriod.id == PayrollRun.period_id)
-        .where(PayrollRun.status == "finalized")
+        .where(
+            PayrollRun.status == "finalized",
+            PayrollPeriod.end_date <= today,
+        )
     )
 
 
