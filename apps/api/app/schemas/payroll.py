@@ -66,11 +66,27 @@ class PayrollPayoutApplyDeltasResponse(BaseModel):
 
 
 class PayrollPayoutDeltaRead(BaseModel):
-    employee_id: uuid.UUID
+    run_id: uuid.UUID
+    document_id: str | None = None
     previous_amount: Decimal
     new_amount: Decimal
     delta: Decimal
     classification: str
+
+
+class PayrollBankDraftRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    run_id: uuid.UUID
+    document_id: str
+    amount: Decimal
+    status: str
+    provider_ref: str | None = None
+    payload: dict[str, Any]
+    last_error: str | None = None
+    synced_at: datetime | None = None
+    created_at: datetime
 
 
 class PayrollRunRead(BaseModel):

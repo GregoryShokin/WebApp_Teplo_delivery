@@ -16,11 +16,13 @@ from app.api.v1.routes import payroll as payroll_routes
 from app.core.config import Settings
 from app.models import (
     Employee,
+    PayrollBankDraft,
     PayrollLine,
     PayrollPayment,
     PayrollPeriod,
     PayrollRun,
     PayrollRunEvent,
+    SourceCredential,
     User,
 )
 from app.schemas.payroll import PayrollPayoutSplitPatch
@@ -31,6 +33,7 @@ from app.services.payroll_payments import mark_payment
 from app.services.payroll_payouts import (
     apply_payout_deltas,
     create_or_update_drafts,
+    create_or_update_run_draft,
     get_payout_deltas,
     set_payout_split,
 )
@@ -184,16 +187,15 @@ async def test_create_or_update_drafts_uses_only_account_part_and_writes_events(
             amount_cash=Decimal("2000"),
             actor_user_id=actor.id,
         )
-        await mark_payment(
+        await set_payout_split(
             session,
             run.id,
             employees[2].id,
-            paid_at=date(2026, 5, 27),
-            method="transfer",
+            amount_cash=Decimal("0"),
             actor_user_id=actor.id,
         )
 
-        drafts_count = await create_or_update_drafts(
+        draft = await create_or_update_run_draft(
             session,
             run.id,
             actor_user_id=actor.id,
@@ -205,16 +207,23 @@ async def test_create_or_update_drafts_uses_only_account_part_and_writes_events(
                 .order_by(PayrollPayment.amount)
             )
         ).all()
+        draft_count = await session.scalar(
+            select(func.count())
+            .select_from(PayrollBankDraft)
+            .where(PayrollBankDraft.run_id == run.id)
+        )
         events = await events_for_run(session, run.id, action="bank_draft_created")
 
-        assert drafts_count == 1
-        assert payments[0].draft_document_id == f"teplo-{run.id}-{employees[0].id}"
-        assert payments[0].draft_status == "created"
+        assert draft_count == 1
+        assert draft.document_id == f"teplo-payroll-{run.id}"
+        assert draft.amount == Decimal("3750.00")
+        assert draft.status == "created"
         assert payments[0].status == "draft_created"
-        assert payments[1].draft_document_id is None
-        assert payments[2].status == "paid"
+        assert payments[0].draft_document_id is None
+        assert payments[1].status == "planned"
+        assert payments[2].status == "draft_created"
         assert [event.action for event in events] == ["bank_draft_created"]
-        assert events[0].payload["amount_account"] == "750.00"
+        assert events[0].payload["amount_account"] == "3750.00"
 
 
 async def test_create_or_update_drafts_is_idempotent_for_same_document_id(
@@ -231,24 +240,22 @@ async def test_create_or_update_drafts_is_idempotent_for_same_document_id(
             actor_user_id=actor.id,
         )
 
-        first_count = await create_or_update_drafts(session, run.id, actor_user_id=actor.id)
-        first_payment = await session.scalar(
-            select(PayrollPayment).where(PayrollPayment.run_id == run.id)
-        )
-        assert first_payment is not None
-        first_document_id = first_payment.draft_document_id
+        first_draft = await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)
+        first_document_id = first_draft.document_id
 
-        second_count = await create_or_update_drafts(session, run.id, actor_user_id=actor.id)
-        payment_count = await session.scalar(
-            select(func.count()).select_from(PayrollPayment).where(PayrollPayment.run_id == run.id)
+        second_draft = await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)
+        draft_count = await session.scalar(
+            select(func.count())
+            .select_from(PayrollBankDraft)
+            .where(PayrollBankDraft.run_id == run.id)
         )
-        await session.refresh(first_payment)
+        compatibility_count = await create_or_update_drafts(session, run.id, actor_user_id=actor.id)
 
-        assert first_count == 1
-        assert second_count == 1
-        assert payment_count == 1
-        assert first_payment.draft_document_id == first_document_id
-        assert first_payment.draft_status == "updated"
+        assert draft_count == 1
+        assert compatibility_count == 1
+        assert second_draft.id == first_draft.id
+        assert second_draft.document_id == first_document_id
+        assert second_draft.status == "updated"
 
 
 async def test_get_payout_deltas_after_recompute_classifies_all_directions(
@@ -277,6 +284,7 @@ async def test_get_payout_deltas_after_recompute_classifies_all_directions(
                 method="transfer",
                 actor_user_id=actor.id,
             )
+        await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)
         await unfinalize_payroll_run(
             session,
             run.id,
@@ -296,13 +304,12 @@ async def test_get_payout_deltas_after_recompute_classifies_all_directions(
         await finalize_payroll_run(session, recomputed.id, finalized_by_user_id=actor.id)
         deltas = await get_payout_deltas(session, recomputed.id)
 
-        by_employee = {item["employee_id"]: item for item in deltas}
-        assert by_employee[employees[0].id]["classification"] == "topup"
-        assert by_employee[employees[0].id]["delta"] == Decimal("500.00")
-        assert by_employee[employees[1].id]["classification"] == "overpay"
-        assert by_employee[employees[1].id]["delta"] == Decimal("-200.00")
-        assert by_employee[employees[2].id]["classification"] == "unchanged"
-        assert by_employee[employees[2].id]["delta"] == Decimal("0.00")
+        assert len(deltas) == 1
+        assert deltas[0]["run_id"] == recomputed.id
+        assert deltas[0]["classification"] == "topup"
+        assert deltas[0]["previous_amount"] == Decimal("3000.00")
+        assert deltas[0]["new_amount"] == Decimal("3300.00")
+        assert deltas[0]["delta"] == Decimal("300.00")
 
 
 async def test_apply_deltas_topup_creates_separate_mock_draft_and_event(
@@ -325,6 +332,7 @@ async def test_apply_deltas_topup_creates_separate_mock_draft_and_event(
             method="transfer",
             actor_user_id=actor.id,
         )
+        await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)
         await unfinalize_payroll_run(
             session,
             run.id,
@@ -343,17 +351,20 @@ async def test_apply_deltas_topup_creates_separate_mock_draft_and_event(
         payment = await session.scalar(
             select(PayrollPayment).where(PayrollPayment.run_id == recomputed.id)
         )
+        draft = await session.scalar(
+            select(PayrollBankDraft).where(PayrollBankDraft.run_id == recomputed.id)
+        )
         events = await events_for_run(session, recomputed.id, action="bank_draft_topup")
 
         assert payment is not None
+        assert draft is not None
         assert applied_count == 1
         assert payment.amount == Decimal("1250.00")
         assert payment.amount_account == Decimal("1250.00")
+        assert draft.amount == Decimal("1250.00")
         assert len(events) == 1
         assert events[0].payload["delta"] == "250.00"
-        assert events[0].payload["document_id"] == (
-            f"teplo-{recomputed.id}-{employees[0].id}-topup-1"
-        )
+        assert events[0].payload["document_id"] == (f"teplo-payroll-{recomputed.id}-topup-1")
 
 
 async def test_apply_deltas_overpay_records_excess_without_bank_draft(
@@ -376,6 +387,7 @@ async def test_apply_deltas_overpay_records_excess_without_bank_draft(
             method="transfer",
             actor_user_id=actor.id,
         )
+        await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)
         await unfinalize_payroll_run(
             session,
             run.id,
@@ -396,27 +408,120 @@ async def test_apply_deltas_overpay_records_excess_without_bank_draft(
         payment = await session.scalar(
             select(PayrollPayment).where(PayrollPayment.run_id == recomputed.id)
         )
+        draft = await session.scalar(
+            select(PayrollBankDraft).where(PayrollBankDraft.run_id == recomputed.id)
+        )
         events = await events_for_run(session, recomputed.id, action="payout_overpaid")
 
         assert payment is not None
+        assert draft is not None
         assert applied_count == 1
         assert payment.amount == Decimal("750.00")
-        assert payment.overpaid_amount == Decimal("250.00")
+        assert draft.amount == Decimal("750.00")
         assert bank_client.drafts == []
         assert len(events) == 1
         assert events[0].payload["overpaid_amount"] == "250.00"
 
 
-async def test_tbank_live_payment_draft_is_not_implemented() -> None:
-    client = TbankClient(settings=Settings(teplo_bank_client_mode="live"))
+async def test_tbank_live_payment_draft_posts_payload_and_bearer_header(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: dict[str, Any] = {}
 
-    with pytest.raises(NotImplementedError):
-        await client.create_payment_draft(
-            document_id="teplo-live-test",
-            amount=Decimal("100.00"),
-            purpose="test",
-            recipient_name="Test Employee",
+    class FakeResponse:
+        status_code = 200
+
+        def json(self) -> dict[str, Any]:
+            return {"documentId": "bank-doc-1", "status": "created"}
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs: Any) -> None:
+            calls["client_kwargs"] = kwargs
+
+        async def __aenter__(self) -> FakeAsyncClient:
+            return self
+
+        async def __aexit__(self, *_args: Any) -> None:
+            return None
+
+        async def post(
+            self,
+            path: str,
+            *,
+            json: dict[str, Any],
+            headers: dict[str, str],
+        ) -> FakeResponse:
+            calls["post"] = {"path": path, "json": json, "headers": headers}
+            return FakeResponse()
+
+    monkeypatch.setattr("app.services.banking.tbank.httpx.AsyncClient", FakeAsyncClient)
+
+    async with async_session_factory() as session:
+        session.add(
+            SourceCredential(
+                id=uuid.uuid4(),
+                provider="tbank",
+                credential_kind="bearer_token",
+                value_encrypted="test-token",
+                is_active=True,
+            )
         )
+        await session.commit()
+        client = TbankClient(
+            session,
+            settings=Settings(
+                teplo_bank_client_mode="live",
+                tbank_payment_base_url="https://secured-openapi.tbank.ru",
+            ),
+        )
+
+        result = await client.create_payment_draft(
+            document_id="teplo-payroll-live-test",
+            amount=Decimal("123.45"),
+            purpose="Выплата заработной платы",
+            requisites={
+                "recipientName": "ШОКИНА КРИСТИНА",
+                "inn": "890307589201",
+                "kpp": "0",
+                "bankAcnt": "40817810800023540968",
+                "bankBik": "044525974",
+                "corrAccount": "30101810145250000974",
+                "executionOrder": 5,
+            },
+            payer_account="40702810900000000001",
+        )
+
+    assert result.document_id == "teplo-payroll-live-test"
+    assert result.provider_ref == "bank-doc-1"
+    assert calls["client_kwargs"]["base_url"] == "https://secured-openapi.tbank.ru"
+    assert calls["client_kwargs"]["headers"]["Authorization"] == "Bearer test-token"
+    assert calls["client_kwargs"]["headers"]["Content-Type"] == "application/json"
+    assert calls["post"]["path"] == "/api/v1/payment/create"
+    assert calls["post"]["headers"]["X-Request-Id"]
+    assert calls["post"]["json"] == {
+        "documentNumber": calls["post"]["json"]["documentNumber"],
+        "amount": 123.45,
+        "recipientName": "ШОКИНА КРИСТИНА",
+        "inn": "890307589201",
+        "kpp": "0",
+        "bankAcnt": "40817810800023540968",
+        "bankBik": "044525974",
+        "accountNumber": "40702810900000000001",
+        "paymentPurpose": "Выплата заработной платы",
+        "executionOrder": 5,
+        "recipientCorrAccountNumber": "30101810145250000974",
+        "taxPayerStatus": "0",
+        "kbk": "0",
+        "oktmo": "0",
+        "taxEvidence": "0",
+        "taxPeriod": "0",
+        "uin": "0",
+        "taxDocNumber": "0",
+        "taxDocDate": "0",
+    }
+    assert calls["post"]["json"]["documentNumber"].isdigit()
+    assert 1 <= len(calls["post"]["json"]["documentNumber"]) <= 6
 
 
 class RecordingBankClient:
@@ -431,14 +536,16 @@ class RecordingBankClient:
         document_id: str,
         amount: Decimal,
         purpose: str,
-        recipient_name: str,
+        requisites: dict[str, Any],
+        payer_account: str,
     ) -> PaymentDraftResult:
         self.drafts.append(
             {
                 "document_id": document_id,
                 "amount": amount,
                 "purpose": purpose,
-                "recipient_name": recipient_name,
+                "requisites": requisites,
+                "payer_account": payer_account,
             }
         )
         return PaymentDraftResult(

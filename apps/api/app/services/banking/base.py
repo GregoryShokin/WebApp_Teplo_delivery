@@ -69,7 +69,8 @@ class BankClient(Protocol):
         document_id: str,
         amount: Decimal,
         purpose: str,
-        recipient_name: str,
+        requisites: dict[str, Any],
+        payer_account: str,
     ) -> PaymentDraftResult:
         ...
 

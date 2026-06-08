@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
+from collections.abc import Mapping
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 import httpx
@@ -26,6 +28,18 @@ from app.services.banking.base import (
     scalar,
 )
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
+
+PAYMENT_DRAFT_PATH = "/api/v1/payment/create"
+DEFAULT_TAX_FIELDS = {
+    "taxPayerStatus": "0",
+    "kbk": "0",
+    "oktmo": "0",
+    "taxEvidence": "0",
+    "taxPeriod": "0",
+    "uin": "0",
+    "taxDocNumber": "0",
+    "taxDocDate": "0",
+}
 
 
 class TbankClient:
@@ -72,7 +86,8 @@ class TbankClient:
         document_id: str,
         amount: Decimal,
         purpose: str,
-        recipient_name: str,
+        requisites: dict[str, Any],
+        payer_account: str,
     ) -> PaymentDraftResult:
         if self.settings.teplo_bank_client_mode == "mock":
             return PaymentDraftResult(
@@ -81,9 +96,50 @@ class TbankClient:
                 provider_ref=f"mock-{document_id}",
             )
 
-        # Stage 2 live constants: POST https://secured-openapi.tbank.ru/api/v1/payment/create,
-        # Authorization: Bearer <token>, payment key: documentId.
-        raise NotImplementedError("T-Bank payment draft (live) — этап 2")
+        token = await required_credential(self.session, self.provider, "bearer_token")
+        payload = build_payment_draft_api_payload(
+            document_id=document_id,
+            amount=amount,
+            purpose=purpose,
+            requisites=requisites,
+            payer_account=payer_account,
+        )
+        async with httpx.AsyncClient(
+            base_url=self.settings.tbank_payment_base_url.rstrip("/"),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            timeout=self.settings.bank_client_timeout_seconds,
+        ) as client:
+            response = await client.post(
+                PAYMENT_DRAFT_PATH,
+                json=payload,
+                headers={"X-Request-Id": str(uuid.uuid4())},
+            )
+        if response.status_code in {401, 403}:
+            raise BankCredentialsError(self.provider, "T-Bank bearer token is invalid or expired")
+        if response.status_code >= 400:
+            raise BankFetchError(self.provider, f"T-Bank API returned {response.status_code}")
+
+        try:
+            response_payload = response.json()
+        except ValueError:
+            response_payload = {}
+        provider_document_id = _first_scalar(
+            response_payload,
+            ("documentId", "document_id", "id"),
+        )
+        status = _first_scalar(
+            response_payload,
+            ("status", "documentStatus", "paymentStatus"),
+        )
+        return PaymentDraftResult(
+            document_id=document_id,
+            status=status or "created",
+            provider_ref=provider_document_id or None,
+        )
 
     async def _fetch_mock_statement(
         self, *, date_from: date, date_to: date
@@ -142,9 +198,7 @@ class TbankClient:
                         break
         return operations
 
-    async def _get_json(
-        self, client: httpx.AsyncClient, path: str, params: dict[str, Any]
-    ) -> Any:
+    async def _get_json(self, client: httpx.AsyncClient, path: str, params: dict[str, Any]) -> Any:
         response = await client.get(
             path,
             params=params,
@@ -263,4 +317,102 @@ def _next_cursor(payload: Any) -> str:
         block = payload.get(block_name)
         if isinstance(block, dict) and block.get("nextCursor"):
             return str(block["nextCursor"])
+    return ""
+
+
+def build_payment_draft_api_payload(
+    *,
+    document_id: str,
+    amount: Decimal,
+    purpose: str,
+    requisites: Mapping[str, Any],
+    payer_account: str,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "documentNumber": _document_number(document_id),
+        "amount": _json_amount(amount),
+        "recipientName": _required_requisite(requisites, "recipientName", "recipient_name"),
+        "inn": clean_digits(_required_requisite(requisites, "inn", "recipientInn")),
+        "kpp": clean_digits(_requisite(requisites, "kpp", "recipientKpp") or "0"),
+        "bankAcnt": clean_digits(_required_requisite(requisites, "bankAcnt", "bank_acnt")),
+        "bankBik": clean_digits(_required_requisite(requisites, "bankBik", "bank_bik", "bik")),
+        "accountNumber": clean_digits(payer_account),
+        "paymentPurpose": " ".join(str(purpose).split()),
+        "executionOrder": int(_requisite(requisites, "executionOrder", "execution_order") or 5),
+        "recipientCorrAccountNumber": clean_digits(
+            _required_requisite(
+                requisites,
+                "recipientCorrAccountNumber",
+                "corrAccount",
+                "corr_account",
+                "correspondent_account",
+            )
+        ),
+    }
+    payload.update(DEFAULT_TAX_FIELDS)
+    _validate_payment_draft_payload(payload)
+    return payload
+
+
+def _document_number(document_id: str) -> str:
+    digits = clean_digits(document_id)
+    if digits:
+        number = int(digits[-6:])
+    else:
+        number = int(hashlib.sha256(document_id.encode("utf-8")).hexdigest()[:12], 16)
+    number = number % 999999
+    if number == 0:
+        number = 1
+    return str(number)
+
+
+def _json_amount(value: Any) -> int | float:
+    amount = Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if amount == amount.to_integral_value():
+        return int(amount)
+    return float(amount)
+
+
+def _requisite(requisites: Mapping[str, Any], *names: str) -> Any:
+    for name in names:
+        value = requisites.get(name)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _required_requisite(requisites: Mapping[str, Any], *names: str) -> str:
+    value = _requisite(requisites, *names)
+    if value in (None, ""):
+        raise ValueError(f"missing payment requisite: {names[0]}")
+    return str(value)
+
+
+def _validate_payment_draft_payload(payload: Mapping[str, Any]) -> None:
+    if Decimal(str(payload["amount"])) <= 0:
+        raise ValueError("payment amount must be greater than zero")
+    if not payload["accountNumber"]:
+        raise ValueError("payer account is required")
+    if len(str(payload["paymentPurpose"])) > 210:
+        raise ValueError("payment purpose must be 210 characters or fewer")
+    execution_order = payload["executionOrder"]
+    if not isinstance(execution_order, int) or execution_order < 1 or execution_order > 5:
+        raise ValueError("executionOrder must be an integer from 1 to 5")
+
+
+def _first_scalar(payload: Any, names: tuple[str, ...]) -> str:
+    if isinstance(payload, dict):
+        for name in names:
+            value = payload.get(name)
+            if value not in (None, "") and not isinstance(value, (dict, list)):
+                return str(value)
+        for value in payload.values():
+            nested = _first_scalar(value, names)
+            if nested:
+                return nested
+    elif isinstance(payload, list):
+        for item in payload:
+            nested = _first_scalar(item, names)
+            if nested:
+                return nested
     return ""

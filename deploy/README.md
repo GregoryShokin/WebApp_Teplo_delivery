@@ -10,13 +10,18 @@ Single-host deployment on Ubuntu 24.04 with Docker Compose and Caddy
   from the environment.
 - `.env.prod` — secrets and per-host config (not committed; see
   `env.prod.example`).
+- `SECRETS.md` — production secret procedure: `.env.prod`, file secrets,
+  bank credentials, checks and rotation.
+- `secrets/` — host-only file secrets mounted read-only to
+  `/run/secrets/teplo` in `api` and `scheduler` containers.
 
 ## First-time bring-up
 
 ```bash
 cd /opt/teplo/deploy
-cp env.prod.example .env.prod
-nano .env.prod                       # fill in domain, secrets
+TEPLO_DOMAIN=app.company.ru TEPLO_ADMIN_EMAIL=admin@company.ru ./init-prod-env.sh
+nano .env.prod                       # fill in domain/account fallbacks if needed
+./check-prod-secrets.sh
 
 # Build images and start everything.
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
@@ -29,12 +34,16 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod \
 Caddy will obtain a Let's Encrypt certificate for `${TEPLO_DOMAIN}` on
 the first HTTPS request as long as DNS already points to this server.
 
+For Sber/T-Bank production credentials, follow `SECRETS.md`. Do not put bank
+tokens or mTLS private keys in git or in shell history.
+
 ## Updating after a git pull
 
 ```bash
 cd /opt/teplo
 git pull --ff-only
 cd deploy
+./check-prod-secrets.sh
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 docker compose -f docker-compose.prod.yml --env-file .env.prod \
   exec api alembic upgrade head

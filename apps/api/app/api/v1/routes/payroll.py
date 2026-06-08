@@ -28,6 +28,7 @@ from app.schemas.payroll import (
     DeferredChargeRead,
     PayrollAggregateRead,
     PayrollAuditEventRead,
+    PayrollBankDraftRead,
     PayrollLineDepositOverridePatch,
     PayrollLineRead,
     PayrollPaymentMarkRequest,
@@ -44,6 +45,7 @@ from app.schemas.payroll import (
     PayrollRunUnfinalize,
 )
 from app.schemas.payroll_config import PayrollRoleCategoryOptionRead
+from app.services.banking import BankCredentialsError, BankFetchError
 from app.services.deferred_audit_charge_service import (
     DeferredChargeConflictError,
     DeferredChargeNotFoundError,
@@ -58,7 +60,9 @@ from app.services.payroll_payments import mark_all_payments, mark_payment, unmar
 from app.services.payroll_payouts import (
     apply_payout_deltas,
     create_or_update_drafts,
+    create_or_update_run_draft,
     get_payout_deltas,
+    get_run_bank_draft,
     set_payout_split,
 )
 from app.services.payroll_personal_report import build_personal_report
@@ -456,6 +460,53 @@ async def patch_payout_split(
 
 
 @router.post(
+    "/runs/{run_id}/bank-draft",
+    response_model=PayrollBankDraftRead,
+    dependencies=PAYROLL_RUNS_BANK_DRAFT_ACCESS,
+)
+async def post_run_bank_draft(
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollBankDraftRead:
+    try:
+        return await create_or_update_run_draft(
+            session,
+            run_id,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except BankCredentialsError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    except BankFetchError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.get(
+    "/runs/{run_id}/bank-draft",
+    response_model=PayrollBankDraftRead,
+    dependencies=PAYROLL_RUNS_BANK_DRAFT_ACCESS,
+)
+async def get_run_bank_draft_endpoint(
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollBankDraftRead:
+    try:
+        draft = await get_run_bank_draft(session, run_id)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if draft is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bank draft not found")
+    return draft
+
+
+@router.post(
     "/runs/{run_id}/payouts/drafts",
     response_model=PayrollPayoutDraftsResponse,
     dependencies=PAYROLL_RUNS_BANK_DRAFT_ACCESS,
@@ -475,6 +526,10 @@ async def post_payout_drafts(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PayrollConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except BankCredentialsError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    except BankFetchError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return PayrollPayoutDraftsResponse(drafts_count=drafts_count)
 
 
@@ -516,6 +571,10 @@ async def post_apply_payout_deltas(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PayrollConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except BankCredentialsError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    except BankFetchError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return PayrollPayoutApplyDeltasResponse(applied_count=applied_count)
 
 

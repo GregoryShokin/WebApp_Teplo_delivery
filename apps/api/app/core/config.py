@@ -3,8 +3,23 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+PRODUCTION_ENVIRONMENTS = {"prod", "production"}
+PLACEHOLDER_SECRET_MARKERS = (
+    "change-me",
+    "placeholder",
+    "replace-with",
+    "example.com",
+)
+
+
+def _looks_like_placeholder(value: str | None) -> bool:
+    if not value:
+        return True
+    normalized = value.strip().casefold()
+    return any(marker in normalized for marker in PLACEHOLDER_SECRET_MARKERS)
 
 
 class Settings(BaseSettings):
@@ -40,6 +55,23 @@ class Settings(BaseSettings):
 
     tbank_api_base_url: str = "https://business.tbank.ru/openapi"
     tbank_api_account_number: str | None = None
+    tbank_payment_base_url: str = "https://secured-openapi.tbank.ru"
+
+    @model_validator(mode="after")
+    def validate_production_settings(self) -> Settings:
+        if self.environment.casefold() not in PRODUCTION_ENVIRONMENTS:
+            return self
+
+        errors: list[str] = []
+        if _looks_like_placeholder(self.jwt_secret_key):
+            errors.append("JWT_SECRET_KEY must be a real production secret")
+        if not self.auth_cookie_secure:
+            errors.append("AUTH_COOKIE_SECURE must be true in production")
+        if self.teplo_bank_client_mode != "live":
+            errors.append("TEPLO_BANK_CLIENT_MODE must be live in production")
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
 
     @property
     def TEPLO_BANK_CLIENT_MODE(self) -> Literal["mock", "live"]:

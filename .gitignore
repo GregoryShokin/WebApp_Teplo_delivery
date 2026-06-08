@@ -9,6 +9,7 @@ research/private/
 integrations/sber/credentials/
 integrations/*/credentials/
 integrations/*/private/
+deploy/secrets/
 exports/
 
 # OS/editor noise.
