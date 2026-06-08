@@ -52,6 +52,22 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod \
   exec api alembic upgrade head
 ```
 
+## Syncing local code without git
+
+From the local repository root, preview the transfer first:
+
+```bash
+deploy/sync-code-to-server.sh teplo-prod /opt/teplo
+```
+
+The script runs `rsync -av --delete` in dry-run mode by default and excludes
+production env files, file secrets, backups, raw/private data and local build
+caches. To apply the reviewed sync, pass `--apply` explicitly:
+
+```bash
+deploy/sync-code-to-server.sh --apply teplo-prod /opt/teplo
+```
+
 ## Logs and status
 
 ```bash
