@@ -4,8 +4,14 @@ from collections.abc import Iterable
 
 PermissionCatalogItem = tuple[str, str, str]
 
-ACCESS_ROLE_CODES: tuple[str, ...] = ("owner", "manager", "office_manager", "cashier")
-EDITABLE_ROLE_CODES = frozenset({"manager", "office_manager", "cashier"})
+ACCESS_ROLE_CODES: tuple[str, ...] = (
+    "owner",
+    "manager",
+    "office_manager",
+    "cashier",
+    "senior_courier",
+)
+EDITABLE_ROLE_CODES = frozenset({"manager", "office_manager", "cashier", "senior_courier"})
 FULL_ACCESS_ROLE_CODES = frozenset({"owner", "admin"})
 
 MODULE_ORDER: tuple[str, ...] = (
@@ -556,10 +562,21 @@ CASHIER_DEFAULT_PERMISSIONS = frozenset(
     }
 )
 
+SENIOR_COURIER_DEFAULT_PERMISSIONS = frozenset(
+    {
+        "couriers.list.read",
+        "couriers.statistics.read",
+        "couriers.schedule.read",
+        "couriers.evaluations.read",
+        "couriers.deposits.read",
+    }
+)
+
 DEFAULT_ROLE_PERMISSIONS = {
     "manager": MANAGER_DEFAULT_PERMISSIONS,
     "office_manager": OFFICE_MANAGER_DEFAULT_PERMISSIONS,
     "cashier": CASHIER_DEFAULT_PERMISSIONS,
+    "senior_courier": SENIOR_COURIER_DEFAULT_PERMISSIONS,
 }
 
 

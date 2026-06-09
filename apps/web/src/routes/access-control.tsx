@@ -1109,7 +1109,7 @@ async function invalidateAccessLists(queryClient: ReturnType<typeof useQueryClie
 }
 
 function sortRoles(roles: AccessRole[]) {
-  const order = ["owner", "manager", "office_manager", "cashier"];
+  const order = ["owner", "manager", "office_manager", "cashier", "senior_courier"];
   return roles
     .slice()
     .sort(
