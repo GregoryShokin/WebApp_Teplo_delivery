@@ -18,7 +18,6 @@ from app.models import (
 )
 from app.schemas.couriers import EvaluationMonthlySummary
 from app.services.couriers.common import get_courier_or_404
-from app.services.couriers.permissions import ensure_admin_cashier
 
 EDIT_WINDOW_SETTING_KEY = "couriers.evaluation.edit_window_minutes"
 DEFAULT_EDIT_WINDOW_MINUTES = 30
@@ -43,7 +42,6 @@ async def create_evaluation(
     actor_id: uuid.UUID,
     source: CourierEvaluationSource | str = CourierEvaluationSource.WEB,
 ) -> CourierEvaluation:
-    await ensure_admin_cashier(session, actor_id)
     await get_courier_or_404(session, courier_id)
     episode_date = evaluated_at or date.today()
     _validate_evaluated_at(episode_date)

@@ -96,7 +96,6 @@ class CourierEvaluationCreate(BaseModel):
     criterion_id: int
     evaluated_at: date | None = None
     comment: str | None = Field(default=None, max_length=2000)
-    actor_id: uuid.UUID | None = None
     source: CourierEvaluationSource = CourierEvaluationSource.WEB
 
 
@@ -104,7 +103,6 @@ class CourierEvaluationUpdate(BaseModel):
     criterion_id: int | None = None
     evaluated_at: date | None = None
     comment: str | None = Field(default=None, max_length=2000)
-    actor_id: uuid.UUID | None = None
 
 
 class CourierEvaluationRead(BaseModel):
@@ -166,7 +164,6 @@ class CourierScheduleUpsert(BaseModel):
     planned_start_at: datetime | None = None
     planned_end_at: datetime | None = None
     comment: str | None = Field(default=None, max_length=2000)
-    actor_id: uuid.UUID | None = None
 
 
 class CourierScheduleMatchedEntry(BaseModel):

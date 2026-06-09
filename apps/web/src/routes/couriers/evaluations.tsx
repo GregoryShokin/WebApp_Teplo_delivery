@@ -69,7 +69,6 @@ import {
   type CourierEvaluationSource,
   type Employee,
 } from "@/lib/api";
-import type { AuthUser } from "@/lib/auth";
 import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
@@ -169,20 +168,17 @@ export function CourierEvaluationsRoute() {
         .sort(byFullName),
     [employees],
   );
-  const authorOptions = useMemo(() => getAuthorOptions(evaluations, employees), [employees, evaluations]);
-  const currentEmployee = useMemo(
-    () => resolveCurrentEmployee(permissions.snapshot.user, employees),
-    [permissions.snapshot.user, employees],
-  );
+  const authorOptions = useMemo(() => getAuthorOptions(evaluations), [evaluations]);
+  const currentUserId = permissions.snapshot.user?.id ?? null;
   const canEditEvaluations = permissions.canPerformAction("couriers.evaluations.edit");
-  const canCreate = Boolean(currentEmployee && canEditEvaluations);
+  const canCreate = canEditEvaluations;
   const hasForbiddenRead =
     apiErrorStatus(criteriaQuery.error) === 403 ||
     apiErrorStatus(evaluationsQuery.error) === 403 ||
     apiErrorStatus(employeesQuery.error) === 403;
 
   const filteredEvaluations = useMemo(() => {
-    const mineId = currentEmployee?.id;
+    const mineId = currentUserId;
     return evaluations.filter((evaluation) => {
       if (courierFilter.length > 0 && !courierFilter.includes(evaluation.courier_employee_id)) {
         return false;
@@ -208,7 +204,7 @@ export function CourierEvaluationsRoute() {
     authorFilter,
     courierFilter,
     criterionFilter,
-    currentEmployee?.id,
+    currentUserId,
     evaluations,
     onlyMine,
     sourceFilter,
@@ -400,7 +396,7 @@ export function CourierEvaluationsRoute() {
             onlyMine={onlyMine}
             period={period}
             sourceFilter={sourceFilter}
-            canFilterMine={Boolean(currentEmployee)}
+            canFilterMine={Boolean(currentUserId)}
           />
 
           {isInitialLoading ? (
@@ -426,13 +422,13 @@ export function CourierEvaluationsRoute() {
                   criterion={criterionById.get(evaluation.criterion_id)}
                   courier={employeeById.get(evaluation.courier_employee_id)}
                   evaluation={evaluation}
-                  isMine={currentEmployee?.id === evaluation.created_by}
+                  isMine={currentUserId === evaluation.created_by}
                   canEdit={canEditEvaluations}
                   key={evaluation.id ?? `${evaluation.created_by}-${evaluation.created_at}`}
                   nowMs={nowMs}
                   onDelete={() => setPendingDelete(evaluation)}
                   onEdit={() => openEditForm(evaluation)}
-                  author={employeeById.get(evaluation.created_by)}
+                  authorName={evaluation.author_name}
                 />
               ))}
             </section>
@@ -698,7 +694,7 @@ function MultiSelectFilter({
 }
 
 function EvaluationCard({
-  author,
+  authorName,
   criterion,
   courier,
   evaluation,
@@ -708,7 +704,7 @@ function EvaluationCard({
   onDelete,
   onEdit,
 }: {
-  author?: Employee;
+  authorName?: string | null;
   criterion?: CourierEvaluationCriterion;
   courier?: Employee;
   evaluation: CourierEvaluation;
@@ -757,7 +753,7 @@ function EvaluationCard({
       <div className="mt-4 flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center">
         <span className="inline-flex items-center gap-1.5">
           <SourceIcon source={evaluation.source} />
-          {author?.full_name ?? "Автор не найден"} · {sourceLabels[evaluation.source] ?? evaluation.source}
+          {authorName ?? "Автор не найден"} · {sourceLabels[evaluation.source] ?? evaluation.source}
         </span>
         <span className="hidden sm:inline">·</span>
         <span>
@@ -1082,28 +1078,19 @@ function indexCriteriaById(criteria: CourierEvaluationCriterion[]) {
   return new Map(criteria.map((criterion) => [criterion.id, criterion]));
 }
 
-function resolveCurrentEmployee(user: AuthUser | null, employees: Employee[]) {
-  if (!user) {
-    return null;
+function getAuthorOptions(evaluations: CourierEvaluation[]) {
+  const labelById = new Map<string, string>();
+  for (const evaluation of evaluations) {
+    if (!labelById.has(evaluation.created_by)) {
+      labelById.set(
+        evaluation.created_by,
+        evaluation.author_name ?? `Автор ${evaluation.created_by.slice(0, 8)}`,
+      );
+    }
   }
-  return (
-    employees.find((employee) => employee.id === user.id) ??
-    employees.find((employee) => normalizeName(employee.full_name) === normalizeName(user.full_name)) ??
-    null
-  );
-}
-
-function getAuthorOptions(evaluations: CourierEvaluation[], employees: Employee[]) {
-  const employeeById = indexById(employees);
-  const authorIds = new Set(evaluations.map((evaluation) => evaluation.created_by));
-  const knownAuthors = Array.from(authorIds).map((id) => {
-    const employee = employeeById.get(id);
-    return {
-      value: id,
-      label: employee?.full_name ?? `Автор ${id.slice(0, 8)}`,
-    };
-  });
-  return knownAuthors.sort((first, second) => first.label.localeCompare(second.label, "ru"));
+  return Array.from(labelById.entries())
+    .map(([value, label]) => ({ value, label }))
+    .sort((first, second) => first.label.localeCompare(second.label, "ru"));
 }
 
 function byFullName(first: Employee, second: Employee) {
@@ -1237,8 +1224,4 @@ function formatDateTime(value: string | null) {
 function cleanComment(value: string) {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
-}
-
-function normalizeName(value: string) {
-  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("ru-RU");
 }

@@ -79,29 +79,6 @@ def criterion(score: int = 7) -> CourierEvaluationCriterion:
     )
 
 
-async def test_create_evaluation_requires_admin_cashier() -> None:
-    actor = employee("Кассир", admin=False)
-    courier = employee("Курьер")
-    session = EvaluationSession(
-        employees=[actor, courier],
-        criteria=[criterion()],
-    )
-
-    with pytest.raises(HTTPException) as exc_info:
-        await evaluation_service.create_evaluation(
-            session,
-            courier_id=courier.id,
-            criterion_id=1,
-            evaluated_at=date.today(),
-            comment=None,
-            actor_id=actor.id,
-            source=CourierEvaluationSource.WEB,
-        )
-
-    assert exc_info.value.status_code == 403
-    assert session.added == []
-
-
 async def test_create_evaluation_snapshots_score_and_allows_multiple_per_day() -> None:
     actor = employee("Кассир", admin=True)
     courier = employee("Курьер")

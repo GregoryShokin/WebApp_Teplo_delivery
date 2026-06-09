@@ -51,10 +51,10 @@ class CourierScheduleEntry(Base):
     planned_start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     planned_end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_by: Mapped[uuid.UUID] = mapped_column(
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("employee.id", ondelete="RESTRICT"),
-        nullable=False,
+        ForeignKey("user.id", ondelete="SET NULL"),
+        nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -1736,6 +1736,7 @@ export type CourierEvaluation = {
   evaluated_at: string;
   source: CourierEvaluationSource;
   created_by: string;
+  author_name: string | null;
   created_at: string | null;
   updated_at: string | null;
   deleted_at: string | null;
@@ -1754,7 +1755,6 @@ export type CourierEvaluationPayload = {
   criterion_id: number;
   evaluated_at?: string | null;
   comment?: string | null;
-  actor_id?: string | null;
   source?: CourierEvaluationSource;
 };
 
@@ -1762,7 +1762,6 @@ export type CourierEvaluationPatch = {
   criterion_id?: number;
   evaluated_at?: string | null;
   comment?: string | null;
-  actor_id?: string | null;
 };
 
 export type CourierEvaluationTopCriterion = {
@@ -3754,10 +3753,8 @@ export async function patchCourierEvaluation(
   return response.data;
 }
 
-export async function deleteCourierEvaluation(id: number, actorId?: string): Promise<void> {
-  await api.delete(`/couriers/evaluations/${id}`, {
-    params: actorId ? { actor_id: actorId } : undefined,
-  });
+export async function deleteCourierEvaluation(id: number): Promise<void> {
+  await api.delete(`/couriers/evaluations/${id}`);
 }
 
 export async function getCourierEvaluationMonthlyAggregate(

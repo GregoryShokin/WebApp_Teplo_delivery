@@ -7,7 +7,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, get_current_actor, require_any_permission, require_permission
@@ -502,7 +502,8 @@ async def get_courier_evaluations(
             criterion_id=criterion,
         ),
     )
-    return [evaluation_service.evaluation_payload(evaluation) for evaluation in evaluations]
+    payloads = [evaluation_service.evaluation_payload(evaluation) for evaluation in evaluations]
+    return await _attach_evaluation_author_names(session, payloads)
 
 
 @router.post(
@@ -515,14 +516,14 @@ async def post_courier_evaluation(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    actor_employee_id = await _resolve_actor_employee_id(session, actor, payload.actor_id)
+    actor_user_id = _require_actor_user_id(actor)
     evaluation = await evaluation_service.create_evaluation(
         session,
         courier_id=payload.courier_employee_id,
         criterion_id=payload.criterion_id,
         evaluated_at=payload.evaluated_at,
         comment=payload.comment,
-        actor_id=actor_employee_id,
+        actor_id=actor_user_id,
         source=payload.source,
     )
     await session.commit()
@@ -542,12 +543,12 @@ async def patch_courier_evaluation(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
     changes = payload.model_dump(exclude_unset=True)
-    requested_actor_id = changes.pop("actor_id", None)
-    actor_employee_id = await _resolve_actor_employee_id(session, actor, requested_actor_id)
+    changes.pop("actor_id", None)
+    actor_user_id = _require_actor_user_id(actor)
     evaluation = await evaluation_service.update_evaluation(
         session,
         evaluation_id=evaluation_id,
-        actor_id=actor_employee_id,
+        actor_id=actor_user_id,
         **changes,
     )
     await session.commit()
@@ -564,13 +565,12 @@ async def delete_courier_evaluation(
     evaluation_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
-    actor_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> dict[str, Any]:
-    actor_employee_id = await _resolve_actor_employee_id(session, actor, actor_id)
+    actor_user_id = _require_actor_user_id(actor)
     evaluation = await evaluation_service.delete_evaluation(
         session,
         evaluation_id=evaluation_id,
-        actor_id=actor_employee_id,
+        actor_id=actor_user_id,
     )
     await session.commit()
     await session.refresh(evaluation)
@@ -650,7 +650,7 @@ async def put_courier_schedule_entry(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    actor_employee_id = await _resolve_actor_employee_id(session, actor, payload.actor_id)
+    actor_user_id = _require_actor_user_id(actor)
     entry = await schedule_service.upsert_entry(
         session,
         courier_id=employee_id,
@@ -659,7 +659,7 @@ async def put_courier_schedule_entry(
         planned_start_at=payload.planned_start_at,
         planned_end_at=payload.planned_end_at,
         comment=payload.comment,
-        actor_id=actor_employee_id,
+        actor_id=actor_user_id,
     )
     await session.commit()
     await session.refresh(entry)
@@ -676,14 +676,13 @@ async def delete_courier_schedule_entry(
     work_date: date,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
-    actor_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> None:
-    actor_employee_id = await _resolve_actor_employee_id(session, actor, actor_id)
+    actor_user_id = _require_actor_user_id(actor)
     await schedule_service.delete_entry(
         session,
         courier_id=employee_id,
         work_date=work_date,
-        actor_id=actor_employee_id,
+        actor_id=actor_user_id,
     )
     await session.commit()
 
@@ -740,6 +739,20 @@ async def _user_name(session: AsyncSession, user_id: uuid.UUID) -> str | None:
     return user.full_name if user is not None else None
 
 
+async def _attach_evaluation_author_names(
+    session: AsyncSession,
+    payloads: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    user_ids = {payload["created_by"] for payload in payloads if payload.get("created_by")}
+    names: dict[uuid.UUID, str] = {}
+    if user_ids:
+        users = (await session.scalars(select(User).where(User.id.in_(user_ids)))).all()
+        names = {user.id: user.full_name for user in users}
+    for payload in payloads:
+        payload["author_name"] = names.get(payload.get("created_by"))
+    return payloads
+
+
 def _parse_month(value: str) -> date:
     try:
         year, month = value.split("-", 1)
@@ -782,12 +795,12 @@ async def _latest_evaluation_payloads(
 ) -> list[dict[str, Any]]:
     month_start, month_end = kpi_service.month_bounds(month)
     result = await session.execute(
-        select(CourierEvaluation, CourierEvaluationCriterion, Employee)
+        select(CourierEvaluation, CourierEvaluationCriterion, User)
         .join(
             CourierEvaluationCriterion,
             CourierEvaluationCriterion.id == CourierEvaluation.criterion_id,
         )
-        .outerjoin(Employee, Employee.id == CourierEvaluation.created_by)
+        .outerjoin(User, User.id == CourierEvaluation.created_by)
         .where(
             CourierEvaluation.courier_employee_id == courier_id,
             CourierEvaluation.deleted_at.is_(None),
@@ -820,49 +833,3 @@ def _require_actor_user_id(actor: CurrentActor) -> uuid.UUID:
     return actor.user_id
 
 
-async def _resolve_actor_employee_id(
-    session: AsyncSession,
-    actor: CurrentActor,
-    requested_actor_id: uuid.UUID | None = None,
-) -> uuid.UUID:
-    employee = await _employee_for_actor(session, actor)
-    if employee is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Не удалось определить сотрудника текущего пользователя",
-        )
-    if requested_actor_id is not None and requested_actor_id != employee.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Нельзя выполнять действие от имени другого сотрудника",
-        )
-    return employee.id
-
-
-async def _employee_for_actor(
-    session: AsyncSession,
-    actor: CurrentActor,
-) -> Employee | None:
-    if actor.user_id is None:
-        return None
-
-    employee = await session.get(Employee, actor.user_id)
-    if employee is not None:
-        return employee
-
-    user = await session.get(User, actor.user_id)
-    if user is None or not user.full_name.strip():
-        return None
-
-    result = await session.scalars(
-        select(Employee)
-        .where(
-            func.lower(Employee.full_name) == user.full_name.strip().lower(),
-            Employee.status == "active",
-        )
-        .order_by(Employee.full_name)
-    )
-    matches = list(result.all())
-    if len(matches) == 1:
-        return matches[0]
-    return None

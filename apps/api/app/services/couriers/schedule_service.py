@@ -17,7 +17,7 @@ from app.models import (
     CourierShiftMatch,
     Employee,
 )
-from app.services.couriers.common import get_courier_or_404, get_employee_or_404
+from app.services.couriers.common import get_courier_or_404
 from app.services.couriers.shift_matching import (
     clear_matches_for_deleted_schedule_entry,
     recalculate_matches,
@@ -51,7 +51,6 @@ async def upsert_entry(
     actor_id: uuid.UUID,
 ) -> CourierScheduleEntry:
     await get_courier_or_404(session, courier_id)
-    await get_employee_or_404(session, actor_id)
     if category not in {"primary", "secondary"}:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -99,7 +98,6 @@ async def delete_entry(
     actor_id: uuid.UUID,
 ) -> None:
     await get_courier_or_404(session, courier_id)
-    await get_employee_or_404(session, actor_id)
     entry = await get_entry(session, courier_id, work_date)
     if entry is None:
         return
