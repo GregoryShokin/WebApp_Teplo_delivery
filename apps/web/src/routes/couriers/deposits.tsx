@@ -74,7 +74,6 @@ import { EmptyState } from "@/components/ui-app/EmptyState";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import {
   apiErrorMessage,
-  getEmployees,
   getCourierDeposits,
   postCourierDepositTransaction,
   type CourierDepositCategoryFilter,
@@ -82,9 +81,7 @@ import {
   type CourierDepositStatusFilter,
   type CourierDepositTransaction,
   type CourierDepositTransactionType,
-  type Employee,
 } from "@/lib/api";
-import type { AuthUser } from "@/lib/auth";
 import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
@@ -108,21 +105,11 @@ export function CourierDepositsRoute({ onNavigate }: CourierDepositsRouteProps) 
   const [pendingOperation, setPendingOperation] = useState<PendingOperation | null>(null);
   const [historyCourier, setHistoryCourier] = useState<CourierDepositRow | null>(null);
 
-  const employeesQuery = useQuery({
-    queryKey: ["employees", "courier-deposits-actor"],
-    queryFn: () => getEmployees({ status: "all" }),
-    staleTime: 60_000,
-  });
   const depositsQuery = useQuery({
     queryKey: ["courier-deposits", statusFilter, categoryFilter],
     queryFn: () => getCourierDeposits({ category: categoryFilter, status: statusFilter }),
     staleTime: 60_000,
   });
-  const currentEmployee = useMemo(
-    () => resolveCurrentEmployee(permissions.snapshot.user, employeesQuery.data ?? []),
-    [permissions.snapshot.user, employeesQuery.data],
-  );
-  const actorId = currentEmployee?.id ?? null;
 
   const rows = useMemo(() => {
     const searchValue = search.trim().toLocaleLowerCase("ru");
@@ -151,11 +138,6 @@ export function CourierDepositsRoute({ onNavigate }: CourierDepositsRouteProps) 
       {!canWrite ? (
         <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
           Режим просмотра. Балансы и история доступны, операции скрыты без права редактировать депозиты курьеров.
-        </div>
-      ) : null}
-      {canWrite && !actorId ? (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Не удалось связать текущий профиль с сотрудником. Создание операций недоступно.
         </div>
       ) : null}
 
@@ -289,7 +271,7 @@ export function CourierDepositsRoute({ onNavigate }: CourierDepositsRouteProps) 
                       {canWrite ? (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button disabled={!actorId} size="sm">
+                            <Button size="sm">
                               <Plus size={16} aria-hidden="true" />
                               Операция
                             </Button>
@@ -327,7 +309,6 @@ export function CourierDepositsRoute({ onNavigate }: CourierDepositsRouteProps) 
       </section>
 
       <CourierOperationDialog
-        actorId={actorId}
         operation={pendingOperation}
         onClose={() => setPendingOperation(null)}
         queryClient={queryClient}
@@ -347,12 +328,10 @@ export function CourierDepositsRoute({ onNavigate }: CourierDepositsRouteProps) 
 }
 
 function CourierOperationDialog({
-  actorId,
   onClose,
   operation,
   queryClient,
 }: {
-  actorId: string | null;
   onClose: () => void;
   operation: PendingOperation | null;
   queryClient: ReturnType<typeof useQueryClient>;
@@ -384,11 +363,10 @@ function CourierOperationDialog({
   const mutation = useMutation({
     mutationFn: async () => {
       const cents = centsFromRubInput(amount);
-      if (!operation || !actorId || cents === null || cents <= 0) {
+      if (!operation || cents === null || cents <= 0) {
         throw new Error("Проверьте данные операции");
       }
       return postCourierDepositTransaction(operation.row.employee_id, {
-        actor_id: actorId,
         amount_cents: cents,
         comment: comment.trim() || null,
         transaction_date: date,
@@ -414,7 +392,7 @@ function CourierOperationDialog({
   function submit() {
     setSubmitted(true);
     setFormError(null);
-    if (!amountValid || !commentValid || !actorId) {
+    if (!amountValid || !commentValid) {
       return;
     }
     if (requiresConfirmation) {
@@ -480,11 +458,6 @@ function CourierOperationDialog({
               ) : null}
             </Label>
 
-            {!actorId ? (
-              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                Не удалось определить текущего пользователя.
-              </div>
-            ) : null}
             {formError ? (
               <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 {formError}
@@ -496,7 +469,7 @@ function CourierOperationDialog({
             <Button disabled={mutation.isPending} onClick={onClose} type="button" variant="outline">
               Отмена
             </Button>
-            <Button disabled={mutation.isPending || !actorId} onClick={submit} type="button">
+            <Button disabled={mutation.isPending} onClick={submit} type="button">
               {mutation.isPending ? (
                 <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
               ) : (
@@ -608,17 +581,3 @@ function emptyTitle(status: CourierDepositStatusFilter) {
   return "Курьеры не найдены";
 }
 
-function resolveCurrentEmployee(user: AuthUser | null, employees: Employee[]) {
-  if (!user) {
-    return null;
-  }
-  return (
-    employees.find((employee) => employee.id === user.id) ??
-    employees.find((employee) => normalizeName(employee.full_name) === normalizeName(user.full_name)) ??
-    null
-  );
-}
-
-function normalizeName(value: string) {
-  return value.trim().toLocaleLowerCase("ru").replace(/\s+/g, " ");
-}

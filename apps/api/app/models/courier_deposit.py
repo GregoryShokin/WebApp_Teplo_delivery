@@ -87,7 +87,7 @@ class CourierDepositTransaction(Base):
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("employee.id", ondelete="RESTRICT"),
+        ForeignKey("user.id", ondelete="RESTRICT"),
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(

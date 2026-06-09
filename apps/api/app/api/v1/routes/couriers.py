@@ -415,15 +415,12 @@ async def put_courier_deposit_opening(
     employee_id: uuid.UUID,
     payload: CourierDepositOpeningUpdate,
     session: Annotated[AsyncSession, Depends(get_session)],
-    actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    actor_employee_id = await _resolve_actor_employee_id(session, actor, payload.actor_id)
     account = await deposit_service.set_opening_balance(
         session,
         employee_id=employee_id,
         amount_cents=payload.amount_cents,
         opening_date=payload.opening_date,
-        actor_id=actor_employee_id,
     )
     transactions = await deposit_service.list_transactions(session, employee_id)
     balance = await deposit_service.get_balance(session, employee_id)
@@ -447,7 +444,7 @@ async def post_courier_deposit_transaction(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    actor_employee_id = await _resolve_actor_employee_id(session, actor, payload.actor_id)
+    actor_user_id = _require_actor_user_id(actor)
     transaction = await deposit_service.create_transaction(
         session,
         employee_id=employee_id,
@@ -455,7 +452,7 @@ async def post_courier_deposit_transaction(
         amount_cents=payload.amount_cents,
         transaction_date=payload.transaction_date,
         comment=payload.comment,
-        actor_id=actor_employee_id,
+        created_by_user_id=actor_user_id,
     )
     await session.commit()
     await session.refresh(transaction)
@@ -719,7 +716,7 @@ async def _deposit_transaction_payload(
     session: AsyncSession,
     transaction: Any,
 ) -> dict[str, Any]:
-    created_by_name = await _employee_name(session, transaction.created_by)
+    created_by_name = await _user_name(session, transaction.created_by)
     return deposit_service.transaction_payload(transaction, created_by_name)
 
 
@@ -727,20 +724,20 @@ async def _deposit_transaction_payloads(
     session: AsyncSession,
     transactions: list[Any],
 ) -> list[dict[str, Any]]:
-    employee_ids = {transaction.created_by for transaction in transactions}
-    if not employee_ids:
+    user_ids = {transaction.created_by for transaction in transactions}
+    if not user_ids:
         return []
-    employees = (await session.scalars(select(Employee).where(Employee.id.in_(employee_ids)))).all()
-    names = {employee.id: employee.full_name for employee in employees}
+    users = (await session.scalars(select(User).where(User.id.in_(user_ids)))).all()
+    names = {user.id: user.full_name for user in users}
     return [
         deposit_service.transaction_payload(transaction, names.get(transaction.created_by))
         for transaction in transactions
     ]
 
 
-async def _employee_name(session: AsyncSession, employee_id: uuid.UUID) -> str | None:
-    employee = await session.get(Employee, employee_id)
-    return employee.full_name if employee is not None else None
+async def _user_name(session: AsyncSession, user_id: uuid.UUID) -> str | None:
+    user = await session.get(User, user_id)
+    return user.full_name if user is not None else None
 
 
 def _parse_month(value: str) -> date:
@@ -812,6 +809,15 @@ async def _latest_evaluation_payloads(
         )
         payloads.append(payload)
     return payloads
+
+
+def _require_actor_user_id(actor: CurrentActor) -> uuid.UUID:
+    if actor.user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Не удалось определить текущего пользователя",
+        )
+    return actor.user_id
 
 
 async def _resolve_actor_employee_id(

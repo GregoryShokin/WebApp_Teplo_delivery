@@ -36,16 +36,13 @@ import {
 import { EmptyState } from "@/components/ui-app/EmptyState";
 import {
   apiErrorMessage,
-  getEmployees,
   getCourierDepositSettings,
   getCourierDeposits,
   putCourierDepositOpening,
   putCourierDepositSettings,
   type CourierDepositRow,
   type CourierDepositSettings,
-  type Employee,
 } from "@/lib/api";
-import { getAuthSnapshot, subscribeAuth, type AuthUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 import { CourierDepositHistoryDrawer } from "./CourierDepositHistoryDrawer";
@@ -89,7 +86,6 @@ export function CourierDepositsSettingsSection({
   canWrite,
 }: CourierDepositsSettingsSectionProps) {
   const queryClient = useQueryClient();
-  const auth = useAuthSnapshot();
   const [settingsDraft, setSettingsDraft] = useState<SettingsDraft>(() =>
     settingsToDraft(DEFAULT_SETTINGS),
   );
@@ -112,11 +108,6 @@ export function CourierDepositsSettingsSection({
     queryFn: getCourierDepositSettings,
     staleTime: 60_000,
   });
-  const employeesQuery = useQuery({
-    queryKey: ["employees", "courier-deposits-actor"],
-    queryFn: () => getEmployees({ status: "all" }),
-    staleTime: 60_000,
-  });
   const rows = useMemo(
     () =>
       [...(depositsQuery.data ?? [])].sort((left, right) =>
@@ -124,11 +115,6 @@ export function CourierDepositsSettingsSection({
       ),
     [depositsQuery.data],
   );
-  const currentEmployee = useMemo(
-    () => resolveCurrentEmployee(auth.user, employeesQuery.data ?? []),
-    [auth.user, employeesQuery.data],
-  );
-  const actorId = currentEmployee?.id ?? null;
   const currentSettings = settingsQuery.data ?? DEFAULT_SETTINGS;
   const settingsValid =
     isNonNegativeRubInput(settingsDraft.targetAmount) &&
@@ -174,11 +160,10 @@ export function CourierDepositsSettingsSection({
   const openingMutation = useMutation({
     mutationFn: (payload: PendingOpeningUpdate) => {
       const amountCents = centsFromRubInput(payload.amount);
-      if (amountCents === null || !actorId) {
-        throw new Error("Проверьте сумму и пользователя");
+      if (amountCents === null) {
+        throw new Error("Проверьте сумму");
       }
       return putCourierDepositOpening(payload.row.employee_id, {
-        actor_id: actorId,
         amount_cents: amountCents,
         opening_date: payload.openingDate,
       });
@@ -303,12 +288,6 @@ export function CourierDepositsSettingsSection({
           />
         ) : (
           <div className="space-y-3">
-            {canWrite && !actorId ? (
-              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                Не удалось связать текущий профиль с сотрудником. Изменение opening balance
-                недоступно.
-              </div>
-            ) : null}
             <Table>
               <TableHeader>
                 <TableRow>
@@ -380,7 +359,6 @@ export function CourierDepositsSettingsSection({
                           <Button
                             disabled={
                               !canWrite ||
-                              !actorId ||
                               !dirty ||
                               !amountValid ||
                               openingMutation.isPending
@@ -630,34 +608,6 @@ function draftSnapshot(draft: SettingsDraft) {
 function rubPayloadValue(value: string) {
   const cents = centsFromRubInput(value);
   return cents === null ? 0 : Math.round(cents / 100);
-}
-
-function resolveCurrentEmployee(user: AuthUser | null, employees: Employee[]) {
-  if (!user) {
-    return null;
-  }
-  return (
-    employees.find((employee) => employee.id === user.id) ??
-    employees.find((employee) => normalizeName(employee.full_name) === normalizeName(user.full_name)) ??
-    null
-  );
-}
-
-function normalizeName(value: string) {
-  return value.trim().toLocaleLowerCase("ru").replace(/\s+/g, " ");
-}
-
-function useAuthSnapshot() {
-  const [auth, setAuth] = useState(getAuthSnapshot);
-
-  useEffect(() => {
-    const unsubscribe = subscribeAuth(setAuth);
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  return auth;
 }
 
 async function invalidateCourierDepositQueries(queryClient: ReturnType<typeof useQueryClient>) {

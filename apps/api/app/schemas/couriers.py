@@ -69,7 +69,6 @@ class CourierDepositCardRead(BaseModel):
 class CourierDepositOpeningUpdate(BaseModel):
     amount_cents: int = Field(ge=0)
     opening_date: date
-    actor_id: uuid.UUID
 
 
 class CourierDepositTransactionCreate(BaseModel):
@@ -77,7 +76,6 @@ class CourierDepositTransactionCreate(BaseModel):
     amount_cents: int = Field(gt=0)
     transaction_date: date
     comment: str | None = Field(default=None, max_length=2000)
-    actor_id: uuid.UUID
 
 
 class CourierEvaluationCriterionRead(BaseModel):

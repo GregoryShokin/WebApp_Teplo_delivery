@@ -1707,7 +1707,6 @@ export type CourierDepositCard = {
 export type CourierDepositOpeningPayload = {
   amount_cents: number;
   opening_date: string;
-  actor_id: string;
 };
 
 export type CourierDepositTransactionPayload = {
@@ -1715,7 +1714,6 @@ export type CourierDepositTransactionPayload = {
   amount_cents: number;
   transaction_date: string;
   comment?: string | null;
-  actor_id: string;
 };
 
 export type CourierEvaluationSource = "web" | "telegram" | "api";

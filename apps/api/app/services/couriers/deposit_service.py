@@ -18,7 +18,7 @@ from app.models import (
     CourierDepositTransactionType,
     Employee,
 )
-from app.services.couriers.common import get_courier_or_404, get_employee_or_404
+from app.services.couriers.common import get_courier_or_404
 
 DepositStatusFilter = Literal["active", "fired", "all"]
 DepositCategoryFilter = Literal["primary", "secondary", "all"]
@@ -143,14 +143,12 @@ async def set_opening_balance(
     employee_id: uuid.UUID,
     amount_cents: int,
     opening_date: date,
-    actor_id: uuid.UUID,
 ) -> CourierDepositAccount:
     if amount_cents < 0:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="opening_balance must be non-negative",
         )
-    await get_employee_or_404(session, actor_id)
     account = await ensure_account(session, employee_id)
     account.opening_balance_cents = amount_cents
     account.opening_date = opening_date
@@ -166,14 +164,13 @@ async def create_transaction(
     amount_cents: int,
     transaction_date: date,
     comment: str | None,
-    actor_id: uuid.UUID,
+    created_by_user_id: uuid.UUID,
 ) -> CourierDepositTransaction:
     if amount_cents <= 0:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="amount_cents must be greater than 0",
         )
-    await get_employee_or_404(session, actor_id)
     account = await ensure_account(session, employee_id)
     transaction = CourierDepositTransaction(
         account_employee_id=account.employee_id,
@@ -181,7 +178,7 @@ async def create_transaction(
         amount_cents=amount_cents,
         transaction_date=transaction_date,
         comment=comment,
-        created_by=actor_id,
+        created_by=created_by_user_id,
     )
     account.updated_at = datetime.now(UTC)
     session.add(transaction)
