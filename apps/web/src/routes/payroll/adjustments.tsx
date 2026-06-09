@@ -141,7 +141,7 @@ export function PayrollAdjustmentsRoute({
   const targetEmployees = useMemo(
     () =>
       (employeesQuery.data ?? [])
-        .filter(isAdjustmentEligible)
+        .filter((employee) => employee.status === "active" && isAdjustmentEligible(employee))
         .sort(compareEmployeesForSelect),
     [employeesQuery.data],
   );
