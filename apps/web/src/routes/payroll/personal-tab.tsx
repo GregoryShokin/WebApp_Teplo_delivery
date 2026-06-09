@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Check, ChevronDown, LoaderCircle } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, LoaderCircle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -18,10 +18,10 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
+import { EmployeeCombobox } from "@/components/ui-app/EmployeeCombobox";
 import { EmptyState } from "@/components/ui-app/EmptyState";
 import {
   apiErrorMessage,
-  type Employee,
   getEmployeePayrollReport,
   getEmployees,
   type PayrollPersonalReport,
@@ -479,120 +479,6 @@ export function PayrollPersonalReportPageTab() {
         </div>
       ) : null}
     </section>
-  );
-}
-
-function employeeOptionLabel(employee: Employee) {
-  return `${employee.full_name}${employee.status === "inactive" ? " · уволен" : ""}`;
-}
-
-// Комбобокс с поиском прямо внутри выпадающего списка (без cmdk/Popover —
-// Radix Select перехватывает ввод, поэтому собираем лёгкий собственный вариант).
-function EmployeeCombobox({
-  disabled,
-  employees,
-  onChange,
-  value,
-}: {
-  disabled?: boolean;
-  employees: Employee[];
-  onChange: (id: string) => void;
-  value: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const selected = employees.find((employee) => employee.id === value) ?? null;
-  const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) {
-      return employees;
-    }
-    return employees.filter((employee) =>
-      employee.full_name.toLowerCase().includes(query),
-    );
-  }, [employees, search]);
-
-  useEffect(() => {
-    if (!open) {
-      setSearch("");
-      return;
-    }
-    const handlePointer = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handlePointer);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("mousedown", handlePointer);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [open]);
-
-  return (
-    <div className="relative" ref={containerRef}>
-      <button
-        aria-expanded={open}
-        className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-        disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
-        type="button"
-      >
-        <span className={cn("line-clamp-1", !selected && "text-muted-foreground")}>
-          {selected ? employeeOptionLabel(selected) : "Выберите сотрудника"}
-        </span>
-        <ChevronDown className="h-4 w-4 shrink-0 opacity-50" aria-hidden="true" />
-      </button>
-
-      {open ? (
-        <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md">
-          <div className="border-b p-1">
-            <Input
-              autoFocus
-              className="h-9"
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Поиск сотрудника"
-              value={search}
-            />
-          </div>
-          <div className="max-h-64 overflow-y-auto p-1">
-            {filtered.length === 0 ? (
-              <div className="px-2 py-2 text-sm text-muted-foreground">
-                Сотрудники не найдены
-              </div>
-            ) : (
-              filtered.map((employee) => (
-                <button
-                  className={cn(
-                    "flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground",
-                    employee.id === value && "bg-accent/60",
-                  )}
-                  key={employee.id}
-                  onClick={() => {
-                    onChange(employee.id);
-                    setOpen(false);
-                  }}
-                  type="button"
-                >
-                  <span className="line-clamp-1">{employeeOptionLabel(employee)}</span>
-                  {employee.id === value ? (
-                    <Check className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  ) : null}
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      ) : null}
-    </div>
   );
 }
 

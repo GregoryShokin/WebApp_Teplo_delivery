@@ -49,6 +49,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
+import { EmployeeCombobox } from "@/components/ui-app/EmployeeCombobox";
 import { EmptyState } from "@/components/ui-app/EmptyState";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import {
@@ -92,6 +93,17 @@ const typeLabels: Record<PayrollAdjustmentType, string> = {
 
 const targetPositions = new Set(["Повар", "Кассир"]);
 
+// Премии и штрафы доступны поварам и кассирам, а также сотрудникам-субститутам —
+// тем, у кого есть активная подменная роль повара/кассира.
+function isAdjustmentEligible(employee: Employee): boolean {
+  if (targetPositions.has(employee.position ?? "")) {
+    return true;
+  }
+  return employee.assignments.some(
+    (assignment) => assignment.is_substitute && !assignment.is_pending,
+  );
+}
+
 export function PayrollAdjustmentsRoute({
   embedded = false,
   headerSlot,
@@ -129,7 +141,7 @@ export function PayrollAdjustmentsRoute({
   const targetEmployees = useMemo(
     () =>
       (employeesQuery.data ?? [])
-        .filter((employee) => targetPositions.has(employee.position ?? ""))
+        .filter(isAdjustmentEligible)
         .sort(compareEmployeesForSelect),
     [employeesQuery.data],
   );
@@ -295,7 +307,7 @@ export function PayrollAdjustmentsRoute({
           <div className="min-w-0">
             <h2 className="text-lg font-semibold tracking-normal">Премии и штрафы</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Ручные корректировки для поваров и кассиров.
+              Ручные корректировки для поваров, кассиров и подменных сотрудников.
             </p>
           </div>
           {addButton}
@@ -304,7 +316,7 @@ export function PayrollAdjustmentsRoute({
         <>
           <PageHeader
             title="Расчёты ЗП — Премии и штрафы"
-            description="Ручные корректировки для поваров и кассиров."
+            description="Ручные корректировки для поваров, кассиров и подменных сотрудников."
             action={addButton}
           />
 
@@ -330,23 +342,15 @@ export function PayrollAdjustmentsRoute({
           </Select>
         </Label>
 
-        <Label className="grid gap-2">
-          <span>Сотрудник</span>
-          <Select onValueChange={setEmployeeFilter} value={employeeFilter}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Все сотрудники</SelectItem>
-              {targetEmployees.map((employee) => (
-                <SelectItem value={employee.id} key={employee.id}>
-                  {employee.full_name}
-                  {employee.status === "inactive" ? " · уволен" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Label>
+        <div className="grid gap-2">
+          <span className="text-sm font-medium leading-none">Сотрудник</span>
+          <EmployeeCombobox
+            allOptionLabel="Все сотрудники"
+            employees={targetEmployees}
+            onChange={setEmployeeFilter}
+            value={employeeFilter}
+          />
+        </div>
 
         <Label className="grid gap-2">
           <span>С даты</span>
@@ -580,28 +584,17 @@ function AdjustmentDialog({
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <Label className="grid gap-2">
-                <span>Сотрудник</span>
-                <Select
+              <div className="grid gap-2">
+                <span className="text-sm font-medium leading-none">Сотрудник</span>
+                <EmployeeCombobox
                   disabled={isPending}
-                  onValueChange={(value) =>
+                  employees={employees}
+                  onChange={(value) =>
                     setDraft((current) => ({ ...current, employee_id: value }))
                   }
                   value={draft.employee_id}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Выберите сотрудника" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {employees.map((employee) => (
-                      <SelectItem value={employee.id} key={employee.id}>
-                        {employee.full_name}
-                        {employee.status === "inactive" ? " · уволен" : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Label>
+                />
+              </div>
 
               <Label className="grid gap-2">
                 <span>Дата</span>

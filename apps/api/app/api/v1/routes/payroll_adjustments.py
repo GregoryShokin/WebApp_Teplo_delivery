@@ -8,6 +8,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentActor, ensure_permission, get_current_actor, require_permission
 from app.db.session import get_session
@@ -336,7 +337,12 @@ async def get_adjustment_or_404(
 
 
 async def get_adjustment_employee(session: AsyncSession, employee_id: uuid.UUID) -> Employee:
-    employee = await session.get(Employee, employee_id)
+    result = await session.execute(
+        select(Employee)
+        .options(selectinload(Employee.role_assignments))
+        .where(Employee.id == employee_id)
+    )
+    employee = result.scalar_one_or_none()
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сотрудник не найден")
     return employee
@@ -381,11 +387,15 @@ def require_adjustment_type_permission(actor: CurrentActor, adjustment_type: str
 
 
 def validate_adjustment_target(employee: Employee) -> None:
-    if employee.position not in ADJUSTMENT_EMPLOYEE_POSITIONS:
-        raise HTTPException(
-            status_code=UNPROCESSABLE_STATUS,
-            detail="Премии и штрафы доступны только для поваров и кассиров",
-        )
+    if employee.position in ADJUSTMENT_EMPLOYEE_POSITIONS:
+        return
+    # Сотрудники-субституты (подменные роли повара/кассира) тоже получают премии и штрафы.
+    if any(assignment.is_substitute for assignment in employee.assignments):
+        return
+    raise HTTPException(
+        status_code=UNPROCESSABLE_STATUS,
+        detail="Премии и штрафы доступны только поварам, кассирам и подменным сотрудникам",
+    )
 
 
 def validate_adjustment_date(work_date: date) -> None:
