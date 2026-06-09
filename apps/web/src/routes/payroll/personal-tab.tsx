@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, LoaderCircle } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Check, ChevronDown, LoaderCircle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -15,18 +15,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { EmptyState } from "@/components/ui-app/EmptyState";
 import {
   apiErrorMessage,
+  type Employee,
   getEmployeePayrollReport,
   getEmployees,
   type PayrollPersonalReport,
@@ -144,6 +139,7 @@ const KIND_ORDER: Record<OperationKind, number> = {
 export function PayrollPersonalReportPageTab() {
   const defaultRange = useMemo(() => defaultPersonalReportRange(), []);
   const [employeeId, setEmployeeId] = useState("");
+  const [showFired, setShowFired] = useState(false);
   const [dateFrom, setDateFrom] = useState(defaultRange.from);
   const [dateTo, setDateTo] = useState(defaultRange.to);
   const [tableView, setTableView] = useState<ReportTableView>("weekly");
@@ -158,20 +154,39 @@ export function PayrollPersonalReportPageTab() {
     queryKey: ["employees", "payroll-personal-report"],
     queryFn: () => getEmployees({ status: "all" }),
   });
-  const sortedEmployees = useMemo(
+  // Персональный отчёт ведётся только по поварам и кассирам.
+  const eligibleEmployees = useMemo(
     () =>
-      [...(employeesQuery.data ?? [])].sort((left, right) =>
-        left.full_name.localeCompare(right.full_name, "ru"),
-      ),
+      (employeesQuery.data ?? [])
+        .filter(
+          (employee) => employee.position === "Повар" || employee.position === "Кассир",
+        )
+        .sort((left, right) => left.full_name.localeCompare(right.full_name, "ru")),
     [employeesQuery.data],
   );
-  const defaultEmployeeId = sortedEmployees[0]?.id ?? "";
+  // Уволенные скрыты по умолчанию; toggle добавляет их к активным.
+  const statusFilteredEmployees = useMemo(
+    () =>
+      eligibleEmployees.filter(
+        (employee) => showFired || employee.status === "active",
+      ),
+    [eligibleEmployees, showFired],
+  );
+  const defaultEmployeeId =
+    eligibleEmployees.find((employee) => employee.status === "active")?.id ?? "";
 
   useEffect(() => {
     if (!employeeId && defaultEmployeeId) {
       setEmployeeId(defaultEmployeeId);
     }
   }, [defaultEmployeeId, employeeId]);
+
+  // Если выбранный сотрудник выпал из фильтра (например, выключили уволенных) — сбросить.
+  useEffect(() => {
+    if (employeeId && !statusFilteredEmployees.some((employee) => employee.id === employeeId)) {
+      setEmployeeId(statusFilteredEmployees[0]?.id ?? "");
+    }
+  }, [employeeId, statusFilteredEmployees]);
 
   useEffect(() => {
     if (!reportParams && employeeId && dateFrom && dateTo && dateFrom <= dateTo) {
@@ -283,26 +298,19 @@ export function PayrollPersonalReportPageTab() {
   return (
     <section className="space-y-4">
       <div className="grid gap-3 rounded-lg border bg-card p-3 lg:grid-cols-[minmax(220px,1fr)_160px_160px_auto] lg:items-end">
-        <Label className="grid gap-2">
-          <span>Сотрудник</span>
-          <Select
-            disabled={sortedEmployees.length === 0 || employeesQuery.isLoading}
-            onValueChange={setEmployeeId}
+        <div className="grid gap-2">
+          <span className="text-sm font-medium leading-none">Сотрудник</span>
+          <EmployeeCombobox
+            disabled={eligibleEmployees.length === 0 || employeesQuery.isLoading}
+            employees={statusFilteredEmployees}
+            onChange={setEmployeeId}
             value={employeeId}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Выберите сотрудника" />
-            </SelectTrigger>
-            <SelectContent>
-              {sortedEmployees.map((employee) => (
-                <SelectItem key={employee.id} value={employee.id}>
-                  {employee.full_name}
-                  {employee.status === "inactive" ? " · уволен" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Label>
+          />
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Switch checked={showFired} onCheckedChange={setShowFired} />
+            <span>Показать уволенных</span>
+          </label>
+        </div>
 
         <Label className="grid gap-2">
           <span>С даты</span>
@@ -471,6 +479,120 @@ export function PayrollPersonalReportPageTab() {
         </div>
       ) : null}
     </section>
+  );
+}
+
+function employeeOptionLabel(employee: Employee) {
+  return `${employee.full_name}${employee.status === "inactive" ? " · уволен" : ""}`;
+}
+
+// Комбобокс с поиском прямо внутри выпадающего списка (без cmdk/Popover —
+// Radix Select перехватывает ввод, поэтому собираем лёгкий собственный вариант).
+function EmployeeCombobox({
+  disabled,
+  employees,
+  onChange,
+  value,
+}: {
+  disabled?: boolean;
+  employees: Employee[];
+  onChange: (id: string) => void;
+  value: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selected = employees.find((employee) => employee.id === value) ?? null;
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) {
+      return employees;
+    }
+    return employees.filter((employee) =>
+      employee.full_name.toLowerCase().includes(query),
+    );
+  }, [employees, search]);
+
+  useEffect(() => {
+    if (!open) {
+      setSearch("");
+      return;
+    }
+    const handlePointer = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointer);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handlePointer);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        aria-expanded={open}
+        className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <span className={cn("line-clamp-1", !selected && "text-muted-foreground")}>
+          {selected ? employeeOptionLabel(selected) : "Выберите сотрудника"}
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 opacity-50" aria-hidden="true" />
+      </button>
+
+      {open ? (
+        <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md">
+          <div className="border-b p-1">
+            <Input
+              autoFocus
+              className="h-9"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Поиск сотрудника"
+              value={search}
+            />
+          </div>
+          <div className="max-h-64 overflow-y-auto p-1">
+            {filtered.length === 0 ? (
+              <div className="px-2 py-2 text-sm text-muted-foreground">
+                Сотрудники не найдены
+              </div>
+            ) : (
+              filtered.map((employee) => (
+                <button
+                  className={cn(
+                    "flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground",
+                    employee.id === value && "bg-accent/60",
+                  )}
+                  key={employee.id}
+                  onClick={() => {
+                    onChange(employee.id);
+                    setOpen(false);
+                  }}
+                  type="button"
+                >
+                  <span className="line-clamp-1">{employeeOptionLabel(employee)}</span>
+                  {employee.id === value ? (
+                    <Check className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  ) : null}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
