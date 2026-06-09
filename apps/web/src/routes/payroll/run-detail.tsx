@@ -14,7 +14,6 @@ import {
   RefreshCw,
   Undo2,
   Search,
-  Split,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -33,15 +32,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Sheet,
   SheetContent,
@@ -58,6 +51,7 @@ import { StatusBadge } from "@/components/ui-app/StatusBadge";
 import {
   apiErrorMessage,
   applyRunPayoutDelta,
+  bulkMarkPayrollPayments,
   createPayrollRun,
   createRunBankDraft,
   finalizePayrollRun,
@@ -67,10 +61,8 @@ import {
   getRunBankDraft,
   getRunPayoutDelta,
   getSettings,
-  markAllPayrollPayments,
-  markPayrollPayment,
   patchPayrollLineDepositOverride,
-  setPayoutSplit,
+  setRunPayoutCash,
   unmarkPayrollPayment,
   unfinalizePayrollRun,
   type AppSetting,
@@ -78,7 +70,6 @@ import {
   type PayrollBankDraft,
   type PayrollLine,
   type PayrollPaymentMethod,
-  type PayrollPaymentPayload,
   type RunPayoutDelta,
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
@@ -168,10 +159,8 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const payrollRatio = totalRevenue > 0 ? totalPayable / totalRevenue : null;
   const employeeCount = new Set(lines.map((line) => line.employee_id)).size;
   const totalHours = lines.reduce((sum, line) => sum + lineHours(line), 0);
-  const totalAccountAmount = lines.reduce(
-    (sum, line) => sum + moneyValue(line.amount_account),
-    0,
-  );
+  const payoutCashTotal = Math.min(moneyValue(run?.payout_cash_total ?? 0), totalPayable);
+  const totalAccountAmount = normalizeMoney(Math.max(0, totalPayable - payoutCashTotal));
   const blockers = run?.blocking_issues ?? [];
   const attendanceWarnings = run?.summary.attendance_warnings ?? [];
   const isLegacyRun = Boolean(run?.is_imported_legacy);
@@ -265,26 +254,6 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
     onError: (error) => {
       setIsRecalculateDialogOpen(false);
       toast.error(payrollRecalculateErrorMessage(error));
-    },
-  });
-
-  const markAllPaymentsMutation = useMutation({
-    mutationFn: (payload: PayrollPaymentPayload) => markAllPayrollPayments(runId, payload),
-    onSuccess: async (response) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["payroll-run", runId] }),
-        queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", runId] }),
-        queryClient.invalidateQueries({ queryKey: ["run-bank-draft", runId] }),
-        queryClient.invalidateQueries({ queryKey: ["run-payout-delta", runId] }),
-      ]);
-      toast.success(
-        response.marked_count > 0
-          ? `Отмечено выплат: ${response.marked_count}`
-          : "Все выплаты уже отмечены",
-      );
-    },
-    onError: (error) => {
-      toast.error(apiErrorMessage(error, "Не удалось отметить выплаты"));
     },
   });
 
@@ -400,27 +369,6 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
                 )}
                 Финализировать
               </Button>
-            ) : null}
-            {canManagePayments ? (
-              <PaymentMarkDialog
-                confirmLabel="Отметить все"
-                description="Дата и способ будут применены ко всем неоплаченным сотрудникам ведомости."
-                isPending={markAllPaymentsMutation.isPending}
-                onSubmit={async (payload) => {
-                  await markAllPaymentsMutation.mutateAsync(payload);
-                }}
-                title="Отметить все выплаты?"
-                trigger={
-                  <Button disabled={markAllPaymentsMutation.isPending} title="Отметить все выплаченными">
-                    {markAllPaymentsMutation.isPending ? (
-                      <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-                    ) : (
-                      <CheckCircle2 size={16} aria-hidden="true" />
-                    )}
-                    Отметить все выплаченными
-                  </Button>
-                }
-              />
             ) : null}
             {canUnfinalize ? (
               <AlertDialog
@@ -556,8 +504,10 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         <RunBankDraftCard
           draft={bankDraftQuery.data ?? null}
           isLoading={bankDraftQuery.isLoading}
+          payoutCashTotal={payoutCashTotal}
           runId={runId}
           totalAccountAmount={totalAccountAmount}
+          totalPayable={totalPayable}
         />
       ) : null}
 
@@ -569,11 +519,11 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
       />
 
       <PayrollByEmployeeTab
-        canManageBankDraft={canManageBankDraft}
         canManagePayments={canManagePayments}
         employeesById={employeesById}
         isLoading={linesQuery.isLoading || runQuery.isLoading}
         lines={lines}
+        runId={runId}
         runStatus={run?.status ?? ""}
       />
     </div>
@@ -581,24 +531,90 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
 }
 
 function PayrollByEmployeeTab({
-  canManageBankDraft,
   canManagePayments,
   employeesById,
   isLoading,
   lines,
+  runId,
   runStatus,
 }: {
-  canManageBankDraft: boolean;
   canManagePayments: boolean;
   employeesById: Map<string, Employee>;
   isLoading: boolean;
   lines: PayrollLine[];
+  runId: string;
   runStatus: string;
 }) {
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<Set<string>>(new Set());
+
+  const unpaidEmployeeIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          lines
+            .filter((line) => line.payment_status !== "paid")
+            .map((line) => line.employee_id),
+        ),
+      ),
+    [lines],
+  );
+
+  // Drop selections that are no longer payable (e.g. after a mark / refetch).
+  useEffect(() => {
+    setSelectedEmployeeIds((current) => {
+      const allowed = new Set(unpaidEmployeeIds);
+      const next = new Set([...current].filter((id) => allowed.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [unpaidEmployeeIds]);
+
+  const selectedCount = selectedEmployeeIds.size;
+  const allUnpaidSelected =
+    unpaidEmployeeIds.length > 0 && unpaidEmployeeIds.every((id) => selectedEmployeeIds.has(id));
+  const someUnpaidSelected = selectedCount > 0 && !allUnpaidSelected;
+
+  function toggleEmployee(employeeId: string, checked: boolean) {
+    setSelectedEmployeeIds((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(employeeId);
+      } else {
+        next.delete(employeeId);
+      }
+      return next;
+    });
+  }
+
+  function toggleAll(checked: boolean) {
+    setSelectedEmployeeIds(checked ? new Set(unpaidEmployeeIds) : new Set());
+  }
+
+  const bulkMarkMutation = useMutation({
+    mutationFn: (employeeIds: string[]) =>
+      bulkMarkPayrollPayments(runId, employeeIds, todayDateInputValue()),
+    onSuccess: async (response) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["payroll-run", runId] }),
+        queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", runId] }),
+        queryClient.invalidateQueries({ queryKey: ["run-bank-draft", runId] }),
+        queryClient.invalidateQueries({ queryKey: ["run-payout-delta", runId] }),
+      ]);
+      setSelectedEmployeeIds(new Set());
+      toast.success(
+        response.marked_count > 0
+          ? `Отмечено выплат: ${response.marked_count}`
+          : "Нет сотрудников для отметки",
+      );
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось отметить выплаты"));
+    },
+  });
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -634,6 +650,37 @@ function PayrollByEmployeeTab({
   }
 
   const tableColumns: Array<DataTableColumn<PayrollLineRowModel>> = [
+    ...(canManagePayments
+      ? [
+          {
+            key: "select",
+            header: (
+              <Checkbox
+                aria-label="Выбрать всех"
+                checked={allUnpaidSelected}
+                disabled={unpaidEmployeeIds.length === 0}
+                onChange={(event) => toggleAll(event.target.checked)}
+                ref={(el) => {
+                  if (el) {
+                    el.indeterminate = someUnpaidSelected;
+                  }
+                }}
+              />
+            ),
+            cell: (row: PayrollLineRowModel) =>
+              row.line.payment_status === "paid" ? null : (
+                <Checkbox
+                  aria-label={`Выбрать ${row.employeeName}`}
+                  checked={selectedEmployeeIds.has(row.line.employee_id)}
+                  onChange={(event) => toggleEmployee(row.line.employee_id, event.target.checked)}
+                  onClick={(event) => event.stopPropagation()}
+                />
+              ),
+            className: "w-10",
+            headerClassName: "w-10",
+          } satisfies DataTableColumn<PayrollLineRowModel>,
+        ]
+      : []),
     {
       key: "name",
       header: (
@@ -768,26 +815,10 @@ function PayrollByEmployeeTab({
       headerClassName: "text-right",
     },
     {
-      key: "payout_split",
-      header: "Нал / РС",
-      cell: (row) => (
-        <PayoutSplitCell
-          canManageBankDraft={canManageBankDraft}
-          employeeName={row.employeeName}
-          line={row.line}
-        />
-      ),
-      className: "min-w-[220px]",
-    },
-    {
       key: "payment",
       header: "Выплата",
       cell: (row) => (
-        <PaymentCell
-          canManagePayments={canManagePayments}
-          employeeName={row.employeeName}
-          line={row.line}
-        />
+        <PaymentCell canManagePayments={canManagePayments} line={row.line} />
       ),
       className: "min-w-[210px]",
     },
@@ -805,8 +836,24 @@ function PayrollByEmployeeTab({
             value={search}
           />
         </div>
-        <div className="text-sm text-muted-foreground">
-          {rows.length} {pluralizeEmployeeLine(rows.length)}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm text-muted-foreground">
+            {rows.length} {pluralizeEmployeeLine(rows.length)}
+          </div>
+          {canManagePayments ? (
+            <Button
+              disabled={selectedCount === 0 || bulkMarkMutation.isPending}
+              onClick={() => bulkMarkMutation.mutate(Array.from(selectedEmployeeIds))}
+              type="button"
+            >
+              {bulkMarkMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <CheckCircle2 size={16} aria-hidden="true" />
+              )}
+              Выплатить{selectedCount > 0 ? ` (${selectedCount})` : ""}
+            </Button>
+          ) : null}
         </div>
       </section>
 
@@ -870,27 +917,60 @@ function KpiCard({
 function RunBankDraftCard({
   draft,
   isLoading,
+  payoutCashTotal,
   runId,
   totalAccountAmount,
+  totalPayable,
 }: {
   draft: PayrollBankDraft | null;
   isLoading: boolean;
+  payoutCashTotal: number;
   runId: string;
   totalAccountAmount: number;
+  totalPayable: number;
 }) {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [cashValue, setCashValue] = useState(moneyInputValue(payoutCashTotal));
   const draftAmount = moneyValue(draft?.amount ?? totalAccountAmount);
   const hasDraft = Boolean(draft);
+
+  useEffect(() => {
+    setCashValue(moneyInputValue(payoutCashTotal));
+  }, [payoutCashTotal]);
+
+  const cashAmount = parseMoneyInput(cashValue);
+  const cashValid = cashAmount !== null && cashAmount >= 0 && cashAmount <= totalPayable;
+  const previewAccount =
+    cashValid && cashAmount !== null
+      ? normalizeMoney(Math.max(0, totalPayable - cashAmount))
+      : null;
+  const cashDirty =
+    cashAmount === null || normalizeMoney(cashAmount) !== normalizeMoney(payoutCashTotal);
+
+  const invalidatePayoutQueries = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["payroll-run", runId] }),
+      queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", runId] }),
+      queryClient.invalidateQueries({ queryKey: ["run-bank-draft", runId] }),
+      queryClient.invalidateQueries({ queryKey: ["run-payout-delta", runId] }),
+    ]);
+
+  const cashMutation = useMutation({
+    mutationFn: (amountCash: number) => setRunPayoutCash(runId, amountCash),
+    onSuccess: async () => {
+      await invalidatePayoutQueries();
+      toast.success("Наличная сумма сохранена");
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось сохранить наличную сумму"));
+    },
+  });
+
   const mutation = useMutation({
     mutationFn: () => createRunBankDraft(runId),
     onSuccess: async (nextDraft) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["payroll-run", runId] }),
-        queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", runId] }),
-        queryClient.invalidateQueries({ queryKey: ["run-bank-draft", runId] }),
-        queryClient.invalidateQueries({ queryKey: ["run-payout-delta", runId] }),
-      ]);
+      await invalidatePayoutQueries();
       setIsDialogOpen(false);
       toast.success(
         nextDraft.status === "updated" || hasDraft ? "Черновик обновлён" : "Черновик сформирован",
@@ -905,16 +985,75 @@ function RunBankDraftCard({
 
   return (
     <section className="rounded-lg border bg-card p-4 shadow-sm">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <Landmark className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-            <h2 className="text-base font-semibold tracking-normal">Черновик выплаты в банк</h2>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Вся РС-часть ведомости уходит одним платежом на счёт ИП.
-          </p>
+      <div className="flex items-center gap-2">
+        <Landmark className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+        <h2 className="text-base font-semibold tracking-normal">Черновик выплаты в банк</h2>
+      </div>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Укажите общую наличную сумму по ведомости. Остаток уходит одним платежом на счёт ИП.
+      </p>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-md border bg-background p-3">
+          <div className="text-xs text-muted-foreground">К выплате (ФОТ)</div>
+          <div className="mt-1 font-semibold tabular-nums">{formatMoney(totalPayable)}</div>
         </div>
+        <div className="rounded-md border bg-background p-3">
+          <Label className="text-xs text-muted-foreground" htmlFor="run-payout-cash">
+            Наличными итого
+          </Label>
+          <Input
+            className="mt-1"
+            disabled={cashMutation.isPending}
+            id="run-payout-cash"
+            inputMode="decimal"
+            max={totalPayable}
+            min={0}
+            onChange={(event) => setCashValue(event.target.value)}
+            step="0.01"
+            type="number"
+            value={cashValue}
+          />
+        </div>
+        <div className="rounded-md border bg-muted/30 p-3">
+          <div className="text-xs text-muted-foreground">На счёт ИП (черновик)</div>
+          <div className="mt-1 font-semibold tabular-nums">
+            {previewAccount === null ? "—" : formatMoney(previewAccount)}
+          </div>
+        </div>
+      </div>
+
+      {!cashValid ? (
+        <div className="mt-2 text-xs text-destructive">
+          Введите наличную сумму от 0 до {formatMoney(totalPayable)}.
+        </div>
+      ) : null}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button
+          disabled={!cashValid || !cashDirty || cashMutation.isPending}
+          onClick={async () => {
+            if (cashAmount === null) {
+              return;
+            }
+            try {
+              await cashMutation.mutateAsync(normalizeMoney(cashAmount));
+            } catch {
+              // Toast is handled by the mutation's onError.
+            }
+          }}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {cashMutation.isPending ? (
+            <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+          ) : (
+            <CheckCircle2 size={15} aria-hidden="true" />
+          )}
+          Сохранить наличные
+        </Button>
+
         <AlertDialog
           open={isDialogOpen}
           onOpenChange={(open) => {
@@ -924,7 +1063,7 @@ function RunBankDraftCard({
           }}
         >
           <AlertDialogTrigger asChild>
-            <Button disabled={isLoading || mutation.isPending} type="button">
+            <Button disabled={isLoading || mutation.isPending || cashDirty} type="button">
               {mutation.isPending ? (
                 <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
               ) : (
@@ -967,6 +1106,12 @@ function RunBankDraftCard({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {cashDirty ? (
+          <span className="text-xs text-muted-foreground">
+            Сначала сохраните наличную сумму.
+          </span>
+        ) : null}
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -1190,202 +1335,6 @@ function PayoutDeltasPanel({
   );
 }
 
-function PayoutSplitCell({
-  canManageBankDraft,
-  employeeName,
-  line,
-}: {
-  canManageBankDraft: boolean;
-  employeeName: string;
-  line: PayrollLine;
-}) {
-  const overpaidAmount = moneyValue(line.overpaid_amount);
-  const canEditSplit = canManageBankDraft && line.payout_status !== "paid";
-
-  return (
-    <div className="flex min-w-[200px] flex-col items-start gap-2">
-      <div className="grid w-full gap-1 text-xs">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-muted-foreground">Нал</span>
-          <span className="font-medium tabular-nums">{formatMoney(moneyValue(line.amount_cash))}</span>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-muted-foreground">РС</span>
-          <span className="font-medium tabular-nums">
-            {formatMoney(moneyValue(line.amount_account))}
-          </span>
-        </div>
-      </div>
-      <div className="flex flex-wrap gap-1">
-        <PayoutStatusBadge line={line} />
-        {overpaidAmount > 0 ? (
-          <InlineTooltip content="остаётся на бизнес-карте">
-            <Badge className="rounded-md border-amber-200 bg-amber-50 text-amber-800 shadow-none">
-              Излишек {formatMoney(overpaidAmount)}
-            </Badge>
-          </InlineTooltip>
-        ) : null}
-      </div>
-      {canEditSplit ? <PayoutSplitDialog employeeName={employeeName} line={line} /> : null}
-    </div>
-  );
-}
-
-function PayoutSplitDialog({ employeeName, line }: { employeeName: string; line: PayrollLine }) {
-  const queryClient = useQueryClient();
-  const total = moneyValue(line.total_payable);
-  const [open, setOpen] = useState(false);
-  const [cashValue, setCashValue] = useState(moneyInputValue(line.amount_cash));
-  const cashAmount = parseMoneyInput(cashValue);
-  const canSubmit = cashAmount !== null && cashAmount >= 0 && cashAmount <= total;
-  const accountAmount = canSubmit && cashAmount !== null ? total - cashAmount : null;
-  const inputId = `payout-split-cash-${line.id}`;
-
-  useEffect(() => {
-    if (open) {
-      setCashValue(moneyInputValue(line.amount_cash));
-    }
-  }, [line.amount_cash, line.id, open]);
-
-  const mutation = useMutation({
-    mutationFn: (amountCash: number) =>
-      setPayoutSplit(line.run_id, line.employee_id, amountCash),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["payroll-run", line.run_id] }),
-        queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", line.run_id] }),
-        queryClient.invalidateQueries({ queryKey: ["run-bank-draft", line.run_id] }),
-        queryClient.invalidateQueries({ queryKey: ["run-payout-delta", line.run_id] }),
-      ]);
-      setOpen(false);
-      toast.success("Нал / РС сохранены");
-    },
-    onError: (error) => {
-      toast.error(apiErrorMessage(error, "Не удалось сохранить нал / РС"));
-    },
-  });
-
-  return (
-    <AlertDialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (mutation.isPending) {
-          return;
-        }
-        setOpen(nextOpen);
-        if (nextOpen) {
-          setCashValue(moneyInputValue(line.amount_cash));
-        }
-      }}
-    >
-      <AlertDialogTrigger asChild>
-        <Button
-          disabled={mutation.isPending}
-          onClick={(event) => event.stopPropagation()}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          {mutation.isPending ? (
-            <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
-          ) : (
-            <Split size={15} aria-hidden="true" />
-          )}
-          Указать нал/РС
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent onClick={(event) => event.stopPropagation()}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Нал / РС: {employeeName}</AlertDialogTitle>
-          <AlertDialogDescription>
-            Укажите наличную часть выплаты. Сумма с РС пересчитается автоматически.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="space-y-3">
-          <div className="text-sm text-muted-foreground">
-            К выплате: <span className="font-medium text-foreground">{formatMoney(total)}</span>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor={inputId}>Наличными</Label>
-              <Input
-                disabled={mutation.isPending}
-                id={inputId}
-                inputMode="decimal"
-                max={total}
-                min={0}
-                onChange={(event) => setCashValue(event.target.value)}
-                step="0.01"
-                type="number"
-                value={cashValue}
-              />
-            </div>
-            <div className="rounded-md border bg-muted/30 p-3">
-              <div className="text-xs text-muted-foreground">С РС</div>
-              <div className="mt-1 font-semibold tabular-nums">
-                {accountAmount === null ? "—" : formatMoney(accountAmount)}
-              </div>
-            </div>
-          </div>
-          {!canSubmit ? (
-            <div className="text-xs text-destructive">
-              Введите сумму наличными от 0 до {formatMoney(total)}.
-            </div>
-          ) : null}
-        </div>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={mutation.isPending} type="button">
-            Отмена
-          </AlertDialogCancel>
-          <AlertDialogAction
-            disabled={!canSubmit || mutation.isPending}
-            onClick={async (event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              if (!canSubmit || cashAmount === null) {
-                return;
-              }
-              try {
-                await mutation.mutateAsync(normalizeMoney(cashAmount));
-              } catch {
-                // Toast is handled by the mutation's onError.
-              }
-            }}
-            type="button"
-          >
-            {mutation.isPending ? (
-              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-            ) : (
-              <CheckCircle2 size={16} aria-hidden="true" />
-            )}
-            Сохранить
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-
-function PayoutStatusBadge({ line }: { line: PayrollLine }) {
-  if (line.payout_status === "paid") {
-    return (
-      <Badge className="rounded-md border-emerald-200 bg-emerald-50 text-emerald-800 shadow-none">
-        Выплачено
-      </Badge>
-    );
-  }
-  if (line.payout_status === "planned" || line.payout_status === "draft_created") {
-    return (
-      <Badge className="rounded-md border-sky-200 bg-sky-50 text-sky-800 shadow-none">
-        Запланировано
-      </Badge>
-    );
-  }
-  return (
-    <Badge className="rounded-md border-border bg-muted text-muted-foreground shadow-none">—</Badge>
-  );
-}
-
 function PayoutDeltaBadge({
   classification,
 }: {
@@ -1439,34 +1388,13 @@ function SortButton({
 
 function PaymentCell({
   canManagePayments,
-  employeeName,
   line,
 }: {
   canManagePayments: boolean;
-  employeeName: string;
   line: PayrollLine;
 }) {
   const queryClient = useQueryClient();
   const isPaid = line.payment_status === "paid";
-  const markMutation = useMutation({
-    mutationFn: (payload: PayrollPaymentPayload) =>
-      markPayrollPayment(line.run_id, {
-        employee_id: line.employee_id,
-        ...payload,
-      }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["payroll-run", line.run_id] }),
-        queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", line.run_id] }),
-        queryClient.invalidateQueries({ queryKey: ["run-bank-draft", line.run_id] }),
-        queryClient.invalidateQueries({ queryKey: ["run-payout-delta", line.run_id] }),
-      ]);
-      toast.success("Выплата отмечена");
-    },
-    onError: (error) => {
-      toast.error(apiErrorMessage(error, "Не удалось отметить выплату"));
-    },
-  });
   const unmarkMutation = useMutation({
     mutationFn: () => unmarkPayrollPayment(line.run_id, line.employee_id),
     onSuccess: async () => {
@@ -1482,7 +1410,6 @@ function PaymentCell({
       toast.error(apiErrorMessage(error, "Не удалось отменить отметку"));
     },
   });
-  const isPending = markMutation.isPending || unmarkMutation.isPending;
 
   return (
     <div className="flex min-w-[190px] flex-col items-start gap-2">
@@ -1501,159 +1428,26 @@ function PaymentCell({
           {line.paid_amount !== null ? ` · ${formatMoney(line.paid_amount)}` : ""}
         </span>
       ) : null}
-      {canManagePayments ? (
-        isPaid ? (
-          <Button
-            disabled={isPending}
-            onClick={(event) => {
-              event.stopPropagation();
-              unmarkMutation.mutate();
-            }}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {unmarkMutation.isPending ? (
-              <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
-            ) : (
-              <Undo2 size={15} aria-hidden="true" />
-            )}
-            Отменить отметку
-          </Button>
-        ) : (
-          <PaymentMarkDialog
-            confirmLabel="Отметить"
-            description="Зафиксируется дата, способ и текущая сумма к выплате по сотруднику."
-            isPending={markMutation.isPending}
-            onSubmit={async (payload) => {
-              await markMutation.mutateAsync(payload);
-            }}
-            title={`Отметить выплату: ${employeeName}`}
-            trigger={
-              <Button
-                disabled={isPending}
-                onClick={(event) => event.stopPropagation()}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                {markMutation.isPending ? (
-                  <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
-                ) : (
-                  <CheckCircle2 size={15} aria-hidden="true" />
-                )}
-                Выплачено
-              </Button>
-            }
-          />
-        )
+      {canManagePayments && isPaid ? (
+        <Button
+          disabled={unmarkMutation.isPending}
+          onClick={(event) => {
+            event.stopPropagation();
+            unmarkMutation.mutate();
+          }}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {unmarkMutation.isPending ? (
+            <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+          ) : (
+            <Undo2 size={15} aria-hidden="true" />
+          )}
+          Отменить отметку
+        </Button>
       ) : null}
     </div>
-  );
-}
-
-function PaymentMarkDialog({
-  confirmLabel,
-  description,
-  isPending,
-  onSubmit,
-  title,
-  trigger,
-}: {
-  confirmLabel: string;
-  description: string;
-  isPending: boolean;
-  onSubmit: (payload: PayrollPaymentPayload) => Promise<void>;
-  title: string;
-  trigger: ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const [paidAt, setPaidAt] = useState(todayDateInputValue);
-  const [method, setMethod] = useState<PayrollPaymentMethod>("business_card");
-  const canSubmit = paidAt.trim().length > 0;
-
-  return (
-    <AlertDialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (isPending) {
-          return;
-        }
-        setOpen(nextOpen);
-        if (nextOpen) {
-          setPaidAt(todayDateInputValue());
-          setMethod("business_card");
-        }
-      }}
-    >
-      <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
-      <AlertDialogContent onClick={(event) => event.stopPropagation()}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="payroll-payment-paid-at">Дата выплаты</Label>
-            <Input
-              disabled={isPending}
-              id="payroll-payment-paid-at"
-              onChange={(event) => setPaidAt(event.target.value)}
-              type="date"
-              value={paidAt}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="payroll-payment-method">Способ</Label>
-            <Select
-              disabled={isPending}
-              onValueChange={(value) => setMethod(value as PayrollPaymentMethod)}
-              value={method}
-            >
-              <SelectTrigger id="payroll-payment-method">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PAYMENT_METHOD_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isPending} type="button">
-            Отмена
-          </AlertDialogCancel>
-          <AlertDialogAction
-            disabled={!canSubmit || isPending}
-            onClick={async (event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              if (!canSubmit) {
-                return;
-              }
-              try {
-                await onSubmit({ paid_at: paidAt, method });
-                setOpen(false);
-              } catch {
-                // Toast is handled by the mutation's onError.
-              }
-            }}
-            type="button"
-          >
-            {isPending ? (
-              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-            ) : (
-              <CheckCircle2 size={16} aria-hidden="true" />
-            )}
-            {confirmLabel}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }
 
@@ -1932,17 +1726,6 @@ function cleanOptionalText(value: string) {
 
 function paymentMethodLabel(method: PayrollPaymentMethod) {
   return PAYMENT_METHOD_OPTIONS.find((option) => option.value === method)?.label ?? "Другое";
-}
-
-function InlineTooltip({ children, content }: { children: ReactNode; content: string }) {
-  return (
-    <span className="group relative inline-flex" title={content}>
-      {children}
-      <span className="pointer-events-none absolute left-0 top-full z-50 mt-2 hidden w-56 rounded-md border bg-popover px-3 py-2 text-left text-xs leading-5 text-popover-foreground shadow-lg group-hover:block">
-        {content}
-      </span>
-    </span>
-  );
 }
 
 async function loadRunBankDraft(runId: string) {

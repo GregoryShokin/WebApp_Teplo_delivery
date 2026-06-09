@@ -158,6 +158,69 @@ async def mark_all_payments(
     return len(rows)
 
 
+async def mark_payments_selected(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    employee_ids: list[uuid.UUID],
+    *,
+    paid_at: date,
+    actor_user_id: uuid.UUID | None,
+) -> int:
+    """Mark the given employees as paid in one shot, without a payment method.
+
+    Used by the bulk "Выплатить" action: the owner only confirms that the
+    selected employees received their pay; the channel (cash/card/transfer) is
+    not recorded.
+    """
+    run = await _get_payment_run(session, run_id)
+    wanted = set(employee_ids)
+    if not wanted:
+        return 0
+    rows = [row for row in await _unpaid_employee_payment_rows(session, run_id) if row[0] in wanted]
+    if not rows:
+        return 0
+
+    for employee_id, amount, payment in rows:
+        if payment is None:
+            session.add(
+                PayrollPayment(
+                    id=uuid.uuid4(),
+                    run_id=run_id,
+                    employee_id=employee_id,
+                    amount=amount,
+                    paid_at=paid_at,
+                    method=None,
+                    paid_by_user_id=actor_user_id,
+                    status="paid",
+                    **_initial_split_for_method(amount, None),
+                )
+            )
+            continue
+        payment.amount = amount
+        _reconcile_split_for_paid(payment, amount, None)
+        payment.paid_at = paid_at
+        payment.method = None
+        payment.paid_by_user_id = actor_user_id
+        payment.status = "paid"
+    _add_payment_event(
+        session,
+        run=run,
+        action="payment_marked",
+        actor_user_id=actor_user_id,
+        payload={
+            "employee_ids": [str(employee_id) for employee_id, _amount, _payment in rows],
+            "count": len(rows),
+            "amount_total": money_text(
+                sum((amount for _employee_id, amount, _payment in rows), Decimal("0"))
+            ),
+            "method": None,
+            "paid_at": paid_at.isoformat(),
+        },
+    )
+    await session.commit()
+    return len(rows)
+
+
 async def _get_payment_run(session: AsyncSession, run_id: uuid.UUID) -> PayrollRun:
     run = await session.get(PayrollRun, run_id)
     if run is None:
@@ -217,13 +280,13 @@ async def _unpaid_employee_payment_rows(
     ]
 
 
-def _initial_split_for_method(amount: Decimal, method: str) -> dict[str, Decimal]:
+def _initial_split_for_method(amount: Decimal, method: str | None) -> dict[str, Decimal]:
     if method == "cash":
         return {"amount_cash": amount, "amount_account": Decimal("0")}
     return {"amount_cash": Decimal("0"), "amount_account": amount}
 
 
-def _reconcile_split_for_paid(payment: PayrollPayment, amount: Decimal, method: str) -> None:
+def _reconcile_split_for_paid(payment: PayrollPayment, amount: Decimal, method: str | None) -> None:
     amount_cash = Decimal(payment.amount_cash or 0)
     amount_account = Decimal(payment.amount_account or 0)
     if amount_cash == 0 and amount_account == 0:

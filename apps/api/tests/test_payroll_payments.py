@@ -22,9 +22,13 @@ from app.models import (
     PayrollRunEvent,
     User,
 )
-from app.schemas.payroll import PayrollPaymentMarkRequest, PayrollPaymentsMarkAllRequest
+from app.schemas.payroll import (
+    PayrollPaymentMarkRequest,
+    PayrollPaymentsBulkMarkRequest,
+    PayrollPaymentsMarkAllRequest,
+)
 from app.services import payroll_runner
-from app.services.payroll_payments import mark_payment
+from app.services.payroll_payments import mark_payment, mark_payments_selected
 from app.services.payroll_runner import finalize_payroll_run, run_payroll, unfinalize_payroll_run
 
 
@@ -373,6 +377,63 @@ async def test_mark_and_unmark_create_payroll_run_events(
         assert events[0].payload["employee_id"] == str(employees[0].id)
         assert events[0].payload["amount"] == "1000.00"
         assert events[1].payload["employee_id"] == str(employees[0].id)
+
+
+async def test_bulk_mark_selected_marks_only_chosen_without_method(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        _period, run, employees = await create_payroll_run(
+            session,
+            status="finalized",
+            period_status="finalized",
+            employee_line_totals=[[Decimal("1000")], [Decimal("2000")], [Decimal("3000")]],
+        )
+
+        marked = await mark_payments_selected(
+            session,
+            run.id,
+            [employees[0].id, employees[2].id],
+            paid_at=date(2026, 5, 27),
+            actor_user_id=actor.id,
+        )
+        assert marked == 2
+
+        payments = {
+            payment.employee_id: payment
+            for payment in (
+                await session.scalars(
+                    select(PayrollPayment).where(PayrollPayment.run_id == run.id)
+                )
+            ).all()
+        }
+        assert set(payments) == {employees[0].id, employees[2].id}
+        assert all(payment.status == "paid" for payment in payments.values())
+        assert all(payment.method is None for payment in payments.values())
+        assert payments[employees[0].id].amount == Decimal("1000.00")
+        assert payments[employees[2].id].amount == Decimal("3000.00")
+
+        # Route wiring marks the remaining unpaid employee.
+        result = await payroll_routes.post_bulk_mark_payments(
+            run.id,
+            PayrollPaymentsBulkMarkRequest(
+                employee_ids=[employees[1].id], paid_at=date(2026, 5, 27)
+            ),
+            session,
+            CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
+        )
+        assert result.marked_count == 1
+
+        # Re-marking an already-paid employee is a no-op.
+        again = await mark_payments_selected(
+            session,
+            run.id,
+            [employees[0].id],
+            paid_at=date(2026, 5, 27),
+            actor_user_id=actor.id,
+        )
+        assert again == 0
 
 
 async def create_actor_user(session: AsyncSession) -> User:

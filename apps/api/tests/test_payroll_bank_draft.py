@@ -19,7 +19,7 @@ from app.services.payroll_payouts import (
     apply_run_payout_delta,
     create_or_update_run_draft,
     get_run_payout_delta,
-    set_payout_split,
+    set_run_payout_cash,
 )
 
 
@@ -57,12 +57,12 @@ async def test_run_delta_routes_call_run_level_services(monkeypatch) -> None:
     assert calls == [("get", run_id, session), ("apply", run_id, session)]
 
 
-async def test_create_run_draft_sums_account_parts_into_one_bank_draft(
+async def test_create_run_draft_uses_run_account_part_for_one_bank_draft(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
-        _period, run, employees = await create_payroll_run(
+        _period, run, _employees = await create_payroll_run(
             session,
             employee_line_totals=[
                 [Decimal("1000")],
@@ -70,14 +70,9 @@ async def test_create_run_draft_sums_account_parts_into_one_bank_draft(
                 [Decimal("3000")],
             ],
         )
-        await set_payout_split(
-            session, run.id, employees[0].id, amount_cash=Decimal("250"), actor_user_id=actor.id
-        )
-        await set_payout_split(
-            session, run.id, employees[1].id, amount_cash=Decimal("2000"), actor_user_id=actor.id
-        )
-        await set_payout_split(
-            session, run.id, employees[2].id, amount_cash=Decimal("0"), actor_user_id=actor.id
+        # Total payable is 6000; owner pays 2250 in cash, so 3750 goes to the account.
+        await set_run_payout_cash(
+            session, run.id, amount_cash=Decimal("2250"), actor_user_id=actor.id
         )
 
         draft = await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)
@@ -97,10 +92,8 @@ async def test_run_draft_is_idempotent_by_document_id(
 ) -> None:
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
-        _period, run, employees = await create_payroll_run(session)
-        await set_payout_split(
-            session, run.id, employees[0].id, amount_cash=Decimal("0"), actor_user_id=actor.id
-        )
+        _period, run, _employees = await create_payroll_run(session)
+        await set_run_payout_cash(session, run.id, amount_cash=Decimal("0"), actor_user_id=actor.id)
 
         first = await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)
         second = await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)
@@ -119,10 +112,8 @@ async def test_run_draft_uses_requisites_from_setting(
 ) -> None:
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
-        _period, run, employees = await create_payroll_run(session)
-        await set_payout_split(
-            session, run.id, employees[0].id, amount_cash=Decimal("0"), actor_user_id=actor.id
-        )
+        _period, run, _employees = await create_payroll_run(session)
+        await set_run_payout_cash(session, run.id, amount_cash=Decimal("0"), actor_user_id=actor.id)
         setting = await session.scalar(
             select(AppSetting).where(AppSetting.key == PAYOUT_REQUISITES_KEY)
         )
@@ -157,10 +148,8 @@ async def test_run_delta_topup_creates_separate_draft_and_down_records_overpaid(
 ) -> None:
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
-        _period, run, employees = await create_payroll_run(session)
-        await set_payout_split(
-            session, run.id, employees[0].id, amount_cash=Decimal("0"), actor_user_id=actor.id
-        )
+        _period, run, _employees = await create_payroll_run(session)
+        await set_run_payout_cash(session, run.id, amount_cash=Decimal("0"), actor_user_id=actor.id)
         await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)
         line = await session.scalar(select(PayrollLine).where(PayrollLine.run_id == run.id))
         assert line is not None

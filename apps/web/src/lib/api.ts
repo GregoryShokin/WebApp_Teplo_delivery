@@ -409,6 +409,7 @@ export type PayrollRun = {
   blocking_issues: Array<Record<string, unknown>>;
   summary: PayrollRunSummary;
   is_imported_legacy: boolean;
+  payout_cash_total: number;
   period: PayrollPeriod | null;
 };
 
@@ -2783,15 +2784,22 @@ export async function markAllPayrollPayments(
   return response.data;
 }
 
-export async function setPayoutSplit(
+export async function bulkMarkPayrollPayments(
   runId: string,
-  employeeId: string,
-  amountCash: number,
-): Promise<PayrollLine> {
-  const response = await api.patch<PayrollLine>(
-    `/payroll/runs/${runId}/payouts/${employeeId}/split`,
-    { amount_cash: amountCash },
+  employeeIds: string[],
+  paidAt: string,
+): Promise<MarkAllPayrollPaymentsResponse> {
+  const response = await api.post<MarkAllPayrollPaymentsResponse>(
+    `/payroll/runs/${runId}/payments/bulk-mark`,
+    { employee_ids: employeeIds, paid_at: paidAt },
   );
+  return response.data;
+}
+
+export async function setRunPayoutCash(runId: string, amountCash: number): Promise<PayrollRun> {
+  const response = await api.patch<PayrollRun>(`/payroll/runs/${runId}/payout-cash`, {
+    amount_cash: amountCash,
+  });
   return response.data;
 }
 

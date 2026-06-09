@@ -47,14 +47,21 @@ class PayrollPaymentsMarkAllRequest(BaseModel):
     method: str
 
 
+class PayrollPaymentsBulkMarkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    employee_ids: list[uuid.UUID] = Field(min_length=1)
+    paid_at: date
+
+
 class PayrollPaymentsMarkAllResponse(BaseModel):
     marked_count: int
 
 
-class PayrollPayoutSplitPatch(BaseModel):
+class PayrollRunPayoutCashPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    amount_cash: Decimal
+    amount_cash: Decimal = Field(ge=0)
 
 
 class PayrollPayoutDraftsResponse(BaseModel):
@@ -100,6 +107,7 @@ class PayrollRunRead(BaseModel):
     blocking_issues: list[dict[str, Any]]
     summary: dict[str, Any]
     is_imported_legacy: bool = False
+    payout_cash_total: float = 0
     period: PayrollPeriodRead | None = None
 
 

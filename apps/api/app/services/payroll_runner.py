@@ -1167,6 +1167,7 @@ def serialize_run(run: PayrollRun, period: PayrollPeriod | None = None) -> dict[
         "blocking_issues": run.blocking_issues or [],
         "summary": run.summary or {},
         "is_imported_legacy": bool(getattr(run, "is_imported_legacy", False)),
+        "payout_cash_total": float(run.payout_cash_total or 0),
     }
     if period is not None:
         data["period"] = serialize_period(period)

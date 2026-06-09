@@ -25,7 +25,7 @@ from app.models import (
     SourceCredential,
     User,
 )
-from app.schemas.payroll import PayrollPayoutSplitPatch
+from app.schemas.payroll import PayrollRunPayoutCashPatch
 from app.services import payroll_runner
 from app.services.banking import PaymentDraftResult
 from app.services.banking.tbank import TbankClient
@@ -35,80 +35,73 @@ from app.services.payroll_payouts import (
     create_or_update_drafts,
     create_or_update_run_draft,
     get_payout_deltas,
-    set_payout_split,
+    set_run_payout_cash,
 )
 from app.services.payroll_runner import finalize_payroll_run, run_payroll, unfinalize_payroll_run
 
 
-async def test_split_validates_bounds_status_and_legacy(
+async def test_run_payout_cash_validates_bounds_status_and_legacy(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
-        _period, run, employees = await create_payroll_run(
+        _period, run, _employees = await create_payroll_run(
             session,
             employee_line_totals=[[Decimal("1000"), Decimal("250")]],
         )
 
-        payment = await set_payout_split(
+        run = await set_run_payout_cash(
             session,
             run.id,
-            employees[0].id,
             amount_cash=Decimal("300"),
             actor_user_id=actor.id,
         )
 
-        assert payment.amount == Decimal("1250.00")
-        assert payment.amount_cash == Decimal("300.00")
-        assert payment.amount_account == Decimal("950.00")
-        assert payment.status == "planned"
+        assert run.payout_cash_total == Decimal("300.00")
 
         with pytest.raises(HTTPException) as too_large:
-            await payroll_routes.patch_payout_split(
+            await payroll_routes.patch_run_payout_cash(
                 run.id,
-                employees[0].id,
-                PayrollPayoutSplitPatch(amount_cash=Decimal("1300")),
+                PayrollRunPayoutCashPatch(amount_cash=Decimal("1300")),
                 session,
                 CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
             )
         assert too_large.value.status_code == 409
 
-        _period_nf, run_nf, employees_nf = await create_payroll_run(
+        _period_nf, run_nf, _employees_nf = await create_payroll_run(
             session,
             status="completed",
             period_status="open",
         )
         with pytest.raises(HTTPException) as not_finalized:
-            await payroll_routes.patch_payout_split(
+            await payroll_routes.patch_run_payout_cash(
                 run_nf.id,
-                employees_nf[0].id,
-                PayrollPayoutSplitPatch(amount_cash=Decimal("1")),
+                PayrollRunPayoutCashPatch(amount_cash=Decimal("1")),
                 session,
                 CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
             )
         assert not_finalized.value.status_code == 409
 
-        _period_legacy, run_legacy, employees_legacy = await create_payroll_run(
+        _period_legacy, run_legacy, _employees_legacy = await create_payroll_run(
             session,
             is_legacy=True,
         )
         with pytest.raises(HTTPException) as legacy:
-            await payroll_routes.patch_payout_split(
+            await payroll_routes.patch_run_payout_cash(
                 run_legacy.id,
-                employees_legacy[0].id,
-                PayrollPayoutSplitPatch(amount_cash=Decimal("1")),
+                PayrollRunPayoutCashPatch(amount_cash=Decimal("1")),
                 session,
                 CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
             )
         assert legacy.value.status_code == 409
 
 
-async def test_payout_split_uses_total_payable_after_ndfl(
+async def test_run_payout_cash_account_uses_total_payable_after_ndfl(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
-        _period, run, employees = await create_payroll_run(
+        _period, run, _employees = await create_payroll_run(
             session,
             employee_line_totals=[[Decimal("870")]],
         )
@@ -119,53 +112,25 @@ async def test_payout_split_uses_total_payable_after_ndfl(
         line.total_payable = Decimal("870.00")
         await session.commit()
 
-        payment = await set_payout_split(
+        run = await set_run_payout_cash(
             session,
             run.id,
-            employees[0].id,
             amount_cash=Decimal("100"),
             actor_user_id=actor.id,
         )
+        assert run.payout_cash_total == Decimal("100.00")
 
-        assert payment.amount == Decimal("870.00")
-        assert payment.amount_cash == Decimal("100.00")
-        assert payment.amount_account == Decimal("770.00")
+        # The account-side draft is total payable (after NDFL, 870) minus cash (100).
+        draft = await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)
+        assert draft.amount == Decimal("770.00")
 
 
-async def test_split_on_paid_payment_returns_409(
+async def test_create_or_update_drafts_uses_run_account_part_and_writes_events(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
-        _period, run, employees = await create_payroll_run(session)
-        await mark_payment(
-            session,
-            run.id,
-            employees[0].id,
-            paid_at=date(2026, 5, 27),
-            method="transfer",
-            actor_user_id=actor.id,
-        )
-
-        with pytest.raises(HTTPException) as exc_info:
-            await payroll_routes.patch_payout_split(
-                run.id,
-                employees[0].id,
-                PayrollPayoutSplitPatch(amount_cash=Decimal("100")),
-                session,
-                CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
-            )
-
-        assert exc_info.value.status_code == 409
-        assert exc_info.value.detail == "Выплата уже отмечена, сначала откатите"
-
-
-async def test_create_or_update_drafts_uses_only_account_part_and_writes_events(
-    async_session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    async with async_session_factory() as session:
-        actor = await create_actor_user(session)
-        _period, run, employees = await create_payroll_run(
+        _period, run, _employees = await create_payroll_run(
             session,
             employee_line_totals=[
                 [Decimal("1000")],
@@ -173,25 +138,11 @@ async def test_create_or_update_drafts_uses_only_account_part_and_writes_events(
                 [Decimal("3000")],
             ],
         )
-        await set_payout_split(
+        # Total payable is 6000; owner pays 2250 in cash, so 3750 goes to the account.
+        await set_run_payout_cash(
             session,
             run.id,
-            employees[0].id,
-            amount_cash=Decimal("250"),
-            actor_user_id=actor.id,
-        )
-        await set_payout_split(
-            session,
-            run.id,
-            employees[1].id,
-            amount_cash=Decimal("2000"),
-            actor_user_id=actor.id,
-        )
-        await set_payout_split(
-            session,
-            run.id,
-            employees[2].id,
-            amount_cash=Decimal("0"),
+            amount_cash=Decimal("2250"),
             actor_user_id=actor.id,
         )
 
@@ -200,13 +151,6 @@ async def test_create_or_update_drafts_uses_only_account_part_and_writes_events(
             run.id,
             actor_user_id=actor.id,
         )
-        payments = (
-            await session.scalars(
-                select(PayrollPayment)
-                .where(PayrollPayment.run_id == run.id)
-                .order_by(PayrollPayment.amount)
-            )
-        ).all()
         draft_count = await session.scalar(
             select(func.count())
             .select_from(PayrollBankDraft)
@@ -218,10 +162,6 @@ async def test_create_or_update_drafts_uses_only_account_part_and_writes_events(
         assert draft.document_id == f"teplo-payroll-{run.id}"
         assert draft.amount == Decimal("3750.00")
         assert draft.status == "created"
-        assert payments[0].status == "draft_created"
-        assert payments[0].draft_document_id is None
-        assert payments[1].status == "planned"
-        assert payments[2].status == "draft_created"
         assert [event.action for event in events] == ["bank_draft_created"]
         assert events[0].payload["amount_account"] == "3750.00"
 
@@ -231,11 +171,10 @@ async def test_create_or_update_drafts_is_idempotent_for_same_document_id(
 ) -> None:
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
-        _period, run, employees = await create_payroll_run(session)
-        await set_payout_split(
+        _period, run, _employees = await create_payroll_run(session)
+        await set_run_payout_cash(
             session,
             run.id,
-            employees[0].id,
             amount_cash=Decimal("0"),
             actor_user_id=actor.id,
         )
@@ -359,8 +298,9 @@ async def test_apply_deltas_topup_creates_separate_mock_draft_and_event(
         assert payment is not None
         assert draft is not None
         assert applied_count == 1
-        assert payment.amount == Decimal("1250.00")
-        assert payment.amount_account == Decimal("1250.00")
+        # The per-employee payment keeps the amount recorded when it was marked paid;
+        # the run-level top-up is reconciled through a separate bank draft.
+        assert payment.amount == Decimal("1000.00")
         assert draft.amount == Decimal("1250.00")
         assert len(events) == 1
         assert events[0].payload["delta"] == "250.00"
@@ -416,7 +356,9 @@ async def test_apply_deltas_overpay_records_excess_without_bank_draft(
         assert payment is not None
         assert draft is not None
         assert applied_count == 1
-        assert payment.amount == Decimal("750.00")
+        # The per-employee payment keeps the amount recorded when it was marked paid;
+        # the run-level overpayment is recorded without a new bank draft.
+        assert payment.amount == Decimal("1000.00")
         assert draft.amount == Decimal("750.00")
         assert bank_client.drafts == []
         assert len(events) == 1
@@ -472,7 +414,7 @@ async def test_tbank_live_payment_draft_posts_payload_and_bearer_header(
             session,
             settings=Settings(
                 teplo_bank_client_mode="live",
-                tbank_payment_base_url="https://secured-openapi.tbank.ru",
+                tbank_payment_base_url="https://business.tbank.ru/openapi",
             ),
         )
 
@@ -494,7 +436,7 @@ async def test_tbank_live_payment_draft_posts_payload_and_bearer_header(
 
     assert result.document_id == "teplo-payroll-live-test"
     assert result.provider_ref == "bank-doc-1"
-    assert calls["client_kwargs"]["base_url"] == "https://secured-openapi.tbank.ru"
+    assert calls["client_kwargs"]["base_url"] == "https://business.tbank.ru/openapi"
     assert calls["client_kwargs"]["headers"]["Authorization"] == "Bearer test-token"
     assert calls["client_kwargs"]["headers"]["Content-Type"] == "application/json"
     assert calls["post"]["path"] == "/api/v1/payment/create"

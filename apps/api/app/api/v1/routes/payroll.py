@@ -32,15 +32,16 @@ from app.schemas.payroll import (
     PayrollLineDepositOverridePatch,
     PayrollLineRead,
     PayrollPaymentMarkRequest,
+    PayrollPaymentsBulkMarkRequest,
     PayrollPaymentsMarkAllRequest,
     PayrollPaymentsMarkAllResponse,
     PayrollPayoutApplyDeltasResponse,
     PayrollPayoutDeltaRead,
     PayrollPayoutDraftsResponse,
-    PayrollPayoutSplitPatch,
     PayrollPeriodRead,
     PayrollPersonalReportRead,
     PayrollRunCreate,
+    PayrollRunPayoutCashPatch,
     PayrollRunRead,
     PayrollRunUnfinalize,
 )
@@ -56,7 +57,12 @@ from app.services.deferred_audit_charge_service import (
 )
 from app.services.payroll_aggregate_service import build_aggregate
 from app.services.payroll_config import list_enabled_role_categories
-from app.services.payroll_payments import mark_all_payments, mark_payment, unmark_payment
+from app.services.payroll_payments import (
+    mark_all_payments,
+    mark_payment,
+    mark_payments_selected,
+    unmark_payment,
+)
 from app.services.payroll_payouts import (
     apply_payout_deltas,
     apply_run_payout_delta,
@@ -65,7 +71,7 @@ from app.services.payroll_payouts import (
     get_payout_deltas,
     get_run_bank_draft,
     get_run_payout_delta,
-    set_payout_split,
+    set_run_payout_cash,
 )
 from app.services.payroll_personal_report import build_personal_report
 from app.services.payroll_runner import (
@@ -436,25 +442,24 @@ async def post_unfinalize(
 
 
 @router.patch(
-    "/runs/{run_id}/payouts/{employee_id}/split",
-    status_code=status.HTTP_204_NO_CONTENT,
+    "/runs/{run_id}/payout-cash",
+    response_model=PayrollRunRead,
     dependencies=PAYROLL_RUNS_BANK_DRAFT_ACCESS,
 )
-async def patch_payout_split(
+async def patch_run_payout_cash(
     run_id: uuid.UUID,
-    employee_id: uuid.UUID,
-    payload: PayrollPayoutSplitPatch,
+    payload: PayrollRunPayoutCashPatch,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
-) -> None:
+) -> PayrollRunRead:
     try:
-        await set_payout_split(
+        await set_run_payout_cash(
             session,
             run_id,
-            employee_id,
             amount_cash=payload.amount_cash,
             actor_user_id=actor.user_id,
         )
+        return await get_run(session, run_id)
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PayrollConflictError as exc:
@@ -692,6 +697,32 @@ async def post_mark_all_payments(
             run_id,
             paid_at=payload.paid_at,
             method=payload.method,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return PayrollPaymentsMarkAllResponse(marked_count=marked_count)
+
+
+@router.post(
+    "/runs/{run_id}/payments/bulk-mark",
+    response_model=PayrollPaymentsMarkAllResponse,
+    dependencies=PAYROLL_RUNS_MARK_PAID_ACCESS,
+)
+async def post_bulk_mark_payments(
+    run_id: uuid.UUID,
+    payload: PayrollPaymentsBulkMarkRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollPaymentsMarkAllResponse:
+    try:
+        marked_count = await mark_payments_selected(
+            session,
+            run_id,
+            payload.employee_ids,
+            paid_at=payload.paid_at,
             actor_user_id=actor.user_id,
         )
     except PayrollNotFoundError as exc:

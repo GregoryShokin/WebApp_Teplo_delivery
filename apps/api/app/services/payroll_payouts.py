@@ -14,7 +14,6 @@ from app.models import (
     AppSetting,
     PayrollBankDraft,
     PayrollLine,
-    PayrollPayment,
     PayrollPeriod,
     PayrollRun,
     PayrollRunEvent,
@@ -30,53 +29,39 @@ MOCK_PAYER_ACCOUNT = "00000000000000000000"
 PAYROLL_BANK_DRAFT_STATUSES = frozenset({"created", "updated", "paid", "failed"})
 
 
-async def set_payout_split(
+async def set_run_payout_cash(
     session: AsyncSession,
     run_id: uuid.UUID,
-    employee_id: uuid.UUID,
     *,
     amount_cash: Decimal,
     actor_user_id: uuid.UUID | None,
-) -> PayrollPayment:
-    await _get_payout_run(session, run_id)
-    total = await _employee_payable_amount(session, run_id, employee_id)
+) -> PayrollRun:
+    """Set the run-level cash portion of the payroll.
+
+    The remainder (total payable minus cash) is what goes to the IP account as a
+    single bank draft. Replaces the former per-employee cash/account split.
+    """
+    run = await _get_payout_run(session, run_id)
+    total = await _run_total_payable(session, run_id)
     cash = _money(amount_cash)
     if cash < 0 or cash > total:
-        raise PayrollConflictError("Наличная часть должна быть от 0 до суммы к выплате")
+        raise PayrollConflictError("Наличная сумма должна быть от 0 до суммы к выплате")
 
-    payment = await session.scalar(
-        select(PayrollPayment).where(
-            PayrollPayment.run_id == run_id,
-            PayrollPayment.employee_id == employee_id,
-        )
+    run.payout_cash_total = cash
+    _add_payout_event(
+        session,
+        run=run,
+        action="payout_cash_set",
+        actor_user_id=actor_user_id,
+        payload={
+            "total_payable": money_text(total),
+            "cash_total": money_text(cash),
+            "account_total": money_text(total - cash),
+        },
     )
-    if payment is not None and payment.status == "paid":
-        raise PayrollConflictError("Выплата уже отмечена, сначала откатите")
-
-    account = total - cash
-    if payment is None:
-        payment = PayrollPayment(
-            id=uuid.uuid4(),
-            run_id=run_id,
-            employee_id=employee_id,
-            amount=total,
-            amount_cash=cash,
-            amount_account=account,
-            status="planned",
-        )
-        session.add(payment)
-    else:
-        payment.amount = total
-        payment.amount_cash = cash
-        payment.amount_account = account
-        payment.status = "planned"
-        payment.draft_document_id = None
-        payment.draft_status = None
-        payment.draft_synced_at = None
-
     await session.commit()
-    await session.refresh(payment)
-    return payment
+    await session.refresh(run)
+    return run
 
 
 async def create_or_update_run_draft(
@@ -91,7 +76,7 @@ async def create_or_update_run_draft(
     requisites = await _bank_payout_requisites(session)
     settings = get_settings()
     payer_account = _payer_account(settings)
-    total_account = await _total_account_amount(session, run_id, sync_payments=True)
+    total_account = await _run_account_amount(session, run)
     if total_account <= 0:
         raise PayrollConflictError("РС-часть ведомости равна нулю")
 
@@ -151,7 +136,6 @@ async def create_or_update_run_draft(
         payload=payload,
         last_error=None,
     )
-    await _mark_run_account_payments_as_draft_created(session, run_id)
     _add_payout_event(
         session,
         run=run,
@@ -173,10 +157,10 @@ async def get_run_bank_draft(
 
 
 async def get_run_payout_delta(session: AsyncSession, run_id: uuid.UUID) -> dict[str, Any]:
-    await _get_payout_run(session, run_id)
+    run = await _get_payout_run(session, run_id)
     draft = await _get_bank_draft(session, run_id)
     previous_amount = _money(draft.amount) if draft is not None else Decimal("0.00")
-    new_amount = await _total_account_amount(session, run_id, sync_payments=False)
+    new_amount = await _run_account_amount(session, run)
     delta = new_amount - previous_amount
     return {
         "run_id": run_id,
@@ -200,7 +184,7 @@ async def apply_run_payout_delta(
     if draft is None:
         raise PayrollConflictError("Сначала создайте банковский черновик ведомости")
 
-    new_amount = await _total_account_amount(session, run_id, sync_payments=True)
+    new_amount = await _run_account_amount(session, run)
     previous_amount = _money(draft.amount)
     delta = new_amount - previous_amount
     if delta == 0:
@@ -397,20 +381,24 @@ async def _get_run_period(session: AsyncSession, run: PayrollRun) -> PayrollPeri
     return period
 
 
-async def _employee_payable_amount(
-    session: AsyncSession,
-    run_id: uuid.UUID,
-    employee_id: uuid.UUID,
-) -> Decimal:
+async def _run_total_payable(session: AsyncSession, run_id: uuid.UUID) -> Decimal:
     amount = await session.scalar(
-        select(func.sum(PayrollLine.total_payable)).where(
-            PayrollLine.run_id == run_id,
-            PayrollLine.employee_id == employee_id,
+        select(func.coalesce(func.sum(PayrollLine.total_payable), 0)).where(
+            PayrollLine.run_id == run_id
         )
     )
-    if amount is None:
-        raise PayrollConflictError("У сотрудника нет начислений в этой ведомости")
     return _money(amount)
+
+
+async def _run_account_amount(session: AsyncSession, run: PayrollRun) -> Decimal:
+    """РС-часть ведомости = ФОТ − наличные (run-level), не меньше нуля.
+
+    Наличная сумма ограничивается текущим ФОТ: если после пересчёта ФОТ упал ниже
+    ранее заданной наличной суммы, на счёт ИП ничего не уходит.
+    """
+    total = await _run_total_payable(session, run.id)
+    cash = min(_money(run.payout_cash_total), total)
+    return _money(total - cash)
 
 
 async def _bank_payout_requisites(session: AsyncSession) -> Mapping[str, Any]:
@@ -463,73 +451,6 @@ async def _upsert_bank_draft(
     draft.synced_at = datetime.now(UTC)
     await session.flush()
     return draft
-
-
-async def _total_account_amount(
-    session: AsyncSession,
-    run_id: uuid.UUID,
-    *,
-    sync_payments: bool,
-) -> Decimal:
-    rows = await _payment_rows_with_current_totals(session, run_id)
-    total = Decimal("0.00")
-    for payment, new_amount in rows:
-        amount_cash = min(_money(payment.amount_cash), new_amount)
-        amount_account = new_amount - amount_cash
-        total += amount_account
-        if sync_payments:
-            payment.amount = new_amount
-            payment.amount_cash = amount_cash
-            payment.amount_account = amount_account
-            if payment.status != "paid" and amount_account == 0:
-                payment.status = "planned"
-                payment.draft_document_id = None
-                payment.draft_status = None
-                payment.draft_synced_at = None
-    if sync_payments:
-        await session.flush()
-    return _money(total)
-
-
-async def _payment_rows_with_current_totals(
-    session: AsyncSession,
-    run_id: uuid.UUID,
-) -> list[tuple[PayrollPayment, Decimal]]:
-    result = await session.execute(
-        select(
-            PayrollPayment,
-            func.coalesce(func.sum(PayrollLine.total_payable), 0),
-        )
-        .outerjoin(
-            PayrollLine,
-            (PayrollLine.run_id == PayrollPayment.run_id)
-            & (PayrollLine.employee_id == PayrollPayment.employee_id),
-        )
-        .where(PayrollPayment.run_id == run_id)
-        .group_by(PayrollPayment.id)
-        .order_by(PayrollPayment.employee_id)
-    )
-    return [(payment, _money(total)) for payment, total in result.all()]
-
-
-async def _mark_run_account_payments_as_draft_created(
-    session: AsyncSession,
-    run_id: uuid.UUID,
-) -> None:
-    payments = (
-        await session.scalars(
-            select(PayrollPayment).where(
-                PayrollPayment.run_id == run_id,
-                PayrollPayment.amount_account > 0,
-                PayrollPayment.status != "paid",
-            )
-        )
-    ).all()
-    for payment in payments:
-        payment.status = "draft_created"
-        payment.draft_document_id = None
-        payment.draft_status = None
-        payment.draft_synced_at = None
 
 
 def _payment_purpose(

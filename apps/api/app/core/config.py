@@ -56,7 +56,9 @@ class Settings(BaseSettings):
 
     tbank_api_base_url: str = "https://business.tbank.ru/openapi"
     tbank_api_account_number: str | None = None
-    tbank_payment_base_url: str = "https://secured-openapi.tbank.ru"
+    # Payment draft creation uses the same bearer-token Business API as statements
+    # (POST /api/v1/payment/create), not the mTLS host-to-host endpoint.
+    tbank_payment_base_url: str = "https://business.tbank.ru/openapi"
     tbank_api_timeout_seconds: float = 90
 
     @model_validator(mode="after")

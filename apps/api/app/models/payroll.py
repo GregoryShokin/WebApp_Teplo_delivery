@@ -114,7 +114,10 @@ class ShiftLedgerEntry(Base):
 
 class PayrollRun(Base):
     __tablename__ = "payroll_run"
-    __table_args__ = (Index("ix_payroll_run_period_started", "period_id", "started_at"),)
+    __table_args__ = (
+        Index("ix_payroll_run_period_started", "period_id", "started_at"),
+        CheckConstraint("payout_cash_total >= 0", name="ck_payroll_run_payout_cash_nonneg"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     period_id: Mapped[uuid.UUID] = mapped_column(
@@ -136,6 +139,11 @@ class PayrollRun(Base):
         nullable=False,
         default=False,
         server_default="false",
+    )
+    # Total cash portion of the run's payroll, set at run level by the owner.
+    # The bank draft (account-side payout) equals total payable minus this amount.
+    payout_cash_total: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
     )
 
 
