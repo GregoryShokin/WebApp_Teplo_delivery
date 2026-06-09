@@ -141,6 +141,7 @@ import {
 } from "@/lib/date-presets";
 import { PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
 import { usePermissions } from "@/lib/permissions";
+import { roleColorClasses } from "@/lib/role-colors";
 import { sortEmployeesByRoleAndName } from "@/lib/role-sort";
 import { cn } from "@/lib/utils";
 
@@ -5773,68 +5774,6 @@ function shiftCostClass(estimate: ShiftCostEstimateRead | undefined, role?: stri
   return estimate?.quality_status === "requires_review"
     ? "text-orange-600"
     : roleColorClasses(role ?? "").secondaryText;
-}
-
-function roleColorClasses(role: string) {
-  const fallback = {
-    container: "border-border bg-background",
-    primaryText: "text-foreground",
-    secondaryText: "text-muted-foreground",
-  };
-  const classes: Record<string, { container: string; primaryText: string; secondaryText: string }> =
-    {
-      sushi: {
-        container: "border-blue-300 bg-blue-50",
-        primaryText: "text-blue-900",
-        secondaryText: "text-blue-700",
-      },
-      shawarma: {
-        container: "border-purple-300 bg-purple-50",
-        primaryText: "text-purple-900",
-        secondaryText: "text-purple-700",
-      },
-      administrator: {
-        container: "border-pink-300 bg-pink-50",
-        primaryText: "text-pink-900",
-        secondaryText: "text-pink-700",
-      },
-      pizza: {
-        container: "border-yellow-300 bg-yellow-50",
-        primaryText: "text-yellow-950",
-        secondaryText: "text-yellow-800",
-      },
-      prep: {
-        container: "border-emerald-800 bg-emerald-900",
-        primaryText: "text-white",
-        secondaryText: "text-emerald-100",
-      },
-      Кассир: {
-        container: "border-pink-300 bg-pink-50",
-        primaryText: "text-pink-900",
-        secondaryText: "text-pink-700",
-      },
-      Касса: {
-        container: "border-pink-300 bg-pink-50",
-        primaryText: "text-pink-900",
-        secondaryText: "text-pink-700",
-      },
-      Сушист: {
-        container: "border-blue-300 bg-blue-50",
-        primaryText: "text-blue-900",
-        secondaryText: "text-blue-700",
-      },
-      Пиццерист: {
-        container: "border-yellow-300 bg-yellow-50",
-        primaryText: "text-yellow-950",
-        secondaryText: "text-yellow-800",
-      },
-      Шаурмист: {
-        container: "border-purple-300 bg-purple-50",
-        primaryText: "text-purple-900",
-        secondaryText: "text-purple-700",
-      },
-    };
-  return classes[role] ?? fallback;
 }
 
 function fotStatusLevel(run: PayrollForecastRunRead): FotStatusLevel {

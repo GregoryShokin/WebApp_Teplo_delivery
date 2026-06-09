@@ -39,6 +39,7 @@ import {
 } from "@/lib/api";
 import { PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
 import { usePermissions } from "@/lib/permissions";
+import { roleColorClasses } from "@/lib/role-colors";
 import { cn } from "@/lib/utils";
 
 type SaveRoleVariables = {
@@ -702,8 +703,10 @@ function RoleSelectCell({
       <Select disabled={isSaving} onValueChange={onChange} value={value || undefined}>
         <SelectTrigger
           className={cn(
-            "h-8 w-[132px] bg-background",
-            !shift.is_resolved && "border-amber-300 bg-amber-50/70",
+            "h-8 w-[132px]",
+            shift.is_resolved
+              ? cn(roleColorClasses(value).container, roleColorClasses(value).primaryText)
+              : "border-amber-300 bg-amber-50/70",
           )}
         >
           <SelectValue placeholder="Выбрать" />
@@ -727,7 +730,13 @@ function LockedRoleSelect({ value }: { value: string }) {
   return (
     <div className="flex items-center gap-2">
       <Select disabled value={value || undefined}>
-        <SelectTrigger className="h-8 w-[132px] bg-muted/30 text-muted-foreground">
+        <SelectTrigger
+          className={cn(
+            "h-8 w-[132px]",
+            roleColorClasses(value).container,
+            roleColorClasses(value).primaryText,
+          )}
+        >
           <span className="truncate">{value ? roleLabel(value) : "Нет ролей"}</span>
         </SelectTrigger>
       </Select>

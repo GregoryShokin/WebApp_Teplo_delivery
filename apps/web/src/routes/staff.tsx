@@ -166,6 +166,7 @@ import {
   PAYROLL_ROLE_LABELS,
 } from "@/lib/i18n/employee";
 import { PERMISSION_GROUPS, usePermissions } from "@/lib/permissions";
+import { roleColorClasses } from "@/lib/role-colors";
 import { cn } from "@/lib/utils";
 
 type StaffStatusFilter = EmployeeStatus | "current" | "all";
@@ -5400,7 +5401,13 @@ function EmployeeTags({
         </Badge>
       ) : null}
       {roleTag ? (
-        <Badge className="rounded-md border-border bg-background text-foreground shadow-none">
+        <Badge
+          className={cn(
+            "rounded-md shadow-none",
+            roleColorClasses(primary?.payroll_role).container,
+            roleColorClasses(primary?.payroll_role).primaryText,
+          )}
+        >
           <span>{roleTag}</span>
           {pending ? (
             <PendingAssignmentIndicator
