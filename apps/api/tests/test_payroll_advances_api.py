@@ -1,0 +1,211 @@
+"""API-тесты авансов: доступное, выдача, гейт права B (заём), 403 без прав.
+
+Авторизация — через `X-User-Role` (header-роли в local-окружении): owner = full
+access (вкл. займы), manager = право A без займов, cashier = без прав на авансы.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import uuid
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.models import Employee, EmployeePositionAssignment, PayrollRate
+
+AS_OF = "2026-05-05"  # первая половина мая, 5/15 → 15000 из оклада 90000
+
+
+def _seed_okladnik(factory: async_sessionmaker[AsyncSession]) -> uuid.UUID:
+    async def _run() -> uuid.UUID:
+        async with factory() as session:
+            employee = Employee(
+                id=uuid.uuid4(),
+                full_name="API Окладник",
+                iiko_id=f"iiko-{uuid.uuid4()}",
+                status="active",
+                is_senior=False,
+                is_deputy_senior=False,
+                hire_date=None,
+                fire_date=None,
+                pin_hash="hashed-pin",
+                pin_set_at=datetime(2026, 1, 1, tzinfo=UTC),
+                created_at=datetime(2026, 1, 1, tzinfo=UTC),
+                updated_at=datetime(2026, 1, 1, tzinfo=UTC),
+            )
+            session.add(employee)
+            await session.flush()
+            session.add(
+                EmployeePositionAssignment(
+                    id=uuid.uuid4(),
+                    employee_id=employee.id,
+                    position="Управляющий",
+                    effective_from=date(2026, 1, 1),
+                    effective_to=None,
+                )
+            )
+            session.add(
+                PayrollRate(
+                    id=uuid.uuid4(),
+                    employee_id=None,
+                    position_group="Управляющий",
+                    category="admin",
+                    station=None,
+                    rate_type="monthly",
+                    amount=Decimal("90000"),
+                    is_active=True,
+                    effective_from=date(2026, 1, 1),
+                )
+            )
+            await session.commit()
+            return employee.id
+
+    return asyncio.run(_run())
+
+
+def test_availability_endpoint_for_owner(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    employee_id = _seed_okladnik(async_session_factory)
+    resp = client.get(
+        f"/api/v1/payroll/advances/availability?employee_id={employee_id}&as_of={AS_OF}",
+        headers={"X-User-Role": "owner"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["basis"] == "okladnik"
+    assert body["available"] == 15000.0
+
+
+def test_availability_forbidden_for_cashier(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    employee_id = _seed_okladnik(async_session_factory)
+    resp = client.get(
+        f"/api/v1/payroll/advances/availability?employee_id={employee_id}&as_of={AS_OF}",
+        headers={"X-User-Role": "cashier"},
+    )
+    assert resp.status_code == 403
+
+
+def test_manager_issues_advance_within_earned(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    employee_id = _seed_okladnik(async_session_factory)
+    resp = client.post(
+        "/api/v1/payroll/advances",
+        headers={"X-User-Role": "manager"},
+        json={
+            "employee_id": str(employee_id),
+            "amount": "10000",
+            "issued_on": AS_OF,
+            "payout_method": "transfer",
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["kind"] == "advance"
+    assert body["installments_count"] == 1
+
+
+def test_manager_cannot_issue_loan_over_earned(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    employee_id = _seed_okladnik(async_session_factory)
+    # Доступно 15000; 20000 сверху = заём, у управляющего нет права на займы → 409.
+    resp = client.post(
+        "/api/v1/payroll/advances",
+        headers={"X-User-Role": "manager"},
+        json={"employee_id": str(employee_id), "amount": "20000", "issued_on": AS_OF},
+    )
+    assert resp.status_code == 409
+
+
+def test_owner_issues_loan_with_installments(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    employee_id = _seed_okladnik(async_session_factory)
+    resp = client.post(
+        "/api/v1/payroll/advances",
+        headers={"X-User-Role": "owner"},
+        json={
+            "employee_id": str(employee_id),
+            "amount": "20000",
+            "installments_count": 4,
+            "issued_on": AS_OF,
+            "payout_method": "cash",
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["kind"] == "loan"
+    assert body["installments_count"] == 4
+    assert body["per_installment_amount"] == 5000.0
+
+
+def test_owner_loan_over_ceiling_blocked_then_override(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    employee_id = _seed_okladnik(async_session_factory)
+    # 150000 > дефолтный потолок 100000 → 409 без подтверждения.
+    blocked = client.post(
+        "/api/v1/payroll/advances",
+        headers={"X-User-Role": "owner"},
+        json={"employee_id": str(employee_id), "amount": "150000", "issued_on": AS_OF},
+    )
+    assert blocked.status_code == 409
+    # С подтверждением превышения → 201.
+    allowed = client.post(
+        "/api/v1/payroll/advances",
+        headers={"X-User-Role": "owner"},
+        json={
+            "employee_id": str(employee_id),
+            "amount": "150000",
+            "override_ceiling": True,
+            "issued_on": AS_OF,
+        },
+    )
+    assert allowed.status_code == 201
+    assert allowed.json()["kind"] == "loan"
+
+
+def test_put_config_changes_loan_ceiling(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    employee_id = _seed_okladnik(async_session_factory)
+    cfg = client.put(
+        "/api/v1/payroll/advances/config",
+        headers={"X-User-Role": "owner"},
+        json={"loan_max": "200000"},
+    )
+    assert cfg.status_code == 200
+    assert cfg.json()["loan_max"] == 200000.0
+    # Теперь 150000 проходит без подтверждения.
+    resp = client.post(
+        "/api/v1/payroll/advances",
+        headers={"X-User-Role": "owner"},
+        json={"employee_id": str(employee_id), "amount": "150000", "issued_on": AS_OF},
+    )
+    assert resp.status_code == 201
+
+
+def test_put_config_forbidden_for_manager(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    resp = client.put(
+        "/api/v1/payroll/advances/config",
+        headers={"X-User-Role": "manager"},
+        json={"loan_max": "200000"},
+    )
+    assert resp.status_code == 403

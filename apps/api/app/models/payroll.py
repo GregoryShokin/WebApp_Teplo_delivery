@@ -289,6 +289,9 @@ class PayrollLine(Base):
     fund_accrual: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     deduction: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     total_payable: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    advance_recovered: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
     deposit_excluded_for_run: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -963,3 +966,117 @@ class DishwasherShift(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class SalaryAdvance(Base):
+    """Аванс или заём сотруднику payroll-контура.
+
+    Аванс — выдача в пределах уже заработанного на дату (право A), гасится разом
+    в ближайшей ведомости. Заём — сверх заработанного (право B), гасится в
+    рассрочку равными долями за `installments_count` периодов. Это источник
+    истины об авансах: выдача регистрируется как факт выплаты для ДДС, возврат
+    нетится в `PayrollLine.deduction`. Дискриминатор `role` разводит возврат по
+    производственной/админской ведомости (как `PayrollAdjustment.role`).
+
+    Аванс: `kind='advance'`, `installments_count=1`, `per_installment_amount=amount`.
+    Заём: `kind='loan'`, `installments_count=N`, `per_installment_amount≈amount/N`.
+    """
+
+    __tablename__ = "salary_advance"
+    __table_args__ = (
+        CheckConstraint("kind in ('advance', 'loan')", name="ck_salary_advance_kind"),
+        CheckConstraint("amount > 0", name="ck_salary_advance_amount_positive"),
+        CheckConstraint(
+            "per_installment_amount > 0",
+            name="ck_salary_advance_per_installment_positive",
+        ),
+        CheckConstraint(
+            "installments_count >= 1", name="ck_salary_advance_installments_positive"
+        ),
+        CheckConstraint(
+            "recovered_amount >= 0", name="ck_salary_advance_recovered_non_negative"
+        ),
+        CheckConstraint(
+            "recovered_amount <= amount", name="ck_salary_advance_recovered_le_amount"
+        ),
+        CheckConstraint(
+            "status in ('issued', 'recovered', 'written_off', 'cancelled')",
+            name="ck_salary_advance_status",
+        ),
+        CheckConstraint(
+            "payout_method is null or payout_method in "
+            "('business_card', 'cash', 'transfer', 'other')",
+            name="ck_salary_advance_payout_method",
+        ),
+        Index("ix_salary_advance_employee_status", "employee_id", "status"),
+        Index("ix_salary_advance_role_status", "role", "status"),
+        Index("ix_salary_advance_issued_on", "issued_on"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee.id", ondelete="RESTRICT"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(160), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="advance")
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    per_installment_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    installments_count: Mapped[int] = mapped_column(
+        nullable=False, default=1, server_default="1"
+    )
+    recovered_amount: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
+    status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="issued", server_default="issued"
+    )
+    issued_on: Mapped[date] = mapped_column(Date, nullable=False)
+    payout_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    created_by_label: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    recoveries: Mapped[list[SalaryAdvanceRecovery]] = relationship(
+        back_populates="advance",
+        cascade="all, delete-orphan",
+        order_by=lambda: SalaryAdvanceRecovery.created_at,
+    )
+
+
+class SalaryAdvanceRecovery(Base):
+    """Факт удержания части аванса/займа в конкретной ведомости.
+
+    Создаётся при расчёте ведомости: гасит `min(остаток, доля, доступный net)`,
+    чтобы выплата не ушла в минус (anti-negative); недобор переносится на
+    следующую ведомость. История возврата — аудит и источник строки возврата.
+    """
+
+    __tablename__ = "salary_advance_recovery"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_salary_advance_recovery_amount_positive"),
+        Index("ix_salary_advance_recovery_advance", "advance_id"),
+        Index("ix_salary_advance_recovery_run", "run_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    advance_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("salary_advance.id", ondelete="CASCADE"), nullable=False
+    )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payroll_run.id", ondelete="SET NULL"), nullable=True
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    advance: Mapped[SalaryAdvance] = relationship(back_populates="recoveries")

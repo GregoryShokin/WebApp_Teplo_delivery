@@ -29,6 +29,10 @@ from app.services.accumulation_fund_service import (
     payout_fund_accounts_for_year,
 )
 from app.services.attendance_loader import PAYROLL_TARGET_POSITIONS, load_attendance_entries
+from app.services.payroll_advance_recovery import (
+    apply_advance_recoveries,
+    apply_advance_recoveries_to_balances,
+)
 from app.services.deferred_audit_charge_service import (
     apply_pending_splits_for_run,
     collapse_deferred_charges_on_dismissal,
@@ -241,6 +245,10 @@ async def run_payroll(
             text("DELETE FROM deposit_transaction WHERE run_id = :run_id"),
             {"run_id": existing_run.id},
         )
+        await session.execute(
+            text("DELETE FROM salary_advance_recovery WHERE run_id = :run_id"),
+            {"run_id": existing_run.id},
+        )
         existing_run.started_at = datetime.now(UTC)
         existing_run.finished_at = None
         existing_run.status = "running"
@@ -367,6 +375,7 @@ async def run_payroll(
                 session.add(line)
             await session.flush()
 
+        advance_summary = await apply_advance_recoveries(session, period, run, calculation.lines)
         subledger_summary = await update_deposits_and_fund(session, period, run, calculation.lines)
         paid_vacations = await vacation_service.mark_vacations_paid_for_payroll_period(
             session,
@@ -380,6 +389,7 @@ async def run_payroll(
             calculation.summary
             | deferred_charge_summary
             | subledger_summary
+            | advance_summary
             | attendance_warning_summary
             | {"vacations_marked_paid": paid_vacations},
             frozen_rate_versions,
@@ -932,6 +942,7 @@ async def finalize_payroll_run(
     previous_finalized_by_user_id = period.finalized_by_user_id
 
     deposit_payload = await apply_deposit_transactions_to_balances(session, run, now, reverse=False)
+    await apply_advance_recoveries_to_balances(session, run, now, reverse=False)
 
     run.summary = payroll_summary_with_rate_snapshot(run.summary or {}, locked=True)
     run.status = "finalized"
@@ -992,6 +1003,7 @@ async def unfinalize_payroll_run(
     previous_finalized_by_user_id = period.finalized_by_user_id
 
     deposit_payload = await apply_deposit_transactions_to_balances(session, run, now, reverse=True)
+    await apply_advance_recoveries_to_balances(session, run, now, reverse=True)
 
     run.status = "completed"
     period.status = "open"

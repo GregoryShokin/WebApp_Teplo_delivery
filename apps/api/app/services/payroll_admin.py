@@ -37,6 +37,7 @@ from app.services.payroll_adjustment_service import (
     ADMIN_PAYROLL_POSITIONS,
     load_adjustments_for_period,
 )
+from app.services.payroll_advance_recovery import apply_advance_recoveries
 from app.services.payroll_calculator import adjustment_component, decimal, money, money_string
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
 
@@ -192,6 +193,10 @@ async def run_admin_payroll(
             text("DELETE FROM payroll_line WHERE run_id = :run_id"),
             {"run_id": existing_run.id},
         )
+        await session.execute(
+            text("DELETE FROM salary_advance_recovery WHERE run_id = :run_id"),
+            {"run_id": existing_run.id},
+        )
         existing_run.started_at = datetime.now(UTC)
         existing_run.finished_at = None
         existing_run.status = "running"
@@ -222,12 +227,13 @@ async def run_admin_payroll(
             await session.refresh(run)
             return run
 
+        advance_summary = await apply_advance_recoveries(session, period, run, lines)
         for line in lines:
             session.add(line)
         run.status = "completed"
         run.finished_at = datetime.now(UTC)
         run.blocking_issues = []
-        run.summary = summary
+        run.summary = {**summary, **advance_summary}
         await session.commit()
         await session.refresh(run)
         return run
@@ -439,22 +445,31 @@ def _prorated_amount(
     amount: Decimal,
     employee: Employee,
     period: PayrollPeriod,
+    *,
+    as_of: date | None = None,
 ) -> tuple[Decimal, dict[str, Any]]:
-    """Прорейт суммы по календарным дням полупериода при найме/увольнении внутри него."""
+    """Прорейт суммы по календарным дням полупериода.
+
+    Учитывает найм/увольнение внутри периода. При переданном `as_of` дополнительно
+    усекает «отработанный» хвост до этой даты — это «заработано на дату X» для
+    расчёта доступного аванса (окладнику капает ровно по календарю).
+    """
     total_days = (period.end_date - period.start_date).days + 1
     hire = employee.hire_date
     fire = employee.fire_date
-    starts_inside = hire is not None and hire > period.start_date
-    ends_inside = fire is not None and fire < period.end_date
-    if not starts_inside and not ends_inside:
+    worked_start = max(period.start_date, hire) if hire is not None else period.start_date
+    worked_end = period.end_date
+    if fire is not None and fire < worked_end:
+        worked_end = fire
+    if as_of is not None and as_of < worked_end:
+        worked_end = as_of
+    if worked_start == period.start_date and worked_end == period.end_date:
         return amount.quantize(_CENTS), {
             "applied": False,
             "total_days": total_days,
             "worked_days": total_days,
         }
 
-    worked_start = max(period.start_date, hire) if hire is not None else period.start_date
-    worked_end = min(period.end_date, fire) if fire is not None else period.end_date
     worked_days = max((worked_end - worked_start).days + 1, 0)
     base = (amount * Decimal(worked_days) / Decimal(total_days)).quantize(_CENTS)
     return base, {
@@ -463,6 +478,7 @@ def _prorated_amount(
         "worked_days": worked_days,
         "hire_date": hire.isoformat() if hire is not None else None,
         "fire_date": fire.isoformat() if fire is not None else None,
+        "as_of": as_of.isoformat() if as_of is not None else None,
     }
 
 
@@ -476,8 +492,14 @@ def _okladnik_base_pay(
     mode: str,
     employee: Employee,
     period: PayrollPeriod,
+    *,
+    as_of: date | None = None,
 ) -> tuple[Decimal, dict[str, Any]]:
-    """База оклада за полупериод с учётом режима выплаты и прорейта."""
+    """База оклада за полупериод с учётом режима выплаты и прорейта.
+
+    `as_of` усекает прорейт до даты (заработано на дату X для аванса); без него —
+    полная база полупериода (как в расчёте ведомости).
+    """
     is_first_half = period.start_date.day == 1
     if mode == PAYOUT_MODE_FIRST_HALF:
         amount = oklad if is_first_half else Decimal("0")
@@ -494,10 +516,26 @@ def _okladnik_base_pay(
             "skipped_this_period": True,
         }
 
-    base, proration = _prorated_amount(amount, employee, period)
+    base, proration = _prorated_amount(amount, employee, period, as_of=as_of)
     proration["payout_mode"] = mode
     proration["is_first_half"] = is_first_half
     return base, proration
+
+
+def okladnik_earned_to_date(
+    oklad: Decimal,
+    mode: str,
+    employee: Employee,
+    period: PayrollPeriod,
+    as_of: date,
+) -> Decimal:
+    """Заработанная часть оклада на дату `as_of` внутри полупериода (для аванса).
+
+    Возвращает база-оклада, пропорциональную календарным дням от начала периода до
+    `as_of`. Это «в пределах заработанного» — потолок аванса (право A) для окладника.
+    """
+    base, _ = _okladnik_base_pay(oklad, mode, employee, period, as_of=as_of)
+    return base
 
 
 async def _load_okladnik_payout_modes(session: AsyncSession) -> dict[str, str]:

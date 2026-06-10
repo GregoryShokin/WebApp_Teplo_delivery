@@ -141,6 +141,18 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Зарплата",
         "Редактировать депозиты производственного персонала",
     ),
+    ("payroll.advances.read", "Зарплата", "Смотреть авансы и займы сотрудников"),
+    (
+        "payroll.advances.production.issue",
+        "Зарплата",
+        "Выдавать авансы производственному персоналу",
+    ),
+    (
+        "payroll.advances.admin.issue",
+        "Зарплата",
+        "Выдавать авансы административному персоналу",
+    ),
+    ("payroll.loans.issue", "Зарплата", "Выдавать займы (сверх заработанного)"),
     ("revisions.read", "Ревизии", "Смотреть ревизии"),
     ("revisions.import", "Ревизии", "Импортировать ревизию"),
     ("revisions.create", "Ревизии", "Создавать ревизию вручную"),
@@ -522,6 +534,9 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "payroll.vacations.edit",
         "payroll.production_deposits.read",
         "payroll.production_deposits.edit",
+        "payroll.advances.read",
+        "payroll.advances.production.issue",
+        "payroll.advances.admin.issue",
         "source.rates.read",
         "source.revenue_percent.read",
         "source.deductions.read",
@@ -557,6 +572,7 @@ OFFICE_MANAGER_DEFAULT_PERMISSIONS = frozenset(
     VISIBLE_PERMISSION_CODES
     - {
         "payroll.runs.reopen",
+        "payroll.loans.issue",
         "revisions.import",
         "revisions.create",
         "revisions.drafts.edit",

@@ -9,7 +9,8 @@ type PayrollActiveTab =
   | "adjustments"
   | "audits"
   | "accruals"
-  | "personal";
+  | "personal"
+  | "advances";
 
 type PayrollRouteProps = {
   activeTab: PayrollActiveTab;
@@ -73,6 +74,9 @@ function payrollTabPath(tab: PayrollActiveTab) {
   if (tab === "admin") {
     return "/payroll/admin";
   }
+  if (tab === "advances") {
+    return "/payroll/advances";
+  }
   return tab === "adjustments" ? "/payroll/adjustments" : "/payroll";
 }
 
@@ -89,6 +93,7 @@ function isPayrollTab(value: unknown): value is PayrollActiveTab {
     value === "adjustments" ||
     value === "audits" ||
     value === "accruals" ||
-    value === "personal"
+    value === "personal" ||
+    value === "advances"
   );
 }

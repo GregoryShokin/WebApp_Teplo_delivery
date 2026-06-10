@@ -847,6 +847,45 @@ export type PayrollAdjustmentPayload = {
 
 export type PayrollAdjustmentPatch = Partial<PayrollAdjustmentPayload>;
 
+export type PayrollAdvanceAvailability = {
+  employee_id: string;
+  as_of: string;
+  period_start: string | null;
+  period_end: string | null;
+  basis: string;
+  earned_to_date: number;
+  already_advanced: number;
+  available: number;
+  note: string | null;
+};
+
+export type PayrollAdvance = {
+  id: string;
+  employee_id: string;
+  role: string;
+  kind: string;
+  amount: number;
+  per_installment_amount: number;
+  installments_count: number;
+  recovered_amount: number;
+  status: string;
+  issued_on: string;
+  payout_method: string | null;
+  comment: string | null;
+};
+
+export type PayrollAdvancePayload = {
+  employee_id: string;
+  amount: string;
+  issued_on?: string;
+  payout_method?: string;
+  installments_count?: number;
+  comment?: string | null;
+  override_ceiling?: boolean;
+};
+
+export type PayrollAdvanceConfig = { loan_max: number };
+
 export type PayrollAdjustmentCategoryPayload = {
   type: PayrollAdjustmentType;
   code?: string;
@@ -3136,6 +3175,55 @@ export async function patchPayrollAdjustment(
 
 export async function deletePayrollAdjustment(id: string): Promise<void> {
   await api.delete(`/payroll/adjustments/${id}`);
+}
+
+export async function getPayrollAdvanceAvailability(
+  employeeId: string,
+  asOf?: string,
+): Promise<PayrollAdvanceAvailability> {
+  const response = await api.get<PayrollAdvanceAvailability>("/payroll/advances/availability", {
+    params: { employee_id: employeeId, as_of: asOf || undefined },
+  });
+  return response.data;
+}
+
+export async function getPayrollAdvances(
+  employeeId?: string,
+  status?: string,
+): Promise<PayrollAdvance[]> {
+  const response = await api.get<PayrollAdvance[]>("/payroll/advances", {
+    params: { employee_id: employeeId || undefined, status: status || undefined },
+  });
+  return response.data;
+}
+
+export async function createPayrollAdvance(
+  payload: PayrollAdvancePayload,
+): Promise<PayrollAdvance> {
+  const response = await api.post<PayrollAdvance>("/payroll/advances", payload);
+  return response.data;
+}
+
+export async function cancelPayrollAdvance(id: string): Promise<PayrollAdvance> {
+  const response = await api.post<PayrollAdvance>(`/payroll/advances/${id}/cancel`);
+  return response.data;
+}
+
+export async function writeOffPayrollAdvance(id: string, reason?: string): Promise<PayrollAdvance> {
+  const response = await api.post<PayrollAdvance>(`/payroll/advances/${id}/write-off`, { reason });
+  return response.data;
+}
+
+export async function getPayrollAdvanceConfig(): Promise<PayrollAdvanceConfig> {
+  const response = await api.get<PayrollAdvanceConfig>("/payroll/advances/config");
+  return response.data;
+}
+
+export async function putPayrollAdvanceConfig(loanMax: number): Promise<PayrollAdvanceConfig> {
+  const response = await api.put<PayrollAdvanceConfig>("/payroll/advances/config", {
+    loan_max: loanMax,
+  });
+  return response.data;
 }
 
 export async function createDeferredCharge(

@@ -45,6 +45,7 @@ import { PageHeader } from "@/components/ui-app/PageHeader";
 import { PayrollAccrualsTab } from "@/routes/payroll/accruals-tab";
 import { PayrollAdminRunsTab } from "@/routes/payroll/admin-runs";
 import { PayrollAdjustmentsRoute } from "@/routes/payroll/adjustments";
+import { PayrollAdvancesRoute } from "@/routes/payroll/advances-tab";
 import { InventoryAuditsRoute } from "@/routes/payroll/audits";
 import { PayrollPersonalReportPageTab } from "@/routes/payroll/personal-tab";
 import { StatusBadge } from "@/components/ui-app/StatusBadge";
@@ -82,7 +83,8 @@ type PayrollActiveTab =
   | "adjustments"
   | "audits"
   | "accruals"
-  | "personal";
+  | "personal"
+  | "advances";
 
 const PAYROLL_ACTIVE_TAB_STORAGE_KEY = "payroll.activeTab";
 
@@ -113,6 +115,9 @@ export function PayrollRunsRoute({
       : null,
     permissions.canOpenSection("payroll.personal")
       ? { value: "personal", label: "Персональный отчёт" }
+      : null,
+    permissions.canOpenSection("payroll.advances")
+      ? { value: "advances", label: "Авансы и займы" }
       : null,
   ].filter((tab): tab is { value: PayrollActiveTab; label: string } => Boolean(tab));
   const runsQuery = useQuery({ queryKey: ["payroll-runs"], queryFn: getPayrollRuns });
@@ -493,6 +498,12 @@ export function PayrollRunsRoute({
                 <PayrollPersonalReportPageTab />
               </TabsContent>
             ) : null}
+
+            {permissions.canOpenSection("payroll.advances") ? (
+              <TabsContent className="mt-0" value="advances">
+                <PayrollAdvancesRoute />
+              </TabsContent>
+            ) : null}
           </>
         )}
       </Tabs>
@@ -517,6 +528,9 @@ function payrollTabPath(tab: PayrollActiveTab) {
   if (tab === "admin") {
     return "/payroll/admin";
   }
+  if (tab === "advances") {
+    return "/payroll/advances";
+  }
   return tab === "adjustments" ? "/payroll/adjustments" : "/payroll";
 }
 
@@ -528,7 +542,8 @@ function isPayrollTab(value: unknown): value is PayrollActiveTab {
     value === "adjustments" ||
     value === "audits" ||
     value === "accruals" ||
-    value === "personal"
+    value === "personal" ||
+    value === "advances"
   );
 }
 

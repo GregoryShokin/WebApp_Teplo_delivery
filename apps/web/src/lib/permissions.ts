@@ -21,6 +21,7 @@ export type AppSection =
   | "payroll.audits"
   | "payroll.accruals"
   | "payroll.personal"
+  | "payroll.advances"
   | "schedule"
   | "source-data"
   | "finance"
@@ -48,6 +49,8 @@ export type AppAction =
   | "payroll.runs.reopen"
   | "payroll.runs.mark_paid"
   | "payroll.runs.bank_draft"
+  | "payroll.advances.issue"
+  | "payroll.loans.issue"
   | "payroll.fund.edit"
   | "payroll.adjustments.edit"
   | "payroll.source-data.edit"
@@ -142,6 +145,7 @@ export const PERMISSION_GROUPS = {
     "payroll.vacations.read",
     "payroll.fund.read",
     "payroll.production_deposits.read",
+    "payroll.advances.read",
   ],
   payrollWrite: [
     "payroll.runs.start",
@@ -237,6 +241,7 @@ const SECTION_PERMISSIONS: Record<AppSection, readonly PermissionCode[]> = {
   "payroll.audits": ["revisions.read", "revisions.deferrals.read"],
   "payroll.accruals": ["payroll.accruals.read"],
   "payroll.personal": ["payroll.personal_reports.read"],
+  "payroll.advances": ["payroll.advances.read"],
   schedule: ["source.schedule.read", "source.shift_ledger.read", "source.schedule.edit"],
   "source-data": [...PERMISSION_GROUPS.sourceDataRead, ...PERMISSION_GROUPS.sourceDataWrite],
   finance: [...PERMISSION_GROUPS.financeRead, ...PERMISSION_GROUPS.financeWrite],
@@ -269,6 +274,12 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "payroll.runs.reopen": ["payroll.runs.reopen"],
   "payroll.runs.mark_paid": ["payroll.runs.mark_paid"],
   "payroll.runs.bank_draft": ["payroll.runs.bank_draft"],
+  "payroll.advances.issue": [
+    "payroll.advances.production.issue",
+    "payroll.advances.admin.issue",
+    "payroll.loans.issue",
+  ],
+  "payroll.loans.issue": ["payroll.loans.issue"],
   "payroll.fund.edit": ["payroll.fund.edit"],
   "payroll.adjustments.edit": [
     "payroll.adjustments.edit",

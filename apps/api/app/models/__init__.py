@@ -91,6 +91,8 @@ from app.models.payroll import (
     PayrollRunEvent,
     PayrollSeniorityPremium,
     RevenueTier,
+    SalaryAdvance,
+    SalaryAdvanceRecovery,
     ShiftLedgerEntry,
 )
 from app.models.payroll_forecast import PayrollForecastRun, ShiftCostEstimate
@@ -172,6 +174,8 @@ __all__ = [
     "Permission",
     "RevenueTier",
     "RevenueForecast",
+    "SalaryAdvance",
+    "SalaryAdvanceRecovery",
     "ReconciliationCase",
     "Role",
     "RolePermission",

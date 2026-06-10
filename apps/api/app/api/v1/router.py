@@ -13,6 +13,7 @@ from app.api.v1.routes.integrations import router as integrations_router
 from app.api.v1.routes.inventory import router as inventory_router
 from app.api.v1.routes.payroll import router as payroll_router
 from app.api.v1.routes.payroll_admin import router as payroll_admin_router
+from app.api.v1.routes.payroll_advances import router as payroll_advances_router
 from app.api.v1.routes.payroll_adjustments import router as payroll_adjustments_router
 from app.api.v1.routes.settings import router as settings_router
 from app.api.v1.routes.shift_schedule import router as shift_schedule_router
@@ -31,6 +32,9 @@ api_router.include_router(integrations_router, prefix="/integrations", tags=["in
 api_router.include_router(inventory_router, prefix="/inventory", tags=["inventory"])
 api_router.include_router(accumulation_fund_router, prefix="/payroll/fund", tags=["payroll"])
 api_router.include_router(payroll_admin_router, prefix="/payroll/admin", tags=["payroll-admin"])
+api_router.include_router(
+    payroll_advances_router, prefix="/payroll/advances", tags=["payroll-advances"]
+)
 api_router.include_router(payroll_router, prefix="/payroll", tags=["payroll"])
 api_router.include_router(payroll_adjustments_router, prefix="/payroll", tags=["payroll"])
 api_router.include_router(payroll_config_router, prefix="/payroll/config", tags=["payroll-config"])
