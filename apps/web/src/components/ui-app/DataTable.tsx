@@ -1,8 +1,7 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -28,6 +27,12 @@ type DataTableProps<T> = {
   rowClassName?: string | ((row: T) => string | undefined);
   emptyMessage?: string;
   className?: string;
+  /**
+   * Max height of the scroll body. The table scrolls internally so the
+   * horizontal scrollbar stays at the bottom of the visible block — you don't
+   * have to scroll past the whole table to reach it. The header stays pinned.
+   */
+  maxHeight?: string;
 };
 
 export function DataTable<T>({
@@ -39,17 +44,20 @@ export function DataTable<T>({
   rowClassName,
   emptyMessage = "Нет данных",
   className,
+  maxHeight = "70vh",
 }: DataTableProps<T>) {
+  const scrollStyle: CSSProperties = { maxHeight };
+
   return (
     <div className={cn("overflow-hidden rounded-lg border bg-card", className)}>
-      <div className="overflow-x-auto">
-        <Table>
+      <div className="pinned-scrollbar overflow-auto" style={scrollStyle}>
+        <table className="w-full caption-bottom text-sm">
           <TableHeader>
-            <TableRow className="bg-muted/70 hover:bg-muted/70">
+            <TableRow className="bg-muted hover:bg-muted">
               {columns.map((column) => (
                 <TableHead
                   className={cn(
-                    "h-10 whitespace-nowrap text-xs font-semibold uppercase",
+                    "sticky top-0 z-10 h-10 whitespace-nowrap bg-muted text-xs font-semibold uppercase",
                     column.headerClassName,
                   )}
                   key={column.key}
@@ -97,7 +105,7 @@ export function DataTable<T>({
               </TableRow>
             ) : null}
           </TableBody>
-        </Table>
+        </table>
       </div>
     </div>
   );

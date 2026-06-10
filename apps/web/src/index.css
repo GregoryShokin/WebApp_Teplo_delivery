@@ -111,3 +111,46 @@ textarea {
     transform: translate(-50%, -50%) scale(0.92);
   }
 }
+
+/* Persistent, mouse-grabbable scrollbars across the whole app.
+   macOS hides overlay scrollbars at rest and only flashes them during a
+   trackpad gesture — mouse users then have no bar to grab. Styling
+   ::-webkit-scrollbar forces WebKit/Blink to render a classic, always-visible
+   bar instead, so horizontal table scroll works with a plain mouse on every OS.
+   `scrollbar-width: thin` + color does the same for Firefox. */
+/* Firefox only. In Chrome 121+/Safari, setting scrollbar-width on an element
+   makes the browser IGNORE its ::-webkit-scrollbar styling and fall back to
+   native overlay bars (invisible at rest on macOS) — so scope it away from
+   WebKit/Blink with @supports. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.45) hsl(var(--muted) / 0.6);
+  }
+}
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+  -webkit-appearance: none;
+}
+*::-webkit-scrollbar-track {
+  background: hsl(var(--muted) / 0.5);
+}
+*::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.45);
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.7);
+  background-clip: content-box;
+}
+
+/* Opt-out: hide a scroll container's own bar (e.g. pinned-scrollbar pattern). */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
