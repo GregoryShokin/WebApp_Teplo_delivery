@@ -1,6 +1,10 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+// vite.config выполняется в Node; объявляем process локально, чтобы tsc -b не
+// требовал @types/node (server.port используется только dev-сервером).
+declare const process: { env: Record<string, string | undefined> };
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
