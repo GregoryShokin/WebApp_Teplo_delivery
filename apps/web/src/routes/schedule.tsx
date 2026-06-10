@@ -85,6 +85,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/ui-app/EmptyState";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { PayrollDailyLedgerRoute } from "@/routes/payroll/daily-ledger";
+import { DishwasherScheduleSection } from "@/routes/schedule/dishwashers";
 import { VacationsRoute } from "@/routes/shifts/vacations";
 import {
   apiErrorMessage,
@@ -146,7 +147,7 @@ import { sortEmployeesByRoleAndName } from "@/lib/role-sort";
 import { cn } from "@/lib/utils";
 
 type ViewMode = "employees" | "stations" | "planFact";
-type ScheduleActiveTab = "schedule" | "shifts-ledger" | "vacations";
+type ScheduleActiveTab = "schedule" | "shifts-ledger" | "vacations" | "dishwashers";
 type PlanFactTableMode = "days" | "employees";
 type SortDirection = "asc" | "desc";
 type DaySortKey = "date" | "hours" | "cost" | "status";
@@ -232,6 +233,8 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   const canEditSchedule = permissions.hasPermission("source.schedule.edit");
   const canViewShiftLedger = permissions.hasPermission("source.shift_ledger.read");
   const canViewVacations = permissions.hasPermission("payroll.vacations.read");
+  const canViewDishwashers = canViewSchedule;
+  const canEditDishwashers = permissions.hasPermission("source.schedule.dishwashers.edit");
   const canViewRevenue = permissions.hasPermission("source.revenue.read");
   const canEditRevenue = permissions.hasPermission("source.revenue.edit");
   const canViewPayrollSourceData = permissions.hasPermission("source.rates.read");
@@ -242,11 +245,14 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
       ? "shifts-ledger"
       : canViewVacations
         ? "vacations"
-        : null;
+        : canViewDishwashers
+          ? "dishwashers"
+          : null;
   const canViewActiveTab =
     (activeTab === "schedule" && canViewSchedule) ||
     (activeTab === "shifts-ledger" && canViewShiftLedger) ||
-    (activeTab === "vacations" && canViewVacations);
+    (activeTab === "vacations" && canViewVacations) ||
+    (activeTab === "dishwashers" && canViewDishwashers);
   const [isResolvingStoredTab, setIsResolvingStoredTab] = useState(useStoredTab);
   const storedPeriodPreset = useMemo(readStoredSchedulePreset, []);
   const [periodPreset, setPeriodPreset] = useLocalStorageState<PeriodPreset>(
@@ -1133,7 +1139,9 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
       <PageHeader
         title="График сотрудников"
         action={
-          canEditSchedule ? (
+          // Черновик/версия/публикация относятся только к расписанию смен (вкладка
+          // «График»). На остальных вкладках (Учёт смен, Отпуска, График мойщиц) их нет.
+          activeTab === "schedule" && canEditSchedule ? (
             <>
               <Button onClick={() => openCreateDialog()} variant="outline">
                 <Plus size={16} aria-hidden="true" />
@@ -1187,6 +1195,9 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
           {canViewSchedule ? <TabsTrigger value="schedule">График</TabsTrigger> : null}
           {canViewShiftLedger ? <TabsTrigger value="shifts-ledger">Учёт смен</TabsTrigger> : null}
           {canViewVacations ? <TabsTrigger value="vacations">Отпуска</TabsTrigger> : null}
+          {canViewDishwashers ? (
+            <TabsTrigger value="dishwashers">График мойщиц</TabsTrigger>
+          ) : null}
         </TabsList>
 
         {canViewSchedule ? (
@@ -1630,6 +1641,12 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
             <VacationsRoute embedded />
           </TabsContent>
         ) : null}
+
+        {canViewDishwashers ? (
+          <TabsContent className="mt-0" value="dishwashers">
+            <DishwasherScheduleSection canEdit={canEditDishwashers} />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </div>
   );
@@ -1639,7 +1656,13 @@ function scheduleTabPath(tab: ScheduleActiveTab) {
   if (tab === "shifts-ledger") {
     return "/schedule/shifts-ledger";
   }
-  return tab === "vacations" ? "/schedule/vacations" : "/schedule";
+  if (tab === "vacations") {
+    return "/schedule/vacations";
+  }
+  if (tab === "dishwashers") {
+    return "/schedule/dishwashers";
+  }
+  return "/schedule";
 }
 
 function readStoredScheduleTab() {
@@ -1648,7 +1671,12 @@ function readStoredScheduleTab() {
 }
 
 function isScheduleTab(value: unknown): value is ScheduleActiveTab {
-  return value === "schedule" || value === "shifts-ledger" || value === "vacations";
+  return (
+    value === "schedule" ||
+    value === "shifts-ledger" ||
+    value === "vacations" ||
+    value === "dishwashers"
+  );
 }
 
 const periodPresetLabels: Record<PeriodPreset, string> = {

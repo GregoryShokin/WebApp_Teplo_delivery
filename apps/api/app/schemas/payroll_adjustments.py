@@ -51,6 +51,9 @@ class PayrollAdjustmentCreate(BaseModel):
     custom_label: str | None = Field(default=None, max_length=200)
     amount: Decimal = Field(gt=0)
     comment: str | None = Field(default=None, max_length=1000)
+    # Роль, к которой относится начисление (для сотрудников с несколькими ролями).
+    # Если не указана — берётся основная должность сотрудника.
+    role: str | None = Field(default=None, max_length=160)
 
 
 class PayrollAdjustmentPatch(BaseModel):
@@ -63,6 +66,7 @@ class PayrollAdjustmentPatch(BaseModel):
     custom_label: str | None = Field(default=None, max_length=200)
     amount: Decimal | None = Field(default=None, gt=0)
     comment: str | None = Field(default=None, max_length=1000)
+    role: str | None = Field(default=None, max_length=160)
 
 
 class PayrollAdjustmentRead(BaseModel):
@@ -72,6 +76,7 @@ class PayrollAdjustmentRead(BaseModel):
     employee_position: str
     work_date: date
     type: str
+    role: str | None = None
     category_id: uuid.UUID | None = None
     category_display_name: str | None = None
     custom_label: str | None = None

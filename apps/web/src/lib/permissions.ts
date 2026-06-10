@@ -42,6 +42,8 @@ export type AppAction =
   | "couriers.shifts.sync"
   | "payroll.runs.start"
   | "payroll.runs.recalculate"
+  | "payroll.runs.admin.start"
+  | "payroll.runs.admin.recalculate"
   | "payroll.runs.finalize"
   | "payroll.runs.reopen"
   | "payroll.runs.mark_paid"
@@ -261,6 +263,8 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "couriers.shifts.sync": ["couriers.shifts.sync"],
   "payroll.runs.start": ["payroll.runs.start"],
   "payroll.runs.recalculate": ["payroll.runs.recalculate"],
+  "payroll.runs.admin.start": ["payroll.runs.admin.start"],
+  "payroll.runs.admin.recalculate": ["payroll.runs.admin.recalculate"],
   "payroll.runs.finalize": ["payroll.runs.finalize"],
   "payroll.runs.reopen": ["payroll.runs.reopen"],
   "payroll.runs.mark_paid": ["payroll.runs.mark_paid"],

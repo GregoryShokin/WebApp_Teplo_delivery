@@ -43,6 +43,7 @@ import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { EmptyState } from "@/components/ui-app/EmptyState";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { PayrollAccrualsTab } from "@/routes/payroll/accruals-tab";
+import { PayrollAdminRunsTab } from "@/routes/payroll/admin-runs";
 import { PayrollAdjustmentsRoute } from "@/routes/payroll/adjustments";
 import { InventoryAuditsRoute } from "@/routes/payroll/audits";
 import { PayrollPersonalReportPageTab } from "@/routes/payroll/personal-tab";
@@ -74,7 +75,14 @@ type PayrollRunsRouteProps = {
   onNavigate: (path: string) => void;
 };
 
-type PayrollActiveTab = "runs" | "fund" | "adjustments" | "audits" | "accruals" | "personal";
+type PayrollActiveTab =
+  | "runs"
+  | "admin"
+  | "fund"
+  | "adjustments"
+  | "audits"
+  | "accruals"
+  | "personal";
 
 const PAYROLL_ACTIVE_TAB_STORAGE_KEY = "payroll.activeTab";
 
@@ -90,6 +98,9 @@ export function PayrollRunsRoute({
   const canEditFund = permissions.canPerformAction("payroll.fund.edit");
   const visibleTabs = [
     permissions.canOpenSection("payroll.runs") ? { value: "runs", label: "Расчёты" } : null,
+    permissions.canOpenSection("payroll.runs")
+      ? { value: "admin", label: "Администрация" }
+      : null,
     permissions.canOpenSection("payroll.fund")
       ? { value: "fund", label: "Накопительный фонд" }
       : null,
@@ -447,6 +458,12 @@ export function PayrollRunsRoute({
             </TabsContent>
             ) : null}
 
+            {permissions.canOpenSection("payroll.runs") ? (
+              <TabsContent className="mt-0 space-y-5" value="admin">
+                <PayrollAdminRunsTab onNavigate={onNavigate} />
+              </TabsContent>
+            ) : null}
+
             {permissions.canOpenSection("payroll.fund") ? (
               <TabsContent className="mt-0" value="fund">
                 <AccumulationFundTab canEdit={canEditFund} />
@@ -497,12 +514,16 @@ function payrollTabPath(tab: PayrollActiveTab) {
   if (tab === "personal") {
     return "/payroll/personal";
   }
+  if (tab === "admin") {
+    return "/payroll/admin";
+  }
   return tab === "adjustments" ? "/payroll/adjustments" : "/payroll";
 }
 
 function isPayrollTab(value: unknown): value is PayrollActiveTab {
   return (
     value === "runs" ||
+    value === "admin" ||
     value === "fund" ||
     value === "adjustments" ||
     value === "audits" ||

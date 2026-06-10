@@ -398,6 +398,7 @@ def make_employee(
         requires_role_review=False,
         role_review_payload=None,
         requires_position_review=False,
+        admin_payroll_excluded=False,
         pin_set_at=SYNC_NOW if pin_hash else None,
         is_senior=False,
         is_deputy_senior=False,

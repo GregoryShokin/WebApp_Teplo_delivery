@@ -2,13 +2,23 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.security import create_access_token
-from app.models import Organization, Permission, Role, RolePermission, User, UserRole
+from app.models import (
+    Employee,
+    EmployeePositionAssignment,
+    Organization,
+    Permission,
+    Role,
+    RolePermission,
+    User,
+    UserRole,
+)
 
 
 def test_courier_schedule_read_and_edit_are_independent(
@@ -171,6 +181,124 @@ def test_bonus_and_penalty_permissions_are_separate(
 
     assert denied_penalty.status_code == 403
     assert denied_bonus.status_code == 403
+
+
+def test_admin_payroll_run_start_separate_from_production(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    production_headers = _headers_for_permissions(
+        async_session_factory,
+        "payroll-prod-start@test.local",
+        ["payroll.runs.start"],
+    )
+    admin_headers = _headers_for_permissions(
+        async_session_factory,
+        "payroll-admin-start@test.local",
+        ["payroll.runs.admin.start"],
+    )
+
+    # Производственное право на запуск НЕ даёт создавать ведомости администрации.
+    denied = client.post("/api/v1/payroll/admin/runs", json={}, headers=production_headers)
+    allowed = client.post("/api/v1/payroll/admin/runs", json={}, headers=admin_headers)
+
+    assert denied.status_code == 403
+    assert allowed.status_code != 403
+
+
+def test_dishwasher_schedule_edit_separate_from_schedule_edit(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    schedule_headers = _headers_for_permissions(
+        async_session_factory,
+        "schedule-edit@test.local",
+        ["source.schedule.edit"],
+    )
+    dishwasher_headers = _headers_for_permissions(
+        async_session_factory,
+        "dishwasher-edit@test.local",
+        ["source.schedule.dishwashers.edit"],
+    )
+    body = {
+        "employee_id": str(uuid.uuid4()),
+        "work_date": "2026-12-25",
+        "worked": False,
+    }
+
+    # Право на график смен НЕ даёт редактировать график мойщиц.
+    denied = client.put("/api/v1/payroll/admin/dishwasher/shifts", json=body, headers=schedule_headers)
+    allowed = client.put(
+        "/api/v1/payroll/admin/dishwasher/shifts", json=body, headers=dishwasher_headers
+    )
+
+    assert denied.status_code == 403
+    assert allowed.status_code != 403
+
+
+def test_admin_adjustment_permission_separate_from_production(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    admin_employee_id = _create_admin_employee(async_session_factory)
+    production_headers = _headers_for_permissions(
+        async_session_factory,
+        "payroll-bonus-prod@test.local",
+        ["payroll.bonuses.add"],
+    )
+    admin_headers = _headers_for_permissions(
+        async_session_factory,
+        "payroll-bonus-admin@test.local",
+        ["payroll.bonuses.admin.add"],
+    )
+    payload = {
+        "employee_id": str(admin_employee_id),
+        "work_date": "2026-12-25",
+        "type": "bonus",
+        "custom_label": "Тест",
+        "amount": "100.00",
+    }
+
+    # Производственное право на премии НЕ покрывает админ-персонал...
+    denied = client.post("/api/v1/payroll/adjustments", json=payload, headers=production_headers)
+    # ...а админское — покрывает.
+    allowed = client.post("/api/v1/payroll/adjustments", json=payload, headers=admin_headers)
+
+    assert denied.status_code == 403
+    assert allowed.status_code != 403
+
+
+def _create_admin_employee(session_factory: async_sessionmaker[AsyncSession]) -> uuid.UUID:
+    return asyncio.run(_create_admin_employee_async(session_factory))
+
+
+async def _create_admin_employee_async(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> uuid.UUID:
+    async with session_factory() as session:
+        employee = Employee(
+            id=uuid.uuid4(),
+            full_name="Админ Гвард",
+            iiko_id=f"guard-admin-{uuid.uuid4()}",
+            status="active",
+            is_senior=False,
+            is_deputy_senior=False,
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            updated_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        session.add(employee)
+        await session.flush()
+        session.add(
+            EmployeePositionAssignment(
+                id=uuid.uuid4(),
+                employee_id=employee.id,
+                position="Управляющий",
+                effective_from=date(2026, 1, 1),
+                effective_to=None,
+            )
+        )
+        await session.commit()
+        return employee.id
 
 
 def test_dds_cashflow_rules_connections_and_wallets_are_independent(

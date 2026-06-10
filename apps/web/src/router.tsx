@@ -14,6 +14,7 @@ import { AccessControlRoute } from "@/routes/access-control";
 import { CourierEvaluationsRoute } from "@/routes/couriers/evaluations";
 import { CourierScheduleRoute } from "@/routes/couriers/schedule";
 import { CourierStatisticsRoute } from "@/routes/couriers/statistics";
+import { PayrollAdminRunDetailRoute } from "@/routes/payroll/admin-run-detail";
 import { PayrollConfigurationRoute } from "@/routes/payroll/configuration";
 import { PayrollRunDetailRoute } from "@/routes/payroll/run-detail";
 import { ScheduleRoute } from "@/routes/schedule";
@@ -81,6 +82,16 @@ const routes: AppRoute[] = [
       {
         path: "personal",
         render: ({ navigate }) => <PayrollRoute activeTab="personal" onNavigate={navigate} />,
+      },
+      {
+        path: "admin",
+        render: ({ navigate }) => <PayrollRoute activeTab="admin" onNavigate={navigate} />,
+      },
+      {
+        path: "admin/runs/:id",
+        render: ({ navigate, params }) => (
+          <PayrollAdminRunDetailRoute runId={params.id ?? ""} onNavigate={navigate} />
+        ),
       },
       {
         path: "runs",
@@ -193,6 +204,10 @@ const routes: AppRoute[] = [
       {
         path: "vacations",
         render: ({ navigate }) => <ScheduleRoute activeTab="vacations" onNavigate={navigate} />,
+      },
+      {
+        path: "dishwashers",
+        render: ({ navigate }) => <ScheduleRoute activeTab="dishwashers" onNavigate={navigate} />,
       },
       {
         path: ":unknown",

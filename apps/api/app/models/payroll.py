@@ -17,6 +17,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -27,7 +28,10 @@ from app.db.base import Base
 class PayrollPeriod(Base):
     __tablename__ = "payroll_period"
     __table_args__ = (
-        CheckConstraint("period_type = 'week'", name="ck_payroll_period_type_week"),
+        CheckConstraint(
+            "period_type in ('week', 'half_month')",
+            name="ck_payroll_period_type",
+        ),
         UniqueConstraint(
             "period_type",
             "start_date",
@@ -423,7 +427,8 @@ class PayrollRate(Base):
         ),
         CheckConstraint(
             "category in "
-            "('category_1', 'category_2', 'category_3', 'category_4', 'intern', 'freelancer')",
+            "('category_1', 'category_2', 'category_3', 'category_4', "
+            "'intern', 'freelancer', 'admin')",
             name="ck_payroll_rate_category_value",
         ),
         CheckConstraint("amount >= 0", name="ck_payroll_rate_amount_non_negative"),
@@ -435,13 +440,29 @@ class PayrollRate(Base):
             "effective_to is null or effective_to > effective_from",
             name="ck_payroll_rate_effective_range",
         ),
-        UniqueConstraint(
+        # Натуральный ключ расщеплён: дефолты по должности (employee_id IS NULL) и
+        # переопределения окладов на конкретного сотрудника (employee_id указан) не
+        # конфликтуют между собой.
+        Index(
+            "uq_payroll_rate_natural_default",
             "position_group",
             "category",
             "station",
             "rate_type",
             "effective_from",
-            name="uq_payroll_rate_natural_effective_from",
+            unique=True,
+            postgresql_where=text("employee_id IS NULL"),
+        ),
+        Index(
+            "uq_payroll_rate_natural_employee",
+            "employee_id",
+            "position_group",
+            "category",
+            "station",
+            "rate_type",
+            "effective_from",
+            unique=True,
+            postgresql_where=text("employee_id IS NOT NULL"),
         ),
         Index(
             "ix_payroll_rate_current_lookup",
@@ -455,6 +476,9 @@ class PayrollRate(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employee.id", ondelete="CASCADE"), nullable=True
+    )
     position_group: Mapped[str] = mapped_column(String(160), nullable=False)
     category: Mapped[str] = mapped_column(String(64), nullable=False)
     station: Mapped[str | None] = mapped_column(String(160), nullable=True)
@@ -699,6 +723,7 @@ class PayrollAdjustment(Base):
         ),
         Index("ix_payroll_adjustment_employee_date", "employee_id", "work_date"),
         Index("ix_payroll_adjustment_work_date", "work_date"),
+        Index("ix_payroll_adjustment_role_date", "role", "work_date"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -706,6 +731,9 @@ class PayrollAdjustment(Base):
         ForeignKey("employee.id", ondelete="RESTRICT"), nullable=False
     )
     work_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # Роль, к которой относится начисление (разводит deньги по производственной и
+    # админской ведомостям для сотрудников с несколькими ролями).
+    role: Mapped[str] = mapped_column(String(160), nullable=False, server_default="Повар")
     type: Mapped[str] = mapped_column(String(16), nullable=False)
     category_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("payroll_adjustment_category.id", ondelete="SET NULL"),
@@ -905,6 +933,33 @@ class PayrollSeniorityPremium(Base):
     percent_of_base: Mapped[Decimal | None] = mapped_column(Numeric(8, 5), nullable=True)
     effective_from: Mapped[date] = mapped_column(Date, nullable=False)
     effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class DishwasherShift(Base):
+    """Смена мойщицы, проставленная управляющим вручную (без iiko).
+
+    Оплата мойщиц посменная: пул ₽/мес ÷ календарные дни месяца = ставка за смену,
+    сумма каждой = (её смены в полупериоде) × ставку. Считается в полумесячной
+    окладной ведомости рядом с администрацией.
+    """
+
+    __tablename__ = "dishwasher_shift"
+    __table_args__ = (
+        UniqueConstraint("employee_id", "work_date", name="uq_dishwasher_shift_employee_date"),
+        Index("ix_dishwasher_shift_work_date", "work_date"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee.id", ondelete="CASCADE"), nullable=False
+    )
+    work_date: Mapped[date] = mapped_column(Date, nullable=False)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

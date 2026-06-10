@@ -32,7 +32,10 @@ from app.services.employee_assignments import (
     get_assignments,
 )
 from app.services.employee_effective_events import get_allowances_on_date, get_position_on_date
-from app.services.payroll_adjustment_service import load_adjustments_for_period
+from app.services.payroll_adjustment_service import (
+    ADMIN_PAYROLL_POSITIONS,
+    load_adjustments_for_period,
+)
 from app.services.payroll_percent import (
     CATEGORY_COEFFICIENT_CONFIG_KEY,
     REVENUE_TIER_CONFIG_KEY,
@@ -197,6 +200,10 @@ async def calculate_payroll_lines(
         employee_ids=employee_ids,
         period_start=period.start_date,
         period_end=period.end_date,
+        # Производственная ведомость не подхватывает админские штрафы/премии — иначе
+        # начисление сотруднику с двумя ролями (управляющий + повар-субститут)
+        # удвоилось бы (повторно в полумесячной админской ведомости).
+        exclude_roles=ADMIN_PAYROLL_POSITIONS,
     )
     deposit_balances = await load_deposit_balances_for_employees(session, employee_ids)
     result = calculate_payroll_lines_from_inputs(

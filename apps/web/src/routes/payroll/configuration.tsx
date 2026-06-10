@@ -47,6 +47,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { EMPLOYEE_CATEGORY_LABELS } from "@/lib/i18n/employee";
 import { usePermissions } from "@/lib/permissions";
+import { AdminSalariesSection } from "@/routes/payroll/admin-salaries-section";
 import { InventoryPositionsSection } from "@/routes/payroll/inventory-positions";
 import {
   apiErrorMessage,
@@ -131,6 +132,7 @@ type TerminationReasonDraft = {
 type HistoryDrawer = "rates" | null;
 type SourceDataTabValue =
   | "rates"
+  | "admin_oklady"
   | "revenue"
   | "deductions"
   | "termination"
@@ -178,6 +180,9 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
     () =>
       [
         canReadRates ? { value: "rates", label: "Ставки", canWrite: canWriteRates } : null,
+        canReadRates
+          ? { value: "admin_oklady", label: "Оклады администрации", canWrite: canWriteRates }
+          : null,
         canReadRevenuePercent
           ? { value: "revenue", label: "Проценты от выручки", canWrite: canWriteRevenuePercent }
           : null,
@@ -578,6 +583,12 @@ export function PayrollConfigurationRoute({ onNavigate }: PayrollConfigurationRo
           {canReadRevisionSettings ? (
             <TabsContent value="inventory" className="mt-0">
               <InventoryPositionsSection canWrite={canWriteRevisionSettings} />
+            </TabsContent>
+          ) : null}
+
+          {canReadRates ? (
+            <TabsContent value="admin_oklady" className="mt-0">
+              <AdminSalariesSection canWrite={canWriteRates} />
             </TabsContent>
           ) : null}
         </Tabs>
@@ -2846,6 +2857,7 @@ function todayKey() {
 function resolveSourceDataTab(value: string | null): SourceDataTabValue {
   if (
     value === "rates" ||
+    value === "admin_oklady" ||
     value === "revenue" ||
     value === "deductions" ||
     value === "termination" ||

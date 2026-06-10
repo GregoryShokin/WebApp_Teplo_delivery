@@ -10,7 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentActor, ensure_permission, get_current_actor, require_permission
+from app.api.deps import (
+    CurrentActor,
+    ensure_any_permission,
+    ensure_permission,
+    get_current_actor,
+    require_permission,
+)
 from app.db.session import get_session
 from app.models import Employee, PayrollAdjustment, PayrollAdjustmentCategory, PayrollRunEvent
 from app.schemas.payroll_adjustments import (
@@ -22,6 +28,7 @@ from app.schemas.payroll_adjustments import (
     PayrollAdjustmentRead,
 )
 from app.services.payroll_adjustment_service import (
+    ADMIN_PAYROLL_POSITIONS,
     PayrollAdjustmentLockedError,
     assert_date_not_locked,
     is_date_locked,
@@ -34,7 +41,15 @@ SOURCE_DEDUCTIONS_READ_ACCESS = (Depends(require_permission("source.deductions.r
 SOURCE_DEDUCTIONS_EDIT_ACCESS = (Depends(require_permission("source.deductions.edit")),)
 
 ADJUSTMENT_TYPES = {"bonus", "penalty"}
-ADJUSTMENT_EMPLOYEE_POSITIONS = {"Повар", "Кассир"}
+ADJUSTMENT_EMPLOYEE_POSITIONS = {
+    "Повар",
+    "Кассир",
+    "Управляющий",
+    "Менеджер",
+    "Системный администратор",
+    "Уборщица",
+    "Посудомойка",
+}
 UNPROCESSABLE_STATUS = 422
 
 
@@ -103,9 +118,15 @@ async def create_adjustment(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
     validate_adjustment_type(payload.type)
-    require_adjustment_type_permission(actor, payload.type)
+    # Fail-fast: нет вообще никакого права на этот тип (ни производственного, ни
+    # админского) — 403 ещё до обращения к сотруднику.
+    ensure_any_permission(actor, _adjustment_type_permission_codes(payload.type))
     employee = await get_adjustment_employee(session, payload.employee_id)
     validate_adjustment_target(employee)
+    role = resolve_adjustment_role(employee, payload.role)
+    # Уточняющая проверка по роли: админ-персонал — отдельное право, субституты
+    # (повара/кассиры) — производственное.
+    require_adjustment_type_permission(actor, payload.type, role)
     validate_adjustment_date(payload.work_date)
     validate_category_xor(payload.category_id, payload.custom_label)
     category = await get_category_for_payload(session, payload.category_id, payload.type)
@@ -116,6 +137,7 @@ async def create_adjustment(
         employee_id=payload.employee_id,
         work_date=payload.work_date,
         type=payload.type,
+        role=role,
         category_id=payload.category_id,
         custom_label=clean_optional_text(payload.custom_label),
         amount=payload.amount,
@@ -165,10 +187,18 @@ async def patch_adjustment(
     next_work_date = updates.get("work_date", adjustment.work_date)
     next_type = updates.get("type", adjustment.type)
     validate_adjustment_type(next_type)
-    require_adjustment_type_permission(actor, next_type)
     validate_adjustment_date(next_work_date)
     employee = await get_adjustment_employee(session, next_employee_id)
     validate_adjustment_target(employee)
+    next_role = (
+        resolve_adjustment_role(employee, updates["role"])
+        if "role" in updates
+        else adjustment.role
+    )
+    # Право зависит от роли: правка существующей записи требует права на её роль,
+    # а результат — права на новую роль (админ-персонал отдельно от субститутов).
+    require_adjustment_type_permission(actor, adjustment.type, adjustment.role)
+    require_adjustment_type_permission(actor, next_type, next_role)
     await ensure_date_unlocked(session, next_work_date)
 
     if "category_id" in updates and "custom_label" in updates:
@@ -194,6 +224,8 @@ async def patch_adjustment(
         adjustment.amount = updates["amount"]
     if "comment" in updates:
         adjustment.comment = clean_optional_text(updates["comment"])
+    if "role" in updates:
+        adjustment.role = resolve_adjustment_role(employee, updates["role"])
     adjustment.updated_at = datetime.now(UTC)
     after = adjustment_audit_snapshot(adjustment)
     add_adjustment_event(
@@ -226,7 +258,7 @@ async def delete_adjustment(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Response:
     adjustment = await get_adjustment_or_404(session, adjustment_id)
-    require_adjustment_type_permission(actor, adjustment.type)
+    require_adjustment_type_permission(actor, adjustment.type, adjustment.role)
     await ensure_date_unlocked(session, adjustment.work_date)
     before = adjustment_audit_snapshot(adjustment)
     add_adjustment_event(
@@ -378,12 +410,36 @@ def validate_adjustment_type(value: str) -> None:
         raise HTTPException(status_code=UNPROCESSABLE_STATUS, detail="Некорректный тип")
 
 
-def require_adjustment_type_permission(actor: CurrentActor, adjustment_type: str) -> None:
-    permission_by_type = {
-        "bonus": "payroll.bonuses.add",
-        "penalty": "payroll.penalties.add",
-    }
-    ensure_permission(actor, permission_by_type[adjustment_type])
+def _adjustment_type_permission_codes(adjustment_type: str) -> tuple[str, str]:
+    """Пара кодов (производственный, админский) для типа начисления."""
+    return {
+        "bonus": ("payroll.bonuses.add", "payroll.bonuses.admin.add"),
+        "penalty": ("payroll.penalties.add", "payroll.penalties.admin.add"),
+    }[adjustment_type]
+
+
+def require_adjustment_type_permission(
+    actor: CurrentActor,
+    adjustment_type: str,
+    role: str | None = None,
+) -> None:
+    """Право на премию/штраф зависит от роли начисления.
+
+    Админ-персонал (управляющий, менеджер, сисадмин, уборщица, мойщица) — отдельное
+    право `payroll.{bonuses,penalties}.admin.add`. Производственные роли и субституты
+    (повара/кассиры) — производственное `payroll.{bonuses,penalties}.add`.
+    """
+    production_code, admin_code = _adjustment_type_permission_codes(adjustment_type)
+    is_admin_role = role is not None and role in ADMIN_PAYROLL_POSITIONS
+    ensure_permission(actor, admin_code if is_admin_role else production_code)
+
+
+def resolve_adjustment_role(employee: Employee, payload_role: str | None) -> str:
+    """Роль начисления: явно переданная (для двуролевых) или основная должность."""
+    role = clean_optional_text(payload_role)
+    if role:
+        return role
+    return employee.position or "Повар"
 
 
 def validate_adjustment_target(employee: Employee) -> None:
@@ -432,6 +488,7 @@ def adjustment_payload(
         "employee_position": employee.position,
         "work_date": adjustment.work_date,
         "type": adjustment.type,
+        "role": adjustment.role,
         "category_id": adjustment.category_id,
         "category_display_name": category.display_name if category is not None else None,
         "custom_label": adjustment.custom_label,
@@ -492,6 +549,7 @@ def adjustment_audit_snapshot(adjustment: PayrollAdjustment) -> dict[str, Any]:
         "employee_id": str(adjustment.employee_id),
         "work_date": adjustment.work_date.isoformat(),
         "type": adjustment.type,
+        "role": adjustment.role,
         "category_id": str(adjustment.category_id) if adjustment.category_id is not None else None,
         "custom_label": adjustment.custom_label,
         "amount": decimal_string(adjustment.amount),

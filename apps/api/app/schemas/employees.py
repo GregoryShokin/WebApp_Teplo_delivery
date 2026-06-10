@@ -192,6 +192,7 @@ class EmployeeRead(BaseModel):
     requires_role_review: bool = False
     requires_position_review: bool = False
     role_review_payload: dict[str, Any] | None = None
+    admin_payroll_excluded: bool = False
     pin_assumed_from_iiko: bool = False
     pin_set_at: datetime | None = None
     iiko_sync_at: datetime | None = None

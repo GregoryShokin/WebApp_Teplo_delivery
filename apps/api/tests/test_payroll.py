@@ -5496,6 +5496,15 @@ class PayrollAdjustmentFakeSession:
             return self.adjustment
         return None
 
+    async def execute(self, _statement: Any) -> Any:
+        employee = self.employee
+
+        class _Result:
+            def scalar_one_or_none(self) -> Any:
+                return employee
+
+        return _Result()
+
     def add(self, item: Any) -> None:
         self.added.append(item)
         if isinstance(item, PayrollAdjustment):
@@ -5586,7 +5595,9 @@ def test_patch_delete_in_finalized_period_409(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_create_for_non_payroll_position_422() -> None:
-    employee = make_employee(position="Управляющий")
+    # Курьер не входит в круг получателей премий/штрафов (в отличие от админ-персонала,
+    # который теперь допустим наравне с поварами и кассирами).
+    employee = make_employee(position="Курьер")
     category = adjustment_category("bonus")
     session = PayrollAdjustmentFakeSession(employee, category=category)
 

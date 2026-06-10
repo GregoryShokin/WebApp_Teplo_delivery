@@ -380,6 +380,7 @@ function isActiveRoute(currentPath: string, href: string) {
       currentPath === href ||
       currentPath === "/payroll/fund" ||
       currentPath === "/payroll/adjustments" ||
+      currentPath.startsWith("/payroll/admin") ||
       currentPath.startsWith("/payroll/runs/")
     );
   }

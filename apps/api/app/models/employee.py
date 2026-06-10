@@ -177,6 +177,13 @@ class Employee(Base):
     fund_excluded_reason: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="source=app_managed"
     )
+    admin_payroll_excluded: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="source=app_managed",
+    )
     pin_hash: Mapped[str | None] = mapped_column(
         String(255), nullable=True, comment="source=app_managed"
     )

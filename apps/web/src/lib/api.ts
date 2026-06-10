@@ -172,6 +172,7 @@ export type Employee = {
   requires_role_review: boolean;
   requires_position_review?: boolean;
   role_review_payload: Record<string, unknown> | null;
+  admin_payroll_excluded?: boolean;
   pin_assumed_from_iiko: boolean;
   pin_set_at: string | null;
   iiko_sync_at: string | null;
@@ -391,7 +392,7 @@ export type PayrollRoleCategoryOption = {
 
 export type PayrollPeriod = {
   id: string;
-  period_type: "week";
+  period_type: "week" | "half_month";
   start_date: string;
   end_date: string;
   payroll_date: string;
@@ -515,6 +516,50 @@ export type PayrollLine = {
 export type PayrollLineDepositOverridePatch = {
   deposit_excluded_for_run: boolean;
   deposit_exclusion_reason?: string | null;
+};
+
+export type AdminPayoutMode = "split" | "first_half" | "second_half";
+
+export type AdminSalaryDefault = {
+  position: string;
+  amount: number | null;
+  effective_from: string | null;
+  payout_mode: AdminPayoutMode;
+};
+
+export type DishwasherEmployee = {
+  id: string;
+  full_name: string;
+};
+
+export type DishwasherShift = {
+  employee_id: string;
+  work_date: string;
+};
+
+export type AdminSalaryOverride = {
+  employee_id: string;
+  employee_name: string;
+  position: string;
+  amount: number;
+  effective_from: string | null;
+};
+
+export type AdminSalariesResponse = {
+  defaults: AdminSalaryDefault[];
+  overrides: AdminSalaryOverride[];
+};
+
+export type AdminSalaryDefaultPayload = {
+  position: string;
+  amount: number;
+  effective_from: string | null;
+};
+
+export type AdminSalaryOverridePayload = {
+  position: string;
+  amount: number;
+  effective_from: string | null;
 };
 
 export type PayrollPersonalReport = {
@@ -769,6 +814,7 @@ export type PayrollAdjustment = {
   employee_position: string;
   work_date: string;
   type: PayrollAdjustmentType;
+  role: string | null;
   category_id: string | null;
   category_display_name: string | null;
   custom_label: string | null;
@@ -792,6 +838,7 @@ export type PayrollAdjustmentPayload = {
   employee_id: string;
   work_date: string;
   type: PayrollAdjustmentType;
+  role?: string | null;
   category_id?: string | null;
   custom_label?: string | null;
   amount: string;
@@ -2734,6 +2781,124 @@ export async function getPayrollRun(id: string): Promise<PayrollRun> {
 
 export async function getPayrollRunLines(id: string): Promise<PayrollLine[]> {
   const response = await api.get<PayrollLine[]>(`/payroll/runs/${id}/lines`);
+  return response.data;
+}
+
+export async function autoCreateNextAdminPayrollPeriod(): Promise<PayrollPeriod> {
+  const response = await api.post<PayrollPeriod>("/payroll/admin/periods/auto-create-next");
+  return response.data;
+}
+
+export async function createAdminPayrollRun(
+  options: { periodId?: string | null; forceRefresh?: boolean } = {},
+): Promise<PayrollRun> {
+  const response = await api.post<PayrollRun>("/payroll/admin/runs", {
+    period_id: options.periodId ?? null,
+    force_refresh: options.forceRefresh ?? false,
+  });
+  return response.data;
+}
+
+export async function getAdminPayrollRuns(): Promise<PayrollRun[]> {
+  const response = await api.get<PayrollRun[]>("/payroll/admin/runs");
+  return response.data;
+}
+
+export async function getAdminPayrollRun(id: string): Promise<PayrollRun> {
+  const response = await api.get<PayrollRun>(`/payroll/admin/runs/${id}`);
+  return response.data;
+}
+
+export async function getAdminPayrollRunLines(id: string): Promise<PayrollLine[]> {
+  const response = await api.get<PayrollLine[]>(`/payroll/admin/runs/${id}/lines`);
+  return response.data;
+}
+
+export async function getAdminSalaries(): Promise<AdminSalariesResponse> {
+  const response = await api.get<AdminSalariesResponse>("/payroll/admin/salaries");
+  return response.data;
+}
+
+export async function putAdminSalaryDefault(
+  payload: AdminSalaryDefaultPayload,
+): Promise<AdminSalariesResponse> {
+  const response = await api.put<AdminSalariesResponse>("/payroll/admin/salaries/default", payload);
+  return response.data;
+}
+
+export async function putAdminSalaryOverride(
+  employeeId: string,
+  payload: AdminSalaryOverridePayload,
+): Promise<AdminSalariesResponse> {
+  const response = await api.put<AdminSalariesResponse>(
+    `/payroll/admin/salaries/override/${employeeId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteAdminSalaryOverride(
+  employeeId: string,
+): Promise<AdminSalariesResponse> {
+  const response = await api.delete<AdminSalariesResponse>(
+    `/payroll/admin/salaries/override/${employeeId}`,
+  );
+  return response.data;
+}
+
+export async function setAdminPayrollExclusion(
+  employeeId: string,
+  excluded: boolean,
+): Promise<{ employee_id: string; admin_payroll_excluded: boolean }> {
+  const response = await api.put<{ employee_id: string; admin_payroll_excluded: boolean }>(
+    `/payroll/admin/salaries/exclusion/${employeeId}`,
+    { excluded },
+  );
+  return response.data;
+}
+
+export async function putAdminPayoutMode(
+  position: string,
+  mode: AdminPayoutMode,
+): Promise<AdminSalariesResponse> {
+  const response = await api.put<AdminSalariesResponse>(
+    `/payroll/admin/salaries/payout-mode/${encodeURIComponent(position)}`,
+    { mode },
+  );
+  return response.data;
+}
+
+export async function getDishwasherPool(): Promise<{ pool: number }> {
+  const response = await api.get<{ pool: number }>("/payroll/admin/dishwasher/pool");
+  return response.data;
+}
+
+export async function putDishwasherPool(pool: number): Promise<{ pool: number }> {
+  const response = await api.put<{ pool: number }>("/payroll/admin/dishwasher/pool", { pool });
+  return response.data;
+}
+
+export async function getDishwasherEmployees(): Promise<DishwasherEmployee[]> {
+  const response = await api.get<DishwasherEmployee[]>("/payroll/admin/dishwasher/employees");
+  return response.data;
+}
+
+export async function getDishwasherShifts(params: {
+  period_start: string;
+  period_end: string;
+}): Promise<DishwasherShift[]> {
+  const response = await api.get<DishwasherShift[]>("/payroll/admin/dishwasher/shifts", {
+    params,
+  });
+  return response.data;
+}
+
+export async function putDishwasherShift(payload: {
+  employee_id: string;
+  work_date: string;
+  worked: boolean;
+}): Promise<DishwasherShift> {
+  const response = await api.put<DishwasherShift>("/payroll/admin/dishwasher/shifts", payload);
   return response.data;
 }
 

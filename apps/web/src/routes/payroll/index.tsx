@@ -2,7 +2,14 @@ import { useEffect, useState } from "react";
 
 import { PayrollRunsRoute } from "@/routes/payroll/runs";
 
-type PayrollActiveTab = "runs" | "fund" | "adjustments" | "audits" | "accruals" | "personal";
+type PayrollActiveTab =
+  | "runs"
+  | "admin"
+  | "fund"
+  | "adjustments"
+  | "audits"
+  | "accruals"
+  | "personal";
 
 type PayrollRouteProps = {
   activeTab: PayrollActiveTab;
@@ -63,6 +70,9 @@ function payrollTabPath(tab: PayrollActiveTab) {
   if (tab === "personal") {
     return "/payroll/personal";
   }
+  if (tab === "admin") {
+    return "/payroll/admin";
+  }
   return tab === "adjustments" ? "/payroll/adjustments" : "/payroll";
 }
 
@@ -74,6 +84,7 @@ function readStoredPayrollTab() {
 function isPayrollTab(value: unknown): value is PayrollActiveTab {
   return (
     value === "runs" ||
+    value === "admin" ||
     value === "fund" ||
     value === "adjustments" ||
     value === "audits" ||

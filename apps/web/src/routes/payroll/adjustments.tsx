@@ -62,6 +62,7 @@ import {
   getPayrollAdjustments,
   patchPayrollAdjustment,
   type Employee,
+  type EmployeeRoleAssignment,
   type PayrollAdjustment,
   type PayrollAdjustmentCategory,
   type PayrollAdjustmentPayload,
@@ -79,6 +80,7 @@ type AdjustmentDraft = {
   employee_id: string;
   work_date: string;
   type: PayrollAdjustmentType;
+  role: string;
   category_id: string;
   custom_label: string;
   amount: string;
@@ -91,10 +93,16 @@ const typeLabels: Record<PayrollAdjustmentType, string> = {
   penalty: "Штраф",
 };
 
-const targetPositions = new Set(["Повар", "Кассир"]);
+const targetPositions = new Set([
+  "Повар",
+  "Кассир",
+  "Управляющий",
+  "Менеджер",
+  "Системный администратор",
+]);
 
-// Премии и штрафы доступны поварам и кассирам, а также сотрудникам-субститутам —
-// тем, у кого есть активная подменная роль повара/кассира.
+// Премии и штрафы доступны поварам, кассирам, админ-персоналу, а также
+// сотрудникам-субститутам — тем, у кого есть активная подменная роль.
 function isAdjustmentEligible(employee: Employee): boolean {
   if (targetPositions.has(employee.position ?? "")) {
     return true;
@@ -102,6 +110,40 @@ function isAdjustmentEligible(employee: Employee): boolean {
   return employee.assignments.some(
     (assignment) => assignment.is_substitute && !assignment.is_pending,
   );
+}
+
+// Подменная роль (повар/кассир) для производственного контура.
+function substituteRoleLabel(payrollRole: EmployeeRoleAssignment["payroll_role"]): string {
+  return payrollRole === "administrator" ? "Кассир" : "Повар";
+}
+
+// Роли, к которым может относиться начисление: основная должность + активные
+// подменные роли. Если их несколько — пользователь обязан выбрать, чтобы деньги
+// ушли в правильную ведомость (админскую или производственную).
+function deriveAdjustmentRoles(employee: Employee | null): { value: string; label: string }[] {
+  if (!employee) {
+    return [];
+  }
+  const roles: { value: string; label: string }[] = [];
+  const seen = new Set<string>();
+  const push = (value: string, label: string) => {
+    if (!value || seen.has(value)) {
+      return;
+    }
+    seen.add(value);
+    roles.push({ value, label });
+  };
+  if (employee.position) {
+    push(employee.position, employee.position);
+  }
+  for (const assignment of employee.assignments) {
+    if (assignment.is_pending || !assignment.is_substitute) {
+      continue;
+    }
+    const role = substituteRoleLabel(assignment.payroll_role);
+    push(role, `${role} (подмена)`);
+  }
+  return roles;
 }
 
 export function PayrollAdjustmentsRoute({
@@ -483,11 +525,36 @@ function AdjustmentDialog({
     }
   }, [adjustment, employees, open]);
 
+  const selectedEmployee = employees.find((employee) => employee.id === draft.employee_id) ?? null;
+  const employeeRoles = useMemo(
+    () => deriveAdjustmentRoles(selectedEmployee),
+    [selectedEmployee],
+  );
+  const needsRoleChoice = employeeRoles.length > 1;
+
+  // Подставляем единственную роль автоматически; при нескольких — сбрасываем выбор,
+  // если текущая роль не подходит сотруднику (например после смены сотрудника).
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    setDraft((current) => {
+      if (employeeRoles.length === 0) {
+        return current;
+      }
+      if (employeeRoles.some((role) => role.value === current.role)) {
+        return current;
+      }
+      return { ...current, role: employeeRoles.length === 1 ? employeeRoles[0].value : "" };
+    });
+  }, [employeeRoles, open]);
+
   const categories = categoriesQuery.data ?? [];
   const selectedCategory = categories.find((category) => category.id === draft.category_id) ?? null;
   const canSubmit =
     Boolean(draft.employee_id) &&
     Boolean(draft.work_date) &&
+    (!needsRoleChoice || Boolean(draft.role)) &&
     numericAmount(draft.amount) > 0 &&
     (draft.mode === "custom" ? draft.custom_label.trim().length > 0 : Boolean(draft.category_id)) &&
     !isPending;
@@ -497,6 +564,7 @@ function AdjustmentDialog({
       employee_id: draft.employee_id,
       work_date: draft.work_date,
       type: draft.type,
+      role: draft.role || null,
       amount: decimalInputPayload(draft.amount),
       comment: draft.comment.trim() || null,
       category_id: draft.mode === "category" ? draft.category_id : null,
@@ -608,6 +676,32 @@ function AdjustmentDialog({
                 />
               </Label>
             </div>
+
+            {needsRoleChoice ? (
+              <Label className="grid gap-2">
+                <span>За какую роль?</span>
+                <Select
+                  disabled={isPending}
+                  onValueChange={(value) => setDraft((current) => ({ ...current, role: value }))}
+                  value={draft.role}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите роль" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employeeRoles.map((role) => (
+                      <SelectItem key={role.value} value={role.value}>
+                        {role.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-xs text-muted-foreground">
+                  Сотрудник работает в нескольких ролях — выберите, к какой относится
+                  начисление (это разводит его по админской и производственной ведомостям).
+                </span>
+              </Label>
+            ) : null}
 
             <div className="grid gap-4 sm:grid-cols-[1fr_160px]">
               <Label className="grid gap-2">
@@ -869,6 +963,7 @@ function draftFromAdjustment(
       employee_id: employees[0]?.id ?? "",
       work_date: todayDateInputValue(),
       type: "bonus",
+      role: "",
       category_id: "",
       custom_label: "",
       amount: "",
@@ -880,6 +975,7 @@ function draftFromAdjustment(
     employee_id: adjustment.employee_id,
     work_date: adjustment.work_date,
     type: adjustment.type,
+    role: adjustment.role ?? "",
     category_id: adjustment.category_id ?? "",
     custom_label: adjustment.custom_label ?? "",
     amount: adjustment.amount,

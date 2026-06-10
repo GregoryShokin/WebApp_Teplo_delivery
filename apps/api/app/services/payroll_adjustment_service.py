@@ -11,6 +11,18 @@ from sqlalchemy.orm import selectinload
 
 from app.models import PayrollAdjustment, PayrollAdjustmentCategory, PayrollPeriod, PayrollRun
 
+# Должности, которые платятся по админскому каденсу (полумесячная ведомость 1/15):
+# собственно администрация + вспомогательный персонал (уборщица-окладник, мойщицы
+# посменно). Их штрафы/премии разводятся в эту ведомость, поэтому производственный
+# расчёт их исключает, а админский — наоборот, берёт только их.
+ADMIN_PAYROLL_POSITIONS = (
+    "Управляющий",
+    "Менеджер",
+    "Системный администратор",
+    "Уборщица",
+    "Посудомойка",
+)
+
 LEGACY_CATEGORIES = [
     {"code": "premium", "type": "bonus", "display_name": "Премия", "sort_order": 10},
     {
@@ -104,18 +116,31 @@ async def load_adjustments_for_period(
     employee_ids: Iterable[uuid.UUID],
     period_start: date,
     period_end: date,
+    roles: Iterable[str] | None = None,
+    exclude_roles: Iterable[str] | None = None,
 ) -> dict[tuple[uuid.UUID, date], list[PayrollAdjustment]]:
+    """Загрузить премии/штрафы за период, сгруппированные по (сотрудник, дата).
+
+    ``roles`` — взять только указанные роли (нужно админской ведомости).
+    ``exclude_roles`` — исключить указанные роли (производственная ведомость
+    исключает админские роли, чтобы не задвоить штрафы сотрудников с двумя ролями).
+    """
     employee_ids = set(employee_ids)
     if not employee_ids:
         return {}
+    conditions = [
+        PayrollAdjustment.employee_id.in_(employee_ids),
+        PayrollAdjustment.work_date >= period_start,
+        PayrollAdjustment.work_date <= period_end,
+    ]
+    if roles is not None:
+        conditions.append(PayrollAdjustment.role.in_(set(roles)))
+    if exclude_roles is not None:
+        conditions.append(PayrollAdjustment.role.notin_(set(exclude_roles)))
     result = await session.scalars(
         select(PayrollAdjustment)
         .options(selectinload(PayrollAdjustment.category))
-        .where(
-            PayrollAdjustment.employee_id.in_(employee_ids),
-            PayrollAdjustment.work_date >= period_start,
-            PayrollAdjustment.work_date <= period_end,
-        )
+        .where(*conditions)
         .order_by(PayrollAdjustment.work_date, PayrollAdjustment.created_at)
     )
     adjustments: dict[tuple[uuid.UUID, date], list[PayrollAdjustment]] = defaultdict(list)
