@@ -3,6 +3,7 @@ from __future__ import annotations
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.core.config import get_settings
+from app.jobs.counterparty_invoice_sync_job import run_counterparty_invoice_sync_job
 from app.jobs.employee_sync_job import run_employee_sync_job
 
 _scheduler: BackgroundScheduler | None = None
@@ -26,6 +27,16 @@ def register_jobs(scheduler: BackgroundScheduler) -> None:
             "interval",
             hours=settings.employee_sync_interval_hours,
             id="employee_iiko_sync",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+    if settings.counterparty_invoice_sync_enabled:
+        scheduler.add_job(
+            run_counterparty_invoice_sync_job,
+            "interval",
+            hours=settings.counterparty_invoice_sync_interval_hours,
+            id="counterparty_invoice_sync",
             replace_existing=True,
             max_instances=1,
             coalesce=True,

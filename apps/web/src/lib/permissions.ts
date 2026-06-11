@@ -28,6 +28,7 @@ export type AppSection =
   | "finance.dds"
   | "finance.payment-calendar"
   | "finance.balance"
+  | "counterparties"
   | "accounting"
   | "accounting.fixed-assets"
   | "accounting.dz-kz"
@@ -64,7 +65,9 @@ export type AppAction =
   | "finance.cashflow.classify"
   | "finance.cashflow.sync"
   | "finance.rules.manage"
-  | "finance.counterparties.edit";
+  | "finance.counterparties.edit"
+  | "counterparties.operate"
+  | "counterparties.admin";
 
 const SOURCE_DATA_TAB_READ_PERMISSIONS = [
   "source.rates.read",
@@ -248,6 +251,7 @@ const SECTION_PERMISSIONS: Record<AppSection, readonly PermissionCode[]> = {
   "finance.dds": [...PERMISSION_GROUPS.financeRead, ...PERMISSION_GROUPS.financeWrite],
   "finance.payment-calendar": ["finance.payment_calendar.read", "finance.payment_calendar.edit"],
   "finance.balance": ["finance.balance.read", "finance.balance.edit"],
+  counterparties: ["counterparties.read"],
   accounting: [...PERMISSION_GROUPS.accountingRead, ...PERMISSION_GROUPS.accountingWrite],
   "accounting.fixed-assets": ["accounting.fixed_assets.read", "accounting.fixed_assets.edit"],
   "accounting.dz-kz": ["accounting.suppliers.read", "accounting.suppliers.edit"],
@@ -298,6 +302,8 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "finance.cashflow.sync": ["finance.cashflow.integrations.manage"],
   "finance.rules.manage": ["finance.classification_rules.manage"],
   "finance.counterparties.edit": ["finance.counterparties.edit"],
+  "counterparties.operate": ["counterparties.operate"],
+  "counterparties.admin": ["counterparties.admin"],
 };
 
 const LEGACY_PERMISSION_ALIASES: Record<PermissionCode, readonly PermissionCode[]> = {

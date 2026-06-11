@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     employee_sync_enabled: bool = True
     employee_sync_interval_hours: int = 6
+    counterparty_invoice_sync_enabled: bool = True
+    counterparty_invoice_sync_interval_hours: int = 5
+    counterparty_invoice_sync_days: int = 30
+    counterparty_match_window_days: int = 7
     teplo_bank_client_mode: Literal["mock", "live"] = "mock"
     bank_sync_providers: str = "tbank"
     bank_client_timeout_seconds: float = 90

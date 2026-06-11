@@ -19,6 +19,15 @@ from app.models.core import (
     UserRoleEvent,
 )
 from app.models.counterparty import Counterparty, CounterpartyRole
+from app.models.counterparty_payable import (
+    CounterpartyCollectionSource,
+    CounterpartyLedgerCategory,
+    CounterpartyPayableProfile,
+    CounterpartyPaymentDraft,
+    CounterpartyRoutingRule,
+    InvoicePaymentAllocation,
+    SupplierInvoice,
+)
 from app.models.courier import (
     CourierIikoShift,
     CourierShiftMatch,
@@ -118,7 +127,12 @@ __all__ = [
     "CategoryCoefficient",
     "Counterparty",
     "CounterpartyAlias",
+    "CounterpartyCollectionSource",
+    "CounterpartyLedgerCategory",
+    "CounterpartyPayableProfile",
+    "CounterpartyPaymentDraft",
     "CounterpartyRole",
+    "CounterpartyRoutingRule",
     "CourierDepositAccount",
     "CourierDepositTransaction",
     "CourierDepositTransactionType",
@@ -151,6 +165,8 @@ __all__ = [
     "InventoryAuditItem",
     "InventoryAuditItemExclusion",
     "InventoryAuditPosition",
+    "InvoicePaymentAllocation",
+    "SupplierInvoice",
     "Location",
     "PayrollDeductionCategory",
     "PayrollAdjustment",

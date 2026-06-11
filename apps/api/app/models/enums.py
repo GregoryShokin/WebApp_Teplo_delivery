@@ -59,3 +59,29 @@ quality_status_enum = Enum(
     "not_applicable",
     name="quality_status",
 )
+counterparty_invoice_source_enum = Enum(
+    "iiko",
+    "manual",
+    "email",
+    "telegram",
+    name="counterparty_invoice_source",
+)
+counterparty_invoice_status_enum = Enum(
+    "unpaid",
+    "partially_paid",
+    "paid",
+    "void",
+    name="counterparty_invoice_status",
+)
+invoice_allocation_source_enum = Enum(
+    "bank",
+    "cash",
+    name="invoice_allocation_source",
+)
+counterparty_collection_source_kind_enum = Enum(
+    "iiko",
+    "email",
+    "telegram",
+    "manual",
+    name="counterparty_collection_source_kind",
+)

@@ -1,0 +1,763 @@
+"""API модуля «Контрагенты».
+
+Inbox счетов к оплате, отправка пачки накладных одним черновиком в банк, мэчинг
+банковских операций с накладными, реестр контрагентов с леджер-категориями и
+карточкой (реквизиты + верификация). Права: чтение — counterparties.read,
+операции — counterparties.operate, администрирование — counterparties.admin.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import date
+from decimal import Decimal
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import CurrentActor, get_current_actor, require_permission
+from app.core.config import get_settings
+from app.db.session import get_session
+from app.models import CounterpartyPaymentDraft
+from app.services import counterparty_bank_match as bank_match
+from app.services import counterparty_matching as matching
+from app.services import counterparty_payments as payments
+from app.services import counterparty_registry as registry
+from app.services.counterparty_invoice_sync import sync_counterparty_invoices
+
+router = APIRouter()
+
+READ = (Depends(require_permission("counterparties.read")),)
+OPERATE = (Depends(require_permission("counterparties.operate")),)
+ADMIN = (Depends(require_permission("counterparties.admin")),)
+
+_DOMAIN_ERRORS = (
+    payments.CounterpartyPaymentError,
+    matching.CounterpartyMatchError,
+    registry.CounterpartyRegistryError,
+)
+
+
+def _conflict(exc: Exception) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+
+# --- schemas ------------------------------------------------------------------
+
+
+class CategoryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    code: str
+    name: str
+    sort_order: int
+    is_active: bool
+
+
+class CategoryCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=160)
+    sort_order: int = 0
+
+
+class CategoryUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, max_length=160)
+    sort_order: int | None = None
+    is_active: bool | None = None
+
+
+class InvoiceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    counterparty_id: uuid.UUID
+    counterparty_name: str
+    ledger_category_id: uuid.UUID | None
+    source: str
+    number: str | None
+    invoice_date: date | None
+    due_date: date | None
+    amount: float
+    vat_total: float
+    vat_breakdown: dict[str, Any]
+    allocated: float
+    remaining: float
+    payment_status: str
+    draft_id: uuid.UUID | None
+
+
+class RegistryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    counterparty_id: uuid.UUID
+    name: str
+    inn: str | None
+    status: str
+    ledger_category_id: uuid.UUID | None
+    brand_group: str | None
+    internal_name: str | None
+    payment_delay_days: int | None
+    requisites_verified: bool
+    unpaid_count: int
+    unpaid_remaining: float
+
+
+class CardRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    counterparty_id: uuid.UUID
+    name: str
+    inn: str | None
+    type: str
+    status: str
+    profile: dict[str, Any] | None
+    aliases: list[dict[str, Any]]
+    collection_sources: list[dict[str, Any]]
+    routing_rules: list[dict[str, Any]]
+    invoices: list[InvoiceRead]
+    drafts: list[dict[str, Any]]
+
+
+class DraftRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    counterparty_id: uuid.UUID
+    document_id: str
+    amount: float
+    status: str
+    provider_ref: str | None
+    last_error: str | None
+    created_at: Any
+
+
+class InvoiceCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    counterparty_id: uuid.UUID
+    amount: Decimal = Field(gt=0)
+    number: str | None = Field(default=None, max_length=128)
+    invoice_date: date | None = None
+    due_date: date | None = None
+    note: str | None = None
+    # Optional VAT breakdown {rate: amount}, e.g. {"10": 90.91, "22": 180.33}.
+    vat_breakdown: dict[str, Decimal] | None = None
+
+
+class DraftCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    invoice_ids: list[uuid.UUID] = Field(min_length=1)
+
+
+class ProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ledger_category_id: uuid.UUID | None = None
+    brand_group: str | None = Field(default=None, max_length=160)
+    internal_name: str | None = Field(default=None, max_length=255)
+    payment_delay_days: int | None = Field(default=None, ge=0)
+    payment_due_day_of_month: int | None = Field(default=None, ge=1, le=31)
+    manager_name: str | None = Field(default=None, max_length=160)
+    manager_phone: str | None = Field(default=None, max_length=64)
+    status: str | None = None
+
+
+class RequisitesUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requisites: dict[str, Any]
+    verified: bool = False
+
+
+class CashAllocationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0)
+    cashflow_transaction_id: uuid.UUID | None = None
+
+
+class AllocateOperationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    draft_id: uuid.UUID
+
+
+class CounterpartyCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=255)
+    inn: str | None = Field(default=None, max_length=12)
+    type: str = "legal_entity"
+    internal_name: str | None = Field(default=None, max_length=255)
+    ledger_category_id: uuid.UUID | None = None
+    brand_group: str | None = Field(default=None, max_length=160)
+    payment_delay_days: int | None = Field(default=None, ge=0)
+    payment_due_day_of_month: int | None = Field(default=None, ge=1, le=31)
+    manager_name: str | None = Field(default=None, max_length=160)
+    manager_phone: str | None = Field(default=None, max_length=64)
+
+
+class CollectionSourceCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    value: str | None = Field(default=None, max_length=255)
+    note: str | None = None
+
+
+class RoutingRuleCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prefix: str = Field(min_length=1, max_length=64)
+    target_counterparty_id: uuid.UUID
+
+
+class MatchCandidateRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    bank_operation_id: uuid.UUID
+    operation_date: date
+    amount: float
+    official_name: str | None
+    inn: str | None
+    requisites: dict[str, Any]
+
+
+class MatchSuggestionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    invoice_id: uuid.UUID
+    invoice_number: str | None
+    invoice_amount: float
+    counterparty_id: uuid.UUID
+    counterparty_name: str
+    counterparty_has_inn: bool
+    candidates: list[MatchCandidateRead]
+    confident: bool
+
+
+class ConfirmMatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    invoice_id: uuid.UUID
+    bank_operation_id: uuid.UUID
+    enrich: bool = True
+
+
+# --- categories ---------------------------------------------------------------
+
+
+@router.get("/categories", response_model=list[CategoryRead], dependencies=READ)
+async def get_categories(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    include_inactive: bool = False,
+) -> list[CategoryRead]:
+    rows = await registry.list_categories(session, include_inactive=include_inactive)
+    return [CategoryRead.model_validate(row) for row in rows]
+
+
+@router.post(
+    "/categories",
+    response_model=CategoryRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=ADMIN,
+)
+async def post_category(
+    payload: CategoryCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CategoryRead:
+    try:
+        category = await registry.create_category(
+            session, code=payload.code, name=payload.name, sort_order=payload.sort_order
+        )
+    except registry.CounterpartyRegistryError as exc:
+        raise _conflict(exc) from exc
+    return CategoryRead.model_validate(category)
+
+
+@router.put("/categories/{category_id}", response_model=CategoryRead, dependencies=ADMIN)
+async def put_category(
+    category_id: uuid.UUID,
+    payload: CategoryUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CategoryRead:
+    try:
+        category = await registry.update_category(
+            session,
+            category_id,
+            name=payload.name,
+            sort_order=payload.sort_order,
+            is_active=payload.is_active,
+        )
+    except registry.CounterpartyRegistryError as exc:
+        raise _conflict(exc) from exc
+    return CategoryRead.model_validate(category)
+
+
+# --- invoices inbox -----------------------------------------------------------
+
+
+@router.get("/invoices", response_model=list[InvoiceRead], dependencies=READ)
+async def get_invoices(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    status_filter: Annotated[str | None, Query(alias="status")] = "unpaid,partially_paid",
+    counterparty_id: uuid.UUID | None = None,
+    category_id: uuid.UUID | None = None,
+    in_draft: bool | None = None,
+) -> list[InvoiceRead]:
+    statuses = (
+        tuple(part.strip() for part in status_filter.split(",") if part.strip())
+        if status_filter
+        else None
+    )
+    items = await registry.list_invoices(
+        session,
+        statuses=statuses,
+        counterparty_id=counterparty_id,
+        category_id=category_id,
+        in_draft=in_draft,
+    )
+    return [InvoiceRead.model_validate(item) for item in items]
+
+
+@router.post(
+    "/invoices",
+    response_model=InvoiceRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=OPERATE,
+)
+async def post_manual_invoice(
+    payload: InvoiceCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> InvoiceRead:
+    try:
+        invoice = await registry.create_manual_invoice(
+            session,
+            counterparty_id=payload.counterparty_id,
+            amount=payload.amount,
+            number=payload.number,
+            invoice_date=payload.invoice_date,
+            due_date=payload.due_date,
+            note=payload.note,
+            vat_breakdown=payload.vat_breakdown,
+            actor_user_id=actor.user_id,
+        )
+    except registry.CounterpartyRegistryError as exc:
+        raise _conflict(exc) from exc
+    item = await registry.get_invoice_item(session, invoice.id)
+    return InvoiceRead.model_validate(item)
+
+
+@router.post("/invoices/{invoice_id}/void", response_model=InvoiceRead, dependencies=OPERATE)
+async def post_void_invoice(
+    invoice_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> InvoiceRead:
+    try:
+        await registry.void_invoice(session, invoice_id)
+    except registry.CounterpartyRegistryError as exc:
+        raise _conflict(exc) from exc
+    item = await registry.get_invoice_item(session, invoice_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    return InvoiceRead.model_validate(item)
+
+
+@router.post(
+    "/invoices/{invoice_id}/allocate-cash",
+    response_model=InvoiceRead,
+    dependencies=OPERATE,
+)
+async def post_allocate_cash(
+    invoice_id: uuid.UUID,
+    payload: CashAllocationRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> InvoiceRead:
+    try:
+        await matching.allocate_cash_to_invoice(
+            session,
+            invoice_id=invoice_id,
+            amount=payload.amount,
+            cashflow_transaction_id=payload.cashflow_transaction_id,
+            actor_user_id=actor.user_id,
+        )
+    except matching.CounterpartyMatchError as exc:
+        raise _conflict(exc) from exc
+    item = await registry.get_invoice_item(session, invoice_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    return InvoiceRead.model_validate(item)
+
+
+# --- registry & card ----------------------------------------------------------
+
+
+@router.get("/registry", response_model=list[RegistryRead], dependencies=READ)
+async def get_registry(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    category_id: uuid.UUID | None = None,
+    include_archived: bool = False,
+) -> list[RegistryRead]:
+    items = await registry.list_registry(
+        session, category_id=category_id, include_archived=include_archived
+    )
+    return [RegistryRead.model_validate(item) for item in items]
+
+
+@router.get("/needs-setup", dependencies=READ)
+async def get_needs_setup(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
+    items = await registry.list_needs_setup(session)
+    return {"count": len(items), "items": items}
+
+
+@router.post(
+    "",
+    response_model=CardRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=ADMIN,
+)
+async def post_counterparty(
+    payload: CounterpartyCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CardRead:
+    try:
+        counterparty = await registry.create_counterparty(
+            session,
+            name=payload.name,
+            inn=payload.inn,
+            cp_type=payload.type,
+            internal_name=payload.internal_name,
+            ledger_category_id=payload.ledger_category_id,
+            brand_group=payload.brand_group,
+            payment_delay_days=payload.payment_delay_days,
+            payment_due_day_of_month=payload.payment_due_day_of_month,
+            manager_name=payload.manager_name,
+            manager_phone=payload.manager_phone,
+        )
+    except registry.CounterpartyRegistryError as exc:
+        raise _conflict(exc) from exc
+    card = await registry.get_counterparty_card(session, counterparty.id)
+    return CardRead.model_validate(card)
+
+
+@router.get("/{counterparty_id}", response_model=CardRead, dependencies=READ)
+async def get_card(
+    counterparty_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CardRead:
+    card = await registry.get_counterparty_card(session, counterparty_id)
+    if card is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Контрагент не найден")
+    return CardRead.model_validate(card)
+
+
+@router.put("/{counterparty_id}/profile", response_model=CardRead, dependencies=ADMIN)
+async def put_profile(
+    counterparty_id: uuid.UUID,
+    payload: ProfileUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CardRead:
+    try:
+        await registry.update_profile(
+            session,
+            counterparty_id,
+            ledger_category_id=payload.ledger_category_id,
+            brand_group=payload.brand_group,
+            internal_name=payload.internal_name,
+            payment_delay_days=payload.payment_delay_days,
+            payment_due_day_of_month=payload.payment_due_day_of_month,
+            manager_name=payload.manager_name,
+            manager_phone=payload.manager_phone,
+            status=payload.status,
+        )
+    except registry.CounterpartyRegistryError as exc:
+        raise _conflict(exc) from exc
+    card = await registry.get_counterparty_card(session, counterparty_id)
+    return CardRead.model_validate(card)
+
+
+@router.get("/{counterparty_id}/requisites/suggestion", dependencies=ADMIN)
+async def get_requisites_suggestion(
+    counterparty_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
+    return await registry.autofill_requisites_from_bank(session, counterparty_id)
+
+
+@router.put("/{counterparty_id}/requisites", response_model=CardRead, dependencies=ADMIN)
+async def put_requisites(
+    counterparty_id: uuid.UUID,
+    payload: RequisitesUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> CardRead:
+    try:
+        await registry.set_requisites(
+            session,
+            counterparty_id,
+            requisites=payload.requisites,
+            verified=payload.verified,
+            actor_user_id=actor.user_id,
+        )
+    except registry.CounterpartyRegistryError as exc:
+        raise _conflict(exc) from exc
+    card = await registry.get_counterparty_card(session, counterparty_id)
+    return CardRead.model_validate(card)
+
+
+@router.post("/{counterparty_id}/archive", response_model=CardRead, dependencies=ADMIN)
+async def post_archive(
+    counterparty_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CardRead:
+    try:
+        await registry.set_counterparty_archived(session, counterparty_id, archived=True)
+    except registry.CounterpartyRegistryError as exc:
+        raise _conflict(exc) from exc
+    card = await registry.get_counterparty_card(session, counterparty_id)
+    return CardRead.model_validate(card)
+
+
+@router.post("/{counterparty_id}/unarchive", response_model=CardRead, dependencies=ADMIN)
+async def post_unarchive(
+    counterparty_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CardRead:
+    try:
+        await registry.set_counterparty_archived(session, counterparty_id, archived=False)
+    except registry.CounterpartyRegistryError as exc:
+        raise _conflict(exc) from exc
+    card = await registry.get_counterparty_card(session, counterparty_id)
+    return CardRead.model_validate(card)
+
+
+@router.post(
+    "/{counterparty_id}/sources",
+    response_model=CardRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=ADMIN,
+)
+async def post_collection_source(
+    counterparty_id: uuid.UUID,
+    payload: CollectionSourceCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CardRead:
+    try:
+        await registry.add_collection_source(
+            session,
+            counterparty_id=counterparty_id,
+            kind=payload.kind,
+            value=payload.value,
+            note=payload.note,
+        )
+    except registry.CounterpartyRegistryError as exc:
+        raise _conflict(exc) from exc
+    card = await registry.get_counterparty_card(session, counterparty_id)
+    return CardRead.model_validate(card)
+
+
+@router.delete(
+    "/{counterparty_id}/sources/{source_id}",
+    response_model=CardRead,
+    dependencies=ADMIN,
+)
+async def delete_collection_source(
+    counterparty_id: uuid.UUID,
+    source_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CardRead:
+    try:
+        await registry.remove_collection_source(session, source_id)
+    except registry.CounterpartyRegistryError as exc:
+        raise _conflict(exc) from exc
+    card = await registry.get_counterparty_card(session, counterparty_id)
+    return CardRead.model_validate(card)
+
+
+@router.post(
+    "/{counterparty_id}/routing",
+    response_model=CardRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=ADMIN,
+)
+async def post_routing_rule(
+    counterparty_id: uuid.UUID,
+    payload: RoutingRuleCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CardRead:
+    try:
+        await registry.add_routing_rule(
+            session,
+            counterparty_id=counterparty_id,
+            prefix=payload.prefix,
+            target_counterparty_id=payload.target_counterparty_id,
+        )
+    except registry.CounterpartyRegistryError as exc:
+        raise _conflict(exc) from exc
+    card = await registry.get_counterparty_card(session, counterparty_id)
+    return CardRead.model_validate(card)
+
+
+@router.delete(
+    "/{counterparty_id}/routing/{rule_id}",
+    response_model=CardRead,
+    dependencies=ADMIN,
+)
+async def delete_routing_rule(
+    counterparty_id: uuid.UUID,
+    rule_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CardRead:
+    try:
+        await registry.remove_routing_rule(session, rule_id)
+    except registry.CounterpartyRegistryError as exc:
+        raise _conflict(exc) from exc
+    card = await registry.get_counterparty_card(session, counterparty_id)
+    return CardRead.model_validate(card)
+
+
+# --- drafts -------------------------------------------------------------------
+
+
+@router.get("/drafts/list", response_model=list[DraftRead], dependencies=READ)
+async def get_drafts(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    counterparty_id: uuid.UUID | None = None,
+) -> list[DraftRead]:
+    query = select(CounterpartyPaymentDraft).order_by(
+        CounterpartyPaymentDraft.created_at.desc()
+    )
+    if counterparty_id is not None:
+        query = query.where(CounterpartyPaymentDraft.counterparty_id == counterparty_id)
+    rows = (await session.execute(query)).scalars().all()
+    return [DraftRead.model_validate(row) for row in rows]
+
+
+@router.post(
+    "/drafts",
+    response_model=DraftRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=OPERATE,
+)
+async def post_draft(
+    payload: DraftCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> DraftRead:
+    try:
+        draft = await payments.create_payment_draft_for_invoices(
+            session, invoice_ids=payload.invoice_ids, actor_user_id=actor.user_id
+        )
+    except payments.CounterpartyPaymentError as exc:
+        raise _conflict(exc) from exc
+    return DraftRead.model_validate(draft)
+
+
+@router.post("/drafts/{draft_id}/cancel", status_code=status.HTTP_204_NO_CONTENT, dependencies=OPERATE)
+async def post_cancel_draft(
+    draft_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    try:
+        await payments.cancel_payment_draft(session, draft_id=draft_id)
+    except payments.CounterpartyPaymentError as exc:
+        raise _conflict(exc) from exc
+
+
+# --- matching -----------------------------------------------------------------
+
+
+@router.post("/match/auto", dependencies=OPERATE)
+async def post_auto_match(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    window_days: int | None = None,
+) -> dict[str, Any]:
+    result = await matching.auto_match_bank_operations(session, window_days=window_days)
+    return {
+        "matched": len(result["matched"]),
+        "needs_review": result["needs_review"],
+    }
+
+
+@router.get(
+    "/match/suggestions", response_model=list[MatchSuggestionRead], dependencies=OPERATE
+)
+async def get_match_suggestions(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    counterparty_id: uuid.UUID | None = None,
+) -> list[MatchSuggestionRead]:
+    items = await bank_match.suggest_invoice_matches(session, counterparty_id=counterparty_id)
+    return [MatchSuggestionRead.model_validate(item) for item in items]
+
+
+@router.post("/match/confirm", dependencies=OPERATE)
+async def post_confirm_match(
+    payload: ConfirmMatchRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    try:
+        return await bank_match.confirm_invoice_match(
+            session,
+            invoice_id=payload.invoice_id,
+            bank_operation_id=payload.bank_operation_id,
+            enrich=payload.enrich,
+            actor_user_id=actor.user_id,
+        )
+    except matching.CounterpartyMatchError as exc:
+        raise _conflict(exc) from exc
+
+
+@router.post(
+    "/match/operations/{bank_operation_id}/allocate",
+    response_model=DraftRead,
+    dependencies=OPERATE,
+)
+async def post_allocate_operation(
+    bank_operation_id: uuid.UUID,
+    payload: AllocateOperationRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> DraftRead:
+    try:
+        draft = await matching.allocate_bank_operation_to_draft(
+            session,
+            bank_operation_id=bank_operation_id,
+            draft_id=payload.draft_id,
+            actor_user_id=actor.user_id,
+        )
+    except matching.CounterpartyMatchError as exc:
+        raise _conflict(exc) from exc
+    return DraftRead.model_validate(draft)
+
+
+# --- sync ---------------------------------------------------------------------
+
+
+@router.post("/sync", dependencies=OPERATE)
+async def post_sync(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    days: int | None = None,
+) -> dict[str, Any]:
+    window = days or get_settings().counterparty_invoice_sync_days
+    try:
+        result = await sync_counterparty_invoices(session, days=window, run_reason="manual")
+    except Exception as exc:  # noqa: BLE001 - surface upstream failure to the caller
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Синхронизация с iiko не удалась: {exc}",
+        ) from exc
+    return result.as_dict()

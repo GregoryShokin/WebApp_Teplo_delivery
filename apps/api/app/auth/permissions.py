@@ -21,6 +21,7 @@ MODULE_ORDER: tuple[str, ...] = (
     "Ревизии",
     "Исходные данные",
     "Финансы",
+    "Контрагенты",
     "Учёт",
     "Настройки и доступы",
 )
@@ -276,6 +277,17 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ("accounting.suppliers.read", "Учёт", "Смотреть взаиморасчёты с поставщиками"),
     ("accounting.suppliers.edit", "Учёт", "Редактировать взаиморасчёты с поставщиками"),
     ("accounting.periods.close", "Учёт", "Закрывать учётный период"),
+    ("counterparties.read", "Контрагенты", "Смотреть контрагентов и счета к оплате"),
+    (
+        "counterparties.operate",
+        "Контрагенты",
+        "Отправлять платежи в банк и сводить с выписками",
+    ),
+    (
+        "counterparties.admin",
+        "Контрагенты",
+        "Редактировать реквизиты, реестр и справочники контрагентов",
+    ),
     ("settings.general.read", "Настройки и доступы", "Смотреть настройки"),
     ("settings.general.edit", "Настройки и доступы", "Редактировать настройки"),
     ("settings.integrations.configure", "Настройки и доступы", "Настраивать обмен данными"),
@@ -564,6 +576,8 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "revisions.items.exclude",
         "revisions.employees.exclude",
         "revisions.deferrals.read",
+        "counterparties.read",
+        "counterparties.operate",
         "settings.general.read",
     }
 )
@@ -589,6 +603,7 @@ OFFICE_MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "settings.access.assign",
         "settings.roles.edit",
         "settings.access_audit.read",
+        "counterparties.admin",
     }
 )
 
