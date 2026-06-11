@@ -54,6 +54,30 @@ export function todayInput() {
   ].join("-");
 }
 
+export function toDateKey(date: Date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+export function subDaysFromToday(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return toDateKey(date);
+}
+
+export function mondayWeekRange(date: Date = new Date()) {
+  const day = date.getDay();
+  const diffToMonday = (day + 6) % 7;
+  const monday = new Date(date);
+  monday.setDate(date.getDate() - diffToMonday);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return { from: toDateKey(monday), to: toDateKey(sunday) };
+}
+
 export function currentMonthKey() {
   return toMonthKey(new Date());
 }

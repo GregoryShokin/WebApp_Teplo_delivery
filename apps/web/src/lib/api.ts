@@ -3936,6 +3936,94 @@ export async function deleteCourierShift(employeeId: string, workDate: string): 
   await api.delete(`/couriers/${employeeId}/schedule/${workDate}`);
 }
 
+export type CourierIikoShiftRow = {
+  id: number;
+  iiko_employee_id: string;
+  employee_id: string | null;
+  employee_name: string | null;
+  opened_at: string;
+  closed_at: string | null;
+  worked_minutes: number | null;
+  is_open: boolean;
+  attendance_type: string;
+  match_status: string | null;
+  match_category: "primary" | "secondary" | null;
+};
+
+export type CourierIikoShiftsResponse = {
+  items: CourierIikoShiftRow[];
+  limit: number;
+  offset: number;
+};
+
+export async function getCourierIikoShifts(params: {
+  from: string;
+  to: string;
+  employee_id?: string;
+  is_open?: boolean;
+  limit?: number;
+  offset?: number;
+}): Promise<CourierIikoShiftsResponse> {
+  const response = await api.get<CourierIikoShiftsResponse>("/couriers/iiko-shifts", {
+    params: cleanDdsParams(params),
+  });
+  return response.data;
+}
+
+export type CourierIikoDeliveryRow = {
+  id: string;
+  iiko_order_id: string;
+  order_number: string | null;
+  work_date: string;
+  status: string | null;
+  service_type: string | null;
+  courier_iiko_id: string | null;
+  courier_employee_name: string | null;
+  opened_at: string | null;
+  taken_at: string | null;
+  delivered_at: string | null;
+  way_duration_minutes: string | null;
+  revenue: string | null;
+};
+
+export type CourierIikoDeliveriesResponse = {
+  items: CourierIikoDeliveryRow[];
+  summary: {
+    count: number;
+    avg_minutes: number | null;
+    revenue_total: string;
+  };
+  limit: number;
+  offset: number;
+};
+
+export async function getCourierIikoDeliveries(params: {
+  from: string;
+  to: string;
+  employee_id?: string;
+  service_type?: string;
+  include_cancelled?: boolean;
+  limit?: number;
+  offset?: number;
+}): Promise<CourierIikoDeliveriesResponse> {
+  const response = await api.get<CourierIikoDeliveriesResponse>("/couriers/iiko-deliveries", {
+    params: cleanDdsParams(params),
+  });
+  return response.data;
+}
+
+export async function syncCourierIikoDeliveries(params: {
+  from?: string;
+  to?: string;
+} = {}): Promise<{ created: number; updated: number; deleted: number }> {
+  const response = await api.post<{ created: number; updated: number; deleted: number }>(
+    "/couriers/iiko/sync-deliveries",
+    null,
+    { params: cleanDdsParams(params) },
+  );
+  return response.data;
+}
+
 export async function getCourierStatisticsDetail(
   employeeId: string,
   month: string,

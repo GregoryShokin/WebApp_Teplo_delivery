@@ -73,9 +73,11 @@ import {
 import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
+import { CourierDeliveriesTab } from "./deliveries-tab";
+import { CourierShiftsTab } from "./shifts-tab";
 import { currentMonthKey } from "./utils";
 
-type CourierScheduleActiveTab = "grid" | "list";
+type CourierScheduleActiveTab = "grid" | "list" | "shifts" | "deliveries";
 
 type CourierScheduleRouteProps = {
   activeTab: CourierScheduleActiveTab;
@@ -294,6 +296,8 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
         <TabsList>
           <TabsTrigger value="grid">График</TabsTrigger>
           <TabsTrigger value="list">Список курьеров</TabsTrigger>
+          <TabsTrigger value="shifts">Реестр смен</TabsTrigger>
+          <TabsTrigger value="deliveries">Реестр доставок</TabsTrigger>
         </TabsList>
 
         <TabsContent className="mt-0 space-y-5" value="grid">
@@ -463,6 +467,22 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
 
         <TabsContent className="mt-0" value="list">
           <CourierDirectoryTab />
+        </TabsContent>
+
+        <TabsContent className="mt-0 space-y-5" value="shifts">
+          <PageHeader
+            title="Реестр смен курьеров"
+            description="Открытия и закрытия смен из iiko Resto."
+          />
+          <CourierShiftsTab />
+        </TabsContent>
+
+        <TabsContent className="mt-0 space-y-5" value="deliveries">
+          <PageHeader
+            title="Реестр доставок"
+            description="История доставок с временами и продолжительностью."
+          />
+          <CourierDeliveriesTab />
         </TabsContent>
       </Tabs>
 
@@ -1326,7 +1346,7 @@ function formatShortDate(value: string) {
 }
 
 function isCourierScheduleTab(value: string): value is CourierScheduleActiveTab {
-  return value === "grid" || value === "list";
+  return value === "grid" || value === "list" || value === "shifts" || value === "deliveries";
 }
 
 function courierScheduleTabPath(value: CourierScheduleActiveTab) {

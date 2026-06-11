@@ -15,6 +15,9 @@ from app.db.session import get_session
 from app.models import (
     CourierEvaluation,
     CourierEvaluationCriterion,
+    CourierIikoShift,
+    CourierShiftMatch,
+    DeliveryOrder,
     Employee,
     User,
 )
@@ -56,6 +59,7 @@ from app.services.couriers import (
     kpi_service,
     schedule_service,
 )
+from app.services.couriers.iiko_olap_sync import sync_courier_olap_deliveries
 
 router = APIRouter()
 COURIERS_LIST_READ_ACCESS = (Depends(require_permission("couriers.list.read")),)
@@ -201,6 +205,227 @@ async def get_courier_shifts(
         date_to=date_to,
         employee_id=employee_id,
     )
+
+
+@router.get("/iiko-shifts", dependencies=COURIERS_STATISTICS_READ_ACCESS)
+async def get_iiko_courier_shifts(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    date_from: Annotated[date, Query(alias="from")],
+    date_to: Annotated[date, Query(alias="to")],
+    employee_id: Annotated[uuid.UUID | None, Query()] = None,
+    is_open: Annotated[bool | None, Query()] = None,
+    limit: Annotated[int, Query(gt=0, le=1000)] = 200,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """Реестр смен курьеров из courier_iiko_shift с резолвом ФИО."""
+    ensure_date_range(date_from, date_to)
+    ensure_window(date_from, date_to, max_days=MAX_DELIVERY_WINDOW_DAYS)
+
+    start_at = datetime.combine(date_from, datetime.min.time(), tzinfo=MOSCOW_TZ)
+    end_at = datetime.combine(date_to + timedelta(days=1), datetime.min.time(), tzinfo=MOSCOW_TZ)
+    query = (
+        select(CourierIikoShift, Employee, CourierShiftMatch)
+        .outerjoin(Employee, Employee.id == CourierIikoShift.employee_id)
+        .outerjoin(
+            CourierShiftMatch,
+            CourierShiftMatch.iiko_shift_id == CourierIikoShift.id,
+        )
+        .where(
+            CourierIikoShift.opened_at >= start_at,
+            CourierIikoShift.opened_at < end_at,
+        )
+    )
+    if employee_id is not None:
+        query = query.where(CourierIikoShift.employee_id == employee_id)
+    if is_open is True:
+        query = query.where(CourierIikoShift.closed_at.is_(None))
+    if is_open is False:
+        query = query.where(CourierIikoShift.closed_at.is_not(None))
+    query = query.order_by(CourierIikoShift.opened_at.desc()).limit(limit).offset(offset)
+    rows = (await session.execute(query)).all()
+
+    items: list[dict[str, Any]] = []
+    for shift, employee, match in rows:
+        worked_minutes: int | None = None
+        if shift.closed_at is not None:
+            worked_minutes = int((shift.closed_at - shift.opened_at).total_seconds() // 60)
+        items.append(
+            {
+                "id": shift.id,
+                "iiko_employee_id": shift.iiko_employee_id,
+                "employee_id": str(shift.employee_id) if shift.employee_id else None,
+                "employee_name": employee.full_name if employee is not None else None,
+                "opened_at": shift.opened_at.isoformat(),
+                "closed_at": shift.closed_at.isoformat() if shift.closed_at else None,
+                "worked_minutes": worked_minutes,
+                "is_open": shift.closed_at is None,
+                "attendance_type": shift.attendance_type,
+                "match_status": match.status.value if match is not None else None,
+                "match_category": (
+                    "primary"
+                    if match is not None and match.status.value.endswith("_primary")
+                    else "secondary"
+                    if match is not None and match.status.value.endswith("_secondary")
+                    else None
+                ),
+            }
+        )
+    return {"items": items, "limit": limit, "offset": offset}
+
+
+@router.get("/iiko-deliveries", dependencies=COURIERS_STATISTICS_READ_ACCESS)
+async def get_iiko_courier_deliveries(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    date_from: Annotated[date, Query(alias="from")],
+    date_to: Annotated[date, Query(alias="to")],
+    employee_id: Annotated[uuid.UUID | None, Query()] = None,
+    service_type: Annotated[str | None, Query()] = None,
+    include_cancelled: Annotated[bool, Query()] = False,
+    limit: Annotated[int, Query(gt=0, le=1000)] = 200,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """Реестр доставок с резолвом ФИО курьера и сводкой за период."""
+    ensure_date_range(date_from, date_to)
+    ensure_window(date_from, date_to, max_days=MAX_DELIVERY_WINDOW_DAYS)
+
+    base = select(DeliveryOrder).where(
+        DeliveryOrder.work_date >= date_from,
+        DeliveryOrder.work_date <= date_to,
+    )
+    if employee_id is not None:
+        employee = await session.get(Employee, employee_id)
+        if employee is None or not employee.iiko_id:
+            return {
+                "items": [],
+                "summary": {"count": 0, "avg_minutes": None, "revenue_total": "0"},
+                "limit": limit,
+                "offset": offset,
+            }
+        base = base.where(DeliveryOrder.courier_iiko_id == employee.iiko_id)
+    if service_type:
+        base = base.where(DeliveryOrder.service_type == service_type)
+    if not include_cancelled:
+        from sqlalchemy import func, or_
+
+        from app.services.couriers.shift_matching import NON_DELIVERY_STATUSES as _CANCELLED
+
+        status_lower = func.lower(DeliveryOrder.status)
+        base = base.where(
+            or_(
+                DeliveryOrder.status.is_(None),
+                status_lower.notin_(_CANCELLED),
+            )
+        )
+
+    list_query = (
+        base.order_by(
+            DeliveryOrder.taken_at.desc().nullslast(),
+            DeliveryOrder.opened_at.desc().nullslast(),
+        )
+        .limit(limit)
+        .offset(offset)
+    )
+    orders = (await session.scalars(list_query)).all()
+
+    courier_iiko_ids = {o.courier_iiko_id for o in orders if o.courier_iiko_id}
+    employees: dict[str, str] = {}
+    if courier_iiko_ids:
+        emp_rows = (
+            await session.scalars(
+                select(Employee).where(Employee.iiko_id.in_(courier_iiko_ids))
+            )
+        ).all()
+        for emp in emp_rows:
+            if emp.iiko_id:
+                employees[emp.iiko_id] = emp.full_name
+
+    items: list[dict[str, Any]] = []
+    for order in orders:
+        items.append(
+            {
+                "id": str(order.id),
+                "iiko_order_id": order.iiko_order_id,
+                "order_number": order.order_number,
+                "work_date": order.work_date.isoformat(),
+                "status": order.status,
+                "service_type": order.service_type,
+                "courier_iiko_id": order.courier_iiko_id,
+                "courier_employee_name": (
+                    employees.get(order.courier_iiko_id) if order.courier_iiko_id else None
+                ),
+                "opened_at": order.opened_at.isoformat() if order.opened_at else None,
+                "taken_at": order.taken_at.isoformat() if order.taken_at else None,
+                "delivered_at": order.delivered_at.isoformat() if order.delivered_at else None,
+                "way_duration_minutes": (
+                    str(order.way_duration_minutes)
+                    if order.way_duration_minutes is not None
+                    else None
+                ),
+                "revenue": str(order.revenue) if order.revenue is not None else None,
+            }
+        )
+
+    from sqlalchemy import func as _func
+
+    summary_row = (
+        await session.execute(
+            select(
+                _func.count(DeliveryOrder.id),
+                _func.avg(DeliveryOrder.way_duration_minutes),
+                _func.coalesce(_func.sum(DeliveryOrder.revenue), 0),
+            ).select_from(base.subquery())
+        )
+    ).one()
+    count_total, avg_minutes, revenue_total = summary_row
+
+    return {
+        "items": items,
+        "summary": {
+            "count": int(count_total or 0),
+            "avg_minutes": float(avg_minutes) if avg_minutes is not None else None,
+            "revenue_total": str(revenue_total) if revenue_total is not None else "0",
+        },
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.post("/iiko/sync-deliveries", dependencies=COURIERS_SHIFTS_SYNC_ACCESS)
+async def post_iiko_delivery_sync(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
+) -> dict[str, int]:
+    """Manual sync доставок через OLAP. Без параметров — hot window (вчера-сегодня)."""
+    today = datetime.now(MOSCOW_TZ).date()
+    if date_from is None or date_to is None:
+        date_from = today - timedelta(days=1)
+        date_to = today
+
+    if date_from > date_to:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="date_from must be <= date_to",
+        )
+    # Cap to today, чтобы не уйти в будущее
+    if date_to > today:
+        date_to = today
+    if date_from > today:
+        date_from = today
+
+    try:
+        result = await sync_courier_olap_deliveries(
+            session, date_from=date_from, date_to=date_to
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
+
+    return result.as_dict()
 
 
 @router.get(

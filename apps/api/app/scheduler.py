@@ -30,6 +30,7 @@ from app.services.banking.own_accounts import sync_own_accounts
 from app.services.banking.sber import SberClient
 from app.services.banking.tbank import TbankClient
 from app.services.couriers.iiko_attendance_sync import sync_attendance
+from app.services.couriers.iiko_olap_sync import sync_courier_olap_deliveries
 from app.services.couriers.shift_matching import recalculate_matches
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,17 @@ async def iiko_courier_shift_matching_job() -> None:
     await run_iiko_courier_shift_matching_once()
 
 
+@scheduler.scheduled_job(
+    "interval",
+    minutes=20,
+    id="iiko_courier_delivery_sync",
+    max_instances=1,
+    coalesce=True,
+)
+async def iiko_courier_delivery_sync_job() -> None:
+    await run_with_iiko_backoff(run_iiko_courier_delivery_sync_once)
+
+
 async def run_iiko_courier_attendance_sync_once() -> dict[str, object]:
     now = datetime.now(MOSCOW_TZ)
     date_from = now.date() - timedelta(days=2)
@@ -100,6 +112,20 @@ async def run_iiko_courier_shift_matching_once() -> dict[str, object]:
         await session.commit()
     logger.info("iiko courier shift matching completed: %s", report.as_dict())
     return report.as_dict()
+
+
+async def run_iiko_courier_delivery_sync_once() -> dict[str, object]:
+    now = datetime.now(MOSCOW_TZ)
+    date_from = now.date() - timedelta(days=1)
+    date_to = now.date()
+    async with AsyncSessionLocal() as session:
+        result = await sync_courier_olap_deliveries(
+            session, date_from=date_from, date_to=date_to
+        )
+        await session.commit()
+    payload = result.as_dict()
+    logger.info("iiko courier delivery sync completed: %s", payload)
+    return payload
 
 
 async def run_with_iiko_backoff(operation: Callable[[], Awaitable[object]]) -> None:

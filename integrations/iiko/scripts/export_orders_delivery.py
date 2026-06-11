@@ -125,14 +125,10 @@ class IikoClient:
     def refresh_token(self) -> None:
         if not self.login or not self.password_sha1:
             raise IikoHTTPError(None, b"Cannot refresh token: missing login or pass")
-        body = urllib.parse.urlencode(
-            {"login": self.login, "pass": self.password_sha1}
-        ).encode("utf-8")
+        query = urllib.parse.urlencode({"login": self.login, "pass": self.password_sha1})
         request = urllib.request.Request(
-            self.api_url("/auth"),
-            data=body,
-            method="POST",
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            f"{self.api_url('/auth')}?{query}",
+            method="GET",
         )
         with urllib.request.urlopen(
             request, timeout=self.timeout, context=self.context

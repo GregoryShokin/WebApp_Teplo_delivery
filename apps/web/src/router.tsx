@@ -273,6 +273,18 @@ const routes: AppRoute[] = [
             ),
           },
           {
+            path: "shifts",
+            render: ({ navigate }) => (
+              <CourierScheduleRoute activeTab="shifts" onNavigate={navigate} />
+            ),
+          },
+          {
+            path: "deliveries",
+            render: ({ navigate }) => (
+              <CourierScheduleRoute activeTab="deliveries" onNavigate={navigate} />
+            ),
+          },
+          {
             path: ":unknown",
             render: ({ navigate }) => (
               <RedirectRoute onNavigate={navigate} to="/couriers/schedule/grid" />
