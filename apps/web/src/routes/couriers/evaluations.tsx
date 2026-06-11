@@ -62,12 +62,11 @@ import {
   deleteCourierEvaluation,
   getCourierEvaluationCriteria,
   getCourierEvaluations,
-  getEmployees,
+  getCourierList,
   patchCourierEvaluation,
   type CourierEvaluation,
   type CourierEvaluationCriterion,
   type CourierEvaluationSource,
-  type Employee,
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -75,6 +74,10 @@ import { cn } from "@/lib/utils";
 type PeriodPreset = "today" | "week" | "current-month" | "previous-month" | "custom";
 type ScoreTone = "positive" | "neutral" | "negative";
 type FormMode = "create" | "edit";
+
+// Журнал оценок берёт курьеров из /couriers/list (доступно по couriers.list.read),
+// а не из staff-реестра /employees/, который кассиру недоступен.
+type CourierOption = { id: string; full_name: string; status: string };
 
 type EvaluationFormState = {
   courierId: string;
@@ -151,22 +154,27 @@ export function CourierEvaluationsRoute() {
     queryKey: ["evaluations", dateRange.from, dateRange.to],
     queryFn: () => getCourierEvaluations({ from: dateRange.from, to: dateRange.to }),
   });
-  const employeesQuery = useQuery({
-    queryKey: ["employees", "courier-evaluations-roster"],
-    queryFn: () => getEmployees({ status: "all" }),
+  const couriersQuery = useQuery({
+    queryKey: ["courier-list", "evaluations-roster"],
+    queryFn: () => getCourierList({ status: "all" }),
   });
 
-  const employees = useMemo(() => employeesQuery.data ?? [], [employeesQuery.data]);
+  const couriers = useMemo<CourierOption[]>(
+    () =>
+      (couriersQuery.data?.rows ?? []).map((row) => ({
+        id: row.employee_id,
+        full_name: row.full_name,
+        status: row.status,
+      })),
+    [couriersQuery.data],
+  );
   const criteria = useMemo(() => criteriaQuery.data ?? [], [criteriaQuery.data]);
   const evaluations = useMemo(() => evaluationsQuery.data ?? [], [evaluationsQuery.data]);
-  const employeeById = useMemo(() => indexById(employees), [employees]);
+  const employeeById = useMemo(() => indexById(couriers), [couriers]);
   const criterionById = useMemo(() => indexCriteriaById(criteria), [criteria]);
   const activeCouriers = useMemo(
-    () =>
-      employees
-        .filter((employee) => employee.position === "Курьер" && employee.status === "active")
-        .sort(byFullName),
-    [employees],
+    () => couriers.filter((courier) => courier.status === "active").sort(byFullName),
+    [couriers],
   );
   const authorOptions = useMemo(() => getAuthorOptions(evaluations), [evaluations]);
   const currentUserId = permissions.snapshot.user?.id ?? null;
@@ -175,7 +183,7 @@ export function CourierEvaluationsRoute() {
   const hasForbiddenRead =
     apiErrorStatus(criteriaQuery.error) === 403 ||
     apiErrorStatus(evaluationsQuery.error) === 403 ||
-    apiErrorStatus(employeesQuery.error) === 403;
+    apiErrorStatus(couriersQuery.error) === 403;
 
   const filteredEvaluations = useMemo(() => {
     const mineId = currentUserId;
@@ -333,7 +341,7 @@ export function CourierEvaluationsRoute() {
   }
 
   const isInitialLoading =
-    criteriaQuery.isLoading || evaluationsQuery.isLoading || employeesQuery.isLoading;
+    criteriaQuery.isLoading || evaluationsQuery.isLoading || couriersQuery.isLoading;
   const isMutating = createMutation.isPending || updateMutation.isPending;
 
   return (
@@ -357,7 +365,7 @@ export function CourierEvaluationsRoute() {
               onClick={() => {
                 void queryClient.invalidateQueries({ queryKey: ["evaluations"] });
                 void queryClient.invalidateQueries({ queryKey: ["evaluation-criteria"] });
-                void queryClient.invalidateQueries({ queryKey: ["employees"] });
+                void queryClient.invalidateQueries({ queryKey: ["courier-list"] });
               }}
               variant="outline"
             >
@@ -510,7 +518,7 @@ function FiltersPanel({
   period,
   sourceFilter,
 }: {
-  activeCouriers: Employee[];
+  activeCouriers: CourierOption[];
   authorFilter: string[];
   authorOptions: Array<{ value: string; label: string }>;
   canFilterMine: boolean;
@@ -706,7 +714,7 @@ function EvaluationCard({
 }: {
   authorName?: string | null;
   criterion?: CourierEvaluationCriterion;
-  courier?: Employee;
+  courier?: CourierOption;
   evaluation: CourierEvaluation;
   isMine: boolean;
   canEdit: boolean;
@@ -805,7 +813,7 @@ function EvaluationFormSheet({
   open,
   permissionBlocked,
 }: {
-  activeCouriers: Employee[];
+  activeCouriers: CourierOption[];
   canCreate: boolean;
   criteria: CourierEvaluationCriterion[];
   form: EvaluationFormState;
@@ -1070,8 +1078,8 @@ function invalidateEvaluationQueries(queryClient: ReturnType<typeof useQueryClie
   ]);
 }
 
-function indexById(employees: Employee[]) {
-  return new Map(employees.map((employee) => [employee.id, employee]));
+function indexById(couriers: CourierOption[]) {
+  return new Map(couriers.map((courier) => [courier.id, courier]));
 }
 
 function indexCriteriaById(criteria: CourierEvaluationCriterion[]) {
@@ -1093,7 +1101,7 @@ function getAuthorOptions(evaluations: CourierEvaluation[]) {
     .sort((first, second) => first.label.localeCompare(second.label, "ru"));
 }
 
-function byFullName(first: Employee, second: Employee) {
+function byFullName(first: CourierOption, second: CourierOption) {
   return first.full_name.localeCompare(second.full_name, "ru");
 }
 
