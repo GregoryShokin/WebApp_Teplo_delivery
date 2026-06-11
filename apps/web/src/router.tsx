@@ -9,6 +9,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { CourierDepositsRoute } from "@/routes/couriers/deposits";
 import { PayrollRoute } from "@/routes/payroll";
 import { DdsRoute } from "@/routes/dds";
+import { CounterpartiesRoute } from "@/routes/counterparties";
 import { LoginRoute } from "@/routes/login";
 import { AccessControlRoute } from "@/routes/access-control";
 import { CourierEvaluationsRoute } from "@/routes/couriers/evaluations";
@@ -53,6 +54,29 @@ const routes: AppRoute[] = [
   {
     path: "/staff",
     render: ({ navigate }) => <StaffRoute onNavigate={navigate} />,
+  },
+  {
+    path: "/counterparties",
+    children: [
+      {
+        path: "",
+        render: ({ navigate }) => (
+          <CounterpartiesRoute activeTab="inbox" onNavigate={navigate} />
+        ),
+      },
+      {
+        path: "drafts",
+        render: ({ navigate }) => (
+          <CounterpartiesRoute activeTab="drafts" onNavigate={navigate} />
+        ),
+      },
+      {
+        path: "registry",
+        render: ({ navigate }) => (
+          <CounterpartiesRoute activeTab="registry" onNavigate={navigate} />
+        ),
+      },
+    ],
   },
   {
     path: "/payroll",
