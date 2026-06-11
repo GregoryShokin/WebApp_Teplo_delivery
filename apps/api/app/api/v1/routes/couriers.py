@@ -420,7 +420,9 @@ async def post_iiko_delivery_sync(
         result = await sync_courier_olap_deliveries(
             session, date_from=date_from, date_to=date_to
         )
+        await session.commit()
     except RuntimeError as exc:
+        await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
         ) from exc
