@@ -90,6 +90,7 @@ def build_shift_matches(
     now: datetime | None = None,
 ) -> list[CourierShiftMatch]:
     recalculated_at = now or datetime.now(UTC)
+    today_local = recalculated_at.astimezone(MOSCOW_TZ).date()
     requested_employees = set(employee_ids or [])
     schedules_by_key: dict[tuple[uuid.UUID, date], list[CourierScheduleEntry]] = defaultdict(list)
     shifts_by_key: dict[tuple[uuid.UUID, date], list[CourierIikoShift]] = defaultdict(list)
@@ -123,7 +124,10 @@ def build_shift_matches(
 
         for schedule in day_schedules:
             shift = pop_best_shift_for_schedule(unused_shifts, schedule)
+            if is_shift_pending(work_date, shift, today_local):
+                continue  # не создаём match — UI покажет план как есть
             if shift is None:
+                # work_date < today_local гарантировано: прошедший день без факта
                 matches.append(
                     make_match(
                         courier_id=courier_id,
@@ -156,10 +160,14 @@ def build_shift_matches(
             continue
 
         for shift in unused_shifts:
+            if shift.closed_at is None:
+                continue  # open shift без плана: пока не помощь, пока ничего
             worked_minutes = worked_minutes_for_shift(shift)
             if worked_minutes is None or worked_minutes < MIN_WORKED_MINUTES:
                 continue
             deliveries_count = delivery_counts.get((courier_id, work_date), 0)
+            if deliveries_count < 1:
+                continue  # помощь требует ≥1 доставку
             matches.append(
                 make_match(
                     courier_id=courier_id,
@@ -351,6 +359,20 @@ def report_for_matches(matches: Sequence[CourierShiftMatch]) -> MatchRecalculati
         elif match.status == CourierShiftMatchStatus.NOT_COUNTED:
             report.not_counted += 1
     return report
+
+
+def is_shift_pending(
+    work_date: date,
+    shift: CourierIikoShift | None,
+    today_local: date,
+) -> bool:
+    """True если match-record создавать не нужно.
+
+    Причины: план без факта на сегодня/будущее, либо открытая смена (closed_at IS NULL).
+    """
+    if shift is None:
+        return work_date >= today_local
+    return shift.closed_at is None
 
 
 def planned_shift_status(

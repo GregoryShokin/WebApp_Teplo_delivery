@@ -13,6 +13,11 @@ from app.services.couriers.shift_matching import build_shift_matches
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
+NOW = datetime(2026, 6, 11, 12, 0, tzinfo=MOSCOW_TZ)
+TODAY = date(2026, 6, 11)
+YESTERDAY = date(2026, 6, 10)
+TOMORROW = date(2026, 6, 12)
+
 
 def test_shift_matching_covers_plan_fact_status_matrix_and_open_shift() -> None:
     courier_id = uuid.uuid4()
@@ -39,6 +44,7 @@ def test_shift_matching_covers_plan_fact_status_matrix_and_open_shift() -> None:
         },
         from_date=date(2026, 6, 1),
         to_date=date(2026, 6, 7),
+        now=datetime(2026, 6, 30, 12, tzinfo=MOSCOW_TZ),
     )
 
     by_date = {match.work_date: match for match in matches}
@@ -49,12 +55,109 @@ def test_shift_matching_covers_plan_fact_status_matrix_and_open_shift() -> None:
     assert by_date[date(2026, 6, 3)].status == CourierShiftMatchStatus.NO_SHOW_PRIMARY
     assert by_date[date(2026, 6, 4)].status == CourierShiftMatchStatus.HELPING
     assert by_date[date(2026, 6, 4)].deliveries_count == 1
-    assert by_date[date(2026, 6, 5)].status == CourierShiftMatchStatus.HELPING
-    assert by_date[date(2026, 6, 5)].schedule_entry_id is None
+    assert by_date[date(2026, 6, 4)].schedule_entry_id is None
+    # 6/5: помощь без доставок (0) — match не создаётся (правило ≥1 доставку)
+    assert date(2026, 6, 5) not in by_date
+    # 6/6: closed shift < 120 мин без плана — не записываем
     assert date(2026, 6, 6) not in by_date
-    assert by_date[date(2026, 6, 7)].status == CourierShiftMatchStatus.SHORT_SECONDARY
-    assert by_date[date(2026, 6, 7)].worked_minutes is None
-    assert len(matches) == 6
+    # 6/7: open shift по плану — пока не закрыта, статус не выставляем
+    assert date(2026, 6, 7) not in by_date
+    assert len(matches) == 4
+
+
+def test_plan_primary_no_fact_today_skips_match() -> None:
+    courier_id = uuid.uuid4()
+    matches = build_shift_matches(
+        schedules=[schedule(1, courier_id, TODAY, category="primary")],
+        shifts=[],
+        delivery_counts={},
+        from_date=TODAY,
+        to_date=TODAY,
+        now=NOW,
+    )
+    assert matches == []
+
+
+def test_plan_primary_no_fact_future_skips_match() -> None:
+    courier_id = uuid.uuid4()
+    matches = build_shift_matches(
+        schedules=[schedule(1, courier_id, TOMORROW, category="primary")],
+        shifts=[],
+        delivery_counts={},
+        from_date=TOMORROW,
+        to_date=TOMORROW,
+        now=NOW,
+    )
+    assert matches == []
+
+
+def test_plan_primary_open_shift_today_skips_match() -> None:
+    courier_id = uuid.uuid4()
+    matches = build_shift_matches(
+        schedules=[schedule(1, courier_id, TODAY, category="primary")],
+        shifts=[shift(1, courier_id, TODAY, opened_hour=10, closed=False)],
+        delivery_counts={},
+        from_date=TODAY,
+        to_date=TODAY,
+        now=NOW,
+    )
+    assert matches == []
+
+
+def test_plan_primary_closed_short_shift_yesterday_is_short() -> None:
+    courier_id = uuid.uuid4()
+    matches = build_shift_matches(
+        schedules=[schedule(1, courier_id, YESTERDAY, category="primary")],
+        shifts=[shift(1, courier_id, YESTERDAY, opened_hour=10, hours=1)],
+        delivery_counts={},
+        from_date=YESTERDAY,
+        to_date=YESTERDAY,
+        now=NOW,
+    )
+    assert len(matches) == 1
+    assert matches[0].status == CourierShiftMatchStatus.SHORT_PRIMARY
+    assert matches[0].worked_minutes == 60
+
+
+def test_no_plan_open_shift_today_skips_match() -> None:
+    courier_id = uuid.uuid4()
+    matches = build_shift_matches(
+        schedules=[],
+        shifts=[shift(1, courier_id, TODAY, opened_hour=10, closed=False)],
+        delivery_counts={},
+        from_date=TODAY,
+        to_date=TODAY,
+        now=NOW,
+    )
+    assert matches == []
+
+
+def test_no_plan_closed_shift_with_deliveries_is_helping() -> None:
+    courier_id = uuid.uuid4()
+    matches = build_shift_matches(
+        schedules=[],
+        shifts=[shift(1, courier_id, YESTERDAY, opened_hour=10, hours=3)],
+        delivery_counts={(courier_id, YESTERDAY): 5},
+        from_date=YESTERDAY,
+        to_date=YESTERDAY,
+        now=NOW,
+    )
+    assert len(matches) == 1
+    assert matches[0].status == CourierShiftMatchStatus.HELPING
+    assert matches[0].deliveries_count == 5
+
+
+def test_no_plan_closed_shift_without_deliveries_skips_match() -> None:
+    courier_id = uuid.uuid4()
+    matches = build_shift_matches(
+        schedules=[],
+        shifts=[shift(1, courier_id, YESTERDAY, opened_hour=10, hours=3)],
+        delivery_counts={(courier_id, YESTERDAY): 0},
+        from_date=YESTERDAY,
+        to_date=YESTERDAY,
+        now=NOW,
+    )
+    assert matches == []
 
 
 def schedule(
