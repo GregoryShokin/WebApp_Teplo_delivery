@@ -72,6 +72,7 @@ async def iiko_courier_attendance_sync_job() -> None:
     id="iiko_courier_shift_matching",
     max_instances=1,
     coalesce=True,
+    next_run_time=datetime.now(MOSCOW_TZ),
 )
 async def iiko_courier_shift_matching_job() -> None:
     await run_iiko_courier_shift_matching_once()
@@ -100,6 +101,12 @@ async def run_iiko_courier_attendance_sync_once() -> dict[str, object]:
             run_reason="cron",
         )
     logger.info("iiko courier attendance sync completed: %s", report.as_dict())
+    # Триггерим matching сразу после attendance sync — иначе свежие смены
+    # остаются как no_show до следующего matching-тика (раз в час).
+    try:
+        await run_iiko_courier_shift_matching_once()
+    except Exception:  # noqa: BLE001
+        logger.exception("post-attendance matching recalc failed; continuing")
     return report.as_dict()
 
 
