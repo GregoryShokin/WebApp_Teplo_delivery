@@ -47,7 +47,11 @@ class Settings(BaseSettings):
     employee_sync_enabled: bool = True
     employee_sync_interval_hours: int = 6
     counterparty_invoice_sync_enabled: bool = True
-    counterparty_invoice_sync_interval_hours: int = 5
+    # Periodic iiko invoice sync runs often on a NARROW window (fresh supplies appear via
+    # DocsInbox within minutes); the full window is reserved for the manual «Синхронизировать»
+    # button, which back-fills older / amended invoices on demand.
+    counterparty_invoice_sync_interval_minutes: int = 15
+    counterparty_invoice_sync_cron_days: int = 7
     counterparty_invoice_sync_days: int = 30
     counterparty_match_window_days: int = 7
     teplo_bank_client_mode: Literal["mock", "live"] = "mock"

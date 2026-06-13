@@ -11,7 +11,8 @@ logger = logging.getLogger(__name__)
 
 
 async def _run() -> None:
-    days = get_settings().counterparty_invoice_sync_days
+    # Narrow window on the periodic tick — the manual button uses the full window.
+    days = get_settings().counterparty_invoice_sync_cron_days
     async with AsyncSessionLocal() as session:
         result = await sync_counterparty_invoices(session, days=days, run_reason="cron")
     logger.info("counterparty invoice sync completed: %s", result.as_dict())

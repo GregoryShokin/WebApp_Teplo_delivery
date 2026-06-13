@@ -35,7 +35,7 @@ def register_jobs(scheduler: BackgroundScheduler) -> None:
         scheduler.add_job(
             run_counterparty_invoice_sync_job,
             "interval",
-            hours=settings.counterparty_invoice_sync_interval_hours,
+            minutes=settings.counterparty_invoice_sync_interval_minutes,
             id="counterparty_invoice_sync",
             replace_existing=True,
             max_instances=1,
