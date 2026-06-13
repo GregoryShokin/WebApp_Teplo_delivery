@@ -400,6 +400,18 @@ export async function getBarterDetail(id: string): Promise<BarterDetail> {
   return response.data;
 }
 
+export type BarterSuggestion = {
+  payable_ids: string[];
+  receivable_ids: string[];
+  amount: number;
+  confident: boolean;
+};
+
+export async function getBarterSuggestions(id: string): Promise<BarterSuggestion[]> {
+  const response = await api.get<BarterSuggestion[]>(`${BASE}/${id}/barter/suggestions`);
+  return response.data;
+}
+
 export async function autoSettleBarter(id: string): Promise<{ settled: number }> {
   const response = await api.post<{ settled: number }>(`${BASE}/${id}/barter/auto-settle`);
   return response.data;

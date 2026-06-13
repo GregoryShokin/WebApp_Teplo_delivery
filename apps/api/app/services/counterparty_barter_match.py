@@ -68,6 +68,20 @@ class BarterDetail:
     settlements: list[BarterSettlementView] = field(default_factory=list)
 
 
+@dataclass
+class BarterSuggestion:
+    """A proposed netting the UI highlights so the manager doesn't pick blind.
+
+    ``confident`` mirrors the auto-settle rule (exact sum + exact product set, unique);
+    non-confident pairs match by sum only and need номенклатура verified by a human.
+    """
+
+    payable_ids: list[uuid.UUID]
+    receivable_ids: list[uuid.UUID]
+    amount: Decimal
+    confident: bool
+
+
 def _ref(invoice: SupplierInvoice) -> _Ref:
     return _Ref(invoice=invoice, amount=_money(invoice.amount), products=_products(invoice))
 
@@ -135,6 +149,63 @@ def _first_confident_match(
                     return [anchor], subset  # anchor payable ↔ subset of receivables
                 return subset, [anchor]  # anchor receivable ↔ subset of payables
     return None
+
+
+def _suggestion(
+    payable_refs: Sequence[_Ref], receivable_refs: Sequence[_Ref], *, confident: bool
+) -> BarterSuggestion:
+    return BarterSuggestion(
+        payable_ids=[ref.invoice.id for ref in payable_refs],
+        receivable_ids=[ref.invoice.id for ref in receivable_refs],
+        amount=_money(sum((ref.amount for ref in payable_refs), Decimal("0.00"))),
+        confident=confident,
+    )
+
+
+def _suggest_pairs(payables: list[_Ref], receivables: list[_Ref]) -> list[BarterSuggestion]:
+    """Non-overlapping netting proposals for the UI to highlight.
+
+    Pass 1 collects confident matches (same rule as auto-settle: exact sum + exact
+    product set, unique). Pass 2 proposes the smallest remaining batch matching by sum
+    only — номенклатура unverified, so the manager must confirm (``confident=False``).
+    """
+    used: set[uuid.UUID] = set()
+    suggestions: list[BarterSuggestion] = []
+
+    def avail(refs: list[_Ref]) -> list[_Ref]:
+        return [ref for ref in refs if ref.invoice.id not in used]
+
+    while True:
+        match = _first_confident_match(avail(payables), avail(receivables))
+        if match is None:
+            break
+        payable_refs, receivable_refs = match
+        suggestions.append(_suggestion(payable_refs, receivable_refs, confident=True))
+        used.update(ref.invoice.id for ref in (*payable_refs, *receivable_refs))
+
+    for anchor_is_payable in (True, False):
+        for anchor in avail(payables if anchor_is_payable else receivables):
+            if anchor.invoice.id in used:
+                continue
+            pool = avail(receivables if anchor_is_payable else payables)
+            subsets = _subsets_summing(pool, anchor.amount)
+            if not subsets:
+                continue
+            subset = list(min(subsets, key=len))  # prefer the smallest batch (1:1 first)
+            payable_refs, receivable_refs = (
+                ([anchor], subset) if anchor_is_payable else (subset, [anchor])
+            )
+            suggestions.append(_suggestion(payable_refs, receivable_refs, confident=False))
+            used.update(ref.invoice.id for ref in (*payable_refs, *receivable_refs))
+
+    return suggestions
+
+
+async def suggest_barter_matches(
+    session: AsyncSession, counterparty_id: uuid.UUID
+) -> list[BarterSuggestion]:
+    payables, receivables = await _load_open(session, counterparty_id)
+    return _suggest_pairs(payables, receivables)
 
 
 async def _create_settlement(

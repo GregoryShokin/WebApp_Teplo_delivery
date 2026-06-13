@@ -753,6 +753,23 @@ async def get_barter(
     }
 
 
+@router.get("/{counterparty_id}/barter/suggestions", dependencies=READ)
+async def get_barter_suggestions(
+    counterparty_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[dict[str, Any]]:
+    suggestions = await barter.suggest_barter_matches(session, counterparty_id)
+    return [
+        {
+            "payable_ids": [str(i) for i in suggestion.payable_ids],
+            "receivable_ids": [str(i) for i in suggestion.receivable_ids],
+            "amount": float(suggestion.amount),
+            "confident": suggestion.confident,
+        }
+        for suggestion in suggestions
+    ]
+
+
 @router.post("/{counterparty_id}/barter/auto-settle", dependencies=OPERATE)
 async def post_barter_auto_settle(
     counterparty_id: uuid.UUID,

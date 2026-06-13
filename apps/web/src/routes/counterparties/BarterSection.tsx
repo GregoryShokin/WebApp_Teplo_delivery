@@ -11,8 +11,10 @@ import { apiErrorMessage } from "@/lib/api";
 import {
   autoSettleBarter,
   getBarterDetail,
+  getBarterSuggestions,
   settleBarter,
   type BarterInvoice,
+  type BarterSuggestion,
 } from "./api";
 import { formatRub } from "./shared";
 
@@ -34,6 +36,10 @@ export function BarterSection({
     queryKey: ["cp", "barter", counterpartyId],
     queryFn: () => getBarterDetail(counterpartyId),
   });
+  const suggestQuery = useQuery({
+    queryKey: ["cp", "barter-suggest", counterpartyId],
+    queryFn: () => getBarterSuggestions(counterpartyId),
+  });
   const [payableSel, setPayableSel] = useState<Set<string>>(new Set());
   const [receivableSel, setReceivableSel] = useState<Set<string>>(new Set());
 
@@ -41,6 +47,11 @@ export function BarterSection({
     await queryClient.invalidateQueries({ queryKey: ["cp"] });
     setPayableSel(new Set());
     setReceivableSel(new Set());
+  };
+
+  const applySuggestion = (suggestion: BarterSuggestion) => {
+    setPayableSel(new Set(suggestion.payable_ids));
+    setReceivableSel(new Set(suggestion.receivable_ids));
   };
 
   const autoMutation = useMutation({
@@ -71,6 +82,15 @@ export function BarterSection({
   if (!detail) {
     return null;
   }
+
+  const suggestions = suggestQuery.data ?? [];
+  const numberById = new Map<string, string>();
+  for (const invoice of [...detail.open_payables, ...detail.open_receivables]) {
+    numberById.set(invoice.id, invoice.number ?? "—");
+  }
+  const suggestedIds = new Set(
+    suggestions.flatMap((suggestion) => [...suggestion.payable_ids, ...suggestion.receivable_ids]),
+  );
 
   const payableSum = sumOf(detail.open_payables, payableSel);
   const receivableSum = sumOf(detail.open_receivables, receivableSel);
@@ -106,11 +126,53 @@ export function BarterSection({
         сторон — суммы должны совпасть.
       </p>
 
+      {suggestions.length > 0 ? (
+        <div className="space-y-1.5">
+          <h4 className="text-xs font-medium uppercase text-muted-foreground">Предложенные пары</h4>
+          {suggestions.map((suggestion, index) => {
+            const payableNumbers = suggestion.payable_ids
+              .map((id) => numberById.get(id) ?? "—")
+              .join(", ");
+            const receivableNumbers = suggestion.receivable_ids
+              .map((id) => numberById.get(id) ?? "—")
+              .join(", ");
+            return (
+              <div
+                key={index}
+                className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-2 text-xs"
+              >
+                <span className="tabular-nums font-medium">{formatRub(suggestion.amount)}</span>
+                <span className="text-muted-foreground">
+                  займы {payableNumbers} ↔ возвраты {receivableNumbers}
+                </span>
+                <Badge
+                  variant="outline"
+                  className={suggestion.confident ? "text-emerald-600" : "text-amber-600"}
+                >
+                  {suggestion.confident ? "уверенно" : "проверьте номенклатуру"}
+                </Badge>
+                {canOperate ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="ml-auto h-7"
+                    onClick={() => applySuggestion(suggestion)}
+                  >
+                    Выбрать
+                  </Button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
       <div className="grid gap-4 sm:grid-cols-2">
         <BarterColumn
           title="Мы должны (займы нам)"
           invoices={detail.open_payables}
           selected={payableSel}
+          suggested={suggestedIds}
           onToggle={(id) => setPayableSel((prev) => toggle(prev, id))}
           disabled={!canOperate}
         />
@@ -118,6 +180,7 @@ export function BarterSection({
           title="Нам должны (наши возвраты)"
           invoices={detail.open_receivables}
           selected={receivableSel}
+          suggested={suggestedIds}
           onToggle={(id) => setReceivableSel((prev) => toggle(prev, id))}
           disabled={!canOperate}
         />
@@ -183,12 +246,14 @@ function BarterColumn({
   title,
   invoices,
   selected,
+  suggested,
   onToggle,
   disabled,
 }: {
   title: string;
   invoices: BarterInvoice[];
   selected: Set<string>;
+  suggested: Set<string>;
   onToggle: (id: string) => void;
   disabled: boolean;
 }) {
@@ -201,7 +266,9 @@ function BarterColumn({
         invoices.map((invoice) => (
           <label
             key={invoice.id}
-            className="flex items-start gap-2 rounded-md border p-2 text-sm"
+            className={`flex items-start gap-2 rounded-md border p-2 text-sm ${
+              suggested.has(invoice.id) ? "border-dashed border-primary/50 bg-primary/5" : ""
+            }`}
           >
             <Checkbox
               checked={selected.has(invoice.id)}
