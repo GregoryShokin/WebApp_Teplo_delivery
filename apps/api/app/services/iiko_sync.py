@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import uuid
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Mapping
@@ -395,6 +396,15 @@ def _request_iiko_with_incomplete_read_retry(
             if attempt == IIKO_INCOMPLETE_READ_ATTEMPTS - 1:
                 raise
             time.sleep(IIKO_INCOMPLETE_READ_RETRY_DELAY_SECONDS)
+        except urllib.error.URLError as exc:
+            # iiko-сервер недоступен (отказ соединения / DNS / таймаут на уровне
+            # сети). refresh_token() бросает сырой URLError мимо обработчиков
+            # IikoHTTPError — оборачиваем в понятную 503, чтобы UI показывал
+            # «iiko недоступен», а не невнятный 500/Network Error.
+            raise IikoEmployeeOperationError(
+                "iiko недоступен — сервер не отвечает. Попробуйте позже.",
+                status_code=503,
+            ) from exc
     raise RuntimeError("unreachable")
 
 
