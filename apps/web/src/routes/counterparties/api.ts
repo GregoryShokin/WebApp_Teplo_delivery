@@ -25,6 +25,7 @@ export type CounterpartyInvoice = {
   remaining: number;
   payment_status: string;
   draft_id: string | null;
+  barter_settlement_id: string | null;
 };
 
 export type RegistryItem = {

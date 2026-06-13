@@ -116,6 +116,7 @@ class InvoiceItem:
     remaining: Decimal
     payment_status: str
     draft_id: uuid.UUID | None
+    barter_settlement_id: uuid.UUID | None = None
 
 
 @dataclass
@@ -249,6 +250,7 @@ def _build_invoice_item(
         remaining=_money(amount - allocated_money),
         payment_status=invoice.payment_status,
         draft_id=invoice.draft_id,
+        barter_settlement_id=invoice.barter_settlement_id,
     )
 
 

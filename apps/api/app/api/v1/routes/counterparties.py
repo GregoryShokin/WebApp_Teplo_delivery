@@ -94,6 +94,7 @@ class InvoiceRead(BaseModel):
     remaining: float
     payment_status: str
     draft_id: uuid.UUID | None
+    barter_settlement_id: uuid.UUID | None = None
 
 
 class RegistryRead(BaseModel):

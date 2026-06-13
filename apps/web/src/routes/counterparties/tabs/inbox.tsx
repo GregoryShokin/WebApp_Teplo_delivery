@@ -81,6 +81,9 @@ export function InboxTab({
         status: statusFilter,
         category_id: categoryId === ALL ? undefined : categoryId,
         relationship: relationship === ALL ? undefined : relationship,
+        // Бартер двусторонний (займы нам + наши возвраты) — показываем обе стороны,
+        // чтобы были видны оба цвета «Возвращено». Иначе инбокс = только приходные.
+        direction: relationship === "barter" ? "" : undefined,
       }),
   });
   const invoices = invoicesQuery.data ?? [];
@@ -190,7 +193,11 @@ export function InboxTab({
         invoice.draft_id ? (
           <Badge className="border-sky-200 bg-sky-50 text-sky-700">В банке</Badge>
         ) : (
-          <InvoiceStatusBadge status={invoice.payment_status} />
+          <InvoiceStatusBadge
+            status={invoice.payment_status}
+            direction={invoice.direction}
+            barterSettled={!!invoice.barter_settlement_id}
+          />
         ),
     },
     {

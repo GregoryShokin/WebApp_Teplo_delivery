@@ -97,7 +97,25 @@ export function isOverdue(dueDate: string | null | undefined, status: string) {
   return new Date(dueDate) < today;
 }
 
-export function InvoiceStatusBadge({ status }: { status: string }) {
+export function InvoiceStatusBadge({
+  status,
+  direction,
+  barterSettled,
+}: {
+  status: string;
+  direction?: string;
+  barterSettled?: boolean;
+}) {
+  // Бартер — это учёт займов сырьём, а не оплата. Закрытую зачётом накладную помечаем
+  // «Возвращено»: приходная (нам заняли — мы вернули) оранжевым, расходная (мы дали —
+  // нам вернули) зелёным.
+  if (barterSettled) {
+    const cls =
+      direction === "payable"
+        ? "border-orange-200 bg-orange-50 text-orange-700"
+        : "border-emerald-200 bg-emerald-50 text-emerald-700";
+    return <Badge className={cls}>Возвращено</Badge>;
+  }
   const className =
     status === "paid"
       ? "border-emerald-200 bg-emerald-50 text-emerald-700"

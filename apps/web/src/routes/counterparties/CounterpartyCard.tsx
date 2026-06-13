@@ -621,7 +621,11 @@ function InvoiceList({ title, invoices }: { title: string; invoices: CardData["i
               </span>
               <span className="flex items-center gap-3">
                 <span className="tabular-nums">{formatRub(invoice.amount)}</span>
-                <InvoiceStatusBadge status={invoice.payment_status} />
+                <InvoiceStatusBadge
+                  status={invoice.payment_status}
+                  direction={invoice.direction}
+                  barterSettled={!!invoice.barter_settlement_id}
+                />
               </span>
             </div>
           ))}
