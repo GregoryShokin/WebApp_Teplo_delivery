@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -14,11 +14,21 @@ from app.models import (
     BankOperation,
     CashflowTransaction,
     ClassificationRule,
+    Counterparty,
     OwnAccountsRegistry,
     ReconciliationCase,
     Wallet,
 )
 from app.services.banking.base import clean_digits
+
+# A manually booked DDS entry (e.g. a supplier paid straight from a bank wallet via
+# ``pay_invoice_from_wallet``) records the cash fact before the bank feed does. When the
+# statement later imports the same operation we must LINK it to that entry instead of
+# booking a second expense — otherwise the ДДС double-counts the payment. We match it
+# conservatively (same wallet + direction + exact amount, a small date drift, same payee
+# INN when the statement carries one) and only against these manual source kinds.
+PREBOOKED_DATE_WINDOW_DAYS = 3
+PREBOOKABLE_SOURCE_KINDS = ("counterparty_payment",)
 
 
 @dataclass(frozen=True)
@@ -40,8 +50,21 @@ async def run_classification_rules(
         )
     ).all()
     counts = {"classified": 0, "internal_transfer": 0, "needs_review": 0, "excluded": 0}
+    # Transactions claimed by an op earlier in this same run aren't flushed yet, so the
+    # "already linked" subquery can't see them — track them in-memory to keep matching 1:1.
+    claimed_transaction_ids: set[UUID] = set()
 
     for operation in operations:
+        if operation.cashflow_transaction_id is None:
+            prebooked = await _find_prebooked_payment(
+                session, operation, claimed=claimed_transaction_ids
+            )
+            if prebooked is not None:
+                operation.cashflow_transaction_id = prebooked.id
+                operation.classification_status = "classified"
+                claimed_transaction_ids.add(prebooked.id)
+                counts["classified"] += 1
+                continue
         matched = False
         for rule in rules:
             if not await _rule_matches(session, rule, operation):
@@ -114,6 +137,15 @@ async def apply_operation_action(
         transaction = None
         if operation.cashflow_transaction_id is not None:
             transaction = await session.get(CashflowTransaction, operation.cashflow_transaction_id)
+        if transaction is None:
+            # Manual classification can reach this directly (bypassing the reconcile pass
+            # in ``run_classification_rules``) — link a pre-booked manual payment here too
+            # so a duplicate expense is never created. Keep its article/source/allocation.
+            prebooked = await _find_prebooked_payment(session, operation, claimed=set())
+            if prebooked is not None:
+                operation.cashflow_transaction_id = prebooked.id
+                operation.classification_status = "classified"
+                return
         if transaction is None:
             transaction = CashflowTransaction(
                 wallet_id=wallet.id,
@@ -269,6 +301,72 @@ async def _wallet_for_operation(session: AsyncSession, operation: BankOperation)
         )
         .order_by(Wallet.code)
     )
+
+
+async def _find_prebooked_payment(
+    session: AsyncSession, operation: BankOperation, *, claimed: set[UUID]
+) -> CashflowTransaction | None:
+    """A manually pre-booked DDS entry that this bank operation settles, or ``None``.
+
+    Linking the bank operation to it — instead of booking a fresh ``bank_operation``
+    expense — is what prevents a double expense in the ДДС. Conservative on purpose:
+    same wallet (so cash/card entries on other wallets are never touched), same
+    direction, exact amount, a small date drift, not yet linked to any bank operation,
+    and the same payee INN whenever the statement carries one.
+    """
+    wallet = await _wallet_for_operation(session, operation)
+    if wallet is None:
+        return None
+    low = operation.operation_date - timedelta(days=PREBOOKED_DATE_WINDOW_DAYS)
+    high = operation.operation_date + timedelta(days=PREBOOKED_DATE_WINDOW_DAYS)
+    already_linked = (
+        select(BankOperation.id)
+        .where(BankOperation.cashflow_transaction_id == CashflowTransaction.id)
+        .exists()
+    )
+    query = (
+        select(CashflowTransaction)
+        .where(
+            CashflowTransaction.wallet_id == wallet.id,
+            CashflowTransaction.direction == operation.direction,
+            CashflowTransaction.amount == operation.amount,
+            CashflowTransaction.source_kind.in_(PREBOOKABLE_SOURCE_KINDS),
+            CashflowTransaction.operation_date >= low,
+            CashflowTransaction.operation_date <= high,
+            ~already_linked,
+        )
+        .order_by(CashflowTransaction.created_at)
+    )
+    if claimed:
+        query = query.where(CashflowTransaction.id.not_in(claimed))
+    candidates = (await session.scalars(query)).all()
+    if not candidates:
+        return None
+
+    op_inn = clean_digits(operation.counterparty_inn_raw)
+    if not op_inn:
+        # Statement has no INN to disambiguate — fall back to the oldest candidate (FIFO).
+        return candidates[0]
+    fallback: CashflowTransaction | None = None
+    for candidate in candidates:
+        candidate_inn = await _transaction_counterparty_inn(session, candidate)
+        if candidate_inn == op_inn:
+            return candidate
+        if candidate_inn is None and fallback is None:
+            fallback = candidate
+    # A candidate with a *different* known INN is never matched — only same-INN or unknown.
+    return fallback
+
+
+async def _transaction_counterparty_inn(
+    session: AsyncSession, transaction: CashflowTransaction
+) -> str | None:
+    if transaction.counterparty_id is None:
+        return None
+    inn = await session.scalar(
+        select(Counterparty.inn).where(Counterparty.id == transaction.counterparty_id)
+    )
+    return clean_digits(inn) or None
 
 
 def _contains(value: str | None, pattern: str) -> bool:

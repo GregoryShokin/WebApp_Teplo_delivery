@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.security import create_access_token
 from app.models import (
+    Account,
     BankOperation,
     Counterparty,
     CounterpartyAlias,
@@ -205,6 +206,26 @@ async def make_draft(
     return draft
 
 
+async def make_account(
+    session: AsyncSession,
+    *,
+    bank_code: str = "tbank",
+    account_number: str | None = None,
+    legal_entity: str = "ООО Тест",
+    bic: str | None = None,
+) -> Account:
+    """A bank account a wallet can hang off, so the bank-feed reconcile resolves a wallet."""
+    account = Account(
+        bank_code=bank_code,
+        account_number=account_number or f"4070281{uuid.uuid4().hex[:13]}",
+        legal_entity=legal_entity,
+        bic=bic,
+    )
+    session.add(account)
+    await session.flush()
+    return account
+
+
 async def make_wallet(
     session: AsyncSession,
     *,
@@ -212,12 +233,14 @@ async def make_wallet(
     wallet_type: str = "cash_safe",
     status: str = "active",
     code: str | None = None,
+    account_id: uuid.UUID | None = None,
 ) -> Wallet:
     wallet = Wallet(
         code=code or f"w-{uuid.uuid4().hex[:8]}",
         name=name,
         type=wallet_type,
         status=status,
+        account_id=account_id,
     )
     session.add(wallet)
     await session.flush()
@@ -253,6 +276,8 @@ async def make_bank_operation(
     receiver: dict[str, Any] | None = None,
     raw_payload: dict[str, Any] | None = None,
     category: str | None = None,
+    account_id: uuid.UUID | None = None,
+    classification_status: str = "pending",
 ) -> BankOperation:
     """An outgoing bank op. ``amount`` stays POSITIVE — sign lives in ``direction``
     (matches the T-Bank normalizer: Debit/42000.00 → direction='out', amount=42000.00).
@@ -272,6 +297,8 @@ async def make_bank_operation(
         counterparty_inn_raw=inn,
         counterparty_account_raw=account,
         raw_payload=payload,
+        account_id=account_id,
+        classification_status=classification_status,
     )
     session.add(operation)
     await session.flush()

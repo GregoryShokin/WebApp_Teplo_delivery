@@ -288,8 +288,10 @@ async def pay_invoice_from_wallet(
     ``counterparty_payment``) on the chosen wallet and allocates it to the invoice,
     supporting splits and partial payments; the unpaid remainder can still be sent to
     the bank as a draft. Intended for cash/card payments that don't go through the bank
-    transfer flow — bank transfers should use the draft+reconcile path to avoid a
-    duplicate DDS entry.
+    transfer flow — the draft+reconcile path stays the preferred route for bank
+    transfers (it also verifies requisites). If a manager does pay from a bank wallet,
+    the bank-feed classifier links the imported statement operation to this entry rather
+    than booking a second expense (see ``_find_prebooked_payment``), so no double expense.
     """
     invoice = await session.get(SupplierInvoice, invoice_id)
     if invoice is None:
