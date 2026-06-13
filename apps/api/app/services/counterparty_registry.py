@@ -29,11 +29,14 @@ from app.models import (
     CounterpartyPaymentDraft,
     CounterpartyRole,
     CounterpartyRoutingRule,
+    DdsArticle,
     InvoicePaymentAllocation,
     SupplierInvoice,
+    Wallet,
 )
 
 COLLECTION_SOURCE_KINDS = frozenset({"iiko", "email", "telegram", "manual"})
+RELATIONSHIP_KINDS = frozenset({"official", "informal", "barter"})
 ARCHIVED_STATUS = "archived"
 
 OPEN_STATUSES = ("unpaid", "partially_paid")
@@ -102,6 +105,7 @@ class InvoiceItem:
     counterparty_name: str
     ledger_category_id: uuid.UUID | None
     source: str
+    direction: str
     number: str | None
     invoice_date: date | None
     due_date: date | None
@@ -120,6 +124,7 @@ class RegistryItem:
     name: str
     inn: str | None
     status: str
+    relationship: str
     ledger_category_id: uuid.UUID | None
     brand_group: str | None
     internal_name: str | None
@@ -127,6 +132,8 @@ class RegistryItem:
     requisites_verified: bool
     unpaid_count: int
     unpaid_remaining: Decimal
+    # Barter: open receivables (they owe us). Net balance = unpaid_remaining − receivable_remaining.
+    receivable_remaining: Decimal
 
 
 @dataclass
@@ -136,6 +143,9 @@ class CounterpartyCard:
     inn: str | None
     type: str
     status: str
+    relationship: str
+    # Barter net (signed): + we owe them, − they owe us. 0 for non-barter.
+    barter_balance: Decimal
     profile: dict[str, Any] | None
     aliases: list[dict[str, Any]] = field(default_factory=list)
     collection_sources: list[dict[str, Any]] = field(default_factory=list)
@@ -173,6 +183,8 @@ async def list_invoices(
     counterparty_id: uuid.UUID | None = None,
     category_id: uuid.UUID | None = None,
     in_draft: bool | None = None,
+    direction: str | None = None,
+    relationship: str | None = None,
 ) -> list[InvoiceItem]:
     query = (
         select(SupplierInvoice, Counterparty.name, CounterpartyPayableProfile.ledger_category_id)
@@ -185,10 +197,14 @@ async def list_invoices(
     )
     if statuses:
         query = query.where(SupplierInvoice.payment_status.in_(tuple(statuses)))
+    if direction is not None:
+        query = query.where(SupplierInvoice.direction == direction)
     if counterparty_id is not None:
         query = query.where(SupplierInvoice.counterparty_id == counterparty_id)
     if category_id is not None:
         query = query.where(CounterpartyPayableProfile.ledger_category_id == category_id)
+    if relationship is not None:
+        query = query.where(CounterpartyPayableProfile.relationship == relationship)
     if in_draft is True:
         query = query.where(SupplierInvoice.draft_id.isnot(None))
     elif in_draft is False:
@@ -222,6 +238,7 @@ def _build_invoice_item(
         counterparty_name=counterparty_name,
         ledger_category_id=ledger_category_id,
         source=invoice.source,
+        direction=invoice.direction,
         number=invoice.number,
         invoice_date=invoice.invoice_date,
         due_date=invoice.due_date,
@@ -235,9 +252,7 @@ def _build_invoice_item(
     )
 
 
-async def get_invoice_item(
-    session: AsyncSession, invoice_id: uuid.UUID
-) -> InvoiceItem | None:
+async def get_invoice_item(session: AsyncSession, invoice_id: uuid.UUID) -> InvoiceItem | None:
     row = (
         await session.execute(
             select(
@@ -290,49 +305,59 @@ async def list_registry(
         query = query.where(CounterpartyPayableProfile.ledger_category_id == category_id)
     rows = list(await session.execute(query))
 
-    # Open invoices remaining per counterparty.
+    # Open invoices remaining per counterparty, split by direction (payable vs receivable).
     open_rows = await session.execute(
         select(
             SupplierInvoice.counterparty_id,
+            SupplierInvoice.direction,
             func.count(SupplierInvoice.id),
             func.coalesce(func.sum(SupplierInvoice.amount), 0),
         )
         .where(SupplierInvoice.payment_status.in_(OPEN_STATUSES))
-        .group_by(SupplierInvoice.counterparty_id)
+        .group_by(SupplierInvoice.counterparty_id, SupplierInvoice.direction)
     )
-    open_amount: dict[uuid.UUID, tuple[int, Decimal]] = {
-        cp_id: (int(count), _money(total)) for cp_id, count, total in open_rows
+    open_by_dir: dict[tuple[uuid.UUID, str], tuple[int, Decimal]] = {
+        (cp_id, direction): (int(count), _money(total))
+        for cp_id, direction, count, total in open_rows
     }
     alloc_rows = await session.execute(
         select(
             SupplierInvoice.counterparty_id,
+            SupplierInvoice.direction,
             func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0),
         )
         .join(InvoicePaymentAllocation, InvoicePaymentAllocation.invoice_id == SupplierInvoice.id)
         .where(SupplierInvoice.payment_status.in_(OPEN_STATUSES))
-        .group_by(SupplierInvoice.counterparty_id)
+        .group_by(SupplierInvoice.counterparty_id, SupplierInvoice.direction)
     )
-    open_allocated: dict[uuid.UUID, Decimal] = {
-        cp_id: _money(total) for cp_id, total in alloc_rows
+    alloc_by_dir: dict[tuple[uuid.UUID, str], Decimal] = {
+        (cp_id, direction): _money(total) for cp_id, direction, total in alloc_rows
     }
+
+    def _remaining(cp_id: uuid.UUID, direction: str) -> tuple[int, Decimal]:
+        count, total = open_by_dir.get((cp_id, direction), (0, Decimal("0.00")))
+        rem = _money(total - alloc_by_dir.get((cp_id, direction), Decimal("0.00")))
+        return count, rem
 
     items: list[RegistryItem] = []
     for counterparty, profile in rows:
-        count, total = open_amount.get(counterparty.id, (0, Decimal("0.00")))
-        remaining = _money(total - open_allocated.get(counterparty.id, Decimal("0.00")))
+        payable_count, payable_remaining = _remaining(counterparty.id, "payable")
+        _r_count, receivable_remaining = _remaining(counterparty.id, "receivable")
         items.append(
             RegistryItem(
                 counterparty_id=counterparty.id,
                 name=counterparty.name,
                 inn=counterparty.inn,
                 status=counterparty.status,
+                relationship=profile.relationship if profile else "official",
                 ledger_category_id=profile.ledger_category_id if profile else None,
                 brand_group=profile.brand_group if profile else None,
                 internal_name=profile.internal_name if profile else None,
                 payment_delay_days=profile.payment_delay_days if profile else None,
                 requisites_verified=bool(profile.requisites_verified) if profile else False,
-                unpaid_count=count,
-                unpaid_remaining=remaining,
+                unpaid_count=payable_count,
+                unpaid_remaining=payable_remaining,
+                receivable_remaining=receivable_remaining,
             )
         )
     items.sort(key=lambda item: item.name.lower())
@@ -367,6 +392,17 @@ async def get_counterparty_card(
     sources = await list_collection_sources(session, counterparty_id)
     routing = await list_routing_rules(session, counterparty_id)
     invoices = await list_invoices(session, counterparty_id=counterparty_id)
+    # Barter net (signed): open payables we owe − open receivables they owe us.
+    barter_balance = _money(
+        sum(
+            (
+                item.remaining if item.direction == "payable" else -item.remaining
+                for item in invoices
+                if item.payment_status in OPEN_STATUSES
+            ),
+            Decimal("0.00"),
+        )
+    )
     drafts = list(
         (
             await session.execute(
@@ -384,6 +420,8 @@ async def get_counterparty_card(
         inn=counterparty.inn,
         type=counterparty.type,
         status=counterparty.status,
+        relationship=profile.relationship if profile else "official",
+        barter_balance=barter_balance,
         profile=_profile_dict(profile),
         aliases=[{"alias": a.alias, "source": a.source} for a in aliases],
         collection_sources=[
@@ -416,6 +454,7 @@ def _profile_dict(profile: CounterpartyPayableProfile | None) -> dict[str, Any] 
         return None
     return {
         "ledger_category_id": profile.ledger_category_id,
+        "relationship": profile.relationship,
         "brand_group": profile.brand_group,
         "internal_name": profile.internal_name,
         "payment_delay_days": profile.payment_delay_days,
@@ -451,6 +490,7 @@ async def update_profile(
     counterparty_id: uuid.UUID,
     *,
     ledger_category_id: uuid.UUID | None = None,
+    relationship: str | None = None,
     brand_group: str | None = None,
     internal_name: str | None = None,
     payment_delay_days: int | None = None,
@@ -462,8 +502,12 @@ async def update_profile(
     counterparty = await session.get(Counterparty, counterparty_id)
     if counterparty is None:
         raise CounterpartyRegistryError("Контрагент не найден")
+    if relationship is not None and relationship not in RELATIONSHIP_KINDS:
+        raise CounterpartyRegistryError("Неизвестный тип контрагента")
     profile = await _get_or_create_profile(session, counterparty_id)
     profile.ledger_category_id = ledger_category_id
+    if relationship is not None:
+        profile.relationship = relationship
     profile.brand_group = brand_group
     profile.internal_name = internal_name
     profile.payment_delay_days = payment_delay_days
@@ -836,9 +880,7 @@ async def remove_collection_source(session: AsyncSession, source_id: uuid.UUID) 
 # --- brand routing rules ------------------------------------------------------
 
 
-async def _counterparty_iiko_guids(
-    session: AsyncSession, counterparty_id: uuid.UUID
-) -> list[str]:
+async def _counterparty_iiko_guids(session: AsyncSession, counterparty_id: uuid.UUID) -> list[str]:
     return list(
         (
             await session.execute(
@@ -917,3 +959,34 @@ async def remove_routing_rule(session: AsyncSession, rule_id: uuid.UUID) -> None
         raise CounterpartyRegistryError("Правило не найдено")
     await session.delete(rule)
     await session.commit()
+
+
+# --- DDS lookups for manual payment ------------------------------------------
+
+
+async def list_wallets(session: AsyncSession) -> list[Wallet]:
+    """Active DDS wallets/accounts selectable as the source of a manual payment."""
+    return list(
+        (
+            await session.execute(
+                select(Wallet).where(Wallet.status == "active").order_by(Wallet.name)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def list_expense_articles(session: AsyncSession) -> list[DdsArticle]:
+    """Active outflow DDS articles a manual supplier payment can be booked to."""
+    return list(
+        (
+            await session.execute(
+                select(DdsArticle)
+                .where(DdsArticle.is_active.is_(True), DdsArticle.movement_type == "outflow")
+                .order_by(DdsArticle.name)
+            )
+        )
+        .scalars()
+        .all()
+    )

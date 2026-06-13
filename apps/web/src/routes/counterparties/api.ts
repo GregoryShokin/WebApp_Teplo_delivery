@@ -14,6 +14,7 @@ export type CounterpartyInvoice = {
   counterparty_name: string;
   ledger_category_id: string | null;
   source: string;
+  direction: string;
   number: string | null;
   invoice_date: string | null;
   due_date: string | null;
@@ -31,6 +32,7 @@ export type RegistryItem = {
   name: string;
   inn: string | null;
   status: string;
+  relationship: string;
   ledger_category_id: string | null;
   brand_group: string | null;
   internal_name: string | null;
@@ -38,6 +40,7 @@ export type RegistryItem = {
   requisites_verified: boolean;
   unpaid_count: number;
   unpaid_remaining: number;
+  receivable_remaining: number;
 };
 
 export type CollectionSource = {
@@ -50,6 +53,7 @@ export type CollectionSource = {
 
 export type CounterpartyProfile = {
   ledger_category_id: string | null;
+  relationship: string;
   brand_group: string | null;
   internal_name: string | null;
   payment_delay_days: number | null;
@@ -67,6 +71,8 @@ export type CounterpartyCard = {
   inn: string | null;
   type: string;
   status: string;
+  relationship: string;
+  barter_balance: number;
   profile: CounterpartyProfile;
   aliases: Array<{ alias: string; source: string | null }>;
   collection_sources: CollectionSource[];
@@ -119,6 +125,8 @@ export async function getInvoices(params?: {
   counterparty_id?: string;
   category_id?: string;
   in_draft?: boolean;
+  direction?: string;
+  relationship?: string;
 }): Promise<CounterpartyInvoice[]> {
   const response = await api.get<CounterpartyInvoice[]>(`${BASE}/invoices`, { params });
   return response.data;
@@ -154,6 +162,35 @@ export async function allocateCash(
     `${BASE}/invoices/${id}/allocate-cash`,
     payload,
   );
+  return response.data;
+}
+
+export type Wallet = { id: string; code: string; name: string; type: string };
+export type ExpenseArticle = { id: string; code: string; name: string };
+
+export async function getWallets(): Promise<Wallet[]> {
+  const response = await api.get<Wallet[]>(`${BASE}/wallets`);
+  return response.data;
+}
+
+export async function getExpenseArticles(): Promise<ExpenseArticle[]> {
+  const response = await api.get<ExpenseArticle[]>(`${BASE}/expense-articles`);
+  return response.data;
+}
+
+export type ManualPaymentPayload = {
+  amount: number;
+  wallet_id: string;
+  operation_date: string;
+  article_id?: string | null;
+  comment?: string | null;
+};
+
+export async function payInvoice(
+  id: string,
+  payload: ManualPaymentPayload,
+): Promise<CounterpartyInvoice> {
+  const response = await api.post<CounterpartyInvoice>(`${BASE}/invoices/${id}/pay`, payload);
   return response.data;
 }
 
@@ -197,6 +234,7 @@ export async function createCounterparty(
 
 export type ProfileUpdatePayload = {
   ledger_category_id?: string | null;
+  relationship?: string | null;
   brand_group?: string | null;
   internal_name?: string | null;
   payment_delay_days?: number | null;
@@ -331,5 +369,49 @@ export async function confirmMatch(payload: {
 
 export async function syncInvoices(): Promise<Record<string, number>> {
   const response = await api.post<Record<string, number>>(`${BASE}/sync`);
+  return response.data;
+}
+
+export type BarterInvoice = {
+  id: string;
+  number: string | null;
+  invoice_date: string | null;
+  amount: number;
+  products: Array<string | null>;
+};
+
+export type BarterSettlementView = {
+  id: string;
+  amount: number;
+  is_auto: boolean;
+  payable_numbers: string[];
+  receivable_numbers: string[];
+};
+
+export type BarterDetail = {
+  relationship_balance: number;
+  open_payables: BarterInvoice[];
+  open_receivables: BarterInvoice[];
+  settlements: BarterSettlementView[];
+};
+
+export async function getBarterDetail(id: string): Promise<BarterDetail> {
+  const response = await api.get<BarterDetail>(`${BASE}/${id}/barter`);
+  return response.data;
+}
+
+export async function autoSettleBarter(id: string): Promise<{ settled: number }> {
+  const response = await api.post<{ settled: number }>(`${BASE}/${id}/barter/auto-settle`);
+  return response.data;
+}
+
+export async function settleBarter(
+  id: string,
+  payload: { payable_ids: string[]; receivable_ids: string[] },
+): Promise<{ id: string; amount: number }> {
+  const response = await api.post<{ id: string; amount: number }>(
+    `${BASE}/${id}/barter/settle`,
+    payload,
+  );
   return response.data;
 }

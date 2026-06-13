@@ -39,6 +39,23 @@ export const INVOICE_STATUS_LABELS: Record<string, string> = {
   void: "Аннулировано",
 };
 
+export const RELATIONSHIP_LABELS: Record<string, string> = {
+  official: "Официальный",
+  informal: "Неофициальный",
+  barter: "Бартер",
+};
+
+export const RELATIONSHIP_HINTS: Record<string, string> = {
+  official: "Оплата банковским переводом (черновик в банк)",
+  informal: "Оплата картой/наличными, перевод недоступен",
+  barter: "Двусторонние накладные, расчёт по сальдо",
+};
+
+export const INVOICE_DIRECTION_LABELS: Record<string, string> = {
+  payable: "К оплате",
+  receivable: "Доходная",
+};
+
 export const SOURCE_LABELS: Record<string, string> = {
   iiko: "iiko",
   manual: "Вручную",
@@ -90,6 +107,20 @@ export function InvoiceStatusBadge({ status }: { status: string }) {
           ? "border-muted bg-muted text-muted-foreground"
           : "border-amber-200 bg-amber-50 text-amber-700";
   return <Badge className={className}>{INVOICE_STATUS_LABELS[status] ?? status}</Badge>;
+}
+
+export function RelationshipBadge({ relationship }: { relationship: string }) {
+  const className =
+    relationship === "barter"
+      ? "border-violet-200 bg-violet-50 text-violet-700"
+      : relationship === "informal"
+        ? "border-orange-200 bg-orange-50 text-orange-700"
+        : "border-slate-200 bg-slate-50 text-slate-700";
+  return (
+    <Badge className={className} title={RELATIONSHIP_HINTS[relationship]}>
+      {RELATIONSHIP_LABELS[relationship] ?? relationship}
+    </Badge>
+  );
 }
 
 export function DraftStatusBadge({ status }: { status: string }) {

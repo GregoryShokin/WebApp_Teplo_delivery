@@ -28,7 +28,9 @@ from app.models.enums import (
     counterparty_collection_source_kind_enum,
     counterparty_invoice_source_enum,
     counterparty_invoice_status_enum,
+    counterparty_relationship_enum,
     invoice_allocation_source_enum,
+    supplier_invoice_direction_enum,
 )
 
 # Draft status mirrors PayrollBankDraft (created → updated → paid / failed) so the
@@ -90,6 +92,14 @@ class CounterpartyPayableProfile(Base):
     # Supplier-side contact (manager) for questions about invoices/payments.
     manager_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     manager_phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Payment relationship: official (bank transfer) / informal (card-cash only) /
+    # barter (two-way, settled by net balance). Auto-set to barter on receivable ingest.
+    relationship: Mapped[str] = mapped_column(
+        counterparty_relationship_enum,
+        nullable=False,
+        default="official",
+        server_default="official",
+    )
     requisites: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
@@ -242,6 +252,14 @@ class SupplierInvoice(Base):
         ForeignKey("counterparty.id", ondelete="RESTRICT"), nullable=False
     )
     source: Mapped[str] = mapped_column(counterparty_invoice_source_enum, nullable=False)
+    # payable = iiko incomingInvoice (we owe); receivable = iiko outgoingInvoice
+    # (barter partner owes us). Net barter balance = Σpayable − Σreceivable.
+    direction: Mapped[str] = mapped_column(
+        supplier_invoice_direction_enum,
+        nullable=False,
+        default="payable",
+        server_default="payable",
+    )
     external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     number: Mapped[str | None] = mapped_column(String(128), nullable=True)
     invoice_date: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -255,6 +273,11 @@ class SupplierInvoice(Base):
     vat_breakdown: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
+    # iiko line items — captured for barter partners only, for номенклатура-based loan
+    # matching: list of {product_id, article, name, quantity, amount}. Empty otherwise.
+    line_items: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
     payment_status: Mapped[str] = mapped_column(
         counterparty_invoice_status_enum,
         nullable=False,
@@ -264,6 +287,10 @@ class SupplierInvoice(Base):
     # The draft this invoice is currently queued in (NULL once paid / not queued).
     draft_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("counterparty_payment_draft.id", ondelete="SET NULL"), nullable=True
+    )
+    # Barter loan settlement (зачёт) this invoice was netted into (NULL = not settled).
+    barter_settlement_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("barter_settlement.id", ondelete="SET NULL"), nullable=True
     )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -310,6 +337,35 @@ class InvoicePaymentAllocation(Base):
         ForeignKey("cashflow_transactions.id", ondelete="SET NULL"), nullable=True
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class BarterSettlement(Base):
+    """A netting (зачёт) of barter loan invoices for one partner.
+
+    Ties a set of payable + receivable invoices of equal total whose номенклатура
+    matches; involved invoices point back via ``SupplierInvoice.barter_settlement_id``
+    and drop out of the open barter balance. ``is_auto`` marks a 100%-confident
+    auto-settlement (sum + product set both exact) vs a manager-confirmed one.
+    """
+
+    __tablename__ = "barter_settlement"
+    __table_args__ = (Index("ix_barter_settlement_cp", "counterparty_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    counterparty_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("counterparty.id", ondelete="CASCADE"), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    is_auto: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )

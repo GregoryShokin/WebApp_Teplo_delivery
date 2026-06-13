@@ -23,6 +23,7 @@ from app.core.config import get_settings
 from app.db.session import get_session
 from app.models import CounterpartyPaymentDraft
 from app.services import counterparty_bank_match as bank_match
+from app.services import counterparty_barter_match as barter
 from app.services import counterparty_matching as matching
 from app.services import counterparty_payments as payments
 from app.services import counterparty_registry as registry
@@ -82,6 +83,7 @@ class InvoiceRead(BaseModel):
     counterparty_name: str
     ledger_category_id: uuid.UUID | None
     source: str
+    direction: str
     number: str | None
     invoice_date: date | None
     due_date: date | None
@@ -101,6 +103,7 @@ class RegistryRead(BaseModel):
     name: str
     inn: str | None
     status: str
+    relationship: str
     ledger_category_id: uuid.UUID | None
     brand_group: str | None
     internal_name: str | None
@@ -108,6 +111,7 @@ class RegistryRead(BaseModel):
     requisites_verified: bool
     unpaid_count: int
     unpaid_remaining: float
+    receivable_remaining: float
 
 
 class CardRead(BaseModel):
@@ -118,6 +122,8 @@ class CardRead(BaseModel):
     inn: str | None
     type: str
     status: str
+    relationship: str
+    barter_balance: float
     profile: dict[str, Any] | None
     aliases: list[dict[str, Any]]
     collection_sources: list[dict[str, Any]]
@@ -162,6 +168,7 @@ class ProfileUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ledger_category_id: uuid.UUID | None = None
+    relationship: str | None = None
     brand_group: str | None = Field(default=None, max_length=160)
     internal_name: str | None = Field(default=None, max_length=255)
     payment_delay_days: int | None = Field(default=None, ge=0)
@@ -183,6 +190,33 @@ class CashAllocationRequest(BaseModel):
 
     amount: Decimal = Field(gt=0)
     cashflow_transaction_id: uuid.UUID | None = None
+
+
+class ManualPaymentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0)
+    wallet_id: uuid.UUID
+    operation_date: date
+    article_id: uuid.UUID | None = None
+    comment: str | None = None
+
+
+class WalletRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    code: str
+    name: str
+    type: str
+
+
+class ExpenseArticleRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    code: str
+    name: str
 
 
 class AllocateOperationRequest(BaseModel):
@@ -243,6 +277,13 @@ class MatchSuggestionRead(BaseModel):
     counterparty_has_inn: bool
     candidates: list[MatchCandidateRead]
     confident: bool
+
+
+class BarterSettleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    payable_ids: list[uuid.UUID] = Field(min_length=1)
+    receivable_ids: list[uuid.UUID] = Field(min_length=1)
 
 
 class ConfirmMatchRequest(BaseModel):
@@ -313,6 +354,8 @@ async def get_invoices(
     counterparty_id: uuid.UUID | None = None,
     category_id: uuid.UUID | None = None,
     in_draft: bool | None = None,
+    direction: str = "payable",
+    relationship: str | None = None,
 ) -> list[InvoiceRead]:
     statuses = (
         tuple(part.strip() for part in status_filter.split(",") if part.strip())
@@ -325,6 +368,8 @@ async def get_invoices(
         counterparty_id=counterparty_id,
         category_id=category_id,
         in_draft=in_draft,
+        direction=direction or None,
+        relationship=relationship,
     )
     return [InvoiceRead.model_validate(item) for item in items]
 
@@ -400,6 +445,33 @@ async def post_allocate_cash(
     return InvoiceRead.model_validate(item)
 
 
+@router.post("/invoices/{invoice_id}/pay", response_model=InvoiceRead, dependencies=OPERATE)
+async def post_pay_invoice(
+    invoice_id: uuid.UUID,
+    payload: ManualPaymentRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> InvoiceRead:
+    """Manually pay (part of) an invoice from a DDS wallet — creates a DDS expense."""
+    try:
+        await payments.pay_invoice_from_wallet(
+            session,
+            invoice_id=invoice_id,
+            wallet_id=payload.wallet_id,
+            amount=payload.amount,
+            operation_date=payload.operation_date,
+            article_id=payload.article_id,
+            comment=payload.comment,
+            actor_user_id=actor.user_id,
+        )
+    except payments.CounterpartyPaymentError as exc:
+        raise _conflict(exc) from exc
+    item = await registry.get_invoice_item(session, invoice_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    return InvoiceRead.model_validate(item)
+
+
 # --- registry & card ----------------------------------------------------------
 
 
@@ -421,6 +493,21 @@ async def get_needs_setup(
 ) -> dict[str, Any]:
     items = await registry.list_needs_setup(session)
     return {"count": len(items), "items": items}
+
+
+@router.get("/wallets", response_model=list[WalletRead], dependencies=READ)
+async def get_wallets(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[WalletRead]:
+    return [WalletRead.model_validate(wallet) for wallet in await registry.list_wallets(session)]
+
+
+@router.get("/expense-articles", response_model=list[ExpenseArticleRead], dependencies=READ)
+async def get_expense_articles(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[ExpenseArticleRead]:
+    rows = await registry.list_expense_articles(session)
+    return [ExpenseArticleRead.model_validate(row) for row in rows]
 
 
 @router.post(
@@ -475,6 +562,7 @@ async def put_profile(
             session,
             counterparty_id,
             ledger_category_id=payload.ledger_category_id,
+            relationship=payload.relationship,
             brand_group=payload.brand_group,
             internal_name=payload.internal_name,
             payment_delay_days=payload.payment_delay_days,
@@ -629,6 +717,72 @@ async def delete_routing_rule(
     return CardRead.model_validate(card)
 
 
+# --- barter loan settlement ---------------------------------------------------
+
+
+def _barter_invoice(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(item["id"]),
+        "number": item["number"],
+        "invoice_date": item["invoice_date"].isoformat() if item["invoice_date"] else None,
+        "amount": float(item["amount"]),
+        "products": item["products"],
+    }
+
+
+@router.get("/{counterparty_id}/barter", dependencies=READ)
+async def get_barter(
+    counterparty_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
+    detail = await barter.barter_detail(session, counterparty_id)
+    return {
+        "relationship_balance": float(detail.relationship_balance),
+        "open_payables": [_barter_invoice(item) for item in detail.open_payables],
+        "open_receivables": [_barter_invoice(item) for item in detail.open_receivables],
+        "settlements": [
+            {
+                "id": str(view.id),
+                "amount": float(view.amount),
+                "is_auto": view.is_auto,
+                "payable_numbers": view.payable_numbers,
+                "receivable_numbers": view.receivable_numbers,
+            }
+            for view in detail.settlements
+        ],
+    }
+
+
+@router.post("/{counterparty_id}/barter/auto-settle", dependencies=OPERATE)
+async def post_barter_auto_settle(
+    counterparty_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, int]:
+    settled = await barter.auto_settle_barter(session, counterparty_id, actor_user_id=actor.user_id)
+    return {"settled": settled}
+
+
+@router.post("/{counterparty_id}/barter/settle", dependencies=OPERATE)
+async def post_barter_settle(
+    counterparty_id: uuid.UUID,
+    payload: BarterSettleRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    try:
+        settlement = await barter.confirm_barter_settlement(
+            session,
+            counterparty_id,
+            payable_ids=payload.payable_ids,
+            receivable_ids=payload.receivable_ids,
+            actor_user_id=actor.user_id,
+        )
+    except barter.BarterMatchError as exc:
+        raise _conflict(exc) from exc
+    return {"id": str(settlement.id), "amount": float(settlement.amount)}
+
+
 # --- drafts -------------------------------------------------------------------
 
 
@@ -637,9 +791,7 @@ async def get_drafts(
     session: Annotated[AsyncSession, Depends(get_session)],
     counterparty_id: uuid.UUID | None = None,
 ) -> list[DraftRead]:
-    query = select(CounterpartyPaymentDraft).order_by(
-        CounterpartyPaymentDraft.created_at.desc()
-    )
+    query = select(CounterpartyPaymentDraft).order_by(CounterpartyPaymentDraft.created_at.desc())
     if counterparty_id is not None:
         query = query.where(CounterpartyPaymentDraft.counterparty_id == counterparty_id)
     rows = (await session.execute(query)).scalars().all()
@@ -666,7 +818,9 @@ async def post_draft(
     return DraftRead.model_validate(draft)
 
 
-@router.post("/drafts/{draft_id}/cancel", status_code=status.HTTP_204_NO_CONTENT, dependencies=OPERATE)
+@router.post(
+    "/drafts/{draft_id}/cancel", status_code=status.HTTP_204_NO_CONTENT, dependencies=OPERATE
+)
 async def post_cancel_draft(
     draft_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -692,9 +846,7 @@ async def post_auto_match(
     }
 
 
-@router.get(
-    "/match/suggestions", response_model=list[MatchSuggestionRead], dependencies=OPERATE
-)
+@router.get("/match/suggestions", response_model=list[MatchSuggestionRead], dependencies=OPERATE)
 async def get_match_suggestions(
     session: Annotated[AsyncSession, Depends(get_session)],
     counterparty_id: uuid.UUID | None = None,

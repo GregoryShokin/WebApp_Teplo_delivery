@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -20,19 +20,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.models import (
+    CashflowTransaction,
     Counterparty,
     CounterpartyPayableProfile,
     CounterpartyPaymentDraft,
+    DdsArticle,
     InvoicePaymentAllocation,
     SupplierInvoice,
+    Wallet,
 )
 from app.services.banking import BankClient, TbankClient
 from app.services.banking.exceptions import BankFetchError
 from app.services.banking.tbank import build_payment_draft_api_payload
+from app.services.counterparty_matching import _invoice_remaining, _recompute_status
 
 MOCK_PAYER_ACCOUNT = "00000000000000000000"
 DRAFTABLE_STATUSES = frozenset({"unpaid", "partially_paid"})
 DRAFT_STATUSES = frozenset({"created", "updated", "paid", "failed"})
+# DDS article a manual supplier payment books to by default.
+DEFAULT_SUPPLIER_ARTICLE_CODE = "payment_to_supplier"
 
 
 class CounterpartyPaymentError(RuntimeError):
@@ -117,11 +123,7 @@ async def create_payment_draft_for_invoices(
         raise CounterpartyPaymentError("Не выбраны накладные для оплаты")
 
     invoices = list(
-        (
-            await session.execute(
-                select(SupplierInvoice).where(SupplierInvoice.id.in_(unique_ids))
-            )
-        )
+        (await session.execute(select(SupplierInvoice).where(SupplierInvoice.id.in_(unique_ids))))
         .scalars()
         .all()
     )
@@ -139,6 +141,8 @@ async def create_payment_draft_for_invoices(
         raise CounterpartyPaymentError(
             "Среди выбранных есть оплаченные или аннулированные накладные"
         )
+    if any(inv.direction != "payable" for inv in invoices):
+        raise CounterpartyPaymentError("Доходные накладные нельзя отправить в банк")
     if any(inv.draft_id is not None for inv in invoices):
         raise CounterpartyPaymentError("Некоторые накладные уже отправлены в банк")
 
@@ -152,6 +156,10 @@ async def create_payment_draft_for_invoices(
             CounterpartyPayableProfile.counterparty_id == counterparty_id
         )
     )
+    if profile is not None and profile.relationship == "informal":
+        raise CounterpartyPaymentError(
+            "Контрагент оплачивается картой/наличными — отправка в банк недоступна"
+        )
     if profile is None or not profile.requisites_verified:
         raise RequisitesNotVerifiedError(
             "Реквизиты контрагента не подтверждены — отправка в банк недоступна"
@@ -233,11 +241,7 @@ async def cancel_payment_draft(session: AsyncSession, *, draft_id: uuid.UUID) ->
     if draft.status == "paid":
         raise CounterpartyPaymentError("Черновик уже оплачен — отмена недоступна")
     invoices = list(
-        (
-            await session.execute(
-                select(SupplierInvoice).where(SupplierInvoice.draft_id == draft_id)
-            )
-        )
+        (await session.execute(select(SupplierInvoice).where(SupplierInvoice.draft_id == draft_id)))
         .scalars()
         .all()
     )
@@ -253,9 +257,7 @@ async def get_payment_draft(
     return await session.get(CounterpartyPaymentDraft, draft_id)
 
 
-async def list_draft_invoices(
-    session: AsyncSession, draft_id: uuid.UUID
-) -> list[SupplierInvoice]:
+async def list_draft_invoices(session: AsyncSession, draft_id: uuid.UUID) -> list[SupplierInvoice]:
     return list(
         (
             await session.execute(
@@ -267,3 +269,81 @@ async def list_draft_invoices(
         .scalars()
         .all()
     )
+
+
+async def pay_invoice_from_wallet(
+    session: AsyncSession,
+    *,
+    invoice_id: uuid.UUID,
+    wallet_id: uuid.UUID,
+    amount: Decimal,
+    operation_date: date,
+    article_id: uuid.UUID | None = None,
+    comment: str | None = None,
+    actor_user_id: uuid.UUID | None = None,
+) -> SupplierInvoice:
+    """Manually pay (part of) a payable invoice from a DDS wallet — bypasses the bank.
+
+    Creates a real DDS expense (``cashflow_transaction``, source_kind
+    ``counterparty_payment``) on the chosen wallet and allocates it to the invoice,
+    supporting splits and partial payments; the unpaid remainder can still be sent to
+    the bank as a draft. Intended for cash/card payments that don't go through the bank
+    transfer flow — bank transfers should use the draft+reconcile path to avoid a
+    duplicate DDS entry.
+    """
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise CounterpartyPaymentError("Накладная не найдена")
+    if invoice.payment_status == "void":
+        raise CounterpartyPaymentError("Накладная аннулирована")
+    if invoice.direction != "payable":
+        raise CounterpartyPaymentError("Доходную накладную нельзя оплатить со счёта")
+
+    requested = _money(amount)
+    remaining = await _invoice_remaining(session, invoice)
+    if requested <= 0 or requested > remaining:
+        raise CounterpartyPaymentError("Сумма оплаты вне допустимого остатка")
+
+    wallet = await session.get(Wallet, wallet_id)
+    if wallet is None or wallet.status != "active":
+        raise CounterpartyPaymentError("Счёт не найден или неактивен")
+
+    resolved_article_id = article_id
+    if resolved_article_id is None:
+        resolved_article_id = await session.scalar(
+            select(DdsArticle.id).where(DdsArticle.code == DEFAULT_SUPPLIER_ARTICLE_CODE)
+        )
+    elif await session.get(DdsArticle, resolved_article_id) is None:
+        raise CounterpartyPaymentError("Статья ДДС не найдена")
+
+    purpose = f"Оплата накладной {invoice.number}" if invoice.number else "Оплата поставщику"
+    transaction = CashflowTransaction(
+        wallet_id=wallet.id,
+        direction="out",
+        amount=requested,
+        operation_date=operation_date,
+        article_id=resolved_article_id,
+        counterparty_id=invoice.counterparty_id,
+        source_kind="counterparty_payment",
+        source_id=invoice.id,
+        payment_purpose=purpose,
+        comment=comment,
+        quality_status="final",
+    )
+    session.add(transaction)
+    await session.flush()
+
+    session.add(
+        InvoicePaymentAllocation(
+            invoice_id=invoice.id,
+            source_kind="cash",
+            cashflow_transaction_id=transaction.id,
+            amount=requested,
+            created_by_user_id=actor_user_id,
+        )
+    )
+    await session.flush()
+    await _recompute_status(session, invoice)
+    await session.commit()
+    await session.refresh(invoice)
+    return invoice

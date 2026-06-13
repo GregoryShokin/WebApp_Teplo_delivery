@@ -31,7 +31,7 @@ import {
   getRegistry,
   type RegistryItem,
 } from "../api";
-import { COUNTERPARTY_TYPE_LABELS, formatRub } from "../shared";
+import { COUNTERPARTY_TYPE_LABELS, formatRub, RelationshipBadge } from "../shared";
 
 const ALL = "all";
 
@@ -79,6 +79,11 @@ export function RegistryTab({
     },
     { key: "inn", header: "ИНН", cell: (item) => item.inn ?? "—" },
     {
+      key: "relationship",
+      header: "Тип",
+      cell: (item) => <RelationshipBadge relationship={item.relationship} />,
+    },
+    {
       key: "requisites",
       header: "Реквизиты",
       cell: (item) =>
@@ -101,6 +106,18 @@ export function RegistryTab({
       className: "text-right tabular-nums",
       headerClassName: "text-right",
       cell: (item) => formatRub(item.unpaid_remaining),
+    },
+    {
+      key: "receivable_remaining",
+      header: "Нам должны",
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+      cell: (item) =>
+        item.receivable_remaining > 0 ? (
+          <span className="text-emerald-700">{formatRub(item.receivable_remaining)}</span>
+        ) : (
+          "—"
+        ),
     },
   ];
 

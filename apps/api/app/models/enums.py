@@ -85,3 +85,19 @@ counterparty_collection_source_kind_enum = Enum(
     "manual",
     name="counterparty_collection_source_kind",
 )
+# Payment relationship axis (orthogonal to the legal form in counterparty_type):
+# official = pay by bank transfer; informal = card/cash only; barter = two-way
+# (incoming AP + outgoing AR) settled by net balance.
+counterparty_relationship_enum = Enum(
+    "official",
+    "informal",
+    "barter",
+    name="counterparty_relationship",
+)
+# Invoice direction: payable = iiko incomingInvoice (we owe), receivable = iiko
+# outgoingInvoice (they owe us — only barter partners get these).
+supplier_invoice_direction_enum = Enum(
+    "payable",
+    "receivable",
+    name="supplier_invoice_direction",
+)

@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Plus, Send } from "lucide-react";
+import { Banknote, LoaderCircle, Plus, Send } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -41,8 +41,16 @@ import {
   formatVat,
   isOverdue,
 } from "../shared";
+import { PayInvoiceDialog } from "../PayInvoiceDialog";
 
 const ALL = "all";
+
+const REL_SEGMENTS: Array<{ value: string; label: string }> = [
+  { value: "all", label: "Все" },
+  { value: "official", label: "Поставщики" },
+  { value: "informal", label: "Неофициальные" },
+  { value: "barter", label: "Бартер" },
+];
 
 export function InboxTab({
   canOperate,
@@ -53,16 +61,19 @@ export function InboxTab({
 }) {
   const queryClient = useQueryClient();
   const [categoryId, setCategoryId] = useState<string>(ALL);
+  const [relationship, setRelationship] = useState<string>(ALL);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isManualOpen, setIsManualOpen] = useState(false);
+  const [payTarget, setPayTarget] = useState<CounterpartyInvoice | null>(null);
 
   const categoriesQuery = useQuery({ queryKey: ["cp", "categories"], queryFn: getLedgerCategories });
   const invoicesQuery = useQuery({
-    queryKey: ["cp", "invoices", categoryId],
+    queryKey: ["cp", "invoices", categoryId, relationship],
     queryFn: () =>
       getInvoices({
         status: "unpaid,partially_paid",
         category_id: categoryId === ALL ? undefined : categoryId,
+        relationship: relationship === ALL ? undefined : relationship,
       }),
   });
   const invoices = invoicesQuery.data ?? [];
@@ -174,10 +185,35 @@ export function InboxTab({
           <InvoiceStatusBadge status={invoice.payment_status} />
         ),
     },
+    {
+      key: "actions",
+      header: "",
+      className: "text-right",
+      cell: (invoice) =>
+        canOperate && !invoice.draft_id ? (
+          <Button size="sm" variant="outline" onClick={() => setPayTarget(invoice)}>
+            <Banknote size={15} aria-hidden="true" />
+            Оплатить
+          </Button>
+        ) : null,
+    },
   ];
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap gap-1">
+        {REL_SEGMENTS.map((segment) => (
+          <Button
+            key={segment.value}
+            size="sm"
+            variant={relationship === segment.value ? "default" : "outline"}
+            onClick={() => setRelationship(segment.value)}
+          >
+            {segment.label}
+          </Button>
+        ))}
+      </div>
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="grid w-full max-w-xs gap-2">
           <Label>Категория</Label>
@@ -240,6 +276,7 @@ export function InboxTab({
       />
 
       <ManualInvoiceDialog open={isManualOpen} onOpenChange={setIsManualOpen} />
+      <PayInvoiceDialog invoice={payTarget} onOpenChange={(open) => !open && setPayTarget(null)} />
     </div>
   );
 }

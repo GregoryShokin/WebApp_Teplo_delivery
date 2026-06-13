@@ -35,7 +35,6 @@ from app.models import (
     CounterpartyRoutingRule,
     SupplierInvoice,
 )
-
 from app.services.counterparty_registry import compute_invoice_due_date
 
 # Reuse the iiko credential loader (DB SourceCredential -> env) used by employee sync.
@@ -44,6 +43,11 @@ from app.services.iiko_sync import _load_source_credential_env
 IIKO_SOURCE = "iiko"
 SUPPLIERS_ENDPOINT = "/suppliers"
 INVOICE_ENDPOINT = "/documents/export/incomingInvoice"
+# Outgoing invoices = goods we ship out (our AR). In this business only barter
+# partners receive outgoing invoices, so a receivable ⇒ relationship=barter.
+OUTGOING_INVOICE_ENDPOINT = "/documents/export/outgoingInvoice"
+# Product directory — resolves line-item product GUID → name (for barter номенклатура).
+PRODUCTS_ENDPOINT = "/products"
 # Only confirmed (posted) receipts are real obligations; NEW is unposted, DELETED is void.
 INGESTED_IIKO_STATUSES = frozenset({"PROCESSED"})
 
@@ -63,6 +67,9 @@ class CounterpartyInvoiceSyncResult:
     invoices_seen: int = 0
     invoices_created: int = 0
     invoices_updated: int = 0
+    receivables_seen: int = 0
+    receivables_created: int = 0
+    receivables_updated: int = 0
     counterparties_created: int = 0
     skipped_status: int = 0
     skipped_store: int = 0
@@ -212,6 +219,41 @@ def _parse_suppliers(suppliers_xml: bytes | str) -> dict[str, IikoSupplier]:
     return suppliers
 
 
+def _parse_products(products_xml: bytes | str | None) -> dict[str, str]:
+    """Build a product GUID → name map from the iiko /products directory."""
+    if not products_xml:
+        return {}
+    root = ET.fromstring(products_xml)
+    names: dict[str, str] = {}
+    for node in root:
+        pid = _text(node, "id")
+        name = _text(node, "name")
+        if pid and name:
+            names[pid] = name
+    return names
+
+
+def _parse_line_items(doc: ET.Element, name_by_id: dict[str, str]) -> list[dict[str, str | None]]:
+    """Line items for номенклатура matching. Product GUID is ``productId`` on outgoing
+    docs and ``product`` on incoming; ``productArticle`` is the shared article code."""
+    items = doc.find("items")
+    if items is None:
+        return []
+    parsed: list[dict[str, str | None]] = []
+    for item in items.findall("item"):
+        product_id = _text(item, "productId") or _text(item, "product")
+        parsed.append(
+            {
+                "product_id": product_id,
+                "article": _text(item, "productArticle"),
+                "name": name_by_id.get(product_id) if product_id else None,
+                "quantity": _text(item, "amount"),
+                "amount": str(_decimal(item.findtext("sum"))),
+            }
+        )
+    return parsed
+
+
 # --- counterparty resolution --------------------------------------------------
 
 
@@ -258,9 +300,7 @@ async def _resolve_counterparty(
         await session.flush()
         session.add(CounterpartyRole(counterparty_id=counterparty.id, role="supplier"))
         session.add(
-            CounterpartyPayableProfile(
-                counterparty_id=counterparty.id, internal_name=supplier.name
-            )
+            CounterpartyPayableProfile(counterparty_id=counterparty.id, internal_name=supplier.name)
         )
         result.counterparties_created += 1
 
@@ -294,16 +334,42 @@ async def _profile_due_terms(
 # --- ingest -------------------------------------------------------------------
 
 
-async def ingest_iiko_payables(
-    session: AsyncSession, *, suppliers_xml: bytes | str, invoices_xml: bytes | str
-) -> CounterpartyInvoiceSyncResult:
-    result = CounterpartyInvoiceSyncResult()
-    suppliers = _parse_suppliers(suppliers_xml)
-    result.suppliers_seen = len(suppliers)
+async def _mark_relationship_barter(session: AsyncSession, counterparty_id: uuid.UUID) -> None:
+    """A counterparty with an outgoing (receivable) invoice is a barter partner."""
+    profile = await session.scalar(
+        select(CounterpartyPayableProfile).where(
+            CounterpartyPayableProfile.counterparty_id == counterparty_id
+        )
+    )
+    if profile is None:
+        session.add(
+            CounterpartyPayableProfile(counterparty_id=counterparty_id, relationship="barter")
+        )
+        await session.flush()
+    elif profile.relationship != "barter":
+        profile.relationship = "barter"
 
-    documents = ET.fromstring(invoices_xml).findall(".//document")
-    result.invoices_seen = len(documents)
 
+async def _is_barter(session: AsyncSession, counterparty_id: uuid.UUID) -> bool:
+    relationship = await session.scalar(
+        select(CounterpartyPayableProfile.relationship).where(
+            CounterpartyPayableProfile.counterparty_id == counterparty_id
+        )
+    )
+    return relationship == "barter"
+
+
+async def _ingest_documents(
+    session: AsyncSession,
+    documents: list[ET.Element],
+    suppliers: dict[str, IikoSupplier],
+    *,
+    direction: str,
+    result: CounterpartyInvoiceSyncResult,
+    name_by_id: dict[str, str] | None = None,
+) -> None:
+    # incoming invoices carry the supplier GUID, outgoing the counteragent GUID.
+    counterparty_field = "supplier" if direction == "payable" else "counteragentId"
     for doc in documents:
         status = (_text(doc, "status") or "").upper()
         if status not in INGESTED_IIKO_STATUSES:
@@ -313,7 +379,7 @@ async def ingest_iiko_payables(
         if not external_id:
             result.skipped_no_id += 1
             continue
-        supplier_guid = _text(doc, "supplier")
+        supplier_guid = _text(doc, counterparty_field)
         supplier = suppliers.get(supplier_guid) if supplier_guid else None
         if supplier is None:
             result.skipped_unknown_supplier += 1
@@ -322,18 +388,25 @@ async def ingest_iiko_payables(
             result.skipped_store += 1
             continue
 
-        counterparty_id = await _routed_counterparty_id(session, supplier.id, _doc_prefix(doc))
+        counterparty_id = None
+        if direction == "payable":
+            counterparty_id = await _routed_counterparty_id(session, supplier.id, _doc_prefix(doc))
         if counterparty_id is None:
             counterparty_id = await _resolve_counterparty(session, supplier, result=result)
+        if direction == "receivable":
+            await _mark_relationship_barter(session, counterparty_id)
+
+        # Capture line items only for barter partners (receivable just marked above).
+        is_barter = direction == "receivable" or await _is_barter(session, counterparty_id)
+        line_items = _parse_line_items(doc, name_by_id or {}) if is_barter else []
+
         amount = _invoice_amount(doc)
         vat_total, vat_breakdown = _invoice_vat(doc)
         number = _text(doc, "documentNumber") or _text(doc, "transportInvoiceNumber")
         invoice_date = _parse_iiko_date(_text(doc, "incomingDate") or _text(doc, "dateIncoming"))
         due_date = _parse_iiko_date(_text(doc, "dueDate"))
         raw_payload = {
-            child.tag: (child.text or "").strip()
-            for child in list(doc)
-            if child.tag != "items"
+            child.tag: (child.text or "").strip() for child in list(doc) if child.tag != "items"
         }
 
         existing = await session.scalar(
@@ -352,6 +425,7 @@ async def ingest_iiko_payables(
                 SupplierInvoice(
                     counterparty_id=counterparty_id,
                     source=IIKO_SOURCE,
+                    direction=direction,
                     external_id=external_id,
                     number=number,
                     invoice_date=invoice_date,
@@ -359,17 +433,22 @@ async def ingest_iiko_payables(
                     amount=amount,
                     vat_total=vat_total,
                     vat_breakdown=vat_breakdown,
+                    line_items=line_items,
                     payment_status="unpaid",
                     raw_payload=raw_payload,
                 )
             )
-            result.invoices_created += 1
+            if direction == "payable":
+                result.invoices_created += 1
+            else:
+                result.receivables_created += 1
         else:
             # Refresh source-owned fields; never override our payment_status /
             # allocations. Amount only changes while still fully unpaid.
             existing.number = number
             existing.invoice_date = invoice_date
             existing.counterparty_id = counterparty_id
+            existing.direction = direction
             if existing.payment_status == "unpaid":
                 existing.amount = amount
                 existing.vat_total = vat_total
@@ -377,7 +456,46 @@ async def ingest_iiko_payables(
                 if due_date is not None:
                     existing.due_date = due_date
             existing.raw_payload = raw_payload
-            result.invoices_updated += 1
+            if is_barter:
+                existing.line_items = line_items
+            if direction == "payable":
+                result.invoices_updated += 1
+            else:
+                result.receivables_updated += 1
+
+
+async def ingest_iiko_payables(
+    session: AsyncSession,
+    *,
+    suppliers_xml: bytes | str,
+    invoices_xml: bytes | str,
+    outgoing_invoices_xml: bytes | str | None = None,
+    products_xml: bytes | str | None = None,
+) -> CounterpartyInvoiceSyncResult:
+    result = CounterpartyInvoiceSyncResult()
+    suppliers = _parse_suppliers(suppliers_xml)
+    result.suppliers_seen = len(suppliers)
+    name_by_id = _parse_products(products_xml)
+
+    # Receivables (outgoing) first: they mark partners as barter, so the payables that
+    # follow capture line items for those partners in the same run.
+    if outgoing_invoices_xml is not None:
+        outgoing = ET.fromstring(outgoing_invoices_xml).findall(".//document")
+        result.receivables_seen = len(outgoing)
+        await _ingest_documents(
+            session,
+            outgoing,
+            suppliers,
+            direction="receivable",
+            result=result,
+            name_by_id=name_by_id,
+        )
+
+    incoming = ET.fromstring(invoices_xml).findall(".//document")
+    result.invoices_seen = len(incoming)
+    await _ingest_documents(
+        session, incoming, suppliers, direction="payable", result=result, name_by_id=name_by_id
+    )
 
     return result
 
@@ -385,18 +503,18 @@ async def ingest_iiko_payables(
 # --- fetch + orchestration ----------------------------------------------------
 
 
-def fetch_iiko_payables(*, days: int = 30) -> tuple[bytes, bytes]:
+def fetch_iiko_payables(*, days: int = 30) -> tuple[bytes, bytes, bytes, bytes]:
     module = _load_orders_module()
     module.load_local_env()
     client = module.IikoClient()
     _status, suppliers_xml = client.request(SUPPLIERS_ENDPOINT)
     today = datetime.now(tz=UTC).date()
     date_from = today - timedelta(days=days)
-    _status2, invoices_xml = client.request(
-        INVOICE_ENDPOINT,
-        params={"from": date_from.isoformat(), "to": today.isoformat()},
-    )
-    return suppliers_xml, invoices_xml
+    params = {"from": date_from.isoformat(), "to": today.isoformat()}
+    _status2, invoices_xml = client.request(INVOICE_ENDPOINT, params=params)
+    _status3, outgoing_xml = client.request(OUTGOING_INVOICE_ENDPOINT, params=params)
+    _status4, products_xml = client.request(PRODUCTS_ENDPOINT)
+    return suppliers_xml, invoices_xml, outgoing_xml, products_xml
 
 
 async def sync_counterparty_invoices(
@@ -411,11 +529,15 @@ async def sync_counterparty_invoices(
     session.add(run)
     await session.flush()
     try:
-        suppliers_xml, invoices_xml = await anyio.to_thread.run_sync(
+        suppliers_xml, invoices_xml, outgoing_xml, products_xml = await anyio.to_thread.run_sync(
             lambda: fetch_iiko_payables(days=days)
         )
         result = await ingest_iiko_payables(
-            session, suppliers_xml=suppliers_xml, invoices_xml=invoices_xml
+            session,
+            suppliers_xml=suppliers_xml,
+            invoices_xml=invoices_xml,
+            products_xml=products_xml,
+            outgoing_invoices_xml=outgoing_xml,
         )
     except Exception as exc:  # noqa: BLE001 - record failure on the run, then re-raise
         run.status = "error"

@@ -24,6 +24,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { apiErrorMessage } from "@/lib/api";
 
+import { BarterSection } from "./BarterSection";
 import {
   addCollectionSource,
   addRoutingRule,
@@ -42,7 +43,11 @@ import {
 import {
   COLLECTION_KIND_LABELS,
   COUNTERPARTY_TYPE_LABELS,
+  INVOICE_DIRECTION_LABELS,
   InvoiceStatusBadge,
+  RELATIONSHIP_HINTS,
+  RELATIONSHIP_LABELS,
+  RelationshipBadge,
   SOURCE_LABELS,
   formatRub,
 } from "./shared";
@@ -105,9 +110,13 @@ function CardBody({
 }) {
   return (
     <div className="mt-5 space-y-8">
-      {card.status === "archived" ? (
-        <Badge className="border-muted bg-muted text-muted-foreground">В архиве</Badge>
-      ) : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <RelationshipBadge relationship={card.relationship} />
+        {card.status === "archived" ? (
+          <Badge className="border-muted bg-muted text-muted-foreground">В архиве</Badge>
+        ) : null}
+      </div>
+      {card.relationship === "barter" ? <BarterBalanceBanner card={card} /> : null}
       <ProfileSection card={card} canAdmin={canAdmin} />
       <RequisitesSection card={card} canAdmin={canAdmin} />
       <CollectionSourcesSection card={card} canAdmin={canAdmin} />
@@ -115,6 +124,9 @@ function CardBody({
         <RoutingSection card={card} canAdmin={canAdmin} />
       ) : null}
       <InvoicesSection card={card} />
+      {card.relationship === "barter" ? (
+        <BarterSection counterpartyId={card.counterparty_id} canOperate={canOperate} />
+      ) : null}
       {canAdmin ? <ArchiveSection card={card} /> : null}
     </div>
   );
@@ -133,6 +145,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
   const queryClient = useQueryClient();
   const categoriesQuery = useQuery({ queryKey: ["cp", "categories"], queryFn: getLedgerCategories });
   const profile = card.profile;
+  const [relationship, setRelationship] = useState("official");
   const [internalName, setInternalName] = useState("");
   const [brandGroup, setBrandGroup] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -142,6 +155,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
   const [managerPhone, setManagerPhone] = useState("");
 
   useEffect(() => {
+    setRelationship(profile?.relationship ?? "official");
     setInternalName(profile?.internal_name ?? "");
     setBrandGroup(profile?.brand_group ?? "");
     setCategoryId(profile?.ledger_category_id ?? "");
@@ -156,6 +170,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
   const saveMutation = useMutation({
     mutationFn: () =>
       updateProfile(card.counterparty_id, {
+        relationship,
         internal_name: internalName || null,
         brand_group: brandGroup || null,
         ledger_category_id: categoryId || null,
@@ -176,6 +191,21 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
   return (
     <Section title="Исходные данные">
       <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Тип отношений">
+          <Select disabled={disabled} value={relationship} onValueChange={setRelationship}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(RELATIONSHIP_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">{RELATIONSHIP_HINTS[relationship]}</p>
+        </Field>
         <Field label="Внутреннее имя (рудимент)">
           <Input
             disabled={disabled}
@@ -537,14 +567,48 @@ function RoutingSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
   );
 }
 
+function BarterBalanceBanner({ card }: { card: CardData }) {
+  const net = card.barter_balance;
+  return (
+    <div className="rounded-md border border-violet-200 bg-violet-50/50 p-3 text-sm">
+      <span className="font-medium">Сальдо по бартеру: </span>
+      {net === 0 ? (
+        <span className="text-muted-foreground">расчёты закрыты</span>
+      ) : net > 0 ? (
+        <span>
+          мы должны <span className="font-medium tabular-nums">{formatRub(net)}</span>
+        </span>
+      ) : (
+        <span className="text-emerald-700">
+          нам должны <span className="font-medium tabular-nums">{formatRub(Math.abs(net))}</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
 function InvoicesSection({ card }: { card: CardData }) {
+  const payables = card.invoices.filter((invoice) => invoice.direction === "payable");
+  const receivables = card.invoices.filter((invoice) => invoice.direction === "receivable");
   return (
     <Section title="Накладные">
-      {card.invoices.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Накладных нет.</p>
+      <InvoiceList title={INVOICE_DIRECTION_LABELS.payable} invoices={payables} />
+      {receivables.length > 0 ? (
+        <InvoiceList title={INVOICE_DIRECTION_LABELS.receivable} invoices={receivables} />
+      ) : null}
+    </Section>
+  );
+}
+
+function InvoiceList({ title, invoices }: { title: string; invoices: CardData["invoices"] }) {
+  return (
+    <div className="space-y-2">
+      <h4 className="text-xs font-medium uppercase text-muted-foreground">{title}</h4>
+      {invoices.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Нет накладных.</p>
       ) : (
         <div className="grid gap-2">
-          {card.invoices.slice(0, 20).map((invoice) => (
+          {invoices.slice(0, 20).map((invoice) => (
             <div
               key={invoice.id}
               className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm"
@@ -563,7 +627,7 @@ function InvoicesSection({ card }: { card: CardData }) {
           ))}
         </div>
       )}
-    </Section>
+    </div>
   );
 }
 

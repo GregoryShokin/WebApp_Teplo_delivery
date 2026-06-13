@@ -103,6 +103,8 @@ async def suggest_invoice_matches(
         .join(Counterparty, Counterparty.id == SupplierInvoice.counterparty_id)
         .where(SupplierInvoice.payment_status.in_(("unpaid", "partially_paid")))
         .where(SupplierInvoice.draft_id.is_(None))
+        # Receivables (AR) are money owed to us — never matched to outgoing bank payments.
+        .where(SupplierInvoice.direction == "payable")
     )
     if counterparty_id is not None:
         invoice_query = invoice_query.where(SupplierInvoice.counterparty_id == counterparty_id)
