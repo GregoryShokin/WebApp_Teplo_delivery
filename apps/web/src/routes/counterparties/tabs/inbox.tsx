@@ -52,6 +52,12 @@ const REL_SEGMENTS: Array<{ value: string; label: string }> = [
   { value: "barter", label: "Бартер" },
 ];
 
+const STATUS_SEGMENTS: Array<{ value: string; label: string }> = [
+  { value: "unpaid,partially_paid", label: "К оплате" },
+  { value: "paid", label: "Оплаченные" },
+  { value: "", label: "Все статусы" },
+];
+
 export function InboxTab({
   canOperate,
   onOpenCounterparty,
@@ -62,16 +68,17 @@ export function InboxTab({
   const queryClient = useQueryClient();
   const [categoryId, setCategoryId] = useState<string>(ALL);
   const [relationship, setRelationship] = useState<string>(ALL);
+  const [statusFilter, setStatusFilter] = useState<string>("unpaid,partially_paid");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [payTarget, setPayTarget] = useState<CounterpartyInvoice | null>(null);
 
   const categoriesQuery = useQuery({ queryKey: ["cp", "categories"], queryFn: getLedgerCategories });
   const invoicesQuery = useQuery({
-    queryKey: ["cp", "invoices", categoryId, relationship],
+    queryKey: ["cp", "invoices", categoryId, relationship, statusFilter],
     queryFn: () =>
       getInvoices({
-        status: "unpaid,partially_paid",
+        status: statusFilter,
         category_id: categoryId === ALL ? undefined : categoryId,
         relationship: relationship === ALL ? undefined : relationship,
       }),
@@ -160,7 +167,8 @@ export function InboxTab({
       header: "Сумма",
       className: "text-right tabular-nums",
       headerClassName: "text-right",
-      cell: (invoice) => formatRub(invoice.remaining),
+      // Остаток к оплате; для оплаченных он 0 — показываем полную сумму накладной.
+      cell: (invoice) => formatRub(invoice.remaining || invoice.amount),
     },
     {
       key: "vat",
@@ -190,7 +198,7 @@ export function InboxTab({
       header: "",
       className: "text-right",
       cell: (invoice) =>
-        canOperate && !invoice.draft_id ? (
+        canOperate && !invoice.draft_id && invoice.payment_status !== "paid" ? (
           <Button size="sm" variant="outline" onClick={() => setPayTarget(invoice)}>
             <Banknote size={15} aria-hidden="true" />
             Оплатить
@@ -208,6 +216,23 @@ export function InboxTab({
             size="sm"
             variant={relationship === segment.value ? "default" : "outline"}
             onClick={() => setRelationship(segment.value)}
+          >
+            {segment.label}
+          </Button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1">
+        <span className="mr-1 text-xs text-muted-foreground">Статус:</span>
+        {STATUS_SEGMENTS.map((segment) => (
+          <Button
+            key={segment.value || "all"}
+            size="sm"
+            variant={statusFilter === segment.value ? "secondary" : "ghost"}
+            onClick={() => {
+              setStatusFilter(segment.value);
+              setSelected(new Set());
+            }}
           >
             {segment.label}
           </Button>
@@ -272,7 +297,13 @@ export function InboxTab({
         rows={invoices}
         isLoading={invoicesQuery.isLoading}
         getRowKey={(invoice) => invoice.id}
-        emptyMessage="Нет неоплаченных накладных"
+        emptyMessage={
+          statusFilter === "paid"
+            ? "Нет оплаченных накладных"
+            : statusFilter === ""
+              ? "Накладных нет"
+              : "Нет неоплаченных накладных"
+        }
       />
 
       <ManualInvoiceDialog open={isManualOpen} onOpenChange={setIsManualOpen} />
