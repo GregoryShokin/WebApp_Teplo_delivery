@@ -117,6 +117,14 @@ class IikoClient:
         self.password_sha1 = password_sha1
         self.timeout = float(os.environ.get("IIKO_SERVER_TIMEOUT_SECONDS") or 90)
         self.context = ssl._create_unverified_context()
+        # iiko is a public host — never route it through HTTPS_PROXY (that proxy exists
+        # only for the bank API, which needs the prod static IP). An empty ProxyHandler
+        # pins this client to a direct connection regardless of HTTPS_PROXY in the env,
+        # so iiko works even when the bank tunnel is down (and no manual env-pop needed).
+        self.opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),
+            urllib.request.HTTPSHandler(context=self.context),
+        )
 
     def api_url(self, path: str) -> str:
         path = path if path.startswith("/") else f"/{path}"
@@ -130,9 +138,7 @@ class IikoClient:
             f"{self.api_url('/auth')}?{query}",
             method="GET",
         )
-        with urllib.request.urlopen(
-            request, timeout=self.timeout, context=self.context
-        ) as response:
+        with self.opener.open(request, timeout=self.timeout) as response:
             token = response.read().decode("utf-8", "replace").strip()
         if not token or "<" in token or "\n" in token:
             raise IikoHTTPError(None, token.encode("utf-8"), "Unexpected auth response")
@@ -178,9 +184,7 @@ class IikoClient:
         request = urllib.request.Request(url, data=body, method=method, headers=headers)
 
         try:
-            with urllib.request.urlopen(
-                request, timeout=self.timeout, context=self.context
-            ) as response:
+            with self.opener.open(request, timeout=self.timeout) as response:
                 return response.status, response.read()
         except urllib.error.HTTPError as exc:
             body_bytes = exc.read()
