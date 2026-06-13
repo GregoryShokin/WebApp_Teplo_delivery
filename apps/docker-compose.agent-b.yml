@@ -1,0 +1,73 @@
+# Изолированный стек для второго агента (agent-b).
+# Свой Docker-проект, свои контейнеры, свои порты, своя БД — не пересекается с default-стеком.
+#
+# Запуск (из папки apps/ в worktree второго агента):
+#   docker compose -p teplo-b -f docker-compose.agent-b.yml up -d
+#   docker exec -w /app/apps/api teplo-api-b alembic upgrade head
+#
+# Default-стек первого агента (docker compose up) продолжает жить параллельно.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: teplo-postgres-b
+    environment:
+      POSTGRES_DB: teplo
+      POSTGRES_USER: teplo
+      POSTGRES_PASSWORD: teplo
+    ports:
+      - "5442:5432"
+    volumes:
+      - teplo_pgdata_b:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teplo -d teplo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    container_name: teplo-api-b
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
+      TEPLO_TEST_DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo_test_b
+      TEPLO_ADMIN_EMAIL: admin1@teplo.local
+      TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
+      JWT_SECRET_KEY: change-me-in-local-env-change-me
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 90
+      BACKEND_CORS_ORIGINS: '["http://localhost:5183","http://127.0.0.1:5183"]'
+    ports:
+      - "8010:8000"
+    volumes:
+      - ./api:/app/apps/api
+      - ../integrations:/app/integrations:ro
+      - ../research/scripts:/app/research/scripts:ro
+      - ../research/raw:/app/research/raw
+      - ../research/processed:/app/research/processed
+      - ../research/private:/app/research/private
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    container_name: teplo-web-b
+    environment:
+      VITE_API_BASE_URL: http://localhost:8010
+    ports:
+      - "5183:5173"
+    volumes:
+      - ./web:/app/apps/web
+      - /app/apps/web/node_modules
+    depends_on:
+      - api
+
+volumes:
+  teplo_pgdata_b:
