@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentActor
 from app.models import Employee, ScheduledShift, ShiftSchedule
 from app.services import employee_assignments, payroll_config, vacation_service
+from app.services.position_registry import schedule_positions
 from app.services.staff_taxonomy import (
     PAYROLL_ROLE_LABELS,
     default_station_for_payroll_role,
@@ -22,7 +23,8 @@ from app.services.staff_taxonomy import (
 )
 
 SCHEDULE_STATUSES = frozenset({"draft", "published", "superseded"})
-SCHEDULE_EMPLOYEE_POSITIONS = frozenset({"Повар", "Кассир"})
+# Должности в графике читаются из реестра: флаг in_schedule →
+# position_registry.schedule_positions().
 MAX_SHIFT_HOURS = Decimal("16")
 LOCATION_TZ = ZoneInfo("Europe/Moscow")
 DEFAULT_SHIFT_START = time(10, 0)
@@ -438,7 +440,7 @@ async def list_employees_roster(session: AsyncSession) -> list[dict[str, Any]]:
             for assignment in assignments
             if _assignment_visible_in_schedule(employee, assignment, substitute_pairs)
         ]
-        if employee.position not in SCHEDULE_EMPLOYEE_POSITIONS and not any(
+        if employee.position not in schedule_positions() and not any(
             assignment.is_substitute for assignment in visible_assignments
         ):
             continue

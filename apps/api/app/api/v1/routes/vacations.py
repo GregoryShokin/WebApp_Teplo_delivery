@@ -21,6 +21,7 @@ from app.schemas.vacations import (
     VacationRosterRow,
 )
 from app.services import vacation_service
+from app.services.position_registry import vacation_positions
 from app.services.vacation_service import UNSET, VacationShiftConflictError
 
 router = APIRouter()
@@ -88,7 +89,7 @@ async def get_vacation_roster(
         await session.scalars(
             select(Employee)
             .where(
-                Employee.position.in_(vacation_service.VACATION_EMPLOYEE_POSITIONS),
+                Employee.position.in_(vacation_positions()),
                 Employee.status == "active",
             )
             .order_by(Employee.full_name)
@@ -97,7 +98,7 @@ async def get_vacation_roster(
     rows: list[VacationRosterRow] = []
     for employee in employees:
         if (
-            employee.position not in vacation_service.VACATION_EMPLOYEE_POSITIONS
+            employee.position not in vacation_positions()
             or employee.status != "active"
         ):
             continue

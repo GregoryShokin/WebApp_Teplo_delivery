@@ -31,8 +31,12 @@ from app.schemas.payroll_config import (
     PayrollRevenueTierBase,
     PayrollSeniorityPremiumBase,
 )
+from app.services.position_registry import (
+    is_known_position,
+    seniority_premium_positions,
+    substitute_target_positions,
+)
 from app.services.staff_taxonomy import (
-    CANONICAL_POSITIONS,
     PAYROLL_ROLE_LABELS,
     canonical_position_name,
     categories_for_payroll_role,
@@ -66,10 +70,12 @@ PAYROLL_RATE_CATEGORY_LABELS = {
     "intern": "Стажёр",
     "freelancer": "Внештатный",
 }
-VALID_SENIORITY_PREMIUM_POSITIONS = frozenset({"Повар", "Кассир"})
+# Должности с надбавкой старшинства читаются из реестра: флаг
+# gets_seniority_premium -> position_registry.seniority_premium_positions().
 VALID_SENIORITY_PREMIUM_ROLES = frozenset({"senior", "deputy_senior"})
 SUBSTITUTE_PAIRS_SETTING_KEY = "payroll.substitute_pairs"
-SUBSTITUTE_TARGET_POSITIONS = frozenset({"Повар", "Кассир"})
+# Кого можно подменять — из реестра: флаг can_substitute ->
+# position_registry.substitute_target_positions().
 DEFAULT_SUBSTITUTE_PAIRS = (
     {"from_position": "Управляющий", "to_position": "Повар", "add_to_schedule": False},
     {"from_position": "Менеджер", "to_position": "Кассир", "add_to_schedule": False},
@@ -740,7 +746,7 @@ def _validate_active_rate_amount(is_active: bool, amount: Any) -> None:
 
 
 def _validate_seniority_premium_payload(payload: PayrollSeniorityPremiumBase) -> None:
-    if payload.position not in VALID_SENIORITY_PREMIUM_POSITIONS:
+    if payload.position not in seniority_premium_positions():
         raise PayrollConfigValidationError("Invalid seniority premium position")
     if payload.role not in VALID_SENIORITY_PREMIUM_ROLES:
         raise PayrollConfigValidationError("Invalid seniority premium role")
@@ -782,10 +788,12 @@ def _validate_substitute_pairs(raw_pairs: Any) -> list[SubstitutePair]:
 
         canonical_from = canonical_position_name(from_position)
         canonical_to = canonical_position_name(to_position)
-        if canonical_from not in CANONICAL_POSITIONS:
+        if not is_known_position(canonical_from):
             raise PayrollConfigValidationError("Кто подменяет должен быть канонической должностью")
-        if canonical_to not in SUBSTITUTE_TARGET_POSITIONS:
-            raise PayrollConfigValidationError("Кого подменяет может быть только Повар или Кассир")
+        if canonical_to not in substitute_target_positions():
+            raise PayrollConfigValidationError(
+                "Кого подменяет может быть только должность с допуском подмены"
+            )
         if canonical_from == canonical_to:
             raise PayrollConfigValidationError("Должности в подменной паре не должны совпадать")
 

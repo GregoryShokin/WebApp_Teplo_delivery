@@ -26,8 +26,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import AttendanceEntry, Employee, PayrollPeriod, SalaryAdvance
 from app.services.employee_effective_events import get_position_on_date
 from app.services.payroll_admin import (
-    DISHWASHER_POSITIONS,
-    OKLADNIK_POSITIONS,
     HALF_MONTH_SPLIT_DAY,
     _dishwasher_shift_rate,
     _first_half,
@@ -40,6 +38,7 @@ from app.services.payroll_admin import (
     okladnik_earned_to_date,
 )
 from app.services.payroll_calculator import calculate_payroll_lines, decimal
+from app.services.position_registry import dishwasher_positions, okladnik_positions
 
 _CENTS = Decimal("0.01")
 
@@ -193,10 +192,10 @@ async def available_to_advance(
     position = position or employee.position or ""
 
     note: str | None = None
-    if position in OKLADNIK_POSITIONS:
+    if position in okladnik_positions():
         basis = "okladnik"
         earned, start, end = await _okladnik_earned(session, employee, position, as_of)
-    elif position in DISHWASHER_POSITIONS:
+    elif position in dishwasher_positions():
         basis = "dishwasher"
         earned, start, end = await _dishwasher_earned(session, employee, as_of)
     else:

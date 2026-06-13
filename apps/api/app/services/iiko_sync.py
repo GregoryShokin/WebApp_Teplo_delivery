@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import http.client
 import importlib
@@ -34,7 +35,7 @@ from app.models import (
     SourceCredential,
 )
 from app.services import employee_change_events as employee_change_event_service
-from app.services import employee_position_service, payroll_config
+from app.services import employee_position_service, payroll_config, position_registry
 from app.services.employee_status import (
     compute_status,
     is_cook_position,
@@ -149,6 +150,14 @@ class IikoEmployeeUpdateResult:
     role_id: str | None
     role_code: str | None
     hire_date: date | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class IikoRoleUpsertResult:
+    role_id: str
+    code: str
+    name: str
+    schedule_type: str
 
 
 class IikoEmployeeOperationError(RuntimeError):
@@ -310,6 +319,31 @@ async def update_iiko_employee(
     )
 
 
+async def upsert_iiko_role(
+    session: AsyncSession,
+    *,
+    name: str,
+    code: str,
+    role_id: str | None = None,
+    schedule_type: str = "SESSION",
+) -> IikoRoleUpsertResult:
+    """Создать/обновить роль в iiko: PUT /resto/api/employees/roles/byCode/{code}."""
+    await _load_source_credential_env(session)
+    return await anyio.to_thread.run_sync(
+        _upsert_iiko_role_sync,
+        name.strip(),
+        code.strip(),
+        (role_id or "").strip() or None,
+        schedule_type.strip() or "SESSION",
+    )
+
+
+async def delete_iiko_role(session: AsyncSession, *, role_id: str) -> None:
+    """Удалить роль в iiko: DELETE /resto/api/employees/roles/byId/{id}."""
+    await _load_source_credential_env(session)
+    await anyio.to_thread.run_sync(_delete_iiko_role_sync, role_id.strip())
+
+
 async def sync_employee_roles_to_iiko(session: AsyncSession, employee_id: uuid.UUID) -> None:
     employee = await session.get(Employee, employee_id)
     if employee is None or not employee.iiko_id:
@@ -396,6 +430,120 @@ def _fetch_iiko_employee_roles_with_client(
         )
     roles.sort(key=lambda role: (role.deleted, role.name.casefold(), role.id))
     return roles
+
+
+def _logout_iiko_client(client: Any) -> None:
+    """iikoServer держит лицензию на токен — после write-операций освобождаем её."""
+    token = getattr(client, "token", "")
+    if not token:
+        return
+    # logout best-effort: если не вышло, лицензию отпустит таймаут iikoServer
+    with contextlib.suppress(Exception):
+        client.request("/logout")
+    client.token = ""
+
+
+def _upsert_iiko_role_sync(
+    name: str,
+    code: str,
+    role_id: str | None,
+    schedule_type: str,
+) -> IikoRoleUpsertResult:
+    if not name:
+        raise IikoEmployeeOperationError("Название роли iiko обязательно", status_code=400)
+    if not code:
+        raise IikoEmployeeOperationError("Код роли iiko обязателен", status_code=400)
+
+    export_employees = _load_export_employees_module()
+    export_employees.load_local_env()
+    client = export_employees.IikoClient()
+    try:
+        if role_id is None:
+            existing = _fetch_iiko_employee_roles_with_client(
+                export_employees,
+                client,
+                include_deleted=True,
+            )
+            matched = next((role for role in existing if (role.code or "") == code), None)
+            role_id = matched.id if matched is not None else str(uuid.uuid4())
+        body = _build_iiko_role_xml(
+            role_id=role_id,
+            code=code,
+            name=name,
+            schedule_type=schedule_type,
+        )
+        try:
+            _request_iiko_with_incomplete_read_retry(
+                client,
+                f"/employees/roles/byCode/{code}",
+                method="PUT",
+                raw_body=body,
+                content_type=IIKO_EMPLOYEE_XML_CONTENT_TYPE,
+            )
+        except export_employees.IikoHTTPError as exc:
+            raise _iiko_operation_error("сохранить роль в iiko", exc) from exc
+
+        # Подтверждаем фактический id/code роли после записи.
+        roles = _fetch_iiko_employee_roles_with_client(
+            export_employees,
+            client,
+            include_deleted=True,
+        )
+        saved = next(
+            (role for role in roles if (role.code or "") == code and not role.deleted),
+            None,
+        )
+        if saved is None:
+            raise IikoEmployeeOperationError(
+                f"iiko не подтвердил сохранение роли «{name}» (код {code})",
+            )
+        return IikoRoleUpsertResult(
+            role_id=saved.id,
+            code=saved.code or code,
+            name=saved.name,
+            schedule_type=schedule_type,
+        )
+    finally:
+        _logout_iiko_client(client)
+
+
+def _delete_iiko_role_sync(role_id: str) -> None:
+    if not role_id:
+        raise IikoEmployeeOperationError("У должности нет id роли iiko", status_code=400)
+
+    export_employees = _load_export_employees_module()
+    export_employees.load_local_env()
+    client = export_employees.IikoClient()
+    try:
+        try:
+            _request_iiko_with_incomplete_read_retry(
+                client,
+                f"/employees/roles/byId/{role_id}",
+                method="DELETE",
+            )
+        except export_employees.IikoHTTPError as exc:
+            raise _iiko_operation_error("удалить роль в iiko", exc) from exc
+    finally:
+        _logout_iiko_client(client)
+
+
+def _build_iiko_role_xml(
+    *,
+    role_id: str,
+    code: str,
+    name: str,
+    schedule_type: str,
+) -> bytes:
+    root = ET.Element("role")
+    _set_xml_text(root, "id", role_id)
+    _set_xml_text(root, "code", code)
+    _set_xml_text(root, "name", name)
+    _set_xml_text(root, "scheduleType", schedule_type)
+    _set_xml_text(root, "paymentPerHour", "0")
+    _set_xml_text(root, "steadySalary", "0")
+    _set_xml_text(root, "comment", "")
+    _set_xml_text(root, "deleted", "false")
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
 def _create_iiko_employee_sync(
@@ -787,6 +935,12 @@ def _iiko_employee_role_for_position(
     roles: Iterable[IikoEmployeeRole],
     position: str,
 ) -> IikoEmployeeRole | None:
+    roles = list(roles)
+    info = position_registry.position_info(position)
+    if info is not None and info.iiko_role_id:
+        for role in roles:
+            if not role.deleted and role.id == info.iiko_role_id:
+                return role
     for role in roles:
         if role.deleted:
             continue

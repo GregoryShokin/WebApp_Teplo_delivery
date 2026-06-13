@@ -24,11 +24,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AppSetting, Employee, PayrollPeriod, SalaryAdvance
 from app.services.employee_effective_events import get_position_on_date
-from app.services.payroll_adjustment_service import ADMIN_PAYROLL_POSITIONS
 from app.services.payroll_admin import _upsert_setting
 from app.services.payroll_advance_availability import available_to_advance
 from app.services.payroll_calculator import decimal
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
+from app.services.position_registry import admin_payroll_positions
 
 _CENTS = Decimal("0.01")
 PAYOUT_METHODS = ("business_card", "cash", "transfer", "other")
@@ -134,7 +134,7 @@ async def issue_advance(
     role = await get_position_on_date(session, employee_id, issued_on)
     role = role or employee.position or ""
     if await _date_in_finalized_period(
-        session, issued_on, admin=role in ADMIN_PAYROLL_POSITIONS
+        session, issued_on, admin=role in admin_payroll_positions()
     ):
         raise PayrollConflictError(
             "Период этой даты уже финализирован — выдача в закрытую ведомость невозможна"

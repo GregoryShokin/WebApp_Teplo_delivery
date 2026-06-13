@@ -1109,7 +1109,7 @@ async function invalidateAccessLists(queryClient: ReturnType<typeof useQueryClie
 }
 
 function sortRoles(roles: AccessRole[]) {
-  const order = ["owner", "manager", "office_manager", "cashier", "senior_courier"];
+  const order = ["admin", "manager", "office_manager", "cashier", "senior_courier"];
   return roles
     .slice()
     .sort(
@@ -1224,6 +1224,7 @@ function permissionAreaLabel(code: string, module: string) {
   if (code.startsWith("accounting.periods.")) return "Закрытие периода";
 
   if (code.startsWith("settings.general.")) return "Общие настройки";
+  if (code.startsWith("settings.positions.")) return "Реестр должностей";
   if (code.startsWith("settings.integrations.")) return "Обмен данными";
   if (code.startsWith("settings.users.")) return "Пользователи";
   if (code.startsWith("settings.access.")) return "Доступы пользователей";

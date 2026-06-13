@@ -15,7 +15,11 @@ from app.auth.permissions import (
     permission_is_granted,
 )
 from app.models import Employee
-from app.services.staff_taxonomy import AUXILIARY_POSITIONS, canonical_position_name
+from app.services.position_registry import (
+    permission_group_for_position,
+    positions_for_permission_group,
+)
+from app.services.staff_taxonomy import canonical_position_name
 
 
 class StaffArea(StrEnum):
@@ -52,13 +56,13 @@ AREA_PERMISSION_SEGMENTS = {
     StaffArea.COURIERS: "couriers",
 }
 
-POSITIONS_BY_AREA = {
-    StaffArea.ADMINISTRATION: frozenset({"Управляющий", "Менеджер", "Системный администратор"}),
-    StaffArea.COOKS: frozenset({"Повар"}),
-    StaffArea.CASHIERS: frozenset({"Кассир"}),
-    StaffArea.AUXILIARY: frozenset(AUXILIARY_POSITIONS),
-    StaffArea.COURIERS: frozenset({"Курьер"}),
-}
+# Должности каждой области прав читаются из реестра (permission_group);
+# группы none/неизвестные исторически относятся к администрации.
+def _positions_for_area(area: StaffArea) -> frozenset[str]:
+    positions = set(positions_for_permission_group(AREA_PERMISSION_SEGMENTS[area]))
+    if area is StaffArea.ADMINISTRATION:
+        positions.update(positions_for_permission_group("none"))
+    return frozenset(positions)
 
 LEGACY_FINANCE_MANAGER_STAFF_PERMISSIONS = frozenset(
     code
@@ -152,14 +156,16 @@ def ensure_employee_access(
 
 def staff_area_for_position(position: str | None) -> StaffArea:
     canonical = canonical_position_name(position)
-    if canonical == "Повар":
+    group = permission_group_for_position(canonical)
+    if group == "cooks":
         return StaffArea.COOKS
-    if canonical == "Кассир":
+    if group == "cashiers":
         return StaffArea.CASHIERS
-    if canonical in AUXILIARY_POSITIONS:
+    if group == "auxiliary":
         return StaffArea.AUXILIARY
-    if canonical == "Курьер":
+    if group == "couriers":
         return StaffArea.COURIERS
+    # administration, none и неизвестные должности — как раньше, администрация.
     return StaffArea.ADMINISTRATION
 
 
@@ -210,5 +216,5 @@ def _area_permission_code(area: StaffArea, action: StaffAction) -> str:
 def _positions_for_areas(areas: Iterable[StaffArea]) -> frozenset[str]:
     positions: set[str] = set()
     for area in areas:
-        positions.update(POSITIONS_BY_AREA[area])
+        positions.update(_positions_for_area(area))
     return frozenset(positions)

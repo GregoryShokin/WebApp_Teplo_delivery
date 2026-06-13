@@ -25,17 +25,13 @@ from app.models import (
     ShiftLedgerEntry,
 )
 from app.services import vacation_service
-from app.services.attendance_loader import PAYROLL_TARGET_POSITIONS
 from app.services.employee_assignments import (
     PAYROLL_ROLE_LABELS,
     assignment_role_for_payroll_context,
     get_assignments,
 )
 from app.services.employee_effective_events import get_allowances_on_date, get_position_on_date
-from app.services.payroll_adjustment_service import (
-    ADMIN_PAYROLL_POSITIONS,
-    load_adjustments_for_period,
-)
+from app.services.payroll_adjustment_service import load_adjustments_for_period
 from app.services.payroll_percent import (
     CATEGORY_COEFFICIENT_CONFIG_KEY,
     REVENUE_TIER_CONFIG_KEY,
@@ -48,6 +44,7 @@ from app.services.payroll_percent import (
     revenue_tier_rate,
     shift_weight,
 )
+from app.services.position_registry import admin_payroll_positions, production_payroll_positions
 from app.services.seniority_allowance_resolver import (
     CASHIER_ALLOWANCE_ASSIGNMENTS_CONFIG_KEY,
     CASHIER_POSITION,
@@ -203,7 +200,7 @@ async def calculate_payroll_lines(
         # Производственная ведомость не подхватывает админские штрафы/премии — иначе
         # начисление сотруднику с двумя ролями (управляющий + повар-субститут)
         # удвоилось бы (повторно в полумесячной админской ведомости).
-        exclude_roles=ADMIN_PAYROLL_POSITIONS,
+        exclude_roles=admin_payroll_positions(),
     )
     deposit_balances = await load_deposit_balances_for_employees(session, employee_ids)
     result = calculate_payroll_lines_from_inputs(
@@ -2002,7 +1999,7 @@ def fund_accrual_for_day(
     work_date: date,
     base_pay_with_premium: Decimal,
 ) -> Decimal:
-    if employee.position not in PAYROLL_TARGET_POSITIONS:
+    if employee.position not in production_payroll_positions():
         return Decimal("0")
     base_pay_with_premium = decimal(base_pay_with_premium)
     if base_pay_with_premium <= 0:

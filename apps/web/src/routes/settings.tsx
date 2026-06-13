@@ -49,6 +49,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { PageHeader } from "@/components/ui-app/PageHeader";
+import { PositionsPanel } from "@/routes/settings-positions";
 import { usePermissions } from "@/lib/permissions";
 import {
   getSettingHistory,
@@ -72,6 +73,7 @@ type SettingsRouteProps = {
 };
 
 const CATEGORY_ORDER = [
+  "positions",
   "schedule",
   "payroll",
   "payment_calendar",
@@ -81,6 +83,10 @@ const CATEGORY_ORDER = [
 ];
 
 const CATEGORY_META: Record<string, CategoryMeta> = {
+  positions: {
+    label: "Должности",
+    description: "Реестр должностей: архетип оплаты, права, допуски и синхронизация с iiko.",
+  },
   schedule: {
     label: "График сотрудников",
     description: "Планирование смен, целевой ФОТ и нетиповые дни.",
@@ -231,16 +237,20 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
     };
   }, []);
 
+  const canViewPositions = permissions.hasPermission("settings.positions.read");
+  const canEditPositions = permissions.hasPermission("settings.positions.edit");
+
   const categories = useMemo(() => {
-    const found = Array.from(
-      new Set(settings.map((setting) => normalizeCategory(setting.category))),
-    );
-    return found.sort(
+    const found = new Set(settings.map((setting) => normalizeCategory(setting.category)));
+    if (canViewPositions) {
+      found.add("positions");
+    }
+    return Array.from(found).sort(
       (a, b) =>
         categoryIndex(a) - categoryIndex(b) ||
         labelForCategory(a).localeCompare(labelForCategory(b), "ru"),
     );
-  }, [settings]);
+  }, [canViewPositions, settings]);
 
   const groupedSettings = useMemo(() => {
     const groups = new Map<string, AppSetting[]>();
@@ -271,6 +281,8 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
 
   const canOpenAccessControl = permissions.canOpenSection("access-control");
   const canWriteSettings = permissions.canPerformAction("settings.edit");
+  const showPositionsPanel =
+    canViewPositions && (!selectedCategory || selectedCategory === "positions");
   const showSubstitutePairsPanel = !selectedCategory || selectedCategory === "payroll";
   const substitutePairs = substitutePairsQuery.data?.pairs ?? [];
   const substitutePairsDirty = !valuesEqual(substituteDrafts, substitutePairs);
@@ -365,6 +377,8 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
       ) : null}
 
       <div className="space-y-6">
+        {showPositionsPanel ? <PositionsPanel canEdit={canEditPositions} /> : null}
+
         {showSubstitutePairsPanel ? (
             <SubstitutePairsPanel
             canWrite={canWriteSettings}
@@ -432,7 +446,7 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
           </section>
         ))}
 
-        {!settingsQuery.isLoading && groupedSettings.length === 0 ? (
+        {!settingsQuery.isLoading && groupedSettings.length === 0 && !showPositionsPanel ? (
           <div className="rounded-lg border bg-card px-4 py-8 text-sm text-muted-foreground">
             Настройки в этом разделе пока не заданы.
           </div>

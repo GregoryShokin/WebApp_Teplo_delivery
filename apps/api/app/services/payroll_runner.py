@@ -28,16 +28,16 @@ from app.services.accumulation_fund_service import (
     fund_outstanding,
     payout_fund_accounts_for_year,
 )
-from app.services.attendance_loader import PAYROLL_TARGET_POSITIONS, load_attendance_entries
-from app.services.payroll_advance_recovery import (
-    apply_advance_recoveries,
-    apply_advance_recoveries_to_balances,
-)
+from app.services.attendance_loader import load_attendance_entries
 from app.services.deferred_audit_charge_service import (
     apply_pending_splits_for_run,
     collapse_deferred_charges_on_dismissal,
 )
 from app.services.iiko_revenue import fetch_daily_revenue
+from app.services.payroll_advance_recovery import (
+    apply_advance_recoveries,
+    apply_advance_recoveries_to_balances,
+)
 from app.services.payroll_calculator import (
     DAILY_REVENUE_CONFIG_KEY,
     PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY,
@@ -49,6 +49,7 @@ from app.services.payroll_calculator import (
     payroll_rate_snapshot_payload,
     summarize_lines,
 )
+from app.services.position_registry import production_payroll_positions
 
 
 class PayrollNotFoundError(LookupError):
@@ -786,7 +787,7 @@ async def accrue_fund(
         if amount <= 0:
             continue
         employee = employees_by_id.get(line.employee_id)
-        if employee is not None and employee.position not in PAYROLL_TARGET_POSITIONS:
+        if employee is not None and employee.position not in production_payroll_positions():
             continue
         account = await get_or_create_fund_account(session, line.employee_id, period.end_date.year)
         account.accumulated_amount = decimal(account.accumulated_amount) + amount

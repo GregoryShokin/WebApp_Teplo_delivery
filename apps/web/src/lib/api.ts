@@ -108,6 +108,52 @@ export type SubstitutePairsResponse = {
   pairs: SubstitutePair[];
 };
 
+export type PositionArchetype =
+  | "okladnik"
+  | "production_percent"
+  | "shift_pool"
+  | "courier"
+  | "none";
+export type PositionPermissionGroup =
+  | "administration"
+  | "cooks"
+  | "cashiers"
+  | "auxiliary"
+  | "couriers"
+  | "none";
+export type PositionScheduleType = "SESSION" | "FIXED" | "HOURS";
+export type PositionStatus = "active" | "excluded";
+
+export type Position = {
+  id: string;
+  name: string;
+  iiko_role_id: string | null;
+  iiko_role_code: string | null;
+  archetype: PositionArchetype;
+  permission_group: PositionPermissionGroup;
+  participates_in_access: boolean;
+  access_role_code: string | null;
+  status: PositionStatus;
+  schedule_type: PositionScheduleType;
+  employee_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PositionPayload = {
+  name: string;
+  archetype: PositionArchetype;
+  permission_group: PositionPermissionGroup;
+  participates_in_access?: boolean;
+  schedule_type?: PositionScheduleType;
+};
+
+export type PositionsSyncResult = {
+  linked: number;
+  imported: number;
+  positions: Position[];
+};
+
 export type EmployeeStatus = "active" | "inactive" | "requires_setup";
 export type EmployeeCategory =
   | "category_1"
@@ -2557,6 +2603,43 @@ export async function updateSubstitutePairs(
   pairs: SubstitutePair[],
 ): Promise<SubstitutePairsResponse> {
   const response = await api.put<SubstitutePairsResponse>("/settings/substitute-pairs", { pairs });
+  return response.data;
+}
+
+export async function getPositions(): Promise<Position[]> {
+  const response = await api.get<{ positions: Position[] }>("/settings/positions");
+  return response.data.positions;
+}
+
+export async function createPosition(payload: PositionPayload): Promise<Position> {
+  const response = await api.post<Position>("/settings/positions", payload);
+  return response.data;
+}
+
+export async function updatePosition(
+  id: string,
+  payload: Partial<PositionPayload>,
+): Promise<Position> {
+  const response = await api.patch<Position>(`/settings/positions/${id}`, payload);
+  return response.data;
+}
+
+export async function excludePosition(id: string): Promise<Position> {
+  const response = await api.post<Position>(`/settings/positions/${id}/exclude`);
+  return response.data;
+}
+
+export async function restorePosition(id: string): Promise<Position> {
+  const response = await api.post<Position>(`/settings/positions/${id}/restore`);
+  return response.data;
+}
+
+export async function deletePosition(id: string): Promise<void> {
+  await api.delete(`/settings/positions/${id}`);
+}
+
+export async function syncPositionsWithIiko(): Promise<PositionsSyncResult> {
+  const response = await api.post<PositionsSyncResult>("/settings/positions/sync-iiko");
   return response.data;
 }
 

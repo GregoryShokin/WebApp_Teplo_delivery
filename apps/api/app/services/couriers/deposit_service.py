@@ -19,6 +19,7 @@ from app.models import (
     Employee,
 )
 from app.services.couriers.common import get_courier_or_404
+from app.services.position_registry import courier_positions
 
 DepositStatusFilter = Literal["active", "fired", "all"]
 DepositCategoryFilter = Literal["primary", "secondary", "all"]
@@ -219,7 +220,7 @@ async def list_couriers_with_balances(
 ) -> list[dict[str, Any]]:
     resolved_filters = filters or CourierDepositFilters()
     result = await session.scalars(
-        select(Employee).where(Employee.position == "Курьер").order_by(Employee.full_name)
+        select(Employee).where(Employee.position.in_(courier_positions())).order_by(Employee.full_name)
     )
     rows: list[dict[str, Any]] = []
     for employee in result.all():

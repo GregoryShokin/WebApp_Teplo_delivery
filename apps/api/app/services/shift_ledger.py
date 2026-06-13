@@ -29,6 +29,7 @@ from app.services.attendance_loader import (
     parse_datetime,
 )
 from app.services.employee_assignments import get_assignments
+from app.services.position_registry import production_payroll_positions
 from app.services.staff_taxonomy import PAYROLL_ROLE_LABELS
 
 
@@ -217,7 +218,7 @@ async def list_ledger_matrix(session: AsyncSession, selected_date: date) -> dict
             ShiftLedgerEntry.work_date >= start_date,
             ShiftLedgerEntry.work_date <= end_date,
             or_(
-                Employee.position.in_(("Повар", "Кассир")),
+                Employee.position.in_(production_payroll_positions()),
                 ShiftLedgerEntry.payroll_role.in_(tuple(PAYROLL_ROLE_LABELS)),
                 select(EmployeeRoleAssignment.id)
                 .where(

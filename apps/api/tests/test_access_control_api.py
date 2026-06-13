@@ -175,9 +175,12 @@ def test_access_control_roles_api_returns_passport_defaults(
 
     assert response.status_code == 200
     roles = {role["code"]: role for role in response.json()}
-    assert set(roles) == {"owner", "manager", "office_manager", "cashier", "senior_courier"}
-    assert roles["owner"]["is_editable"] is False
-    assert set(roles["owner"]["permission_codes"]) == VISIBLE_PERMISSION_CODES
+    # Список ролей доступа = должности реестра с participates_in_access (сид 0102):
+    # Собственник (owner) — скрытая суперроль-подстраховка, в список не входит;
+    # место полного доступа занимает «Системный администратор» (admin).
+    assert set(roles) == {"admin", "manager", "office_manager", "cashier", "senior_courier"}
+    assert roles["admin"]["is_editable"] is False
+    assert set(roles["admin"]["permission_codes"]) == VISIBLE_PERMISSION_CODES
     assert set(roles["manager"]["permission_codes"]) == DEFAULT_ROLE_PERMISSIONS["manager"]
     assert roles["senior_courier"]["is_editable"] is True
     assert (

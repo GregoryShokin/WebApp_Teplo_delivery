@@ -55,10 +55,10 @@ from app.services import deferred_audit_charge_service as deferred_charge_servic
 from app.services import shift_ledger as shift_ledger_service
 from app.services.accumulation_fund_service import forfeit_active_fund_on_dismiss
 from app.services.attendance_loader import (
-    PAYROLL_TARGET_POSITIONS,
     build_attendance_entry,
     load_attendance_entries,
 )
+from app.services.position_registry import production_payroll_positions
 from app.services.deferred_audit_charge_service import (
     apply_pending_splits_for_run,
     cancel_deferred_charge,
@@ -5846,12 +5846,13 @@ async def test_finalized_run_cannot_be_finalized_again() -> None:
 
 
 def test_payroll_target_positions_are_cook_and_cashier_only() -> None:
-    """Канон таксономии: ЗП считается только для Поваров и Кассиров.
+    """Сид реестра должностей: производственная ЗП — только Повара и Кассиры.
 
     См. app-spec/modules/staff/taxonomy.md — курьеры, управляющий, менеджер,
-    сисадмин, уборщица, посудомойка имеют отдельные правила оплаты.
+    сисадмин, уборщица, посудомойка имеют отдельные правила оплаты
+    (архетипы courier/okladnik/shift_pool в реестре).
     """
-    assert set(PAYROLL_TARGET_POSITIONS) == {"Повар", "Кассир"}
+    assert set(production_payroll_positions()) == {"Повар", "Кассир"}
 
 
 class AttendanceLoaderFakeScalarResult:

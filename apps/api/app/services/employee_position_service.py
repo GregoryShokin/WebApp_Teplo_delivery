@@ -10,11 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor
 from app.models import Employee, EmployeePositionAssignment, PayrollPeriod, PayrollRun
-from app.services.staff_taxonomy import (
-    AUXILIARY_POSITIONS,
-    CREATE_POSITIONS,
-    canonical_position_name,
-)
+from app.services.position_registry import is_active_position
+from app.services.staff_taxonomy import canonical_position_name
 
 
 class EmployeePositionError(ValueError):
@@ -100,7 +97,7 @@ async def change_position(
     acknowledge_closed_period: bool = False,
 ) -> EmployeePositionAssignment:
     canonical = canonical_position_name(new_position)
-    if canonical not in CREATE_POSITIONS + AUXILIARY_POSITIONS:
+    if canonical is None or not is_active_position(canonical):
         raise EmployeePositionError(f"Неизвестная должность: {new_position}")
 
     current = await session.scalar(
@@ -169,7 +166,7 @@ async def replace_position_assignment(
     canonical = None
     if position is not None:
         canonical = canonical_position_name(position)
-        if canonical not in CREATE_POSITIONS + AUXILIARY_POSITIONS:
+        if canonical is None or not is_active_position(canonical):
             raise EmployeePositionError(f"Неизвестная должность: {position}")
 
     before_by_id = _states_by_id(assignments)

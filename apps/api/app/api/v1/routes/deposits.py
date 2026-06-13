@@ -14,7 +14,6 @@ from app.api.deps import CurrentActor, get_current_actor, require_any_permission
 from app.db.session import get_session
 from app.models import DepositAccount, DepositTransaction, Employee
 from app.services import deposit_service
-from app.services.attendance_loader import PAYROLL_TARGET_POSITIONS
 from app.services.payroll_calculator import (
     decimal,
     employee_deposit_target,
@@ -22,6 +21,7 @@ from app.services.payroll_calculator import (
     is_deposit_currently_excluded,
     load_payroll_settings,
 )
+from app.services.position_registry import production_payroll_positions
 
 router = APIRouter()
 DEPOSITS_READ_ACCESS = (
@@ -105,7 +105,7 @@ async def list_deposits(
 ) -> list[dict[str, Any]]:
     result = await session.scalars(
         select(Employee)
-        .where(Employee.position.in_(PAYROLL_TARGET_POSITIONS))
+        .where(Employee.position.in_(production_payroll_positions()))
         .order_by(Employee.full_name)
     )
     employees = result.all()

@@ -27,7 +27,6 @@ from app.services.accumulation_fund_service import (
     fund_outstanding,
     payout_fund_accounts_for_year,
 )
-from app.services.attendance_loader import PAYROLL_TARGET_POSITIONS
 from app.services.payroll_calculator import (
     _fund_rate_for_months,
     decimal,
@@ -35,6 +34,7 @@ from app.services.payroll_calculator import (
     load_payroll_settings,
     tenure_months_on,
 )
+from app.services.position_registry import production_payroll_positions
 
 router = APIRouter()
 FUND_READ_ACCESS = (Depends(require_permission("payroll.fund.read")),)
@@ -208,7 +208,7 @@ async def get_initial_balance_roster(
         await session.scalars(
             select(Employee).where(
                 Employee.status == "active",
-                Employee.position.in_(PAYROLL_TARGET_POSITIONS),
+                Employee.position.in_(production_payroll_positions()),
             )
         )
     ).all()
@@ -277,7 +277,7 @@ async def set_fund_initial_balance(
     )
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сотрудник не найден")
-    if employee.position not in PAYROLL_TARGET_POSITIONS:
+    if employee.position not in production_payroll_positions():
         raise HTTPException(
             status_code=422,
             detail=FUND_TARGET_POSITIONS_ERROR,
@@ -377,7 +377,7 @@ async def patch_fund_exclusion(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> FundExclusionRead:
     employee = await _get_employee_or_404(session, employee_id)
-    if employee.position not in PAYROLL_TARGET_POSITIONS:
+    if employee.position not in production_payroll_positions():
         raise HTTPException(status_code=422, detail=FUND_TARGET_POSITIONS_ERROR)
 
     before = _fund_exclusion_snapshot(employee)
@@ -415,7 +415,7 @@ async def get_fund_summary(
             .join(Employee, Employee.id == AccumulationFundAccount.employee_id)
             .where(
                 AccumulationFundAccount.year == year,
-                Employee.position.in_(PAYROLL_TARGET_POSITIONS),
+                Employee.position.in_(production_payroll_positions()),
             )
         )
     ).all()
@@ -427,7 +427,7 @@ async def get_fund_summary(
             .where(
                 AccumulationFundTransaction.transaction_type == "payout",
                 extract("year", AccumulationFundTransaction.created_at) == year,
-                Employee.position.in_(PAYROLL_TARGET_POSITIONS),
+                Employee.position.in_(production_payroll_positions()),
             )
         )
     ).all()
@@ -438,7 +438,7 @@ async def get_fund_summary(
             .where(
                 AccumulationFundTransaction.transaction_type == "forfeit",
                 extract("year", AccumulationFundTransaction.created_at) == year,
-                Employee.position.in_(PAYROLL_TARGET_POSITIONS),
+                Employee.position.in_(production_payroll_positions()),
             )
         )
     ).all()
@@ -474,7 +474,7 @@ async def list_fund_accounts(
         .join(Employee, Employee.id == AccumulationFundAccount.employee_id)
         .where(
             AccumulationFundAccount.year == year,
-            Employee.position.in_(PAYROLL_TARGET_POSITIONS),
+            Employee.position.in_(production_payroll_positions()),
         )
         .order_by(Employee.full_name)
     )
@@ -518,7 +518,7 @@ async def get_employee_fund(
     employee = await session.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
-    if employee.position not in PAYROLL_TARGET_POSITIONS:
+    if employee.position not in production_payroll_positions():
         raise HTTPException(status_code=422, detail=FUND_TARGET_POSITIONS_ERROR)
 
     settings = await load_payroll_settings(session)

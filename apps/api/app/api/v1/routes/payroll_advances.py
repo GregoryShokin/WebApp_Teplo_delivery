@@ -28,7 +28,6 @@ from app.auth.permissions import permission_is_granted
 from app.db.session import get_session
 from app.models import Employee
 from app.services.employee_effective_events import get_position_on_date
-from app.services.payroll_adjustment_service import ADMIN_PAYROLL_POSITIONS
 from app.services.payroll_advance_availability import AdvanceAvailability, available_to_advance
 from app.services.payroll_advance_service import (
     cancel_advance,
@@ -39,6 +38,7 @@ from app.services.payroll_advance_service import (
     write_off_advance,
 )
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
+from app.services.position_registry import admin_payroll_positions
 
 router = APIRouter()
 
@@ -172,7 +172,7 @@ async def post_advance(
     issued_on = payload.issued_on or datetime.now(UTC).date()
     position = await get_position_on_date(session, employee.id, issued_on)
     position = position or employee.position or ""
-    issue_code = _ISSUE_ADMIN if position in ADMIN_PAYROLL_POSITIONS else _ISSUE_PRODUCTION
+    issue_code = _ISSUE_ADMIN if position in admin_payroll_positions() else _ISSUE_PRODUCTION
     ensure_permission(actor, issue_code)
     allow_loan = permission_is_granted(_LOAN_ISSUE, actor.permissions)
     try:

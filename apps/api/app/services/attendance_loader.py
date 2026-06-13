@@ -21,6 +21,7 @@ from app.models import (
 )
 from app.services.employee_position_service import position_at
 from app.services.iiko_sync import _load_source_credential_env
+from app.services.position_registry import production_payroll_positions
 from app.services.settings_service import SettingNotFoundError, get_setting_model
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
@@ -38,7 +39,8 @@ def default_attendance_rules() -> AttendanceRules:
     return AttendanceRules(open_shift_cap_hours=12, open_shift_auto_close_time=time(22, 0))
 
 
-PAYROLL_TARGET_POSITIONS = ("Повар", "Кассир")
+# Должности производственной ЗП читаются из реестра должностей:
+# archetype production_percent -> position_registry.production_payroll_positions().
 
 
 async def load_attendance_entries(
@@ -245,7 +247,7 @@ async def _attendance_entry_is_payroll_relevant(
     if employee is None:
         return False
     position_on_date = await position_at(session, employee.id, entry.work_date)
-    if position_on_date in PAYROLL_TARGET_POSITIONS:
+    if position_on_date in production_payroll_positions():
         return True
 
     ledger_entry = await session.scalar(

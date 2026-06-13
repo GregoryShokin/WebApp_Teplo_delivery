@@ -52,6 +52,7 @@ from app.services import (
     revenue_forecast_service,
     shift_schedule_service,
 )
+from app.services.position_registry import schedule_positions
 from app.services.seniority_allowance_resolver import (
     CASHIER_POSITION,
     AllowanceAssignment,
@@ -219,7 +220,7 @@ async def get_schedule_ledger(
             ShiftLedgerEntry.work_date >= date_from,
             ShiftLedgerEntry.work_date <= date_to,
             or_(
-                Employee.position.in_(shift_schedule_service.SCHEDULE_EMPLOYEE_POSITIONS),
+                Employee.position.in_(schedule_positions()),
                 ShiftLedgerEntry.payroll_role.in_(tuple(PAYROLL_ROLE_LABELS)),
             ),
         )
@@ -230,7 +231,7 @@ async def get_schedule_ledger(
         for entry, employee in result.all()
         if date_from <= entry.work_date <= date_to
         and (
-            employee.position in shift_schedule_service.SCHEDULE_EMPLOYEE_POSITIONS
+            employee.position in schedule_positions()
             or entry.payroll_role in PAYROLL_ROLE_LABELS
         )
     ]

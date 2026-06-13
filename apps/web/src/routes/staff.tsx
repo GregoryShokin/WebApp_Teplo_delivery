@@ -2546,7 +2546,12 @@ function CreateEmployeeDialog({
           return false;
         }
         const position = canonicalPosition(role.name);
-        return Boolean(position && createPositions.has(position) && allowedPositions.has(position));
+        if (!position) {
+          // Роль из реестра должностей, неизвестная клиентскому каталогу:
+          // сервер уже отфильтровал активные должности — показываем как есть.
+          return true;
+        }
+        return createPositions.has(position) && allowedPositions.has(position);
       }),
     [allowedPositions, roles],
   );

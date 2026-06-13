@@ -12,7 +12,7 @@ from sqlalchemy.orm import aliased
 from app.api.deps import CurrentActor, ensure_any_permission, ensure_permission, get_current_actor
 from app.auth.permissions import (
     ACCESS_ROLE_CODES,
-    EDITABLE_ROLE_CODES,
+    FULL_ACCESS_ROLE_CODES,
     LEGACY_PERMISSION_CODES,
     MODULE_ORDER_INDEX,
     PERMISSION_CODE_ORDER,
@@ -26,6 +26,7 @@ from app.db.session import get_session
 from app.models import (
     Organization,
     Permission,
+    Position,
     Role,
     RolePermission,
     RolePermissionEvent,
@@ -132,9 +133,18 @@ async def list_permissions(
 async def list_roles(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[dict[str, object]]:
-    roles = await _access_roles(session)
+    roles_with_names = await _access_roles_with_names(session)
+    roles = [role for role, _name in roles_with_names]
+    display_names = {role.id: name for role, name in roles_with_names}
     permissions_by_role = await _role_permission_codes(session, [role.id for role in roles])
-    return [_role_payload(role, permissions_by_role.get(role.id, [])) for role in roles]
+    return [
+        _role_payload(
+            role,
+            permissions_by_role.get(role.id, []),
+            display_name=display_names.get(role.id),
+        )
+        for role in roles
+    ]
 
 
 @router.put(
@@ -151,7 +161,7 @@ async def put_role_permissions(
     role = await session.get(Role, role_id)
     if role is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
-    if role.code not in EDITABLE_ROLE_CODES:
+    if role.code in FULL_ACCESS_ROLE_CODES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Role is fixed")
 
     requested_codes = set(normalize_permission_codes_for_storage(payload.permission_codes))
@@ -434,10 +444,36 @@ async def list_audit_events(
     return events[offset : offset + limit]
 
 
-async def _access_roles(session: AsyncSession) -> list[Role]:
+async def _access_roles_with_names(session: AsyncSession) -> list[tuple[Role, str]]:
+    """Роли доступа = должности реестра с участием в доступах (подпись — имя должности).
+
+    Список и его порядок задаются реестром должностей; роль-движок прав берётся по
+    position.access_role_code. Если реестр ещё не заполнен (старый дамп) — fallback
+    на исторический ACCESS_ROLE_CODES, чтобы доступы не пропали.
+    """
+    positions = (
+        await session.scalars(
+            select(Position)
+            .where(
+                Position.participates_in_access.is_(True),
+                Position.access_role_code.is_not(None),
+            )
+            .order_by(Position.name)
+        )
+    ).all()
+    if positions:
+        codes = [position.access_role_code for position in positions]
+        roles = (await session.scalars(select(Role).where(Role.code.in_(codes)))).all()
+        by_code = {role.code: role for role in roles}
+        return [
+            (by_code[position.access_role_code], position.name)
+            for position in positions
+            if position.access_role_code in by_code
+        ]
+
     roles = (await session.scalars(select(Role).where(Role.code.in_(ACCESS_ROLE_CODES)))).all()
     by_code = {role.code: role for role in roles}
-    return [by_code[code] for code in ACCESS_ROLE_CODES if code in by_code]
+    return [(by_code[code], by_code[code].name) for code in ACCESS_ROLE_CODES if code in by_code]
 
 
 async def _role_permission_codes(
@@ -478,14 +514,24 @@ async def _user_role_codes(
     return grouped
 
 
-def _role_payload(role: Role, permission_codes: list[str]) -> dict[str, object]:
+def _role_payload(
+    role: Role,
+    permission_codes: list[str],
+    *,
+    display_name: str | None = None,
+) -> dict[str, object]:
+    is_full_access = role.code in FULL_ACCESS_ROLE_CODES
+    # Полный доступ (Собственник/Системный администратор) владеет всеми правами
+    # де-факто (см. effective_staff_permission_codes), поэтому показываем полный
+    # каталог, а не то, что записано в role_permission. Такая роль не редактируется.
+    effective_codes = list(VISIBLE_PERMISSION_CODES) if is_full_access else permission_codes
     return {
         "id": role.id,
         "code": role.code,
-        "name": role.name,
-        "is_editable": role.code in EDITABLE_ROLE_CODES,
+        "name": display_name or role.name,
+        "is_editable": not is_full_access,
         "permission_codes": sorted(
-            permission_codes,
+            effective_codes,
             key=lambda code: PERMISSION_CODE_ORDER.get(code, 10_000),
         ),
     }
@@ -517,7 +563,15 @@ async def _user_or_404(session: AsyncSession, user_id: uuid.UUID) -> User:
 
 
 async def _assignable_role_or_400(session: AsyncSession, role_code: str) -> Role:
-    if role_code not in ACCESS_ROLE_CODES:
+    # Назначаемы роли должностей с участием в доступах + исторические ACCESS_ROLE_CODES
+    # (в т.ч. owner — скрытая суперроль-подстраховка, не привязанная к должности).
+    linked_position = await session.scalar(
+        select(Position.id).where(
+            Position.access_role_code == role_code,
+            Position.participates_in_access.is_(True),
+        )
+    )
+    if linked_position is None and role_code not in ACCESS_ROLE_CODES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Role is not assignable",

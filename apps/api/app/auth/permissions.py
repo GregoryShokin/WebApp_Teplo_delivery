@@ -82,6 +82,7 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ("couriers.statistics.read", "Курьеры", "Смотреть статистику курьеров"),
     ("couriers.schedule.read", "Курьеры", "Смотреть график курьеров"),
     ("couriers.schedule.edit", "Курьеры", "Редактировать график курьеров"),
+    ("couriers.senior.assign", "Курьеры", "Назначать старшего курьера"),
     ("couriers.shifts.sync", "Курьеры", "Загружать смены курьеров из внешней системы"),
     ("couriers.evaluations.read", "Курьеры", "Смотреть оценки курьеров"),
     ("couriers.evaluations.edit", "Курьеры", "Добавлять/редактировать оценки курьеров"),
@@ -290,6 +291,8 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ),
     ("settings.general.read", "Настройки и доступы", "Смотреть настройки"),
     ("settings.general.edit", "Настройки и доступы", "Редактировать настройки"),
+    ("settings.positions.read", "Настройки и доступы", "Смотреть реестр должностей"),
+    ("settings.positions.edit", "Настройки и доступы", "Редактировать реестр должностей"),
     ("settings.integrations.configure", "Настройки и доступы", "Настраивать обмен данными"),
     ("settings.users.read", "Настройки и доступы", "Смотреть пользователей"),
     ("settings.users.create", "Настройки и доступы", "Создавать пользователей"),
@@ -524,6 +527,7 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "couriers.list.read",
         "couriers.schedule.read",
         "couriers.schedule.edit",
+        "couriers.senior.assign",
         "couriers.shifts.sync",
         "couriers.statistics.read",
         "couriers.evaluations.read",
@@ -579,6 +583,7 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "counterparties.read",
         "counterparties.operate",
         "settings.general.read",
+        "settings.positions.read",
     }
 )
 

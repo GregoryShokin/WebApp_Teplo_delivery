@@ -26,6 +26,7 @@ from app.services.couriers.shift_matching import (
     MOSCOW_TZ,
     NON_DELIVERY_STATUSES,
 )
+from app.services.position_registry import courier_positions
 
 
 async def get_courier_kpi(
@@ -130,7 +131,7 @@ def month_bounds(month: date) -> tuple[date, date]:
 async def _active_couriers(session: AsyncSession) -> list[Employee]:
     result = await session.scalars(
         select(Employee)
-        .where(Employee.position == "Курьер", Employee.status == "active")
+        .where(Employee.position.in_(courier_positions()), Employee.status == "active")
         .order_by(Employee.full_name)
     )
     return list(result.all())

@@ -2090,7 +2090,7 @@ async def test_create_employee_allows_courier_without_roles(
             pin_code="4321",
             iiko_role_id="role-courier",
             roles=[],
-            is_senior=True,
+            is_senior=False,
         ),
         session,  # type: ignore[arg-type]
         CurrentActor(roles=frozenset({"finance_manager"})),
@@ -2099,7 +2099,9 @@ async def test_create_employee_allows_courier_without_roles(
     assert employee.position == "Курьер"
     assert employee.category is None
     assert employee.default_cooking_station is None
-    assert employee.is_senior is True
+    # Старшинство курьера теперь — отдельная должность «Старший курьер»,
+    # а не галочка is_senior: надбавка «Старший» для Курьера недоступна.
+    assert employee.is_senior is False
     assert employee.is_deputy_senior is False
     assert employee.status == "active"
     assert [item for item in session.added if isinstance(item, EmployeeRoleAssignment)] == []

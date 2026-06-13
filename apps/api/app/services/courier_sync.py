@@ -28,6 +28,7 @@ from app.services.iiko_sync import (
     _load_source_credential_env,
     _request_iiko_with_incomplete_read_retry,
 )
+from app.services.position_registry import courier_positions
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 ACTIVE_DEPARTMENT_ID = "d8d4a22e-3abd-4f02-b82d-7d4712f32729"
@@ -275,7 +276,7 @@ async def list_courier_shifts(
         .where(
             ShiftLedgerEntry.work_date >= date_from,
             ShiftLedgerEntry.work_date <= date_to,
-            Employee.position == "Курьер",
+            Employee.position.in_(courier_positions()),
         )
         .order_by(ShiftLedgerEntry.work_date, ShiftLedgerEntry.opened_at, Employee.full_name)
     )
@@ -285,7 +286,7 @@ async def list_courier_shifts(
         .where(
             AttendanceEntry.work_date >= date_from,
             AttendanceEntry.work_date <= date_to,
-            Employee.position == "Курьер",
+            Employee.position.in_(courier_positions()),
         )
         .order_by(AttendanceEntry.work_date, AttendanceEntry.started_at, Employee.full_name)
     )

@@ -11,17 +11,8 @@ from sqlalchemy.orm import selectinload
 
 from app.models import PayrollAdjustment, PayrollAdjustmentCategory, PayrollPeriod, PayrollRun
 
-# Должности, которые платятся по админскому каденсу (полумесячная ведомость 1/15):
-# собственно администрация + вспомогательный персонал (уборщица-окладник, мойщицы
-# посменно). Их штрафы/премии разводятся в эту ведомость, поэтому производственный
-# расчёт их исключает, а админский — наоборот, берёт только их.
-ADMIN_PAYROLL_POSITIONS = (
-    "Управляющий",
-    "Менеджер",
-    "Системный администратор",
-    "Уборщица",
-    "Посудомойка",
-)
+# Должности админского каденса (полумесячная ведомость 1/15) читаются из реестра
+# должностей: archetype okladnik/shift_pool → position_registry.admin_payroll_positions().
 
 LEGACY_CATEGORIES = [
     {"code": "premium", "type": "bonus", "display_name": "Премия", "sort_order": 10},

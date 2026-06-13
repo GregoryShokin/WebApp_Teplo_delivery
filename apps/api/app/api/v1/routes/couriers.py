@@ -60,6 +60,7 @@ from app.services.couriers import (
     schedule_service,
 )
 from app.services.couriers.iiko_olap_sync import sync_courier_olap_deliveries
+from app.services.position_registry import courier_positions
 
 router = APIRouter()
 COURIERS_LIST_READ_ACCESS = (Depends(require_permission("couriers.list.read")),)
@@ -469,7 +470,7 @@ async def get_couriers_list(
     month_end = kpi_service.month_bounds(month_start)[1]
     couriers = (
         await session.scalars(
-            select(Employee).where(Employee.position == "Курьер").order_by(Employee.full_name)
+            select(Employee).where(Employee.position.in_(courier_positions())).order_by(Employee.full_name)
         )
     ).all()
     active_couriers = [courier for courier in couriers if courier.status == "active"]

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-import re
+from app.services import position_registry
 
+# Исторический канон должностей. Источник истины теперь — реестр должностей
+# (таблица `position`, см. position_registry); эти кортежи остаются как сид
+# и fallback до загрузки реестра из БД.
 CANONICAL_POSITIONS = (
     "Кассир",
     "Повар",
@@ -73,7 +76,9 @@ COOKING_STATIONS = ("sushi", "pizza", "shawarma")
 PREMIUM_APPLICABILITY = {
     "Кассир": {"is_senior": True, "is_deputy_senior": True},
     "Повар": {"is_senior": True, "is_deputy_senior": True},
-    "Курьер": {"is_senior": True, "is_deputy_senior": False},
+    # Старшинство курьера вынесено в отдельную должность «Старший курьер»
+    # (а не галочку is_senior), поэтому надбавка на курьере больше не применима.
+    "Курьер": {"is_senior": False, "is_deputy_senior": False},
     "Управляющий": {"is_senior": False, "is_deputy_senior": False},
     "Системный администратор": {"is_senior": False, "is_deputy_senior": False},
     "Менеджер": {"is_senior": False, "is_deputy_senior": False},
@@ -100,7 +105,7 @@ def normalize_position(position: str | None) -> str:
 
 
 def canonical_position_name(position: str | None) -> str | None:
-    return _CANONICAL_BY_NORMALIZED.get(_normalize_position(position))
+    return position_registry.canonical_position_name(position)
 
 
 def is_canonical_position(position: str | None) -> bool:
@@ -108,20 +113,20 @@ def is_canonical_position(position: str | None) -> bool:
 
 
 def is_create_position(position: str | None) -> bool:
-    canonical = canonical_position_name(position)
-    return canonical in CREATE_POSITIONS
+    """Должность доступна для выбора при создании/назначении (активна в реестре)."""
+    return position_registry.is_active_position(position)
 
 
 def position_requires_pin(position: str | None) -> bool:
-    canonical = canonical_position_name(position)
-    return canonical is not None and canonical not in AUXILIARY_POSITIONS
+    info = position_registry.position_info(position)
+    return info is not None and info.permission_group != "auxiliary"
 
 
 def payroll_roles_for_position(position: str | None) -> tuple[str, ...]:
     canonical = canonical_position_name(position)
     if canonical is None:
         return ()
-    return POSITION_PAYROLL_ROLES[canonical]
+    return POSITION_PAYROLL_ROLES.get(canonical, ())
 
 
 def position_allows_payroll_role(position: str | None, payroll_role: str) -> bool:
@@ -153,7 +158,9 @@ def premium_applicability(position: str | None) -> dict[str, bool]:
     canonical = canonical_position_name(position)
     if canonical is None:
         return {"is_senior": False, "is_deputy_senior": False}
-    return PREMIUM_APPLICABILITY[canonical]
+    return PREMIUM_APPLICABILITY.get(
+        canonical, {"is_senior": False, "is_deputy_senior": False}
+    )
 
 
 def reset_inapplicable_premiums(
@@ -183,12 +190,4 @@ def validate_premiums(
 
 
 def _normalize_position(position: str | None) -> str:
-    text = (position or "").replace("\xa0", " ").strip()
-    text = text.replace("ё", "е").replace("Ё", "Е").casefold()
-    text = re.sub(r"\s*[-–—]\s*", "-", text)
-    return re.sub(r"\s+", " ", text).strip()
-
-
-_CANONICAL_BY_NORMALIZED = {
-    _normalize_position(position): position for position in CANONICAL_POSITIONS
-}
+    return position_registry.normalize_position_name(position)

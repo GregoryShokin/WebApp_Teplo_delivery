@@ -23,8 +23,10 @@ from app.models import (
     ShiftSchedule,
     VacationPeriod,
 )
+from app.services.position_registry import vacation_positions
 
-VACATION_EMPLOYEE_POSITIONS = frozenset({"Повар", "Кассир"})
+# Должности с отпусками читаются из реестра: флаг gets_vacation →
+# position_registry.vacation_positions().
 ACTIVE_VACATION_STATUSES = frozenset({"planned", "paid"})
 DEFAULT_DAYS_PER_YEAR_LIMIT = 20
 DEFAULT_DAILY_AMOUNT = Decimal("1000")
@@ -404,7 +406,7 @@ async def _get_vacation_employee(session: AsyncSession, employee_id: uuid.UUID) 
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Сотрудник не найден",
         )
-    if employee.status != "active" or employee.position not in VACATION_EMPLOYEE_POSITIONS:
+    if employee.status != "active" or employee.position not in vacation_positions():
         raise HTTPException(
             status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Отпуск можно назначить только активным Поварам и Кассирам",

@@ -33,8 +33,8 @@ from app.models import (
     SalaryAdvance,
     SalaryAdvanceRecovery,
 )
-from app.services.payroll_adjustment_service import ADMIN_PAYROLL_POSITIONS
 from app.services.payroll_calculator import decimal, money
+from app.services.position_registry import admin_payroll_positions
 
 _CENTS = Decimal("0.01")
 
@@ -62,7 +62,7 @@ async def _outstanding_advances(
     by_emp: dict[uuid.UUID, list[SalaryAdvance]] = defaultdict(list)
     for advance in rows:
         # Маршрутизация по пайплайну выплаты: админская ведомость — только админ-роли.
-        if (advance.role in ADMIN_PAYROLL_POSITIONS) != admin:
+        if (advance.role in admin_payroll_positions()) != admin:
             continue
         if decimal(advance.recovered_amount) >= decimal(advance.amount):
             continue

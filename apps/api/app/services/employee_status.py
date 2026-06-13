@@ -4,8 +4,8 @@ from collections.abc import Iterable
 from typing import Literal
 
 from app.models import Employee
+from app.services.position_registry import is_active_position
 from app.services.staff_taxonomy import (
-    CANONICAL_POSITIONS,
     COOKING_STATIONS,
     PAYROLL_ROLE_LABELS,
     canonical_position_name,
@@ -27,9 +27,6 @@ COOKING_STATIONS = frozenset(COOKING_STATIONS)
 COOK_PAYROLL_ROLES = frozenset({"sushi", "pizza", "shawarma", "prep"})
 STAFF_PAYROLL_ROLES = frozenset({"administrator"})
 
-COOK_POSITION_ALIASES = ("Повар",)
-STAFF_POSITION_ALIASES = ("Кассир",)
-TARGET_POSITION_ALIASES = CANONICAL_POSITIONS
 PAYROLL_ROLES = frozenset(PAYROLL_ROLE_LABELS)
 
 
@@ -82,7 +79,9 @@ def is_cook_position(position: str | None) -> bool:
 
 
 def is_target_position(position: str | None) -> bool:
-    return canonical_position_name(position) is not None
+    # Сотрудник заводится из iiko только с активной должностью реестра;
+    # исключённые (Бармен, Официант и т.п.) по-прежнему пропускаются синком.
+    return is_active_position(position)
 
 
 def position_group_for_position(position: str | None) -> PositionGroup:

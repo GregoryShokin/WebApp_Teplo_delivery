@@ -33,22 +33,23 @@ from app.models import (
     PayrollRun,
 )
 from app.services.employee_effective_events import get_position_on_date
-from app.services.payroll_adjustment_service import (
-    ADMIN_PAYROLL_POSITIONS,
-    load_adjustments_for_period,
-)
+from app.services.payroll_adjustment_service import load_adjustments_for_period
 from app.services.payroll_advance_recovery import apply_advance_recoveries
 from app.services.payroll_calculator import adjustment_component, decimal, money, money_string
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
+from app.services.position_registry import (
+    admin_payroll_positions,
+    dishwasher_positions,
+    okladnik_positions,
+)
 
 ADMIN_OKLAD_CATEGORY = "admin"
 HALF_MONTH_SPLIT_DAY = 15
 _CENTS = Decimal("0.01")
 
-# Должности, оплачиваемые фиксированным окладом (оклад/2 за полупериод).
-OKLADNIK_POSITIONS = ("Управляющий", "Менеджер", "Системный администратор", "Уборщица")
-# Должности с посменной оплатой из месячного пула (мойщицы).
-DISHWASHER_POSITIONS = ("Посудомойка",)
+# Окладные должности (оклад/2 за полупериод) и посменные из месячного пула
+# (мойщицы) читаются из реестра должностей: archetype okladnik / shift_pool →
+# position_registry.okladnik_positions() / dishwasher_positions().
 
 # Режим выплаты оклада за полумесяц. split — пополам (½ на 15-е, ½ на 1-е);
 # first_half — весь оклад на выплату 15-го; second_half — весь оклад на выплату 1-го.
@@ -261,7 +262,7 @@ async def calculate_admin_payroll_lines(
         employee_ids=employee_ids,
         period_start=period.start_date,
         period_end=period.end_date,
-        roles=ADMIN_PAYROLL_POSITIONS,
+        roles=admin_payroll_positions(),
     )
     adjustments_by_employee: dict[uuid.UUID, list[Any]] = {}
     for (employee_id, _work_date), items in adjustments_by_key.items():
@@ -283,7 +284,7 @@ async def calculate_admin_payroll_lines(
     for employee in employees:
         position = await get_position_on_date(session, employee.id, period.end_date)
         position = position or employee.position
-        if position not in ADMIN_PAYROLL_POSITIONS:
+        if position not in admin_payroll_positions():
             # На дату периода сотрудник был на другой (неадминской) должности — например
             # повар, позже повышенный в управляющие. За этот период он считается по своей
             # тогдашней должности (производственная ведомость), не здесь.
@@ -301,7 +302,7 @@ async def calculate_admin_payroll_lines(
         )
         has_adjustments = bool(bonus_items or penalty_items)
 
-        if position in DISHWASHER_POSITIONS:
+        if position in dishwasher_positions():
             # Посменная оплата: смены в полупериоде × ставку-из-пула.
             shifts = shift_counts.get(employee.id, 0)
             if shifts <= 0 and not has_adjustments:
@@ -380,7 +381,7 @@ async def _load_admin_employees(
 ) -> list[Employee]:
     result = await session.scalars(
         select(Employee).where(
-            Employee.position.in_(ADMIN_PAYROLL_POSITIONS),
+            Employee.position.in_(admin_payroll_positions()),
             Employee.admin_payroll_excluded.is_(False),
             or_(Employee.hire_date.is_(None), Employee.hire_date <= period.end_date),
             or_(Employee.fire_date.is_(None), Employee.fire_date >= period.start_date),
@@ -665,7 +666,7 @@ async def list_admin_oklady(
                 ),
                 "payout_mode": _okladnik_payout_mode(payout_modes, position),
             }
-            for position in OKLADNIK_POSITIONS
+            for position in okladnik_positions()
         ],
         "overrides": [
             {
@@ -688,7 +689,7 @@ async def upsert_admin_oklad(
     amount: Decimal,
     effective_from: date,
 ) -> PayrollRate:
-    if position not in OKLADNIK_POSITIONS:
+    if position not in okladnik_positions():
         raise PayrollConflictError("Должность не является окладной")
     amount_dec = decimal(amount)
     if amount_dec <= 0:
@@ -809,7 +810,7 @@ async def set_okladnik_payout_mode(
     mode: str,
 ) -> None:
     """Режим выплаты оклада за полумесяц для должности (split — дефолт, не хранится)."""
-    if position not in OKLADNIK_POSITIONS:
+    if position not in okladnik_positions():
         raise PayrollConflictError("Должность не является окладной")
     if mode not in PAYOUT_MODES:
         raise PayrollConflictError("Неизвестный режим выплаты")
@@ -856,7 +857,7 @@ async def list_dishwasher_employees(session: AsyncSession) -> list[Employee]:
     result = await session.scalars(
         select(Employee)
         .where(
-            Employee.position.in_(DISHWASHER_POSITIONS),
+            Employee.position.in_(dishwasher_positions()),
             Employee.admin_payroll_excluded.is_(False),
         )
         .order_by(Employee.full_name)
@@ -941,4 +942,4 @@ async def list_admin_runs(session: AsyncSession) -> list[tuple[PayrollRun, Payro
 
 
 def admin_positions() -> Iterable[str]:
-    return ADMIN_PAYROLL_POSITIONS
+    return admin_payroll_positions()

@@ -28,11 +28,14 @@ from app.schemas.payroll_adjustments import (
     PayrollAdjustmentRead,
 )
 from app.services.payroll_adjustment_service import (
-    ADMIN_PAYROLL_POSITIONS,
     PayrollAdjustmentLockedError,
     assert_date_not_locked,
     is_date_locked,
     load_locked_dates_for_period,
+)
+from app.services.position_registry import (
+    admin_payroll_positions,
+    production_payroll_positions,
 )
 
 router = APIRouter()
@@ -41,15 +44,13 @@ SOURCE_DEDUCTIONS_READ_ACCESS = (Depends(require_permission("source.deductions.r
 SOURCE_DEDUCTIONS_EDIT_ACCESS = (Depends(require_permission("source.deductions.edit")),)
 
 ADJUSTMENT_TYPES = {"bonus", "penalty"}
-ADJUSTMENT_EMPLOYEE_POSITIONS = {
-    "Повар",
-    "Кассир",
-    "Управляющий",
-    "Менеджер",
-    "Системный администратор",
-    "Уборщица",
-    "Посудомойка",
-}
+
+
+def _adjustment_employee_positions() -> set[str]:
+    """Премии/штрафы доступны производственным и админским должностям (не курьерам)."""
+    return set(production_payroll_positions()) | set(admin_payroll_positions())
+
+
 UNPROCESSABLE_STATUS = 422
 
 
@@ -430,7 +431,7 @@ def require_adjustment_type_permission(
     (повара/кассиры) — производственное `payroll.{bonuses,penalties}.add`.
     """
     production_code, admin_code = _adjustment_type_permission_codes(adjustment_type)
-    is_admin_role = role is not None and role in ADMIN_PAYROLL_POSITIONS
+    is_admin_role = role is not None and role in admin_payroll_positions()
     ensure_permission(actor, admin_code if is_admin_role else production_code)
 
 
@@ -443,7 +444,7 @@ def resolve_adjustment_role(employee: Employee, payload_role: str | None) -> str
 
 
 def validate_adjustment_target(employee: Employee) -> None:
-    if employee.position in ADJUSTMENT_EMPLOYEE_POSITIONS:
+    if employee.position in _adjustment_employee_positions():
         return
     # Сотрудники-субституты (подменные роли повара/кассира) тоже получают премии и штрафы.
     if any(assignment.is_substitute for assignment in employee.assignments):

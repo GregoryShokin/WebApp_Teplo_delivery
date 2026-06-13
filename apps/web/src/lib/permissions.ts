@@ -211,12 +211,14 @@ export const PERMISSION_GROUPS = {
   ],
   settingsRead: [
     "settings.general.read",
+    "settings.positions.read",
     "settings.users.read",
     "settings.access_audit.read",
     "settings.action_audit.read",
   ],
   settingsWrite: [
     "settings.general.edit",
+    "settings.positions.edit",
     "settings.integrations.configure",
     "settings.users.create",
     "settings.users.edit",

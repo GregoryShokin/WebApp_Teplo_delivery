@@ -10,8 +10,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AccumulationFundAccount, AccumulationFundTransaction, Employee
-from app.services.attendance_loader import PAYROLL_TARGET_POSITIONS
 from app.services.payroll_calculator import decimal
+from app.services.position_registry import production_payroll_positions
 
 MONEY = Decimal("0.01")
 
@@ -77,7 +77,7 @@ async def forfeit_active_fund_on_dismiss(
     fire_date: date,
     now: datetime,
 ) -> None:
-    if employee.position not in PAYROLL_TARGET_POSITIONS:
+    if employee.position not in production_payroll_positions():
         return
     result = await session.scalars(
         select(AccumulationFundAccount)
@@ -111,7 +111,7 @@ async def payout_fund_accounts_for_year(
         .where(
             AccumulationFundAccount.year == year,
             AccumulationFundAccount.status == "active",
-            Employee.position.in_(PAYROLL_TARGET_POSITIONS),
+            Employee.position.in_(production_payroll_positions()),
             or_(Employee.status != "active", Employee.fire_date.is_not(None)),
         )
         .with_for_update()
@@ -135,7 +135,7 @@ async def payout_fund_accounts_for_year(
         .where(
             AccumulationFundAccount.year == year,
             AccumulationFundAccount.status == "active",
-            Employee.position.in_(PAYROLL_TARGET_POSITIONS),
+            Employee.position.in_(production_payroll_positions()),
             Employee.status == "active",
             Employee.fire_date.is_(None),
         )
