@@ -14,6 +14,7 @@ import itertools
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -49,6 +50,7 @@ class _Ref:
     invoice: SupplierInvoice
     amount: Decimal
     products: frozenset[str]
+    date: date | None
 
 
 @dataclass
@@ -83,7 +85,28 @@ class BarterSuggestion:
 
 
 def _ref(invoice: SupplierInvoice) -> _Ref:
-    return _Ref(invoice=invoice, amount=_money(invoice.amount), products=_products(invoice))
+    return _Ref(
+        invoice=invoice,
+        amount=_money(invoice.amount),
+        products=_products(invoice),
+        date=invoice.invoice_date,
+    )
+
+
+def _date_eligible(pool_ref: _Ref, anchor: _Ref, *, anchor_is_payable: bool) -> bool:
+    """A loan (payable) can only be covered by a return (receivable) dated on/after it —
+    you can't return goods that weren't borrowed yet. Missing dates → don't block.
+
+    Without this, two identical loans (same sum + номенклатура) on different dates both
+    look like valid subset members, the match stops being unique, and auto-settle bails.
+    """
+    if pool_ref.date is None or anchor.date is None:
+        return True
+    if anchor_is_payable:
+        # anchor = loan, pool_ref = return → return must be on/after the loan
+        return pool_ref.date >= anchor.date
+    # anchor = return, pool_ref = loan → loan must be on/before the return
+    return pool_ref.date <= anchor.date
 
 
 async def _load_open(
@@ -138,9 +161,14 @@ def _first_confident_match(
         for anchor in anchors:
             if not anchor.products:
                 continue  # cannot verify номенклатура → never auto
+            eligible = [
+                ref
+                for ref in pool
+                if _date_eligible(ref, anchor, anchor_is_payable=anchor_is_payable)
+            ]
             exact = [
                 subset
-                for subset in _subsets_summing(pool, anchor.amount)
+                for subset in _subsets_summing(eligible, anchor.amount)
                 if _union_products(subset) == anchor.products
             ]
             if len(exact) == 1:
@@ -188,6 +216,11 @@ def _suggest_pairs(payables: list[_Ref], receivables: list[_Ref]) -> list[Barter
             if anchor.invoice.id in used:
                 continue
             pool = avail(receivables if anchor_is_payable else payables)
+            pool = [
+                ref
+                for ref in pool
+                if _date_eligible(ref, anchor, anchor_is_payable=anchor_is_payable)
+            ]
             subsets = _subsets_summing(pool, anchor.amount)
             if not subsets:
                 continue

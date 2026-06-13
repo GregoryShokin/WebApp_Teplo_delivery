@@ -7,6 +7,7 @@ flagged non-confident for a human to verify the номенклатура.
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from cp_helpers import make_counterparty, make_invoice
@@ -125,3 +126,35 @@ async def test_suggest_non_overlapping(
         assert all_payable == {p1.id, p2.id}
         assert all_receivable == {r1.id, r2.id}
         assert all(s.confident for s in suggestions)
+
+
+async def test_suggest_date_filters_loan_after_return(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Ёбидоёби-кейс: заём, выданный ПОСЛЕ даты возврата, не рассматривается, поэтому
+    одинаковая по сумме/номенклатуре пара остаётся единственной → уверенный зачёт."""
+    async with async_session_factory() as session:
+        cp = await _barter_cp(session, "7710000020")
+        chili = await make_invoice(
+            session, counterparty_id=cp.id, amount="1643.98", direction="payable",
+            line_items=items("CHILI"), invoice_date=date(2026, 5, 1),
+        )
+        potato_in_window = await make_invoice(
+            session, counterparty_id=cp.id, amount="1078.00", direction="payable",
+            line_items=items("POTATO"), invoice_date=date(2026, 5, 6),
+        )
+        # тот же картофель по той же цене, но выдан ПОСЛЕ возврата — не должен мешать
+        await make_invoice(
+            session, counterparty_id=cp.id, amount="1078.00", direction="payable",
+            line_items=items("POTATO"), invoice_date=date(2026, 5, 25),
+        )
+        ret = await make_invoice(
+            session, counterparty_id=cp.id, amount="2721.98", direction="receivable",
+            line_items=items("CHILI", "POTATO"), invoice_date=date(2026, 5, 9),
+        )
+        await session.commit()
+
+        confident = [s for s in await suggest_barter_matches(session, cp.id) if s.confident]
+        assert len(confident) == 1
+        assert set(confident[0].payable_ids) == {chili.id, potato_in_window.id}
+        assert set(confident[0].receivable_ids) == {ret.id}
