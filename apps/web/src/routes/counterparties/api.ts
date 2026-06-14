@@ -28,6 +28,7 @@ export type CounterpartyInvoice = {
   barter_settlement_id: string | null;
   // Роль сведённой бартер-накладной по хронологии: "loan" | "return" | null (пока открыта).
   barter_role: string | null;
+  iiko_push_status: string;
 };
 
 export type RegistryItem = {

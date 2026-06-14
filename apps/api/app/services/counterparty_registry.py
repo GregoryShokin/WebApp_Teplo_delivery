@@ -120,6 +120,7 @@ class InvoiceItem:
     # Barter role once settled: "loan" / "return" (by chronology) — None while open or
     # non-barter. Lets the badge say «мы заняли»/«нам вернули» rather than guess by direction.
     barter_role: str | None = None
+    iiko_push_status: str = "not_pushed"
 
 
 @dataclass
@@ -267,6 +268,7 @@ def _build_invoice_item(
         payment_status=invoice.payment_status,
         draft_id=invoice.draft_id,
         barter_settlement_id=invoice.barter_settlement_id,
+        iiko_push_status=invoice.iiko_push_status,
     )
 
 

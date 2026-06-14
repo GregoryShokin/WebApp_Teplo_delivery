@@ -33,8 +33,15 @@ import {
 } from "../shared";
 import { PayInvoiceDialog } from "../PayInvoiceDialog";
 import { CreateInvoiceDialog } from "../../warehouse/CreateInvoiceDialog";
+import { pushInvoiceToIiko } from "../../warehouse/api";
 
 const ALL = "all";
+
+const PUSH_BADGE: Record<string, { label: string; cls: string }> = {
+  pushed: { label: "в iiko", cls: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  failed: { label: "ошибка iiko", cls: "border-red-200 bg-red-50 text-red-700" },
+  skipped: { label: "без iiko", cls: "border-amber-200 bg-amber-50 text-amber-700" },
+};
 
 const REL_SEGMENTS: Array<{ value: string; label: string }> = [
   { value: "all", label: "Все" },
@@ -103,6 +110,21 @@ export function InboxTab({
       toast.success(`Черновик на ${formatRub(draft.amount)} отправлен в банк`);
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отправить в банк")),
+  });
+
+  const pushMutation = useMutation({
+    mutationFn: (id: string) => pushInvoiceToIiko(id),
+    onSuccess: async (invoice) => {
+      await queryClient.invalidateQueries({ queryKey: ["cp"] });
+      if (invoice.iiko_push_status === "pushed") {
+        toast.success("Отправлено в iiko");
+      } else if (invoice.iiko_push_status === "skipped") {
+        toast.info(`Не отправлено: ${invoice.iiko_push_error ?? "нет товарных строк"}`);
+      } else {
+        toast.error(`Ошибка iiko: ${invoice.iiko_push_error ?? ""}`);
+      }
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отправить в iiko")),
   });
 
   function toggle(id: string) {
@@ -203,13 +225,42 @@ export function InboxTab({
       key: "actions",
       header: "",
       className: "text-right",
-      cell: (invoice) =>
-        canOperate && !invoice.draft_id && invoice.payment_status !== "paid" ? (
-          <Button size="sm" variant="outline" onClick={() => setPayTarget(invoice)}>
-            <Banknote size={15} aria-hidden="true" />
-            Оплатить
-          </Button>
-        ) : null,
+      cell: (invoice) => (
+        <div className="flex items-center justify-end gap-2">
+          {invoice.source === "manual" && canOperate ? (
+            invoice.iiko_push_status === "pushed" || invoice.iiko_push_status === "skipped" ? (
+              <Badge className={PUSH_BADGE[invoice.iiko_push_status].cls}>
+                {PUSH_BADGE[invoice.iiko_push_status].label}
+              </Badge>
+            ) : (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={pushMutation.isPending}
+                title="Создать документ в iiko"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Отправить накладную в iiko? Будет создан реальный документ.",
+                    )
+                  ) {
+                    pushMutation.mutate(invoice.id);
+                  }
+                }}
+              >
+                <Send size={15} aria-hidden="true" />
+                {invoice.iiko_push_status === "failed" ? "Повторить" : "В iiko"}
+              </Button>
+            )
+          ) : null}
+          {canOperate && !invoice.draft_id && invoice.payment_status !== "paid" ? (
+            <Button size="sm" variant="outline" onClick={() => setPayTarget(invoice)}>
+              <Banknote size={15} aria-hidden="true" />
+              Оплатить
+            </Button>
+          ) : null}
+        </div>
+      ),
     },
   ];
 

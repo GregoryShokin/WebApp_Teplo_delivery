@@ -21,6 +21,7 @@ from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import IikoProduct
 from app.services.iiko_product_sync import sync_iiko_products
+from app.services.warehouse_invoice_push import WarehousePushError, push_invoice_to_iiko
 from app.services.warehouse_invoices import (
     LineInput,
     ReturnLineInput,
@@ -193,6 +194,22 @@ async def list_invoices(
     return await list_warehouse_invoices(
         session, statuses=statuses, counterparty_id=counterparty_id, has_staff=has_staff
     )
+
+
+@router.post("/invoices/{invoice_id}/push", dependencies=OPERATE)
+async def post_push(
+    invoice_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
+    """Отправить (или повторить отправку) накладную в iiko. Создаёт реальный документ."""
+    try:
+        await push_invoice_to_iiko(session, invoice_id)
+    except WarehousePushError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    result = await get_warehouse_invoice(session, invoice_id)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    return result
 
 
 @router.get("/invoices/{invoice_id}", dependencies=READ)

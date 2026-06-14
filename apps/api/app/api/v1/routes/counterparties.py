@@ -96,6 +96,7 @@ class InvoiceRead(BaseModel):
     draft_id: uuid.UUID | None
     barter_settlement_id: uuid.UUID | None = None
     barter_role: str | None = None
+    iiko_push_status: str = "not_pushed"
 
 
 class RegistryRead(BaseModel):

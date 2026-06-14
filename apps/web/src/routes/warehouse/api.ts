@@ -109,6 +109,11 @@ export async function getNextInvoiceNumber(): Promise<string> {
   return response.data.number;
 }
 
+export async function pushInvoiceToIiko(id: string): Promise<WarehouseInvoiceDetail> {
+  const response = await api.post<WarehouseInvoiceDetail>(`${BASE}/invoices/${id}/push`);
+  return response.data;
+}
+
 export type OpenLoan = {
   id: string;
   counterparty_id: string;
