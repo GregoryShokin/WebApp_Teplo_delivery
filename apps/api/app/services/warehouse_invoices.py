@@ -19,10 +19,11 @@ from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    BarterReturnLine,
     Counterparty,
     CounterpartyPayableProfile,
     IikoProduct,
@@ -273,3 +274,219 @@ async def get_warehouse_invoice(
         for line in lines
     ]
     return summary
+
+
+@dataclass
+class ReturnLineInput:
+    amount: Decimal
+    loan_line_item_id: uuid.UUID | None = None
+    quantity: Decimal | None = None
+
+
+async def _loan_returned_amount(session: AsyncSession, loan_id: uuid.UUID) -> Decimal:
+    total = await session.scalar(
+        select(func.coalesce(func.sum(BarterReturnLine.amount), 0)).where(
+            BarterReturnLine.loan_invoice_id == loan_id
+        )
+    )
+    return _money(total)
+
+
+async def _loan_line_returned_qty(
+    session: AsyncSession, loan_id: uuid.UUID
+) -> dict[uuid.UUID, Decimal]:
+    rows = await session.execute(
+        select(
+            BarterReturnLine.loan_line_item_id,
+            func.coalesce(func.sum(BarterReturnLine.quantity), 0),
+        )
+        .where(
+            BarterReturnLine.loan_invoice_id == loan_id,
+            BarterReturnLine.loan_line_item_id.isnot(None),
+        )
+        .group_by(BarterReturnLine.loan_line_item_id)
+    )
+    return {line_id: _qty(qty) for line_id, qty in rows}
+
+
+async def list_open_loans(
+    session: AsyncSession, counterparty_id: uuid.UUID | None = None
+) -> list[dict[str, Any]]:
+    """Open / partially-returned barter loans, with the remaining balance to settle."""
+    query = (
+        select(SupplierInvoice, Counterparty.name)
+        .join(Counterparty, Counterparty.id == SupplierInvoice.counterparty_id)
+        .where(
+            SupplierInvoice.barter_role == "loan",
+            SupplierInvoice.barter_return_status != "returned",
+        )
+        .order_by(SupplierInvoice.issued_at.nulls_last())
+    )
+    if counterparty_id is not None:
+        query = query.where(SupplierInvoice.counterparty_id == counterparty_id)
+    out: list[dict[str, Any]] = []
+    for loan, name in list(await session.execute(query)):
+        returned = await _loan_returned_amount(session, loan.id)
+        out.append(
+            {
+                "id": str(loan.id),
+                "counterparty_id": str(loan.counterparty_id),
+                "counterparty_name": name,
+                "number": loan.number,
+                "issued_at": loan.issued_at.isoformat() if loan.issued_at else None,
+                "we_lend": loan.direction == "receivable",
+                "amount": float(_money(loan.amount)),
+                "returned": float(returned),
+                "remaining": float(_money(loan.amount - returned)),
+                "status": loan.barter_return_status,
+            }
+        )
+    return out
+
+
+async def get_loan_returnable(
+    session: AsyncSession, loan_id: uuid.UUID
+) -> dict[str, Any] | None:
+    loan = await session.get(SupplierInvoice, loan_id)
+    if loan is None or loan.barter_role != "loan":
+        return None
+    lines = (
+        await session.scalars(
+            select(InvoiceLineItem)
+            .where(InvoiceLineItem.invoice_id == loan_id)
+            .order_by(InvoiceLineItem.sort_order)
+        )
+    ).all()
+    returned_qty = await _loan_line_returned_qty(session, loan_id)
+    returned_total = await _loan_returned_amount(session, loan_id)
+    return {
+        "id": str(loan.id),
+        "number": loan.number,
+        "we_lend": loan.direction == "receivable",
+        "amount": float(_money(loan.amount)),
+        "remaining": float(_money(loan.amount - returned_total)),
+        "lines": [
+            {
+                "id": str(line.id),
+                "name": line.name,
+                "unit": line.unit,
+                "price": float(_money(line.price)),
+                "quantity": float(_qty(line.quantity)),
+                "remaining_qty": float(
+                    _qty(line.quantity) - returned_qty.get(line.id, Decimal("0"))
+                ),
+            }
+            for line in lines
+        ],
+    }
+
+
+async def create_barter_return(
+    session: AsyncSession,
+    *,
+    loan_id: uuid.UUID,
+    issued_at: datetime,
+    returns: Sequence[ReturnLineInput],
+    number: str | None = None,
+    actor_user_id: uuid.UUID | None = None,
+) -> SupplierInvoice:
+    loan = await session.get(SupplierInvoice, loan_id)
+    if loan is None or loan.barter_role != "loan":
+        raise WarehouseInvoiceError("Заём не найден")
+    if loan.barter_return_status == "returned":
+        raise WarehouseInvoiceError("Заём уже полностью возвращён")
+    items = [r for r in returns if _money(r.amount) > 0]
+    if not items:
+        raise WarehouseInvoiceError("Укажите, что возвращаете")
+
+    loan_lines = {
+        line.id: line
+        for line in (
+            await session.scalars(
+                select(InvoiceLineItem).where(InvoiceLineItem.invoice_id == loan_id)
+            )
+        ).all()
+    }
+    returned_total = await _loan_returned_amount(session, loan_id)
+    returned_qty = await _loan_line_returned_qty(session, loan_id)
+    loan_remaining = _money(loan.amount - returned_total)
+
+    new_total = _money(sum((r.amount for r in items), Decimal("0.00")))
+    if new_total > loan_remaining:
+        raise WarehouseInvoiceError(
+            f"Возврат {new_total} превышает остаток займа {loan_remaining}"
+        )
+    for r in items:
+        if r.loan_line_item_id is not None and r.quantity is not None:
+            line = loan_lines.get(r.loan_line_item_id)
+            if line is None:
+                raise WarehouseInvoiceError("Строка займа не найдена")
+            already = returned_qty.get(r.loan_line_item_id, Decimal("0"))
+            if _qty(already + r.quantity) > _qty(line.quantity):
+                raise WarehouseInvoiceError(f"Возврат по «{line.name}» превышает остаток")
+
+    ret = SupplierInvoice(
+        counterparty_id=loan.counterparty_id,
+        source="manual",
+        direction="payable" if loan.direction == "receivable" else "receivable",
+        barter_role="return",
+        barter_loan_id=loan.id,
+        number=number or await next_invoice_number(session),
+        invoice_date=issued_at.date(),
+        issued_at=issued_at,
+        amount=new_total,
+        payment_status="paid",
+        created_by_user_id=actor_user_id,
+    )
+    session.add(ret)
+    await session.flush()
+
+    mirror: list[dict[str, Any]] = []
+    for idx, r in enumerate(items):
+        line = loan_lines.get(r.loan_line_item_id) if r.loan_line_item_id else None
+        qty = _qty(r.quantity) if r.quantity is not None else None
+        session.add(
+            BarterReturnLine(
+                return_invoice_id=ret.id,
+                loan_invoice_id=loan.id,
+                loan_line_item_id=r.loan_line_item_id,
+                quantity=qty,
+                amount=_money(r.amount),
+                created_by_user_id=actor_user_id,
+            )
+        )
+        if line is not None:
+            session.add(
+                InvoiceLineItem(
+                    invoice_id=ret.id,
+                    iiko_product_id=line.iiko_product_id,
+                    product_guid=line.product_guid,
+                    name=line.name,
+                    article=line.article,
+                    unit=line.unit,
+                    quantity=qty if qty is not None else Decimal("0"),
+                    price=line.price,
+                    sum=_money(r.amount),
+                    sort_order=idx,
+                )
+            )
+            mirror.append(
+                {
+                    "product_id": line.product_guid,
+                    "article": line.article,
+                    "name": line.name,
+                    "quantity": str(qty if qty is not None else 0),
+                    "amount": str(_money(r.amount)),
+                }
+            )
+    ret.line_items = mirror
+
+    new_returned = _money(returned_total + new_total)
+    if new_returned >= _money(loan.amount):
+        loan.barter_return_status = "returned"
+        loan.payment_status = "paid"
+    else:
+        loan.barter_return_status = "partially_returned"
+    await session.commit()
+    await session.refresh(ret)
+    return ret

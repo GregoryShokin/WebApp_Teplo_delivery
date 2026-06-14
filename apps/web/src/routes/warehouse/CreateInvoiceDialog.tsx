@@ -14,14 +14,24 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { apiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { getRegistry, type RegistryItem } from "../counterparties/api";
 import { formatRub } from "../counterparties/shared";
 import {
+  createBarterReturn,
   createWarehouseInvoice,
+  getLoanReturnable,
   getNextInvoiceNumber,
+  getOpenLoans,
   getProducts,
   type WarehouseProduct,
 } from "./api";
@@ -64,12 +74,14 @@ export function CreateInvoiceDialog({
   barter?: boolean;
 }) {
   const [weLend, setWeLend] = useState(true);
+  const [barterAction, setBarterAction] = useState<"loan" | "return">("loan");
   const [counterpartyId, setCounterpartyId] = useState("");
   const [issuedAt, setIssuedAt] = useState("");
   const [number, setNumber] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
   const queryClient = useQueryClient();
   const isBarter = barter;
+  const isReturn = isBarter && barterAction === "return";
 
   const registryQuery = useQuery({
     queryKey: ["cp", "registry", "all"],
@@ -96,6 +108,7 @@ export function CreateInvoiceDialog({
 
   const reset = () => {
     setWeLend(true);
+    setBarterAction("loan");
     setCounterpartyId("");
     setIssuedAt("");
     setNumber("");
@@ -162,33 +175,53 @@ export function CreateInvoiceDialog({
           {isBarter ? (
             <div className="flex flex-wrap items-center gap-2">
               <div className="inline-flex overflow-hidden rounded-md border">
-                <span className="bg-primary/10 px-3 py-1 text-xs font-medium text-primary">Займ</span>
-                <span
-                  className="cursor-not-allowed px-3 py-1 text-xs text-muted-foreground opacity-50"
-                  title="Возврат займа — на следующем шаге"
+                <button
+                  type="button"
+                  className={cn("px-3 py-1 text-xs", !isReturn && "bg-primary/10 font-medium text-primary")}
+                  onClick={() => setBarterAction("loan")}
+                >
+                  Займ
+                </button>
+                <button
+                  type="button"
+                  className={cn("px-3 py-1 text-xs", isReturn && "bg-primary/10 font-medium text-primary")}
+                  onClick={() => setBarterAction("return")}
                 >
                   Возврат
-                </span>
-              </div>
-              <div className="inline-flex overflow-hidden rounded-md border">
-                <button
-                  type="button"
-                  className={cn("px-3 py-1 text-xs", weLend && "bg-muted font-medium")}
-                  onClick={() => setWeLend(true)}
-                >
-                  Мы выдаём
-                </button>
-                <button
-                  type="button"
-                  className={cn("px-3 py-1 text-xs", !weLend && "bg-muted font-medium")}
-                  onClick={() => setWeLend(false)}
-                >
-                  Нам выдают
                 </button>
               </div>
+              {!isReturn ? (
+                <div className="inline-flex overflow-hidden rounded-md border">
+                  <button
+                    type="button"
+                    className={cn("px-3 py-1 text-xs", weLend && "bg-muted font-medium")}
+                    onClick={() => setWeLend(true)}
+                  >
+                    Мы выдаём
+                  </button>
+                  <button
+                    type="button"
+                    className={cn("px-3 py-1 text-xs", !weLend && "bg-muted font-medium")}
+                    onClick={() => setWeLend(false)}
+                  >
+                    Нам выдают
+                  </button>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
+          {isReturn ? (
+            <ReturnForm
+              onDone={() => {
+                onCreated();
+                void queryClient.invalidateQueries({ queryKey: ["wh", "next-number"] });
+                reset();
+                onOpenChange(false);
+              }}
+            />
+          ) : (
+            <>
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="grid gap-2">
               <Label>Контрагент</Label>
@@ -268,18 +301,147 @@ export function CreateInvoiceDialog({
               <span className="text-amber-700">Персонал: {formatRub(totals.staff)}</span>
             ) : null}
           </div>
+            </>
+          )}
         </div>
 
-        <DialogFooter>
-          <Button disabled={!canSave} onClick={() => createMutation.mutate()}>
-            {createMutation.isPending ? (
-              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-            ) : null}
-            {isBarter ? "Оформить займ" : "Создать"}
-          </Button>
-        </DialogFooter>
+        {!isReturn ? (
+          <DialogFooter>
+            <Button disabled={!canSave} onClick={() => createMutation.mutate()}>
+              {createMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : null}
+              {isBarter ? "Оформить займ" : "Создать"}
+            </Button>
+          </DialogFooter>
+        ) : null}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ReturnForm({ onDone }: { onDone: () => void }) {
+  const [loanId, setLoanId] = useState("");
+  const [issuedAt, setIssuedAt] = useState("");
+  const [qtyByLine, setQtyByLine] = useState<Record<string, string>>({});
+
+  const loansQuery = useQuery({ queryKey: ["wh", "loans"], queryFn: () => getOpenLoans() });
+  const returnableQuery = useQuery({
+    queryKey: ["wh", "returnable", loanId],
+    queryFn: () => getLoanReturnable(loanId),
+    enabled: !!loanId,
+  });
+  const loan = returnableQuery.data;
+
+  const returnLines = useMemo(() => {
+    if (!loan) return [];
+    return loan.lines.map((l) => {
+      const qty = Math.min(num(qtyByLine[l.id] ?? ""), l.remaining_qty);
+      return { ...l, raw: qtyByLine[l.id] ?? "", qty, amount: Math.round(qty * l.price * 100) / 100 };
+    });
+  }, [loan, qtyByLine]);
+  const totalReturn = returnLines.reduce((s, l) => s + l.amount, 0);
+
+  const returnMutation = useMutation({
+    mutationFn: () =>
+      createBarterReturn({
+        loan_id: loanId,
+        issued_at: issuedAt,
+        returns: returnLines
+          .filter((l) => l.qty > 0)
+          .map((l) => ({ loan_line_item_id: l.id, quantity: l.qty, amount: l.amount })),
+      }),
+    onSuccess: () => {
+      toast.success("Возврат проведён");
+      onDone();
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, "Не удалось провести возврат")),
+  });
+
+  const canReturn = !!loanId && !!issuedAt && totalReturn > 0 && !returnMutation.isPending;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-2">
+          <Label>Заём для возврата</Label>
+          <Select
+            value={loanId}
+            onValueChange={(v) => {
+              setLoanId(v);
+              setQtyByLine({});
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Выберите открытый заём" />
+            </SelectTrigger>
+            <SelectContent>
+              {(loansQuery.data ?? []).map((ln) => (
+                <SelectItem key={ln.id} value={ln.id}>
+                  {ln.counterparty_name} · №{ln.number ?? "—"} · остаток {formatRub(ln.remaining)} ·{" "}
+                  {ln.we_lend ? "мы выдали" : "нам выдали"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="grid gap-2">
+          <Label>Дата и время возврата</Label>
+          <Input
+            type="datetime-local"
+            value={issuedAt}
+            onChange={(e) => setIssuedAt(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {loan ? (
+        <div className="space-y-2">
+          <div className="grid grid-cols-[1fr_96px_84px_90px] gap-2 px-2 text-xs text-muted-foreground">
+            <span>Товар</span>
+            <span className="text-right">Остаток</span>
+            <span className="text-right">Вернуть</span>
+            <span className="text-right">Сумма</span>
+          </div>
+          {returnLines.map((l) => (
+            <div
+              key={l.id}
+              className="grid grid-cols-[1fr_96px_84px_90px] items-center gap-2 rounded-md border p-2 text-sm"
+            >
+              <span className="truncate">{l.name}</span>
+              <span className="text-right tabular-nums text-muted-foreground">
+                {l.remaining_qty} {l.unit ?? ""}
+              </span>
+              <Input
+                type="number"
+                min={0}
+                max={l.remaining_qty}
+                value={l.raw}
+                onChange={(e) => setQtyByLine((p) => ({ ...p, [l.id]: e.target.value }))}
+              />
+              <span className="text-right tabular-nums">{formatRub(l.amount)}</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between rounded-md bg-muted/50 p-2 text-sm">
+            <span>
+              К возврату: <span className="font-medium tabular-nums">{formatRub(totalReturn)}</span>
+            </span>
+            <span className="text-xs text-muted-foreground">
+              остаток займа {formatRub(loan.remaining)}
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      <DialogFooter>
+        <Button disabled={!canReturn} onClick={() => returnMutation.mutate()}>
+          {returnMutation.isPending ? (
+            <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+          ) : null}
+          Провести возврат
+        </Button>
+      </DialogFooter>
+    </div>
   );
 }
 

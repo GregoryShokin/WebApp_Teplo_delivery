@@ -23,9 +23,13 @@ from app.models import IikoProduct
 from app.services.iiko_product_sync import sync_iiko_products
 from app.services.warehouse_invoices import (
     LineInput,
+    ReturnLineInput,
     WarehouseInvoiceError,
+    create_barter_return,
     create_warehouse_invoice,
+    get_loan_returnable,
     get_warehouse_invoice,
+    list_open_loans,
     list_warehouse_invoices,
     next_invoice_number,
 )
@@ -55,6 +59,19 @@ class InvoiceCreate(BaseModel):
     due_date: date | None = None
     store_guid: str | None = None
     lines: list[LineCreate] = Field(min_length=1)
+
+
+class ReturnLineCreate(BaseModel):
+    amount: Decimal
+    loan_line_item_id: uuid.UUID | None = None
+    quantity: Decimal | None = None
+
+
+class ReturnCreate(BaseModel):
+    loan_id: uuid.UUID
+    issued_at: datetime
+    number: str | None = None
+    returns: list[ReturnLineCreate] = Field(min_length=1)
 
 
 @router.get("/products", dependencies=READ)
@@ -112,6 +129,57 @@ async def invoice_next_number(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, str]:
     return {"number": await next_invoice_number(session)}
+
+
+@router.get("/loans", dependencies=READ)
+async def list_loans(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    counterparty_id: uuid.UUID | None = None,
+) -> list[dict[str, Any]]:
+    """Open / partially-returned barter loans — для режима «Возврат»."""
+    return await list_open_loans(session, counterparty_id)
+
+
+@router.get("/loans/{loan_id}/returnable", dependencies=READ)
+async def loan_returnable(
+    loan_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
+    loan = await get_loan_returnable(session, loan_id)
+    if loan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заём не найден")
+    return loan
+
+
+@router.post("/invoices/return", dependencies=OPERATE, status_code=status.HTTP_201_CREATED)
+async def post_return(
+    payload: ReturnCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    try:
+        ret = await create_barter_return(
+            session,
+            loan_id=payload.loan_id,
+            issued_at=payload.issued_at,
+            number=payload.number,
+            returns=[
+                ReturnLineInput(
+                    amount=line.amount,
+                    loan_line_item_id=line.loan_line_item_id,
+                    quantity=line.quantity,
+                )
+                for line in payload.returns
+            ],
+            actor_user_id=actor.user_id,
+        )
+    except WarehouseInvoiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    result = await get_warehouse_invoice(session, ret.id)
+    assert result is not None
+    return result
 
 
 @router.get("/invoices", dependencies=READ)

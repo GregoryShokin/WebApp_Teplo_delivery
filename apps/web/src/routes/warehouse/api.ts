@@ -108,3 +108,60 @@ export async function getNextInvoiceNumber(): Promise<string> {
   const response = await api.get<{ number: string }>(`${BASE}/invoices/next-number`);
   return response.data.number;
 }
+
+export type OpenLoan = {
+  id: string;
+  counterparty_id: string;
+  counterparty_name: string;
+  number: string | null;
+  issued_at: string | null;
+  we_lend: boolean;
+  amount: number;
+  returned: number;
+  remaining: number;
+  status: string | null;
+};
+
+export type ReturnableLine = {
+  id: string;
+  name: string;
+  unit: string | null;
+  price: number;
+  quantity: number;
+  remaining_qty: number;
+};
+
+export type LoanReturnable = {
+  id: string;
+  number: string | null;
+  we_lend: boolean;
+  amount: number;
+  remaining: number;
+  lines: ReturnableLine[];
+};
+
+export type ReturnPayload = {
+  loan_id: string;
+  issued_at: string;
+  number?: string | null;
+  returns: Array<{ amount: number; loan_line_item_id?: string | null; quantity?: number | null }>;
+};
+
+export async function getOpenLoans(counterpartyId?: string): Promise<OpenLoan[]> {
+  const response = await api.get<OpenLoan[]>(`${BASE}/loans`, {
+    params: counterpartyId ? { counterparty_id: counterpartyId } : undefined,
+  });
+  return response.data;
+}
+
+export async function getLoanReturnable(loanId: string): Promise<LoanReturnable> {
+  const response = await api.get<LoanReturnable>(`${BASE}/loans/${loanId}/returnable`);
+  return response.data;
+}
+
+export async function createBarterReturn(
+  payload: ReturnPayload,
+): Promise<WarehouseInvoiceDetail> {
+  const response = await api.post<WarehouseInvoiceDetail>(`${BASE}/invoices/return`, payload);
+  return response.data;
+}
