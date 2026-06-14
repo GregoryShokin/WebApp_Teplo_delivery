@@ -3,13 +3,13 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeftRight,
   Banknote,
-  Bike,
   Boxes,
   CalendarClock,
   CalendarDays,
   CalendarRange,
   ChartNoAxesColumn,
   ChevronDown,
+  ClipboardCheck,
   ClipboardList,
   Flame,
   Home,
@@ -80,13 +80,7 @@ const navGroups: NavGroup[] = [
   {
     title: "Курьеры",
     items: [
-      { label: "Депозиты", href: "/couriers/deposits", icon: Bike, section: "couriers.deposits" },
-      {
-        label: "Оценки",
-        href: "/couriers/evaluations",
-        icon: ClipboardList,
-        section: "couriers.evaluations",
-      },
+      { label: "Смена", href: "/couriers/shift", icon: ClipboardCheck, section: "couriers.shift" },
       {
         label: "Статистика",
         href: "/couriers/statistics",

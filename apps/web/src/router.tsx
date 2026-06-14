@@ -6,13 +6,12 @@ import { Toaster } from "@/components/ui/sonner";
 import { restoreSession } from "@/lib/api";
 import { getAuthSnapshot } from "@/lib/auth";
 import { DashboardPage } from "@/pages/DashboardPage";
-import { CourierDepositsRoute } from "@/routes/couriers/deposits";
+import { CourierShiftRoute } from "@/routes/couriers/shift";
 import { PayrollRoute } from "@/routes/payroll";
 import { DdsRoute } from "@/routes/dds";
 import { CounterpartiesRoute } from "@/routes/counterparties";
 import { LoginRoute } from "@/routes/login";
 import { AccessControlRoute } from "@/routes/access-control";
-import { CourierEvaluationsRoute } from "@/routes/couriers/evaluations";
 import { CourierScheduleRoute } from "@/routes/couriers/schedule";
 import { CourierStatisticsRoute } from "@/routes/couriers/statistics";
 import { PayrollAdminRunDetailRoute } from "@/routes/payroll/admin-run-detail";
@@ -256,15 +255,54 @@ const routes: AppRoute[] = [
     children: [
       {
         path: "",
-        render: ({ navigate }) => <RedirectRoute onNavigate={navigate} to="/couriers/deposits" />,
+        render: ({ navigate }) => <RedirectRoute onNavigate={navigate} to="/couriers/shift" />,
+      },
+      {
+        path: "shift",
+        children: [
+          {
+            path: "",
+            render: ({ navigate }) => (
+              <RedirectRoute onNavigate={navigate} to="/couriers/shift/inbox" />
+            ),
+          },
+          {
+            path: "inbox",
+            render: ({ navigate }) => (
+              <CourierShiftRoute activeTab="inbox" onNavigate={navigate} />
+            ),
+          },
+          {
+            path: "deposits",
+            render: ({ navigate }) => (
+              <CourierShiftRoute activeTab="deposits" onNavigate={navigate} />
+            ),
+          },
+          {
+            path: "evaluations",
+            render: ({ navigate }) => (
+              <CourierShiftRoute activeTab="evaluations" onNavigate={navigate} />
+            ),
+          },
+          {
+            path: ":unknown",
+            render: ({ navigate }) => (
+              <RedirectRoute onNavigate={navigate} to="/couriers/shift/inbox" />
+            ),
+          },
+        ],
       },
       {
         path: "deposits",
-        render: ({ navigate }) => <CourierDepositsRoute onNavigate={navigate} />,
+        render: ({ navigate }) => (
+          <RedirectRoute onNavigate={navigate} to="/couriers/shift/deposits" />
+        ),
       },
       {
         path: "evaluations",
-        render: () => <CourierEvaluationsRoute />,
+        render: ({ navigate }) => (
+          <RedirectRoute onNavigate={navigate} to="/couriers/shift/evaluations" />
+        ),
       },
       {
         path: "statistics",
@@ -318,7 +356,7 @@ const routes: AppRoute[] = [
       },
       {
         path: ":unknown",
-        render: ({ navigate }) => <RedirectRoute onNavigate={navigate} to="/couriers/deposits" />,
+        render: ({ navigate }) => <RedirectRoute onNavigate={navigate} to="/couriers/shift" />,
       },
     ],
   },

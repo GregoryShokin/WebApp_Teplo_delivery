@@ -40,6 +40,8 @@ from app.schemas.couriers import (
     CourierScheduleEntryRead,
     CourierScheduleMatchedEntry,
     CourierScheduleUpsert,
+    CourierShiftDayResponse,
+    CourierShiftReviewUpdate,
     CourierStatisticsDetail,
     CourierStatisticsRow,
     CourierWorkStatusFilter,
@@ -58,6 +60,7 @@ from app.services.couriers import (
     iiko_attendance_sync,
     kpi_service,
     schedule_service,
+    shift_day_service,
 )
 from app.services.couriers.iiko_olap_sync import sync_courier_olap_deliveries
 from app.services.position_registry import courier_positions
@@ -80,6 +83,16 @@ COURIERS_DEPOSITS_SETTINGS_READ_ACCESS = (
 COURIERS_DEPOSITS_SETTINGS_EDIT_ACCESS = (
     Depends(
         require_any_permission(("couriers.deposits.configure", "source.deposit_settings.edit"))
+    ),
+)
+COURIERS_SHIFT_DAY_READ_ACCESS = (
+    Depends(
+        require_any_permission(("couriers.deposits.read", "couriers.evaluations.read"))
+    ),
+)
+COURIERS_SHIFT_DAY_EDIT_ACCESS = (
+    Depends(
+        require_any_permission(("couriers.deposits.edit", "couriers.evaluations.edit"))
     ),
 )
 CourierSyncMode = Literal["hot", "cold", "custom"]
@@ -817,6 +830,78 @@ async def get_courier_evaluation_monthly(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
     return await evaluation_service.monthly_aggregate(session, employee_id, _parse_month(month))
+
+
+@router.get(
+    "/shift-day",
+    response_model=CourierShiftDayResponse,
+    dependencies=COURIERS_SHIFT_DAY_READ_ACCESS,
+)
+async def get_courier_shift_day(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    work_date: Annotated[date, Query(alias="date")],
+) -> dict[str, Any]:
+    return await shift_day_service.get_shift_day(session, work_date)
+
+
+@router.put(
+    "/shift-day/{work_date}/courier/{employee_id}/review",
+    response_model=CourierShiftDayResponse,
+    dependencies=COURIERS_SHIFT_DAY_EDIT_ACCESS,
+)
+async def put_courier_shift_review(
+    work_date: date,
+    employee_id: uuid.UUID,
+    payload: CourierShiftReviewUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    actor_user_id = _require_actor_user_id(actor)
+    changes = payload.model_dump(exclude_unset=True)
+    await shift_day_service.set_review(
+        session,
+        work_date=work_date,
+        courier_employee_id=employee_id,
+        actor_id=actor_user_id,
+        eval_skipped=changes.get("eval_skipped"),
+        deposit_skipped=changes.get("deposit_skipped"),
+        deposit_skip_comment=changes.get("deposit_skip_comment", shift_day_service.UNSET),
+    )
+    snapshot = await shift_day_service.get_shift_day(session, work_date)
+    await session.commit()
+    return snapshot
+
+
+@router.post(
+    "/shift-day/{work_date}/confirm",
+    response_model=CourierShiftDayResponse,
+    dependencies=COURIERS_SHIFT_DAY_EDIT_ACCESS,
+)
+async def post_courier_shift_day_confirm(
+    work_date: date,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    actor_user_id = _require_actor_user_id(actor)
+    snapshot = await shift_day_service.confirm_day(session, work_date, actor_user_id)
+    await session.commit()
+    return snapshot
+
+
+@router.post(
+    "/shift-day/{work_date}/unconfirm",
+    response_model=CourierShiftDayResponse,
+    dependencies=COURIERS_SHIFT_DAY_EDIT_ACCESS,
+)
+async def post_courier_shift_day_unconfirm(
+    work_date: date,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    snapshot = await shift_day_service.unconfirm_day(session, work_date)
+    await session.commit()
+    return snapshot
 
 
 @router.get(

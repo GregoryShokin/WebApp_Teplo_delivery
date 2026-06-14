@@ -86,7 +86,8 @@ import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 type CourierDepositsRouteProps = {
-  onNavigate: (path: string) => void;
+  onNavigate?: (path: string) => void;
+  embedded?: boolean;
 };
 
 type PendingOperation = {
@@ -94,7 +95,21 @@ type PendingOperation = {
   type: CourierDepositTransactionType;
 };
 
-export function CourierDepositsRoute({ onNavigate }: CourierDepositsRouteProps) {
+function isDepositCollected(row: CourierDepositRow) {
+  return row.balance_cents >= row.target_amount_cents && row.target_amount_cents > 0;
+}
+
+function depositGroupRank(row: CourierDepositRow) {
+  if (row.balance_cents <= 0) {
+    return 2; // без операций — вниз
+  }
+  if (isDepositCollected(row)) {
+    return 1; // собрали полностью
+  }
+  return 0; // собирают — наверх
+}
+
+export function CourierDepositsRoute({ onNavigate, embedded = false }: CourierDepositsRouteProps) {
   void onNavigate;
   const queryClient = useQueryClient();
   const permissions = usePermissions();
@@ -115,25 +130,41 @@ export function CourierDepositsRoute({ onNavigate }: CourierDepositsRouteProps) 
     const searchValue = search.trim().toLocaleLowerCase("ru");
     return [...(depositsQuery.data ?? [])]
       .filter((row) => !searchValue || row.full_name.toLocaleLowerCase("ru").includes(searchValue))
-      .sort((left, right) => left.full_name.localeCompare(right.full_name, "ru"));
+      .sort((left, right) => {
+        const rankDiff = depositGroupRank(left) - depositGroupRank(right);
+        if (rankDiff !== 0) {
+          return rankDiff;
+        }
+        // внутри «собирают» — по убыванию суммы (кто больше собрал, тот выше)
+        if (depositGroupRank(left) === 0 && right.balance_cents !== left.balance_cents) {
+          return right.balance_cents - left.balance_cents;
+        }
+        return left.full_name.localeCompare(right.full_name, "ru");
+      });
   }, [depositsQuery.data, search]);
+
+  const refreshButton = (
+    <Button
+      onClick={() => void queryClient.invalidateQueries({ queryKey: ["courier-deposits"] })}
+      title="Обновить"
+      variant="outline"
+    >
+      <RefreshCw size={16} aria-hidden="true" />
+      Обновить
+    </Button>
+  );
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Депозиты курьеров"
-        description="Оперативная работа с балансами курьеров."
-        action={
-          <Button
-            onClick={() => void queryClient.invalidateQueries({ queryKey: ["courier-deposits"] })}
-            title="Обновить"
-            variant="outline"
-          >
-            <RefreshCw size={16} aria-hidden="true" />
-            Обновить
-          </Button>
-        }
-      />
+      {embedded ? (
+        <div className="flex justify-end">{refreshButton}</div>
+      ) : (
+        <PageHeader
+          title="Депозиты курьеров"
+          description="Оперативная работа с балансами курьеров."
+          action={refreshButton}
+        />
+      )}
 
       {!canWrite ? (
         <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
@@ -269,6 +300,12 @@ export function CourierDepositsRoute({ onNavigate }: CourierDepositsRouteProps) 
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
                       {canWrite ? (
+                        isDepositCollected(row) ? (
+                          <Button size="sm" disabled title="Депозит собран — собирать нечего">
+                            <Plus size={16} aria-hidden="true" />
+                            Собран
+                          </Button>
+                        ) : (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button size="sm">
@@ -294,6 +331,7 @@ export function CourierDepositsRoute({ onNavigate }: CourierDepositsRouteProps) 
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
+                        )
                       ) : null}
                       <Button onClick={() => setHistoryCourier(row)} size="sm" variant="outline">
                         <History size={16} aria-hidden="true" />

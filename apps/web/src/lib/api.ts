@@ -4108,6 +4108,93 @@ export async function syncCourierIikoDeliveries(params: {
   return response.data;
 }
 
+export type CourierShiftDayShift = {
+  opened_at: string;
+  closed_at: string | null;
+  is_open: boolean;
+  worked_minutes: number | null;
+};
+
+export type CourierShiftDayCourier = {
+  employee_id: string;
+  full_name: string;
+  category: CourierScheduleCategory | null;
+  shifts: CourierShiftDayShift[];
+  eval_present: boolean;
+  eval_skipped: boolean;
+  eval_count: number;
+  latest_eval_label: string | null;
+  latest_eval_score: number | null;
+  deposit_balance_cents: number;
+  deposit_target_cents: number;
+  deposit_collected: boolean;
+  deposit_present: boolean;
+  deposit_skipped: boolean;
+  deposit_skip_comment: string | null;
+  ready: boolean;
+};
+
+export type CourierShiftDayUnmatched = {
+  iiko_employee_id: string;
+  opened_at: string;
+  closed_at: string | null;
+  is_open: boolean;
+};
+
+export type CourierShiftDayResponse = {
+  work_date: string;
+  status: "draft" | "confirmed";
+  confirmed_by: string | null;
+  confirmed_by_name: string | null;
+  confirmed_at: string | null;
+  couriers: CourierShiftDayCourier[];
+  unmatched: CourierShiftDayUnmatched[];
+  summary: { total: number; ready_count: number; can_confirm: boolean };
+};
+
+export type CourierShiftReviewPayload = {
+  eval_skipped?: boolean;
+  deposit_skipped?: boolean;
+  deposit_skip_comment?: string | null;
+};
+
+export async function getCourierShiftDay(date: string): Promise<CourierShiftDayResponse> {
+  const response = await api.get<CourierShiftDayResponse>("/couriers/shift-day", {
+    params: { date },
+  });
+  return response.data;
+}
+
+export async function putCourierShiftReview(
+  workDate: string,
+  employeeId: string,
+  payload: CourierShiftReviewPayload,
+): Promise<CourierShiftDayResponse> {
+  const response = await api.put<CourierShiftDayResponse>(
+    `/couriers/shift-day/${workDate}/courier/${employeeId}/review`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function confirmCourierShiftDay(workDate: string): Promise<CourierShiftDayResponse> {
+  const response = await api.post<CourierShiftDayResponse>(
+    `/couriers/shift-day/${workDate}/confirm`,
+    null,
+  );
+  return response.data;
+}
+
+export async function unconfirmCourierShiftDay(
+  workDate: string,
+): Promise<CourierShiftDayResponse> {
+  const response = await api.post<CourierShiftDayResponse>(
+    `/couriers/shift-day/${workDate}/unconfirm`,
+    null,
+  );
+  return response.data;
+}
+
 export async function getCourierStatisticsDetail(
   employeeId: string,
   month: string,

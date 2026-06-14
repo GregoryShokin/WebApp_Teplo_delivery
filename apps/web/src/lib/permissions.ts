@@ -10,6 +10,7 @@ export type AppSection =
   | "dashboard"
   | "staff"
   | "couriers"
+  | "couriers.shift"
   | "couriers.deposits"
   | "couriers.evaluations"
   | "couriers.statistics"
@@ -231,6 +232,7 @@ const SECTION_PERMISSIONS: Record<AppSection, readonly PermissionCode[]> = {
   dashboard: [],
   staff: PERMISSION_GROUPS.staffRead,
   couriers: PERMISSION_GROUPS.couriersRead,
+  "couriers.shift": ["couriers.deposits.read", "couriers.evaluations.read"],
   "couriers.deposits": ["couriers.deposits.read"],
   "couriers.evaluations": ["couriers.evaluations.read"],
   "couriers.statistics": ["couriers.statistics.read"],

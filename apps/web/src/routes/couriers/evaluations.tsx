@@ -102,7 +102,7 @@ const sourceOptions: Array<{ value: CourierEvaluationSource; label: string }> = 
   { value: "api", label: "api" },
 ];
 
-export function CourierEvaluationsRoute() {
+export function CourierEvaluationsRoute({ embedded = false }: { embedded?: boolean } = {}) {
   const queryClient = useQueryClient();
   const permissions = usePermissions();
   const [period, setPeriod] = useState<PeriodPreset>("current-month");
@@ -344,37 +344,43 @@ export function CourierEvaluationsRoute() {
     criteriaQuery.isLoading || evaluationsQuery.isLoading || couriersQuery.isLoading;
   const isMutating = createMutation.isPending || updateMutation.isPending;
 
+  const headerActions = (
+    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+      <Button
+        className="h-12 justify-center text-base sm:h-11"
+        disabled={hasForbiddenRead || !canEditEvaluations}
+        onClick={openCreateForm}
+        size="lg"
+      >
+        <Plus aria-hidden="true" />
+        Поставить отличие
+      </Button>
+      <Button
+        className="h-11"
+        onClick={() => {
+          void queryClient.invalidateQueries({ queryKey: ["evaluations"] });
+          void queryClient.invalidateQueries({ queryKey: ["evaluation-criteria"] });
+          void queryClient.invalidateQueries({ queryKey: ["courier-list"] });
+        }}
+        variant="outline"
+      >
+        <RefreshCw aria-hidden="true" />
+        Обновить
+      </Button>
+    </div>
+  );
+
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Оценки курьеров"
-        description="Журнал отличий курьеров от администраторов смены."
-        action={
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <Button
-              className="h-12 justify-center text-base sm:h-11"
-              disabled={hasForbiddenRead || !canEditEvaluations}
-              onClick={openCreateForm}
-              size="lg"
-            >
-              <Plus aria-hidden="true" />
-              Поставить отличие
-            </Button>
-            <Button
-              className="h-11"
-              onClick={() => {
-                void queryClient.invalidateQueries({ queryKey: ["evaluations"] });
-                void queryClient.invalidateQueries({ queryKey: ["evaluation-criteria"] });
-                void queryClient.invalidateQueries({ queryKey: ["courier-list"] });
-              }}
-              variant="outline"
-            >
-              <RefreshCw aria-hidden="true" />
-              Обновить
-            </Button>
-          </div>
-        }
-      />
+      {embedded ? (
+        <div className="flex justify-end">{headerActions}</div>
+      ) : (
+        <PageHeader
+          title="Оценки курьеров"
+          description="Журнал отличий курьеров от администраторов смены."
+          action={headerActions}
+        />
+      )}
 
       {hasForbiddenRead ? (
         <EmptyState

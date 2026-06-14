@@ -197,6 +197,62 @@ class CourierScheduleMatchedEntry(BaseModel):
     closed_at: datetime | None = None
 
 
+class CourierShiftDayShift(BaseModel):
+    opened_at: datetime
+    closed_at: datetime | None = None
+    is_open: bool
+    worked_minutes: int | None = None
+
+
+class CourierShiftDayCourier(BaseModel):
+    employee_id: uuid.UUID
+    full_name: str
+    category: Literal["primary", "secondary"] | None = None
+    shifts: list[CourierShiftDayShift]
+    eval_present: bool
+    eval_skipped: bool
+    eval_count: int
+    latest_eval_label: str | None = None
+    latest_eval_score: int | None = None
+    deposit_balance_cents: int
+    deposit_target_cents: int
+    deposit_collected: bool
+    deposit_present: bool
+    deposit_skipped: bool
+    deposit_skip_comment: str | None = None
+    ready: bool
+
+
+class CourierShiftDayUnmatched(BaseModel):
+    iiko_employee_id: str
+    opened_at: datetime
+    closed_at: datetime | None = None
+    is_open: bool
+
+
+class CourierShiftDaySummary(BaseModel):
+    total: int
+    ready_count: int
+    can_confirm: bool
+
+
+class CourierShiftDayResponse(BaseModel):
+    work_date: date
+    status: Literal["draft", "confirmed"]
+    confirmed_by: uuid.UUID | None = None
+    confirmed_by_name: str | None = None
+    confirmed_at: datetime | None = None
+    couriers: list[CourierShiftDayCourier]
+    unmatched: list[CourierShiftDayUnmatched]
+    summary: CourierShiftDaySummary
+
+
+class CourierShiftReviewUpdate(BaseModel):
+    eval_skipped: bool | None = None
+    deposit_skipped: bool | None = None
+    deposit_skip_comment: str | None = Field(default=None, max_length=2000)
+
+
 CourierDepositStatus = Literal["active", "fired", "all"]
 CourierDepositCategory = Literal["primary", "secondary", "all"]
 CourierWorkStatus = Literal["working", "reserve"]

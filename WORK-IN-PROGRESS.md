@@ -25,12 +25,23 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
-_(пусто — нет активных агентов)_
+### agent-c — ветка `agent/c-couriers`
+- worktree: `../Teplo-agent-c`
+- compose: agent-c (API 8020 / web 5193 / pg 5452, БД `teplo`, тест `teplo_test_c`)
+- трогает: модуль «Курьеры» — объединённая страница «Смена» (инбокс + депозиты + оценки):
+  - back: `app/models/courier_shift_day.py`, `app/services/couriers/shift_day_service.py`,
+    `app/api/v1/routes/couriers.py` (shift-day роуты), `app/schemas/couriers.py`,
+    `alembic/versions/0104_courier_shift_day.py`, `app/models/__init__.py`
+  - front: `routes/couriers/{shift,shift-inbox,deposits,evaluations}.tsx`, `lib/api.ts` (хвост),
+    `lib/permissions.ts` (секция `couriers.shift`), `components/layout/AppLayout.tsx` (пункт «Смена»),
+    `router.tsx` (раздел `/couriers`)
+- НЕ трогать другим: миграция `0104` (head), пункт сайдбара «Смена», секция прав `couriers.shift`
+- статус: реализовано, проверено в стеке teplo-c; не закоммичено
 
 ---
 
 ## Shared-ресурсы — кто сейчас держит
 
-- **Миграции alembic** (`alembic upgrade head`): сериализованно, один за раз. Держатель: —
+- **Миграции alembic** (`alembic upgrade head`): сериализованно, один за раз. Держатель: agent-c (head `0104`)
 - **Тестовая БД `teplo_test`**: default-стек. Второй агент → `teplo_test_b` (compose agent-b).
-- **Порты**: API 8000 / web 5173 (default); API 8010 / web 5183 (agent-b).
+- **Порты**: API 8000 / web 5173 (default); API 8010 / web 5183 (agent-b); API 8020 / web 5193 (agent-c).

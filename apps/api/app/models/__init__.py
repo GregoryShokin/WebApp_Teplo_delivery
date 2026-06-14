@@ -46,6 +46,11 @@ from app.models.courier_evaluation import (
     CourierEvaluationSource,
 )
 from app.models.courier_schedule import CourierScheduleEntry
+from app.models.courier_shift_day import (
+    CourierShiftDay,
+    CourierShiftDayStatus,
+    CourierShiftReview,
+)
 from app.models.dds import (
     Account,
     BankOperation,
@@ -143,8 +148,11 @@ __all__ = [
     "CourierEvaluationSource",
     "CourierIikoShift",
     "CourierScheduleEntry",
+    "CourierShiftDay",
+    "CourierShiftDayStatus",
     "CourierShiftMatch",
     "CourierShiftMatchStatus",
+    "CourierShiftReview",
     "DataSource",
     "DdsArticle",
     "DdsArticleAlias",
