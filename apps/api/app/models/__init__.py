@@ -29,6 +29,7 @@ from app.models.counterparty_payable import (
     InvoicePaymentAllocation,
     SupplierInvoice,
 )
+from app.models.iiko_product import IikoProduct
 from app.models.courier import (
     CourierIikoShift,
     CourierShiftMatch,
@@ -176,6 +177,7 @@ __all__ = [
     "InventoryAuditItemExclusion",
     "InventoryAuditPosition",
     "BarterSettlement",
+    "IikoProduct",
     "InvoicePaymentAllocation",
     "SupplierInvoice",
     "Location",
