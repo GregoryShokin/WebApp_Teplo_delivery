@@ -17,8 +17,8 @@ import {
   Menu,
   ReceiptText,
   Settings,
-  Truck,
   UsersRound,
+  Warehouse,
   type LucideIcon,
 } from "lucide-react";
 
@@ -101,7 +101,17 @@ const navGroups: NavGroup[] = [
         section: "finance.payment-calendar",
       },
       { label: "Баланс", href: "/balance", icon: ReceiptText, section: "finance.balance" },
-      { label: "Контрагенты", href: "/counterparties", icon: Truck, section: "counterparties" },
+    ],
+  },
+  {
+    title: "Управление складом",
+    items: [
+      {
+        label: "Накладные",
+        href: "/warehouse/invoices",
+        icon: Warehouse,
+        section: "counterparties",
+      },
     ],
   },
   {

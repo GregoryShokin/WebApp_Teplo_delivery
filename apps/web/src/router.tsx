@@ -9,7 +9,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { CourierShiftRoute } from "@/routes/couriers/shift";
 import { PayrollRoute } from "@/routes/payroll";
 import { DdsRoute } from "@/routes/dds";
-import { CounterpartiesRoute } from "@/routes/counterparties";
+import { WarehouseInvoicesRoute } from "@/routes/warehouse";
 import { LoginRoute } from "@/routes/login";
 import { AccessControlRoute } from "@/routes/access-control";
 import { CourierScheduleRoute } from "@/routes/couriers/schedule";
@@ -40,6 +40,13 @@ type MatchedRoute = {
   layout: boolean;
 };
 
+function Redirect({ to, navigate }: { to: string; navigate: Navigate }): null {
+  useEffect(() => {
+    navigate(to);
+  }, [to, navigate]);
+  return null;
+}
+
 const routes: AppRoute[] = [
   {
     path: "/login",
@@ -57,22 +64,37 @@ const routes: AppRoute[] = [
   {
     path: "/counterparties",
     children: [
+      { path: "", render: ({ navigate }) => <Redirect to="/warehouse/invoices" navigate={navigate} /> },
+      { path: "drafts", render: ({ navigate }) => <Redirect to="/warehouse/drafts" navigate={navigate} /> },
       {
-        path: "",
+        path: "registry",
+        render: ({ navigate }) => <Redirect to="/warehouse/registry" navigate={navigate} />,
+      },
+    ],
+  },
+  {
+    path: "/warehouse",
+    children: [
+      {
+        path: "invoices",
         render: ({ navigate }) => (
-          <CounterpartiesRoute activeTab="inbox" onNavigate={navigate} />
+          <WarehouseInvoicesRoute activeTab="normal" onNavigate={navigate} />
+        ),
+      },
+      {
+        path: "barter",
+        render: ({ navigate }) => (
+          <WarehouseInvoicesRoute activeTab="barter" onNavigate={navigate} />
         ),
       },
       {
         path: "drafts",
-        render: ({ navigate }) => (
-          <CounterpartiesRoute activeTab="drafts" onNavigate={navigate} />
-        ),
+        render: ({ navigate }) => <WarehouseInvoicesRoute activeTab="drafts" onNavigate={navigate} />,
       },
       {
         path: "registry",
         render: ({ navigate }) => (
-          <CounterpartiesRoute activeTab="registry" onNavigate={navigate} />
+          <WarehouseInvoicesRoute activeTab="registry" onNavigate={navigate} />
         ),
       },
     ],

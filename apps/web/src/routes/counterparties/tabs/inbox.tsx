@@ -6,14 +6,6 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -27,10 +19,8 @@ import { apiErrorMessage } from "@/lib/api";
 
 import {
   createDraft,
-  createManualInvoice,
   getInvoices,
   getLedgerCategories,
-  getRegistry,
   type CounterpartyInvoice,
 } from "../api";
 import {
@@ -42,6 +32,7 @@ import {
   isOverdue,
 } from "../shared";
 import { PayInvoiceDialog } from "../PayInvoiceDialog";
+import { CreateInvoiceDialog } from "../../warehouse/CreateInvoiceDialog";
 
 const ALL = "all";
 
@@ -61,9 +52,13 @@ const STATUS_SEGMENTS: Array<{ value: string; label: string }> = [
 export function InboxTab({
   canOperate,
   onOpenCounterparty,
+  kind,
 }: {
   canOperate: boolean;
   onOpenCounterparty: (id: string) => void;
+  // Два инбокса: "barter" (только бартер, обе стороны, создание займа) /
+  // "normal" (всё кроме бартера). Без него — старое поведение с сегментами.
+  kind?: "normal" | "barter";
 }) {
   const queryClient = useQueryClient();
   const [categoryId, setCategoryId] = useState<string>(ALL);
@@ -73,17 +68,20 @@ export function InboxTab({
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [payTarget, setPayTarget] = useState<CounterpartyInvoice | null>(null);
 
+  const isBarter = kind === "barter";
+  const forcedRelationship = kind === "barter" ? "barter" : kind === "normal" ? "non_barter" : null;
+  const effectiveRelationship = forcedRelationship ?? (relationship === ALL ? undefined : relationship);
+
   const categoriesQuery = useQuery({ queryKey: ["cp", "categories"], queryFn: getLedgerCategories });
   const invoicesQuery = useQuery({
-    queryKey: ["cp", "invoices", categoryId, relationship, statusFilter],
+    queryKey: ["cp", "invoices", categoryId, effectiveRelationship ?? "all", statusFilter],
     queryFn: () =>
       getInvoices({
         status: statusFilter,
         category_id: categoryId === ALL ? undefined : categoryId,
-        relationship: relationship === ALL ? undefined : relationship,
-        // Бартер двусторонний (займы нам + наши возвраты) — показываем обе стороны,
-        // чтобы были видны оба цвета «Возвращено». Иначе инбокс = только приходные.
-        direction: relationship === "barter" ? "" : undefined,
+        relationship: effectiveRelationship,
+        // Бартер двусторонний (займы нам + наши возвраты) — показываем обе стороны.
+        direction: isBarter || relationship === "barter" ? "" : undefined,
       }),
   });
   const invoices = invoicesQuery.data ?? [];
@@ -217,18 +215,20 @@ export function InboxTab({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-1">
-        {REL_SEGMENTS.map((segment) => (
-          <Button
-            key={segment.value}
-            size="sm"
-            variant={relationship === segment.value ? "default" : "outline"}
-            onClick={() => setRelationship(segment.value)}
-          >
-            {segment.label}
-          </Button>
-        ))}
-      </div>
+      {!kind ? (
+        <div className="flex flex-wrap gap-1">
+          {REL_SEGMENTS.map((segment) => (
+            <Button
+              key={segment.value}
+              size="sm"
+              variant={relationship === segment.value ? "default" : "outline"}
+              onClick={() => setRelationship(segment.value)}
+            >
+              {segment.label}
+            </Button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-1">
         <span className="mr-1 text-xs text-muted-foreground">Статус:</span>
@@ -314,126 +314,13 @@ export function InboxTab({
         }
       />
 
-      <ManualInvoiceDialog open={isManualOpen} onOpenChange={setIsManualOpen} />
+      <CreateInvoiceDialog
+        open={isManualOpen}
+        onOpenChange={setIsManualOpen}
+        barter={isBarter}
+        onCreated={() => queryClient.invalidateQueries({ queryKey: ["cp"] })}
+      />
       <PayInvoiceDialog invoice={payTarget} onOpenChange={(open) => !open && setPayTarget(null)} />
     </div>
-  );
-}
-
-function ManualInvoiceDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const queryClient = useQueryClient();
-  const [counterpartyId, setCounterpartyId] = useState("");
-  const [amount, setAmount] = useState("");
-  const [number, setNumber] = useState("");
-  const [invoiceDate, setInvoiceDate] = useState("");
-  const [vat10, setVat10] = useState("");
-  const [vat22, setVat22] = useState("");
-
-  const registryQuery = useQuery({
-    queryKey: ["cp", "registry", "all"],
-    queryFn: () => getRegistry(),
-    enabled: open,
-  });
-
-  const createMutation = useMutation({
-    mutationFn: () => {
-      const vat: Record<string, number> = {};
-      if (Number(vat10) > 0) vat["10"] = Number(vat10);
-      if (Number(vat22) > 0) vat["22"] = Number(vat22);
-      return createManualInvoice({
-        counterparty_id: counterpartyId,
-        amount: Number(amount),
-        number: number || null,
-        invoice_date: invoiceDate || null,
-        vat_breakdown: Object.keys(vat).length ? vat : null,
-      });
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["cp"] });
-      setAmount("");
-      setNumber("");
-      setInvoiceDate("");
-      setVat10("");
-      setVat22("");
-      onOpenChange(false);
-      toast.success("Накладная добавлена");
-    },
-    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось добавить накладную")),
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Накладная вручную</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-4">
-          <div className="grid gap-2">
-            <Label>Контрагент</Label>
-            <Select value={counterpartyId} onValueChange={setCounterpartyId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Выберите контрагента" />
-              </SelectTrigger>
-              <SelectContent>
-                {(registryQuery.data ?? []).map((item) => (
-                  <SelectItem key={item.counterparty_id} value={item.counterparty_id}>
-                    {item.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-2">
-              <Label>Сумма, ₽</Label>
-              <Input
-                type="number"
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Номер счёта</Label>
-              <Input value={number} onChange={(event) => setNumber(event.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <div className="grid gap-2">
-              <Label>Дата</Label>
-              <Input
-                type="date"
-                value={invoiceDate}
-                onChange={(event) => setInvoiceDate(event.target.value)}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>НДС 10%, ₽</Label>
-              <Input type="number" value={vat10} onChange={(event) => setVat10(event.target.value)} />
-            </div>
-            <div className="grid gap-2">
-              <Label>НДС 22%, ₽</Label>
-              <Input type="number" value={vat22} onChange={(event) => setVat22(event.target.value)} />
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button
-            disabled={!counterpartyId || !(Number(amount) > 0) || createMutation.isPending}
-            onClick={() => createMutation.mutate()}
-          >
-            {createMutation.isPending ? (
-              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-            ) : null}
-            Сохранить
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
