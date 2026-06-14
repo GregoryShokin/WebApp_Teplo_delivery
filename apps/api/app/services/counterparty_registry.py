@@ -207,7 +207,10 @@ async def list_invoices(
         query = query.where(SupplierInvoice.counterparty_id == counterparty_id)
     if category_id is not None:
         query = query.where(CounterpartyPayableProfile.ledger_category_id == category_id)
-    if relationship is not None:
+    if relationship == "non_barter":
+        # «Обычная» накладная-инбокс: всё, кроме бартера (официальные + неофициальные).
+        query = query.where(CounterpartyPayableProfile.relationship != "barter")
+    elif relationship is not None:
         query = query.where(CounterpartyPayableProfile.relationship == relationship)
     if in_draft is True:
         query = query.where(SupplierInvoice.draft_id.isnot(None))

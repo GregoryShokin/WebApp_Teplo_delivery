@@ -101,3 +101,11 @@ supplier_invoice_direction_enum = Enum(
     "receivable",
     name="supplier_invoice_direction",
 )
+# Explicit barter role set at creation (NULL = ordinary or iiko-synced invoice whose
+# role is still derived chronologically): loan = a loan in kind, return = it settles an
+# earlier loan (linked via barter_loan_id, may be partial).
+supplier_invoice_barter_role_enum = Enum(
+    "loan",
+    "return",
+    name="supplier_invoice_barter_role",
+)

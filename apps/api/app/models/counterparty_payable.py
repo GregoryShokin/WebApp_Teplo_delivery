@@ -30,6 +30,7 @@ from app.models.enums import (
     counterparty_invoice_status_enum,
     counterparty_relationship_enum,
     invoice_allocation_source_enum,
+    supplier_invoice_barter_role_enum,
     supplier_invoice_direction_enum,
 )
 
@@ -299,11 +300,80 @@ class SupplierInvoice(Base):
     raw_payload: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
+    # --- warehouse «Накладные» operational fields (manual create + iiko push) ---
+    # Receipt date+TIME (manual create requires it) — the basis for auto-matching the
+    # payment against a bank operation; invoice_date (Date) stays for compatibility.
+    issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Σ of line sums flagged «персонал» — excluded from the iiko document, tracked as a
+    # separate cash-flow (future dedicated DDS article). 0 for ordinary invoices.
+    staff_amount: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
+    store_guid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    iiko_push_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="not_pushed", server_default="not_pushed"
+    )
+    iiko_pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    iiko_push_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # --- explicit barter (NULL = ordinary / iiko-synced, role derived chronologically) ---
+    barter_role: Mapped[str | None] = mapped_column(
+        supplier_invoice_barter_role_enum, nullable=True
+    )
+    # On a return invoice: the specific loan it settles. Self-FK.
+    barter_loan_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("supplier_invoice.id", ondelete="SET NULL"), nullable=True
+    )
+    # On a loan invoice: cached settlement state — open / partially_returned / returned.
+    barter_return_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class InvoiceLineItem(Base):
+    """A normalized line of a warehouse invoice — quantity, unit, sum, «персонал» flag.
+
+    Manual/warehouse invoices store lines here (the source of truth) for accurate per-item
+    quantities, partial barter returns, and the personnel split. ``is_staff`` lines are
+    kept out of the pushed iiko document but still counted in the invoice total and routed
+    as a separate cash-flow. iiko-synced invoices keep using ``SupplierInvoice.line_items``
+    (JSONB); new invoices mirror a minimal slice there so номенклатура-based barter matching
+    keeps working.
+    """
+
+    __tablename__ = "invoice_line_item"
+    __table_args__ = (
+        Index("ix_invoice_line_item_invoice", "invoice_id"),
+        Index("ix_invoice_line_item_product", "iiko_product_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    invoice_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("supplier_invoice.id", ondelete="CASCADE"), nullable=False
+    )
+    iiko_product_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("iiko_product.id", ondelete="SET NULL"), nullable=True
+    )
+    # GUID snapshot at creation — survives the product later being removed from the cache.
+    product_guid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    name: Mapped[str] = mapped_column(String(512), nullable=False)
+    article: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    # quantity * price, gross (VAT-inclusive, как у iiko).
+    sum: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    vat_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    vat_sum: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    is_staff: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -366,6 +436,41 @@ class BarterSettlement(Base):
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class BarterReturnLine(Base):
+    """One partial settlement of a barter loan — by product line and/or by amount.
+
+    A return invoice (``SupplierInvoice.barter_role == "return"``) closes part of a
+    specific loan: each row records how much of which loan line is being returned
+    (``quantity``) and the ruble amount (``amount``, always set). A loan is fully
+    ``returned`` once Σ amount equals its total; otherwise ``partially_returned``.
+    """
+
+    __tablename__ = "barter_return_line"
+    __table_args__ = (
+        Index("ix_barter_return_loan", "loan_invoice_id"),
+        Index("ix_barter_return_return", "return_invoice_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    return_invoice_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("supplier_invoice.id", ondelete="CASCADE"), nullable=False
+    )
+    loan_invoice_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("supplier_invoice.id", ondelete="RESTRICT"), nullable=False
+    )
+    loan_line_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("invoice_line_item.id", ondelete="SET NULL"), nullable=True
+    )
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )

@@ -20,16 +20,17 @@ from app.models.core import (
 )
 from app.models.counterparty import Counterparty, CounterpartyRole
 from app.models.counterparty_payable import (
+    BarterReturnLine,
     BarterSettlement,
     CounterpartyCollectionSource,
     CounterpartyLedgerCategory,
     CounterpartyPayableProfile,
     CounterpartyPaymentDraft,
     CounterpartyRoutingRule,
+    InvoiceLineItem,
     InvoicePaymentAllocation,
     SupplierInvoice,
 )
-from app.models.iiko_product import IikoProduct
 from app.models.courier import (
     CourierIikoShift,
     CourierShiftMatch,
@@ -75,6 +76,7 @@ from app.models.employee import (
     EmployeeRoleAssignment,
 )
 from app.models.employee_position_assignment import EmployeePositionAssignment
+from app.models.iiko_product import IikoProduct
 from app.models.inventory import (
     InventoryAudit,
     InventoryAuditEmployeeExclusion,
@@ -176,8 +178,10 @@ __all__ = [
     "InventoryAuditItem",
     "InventoryAuditItemExclusion",
     "InventoryAuditPosition",
+    "BarterReturnLine",
     "BarterSettlement",
     "IikoProduct",
+    "InvoiceLineItem",
     "InvoicePaymentAllocation",
     "SupplierInvoice",
     "Location",
