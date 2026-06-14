@@ -317,6 +317,37 @@ async def link_iiko_roles(
     return linked, imported
 
 
+async def active_positions_without_iiko_role(session: AsyncSession) -> list[Position]:
+    """Активные должности реестра без связанной роли iiko.
+
+    Сид миграции заводит должности без iiko-роли (миграция не ходит в iiko),
+    поэтому их роли создаются позже — при синхронизации (provision)."""
+    rows = await session.scalars(
+        select(Position)
+        .where(Position.status == "active", Position.iiko_role_id.is_(None))
+        .order_by(Position.name)
+    )
+    return list(rows.all())
+
+
+async def attach_iiko_role(
+    session: AsyncSession,
+    position: Position,
+    *,
+    role_id: str,
+    role_code: str,
+    actor_user_id: uuid.UUID | None = None,
+) -> Position:
+    before = _position_snapshot(position)
+    position.iiko_role_id = role_id
+    position.iiko_role_code = role_code
+    await session.flush()
+    _add_change_event(
+        session, position, "iiko_provision", before=before, actor_user_id=actor_user_id
+    )
+    return position
+
+
 def _position_snapshot(position: Position) -> dict[str, Any]:
     return {
         "name": position.name,

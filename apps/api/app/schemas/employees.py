@@ -300,7 +300,8 @@ class EmployeeCreateRoleRequest(BaseModel):
 class EmployeeCreateRequest(BaseModel):
     full_name: str = Field(min_length=1, max_length=255)
     pin_code: str
-    iiko_role_id: str = Field(min_length=1, max_length=128)
+    # Название должности из реестра (роль в iiko создаётся/линкуется на лету).
+    position: str = Field(min_length=1, max_length=160)
     category: str | None = Field(default=None, max_length=64)
     roles: list[EmployeeCreateRoleRequest] = Field(default_factory=list)
     is_senior: bool = False

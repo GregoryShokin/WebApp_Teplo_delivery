@@ -302,6 +302,7 @@ async def test_delete_removes_position_and_iiko_role(
 async def test_sync_iiko_links_known_and_imports_unknown_as_excluded(
     edit_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
+    fake_iiko: dict[str, list],
     async_session_factory,
 ) -> None:
     roles = [
@@ -320,12 +321,19 @@ async def test_sync_iiko_links_known_and_imports_unknown_as_excluded(
     body = response.json()
     assert body["linked"] == 1
     assert body["imported"] == 1
+    # Повар слинкован по имени; остальным активным должностям реестра без роли
+    # iiko заводим роль (provision). Бармен исключён — не провизионится.
+    assert body["provisioned"] == 8
 
     by_name = {item["name"]: item for item in body["positions"]}
     assert by_name["Повар"]["iiko_role_id"] == "role-cook"
     assert by_name["Бармен"]["status"] == "excluded"
     assert by_name["Бармен"]["archetype"] == "none"
     assert "Старая роль" not in by_name
+
+    # Должность без роли в iiko (Посудомойка) теперь заведена и выбираема при найме.
+    assert by_name["Посудомойка"]["iiko_role_id"] == "iiko-POSUDOMOYKA"
+    assert position_registry.is_active_position("Посудомойка")
 
     # Бармен исключён: не участвует ни в найме, ни в payroll-выборках.
     assert not position_registry.is_active_position("Бармен")

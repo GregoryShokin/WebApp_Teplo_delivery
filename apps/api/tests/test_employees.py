@@ -1826,6 +1826,25 @@ def test_compute_status_role_position_without_pin_requires_setup(position: str) 
     )
 
 
+def _fake_create_position_lookup():
+    """find_by_name для create-тестов: отдаёт активную должность с готовой ролью iiko,
+    чтобы _ensure_iiko_role_for_position не ходил в БД/iiko (FakeSession)."""
+    from types import SimpleNamespace
+
+    role_by_name = {"Повар": "role-cook", "Кассир": "role-cashier", "Курьер": "role-courier"}
+
+    async def _find(_session, name):
+        return SimpleNamespace(
+            name=name,
+            status="active",
+            iiko_role_id=role_by_name.get(name, f"role-{name}"),
+            iiko_role_code="X",
+            schedule_type="SESSION",
+        )
+
+    return _find
+
+
 async def test_create_employee_creates_iiko_first_then_local_audit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1854,12 +1873,15 @@ async def test_create_employee_creates_iiko_first_then_local_audit(
 
     monkeypatch.setattr(employee_routes, "get_iiko_employee_roles", fake_get_iiko_roles)
     monkeypatch.setattr(employee_routes, "create_iiko_employee_in_iiko", fake_create_iiko)
+    monkeypatch.setattr(
+        employee_routes.position_service, "find_by_name", _fake_create_position_lookup()
+    )
 
     employee = await create_employee(
         EmployeeCreateRequest(
             full_name=" Новый Сотрудник ",
             pin_code="1234",
-            iiko_role_id="role-cook",
+            position="Повар",
             roles=[
                 {
                     "payroll_role": "sushi",
@@ -1931,12 +1953,15 @@ async def test_create_cook_allows_multiple_roles_with_one_primary(
 
     monkeypatch.setattr(employee_routes, "get_iiko_employee_roles", fake_get_iiko_roles)
     monkeypatch.setattr(employee_routes, "create_iiko_employee_in_iiko", fake_create_iiko)
+    monkeypatch.setattr(
+        employee_routes.position_service, "find_by_name", _fake_create_position_lookup()
+    )
 
     employee = await create_employee(
         EmployeeCreateRequest(
             full_name="Новый Мультиповар",
             pin_code="1234",
-            iiko_role_id="role-cook",
+            position="Повар",
             roles=[
                 {
                     "payroll_role": "pizza",
@@ -1991,12 +2016,15 @@ async def test_create_cashier_creates_administrator_assignment_automatically(
 
     monkeypatch.setattr(employee_routes, "get_iiko_employee_roles", fake_get_iiko_roles)
     monkeypatch.setattr(employee_routes, "create_iiko_employee_in_iiko", fake_create_iiko)
+    monkeypatch.setattr(
+        employee_routes.position_service, "find_by_name", _fake_create_position_lookup()
+    )
 
     employee = await create_employee(
         EmployeeCreateRequest(
             full_name="Новый Кассир",
             pin_code="2468",
-            iiko_role_id="role-cashier",
+            position="Кассир",
             category="category_2",
         ),
         session,  # type: ignore[arg-type]
@@ -2033,13 +2061,16 @@ async def test_create_employee_rejects_invalid_role_category(
 
     monkeypatch.setattr(employee_routes, "get_iiko_employee_roles", fake_get_iiko_roles)
     monkeypatch.setattr(employee_routes, "create_iiko_employee_in_iiko", fake_create_iiko)
+    monkeypatch.setattr(
+        employee_routes.position_service, "find_by_name", _fake_create_position_lookup()
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await create_employee(
             EmployeeCreateRequest(
                 full_name="Новый Сотрудник",
                 pin_code="1234",
-                iiko_role_id="role-cook",
+                position="Повар",
                 roles=[
                     {
                         "payroll_role": "shawarma",
@@ -2083,12 +2114,15 @@ async def test_create_employee_allows_courier_without_roles(
 
     monkeypatch.setattr(employee_routes, "get_iiko_employee_roles", fake_get_iiko_roles)
     monkeypatch.setattr(employee_routes, "create_iiko_employee_in_iiko", fake_create_iiko)
+    monkeypatch.setattr(
+        employee_routes.position_service, "find_by_name", _fake_create_position_lookup()
+    )
 
     employee = await create_employee(
         EmployeeCreateRequest(
             full_name="Новый Курьер",
             pin_code="4321",
-            iiko_role_id="role-courier",
+            position="Курьер",
             roles=[],
             is_senior=False,
         ),
@@ -2136,12 +2170,15 @@ async def test_create_employee_allows_roleless_positions_without_roles(
 
     monkeypatch.setattr(employee_routes, "get_iiko_employee_roles", fake_get_iiko_roles)
     monkeypatch.setattr(employee_routes, "create_iiko_employee_in_iiko", fake_create_iiko)
+    monkeypatch.setattr(
+        employee_routes.position_service, "find_by_name", _fake_create_position_lookup()
+    )
 
     employee = await create_employee(
         EmployeeCreateRequest(
             full_name=f"Новый {position}",
             pin_code="4321",
-            iiko_role_id=role_id,
+            position=position,
             roles=[],
         ),
         session,  # type: ignore[arg-type]
@@ -2170,7 +2207,7 @@ async def test_create_employee_rejects_position_outside_canonical(
             EmployeeCreateRequest(
                 full_name="Новый Официант",
                 pin_code="1234",
-                iiko_role_id="role-waiter",
+                position="Официант",
                 roles=[],
             ),
             session,  # type: ignore[arg-type]
@@ -2200,13 +2237,16 @@ async def test_create_employee_iiko_error_does_not_create_local(
 
     monkeypatch.setattr(employee_routes, "get_iiko_employee_roles", fake_get_iiko_roles)
     monkeypatch.setattr(employee_routes, "create_iiko_employee_in_iiko", fake_create_iiko)
+    monkeypatch.setattr(
+        employee_routes.position_service, "find_by_name", _fake_create_position_lookup()
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await create_employee(
             EmployeeCreateRequest(
                 full_name="Новый Сотрудник",
                 pin_code="1234",
-                iiko_role_id="role-cook",
+                position="Повар",
                 roles=[
                     {
                         "payroll_role": "sushi",
@@ -2246,13 +2286,16 @@ async def test_second_senior_cook_is_rejected_with_existing_cook_name(
 
     monkeypatch.setattr(employee_routes, "get_iiko_employee_roles", fake_get_iiko_roles)
     monkeypatch.setattr(employee_routes, "create_iiko_employee_in_iiko", fake_create_iiko)
+    monkeypatch.setattr(
+        employee_routes.position_service, "find_by_name", _fake_create_position_lookup()
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await create_employee(
             EmployeeCreateRequest(
                 full_name="Второй Старший",
                 pin_code="1111",
-                iiko_role_id="role-cook",
+                position="Повар",
                 roles=[
                     {
                         "payroll_role": "sushi",
@@ -2291,13 +2334,16 @@ async def test_second_deputy_senior_cook_is_rejected_with_existing_cook_name(
 
     monkeypatch.setattr(employee_routes, "get_iiko_employee_roles", fake_get_iiko_roles)
     monkeypatch.setattr(employee_routes, "create_iiko_employee_in_iiko", fake_create_iiko)
+    monkeypatch.setattr(
+        employee_routes.position_service, "find_by_name", _fake_create_position_lookup()
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await create_employee(
             EmployeeCreateRequest(
                 full_name="Второй Зам",
                 pin_code="1111",
-                iiko_role_id="role-cook",
+                position="Повар",
                 roles=[
                     {
                         "payroll_role": "sushi",
@@ -2342,13 +2388,16 @@ async def test_second_senior_cashier_is_rejected_with_existing_admin_name(
 
     monkeypatch.setattr(employee_routes, "get_iiko_employee_roles", fake_get_iiko_roles)
     monkeypatch.setattr(employee_routes, "create_iiko_employee_in_iiko", fake_create_iiko)
+    monkeypatch.setattr(
+        employee_routes.position_service, "find_by_name", _fake_create_position_lookup()
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await create_employee(
             EmployeeCreateRequest(
                 full_name="Третий Старший",
                 pin_code="2222",
-                iiko_role_id="role-cashier",
+                position="Кассир",
                 category="category_2",
                 is_senior=True,
             ),
@@ -3174,22 +3223,27 @@ async def test_list_employee_changes_manager_for_administration_detail_returns_4
 async def test_list_iiko_employee_roles_manager_hides_administration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_iiko_roles(_session: Any) -> list[IikoEmployeeRole]:
+    # Список должностей для найма берётся из реестра (а не из живого iiko) и
+    # фильтруется по праву создания соответствующей области штата.
+    from types import SimpleNamespace
+
+    async def fake_list_positions(_session: Any) -> list[Any]:
         return [
-            IikoEmployeeRole(id="role-cook", name="Повар"),
-            IikoEmployeeRole(id="role-cashier", name="Кассир"),
-            IikoEmployeeRole(id="role-courier", name="Курьер"),
-            IikoEmployeeRole(id="role-manager", name="Менеджер"),
-            IikoEmployeeRole(id="role-director", name="Управляющий"),
+            SimpleNamespace(name=name, status="active", iiko_role_code=None)
+            for name in ["Повар", "Кассир", "Курьер", "Менеджер", "Управляющий"]
         ]
 
-    monkeypatch.setattr(employee_routes, "get_iiko_employee_roles", fake_iiko_roles)
+    monkeypatch.setattr(
+        employee_routes.position_service, "list_positions", fake_list_positions
+    )
 
     rows = await list_iiko_employee_roles(
         FakeSession([]),  # type: ignore[arg-type]
         CurrentActor(roles=frozenset({"manager"})),
     )
 
+    # Менеджер/Управляющий (администрация) скрыты — у роли manager нет
+    # staff.administration.create.
     assert [row.name for row in rows] == ["Повар", "Кассир", "Курьер"]
 
 

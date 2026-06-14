@@ -259,11 +259,49 @@ async def sync_positions_with_iiko(
     linked, imported = await position_service.link_iiko_roles(
         session, list(roles), actor_user_id=actor.user_id
     )
+
+    # Provision: активным должностям реестра без роли в iiko (Системный
+    # администратор, Посудомойка, Уборщица, Старший курьер и т.п.) заводим роль —
+    # иначе их нельзя выбрать при создании сотрудника (карточка в iiko требует роль).
+    provisioned = 0
+    pending = await position_service.active_positions_without_iiko_role(session)
+    if pending:
+        taken_codes = {
+            position.iiko_role_code
+            for position in await position_service.list_positions(session)
+            if position.iiko_role_code
+        }
+        for position in pending:
+            role_code = position.iiko_role_code or position_service.generate_iiko_role_code(
+                position.name, taken_codes
+            )
+            try:
+                iiko_role = await upsert_iiko_role(
+                    session,
+                    name=position.name,
+                    code=role_code,
+                    schedule_type=position.schedule_type,
+                )
+            except _http_client.IncompleteRead as exc:
+                raise HTTPException(status_code=502, detail=_IIKO_TIMEOUT_DETAIL) from exc
+            except IikoEmployeeOperationError as exc:
+                raise _http_error(exc) from exc
+            taken_codes.add(iiko_role.code)
+            await position_service.attach_iiko_role(
+                session,
+                position,
+                role_id=iiko_role.role_id,
+                role_code=iiko_role.code,
+                actor_user_id=actor.user_id,
+            )
+            provisioned += 1
+
     await session.commit()
     await refresh_position_registry(session)
     return PositionIikoSyncResult(
         linked=linked,
         imported=imported,
+        provisioned=provisioned,
         positions=await _read_positions(session),
     )
 

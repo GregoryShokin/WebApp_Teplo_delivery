@@ -2540,20 +2540,10 @@ function CreateEmployeeDialog({
   const [isDeputySenior, setIsDeputySenior] = useState(false);
 
   const filteredRoles = useMemo(
-    () =>
-      roles.filter((role) => {
-        if (role.deleted) {
-          return false;
-        }
-        const position = canonicalPosition(role.name);
-        if (!position) {
-          // Роль из реестра должностей, неизвестная клиентскому каталогу:
-          // сервер уже отфильтровал активные должности — показываем как есть.
-          return true;
-        }
-        return createPositions.has(position) && allowedPositions.has(position);
-      }),
-    [allowedPositions, roles],
+    // Список приходит из реестра должностей и уже отфильтрован сервером по праву
+    // создания (доступные актору активные должности) — доверяем ему как есть.
+    () => roles.filter((role) => !role.deleted),
+    [roles],
   );
   const selectedIikoRole = useMemo(
     () => filteredRoles.find((role) => role.id === iikoRoleId) ?? null,
@@ -2650,7 +2640,7 @@ function CreateEmployeeDialog({
     onCreate({
       full_name: trimmedName,
       pin_code: pinCode,
-      iiko_role_id: iikoRoleId,
+      position: iikoRoleId,
       roles: showCashierCategory
         ? [
             {

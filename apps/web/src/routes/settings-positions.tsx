@@ -189,7 +189,10 @@ export function PositionsPanel({ canEdit }: { canEdit: boolean }) {
   const syncMutation = useMutation({
     mutationFn: syncPositionsWithIiko,
     onSuccess: async (result) => {
-      toast.success(`Связано: ${result.linked}, добавлено из iiko: ${result.imported}`);
+      toast.success(
+        `Связано: ${result.linked}, добавлено из iiko: ${result.imported}, ` +
+          `заведено ролей в iiko: ${result.provisioned}`,
+      );
       await invalidatePositions();
     },
     onError: (error) => {

@@ -151,6 +151,7 @@ export type PositionPayload = {
 export type PositionsSyncResult = {
   linked: number;
   imported: number;
+  provisioned: number;
   positions: Position[];
 };
 
@@ -405,7 +406,7 @@ export type EmployeeChangeFilters = {
 export type EmployeeCreatePayload = {
   full_name: string;
   pin_code: string;
-  iiko_role_id: string;
+  position: string;
   roles: Array<{
     payroll_role: PayrollRole;
     category: EmployeeCategory;

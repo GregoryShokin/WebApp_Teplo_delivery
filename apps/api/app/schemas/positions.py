@@ -60,6 +60,7 @@ class PositionListRead(BaseModel):
 class PositionIikoSyncResult(BaseModel):
     linked: int
     imported: int
+    provisioned: int = 0
     positions: list[PositionRead]
 
 

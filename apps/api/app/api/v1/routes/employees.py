@@ -76,12 +76,14 @@ from app.services.employee_status import (
     is_cook_position,
     position_group_for_position,
 )
+from app.services import position_service
 from app.services.iiko_sync import (
     IikoEmployeeOperationError,
     IikoEmployeeRole,
     get_iiko_employee_roles,
     sync_employees,
     update_iiko_employee,
+    upsert_iiko_role,
 )
 from app.services.iiko_sync import (
     create_iiko_employee as create_iiko_employee_in_iiko,
@@ -330,26 +332,22 @@ async def list_iiko_employee_roles(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> list[IikoEmployeeRoleRead]:
-    try:
-        roles = await get_iiko_employee_roles(session)
-    except _http_client.IncompleteRead as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="iiko не отвечает — сервер оборвал соединение. Попробуйте через минуту.",
-        ) from exc
-    except IikoEmployeeOperationError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-
+    # Список должностей для создания сотрудника берём из РЕЕСТРА должностей
+    # (активные, доступные актору), а не из живого iiko — диалог открывается
+    # сразу, без зависимости от доступности iiko. Роль в iiko создаётся на лету
+    # при создании сотрудника (см. _ensure_iiko_role_for_position). `id` — имя
+    # должности; `code` — связанная роль iiko (если уже заведена).
+    positions = await position_service.list_positions(session)
     return [
         IikoEmployeeRoleRead(
-            id=role.id,
-            name=role.name,
-            code=role.code,
-            deleted=role.deleted,
+            id=position.name,
+            name=position.name,
+            code=position.iiko_role_code,
+            deleted=False,
         )
-        for role in roles
-        if is_create_position(role.name)
-        and can_access_position(actor, role.name, StaffAction.CREATE)
+        for position in positions
+        if position.status == "active"
+        and can_access_position(actor, position.name, StaffAction.CREATE)
     ]
 
 
@@ -691,47 +689,39 @@ async def create_employee(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> Employee:
-    try:
-        iiko_role = await _resolve_create_iiko_position(session, payload.iiko_role_id)
-        canonical_position = canonical_position_name(iiko_role.name)
-        if canonical_position is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Выбранная должность iiko недоступна для создания сотрудника",
-            )
-        ensure_position_access(actor, canonical_position, StaffAction.CREATE)
-        _validate_premium_flags(
-            canonical_position,
-            is_senior=payload.is_senior,
-            is_deputy_senior=payload.is_deputy_senior,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        )
-        resolved_roles = await _resolve_create_roles(
-            session,
-            payload,
-            position=canonical_position,
-        )
-        await _validate_premium_capacity(
-            session,
-            canonical_position,
-            is_senior=payload.is_senior,
-            is_deputy_senior=payload.is_deputy_senior,
-            exclude_employee_id=None,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        )
-    except _http_client.IncompleteRead as exc:
+    canonical_position = canonical_position_name(payload.position)
+    if canonical_position is None or not is_create_position(canonical_position):
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="iiko не отвечает — сотрудник не создан. Попробуйте через минуту.",
-        ) from exc
-    except IikoEmployeeOperationError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Должность недоступна для создания сотрудника",
+        )
+    ensure_position_access(actor, canonical_position, StaffAction.CREATE)
+    _validate_premium_flags(
+        canonical_position,
+        is_senior=payload.is_senior,
+        is_deputy_senior=payload.is_deputy_senior,
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+    )
+    resolved_roles = await _resolve_create_roles(
+        session,
+        payload,
+        position=canonical_position,
+    )
+    await _validate_premium_capacity(
+        session,
+        canonical_position,
+        is_senior=payload.is_senior,
+        is_deputy_senior=payload.is_deputy_senior,
+        exclude_employee_id=None,
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+    )
 
     try:
+        role_id = await _ensure_iiko_role_for_position(session, canonical_position, actor)
         iiko_employee = await create_iiko_employee_in_iiko(
             session,
             full_name=payload.full_name,
-            role_id=iiko_role.id,
+            role_id=role_id,
             pin_code=payload.pin_code,
         )
     except _http_client.IncompleteRead as exc:
@@ -840,7 +830,7 @@ async def create_employee(
     after = {
         **_employee_lifecycle_snapshot(employee),
         "iiko_role_id": iiko_employee.role_id,
-        "iiko_role_name": iiko_role.name,
+        "iiko_role_name": canonical_position,
         "iiko_role_code": iiko_employee.role_code,
         "is_target_position": iiko_employee.is_target_position,
         "roles": assignment_snapshots,
@@ -2585,24 +2575,66 @@ def _validate_patch_payload(payload: dict[str, Any]) -> None:
         raise HTTPException(status_code=400, detail="Некорректная станция кухни")
 
 
-async def _resolve_create_iiko_position(
+async def _ensure_iiko_role_for_position(
     session: AsyncSession,
-    iiko_role_id: str,
-) -> IikoEmployeeRole:
+    position_name: str,
+    actor: CurrentActor,
+) -> str:
+    """Гарантирует роль iiko для должности реестра и возвращает её id.
+
+    Если должность уже связана с ролью — возвращаем её. Иначе линкуем по имени
+    с существующей ролью iiko, а при отсутствии — заводим новую роль в iiko.
+    Связь сохраняется в реестре, чтобы повторные создания не плодили роли."""
+    position = await position_service.find_by_name(session, position_name)
+    if position is None or position.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Должность недоступна для создания сотрудника",
+        )
+    if position.iiko_role_id:
+        return position.iiko_role_id
+
     iiko_roles = await get_iiko_employee_roles(session)
-    role_by_id = {role.id: role for role in iiko_roles}
-    iiko_role = role_by_id.get(iiko_role_id)
-    if iiko_role is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Выбранная должность iiko недоступна",
+    match = next(
+        (
+            role
+            for role in iiko_roles
+            if not role.deleted and canonical_position_name(role.name) == position.name
+        ),
+        None,
+    )
+    if match is not None:
+        await position_service.attach_iiko_role(
+            session,
+            position,
+            role_id=match.id,
+            role_code=match.code,
+            actor_user_id=actor.user_id,
         )
-    if not is_create_position(iiko_role.name):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Выбранная должность iiko недоступна для создания сотрудника",
-        )
-    return iiko_role
+        return match.id
+
+    taken_codes = {
+        item.iiko_role_code
+        for item in await position_service.list_positions(session)
+        if item.iiko_role_code
+    }
+    role_code = position.iiko_role_code or position_service.generate_iiko_role_code(
+        position.name, taken_codes
+    )
+    iiko_role = await upsert_iiko_role(
+        session,
+        name=position.name,
+        code=role_code,
+        schedule_type=position.schedule_type,
+    )
+    await position_service.attach_iiko_role(
+        session,
+        position,
+        role_id=iiko_role.role_id,
+        role_code=iiko_role.code,
+        actor_user_id=actor.user_id,
+    )
+    return iiko_role.role_id
 
 
 async def _resolve_create_roles(
