@@ -1,11 +1,20 @@
-"""Settle barter loans: net payable (they lent us) ↔ receivable (we returned) invoices.
+"""Settle barter loans by netting opposite-direction invoices of the same partner.
 
-Returns are recorded at the SAME ruble sum as the loan (not by kg), but a return may
-be batched into one invoice covering several loans. So we match by exact amount —
-1:1 or subset-sum for batched returns — and disambiguate by the **номенклатура** set
-(product ids) of the invoice line items. A match where the sum is exact AND the product
-set is exact AND unique is auto-settled; anything ambiguous is left for a manager to
-confirm explicitly.
+A barter invoice's **direction** is only physics — payable = приходная (goods came to
+us), receivable = расходная (goods left us). It does NOT say who lent: the same приход
+can be a partner lending us OR a partner returning our earlier loan. The **role**
+(заём/возврат) is decided by **chronology** inside a matched pair, not by direction:
+the earlier invoice is the LOAN, the later one is the RETURN. Whose loan follows from
+the loan side's direction — расход-loan = we lent, приход-loan = they lent us. Equal
+dates are broken by invoice **number** (larger = later = the return).
+
+Returns are recorded at the SAME ruble sum as the loan (not by kg); a return may be
+batched into one invoice covering several earlier loans. So we match by exact amount —
+1:1 or subset-sum — disambiguated by the **номенклатура** set (product ids) and by
+chronology (a return only covers loans dated on/before it). When several identical
+loans compete, they are closed **FIFO** (earliest loan first). A match that is exact
+in sum + product set and FIFO-unambiguous is auto-settled; the rest is left for a
+manager to confirm explicitly.
 """
 
 from __future__ import annotations
@@ -58,8 +67,11 @@ class BarterSettlementView:
     id: uuid.UUID
     amount: Decimal
     is_auto: bool
-    payable_numbers: list[str]
-    receivable_numbers: list[str]
+    # True = we were the lender (loan side is расход/receivable, partner returned via
+    # приход); False = the partner lent us. Drives the «мы заняли»/«заняли нам» wording.
+    we_lent: bool
+    loan_numbers: list[str]
+    return_numbers: list[str]
 
 
 @dataclass
@@ -82,6 +94,7 @@ class BarterSuggestion:
     receivable_ids: list[uuid.UUID]
     amount: Decimal
     confident: bool
+    we_lent: bool  # who is the lender in this proposed netting (by chronology)
 
 
 def _ref(invoice: SupplierInvoice) -> _Ref:
@@ -93,20 +106,68 @@ def _ref(invoice: SupplierInvoice) -> _Ref:
     )
 
 
-def _date_eligible(pool_ref: _Ref, anchor: _Ref, *, anchor_is_payable: bool) -> bool:
-    """A loan (payable) can only be covered by a return (receivable) dated on/after it —
-    you can't return goods that weren't borrowed yet. Missing dates → don't block.
+def _order_key(ref: _Ref) -> tuple[date, str]:
+    """Chronological sort key: by date, ties broken by invoice number (larger = later)."""
+    return (ref.date or date.min, ref.invoice.number or "")
 
-    Without this, two identical loans (same sum + номенклатура) on different dates both
-    look like valid subset members, the match stops being unique, and auto-settle bails.
+
+def _chrono_sorted(refs: Sequence[_Ref]) -> list[_Ref]:
+    return sorted(refs, key=_order_key)
+
+
+def _chronology_ok(anchor: _Ref, subset: Sequence[_Ref]) -> bool:
+    """A loan↔return group nets only if it splits cleanly in time: every loan is dated
+    on/before its return. Role is by DATE, not direction — so the anchor is valid either
+    as the return covering earlier loans (all subset ≤ anchor) OR as a loan covered by
+    later returns (all subset ≥ anchor). A subset straddling the anchor date is rejected.
+    Missing dates never block (legacy invoices without a date stay matchable).
     """
-    if pool_ref.date is None or anchor.date is None:
+    sub_dates = [ref.date for ref in subset if ref.date is not None]
+    if anchor.date is None or len(sub_dates) != len(subset):
         return True
-    if anchor_is_payable:
-        # anchor = loan, pool_ref = return → return must be on/after the loan
-        return pool_ref.date >= anchor.date
-    # anchor = return, pool_ref = loan → loan must be on/before the return
-    return pool_ref.date <= anchor.date
+    return all(d <= anchor.date for d in sub_dates) or all(d >= anchor.date for d in sub_dates)
+
+
+def _we_lent(payables: Sequence[_Ref], receivables: Sequence[_Ref]) -> bool:
+    """Within a netted group, who was the lender? The return is the latest invoice
+    (by date, then number); the loan side is the opposite direction. A return that came
+    in as приход (payable) means we were owed goods back → WE lent. Returns True iff so.
+    """
+    refs = [*payables, *receivables]
+    latest = max(refs, key=_order_key)
+    return latest.invoice.direction == "payable"
+
+
+def _loan_direction(payables: Sequence[_Ref], receivables: Sequence[_Ref]) -> str:
+    """Which direction holds the loans (the earlier side). расход if we lent, else приход."""
+    return "receivable" if _we_lent(payables, receivables) else "payable"
+
+
+def _split_by_direction(
+    anchor: _Ref, subset: Sequence[_Ref]
+) -> tuple[list[_Ref], list[_Ref]]:
+    """Group an anchor + its matched subset into (payables, receivables) — the settlement
+    stores invoices by direction; role is recovered later from chronology, not from this."""
+    members = list(subset)
+    if anchor.invoice.direction == "payable":
+        return [anchor], members
+    return members, [anchor]
+
+
+def _fifo_key(subset: Sequence[_Ref]) -> tuple[tuple[date, str], ...]:
+    """Sort key making the subset with the EARLIEST invoices win — FIFO loan closing."""
+    return tuple(sorted(_order_key(ref) for ref in subset))
+
+
+def _fifo_pick(subsets: Sequence[Sequence[_Ref]]) -> list[_Ref] | None:
+    """Pick the FIFO-earliest subset. Returns None when the two best are tied (e.g. all
+    dates missing) — a genuine ambiguity that must go to a manager, not auto-settle."""
+    ordered = sorted(subsets, key=_fifo_key)
+    if not ordered:
+        return None
+    if len(ordered) >= 2 and _fifo_key(ordered[0]) == _fifo_key(ordered[1]):
+        return None
+    return list(ordered[0])
 
 
 async def _load_open(
@@ -152,30 +213,22 @@ def _union_products(subset: Sequence[_Ref]) -> frozenset[str]:
 def _first_confident_match(
     payables: list[_Ref], receivables: list[_Ref]
 ) -> tuple[list[_Ref], list[_Ref]] | None:
-    """Find a unique anchor↔subset match: exact sum AND exact product set, anchor on
-    either side. Returns (payable_refs, receivable_refs) or None."""
-    for anchors, pool, anchor_is_payable in (
-        (receivables, payables, False),
-        (payables, receivables, True),
-    ):
-        for anchor in anchors:
+    """Find one auto-settleable match: exact sum + exact product set + clean chronology,
+    anchor on either side. Anchors are scanned earliest-first and identical loans close
+    FIFO, so repeated calls (the auto-settle loop) close loans in date order. Returns
+    (payable_refs, receivable_refs) or None."""
+    for anchors, pool in ((receivables, payables), (payables, receivables)):
+        for anchor in _chrono_sorted(anchors):
             if not anchor.products:
                 continue  # cannot verify номенклатура → never auto
-            eligible = [
-                ref
-                for ref in pool
-                if _date_eligible(ref, anchor, anchor_is_payable=anchor_is_payable)
-            ]
-            exact = [
+            valid = [
                 subset
-                for subset in _subsets_summing(eligible, anchor.amount)
-                if _union_products(subset) == anchor.products
+                for subset in _subsets_summing(pool, anchor.amount)
+                if _union_products(subset) == anchor.products and _chronology_ok(anchor, subset)
             ]
-            if len(exact) == 1:
-                subset = list(exact[0])
-                if anchor_is_payable:
-                    return [anchor], subset  # anchor payable ↔ subset of receivables
-                return subset, [anchor]  # anchor receivable ↔ subset of payables
+            chosen = _fifo_pick(valid)
+            if chosen is not None:
+                return _split_by_direction(anchor, chosen)
     return None
 
 
@@ -187,6 +240,7 @@ def _suggestion(
         receivable_ids=[ref.invoice.id for ref in receivable_refs],
         amount=_money(sum((ref.amount for ref in payable_refs), Decimal("0.00"))),
         confident=confident,
+        we_lent=_we_lent(payable_refs, receivable_refs),
     )
 
 
@@ -211,23 +265,21 @@ def _suggest_pairs(payables: list[_Ref], receivables: list[_Ref]) -> list[Barter
         suggestions.append(_suggestion(payable_refs, receivable_refs, confident=True))
         used.update(ref.invoice.id for ref in (*payable_refs, *receivable_refs))
 
-    for anchor_is_payable in (True, False):
-        for anchor in avail(payables if anchor_is_payable else receivables):
+    for anchor_pool, other_pool in ((payables, receivables), (receivables, payables)):
+        for anchor in _chrono_sorted(avail(anchor_pool)):
             if anchor.invoice.id in used:
                 continue
-            pool = avail(receivables if anchor_is_payable else payables)
-            pool = [
-                ref
-                for ref in pool
-                if _date_eligible(ref, anchor, anchor_is_payable=anchor_is_payable)
+            pool = avail(other_pool)
+            subsets = [
+                subset
+                for subset in _subsets_summing(pool, anchor.amount)
+                if _chronology_ok(anchor, subset)
             ]
-            subsets = _subsets_summing(pool, anchor.amount)
             if not subsets:
                 continue
-            subset = list(min(subsets, key=len))  # prefer the smallest batch (1:1 first)
-            payable_refs, receivable_refs = (
-                ([anchor], subset) if anchor_is_payable else (subset, [anchor])
-            )
+            # smallest batch first (1:1 over a sweep), then FIFO-earliest among equal sizes
+            subset = min(subsets, key=lambda s: (len(s), _fifo_key(s)))
+            payable_refs, receivable_refs = _split_by_direction(anchor, subset)
             suggestions.append(_suggestion(payable_refs, receivable_refs, confident=False))
             used.update(ref.invoice.id for ref in (*payable_refs, *receivable_refs))
 
@@ -390,15 +442,49 @@ async def _load_settlements(
     views: list[BarterSettlementView] = []
     for settlement in settlements:
         linked = [inv for inv in invoices if inv.barter_settlement_id == settlement.id]
+        payables = [_ref(inv) for inv in linked if inv.direction == "payable"]
+        receivables = [_ref(inv) for inv in linked if inv.direction == "receivable"]
+        loan_dir = _loan_direction(payables, receivables)
         views.append(
             BarterSettlementView(
                 id=settlement.id,
                 amount=_money(settlement.amount),
                 is_auto=settlement.is_auto,
-                payable_numbers=[inv.number or "—" for inv in linked if inv.direction == "payable"],
-                receivable_numbers=[
-                    inv.number or "—" for inv in linked if inv.direction == "receivable"
-                ],
+                we_lent=loan_dir == "receivable",
+                loan_numbers=[inv.number or "—" for inv in linked if inv.direction == loan_dir],
+                return_numbers=[inv.number or "—" for inv in linked if inv.direction != loan_dir],
             )
         )
     return views
+
+
+async def settled_roles(
+    session: AsyncSession, settlement_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    """Map every invoice in the given settlements to its role — ``"loan"`` or
+    ``"return"`` — decided by chronology (earlier side lends, later side returns).
+    Lets the inbox/card badge label a settled barter invoice without re-deriving roles.
+    """
+    ids = list(dict.fromkeys(settlement_ids))
+    if not ids:
+        return {}
+    invoices = (
+        (
+            await session.execute(
+                select(SupplierInvoice).where(SupplierInvoice.barter_settlement_id.in_(ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    grouped: dict[uuid.UUID, list[SupplierInvoice]] = {}
+    for inv in invoices:
+        grouped.setdefault(inv.barter_settlement_id, []).append(inv)
+    roles: dict[uuid.UUID, str] = {}
+    for linked in grouped.values():
+        payables = [_ref(inv) for inv in linked if inv.direction == "payable"]
+        receivables = [_ref(inv) for inv in linked if inv.direction == "receivable"]
+        loan_dir = _loan_direction(payables, receivables)
+        for inv in linked:
+            roles[inv.id] = "loan" if inv.direction == loan_dir else "return"
+    return roles

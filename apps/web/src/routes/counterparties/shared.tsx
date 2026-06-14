@@ -97,24 +97,37 @@ export function isOverdue(dueDate: string | null | undefined, status: string) {
   return new Date(dueDate) < today;
 }
 
+// Роль сведённой бартер-накладной (направление + хронологическая роль) → подпись.
+// Ранний по дате — заём, поздний — возврат; чей заём видно по направлению товара.
+const BARTER_ROLE_LABELS: Record<string, string> = {
+  "receivable:loan": "Мы заняли", // расход раньше → наш заём партнёру
+  "receivable:return": "Мы вернули", // расход позже → мы вернули партнёру
+  "payable:loan": "Заняли нам", // приход раньше → партнёр занял нам
+  "payable:return": "Нам вернули", // приход позже → партнёр вернул нам
+};
+
 export function InvoiceStatusBadge({
   status,
   direction,
   barterSettled,
+  barterRole,
 }: {
   status: string;
   direction?: string;
   barterSettled?: boolean;
+  barterRole?: string | null;
 }) {
-  // Бартер — это учёт займов сырьём, а не оплата. Закрытую зачётом накладную помечаем
-  // «Возвращено»: приходная (нам заняли — мы вернули) оранжевым, расходная (мы дали —
-  // нам вернули) зелёным.
+  // Бартер — учёт займов сырьём, а не оплата. У сведённой накладной показываем РОЛЬ по
+  // хронологии (заём/возврат + чей), а цвет — по направлению товара: приход оранжевый,
+  // расход зелёный (так пара заём↔возврат видна двумя цветами).
   if (barterSettled) {
     const cls =
       direction === "payable"
         ? "border-orange-200 bg-orange-50 text-orange-700"
         : "border-emerald-200 bg-emerald-50 text-emerald-700";
-    return <Badge className={cls}>Возвращено</Badge>;
+    const label =
+      (barterRole && direction && BARTER_ROLE_LABELS[`${direction}:${barterRole}`]) || "Возвращено";
+    return <Badge className={cls}>{label}</Badge>;
   }
   const className =
     status === "paid"

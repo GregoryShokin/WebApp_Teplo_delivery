@@ -117,6 +117,9 @@ class InvoiceItem:
     payment_status: str
     draft_id: uuid.UUID | None
     barter_settlement_id: uuid.UUID | None = None
+    # Barter role once settled: "loan" / "return" (by chronology) — None while open or
+    # non-barter. Lets the badge say «мы заняли»/«нам вернули» rather than guess by direction.
+    barter_role: str | None = None
 
 
 @dataclass
@@ -217,12 +220,22 @@ async def list_invoices(
     rows = list(await session.execute(query))
     invoices = [row[0] for row in rows]
     allocations = await _allocations_by_invoice(session, [inv.id for inv in invoices])
-    return [
+    items = [
         _build_invoice_item(
             invoice, counterparty_name, ledger_category_id, allocations.get(invoice.id)
         )
         for invoice, counterparty_name, ledger_category_id in rows
     ]
+    # Attach the barter role (loan/return by chronology) to settled barter invoices so the
+    # inbox/card badge reflects who lent — not the raw приход/расход direction.
+    from app.services import counterparty_barter_match as barter_match
+
+    settlement_ids = [inv.barter_settlement_id for inv in invoices if inv.barter_settlement_id]
+    if settlement_ids:
+        roles = await barter_match.settled_roles(session, settlement_ids)
+        for item in items:
+            item.barter_role = roles.get(item.id)
+    return items
 
 
 def _build_invoice_item(

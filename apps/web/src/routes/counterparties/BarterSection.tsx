@@ -122,7 +122,8 @@ export function BarterSection({
       </div>
       <p className="text-xs text-muted-foreground">
         Займы сводятся по совпадению суммы и номенклатуры (включая сводный возврат на сумму
-        нескольких). Уверенные совпадения закрывает авто-зачёт; остальное отметьте вручную с обеих
+        нескольких). Кто заём, а кто возврат — определяет дата: ранняя накладная заём, поздняя
+        возврат. Уверенные совпадения закрывает авто-зачёт; остальное отметьте вручную с обеих
         сторон — суммы должны совпасть.
       </p>
 
@@ -130,12 +131,14 @@ export function BarterSection({
         <div className="space-y-1.5">
           <h4 className="text-xs font-medium uppercase text-muted-foreground">Предложенные пары</h4>
           {suggestions.map((suggestion, index) => {
-            const payableNumbers = suggestion.payable_ids
-              .map((id) => numberById.get(id) ?? "—")
-              .join(", ");
-            const receivableNumbers = suggestion.receivable_ids
-              .map((id) => numberById.get(id) ?? "—")
-              .join(", ");
+            // Заём — ранняя сторона (по хронологии): если занимали мы, это расходные
+            // (receivable), иначе приходные (payable). we_lent приходит с бэка.
+            const loanIds = suggestion.we_lent ? suggestion.receivable_ids : suggestion.payable_ids;
+            const returnIds = suggestion.we_lent
+              ? suggestion.payable_ids
+              : suggestion.receivable_ids;
+            const loanNumbers = loanIds.map((id) => numberById.get(id) ?? "—").join(", ");
+            const returnNumbers = returnIds.map((id) => numberById.get(id) ?? "—").join(", ");
             return (
               <div
                 key={index}
@@ -143,7 +146,8 @@ export function BarterSection({
               >
                 <span className="tabular-nums font-medium">{formatRub(suggestion.amount)}</span>
                 <span className="text-muted-foreground">
-                  займы {payableNumbers} ↔ возвраты {receivableNumbers}
+                  {suggestion.we_lent ? "мы заняли" : "заняли нам"} {loanNumbers} ↔ возврат{" "}
+                  {returnNumbers}
                 </span>
                 <Badge
                   variant="outline"
@@ -169,7 +173,7 @@ export function BarterSection({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <BarterColumn
-          title="Мы должны (займы нам)"
+          title="Нам заняли (приход — ждём наш возврат)"
           invoices={detail.open_payables}
           selected={payableSel}
           suggested={suggestedIds}
@@ -177,7 +181,7 @@ export function BarterSection({
           disabled={!canOperate}
         />
         <BarterColumn
-          title="Нам должны (наши возвраты)"
+          title="Мы заняли (расход — ждём возврат партнёра)"
           invoices={detail.open_receivables}
           selected={receivableSel}
           suggested={suggestedIds}
@@ -218,8 +222,9 @@ export function BarterSection({
             >
               <span className="tabular-nums font-medium">{formatRub(settlement.amount)}</span>
               <span className="text-muted-foreground">
-                займы {settlement.payable_numbers.join(", ") || "—"} ↔ возвраты{" "}
-                {settlement.receivable_numbers.join(", ") || "—"}
+                {settlement.we_lent ? "мы заняли" : "заняли нам"}{" "}
+                {settlement.loan_numbers.join(", ") || "—"} ↔ возврат{" "}
+                {settlement.return_numbers.join(", ") || "—"}
               </span>
               <Badge variant="outline" className="ml-auto">
                 {settlement.is_auto ? "авто" : "вручную"}

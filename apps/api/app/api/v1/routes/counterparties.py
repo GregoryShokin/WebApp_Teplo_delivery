@@ -95,6 +95,7 @@ class InvoiceRead(BaseModel):
     payment_status: str
     draft_id: uuid.UUID | None
     barter_settlement_id: uuid.UUID | None = None
+    barter_role: str | None = None
 
 
 class RegistryRead(BaseModel):
@@ -746,8 +747,9 @@ async def get_barter(
                 "id": str(view.id),
                 "amount": float(view.amount),
                 "is_auto": view.is_auto,
-                "payable_numbers": view.payable_numbers,
-                "receivable_numbers": view.receivable_numbers,
+                "we_lent": view.we_lent,
+                "loan_numbers": view.loan_numbers,
+                "return_numbers": view.return_numbers,
             }
             for view in detail.settlements
         ],
@@ -766,6 +768,7 @@ async def get_barter_suggestions(
             "receivable_ids": [str(i) for i in suggestion.receivable_ids],
             "amount": float(suggestion.amount),
             "confident": suggestion.confident,
+            "we_lent": suggestion.we_lent,
         }
         for suggestion in suggestions
     ]

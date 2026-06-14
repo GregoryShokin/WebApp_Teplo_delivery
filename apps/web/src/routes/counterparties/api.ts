@@ -26,6 +26,8 @@ export type CounterpartyInvoice = {
   payment_status: string;
   draft_id: string | null;
   barter_settlement_id: string | null;
+  // Роль сведённой бартер-накладной по хронологии: "loan" | "return" | null (пока открыта).
+  barter_role: string | null;
 };
 
 export type RegistryItem = {
@@ -385,8 +387,9 @@ export type BarterSettlementView = {
   id: string;
   amount: number;
   is_auto: boolean;
-  payable_numbers: string[];
-  receivable_numbers: string[];
+  we_lent: boolean; // true — лендером были мы (заём = расход), false — заняли нам
+  loan_numbers: string[];
+  return_numbers: string[];
 };
 
 export type BarterDetail = {
@@ -406,6 +409,7 @@ export type BarterSuggestion = {
   receivable_ids: string[];
   amount: number;
   confident: boolean;
+  we_lent: boolean; // кто лендер в предложенном зачёте (по хронологии)
 };
 
 export async function getBarterSuggestions(id: string): Promise<BarterSuggestion[]> {

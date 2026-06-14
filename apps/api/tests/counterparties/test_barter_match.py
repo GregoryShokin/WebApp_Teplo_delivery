@@ -7,6 +7,7 @@ Auto only on a unique 100% match; otherwise the manager confirms.
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -20,6 +21,7 @@ from app.services.counterparty_barter_match import (
     auto_settle_barter,
     barter_detail,
     confirm_barter_settlement,
+    settled_roles,
 )
 
 
@@ -257,3 +259,116 @@ async def test_barter_detail_excludes_settled(
         assert len(detail.open_receivables) == 1
         assert len(detail.settlements) == 1
         assert detail.settlements[0].is_auto is True
+
+
+async def test_auto_settle_reverse_we_lent(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Ёбидоёби-кейс: МЫ заняли (ранний расход) → партнёр вернул (поздний приход).
+
+    Старая логика «приход=заём нам, расход=мы вернули» этот случай не сводила (требовала
+    расход-возврат ПОСЛЕ прихода-займа). Хронология сводит: ранняя накладная — заём,
+    поздняя — возврат, независимо от направления.
+    """
+    async with async_session_factory() as session:
+        cp = await _barter_cp(session, "7710000030")
+        loan = await make_invoice(
+            session, counterparty_id=cp.id, amount="700.00", direction="receivable",
+            number="AR-2", line_items=items("SAUCE"), invoice_date=date(2026, 6, 2),
+        )
+        ret = await make_invoice(
+            session, counterparty_id=cp.id, amount="700.00", direction="payable",
+            number="AP-5", line_items=items("SAUCE"), invoice_date=date(2026, 6, 5),
+        )
+        await session.commit()
+
+        assert await auto_settle_barter(session, cp.id) == 1
+        assert await _settled_ids(session, cp.id) == {loan.id, ret.id}
+
+        roles = await settled_roles(session, [loan.barter_settlement_id])
+        assert roles[loan.id] == "loan"  # ранний расход = наш заём
+        assert roles[ret.id] == "return"  # поздний приход = возврат партнёра
+        detail = await barter_detail(session, cp.id)
+        assert detail.settlements[0].we_lent is True
+        assert detail.settlements[0].loan_numbers == ["AR-2"]
+        assert detail.settlements[0].return_numbers == ["AP-5"]
+
+
+async def test_auto_settle_fifo_closes_earliest_loan(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Два одинаковых наших займа + два одинаковых возврата: ранний возврат гасит ранний
+    заём (FIFO). Без дат это было бы неоднозначно (остаётся ручным); с датами — авто."""
+    async with async_session_factory() as session:
+        cp = await _barter_cp(session, "7710000031")
+        l1 = await make_invoice(
+            session, counterparty_id=cp.id, amount="100.00", direction="receivable",
+            number="L1", line_items=items("A"), invoice_date=date(2026, 6, 1),
+        )
+        l2 = await make_invoice(
+            session, counterparty_id=cp.id, amount="100.00", direction="receivable",
+            number="L2", line_items=items("A"), invoice_date=date(2026, 6, 2),
+        )
+        r1 = await make_invoice(
+            session, counterparty_id=cp.id, amount="100.00", direction="payable",
+            number="R1", line_items=items("A"), invoice_date=date(2026, 6, 3),
+        )
+        r2 = await make_invoice(
+            session, counterparty_id=cp.id, amount="100.00", direction="payable",
+            number="R2", line_items=items("A"), invoice_date=date(2026, 6, 4),
+        )
+        await session.commit()
+
+        assert await auto_settle_barter(session, cp.id) == 2
+        for inv in (l1, l2, r1, r2):
+            await session.refresh(inv)
+        # FIFO: l1↔r1, l2↔r2; the two settlements are distinct.
+        assert l1.barter_settlement_id == r1.barter_settlement_id
+        assert l2.barter_settlement_id == r2.barter_settlement_id
+        assert l1.barter_settlement_id != l2.barter_settlement_id
+
+
+async def test_role_tie_break_by_number_same_date(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Заём и возврат в один день: больший номер — более поздняя накладная (возврат)."""
+    async with async_session_factory() as session:
+        cp = await _barter_cp(session, "7710000032")
+        a = await make_invoice(
+            session, counterparty_id=cp.id, amount="500.00", direction="receivable",
+            number="N-001", line_items=items("A"), invoice_date=date(2026, 6, 7),
+        )
+        b = await make_invoice(
+            session, counterparty_id=cp.id, amount="500.00", direction="payable",
+            number="N-002", line_items=items("A"), invoice_date=date(2026, 6, 7),
+        )
+        await session.commit()
+
+        assert await auto_settle_barter(session, cp.id) == 1
+        roles = await settled_roles(session, [a.barter_settlement_id])
+        assert roles[a.id] == "loan"  # N-001 раньше → заём (расход → мы заняли)
+        assert roles[b.id] == "return"  # N-002 позже → возврат
+
+
+async def test_list_invoices_exposes_barter_role(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Инбокс отдаёт роль (loan/return) у сведённых бартер-накладных, не только direction."""
+    from app.services.counterparty_registry import list_invoices
+
+    async with async_session_factory() as session:
+        cp = await _barter_cp(session, "7710000033")
+        loan = await make_invoice(
+            session, counterparty_id=cp.id, amount="700.00", direction="receivable",
+            number="AR-9", line_items=items("S"), invoice_date=date(2026, 6, 2),
+        )
+        ret = await make_invoice(
+            session, counterparty_id=cp.id, amount="700.00", direction="payable",
+            number="AP-9", line_items=items("S"), invoice_date=date(2026, 6, 5),
+        )
+        await session.commit()
+        await auto_settle_barter(session, cp.id)
+
+        by_id = {item.id: item for item in await list_invoices(session, counterparty_id=cp.id)}
+        assert by_id[loan.id].barter_role == "loan"
+        assert by_id[ret.id].barter_role == "return"

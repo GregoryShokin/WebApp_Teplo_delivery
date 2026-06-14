@@ -197,6 +197,7 @@ export function InboxTab({
             status={invoice.payment_status}
             direction={invoice.direction}
             barterSettled={!!invoice.barter_settlement_id}
+            barterRole={invoice.barter_role}
           />
         ),
     },
