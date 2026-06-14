@@ -119,6 +119,24 @@ async def test_ingest_skips_unposted_status(
         assert await _count(session, SupplierInvoice) == 0
 
 
+async def test_ingest_skips_zero_amount_gift(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A 0₽ document (iiko «подарок»/bonus, no priced items) is not a payable — skip it
+    entirely so it never lands in the inbox, and create no counterparty for it."""
+    async with async_session_factory() as session:
+        result = await ingest_iiko_payables(
+            session,
+            suppliers_xml=_one_supplier(),
+            invoices_xml=invoices_xml([_doc(items=[])]),
+        )
+        await session.commit()
+        assert result.skipped_zero_amount == 1
+        assert result.invoices_created == 0
+        assert await _count(session, SupplierInvoice) == 0
+        assert await _count(session, Counterparty) == 0  # no phantom supplier for a gift
+
+
 async def test_ingest_skips_store_and_unknown_and_idless(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

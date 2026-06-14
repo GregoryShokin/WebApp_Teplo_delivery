@@ -75,6 +75,7 @@ class CounterpartyInvoiceSyncResult:
     skipped_store: int = 0
     skipped_no_id: int = 0
     skipped_unknown_supplier: int = 0
+    skipped_zero_amount: int = 0
 
     def as_dict(self) -> dict[str, int]:
         return asdict(self)
@@ -388,6 +389,14 @@ async def _ingest_documents(
             result.skipped_store += 1
             continue
 
+        # 0₽ documents are gifts/bonuses (iiko comment «подарок» etc.) — nothing to pay and
+        # no value to net in barter. Keep them out of the inbox entirely, before we even
+        # resolve/create a counterparty for a gift-only supplier.
+        amount = _invoice_amount(doc)
+        if amount == 0:
+            result.skipped_zero_amount += 1
+            continue
+
         counterparty_id = None
         if direction == "payable":
             counterparty_id = await _routed_counterparty_id(session, supplier.id, _doc_prefix(doc))
@@ -400,7 +409,6 @@ async def _ingest_documents(
         is_barter = direction == "receivable" or await _is_barter(session, counterparty_id)
         line_items = _parse_line_items(doc, name_by_id or {}) if is_barter else []
 
-        amount = _invoice_amount(doc)
         vat_total, vat_breakdown = _invoice_vat(doc)
         number = _text(doc, "documentNumber") or _text(doc, "transportInvoiceNumber")
         invoice_date = _parse_iiko_date(_text(doc, "incomingDate") or _text(doc, "dateIncoming"))
