@@ -73,6 +73,7 @@ export function CreateInvoiceDialog({
   onCreated: () => void;
   barter?: boolean;
 }) {
+  const [kind, setKind] = useState<"normal" | "barter">(barter ? "barter" : "normal");
   const [weLend, setWeLend] = useState(true);
   const [barterAction, setBarterAction] = useState<"loan" | "return">("loan");
   const [counterpartyId, setCounterpartyId] = useState("");
@@ -80,7 +81,7 @@ export function CreateInvoiceDialog({
   const [number, setNumber] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
   const queryClient = useQueryClient();
-  const isBarter = barter;
+  const isBarter = kind === "barter";
   const isReturn = isBarter && barterAction === "return";
 
   const registryQuery = useQuery({
@@ -106,7 +107,13 @@ export function CreateInvoiceDialog({
     }
   }, [open, number, nextNumberQuery.data]);
 
+  // Инбокс задаёт лишь значение по умолчанию; внутри окна можно переключить.
+  useEffect(() => {
+    if (open) setKind(barter ? "barter" : "normal");
+  }, [open, barter]);
+
   const reset = () => {
+    setKind(barter ? "barter" : "normal");
     setWeLend(true);
     setBarterAction("loan");
     setCounterpartyId("");
@@ -172,6 +179,29 @@ export function CreateInvoiceDialog({
         </DialogHeader>
 
         <div className="grid gap-4">
+          <div className="inline-flex w-fit overflow-hidden rounded-md border">
+            <button
+              type="button"
+              className={cn(
+                "px-4 py-1.5 text-sm",
+                !isBarter && "bg-primary/10 font-medium text-primary",
+              )}
+              onClick={() => setKind("normal")}
+            >
+              Обычная
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "px-4 py-1.5 text-sm",
+                isBarter && "bg-primary/10 font-medium text-primary",
+              )}
+              onClick={() => setKind("barter")}
+            >
+              Бартер
+            </button>
+          </div>
+
           {isBarter ? (
             <div className="flex flex-wrap items-center gap-2">
               <div className="inline-flex overflow-hidden rounded-md border">
