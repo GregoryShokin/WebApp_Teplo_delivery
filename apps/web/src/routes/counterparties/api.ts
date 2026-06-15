@@ -315,22 +315,8 @@ export async function deleteRoutingRule(
   return response.data;
 }
 
-export async function getDrafts(params?: { counterparty_id?: string }): Promise<PaymentDraft[]> {
-  const response = await api.get<PaymentDraft[]>(`${BASE}/drafts/list`, { params });
-  return response.data;
-}
-
 export async function createDraft(invoiceIds: string[]): Promise<PaymentDraft> {
   const response = await api.post<PaymentDraft>(`${BASE}/drafts`, { invoice_ids: invoiceIds });
-  return response.data;
-}
-
-export async function cancelDraft(id: string): Promise<void> {
-  await api.post(`${BASE}/drafts/${id}/cancel`);
-}
-
-export async function runAutoMatch(): Promise<{ matched: number; needs_review: unknown[] }> {
-  const response = await api.post<{ matched: number; needs_review: unknown[] }>(`${BASE}/match/auto`);
   return response.data;
 }
 

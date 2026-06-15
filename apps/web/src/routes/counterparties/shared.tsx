@@ -154,24 +154,6 @@ export function RelationshipBadge({ relationship }: { relationship: string }) {
   );
 }
 
-export function DraftStatusBadge({ status }: { status: string }) {
-  const className =
-    status === "paid"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-      : status === "failed"
-        ? "border-red-200 bg-red-50 text-red-700"
-        : "border-sky-200 bg-sky-50 text-sky-700";
-  const label =
-    status === "paid"
-      ? "Оплачен"
-      : status === "failed"
-        ? "Ошибка"
-        : status === "updated"
-          ? "Обновлён"
-          : "Создан";
-  return <Badge className={className}>{label}</Badge>;
-}
-
 export function MetricCard({ label, value, accent }: { label: string; value: string; accent?: "danger" | "info" }) {
   return (
     <div className="rounded-md bg-muted/50 p-4">

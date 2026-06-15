@@ -16,10 +16,12 @@ from app.db.session import AsyncSessionLocal
 from app.models import (
     Account,
     BankOperation,
+    CounterpartyPaymentDraft,
     OwnAccountsRegistry,
     ReconciliationCase,
     Wallet,
 )
+from app.services.bank_payment_status import apply_payment_status
 from app.services.banking.base import AccountMeta, NormalizedBankOperation, clean_digits
 from app.services.banking.classifier import (
     create_or_update_reconciliation_case,
@@ -53,6 +55,60 @@ SUPPORTED_BANK_PROVIDERS = ("sber", "tbank")
 async def poll_banks() -> None:
     for provider in _bank_sync_providers():
         await run_bank_sync_job(provider=provider)
+
+
+@scheduler.scheduled_job(
+    "interval",
+    minutes=10,
+    id="poll_payment_statuses",
+    max_instances=1,
+    coalesce=True,
+)
+async def poll_payment_statuses() -> None:
+    """Фоновый добор статуса исходящих платежей (замена ручного мэчинга): опрашиваем банк по
+    отправленным черновикам и гасим накладные, когда платёж исполнен."""
+    async with AsyncSessionLocal() as session:
+        await run_payment_status_poll(session)
+
+
+async def run_payment_status_poll(
+    session: AsyncSession, *, client: TbankClient | None = None
+) -> dict[str, int]:
+    """Опросить статус по всем «отправленным в банк» черновикам и применить его. Вынесено из
+    джоба для тестируемости (можно передать фейковый клиент)."""
+    client = client or TbankClient(session)
+    drafts = (
+        await session.scalars(
+            select(CounterpartyPaymentDraft).where(
+                CounterpartyPaymentDraft.status.in_(("created", "updated")),
+                CounterpartyPaymentDraft.provider_ref.is_not(None),
+            )
+        )
+    ).all()
+    result = {"checked": 0, "paid": 0, "failed": 0, "errors": 0}
+    for draft in drafts:
+        try:
+            raw = await client.get_payment_status(draft.provider_ref or "")
+        except BankCredentialsError:
+            # Токен один на все платежи — дальше опрашивать бессмысленно; уже применённое
+            # коммитим (как делает run_bank_sync_job), джоб не падает наружу.
+            logger.warning("payment-status poll: credentials error, прерываю опрос", exc_info=True)
+            result["errors"] += 1
+            break
+        except Exception:  # noqa: BLE001 - сетевая/банк-ошибка одного платежа не валит весь проход
+            logger.warning("payment-status poll: ошибка по черновику %s", draft.id, exc_info=True)
+            result["errors"] += 1
+            continue
+        result["checked"] += 1
+        if raw is None:
+            continue
+        status = await apply_payment_status(session, draft=draft, raw_status=raw, commit=False)
+        if status == "paid":
+            result["paid"] += 1
+        elif status == "failed":
+            result["failed"] += 1
+    await session.commit()
+    return result
 
 
 @scheduler.scheduled_job(

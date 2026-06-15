@@ -65,7 +65,7 @@ const routes: AppRoute[] = [
     path: "/counterparties",
     children: [
       { path: "", render: ({ navigate }) => <Redirect to="/warehouse/invoices" navigate={navigate} /> },
-      { path: "drafts", render: ({ navigate }) => <Redirect to="/warehouse/drafts" navigate={navigate} /> },
+      { path: "drafts", render: ({ navigate }) => <Redirect to="/warehouse/invoices" navigate={navigate} /> },
       {
         path: "registry",
         render: ({ navigate }) => <Redirect to="/warehouse/registry" navigate={navigate} />,
@@ -89,7 +89,7 @@ const routes: AppRoute[] = [
       },
       {
         path: "drafts",
-        render: ({ navigate }) => <WarehouseInvoicesRoute activeTab="drafts" onNavigate={navigate} />,
+        render: ({ navigate }) => <Redirect to="/warehouse/invoices" navigate={navigate} />,
       },
       {
         path: "registry",

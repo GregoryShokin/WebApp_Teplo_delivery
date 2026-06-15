@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     # (POST /api/v1/payment/create), not the mTLS host-to-host endpoint.
     tbank_payment_base_url: str = "https://business.tbank.ru/openapi"
     tbank_api_timeout_seconds: float = 90
+    # Webhook «Статус платежа» T-Банка (входящие POST банк→мы). Токен сверяется с заголовком
+    # Authorization: Bearer; список IP (CSV) — опциональный whitelist 6 IP банка. Пусто =
+    # проверка отключена (dev). Заявка на подключение — письмом на openapi@tbank.ru.
+    tbank_webhook_token: str | None = None
+    tbank_webhook_allowed_ips: str = ""
 
     @model_validator(mode="after")
     def validate_production_settings(self) -> Settings:
@@ -81,6 +86,10 @@ class Settings(BaseSettings):
             errors.append("AUTH_COOKIE_SECURE must be true in production")
         if self.teplo_bank_client_mode != "live":
             errors.append("TEPLO_BANK_CLIENT_MODE must be live in production")
+        # Webhook «Статус платежа» мутирует финучёт (гасит/откатывает накладные). Токен —
+        # основная защита (IP по XFF за прокси ненадёжен), поэтому в проде он обязателен.
+        if _looks_like_placeholder(self.tbank_webhook_token):
+            errors.append("TBANK_WEBHOOK_TOKEN must be set in production")
         if errors:
             raise ValueError("; ".join(errors))
         return self

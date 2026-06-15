@@ -108,7 +108,10 @@ def _payment_purpose(
 
 
 def _safe_status(status: str | None) -> str:
-    return status if status in DRAFT_STATUSES else "created"
+    # Свежесозданный черновик может быть только created/updated. Терминальные paid/failed
+    # выставляются ИСКЛЮЧИТЕЛЬНО через apply_payment_status — иначе платёж минует гашение/откат
+    # и навсегда выпадет из polling (фильтр status in created,updated).
+    return status if status in ("created", "updated") else "created"
 
 
 async def create_payment_draft_for_invoices(

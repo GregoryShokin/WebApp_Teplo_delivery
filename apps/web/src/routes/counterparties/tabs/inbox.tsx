@@ -216,7 +216,7 @@ export function InboxTab({
       header: "Статус",
       cell: (invoice) =>
         invoice.draft_id ? (
-          <Badge className="border-sky-200 bg-sky-50 text-sky-700">В банке</Badge>
+          <Badge className="border-sky-200 bg-sky-50 text-sky-700">Отправлено в банк</Badge>
         ) : (
           <InvoiceStatusBadge
             status={invoice.payment_status}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -9,20 +9,18 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiErrorMessage } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 
-import { getInvoices } from "../counterparties/api";
+import { getInvoices, syncInvoices } from "../counterparties/api";
 import { CounterpartyCard } from "../counterparties/CounterpartyCard";
 import { MetricCard, formatRub, isOverdue } from "../counterparties/shared";
-import { DraftsTab } from "../counterparties/tabs/drafts";
 import { InboxTab } from "../counterparties/tabs/inbox";
 import { RegistryTab } from "../counterparties/tabs/registry";
 import { syncProducts } from "./api";
 
-export type WarehouseTab = "normal" | "barter" | "drafts" | "registry";
+export type WarehouseTab = "normal" | "barter" | "registry";
 
 const WAREHOUSE_TABS: Array<{ value: WarehouseTab; label: string; path: string }> = [
   { value: "normal", label: "Обычные накладные", path: "/warehouse/invoices" },
   { value: "barter", label: "Бартер", path: "/warehouse/barter" },
-  { value: "drafts", label: "Черновики и мэчинг", path: "/warehouse/drafts" },
   { value: "registry", label: "Контрагенты", path: "/warehouse/registry" },
 ];
 
@@ -54,10 +52,21 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate }: Props) {
     .filter((item) => item.draft_id)
     .reduce((sum, item) => sum + item.remaining, 0);
 
+  const queryClient = useQueryClient();
   const syncMutation = useMutation({
     mutationFn: syncProducts,
     onSuccess: (r) => toast.success(`Номенклатура обновлена: ${r.goods_count} товаров (GOODS)`),
     onError: (e) => toast.error(apiErrorMessage(e, "Не удалось синхронизировать номенклатуру")),
+  });
+  const invoiceSyncMutation = useMutation({
+    mutationFn: syncInvoices,
+    onSuccess: async (r) => {
+      await queryClient.invalidateQueries({ queryKey: ["cp"] });
+      toast.success(
+        `Синхронизация iiko: новых ${r.invoices_created ?? 0}, обновлено ${r.invoices_updated ?? 0}`,
+      );
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, "Синхронизация с iiko не удалась")),
   });
 
   return (
@@ -91,19 +100,34 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate }: Props) {
           </TabsList>
         </Tabs>
         {canOperate ? (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={syncMutation.isPending}
-            onClick={() => syncMutation.mutate()}
-          >
-            {syncMutation.isPending ? (
-              <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
-            ) : (
-              <RefreshCw size={15} aria-hidden="true" />
-            )}
-            Синхронизировать номенклатуру
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={invoiceSyncMutation.isPending}
+              onClick={() => invoiceSyncMutation.mutate()}
+            >
+              {invoiceSyncMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+              ) : (
+                <RefreshCw size={15} aria-hidden="true" />
+              )}
+              Синхронизировать iiko
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={syncMutation.isPending}
+              onClick={() => syncMutation.mutate()}
+            >
+              {syncMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+              ) : (
+                <RefreshCw size={15} aria-hidden="true" />
+              )}
+              Синхронизировать номенклатуру
+            </Button>
+          </div>
         ) : null}
       </div>
 
@@ -112,9 +136,6 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate }: Props) {
       ) : null}
       {activeTab === "barter" ? (
         <InboxTab kind="barter" canOperate={canOperate} onOpenCounterparty={setOpenId} />
-      ) : null}
-      {activeTab === "drafts" ? (
-        <DraftsTab canOperate={canOperate} onOpenCounterparty={setOpenId} />
       ) : null}
       {activeTab === "registry" ? (
         <RegistryTab canOperate={canOperate} canAdmin={canAdmin} onOpenCounterparty={setOpenId} />
