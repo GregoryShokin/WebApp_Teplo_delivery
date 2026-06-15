@@ -353,6 +353,8 @@ export function CreateInvoiceDialog({
 function ReturnForm({ onDone }: { onDone: () => void }) {
   const [loanId, setLoanId] = useState("");
   const [issuedAt, setIssuedAt] = useState("");
+  const [returnKind, setReturnKind] = useState<"goods" | "money">("goods");
+  const [moneyAmount, setMoneyAmount] = useState("");
   const [qtyByLine, setQtyByLine] = useState<Record<string, string>>({});
 
   const loansQuery = useQuery({ queryKey: ["wh", "loans"], queryFn: () => getOpenLoans() });
@@ -370,19 +372,25 @@ function ReturnForm({ onDone }: { onDone: () => void }) {
       return { ...l, raw: qtyByLine[l.id] ?? "", qty, amount: Math.round(qty * l.price * 100) / 100 };
     });
   }, [loan, qtyByLine]);
-  const totalReturn = returnLines.reduce((s, l) => s + l.amount, 0);
+  const money = loan ? Math.min(num(moneyAmount), loan.remaining) : 0;
+  const totalReturn =
+    returnKind === "money" ? money : returnLines.reduce((s, l) => s + l.amount, 0);
 
   const returnMutation = useMutation({
     mutationFn: () =>
       createBarterReturn({
         loan_id: loanId,
         issued_at: issuedAt,
-        returns: returnLines
-          .filter((l) => l.qty > 0)
-          .map((l) => ({ loan_line_item_id: l.id, quantity: l.qty, amount: l.amount })),
+        // Деньгами — одна строка-сумма без товара; товаром — построчно по цене займа.
+        returns:
+          returnKind === "money"
+            ? [{ amount: money }]
+            : returnLines
+                .filter((l) => l.qty > 0)
+                .map((l) => ({ loan_line_item_id: l.id, quantity: l.qty, amount: l.amount })),
       }),
     onSuccess: () => {
-      toast.success("Возврат проведён");
+      toast.success(returnKind === "money" ? "Возврат деньгами проведён" : "Возврат проведён");
       onDone();
     },
     onError: (e) => toast.error(apiErrorMessage(e, "Не удалось провести возврат")),
@@ -426,32 +434,65 @@ function ReturnForm({ onDone }: { onDone: () => void }) {
       </div>
 
       {loan ? (
-        <div className="space-y-2">
-          <div className="grid grid-cols-[1fr_96px_84px_90px] gap-2 px-2 text-xs text-muted-foreground">
-            <span>Товар</span>
-            <span className="text-right">Остаток</span>
-            <span className="text-right">Вернуть</span>
-            <span className="text-right">Сумма</span>
-          </div>
-          {returnLines.map((l) => (
-            <div
-              key={l.id}
-              className="grid grid-cols-[1fr_96px_84px_90px] items-center gap-2 rounded-md border p-2 text-sm"
+        <>
+          <div className="inline-flex w-fit overflow-hidden rounded-md border">
+            <button
+              type="button"
+              className={cn("px-3 py-1 text-xs", returnKind === "goods" && "bg-muted font-medium")}
+              onClick={() => setReturnKind("goods")}
             >
-              <span className="truncate">{l.name}</span>
-              <span className="text-right tabular-nums text-muted-foreground">
-                {l.remaining_qty} {l.unit ?? ""}
-              </span>
+              Товаром
+            </button>
+            <button
+              type="button"
+              className={cn("px-3 py-1 text-xs", returnKind === "money" && "bg-muted font-medium")}
+              onClick={() => setReturnKind("money")}
+            >
+              Деньгами
+            </button>
+          </div>
+
+          {returnKind === "goods" ? (
+            <div className="space-y-2">
+              <div className="grid grid-cols-[1fr_96px_84px_90px] gap-2 px-2 text-xs text-muted-foreground">
+                <span>Товар</span>
+                <span className="text-right">Остаток</span>
+                <span className="text-right">Вернуть</span>
+                <span className="text-right">Сумма</span>
+              </div>
+              {returnLines.map((l) => (
+                <div
+                  key={l.id}
+                  className="grid grid-cols-[1fr_96px_84px_90px] items-center gap-2 rounded-md border p-2 text-sm"
+                >
+                  <span className="truncate">{l.name}</span>
+                  <span className="text-right tabular-nums text-muted-foreground">
+                    {l.remaining_qty} {l.unit ?? ""}
+                  </span>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={l.remaining_qty}
+                    value={l.raw}
+                    onChange={(e) => setQtyByLine((p) => ({ ...p, [l.id]: e.target.value }))}
+                  />
+                  <span className="text-right tabular-nums">{formatRub(l.amount)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-2 sm:max-w-xs">
+              <Label>Сумма возврата деньгами, ₽</Label>
               <Input
                 type="number"
                 min={0}
-                max={l.remaining_qty}
-                value={l.raw}
-                onChange={(e) => setQtyByLine((p) => ({ ...p, [l.id]: e.target.value }))}
+                max={loan.remaining}
+                value={moneyAmount}
+                onChange={(e) => setMoneyAmount(e.target.value)}
               />
-              <span className="text-right tabular-nums">{formatRub(l.amount)}</span>
             </div>
-          ))}
+          )}
+
           <div className="flex items-center justify-between rounded-md bg-muted/50 p-2 text-sm">
             <span>
               К возврату: <span className="font-medium tabular-nums">{formatRub(totalReturn)}</span>
@@ -460,7 +501,7 @@ function ReturnForm({ onDone }: { onDone: () => void }) {
               остаток займа {formatRub(loan.remaining)}
             </span>
           </div>
-        </div>
+        </>
       ) : null}
 
       <DialogFooter>

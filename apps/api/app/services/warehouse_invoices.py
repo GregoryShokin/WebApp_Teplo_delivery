@@ -411,19 +411,30 @@ async def create_barter_return(
     returned_qty = await _loan_line_returned_qty(session, loan_id)
     loan_remaining = _money(loan.amount - returned_total)
 
-    new_total = _money(sum((r.amount for r in items), Decimal("0.00")))
+    # Сумма возврата ТОВАРОМ = кол-во × ИСХОДНАЯ цена займа: товар возвращается на склад
+    # по той же стоимости, по которой ушёл, даже если рыночная цена изменилась. Возврат
+    # ДЕНЬГАМИ (строка без товара) — переданная сумма денег как есть.
+    resolved: list[tuple[InvoiceLineItem | None, Decimal | None, Decimal]] = []
+    for r in items:
+        line = loan_lines.get(r.loan_line_item_id) if r.loan_line_item_id else None
+        if line is not None:
+            if r.quantity is None:
+                raise WarehouseInvoiceError(f"Укажите количество для «{line.name}»")
+            qty = _qty(r.quantity)
+            already = returned_qty.get(line.id, Decimal("0"))
+            if _qty(already + qty) > _qty(line.quantity):
+                raise WarehouseInvoiceError(f"Возврат по «{line.name}» превышает остаток")
+            resolved.append((line, qty, _money(qty * line.price)))
+        else:
+            resolved.append((None, None, _money(r.amount)))
+
+    new_total = _money(sum((amt for _, _, amt in resolved), Decimal("0.00")))
+    if new_total <= 0:
+        raise WarehouseInvoiceError("Сумма возврата должна быть больше нуля")
     if new_total > loan_remaining:
         raise WarehouseInvoiceError(
             f"Возврат {new_total} превышает остаток займа {loan_remaining}"
         )
-    for r in items:
-        if r.loan_line_item_id is not None and r.quantity is not None:
-            line = loan_lines.get(r.loan_line_item_id)
-            if line is None:
-                raise WarehouseInvoiceError("Строка займа не найдена")
-            already = returned_qty.get(r.loan_line_item_id, Decimal("0"))
-            if _qty(already + r.quantity) > _qty(line.quantity):
-                raise WarehouseInvoiceError(f"Возврат по «{line.name}» превышает остаток")
 
     ret = SupplierInvoice(
         counterparty_id=loan.counterparty_id,
@@ -442,16 +453,14 @@ async def create_barter_return(
     await session.flush()
 
     mirror: list[dict[str, Any]] = []
-    for idx, r in enumerate(items):
-        line = loan_lines.get(r.loan_line_item_id) if r.loan_line_item_id else None
-        qty = _qty(r.quantity) if r.quantity is not None else None
+    for idx, (line, qty, amount) in enumerate(resolved):
         session.add(
             BarterReturnLine(
                 return_invoice_id=ret.id,
                 loan_invoice_id=loan.id,
-                loan_line_item_id=r.loan_line_item_id,
+                loan_line_item_id=line.id if line else None,
                 quantity=qty,
-                amount=_money(r.amount),
+                amount=amount,
                 created_by_user_id=actor_user_id,
             )
         )
@@ -466,7 +475,7 @@ async def create_barter_return(
                     unit=line.unit,
                     quantity=qty if qty is not None else Decimal("0"),
                     price=line.price,
-                    sum=_money(r.amount),
+                    sum=amount,
                     sort_order=idx,
                 )
             )
@@ -476,7 +485,7 @@ async def create_barter_return(
                     "article": line.article,
                     "name": line.name,
                     "quantity": str(qty if qty is not None else 0),
-                    "amount": str(_money(r.amount)),
+                    "amount": str(amount),
                 }
             )
     ret.line_items = mirror
