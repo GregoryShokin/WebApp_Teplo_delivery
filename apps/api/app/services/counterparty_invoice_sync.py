@@ -22,7 +22,7 @@ from pathlib import Path
 from types import ModuleType
 
 import anyio
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -41,6 +41,10 @@ from app.services.counterparty_registry import compute_invoice_due_date
 from app.services.iiko_sync import _load_source_credential_env
 
 IIKO_SOURCE = "iiko"
+# Invoices we create in our system and push INTO iiko keep source='manual' but get an
+# external_id assigned from the iiko response (warehouse_invoice_push). The reverse sync
+# must recognise them by that external_id and NOT re-create an iiko-sourced clone.
+MANUAL_SOURCE = "manual"
 SUPPLIERS_ENDPOINT = "/suppliers"
 INVOICE_ENDPOINT = "/documents/export/incomingInvoice"
 # Outgoing invoices = goods we ship out (our AR). In this business only barter
@@ -76,6 +80,10 @@ class CounterpartyInvoiceSyncResult:
     skipped_no_id: int = 0
     skipped_unknown_supplier: int = 0
     skipped_zero_amount: int = 0
+    # Documents that are our own manually-created invoices already pushed into iiko —
+    # matched by external_id to an existing source='manual' record, so we skip them
+    # instead of creating an iiko-sourced duplicate.
+    skipped_own_pushed: int = 0
 
     def as_dict(self) -> dict[str, int]:
         return asdict(self)
@@ -379,6 +387,29 @@ async def _ingest_documents(
         external_id = _text(doc, "id")
         if not external_id:
             result.skipped_no_id += 1
+            continue
+        # Our own invoice pushed into iiko (source='manual'): skip so the reverse sync doesn't
+        # clone it as a second iiko obligation or clobber our fields (issued_at, staff_amount,
+        # push_doc_id, normalized lines). Primary key is external_id (= the iiko doc id). But if
+        # the post-push id lookup failed (replica lag / export error), external_id is still NULL
+        # — fall back to matching the manual row by documentNumber and BACKFILL external_id, so
+        # this branch (and all future syncs) dedupe correctly instead of creating a clone.
+        own_number = _text(doc, "documentNumber") or _text(doc, "transportInvoiceNumber")
+        own_conditions = [SupplierInvoice.external_id == external_id]
+        if own_number:
+            own_conditions.append(
+                and_(SupplierInvoice.external_id.is_(None), SupplierInvoice.number == own_number)
+            )
+        own_pushed = await session.scalar(
+            select(SupplierInvoice).where(
+                SupplierInvoice.source == MANUAL_SOURCE,
+                or_(*own_conditions),
+            )
+        )
+        if own_pushed is not None:
+            if own_pushed.external_id is None:
+                own_pushed.external_id = external_id
+            result.skipped_own_pushed += 1
             continue
         supplier_guid = _text(doc, counterparty_field)
         supplier = suppliers.get(supplier_guid) if supplier_guid else None

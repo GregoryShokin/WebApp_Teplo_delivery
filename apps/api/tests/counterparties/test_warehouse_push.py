@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.models import InvoiceLineItem, SupplierInvoice
 from app.services.warehouse_invoice_push import (
     PushLine,
+    _parse_push_result,
     build_invoice_xml,
     prepare_push,
 )
@@ -33,7 +34,10 @@ def test_build_xml_incoming_payable() -> None:
         date_incoming="2026-06-15T14:30:00",
         store_guid="ST-1",
         lines=[
-            PushLine("P1", "2", "500", "1000", num=1, unit_guid="U1", vat_percent="20", vat_sum="166.67")
+            PushLine(
+                "P1", "2", "500", "1000", num=1, unit_guid="U1",
+                vat_percent="20", vat_sum="166.67",
+            )
         ],
     )
     assert xml.startswith("<document>")  # single document, NOT the list wrapper
@@ -64,6 +68,40 @@ def test_build_xml_outgoing_receivable() -> None:
     assert "<outgoingInvoiceDtoes>" not in xml
     assert "<counteragentId>CA-1</counteragentId>" in xml
     assert "<vatPercent>" not in xml  # no VAT given → tag omitted
+
+
+def test_parse_push_result_rejected_on_http_200() -> None:
+    """iiko returns HTTP 200 with <valid>false</valid> when it rejects the document
+    (e.g. re-pushing a PROCESSED number). Captured from a real iiko reply."""
+    body = (
+        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        b"<documentValidationResult><valid>false</valid><warning>false</warning>"
+        b"<documentNumber>TESTPUSH-1</documentNumber>"
+        b"<errorMessage>Changing processed or deleted document is not allowed: "
+        b"existing #TESTPUSH-1 of 15.06.2026 16:06 is in status PROCESSED</errorMessage>"
+        b"</documentValidationResult>"
+    )
+    res = _parse_push_result(body)
+    assert res.valid is False
+    assert res.error is not None and "not allowed" in res.error
+    assert res.doc_number == "TESTPUSH-1"
+
+
+def test_parse_push_result_accepted() -> None:
+    body = (
+        b"<documentValidationResult><valid>true</valid><warning>false</warning>"
+        b"<documentNumber>W-1</documentNumber></documentValidationResult>"
+    )
+    res = _parse_push_result(body)
+    assert res.valid is True
+    assert res.error is None
+    assert res.doc_number == "W-1"
+
+
+def test_parse_push_result_unparseable_is_failure() -> None:
+    res = _parse_push_result(b"<<not xml")
+    assert res.valid is False
+    assert res.error is not None
 
 
 async def _invoice_with_lines(

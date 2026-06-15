@@ -12,6 +12,7 @@ from cp_helpers import (
     add_routing_rule,
     invoices_xml,
     make_counterparty,
+    make_invoice,
     outgoing_invoices_xml,
     suppliers_xml,
 )
@@ -298,6 +299,75 @@ async def test_ingest_outgoing_creates_receivable_and_marks_barter(
             )
         )
         assert profile.relationship == "barter"
+
+
+async def test_reverse_sync_skips_our_own_pushed_manual_invoice(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A manually-created warehouse invoice pushed into iiko keeps ``source='manual'`` but
+    gets an ``external_id`` from the iiko response. The reverse incoming-invoice sync must
+    recognise it by that external_id and skip it — not create a second iiko-sourced clone
+    that would re-appear unpaid in the inbox and double-count the obligation."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Наш поставщик", inn="7708888888")
+        await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="232.00",
+            number="СЧ-OUR-1",
+            source="manual",
+            external_id="doc-1",  # = iiko doc id assigned on push
+            payment_status="paid",
+        )
+        await session.commit()
+
+        # iiko re-exports the same document (id="doc-1") on the next reverse sync run.
+        result = await ingest_iiko_payables(
+            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([_doc()])
+        )
+        await session.commit()
+
+        assert result.skipped_own_pushed == 1
+        assert result.invoices_created == 0
+        assert result.counterparties_created == 0  # no phantom supplier for our own doc
+        # Still exactly one invoice — our manual one — with payment state untouched.
+        assert await _count(session, SupplierInvoice) == 1
+        only = await session.scalar(select(SupplierInvoice))
+        assert only.source == "manual"
+        assert only.payment_status == "paid"
+
+
+async def test_reverse_sync_dedupes_pushed_manual_by_number_when_external_id_null(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """If the post-push id lookup failed (external_id still NULL), the reverse sync must still
+    recognise our pushed manual invoice by documentNumber, skip it, and backfill external_id —
+    otherwise it would clone the document as a second unpaid obligation."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Наш поставщик", inn="7707777777")
+        await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="232.00",
+            number="СЧ-001",  # = documentNumber iiko echoes back in _doc()
+            source="manual",
+            external_id=None,  # id lookup failed on push
+            payment_status="paid",
+        )
+        await session.commit()
+
+        result = await ingest_iiko_payables(
+            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([_doc()])
+        )
+        await session.commit()
+
+        assert result.skipped_own_pushed == 1
+        assert result.invoices_created == 0
+        assert await _count(session, SupplierInvoice) == 1
+        only = await session.scalar(select(SupplierInvoice))
+        assert only.source == "manual"
+        assert only.external_id == "doc-1"  # backfilled from the iiko document id
+        assert only.payment_status == "paid"
 
 
 async def test_ingest_outgoing_is_idempotent(

@@ -7,17 +7,22 @@ omitted from the pushed document (they are a separate cash-flow, not iiko stock)
 partner GUID comes from ``CounterpartyAlias`` (source=iiko); the store GUID from the
 invoice or the ``iiko.default_store_guid`` setting (Бар Черникова).
 
-The same client-generated ``<id>`` is reused on retry (kept in ``raw_payload.push_doc_id``)
-so a re-push overwrites rather than duplicates. The actual send is an explicit action —
-auto-push on create is intentionally NOT enabled until the live behaviour is verified on
-prod (creating a real iiko document is irreversible).
+iiko keys a document by its ``documentNumber`` (it ignores the client ``<id>`` we send and
+assigns its own), and the import response is a ``<documentValidationResult>`` (HTTP 200 even
+on a logical failure) that does NOT carry the new document id. So: we treat ``valid=false``
+as a failure, and after a valid import we read the real iiko id back via an ``export`` lookup
+by ``documentNumber`` and store it in ``external_id`` (the reverse sync dedupes on it). A
+re-push of an already-PROCESSED number is rejected by iiko (``valid=false``) — that IS the
+dup guard. The actual send is an explicit action — auto-push on create is intentionally NOT
+enabled (creating a real iiko document is irreversible).
 """
 
 from __future__ import annotations
 
 import uuid
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import UTC, datetime, time
+from datetime import UTC, date, datetime, time
 from typing import Any
 from xml.sax.saxutils import escape
 
@@ -38,6 +43,8 @@ STORE_SETTING_KEY = "iiko.default_store_guid"
 IIKO_SOURCE = "iiko"
 INCOMING_ENDPOINT = "/documents/import/incomingInvoice"
 OUTGOING_ENDPOINT = "/documents/import/outgoingInvoice"
+EXPORT_INCOMING_ENDPOINT = "/documents/export/incomingInvoice"
+EXPORT_OUTGOING_ENDPOINT = "/documents/export/outgoingInvoice"
 
 
 class WarehousePushError(RuntimeError):
@@ -61,6 +68,20 @@ class PreparedPush:
     xml: str | None
     doc_id: str
     skip_reason: str | None = None
+    partner_guid: str | None = None
+    doc_number: str | None = None
+    doc_date: date | None = None
+
+
+@dataclass
+class PushResult:
+    """Parsed ``<documentValidationResult>`` — iiko's import reply (HTTP 200 even when
+    rejected). ``valid=false`` means the document was NOT accepted (e.g. duplicate number
+    on a PROCESSED doc)."""
+
+    valid: bool
+    error: str | None = None
+    doc_number: str | None = None
 
 
 def _el(tag: str, value: Any) -> str:
@@ -195,7 +216,13 @@ async def prepare_push(session: AsyncSession, invoice: SupplierInvoice) -> Prepa
         store_guid=store_guid,
         lines=lines,
     )
-    return PreparedPush(xml, doc_id)
+    return PreparedPush(
+        xml,
+        doc_id,
+        partner_guid=partner_guid,
+        doc_number=invoice.number or "",
+        doc_date=dt.date(),
+    )
 
 
 def _send_to_iiko(direction: str, xml: str) -> tuple[int, bytes]:
@@ -207,17 +234,48 @@ def _send_to_iiko(direction: str, xml: str) -> tuple[int, bytes]:
     return client.request(endpoint, method="POST", raw_body=xml, content_type="application/xml")
 
 
-def _parse_document_id(body: bytes) -> str | None:
+def _parse_push_result(body: bytes) -> PushResult:
+    """Parse iiko's ``<documentValidationResult>`` import reply. iiko returns HTTP 200 even
+    when it rejects the document, so ``<valid>`` is the real success flag; the new document
+    id is NOT in the reply (we read it back via export)."""
     try:
-        import xml.etree.ElementTree as ET
+        root = ET.fromstring(body)
+    except ET.ParseError:
+        return PushResult(False, error="Не удалось разобрать ответ iiko")
+    valid = (root.findtext(".//valid") or "").strip().lower() == "true"
+    error = (root.findtext(".//errorMessage") or "").strip() or None
+    number = (root.findtext(".//documentNumber") or "").strip() or None
+    return PushResult(valid, error=error, doc_number=number)
 
+
+def _fetch_iiko_doc_id(
+    direction: str, *, doc_number: str, partner_guid: str, day: date
+) -> str | None:
+    """iiko's import reply has no document id, so after a valid import we read it back: export
+    the day's documents and match by ``documentNumber`` + counterparty (iiko's own dedupe key).
+    Returns the iiko-assigned id (≠ the client ``<id>`` we sent)."""
+    if not doc_number:
+        return None
+    inventory = _load_inventory_module()
+    inventory.load_local_env()
+    client = inventory.IikoClient()
+    endpoint = EXPORT_INCOMING_ENDPOINT if direction == "payable" else EXPORT_OUTGOING_ENDPOINT
+    field = "supplier" if direction == "payable" else "counteragentId"
+    iso = day.isoformat()
+    status, body = client.request(endpoint, params={"from": iso, "to": iso})
+    if status >= 400:
+        return None
+    try:
         root = ET.fromstring(body)
     except ET.ParseError:
         return None
-    for tag in ("id", "documentId"):
-        node = root.find(f".//{tag}")
-        if node is not None and node.text:
-            return node.text.strip()
+    for doc in root.findall(".//document"):
+        if (doc.findtext("documentNumber") or "").strip() != doc_number:
+            continue
+        if partner_guid and (doc.findtext(field) or "").strip() != partner_guid:
+            continue
+        doc_id = (doc.findtext("id") or "").strip()
+        return doc_id or None
     return None
 
 
@@ -255,7 +313,45 @@ async def push_invoice_to_iiko(session: AsyncSession, invoice_id: uuid.UUID) -> 
         await session.commit()
         return invoice
 
-    invoice.external_id = _parse_document_id(body) or invoice.external_id
+    async def _resolve_id() -> str | None:
+        """Read the iiko-assigned doc id back via export (the import reply has none)."""
+        if prepared.doc_date is None:
+            return None
+        try:
+            return await anyio.to_thread.run_sync(
+                lambda: _fetch_iiko_doc_id(
+                    invoice.direction,
+                    doc_number=prepared.doc_number or invoice.number or "",
+                    partner_guid=prepared.partner_guid or "",
+                    day=prepared.doc_date,
+                )
+            )
+        except Exception:  # noqa: BLE001 - id lookup is best-effort, push already succeeded
+            return None
+
+    # iiko replies HTTP 200 with <documentValidationResult> even when it rejects the doc.
+    result = _parse_push_result(body)
+    if not result.valid:
+        # A re-push of a doc iiko already has as PROCESSED is rejected — but that means the
+        # document IS there, so it's an idempotent no-op, not a failure: resolve its id and mark
+        # pushed instead of leaving the invoice stuck in failed.
+        err = result.error or ""
+        if "processed" in err.lower() or "deleted document" in err.lower():
+            existing_id = await _resolve_id()
+            if existing_id:
+                invoice.external_id = existing_id
+                invoice.iiko_push_status = "pushed"
+                invoice.iiko_pushed_at = datetime.now(UTC)
+                invoice.iiko_push_error = None
+                await session.commit()
+                return invoice
+        invoice.iiko_push_status = "failed"
+        invoice.iiko_push_error = (err or "iiko отклонил документ (valid=false)")[:500]
+        await session.commit()
+        return invoice
+
+    # Accepted. The reply carries no id — read the real iiko id back via export by number.
+    invoice.external_id = await _resolve_id() or invoice.external_id
     invoice.iiko_push_status = "pushed"
     invoice.iiko_pushed_at = datetime.now(UTC)
     invoice.iiko_push_error = None
