@@ -11,11 +11,13 @@ from the bank ``receiver`` block. Identity is never auto-committed: amount colli
 
 from __future__ import annotations
 
+import math
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +38,16 @@ from app.services.counterparty_matching import (
 
 # Acquirer / bank own INNs whose payments are card operations, not real payees.
 BANK_NOISE_INNS = frozenset({"7710140679"})
+
+# Warehouse invoice ↔ bank time-match defaults (issued_at receipt time ↔ posted_at).
+# Owner's rule: amount may be fuzzy (±10%) ONLY when the time is tight, so a fuzzy-amount
+# candidate is "confident" only inside the tight window. All three are overridable per call
+# (and surfaced as settings). The fallback date (when posted_at is NULL) is taken in the
+# business TZ so an evening receipt doesn't slip to the next calendar day.
+WAREHOUSE_AMOUNT_TOLERANCE_PCT = Decimal("10")
+WAREHOUSE_WINDOW_HOURS = 48
+WAREHOUSE_TIGHT_WINDOW_MINUTES = 120
+BUSINESS_TZ = ZoneInfo("Europe/Moscow")
 
 
 def _money(value: Any) -> Decimal:
@@ -163,6 +175,222 @@ async def suggest_invoice_matches(
     return suggestions
 
 
+# --- warehouse time-match (issued_at ↔ posted_at) ----------------------------
+#
+# A separate matcher from ``suggest_invoice_matches`` (which matches an EXACT amount and
+# ignores the date). Here a warehouse invoice carries a receipt timestamp (``issued_at``)
+# and we rank T-Bank outgoing operations by how close ``posted_at`` is and how close the
+# amount is, per the owner's rule (±10% amount allowed only when the time is tight).
+
+
+@dataclass
+class TimeMatchCandidate:
+    bank_operation_id: uuid.UUID
+    operation_date: date
+    posted_at: datetime | None
+    amount: Decimal
+    official_name: str | None
+    inn: str | None
+    requisites: dict[str, Any]
+    tier: int  # 1 tight-time+exact-amount … 4 fallback by operation_date (posted_at NULL)
+    minutes_delta: int | None  # |posted_at − issued_at| in minutes, None on date fallback
+
+
+@dataclass
+class TimeMatchSuggestion:
+    invoice_id: uuid.UUID
+    invoice_number: str | None
+    invoice_amount: Decimal
+    remaining: Decimal
+    issued_at: datetime | None
+    counterparty_id: uuid.UUID
+    counterparty_name: str
+    counterparty_has_inn: bool
+    candidates: list[TimeMatchCandidate] = field(default_factory=list)
+    confident: bool = False
+
+
+def _as_utc(value: datetime) -> datetime:
+    """Make a datetime tz-aware (assume UTC if naive) and normalise to UTC for deltas."""
+    aware = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    return aware.astimezone(UTC)
+
+
+async def suggest_invoice_matches_by_time(
+    session: AsyncSession,
+    *,
+    invoice_id: uuid.UUID,
+    window_hours: int | None = None,
+    amount_tolerance_pct: Decimal | float | None = None,
+    tight_window_minutes: int | None = None,
+) -> TimeMatchSuggestion | None:
+    """Rank T-Bank outgoing operations against one warehouse invoice by receipt time +
+    amount. Returns ``None`` if the invoice can't be time-matched (not a plain payable, or
+    barter, or already paid). Confirmation is a separate step (``confirm_invoice_match``)."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        return None
+    # Only plain payables match outgoing payments; barter loans are settled in goods, AR is
+    # money owed to us, void/paid have nothing to match.
+    if (
+        invoice.direction != "payable"
+        or invoice.barter_role is not None
+        or invoice.payment_status not in ("unpaid", "partially_paid")
+    ):
+        return None
+    counterparty = await session.get(Counterparty, invoice.counterparty_id)
+
+    window_hours = window_hours if window_hours is not None else WAREHOUSE_WINDOW_HOURS
+    tight_minutes = (
+        tight_window_minutes if tight_window_minutes is not None else WAREHOUSE_TIGHT_WINDOW_MINUTES
+    )
+    tol_pct = (
+        Decimal(str(amount_tolerance_pct))
+        if amount_tolerance_pct is not None
+        else WAREHOUSE_AMOUNT_TOLERANCE_PCT
+    )
+
+    remaining = _money(invoice.amount) - await _allocated_amount(session, invoice.id)
+    suggestion = TimeMatchSuggestion(
+        invoice_id=invoice.id,
+        invoice_number=invoice.number,
+        invoice_amount=_money(invoice.amount),
+        remaining=remaining,
+        issued_at=invoice.issued_at,
+        counterparty_id=invoice.counterparty_id,
+        counterparty_name=counterparty.name if counterparty else "—",
+        counterparty_has_inn=bool(counterparty and counterparty.inn),
+    )
+    if remaining <= 0 or invoice.issued_at is None:
+        return suggestion
+
+    tol_abs = _money(remaining * tol_pct / Decimal("100"))
+    low, high = _money(remaining - tol_abs), _money(remaining + tol_abs)
+    issued_utc = _as_utc(invoice.issued_at)
+    issued_date = invoice.issued_at.astimezone(BUSINESS_TZ).date()
+    # operation_date is always present; narrow the SQL scan by it (± window in days + slack).
+    day_slack = math.ceil(window_hours / 24) + 1
+    day_lo = issued_date - timedelta(days=day_slack)
+    day_hi = issued_date + timedelta(days=day_slack)
+
+    operations = (
+        (
+            await session.execute(
+                select(BankOperation).where(
+                    BankOperation.provider == "tbank",
+                    BankOperation.direction == "out",
+                    BankOperation.transfer_group_id.is_(None),  # exclude internal transfers
+                    BankOperation.amount >= low,
+                    BankOperation.amount <= high,
+                    BankOperation.operation_date >= day_lo,
+                    BankOperation.operation_date <= day_hi,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    candidates: list[TimeMatchCandidate] = []
+    for operation in operations:
+        if _is_card_noise(operation):
+            continue
+        if await _op_already_allocated(session, operation.id):
+            continue
+        requisites = _payee_requisites(operation)
+        payee_inn = requisites.get("inn")
+        if counterparty and counterparty.inn and payee_inn and payee_inn != counterparty.inn:
+            continue
+        amt = _money(abs(operation.amount))
+        if amt < low or amt > high:  # SQL already bounds this; guard against sign edge
+            continue
+        amount_exact = amt == remaining
+
+        tier: int | None
+        minutes_delta: int | None
+        if operation.posted_at is not None:
+            delta_min = int(
+                abs((_as_utc(operation.posted_at) - issued_utc).total_seconds()) // 60
+            )
+            minutes_delta = delta_min
+            same_day = operation.operation_date == issued_date
+            # When the time is known, the window always applies — a same-day op that is
+            # actually ~12h off must NOT sneak past a tight window (and become confident).
+            if delta_min > window_hours * 60:
+                continue
+            if delta_min <= tight_minutes and amount_exact:
+                tier = 1
+            elif same_day and amount_exact:
+                tier = 2
+            else:
+                tier = 3
+        else:
+            # posted_at unknown → weakest signal: same business date only.
+            if operation.operation_date != issued_date:
+                continue
+            tier, minutes_delta = 4, None
+
+        candidates.append(
+            TimeMatchCandidate(
+                bank_operation_id=operation.id,
+                operation_date=operation.operation_date,
+                posted_at=operation.posted_at,
+                amount=amt,
+                official_name=requisites.get("recipientName"),
+                inn=payee_inn,
+                requisites=requisites,
+                tier=tier,
+                minutes_delta=minutes_delta,
+            )
+        )
+
+    # Best first: lower tier wins; within a tier, the closest time wins.
+    candidates.sort(key=lambda c: (c.tier, c.minutes_delta if c.minutes_delta is not None else 10**9))  # noqa: E501
+    suggestion.candidates = candidates
+    # Confident = exactly one strong candidate (tight/same-day + exact amount). Robust to
+    # empty INNs (manual counterparties often have none), unlike a distinct-INN count.
+    strong = [c for c in candidates if c.tier <= 2]
+    suggestion.confident = len(strong) == 1
+    return suggestion
+
+
+async def _apply_bank_allocation(
+    session: AsyncSession,
+    *,
+    invoice: SupplierInvoice,
+    operation: BankOperation,
+    amount: Decimal,
+    actor_user_id: uuid.UUID | None,
+) -> None:
+    """Add one bank allocation to the invoice WITHOUT committing — the commit-less core
+    shared by ``confirm_invoice_match`` and the split orchestrator. The caller validates
+    occupancy/remaining and runs ``_recompute_status`` + commit."""
+    session.add(
+        InvoicePaymentAllocation(
+            invoice_id=invoice.id,
+            source_kind="bank",
+            bank_operation_id=operation.id,
+            amount=_money(amount),
+            created_by_user_id=actor_user_id,
+        )
+    )
+    await session.flush()
+
+
+def assert_bank_matchable(invoice: SupplierInvoice, operation: BankOperation) -> None:
+    """Guard shared by confirm + split: only a plain payable matches an OUTGOING supplier
+    payment. Mirrors the suggestion-layer filters so a crafted POST (bypassing the picker)
+    can't allocate a receivable/barter invoice or a card/internal-transfer/incoming operation."""
+    if invoice.direction != "payable" or invoice.barter_role is not None:
+        raise CounterpartyMatchError("Накладная не поддерживает банковский мэтч")
+    if (
+        operation.direction != "out"
+        or _is_card_noise(operation)
+        or operation.transfer_group_id is not None
+    ):
+        raise CounterpartyMatchError("Операция не является исходящим платежом поставщику")
+
+
 async def confirm_invoice_match(
     session: AsyncSession,
     *,
@@ -177,23 +405,20 @@ async def confirm_invoice_match(
     operation = await session.get(BankOperation, bank_operation_id)
     if operation is None:
         raise CounterpartyMatchError("Банковская операция не найдена")
+    assert_bank_matchable(invoice, operation)
     if await _op_already_allocated(session, operation.id):
         raise CounterpartyMatchError("Эта операция уже использована в сверке")
 
     remaining = _money(invoice.amount) - await _allocated_amount(session, invoice.id)
     if remaining <= 0:
         raise CounterpartyMatchError("Накладная уже оплачена")
-    allocation_amount = min(remaining, _money(abs(operation.amount)))
-    session.add(
-        InvoicePaymentAllocation(
-            invoice_id=invoice.id,
-            source_kind="bank",
-            bank_operation_id=operation.id,
-            amount=allocation_amount,
-            created_by_user_id=actor_user_id,
-        )
+    await _apply_bank_allocation(
+        session,
+        invoice=invoice,
+        operation=operation,
+        amount=min(remaining, _money(abs(operation.amount))),
+        actor_user_id=actor_user_id,
     )
-    await session.flush()
     await _recompute_status(session, invoice)
 
     enriched = False

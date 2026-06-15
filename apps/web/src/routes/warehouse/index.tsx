@@ -108,7 +108,7 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate }: Props) {
       </div>
 
       {activeTab === "normal" ? (
-        <InboxTab kind="normal" canOperate={canOperate} onOpenCounterparty={setOpenId} />
+        <InboxTab kind="normal" splitPay canOperate={canOperate} onOpenCounterparty={setOpenId} />
       ) : null}
       {activeTab === "barter" ? (
         <InboxTab kind="barter" canOperate={canOperate} onOpenCounterparty={setOpenId} />

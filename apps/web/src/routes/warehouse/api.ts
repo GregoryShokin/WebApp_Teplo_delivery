@@ -22,6 +22,9 @@ export type WarehouseInvoiceSummary = {
   invoice_date: string | null;
   amount: number;
   staff_amount: number;
+  production_amount: number;
+  allocated: number;
+  remaining: number;
   payment_status: string;
   iiko_push_status: string;
 };
@@ -38,10 +41,19 @@ export type WarehouseInvoiceLine = {
   is_staff: boolean;
 };
 
+export type InvoiceAllocation = {
+  id: string;
+  source_kind: string;
+  bank_operation_id: string | null;
+  cashflow_transaction_id: string | null;
+  amount: number;
+};
+
 export type WarehouseInvoiceDetail = WarehouseInvoiceSummary & {
   due_date: string | null;
   iiko_push_error: string | null;
   lines: WarehouseInvoiceLine[];
+  allocations: InvoiceAllocation[];
 };
 
 export type LinePayload = {
@@ -168,5 +180,86 @@ export async function createBarterReturn(
   payload: ReturnPayload,
 ): Promise<WarehouseInvoiceDetail> {
   const response = await api.post<WarehouseInvoiceDetail>(`${BASE}/invoices/return`, payload);
+  return response.data;
+}
+
+// --- Phase 4: ДДС-мэтч по дате+времени + сплит-оплата ------------------------
+
+export type MatchCandidate = {
+  bank_operation_id: string;
+  operation_date: string;
+  posted_at: string | null;
+  amount: number;
+  official_name: string | null;
+  inn: string | null;
+  requisites: Record<string, string>;
+  tier: number; // 1 точное время+сумма … 4 фолбэк по дате
+  minutes_delta: number | null;
+};
+
+export type MatchSuggestion = {
+  invoice_id: string;
+  invoice_number: string | null;
+  invoice_amount: number;
+  remaining: number;
+  issued_at: string | null;
+  counterparty_id: string;
+  counterparty_name: string;
+  counterparty_has_inn: boolean;
+  confident: boolean;
+  candidates: MatchCandidate[];
+};
+
+export type BankPartInput = { bank_operation_id: string; amount?: number | null };
+export type CashPartInput = {
+  wallet_id: string;
+  amount: number;
+  operation_date: string;
+  article_id?: string | null;
+  comment?: string | null;
+};
+export type PaySplitPayload = {
+  bank_parts?: BankPartInput[];
+  cash_parts?: CashPartInput[];
+  split_staff?: boolean;
+};
+
+/** Кандидаты банк-операций по дате+времени чека. Возвращает null, если накладная
+ *  не поддерживает сверку (бартер/доходная/оплачена) — бэк отвечает 404. */
+export async function getInvoiceMatchSuggestions(
+  id: string,
+  params?: { window_hours?: number; tolerance_pct?: number; tight_minutes?: number },
+): Promise<MatchSuggestion | null> {
+  try {
+    const response = await api.get<MatchSuggestion>(
+      `${BASE}/invoices/${id}/match-suggestions`,
+      { params },
+    );
+    return response.data;
+  } catch (error) {
+    if ((error as { response?: { status?: number } })?.response?.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function confirmInvoiceMatch(payload: {
+  invoice_id: string;
+  bank_operation_id: string;
+  enrich: boolean;
+}): Promise<{ invoice_id: string; payment_status: string; enriched: boolean }> {
+  const response = await api.post(`${BASE}/match/confirm`, payload);
+  return response.data;
+}
+
+export async function payInvoiceSplit(
+  id: string,
+  payload: PaySplitPayload,
+): Promise<WarehouseInvoiceDetail> {
+  const response = await api.post<WarehouseInvoiceDetail>(
+    `${BASE}/invoices/${id}/pay-split`,
+    payload,
+  );
   return response.data;
 }

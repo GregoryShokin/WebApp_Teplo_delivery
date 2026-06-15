@@ -28,6 +28,7 @@ from app.models import (
     CounterpartyPayableProfile,
     IikoProduct,
     InvoiceLineItem,
+    InvoicePaymentAllocation,
     SupplierInvoice,
 )
 
@@ -204,8 +205,13 @@ async def list_warehouse_invoices(
     counterparty_id: uuid.UUID | None = None,
     has_staff: bool | None = None,
 ) -> list[dict[str, Any]]:
+    allocated_subq = (
+        select(func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0))
+        .where(InvoicePaymentAllocation.invoice_id == SupplierInvoice.id)
+        .scalar_subquery()
+    )
     query = (
-        select(SupplierInvoice, Counterparty.name)
+        select(SupplierInvoice, Counterparty.name, allocated_subq.label("allocated"))
         .join(Counterparty, Counterparty.id == SupplierInvoice.counterparty_id)
         .order_by(
             SupplierInvoice.issued_at.nulls_last(),
@@ -220,10 +226,15 @@ async def list_warehouse_invoices(
         query = query.where(SupplierInvoice.staff_amount > 0)
 
     rows = list(await session.execute(query))
-    return [_invoice_summary(invoice, name) for invoice, name in rows]
+    return [_invoice_summary(invoice, name, allocated) for invoice, name, allocated in rows]
 
 
-def _invoice_summary(invoice: SupplierInvoice, counterparty_name: str) -> dict[str, Any]:
+def _invoice_summary(
+    invoice: SupplierInvoice, counterparty_name: str, allocated: Any = 0
+) -> dict[str, Any]:
+    amount = _money(invoice.amount)
+    staff = _money(invoice.staff_amount)
+    allocated_money = _money(allocated)
     return {
         "id": str(invoice.id),
         "counterparty_id": str(invoice.counterparty_id),
@@ -233,8 +244,11 @@ def _invoice_summary(invoice: SupplierInvoice, counterparty_name: str) -> dict[s
         "number": invoice.number,
         "issued_at": invoice.issued_at.isoformat() if invoice.issued_at else None,
         "invoice_date": invoice.invoice_date.isoformat() if invoice.invoice_date else None,
-        "amount": float(_money(invoice.amount)),
-        "staff_amount": float(_money(invoice.staff_amount)),
+        "amount": float(amount),
+        "staff_amount": float(staff),
+        "production_amount": float(amount - staff),
+        "allocated": float(allocated_money),
+        "remaining": float(amount - allocated_money),
         "payment_status": invoice.payment_status,
         "iiko_push_status": invoice.iiko_push_status,
         "barter_role": invoice.barter_role,
@@ -256,9 +270,29 @@ async def get_warehouse_invoice(
             .order_by(InvoiceLineItem.sort_order)
         )
     ).all()
-    summary = _invoice_summary(invoice, counterparty.name if counterparty else "—")
+    allocations = (
+        await session.scalars(
+            select(InvoicePaymentAllocation)
+            .where(InvoicePaymentAllocation.invoice_id == invoice_id)
+            .order_by(InvoicePaymentAllocation.created_at)
+        )
+    ).all()
+    allocated = sum((_money(a.amount) for a in allocations), Decimal("0.00"))
+    summary = _invoice_summary(invoice, counterparty.name if counterparty else "—", allocated)
     summary["due_date"] = invoice.due_date.isoformat() if invoice.due_date else None
     summary["iiko_push_error"] = invoice.iiko_push_error
+    summary["allocations"] = [
+        {
+            "id": str(a.id),
+            "source_kind": a.source_kind,
+            "bank_operation_id": str(a.bank_operation_id) if a.bank_operation_id else None,
+            "cashflow_transaction_id": (
+                str(a.cashflow_transaction_id) if a.cashflow_transaction_id else None
+            ),
+            "amount": float(_money(a.amount)),
+        }
+        for a in allocations
+    ]
     summary["lines"] = [
         {
             "id": str(line.id),

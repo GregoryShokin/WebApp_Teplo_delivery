@@ -164,6 +164,9 @@ async def make_invoice(
     vat_breakdown: dict[str, Any] | None = None,
     line_items: list[dict[str, Any]] | None = None,
     invoice_date: date | None = None,
+    issued_at: datetime | None = None,
+    staff_amount: Decimal | str | float | None = None,
+    barter_role: str | None = None,
     due_date: date | None = None,
     draft_id: uuid.UUID | None = None,
 ) -> SupplierInvoice:
@@ -174,11 +177,14 @@ async def make_invoice(
         external_id=external_id,
         number=number,
         amount=_money(amount),
+        staff_amount=_money(staff_amount) if staff_amount is not None else Decimal("0.00"),
         vat_total=_money(vat_total),
         vat_breakdown=dict(vat_breakdown or {}),
         line_items=list(line_items or []),
         payment_status=payment_status,
         invoice_date=invoice_date,
+        issued_at=issued_at,
+        barter_role=barter_role,
         due_date=due_date,
         draft_id=draft_id,
     )
@@ -271,12 +277,14 @@ async def make_bank_operation(
     name: str | None = None,
     account: str | None = None,
     operation_date: date | None = None,
+    posted_at: datetime | None = None,
     provider: str = "tbank",
     provider_operation_id: str | None = None,
     receiver: dict[str, Any] | None = None,
     raw_payload: dict[str, Any] | None = None,
     category: str | None = None,
     account_id: uuid.UUID | None = None,
+    transfer_group_id: uuid.UUID | None = None,
     classification_status: str = "pending",
 ) -> BankOperation:
     """An outgoing bank op. ``amount`` stays POSITIVE — sign lives in ``direction``
@@ -291,6 +299,7 @@ async def make_bank_operation(
         provider=provider,
         provider_operation_id=provider_operation_id or f"op-{uuid.uuid4()}",
         operation_date=operation_date or date.today(),
+        posted_at=posted_at,
         direction=direction,
         amount=_money(amount),
         counterparty_name_raw=name,
@@ -298,6 +307,7 @@ async def make_bank_operation(
         counterparty_account_raw=account,
         raw_payload=payload,
         account_id=account_id,
+        transfer_group_id=transfer_group_id,
         classification_status=classification_status,
     )
     session.add(operation)

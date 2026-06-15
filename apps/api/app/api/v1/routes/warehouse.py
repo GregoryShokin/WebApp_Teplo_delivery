@@ -19,7 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
-from app.models import IikoProduct
+from app.models import IikoProduct, SupplierInvoice
+from app.services.counterparty_bank_match import (
+    TimeMatchSuggestion,
+    confirm_invoice_match,
+    suggest_invoice_matches_by_time,
+)
+from app.services.counterparty_matching import CounterpartyMatchError
 from app.services.iiko_product_sync import sync_iiko_products
 from app.services.warehouse_invoice_push import WarehousePushError, push_invoice_to_iiko
 from app.services.warehouse_invoices import (
@@ -33,6 +39,14 @@ from app.services.warehouse_invoices import (
     list_open_loans,
     list_warehouse_invoices,
     next_invoice_number,
+)
+from app.services.warehouse_payments import (
+    BankPart,
+    CashPart,
+    WarehousePaymentError,
+    build_staff_split_cash_parts,
+    pay_invoice_split,
+    resolve_match_params,
 )
 
 router = APIRouter()
@@ -73,6 +87,62 @@ class ReturnCreate(BaseModel):
     issued_at: datetime
     number: str | None = None
     returns: list[ReturnLineCreate] = Field(min_length=1)
+
+
+class MatchConfirmRequest(BaseModel):
+    invoice_id: uuid.UUID
+    bank_operation_id: uuid.UUID
+    enrich: bool = True
+
+
+class BankPartReq(BaseModel):
+    bank_operation_id: uuid.UUID
+    amount: Decimal | None = None
+
+
+class CashPartReq(BaseModel):
+    wallet_id: uuid.UUID
+    amount: Decimal
+    operation_date: date
+    article_id: uuid.UUID | None = None
+    comment: str | None = None
+
+
+class PaySplitRequest(BaseModel):
+    bank_parts: list[BankPartReq] = Field(default_factory=list)
+    cash_parts: list[CashPartReq] = Field(default_factory=list)
+    # split_staff: pay the whole invoice in cash from ONE wallet, booking the «персонал»
+    # part to its own DDS article. Bank parts are not allowed with it (bank lines are
+    # classified as one sum), so the staff split stays cash-only on MVP.
+    split_staff: bool = False
+
+
+def _serialize_time_suggestion(sug: TimeMatchSuggestion) -> dict[str, Any]:
+    return {
+        "invoice_id": str(sug.invoice_id),
+        "invoice_number": sug.invoice_number,
+        "invoice_amount": float(sug.invoice_amount),
+        "remaining": float(sug.remaining),
+        "issued_at": sug.issued_at.isoformat() if sug.issued_at else None,
+        "counterparty_id": str(sug.counterparty_id),
+        "counterparty_name": sug.counterparty_name,
+        "counterparty_has_inn": sug.counterparty_has_inn,
+        "confident": sug.confident,
+        "candidates": [
+            {
+                "bank_operation_id": str(c.bank_operation_id),
+                "operation_date": c.operation_date.isoformat(),
+                "posted_at": c.posted_at.isoformat() if c.posted_at else None,
+                "amount": float(c.amount),
+                "official_name": c.official_name,
+                "inn": c.inn,
+                "requisites": c.requisites,
+                "tier": c.tier,
+                "minutes_delta": c.minutes_delta,
+            }
+            for c in sug.candidates
+        ],
+    }
 
 
 @router.get("/products", dependencies=READ)
@@ -221,6 +291,121 @@ async def get_invoice(
     if invoice is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
     return invoice
+
+
+@router.get("/invoices/{invoice_id}/match-suggestions", dependencies=READ)
+async def get_match_suggestions(
+    invoice_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    window_hours: int | None = None,
+    tolerance_pct: float | None = None,
+    tight_minutes: int | None = None,
+) -> dict[str, Any]:
+    """Кандидаты банк-операций по дате+времени чека (issued_at ↔ posted_at)."""
+    window, tol, tight = await resolve_match_params(
+        session,
+        window_hours=window_hours,
+        amount_tolerance_pct=tolerance_pct,
+        tight_window_minutes=tight_minutes,
+    )
+    sug = await suggest_invoice_matches_by_time(
+        session,
+        invoice_id=invoice_id,
+        window_hours=window,
+        amount_tolerance_pct=tol,
+        tight_window_minutes=tight,
+    )
+    if sug is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Накладная не поддерживает сверку с банком",
+        )
+    return _serialize_time_suggestion(sug)
+
+
+@router.post("/match/confirm", dependencies=OPERATE)
+async def post_match_confirm(
+    payload: MatchConfirmRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    """Подтвердить мэтч накладной с банк-операцией (переиспользует общий банк-мэтч)."""
+    try:
+        return await confirm_invoice_match(
+            session,
+            invoice_id=payload.invoice_id,
+            bank_operation_id=payload.bank_operation_id,
+            enrich=payload.enrich,
+            actor_user_id=actor.user_id,
+        )
+    except CounterpartyMatchError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post("/invoices/{invoice_id}/pay-split", dependencies=OPERATE)
+async def post_pay_split(
+    invoice_id: uuid.UUID,
+    payload: PaySplitRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    """Оплатить накладную из нескольких источников (банк + касса) одной транзакцией.
+    При ``split_staff`` оплата налом из одного кошелька разносится на производство/персонал."""
+    bank_parts = [
+        BankPart(bank_operation_id=b.bank_operation_id, amount=b.amount) for b in payload.bank_parts
+    ]
+    cash_parts = [
+        CashPart(
+            wallet_id=c.wallet_id,
+            amount=c.amount,
+            operation_date=c.operation_date,
+            article_id=c.article_id,
+            comment=c.comment,
+        )
+        for c in payload.cash_parts
+    ]
+    try:
+        if payload.split_staff:
+            invoice = await session.get(SupplierInvoice, invoice_id)
+            if invoice is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена"
+                )
+            if payload.bank_parts:
+                raise WarehousePaymentError(
+                    "Разнесение персонала доступно только при оплате наличными"
+                )
+            if len(payload.cash_parts) != 1:
+                raise WarehousePaymentError(
+                    "Для разнесения персонала укажите один наличный источник"
+                )
+            # build_staff_split_cash_parts разносит ПОЛНУЮ сумму накладной — на частично
+            # оплаченной Σ частей всегда > остаток → 409. Поэтому только для неоплаченной.
+            if invoice.payment_status != "unpaid":
+                raise WarehousePaymentError(
+                    "Разнести персонал можно только для полностью неоплаченной накладной"
+                )
+            c0 = payload.cash_parts[0]
+            cash_parts = await build_staff_split_cash_parts(
+                session,
+                invoice,
+                wallet_id=c0.wallet_id,
+                operation_date=c0.operation_date,
+                comment=c0.comment,
+            )
+        await pay_invoice_split(
+            session,
+            invoice_id=invoice_id,
+            bank_parts=bank_parts,
+            cash_parts=cash_parts,
+            actor_user_id=actor.user_id,
+        )
+    except (WarehousePaymentError, CounterpartyMatchError) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    result = await get_warehouse_invoice(session, invoice_id)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    return result
 
 
 @router.post("/invoices", dependencies=OPERATE, status_code=status.HTTP_201_CREATED)

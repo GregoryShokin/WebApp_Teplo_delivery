@@ -318,13 +318,46 @@ async def pay_invoice_from_wallet(
     elif await session.get(DdsArticle, resolved_article_id) is None:
         raise CounterpartyPaymentError("Статья ДДС не найдена")
 
+    await _apply_wallet_payment(
+        session,
+        invoice=invoice,
+        wallet=wallet,
+        amount=requested,
+        operation_date=operation_date,
+        article_id=resolved_article_id,
+        comment=comment,
+        actor_user_id=actor_user_id,
+    )
+    await _recompute_status(session, invoice)
+    await session.commit()
+    await session.refresh(invoice)
+    return invoice
+
+
+async def _apply_wallet_payment(
+    session: AsyncSession,
+    *,
+    invoice: SupplierInvoice,
+    wallet: Wallet,
+    amount: Decimal,
+    operation_date: date,
+    article_id: uuid.UUID | None,
+    comment: str | None,
+    actor_user_id: uuid.UUID | None,
+) -> CashflowTransaction:
+    """Create the DDS expense + cash allocation for one wallet payment WITHOUT committing —
+    the commit-less core shared by ``pay_invoice_from_wallet`` and the split orchestrator.
+    Always creates a NEW ``CashflowTransaction`` (so no two invoices share one cash txn).
+    The caller resolves the article, validates the remaining, recomputes status and commits.
+    """
+    requested = _money(amount)
     purpose = f"Оплата накладной {invoice.number}" if invoice.number else "Оплата поставщику"
     transaction = CashflowTransaction(
         wallet_id=wallet.id,
         direction="out",
         amount=requested,
         operation_date=operation_date,
-        article_id=resolved_article_id,
+        article_id=article_id,
         counterparty_id=invoice.counterparty_id,
         source_kind="counterparty_payment",
         source_id=invoice.id,
@@ -345,7 +378,4 @@ async def pay_invoice_from_wallet(
         )
     )
     await session.flush()
-    await _recompute_status(session, invoice)
-    await session.commit()
-    await session.refresh(invoice)
-    return invoice
+    return transaction

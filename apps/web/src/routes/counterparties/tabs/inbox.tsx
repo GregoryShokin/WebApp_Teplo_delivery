@@ -33,6 +33,7 @@ import {
 } from "../shared";
 import { PayInvoiceDialog } from "../PayInvoiceDialog";
 import { CreateInvoiceDialog } from "../../warehouse/CreateInvoiceDialog";
+import { PayWarehouseInvoiceDialog } from "../../warehouse/PayWarehouseInvoiceDialog";
 import { pushInvoiceToIiko } from "../../warehouse/api";
 
 const ALL = "all";
@@ -60,12 +61,16 @@ export function InboxTab({
   canOperate,
   onOpenCounterparty,
   kind,
+  splitPay,
 }: {
   canOperate: boolean;
   onOpenCounterparty: (id: string) => void;
   // Два инбокса: "barter" (только бартер, обе стороны, создание займа) /
   // "normal" (всё кроме бартера). Без него — старое поведение с сегментами.
   kind?: "normal" | "barter";
+  // splitPay: «Оплатить» открывает диалог сплит-оплаты с банк-подсказками + персонал-разнесением
+  // (Фаза 4). Без него — простой диалог оплаты со счёта.
+  splitPay?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [categoryId, setCategoryId] = useState<string>(ALL);
@@ -371,7 +376,17 @@ export function InboxTab({
         barter={isBarter}
         onCreated={() => queryClient.invalidateQueries({ queryKey: ["cp"] })}
       />
-      <PayInvoiceDialog invoice={payTarget} onOpenChange={(open) => !open && setPayTarget(null)} />
+      {splitPay ? (
+        <PayWarehouseInvoiceDialog
+          invoiceId={payTarget?.id ?? null}
+          onOpenChange={(open) => !open && setPayTarget(null)}
+        />
+      ) : (
+        <PayInvoiceDialog
+          invoice={payTarget}
+          onOpenChange={(open) => !open && setPayTarget(null)}
+        />
+      )}
     </div>
   );
 }
