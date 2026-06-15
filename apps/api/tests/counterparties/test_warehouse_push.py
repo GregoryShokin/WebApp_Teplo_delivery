@@ -29,13 +29,21 @@ def test_build_xml_incoming_payable() -> None:
         direction="payable",
         partner_guid="SUP-1",
         number="W-1",
-        date_iso="2026-06-15T14:30:00",
+        incoming_date="2026-06-15",
+        date_incoming="2026-06-15T14:30:00",
         store_guid="ST-1",
-        lines=[PushLine("P1", "2", "500", "1000", vat_percent="20", vat_sum="166.67")],
+        lines=[
+            PushLine("P1", "2", "500", "1000", num=1, unit_guid="U1", vat_percent="20", vat_sum="166.67")
+        ],
     )
-    assert "<incomingInvoiceDtoes>" in xml
+    assert xml.startswith("<document>")  # single document, NOT the list wrapper
+    assert "<incomingInvoiceDtoes>" not in xml
     assert "<supplier>SUP-1</supplier>" in xml
+    assert "<defaultStore>ST-1</defaultStore>" in xml
+    assert "<incomingDate>2026-06-15</incomingDate>" in xml
+    assert "<num>1</num>" in xml
     assert "<product>P1</product>" in xml
+    assert "<amountUnit>U1</amountUnit>" in xml
     assert "<store>ST-1</store>" in xml
     assert "<vatPercent>20</vatPercent>" in xml
     assert "<id>D1</id>" in xml
@@ -47,11 +55,13 @@ def test_build_xml_outgoing_receivable() -> None:
         direction="receivable",
         partner_guid="CA-1",
         number="W-2",
-        date_iso="2026-06-15T14:30:00",
+        incoming_date="2026-06-15",
+        date_incoming="2026-06-15T14:30:00",
         store_guid="ST-1",
-        lines=[PushLine("P1", "1", "100", "100")],
+        lines=[PushLine("P1", "1", "100", "100", num=1)],
     )
-    assert "<outgoingInvoiceDtoes>" in xml
+    assert xml.startswith("<document>")
+    assert "<outgoingInvoiceDtoes>" not in xml
     assert "<counteragentId>CA-1</counteragentId>" in xml
     assert "<vatPercent>" not in xml  # no VAT given → tag omitted
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 from typing import Any
 from xml.sax.saxutils import escape
 
@@ -25,7 +25,13 @@ import anyio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AppSetting, CounterpartyAlias, InvoiceLineItem, SupplierInvoice
+from app.models import (
+    AppSetting,
+    CounterpartyAlias,
+    IikoProduct,
+    InvoiceLineItem,
+    SupplierInvoice,
+)
 from app.services.iiko_inventory import _load_inventory_module
 
 STORE_SETTING_KEY = "iiko.default_store_guid"
@@ -44,6 +50,8 @@ class PushLine:
     quantity: str
     price: str
     sum: str
+    num: int = 1
+    unit_guid: str | None = None
     vat_percent: str | None = None
     vat_sum: str | None = None
 
@@ -65,48 +73,51 @@ def build_invoice_xml(
     direction: str,
     partner_guid: str,
     number: str,
-    date_iso: str,
+    incoming_date: str,
+    date_incoming: str,
     store_guid: str,
     lines: list[PushLine],
 ) -> str:
-    """Build the iiko import XML. payable → incomingInvoice, receivable → outgoingInvoice."""
+    """Build the iiko import XML mirroring a real document's shape: ``incomingDate`` is a
+    DATE (``yyyy-MM-dd``), ``dateIncoming`` a tz-less datetime, plus a document-level
+    ``defaultStore``. payable → incomingInvoice (``<supplier>``), receivable →
+    outgoingInvoice (``<counteragentId>``)."""
     items: list[str] = []
     for line in lines:
         parts = [
+            _el("num", line.num),
             _el("product", line.product_guid),
             _el("amount", line.quantity),
+            _el("actualAmount", line.quantity),
             _el("price", line.price),
             _el("sum", line.sum),
             _el("store", store_guid),
         ]
+        if line.unit_guid:
+            parts.append(_el("amountUnit", line.unit_guid))
         if line.vat_percent is not None:
             parts.append(_el("vatPercent", line.vat_percent))
         if line.vat_sum is not None:
             parts.append(_el("vatSum", line.vat_sum))
         items.append("<item>" + "".join(parts) + "</item>")
     items_xml = "<items>" + "".join(items) + "</items>"
-    head = _el("id", doc_id) + "<status>PROCESSED</status>"
-    if direction == "payable":
-        body = (
-            "<document>"
-            + head
-            + _el("supplier", partner_guid)
-            + _el("documentNumber", number)
-            + _el("incomingDate", date_iso)
-            + items_xml
-            + "</document>"
-        )
-        return "<incomingInvoiceDtoes>" + body + "</incomingInvoiceDtoes>"
-    body = (
-        "<document>"
-        + head
-        + _el("counteragentId", partner_guid)
+    # Field set/shape mirrors a real exported document (DISTRIBUTION_BY_AMOUNT etc.).
+    head = (
+        _el("id", doc_id)
+        + "<transportInvoiceNumber></transportInvoiceNumber>"
+        + _el("incomingDate", incoming_date)
+        + "<useDefaultDocumentTime>false</useDefaultDocumentTime>"
+        + _el("dateIncoming", date_incoming)
         + _el("documentNumber", number)
-        + _el("dateIncoming", date_iso)
-        + items_xml
-        + "</document>"
+        + "<status>PROCESSED</status>"
+        + "<distributionAlgorithm>DISTRIBUTION_BY_AMOUNT</distributionAlgorithm>"
+        + _el("defaultStore", store_guid)
     )
-    return "<outgoingInvoiceDtoes>" + body + "</outgoingInvoiceDtoes>"
+    # iiko import wants a single <document> as root (NOT the <incomingInvoiceDtoes> list
+    # wrapper the export returns — that yields a generic 400 before iiko even parses it).
+    if direction == "payable":
+        return "<document>" + head + _el("supplier", partner_guid) + items_xml + "</document>"
+    return "<document>" + head + _el("counteragentId", partner_guid) + items_xml + "</document>"
 
 
 async def _store_guid(session: AsyncSession, invoice: SupplierInvoice) -> str | None:
@@ -145,26 +156,42 @@ async def prepare_push(session: AsyncSession, invoice: SupplierInvoice) -> Prepa
             .order_by(InvoiceLineItem.sort_order)
         )
     ).all()
-    lines = [
-        PushLine(
-            product_guid=line.product_guid,
-            quantity=str(line.quantity),
-            price=str(line.price),
-            sum=str(line.sum),
-            vat_percent=str(line.vat_percent) if line.vat_percent is not None else None,
-            vat_sum=str(line.vat_sum) if line.vat_sum is not None else None,
+    # iiko хочет GUID единицы измерения (amountUnit) у позиции — берём из кэша номенклатуры.
+    product_ids = [row.iiko_product_id for row in rows if row.iiko_product_id]
+    unit_by_product: dict[uuid.UUID, str | None] = {}
+    if product_ids:
+        products = (
+            await session.scalars(select(IikoProduct).where(IikoProduct.id.in_(product_ids)))
+        ).all()
+        unit_by_product = {p.id: p.main_unit_guid for p in products}
+    lines: list[PushLine] = []
+    for index, line in enumerate(rows, start=1):
+        if not line.product_guid:
+            continue
+        lines.append(
+            PushLine(
+                product_guid=line.product_guid,
+                quantity=str(line.quantity),
+                price=str(line.price),
+                sum=str(line.sum),
+                num=index,
+                unit_guid=unit_by_product.get(line.iiko_product_id),
+                vat_percent=str(line.vat_percent) if line.vat_percent is not None else None,
+                vat_sum=str(line.vat_sum) if line.vat_sum is not None else None,
+            )
         )
-        for line in rows
-        if line.product_guid
-    ]
     if not lines:
         return PreparedPush(None, doc_id, "Нет товарных строк с iiko-GUID (персонал/ручные)")
+    dt = invoice.issued_at
+    if dt is None and invoice.invoice_date is not None:
+        dt = datetime.combine(invoice.invoice_date, time())
     xml = build_invoice_xml(
         doc_id=doc_id,
         direction=invoice.direction,
         partner_guid=partner_guid,
         number=invoice.number or "",
-        date_iso=(invoice.issued_at or invoice.invoice_date).isoformat(),
+        incoming_date=dt.date().isoformat(),
+        date_incoming=dt.replace(tzinfo=None).isoformat(timespec="seconds"),
         store_guid=store_guid,
         lines=lines,
     )
@@ -176,9 +203,8 @@ def _send_to_iiko(direction: str, xml: str) -> tuple[int, bytes]:
     inventory.load_local_env()
     client = inventory.IikoClient()
     endpoint = INCOMING_ENDPOINT if direction == "payable" else OUTGOING_ENDPOINT
-    return client.request(
-        endpoint, method="POST", raw_body=xml, content_type="application/xml; charset=utf-8"
-    )
+    # iiko требует ровно application/xml (text/xml → 415).
+    return client.request(endpoint, method="POST", raw_body=xml, content_type="application/xml")
 
 
 def _parse_document_id(body: bytes) -> str | None:
