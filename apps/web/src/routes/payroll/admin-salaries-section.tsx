@@ -33,6 +33,7 @@ const ADMIN_POSITIONS = [
   "Менеджер",
   "Системный администратор",
   "Уборщица",
+  "Старший курьер",
 ];
 
 const PAYOUT_MODE_OPTIONS: Array<{ value: AdminPayoutMode; label: string }> = [
@@ -252,6 +253,7 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
                     </td>
                     <td className="px-3 py-2">
                       <Select
+                        key={payoutMode}
                         disabled={!canWrite || isBusy}
                         onValueChange={(value) =>
                           savePayoutMode.mutate({

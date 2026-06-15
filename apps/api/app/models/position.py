@@ -57,6 +57,9 @@ class Position(Base):
     # список «Права должностей» и связана с ролью-движком прав через access_role_code.
     participates_in_access: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     access_role_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Курьер-окладник: помимо своего архетипа получает админ-оклад в полумесячной
+    # ведомости (например «Старший курьер» — archetype=courier + админ-оклад).
+    gets_admin_oklad: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     schedule_type: Mapped[str] = mapped_column(String(16), nullable=False, default="SESSION")
     created_at: Mapped[datetime] = mapped_column(

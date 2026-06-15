@@ -226,6 +226,7 @@ type CanonicalPosition =
   | "Управляющий"
   | "Системный администратор"
   | "Курьер"
+  | "Старший курьер"
   | "Менеджер"
   | "Уборщица"
   | "Посудомойка";
@@ -236,6 +237,7 @@ const canonicalPositions: CanonicalPosition[] = [
   "Управляющий",
   "Системный администратор",
   "Курьер",
+  "Старший курьер",
   "Менеджер",
   "Уборщица",
   "Посудомойка",
@@ -246,6 +248,7 @@ const positionPayrollRoles: Record<CanonicalPosition, PayrollRole[]> = {
   Управляющий: [],
   "Системный администратор": [],
   Курьер: [],
+  "Старший курьер": [],
   Менеджер: [],
   Уборщица: [],
   Посудомойка: [],
@@ -256,7 +259,8 @@ const premiumApplicability: Record<
 > = {
   Кассир: { is_senior: true, is_deputy_senior: true },
   Повар: { is_senior: true, is_deputy_senior: true },
-  Курьер: { is_senior: true, is_deputy_senior: false },
+  Курьер: { is_senior: false, is_deputy_senior: false },
+  "Старший курьер": { is_senior: false, is_deputy_senior: false },
   Управляющий: { is_senior: false, is_deputy_senior: false },
   "Системный администратор": { is_senior: false, is_deputy_senior: false },
   Менеджер: { is_senior: false, is_deputy_senior: false },
@@ -277,7 +281,7 @@ const positionFilterOptions: Array<{
     label: "Администрация",
     positions: ["Управляющий", "Менеджер", "Системный администратор"],
   },
-  { value: "couriers", label: "Курьеры", positions: ["Курьер"] },
+  { value: "couriers", label: "Курьеры", positions: ["Курьер", "Старший курьер"] },
   {
     value: "auxiliary",
     label: "Вспомогательный персонал",
@@ -6241,7 +6245,7 @@ function staffAreaForPosition(position: CanonicalPosition | null): "administrati
   }
   if (position === "Повар") return "cooks";
   if (position === "Кассир") return "cashiers";
-  if (position === "Курьер") return "couriers";
+  if (position === "Курьер" || position === "Старший курьер") return "couriers";
   if (auxiliaryPositions.has(position)) return "auxiliary";
   return null;
 }

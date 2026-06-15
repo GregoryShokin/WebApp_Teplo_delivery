@@ -162,6 +162,47 @@ async def test_admin_run_full_period_is_half_oklad(
         assert line.ndfl_withheld == Decimal("0")
 
 
+async def test_senior_courier_gets_admin_oklad(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Старший курьер (archetype=courier) получает админ-оклад в полумесячной ведомости."""
+    async with async_session_factory() as session:
+        employee = await _make_admin_employee(session, position="Старший курьер")
+        await _set_oklad(session, position="Старший курьер", amount=Decimal("40000"))
+        period = await _make_period(session)
+        await session.commit()
+
+        run = await run_admin_payroll(session, period.id)
+        assert run.status == "completed"
+        lines = await _lines(session, run.id)
+        assert len(lines) == 1
+        line = lines[0]
+        assert line.employee_id == employee.id
+        assert line.role == "Старший курьер"
+        # Режим по умолчанию — split (½ за первую половину).
+        assert line.base_pay == Decimal("20000.00")
+        assert line.total_payable == Decimal("20000.00")
+
+
+async def test_admin_salaries_response_exposes_payout_mode(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Режим выплаты не должен срезаться response-схемой (регрессия UI «остаётся Пополам»)."""
+    from app.api.v1.routes.payroll_admin import AdminSalariesRead
+    from app.services.payroll_admin import list_admin_oklady, set_okladnik_payout_mode
+
+    async with async_session_factory() as session:
+        await _make_admin_employee(session, position="Уборщица")
+        await _set_oklad(session, position="Уборщица", amount=Decimal("15000"))
+        await set_okladnik_payout_mode(session, "Уборщица", "first_half")
+        await session.commit()
+
+        data = await list_admin_oklady(session)
+        serialized = AdminSalariesRead.model_validate(data).model_dump()
+        by_position = {item["position"]: item for item in serialized["defaults"]}
+        assert by_position["Уборщица"]["payout_mode"] == "first_half"
+
+
 async def test_admin_run_prorates_on_mid_period_hire(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

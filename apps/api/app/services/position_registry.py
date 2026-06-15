@@ -47,6 +47,8 @@ class PositionInfo:
     access_role_code: str | None = None
     iiko_role_id: str | None = None
     iiko_role_code: str | None = None
+    # Помимо архетипа должность получает админ-оклад (курьер-окладник).
+    gets_admin_oklad: bool = False
 
     # --- допуски, выводимые из архетипа --- #
     @property
@@ -86,6 +88,7 @@ DEFAULT_POSITIONS: tuple[PositionInfo, ...] = (
     PositionInfo(
         "Старший курьер", "courier", "couriers",
         participates_in_access=True, access_role_code="senior_courier",
+        gets_admin_oklad=True,
     ),
     PositionInfo(
         "Менеджер", "okladnik", "administration",
@@ -130,6 +133,9 @@ class PositionSnapshot:
     def names_by_permission_group(self, group: str) -> tuple[str, ...]:
         return tuple(p.name for p in self.positions if p.permission_group == group)
 
+    def names_with_admin_oklad(self) -> tuple[str, ...]:
+        return tuple(p.name for p in self.positions if p.gets_admin_oklad)
+
 
 _DEFAULT_SNAPSHOT = PositionSnapshot(DEFAULT_POSITIONS)
 _snapshot: PositionSnapshot = _DEFAULT_SNAPSHOT
@@ -171,6 +177,7 @@ async def refresh_position_registry(session: AsyncSession) -> PositionSnapshot:
                     access_role_code=row.access_role_code,
                     iiko_role_id=row.iiko_role_id,
                     iiko_role_code=row.iiko_role_code,
+                    gets_admin_oklad=row.gets_admin_oklad,
                 )
                 for row in rows
             )
@@ -222,8 +229,19 @@ def is_active_position(position: str | None) -> bool:
 
 
 def okladnik_positions() -> tuple[str, ...]:
-    """Бывший OKLADNIK_POSITIONS: фиксированный оклад, полумесячная ведомость."""
-    return _snapshot.names_by_archetype(ARCHETYPE_OKLADNIK)
+    """Бывший OKLADNIK_POSITIONS: фиксированный оклад, полумесячная ведомость.
+
+    Включает курьеров-окладников (gets_admin_oklad) — например «Старший курьер»,
+    который остаётся в курьерском контуре, но получает админ-оклад.
+    """
+    return tuple(
+        dict.fromkeys(
+            (
+                *_snapshot.names_by_archetype(ARCHETYPE_OKLADNIK),
+                *_snapshot.names_with_admin_oklad(),
+            )
+        )
+    )
 
 
 def dishwasher_positions() -> tuple[str, ...]:
@@ -237,8 +255,16 @@ def production_payroll_positions() -> tuple[str, ...]:
 
 
 def admin_payroll_positions() -> tuple[str, ...]:
-    """Бывший ADMIN_PAYROLL_POSITIONS: админский каденс ведомости (оклад + посменный пул)."""
-    return _snapshot.names_by_archetype(ARCHETYPE_OKLADNIK, ARCHETYPE_SHIFT_POOL)
+    """Бывший ADMIN_PAYROLL_POSITIONS: админский каденс ведомости (оклад + посменный
+    пул + курьеры-окладники по gets_admin_oklad)."""
+    return tuple(
+        dict.fromkeys(
+            (
+                *_snapshot.names_by_archetype(ARCHETYPE_OKLADNIK, ARCHETYPE_SHIFT_POOL),
+                *_snapshot.names_with_admin_oklad(),
+            )
+        )
+    )
 
 
 def courier_positions() -> tuple[str, ...]:

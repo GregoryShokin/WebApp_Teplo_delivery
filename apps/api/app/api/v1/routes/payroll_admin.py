@@ -69,6 +69,7 @@ class AdminSalaryDefaultRead(BaseModel):
     position: str
     amount: float | None = None
     effective_from: date | None = None
+    payout_mode: str = "split"
 
 
 class AdminSalaryOverrideRead(BaseModel):

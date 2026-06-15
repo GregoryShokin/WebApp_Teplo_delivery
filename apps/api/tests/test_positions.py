@@ -397,3 +397,14 @@ def test_senior_courier_is_courier_for_payroll_selections() -> None:
     assert "Курьер" in position_registry.courier_positions()
     assert position_registry.access_role_code_for_position("Старший курьер") == "senior_courier"
     assert position_registry.access_role_code_for_position("Курьер") is None
+
+
+def test_senior_courier_is_admin_okladnik_but_not_production() -> None:
+    # Курьер-окладник: получает админ-оклад, оставаясь курьером; в производство не входит.
+    assert "Старший курьер" in position_registry.admin_payroll_positions()
+    assert "Старший курьер" in position_registry.okladnik_positions()
+    assert "Старший курьер" in position_registry.courier_positions()
+    assert "Старший курьер" not in position_registry.production_payroll_positions()
+    # Обычный курьер админ-оклад не получает.
+    assert "Курьер" not in position_registry.admin_payroll_positions()
+    assert "Курьер" not in position_registry.okladnik_positions()
