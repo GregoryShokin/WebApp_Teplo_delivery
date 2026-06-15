@@ -240,13 +240,6 @@ const canonicalPositions: CanonicalPosition[] = [
   "Уборщица",
   "Посудомойка",
 ];
-const createPositions = new Set<CanonicalPosition>([
-  "Кассир",
-  "Менеджер",
-  "Повар",
-  "Управляющий",
-  "Курьер",
-]);
 const positionPayrollRoles: Record<CanonicalPosition, PayrollRole[]> = {
   Кассир: cashierPayrollRoles,
   Повар: cookPayrollRoles,
@@ -2987,7 +2980,8 @@ function ChangeEmployeePositionDialog({
   const [position, setPosition] = useState<CanonicalPosition | "">("");
   const [effectiveFrom, setEffectiveFrom] = useState(today);
   const [comment, setComment] = useState("");
-  const positionOptions = canonicalPositions.filter((item) => createPositions.has(item));
+  // Перевести можно на любую должность реестра (включая вспомогательные и сисадмина).
+  const positionOptions = canonicalPositions;
   const commentRequired = Boolean(effectiveFrom) && effectiveFrom < today;
   const canSubmit =
     Boolean(position) &&
@@ -2999,7 +2993,7 @@ function ChangeEmployeePositionDialog({
     if (!open) {
       return;
     }
-    setPosition(currentCanonical && createPositions.has(currentCanonical) ? currentCanonical : "");
+    setPosition(currentCanonical ?? "");
     setEffectiveFrom(todayDateInputValue());
     setComment("");
   }, [currentCanonical, open]);

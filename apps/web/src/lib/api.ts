@@ -917,6 +917,7 @@ export type PayrollAdvance = {
   recovered_amount: number;
   status: string;
   issued_on: string;
+  recovery_start_date: string | null;
   payout_method: string | null;
   comment: string | null;
 };
@@ -924,9 +925,12 @@ export type PayrollAdvance = {
 export type PayrollAdvancePayload = {
   employee_id: string;
   amount: string;
+  kind?: "advance" | "loan";
   issued_on?: string;
   payout_method?: string;
   installments_count?: number;
+  installment_amount?: string;
+  recovery_start_date?: string;
   comment?: string | null;
   override_ceiling?: boolean;
 };
@@ -3295,6 +3299,19 @@ export async function cancelPayrollAdvance(id: string): Promise<PayrollAdvance> 
 
 export async function writeOffPayrollAdvance(id: string, reason?: string): Promise<PayrollAdvance> {
   const response = await api.post<PayrollAdvance>(`/payroll/advances/${id}/write-off`, { reason });
+  return response.data;
+}
+
+export async function deferPayrollAdvanceRecovery(
+  runId: string,
+  advanceId: string,
+  defer: boolean,
+  reason?: string,
+): Promise<PayrollRun> {
+  const response = await api.post<PayrollRun>(
+    `/payroll/runs/${runId}/advances/${advanceId}/defer-recovery`,
+    { defer, reason },
+  );
   return response.data;
 }
 

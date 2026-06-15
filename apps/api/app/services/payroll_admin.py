@@ -231,6 +231,10 @@ async def run_admin_payroll(
         advance_summary = await apply_advance_recoveries(session, period, run, lines)
         for line in lines:
             session.add(line)
+        # Итог к выплате — ПОСЛЕ удержаний авансов/займов (накопленный выше — начисления).
+        summary["total_payable"] = money(
+            sum((decimal(line.total_payable) for line in lines), Decimal("0"))
+        )
         run.status = "completed"
         run.finished_at = datetime.now(UTC)
         run.blocking_issues = []

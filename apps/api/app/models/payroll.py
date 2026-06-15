@@ -980,6 +980,9 @@ class SalaryAdvance(Base):
 
     Аванс: `kind='advance'`, `installments_count=1`, `per_installment_amount=amount`.
     Заём: `kind='loan'`, `installments_count=N`, `per_installment_amount≈amount/N`.
+
+    Заём можно выдать и в пределах заработанного (явный выбор типа), и отложить
+    начало удержания через `recovery_start_date` (NULL = с ближайшей ведомости).
     """
 
     __tablename__ = "salary_advance"
@@ -1031,6 +1034,8 @@ class SalaryAdvance(Base):
         String(24), nullable=False, default="issued", server_default="issued"
     )
     issued_on: Mapped[date] = mapped_column(Date, nullable=False)
+    # С какой даты заём попадает в удержание. NULL = с ближайшей ведомости.
+    recovery_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     payout_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(

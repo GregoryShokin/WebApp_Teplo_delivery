@@ -26,6 +26,7 @@ from app.services.payroll_advance_availability import available_to_advance
 from app.services.payroll_advance_service import (
     cancel_advance,
     issue_advance,
+    set_advance_recovery_deferral,
     set_loan_max,
     write_off_advance,
 )
@@ -172,6 +173,77 @@ async def test_issue_loan_splits_into_equal_installments(
         assert loan.status == "issued"
 
 
+async def test_explicit_loan_within_earned(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Явный заём оформляется даже в пределах заработанного и уменьшает доступное."""
+    async with async_session_factory() as session:
+        emp = await _make_okladnik(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
+        await session.commit()
+
+        # Доступно 15000; просим 10000 явным займом → заём, не аванс.
+        loan = await issue_advance(
+            session,
+            employee_id=emp.id,
+            amount=Decimal("10000"),
+            allow_loan=True,
+            requested_kind="loan",
+            installment_amount=Decimal("5000"),
+            issued_on=AS_OF,
+        )
+        assert loan.kind == "loan"
+        assert loan.installments_count == 2  # 10000 / 5000
+        assert loan.per_installment_amount == Decimal("5000.00")
+
+        # Заём в пределах заработанного всё равно уменьшает доступное к авансу.
+        avail = await available_to_advance(session, emp, AS_OF)
+        assert avail.already_advanced == Decimal("10000.00")
+        assert avail.available == Decimal("5000.00")
+
+
+async def test_loan_installment_amount_derives_count(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Сумма доли задаёт число периодов (округление вверх)."""
+    async with async_session_factory() as session:
+        emp = await _make_okladnik(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
+        await session.commit()
+
+        loan = await issue_advance(
+            session,
+            employee_id=emp.id,
+            amount=Decimal("30000"),
+            allow_loan=True,
+            installment_amount=Decimal("5000"),
+            issued_on=AS_OF,
+        )
+        assert loan.kind == "loan"
+        assert loan.installments_count == 6  # 30000 / 5000
+        assert loan.per_installment_amount == Decimal("5000.00")
+
+
+async def test_explicit_advance_over_earned_rejected(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Явный аванс сверх заработанного отклоняется (нужно оформить заём)."""
+    async with async_session_factory() as session:
+        emp = await _make_okladnik(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
+        await session.commit()
+
+        with pytest.raises(PayrollConflictError):
+            await issue_advance(
+                session,
+                employee_id=emp.id,
+                amount=Decimal("20000"),
+                allow_loan=True,
+                requested_kind="advance",
+                issued_on=AS_OF,
+            )
+
+
 async def test_cancel_advance_before_recovery(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -242,6 +314,8 @@ async def test_advance_recovered_in_admin_run_and_finalize(
         assert line.base_pay == Decimal("45000.00")
         assert line.advance_recovered == Decimal("10000.00")
         assert line.total_payable == Decimal("35000.00")  # 45000 − 10000 удержано
+        # Итог ведомости отражает удержание (а не начисления).
+        assert run.summary["total_payable"] == 35000.0
 
         # До финализации возврат — превью: баланс аванса не двинут.
         await session.refresh(adv)
@@ -305,6 +379,82 @@ async def test_loan_installment_recovered_per_run(
         await session.refresh(loan)
         assert loan.recovered_amount == Decimal("5000.00")
         assert loan.status == "issued"  # остаются 3 доли
+
+
+async def test_recovery_start_date_defers_recovery(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Заём с датой начала удержания позже периода в этой ведомости не гасится."""
+    async with async_session_factory() as session:
+        emp = await _make_okladnik(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
+        period = await _make_first_half_period(session)  # 1–15 мая
+        await session.commit()
+
+        loan = await issue_advance(
+            session,
+            employee_id=emp.id,
+            amount=Decimal("10000"),
+            allow_loan=True,
+            requested_kind="loan",
+            installment_amount=Decimal("5000"),
+            issued_on=AS_OF,
+            recovery_start_date=date(2026, 5, 16),  # после конца периода
+        )
+        run = await run_admin_payroll(session, period.id)
+        line = await _one_line(session, run.id)
+        # Удержания нет — заём ещё «спит».
+        assert line.advance_recovered == Decimal("0.00")
+        assert line.total_payable == Decimal("45000.00")
+
+        await finalize_payroll_run(session, run.id)
+        await session.refresh(loan)
+        assert loan.recovered_amount == Decimal("0")
+        assert loan.status == "issued"
+
+
+async def test_defer_advance_recovery_skips_this_run_then_resumes(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Отсрочка освобождает заём от удержания в ведомости; возврат — снова удерживает."""
+    async with async_session_factory() as session:
+        emp = await _make_okladnik(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
+        period = await _make_first_half_period(session)
+        await session.commit()
+
+        loan = await issue_advance(
+            session,
+            employee_id=emp.id,
+            amount=Decimal("10000"),
+            allow_loan=True,
+            requested_kind="loan",
+            installment_amount=Decimal("5000"),
+            issued_on=AS_OF,
+        )
+        run = await run_admin_payroll(session, period.id)
+        line = await _one_line(session, run.id)
+        assert line.advance_recovered == Decimal("5000.00")  # по умолчанию гасится
+        assert run.summary["total_payable"] == 40000.0  # итог отражает удержание
+
+        # Отсрочка + пересчёт → удержания нет, итог растёт.
+        await set_advance_recovery_deferral(
+            session, run_id=run.id, advance_id=loan.id, defer=True, actor_user_id=None
+        )
+        run_after_defer = await run_admin_payroll(session, period.id)
+        line_after_defer = await _one_line(session, run.id)
+        assert line_after_defer.advance_recovered == Decimal("0.00")
+        assert line_after_defer.total_payable == Decimal("45000.00")
+        assert run_after_defer.summary["total_payable"] == 45000.0
+
+        # Возврат удержания + пересчёт → снова гасится, итог падает.
+        await set_advance_recovery_deferral(
+            session, run_id=run.id, advance_id=loan.id, defer=False, actor_user_id=None
+        )
+        run_after_resume = await run_admin_payroll(session, period.id)
+        line_after_resume = await _one_line(session, run.id)
+        assert line_after_resume.advance_recovered == Decimal("5000.00")
+        assert run_after_resume.summary["total_payable"] == 40000.0
 
 
 async def test_recovery_capped_by_line_net_anti_negative(

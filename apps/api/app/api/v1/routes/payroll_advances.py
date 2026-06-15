@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -76,6 +76,7 @@ class AdvanceRead(BaseModel):
     recovered_amount: float
     status: str
     issued_on: date
+    recovery_start_date: date | None = None
     payout_method: str | None = None
     comment: str | None = None
 
@@ -85,9 +86,15 @@ class AdvanceIssueRequest(BaseModel):
 
     employee_id: uuid.UUID
     amount: Decimal = Field(gt=0)
+    # None → авто-классификация по заработанному; 'loan' → заём даже в пределах заработанного.
+    kind: Literal["advance", "loan"] | None = None
     issued_on: date | None = None
     payout_method: str | None = None
     installments_count: int = Field(default=1, ge=1)
+    # Сумма доли удержания (приоритет над installments_count для займа).
+    installment_amount: Decimal | None = Field(default=None, gt=0)
+    # Дата начала удержания займа (NULL = с ближайшей ведомости).
+    recovery_start_date: date | None = None
     comment: str | None = None
     # Превышение потолка займа (требует права B + подтверждения в UI).
     override_ceiling: bool = False
@@ -181,10 +188,13 @@ async def post_advance(
             employee_id=payload.employee_id,
             amount=payload.amount,
             allow_loan=allow_loan,
+            requested_kind=payload.kind,
             override_ceiling=payload.override_ceiling,
             issued_on=issued_on,
             payout_method=payload.payout_method,
             installments_count=payload.installments_count,
+            installment_amount=payload.installment_amount,
+            recovery_start_date=payload.recovery_start_date,
             comment=payload.comment,
             actor_user_id=actor.user_id,
         )

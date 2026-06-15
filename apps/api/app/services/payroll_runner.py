@@ -392,7 +392,13 @@ async def run_payroll(
             | subledger_summary
             | advance_summary
             | attendance_warning_summary
-            | {"vacations_marked_paid": paid_vacations},
+            | {"vacations_marked_paid": paid_vacations}
+            # Итог к выплате — ПОСЛЕ удержаний авансов/займов (перекрывает начисленный).
+            | {
+                "total_payable": money(
+                    sum((decimal(line.total_payable) for line in calculation.lines), decimal(0))
+                )
+            },
             frozen_rate_versions,
             locked=frozen_rate_versions is not None,
         )

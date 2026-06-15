@@ -66,6 +66,9 @@ async def _outstanding_advances(
             continue
         if decimal(advance.recovered_amount) >= decimal(advance.amount):
             continue
+        # Отложенное удержание: заём не гасится, пока ведомость раньше даты старта.
+        if advance.recovery_start_date is not None and advance.recovery_start_date > period_end:
+            continue
         by_emp[advance.employee_id].append(advance)
     return by_emp
 

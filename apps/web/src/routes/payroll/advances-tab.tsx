@@ -42,6 +42,7 @@ import {
   type PayrollAdvance,
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
+import { cn } from "@/lib/utils";
 
 const KIND_LABEL: Record<string, string> = { advance: "Аванс", loan: "Заём" };
 const STATUS_LABEL: Record<string, string> = {
@@ -67,8 +68,10 @@ export function PayrollAdvancesRoute() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [issueEmployeeId, setIssueEmployeeId] = useState("");
   const [amount, setAmount] = useState("");
+  const [kind, setKind] = useState<"advance" | "loan">("advance");
   const [payoutMethod, setPayoutMethod] = useState("transfer");
-  const [installments, setInstallments] = useState("1");
+  const [installmentAmount, setInstallmentAmount] = useState("");
+  const [recoveryStartDate, setRecoveryStartDate] = useState("");
   const [comment, setComment] = useState("");
   const [overrideCeiling, setOverrideCeiling] = useState(false);
 
@@ -92,13 +95,17 @@ export function PayrollAdvancesRoute() {
   const availability = availabilityQuery.data ?? null;
   const available = availability?.available ?? 0;
   const amountNumber = numericAmount(amount);
-  const isLoan = amountNumber > available;
+  const overEarned = amountNumber > available;
+  const isLoan = kind === "loan";
+  const advanceOverEarned = kind === "advance" && overEarned;
 
   function resetForm() {
     setIssueEmployeeId("");
     setAmount("");
+    setKind("advance");
     setPayoutMethod("transfer");
-    setInstallments("1");
+    setInstallmentAmount("");
+    setRecoveryStartDate("");
     setComment("");
     setOverrideCeiling(false);
   }
@@ -108,10 +115,13 @@ export function PayrollAdvancesRoute() {
       createPayrollAdvance({
         employee_id: issueEmployeeId,
         amount: decimalInputPayload(amount),
+        kind,
         payout_method: payoutMethod,
-        installments_count: isLoan ? Math.max(Number(installments) || 1, 1) : 1,
+        installment_amount:
+          isLoan && installmentAmount ? decimalInputPayload(installmentAmount) : undefined,
+        recovery_start_date: isLoan && recoveryStartDate ? recoveryStartDate : undefined,
         comment: comment.trim() || undefined,
-        override_ceiling: overrideCeiling,
+        override_ceiling: isLoan ? overrideCeiling : false,
       }),
     onSuccess: async () => {
       toast.success(isLoan ? "Заём выдан" : "Аванс выдан");
@@ -140,7 +150,8 @@ export function PayrollAdvancesRoute() {
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось списать")),
   });
 
-  const canSubmit = Boolean(issueEmployeeId) && amountNumber > 0 && (!isLoan || canLoan);
+  const canSubmit =
+    Boolean(issueEmployeeId) && amountNumber > 0 && (isLoan ? canLoan : !overEarned);
 
   const columns: Array<DataTableColumn<PayrollAdvance>> = [
     { key: "employee", header: "Сотрудник", cell: (row) => employeeName(row.employee_id) },
@@ -233,9 +244,10 @@ export function PayrollAdvancesRoute() {
       >
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Выдать аванс</DialogTitle>
+            <DialogTitle>{isLoan ? "Выдать заём" : "Выдать аванс"}</DialogTitle>
             <DialogDescription>
-              Система покажет доступное и сама определит, аванс это или заём.
+              Аванс — в пределах заработанного, гасится разом. Заём — деньги в долг,
+              гасятся в рассрочку с выбранной даты.
             </DialogDescription>
           </DialogHeader>
 
@@ -248,6 +260,33 @@ export function PayrollAdvancesRoute() {
                 onChange={setIssueEmployeeId}
               />
             </Label>
+
+            <div className="grid gap-2">
+              <span className="text-sm font-medium">Тип выдачи</span>
+              <div className="inline-flex w-fit overflow-hidden rounded-md border">
+                <button
+                  type="button"
+                  className={cn(
+                    "px-4 py-1.5 text-sm",
+                    !isLoan && "bg-primary/10 font-medium text-primary",
+                  )}
+                  onClick={() => setKind("advance")}
+                >
+                  Аванс
+                </button>
+                <button
+                  type="button"
+                  disabled={!canLoan}
+                  className={cn(
+                    "px-4 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50",
+                    isLoan && "bg-primary/10 font-medium text-primary",
+                  )}
+                  onClick={() => setKind("loan")}
+                >
+                  Заём
+                </button>
+              </div>
+            </div>
 
             {issueEmployeeId ? (
               <div className="rounded-md border bg-muted/40 p-3 text-sm">
@@ -274,25 +313,43 @@ export function PayrollAdvancesRoute() {
               />
             </Label>
 
-            {isLoan ? (
+            {advanceOverEarned ? (
               <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-                Сумма превышает заработанное — это <b>заём</b> ({formatMoney(amountNumber - available)}{" "}
-                сверх).{" "}
-                {canLoan ? "Гасится в рассрочку." : "У вас нет права на выдачу займов."}
+                Сумма превышает заработанное ({formatMoney(available)}). Это можно выдать только
+                как <b>заём</b> — переключите тип выдачи.
               </div>
             ) : null}
 
-            {isLoan && canLoan ? (
+            {isLoan ? (
               <>
+                <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
+                  Заём гасится в рассрочку. Часть в пределах заработанного (
+                  {formatMoney(Math.min(amountNumber, available))}) тоже идёт в долг, а не
+                  списывается сразу.
+                </div>
                 <Label className="grid gap-2">
-                  <span>Рассрочка, периодов</span>
+                  <span>Сумма удержания за период, ₽</span>
                   <Input
                     type="number"
-                    min={1}
-                    value={installments}
-                    onChange={(event) => setInstallments(event.target.value)}
+                    inputMode="decimal"
+                    value={installmentAmount}
+                    onChange={(event) => setInstallmentAmount(event.target.value)}
+                    placeholder="Пусто — весь заём одной ведомостью"
                   />
                 </Label>
+                <Label className="grid gap-2">
+                  <span>Удерживать с (необязательно)</span>
+                  <Input
+                    type="date"
+                    value={recoveryStartDate}
+                    onChange={(event) => setRecoveryStartDate(event.target.value)}
+                  />
+                </Label>
+                {canLoan ? null : (
+                  <div className="text-sm text-amber-600">
+                    У вас нет права на выдачу займов.
+                  </div>
+                )}
                 <label className="flex items-center gap-2 text-sm text-muted-foreground">
                   <input
                     type="checkbox"

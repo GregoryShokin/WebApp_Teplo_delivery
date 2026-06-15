@@ -19,11 +19,13 @@ from app.models import (
     DepositTransaction,
     PayrollLine,
     PayrollPayment,
+    PayrollPeriod,
     PayrollRun,
     PayrollRunEvent,
     User,
 )
 from app.schemas.payroll import (
+    AdvanceRecoveryDeferralRequest,
     DeferredChargeCreate,
     DeferredChargeRead,
     PayrollAggregateRead,
@@ -73,6 +75,8 @@ from app.services.payroll_payouts import (
     get_run_payout_delta,
     set_run_payout_cash,
 )
+from app.services.payroll_admin import run_admin_payroll
+from app.services.payroll_advance_service import set_advance_recovery_deferral
 from app.services.payroll_personal_report import build_personal_report
 from app.services.payroll_runner import (
     PayrollConflictError,
@@ -94,6 +98,7 @@ PAYROLL_RUNS_FINALIZE_ACCESS = (Depends(require_permission("payroll.runs.finaliz
 PAYROLL_RUNS_REOPEN_ACCESS = (Depends(require_permission("payroll.runs.reopen")),)
 PAYROLL_RUNS_MARK_PAID_ACCESS = (Depends(require_permission("payroll.runs.mark_paid")),)
 PAYROLL_RUNS_BANK_DRAFT_ACCESS = (Depends(require_permission("payroll.runs.bank_draft")),)
+PAYROLL_LOANS_ISSUE_ACCESS = (Depends(require_permission("payroll.loans.issue")),)
 PAYROLL_ACCRUALS_READ_ACCESS = (Depends(require_permission("payroll.accruals.read")),)
 PAYROLL_PERSONAL_REPORTS_READ_ACCESS = (
     Depends(require_permission("payroll.personal_reports.read")),
@@ -459,6 +464,41 @@ async def patch_run_payout_cash(
             amount_cash=payload.amount_cash,
             actor_user_id=actor.user_id,
         )
+        return await get_run(session, run_id)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/runs/{run_id}/advances/{advance_id}/defer-recovery",
+    response_model=PayrollRunRead,
+    dependencies=PAYROLL_LOANS_ISSUE_ACCESS,
+)
+async def post_defer_advance_recovery(
+    run_id: uuid.UUID,
+    advance_id: uuid.UUID,
+    payload: AdvanceRecoveryDeferralRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict:
+    """Отсрочить/вернуть удержание займа в этой ведомости и пересчитать её."""
+    try:
+        await set_advance_recovery_deferral(
+            session,
+            run_id=run_id,
+            advance_id=advance_id,
+            defer=payload.defer,
+            reason=payload.reason,
+            actor_user_id=actor.user_id,
+        )
+        run = await session.get(PayrollRun, run_id)
+        period = await session.get(PayrollPeriod, run.period_id)
+        if period.period_type == "half_month":
+            await run_admin_payroll(session, run.period_id)
+        else:
+            await run_payroll(session, run.period_id, force_refresh=True)
         return await get_run(session, run_id)
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

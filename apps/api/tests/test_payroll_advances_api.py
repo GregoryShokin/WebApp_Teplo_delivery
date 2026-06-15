@@ -151,6 +151,46 @@ def test_owner_issues_loan_with_installments(
     assert body["per_installment_amount"] == 5000.0
 
 
+def test_owner_issues_explicit_loan_within_earned(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    employee_id = _seed_okladnik(async_session_factory)
+    # Доступно 15000; просим 10000 ЯВНЫМ займом с долей 5000 и отложенным удержанием.
+    resp = client.post(
+        "/api/v1/payroll/advances",
+        headers={"X-User-Role": "owner"},
+        json={
+            "employee_id": str(employee_id),
+            "amount": "10000",
+            "kind": "loan",
+            "installment_amount": "5000",
+            "recovery_start_date": "2026-05-20",
+            "issued_on": AS_OF,
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["kind"] == "loan"
+    assert body["installments_count"] == 2
+    assert body["per_installment_amount"] == 5000.0
+    assert body["recovery_start_date"] == "2026-05-20"
+
+
+def test_manager_cannot_issue_explicit_loan(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    employee_id = _seed_okladnik(async_session_factory)
+    # Явный заём в пределах заработанного, но у управляющего нет права на займы → 409.
+    resp = client.post(
+        "/api/v1/payroll/advances",
+        headers={"X-User-Role": "manager"},
+        json={"employee_id": str(employee_id), "amount": "10000", "kind": "loan", "issued_on": AS_OF},
+    )
+    assert resp.status_code == 409
+
+
 def test_owner_loan_over_ceiling_blocked_then_override(
     client: TestClient,
     async_session_factory: async_sessionmaker[AsyncSession],

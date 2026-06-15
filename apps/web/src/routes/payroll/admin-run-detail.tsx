@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  CalendarClock,
   CheckCircle2,
   LoaderCircle,
   RefreshCw,
@@ -35,13 +36,16 @@ import {
   apiErrorMessage,
   bulkMarkPayrollPayments,
   createAdminPayrollRun,
+  deferPayrollAdvanceRecovery,
   finalizePayrollRun,
   getAdminPayrollRun,
   getAdminPayrollRunLines,
   getEmployees,
+  getPayrollAdvances,
   unfinalizePayrollRun,
   unmarkPayrollPayment,
   type Employee,
+  type PayrollAdvance,
   type PayrollLine,
   type PayrollPaymentMethod,
 } from "@/lib/api";
@@ -75,6 +79,7 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
   const canFinalizeRuns = permissions.canPerformAction("payroll.runs.finalize");
   const canReopenRuns = permissions.canPerformAction("payroll.runs.reopen");
   const canMarkPaid = permissions.canPerformAction("payroll.runs.mark_paid");
+  const canManageLoans = permissions.canPerformAction("payroll.loans.issue");
   const [isRecalculateDialogOpen, setIsRecalculateDialogOpen] = useState(false);
   const [isUnfinalizeDialogOpen, setIsUnfinalizeDialogOpen] = useState(false);
   const [unfinalizeReason, setUnfinalizeReason] = useState("");
@@ -91,6 +96,10 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
     queryKey: ["employees", "payroll-line-map"],
     queryFn: () => getEmployees({ status: "all" }),
   });
+  const advancesQuery = useQuery({
+    queryKey: ["payroll-advances", "all"],
+    queryFn: () => getPayrollAdvances(),
+  });
 
   const employeesById = useMemo(() => {
     const map = new Map<string, Employee>();
@@ -102,6 +111,13 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
 
   const run = runQuery.data;
   const lines = linesQuery.data ?? [];
+  const loans = useMemo(
+    () =>
+      (advancesQuery.data ?? []).filter(
+        (advance) => advance.kind === "loan" && advance.status === "issued",
+      ),
+    [advancesQuery.data],
+  );
   const totalPayable = Number(run?.summary.total_payable ?? 0);
   const employeeCount = new Set(lines.map((line) => line.employee_id)).size;
   const blockers = run?.blocking_issues ?? [];
@@ -420,9 +436,12 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
 
       <AdminLinesTable
         canManagePayments={canManagePayments}
+        canDeferLoans={canManageLoans && run?.status !== "finalized"}
         employeesById={employeesById}
         isLoading={linesQuery.isLoading || runQuery.isLoading}
         lines={lines}
+        loans={loans}
+        periodEnd={run?.period?.end_date}
         runId={runId}
       />
     </div>
@@ -431,19 +450,34 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
 
 function AdminLinesTable({
   canManagePayments,
+  canDeferLoans,
   employeesById,
   isLoading,
   lines,
+  loans,
+  periodEnd,
   runId,
 }: {
   canManagePayments: boolean;
+  canDeferLoans: boolean;
   employeesById: Map<string, Employee>;
   isLoading: boolean;
   lines: PayrollLine[];
+  loans: PayrollAdvance[];
+  periodEnd?: string;
   runId: string;
 }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const loansByEmployee = useMemo(() => {
+    const map = new Map<string, PayrollAdvance[]>();
+    for (const loan of loans) {
+      const list = map.get(loan.employee_id) ?? [];
+      list.push(loan);
+      map.set(loan.employee_id, list);
+    }
+    return map;
+  }, [loans]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<Set<string>>(new Set());
 
   const unpaidEmployeeIds = useMemo(
@@ -608,6 +642,20 @@ function AdminLinesTable({
       headerClassName: "text-right",
     },
     {
+      key: "loan",
+      header: "Удержание",
+      cell: (row) => (
+        <LoanRecoveryCell
+          canDefer={canDeferLoans}
+          line={row.line}
+          loans={loansByEmployee.get(row.line.employee_id) ?? []}
+          periodEnd={periodEnd}
+          runId={runId}
+        />
+      ),
+      className: "min-w-[180px]",
+    },
+    {
       key: "payment",
       header: "Выплата",
       cell: (row) => <PaymentCell canManagePayments={canManagePayments} line={row.line} />,
@@ -722,6 +770,129 @@ function PaymentCell({
           )}
           Отменить отметку
         </Button>
+      ) : null}
+    </div>
+  );
+}
+
+type Recovery = { advanceId: string; kind: string; amount: number };
+
+function extractRecoveries(line: PayrollLine): Recovery[] {
+  const components = line.components;
+  if (!components || typeof components !== "object") {
+    return [];
+  }
+  const raw = (components as Record<string, unknown>).advance_recoveries;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const result: Recovery[] = [];
+  for (const item of raw) {
+    if (item && typeof item === "object") {
+      const record = item as Record<string, unknown>;
+      const advanceId = typeof record.advance_id === "string" ? record.advance_id : "";
+      const kind = typeof record.kind === "string" ? record.kind : "";
+      result.push({ advanceId, kind, amount: Number(record.amount ?? 0) });
+    }
+  }
+  return result;
+}
+
+function LoanRecoveryCell({
+  canDefer,
+  line,
+  loans,
+  periodEnd,
+  runId,
+}: {
+  canDefer: boolean;
+  line: PayrollLine;
+  loans: PayrollAdvance[];
+  periodEnd?: string;
+  runId: string;
+}) {
+  const queryClient = useQueryClient();
+  const recoveries = extractRecoveries(line);
+  // Удерживается всё (аванс + заём), но отсрочить можно только заём.
+  const total = recoveries.reduce((sum, item) => sum + item.amount, 0);
+  const loanRecoveries = recoveries.filter((item) => item.kind === "loan" && item.advanceId);
+  const deferredLoans = periodEnd
+    ? loans.filter(
+        (loan) => loan.recovery_start_date !== null && loan.recovery_start_date > periodEnd,
+      )
+    : [];
+
+  const deferMutation = useMutation({
+    mutationFn: ({ advanceId, defer }: { advanceId: string; defer: boolean }) =>
+      deferPayrollAdvanceRecovery(runId, advanceId, defer),
+    onSuccess: async (_data, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["payroll-admin-run", runId] }),
+        queryClient.invalidateQueries({ queryKey: ["payroll-admin-run-lines", runId] }),
+        queryClient.invalidateQueries({ queryKey: ["payroll-advances", "all"] }),
+      ]);
+      toast.success(variables.defer ? "Удержание займа отсрочено" : "Удержание займа возвращено");
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось изменить удержание")),
+  });
+
+  if (total <= 0 && deferredLoans.length === 0) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      {total > 0 ? <span className="tabular-nums text-rose-700">−{formatMoney(total)}</span> : null}
+      {canDefer
+        ? loanRecoveries.map((item) => (
+            <Button
+              key={item.advanceId}
+              disabled={deferMutation.isPending}
+              onClick={(event) => {
+                event.stopPropagation();
+                deferMutation.mutate({ advanceId: item.advanceId, defer: true });
+              }}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {deferMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+              ) : (
+                <CalendarClock size={15} aria-hidden="true" />
+              )}
+              Отсрочить заём
+            </Button>
+          ))
+        : null}
+      {deferredLoans.length > 0 ? (
+        <div className="flex flex-col items-start gap-1">
+          <Badge className="rounded-md border-amber-200 bg-amber-50 text-amber-800 shadow-none">
+            Заём отсрочен
+          </Badge>
+          {canDefer
+            ? deferredLoans.map((loan) => (
+                <Button
+                  key={loan.id}
+                  disabled={deferMutation.isPending}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    deferMutation.mutate({ advanceId: loan.id, defer: false });
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {deferMutation.isPending ? (
+                    <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+                  ) : (
+                    <Undo2 size={15} aria-hidden="true" />
+                  )}
+                  Вернуть
+                </Button>
+              ))
+            : null}
+        </div>
       ) : null}
     </div>
   );

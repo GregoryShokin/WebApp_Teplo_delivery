@@ -32,6 +32,14 @@ class PayrollRunUnfinalize(BaseModel):
     reason: str
 
 
+class AdvanceRecoveryDeferralRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # true — отсрочить удержание займа в этой ведомости; false — вернуть удержание.
+    defer: bool = True
+    reason: str | None = None
+
+
 class PayrollPaymentMarkRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
