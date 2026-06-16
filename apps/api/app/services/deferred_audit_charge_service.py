@@ -372,6 +372,61 @@ def deferred_splits_on_payout(
     return rows
 
 
+def deferred_by_employee_on_payout(
+    charges: list[DeferredAuditCharge],
+    *,
+    period_start: date,
+) -> list[dict[str, Any]]:
+    """Распределённые доли на выплату ``period_start`` в разрезе сотрудников.
+
+    Для каждого сотрудника-получателя суммирует его доли по всем штрафам,
+    попадающим на эту выплату, и собирает разбивку для подсказки.
+    """
+    by_employee: dict[uuid.UUID, dict[str, Any]] = {}
+    for charge in charges:
+        start = charge.start_period_start
+        if start is None or charge.status == "cancelled":
+            continue
+        offset_days = (period_start - start).days
+        if offset_days < 0 or offset_days % 7 != 0:
+            continue
+        split_index = offset_days // 7 + 1
+        if split_index < 1 or split_index > charge.splits_count:
+            continue
+
+        source_audit = getattr(charge, "source_audit", None)
+        source_item = getattr(charge, "source_item", None)
+        for recipient in charge.recipients:
+            split = next(
+                (item for item in recipient.splits if item.split_index == split_index),
+                None,
+            )
+            if split is None or split.amount <= 0:
+                continue
+            entry = by_employee.setdefault(
+                recipient.employee_id,
+                {"total": Decimal("0"), "items": []},
+            )
+            entry["total"] += split.amount
+            entry["items"].append(
+                {
+                    "source_audit_date": getattr(source_audit, "business_date", None),
+                    "source_item_name": getattr(source_item, "product_name_snapshot", None),
+                    "split_index": split_index,
+                    "splits_count": charge.splits_count,
+                    "amount": decimal_string(_money(split.amount)),
+                }
+            )
+    return [
+        {
+            "employee_id": employee_id,
+            "total": decimal_string(_money(entry["total"])),
+            "items": entry["items"],
+        }
+        for employee_id, entry in by_employee.items()
+    ]
+
+
 def split_charge_amount(total_amount: Decimal, splits_count: int) -> list[Decimal]:
     total = _money(total_amount)
     base = _money(total / Decimal(splits_count))

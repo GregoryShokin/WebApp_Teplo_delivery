@@ -3710,7 +3710,7 @@ export async function getInventoryAuditPayoutOptions(
   return response.data;
 }
 
-export type InventoryDeferredOnPayout = {
+export type InventoryDeferredOnPayoutCharge = {
   charge_id: string;
   source_audit_date: string | null;
   source_item_name: string | null;
@@ -3723,10 +3723,30 @@ export type InventoryDeferredOnPayout = {
   reason: string;
 };
 
+export type InventoryDeferredOnPayoutItem = {
+  source_audit_date: string | null;
+  source_item_name: string | null;
+  split_index: number;
+  splits_count: number;
+  amount: string;
+};
+
+export type InventoryDeferredOnPayoutEmployee = {
+  employee_id: string;
+  total: string;
+  items: InventoryDeferredOnPayoutItem[];
+};
+
+export type InventoryDeferredOnPayout = {
+  total: string;
+  charges: InventoryDeferredOnPayoutCharge[];
+  by_employee: InventoryDeferredOnPayoutEmployee[];
+};
+
 export async function getInventoryAuditDeferredOnPayout(
   auditId: string,
-): Promise<InventoryDeferredOnPayout[]> {
-  const response = await api.get<InventoryDeferredOnPayout[]>(
+): Promise<InventoryDeferredOnPayout> {
+  const response = await api.get<InventoryDeferredOnPayout>(
     `/inventory/audits/${auditId}/deferred-on-payout`,
   );
   return response.data;

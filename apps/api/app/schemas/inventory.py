@@ -117,6 +117,26 @@ class DeferredOnPayoutRead(BaseModel):
     reason: str
 
 
+class DeferredOnPayoutItemRead(BaseModel):
+    source_audit_date: date | None = None
+    source_item_name: str | None = None
+    split_index: int
+    splits_count: int
+    amount: str
+
+
+class DeferredOnPayoutEmployeeRead(BaseModel):
+    employee_id: uuid.UUID
+    total: str
+    items: list[DeferredOnPayoutItemRead]
+
+
+class DeferredOnPayoutResponse(BaseModel):
+    total: str
+    charges: list[DeferredOnPayoutRead]
+    by_employee: list[DeferredOnPayoutEmployeeRead]
+
+
 class InventoryAuditEmployeeExclusionPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

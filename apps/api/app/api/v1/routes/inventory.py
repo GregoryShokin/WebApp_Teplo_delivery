@@ -20,7 +20,7 @@ from app.models import (
     InventoryAuditPosition,
 )
 from app.schemas.inventory import (
-    DeferredOnPayoutRead,
+    DeferredOnPayoutResponse,
     IikoInventoryCandidateRead,
     IikoProductRead,
     InventoryAuditAllExclusionsRead,
@@ -42,6 +42,7 @@ from app.schemas.inventory import (
 )
 from app.services import iiko_inventory
 from app.services.deferred_audit_charge_service import (
+    deferred_by_employee_on_payout,
     deferred_splits_on_payout,
     list_deferred_charges,
 )
@@ -442,20 +443,25 @@ async def audit_payout_options(
 
 @router.get(
     "/audits/{audit_id}/deferred-on-payout",
-    response_model=list[DeferredOnPayoutRead],
+    response_model=DeferredOnPayoutResponse,
     dependencies=REVISION_READ_ACCESS,
 )
 async def audit_deferred_on_payout(
     audit_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     audit = await load_audit_or_404(session, audit_id)
     period_start, _period_end, _payout = payroll_period_for_date(
         effective_penalty_work_date(audit)
     )
     charges = await list_deferred_charges(session)
-    return deferred_splits_on_payout(charges, period_start=period_start)
+    charge_rows = deferred_splits_on_payout(charges, period_start=period_start)
+    by_employee = deferred_by_employee_on_payout(charges, period_start=period_start)
+    total = decimal_string(
+        sum((Decimal(row["total_amount"]) for row in charge_rows), Decimal("0"))
+    )
+    return {"total": total, "charges": charge_rows, "by_employee": by_employee}
 
 
 @router.post(

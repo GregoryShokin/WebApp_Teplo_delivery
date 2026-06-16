@@ -82,7 +82,7 @@ import {
   type DeferredCharge,
   type DeferredChargeStatus,
   type InventoryAudit,
-  type InventoryDeferredOnPayout,
+  type InventoryDeferredOnPayoutEmployee,
   type InventoryPayoutOption,
   type InventoryAuditExclusionLogRow,
   type InventoryEmployeeRecipient,
@@ -1518,7 +1518,15 @@ function AuditDetail({
     queryKey: ["inventory-audit-deferred-on-payout", audit.id],
     queryFn: () => getInventoryAuditDeferredOnPayout(audit.id),
   });
-  const deferredOnPayout: InventoryDeferredOnPayout[] = deferredOnPayoutQuery.data ?? [];
+  const deferredOnPayout = deferredOnPayoutQuery.data ?? {
+    total: "0",
+    charges: [],
+    by_employee: [],
+  };
+  const deferredByEmployee = new Map<string, InventoryDeferredOnPayoutEmployee>(
+    deferredOnPayout.by_employee.map((row) => [row.employee_id, row]),
+  );
+  const deductionTotal = Number(audit.total_penalty_amount) + Number(deferredOnPayout.total);
   const snapshot = audit.computation_snapshot;
   const groups = snapshot?.groups ?? {};
   const penalties = snapshot?.employee_penalties ?? [];
@@ -1620,12 +1628,12 @@ function AuditDetail({
               </Select>
             ) : null}
           </div>
-          {deferredOnPayout.length > 0 ? (
+          {deferredOnPayout.charges.length > 0 ? (
             <div className="mt-2 rounded-md border border-dashed bg-muted/20 px-3 py-2 text-xs leading-5 text-muted-foreground">
               <div className="font-medium text-foreground/80">
                 Распределённые штрафы на эту выплату
               </div>
-              {deferredOnPayout.map((row) => (
+              {deferredOnPayout.charges.map((row) => (
                 <div key={`${row.charge_id}-${row.split_index}`}>
                   Ревизия {row.source_audit_date ? formatDate(row.source_audit_date) : "—"}
                   {row.source_item_name ? ` (${row.source_item_name})` : ""}: доля{" "}
@@ -1705,6 +1713,23 @@ function AuditDetail({
             </span>
           </span>
         </div>
+        {Number(deferredOnPayout.total) > 0 ? (
+          <div className="grid gap-2 sm:grid-cols-[190px_minmax(0,1fr)] sm:items-baseline">
+            <span className="font-medium">Сумма списания:</span>
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-lg font-semibold tabular-nums">
+                {formatMoney(deductionTotal.toFixed(2))}
+              </span>
+              <InlineTooltip
+                content={`Штраф ревизии ${formatMoney(
+                  audit.total_penalty_amount,
+                )} + распределённое на эту выплату ${formatMoney(deferredOnPayout.total)}`}
+              >
+                <Info size={14} aria-hidden="true" className="text-muted-foreground" />
+              </InlineTooltip>
+            </span>
+          </div>
+        ) : null}
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,440px)]">
@@ -1809,6 +1834,7 @@ function AuditDetail({
                 <div className="rounded-md border">
                   {recipientRows.map((recipient) => (
                     <EmployeePenaltyRow
+                      deferred={deferredByEmployee.get(recipient.employee_id)}
                       disabled={isExclusionDisabled}
                       key={recipient.employee_id}
                       loading={
@@ -2261,17 +2287,36 @@ function GroupSnapshotTable({ groups }: { groups: Record<string, InventoryGroupS
 }
 
 function EmployeePenaltyRow({
+  deferred,
   disabled,
   loading,
   onIncludedChange,
   recipient,
 }: {
+  deferred?: InventoryDeferredOnPayoutEmployee;
   disabled: boolean;
   loading: boolean;
   onIncludedChange: (included: boolean) => void;
   recipient: InventoryEmployeeRecipient;
 }) {
   const included = !recipient.is_excluded;
+  const hasDeferred = Boolean(deferred) && Number(deferred?.total ?? 0) > 0;
+  const displayedAmount = hasDeferred
+    ? (Number(recipient.amount) + Number(deferred?.total ?? 0)).toFixed(2)
+    : recipient.amount;
+  const deferredTooltip =
+    hasDeferred && deferred
+      ? `${formatMoney(recipient.amount)} — штраф ревизии${deferred.items
+          .map(
+            (item) =>
+              `; +${formatMoney(item.amount)} распределённый штраф (ревизия ${
+                item.source_audit_date ? formatDate(item.source_audit_date) : "—"
+              }${item.source_item_name ? `, ${item.source_item_name}` : ""}, доля ${
+                item.split_index
+              }/${item.splits_count})`,
+          )
+          .join("")}`
+      : "";
   return (
     <div
       className={cn(
@@ -2288,7 +2333,14 @@ function EmployeePenaltyRow({
           </div>
         ) : null}
       </div>
-      <div className="font-medium tabular-nums sm:text-right">{formatMoney(recipient.amount)}</div>
+      <div className="flex items-center gap-1 font-medium tabular-nums sm:justify-end">
+        {formatMoney(displayedAmount)}
+        {hasDeferred ? (
+          <InlineTooltip content={deferredTooltip}>
+            <Info size={13} aria-hidden="true" className="text-muted-foreground" />
+          </InlineTooltip>
+        ) : null}
+      </div>
       <div className="flex items-center gap-2 sm:justify-end">
         {loading ? <LoaderCircle className="animate-spin" size={15} aria-hidden="true" /> : null}
         <span className="text-xs text-muted-foreground">Учитывать</span>

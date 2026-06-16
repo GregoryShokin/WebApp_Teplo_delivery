@@ -1562,8 +1562,8 @@ def test_deferred_splits_on_payout_matches_target_week() -> None:
         allocation_group="chefs",
         splits_count=2,
         recipients=[
-            SimpleNamespace(splits=[split(1, "313"), split(2, "312")]),
-            SimpleNamespace(splits=[split(1, "313"), split(2, "312")]),
+            SimpleNamespace(employee_id=uuid.uuid4(), splits=[split(1, "313"), split(2, "312")]),
+            SimpleNamespace(employee_id=uuid.uuid4(), splits=[split(1, "313"), split(2, "312")]),
         ],
         source_audit=SimpleNamespace(business_date=date(2026, 5, 18)),
         source_item=SimpleNamespace(product_name_snapshot="Семга х/к"),
@@ -1579,10 +1579,27 @@ def test_deferred_splits_on_payout_matches_target_week() -> None:
     assert rows[0]["applied"] is False
     assert rows[0]["source_item_name"] == "Семга х/к"
     assert rows[0]["source_audit_date"] == date(2026, 5, 18)
-    # строка должна валидироваться схемой ответа (Decimal→str и пр.)
-    from app.schemas.inventory import DeferredOnPayoutRead
+    # per-employee разрез на эту выплату
+    from app.services.deferred_audit_charge_service import deferred_by_employee_on_payout
 
-    DeferredOnPayoutRead(**rows[0])
+    emp = deferred_by_employee_on_payout([charge], period_start=date(2026, 6, 9))
+    assert len(emp) == 2
+    assert {row["total"] for row in emp} == {"313.00"}
+    assert emp[0]["items"][0]["amount"] == "313.00"
+    assert emp[0]["items"][0]["source_item_name"] == "Семга х/к"
+
+    # ответ-объект должен валидироваться схемой (Decimal→str и пр.)
+    from app.schemas.inventory import (
+        DeferredOnPayoutEmployeeRead,
+        DeferredOnPayoutRead,
+        DeferredOnPayoutResponse,
+    )
+
+    DeferredOnPayoutResponse(
+        total="626.00",
+        charges=[DeferredOnPayoutRead(**rows[0])],
+        by_employee=[DeferredOnPayoutEmployeeRead(**row) for row in emp],
+    )
 
     # период 16–22 → доля 2
     rows2 = deferred_splits_on_payout([charge], period_start=date(2026, 6, 16))
