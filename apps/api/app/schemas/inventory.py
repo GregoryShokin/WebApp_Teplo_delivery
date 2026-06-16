@@ -104,6 +104,19 @@ class PayoutOptionRead(BaseModel):
     is_default: bool
 
 
+class DeferredOnPayoutRead(BaseModel):
+    charge_id: uuid.UUID
+    source_audit_date: date | None = None
+    source_item_name: str | None = None
+    allocation_group: str
+    split_index: int
+    splits_count: int
+    recipient_count: int
+    total_amount: str
+    applied: bool
+    reason: str
+
+
 class InventoryAuditEmployeeExclusionPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

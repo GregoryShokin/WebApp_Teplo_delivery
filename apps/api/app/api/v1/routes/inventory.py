@@ -20,6 +20,7 @@ from app.models import (
     InventoryAuditPosition,
 )
 from app.schemas.inventory import (
+    DeferredOnPayoutRead,
     IikoInventoryCandidateRead,
     IikoProductRead,
     InventoryAuditAllExclusionsRead,
@@ -40,6 +41,10 @@ from app.schemas.inventory import (
     PenaltyComputationRead,
 )
 from app.services import iiko_inventory
+from app.services.deferred_audit_charge_service import (
+    deferred_splits_on_payout,
+    list_deferred_charges,
+)
 from app.services.inventory_audit_service import (
     ALLOCATION_GROUPS,
     IikoInventoryDocumentNotFoundError,
@@ -63,6 +68,7 @@ from app.services.inventory_audit_service import (
     list_all_exclusions,
     list_iiko_candidates,
     list_payout_options,
+    payroll_period_for_date,
     restore_cancelled_audit,
     set_employee_exclusion,
     set_item_exclusion,
@@ -432,6 +438,24 @@ async def audit_payout_options(
 ) -> list[dict[str, Any]]:
     audit = await load_audit_or_404(session, audit_id)
     return await list_payout_options(session, audit)
+
+
+@router.get(
+    "/audits/{audit_id}/deferred-on-payout",
+    response_model=list[DeferredOnPayoutRead],
+    dependencies=REVISION_READ_ACCESS,
+)
+async def audit_deferred_on_payout(
+    audit_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> list[dict[str, Any]]:
+    audit = await load_audit_or_404(session, audit_id)
+    period_start, _period_end, _payout = payroll_period_for_date(
+        effective_penalty_work_date(audit)
+    )
+    charges = await list_deferred_charges(session)
+    return deferred_splits_on_payout(charges, period_start=period_start)
 
 
 @router.post(

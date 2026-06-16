@@ -3710,6 +3710,28 @@ export async function getInventoryAuditPayoutOptions(
   return response.data;
 }
 
+export type InventoryDeferredOnPayout = {
+  charge_id: string;
+  source_audit_date: string | null;
+  source_item_name: string | null;
+  allocation_group: InventoryAllocationGroup;
+  split_index: number;
+  splits_count: number;
+  recipient_count: number;
+  total_amount: string;
+  applied: boolean;
+  reason: string;
+};
+
+export async function getInventoryAuditDeferredOnPayout(
+  auditId: string,
+): Promise<InventoryDeferredOnPayout[]> {
+  const response = await api.get<InventoryDeferredOnPayout[]>(
+    `/inventory/audits/${auditId}/deferred-on-payout`,
+  );
+  return response.data;
+}
+
 export async function getIikoCandidates(businessDate: string): Promise<IikoCandidate[]> {
   const response = await api.get<IikoCandidate[]>("/inventory/audits/iiko-candidates", {
     params: { business_date: businessDate },

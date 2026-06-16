@@ -311,6 +311,66 @@ async def collapse_deferred_charges_on_dismissal(
     return collapsed
 
 
+def deferred_splits_on_payout(
+    charges: list[DeferredAuditCharge],
+    *,
+    period_start: date,
+) -> list[dict[str, Any]]:
+    """Доли распределённых штрафов, попадающие на зарплатный период ``period_start``.
+
+    Для каждого штрафа с заданной стартовой выплатой находим долю, чья целевая
+    неделя (``start_period_start + 7*(k-1)``) совпадает с ``period_start``, и
+    агрегируем её сумму по получателям. Отменённые и legacy-штрафы (без старта)
+    пропускаем — у последних нет детерминированной привязки к дате.
+    """
+    rows: list[dict[str, Any]] = []
+    for charge in charges:
+        start = charge.start_period_start
+        if start is None or charge.status == "cancelled":
+            continue
+        offset_days = (period_start - start).days
+        if offset_days < 0 or offset_days % 7 != 0:
+            continue
+        split_index = offset_days // 7 + 1
+        if split_index < 1 or split_index > charge.splits_count:
+            continue
+
+        total = Decimal("0")
+        recipient_count = 0
+        applied_count = 0
+        for recipient in charge.recipients:
+            split = next(
+                (item for item in recipient.splits if item.split_index == split_index),
+                None,
+            )
+            if split is None:
+                continue
+            recipient_count += 1
+            total += split.amount
+            if split.applied_at is not None:
+                applied_count += 1
+        if recipient_count == 0:
+            continue
+
+        source_audit = getattr(charge, "source_audit", None)
+        source_item = getattr(charge, "source_item", None)
+        rows.append(
+            {
+                "charge_id": charge.id,
+                "source_audit_date": getattr(source_audit, "business_date", None),
+                "source_item_name": getattr(source_item, "product_name_snapshot", None),
+                "allocation_group": charge.allocation_group,
+                "split_index": split_index,
+                "splits_count": charge.splits_count,
+                "recipient_count": recipient_count,
+                "total_amount": _money(total),
+                "applied": applied_count == recipient_count,
+                "reason": charge.reason,
+            }
+        )
+    return rows
+
+
 def split_charge_amount(total_amount: Decimal, splits_count: int) -> list[Decimal]:
     total = _money(total_amount)
     base = _money(total / Decimal(splits_count))

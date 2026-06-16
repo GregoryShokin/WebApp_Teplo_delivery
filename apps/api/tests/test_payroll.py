@@ -5,6 +5,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -1542,6 +1543,57 @@ async def test_apply_pending_splits_respects_charge_start_period(
     assert len(applied_next) == 1
     assert recipient.splits_remaining == 0
     assert charge.status == "applied"
+
+
+def test_deferred_splits_on_payout_matches_target_week() -> None:
+    from app.services.deferred_audit_charge_service import deferred_splits_on_payout
+
+    def split(idx: int, amount: str, applied: bool = False) -> SimpleNamespace:
+        return SimpleNamespace(
+            split_index=idx,
+            amount=Decimal(amount),
+            applied_at=datetime(2026, 6, 16, tzinfo=UTC) if applied else None,
+        )
+
+    charge = SimpleNamespace(
+        id=uuid.uuid4(),
+        start_period_start=date(2026, 6, 9),
+        status="pending",
+        allocation_group="chefs",
+        splits_count=2,
+        recipients=[
+            SimpleNamespace(splits=[split(1, "313"), split(2, "312")]),
+            SimpleNamespace(splits=[split(1, "313"), split(2, "312")]),
+        ],
+        source_audit=SimpleNamespace(business_date=date(2026, 5, 18)),
+        source_item=SimpleNamespace(product_name_snapshot="Семга х/к"),
+        reason="Перенос",
+    )
+
+    # период 09–15 → доля 1, сумма 313+313
+    rows = deferred_splits_on_payout([charge], period_start=date(2026, 6, 9))
+    assert len(rows) == 1
+    assert rows[0]["split_index"] == 1
+    assert rows[0]["recipient_count"] == 2
+    assert rows[0]["total_amount"] == Decimal("626.00")
+    assert rows[0]["applied"] is False
+    assert rows[0]["source_item_name"] == "Семга х/к"
+    assert rows[0]["source_audit_date"] == date(2026, 5, 18)
+
+    # период 16–22 → доля 2
+    rows2 = deferred_splits_on_payout([charge], period_start=date(2026, 6, 16))
+    assert rows2[0]["split_index"] == 2
+    assert rows2[0]["total_amount"] == Decimal("624.00")
+
+    # период 23–29 → долей нет (всего 2)
+    assert deferred_splits_on_payout([charge], period_start=date(2026, 6, 23)) == []
+
+    # период не выровнен по неделям → пропуск
+    assert deferred_splits_on_payout([charge], period_start=date(2026, 6, 10)) == []
+
+    # отменённый штраф пропускается
+    charge.status = "cancelled"
+    assert deferred_splits_on_payout([charge], period_start=date(2026, 6, 9)) == []
 
 
 async def test_collapse_on_dismissal_creates_single_adjustment(

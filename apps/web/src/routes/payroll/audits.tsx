@@ -67,6 +67,7 @@ import {
   getDeferredChargePayoutOptions,
   getIikoCandidates,
   getInventoryAudit,
+  getInventoryAuditDeferredOnPayout,
   getInventoryAuditPayoutOptions,
   getInventoryAudits,
   getInventoryPositions,
@@ -81,6 +82,7 @@ import {
   type DeferredCharge,
   type DeferredChargeStatus,
   type InventoryAudit,
+  type InventoryDeferredOnPayout,
   type InventoryPayoutOption,
   type InventoryAuditExclusionLogRow,
   type InventoryEmployeeRecipient,
@@ -1512,6 +1514,11 @@ function AuditDetail({
     onError: (error) =>
       toast.error(apiErrorMessage(error, "Не удалось перенести дату списания")),
   });
+  const deferredOnPayoutQuery = useQuery({
+    queryKey: ["inventory-audit-deferred-on-payout", audit.id],
+    queryFn: () => getInventoryAuditDeferredOnPayout(audit.id),
+  });
+  const deferredOnPayout: InventoryDeferredOnPayout[] = deferredOnPayoutQuery.data ?? [];
   const snapshot = audit.computation_snapshot;
   const groups = snapshot?.groups ?? {};
   const penalties = snapshot?.employee_penalties ?? [];
@@ -1613,6 +1620,21 @@ function AuditDetail({
               </Select>
             ) : null}
           </div>
+          {deferredOnPayout.length > 0 ? (
+            <div className="mt-2 rounded-md border border-dashed bg-muted/20 px-3 py-2 text-xs leading-5 text-muted-foreground">
+              <div className="font-medium text-foreground/80">
+                Распределённые штрафы на эту выплату
+              </div>
+              {deferredOnPayout.map((row) => (
+                <div key={`${row.charge_id}-${row.split_index}`}>
+                  Ревизия {row.source_audit_date ? formatDate(row.source_audit_date) : "—"}
+                  {row.source_item_name ? ` (${row.source_item_name})` : ""}: доля{" "}
+                  {row.split_index}/{row.splits_count} — {formatMoney(row.total_amount)} на{" "}
+                  {row.recipient_count} сотр.{row.applied ? " · применена" : " · ожидает"}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
           <div className="text-right">
