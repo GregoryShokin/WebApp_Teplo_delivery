@@ -16,6 +16,7 @@ import { CourierScheduleRoute } from "@/routes/couriers/schedule";
 import { CourierStatisticsRoute } from "@/routes/couriers/statistics";
 import { PayrollAdminRunDetailRoute } from "@/routes/payroll/admin-run-detail";
 import { PayrollConfigurationRoute } from "@/routes/payroll/configuration";
+import { PayrollDepositsRoute } from "@/routes/payroll/deposits";
 import { PayrollRunDetailRoute } from "@/routes/payroll/run-detail";
 import { ScheduleRoute } from "@/routes/schedule";
 import { SettingsRoute } from "@/routes/settings";
@@ -181,6 +182,10 @@ const routes: AppRoute[] = [
         ),
       },
     ],
+  },
+  {
+    path: "/deposits",
+    render: ({ navigate }) => <PayrollDepositsRoute onNavigate={navigate} />,
   },
   {
     path: "/payroll-adjustments",

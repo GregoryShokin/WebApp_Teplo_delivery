@@ -15,6 +15,7 @@ import {
   Home,
   LogOut,
   Menu,
+  PiggyBank,
   ReceiptText,
   Settings,
   UsersRound,
@@ -73,6 +74,7 @@ const navGroups: NavGroup[] = [
     title: "Зарплата",
     items: [
       { label: "Расчёты", href: "/payroll", icon: Banknote, section: "payroll" },
+      { label: "Депозиты", href: "/deposits", icon: PiggyBank, section: "payroll.deposits" },
       { label: "График сотрудников", href: "/schedule", icon: CalendarDays, section: "schedule" },
       { label: "Исходные данные", href: "/source-data", icon: ClipboardList, section: "source-data" },
     ],

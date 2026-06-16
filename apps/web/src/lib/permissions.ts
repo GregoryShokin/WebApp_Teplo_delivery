@@ -23,6 +23,7 @@ export type AppSection =
   | "payroll.accruals"
   | "payroll.personal"
   | "payroll.advances"
+  | "payroll.deposits"
   | "schedule"
   | "source-data"
   | "finance"
@@ -249,6 +250,7 @@ const SECTION_PERMISSIONS: Record<AppSection, readonly PermissionCode[]> = {
   "payroll.accruals": ["payroll.accruals.read"],
   "payroll.personal": ["payroll.personal_reports.read"],
   "payroll.advances": ["payroll.advances.read"],
+  "payroll.deposits": ["payroll.production_deposits.read"],
   schedule: ["source.schedule.read", "source.shift_ledger.read", "source.schedule.edit"],
   "source-data": [...PERMISSION_GROUPS.sourceDataRead, ...PERMISSION_GROUPS.sourceDataWrite],
   finance: [...PERMISSION_GROUPS.financeRead, ...PERMISSION_GROUPS.financeWrite],
