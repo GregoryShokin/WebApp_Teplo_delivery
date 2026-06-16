@@ -457,3 +457,40 @@ async def test_admin_run_respects_exclusion_toggle(
         assert run.status == "completed"
         assert await _lines(session, run.id) == []
         assert run.summary["excluded_no_oklad"] == []
+
+
+async def test_admin_half_month_finalization_does_not_lock_shift_ledger(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Регрессия: финализация админской полумесячной ведомости (1–15, выплата 15-го) НЕ
+    # должна морозить ячейки производственного Учёта смен за ещё не закрытую неделю 9–15.
+    # Раньше водяная отметка блокировки бралась по всем типам периодов, и end_date
+    # админского периода (15 июня) морозил весь табель первой половины месяца.
+    from app.services import shift_ledger as shift_ledger_service
+    from app.services.shift_ledger import (
+        get_latest_locked_payroll_date,
+        is_payroll_locked,
+    )
+
+    monkeypatch.setattr(shift_ledger_service, "ledger_today", lambda: date(2026, 6, 16))
+
+    async with async_session_factory() as session:
+        # Последняя финализированная производственная неделя — по понедельник 8 июня.
+        await _add_finalized_run(
+            session, period_type="week", start=date(2026, 6, 2), end=date(2026, 6, 8)
+        )
+        # Админская полумесячная 1–15 финализирована — её end_date в блокировке табеля не учитываем.
+        await _add_finalized_run(
+            session, period_type="half_month", start=date(2026, 6, 1), end=date(2026, 6, 15)
+        )
+        await session.commit()
+
+        latest = await get_latest_locked_payroll_date(session)
+        # Отметка — по производственной неделе (8 июня), а не по админскому периоду (15 июня).
+        assert latest == date(2026, 6, 8)
+        # Дни ещё не закрытой производственной недели 9–15 редактируемы.
+        assert is_payroll_locked(date(2026, 6, 9), latest) is False
+        assert is_payroll_locked(date(2026, 6, 15), latest) is False
+        # Дни закрытой производственной недели остаются заблокированными.
+        assert is_payroll_locked(date(2026, 6, 8), latest) is True
