@@ -123,6 +123,15 @@ async def get_vacation_roster(
     return rows
 
 
+@router.get("/payout-dates", response_model=list[date], dependencies=VACATIONS_READ_ACCESS)
+async def get_vacation_payout_dates(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> list[date]:
+    del actor
+    return await vacation_service.eligible_payout_dates(session)
+
+
 @router.post("", response_model=VacationPeriodRead, dependencies=VACATIONS_EDIT_ACCESS)
 @router.post(
     "/",

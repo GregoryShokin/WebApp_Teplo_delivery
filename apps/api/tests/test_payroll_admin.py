@@ -494,3 +494,34 @@ async def test_admin_half_month_finalization_does_not_lock_shift_ledger(
         assert is_payroll_locked(date(2026, 6, 15), latest) is False
         # Дни закрытой производственной недели остаются заблокированными.
         assert is_payroll_locked(date(2026, 6, 8), latest) is True
+
+
+async def test_eligible_payout_dates_include_open_week_skip_finalized(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Даты выплаты отпускных = незакрытые ведомости. Последняя финализированная неделя —
+    # выплата 9 июня (вторник); значит первая доступная дата — следующий вторник 16 июня
+    # (его ведомость ещё не закрыта), а сама дата 9 июня не предлагается.
+    from app.services.vacation_service import eligible_payout_dates
+
+    async with async_session_factory() as session:
+        session.add(
+            PayrollPeriod(
+                id=uuid.uuid4(),
+                period_type="week",
+                start_date=date(2026, 6, 2),
+                end_date=date(2026, 6, 8),
+                payroll_date=date(2026, 6, 9),
+                status="finalized",
+            )
+        )
+        await session.commit()
+
+        dates = await eligible_payout_dates(session, count=4)
+        assert dates == [
+            date(2026, 6, 16),
+            date(2026, 6, 23),
+            date(2026, 6, 30),
+            date(2026, 7, 7),
+        ]
+        assert date(2026, 6, 9) not in dates

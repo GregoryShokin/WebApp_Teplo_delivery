@@ -41,6 +41,7 @@ import {
   apiErrorStatus,
   cancelVacationPeriod,
   createVacationPeriod,
+  getVacationPayoutDates,
   getVacationRoster,
   patchVacationPeriod,
   type VacationConflictResponse,
@@ -91,6 +92,16 @@ export function VacationsRoute({ embedded = false, headerSlot }: VacationsRouteP
     queryKey: ["vacations-roster", year],
     queryFn: () => getVacationRoster(year),
   });
+
+  const payoutDatesQuery = useQuery({
+    queryKey: ["vacation-payout-dates"],
+    queryFn: getVacationPayoutDates,
+    staleTime: 60_000,
+  });
+  const payoutDates =
+    payoutDatesQuery.data && payoutDatesQuery.data.length > 0
+      ? payoutDatesQuery.data
+      : upcomingPayoutTuesdays();
 
   const saveVacationMutation = useMutation({
     mutationFn: (variables: { state: VacationDialogState; forceRemoveShifts?: boolean }) => {
@@ -153,14 +164,14 @@ export function VacationsRoute({ embedded = false, headerSlot }: VacationsRouteP
 
   function openVacationDialog(employee?: VacationRosterRow, period?: VacationPeriodRead) {
     const today = toIsoDate(new Date());
-    const defaultPayout = upcomingPayoutTuesdays()[0] ?? today;
+    const defaultPayout = period?.payout_date ?? payoutDates[0] ?? today;
     setVacationDialog({
       mode: period ? "edit" : "create",
       period: period ?? null,
       employeeId: employee?.employee_id ?? "",
       dateStart: period?.date_start ?? today,
       dateEnd: period?.date_end ?? today,
-      payoutDate: period?.payout_date ?? defaultPayout,
+      payoutDate: defaultPayout,
       comment: period?.comment ?? "",
       conflict: null,
     });
@@ -230,6 +241,7 @@ export function VacationsRoute({ embedded = false, headerSlot }: VacationsRouteP
 
       <VacationDialog
         employees={vacationRosterQuery.data ?? []}
+        payoutDates={payoutDates}
         isCancelling={cancelVacationMutation.isPending}
         isSaving={saveVacationMutation.isPending}
         canEdit={canEditVacations}
@@ -466,6 +478,7 @@ function VacationStatusBadge({ status }: { status: VacationPeriodRead["status"] 
 function VacationDialog({
   canEdit,
   employees,
+  payoutDates,
   isCancelling,
   isSaving,
   onCancelPeriod,
@@ -476,6 +489,7 @@ function VacationDialog({
 }: {
   canEdit: boolean;
   employees: VacationRosterRow[];
+  payoutDates: string[];
   isCancelling: boolean;
   isSaving: boolean;
   onCancelPeriod: (period: VacationPeriodRead) => void;
@@ -493,11 +507,10 @@ function VacationDialog({
     state?.dateStart && state.dateEnd && state.dateEnd >= state.dateStart
       ? vacationDaysCount(state.dateStart, state.dateEnd)
       : null;
-  const payoutTuesdays = upcomingPayoutTuesdays();
   const payoutOptions =
-    state?.payoutDate && !payoutTuesdays.includes(state.payoutDate)
-      ? [state.payoutDate, ...payoutTuesdays]
-      : payoutTuesdays;
+    state?.payoutDate && !payoutDates.includes(state.payoutDate)
+      ? [state.payoutDate, ...payoutDates]
+      : payoutDates;
 
   function patchState(patch: Partial<VacationDialogState>) {
     setValue((current) => (current ? { ...current, ...patch, conflict: null } : current));

@@ -3403,6 +3403,11 @@ export async function getVacationRoster(year: number): Promise<VacationRosterRow
   return response.data;
 }
 
+export async function getVacationPayoutDates(): Promise<string[]> {
+  const response = await api.get<string[]>("/vacations/payout-dates");
+  return response.data;
+}
+
 export async function createVacationPeriod(
   payload: VacationPeriodPayload,
 ): Promise<VacationPeriodRead> {

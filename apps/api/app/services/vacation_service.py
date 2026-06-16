@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from fastapi import status as http_status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor
@@ -337,6 +337,32 @@ async def vacation_payouts_for_payroll_date(
             )
         )
     return payouts
+
+
+def _next_tuesday_on_or_after(value: date) -> date:
+    # Вторник == weekday 1.
+    return value + timedelta(days=(1 - value.weekday()) % 7)
+
+
+async def eligible_payout_dates(session: AsyncSession, *, count: int = 12) -> list[date]:
+    """Даты выплат (вторники) для незакрытых ведомостей.
+
+    Берём вторники начиная с первой нефинализированной недели — то есть со
+    следующего вторника после последней закрытой ведомости. Включает текущую
+    открытую неделю, даже если её вторник уже прошёл (её ведомость ещё не закрыта),
+    и не предлагает даты уже финализированных ведомостей.
+    """
+    latest_finalized = await session.scalar(
+        select(func.max(PayrollPeriod.payroll_date)).where(
+            PayrollPeriod.period_type == "week",
+            PayrollPeriod.status == "finalized",
+        )
+    )
+    if latest_finalized is not None:
+        start = latest_finalized + timedelta(days=7)
+    else:
+        start = _next_tuesday_on_or_after(datetime.now(UTC).date())
+    return [start + timedelta(days=7 * index) for index in range(max(count, 1))]
 
 
 async def employee_has_active_vacation(
