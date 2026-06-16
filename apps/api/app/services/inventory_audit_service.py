@@ -31,6 +31,7 @@ from app.services import iiko_inventory
 from app.services.payroll_adjustment_service import (
     PayrollAdjustmentLockedError,
     assert_date_not_locked,
+    is_date_locked,
 )
 
 ALLOCATION_GROUPS = {"chefs", "common", "admins"}
@@ -501,7 +502,7 @@ async def apply_audit_penalties(
         raise InventoryAuditConflictError("Ревизия уже применена")
     if audit.status == "cancelled":
         raise InventoryAuditConflictError("Отменённую ревизию нельзя применить")
-    adjustment_work_date = audit_penalty_work_date(audit.business_date)
+    adjustment_work_date = effective_penalty_work_date(audit)
     try:
         await assert_date_not_locked(session, adjustment_work_date)
     except PayrollAdjustmentLockedError as exc:
@@ -560,7 +561,7 @@ async def cancel_audit(
 
     removed_adjustments = 0
     if audit.status == "applied":
-        adjustment_work_date = audit_penalty_work_date(audit.business_date)
+        adjustment_work_date = effective_penalty_work_date(audit)
         try:
             await assert_date_not_locked(session, adjustment_work_date)
         except PayrollAdjustmentLockedError as exc:
@@ -996,7 +997,108 @@ def adjustment_comment_for_computation(
 
 
 def audit_penalty_work_date(business_date: date) -> date:
+    """Дата списания штрафа по умолчанию: день, следующий за ревизией.
+
+    Для понедельничных ревизий это вторник — первый день следующего
+    зарплатного периода (вторник…понедельник), поэтому штраф удерживается
+    из выплаты примерно через неделю. Переопределяется на уровне ревизии
+    полем ``penalty_work_date_override`` (см. :func:`effective_penalty_work_date`).
+    """
     return business_date + timedelta(days=1)
+
+
+def effective_penalty_work_date(audit: Any) -> date:
+    """Фактическая дата списания: ручной перенос или правило по умолчанию."""
+    override = getattr(audit, "penalty_work_date_override", None)
+    if override is not None:
+        return override
+    return audit_penalty_work_date(audit.business_date)
+
+
+def payroll_period_for_date(work_date: date) -> tuple[date, date, date]:
+    """Зарплатный период (вторник…понедельник), содержащий дату, и дата выплаты.
+
+    Возвращает ``(start, end, payout)``: start — вторник, end — понедельник,
+    payout — следующий вторник (день выплаты этого периода).
+    """
+    offset = (work_date.weekday() - 1) % 7  # вторник=1 → 0
+    start = work_date - timedelta(days=offset)
+    end = start + timedelta(days=6)
+    payout = end + timedelta(days=1)
+    return start, end, payout
+
+
+async def list_payout_options(
+    session: AsyncSession,
+    audit: Any,
+    *,
+    count: int = 8,
+) -> list[dict[str, Any]]:
+    """Список зарплатных выплат для переноса даты списания штрафа.
+
+    Первый элемент — период по умолчанию (``override_value=None``), далее идут
+    следующие недельные периоды. ``locked=True`` помечает уже зафиксированные
+    (финализированные) периоды — переносить в них нельзя.
+    """
+    default_date = audit_penalty_work_date(audit.business_date)
+    base_start, base_end, base_payout = payroll_period_for_date(default_date)
+    options: list[dict[str, Any]] = []
+    for index in range(max(count, 1)):
+        shift = timedelta(days=7 * index)
+        start = base_start + shift
+        end = base_end + shift
+        payout = base_payout + shift
+        options.append(
+            {
+                "override_value": None if index == 0 else start,
+                "period_start": start,
+                "period_end": end,
+                "payout_date": payout,
+                "locked": await is_date_locked(session, start),
+                "is_default": index == 0,
+            }
+        )
+    return options
+
+
+async def set_penalty_work_date_override(
+    session: AsyncSession,
+    audit: InventoryAudit,
+    override: date | None,
+    *,
+    actor: CurrentActor,
+) -> None:
+    """Установить/сбросить перенос даты списания (только в черновике).
+
+    Не коммитит — вызывающая сторона коммитит вместе с остальными правками.
+    """
+    if audit.status != "draft":
+        raise InventoryAuditConflictError(
+            "Перенести дату списания можно только в черновике"
+        )
+    if override is not None:
+        default_date = audit_penalty_work_date(audit.business_date)
+        if override < default_date:
+            raise InventoryAuditValidationError(
+                "Дата списания не может быть раньше расчётной (дата ревизии + 1 день)"
+            )
+        try:
+            await assert_date_not_locked(session, override)
+        except PayrollAdjustmentLockedError as exc:
+            raise InventoryAuditConflictError(str(exc)) from exc
+    before = audit.penalty_work_date_override
+    audit.penalty_work_date_override = override
+    audit.updated_at = datetime.now(UTC)
+    await _write_agent_audit(
+        session,
+        action_type="inventory_audit_penalty_date_override",
+        audit=audit,
+        actor=actor,
+        after={
+            "before": before.isoformat() if before else None,
+            "override": override.isoformat() if override else None,
+        },
+    )
 
 
 async def _compute_penalties(

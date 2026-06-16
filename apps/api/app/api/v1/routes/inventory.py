@@ -36,6 +36,7 @@ from app.schemas.inventory import (
     InventoryPositionPatch,
     InventoryPositionRead,
     InventoryPositionsSyncRead,
+    PayoutOptionRead,
     PenaltyComputationRead,
 )
 from app.services import iiko_inventory
@@ -51,6 +52,7 @@ from app.services.inventory_audit_service import (
     compute_penalties,
     create_manual_audit,
     decimal_string,
+    effective_penalty_work_date,
     get_audit_with_items,
     import_audit_from_iiko,
     item_effective_swap_group,
@@ -60,9 +62,11 @@ from app.services.inventory_audit_service import (
     item_swap_group_override,
     list_all_exclusions,
     list_iiko_candidates,
+    list_payout_options,
     restore_cancelled_audit,
     set_employee_exclusion,
     set_item_exclusion,
+    set_penalty_work_date_override,
     summarize_audit_items,
     summarize_swap_groups,
     sync_positions_from_iiko,
@@ -392,11 +396,42 @@ async def patch_audit(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
     audit = await load_audit_or_404(session, audit_id)
-    audit.notes = clean_optional_text(payload.notes)
+    fields = payload.model_fields_set
+    if "notes" in fields:
+        audit.notes = clean_optional_text(payload.notes)
+    if "penalty_work_date_override" in fields:
+        try:
+            await set_penalty_work_date_override(
+                session,
+                audit,
+                payload.penalty_work_date_override,
+                actor=actor,
+            )
+        except InventoryAuditConflictError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+            ) from exc
+        except InventoryAuditValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
     await session.commit()
-    await session.refresh(audit)
     audit = await load_audit_or_404(session, audit.id)
     return audit_payload(audit, include_items=True)
+
+
+@router.get(
+    "/audits/{audit_id}/payout-options",
+    response_model=list[PayoutOptionRead],
+    dependencies=REVISION_READ_ACCESS,
+)
+async def audit_payout_options(
+    audit_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> list[dict[str, Any]]:
+    audit = await load_audit_or_404(session, audit_id)
+    return await list_payout_options(session, audit)
 
 
 @router.post(
@@ -741,6 +776,8 @@ def audit_payload(audit: InventoryAudit, *, include_items: bool = False) -> dict
         "total_penalty_amount": decimal_string(audit.total_penalty_amount),
         "employee_count": snapshot_employee_count(audit.computation_snapshot),
         "notes": audit.notes,
+        "penalty_work_date_override": getattr(audit, "penalty_work_date_override", None),
+        "penalty_work_date_effective": effective_penalty_work_date(audit),
         "created_at": audit.created_at,
         "updated_at": audit.updated_at,
         "applied_at": audit.applied_at,

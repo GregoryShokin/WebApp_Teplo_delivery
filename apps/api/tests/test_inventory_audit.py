@@ -656,6 +656,195 @@ def test_apply_in_finalized_period_409() -> None:
         raise InventoryAuditConflictError("Период зафиксирован, изменения невозможны")
 
 
+def test_effective_penalty_work_date_default_and_override() -> None:
+    audit = audit_obj(business_date=date(2026, 6, 8))
+    audit.penalty_work_date_override = None
+    # по умолчанию — день после ревизии
+    assert inventory_audit_service.effective_penalty_work_date(audit) == date(2026, 6, 9)
+    # с переносом — берётся override
+    audit.penalty_work_date_override = date(2026, 6, 16)
+    assert inventory_audit_service.effective_penalty_work_date(audit) == date(2026, 6, 16)
+
+
+def test_payroll_period_for_date_monday_and_tuesday() -> None:
+    # понедельник — последний день периода вторник…понедельник
+    start, end, payout = inventory_audit_service.payroll_period_for_date(date(2026, 6, 15))
+    assert (start, end, payout) == (date(2026, 6, 9), date(2026, 6, 15), date(2026, 6, 16))
+    # вторник — первый день нового периода, выплата через неделю
+    start, end, payout = inventory_audit_service.payroll_period_for_date(date(2026, 6, 16))
+    assert (start, end, payout) == (date(2026, 6, 16), date(2026, 6, 22), date(2026, 6, 23))
+
+
+@pytest.mark.asyncio
+async def test_apply_uses_penalty_work_date_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    payroll_employee = employee("Cook", "Повар")
+    audit = audit_obj(business_date=date(2026, 6, 8), previous_audit_date=date(2026, 6, 1))
+    audit.status = "draft"
+    audit.penalty_work_date_override = date(2026, 6, 16)
+    category = SimpleNamespace(id=uuid.uuid4())
+    computation = SimpleNamespace(
+        employee_penalties={payroll_employee.id: Decimal("2800.00")},
+        total_penalty_amount=Decimal("2800.00"),
+    )
+    session = ApplyAuditSession()
+    locked_dates: list[date] = []
+
+    async def fake_load_audit(_session: Any, _audit_id: uuid.UUID) -> SimpleNamespace:
+        return audit
+
+    async def fake_compute_penalties(
+        _session: Any, _audit_id: uuid.UUID, *, commit: bool
+    ) -> SimpleNamespace:
+        return computation
+
+    async def fake_get_category(_session: Any) -> SimpleNamespace:
+        return category
+
+    async def fake_assert_date_not_locked(_session: Any, work_date: date) -> None:
+        locked_dates.append(work_date)
+
+    async def fake_write_agent_audit(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(inventory_audit_service, "_load_audit_or_404", fake_load_audit)
+    monkeypatch.setattr(inventory_audit_service, "_compute_penalties", fake_compute_penalties)
+    monkeypatch.setattr(
+        inventory_audit_service, "_get_or_create_inventory_category", fake_get_category
+    )
+    monkeypatch.setattr(
+        inventory_audit_service, "assert_date_not_locked", fake_assert_date_not_locked
+    )
+    monkeypatch.setattr(inventory_audit_service, "_write_agent_audit", fake_write_agent_audit)
+
+    await inventory_audit_service.apply_audit_penalties(
+        session,  # type: ignore[arg-type]
+        audit.id,
+        actor=finance_actor(),
+    )
+
+    adjustments = [row for row in session.added if isinstance(row, PayrollAdjustment)]
+    # дата списания и проверка блокировки идут по перенесённой дате, а не business_date+1
+    assert locked_dates == [date(2026, 6, 16)]
+    assert adjustments[0].work_date == date(2026, 6, 16)
+
+
+@pytest.mark.asyncio
+async def test_set_penalty_work_date_override_non_draft_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audit = audit_obj(business_date=date(2026, 6, 8))
+    audit.status = "applied"
+    audit.penalty_work_date_override = None
+
+    with pytest.raises(InventoryAuditConflictError) as exc_info:
+        await inventory_audit_service.set_penalty_work_date_override(
+            None,  # type: ignore[arg-type]
+            audit,
+            date(2026, 6, 16),
+            actor=finance_actor(),
+        )
+
+    assert "только в черновике" in str(exc_info.value)
+    assert audit.penalty_work_date_override is None
+
+
+@pytest.mark.asyncio
+async def test_set_penalty_work_date_override_locked_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.payroll_adjustment_service import PayrollAdjustmentLockedError
+
+    audit = audit_obj(business_date=date(2026, 6, 8))
+    audit.status = "draft"
+    audit.penalty_work_date_override = None
+
+    async def fake_assert_locked(_session: Any, _work_date: date) -> None:
+        raise PayrollAdjustmentLockedError("Период зафиксирован, изменения невозможны")
+
+    monkeypatch.setattr(inventory_audit_service, "assert_date_not_locked", fake_assert_locked)
+
+    with pytest.raises(InventoryAuditConflictError):
+        await inventory_audit_service.set_penalty_work_date_override(
+            None,  # type: ignore[arg-type]
+            audit,
+            date(2026, 6, 16),
+            actor=finance_actor(),
+        )
+    assert audit.penalty_work_date_override is None
+
+
+@pytest.mark.asyncio
+async def test_set_penalty_work_date_override_earlier_than_default_rejected() -> None:
+    audit = audit_obj(business_date=date(2026, 6, 8))
+    audit.status = "draft"
+    audit.penalty_work_date_override = None
+
+    with pytest.raises(inventory_audit_service.InventoryAuditValidationError):
+        await inventory_audit_service.set_penalty_work_date_override(
+            None,  # type: ignore[arg-type]
+            audit,
+            date(2026, 6, 8),  # = business_date, раньше расчётной (09.06)
+            actor=finance_actor(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_set_penalty_work_date_override_sets_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audit = audit_obj(business_date=date(2026, 6, 8))
+    audit.status = "draft"
+    audit.penalty_work_date_override = None
+    events: list[dict[str, Any]] = []
+
+    async def fake_assert_not_locked(_session: Any, _work_date: date) -> None:
+        return None
+
+    async def fake_write_agent_audit(*_args: Any, **kwargs: Any) -> None:
+        events.append(kwargs["after"])
+
+    monkeypatch.setattr(inventory_audit_service, "assert_date_not_locked", fake_assert_not_locked)
+    monkeypatch.setattr(inventory_audit_service, "_write_agent_audit", fake_write_agent_audit)
+
+    await inventory_audit_service.set_penalty_work_date_override(
+        None,  # type: ignore[arg-type]
+        audit,
+        date(2026, 6, 16),
+        actor=finance_actor(),
+    )
+
+    assert audit.penalty_work_date_override == date(2026, 6, 16)
+    assert events == [{"before": None, "override": "2026-06-16"}]
+
+
+@pytest.mark.asyncio
+async def test_list_payout_options_marks_default_and_locked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audit = audit_obj(business_date=date(2026, 6, 8))
+
+    async def fake_is_locked(_session: Any, work_date: date) -> bool:
+        return work_date == date(2026, 6, 9)  # период по умолчанию закрыт
+
+    monkeypatch.setattr(inventory_audit_service, "is_date_locked", fake_is_locked)
+
+    options = await inventory_audit_service.list_payout_options(
+        None,  # type: ignore[arg-type]
+        audit,
+        count=3,
+    )
+
+    assert options[0]["is_default"] is True
+    assert options[0]["override_value"] is None
+    assert options[0]["period_start"] == date(2026, 6, 9)
+    assert options[0]["payout_date"] == date(2026, 6, 16)
+    assert options[0]["locked"] is True
+    assert options[1]["is_default"] is False
+    assert options[1]["override_value"] == date(2026, 6, 16)
+    assert options[1]["payout_date"] == date(2026, 6, 23)
+    assert options[1]["locked"] is False
+
+
 def test_cancel_removes_adjustments() -> None:
     comment = adjustment_comment(date(2026, 5, 26))
     adjustments = [

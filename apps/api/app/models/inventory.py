@@ -101,6 +101,9 @@ class InventoryAudit(Base):
     )
     computation_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Перенос даты списания штрафа: если задано — work_date берётся отсюда,
+    # иначе действует правило по умолчанию (business_date + 1 день).
+    penalty_work_date_override: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )

@@ -1120,6 +1120,8 @@ export type InventoryAudit = {
   total_penalty_amount: string;
   employee_count: number;
   notes: string | null;
+  penalty_work_date_override: string | null;
+  penalty_work_date_effective?: string | null;
   created_at: string | null;
   updated_at: string | null;
   applied_at: string | null;
@@ -1129,6 +1131,15 @@ export type InventoryAudit = {
   employee_exclusions_log?: InventoryAuditExclusionLogItem[];
   swap_groups?: InventorySwapGroupSummary[];
   computation_snapshot?: InventoryComputationSnapshot | null;
+};
+
+export type InventoryPayoutOption = {
+  override_value: string | null;
+  period_start: string;
+  period_end: string;
+  payout_date: string;
+  locked: boolean;
+  is_default: boolean;
 };
 
 export type InventorySwapGroupSummary = {
@@ -3670,6 +3681,23 @@ export async function getAllInventoryAuditExclusions(
 
 export async function getInventoryAudit(id: string): Promise<InventoryAudit> {
   const response = await api.get<InventoryAudit>(`/inventory/audits/${id}/preview`);
+  return response.data;
+}
+
+export async function patchInventoryAudit(
+  auditId: string,
+  payload: { notes?: string | null; penalty_work_date_override?: string | null },
+): Promise<InventoryAudit> {
+  const response = await api.patch<InventoryAudit>(`/inventory/audits/${auditId}`, payload);
+  return response.data;
+}
+
+export async function getInventoryAuditPayoutOptions(
+  auditId: string,
+): Promise<InventoryPayoutOption[]> {
+  const response = await api.get<InventoryPayoutOption[]>(
+    `/inventory/audits/${auditId}/payout-options`,
+  );
   return response.data;
 }
 

@@ -90,6 +90,18 @@ class InventoryAuditPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     notes: str | None = Field(default=None, max_length=2000)
+    # Перенос даты списания штрафа: дата (внутри открытого периода) или null (сброс
+    # к правилу по умолчанию). Поле учитывается только если присутствует в payload.
+    penalty_work_date_override: date | None = Field(default=None)
+
+
+class PayoutOptionRead(BaseModel):
+    override_value: date | None = None
+    period_start: date
+    period_end: date
+    payout_date: date
+    locked: bool
+    is_default: bool
 
 
 class InventoryAuditEmployeeExclusionPatch(BaseModel):
@@ -160,6 +172,8 @@ class InventoryAuditListRead(BaseModel):
     total_penalty_amount: str
     employee_count: int
     notes: str | None = None
+    penalty_work_date_override: date | None = None
+    penalty_work_date_effective: date | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     applied_at: datetime | None = None

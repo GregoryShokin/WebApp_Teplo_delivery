@@ -14,5 +14,7 @@ export default defineConfig({
   },
   server: {
     port: Number(process.env.PORT) || 5173,
+    // macOS + Docker bind-mount теряет file-watch события — поллинг чинит HMR.
+    watch: { usePolling: true, interval: 300 },
   },
 });

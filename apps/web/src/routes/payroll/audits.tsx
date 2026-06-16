@@ -66,11 +66,13 @@ import {
   getAllInventoryAuditExclusions,
   getIikoCandidates,
   getInventoryAudit,
+  getInventoryAuditPayoutOptions,
   getInventoryAudits,
   getInventoryPositions,
   getSettings,
   importInventoryAuditFromIiko,
   listDeferredCharges,
+  patchInventoryAudit,
   patchInventoryAuditEmployeeExclusion,
   patchInventoryAuditItem,
   patchInventoryAuditItemExclusion,
@@ -78,6 +80,7 @@ import {
   type DeferredCharge,
   type DeferredChargeStatus,
   type InventoryAudit,
+  type InventoryPayoutOption,
   type InventoryAuditExclusionLogRow,
   type InventoryEmployeeRecipient,
   type InventoryAuditItem,
@@ -219,7 +222,7 @@ export function InventoryAuditsRoute({ onNavigate }: InventoryAuditsRouteProps) 
     onSuccess: async (audit) => {
       toast.success(
         `Штрафы применены к payroll-периоду с ${formatDate(
-          payrollPeriodStartForAudit(audit.business_date),
+          audit.penalty_work_date_effective ?? payrollPeriodStartForAudit(audit.business_date),
         )}`,
       );
       setConfirmation(null);
@@ -1429,6 +1432,21 @@ function AuditDetail({
     onError: (error) =>
       toast.error(apiErrorMessage(error, "Не удалось обновить исключение позиции")),
   });
+  const payoutOptionsQuery = useQuery({
+    queryKey: ["inventory-audit-payout-options", audit.id],
+    queryFn: () => getInventoryAuditPayoutOptions(audit.id),
+    enabled: audit.status === "draft",
+  });
+  const penaltyDateMutation = useMutation({
+    mutationFn: (override: string | null) =>
+      patchInventoryAudit(audit.id, { penalty_work_date_override: override }),
+    onSuccess: async () => {
+      toast.success("Дата списания обновлена");
+      await invalidateInventory(queryClient, audit.id);
+    },
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, "Не удалось перенести дату списания")),
+  });
   const snapshot = audit.computation_snapshot;
   const groups = snapshot?.groups ?? {};
   const penalties = snapshot?.employee_penalties ?? [];
@@ -1463,7 +1481,15 @@ function AuditDetail({
   const skippedCount = audit.items_skipped_count ?? 0;
   const totalShortageIiko = audit.total_shortage_iiko ?? audit.total_shortage_amount;
   const totalShortageConsidered = audit.total_shortage_considered ?? audit.total_shortage_amount;
-  const payrollPeriodStart = payrollPeriodStartForAudit(audit.business_date);
+  const payrollPeriodStart =
+    audit.penalty_work_date_effective ?? payrollPeriodStartForAudit(audit.business_date);
+  const hasOverride = audit.penalty_work_date_override != null;
+  const payoutOptions: InventoryPayoutOption[] = payoutOptionsQuery.data ?? [];
+  const selectedPayout =
+    payoutOptions.find(
+      (option) =>
+        payrollPeriodStart >= option.period_start && payrollPeriodStart <= option.period_end,
+    ) ?? null;
   const isFinalized = audit.status !== "draft";
   const isOverrideDisabled =
     audit.status !== "draft" || overrideMutation.isPending || itemExclusionMutation.isPending;
@@ -1486,8 +1512,41 @@ function AuditDetail({
               ? ` · Период ${formatDate(period.start)} — ${formatDate(period.end)}`
               : ""}
           </div>
-          <div className="mt-1 text-sm text-muted-foreground">
-            Штрафы попадут в payroll-период с {formatDate(payrollPeriodStart)}
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span>
+              Штраф спишется в выплату{" "}
+              {formatDate(selectedPayout ? selectedPayout.payout_date : payrollPeriodStart)}
+              {hasOverride ? " · перенесено" : ""}
+            </span>
+            {audit.status === "draft" ? (
+              <Select
+                value={selectedPayout?.period_start ?? ""}
+                onValueChange={(value) => {
+                  const option = payoutOptions.find((item) => item.period_start === value);
+                  if (option) {
+                    penaltyDateMutation.mutate(option.override_value);
+                  }
+                }}
+                disabled={penaltyDateMutation.isPending || payoutOptionsQuery.isLoading}
+              >
+                <SelectTrigger className="h-7 w-auto min-w-[15rem] text-xs">
+                  <SelectValue placeholder="Перенести списание…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {payoutOptions.map((option) => (
+                    <SelectItem
+                      key={option.period_start}
+                      value={option.period_start}
+                      disabled={option.locked}
+                    >
+                      Выплата {formatDate(option.payout_date)}
+                      {option.is_default ? " (по умолчанию)" : ""}
+                      {option.locked ? " — закрыт" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
