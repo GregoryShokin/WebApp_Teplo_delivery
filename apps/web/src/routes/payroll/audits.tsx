@@ -2336,7 +2336,7 @@ function EmployeePenaltyRow({
       <div className="flex items-center gap-1 font-medium tabular-nums sm:justify-end">
         {formatMoney(displayedAmount)}
         {hasDeferred ? (
-          <InlineTooltip content={deferredTooltip}>
+          <InlineTooltip align="right" content={deferredTooltip}>
             <Info size={13} aria-hidden="true" className="text-muted-foreground" />
           </InlineTooltip>
         ) : null}
@@ -2432,12 +2432,23 @@ function FilterButton({
   );
 }
 
-function InlineTooltip({ children, content }: { children: ReactNode; content: string }) {
+function InlineTooltip({
+  align = "left",
+  children,
+  content,
+}: {
+  align?: "left" | "right";
+  children: ReactNode;
+  content: string;
+}) {
   return (
     <span className="group relative inline-flex w-fit">
       {children}
       <span
-        className="pointer-events-none absolute left-0 top-full z-50 mt-2 hidden w-80 rounded-md border bg-popover px-3 py-2 text-left text-xs leading-5 text-popover-foreground shadow-lg group-focus-within:block group-hover:block"
+        className={cn(
+          "pointer-events-none absolute top-full z-50 mt-2 hidden max-w-[min(20rem,calc(100vw-2rem))] rounded-md border bg-popover px-3 py-2 text-left text-xs leading-5 text-popover-foreground shadow-lg group-focus-within:block group-hover:block",
+          align === "right" ? "right-0" : "left-0",
+        )}
         role="tooltip"
       >
         {content}
