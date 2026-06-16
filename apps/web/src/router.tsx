@@ -395,6 +395,10 @@ const routes: AppRoute[] = [
         render: ({ navigate }) => <DdsRoute activeTab="today" onNavigate={navigate} useStoredTab />,
       },
       {
+        path: "accounts",
+        render: ({ navigate }) => <DdsRoute activeTab="accounts" onNavigate={navigate} />,
+      },
+      {
         path: "operations",
         render: ({ navigate }) => <DdsRoute activeTab="operations" onNavigate={navigate} />,
       },

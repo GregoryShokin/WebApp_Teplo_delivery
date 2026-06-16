@@ -6,6 +6,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { getDdsOwnerReview } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
+import { AccountsTab } from "@/routes/dds/tabs/accounts";
 import { ArticlesTab } from "@/routes/dds/tabs/articles";
 import { CounterpartiesTab } from "@/routes/dds/tabs/counterparties";
 import { CredentialsTab } from "@/routes/dds/tabs/credentials";
@@ -127,6 +128,9 @@ function renderTab(
   onNavigate: (path: string) => void,
   permissions: ReturnType<typeof usePermissions>,
 ) {
+  if (activeTab === "accounts") {
+    return <AccountsTab />;
+  }
   if (activeTab === "operations") {
     return <OperationsTab />;
   }
@@ -152,7 +156,7 @@ function renderTab(
 }
 
 function canOpenDdsTab(tab: DdsActiveTab, permissions: ReturnType<typeof usePermissions>) {
-  if (tab === "today") {
+  if (tab === "today" || tab === "accounts") {
     return permissions.hasAnyPermission([
       "finance.wallets.read",
       "finance.store_cash.read",

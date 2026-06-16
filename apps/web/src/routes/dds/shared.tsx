@@ -29,6 +29,7 @@ import { formatMoney } from "@/routes/payroll/runs";
 
 export type DdsActiveTab =
   | "today"
+  | "accounts"
   | "operations"
   | "ledger"
   | "owner-review"
@@ -41,6 +42,7 @@ export const DDS_ACTIVE_TAB_STORAGE_KEY = "dds.activeTab";
 
 export const DDS_TABS: Array<{ value: DdsActiveTab; label: string; path: string }> = [
   { value: "today", label: "Деньги сегодня", path: "/dds" },
+  { value: "accounts", label: "Счета", path: "/dds/accounts" },
   { value: "operations", label: "Операции банка", path: "/dds/operations" },
   { value: "ledger", label: "Журнал ДДС", path: "/dds/ledger" },
   { value: "owner-review", label: "Owner review", path: "/dds/owner-review" },
