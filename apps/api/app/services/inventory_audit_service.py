@@ -30,8 +30,7 @@ from app.models import (
 from app.services import iiko_inventory
 from app.services.payroll_adjustment_service import (
     PayrollAdjustmentLockedError,
-    assert_date_not_locked,
-    is_date_locked,
+    assert_production_date_not_locked,
     is_production_date_locked,
 )
 
@@ -509,7 +508,7 @@ async def apply_audit_penalties(
         raise InventoryAuditConflictError("Отменённую ревизию нельзя применить")
     adjustment_work_date = effective_penalty_work_date(audit)
     try:
-        await assert_date_not_locked(session, adjustment_work_date)
+        await assert_production_date_not_locked(session, adjustment_work_date)
     except PayrollAdjustmentLockedError as exc:
         raise InventoryAuditConflictError(str(exc)) from exc
 
@@ -568,7 +567,7 @@ async def cancel_audit(
     if audit.status == "applied":
         adjustment_work_date = effective_penalty_work_date(audit)
         try:
-            await assert_date_not_locked(session, adjustment_work_date)
+            await assert_production_date_not_locked(session, adjustment_work_date)
         except PayrollAdjustmentLockedError as exc:
             raise InventoryAuditConflictError(str(exc)) from exc
         category = await _inventory_category(session)
@@ -1060,7 +1059,7 @@ async def list_payout_options_from(
                 "period_start": start,
                 "period_end": end,
                 "payout_date": payout,
-                "locked": await is_date_locked(session, start),
+                "locked": await is_production_date_locked(session, start),
                 "is_default": index == 0,
             }
         )
@@ -1143,7 +1142,7 @@ async def set_penalty_work_date_override(
                 "Дата списания не может быть раньше расчётной (дата ревизии + 1 день)"
             )
         try:
-            await assert_date_not_locked(session, override)
+            await assert_production_date_not_locked(session, override)
         except PayrollAdjustmentLockedError as exc:
             raise InventoryAuditConflictError(str(exc)) from exc
     before = audit.penalty_work_date_override

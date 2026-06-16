@@ -98,6 +98,13 @@ async def is_production_date_locked(session: AsyncSession, work_date: date) -> b
     return locked_period_id is not None
 
 
+async def assert_production_date_not_locked(session: AsyncSession, work_date: date) -> None:
+    """Как :func:`assert_date_not_locked`, но только по недельной (производственной)
+    финализации — админская полумесячная ведомость не блокирует штрафы ревизий."""
+    if await is_production_date_locked(session, work_date):
+        raise PayrollAdjustmentLockedError("Период зафиксирован, изменения невозможны")
+
+
 async def load_locked_dates_for_period(
     session: AsyncSession,
     *,

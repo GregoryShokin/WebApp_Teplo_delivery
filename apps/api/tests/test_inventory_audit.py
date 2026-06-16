@@ -519,7 +519,7 @@ async def test_apply_creates_adjustment_with_next_day_work_date(
         inventory_audit_service, "_get_or_create_inventory_category", fake_get_category
     )
     monkeypatch.setattr(
-        inventory_audit_service, "assert_date_not_locked", fake_assert_date_not_locked
+        inventory_audit_service, "assert_production_date_not_locked", fake_assert_date_not_locked
     )
     monkeypatch.setattr(inventory_audit_service, "_write_agent_audit", fake_write_agent_audit)
 
@@ -712,7 +712,7 @@ async def test_apply_uses_penalty_work_date_override(monkeypatch: pytest.MonkeyP
         inventory_audit_service, "_get_or_create_inventory_category", fake_get_category
     )
     monkeypatch.setattr(
-        inventory_audit_service, "assert_date_not_locked", fake_assert_date_not_locked
+        inventory_audit_service, "assert_production_date_not_locked", fake_assert_date_not_locked
     )
     monkeypatch.setattr(inventory_audit_service, "_write_agent_audit", fake_write_agent_audit)
 
@@ -761,7 +761,9 @@ async def test_set_penalty_work_date_override_locked_rejected(
     async def fake_assert_locked(_session: Any, _work_date: date) -> None:
         raise PayrollAdjustmentLockedError("Период зафиксирован, изменения невозможны")
 
-    monkeypatch.setattr(inventory_audit_service, "assert_date_not_locked", fake_assert_locked)
+    monkeypatch.setattr(
+        inventory_audit_service, "assert_production_date_not_locked", fake_assert_locked
+    )
 
     with pytest.raises(InventoryAuditConflictError):
         await inventory_audit_service.set_penalty_work_date_override(
@@ -803,7 +805,9 @@ async def test_set_penalty_work_date_override_sets_value(
     async def fake_write_agent_audit(*_args: Any, **kwargs: Any) -> None:
         events.append(kwargs["after"])
 
-    monkeypatch.setattr(inventory_audit_service, "assert_date_not_locked", fake_assert_not_locked)
+    monkeypatch.setattr(
+        inventory_audit_service, "assert_production_date_not_locked", fake_assert_not_locked
+    )
     monkeypatch.setattr(inventory_audit_service, "_write_agent_audit", fake_write_agent_audit)
 
     await inventory_audit_service.set_penalty_work_date_override(
@@ -826,7 +830,7 @@ async def test_list_payout_options_marks_default_and_locked(
     async def fake_is_locked(_session: Any, work_date: date) -> bool:
         return work_date == date(2026, 6, 9)  # период по умолчанию закрыт
 
-    monkeypatch.setattr(inventory_audit_service, "is_date_locked", fake_is_locked)
+    monkeypatch.setattr(inventory_audit_service, "is_production_date_locked", fake_is_locked)
 
     options = await inventory_audit_service.list_payout_options(
         None,  # type: ignore[arg-type]
