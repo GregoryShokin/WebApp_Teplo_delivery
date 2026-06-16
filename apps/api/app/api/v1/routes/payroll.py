@@ -58,7 +58,7 @@ from app.services.deferred_audit_charge_service import (
     create_deferred_charge,
     list_deferred_charges,
 )
-from app.services.inventory_audit_service import list_payout_options_from
+from app.services.inventory_audit_service import list_open_production_payouts
 from app.services.payroll_admin import run_admin_payroll
 from app.services.payroll_advance_service import set_advance_recovery_deferral
 from app.services.payroll_aggregate_service import build_aggregate
@@ -243,8 +243,7 @@ async def deferred_charge_payout_options(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> list[dict[str, Any]]:
-    today = datetime.now(UTC).date()
-    return await list_payout_options_from(session, today, count=12)
+    return await list_open_production_payouts(session, count=12)
 
 
 @router.post(

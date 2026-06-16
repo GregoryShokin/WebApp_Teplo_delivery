@@ -26,7 +26,7 @@ from app.schemas.payroll import DeferredChargeCreate
 from app.services.inventory_audit_service import (
     _load_period_employees,
     audit_period,
-    is_date_locked,
+    is_production_date_locked,
     payroll_period_for_date,
     split_amount_evenly,
 )
@@ -82,7 +82,7 @@ async def create_deferred_charge(
         # Нормализуем на начало зарплатного периода (вторник) и запрещаем
         # старт в уже зафиксированной выплате.
         start_period_start = payroll_period_for_date(payload.start_period_start)[0]
-        if await is_date_locked(session, start_period_start):
+        if await is_production_date_locked(session, start_period_start):
             raise DeferredChargeValidationError(
                 "Стартовая выплата уже зафиксирована — выберите открытую"
             )

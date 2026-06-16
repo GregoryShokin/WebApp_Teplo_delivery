@@ -32,6 +32,7 @@ from app.services.payroll_adjustment_service import (
     PayrollAdjustmentLockedError,
     assert_date_not_locked,
     is_date_locked,
+    is_production_date_locked,
 )
 
 ALLOCATION_GROUPS = {"chefs", "common", "admins"}
@@ -43,6 +44,10 @@ DEFAULT_SETTINGS = {
     "inventory.threshold_50pct": Decimal("10000"),
     "inventory.rate_tier_40pct": Decimal("0.40"),
     "inventory.rate_tier_50pct": Decimal("0.50"),
+    # Ставки групп «Общая» и «Бар админов» — без порогов, вся недостача цеха
+    # облагается этой ставкой (по умолчанию 100%).
+    "inventory.rate_common": Decimal("1.00"),
+    "inventory.rate_admins": Decimal("1.00"),
 }
 MONEY = Decimal("0.01")
 
@@ -942,8 +947,8 @@ def group_penalty_rate(
 ) -> tuple[Decimal, str]:
     effective_settings = {**DEFAULT_SETTINGS, **(settings or {})}
     amount = _decimal(total_shortage)
-    rate_50 = _decimal(effective_settings["inventory.rate_tier_50pct"])
     if group == "chefs":
+        rate_50 = _decimal(effective_settings["inventory.rate_tier_50pct"])
         threshold_zero = _decimal(effective_settings["inventory.threshold_zero"])
         threshold_50 = _decimal(effective_settings["inventory.threshold_50pct"])
         rate_40 = _decimal(effective_settings["inventory.rate_tier_40pct"])
@@ -952,8 +957,11 @@ def group_penalty_rate(
         if amount < threshold_50:
             return rate_40, "tier_5k_10k"
         return rate_50, "tier_10k_plus"
-    if group in {"common", "admins"}:
-        return rate_50, "fixed_50pct"
+    # «Общая» и «Бар админов» — без порогов: вся недостача цеха по своей ставке.
+    if group == "common":
+        return _decimal(effective_settings["inventory.rate_common"]), "common_rate"
+    if group == "admins":
+        return _decimal(effective_settings["inventory.rate_admins"]), "admins_rate"
     return Decimal("0"), "unknown_group"
 
 
@@ -1071,6 +1079,46 @@ async def list_payout_options(
         audit_penalty_work_date(audit.business_date),
         count=count,
     )
+
+
+async def list_open_production_payouts(
+    session: AsyncSession,
+    *,
+    count: int = 12,
+    today: date | None = None,
+) -> list[dict[str, Any]]:
+    """Все НЕ финализированные производственные (недельные) выплаты от текущей.
+
+    Для распределённого штрафа: показываем каждую открытую недельную выплату,
+    чья выплата ещё не прошла. Полумесячная админская финализация (`half_month`)
+    НЕ скрывает выплату — штраф ревизии идёт в недельную ведомость поваров/кассиров.
+    Начинаем на неделю раньше текущего периода, чтобы захватить выплату, которая
+    приходится на сегодня.
+    """
+    today = today or datetime.now(UTC).date()
+    base_start, _base_end, _base_payout = payroll_period_for_date(today - timedelta(days=7))
+    options: list[dict[str, Any]] = []
+    index = 0
+    while len(options) < count and index < count + 12:
+        start = base_start + timedelta(days=7 * index)
+        end = start + timedelta(days=6)
+        payout = end + timedelta(days=1)
+        index += 1
+        if payout < today:
+            continue
+        if await is_production_date_locked(session, start):
+            continue
+        options.append(
+            {
+                "override_value": start,
+                "period_start": start,
+                "period_end": end,
+                "payout_date": payout,
+                "locked": False,
+                "is_default": len(options) == 0,
+            }
+        )
+    return options
 
 
 async def set_penalty_work_date_override(
@@ -1445,13 +1493,17 @@ def threshold_label(
     *,
     group: str = "chefs",
 ) -> str:
-    _rate, reason = group_penalty_rate(group, shortage_sum, settings)
-    return {
+    rate, reason = group_penalty_rate(group, shortage_sum, settings)
+    static = {
         "below_threshold": "<5K",
         "tier_5k_10k": "5-10K",
         "tier_10k_plus": ">=10K",
-        "fixed_50pct": "50% всегда",
-    }.get(reason, "—")
+    }
+    if reason in static:
+        return static[reason]
+    if reason in {"common_rate", "admins_rate"}:
+        return f"{rate * Decimal('100'):.0f}% всегда"
+    return "—"
 
 
 def _distribute_group(

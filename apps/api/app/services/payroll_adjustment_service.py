@@ -75,6 +75,29 @@ async def is_date_locked(session: AsyncSession, work_date: date) -> bool:
     return locked_period_id is not None
 
 
+async def is_production_date_locked(session: AsyncSession, work_date: date) -> bool:
+    """Дата закрыта для ПРОИЗВОДСТВЕННОЙ (недельной) ведомости.
+
+    Учитывает только финализированные недельные периоды (``period_type='week'``);
+    полумесячная админская финализация её НЕ блокирует (симметрично
+    ``_is_admin_date_locked``). Штрафы ревизий идут поварам/кассирам в недельную
+    ведомость — для них релевантна именно эта блокировка, а не общая ``is_date_locked``.
+    """
+    locked_period_id = await session.scalar(
+        select(PayrollPeriod.id)
+        .select_from(PayrollRun)
+        .join(PayrollPeriod, PayrollPeriod.id == PayrollRun.period_id)
+        .where(
+            PayrollRun.status == "finalized",
+            PayrollPeriod.period_type == "week",
+            PayrollPeriod.start_date <= work_date,
+            PayrollPeriod.end_date >= work_date,
+        )
+        .limit(1)
+    )
+    return locked_period_id is not None
+
+
 async def load_locked_dates_for_period(
     session: AsyncSession,
     *,

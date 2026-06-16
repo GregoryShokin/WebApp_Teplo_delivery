@@ -97,11 +97,11 @@ def test_group_penalty_rate_chefs_thresholds(
         Decimal("10000"),
     ],
 )
-def test_group_penalty_rate_common_and_admins_fixed_50pct(
+def test_group_penalty_rate_common_and_admins_full_100pct(
     group: str,
     shortage_sum: Decimal,
 ) -> None:
-    assert group_penalty_rate(group, shortage_sum) == (Decimal("0.50"), "fixed_50pct")
+    assert group_penalty_rate(group, shortage_sum) == (Decimal("1.00"), f"{group}_rate")
 
 
 def test_chefs_below_5000_zero_rate() -> None:
@@ -213,48 +213,48 @@ def test_swap_group_audit_trail_in_adjustment_comment() -> None:
     assert "итог -1 647 ₽" in comment
 
 
-def test_common_always_50pct_low_sum() -> None:
+def test_common_full_100pct_low_sum() -> None:
     chef = employee("Cook", "Повар")
     admin = employee("Admin", "Кассир")
     computation = compute([item("1000", "common")], chefs=[chef], admins=[admin])
 
-    assert computation.groups["common"]["rate"] == "0.50"
-    assert computation.groups["common"]["rate_reason"] == "fixed_50pct"
-    assert computation.groups["common"]["penalty"] == "500.00"
-    assert computation.employee_penalties[chef.id] == Decimal("250.00")
-    assert computation.employee_penalties[admin.id] == Decimal("250.00")
+    assert computation.groups["common"]["rate"] == "1.00"
+    assert computation.groups["common"]["rate_reason"] == "common_rate"
+    assert computation.groups["common"]["penalty"] == "1000.00"
+    assert computation.employee_penalties[chef.id] == Decimal("500.00")
+    assert computation.employee_penalties[admin.id] == Decimal("500.00")
 
 
-def test_common_always_50pct_high_sum() -> None:
+def test_common_full_100pct_high_sum() -> None:
     chef = employee("Cook", "Повар")
     admin = employee("Admin", "Кассир")
     computation = compute([item("20000", "common")], chefs=[chef], admins=[admin])
 
-    assert computation.groups["common"]["rate"] == "0.50"
-    assert computation.groups["common"]["penalty"] == "10000.00"
-    assert computation.employee_penalties[chef.id] == Decimal("5000.00")
-    assert computation.employee_penalties[admin.id] == Decimal("5000.00")
+    assert computation.groups["common"]["rate"] == "1.00"
+    assert computation.groups["common"]["penalty"] == "20000.00"
+    assert computation.employee_penalties[chef.id] == Decimal("10000.00")
+    assert computation.employee_penalties[admin.id] == Decimal("10000.00")
 
 
-def test_admins_always_50pct_low_sum() -> None:
+def test_admins_full_100pct_low_sum() -> None:
     chef = employee("Cook", "Повар")
     admin = employee("Admin", "Кассир")
     computation = compute([item("500", "admins")], chefs=[chef], admins=[admin])
 
-    assert computation.groups["admins"]["rate"] == "0.50"
-    assert computation.groups["admins"]["rate_reason"] == "fixed_50pct"
-    assert computation.groups["admins"]["penalty"] == "250.00"
-    assert computation.employee_penalties == {admin.id: Decimal("250.00")}
+    assert computation.groups["admins"]["rate"] == "1.00"
+    assert computation.groups["admins"]["rate_reason"] == "admins_rate"
+    assert computation.groups["admins"]["penalty"] == "500.00"
+    assert computation.employee_penalties == {admin.id: Decimal("500.00")}
 
 
-def test_admins_always_50pct_high_sum() -> None:
+def test_admins_full_100pct_high_sum() -> None:
     chef = employee("Cook", "Повар")
     admin = employee("Admin", "Кассир")
     computation = compute([item("15000", "admins")], chefs=[chef], admins=[admin])
 
-    assert computation.groups["admins"]["rate"] == "0.50"
-    assert computation.groups["admins"]["penalty"] == "7500.00"
-    assert computation.employee_penalties == {admin.id: Decimal("7500.00")}
+    assert computation.groups["admins"]["rate"] == "1.00"
+    assert computation.groups["admins"]["penalty"] == "15000.00"
+    assert computation.employee_penalties == {admin.id: Decimal("15000.00")}
 
 
 def test_compute_independent_thresholds_per_group() -> None:
@@ -267,10 +267,10 @@ def test_compute_independent_thresholds_per_group() -> None:
     )
 
     assert computation.groups["chefs"]["penalty"] == "6000.00"
-    assert computation.groups["admins"]["penalty"] == "2000.00"
+    assert computation.groups["admins"]["penalty"] == "4000.00"
     assert computation.employee_penalties == {
         chef.id: Decimal("6000.00"),
-        admin.id: Decimal("2000.00"),
+        admin.id: Decimal("4000.00"),
     }
 
 
@@ -394,7 +394,7 @@ async def test_set_item_exclusion_excludes_from_penalty(
     )
 
     assert updated.total_shortage_amount == Decimal("3000.00")
-    assert updated.total_penalty_amount == Decimal("1500.00")
+    assert updated.total_penalty_amount == Decimal("3000.00")
     assert item_ids_in_penalty_groups(updated.computation_snapshot) == {str(remaining_item.id)}
     assert updated.computation_snapshot["skipped_items"] == [
         {
@@ -843,6 +843,39 @@ async def test_list_payout_options_marks_default_and_locked(
     assert options[1]["override_value"] == date(2026, 6, 16)
     assert options[1]["payout_date"] == date(2026, 6, 23)
     assert options[1]["locked"] is False
+
+
+@pytest.mark.asyncio
+async def test_list_open_production_payouts_skips_finalized_weeks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Ничего не закрыто → первая выплата = сегодняшняя (период, заканчивающийся вчера).
+    async def none_locked(_session: Any, _work_date: date) -> bool:
+        return False
+
+    monkeypatch.setattr(inventory_audit_service, "is_production_date_locked", none_locked)
+    options = await inventory_audit_service.list_open_production_payouts(
+        None,  # type: ignore[arg-type]
+        count=3,
+        today=date(2026, 6, 16),
+    )
+    assert options[0]["period_start"] == date(2026, 6, 9)
+    assert options[0]["payout_date"] == date(2026, 6, 16)
+    assert options[0]["is_default"] is True
+    assert options[1]["payout_date"] == date(2026, 6, 23)
+
+    # Недельный период 09–15 финализирован → первая открытая выплата = 23.06.
+    async def week_0915_locked(_session: Any, work_date: date) -> bool:
+        return work_date == date(2026, 6, 9)
+
+    monkeypatch.setattr(inventory_audit_service, "is_production_date_locked", week_0915_locked)
+    options2 = await inventory_audit_service.list_open_production_payouts(
+        None,  # type: ignore[arg-type]
+        count=3,
+        today=date(2026, 6, 16),
+    )
+    assert options2[0]["period_start"] == date(2026, 6, 16)
+    assert options2[0]["payout_date"] == date(2026, 6, 23)
 
 
 def test_cancel_removes_adjustments() -> None:
