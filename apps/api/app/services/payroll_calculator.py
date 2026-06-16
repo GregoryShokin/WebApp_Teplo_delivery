@@ -100,6 +100,8 @@ SHIFT_LEDGER_CONFIG_KEY = "shift_ledger.entries_by_date"
 PAYROLL_ADJUSTMENTS_CONFIG_KEY = "payroll.adjustments_by_date"
 VACATION_DAYS_CONFIG_KEY = "vacation.days_by_employee_date"
 VACATION_DAILY_AMOUNT_CONFIG_KEY = vacation_service.VACATION_DAILY_AMOUNT_KEY
+# Отпуска, выплачиваемые одним траншем на дату выплаты текущей ведомости.
+VACATION_PAYOUTS_CONFIG_KEY = "vacation.payouts_for_run"
 WEEKDAY_KEYS = (
     "monday",
     "tuesday",
@@ -135,9 +137,21 @@ async def calculate_payroll_lines(
         period_start=period.start_date,
         period_end=period.end_date,
     )
-    employee_ids = {entry.employee_id for entry in entries} | {
-        employee_id for employee_id, _work_date in vacation_days
+    vacation_payouts = await vacation_service.vacation_payouts_for_payroll_date(
+        session,
+        payroll_date=period.payroll_date,
+    )
+    # Для лумп-выплат роль/категория резолвятся по первому дню отпуска — добавляем
+    # эти (сотрудник, дата) в загрузку назначений/должностей наравне с днями отпуска.
+    payout_role_days = {
+        (payout.employee_id, payout.date_start): None for payout in vacation_payouts
     }
+    vacation_extra_days = {**vacation_days, **payout_role_days}
+    employee_ids = (
+        {entry.employee_id for entry in entries}
+        | {employee_id for employee_id, _work_date in vacation_days}
+        | {payout.employee_id for payout in vacation_payouts}
+    )
     employees = {
         employee.id: employee
         for employee in (
@@ -149,6 +163,18 @@ async def calculate_payroll_lines(
     settings[VACATION_DAILY_AMOUNT_CONFIG_KEY] = await vacation_service.vacation_daily_amount(
         session
     )
+    settings[VACATION_PAYOUTS_CONFIG_KEY] = [
+        {
+            "employee_id": str(payout.employee_id),
+            "period_id": str(payout.period_id),
+            "date_start": payout.date_start.isoformat(),
+            "date_end": payout.date_end.isoformat(),
+            "days_count": payout.days_count,
+            "amount": str(payout.amount),
+            "payout_date": period.payroll_date.isoformat(),
+        }
+        for payout in vacation_payouts
+    ]
     rate_versions = (
         list(rate_versions_override)
         if rate_versions_override is not None
@@ -172,17 +198,17 @@ async def calculate_payroll_lines(
     settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = await load_employee_assignments_for_entries(
         session,
         entries,
-        extra_employee_days=vacation_days,
+        extra_employee_days=vacation_extra_days,
     )
     settings[EMPLOYEE_POSITIONS_CONFIG_KEY] = await load_employee_positions_for_entries(
         session,
         entries,
-        extra_employee_days=vacation_days,
+        extra_employee_days=vacation_extra_days,
     )
     settings[EMPLOYEE_ALLOWANCES_CONFIG_KEY] = await load_employee_allowances_for_entries(
         session,
         entries,
-        extra_employee_days=vacation_days,
+        extra_employee_days=vacation_extra_days,
     )
     settings[SENIORITY_ALLOWANCE_MAP_CONFIG_KEY] = await load_seniority_allowance_maps(
         session,
@@ -381,6 +407,27 @@ async def load_deposit_balances_for_employees(
         select(DepositAccount).where(DepositAccount.employee_id.in_(employee_ids))
     )
     return {account.employee_id: decimal(account.balance) for account in result.all()}
+
+
+def _new_line_totals() -> dict[str, Any]:
+    return {
+        "base_pay": Decimal("0"),
+        "premium": Decimal("0"),
+        "percent_pay": Decimal("0"),
+        "vacation_pay": Decimal("0"),
+        # Отпускные «одним траншем»: держим отдельно — НЕ облагаются НДФЛ и НЕ входят
+        # в базу удержания депозита (в total_payable добавляются полностью).
+        "vacation_payout_lump": Decimal("0"),
+        "fund_accrual": Decimal("0"),
+        "deduction": Decimal("0"),
+        "manual_deduction": Decimal("0"),
+        "days": [],
+        "adjustments": {
+            "bonuses": [],
+            "penalties": [],
+            "primary_role_chosen": None,
+        },
+    }
 
 
 def calculate_payroll_lines_from_inputs(
@@ -596,24 +643,7 @@ def calculate_payroll_lines_from_inputs(
                 station,
             )
         key = (employee_id, role)
-        totals = line_totals.setdefault(
-            key,
-            {
-                "base_pay": Decimal("0"),
-                "premium": Decimal("0"),
-                "percent_pay": Decimal("0"),
-                "vacation_pay": Decimal("0"),
-                "fund_accrual": Decimal("0"),
-                "deduction": Decimal("0"),
-                "manual_deduction": Decimal("0"),
-                "days": [],
-                "adjustments": {
-                    "bonuses": [],
-                    "penalties": [],
-                    "primary_role_chosen": None,
-                },
-            },
-        )
+        totals = line_totals.setdefault(key, _new_line_totals())
         totals["base_pay"] += base_pay_with_premium
         totals["percent_pay"] += percent_pay
         totals["vacation_pay"] += vacation_pay
@@ -643,24 +673,61 @@ def calculate_payroll_lines_from_inputs(
 
     apply_adjustments_to_line_totals(line_totals, settings, period)
 
+    # Отпускные одним траншем: вся сумма падает в ведомость с датой выплаты =
+    # payout_date. В total_payable входит полностью, но НЕ облагается НДФЛ и НЕ
+    # участвует в удержании депозита (см. line build ниже).
+    for payout in vacation_payouts_from_settings(settings):
+        employee = employees.get(payout["employee_id"])
+        if employee is None:
+            continue
+        role = vacation_role_for_employee_day(settings, employee, payout["date_start"])
+        totals = line_totals.setdefault((employee.id, role), _new_line_totals())
+        totals["vacation_payout_lump"] += payout["amount"]
+        totals["days"].append(
+            {
+                "kind": "vacation_payout",
+                "date": payout["payout_date"].isoformat(),
+                "vacation_pay": money(payout["amount"]),
+                "base_pay": 0,
+                "base_pay_shift": 0,
+                "percent_pay": 0,
+                "seniority_allowance_pay": 0,
+                "weekday_premium": 0,
+                "fund_accrual": 0,
+                "is_substitute": False,
+                "vacation_payout": True,
+                "vacation_date_start": payout["date_start"].isoformat(),
+                "vacation_date_end": payout["date_end"].isoformat(),
+                "vacation_days_count": payout["days_count"],
+            }
+        )
+
     lines = []
     running_deposit_balances = {
         employee_id: decimal(balance) for employee_id, balance in (deposit_balances or {}).items()
     }
     deposit_overrides = line_deposit_overrides or {}
     for (employee_id, role), totals in line_totals.items():
+        vacation_payout_lump = totals.get("vacation_payout_lump", Decimal("0"))
         total_before_deduction = (
-            totals["base_pay"] + totals["premium"] + totals["percent_pay"] + totals["vacation_pay"]
+            totals["base_pay"]
+            + totals["premium"]
+            + totals["percent_pay"]
+            + totals["vacation_pay"]
+            + vacation_payout_lump
         )
         manual_deduction = totals.get("manual_deduction", Decimal("0"))
+        # НДФЛ считается по totals["vacation_pay"] (подневные отпускные), лумп-выплата
+        # в налоговую базу не входит — отпускные одним траншем платятся полностью.
         ndfl = calculate_ndfl_for_line(settings, employees[employee_id], role, totals)
         totals["ndfl_withheld"] = ndfl["withheld"]
         totals["ndfl_taxable_base"] = ndfl["taxable_base"]
         totals["ndfl_components"] = ndfl["components"]
         apply_ndfl_to_day_components(totals, ndfl)
         current_deposit_balance = running_deposit_balances.get(employee_id, Decimal("0"))
+        # Лумп-выплату исключаем из базы удержания депозита.
         deposit_base = max(
-            total_before_deduction - manual_deduction - ndfl["withheld"],
+            total_before_deduction - vacation_payout_lump - manual_deduction - ndfl["withheld"],
             Decimal("0"),
         )
         line_override = line_deposit_override(deposit_overrides, employee_id, role)
@@ -689,7 +756,7 @@ def calculate_payroll_lines_from_inputs(
                 base_pay=money(totals["base_pay"]),
                 premium=money(totals["premium"]),
                 percent_pay=money(totals["percent_pay"]),
-                vacation_pay=money(totals["vacation_pay"]),
+                vacation_pay=money(totals["vacation_pay"] + vacation_payout_lump),
                 ndfl_withheld=ndfl["withheld"],
                 fund_accrual=money(totals["fund_accrual"]),
                 deduction=money(totals["deduction"]),
@@ -1369,6 +1436,35 @@ def vacation_daily_amount_from_settings(settings: Mapping[str, Any]) -> Decimal:
     return decimal(
         settings.get(VACATION_DAILY_AMOUNT_CONFIG_KEY, vacation_service.DEFAULT_DAILY_AMOUNT)
     )
+
+
+def vacation_payouts_from_settings(settings: Mapping[str, Any]) -> list[dict[str, Any]]:
+    raw = settings.get(VACATION_PAYOUTS_CONFIG_KEY)
+    if not isinstance(raw, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            continue
+        try:
+            parsed = {
+                "employee_id": item["employee_id"]
+                if isinstance(item["employee_id"], uuid.UUID)
+                else uuid.UUID(str(item["employee_id"])),
+                "amount": decimal(item["amount"]),
+                "date_start": _as_date(item["date_start"]),
+                "date_end": _as_date(item["date_end"]),
+                "payout_date": _as_date(item["payout_date"]),
+                "days_count": int(item["days_count"]),
+            }
+        except (KeyError, TypeError, ValueError):
+            continue
+        result.append(parsed)
+    return result
+
+
+def _as_date(value: Any) -> date:
+    return value if isinstance(value, date) else date.fromisoformat(str(value))
 
 
 def category_for_payroll_entry(

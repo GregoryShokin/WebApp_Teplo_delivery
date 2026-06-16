@@ -77,6 +77,7 @@ from app.services.payroll_calculator import (
     SHIFT_LEDGER_CONFIG_KEY,
     VACATION_DAILY_AMOUNT_CONFIG_KEY,
     VACATION_DAYS_CONFIG_KEY,
+    VACATION_PAYOUTS_CONFIG_KEY,
     _fund_rate_for_months,
     calculate_payroll_lines_from_inputs,
     deposit_withholding,
@@ -3084,6 +3085,54 @@ def test_vacation_day_suppresses_regular_pay_for_attendance_entry() -> None:
     assert result.lines[0].vacation_pay == 1000
     assert result.lines[0].total_payable == 1000
     assert result.lines[0].components["days"][0]["hours"] == 0
+
+
+def test_vacation_payout_lump_pays_full_amount_without_deposit() -> None:
+    # Отпуск с датой выплаты: вся сумма (10 × 1000) выплачивается одним траншем в
+    # ведомости этой даты. Авто-удержание депозита ВКЛЮЧЕНО, но из отпускных депозит
+    # не удерживается — иначе deduction был бы 1000 (ставка category_2), а total < 10000.
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee()
+    settings = payroll_settings()
+    settings["payroll.deposit_auto_withholding_enabled"] = True
+    settings[VACATION_DAILY_AMOUNT_CONFIG_KEY] = Decimal("1000")
+    settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = {
+        (employee.id, date(2026, 6, 13)): [
+            make_role_assignment(employee.id, "prep", "category_2", is_primary=True)
+        ]
+    }
+    settings[VACATION_PAYOUTS_CONFIG_KEY] = [
+        {
+            "employee_id": str(employee.id),
+            "period_id": str(uuid.uuid4()),
+            "date_start": "2026-06-13",
+            "date_end": "2026-06-22",
+            "days_count": 10,
+            "amount": "10000",
+            "payout_date": "2026-06-09",
+        }
+    ]
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [],
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    assert len(result.lines) == 1
+    line = result.lines[0]
+    assert line.vacation_pay == Decimal("10000")
+    assert line.total_payable == Decimal("10000")
+    assert line.deduction == 0
+    assert line.ndfl_withheld == 0
+    day = line.components["days"][0]
+    assert day["kind"] == "vacation_payout"
+    assert day["vacation_payout"] is True
+    assert day["vacation_days_count"] == 10
 
 
 def test_full_12_hour_shift_gets_full_salary_and_percent() -> None:

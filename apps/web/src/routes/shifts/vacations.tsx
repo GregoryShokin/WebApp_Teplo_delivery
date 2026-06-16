@@ -61,6 +61,7 @@ type VacationDialogState = {
   employeeId: string;
   dateStart: string;
   dateEnd: string;
+  payoutDate: string;
   comment: string;
   conflict: VacationConflictResponse | null;
 };
@@ -97,6 +98,7 @@ export function VacationsRoute({ embedded = false, headerSlot }: VacationsRouteP
         return patchVacationPeriod(variables.state.period.id, {
           date_start: variables.state.dateStart,
           date_end: variables.state.dateEnd,
+          payout_date: variables.state.payoutDate || null,
           comment: variables.state.comment.trim() || null,
           force_remove_conflicting_shifts: Boolean(variables.forceRemoveShifts),
         });
@@ -105,6 +107,7 @@ export function VacationsRoute({ embedded = false, headerSlot }: VacationsRouteP
         employee_id: variables.state.employeeId,
         date_start: variables.state.dateStart,
         date_end: variables.state.dateEnd,
+        payout_date: variables.state.payoutDate || null,
         comment: variables.state.comment.trim() || null,
         force_remove_conflicting_shifts: Boolean(variables.forceRemoveShifts),
       });
@@ -150,12 +153,14 @@ export function VacationsRoute({ embedded = false, headerSlot }: VacationsRouteP
 
   function openVacationDialog(employee?: VacationRosterRow, period?: VacationPeriodRead) {
     const today = toIsoDate(new Date());
+    const defaultPayout = upcomingPayoutTuesdays()[0] ?? today;
     setVacationDialog({
       mode: period ? "edit" : "create",
       period: period ?? null,
       employeeId: employee?.employee_id ?? "",
       dateStart: period?.date_start ?? today,
       dateEnd: period?.date_end ?? today,
+      payoutDate: period?.payout_date ?? defaultPayout,
       comment: period?.comment ?? "",
       conflict: null,
     });
@@ -416,6 +421,14 @@ function VacationsView({
                           <span className="ml-2 text-muted-foreground">
                             {period.days_count} дн.
                           </span>
+                          {period.payout_date ? (
+                            <span className="ml-2 text-muted-foreground">
+                              · выплата {formatShortDate(period.payout_date)}
+                              {period.payout_amount != null
+                                ? ` · ${formatRub(period.payout_amount)}`
+                                : ""}
+                            </span>
+                          ) : null}
                           <VacationStatusBadge status={period.status} />
                         </button>
                       ))}
@@ -480,6 +493,11 @@ function VacationDialog({
     state?.dateStart && state.dateEnd && state.dateEnd >= state.dateStart
       ? vacationDaysCount(state.dateStart, state.dateEnd)
       : null;
+  const payoutTuesdays = upcomingPayoutTuesdays();
+  const payoutOptions =
+    state?.payoutDate && !payoutTuesdays.includes(state.payoutDate)
+      ? [state.payoutDate, ...payoutTuesdays]
+      : payoutTuesdays;
 
   function patchState(patch: Partial<VacationDialogState>) {
     setValue((current) => (current ? { ...current, ...patch, conflict: null } : current));
@@ -540,6 +558,29 @@ function VacationDialog({
                   value={state.dateEnd}
                 />
               </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Дата выплаты отпускных</Label>
+              <Select
+                onValueChange={(value) => patchState({ payoutDate: value })}
+                value={state.payoutDate || undefined}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите дату выплаты" />
+                </SelectTrigger>
+                <SelectContent>
+                  {payoutOptions.map((iso) => (
+                    <SelectItem key={iso} value={iso}>
+                      {formatDate(iso)} · вторник
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground">
+                {selectedDaysCount !== null
+                  ? `Вся сумма за ${selectedDaysCount} дн. выплачивается одним траншем в эту дату.`
+                  : "Вся сумма отпускных выплачивается одним траншем в эту дату (по вторникам)."}
+              </span>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="vacation-comment">Комментарий</Label>
@@ -741,6 +782,29 @@ function formatShortRange(start: string, end: string) {
 function formatShortDate(value: string) {
   const [, month, day] = value.split("-");
   return `${day}.${month}`;
+}
+
+function formatRub(value: string | number) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) {
+    return "";
+  }
+  return `${Math.round(amount).toLocaleString("ru-RU")} ₽`;
+}
+
+// Ближайшие даты выплат (вторники): сегодня, если сегодня вторник, иначе ближайший
+// будущий вторник, и далее с шагом неделя. Используется для выбора даты выплаты отпускных.
+function upcomingPayoutTuesdays(count = 8): string[] {
+  const base = new Date();
+  base.setHours(12, 0, 0, 0);
+  const daysUntilTuesday = (2 - base.getDay() + 7) % 7;
+  let cursor = addDays(base, daysUntilTuesday);
+  const result: string[] = [];
+  for (let index = 0; index < count; index += 1) {
+    result.push(toIsoDate(cursor));
+    cursor = addDays(cursor, 7);
+  }
+  return result;
 }
 
 function readStoredVacationYear() {

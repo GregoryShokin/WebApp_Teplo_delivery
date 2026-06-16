@@ -35,6 +35,7 @@ class VacationPeriod(Base):
         ),
         Index("ix_vacation_period_employee_start", "employee_id", "date_start"),
         Index("ix_vacation_period_date_range", "date_start", "date_end"),
+        Index("ix_vacation_period_payout_date", "payout_date"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -44,6 +45,9 @@ class VacationPeriod(Base):
     date_start: Mapped[date] = mapped_column(Date, nullable=False)
     date_end: Mapped[date] = mapped_column(Date, nullable=False)
     days_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Дата выплаты отпускных одним траншем (вторник = payroll_date недельной
+    # ведомости). NULL — легаси: отпускные размазываются по дням, как раньше.
+    payout_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="planned")
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(

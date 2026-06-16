@@ -19,6 +19,7 @@ from app.models import (
     AgentRun,
     AppSetting,
     Employee,
+    PayrollPeriod,
     ScheduledShift,
     ShiftSchedule,
     VacationPeriod,
@@ -56,6 +57,18 @@ class VacationBalance:
     periods: list[VacationPeriod]
 
 
+@dataclass(frozen=True, slots=True)
+class VacationPayout:
+    """Отпуск, выплачиваемый одним траншем на конкретную дату выплаты (вторник)."""
+
+    employee_id: uuid.UUID
+    period_id: uuid.UUID
+    date_start: date
+    date_end: date
+    days_count: int
+    amount: Decimal
+
+
 class VacationShiftConflictError(RuntimeError):
     def __init__(self, conflicts: list[ShiftConflict]) -> None:
         super().__init__("На период отпуска уже есть смены")
@@ -70,6 +83,7 @@ async def create_vacation_period(
     date_end: date,
     comment: str | None,
     actor: CurrentActor,
+    payout_date: date | None = None,
     force_remove_conflicting_shifts: bool = False,
 ) -> VacationPeriod:
     employee = await _get_vacation_employee(session, employee_id)
@@ -80,6 +94,7 @@ async def create_vacation_period(
         date_end=date_end,
         exclude_period_id=None,
     )
+    await _validate_payout_date(session, payout_date)
     before: dict[str, Any] | None = None
     period = VacationPeriod(
         id=uuid.uuid4(),
@@ -87,6 +102,7 @@ async def create_vacation_period(
         date_start=date_start,
         date_end=date_end,
         days_count=days_count,
+        payout_date=payout_date,
         status="planned",
         comment=_clean_comment(comment),
         created_by_user_id=_actor_user_id(actor),
@@ -123,6 +139,7 @@ async def update_vacation_period(
     date_start: date | None = None,
     date_end: date | None = None,
     comment: str | None | object = UNSET,
+    payout_date: date | None | object = UNSET,
     actor: CurrentActor,
     force_remove_conflicting_shifts: bool = False,
 ) -> VacationPeriod:
@@ -161,6 +178,10 @@ async def update_vacation_period(
         force_remove_conflicting_shifts=force_remove_conflicting_shifts,
     )
 
+    if payout_date is not UNSET:
+        next_payout = payout_date if isinstance(payout_date, date) else None
+        await _validate_payout_date(session, next_payout)
+        period.payout_date = next_payout
     period.date_start = next_start
     period.date_end = next_end
     period.days_count = next_days
@@ -273,12 +294,49 @@ async def vacation_days_for_payroll_period(
     periods = await _active_vacations_overlapping(session, period_start, period_end)
     days: dict[tuple[uuid.UUID, date], None] = {}
     for period in periods:
+        # Отпуск с заданной датой выплаты оплачивается одним траншем — по дням не
+        # размазываем (иначе сумма задвоится с лумп-выплатой).
+        if period.payout_date is not None:
+            continue
         current = max(period.date_start, period_start)
         last = min(period.date_end, period_end)
         while current <= last:
             days[(period.employee_id, current)] = None
             current += timedelta(days=1)
     return days
+
+
+async def vacation_payouts_for_payroll_date(
+    session: AsyncSession,
+    *,
+    payroll_date: date,
+) -> list[VacationPayout]:
+    """Отпуска, чья дата выплаты совпадает с датой выплаты ведомости (вторник).
+
+    Вся сумма (`days_count × vacation.daily_amount`) выплачивается одним траншем.
+    """
+    result = await session.scalars(
+        select(VacationPeriod).where(
+            VacationPeriod.status.in_(ACTIVE_VACATION_STATUSES),
+            VacationPeriod.payout_date == payroll_date,
+        )
+    )
+    daily = await vacation_daily_amount(session)
+    payouts: list[VacationPayout] = []
+    for period in result.all():
+        if period.payout_date != payroll_date or period.status not in ACTIVE_VACATION_STATUSES:
+            continue
+        payouts.append(
+            VacationPayout(
+                employee_id=period.employee_id,
+                period_id=period.id,
+                date_start=period.date_start,
+                date_end=period.date_end,
+                days_count=period.days_count,
+                amount=daily * period.days_count,
+            )
+        )
+    return payouts
 
 
 async def employee_has_active_vacation(
@@ -313,6 +371,7 @@ async def mark_vacations_paid_for_payroll_period(
     *,
     period_start: date,
     period_end: date,
+    payroll_date: date | None = None,
 ) -> int:
     periods = await _active_vacations_overlapping(session, period_start, period_end)
     now = datetime.now(UTC)
@@ -320,11 +379,27 @@ async def mark_vacations_paid_for_payroll_period(
     for period in periods:
         if period.status != "planned":
             continue
+        # Отпуска с датой выплаты помечаются оплаченными по совпадению payout_date с
+        # датой выплаты ведомости (ниже), а не по завершению дней в периоде.
+        if period.payout_date is not None:
+            continue
         if period.date_end > period_end:
             continue
         period.status = "paid"
         period.updated_at = now
         count += 1
+    if payroll_date is not None:
+        payout_periods = await session.scalars(
+            select(VacationPeriod).where(
+                VacationPeriod.status == "planned",
+                VacationPeriod.payout_date == payroll_date,
+            )
+        )
+        for period in payout_periods.all():
+            if period.status == "planned" and period.payout_date == payroll_date:
+                period.status = "paid"
+                period.updated_at = now
+                count += 1
     if count:
         await session.flush()
     return count
@@ -348,6 +423,28 @@ async def vacation_daily_amount(session: AsyncSession) -> Decimal:
         return Decimal(str(setting.value))
     except Exception:  # noqa: BLE001 - setting fallback must be resilient
         return DEFAULT_DAILY_AMOUNT
+
+
+async def _validate_payout_date(session: AsyncSession, payout_date: date | None) -> None:
+    if payout_date is None:
+        return
+    if payout_date.weekday() != 1:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Дата выплаты отпускных должна быть вторником",
+        )
+    finalized = await session.scalar(
+        select(PayrollPeriod).where(
+            PayrollPeriod.period_type == "week",
+            PayrollPeriod.payroll_date == payout_date,
+            PayrollPeriod.status == "finalized",
+        )
+    )
+    if finalized is not None:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Ведомость на эту дату выплаты уже закрыта — выберите другую дату",
+        )
 
 
 async def _validate_period_payload(
@@ -668,6 +765,7 @@ def _period_snapshot(period: VacationPeriod) -> dict[str, Any]:
         "date_start": period.date_start.isoformat(),
         "date_end": period.date_end.isoformat(),
         "days_count": period.days_count,
+        "payout_date": period.payout_date.isoformat() if period.payout_date else None,
         "status": period.status,
         "comment": period.comment,
     }

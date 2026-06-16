@@ -383,6 +383,7 @@ async def run_payroll(
             session,
             period_start=period.start_date,
             period_end=period.end_date,
+            payroll_date=period.payroll_date,
         )
         run.status = "completed"
         run.finished_at = datetime.now(UTC)

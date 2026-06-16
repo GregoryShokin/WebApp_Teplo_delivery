@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def _ensure_tuesday(value: date | None) -> date | None:
+    if value is not None and value.weekday() != 1:
+        raise ValueError("Дата выплаты отпускных должна быть вторником")
+    return value
 
 
 class VacationPeriodRead(BaseModel):
@@ -13,6 +20,8 @@ class VacationPeriodRead(BaseModel):
     date_start: date
     date_end: date
     days_count: int
+    payout_date: date | None
+    payout_amount: Decimal | None
     status: str
     comment: str | None
     created_by_label: str | None
@@ -46,6 +55,7 @@ class VacationPeriodCreate(BaseModel):
     employee_id: uuid.UUID
     date_start: date
     date_end: date
+    payout_date: date | None = None
     comment: str | None = Field(default=None, max_length=2000)
     force_remove_conflicting_shifts: bool = False
 
@@ -56,6 +66,11 @@ class VacationPeriodCreate(BaseModel):
             return value
         normalized = value.strip()
         return normalized or None
+
+    @field_validator("payout_date")
+    @classmethod
+    def validate_payout_date(cls, value: date | None) -> date | None:
+        return _ensure_tuesday(value)
 
     @model_validator(mode="after")
     def validate_date_range(self) -> VacationPeriodCreate:
@@ -69,6 +84,7 @@ class VacationPeriodPatch(BaseModel):
 
     date_start: date | None = None
     date_end: date | None = None
+    payout_date: date | None = None
     comment: str | None = Field(default=None, max_length=2000)
     force_remove_conflicting_shifts: bool = False
 
@@ -79,6 +95,11 @@ class VacationPeriodPatch(BaseModel):
             return value
         normalized = value.strip()
         return normalized or None
+
+    @field_validator("payout_date")
+    @classmethod
+    def validate_payout_date(cls, value: date | None) -> date | None:
+        return _ensure_tuesday(value)
 
 
 class VacationRosterRow(BaseModel):

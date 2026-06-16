@@ -1445,6 +1445,8 @@ export type VacationPeriodRead = {
   date_start: string;
   date_end: string;
   days_count: number;
+  payout_date: string | null;
+  payout_amount: string | number | null;
   status: VacationStatus;
   comment: string | null;
   created_by_label: string | null;
@@ -1475,6 +1477,7 @@ export type VacationPeriodPayload = {
   employee_id: string;
   date_start: string;
   date_end: string;
+  payout_date?: string | null;
   comment?: string | null;
   force_remove_conflicting_shifts?: boolean;
 };
@@ -1482,6 +1485,7 @@ export type VacationPeriodPayload = {
 export type VacationPeriodPatchPayload = {
   date_start?: string;
   date_end?: string;
+  payout_date?: string | null;
   comment?: string | null;
   force_remove_conflicting_shifts?: boolean;
 };

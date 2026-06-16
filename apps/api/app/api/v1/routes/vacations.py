@@ -143,6 +143,7 @@ async def post_vacation(
             date_end=payload.date_end,
             comment=payload.comment,
             actor=actor,
+            payout_date=payload.payout_date,
             force_remove_conflicting_shifts=payload.force_remove_conflicting_shifts,
         )
     except VacationShiftConflictError as exc:
@@ -162,6 +163,7 @@ async def patch_vacation(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> VacationPeriodRead | JSONResponse:
     comment = payload.comment if "comment" in payload.model_fields_set else UNSET
+    payout_date = payload.payout_date if "payout_date" in payload.model_fields_set else UNSET
     try:
         period = await vacation_service.update_vacation_period(
             session,
@@ -169,6 +171,7 @@ async def patch_vacation(
             date_start=payload.date_start,
             date_end=payload.date_end,
             comment=comment,
+            payout_date=payout_date,
             actor=actor,
             force_remove_conflicting_shifts=payload.force_remove_conflicting_shifts,
         )
@@ -213,6 +216,7 @@ async def _periods_to_read(
             user.id: user
             for user in (await session.scalars(select(User).where(User.id.in_(user_ids)))).all()
         }
+    daily_amount = await vacation_service.vacation_daily_amount(session)
     return [
         VacationPeriodRead(
             id=period.id,
@@ -223,6 +227,8 @@ async def _periods_to_read(
             date_start=period.date_start,
             date_end=period.date_end,
             days_count=period.days_count,
+            payout_date=period.payout_date,
+            payout_amount=(daily_amount * period.days_count) if period.payout_date else None,
             status=period.status,
             comment=period.comment,
             created_by_label=_user_label(users.get(period.created_by_user_id)),
