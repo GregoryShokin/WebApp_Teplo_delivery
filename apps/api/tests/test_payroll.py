@@ -58,7 +58,6 @@ from app.services.attendance_loader import (
     build_attendance_entry,
     load_attendance_entries,
 )
-from app.services.position_registry import production_payroll_positions
 from app.services.deferred_audit_charge_service import (
     apply_pending_splits_for_run,
     cancel_deferred_charge,
@@ -104,6 +103,7 @@ from app.services.payroll_runner import (
     payout_previous_year_fund_if_due,
     run_payroll,
 )
+from app.services.position_registry import production_payroll_positions
 from app.services.seniority_allowance_service import SENIORITY_ALLOWANCE_MAP_CONFIG_KEY
 from app.services.shift_ledger import AttendanceSnapshot, LedgerAssignment
 
@@ -1479,6 +1479,69 @@ async def test_apply_pending_splits_skips_recipients_not_in_run(
     assert applied_recipient.splits_remaining == 1
     assert skipped_recipient.splits_remaining == 2
     assert skipped_recipient.splits[0].run_id is None
+
+
+async def test_apply_pending_splits_respects_charge_start_period(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patch_deferred_period_employees(monkeypatch)
+    chef = make_employee(position="Повар")
+    audit = make_inventory_audit()
+    item = make_inventory_item(audit, position=make_inventory_position(allocation_group="chefs"))
+    session = DeferredChargeFakeSession(audit=audit, item=item, employees=[chef])
+    charge = await create_test_deferred_charge(
+        session,
+        audit_id=audit.id,
+        source_item_id=item.id,
+        total_penalty_amount=Decimal("1000.00"),
+        splits_count=2,
+    )
+    # Стартовая выплата = период с началом 16.06; доля 1 → 16.06, доля 2 → 23.06.
+    charge.start_period_start = date(2026, 6, 16)
+    recipient = charge.recipients[0]
+
+    def make_run(started: date) -> PayrollRun:
+        return PayrollRun(
+            id=uuid.uuid4(),
+            period_id=uuid.uuid4(),
+            started_at=datetime(started.year, started.month, started.day, tzinfo=UTC),
+            status="running",
+            blocking_issues=[],
+            summary={},
+        )
+
+    # Прогон РАНЬШЕ стартового периода — доля не применяется (гейт по дате).
+    early_run = make_run(date(2026, 6, 9))
+    session.add(make_payroll_line(early_run.id, chef.id))
+    applied_early = await apply_pending_splits_for_run(
+        session, early_run, date(2026, 6, 15), period_start=date(2026, 6, 9)
+    )
+    assert applied_early == []
+    assert recipient.splits_remaining == 2
+    assert recipient.splits[0].run_id is None
+    assert charge.status == "pending"
+
+    # Прогон стартового периода — применяется доля 1 (work_date = конец периода).
+    start_run = make_run(date(2026, 6, 16))
+    session.add(make_payroll_line(start_run.id, chef.id))
+    applied_start = await apply_pending_splits_for_run(
+        session, start_run, date(2026, 6, 22), period_start=date(2026, 6, 16)
+    )
+    assert len(applied_start) == 1
+    assert recipient.splits_remaining == 1
+    assert recipient.splits[0].run_id == start_run.id
+    assert session.adjustments[-1].work_date == date(2026, 6, 22)
+    assert charge.status == "partially_applied"
+
+    # Следующий недельный прогон — применяется доля 2 (target 16.06 + 7 = 23.06).
+    next_run = make_run(date(2026, 6, 23))
+    session.add(make_payroll_line(next_run.id, chef.id))
+    applied_next = await apply_pending_splits_for_run(
+        session, next_run, date(2026, 6, 29), period_start=date(2026, 6, 23)
+    )
+    assert len(applied_next) == 1
+    assert recipient.splits_remaining == 0
+    assert charge.status == "applied"
 
 
 async def test_collapse_on_dismissal_creates_single_adjustment(

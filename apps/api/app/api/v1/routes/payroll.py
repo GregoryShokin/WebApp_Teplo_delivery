@@ -24,6 +24,7 @@ from app.models import (
     PayrollRunEvent,
     User,
 )
+from app.schemas.inventory import PayoutOptionRead
 from app.schemas.payroll import (
     AdvanceRecoveryDeferralRequest,
     DeferredChargeCreate,
@@ -57,6 +58,9 @@ from app.services.deferred_audit_charge_service import (
     create_deferred_charge,
     list_deferred_charges,
 )
+from app.services.inventory_audit_service import list_payout_options_from
+from app.services.payroll_admin import run_admin_payroll
+from app.services.payroll_advance_service import set_advance_recovery_deferral
 from app.services.payroll_aggregate_service import build_aggregate
 from app.services.payroll_config import list_enabled_role_categories
 from app.services.payroll_payments import (
@@ -75,8 +79,6 @@ from app.services.payroll_payouts import (
     get_run_payout_delta,
     set_run_payout_cash,
 )
-from app.services.payroll_admin import run_admin_payroll
-from app.services.payroll_advance_service import set_advance_recovery_deferral
 from app.services.payroll_personal_report import build_personal_report
 from app.services.payroll_runner import (
     PayrollConflictError,
@@ -230,6 +232,19 @@ async def list_deferred_charges_endpoint(
         audit_id=audit_id,
     )
     return [deferred_charge_payload(charge) for charge in charges]
+
+
+@router.get(
+    "/deferred-charges/payout-options",
+    response_model=list[PayoutOptionRead],
+    dependencies=REVISION_DEFERRALS_MANAGE_ACCESS,
+)
+async def deferred_charge_payout_options(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> list[dict[str, Any]]:
+    today = datetime.now(UTC).date()
+    return await list_payout_options_from(session, today, count=12)
 
 
 @router.post(
@@ -857,6 +872,7 @@ def deferred_charge_payload(charge: DeferredAuditCharge) -> dict[str, Any]:
         "allocation_group": charge.allocation_group,
         "total_penalty_amount": decimal_string(charge.total_penalty_amount),
         "splits_count": charge.splits_count,
+        "start_period_start": charge.start_period_start,
         "status": charge.status,
         "reason": charge.reason,
         "created_by_name": created_by.full_name if created_by is not None else None,

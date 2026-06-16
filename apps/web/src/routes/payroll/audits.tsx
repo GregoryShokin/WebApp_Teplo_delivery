@@ -64,6 +64,7 @@ import {
   createDeferredCharge,
   createManualInventoryAudit,
   getAllInventoryAuditExclusions,
+  getDeferredChargePayoutOptions,
   getIikoCandidates,
   getInventoryAudit,
   getInventoryAuditPayoutOptions,
@@ -954,7 +955,16 @@ function DeferredChargeDialog({
   const queryClient = useQueryClient();
   const [amount, setAmount] = useState<string>("");
   const [splitsCount, setSplitsCount] = useState<number>(3);
+  const [startPeriodStart, setStartPeriodStart] = useState<string>("");
   const [reason, setReason] = useState<string>("");
+
+  const payoutOptionsQuery = useQuery({
+    queryKey: ["deferred-charge-payout-options"],
+    queryFn: getDeferredChargePayoutOptions,
+    enabled: row !== null,
+  });
+  const payoutOptions: InventoryPayoutOption[] = payoutOptionsQuery.data ?? [];
+  const firstOpenOption = payoutOptions.find((option) => !option.locked) ?? null;
 
   useEffect(() => {
     if (!row) {
@@ -963,7 +973,24 @@ function DeferredChargeDialog({
     setAmount("");
     setSplitsCount(3);
     setReason(row.reason ?? "");
+    setStartPeriodStart("");
   }, [row]);
+
+  // дефолт — первая открытая выплата, когда опции загрузились
+  useEffect(() => {
+    if (row && !startPeriodStart && firstOpenOption) {
+      setStartPeriodStart(firstOpenOption.period_start);
+    }
+  }, [row, startPeriodStart, firstOpenOption]);
+
+  const startOption =
+    payoutOptions.find((option) => option.period_start === startPeriodStart) ?? null;
+  // выплаты, в которые сядут доли: старт + 7×k
+  const targetPayouts = startOption
+    ? Array.from({ length: splitsCount }, (_, index) =>
+        dateKey(addDays(parseDateKey(startOption.payout_date), 7 * index)),
+      )
+    : [];
 
   const amountNumber = Number(amount);
   const isValid =
@@ -973,6 +1000,7 @@ function DeferredChargeDialog({
     amountNumber > 0 &&
     splitsCount >= 1 &&
     splitsCount <= 24 &&
+    startPeriodStart.length > 0 &&
     reason.trim().length > 0;
 
   const mutation = useMutation({
@@ -982,10 +1010,11 @@ function DeferredChargeDialog({
         source_item_id: row!.item_id!,
         total_penalty_amount: amount,
         splits_count: splitsCount,
+        start_period_start: startPeriodStart,
         reason: reason.trim(),
       }),
     onSuccess: async () => {
-      toast.success(`Штраф распределён на ${splitsCount} расчётов ЗП`);
+      toast.success(`Штраф распределён на ${splitsCount} ${pluralizeRuns(splitsCount)}`);
       onClose();
       await queryClient.invalidateQueries({ queryKey: ["deferred-charges"] });
     },
@@ -998,8 +1027,8 @@ function DeferredChargeDialog({
         <DialogHeader>
           <DialogTitle>Распределить штраф по расчётам ЗП</DialogTitle>
           <DialogDescription>
-            Штраф будет делиться равными долями по {splitsCount} {pluralizeRuns(splitsCount)}{" "}
-            начиная со следующего создания payroll-run.
+            Штраф делится равными долями по {splitsCount} {pluralizeRuns(splitsCount)} начиная с
+            выбранной выплаты, далее подряд по неделям.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -1022,7 +1051,7 @@ function DeferredChargeDialog({
             />
           </Label>
           <Label className="grid gap-2">
-            <span>Количество расчётов ЗП ({splitsCount})</span>
+            <span>Количество долей ({splitsCount})</span>
             <Input
               disabled={mutation.isPending}
               max={24}
@@ -1034,11 +1063,37 @@ function DeferredChargeDialog({
               value={splitsCount}
             />
           </Label>
-          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
-            Бэк определит получателей автоматически по сотрудникам в сменах за период ревизии для
-            группы исключённой позиции. Для каждого получателя будет создано {splitsCount}{" "}
-            {pluralizeRuns(splitsCount)}.
-          </div>
+          <Label className="grid gap-2">
+            <span>Стартовая выплата</span>
+            <Select
+              disabled={mutation.isPending || payoutOptionsQuery.isLoading}
+              onValueChange={setStartPeriodStart}
+              value={startPeriodStart}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Выберите выплату" />
+              </SelectTrigger>
+              <SelectContent>
+                {payoutOptions.map((option) => (
+                  <SelectItem
+                    disabled={option.locked}
+                    key={option.period_start}
+                    value={option.period_start}
+                  >
+                    Выплата {formatDate(option.payout_date)}
+                    {option.locked ? " — закрыта" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Label>
+          {targetPayouts.length > 0 ? (
+            <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
+              Доли уйдут в выплаты: {targetPayouts.map((payout) => formatDate(payout)).join(", ")}.
+              Получателей бэк определит автоматически по сотрудникам в сменах за период ревизии для
+              группы исключённой позиции.
+            </div>
+          ) : null}
           <Label className="grid gap-2">
             <span>Причина</span>
             <Textarea
@@ -1304,11 +1359,21 @@ function DeferredChargeDetailsDialog({
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
                           {recipient.splits
-                            .map((split) =>
-                              split.applied_at
-                                ? `${split.split_index}: применена`
-                                : `${split.split_index}: ${formatMoney(split.amount)}`,
-                            )
+                            .map((split) => {
+                              const label = charge.start_period_start
+                                ? formatDate(
+                                    dateKey(
+                                      addDays(
+                                        parseDateKey(charge.start_period_start),
+                                        7 * split.split_index,
+                                      ),
+                                    ),
+                                  )
+                                : `${split.split_index}`;
+                              return split.applied_at
+                                ? `${label}: применена`
+                                : `${label}: ${formatMoney(split.amount)}`;
+                            })
                             .join(" · ")}
                         </div>
                       </td>

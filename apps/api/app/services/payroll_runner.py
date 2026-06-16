@@ -335,6 +335,7 @@ async def run_payroll(
             session,
             run=run,
             period_end=period.end_date,
+            period_start=period.start_date,
         )
         collapsed_recipients = await collapse_dismissed_deferred_charge_recipients(
             session,

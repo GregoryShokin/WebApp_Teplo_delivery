@@ -788,6 +788,10 @@ class DeferredAuditCharge(Base):
     allocation_group: Mapped[str] = mapped_column(String(16), nullable=False)
     total_penalty_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     splits_count: Mapped[int] = mapped_column(nullable=False)
+    # Стартовая выплата распределения: период (вторник…понедельник), в который садится
+    # первая доля; последующие доли идут подряд по неделям. None = legacy-поведение
+    # (доли применяются в ближайших прогонах без привязки к дате).
+    start_period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="pending", server_default="pending"

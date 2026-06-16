@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -26,6 +26,8 @@ from app.schemas.payroll import DeferredChargeCreate
 from app.services.inventory_audit_service import (
     _load_period_employees,
     audit_period,
+    is_date_locked,
+    payroll_period_for_date,
     split_amount_evenly,
 )
 
@@ -75,12 +77,23 @@ async def create_deferred_charge(
     if not recipients:
         raise DeferredChargeValidationError("Нет получателей штрафа за этот период")
 
+    start_period_start: date | None = None
+    if payload.start_period_start is not None:
+        # Нормализуем на начало зарплатного периода (вторник) и запрещаем
+        # старт в уже зафиксированной выплате.
+        start_period_start = payroll_period_for_date(payload.start_period_start)[0]
+        if await is_date_locked(session, start_period_start):
+            raise DeferredChargeValidationError(
+                "Стартовая выплата уже зафиксирована — выберите открытую"
+            )
+
     charge = DeferredAuditCharge(
         source_audit_id=payload.source_audit_id,
         source_item_id=payload.source_item_id,
         allocation_group=allocation_group,
         total_penalty_amount=_money(payload.total_penalty_amount),
         splits_count=payload.splits_count,
+        start_period_start=start_period_start,
         status="pending",
         reason=payload.reason.strip(),
         created_by_user_id=actor.user_id,
@@ -142,6 +155,8 @@ async def apply_pending_splits_for_run(
     session: AsyncSession,
     run: PayrollRun,
     period_end: date,
+    *,
+    period_start: date | None = None,
 ) -> list[DeferredAuditChargeSplit]:
     result = await session.scalars(
         select(DeferredAuditChargeRecipient)
@@ -178,6 +193,16 @@ async def apply_pending_splits_for_run(
             recipient.splits_remaining = 0
             touched_charges.add(recipient.charge)
             continue
+
+        # Привязка к дате: если у штрафа задан стартовый период, доля N садится в
+        # период start + 7*(N-1) дней и не применяется в более ранних прогонах.
+        charge = recipient.charge
+        if charge.start_period_start is not None and period_start is not None:
+            target_period_start = charge.start_period_start + timedelta(
+                days=7 * (split.split_index - 1)
+            )
+            if period_start < target_period_start:
+                continue
 
         if split.amount > 0:
             if category is None:

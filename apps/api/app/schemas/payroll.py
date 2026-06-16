@@ -174,6 +174,9 @@ class DeferredChargeCreate(BaseModel):
     source_item_id: uuid.UUID
     total_penalty_amount: Decimal = Field(gt=0)
     splits_count: int = Field(ge=1, le=24)
+    # Стартовая выплата: первая доля садится в этот период, следующие — подряд по
+    # неделям. None = доли применяются в ближайших прогонах (legacy).
+    start_period_start: date | None = Field(default=None)
     reason: str = Field(min_length=1, max_length=500)
 
 
@@ -207,6 +210,7 @@ class DeferredChargeRead(BaseModel):
     allocation_group: str
     total_penalty_amount: str
     splits_count: int
+    start_period_start: date | None = None
     status: str
     reason: str
     created_by_name: str | None = None

@@ -1028,20 +1028,18 @@ def payroll_period_for_date(work_date: date) -> tuple[date, date, date]:
     return start, end, payout
 
 
-async def list_payout_options(
+async def list_payout_options_from(
     session: AsyncSession,
-    audit: Any,
+    base_work_date: date,
     *,
     count: int = 8,
 ) -> list[dict[str, Any]]:
-    """Список зарплатных выплат для переноса даты списания штрафа.
+    """Список недельных выплат начиная с периода, содержащего ``base_work_date``.
 
-    Первый элемент — период по умолчанию (``override_value=None``), далее идут
-    следующие недельные периоды. ``locked=True`` помечает уже зафиксированные
-    (финализированные) периоды — переносить в них нельзя.
+    ``override_value=None``/``is_default=True`` помечают первый (базовый) период.
+    ``locked=True`` — уже зафиксированный (финализированный) период.
     """
-    default_date = audit_penalty_work_date(audit.business_date)
-    base_start, base_end, base_payout = payroll_period_for_date(default_date)
+    base_start, base_end, base_payout = payroll_period_for_date(base_work_date)
     options: list[dict[str, Any]] = []
     for index in range(max(count, 1)):
         shift = timedelta(days=7 * index)
@@ -1059,6 +1057,20 @@ async def list_payout_options(
             }
         )
     return options
+
+
+async def list_payout_options(
+    session: AsyncSession,
+    audit: Any,
+    *,
+    count: int = 8,
+) -> list[dict[str, Any]]:
+    """Выплаты для переноса даты списания штрафа ревизии (от даты по умолчанию)."""
+    return await list_payout_options_from(
+        session,
+        audit_penalty_work_date(audit.business_date),
+        count=count,
+    )
 
 
 async def set_penalty_work_date_override(

@@ -985,6 +985,7 @@ export type DeferredCharge = {
   allocation_group: "chefs" | "admins" | "common";
   total_penalty_amount: string;
   splits_count: number;
+  start_period_start: string | null;
   status: DeferredChargeStatus;
   reason: string;
   created_by_name: string | null;
@@ -998,6 +999,7 @@ export type DeferredChargeCreatePayload = {
   source_item_id: string;
   total_penalty_amount: string;
   splits_count: number;
+  start_period_start?: string | null;
   reason: string;
 };
 
@@ -3342,6 +3344,13 @@ export async function createDeferredCharge(
   payload: DeferredChargeCreatePayload,
 ): Promise<DeferredCharge> {
   const response = await api.post<DeferredCharge>("/payroll/deferred-charges", payload);
+  return response.data;
+}
+
+export async function getDeferredChargePayoutOptions(): Promise<InventoryPayoutOption[]> {
+  const response = await api.get<InventoryPayoutOption[]>(
+    "/payroll/deferred-charges/payout-options",
+  );
   return response.data;
 }
 
