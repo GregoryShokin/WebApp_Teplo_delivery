@@ -13,7 +13,10 @@ import {
 } from "@/lib/api";
 import { BankSyncButton, formatDdsMoney } from "@/routes/dds/shared";
 
-type WalletGroupKey = "bank" | "cash" | "reserve";
+type WalletGroupKey = "tbank" | "sber" | "cash" | "reserve";
+
+const isBankWallet = (wallet: WalletRead) =>
+  wallet.type === "bank" || wallet.type === "bank_account";
 
 const GROUP_CONFIG: Array<{
   key: WalletGroupKey;
@@ -25,13 +28,22 @@ const GROUP_CONFIG: Array<{
   matches: (wallet: WalletRead) => boolean;
 }> = [
   {
-    key: "bank",
-    label: "Банковские счета",
-    description: "Безналичные деньги в банках",
+    key: "tbank",
+    label: "Тинькофф",
+    description: "Счета в Т-Банке",
     icon: Banknote,
     accent: "from-sky-50 to-sky-100/60",
     badgeClass: "border-sky-200 bg-sky-50 text-sky-700",
-    matches: (wallet) => wallet.type === "bank" || wallet.type === "bank_account",
+    matches: (wallet) => isBankWallet(wallet) && wallet.bank_code === "tbank",
+  },
+  {
+    key: "sber",
+    label: "Сбербанк",
+    description: "Счета в Сбербанке",
+    icon: Banknote,
+    accent: "from-green-50 to-green-100/60",
+    badgeClass: "border-green-200 bg-green-50 text-green-700",
+    matches: (wallet) => isBankWallet(wallet) && wallet.bank_code === "sber",
   },
   {
     key: "cash",
@@ -136,7 +148,7 @@ export function TodayTab({ onNavigate }: { onNavigate: (path: string) => void })
             </div>
             <div className="mt-2 text-xs text-emerald-900/70">
               По {wallets.length} {pluralize(wallets.length, "кошельку", "кошелькам", "кошелькам")} —
-              {" "}банки, кассы и резервы вместе.
+              {" "}все счета и кассы вместе.
             </div>
           </div>
           {pendingReview > 0 ? (
@@ -154,9 +166,11 @@ export function TodayTab({ onNavigate }: { onNavigate: (path: string) => void })
       </Card>
 
       <div className="grid gap-3 lg:grid-cols-3">
-        {groups.buckets.map((group) => (
-          <GroupCard key={group.key} group={group} loading={walletsQuery.isLoading} />
-        ))}
+        {groups.buckets
+          .filter((group) => walletsQuery.isLoading || group.items.length > 0)
+          .map((group) => (
+            <GroupCard key={group.key} group={group} loading={walletsQuery.isLoading} />
+          ))}
       </div>
 
       {groups.orphans.length > 0 ? (

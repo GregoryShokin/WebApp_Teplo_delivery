@@ -219,8 +219,10 @@ class TbankClient:
                 while True:
                     params: dict[str, Any] = {
                         "accountNumber": account_number,
-                        "from": date_from.isoformat(),
-                        "to": date_to.isoformat(),
+                        # T-Bank statement requires RFC3339 date-time, not a bare date —
+                        # a plain ``2026-06-01`` is rejected with 400 VALIDATION_ERROR.
+                        "from": f"{date_from.isoformat()}T00:00:00Z",
+                        "to": f"{date_to.isoformat()}T23:59:59Z",
                         "limit": 1000,
                     }
                     if cursor:

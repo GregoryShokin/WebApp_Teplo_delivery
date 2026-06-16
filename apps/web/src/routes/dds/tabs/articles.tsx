@@ -45,7 +45,7 @@ import {
   type DdsArticleCreate,
   type DdsArticleRead,
 } from "@/lib/api";
-import { MovementBadge, badgeMutedClass, compactText } from "@/routes/dds/shared";
+import { MovementBadge, activityLabels, badgeMutedClass, compactText } from "@/routes/dds/shared";
 
 type MovementType = DdsArticleCreate["movement_type"];
 
@@ -60,7 +60,6 @@ export function ArticlesTab({ canEdit }: { canEdit: boolean }) {
     () => (articlesQuery.data ?? []).find((article) => article.id === selectedId) ?? null,
     [articlesQuery.data, selectedId],
   );
-  const articlesById = new Map((articlesQuery.data ?? []).map((article) => [article.id, article]));
   const groups = groupArticles(articlesQuery.data ?? []);
 
   const deleteMutation = useMutation({
@@ -75,7 +74,6 @@ export function ArticlesTab({ canEdit }: { canEdit: boolean }) {
   });
 
   const columns: Array<DataTableColumn<DdsArticleRead>> = [
-    { key: "code", header: "Код", cell: (article) => article.code, className: "font-mono" },
     {
       key: "name",
       header: "Название",
@@ -86,12 +84,6 @@ export function ArticlesTab({ canEdit }: { canEdit: boolean }) {
       key: "movement",
       header: "Движение",
       cell: (article) => <MovementBadge movement={article.movement_type} />,
-    },
-    {
-      key: "parent",
-      header: "Родитель",
-      cell: (article) =>
-        article.parent_id ? articlesById.get(article.parent_id)?.name ?? article.parent_id : "—",
     },
     {
       key: "active",
@@ -123,7 +115,9 @@ export function ArticlesTab({ canEdit }: { canEdit: boolean }) {
             <Card key={activityType}>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-base font-semibold">{activityType}</h3>
+                  <h3 className="text-base font-semibold">
+                    {activityLabels[activityType] ?? activityType}
+                  </h3>
                   <Badge variant="outline">{articles.length}</Badge>
                 </div>
               </CardHeader>
@@ -141,14 +135,9 @@ export function ArticlesTab({ canEdit }: { canEdit: boolean }) {
         </div>
       )}
 
-      <ArticleDialog
-        articles={articlesQuery.data ?? []}
-        open={canEdit && isCreateOpen}
-        onOpenChange={setIsCreateOpen}
-      />
+      <ArticleDialog open={canEdit && isCreateOpen} onOpenChange={setIsCreateOpen} />
       <ArticleSheet
         article={selected}
-        articles={articlesQuery.data ?? []}
         canEdit={canEdit}
         onClose={() => setSelectedId(null)}
         onDelete={setDeleteTarget}
@@ -178,11 +167,9 @@ export function ArticlesTab({ canEdit }: { canEdit: boolean }) {
 }
 
 function ArticleDialog({
-  articles,
   onOpenChange,
   open,
 }: {
-  articles: DdsArticleRead[];
   onOpenChange: (open: boolean) => void;
   open: boolean;
 }) {
@@ -205,10 +192,10 @@ function ArticleDialog({
         <DialogHeader>
           <DialogTitle>Новая статья ДДС</DialogTitle>
         </DialogHeader>
-        <ArticleForm articles={articles} draft={draft} onDraftChange={setDraft} />
+        <ArticleForm draft={draft} onDraftChange={setDraft} />
         <DialogFooter>
           <Button
-            disabled={!draft.code.trim() || !draft.name.trim() || createMutation.isPending}
+            disabled={!draft.name.trim() || createMutation.isPending}
             onClick={() => createMutation.mutate()}
           >
             {createMutation.isPending ? (
@@ -224,13 +211,11 @@ function ArticleDialog({
 
 function ArticleSheet({
   article,
-  articles,
   canEdit,
   onClose,
   onDelete,
 }: {
   article: DdsArticleRead | null;
-  articles: DdsArticleRead[];
   canEdit: boolean;
   onClose: () => void;
   onDelete: (article: DdsArticleRead) => void;
@@ -274,18 +259,18 @@ function ArticleSheet({
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["dds", "articles"] });
       setAlias("");
-      toast.success("Alias добавлен");
+      toast.success("Синоним добавлен");
     },
-    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось добавить alias")),
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось добавить синоним")),
   });
 
   const deleteAliasMutation = useMutation({
     mutationFn: deleteDdsArticleAlias,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["dds", "articles"] });
-      toast.success("Alias удалён");
+      toast.success("Синоним удалён");
     },
-    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось удалить alias")),
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось удалить синоним")),
   });
 
   return (
@@ -297,12 +282,7 @@ function ArticleSheet({
         </SheetHeader>
         {article ? (
           <div className="mt-5 space-y-5">
-            <ArticleForm
-              articles={articles.filter((item) => item.id !== article.id)}
-              disabled={!canEdit}
-              draft={draft}
-              onDraftChange={setDraft}
-            />
+            <ArticleForm disabled={!canEdit} draft={draft} onDraftChange={setDraft} />
             {canEdit ? (
               <div className="flex flex-wrap gap-2">
                 <Button disabled={patchMutation.isPending} onClick={() => patchMutation.mutate()}>
@@ -319,7 +299,7 @@ function ArticleSheet({
             ) : null}
             {canEdit || article.aliases.length > 0 ? (
             <div className="space-y-3 border-t pt-5">
-              <h3 className="text-sm font-semibold">Aliases</h3>
+              <h3 className="text-sm font-semibold">Синонимы</h3>
               {canEdit ? (
                 <div className="flex gap-2">
                   <Input value={alias} onChange={(event) => setAlias(event.target.value)} />
@@ -372,12 +352,10 @@ type ArticleDraft = {
 };
 
 function ArticleForm({
-  articles,
   disabled = false,
   draft,
   onDraftChange,
 }: {
-  articles: DdsArticleRead[];
   disabled?: boolean;
   draft: ArticleDraft;
   onDraftChange: (draft: ArticleDraft) => void;
@@ -385,16 +363,13 @@ function ArticleForm({
   const setField = <K extends keyof ArticleDraft>(key: K, value: ArticleDraft[K]) =>
     onDraftChange({ ...draft, [key]: value });
 
+  const activityValue = normalizeActivity(draft.activity_type);
+  const activityOptions = ACTIVITY_ORDER.includes(activityValue)
+    ? ACTIVITY_ORDER
+    : [activityValue, ...ACTIVITY_ORDER];
+
   return (
     <div className="grid gap-4">
-      <div className="grid gap-2">
-        <Label>Код</Label>
-        <Input
-          disabled={disabled}
-          value={draft.code}
-          onChange={(event) => setField("code", event.target.value)}
-        />
-      </div>
       <div className="grid gap-2">
         <Label>Название</Label>
         <Input
@@ -422,33 +397,24 @@ function ArticleForm({
           </Select>
         </div>
         <div className="grid gap-2">
-          <Label>Activity type</Label>
-          <Input
+          <Label>Вид деятельности</Label>
+          <Select
             disabled={disabled}
-            value={draft.activity_type}
-            onChange={(event) => setField("activity_type", event.target.value)}
-          />
+            value={activityValue}
+            onValueChange={(value) => setField("activity_type", value)}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {activityOptions.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {activityLabels[option] ?? option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-      </div>
-      <div className="grid gap-2">
-        <Label>Родитель</Label>
-        <Select
-          disabled={disabled}
-          value={draft.parent_id}
-          onValueChange={(value) => setField("parent_id", value)}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">Нет</SelectItem>
-            {articles.map((article) => (
-              <SelectItem key={article.id} value={article.id}>
-                {article.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </div>
       <div className="grid gap-2">
         <Label>Описание</Label>
@@ -487,7 +453,7 @@ function articleDraft(): ArticleDraft {
 function toArticlePayload(draft: ArticleDraft): DdsArticleCreate {
   return {
     activity_type: draft.activity_type,
-    code: draft.code,
+    code: draft.code.trim() || generateArticleCode(draft.name),
     description: compactText(draft.description, ""),
     is_active: draft.is_active,
     movement_type: draft.movement_type,
@@ -496,12 +462,55 @@ function toArticlePayload(draft: ArticleDraft): DdsArticleCreate {
   };
 }
 
+const CODE_TRANSLIT: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z",
+  и: "i", й: "i", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
+  с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "c", ч: "ch", ш: "sh", щ: "sch",
+  ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+};
+
+function generateArticleCode(name: string): string {
+  const base = name
+    .toLowerCase()
+    .split("")
+    .map((char) => CODE_TRANSLIT[char] ?? char)
+    .join("")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48);
+  const suffix = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}`)
+    .replace(/[^a-z0-9]/gi, "")
+    .slice(0, 6)
+    .toLowerCase();
+  return base ? `${base}_${suffix}` : `article_${suffix}`;
+}
+
+const ACTIVITY_ORDER = ["operating", "financing", "investing", "technical"];
+
+function normalizeActivity(activityType: string) {
+  return activityType === "internal" ? "technical" : activityType;
+}
+
 function groupArticles(articles: DdsArticleRead[]) {
   const groups = new Map<string, DdsArticleRead[]>();
   articles.forEach((article) => {
-    const group = groups.get(article.activity_type) ?? [];
+    const key = normalizeActivity(article.activity_type);
+    const group = groups.get(key) ?? [];
     group.push(article);
-    groups.set(article.activity_type, group);
+    groups.set(key, group);
   });
-  return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right, "ru"));
+  return [...groups.entries()].sort(([left], [right]) => {
+    const leftIndex = ACTIVITY_ORDER.indexOf(left);
+    const rightIndex = ACTIVITY_ORDER.indexOf(right);
+    if (leftIndex === -1 && rightIndex === -1) {
+      return left.localeCompare(right, "ru");
+    }
+    if (leftIndex === -1) {
+      return 1;
+    }
+    if (rightIndex === -1) {
+      return -1;
+    }
+    return leftIndex - rightIndex;
+  });
 }

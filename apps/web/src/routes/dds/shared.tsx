@@ -75,6 +75,14 @@ export const movementLabels: Record<string, string> = {
   internal: "Внутреннее",
 };
 
+export const activityLabels: Record<string, string> = {
+  operating: "Операционная",
+  financing: "Финансовая",
+  investing: "Инвестиционная",
+  technical: "Техническая",
+  internal: "Техническая",
+};
+
 export const qualityLabels: Record<string, string> = {
   auto: "Авто",
   owner_review: "Owner review",

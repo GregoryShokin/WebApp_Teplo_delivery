@@ -125,12 +125,14 @@ def test_get_dds_wallets_returns_seeded_wallets(client: TestClient) -> None:
 
     assert response.status_code == 200
     rows = response.json()
-    assert len(rows) == 5
+    assert len(rows) == 7
     assert {row["code"] for row in rows} == {
         "cash_safe",
         "guarant_fund",
         "sber_main",
         "tbank_main",
+        "tbank_kopilka",
+        "tbank_nakopit",
         "tk_chernikova",
     }
 

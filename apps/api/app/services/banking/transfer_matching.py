@@ -70,21 +70,34 @@ async def _operations_match(
     inflow: BankOperation,
     account_numbers: dict[UUID, str],
 ) -> bool:
-    if outflow.provider == inflow.provider:
-        return False
     if Decimal(outflow.amount) != Decimal(inflow.amount):
         return False
     if abs((outflow.operation_date - inflow.operation_date).days) > 2:
         return False
 
-    out_counterparty_account = clean_digits(outflow.counterparty_account_raw)
+    out_account = account_numbers.get(outflow.id, "")
     inflow_account = account_numbers.get(inflow.id, "")
+    # A transfer always moves money between two DIFFERENT accounts.
+    if out_account and inflow_account and out_account == inflow_account:
+        return False
+
+    out_counterparty_account = clean_digits(outflow.counterparty_account_raw)
+    # Strong signal: the outflow names the inflow's own account as the counterparty.
+    # Works for both cross-bank and intra-bank (same provider) transfers, e.g. T-Bank
+    # расчётный счёт -> Бизнес-копилка / Гарант фонд / Накопительный фонд.
     if out_counterparty_account and out_counterparty_account == inflow_account:
         return True
 
-    out_counterparty_inn = clean_digits(outflow.counterparty_inn_raw)
-    inflow_own_inn = await _own_inn_for_account(session, inflow.provider, inflow_account)
-    return bool(out_counterparty_inn and inflow_own_inn and out_counterparty_inn == inflow_own_inn)
+    # INN fallback only ACROSS different banks: within one bank all of our accounts
+    # share the same legal-entity INN, so an INN match there is not specific enough
+    # and would pair unrelated operations.
+    if outflow.provider != inflow.provider:
+        out_counterparty_inn = clean_digits(outflow.counterparty_inn_raw)
+        inflow_own_inn = await _own_inn_for_account(session, inflow.provider, inflow_account)
+        return bool(
+            out_counterparty_inn and inflow_own_inn and out_counterparty_inn == inflow_own_inn
+        )
+    return False
 
 
 async def _operation_account_number(session: AsyncSession, operation: BankOperation) -> str:

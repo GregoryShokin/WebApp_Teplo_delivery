@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_permission
 from app.db.session import get_session
 from app.models import (
+    Account,
     BankOperation,
     CashflowTransaction,
     ClassificationRule,
@@ -21,6 +23,7 @@ from app.models import (
     DdsArticleAlias,
     ReconciliationCase,
     SourceCredential,
+    TransferGroup,
     Wallet,
 )
 from app.scheduler import run_bank_sync_job
@@ -146,7 +149,59 @@ async def list_wallets(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[dict[str, object]]:
     result = await session.scalars(select(Wallet).order_by(Wallet.code))
-    return [_wallet_payload(wallet) for wallet in result.all()]
+    wallets = result.all()
+    deltas = await _wallet_movement_deltas(session)
+    bank_by_account = dict(
+        (await session.execute(select(Account.id, Account.bank_code))).all()
+    )
+    return [
+        _wallet_payload(
+            wallet,
+            deltas.get(wallet.id, Decimal("0")),
+            bank_by_account.get(wallet.account_id),
+        )
+        for wallet in wallets
+    ]
+
+
+async def _wallet_movement_deltas(session: AsyncSession) -> dict[UUID, Decimal]:
+    """Net cash movement per wallet: classified cashflow plus matched transfers.
+
+    Balance is derived from movements, never from the bank's reported balance — the
+    T-Bank ``otb`` field is inflated by the overdraft limit, so it is not used.
+    """
+    deltas: dict[UUID, Decimal] = defaultdict(lambda: Decimal("0"))
+
+    cashflow_rows = await session.execute(
+        select(
+            CashflowTransaction.wallet_id,
+            CashflowTransaction.direction,
+            func.coalesce(func.sum(CashflowTransaction.amount), 0),
+        ).group_by(CashflowTransaction.wallet_id, CashflowTransaction.direction)
+    )
+    for wallet_id, direction, total in cashflow_rows:
+        if wallet_id is None:
+            continue
+        amount = Decimal(total)
+        deltas[wallet_id] += amount if direction == "in" else -amount
+
+    transfer_out = await session.execute(
+        select(TransferGroup.from_wallet_id, func.coalesce(func.sum(TransferGroup.amount), 0))
+        .where(TransferGroup.from_wallet_id.is_not(None))
+        .group_by(TransferGroup.from_wallet_id)
+    )
+    for wallet_id, total in transfer_out:
+        deltas[wallet_id] -= Decimal(total)
+
+    transfer_in = await session.execute(
+        select(TransferGroup.to_wallet_id, func.coalesce(func.sum(TransferGroup.amount), 0))
+        .where(TransferGroup.to_wallet_id.is_not(None))
+        .group_by(TransferGroup.to_wallet_id)
+    )
+    for wallet_id, total in transfer_in:
+        deltas[wallet_id] += Decimal(total)
+
+    return deltas
 
 
 @router.get("/articles", response_model=list[DdsArticleRead], dependencies=DDS_READ_ACCESS)
@@ -627,8 +682,13 @@ async def dismiss_owner_review_case(
     return {"case_id": case.id, "status": case.status, "bank_operation_id": case.bank_operation_id}
 
 
-def _wallet_payload(wallet: Wallet) -> dict[str, object]:
-    balance = _money(wallet.opening_balance)
+def _wallet_payload(
+    wallet: Wallet,
+    movement_delta: Decimal = Decimal("0"),
+    bank_code: str | None = None,
+) -> dict[str, object]:
+    opening = _money(wallet.opening_balance)
+    balance = _money(Decimal(str(wallet.opening_balance)) + movement_delta)
     return {
         "id": wallet.id,
         "code": wallet.code,
@@ -638,7 +698,8 @@ def _wallet_payload(wallet: Wallet) -> dict[str, object]:
         "is_internal_transfer_eligible": wallet.is_internal_transfer_eligible,
         "status": wallet.status,
         "account_id": wallet.account_id,
-        "opening_balance": balance,
+        "bank_code": bank_code,
+        "opening_balance": opening,
         "opening_balance_date": wallet.opening_balance_date,
         "balance": balance,
     }

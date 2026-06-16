@@ -63,6 +63,7 @@ class DdsWalletRead(BaseModel):
     is_internal_transfer_eligible: bool
     status: str
     account_id: uuid.UUID | None = None
+    bank_code: str | None = None
     opening_balance: str
     opening_balance_date: date | None = None
     balance: str

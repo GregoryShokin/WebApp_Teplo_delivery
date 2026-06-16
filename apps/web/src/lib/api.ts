@@ -2084,6 +2084,7 @@ export type WalletRead = {
   is_internal_transfer_eligible: boolean;
   status: string;
   account_id: string | null;
+  bank_code: string | null;
   opening_balance: string;
   opening_balance_date: string | null;
   balance: string;
