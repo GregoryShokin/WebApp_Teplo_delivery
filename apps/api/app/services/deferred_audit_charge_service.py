@@ -26,6 +26,7 @@ from app.schemas.payroll import DeferredChargeCreate
 from app.services.inventory_audit_service import (
     _load_period_employees,
     audit_period,
+    decimal_string,
     is_production_date_locked,
     payroll_period_for_date,
     split_amount_evenly,
@@ -363,7 +364,7 @@ def deferred_splits_on_payout(
                 "split_index": split_index,
                 "splits_count": charge.splits_count,
                 "recipient_count": recipient_count,
-                "total_amount": _money(total),
+                "total_amount": decimal_string(_money(total)),
                 "applied": applied_count == recipient_count,
                 "reason": charge.reason,
             }

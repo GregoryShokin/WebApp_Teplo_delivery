@@ -1575,15 +1575,19 @@ def test_deferred_splits_on_payout_matches_target_week() -> None:
     assert len(rows) == 1
     assert rows[0]["split_index"] == 1
     assert rows[0]["recipient_count"] == 2
-    assert rows[0]["total_amount"] == Decimal("626.00")
+    assert rows[0]["total_amount"] == "626.00"
     assert rows[0]["applied"] is False
     assert rows[0]["source_item_name"] == "Семга х/к"
     assert rows[0]["source_audit_date"] == date(2026, 5, 18)
+    # строка должна валидироваться схемой ответа (Decimal→str и пр.)
+    from app.schemas.inventory import DeferredOnPayoutRead
+
+    DeferredOnPayoutRead(**rows[0])
 
     # период 16–22 → доля 2
     rows2 = deferred_splits_on_payout([charge], period_start=date(2026, 6, 16))
     assert rows2[0]["split_index"] == 2
-    assert rows2[0]["total_amount"] == Decimal("624.00")
+    assert rows2[0]["total_amount"] == "624.00"
 
     # период 23–29 → долей нет (всего 2)
     assert deferred_splits_on_payout([charge], period_start=date(2026, 6, 23)) == []
