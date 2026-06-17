@@ -3396,12 +3396,12 @@ function EmployeeScheduleGrid({
 
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
-      <div className="overflow-x-auto">
+      <div className="overflow-auto max-h-[70vh]">
         <table className="border-separate border-spacing-0 text-sm" style={{ minWidth }}>
           <thead>
             <tr>
               <th
-                className="sticky left-0 z-20 border-b border-r bg-muted/90 px-3 py-3 text-left font-medium text-muted-foreground"
+                className="sticky left-0 top-0 z-30 border-b border-r bg-muted/90 px-3 py-3 text-left font-medium text-muted-foreground"
                 style={{ width: EMPLOYEE_COLUMN_WIDTH, minWidth: EMPLOYEE_COLUMN_WIDTH }}
               >
                 Сотрудник
@@ -3545,12 +3545,12 @@ function StationScheduleGrid({
 
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
-      <div className="overflow-x-auto">
+      <div className="overflow-auto max-h-[70vh]">
         <table className="border-separate border-spacing-0 text-sm" style={{ minWidth }}>
           <thead>
             <tr>
               <th
-                className="sticky left-0 z-20 border-b border-r bg-muted/90 px-3 py-3 text-left font-medium text-muted-foreground"
+                className="sticky left-0 top-0 z-30 border-b border-r bg-muted/90 px-3 py-3 text-left font-medium text-muted-foreground"
                 style={{ width: STATION_COLUMN_WIDTH, minWidth: STATION_COLUMN_WIDTH }}
               >
                 Станция
@@ -3930,7 +3930,7 @@ function allowanceRoleShortLabel(role: "senior" | "deputy_senior") {
 function GridDayHeader({ day, ledgerEmpty = false }: { day: string; ledgerEmpty?: boolean }) {
   return (
     <th
-      className="border-b border-r bg-muted/70 px-2 py-2 text-center font-medium text-muted-foreground"
+      className="sticky top-0 z-20 border-b border-r bg-muted/70 px-2 py-2 text-center font-medium text-muted-foreground"
       style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
     >
       <div>{weekdayLabels[parseIsoDate(day).getDay()]}</div>
