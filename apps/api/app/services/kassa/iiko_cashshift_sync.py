@@ -24,7 +24,7 @@ import urllib.parse
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -32,14 +32,21 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    AppSetting,
     CashflowTransaction,
     DdsArticle,
+    Employee,
     IikoCashShift,
     IikoCashShiftPayout,
     InvoicePaymentAllocation,
+    KassaShiftPenalty,
+    PayrollAdjustment,
+    ShiftLedgerEntry,
     SupplierInvoice,
     Wallet,
 )
+from app.services.payroll_adjustment_service import is_production_date_locked
+from app.services.staff_taxonomy import CASHIER_PAYROLL_ROLES
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +74,19 @@ CASH_ADJUSTMENT_MINUS_ARTICLE = "Корретировки кассы -"
 SHIFT_SOURCE_KIND = "kassa_cashshift"
 ADJUSTMENT_SOURCE_KIND = "kassa_cashshift_adjustment"
 
+# --- авто-штраф кассирам за недостачу смены (Фаза 10) ---------------------------
+MONEY = Decimal("0.01")
+# Порог недостачи (% от всей выручки смены), ниже которого штрафа нет. Настройка.
+SHORTAGE_THRESHOLD_PCT_KEY = "kassa.shortage_penalty_threshold_pct"
+DEFAULT_SHORTAGE_THRESHOLD_PCT = Decimal("1.0")
+# Должность, в роль которой садится штраф (попадает в недельную ведомость кассира).
+CASHIER_POSITION = "Кассир"
+# Итоги авто-штрафа смены (поле iiko_cash_shift.penalty_status).
+PENALTY_STATUS_NONE = "none"
+PENALTY_STATUS_APPLIED = "applied"
+PENALTY_STATUS_WAIVED = "waived"
+PENALTY_STATUS_MANUAL_REVIEW = "manual_review"
+
 
 @dataclass(slots=True)
 class CashShiftSyncReport:
@@ -75,6 +95,7 @@ class CashShiftSyncReport:
     updated: int = 0
     payouts: int = 0
     posted: int = 0
+    penalized: int = 0
     skipped: int = 0
 
     def as_dict(self) -> dict[str, int]:
@@ -84,6 +105,7 @@ class CashShiftSyncReport:
             "updated": self.updated,
             "payouts": self.payouts,
             "posted": self.posted,
+            "penalized": self.penalized,
             "skipped": self.skipped,
         }
 
@@ -194,11 +216,17 @@ def _iiko_post(token: str, path: str, body: dict[str, Any]) -> Any:
         conn.close()
 
 
-def _fetch_cash_sales_by_day(token: str, date_from: date, date_to: date) -> dict[date, Decimal]:
-    """Достоверная наличная выручка по дням из OLAP SALES (тип оплаты «Наличные»).
+def _fetch_cash_sales_by_day(
+    token: str, date_from: date, date_to: date
+) -> tuple[dict[date, Decimal], dict[date, Decimal]]:
+    """Выручка по дням из OLAP SALES: наличная (тип «Наличные») и ВСЯ (все типы оплат).
 
-    iiko `salesCash` кассовой смены завышен зачтёнными предоплатами — поэтому наличную
-    выручку берём из OLAP по типам оплат (`PayTypes.Group='CASH'`, сумма со скидкой).
+    iiko `salesCash`/`salesCard` кассовой смены ненадёжны (нал завышен зачтёнными
+    предоплатами), поэтому обе берём из одного OLAP-отчёта по типам оплат
+    (`PayTypes.Group`, сумма со скидкой). Наличная — база расхождения кассы; вся выручка
+    (нал + безнал + прочее) — база порога авто-штрафа за недостачу.
+
+    Возвращает ``(cash_by_day, total_by_day)``.
     """
     body = {
         "reportType": "SALES",
@@ -219,16 +247,17 @@ def _fetch_cash_sales_by_day(token: str, date_from: date, date_to: date) -> dict
     }
     data = _iiko_post(token, "/resto/api/v2/reports/olap", body)
     rows = data.get("data", []) if isinstance(data, dict) else []
-    result: dict[date, Decimal] = {}
+    cash: dict[date, Decimal] = {}
+    total: dict[date, Decimal] = {}
     for row in rows:
-        if str(row.get("PayTypes.Group") or "") != "CASH":
-            continue
         day = _parse_date(row.get("OpenDate.Typed"))
         if day is None:
             continue
         amount = _dec(row.get("DishDiscountSumInt")) or Decimal("0")
-        result[day] = result.get(day, Decimal("0")) + amount
-    return result
+        total[day] = total.get(day, Decimal("0")) + amount
+        if str(row.get("PayTypes.Group") or "") == "CASH":
+            cash[day] = cash.get(day, Decimal("0")) + amount
+    return cash, total
 
 
 # --- parsing helpers -----------------------------------------------------------
@@ -301,8 +330,9 @@ async def sync_iiko_cashshifts(
     token = _auth_token()
     shifts = _fetch_cashshifts_list(token, date_from, date_to)
     report = CashShiftSyncReport(fetched=len(shifts))
-    # Достоверная наличная выручка по дням (OLAP по типам оплат), не из salesCash.
-    cash_by_day = _fetch_cash_sales_by_day(token, date_from, date_to)
+    # Достоверная выручка по дням (OLAP по типам оплат), не из salesCash/salesCard:
+    # наличная — для расхождения, полная — для порога авто-штрафа.
+    cash_by_day, total_by_day = _fetch_cash_sales_by_day(token, date_from, date_to)
 
     session_ids = [row.get("id") for row in shifts if row.get("id")]
     existing: dict[str, IikoCashShift] = {}
@@ -333,9 +363,10 @@ async def sync_iiko_cashshifts(
                 setattr(shift, key, value)
             report.updated += 1
 
-        # Наличная выручка из OLAP по дню открытия смены (не из завышенного salesCash).
+        # Выручка из OLAP по дню открытия смены (не из завышенного salesCash/salesCard).
         shift_day = (shift.open_date or shift.close_date).date()
         shift.cash_sales = cash_by_day.get(shift_day)
+        shift.total_sales = total_by_day.get(shift_day)
 
         # Разнос изъятий и проводку делаем только пока смена не проведена в ДДС.
         if not shift.posted:
@@ -345,14 +376,20 @@ async def sync_iiko_cashshifts(
             if await post_shift_cash_circuit(session, shift):
                 report.posted += 1
 
+        # Авто-штраф кассирам, если недостача > порога (идемпотентно по смене).
+        if await apply_shortage_penalty(session, shift):
+            report.penalized += 1
+
     await session.flush()
     logger.info(
-        "iiko cashshift sync: fetched=%s created=%s updated=%s payouts=%s posted=%s skipped=%s",
+        "iiko cashshift sync: fetched=%s created=%s updated=%s payouts=%s posted=%s "
+        "penalized=%s skipped=%s",
         report.fetched,
         report.created,
         report.updated,
         report.payouts,
         report.posted,
+        report.penalized,
         report.skipped,
     )
     return report
@@ -438,9 +475,7 @@ async def post_shift_cash_circuit(session: AsyncSession, shift: IikoCashShift) -
             select(IikoCashShiftPayout).where(IikoCashShiftPayout.shift_id == shift.id)
         )
     ).all()
-    main_total = sum(
-        (p.amount for p in payouts if p.category == "main_cash"), Decimal("0.00")
-    )
+    main_total = sum((p.amount for p in payouts if p.category == "main_cash"), Decimal("0.00"))
     courier_total = sum(
         (p.amount for p in payouts if p.category == "courier_salary"), Decimal("0.00")
     )
@@ -538,6 +573,209 @@ async def post_shift_adjustment(session: AsyncSession, shift: IikoCashShift) -> 
     return transaction
 
 
+# --- недостача → авто-штраф кассирам (Фаза 10) ---------------------------------
+
+
+async def _shortage_threshold_pct(session: AsyncSession) -> Decimal:
+    """Порог авто-штрафа (% от всей выручки смены) из настройки, с дефолтом 1.0."""
+    raw = await session.scalar(
+        select(AppSetting.value).where(AppSetting.key == SHORTAGE_THRESHOLD_PCT_KEY)
+    )
+    if raw is None:
+        return DEFAULT_SHORTAGE_THRESHOLD_PCT
+    try:
+        return Decimal(str(raw))
+    except (InvalidOperation, ValueError):
+        return DEFAULT_SHORTAGE_THRESHOLD_PCT
+
+
+def _shift_penalty_work_date(shift: IikoCashShift) -> date | None:
+    """Дата штрафа = дата ОТКРЫТИЯ смены (совпадает с work_date явок кассиров)."""
+    moment = shift.open_date or shift.close_date
+    return moment.date() if moment is not None else None
+
+
+async def _shift_cashiers(session: AsyncSession, work_date: date) -> list[uuid.UUID]:
+    """Кассиры смены = сотрудники с явкой роли «кассир» (``administrator``) на дату.
+
+    Источник — ``ShiftLedgerEntry`` («Учёт смен»): в нём ``payroll_role`` заполнен явной
+    ролью (в отличие от ``attendance_entry.role``, который в данных пуст). Порядок по
+    ``employee_id`` детерминирован — для воспроизводимого делёжа остатка копеек.
+    """
+    rows = await session.scalars(
+        select(ShiftLedgerEntry.employee_id)
+        .where(
+            ShiftLedgerEntry.work_date == work_date,
+            ShiftLedgerEntry.payroll_role.in_(CASHIER_PAYROLL_ROLES),
+        )
+        .distinct()
+        .order_by(ShiftLedgerEntry.employee_id)
+    )
+    return list(rows.all())
+
+
+def _split_evenly(total: Decimal, n: int) -> list[Decimal]:
+    """Поделить сумму поровну на ``n`` долей до копеек; остаток — первой доле."""
+    total = total.quantize(MONEY)
+    base = (total / n).quantize(MONEY, rounding=ROUND_DOWN)
+    shares = [base] * n
+    shares[0] = (base + (total - base * n)).quantize(MONEY)
+    return shares
+
+
+def _mark_penalty_review(shift: IikoCashShift, reason: str) -> bool:
+    """Недостача > порога, но авто-штраф невозможен — пометить «ручной разбор»."""
+    shift.penalty_status = PENALTY_STATUS_MANUAL_REVIEW
+    shift.penalty_review_reason = reason
+    return False
+
+
+async def apply_shortage_penalty(session: AsyncSession, shift: IikoCashShift) -> bool:
+    """Авто-штраф кассирам смены, если недостача > порога % от выручки. Идемпотентно.
+
+    Недостача (``compute_real_cash_diff`` > 0) делится РОВНО поровну между кассирами
+    смены (явка роли «кассир» на дату открытия). Каждому — ``PayrollAdjustment``
+    (penalty) в недельную ведомость + строка ``KassaShiftPenalty`` для трассировки.
+    Повторный синк не дублирует и не воскрешает отменённые штрафы (барьер — наличие
+    строк ``kassa_shift_penalty`` по смене). Возвращает ``True``, если создал штрафы
+    в этом вызове.
+
+    Если недостача > порога, но штраф нельзя создать автоматически (нет кассиров на
+    дату / период зарплаты зафиксирован / нет данных о выручке) — смена помечается
+    ``penalty_status='manual_review'`` и штраф не создаётся.
+    """
+    existing = (
+        await session.scalars(
+            select(KassaShiftPenalty).where(KassaShiftPenalty.shift_id == shift.id)
+        )
+    ).all()
+    if existing:
+        # Уже разобрано: не пересоздаём и не воскрешаем waived — только синхронизируем итог.
+        shift.penalty_status = (
+            PENALTY_STATUS_WAIVED
+            if all(penalty.status == "waived" for penalty in existing)
+            else PENALTY_STATUS_APPLIED
+        )
+        return False
+
+    diff = await compute_real_cash_diff(session, shift)
+    if diff is None or diff <= 0:
+        shift.penalty_status = PENALTY_STATUS_NONE
+        shift.penalty_review_reason = None
+        return False
+
+    if shift.total_sales is None or shift.total_sales <= 0:
+        return _mark_penalty_review(shift, "Нет данных о выручке смены для расчёта порога")
+
+    pct = await _shortage_threshold_pct(session)
+    threshold = (shift.total_sales * pct / Decimal("100")).quantize(MONEY)
+    if diff <= threshold:
+        shift.penalty_status = PENALTY_STATUS_NONE
+        shift.penalty_review_reason = None
+        return False
+
+    work_date = _shift_penalty_work_date(shift)
+    if work_date is None:
+        return _mark_penalty_review(shift, "У смены нет даты открытия")
+    if await is_production_date_locked(session, work_date):
+        return _mark_penalty_review(
+            shift, "Зарплатный период зафиксирован — назначьте штраф вручную"
+        )
+
+    cashiers = await _shift_cashiers(session, work_date)
+    if not cashiers:
+        return _mark_penalty_review(
+            shift, "Не найдены кассиры смены на дату — распределите штраф вручную"
+        )
+
+    shares = _split_evenly(diff, len(cashiers))
+    label = _shift_label(shift)
+    now = datetime.now(tz=MOSCOW_TZ)
+    created = 0
+    for employee_id, amount in zip(cashiers, shares, strict=True):
+        if amount <= 0:
+            continue
+        adjustment = PayrollAdjustment(
+            employee_id=employee_id,
+            work_date=work_date,
+            role=CASHIER_POSITION,
+            type="penalty",
+            category_id=None,
+            custom_label=f"Недостача кассы (смена № {label})",
+            amount=amount,
+            comment=(
+                f"Авто-штраф: недостача смены {diff.quantize(MONEY)} ₽ "
+                f"> порога {threshold} ₽ ({pct}% выручки), делёж на {len(cashiers)}"
+            ),
+            created_by_user_id=None,
+            created_by_label="Касса (авто)",
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(adjustment)
+        await session.flush()
+        session.add(
+            KassaShiftPenalty(
+                shift_id=shift.id,
+                employee_id=employee_id,
+                payroll_adjustment_id=adjustment.id,
+                amount=amount,
+                status="active",
+            )
+        )
+        created += 1
+
+    if created == 0:
+        # Все доли вышли нулевыми (вырожденный случай) — на ручной разбор.
+        return _mark_penalty_review(shift, "Недостача не делится на доли > 0")
+
+    shift.penalty_status = PENALTY_STATUS_APPLIED
+    shift.penalty_review_reason = None
+    await session.flush()
+    return True
+
+
+async def waive_shift_penalty(
+    session: AsyncSession, shift: IikoCashShift, *, actor_user_id: uuid.UUID | None
+) -> int:
+    """Отменить авто-штрафы смены: удалить ``PayrollAdjustment`` и пометить waived.
+
+    Точечная операция под правом ``kassa.penalty.waive``. Удаление ``PayrollAdjustment``
+    убирает штраф из расчёта зарплаты (расчёт читает корректировки по дате в реальном
+    времени). Работает независимо от величины недостачи (в т. ч. > порога). Возвращает
+    число отменённых штрафов; ``RuntimeError``, если отменять нечего или период
+    зарплаты зафиксирован.
+    """
+    penalties = (
+        await session.scalars(
+            select(KassaShiftPenalty).where(
+                KassaShiftPenalty.shift_id == shift.id,
+                KassaShiftPenalty.status == "active",
+            )
+        )
+    ).all()
+    if not penalties:
+        raise RuntimeError("У смены нет активных авто-штрафов")
+
+    work_date = _shift_penalty_work_date(shift)
+    if work_date is not None and await is_production_date_locked(session, work_date):
+        raise RuntimeError("Зарплатный период зафиксирован — отмена невозможна")
+
+    now = datetime.now(tz=MOSCOW_TZ)
+    for penalty in penalties:
+        if penalty.payroll_adjustment_id is not None:
+            adjustment = await session.get(PayrollAdjustment, penalty.payroll_adjustment_id)
+            penalty.payroll_adjustment_id = None
+            if adjustment is not None:
+                await session.delete(adjustment)
+        penalty.status = "waived"
+        penalty.waived_by_user_id = actor_user_id
+        penalty.waived_at = now
+    shift.penalty_status = PENALTY_STATUS_WAIVED
+    await session.flush()
+    return len(penalties)
+
+
 # --- read (витрина) ------------------------------------------------------------
 
 
@@ -598,12 +836,14 @@ async def _shift_summary(session: AsyncSession, shift: IikoCashShift) -> dict[st
         "sales_cash": shift.sales_cash,
         "cash_sales": shift.cash_sales,
         "sales_card": shift.sales_card,
+        "total_sales": shift.total_sales,
         "pay_in": shift.pay_in,
         "pay_out": shift.pay_out,
         "cash_remain": shift.cash_remain,
         "cash_diff": shift.cash_diff,
         "real_cash_diff": await compute_real_cash_diff(session, shift),
         "posted": shift.posted,
+        "penalty_status": shift.penalty_status,
         "synced_at": shift.synced_at,
     }
 
@@ -653,4 +893,47 @@ async def get_shift(session: AsyncSession, shift_id: uuid.UUID) -> dict[str, Any
         }
         for payout in payouts
     ]
+    payload.update(await _shift_penalty_payload(session, shift))
     return payload
+
+
+async def _shift_penalty_payload(session: AsyncSession, shift: IikoCashShift) -> dict[str, Any]:
+    """Блок авто-штрафа смены для детали: порог, % недостачи, список оштрафованных."""
+    pct = await _shortage_threshold_pct(session)
+    diff = await compute_real_cash_diff(session, shift)
+    threshold = (
+        (shift.total_sales * pct / Decimal("100")).quantize(MONEY)
+        if shift.total_sales is not None and shift.total_sales > 0
+        else None
+    )
+    shortage_pct = (
+        (diff / shift.total_sales * Decimal("100")).quantize(Decimal("0.01"))
+        if diff is not None and shift.total_sales is not None and shift.total_sales > 0
+        else None
+    )
+    rows = (
+        await session.execute(
+            select(KassaShiftPenalty, Employee.full_name)
+            .join(Employee, Employee.id == KassaShiftPenalty.employee_id)
+            .where(KassaShiftPenalty.shift_id == shift.id)
+            .order_by(KassaShiftPenalty.created_at)
+        )
+    ).all()
+    return {
+        "penalty_status": shift.penalty_status,
+        "penalty_review_reason": shift.penalty_review_reason,
+        "shortage_threshold_pct": pct,
+        "shortage_threshold_amount": threshold,
+        "shortage_pct_of_revenue": shortage_pct,
+        "penalties": [
+            {
+                "id": penalty.id,
+                "employee_id": penalty.employee_id,
+                "employee_full_name": full_name,
+                "amount": penalty.amount,
+                "status": penalty.status,
+                "waived_at": penalty.waived_at,
+            }
+            for penalty, full_name in rows
+        ],
+    }

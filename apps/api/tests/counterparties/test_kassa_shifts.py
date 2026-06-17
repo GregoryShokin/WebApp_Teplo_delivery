@@ -93,15 +93,20 @@ def _patch(
     shifts: list[dict],
     payments: dict | None = None,
     cash_by_day: dict | None = None,
+    total_by_day: dict | None = None,
 ) -> None:
     payments = payments if payments is not None else PAYMENTS
     # Наличная выручка из OLAP по дню открытия смены (по умолчанию = salesCash мока).
     cash_map = cash_by_day if cash_by_day is not None else {date(2026, 6, 17): Decimal("16416")}
+    # Вся выручка смены (нал + безнал); по умолчанию = salesCash + salesCard мока.
+    total_map = total_by_day if total_by_day is not None else {date(2026, 6, 17): Decimal("103364")}
     monkeypatch.setattr(sync_mod, "_auth_token", lambda: "tok")
     monkeypatch.setattr(sync_mod, "_fetch_cashshifts_list", lambda token, df, dt: shifts)
     monkeypatch.setattr(sync_mod, "_fetch_shift_payments", lambda token, sid: payments.get(sid, {}))
     monkeypatch.setattr(sync_mod, "_fetch_accounts_map", lambda token: ACCOUNTS)
-    monkeypatch.setattr(sync_mod, "_fetch_cash_sales_by_day", lambda token, df, dt: cash_map)
+    monkeypatch.setattr(
+        sync_mod, "_fetch_cash_sales_by_day", lambda token, df, dt: (cash_map, total_map)
+    )
 
 
 async def test_sync_imports_and_categorizes_payouts(

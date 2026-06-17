@@ -46,6 +46,7 @@ export type CardTransaction = {
   bank_operation_id: string;
   operation_date: string;
   posted_at: string | null;
+  purchased_at: string | null;
   amount: number;
   counterparty_name_raw: string | null;
   purpose: string | null;
@@ -89,6 +90,7 @@ export type Cheque = {
 export type ChequeLinePayload = {
   name: string;
   quantity: number;
+  unit?: string | null;
   price: number;
   iiko_product_id?: string | null;
   vat_percent?: number | null;
@@ -130,6 +132,9 @@ export async function createCheque(payload: CreateChequePayload): Promise<Cheque
 
 // --- закрытие смены ------------------------------------------------------------
 
+// Итог авто-штрафа смены за недостачу.
+export type KassaPenaltyStatus = "none" | "applied" | "waived" | "manual_review";
+
 export type KassaShift = {
   id: string;
   iiko_session_id: string;
@@ -142,12 +147,14 @@ export type KassaShift = {
   sales_cash: number | null;
   cash_sales: number | null;
   sales_card: number | null;
+  total_sales: number | null;
   pay_in: number | null;
   pay_out: number | null;
   cash_remain: number | null;
   cash_diff: number | null;
   real_cash_diff: number | null;
   posted: boolean;
+  penalty_status: KassaPenaltyStatus | null;
   synced_at: string;
 };
 
@@ -160,8 +167,22 @@ export type KassaShiftPayout = {
   comment: string | null;
 };
 
+export type KassaShiftPenalty = {
+  id: string;
+  employee_id: string;
+  employee_full_name: string;
+  amount: number;
+  status: "active" | "waived";
+  waived_at: string | null;
+};
+
 export type KassaShiftDetail = KassaShift & {
   payouts: KassaShiftPayout[];
+  penalty_review_reason: string | null;
+  shortage_threshold_pct: number | null;
+  shortage_threshold_amount: number | null;
+  shortage_pct_of_revenue: number | null;
+  penalties: KassaShiftPenalty[];
 };
 
 export type KassaShiftSyncReport = {
@@ -170,6 +191,7 @@ export type KassaShiftSyncReport = {
   updated: number;
   payouts: number;
   posted: number;
+  penalized: number;
   skipped: number;
 };
 
@@ -201,5 +223,10 @@ export async function postKassaShift(id: string): Promise<KassaShiftDetail> {
 
 export async function postKassaShiftAdjustment(id: string): Promise<KassaShiftDetail> {
   const response = await api.post<KassaShiftDetail>(`${BASE}/shifts/${id}/post-adjustment`);
+  return response.data;
+}
+
+export async function waiveKassaShiftPenalty(id: string): Promise<KassaShiftDetail> {
+  const response = await api.post<KassaShiftDetail>(`${BASE}/shifts/${id}/waive-penalty`);
   return response.data;
 }

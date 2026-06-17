@@ -1,139 +1,72 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
 
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { usePermissions } from "@/lib/permissions";
-import { WarehouseInvoicesRoute } from "@/routes/warehouse";
-import {
-  KASSA_ACTIVE_TAB_STORAGE_KEY,
-  KASSA_TABS,
-  isKassaTab,
-  kassaTabPath,
-  type KassaActiveTab,
-} from "@/routes/kassa/shared";
-import { ReceiptsTab } from "@/routes/kassa/tabs/receipts";
+import { CreateChequeDialog } from "@/routes/kassa/CreateChequeDialog";
+import { CreatePaymentChooser, type PaymentKind } from "@/routes/kassa/CreatePaymentChooser";
 import { ShiftCloseTab } from "@/routes/kassa/tabs/shift-close";
+import { CreateInvoiceDialog } from "@/routes/warehouse/CreateInvoiceDialog";
 
-type KassaRouteProps = {
-  activeTab: KassaActiveTab;
-  invalidPath?: boolean;
-  onNavigate: (path: string) => void;
-  useStoredTab?: boolean;
-};
+type DialogMode = "chooser" | PaymentKind | null;
 
-export function KassaRoute({
-  activeTab,
-  invalidPath = false,
-  onNavigate,
-  useStoredTab = false,
-}: KassaRouteProps) {
+export function KassaRoute() {
   const permissions = usePermissions();
-  const visibleTabs = KASSA_TABS.filter((tab) => canOpenKassaTab(tab.value, permissions));
-  const [isResolvingStoredTab, setIsResolvingStoredTab] = useState(useStoredTab);
+  const queryClient = useQueryClient();
+  const [mode, setMode] = useState<DialogMode>(null);
 
-  useEffect(() => {
-    if (!useStoredTab) {
-      setIsResolvingStoredTab(false);
-      return;
-    }
-    const stored = readStoredKassaTab();
-    if (stored && stored !== activeTab) {
-      onNavigate(kassaTabPath(stored));
-      return;
-    }
-    setIsResolvingStoredTab(false);
-  }, [activeTab, onNavigate, useStoredTab]);
+  const canCreateInvoice = permissions.canPerformAction("kassa.invoices.create");
+  const canCreateCheque = permissions.canPerformAction("kassa.cheques.create");
+  const canCreate = canCreateInvoice || canCreateCheque;
 
-  useEffect(() => {
-    if (isResolvingStoredTab) {
-      return;
-    }
-    window.localStorage.setItem(KASSA_ACTIVE_TAB_STORAGE_KEY, activeTab);
-  }, [activeTab, isResolvingStoredTab]);
-
-  useEffect(() => {
-    if (
-      !isResolvingStoredTab &&
-      visibleTabs.length > 0 &&
-      !visibleTabs.some((tab) => tab.value === activeTab)
-    ) {
-      onNavigate(kassaTabPath(visibleTabs[0].value));
-    }
-  }, [activeTab, isResolvingStoredTab, onNavigate, visibleTabs]);
-
-  if (isResolvingStoredTab) {
-    return null;
-  }
-
-  function handleTabChange(value: string) {
-    if (!isKassaTab(value)) {
-      return;
-    }
-    window.localStorage.setItem(KASSA_ACTIVE_TAB_STORAGE_KEY, value);
-    onNavigate(kassaTabPath(value));
+  function invalidateAfterCreate() {
+    queryClient.invalidateQueries({ queryKey: ["kassa"] });
+    queryClient.invalidateQueries({ queryKey: ["cp"] });
+    queryClient.invalidateQueries({ queryKey: ["dds"] });
   }
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Касса"
-        description={
-          invalidPath
-            ? "Неизвестная вкладка. Открыт основной раздел кассы."
-            : "Закрытие смены iiko, накладные и чеки (оплаты картой)."
+        description="Закрытие смены iiko и создание платежей — накладных и чеков."
+        action={
+          canCreate ? (
+            <Button onClick={() => setMode("chooser")}>
+              <Plus size={16} aria-hidden="true" />
+              Создать платёж
+            </Button>
+          ) : null
         }
       />
 
-      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-5">
-        <TabsList className="h-auto flex-wrap justify-start">
-          {visibleTabs.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value}>
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        {visibleTabs.length === 0 ? (
-          <div className="rounded-lg border bg-card px-4 py-8 text-sm text-muted-foreground">
-            Нет доступных вкладок кассы для текущего профиля.
-          </div>
-        ) : (
-          renderTab(activeTab, onNavigate, permissions)
-        )}
-      </Tabs>
+      <ShiftCloseTab
+        canSync={permissions.canPerformAction("kassa.shifts.sync")}
+        canPost={permissions.canPerformAction("kassa.shifts.post")}
+        canWaive={permissions.canPerformAction("kassa.penalty.waive")}
+      />
+
+      <CreatePaymentChooser
+        open={mode === "chooser"}
+        onOpenChange={(open) => setMode(open ? "chooser" : null)}
+        canInvoice={canCreateInvoice}
+        canCheque={canCreateCheque}
+        onPick={(kind) => setMode(kind)}
+      />
+
+      <CreateInvoiceDialog
+        open={mode === "invoice"}
+        onOpenChange={(open) => setMode(open ? "invoice" : null)}
+        onCreated={invalidateAfterCreate}
+      />
+
+      <CreateChequeDialog
+        open={mode === "cheque"}
+        onOpenChange={(open) => setMode(open ? "cheque" : null)}
+        onCreated={invalidateAfterCreate}
+      />
     </div>
   );
-}
-
-function renderTab(
-  activeTab: KassaActiveTab,
-  onNavigate: (path: string) => void,
-  permissions: ReturnType<typeof usePermissions>,
-) {
-  if (activeTab === "invoices") {
-    return <WarehouseInvoicesRoute activeTab="normal" onNavigate={onNavigate} embedded />;
-  }
-  if (activeTab === "receipts") {
-    return <ReceiptsTab canCreate={permissions.canPerformAction("kassa.cheques.create")} />;
-  }
-  return (
-    <ShiftCloseTab
-      canSync={permissions.canPerformAction("kassa.shifts.sync")}
-      canPost={permissions.canPerformAction("kassa.shifts.post")}
-    />
-  );
-}
-
-function canOpenKassaTab(tab: KassaActiveTab, permissions: ReturnType<typeof usePermissions>) {
-  if (tab === "invoices") {
-    return permissions.canOpenSection("kassa.invoices");
-  }
-  if (tab === "receipts") {
-    return permissions.canOpenSection("kassa.receipts");
-  }
-  return permissions.canOpenSection("kassa.shift-close");
-}
-
-function readStoredKassaTab() {
-  const value = window.localStorage.getItem(KASSA_ACTIVE_TAB_STORAGE_KEY);
-  return isKassaTab(value) ? value : null;
 }

@@ -84,7 +84,7 @@ from app.models.inventory import (
     InventoryAuditItemExclusion,
     InventoryAuditPosition,
 )
-from app.models.kassa import IikoCashShift, IikoCashShiftPayout
+from app.models.kassa import IikoCashShift, IikoCashShiftPayout, KassaShiftPenalty
 from app.models.payroll import (
     AccumulationFundAccount,
     AccumulationFundTransaction,
@@ -183,6 +183,7 @@ __all__ = [
     "BarterSettlement",
     "IikoCashShift",
     "IikoCashShiftPayout",
+    "KassaShiftPenalty",
     "IikoProduct",
     "InvoiceLineItem",
     "InvoicePaymentAllocation",

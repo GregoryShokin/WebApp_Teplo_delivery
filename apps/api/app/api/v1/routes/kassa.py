@@ -37,6 +37,7 @@ from app.services.kassa.iiko_cashshift_sync import (
     post_shift_adjustment,
     post_shift_cash_circuit,
     sync_iiko_cashshifts,
+    waive_shift_penalty,
 )
 
 router = APIRouter()
@@ -47,6 +48,7 @@ KASSA_SHIFTS_READ = (Depends(require_permission("kassa.shifts.read")),)
 KASSA_SHIFTS_SYNC = (Depends(require_permission("kassa.shifts.sync")),)
 KASSA_SHIFTS_POST = (Depends(require_permission("kassa.shifts.post")),)
 KASSA_ADJUSTMENTS_CREATE = (Depends(require_permission("kassa.adjustments.create")),)
+KASSA_PENALTY_WAIVE = (Depends(require_permission("kassa.penalty.waive")),)
 
 
 @router.get(
@@ -62,9 +64,7 @@ async def list_dds_articles(
     conditions = [DdsArticle.is_active.is_(True)]
     if movement_type is not None:
         conditions.append(DdsArticle.movement_type == movement_type)
-    result = await session.scalars(
-        select(DdsArticle).where(*conditions).order_by(DdsArticle.name)
-    )
+    result = await session.scalars(select(DdsArticle).where(*conditions).order_by(DdsArticle.name))
     return list(result.all())
 
 
@@ -172,6 +172,7 @@ async def create_cheque_endpoint(
                     name=line.name,
                     quantity=line.quantity,
                     price=line.price,
+                    unit=line.unit,
                     iiko_product_id=line.iiko_product_id,
                     vat_percent=line.vat_percent,
                 )
@@ -267,6 +268,33 @@ async def post_shift_adjustment_endpoint(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Смена не найдена")
     try:
         await post_shift_adjustment(session, shift)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await session.commit()
+    payload = await get_shift(session, shift_id)
+    assert payload is not None  # noqa: S101 - shift exists
+    return payload
+
+
+@router.post(
+    "/shifts/{shift_id}/waive-penalty",
+    response_model=KassaShiftDetailRead,
+    dependencies=KASSA_PENALTY_WAIVE,
+)
+async def waive_shift_penalty_endpoint(
+    shift_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict:
+    """Отменить авто-штрафы кассирам за недостачу смены (право выдаётся точечно).
+
+    Удаляет связанные ``PayrollAdjustment`` (штраф уходит из расчёта зарплаты) и помечает
+    штрафы ``waived``. Работает даже при недостаче > порога."""
+    shift = await session.get(IikoCashShift, shift_id)
+    if shift is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Смена не найдена")
+    try:
+        await waive_shift_penalty(session, shift, actor_user_id=actor.user_id)
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await session.commit()

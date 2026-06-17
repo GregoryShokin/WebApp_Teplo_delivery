@@ -19,12 +19,22 @@ import { apiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { formatDateTime, formatDdsMoney, isoDateDaysAgo, toIsoDate } from "@/routes/dds/shared";
 import { getKassaShifts, postKassaShift, syncKassaShifts } from "@/routes/kassa/api";
-import { ShiftPostedBadge } from "@/routes/kassa/shared";
+import { ShiftDetailDialog } from "@/routes/kassa/ShiftDetailDialog";
+import { ShiftPenaltyBadge, ShiftPostedBadge } from "@/routes/kassa/shared";
 
-export function ShiftCloseTab({ canSync, canPost }: { canSync: boolean; canPost: boolean }) {
+export function ShiftCloseTab({
+  canSync,
+  canPost,
+  canWaive,
+}: {
+  canSync: boolean;
+  canPost: boolean;
+  canWaive: boolean;
+}) {
   const queryClient = useQueryClient();
   const [dateFrom, setDateFrom] = useState(isoDateDaysAgo(7));
   const [dateTo, setDateTo] = useState(toIsoDate(new Date()));
+  const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
 
   const shiftsQuery = useQuery({
     queryKey: ["kassa", "shifts", dateFrom, dateTo],
@@ -127,6 +137,7 @@ export function ShiftCloseTab({ canSync, canPost }: { canSync: boolean; canPost:
               <TableHead className="text-right">Изъятия</TableHead>
               <TableHead className="text-right">Остаток</TableHead>
               <TableHead className="text-right">Расхожд.</TableHead>
+              <TableHead>Штраф</TableHead>
               <TableHead>В ДДС</TableHead>
               <TableHead />
             </TableRow>
@@ -134,13 +145,17 @@ export function ShiftCloseTab({ canSync, canPost }: { canSync: boolean; canPost:
           <TableBody>
             {shifts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={10} className="py-8 text-center text-sm text-muted-foreground">
                   {shiftsQuery.isLoading ? "Загрузка…" : "За период нет закрытых смен."}
                 </TableCell>
               </TableRow>
             ) : (
               shifts.map((shift) => (
-                <TableRow key={shift.id}>
+                <TableRow
+                  key={shift.id}
+                  className="cursor-pointer"
+                  onClick={() => setSelectedShiftId(shift.id)}
+                >
                   <TableCell>{formatDateTime(shift.close_date)}</TableCell>
                   <TableCell className="font-medium">№ {shift.session_number ?? "—"}</TableCell>
                   <TableCell className="text-right tabular-nums">
@@ -164,6 +179,9 @@ export function ShiftCloseTab({ canSync, canPost }: { canSync: boolean; canPost:
                     {formatDdsMoney(shift.real_cash_diff)}
                   </TableCell>
                   <TableCell>
+                    <ShiftPenaltyBadge status={shift.penalty_status} />
+                  </TableCell>
+                  <TableCell>
                     <ShiftPostedBadge posted={shift.posted} />
                   </TableCell>
                   <TableCell className="text-right">
@@ -172,7 +190,10 @@ export function ShiftCloseTab({ canSync, canPost }: { canSync: boolean; canPost:
                         size="sm"
                         variant="outline"
                         disabled={postMutation.isPending}
-                        onClick={() => postMutation.mutate(shift.id)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          postMutation.mutate(shift.id);
+                        }}
                       >
                         Провести
                       </Button>
@@ -184,6 +205,12 @@ export function ShiftCloseTab({ canSync, canPost }: { canSync: boolean; canPost:
           </TableBody>
         </Table>
       </div>
+
+      <ShiftDetailDialog
+        shiftId={selectedShiftId}
+        canWaive={canWaive}
+        onClose={() => setSelectedShiftId(null)}
+      />
     </div>
   );
 }

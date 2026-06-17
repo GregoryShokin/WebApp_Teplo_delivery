@@ -50,6 +50,7 @@ class CardTransactionRead(BaseModel):
     bank_operation_id: uuid.UUID
     operation_date: date
     posted_at: datetime | None = None
+    purchased_at: datetime | None = None  # момент покупки (authorizationDate)
     amount: Decimal
     counterparty_name_raw: str | None = None
     purpose: str | None = None
@@ -62,6 +63,7 @@ class ChequeLineCreate(BaseModel):
 
     name: str
     quantity: Decimal
+    unit: str | None = None  # ед. изм.: шт / кг / л / порц
     price: Decimal
     iiko_product_id: uuid.UUID | None = None
     vat_percent: Decimal | None = None
@@ -139,12 +141,15 @@ class KassaShiftRead(BaseModel):
     sales_cash: float | None = None  # iiko salesCash (завышен предоплатами) — справочно
     cash_sales: float | None = None  # достоверная наличная выручка из OLAP (тип «Наличные»)
     sales_card: float | None = None
+    total_sales: float | None = None  # вся выручка смены из OLAP (база порога авто-штрафа)
     pay_in: float | None = None
     pay_out: float | None = None
     cash_remain: float | None = None
     cash_diff: float | None = None  # сырое поле iiko (= 2× остаток, артефакт)
     real_cash_diff: float | None = None  # сверка ящика: положит. = недостача/неучтённое изъятие
     posted: bool
+    # Итог авто-штрафа: none / applied / waived / manual_review (см. iiko_cashshift_sync).
+    penalty_status: str | None = None
     synced_at: datetime
 
 
@@ -159,8 +164,26 @@ class KassaPayoutRead(BaseModel):
     comment: str | None = None
 
 
+class KassaShiftPenaltyRead(BaseModel):
+    """Один авто-штраф кассиру за недостачу смены."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    employee_id: uuid.UUID
+    employee_full_name: str
+    amount: float
+    status: str  # active | waived
+    waived_at: datetime | None = None
+
+
 class KassaShiftDetailRead(KassaShiftRead):
     payouts: list[KassaPayoutRead] = Field(default_factory=list)
+    penalty_review_reason: str | None = None
+    shortage_threshold_pct: float | None = None  # порог, % выручки
+    shortage_threshold_amount: float | None = None  # порог в рублях
+    shortage_pct_of_revenue: float | None = None  # фактическая недостача, % выручки
+    penalties: list[KassaShiftPenaltyRead] = Field(default_factory=list)
 
 
 class KassaShiftSyncReport(BaseModel):
@@ -169,4 +192,5 @@ class KassaShiftSyncReport(BaseModel):
     updated: int
     payouts: int
     posted: int
+    penalized: int
     skipped: int

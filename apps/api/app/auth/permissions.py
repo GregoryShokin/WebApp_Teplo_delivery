@@ -313,6 +313,7 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ("kassa.cheques.create", "Касса", "Создавать чеки (оплаты картой)"),
     ("kassa.invoices.create", "Касса", "Создавать накладные из Кассы"),
     ("kassa.adjustments.create", "Касса", "Создавать корректировки кассы"),
+    ("kassa.penalty.waive", "Касса", "Отменять авто-штрафы кассирам за недостачу смены"),
     (
         "kassa.refs.read",
         "Касса",
@@ -654,6 +655,8 @@ OFFICE_MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "counterparties.admin",
         # Корректировки кассы — точечное право, не входит в дефолт Менеджера.
         "kassa.adjustments.create",
+        # Отмена авто-штрафов за недостачу — точечное право (только owner/admin).
+        "kassa.penalty.waive",
     }
 )
 

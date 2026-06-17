@@ -1,0 +1,84 @@
+import type { ReactNode } from "react";
+import { FileText, Receipt } from "lucide-react";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+export type PaymentKind = "invoice" | "cheque";
+
+type CreatePaymentChooserProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  canInvoice: boolean;
+  canCheque: boolean;
+  onPick: (kind: PaymentKind) => void;
+};
+
+export function CreatePaymentChooser({
+  open,
+  onOpenChange,
+  canInvoice,
+  canCheque,
+  onPick,
+}: CreatePaymentChooserProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Создать платёж</DialogTitle>
+          <DialogDescription>Выберите, что создать.</DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3">
+          {canInvoice ? (
+            <ChoiceCard
+              icon={<FileText size={20} aria-hidden="true" />}
+              title="Накладная"
+              description="Обязательство к оплате поставщику (с разнесением и отправкой в банк)."
+              onClick={() => onPick("invoice")}
+            />
+          ) : null}
+          {canCheque ? (
+            <ChoiceCard
+              icon={<Receipt size={20} aria-hidden="true" />}
+              title="Чек"
+              description="Уже оплаченная картой покупка — уходит в ДДС по выбранной статье."
+              onClick={() => onPick("cheque")}
+            />
+          ) : null}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ChoiceCard({
+  icon,
+  title,
+  description,
+  onClick,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-start gap-3 rounded-lg border p-4 text-left transition-colors hover:border-primary hover:bg-accent"
+    >
+      <span className="mt-0.5 text-muted-foreground">{icon}</span>
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-foreground">{title}</span>
+        <span className="mt-0.5 block text-sm text-muted-foreground">{description}</span>
+      </span>
+    </button>
+  );
+}

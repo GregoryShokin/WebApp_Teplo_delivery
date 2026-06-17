@@ -436,26 +436,10 @@ const routes: AppRoute[] = [
   {
     path: "/kassa",
     children: [
-      {
-        path: "",
-        render: ({ navigate }) => (
-          <KassaRoute activeTab="shift-close" onNavigate={navigate} useStoredTab />
-        ),
-      },
-      {
-        path: "invoices",
-        render: ({ navigate }) => <KassaRoute activeTab="invoices" onNavigate={navigate} />,
-      },
-      {
-        path: "receipts",
-        render: ({ navigate }) => <KassaRoute activeTab="receipts" onNavigate={navigate} />,
-      },
-      {
-        path: ":unknown",
-        render: ({ navigate }) => (
-          <KassaRoute activeTab="shift-close" invalidPath onNavigate={navigate} />
-        ),
-      },
+      // Касса — одна страница (закрытие смены + кнопка «Создать платёж»); прежние
+      // подвкладки убраны, старые ссылки /kassa/* падают на ту же страницу.
+      { path: "", render: () => <KassaRoute /> },
+      { path: ":unknown", render: () => <KassaRoute /> },
     ],
   },
   {

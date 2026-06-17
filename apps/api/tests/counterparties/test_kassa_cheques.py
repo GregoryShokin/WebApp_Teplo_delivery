@@ -168,7 +168,11 @@ async def test_create_cheque_with_nomenclature(
             issued_at=ISSUED,
             bank_parts=[ChequeBankPart(bank_operation_id=op.id)],
             track_nomenclature=True,
-            lines=[ChequeLineInput(name="Лук", quantity=Decimal("5"), price=Decimal("100.00"))],
+            lines=[
+                ChequeLineInput(
+                    name="Лук", quantity=Decimal("5"), unit="кг", price=Decimal("100.00")
+                )
+            ],
         )
 
         assert cheque.payment_status == "paid"
@@ -179,6 +183,7 @@ async def test_create_cheque_with_nomenclature(
         ).all()
         assert len(lines) == 1
         assert lines[0].name == "Лук"
+        assert lines[0].unit == "кг"
         assert lines[0].sum == Decimal("500.00")
 
 
@@ -287,6 +292,72 @@ async def test_list_card_transactions_excludes_non_card(
         candidates = await list_card_transactions(session, issued_at=ISSUED)
         assert [c.bank_operation_id for c in candidates] == [card.id]
         assert candidates[0].tier == 1
+
+
+async def test_card_purchase_with_tbank_processing_requisites_is_recognized(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Боевой формат T-Bank: у card-покупки получатель = процессинг АО «ТБанк»
+    # (ИНН 7710140679 из BANK_NOISE_INNS), реальный магазин — в ``merch``. Раньше такая
+    # операция ложно отсекалась BANK_NOISE-фильтром (проверка шла до cardOperation) —
+    # регресс-тест на боевую покупку «Магнит».
+    async with async_session_factory() as session:
+        account = await make_account(session)
+        await make_wallet(session, wallet_type="bank", account_id=account.id)
+        op = await make_bank_operation(
+            session,
+            amount="3025.83",
+            operation_date=OP_DATE,
+            posted_at=ISSUED,
+            category="cardOperation",
+            name='АО "ТБанк"',
+            inn="7710140679",
+            account="30232810600010000002",
+            receiver={"inn": "7710140679", "name": 'АО "ТБанк"', "acct": "30232810600010000002"},
+            raw_payload={"merch": {"name": "MAGNIT MM BEREGOVOJ", "city": "Volgodonsk"}},
+            account_id=account.id,
+        )
+        await session.commit()
+
+        candidates = await list_card_transactions(session, issued_at=ISSUED)
+        assert [c.bank_operation_id for c in candidates] == [op.id]
+        # В дропдауне — реальный магазин, а не «АО ТБанк».
+        assert candidates[0].counterparty_name_raw == "MAGNIT MM BEREGOVOJ (Volgodonsk)"
+
+
+async def test_list_card_transactions_filters_by_purchase_day_not_settlement(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Банк проводит карт-покупку пачкой позже (settlement): operation_date/posted_at =
+    # день ПРОВОДКИ, authorizationDate = реальный день ПОКУПКИ. Фильтр — по дню покупки.
+    async with async_session_factory() as session:
+        account = await make_account(session)
+        await make_wallet(session, wallet_type="bank", account_id=account.id)
+        op = await make_bank_operation(
+            session,
+            amount="216.73",
+            operation_date=date(2026, 6, 15),  # проведено 15-го
+            posted_at=datetime(2026, 6, 15, 0, 0, tzinfo=UTC),
+            category="cardOperation",
+            raw_payload={
+                "authorizationDate": "2026-06-13T08:41:00Z",  # куплено 13-го
+                "merch": {"name": "PYATEROCHKA"},
+            },
+            account_id=account.id,
+        )
+        await session.commit()
+
+        # Дата чека 13.06 (день покупки) — операция найдена, хотя проведена 15-го.
+        purchase_day = await list_card_transactions(
+            session, issued_at=datetime(2026, 6, 13, 12, 0)
+        )
+        assert [c.bank_operation_id for c in purchase_day] == [op.id]
+
+        # Дата чека 15.06 (день проводки) — НЕ найдена: покупка была не в этот день.
+        settlement_day = await list_card_transactions(
+            session, issued_at=datetime(2026, 6, 15, 12, 0)
+        )
+        assert settlement_day == []
 
 
 # --- HTTP-слой (FastAPI): право, маппинг тела, сериализация ChequeRead, 409 --------

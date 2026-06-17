@@ -14,7 +14,6 @@ Card-операции классификатор выписки НЕ книжи�
 
 from __future__ import annotations
 
-import math
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -66,6 +65,7 @@ class ChequeLineInput:
     name: str
     quantity: Decimal
     price: Decimal
+    unit: str | None = None
     iiko_product_id: uuid.UUID | None = None
     vat_percent: Decimal | None = None
 
@@ -83,6 +83,7 @@ class CardTxnCandidate:
     bank_operation_id: uuid.UUID
     operation_date: date
     posted_at: datetime | None
+    purchased_at: datetime | None  # момент покупки (authorizationDate), не проводки
     amount: Decimal
     counterparty_name_raw: str | None
     purpose: str | None
@@ -101,15 +102,61 @@ def _is_card_purchase(operation: BankOperation) -> bool:
     if operation.direction != "out" or operation.transfer_group_id is not None:
         return False
     raw = operation.raw_payload or {}
+    # Карточная покупка по бизнес-карте — самый надёжный признак ``category``. У неё
+    # реквизиты получателя = процессинг эмитента (АО «ТБанк», ИНН 7710140679 из
+    # BANK_NOISE_INNS), а реальный мерчант лежит в ``merch``/``description``. Поэтому
+    # проверяем cardOperation ДО BANK_NOISE-фильтра — иначе любая карт-покупка ложно
+    # отсекается как эквайринговый «шум» (подтверждено боевой операцией «Магнит»).
+    if str(raw.get("category") or "").strip() == "cardOperation":
+        return True
     receiver = _receiver_block(raw)
     inn = str(receiver.get("inn") or operation.counterparty_inn_raw or "")
     name = str(receiver.get("name") or operation.counterparty_name_raw or "")
     if inn in BANK_NOISE_INNS or "ТБАНК" in name.upper():
         return False
-    if str(raw.get("category") or "").strip() == "cardOperation":
-        return True
     account = str(receiver.get("acct") or operation.counterparty_account_raw or "")
     return not inn and not account
+
+
+def _card_merchant_label(operation: BankOperation) -> str | None:
+    """Человекочитаемое имя мерчанта card-операции для дропдауна (а не «АО ТБанк»).
+
+    В выписке T-Bank получатель card-покупки = процессинг банка; реальный магазин —
+    в ``merch.name`` (+ город) или в ``description``. Фолбэк — сырой контрагент.
+    """
+    raw = operation.raw_payload or {}
+    merch = raw.get("merch") if isinstance(raw.get("merch"), dict) else None
+    name = str((merch or {}).get("name") or "").strip()
+    if name:
+        city = str((merch or {}).get("city") or "").strip()
+        return f"{name} ({city})" if city else name
+    description = str(raw.get("description") or "").strip()
+    return description or operation.counterparty_name_raw
+
+
+def _parse_iso_dt(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _purchase_dt(operation: BankOperation) -> datetime | None:
+    """Момент реальной покупки по карте (``authorizationDate`` из выписки T-Bank).
+
+    Банк списывает card-покупки пачкой через 1–3 дня (settlement), поэтому
+    ``operation_date``/``posted_at`` = день ПРОВОДКИ, а не покупки. Для «операций за
+    день» нужен момент авторизации в магазине. Фолбэк — ``chargeDate``/``posted_at``.
+    """
+    raw = operation.raw_payload or {}
+    for key in ("authorizationDate", "chargeDate"):
+        parsed = _parse_iso_dt(raw.get(key))
+        if parsed is not None:
+            return parsed
+    return _as_utc(operation.posted_at) if operation.posted_at is not None else None
 
 
 def _assert_card_purchase(operation: BankOperation) -> None:
@@ -152,13 +199,18 @@ async def list_card_transactions(
     нужные операции под сумму чека (возможен сплит на несколько карт + наличные).
     """
     if issued_at is not None:
-        issued_utc = _as_utc(issued_at)
-        issued_date = (
-            issued_at.astimezone(BUSINESS_TZ).date() if issued_at.tzinfo else issued_at.date()
+        # UI шлёт время чека из <input type="datetime-local"> как naive локальное (МСК).
+        # Трактуем naive как BUSINESS_TZ; иначе сравнение по времени уедет на смещение пояса.
+        issued_local = (
+            issued_at if issued_at.tzinfo is not None else issued_at.replace(tzinfo=BUSINESS_TZ)
         )
-        day_slack = math.ceil(window_hours / 24) + 1
-        day_lo = issued_date - timedelta(days=day_slack)
-        day_hi = issued_date + timedelta(days=day_slack)
+        issued_utc = issued_local.astimezone(UTC)
+        issued_date = issued_local.astimezone(BUSINESS_TZ).date()
+        # Показываем операции строго за ДЕНЬ ПОКУПКИ. Банк проводит покупку позже
+        # (settlement-лаг), operation_date всегда ≥ дня покупки — поэтому окно по
+        # operation_date асимметрично вперёд; точный фильтр по дню покупки — в цикле.
+        day_lo = issued_date - timedelta(days=1)
+        day_hi = issued_date + timedelta(days=10)
     elif date_from is not None and date_to is not None:
         issued_utc = None
         issued_date = None
@@ -172,49 +224,61 @@ async def list_card_transactions(
                 BankOperation.provider == "tbank",
                 BankOperation.direction == "out",
                 BankOperation.transfer_group_id.is_(None),
+                BankOperation.cashflow_transaction_id.is_(None),
                 BankOperation.operation_date >= day_lo,
                 BankOperation.operation_date <= day_hi,
             )
         )
     ).all()
 
+    # Один bulk-запрос вместо N: какие из операций окна уже привязаны к чеку/накладной
+    # (раньше ``_op_already_allocated`` дёргался в цикле — это и был лишний пинг).
+    op_ids = [operation.id for operation in operations]
+    allocated_ids: set[uuid.UUID] = set()
+    if op_ids:
+        allocated_ids = set(
+            (
+                await session.scalars(
+                    select(InvoicePaymentAllocation.bank_operation_id).where(
+                        InvoicePaymentAllocation.bank_operation_id.in_(op_ids)
+                    )
+                )
+            ).all()
+        )
+
     candidates: list[CardTxnCandidate] = []
     for operation in operations:
         if not _is_card_purchase(operation):
             continue
-        if operation.cashflow_transaction_id is not None:
-            continue
-        if await _op_already_allocated(session, operation.id):
+        if operation.id in allocated_ids:
             continue
 
+        purchased_at = _purchase_dt(operation)
         tier: int | None = None
         minutes_delta: int | None = None
-        if issued_utc is not None:
-            if operation.posted_at is not None:
-                delta_min = int(
-                    abs((_as_utc(operation.posted_at) - issued_utc).total_seconds()) // 60
-                )
-                if delta_min > window_hours * 60:
-                    continue
-                minutes_delta = delta_min
-                if delta_min <= tight_window_minutes:
-                    tier = 1
-                elif operation.operation_date == issued_date:
-                    tier = 2
-                else:
-                    tier = 3
+        if issued_date is not None:
+            # Строго за ДЕНЬ ПОКУПКИ (authorizationDate в МСК), а не за день проводки.
+            purchase_date = (
+                purchased_at.astimezone(BUSINESS_TZ).date()
+                if purchased_at is not None
+                else operation.operation_date
+            )
+            if purchase_date != issued_date:
+                continue
+            if purchased_at is not None and issued_utc is not None:
+                minutes_delta = int(abs((purchased_at - issued_utc).total_seconds()) // 60)
+                tier = 1 if minutes_delta <= tight_window_minutes else 2
             else:
-                if operation.operation_date != issued_date:
-                    continue
-                tier = 4
+                tier = 2
 
         candidates.append(
             CardTxnCandidate(
                 bank_operation_id=operation.id,
                 operation_date=operation.operation_date,
                 posted_at=operation.posted_at,
+                purchased_at=purchased_at,
                 amount=_money(abs(operation.amount)),
-                counterparty_name_raw=operation.counterparty_name_raw,
+                counterparty_name_raw=_card_merchant_label(operation),
                 purpose=operation.payment_purpose,
                 tier=tier,
                 minutes_delta=minutes_delta,
@@ -226,9 +290,7 @@ async def list_card_transactions(
             key=lambda c: (c.tier or 9, c.minutes_delta if c.minutes_delta is not None else 10**9)
         )
     else:
-        candidates.sort(
-            key=lambda c: c.posted_at or datetime.min.replace(tzinfo=UTC), reverse=True
-        )
+        candidates.sort(key=lambda c: c.posted_at or datetime.min.replace(tzinfo=UTC), reverse=True)
     return candidates[:limit]
 
 
@@ -360,7 +422,7 @@ async def create_cheque(
                     product_guid=product.iiko_id if product else None,
                     name=item_name,
                     article=product.code if product else None,
-                    unit=product.unit if product else None,
+                    unit=line.unit or (product.unit if product else None),
                     quantity=quantity,
                     price=price,
                     sum=line_sum,

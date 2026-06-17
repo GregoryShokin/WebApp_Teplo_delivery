@@ -32,9 +32,6 @@ export type AppSection =
   | "finance.balance"
   | "counterparties"
   | "kassa"
-  | "kassa.shift-close"
-  | "kassa.invoices"
-  | "kassa.receipts"
   | "accounting"
   | "accounting.fixed-assets"
   | "accounting.dz-kz"
@@ -84,7 +81,8 @@ export type AppAction =
   | "kassa.shifts.post"
   | "kassa.cheques.create"
   | "kassa.invoices.create"
-  | "kassa.adjustments.create";
+  | "kassa.adjustments.create"
+  | "kassa.penalty.waive";
 
 const SOURCE_DATA_TAB_READ_PERMISSIONS = [
   "source.rates.read",
@@ -274,11 +272,6 @@ const SECTION_PERMISSIONS: Record<AppSection, readonly PermissionCode[]> = {
   "finance.balance": ["finance.balance.read", "finance.balance.edit"],
   counterparties: ["counterparties.read"],
   kassa: ["kassa.shifts.read", "kassa.cheques.read", "kassa.refs.read", "kassa.invoices.create"],
-  "kassa.shift-close": ["kassa.shifts.read"],
-  // Вкладка «Накладные» встраивает warehouse-инбокс (нужен counterparties.read);
-  // доступ кассира через kassa.invoices.* подключается в Фазе 9 (dual-guard).
-  "kassa.invoices": ["counterparties.read"],
-  "kassa.receipts": ["kassa.cheques.read"],
   accounting: [...PERMISSION_GROUPS.accountingRead, ...PERMISSION_GROUPS.accountingWrite],
   "accounting.fixed-assets": ["accounting.fixed_assets.read", "accounting.fixed_assets.edit"],
   "accounting.dz-kz": ["accounting.suppliers.read", "accounting.suppliers.edit"],
@@ -342,6 +335,7 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "kassa.cheques.create": ["kassa.cheques.create"],
   "kassa.invoices.create": ["kassa.invoices.create"],
   "kassa.adjustments.create": ["kassa.adjustments.create"],
+  "kassa.penalty.waive": ["kassa.penalty.waive"],
 };
 
 const LEGACY_PERMISSION_ALIASES: Record<PermissionCode, readonly PermissionCode[]> = {
