@@ -12,6 +12,7 @@ from app.api.v1.routes.employees import router as employees_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.integrations import router as integrations_router
 from app.api.v1.routes.inventory import router as inventory_router
+from app.api.v1.routes.kassa import router as kassa_router
 from app.api.v1.routes.payroll import router as payroll_router
 from app.api.v1.routes.payroll_adjustments import router as payroll_adjustments_router
 from app.api.v1.routes.payroll_admin import router as payroll_admin_router
@@ -52,3 +53,4 @@ api_router.include_router(shifts_router, prefix="/shifts", tags=["shifts"])
 api_router.include_router(vacations_router, prefix="/vacations", tags=["vacations"])
 api_router.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"])
 api_router.include_router(warehouse_router, prefix="/warehouse", tags=["warehouse"])
+api_router.include_router(kassa_router, prefix="/kassa", tags=["kassa"])

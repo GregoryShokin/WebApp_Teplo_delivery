@@ -28,7 +28,7 @@ from app.services.banking.base import clean_digits
 # conservatively (same wallet + direction + exact amount, a small date drift, same payee
 # INN when the statement carries one) and only against these manual source kinds.
 PREBOOKED_DATE_WINDOW_DAYS = 3
-PREBOOKABLE_SOURCE_KINDS = ("counterparty_payment",)
+PREBOOKABLE_SOURCE_KINDS = ("counterparty_payment", "kassa_cheque")
 
 
 @dataclass(frozen=True)

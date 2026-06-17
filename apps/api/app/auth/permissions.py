@@ -23,6 +23,7 @@ MODULE_ORDER: tuple[str, ...] = (
     "Финансы",
     "Контрагенты",
     "Накладные",
+    "Касса",
     "Учёт",
     "Настройки и доступы",
 )
@@ -305,6 +306,18 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ),
     ("invoices.barter.edit", "Накладные", "Редактировать бартерные накладные"),
     ("invoices.barter.pay", "Накладные", "Оплачивать бартерные накладные"),
+    ("kassa.shifts.read", "Касса", "Смотреть закрытие кассовых смен"),
+    ("kassa.shifts.sync", "Касса", "Загружать кассовые смены из iiko"),
+    ("kassa.shifts.post", "Касса", "Проводить наличный контур смены в ДДС"),
+    ("kassa.cheques.read", "Касса", "Смотреть чеки (оплаты картой)"),
+    ("kassa.cheques.create", "Касса", "Создавать чеки (оплаты картой)"),
+    ("kassa.invoices.create", "Касса", "Создавать накладные из Кассы"),
+    ("kassa.adjustments.create", "Касса", "Создавать корректировки кассы"),
+    (
+        "kassa.refs.read",
+        "Касса",
+        "Смотреть справочники Кассы (статьи ДДС, счета, контрагенты)",
+    ),
     ("settings.general.read", "Настройки и доступы", "Смотреть настройки"),
     ("settings.general.edit", "Настройки и доступы", "Редактировать настройки"),
     ("settings.positions.read", "Настройки и доступы", "Смотреть реестр должностей"),
@@ -605,6 +618,13 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "invoices.barter.create",
         "invoices.barter.edit",
         "invoices.barter.pay",
+        "kassa.shifts.read",
+        "kassa.shifts.sync",
+        "kassa.shifts.post",
+        "kassa.cheques.read",
+        "kassa.cheques.create",
+        "kassa.invoices.create",
+        "kassa.refs.read",
         "settings.general.read",
         "settings.positions.read",
     }
@@ -632,6 +652,8 @@ OFFICE_MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "settings.roles.edit",
         "settings.access_audit.read",
         "counterparties.admin",
+        # Корректировки кассы — точечное право, не входит в дефолт Менеджера.
+        "kassa.adjustments.create",
     }
 )
 
@@ -648,6 +670,12 @@ CASHIER_DEFAULT_PERMISSIONS = frozenset(
         "source.shift_ledger.input",
         "finance.store_cash.read",
         "finance.store_cash.enter",
+        "kassa.shifts.read",
+        "kassa.shifts.sync",
+        "kassa.cheques.read",
+        "kassa.cheques.create",
+        "kassa.invoices.create",
+        "kassa.refs.read",
     }
 )
 
