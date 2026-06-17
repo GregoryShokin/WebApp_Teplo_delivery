@@ -169,15 +169,27 @@ async def _wallet_movement_deltas(session: AsyncSession) -> dict[UUID, Decimal]:
 
     Balance is derived from movements, never from the bank's reported balance — the
     T-Bank ``otb`` field is inflated by the overdraft limit, so it is not used.
+
+    Only movements dated AFTER ``opening_balance_date`` are counted: the opening
+    snapshot already incorporates everything up to and including that date, so
+    summing earlier movements (e.g. an acquiring statement back-filled by the bank
+    sync) would double-count them. Wallets with no opening date count all movements.
     """
     deltas: dict[UUID, Decimal] = defaultdict(lambda: Decimal("0"))
 
+    after_opening_cashflow = or_(
+        Wallet.opening_balance_date.is_(None),
+        CashflowTransaction.operation_date > Wallet.opening_balance_date,
+    )
     cashflow_rows = await session.execute(
         select(
             CashflowTransaction.wallet_id,
             CashflowTransaction.direction,
             func.coalesce(func.sum(CashflowTransaction.amount), 0),
-        ).group_by(CashflowTransaction.wallet_id, CashflowTransaction.direction)
+        )
+        .join(Wallet, Wallet.id == CashflowTransaction.wallet_id)
+        .where(after_opening_cashflow)
+        .group_by(CashflowTransaction.wallet_id, CashflowTransaction.direction)
     )
     for wallet_id, direction, total in cashflow_rows:
         if wallet_id is None:
@@ -185,9 +197,14 @@ async def _wallet_movement_deltas(session: AsyncSession) -> dict[UUID, Decimal]:
         amount = Decimal(total)
         deltas[wallet_id] += amount if direction == "in" else -amount
 
+    after_opening_transfer = or_(
+        Wallet.opening_balance_date.is_(None),
+        TransferGroup.initiated_at > Wallet.opening_balance_date,
+    )
     transfer_out = await session.execute(
         select(TransferGroup.from_wallet_id, func.coalesce(func.sum(TransferGroup.amount), 0))
-        .where(TransferGroup.from_wallet_id.is_not(None))
+        .join(Wallet, Wallet.id == TransferGroup.from_wallet_id)
+        .where(after_opening_transfer)
         .group_by(TransferGroup.from_wallet_id)
     )
     for wallet_id, total in transfer_out:
@@ -195,7 +212,8 @@ async def _wallet_movement_deltas(session: AsyncSession) -> dict[UUID, Decimal]:
 
     transfer_in = await session.execute(
         select(TransferGroup.to_wallet_id, func.coalesce(func.sum(TransferGroup.amount), 0))
-        .where(TransferGroup.to_wallet_id.is_not(None))
+        .join(Wallet, Wallet.id == TransferGroup.to_wallet_id)
+        .where(after_opening_transfer)
         .group_by(TransferGroup.to_wallet_id)
     )
     for wallet_id, total in transfer_in:
