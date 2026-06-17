@@ -71,6 +71,8 @@ export type ChequeLine = {
   price: number;
   sum: number;
   vat_percent: number | null;
+  dds_article_id: string | null;
+  dds_article_name: string | null;
 };
 
 export type Cheque = {
@@ -92,13 +94,14 @@ export type ChequeLinePayload = {
   quantity: number;
   unit?: string | null;
   price: number;
+  dds_article_id?: string | null;
   iiko_product_id?: string | null;
   vat_percent?: number | null;
 };
 
 export type CreateChequePayload = {
   counterparty_id: string;
-  article_id: string;
+  article_id?: string | null;
   issued_at: string;
   bank_parts: Array<{ bank_operation_id: string; amount?: number | null }>;
   cash_amount?: number | null;

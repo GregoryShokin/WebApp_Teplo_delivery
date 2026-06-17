@@ -9,7 +9,6 @@ import { Check, ChevronRight, LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -37,16 +36,26 @@ import {
   type CardTransaction,
   type ChequeLinePayload,
 } from "@/routes/kassa/api";
+import { getProducts } from "@/routes/warehouse/api";
+import { ProductSearch } from "@/routes/warehouse/ProductSearch";
 
-// Единицы измерения номенклатуры (резолвятся из GUID iiko — см. iiko_product.unit).
-const UNITS = ["шт", "кг", "л", "порц"] as const;
+// Контрагент чеков местного закупа фиксирован — выбор магазина не нужен (метка для iiko).
+const LOCAL_PURCHASE_NAME = "Местный закуп";
 
-type DraftLine = { key: string; name: string; quantity: string; unit: string; price: string };
+type DraftLine = {
+  key: string;
+  name: string;
+  productId: string | null;
+  unit: string | null;
+  quantity: string;
+  price: string;
+  articleId: string;
+};
 
 let lineSeq = 0;
 function emptyLine(): DraftLine {
   lineSeq += 1;
-  return { key: `l${lineSeq}`, name: "", quantity: "1", unit: "шт", price: "" };
+  return { key: `l${lineSeq}`, name: "", productId: null, unit: null, quantity: "1", price: "", articleId: "" };
 }
 
 function dayLabel(issuedAt: string): string {
@@ -63,17 +72,13 @@ type CreateChequeDialogProps = {
 
 export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateChequeDialogProps) {
   const queryClient = useQueryClient();
-  const [counterpartyId, setCounterpartyId] = useState("");
-  const [articleId, setArticleId] = useState("");
   const [issuedAt, setIssuedAt] = useState(() => toDateTimeLocalInput(new Date()));
   const [selectedOp, setSelectedOp] = useState<CardTransaction | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [cashAmount, setCashAmount] = useState("");
-  const [trackNomenclature, setTrackNomenclature] = useState(false);
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
   const [comment, setComment] = useState("");
 
-  // Дебаунс даты: смена даты не шлёт запрос на каждый тик datetime-local (меньше пинга).
   const [debouncedIssuedAt, setDebouncedIssuedAt] = useState(issuedAt);
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedIssuedAt(issuedAt), 350);
@@ -92,8 +97,12 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
     enabled: open,
     staleTime: 60_000,
   });
-  // Операции за ДЕНЬ покупки выбранной даты; грузятся заранее (при открытии и смене
-  // даты), прошлый список виден без мелькания, кэш 30с — окно выбора открывается мгновенно.
+  const productsQuery = useQuery({
+    queryKey: ["wh", "products", "goods-all"],
+    queryFn: () => getProducts({ type: "GOODS", limit: 2000 }),
+    enabled: open,
+    staleTime: 60_000,
+  });
   const cardTxQuery = useQuery({
     queryKey: ["kassa", "card-transactions", debouncedIssuedAt],
     queryFn: () => getCardTransactions({ issued_at: debouncedIssuedAt }),
@@ -102,8 +111,14 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
     staleTime: 30_000,
   });
   const cardOps = useMemo(() => cardTxQuery.data ?? [], [cardTxQuery.data]);
+  const products = productsQuery.data ?? [];
+  const articles = articlesQuery.data ?? [];
 
-  // Если выбранная операция выпала из списка новой даты — сбрасываем выбор.
+  const localPurchase = useMemo(
+    () => (counterpartiesQuery.data ?? []).find((cp) => cp.name === LOCAL_PURCHASE_NAME),
+    [counterpartiesQuery.data],
+  );
+
   useEffect(() => {
     if (
       selectedOp &&
@@ -127,12 +142,9 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
   const paidTotal = cardTotal + cash;
 
   function reset() {
-    setCounterpartyId("");
-    setArticleId("");
     setIssuedAt(toDateTimeLocalInput(new Date()));
     setSelectedOp(null);
     setCashAmount("");
-    setTrackNomenclature(false);
     setLines([emptyLine()]);
     setComment("");
   }
@@ -146,23 +158,22 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
       const bankParts = selectedOp
         ? [{ bank_operation_id: selectedOp.bank_operation_id }]
         : [];
-      const payloadLines: ChequeLinePayload[] | undefined = trackNomenclature
-        ? lines
-            .filter((line) => line.name.trim())
-            .map((line) => ({
-              name: line.name.trim(),
-              quantity: Number(line.quantity) || 0,
-              unit: line.unit || null,
-              price: Number(line.price) || 0,
-            }))
-        : undefined;
+      const payloadLines: ChequeLinePayload[] = lines
+        .filter((line) => line.name.trim())
+        .map((line) => ({
+          name: line.name.trim(),
+          quantity: Number(line.quantity) || 0,
+          unit: line.unit || null,
+          price: Number(line.price) || 0,
+          dds_article_id: line.articleId || null,
+          iiko_product_id: line.productId,
+        }));
       return createCheque({
-        counterparty_id: counterpartyId,
-        article_id: articleId,
+        counterparty_id: localPurchase?.id ?? "",
         issued_at: issuedAt,
         bank_parts: bankParts,
         cash_amount: cash > 0 ? cash : null,
-        track_nomenclature: trackNomenclature,
+        track_nomenclature: true,
         lines: payloadLines,
         comment: comment.trim() || null,
       });
@@ -182,63 +193,41 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось создать чек")),
   });
 
-  const nomenclatureOk = !trackNomenclature || Math.abs(linesTotal - paidTotal) < 0.01;
+  const filledLines = lines.filter(
+    (line) => line.name.trim() && Number(line.quantity) > 0 && line.articleId,
+  );
+  const allLinesValid = lines.every(
+    (line) => !line.name.trim() || (Number(line.quantity) > 0 && Boolean(line.articleId)),
+  );
+  const totalsMatch = Math.abs(linesTotal - paidTotal) < 0.01;
   const canSave =
-    Boolean(counterpartyId) &&
-    Boolean(articleId) &&
+    Boolean(localPurchase) &&
     Boolean(issuedAt) &&
     paidTotal > 0 &&
-    nomenclatureOk &&
+    filledLines.length > 0 &&
+    allLinesValid &&
+    totalsMatch &&
     !createMutation.isPending;
 
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[88vh] max-w-md overflow-y-auto">
+        <DialogContent className="max-h-[88vh] max-w-2xl overflow-y-auto">
           <DialogHeader className="space-y-1">
-            <DialogTitle>Новый чек</DialogTitle>
+            <DialogTitle>Новый чек — местный закуп</DialogTitle>
             <DialogDescription>
-              Оплата по бизнес-карте — сразу проводится в ДДС.
+              Оплата по бизнес-карте. Статья ДДС указывается в каждой позиции.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* Шапка чека: магазин · статья · дата */}
-            <div className="space-y-2.5">
-              <div className="grid grid-cols-2 gap-2.5">
-                <Select value={counterpartyId} onValueChange={setCounterpartyId}>
-                  <SelectTrigger aria-label="Магазин">
-                    <SelectValue placeholder="Магазин" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(counterpartiesQuery.data ?? []).map((cp) => (
-                      <SelectItem key={cp.id} value={cp.id}>
-                        {cp.name}
-                        {cp.inn ? ` · ${cp.inn}` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={articleId} onValueChange={setArticleId}>
-                  <SelectTrigger aria-label="Статья расхода">
-                    <SelectValue placeholder="Статья" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(articlesQuery.data ?? []).map((article) => (
-                      <SelectItem key={article.id} value={article.id}>
-                        {article.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Input
-                type="datetime-local"
-                aria-label="Дата и время покупки"
-                value={issuedAt}
-                onChange={(event) => setIssuedAt(event.target.value)}
-              />
-            </div>
+            {/* Дата покупки */}
+            <Input
+              type="datetime-local"
+              aria-label="Дата и время покупки"
+              value={issuedAt}
+              onChange={(event) => setIssuedAt(event.target.value)}
+            />
 
             {/* Операция по карте — выбор через окно за день покупки */}
             <button
@@ -276,7 +265,6 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
               <ChevronRight size={16} className="shrink-0 text-muted-foreground" aria-hidden="true" />
             </button>
 
-            {/* Наличная часть той же покупки (опционально) */}
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-muted-foreground">+ наличными, ₽</span>
               <Input
@@ -288,90 +276,100 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
               />
             </div>
 
-            {/* Позиции (чек-стиль) */}
+            {/* Позиции: товар из номенклатуры + статья ДДС на каждую */}
             <div className="space-y-2 border-t border-dashed pt-3">
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={trackNomenclature}
-                  onChange={(event) => setTrackNomenclature(event.target.checked)}
-                />
-                Расписать позиции (склад)
-              </label>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Позиции</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground"
+                  onClick={() => setLines((prev) => [...prev, emptyLine()])}
+                >
+                  <Plus size={14} aria-hidden="true" />
+                  Строка
+                </Button>
+              </div>
 
-              {trackNomenclature ? (
-                <div className="space-y-1.5">
-                  {lines.map((line) => (
-                    <div
-                      key={line.key}
-                      className="grid grid-cols-[1fr_50px_70px_64px_28px] items-center gap-1.5"
-                    >
-                      <Input
-                        className="h-9"
-                        placeholder="Наименование"
-                        value={line.name}
-                        onChange={(event) => updateLine(line.key, { name: event.target.value })}
-                      />
-                      <Input
-                        className="h-9 px-2 text-center"
-                        inputMode="decimal"
-                        aria-label="Количество"
-                        placeholder="Кол-во"
-                        value={line.quantity}
-                        onChange={(event) => updateLine(line.key, { quantity: event.target.value })}
-                      />
-                      <Select
-                        value={line.unit}
-                        onValueChange={(value) => updateLine(line.key, { unit: value })}
-                      >
-                        <SelectTrigger className="h-9 px-2" aria-label="Единица измерения">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {UNITS.map((unit) => (
-                            <SelectItem key={unit} value={unit}>
-                              {unit}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        className="h-9 px-2 text-right"
-                        inputMode="decimal"
-                        aria-label="Цена"
-                        placeholder="Цена"
-                        value={line.price}
-                        onChange={(event) => updateLine(line.key, { price: event.target.value })}
-                      />
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="size-9"
-                        aria-label="Удалить позицию"
-                        onClick={() =>
-                          setLines((prev) =>
-                            prev.length > 1 ? prev.filter((l) => l.key !== line.key) : prev,
-                          )
-                        }
-                      >
-                        <Trash2 size={14} aria-hidden="true" />
-                      </Button>
-                    </div>
-                  ))}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-muted-foreground"
-                    onClick={() => setLines((prev) => [...prev, emptyLine()])}
+              <div className="grid grid-cols-[1fr_46px_36px_64px_1fr_28px] gap-1.5 px-1 text-xs text-muted-foreground">
+                <span>Товар</span>
+                <span className="text-center">Кол-во</span>
+                <span className="text-center">Ед.</span>
+                <span className="text-right">Цена</span>
+                <span>Статья ДДС</span>
+                <span aria-hidden="true" />
+              </div>
+
+              {lines.map((line) => (
+                <div
+                  key={line.key}
+                  className="grid grid-cols-[1fr_46px_36px_64px_1fr_28px] items-center gap-1.5"
+                >
+                  <ProductSearch
+                    value={line.name}
+                    products={products}
+                    placeholder="Наименование"
+                    onPick={(product) =>
+                      updateLine(line.key, {
+                        name: product.name,
+                        productId: product.id,
+                        unit: product.unit,
+                      })
+                    }
+                    onTextChange={(text) =>
+                      updateLine(line.key, { name: text, productId: null, unit: null })
+                    }
+                  />
+                  <Input
+                    className="h-9 px-1 text-center"
+                    inputMode="decimal"
+                    aria-label="Количество"
+                    value={line.quantity}
+                    onChange={(event) => updateLine(line.key, { quantity: event.target.value })}
+                  />
+                  <span className="text-center text-xs text-muted-foreground">{line.unit ?? "—"}</span>
+                  <Input
+                    className="h-9 px-1 text-right"
+                    inputMode="decimal"
+                    aria-label="Цена"
+                    value={line.price}
+                    onChange={(event) => updateLine(line.key, { price: event.target.value })}
+                  />
+                  <Select
+                    value={line.articleId}
+                    onValueChange={(value) => updateLine(line.key, { articleId: value })}
                   >
-                    <Plus size={14} aria-hidden="true" />
-                    Строка
+                    <SelectTrigger className="h-9" aria-label="Статья ДДС">
+                      <SelectValue placeholder="Статья" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {articles.map((article) => (
+                        <SelectItem key={article.id} value={article.id}>
+                          {article.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="size-9"
+                    aria-label="Удалить позицию"
+                    onClick={() =>
+                      setLines((prev) =>
+                        prev.length > 1 ? prev.filter((l) => l.key !== line.key) : prev,
+                      )
+                    }
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
                   </Button>
-                  {!nomenclatureOk ? (
-                    <p className="text-xs text-destructive">
-                      Сумма позиций {formatDdsMoney(linesTotal)} ≠ оплате {formatDdsMoney(paidTotal)}.
-                    </p>
-                  ) : null}
                 </div>
+              ))}
+
+              {!totalsMatch && filledLines.length > 0 ? (
+                <p className="text-xs text-destructive">
+                  Сумма позиций {formatDdsMoney(linesTotal)} ≠ оплате {formatDdsMoney(paidTotal)}.
+                </p>
               ) : null}
             </div>
 

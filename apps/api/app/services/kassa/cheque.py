@@ -66,6 +66,7 @@ class ChequeLineInput:
     quantity: Decimal
     price: Decimal
     unit: str | None = None
+    dds_article_id: uuid.UUID | None = None
     iiko_product_id: uuid.UUID | None = None
     vat_percent: Decimal | None = None
 
@@ -294,11 +295,33 @@ async def list_card_transactions(
     return candidates[:limit]
 
 
+def _allocate_by_articles(
+    amount: Decimal, article_sums: list[tuple[uuid.UUID, Decimal]], total: Decimal
+) -> list[tuple[uuid.UUID, Decimal]]:
+    """Разнести сумму оплаты по статьям пропорционально их долям в чеке.
+
+    Оплата (карта/наличные) и статьи (позиции) — независимые разбиения суммы чека,
+    поэтому каждую оплату делим между статьями пропорционально ``доля статьи / итог``.
+    Остаток от округления отдаём последней статье, чтобы Σ долей == ``amount``.
+    """
+    shares: list[tuple[uuid.UUID, Decimal]] = []
+    allocated = Decimal("0.00")
+    for index, (article_id, article_sum) in enumerate(article_sums):
+        if index == len(article_sums) - 1:
+            share = amount - allocated
+        else:
+            share = _money(amount * article_sum / total)
+            allocated += share
+        if share > 0:
+            shares.append((article_id, share))
+    return shares
+
+
 async def create_cheque(
     session: AsyncSession,
     *,
     counterparty_id: uuid.UUID,
-    article_id: uuid.UUID,
+    article_id: uuid.UUID | None = None,
     issued_at: datetime,
     bank_parts: list[ChequeBankPart] | None = None,
     cash_amount: Decimal | None = None,
@@ -320,12 +343,6 @@ async def create_cheque(
         raise KassaChequeError("Укажите дату и время чека")
     if not bank_parts and not cash_amount:
         raise KassaChequeError("Укажите хотя бы один источник оплаты: карта или наличные")
-
-    article = await session.get(DdsArticle, article_id)
-    if article is None or not article.is_active:
-        raise KassaChequeError("Статья ДДС не найдена")
-    if article.movement_type != "outflow":
-        raise KassaChequeError("Статья ДДС должна быть расходной")
 
     counterparty = await session.get(Counterparty, counterparty_id)
     if counterparty is None:
@@ -393,6 +410,8 @@ async def create_cheque(
 
     vat_total = Decimal("0.00")
     mirror: list[dict[str, Any]] = []
+    # Накопление сумм по статьям ДДС (для построчной проводки чека местного закупа).
+    article_totals: dict[uuid.UUID, Decimal] = {}
     if track_nomenclature:
         if not line_inputs:
             raise KassaChequeError("Включён складской учёт — добавьте позиции")
@@ -409,6 +428,9 @@ async def create_cheque(
             quantity = _qty(line.quantity)
             price = _money(line.price)
             line_sum = _money(quantity * price)
+            line_article_id = line.dds_article_id or article_id
+            if line_article_id is None:
+                raise KassaChequeError(f"У позиции «{line.name}» не указана статья ДДС")
             vat_sum: Decimal | None = None
             if line.vat_percent:
                 rate = Decimal(str(line.vat_percent))
@@ -428,11 +450,15 @@ async def create_cheque(
                     sum=line_sum,
                     vat_percent=Decimal(str(line.vat_percent)) if line.vat_percent else None,
                     vat_sum=vat_sum,
+                    dds_article_id=line_article_id,
                     is_staff=False,
                     sort_order=index,
                 )
             )
             lines_total += line_sum
+            article_totals[line_article_id] = (
+                article_totals.get(line_article_id, Decimal("0.00")) + line_sum
+            )
             mirror.append(
                 {
                     "product_id": product.iiko_id if product else None,
@@ -446,6 +472,20 @@ async def create_cheque(
             raise KassaChequeError(
                 f"Сумма позиций {_money(lines_total)} не совпадает с оплатой {paid_total}"
             )
+    elif article_id is not None:
+        # Чек без позиций — вся сумма на единую статью чека (фолбэк-режим).
+        article_totals[article_id] = paid_total
+    else:
+        raise KassaChequeError("Укажите статью ДДС (в позициях или на чеке)")
+
+    # Статьи проводки в порядке появления; проверяем, что все расходные и активные.
+    article_sums = list(article_totals.items())
+    for line_article_id, _sum in article_sums:
+        article = await session.get(DdsArticle, line_article_id)
+        if article is None or not article.is_active:
+            raise KassaChequeError("Статья ДДС не найдена")
+        if article.movement_type != "outflow":
+            raise KassaChequeError("Статья ДДС должна быть расходной")
 
     invoice.amount = paid_total
     invoice.staff_amount = Decimal("0.00")
@@ -453,24 +493,28 @@ async def create_cheque(
     invoice.line_items = mirror
     await session.flush()
 
-    # --- безналичные части: движение ДДС + привязка операции + аллокация --------
+    # --- безналичные части: движения ДДС по статьям + привязка операции + аллокация --
     for operation, wallet, amount in resolved_bank:
-        transaction = CashflowTransaction(
-            wallet_id=wallet.id,
-            direction="out",
-            amount=amount,
-            operation_date=operation.operation_date,
-            article_id=article_id,
-            counterparty_id=counterparty_id,
-            source_kind="kassa_cheque",
-            source_id=invoice.id,
-            payment_purpose=f"Чек {invoice.number}",
-            comment=comment,
-            quality_status="final",
-        )
-        session.add(transaction)
-        await session.flush()
-        operation.cashflow_transaction_id = transaction.id
+        first_txn_id: uuid.UUID | None = None
+        for art_id, share in _allocate_by_articles(amount, article_sums, paid_total):
+            transaction = CashflowTransaction(
+                wallet_id=wallet.id,
+                direction="out",
+                amount=share,
+                operation_date=operation.operation_date,
+                article_id=art_id,
+                counterparty_id=counterparty_id,
+                source_kind="kassa_cheque",
+                source_id=invoice.id,
+                payment_purpose=f"Чек {invoice.number}",
+                comment=comment,
+                quality_status="final",
+            )
+            session.add(transaction)
+            await session.flush()
+            if first_txn_id is None:
+                first_txn_id = transaction.id
+        operation.cashflow_transaction_id = first_txn_id
         session.add(
             InvoicePaymentAllocation(
                 invoice_id=invoice.id,
@@ -482,28 +526,32 @@ async def create_cheque(
         )
     await session.flush()
 
-    # --- наличная часть: движение ДДС с кассы Черниковой + аллокация ------------
+    # --- наличная часть: движения ДДС по статьям с кассы Черниковой + аллокация --
     if cash_total > 0 and cash_wallet is not None:
-        transaction = CashflowTransaction(
-            wallet_id=cash_wallet.id,
-            direction="out",
-            amount=cash_total,
-            operation_date=issued_at.date(),
-            article_id=article_id,
-            counterparty_id=counterparty_id,
-            source_kind="kassa_cheque",
-            source_id=invoice.id,
-            payment_purpose=f"Чек {invoice.number} (наличные)",
-            comment=comment,
-            quality_status="final",
-        )
-        session.add(transaction)
-        await session.flush()
+        first_cash_txn_id: uuid.UUID | None = None
+        for art_id, share in _allocate_by_articles(cash_total, article_sums, paid_total):
+            transaction = CashflowTransaction(
+                wallet_id=cash_wallet.id,
+                direction="out",
+                amount=share,
+                operation_date=issued_at.date(),
+                article_id=art_id,
+                counterparty_id=counterparty_id,
+                source_kind="kassa_cheque",
+                source_id=invoice.id,
+                payment_purpose=f"Чек {invoice.number} (наличные)",
+                comment=comment,
+                quality_status="final",
+            )
+            session.add(transaction)
+            await session.flush()
+            if first_cash_txn_id is None:
+                first_cash_txn_id = transaction.id
         session.add(
             InvoicePaymentAllocation(
                 invoice_id=invoice.id,
                 source_kind="cash",
-                cashflow_transaction_id=transaction.id,
+                cashflow_transaction_id=first_cash_txn_id,
                 amount=cash_total,
                 created_by_user_id=actor_user_id,
             )
@@ -566,6 +614,14 @@ async def _cheque_payload(session: AsyncSession, invoice: SupplierInvoice) -> di
             .limit(1)
         )
     ).first()
+    # Имена статей ДДС позиций (для отображения построчно).
+    article_ids = {line.dds_article_id for line in lines if line.dds_article_id is not None}
+    article_names: dict[uuid.UUID, str] = {}
+    if article_ids:
+        rows = await session.execute(
+            select(DdsArticle.id, DdsArticle.name).where(DdsArticle.id.in_(article_ids))
+        )
+        article_names = {row[0]: row[1] for row in rows.all()}
     return {
         "id": invoice.id,
         "number": invoice.number,
@@ -596,6 +652,8 @@ async def _cheque_payload(session: AsyncSession, invoice: SupplierInvoice) -> di
                 "price": float(_money(line.price)),
                 "sum": float(_money(line.sum)),
                 "vat_percent": float(line.vat_percent) if line.vat_percent is not None else None,
+                "dds_article_id": line.dds_article_id,
+                "dds_article_name": article_names.get(line.dds_article_id),
             }
             for line in lines
         ],

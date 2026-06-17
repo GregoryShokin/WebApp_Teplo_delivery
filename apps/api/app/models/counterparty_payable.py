@@ -368,6 +368,10 @@ class InvoiceLineItem(Base):
     sum: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     vat_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     vat_sum: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    # Статья ДДС позиции (чек местного закупа разносится постро́чно по статьям).
+    dds_article_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("dds_articles.id", ondelete="SET NULL"), nullable=True
+    )
     is_staff: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )

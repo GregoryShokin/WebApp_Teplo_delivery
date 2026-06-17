@@ -187,6 +187,54 @@ async def test_create_cheque_with_nomenclature(
         assert lines[0].sum == Decimal("500.00")
 
 
+async def test_cheque_books_dds_per_line_article(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Местный закуп: позиции с разными статьями ДДС → отдельные движения по статьям.
+    async with async_session_factory() as session:
+        veg = await make_expense_article(session, code="veg", name="Овощи")
+        household = await make_expense_article(session, code="hh", name="Хозтовары")
+        cp = await make_counterparty(session, name="Местный закуп")
+        _, op = await _card_op(session, amount="500.00")
+        await session.commit()
+
+        cheque = await create_cheque(
+            session,
+            counterparty_id=cp.id,
+            article_id=None,  # статья теперь на позициях, не на чеке
+            issued_at=ISSUED,
+            bank_parts=[ChequeBankPart(bank_operation_id=op.id)],
+            track_nomenclature=True,
+            lines=[
+                ChequeLineInput(
+                    name="Помидоры",
+                    quantity=Decimal("2"),
+                    price=Decimal("150.00"),
+                    dds_article_id=veg.id,
+                ),
+                ChequeLineInput(
+                    name="Мыло",
+                    quantity=Decimal("1"),
+                    price=Decimal("200.00"),
+                    dds_article_id=household.id,
+                ),
+            ],
+        )
+
+        assert cheque.payment_status == "paid"
+        # Движения ДДС разнесены по статьям позиций: 300 ₽ овощи + 200 ₽ хозтовары.
+        by_article = {t.article_id: t.amount for t in await _txns(session, cheque.id)}
+        assert by_article[veg.id] == Decimal("300.00")
+        assert by_article[household.id] == Decimal("200.00")
+        # Каждая позиция сохранила свою статью.
+        lines = (
+            await session.scalars(
+                select(InvoiceLineItem).where(InvoiceLineItem.invoice_id == cheque.id)
+            )
+        ).all()
+        assert {line.dds_article_id for line in lines} == {veg.id, household.id}
+
+
 async def test_nomenclature_total_mismatch_rejected(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

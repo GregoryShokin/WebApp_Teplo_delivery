@@ -65,6 +65,7 @@ class ChequeLineCreate(BaseModel):
     quantity: Decimal
     unit: str | None = None  # ед. изм.: шт / кг / л / порц
     price: Decimal
+    dds_article_id: uuid.UUID | None = None  # статья ДДС позиции (своя у каждой строки)
     iiko_product_id: uuid.UUID | None = None
     vat_percent: Decimal | None = None
 
@@ -80,7 +81,9 @@ class ChequeCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     counterparty_id: uuid.UUID
-    article_id: uuid.UUID
+    # Статья на уровне чека — опциональный фолбэк для позиций без своей статьи
+    # (для местного закупа статья ставится в каждой строке).
+    article_id: uuid.UUID | None = None
     issued_at: datetime
     bank_parts: list[ChequeBankPartCreate] = Field(default_factory=list)
     cash_amount: Decimal | None = None
@@ -102,12 +105,14 @@ class ChequeAllocationRead(BaseModel):
 class ChequeLineRead(BaseModel):
     id: uuid.UUID
     name: str
-    article: str | None = None
+    article: str | None = None  # артикул товара
     unit: str | None = None
     quantity: float
     price: float
     sum: float
     vat_percent: float | None = None
+    dds_article_id: uuid.UUID | None = None
+    dds_article_name: str | None = None
 
 
 class ChequeRead(BaseModel):
