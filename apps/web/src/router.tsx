@@ -9,6 +9,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { CourierShiftRoute } from "@/routes/couriers/shift";
 import { PayrollRoute } from "@/routes/payroll";
 import { DdsRoute } from "@/routes/dds";
+import { KassaRoute } from "@/routes/kassa";
 import { WarehouseInvoicesRoute } from "@/routes/warehouse";
 import { LoginRoute } from "@/routes/login";
 import { AccessControlRoute } from "@/routes/access-control";
@@ -429,6 +430,31 @@ const routes: AppRoute[] = [
       {
         path: ":unknown",
         render: ({ navigate }) => <DdsRoute activeTab="today" invalidPath onNavigate={navigate} />,
+      },
+    ],
+  },
+  {
+    path: "/kassa",
+    children: [
+      {
+        path: "",
+        render: ({ navigate }) => (
+          <KassaRoute activeTab="shift-close" onNavigate={navigate} useStoredTab />
+        ),
+      },
+      {
+        path: "invoices",
+        render: ({ navigate }) => <KassaRoute activeTab="invoices" onNavigate={navigate} />,
+      },
+      {
+        path: "receipts",
+        render: ({ navigate }) => <KassaRoute activeTab="receipts" onNavigate={navigate} />,
+      },
+      {
+        path: ":unknown",
+        render: ({ navigate }) => (
+          <KassaRoute activeTab="shift-close" invalidPath onNavigate={navigate} />
+        ),
       },
     ],
   },

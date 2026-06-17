@@ -136,12 +136,14 @@ class KassaShiftRead(BaseModel):
     close_date: datetime | None = None
     session_status: str | None = None
     session_start_cash: float | None = None
-    sales_cash: float | None = None
+    sales_cash: float | None = None  # iiko salesCash (завышен предоплатами) — справочно
+    cash_sales: float | None = None  # достоверная наличная выручка из OLAP (тип «Наличные»)
     sales_card: float | None = None
     pay_in: float | None = None
     pay_out: float | None = None
     cash_remain: float | None = None
-    cash_diff: float | None = None
+    cash_diff: float | None = None  # сырое поле iiko (= 2× остаток, артефакт)
+    real_cash_diff: float | None = None  # сверка ящика: положит. = недостача/неучтённое изъятие
     posted: bool
     synced_at: datetime
 

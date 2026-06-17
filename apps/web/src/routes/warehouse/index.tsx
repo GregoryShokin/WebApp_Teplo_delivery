@@ -31,9 +31,12 @@ export function warehouseTabPath(tab: WarehouseTab): string {
 type Props = {
   activeTab: WarehouseTab;
   onNavigate: (path: string) => void;
+  // embedded = встроено в другую страницу (например «Касса»): без своего заголовка и
+  // без собственной полосы вкладок — рендерим только обычные накладные.
+  embedded?: boolean;
 };
 
-export function WarehouseInvoicesRoute({ activeTab, onNavigate }: Props) {
+export function WarehouseInvoicesRoute({ activeTab, onNavigate, embedded = false }: Props) {
   const permissions = usePermissions();
   const canOperate = permissions.canPerformAction("counterparties.operate");
   const canAdmin = permissions.canPerformAction("counterparties.admin");
@@ -73,12 +76,16 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate }: Props) {
     onError: (e) => toast.error(apiErrorMessage(e, "Синхронизация с iiko не удалась")),
   });
 
+  const effectiveTab: WarehouseTab = embedded ? "normal" : activeTab;
+
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Накладные"
-        description="Накладные из iiko и созданные вручную: оплата, отправка в банк, бартер, персонал-разнесение и реестр контрагентов."
-      />
+      {embedded ? null : (
+        <PageHeader
+          title="Накладные"
+          description="Накладные из iiko и созданные вручную: оплата, отправка в банк, бартер, персонал-разнесение и реестр контрагентов."
+        />
+      )}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard label="К оплате" value={formatRub(toPay)} />
@@ -91,18 +98,22 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate }: Props) {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Tabs
-          value={activeTab}
-          onValueChange={(value) => onNavigate(warehouseTabPath(value as WarehouseTab))}
-        >
-          <TabsList className="h-auto flex-wrap justify-start">
-            {WAREHOUSE_TABS.map((tab) => (
-              <TabsTrigger key={tab.value} value={tab.value}>
-                {tab.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        {embedded ? (
+          <span />
+        ) : (
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => onNavigate(warehouseTabPath(value as WarehouseTab))}
+          >
+            <TabsList className="h-auto flex-wrap justify-start">
+              {WAREHOUSE_TABS.map((tab) => (
+                <TabsTrigger key={tab.value} value={tab.value}>
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        )}
         {canOperate ? (
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -135,7 +146,7 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate }: Props) {
         ) : null}
       </div>
 
-      {activeTab === "normal" ? (
+      {effectiveTab === "normal" ? (
         <InboxTab
           kind="normal"
           splitPay
@@ -145,7 +156,7 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate }: Props) {
           onOpenCounterparty={setOpenId}
         />
       ) : null}
-      {activeTab === "barter" ? (
+      {effectiveTab === "barter" ? (
         <InboxTab
           kind="barter"
           canOperate={canOperate}
@@ -154,7 +165,7 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate }: Props) {
           onOpenCounterparty={setOpenId}
         />
       ) : null}
-      {activeTab === "registry" ? (
+      {effectiveTab === "registry" ? (
         <RegistryTab canOperate={canOperate} canAdmin={canAdmin} onOpenCounterparty={setOpenId} />
       ) : null}
 

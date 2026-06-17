@@ -28,7 +28,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -36,6 +36,8 @@ from app.models import (
     DdsArticle,
     IikoCashShift,
     IikoCashShiftPayout,
+    InvoicePaymentAllocation,
+    SupplierInvoice,
     Wallet,
 )
 
@@ -171,6 +173,64 @@ def _fetch_accounts_map(token: str) -> dict[str, str]:
     }
 
 
+def _iiko_post(token: str, path: str, body: dict[str, Any]) -> Any:
+    host, port = _iiko_host_and_port()
+    payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    ctx = ssl._create_unverified_context()
+    conn = hc.HTTPSConnection(host, port, timeout=120, context=ctx)
+    try:
+        conn.request(
+            "POST",
+            f"{path}?key={token}",
+            body=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        resp = conn.getresponse()
+        raw = resp.read()
+        if resp.status != 200:
+            raise RuntimeError(f"iiko POST {path} failed: {resp.status} {raw[:300]!r}")
+        return json.loads(raw)
+    finally:
+        conn.close()
+
+
+def _fetch_cash_sales_by_day(token: str, date_from: date, date_to: date) -> dict[date, Decimal]:
+    """Достоверная наличная выручка по дням из OLAP SALES (тип оплаты «Наличные»).
+
+    iiko `salesCash` кассовой смены завышен зачтёнными предоплатами — поэтому наличную
+    выручку берём из OLAP по типам оплат (`PayTypes.Group='CASH'`, сумма со скидкой).
+    """
+    body = {
+        "reportType": "SALES",
+        "buildSummary": False,
+        "groupByRowFields": ["OpenDate.Typed", "PayTypes.Group"],
+        "groupByColFields": [],
+        "aggregateFields": ["DishDiscountSumInt"],
+        "filters": {
+            "OpenDate.Typed": {
+                "filterType": "DateRange",
+                "periodType": "CUSTOM",
+                "from": f"{date_from.isoformat()}T00:00:00.000",
+                "to": f"{(date_to + timedelta(days=1)).isoformat()}T00:00:00.000",
+                "includeLow": True,
+                "includeHigh": False,
+            }
+        },
+    }
+    data = _iiko_post(token, "/resto/api/v2/reports/olap", body)
+    rows = data.get("data", []) if isinstance(data, dict) else []
+    result: dict[date, Decimal] = {}
+    for row in rows:
+        if str(row.get("PayTypes.Group") or "") != "CASH":
+            continue
+        day = _parse_date(row.get("OpenDate.Typed"))
+        if day is None:
+            continue
+        amount = _dec(row.get("DishDiscountSumInt")) or Decimal("0")
+        result[day] = result.get(day, Decimal("0")) + amount
+    return result
+
+
 # --- parsing helpers -----------------------------------------------------------
 
 
@@ -189,6 +249,15 @@ def _parse_dt(value: Any) -> datetime | None:
     except ValueError:
         return None
     return parsed.replace(tzinfo=MOSCOW_TZ) if parsed.tzinfo is None else parsed
+
+
+def _parse_date(value: Any) -> date | None:
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value[:10])
+    except ValueError:
+        return None
 
 
 def _dec(value: Any) -> Decimal | None:
@@ -232,6 +301,8 @@ async def sync_iiko_cashshifts(
     token = _auth_token()
     shifts = _fetch_cashshifts_list(token, date_from, date_to)
     report = CashShiftSyncReport(fetched=len(shifts))
+    # Достоверная наличная выручка по дням (OLAP по типам оплат), не из salesCash.
+    cash_by_day = _fetch_cash_sales_by_day(token, date_from, date_to)
 
     session_ids = [row.get("id") for row in shifts if row.get("id")]
     existing: dict[str, IikoCashShift] = {}
@@ -261,6 +332,10 @@ async def sync_iiko_cashshifts(
             for key, value in values.items():
                 setattr(shift, key, value)
             report.updated += 1
+
+        # Наличная выручка из OLAP по дню открытия смены (не из завышенного salesCash).
+        shift_day = (shift.open_date or shift.close_date).date()
+        shift.cash_sales = cash_by_day.get(shift_day)
 
         # Разнос изъятий и проводку делаем только пока смена не проведена в ДДС.
         if not shift.posted:
@@ -426,9 +501,9 @@ async def post_shift_adjustment(session: AsyncSession, shift: IikoCashShift) -> 
     ``cash_diff`` > 0 → приход «Корретировки кассы +»; < 0 → расход «Корретировки кассы -».
     Идемпотентно: повторная корректировка по той же смене запрещена.
     """
-    cash_diff = shift.cash_diff
-    if cash_diff is None or cash_diff == 0:
-        raise RuntimeError("У смены нет расхождения кассы")
+    diff = await compute_real_cash_diff(session, shift)
+    if diff is None or diff == 0:
+        raise RuntimeError("У смены нет реального расхождения кассы")
     existing = await session.scalar(
         select(CashflowTransaction.id)
         .where(
@@ -441,14 +516,16 @@ async def post_shift_adjustment(session: AsyncSession, shift: IikoCashShift) -> 
         raise RuntimeError("Корректировка по смене уже проведена")
 
     wallet = await _cash_wallet(session)
-    if cash_diff > 0:
-        article_name, direction = CASH_ADJUSTMENT_PLUS_ARTICLE, "in"
-    else:
+    # diff > 0 — наличных в кассе меньше расчёта (недостача) → расход «Корретировки кассы -»;
+    # diff < 0 — излишек → приход «Корретировки кассы +».
+    if diff > 0:
         article_name, direction = CASH_ADJUSTMENT_MINUS_ARTICLE, "out"
+    else:
+        article_name, direction = CASH_ADJUSTMENT_PLUS_ARTICLE, "in"
     transaction = CashflowTransaction(
         wallet_id=wallet.id,
         direction=direction,
-        amount=abs(cash_diff),
+        amount=abs(diff),
         operation_date=_shift_op_date(shift),
         article_id=await _article_id_by_name(session, article_name),
         source_kind=ADJUSTMENT_SOURCE_KIND,
@@ -464,9 +541,76 @@ async def post_shift_adjustment(session: AsyncSession, shift: IikoCashShift) -> 
 # --- read (витрина) ------------------------------------------------------------
 
 
+async def _cash_cheque_total(session: AsyncSession, work_date: date) -> Decimal:
+    """Сумма наличных частей чеков (``kassa_cheque``) за день — «прочие наличные расходы по
+    кассе»: админ взял наличные из дневной выручки и купил, оформив чек."""
+    total = await session.scalar(
+        select(func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0))
+        .select_from(InvoicePaymentAllocation)
+        .join(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
+        .where(
+            SupplierInvoice.source == "kassa_cheque",
+            SupplierInvoice.invoice_date == work_date,
+            InvoicePaymentAllocation.source_kind == "cash",
+        )
+    )
+    return Decimal(str(total or 0))
+
+
+async def compute_real_cash_diff(session: AsyncSession, shift: IikoCashShift) -> Decimal | None:
+    """Реальное расхождение кассы (сверка денежного ящика, методология владельца):
+
+    ``наличная выручка + внесения − изъятия − наличные чеки − изменение остатка``,
+    где изменение остатка = ``остаток − старт флоута``. Наличная выручка — из ``cash_sales``
+    (OLAP, тип «Наличные»), НЕ из завышенного iiko ``salesCash``.
+
+    Положительное = недостача (физически налички меньше, чем должно), отрицательное = излишек.
+    Изменение остатка вычитается, чтобы разгрузка/пополнение флоута не считались недостачей
+    (см. смену 1140: курьеров доплатили из остатка → это не расхождение). Алиса сокращается
+    сама: она входит и в наличную выручку, и в изъятия (физически в кассу не приходила).
+    """
+    if (
+        shift.cash_sales is None
+        or shift.pay_out is None
+        or shift.cash_remain is None
+        or shift.session_start_cash is None
+    ):
+        return None
+    pay_in = shift.pay_in or Decimal("0")
+    moment = shift.close_date or shift.open_date
+    cash_cheques = (
+        await _cash_cheque_total(session, moment.date()) if moment is not None else Decimal("0")
+    )
+    float_change = shift.cash_remain - shift.session_start_cash
+    return shift.cash_sales + pay_in - shift.pay_out - cash_cheques - float_change
+
+
+async def _shift_summary(session: AsyncSession, shift: IikoCashShift) -> dict[str, Any]:
+    return {
+        "id": shift.id,
+        "iiko_session_id": shift.iiko_session_id,
+        "session_number": shift.session_number,
+        "point_of_sale_id": shift.point_of_sale_id,
+        "open_date": shift.open_date,
+        "close_date": shift.close_date,
+        "session_status": shift.session_status,
+        "session_start_cash": shift.session_start_cash,
+        "sales_cash": shift.sales_cash,
+        "cash_sales": shift.cash_sales,
+        "sales_card": shift.sales_card,
+        "pay_in": shift.pay_in,
+        "pay_out": shift.pay_out,
+        "cash_remain": shift.cash_remain,
+        "cash_diff": shift.cash_diff,
+        "real_cash_diff": await compute_real_cash_diff(session, shift),
+        "posted": shift.posted,
+        "synced_at": shift.synced_at,
+    }
+
+
 async def list_shifts(
     session: AsyncSession, *, date_from: date | None = None, date_to: date | None = None
-) -> list[IikoCashShift]:
+) -> list[dict[str, Any]]:
     conditions = []
     if date_from is not None:
         conditions.append(
@@ -478,10 +622,12 @@ async def list_shifts(
             IikoCashShift.close_date
             <= datetime.combine(date_to + timedelta(days=1), datetime.min.time(), tzinfo=MOSCOW_TZ)
         )
-    result = await session.scalars(
-        select(IikoCashShift).where(*conditions).order_by(IikoCashShift.close_date.desc())
-    )
-    return list(result.all())
+    shifts = (
+        await session.scalars(
+            select(IikoCashShift).where(*conditions).order_by(IikoCashShift.close_date.desc())
+        )
+    ).all()
+    return [await _shift_summary(session, shift) for shift in shifts]
 
 
 async def get_shift(session: AsyncSession, shift_id: uuid.UUID) -> dict[str, Any] | None:
@@ -495,32 +641,16 @@ async def get_shift(session: AsyncSession, shift_id: uuid.UUID) -> dict[str, Any
             .order_by(IikoCashShiftPayout.amount.desc())
         )
     ).all()
-    return {
-        "id": shift.id,
-        "iiko_session_id": shift.iiko_session_id,
-        "session_number": shift.session_number,
-        "point_of_sale_id": shift.point_of_sale_id,
-        "open_date": shift.open_date,
-        "close_date": shift.close_date,
-        "session_status": shift.session_status,
-        "session_start_cash": shift.session_start_cash,
-        "sales_cash": shift.sales_cash,
-        "sales_card": shift.sales_card,
-        "pay_in": shift.pay_in,
-        "pay_out": shift.pay_out,
-        "cash_remain": shift.cash_remain,
-        "cash_diff": shift.cash_diff,
-        "posted": shift.posted,
-        "synced_at": shift.synced_at,
-        "payouts": [
-            {
-                "id": payout.id,
-                "account_id_iiko": payout.account_id_iiko,
-                "account_name": payout.account_name,
-                "category": payout.category,
-                "amount": payout.amount,
-                "comment": payout.comment,
-            }
-            for payout in payouts
-        ],
-    }
+    payload = await _shift_summary(session, shift)
+    payload["payouts"] = [
+        {
+            "id": payout.id,
+            "account_id_iiko": payout.account_id_iiko,
+            "account_name": payout.account_name,
+            "category": payout.category,
+            "amount": payout.amount,
+            "comment": payout.comment,
+        }
+        for payout in payouts
+    ]
+    return payload

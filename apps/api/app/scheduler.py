@@ -34,6 +34,7 @@ from app.services.banking.tbank import TbankClient
 from app.services.couriers.iiko_attendance_sync import sync_attendance
 from app.services.couriers.iiko_olap_sync import sync_courier_olap_deliveries
 from app.services.couriers.shift_matching import recalculate_matches
+from app.services.kassa.iiko_cashshift_sync import sync_iiko_cashshifts
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
@@ -188,6 +189,29 @@ async def run_iiko_courier_delivery_sync_once() -> dict[str, object]:
         await session.commit()
     payload = result.as_dict()
     logger.info("iiko courier delivery sync completed: %s", payload)
+    return payload
+
+
+@scheduler.scheduled_job(
+    "interval",
+    minutes=20,
+    id="iiko_cashshift_sync",
+    max_instances=1,
+    coalesce=True,
+)
+async def iiko_cashshift_sync_job() -> None:
+    await run_with_iiko_backoff(run_iiko_cashshift_sync_once)
+
+
+async def run_iiko_cashshift_sync_once() -> dict[str, object]:
+    now = datetime.now(MOSCOW_TZ)
+    date_from = now.date() - timedelta(days=2)
+    date_to = now.date() + timedelta(days=1)
+    async with AsyncSessionLocal() as session:
+        report = await sync_iiko_cashshifts(session, date_from=date_from, date_to=date_to)
+        await session.commit()
+    payload = report.as_dict()
+    logger.info("iiko cashshift sync completed: %s", payload)
     return payload
 
 

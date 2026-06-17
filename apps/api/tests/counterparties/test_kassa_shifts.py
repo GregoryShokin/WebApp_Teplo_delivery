@@ -10,16 +10,26 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from cp_helpers import make_counterparty
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.services.kassa.iiko_cashshift_sync as sync_mod
-from app.models import CashflowTransaction, DdsArticle, IikoCashShift, IikoCashShiftPayout, Wallet
+from app.models import (
+    CashflowTransaction,
+    DdsArticle,
+    IikoCashShift,
+    IikoCashShiftPayout,
+    InvoicePaymentAllocation,
+    SupplierInvoice,
+    Wallet,
+)
 from app.services.kassa.iiko_cashshift_sync import (
     ALISA_ACCOUNT_ID,
     COURIER_SALARY_ACCOUNT_ID,
     MAIN_CASH_ACCOUNT_ID,
     SHIFT_SOURCE_KIND,
+    compute_real_cash_diff,
     get_shift,
     post_shift_adjustment,
     sync_iiko_cashshifts,
@@ -52,7 +62,14 @@ PAYMENTS = {
 }
 
 
-def _shift(session_id: str, *, close: str | None = "2026-06-17T22:00:00") -> dict:
+def _shift(
+    session_id: str,
+    *,
+    close: str | None = "2026-06-17T22:00:00",
+    pay_out: float = 16416,
+    start_cash: float = 5000.08,
+    cash_remain: float = 5000.08,
+) -> dict:
     return {
         "id": session_id,
         "sessionNumber": 1065,
@@ -61,22 +78,30 @@ def _shift(session_id: str, *, close: str | None = "2026-06-17T22:00:00") -> dic
         "openDate": "2026-06-17T08:30:00",
         "closeDate": close,
         "sessionStatus": "UNACCEPTED",
-        "sessionStartCash": 5000.08,
+        "sessionStartCash": start_cash,
         "salesCash": 16416,
         "salesCard": 86948,
         "payIn": 0,
-        "payOut": 16416,
-        "cashRemain": 5000.08,
+        "payOut": pay_out,
+        "cashRemain": cash_remain,
         "cashDiff": 10000.16,
     }
 
 
-def _patch(monkeypatch, shifts: list[dict], payments: dict | None = None) -> None:
+def _patch(
+    monkeypatch,
+    shifts: list[dict],
+    payments: dict | None = None,
+    cash_by_day: dict | None = None,
+) -> None:
     payments = payments if payments is not None else PAYMENTS
+    # Наличная выручка из OLAP по дню открытия смены (по умолчанию = salesCash мока).
+    cash_map = cash_by_day if cash_by_day is not None else {date(2026, 6, 17): Decimal("16416")}
     monkeypatch.setattr(sync_mod, "_auth_token", lambda: "tok")
     monkeypatch.setattr(sync_mod, "_fetch_cashshifts_list", lambda token, df, dt: shifts)
     monkeypatch.setattr(sync_mod, "_fetch_shift_payments", lambda token, sid: payments.get(sid, {}))
     monkeypatch.setattr(sync_mod, "_fetch_accounts_map", lambda token: ACCOUNTS)
+    monkeypatch.setattr(sync_mod, "_fetch_cash_sales_by_day", lambda token, df, dt: cash_map)
 
 
 async def test_sync_imports_and_categorizes_payouts(
@@ -237,23 +262,90 @@ async def test_post_is_idempotent_on_resync(
         assert len(txns) == 2  # повторный синк не задвоил движения
 
 
-async def test_post_adjustment_books_cash_diff_once(
+async def test_post_adjustment_books_real_diff_once(
     monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    _patch(monkeypatch, [_shift("sess-1")])
+    # pay_out=15416 → реальное расхождение = 16416 + 0 − 15416 − 0(чеков нет) = 1000 (недостача).
+    _patch(monkeypatch, [_shift("sess-1", pay_out=15416)])
     async with async_session_factory() as session:
         await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
         await session.commit()
         shift = await session.scalar(
             select(IikoCashShift).where(IikoCashShift.iiko_session_id == "sess-1")
         )
-        # cash_diff = 10000.16 > 0 → приход «Корретировки кассы +».
+        # Недостача (наличных меньше расчёта) → расход «Корретировки кассы -».
         txn = await post_shift_adjustment(session, shift)
         await session.commit()
-        assert txn.direction == "in"
-        assert txn.amount == Decimal("10000.16")
+        assert txn.direction == "out"
+        assert txn.amount == Decimal("1000")
         article = await session.get(DdsArticle, txn.article_id)
-        assert article.name == "Корретировки кассы +"
+        assert article.name == "Корретировки кассы -"
 
         with pytest.raises(RuntimeError):
             await post_shift_adjustment(session, shift)
+
+
+async def test_real_cash_diff_formula_and_cash_cheque(
+    monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    # База: выручка 16416 + внесения 0 − изъятия 15416 − чеки 0 = 1000.
+    _patch(monkeypatch, [_shift("sess-1", pay_out=15416)])
+    async with async_session_factory() as session:
+        await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
+        await session.commit()
+        shift = await session.scalar(
+            select(IikoCashShift).where(IikoCashShift.iiko_session_id == "sess-1")
+        )
+        assert await compute_real_cash_diff(session, shift) == Decimal("1000")
+
+        # Наличный чек на 1000 за дату смены = «прочий наличный расход» → расхождение в 0.
+        cp = await make_counterparty(session, name="Магазин")
+        invoice = SupplierInvoice(
+            counterparty_id=cp.id,
+            source="kassa_cheque",
+            amount=Decimal("1000"),
+            invoice_date=shift.close_date.date(),
+        )
+        session.add(invoice)
+        await session.flush()
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=invoice.id, source_kind="cash", amount=Decimal("1000")
+            )
+        )
+        await session.commit()
+        assert await compute_real_cash_diff(session, shift) == Decimal("0")
+
+
+async def test_real_cash_diff_float_change_vs_real_shortage(
+    monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    # Сценарий смены 1140: курьеров доплатили из остатка (флоут 5010 → 4025) — НЕ недостача.
+    _patch(
+        monkeypatch,
+        [_shift("s-float", start_cash=5010, cash_remain=4025, pay_out=6980)],
+        cash_by_day={date(2026, 6, 17): Decimal("5995")},
+    )
+    async with async_session_factory() as session:
+        await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
+        await session.commit()
+        shift = await session.scalar(
+            select(IikoCashShift).where(IikoCashShift.iiko_session_id == "s-float")
+        )
+        # 5995 + 0 − 6980 − 0 − (4025 − 5010) = 0
+        assert await compute_real_cash_diff(session, shift) == Decimal("0")
+
+    # Настоящая недостача: флоут не менялся, изъяли на 1000 меньше наличной выручки.
+    _patch(
+        monkeypatch,
+        [_shift("s-short", start_cash=5000, cash_remain=5000, pay_out=9000)],
+        cash_by_day={date(2026, 6, 17): Decimal("10000")},
+    )
+    async with async_session_factory() as session:
+        await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
+        await session.commit()
+        shift = await session.scalar(
+            select(IikoCashShift).where(IikoCashShift.iiko_session_id == "s-short")
+        )
+        # 10000 + 0 − 9000 − 0 − (5000 − 5000) = 1000 (недостача)
+        assert await compute_real_cash_diff(session, shift) == Decimal("1000")

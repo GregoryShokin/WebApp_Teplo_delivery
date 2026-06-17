@@ -19,6 +19,7 @@ import {
   ReceiptText,
   Settings,
   UsersRound,
+  Wallet,
   Warehouse,
   type LucideIcon,
 } from "lucide-react";
@@ -103,6 +104,7 @@ const navGroups: NavGroup[] = [
         section: "finance.payment-calendar",
       },
       { label: "Баланс", href: "/balance", icon: ReceiptText, section: "finance.balance" },
+      { label: "Касса", href: "/kassa", icon: Wallet, section: "kassa" },
     ],
   },
   {
@@ -397,6 +399,9 @@ function isActiveRoute(currentPath: string, href: string) {
   }
   if (href === "/dds") {
     return currentPath === href || currentPath.startsWith("/dds/");
+  }
+  if (href === "/kassa") {
+    return currentPath === href || currentPath.startsWith("/kassa/");
   }
   return currentPath === href;
 }

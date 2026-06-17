@@ -53,7 +53,10 @@ class IikoCashShift(Base):
     close_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     session_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     session_start_cash: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    # salesCash из iiko (завышен зачтёнными предоплатами) — храним для справки.
     sales_cash: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    # Достоверная наличная выручка из OLAP (тип оплаты «Наличные») — для расхождения/витрины.
+    cash_sales: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     sales_card: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     pay_in: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     pay_out: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)

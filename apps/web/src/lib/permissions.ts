@@ -31,6 +31,10 @@ export type AppSection =
   | "finance.payment-calendar"
   | "finance.balance"
   | "counterparties"
+  | "kassa"
+  | "kassa.shift-close"
+  | "kassa.invoices"
+  | "kassa.receipts"
   | "accounting"
   | "accounting.fixed-assets"
   | "accounting.dz-kz"
@@ -75,7 +79,12 @@ export type AppAction =
   | "invoices.normal.pay"
   | "invoices.barter.create"
   | "invoices.barter.edit"
-  | "invoices.barter.pay";
+  | "invoices.barter.pay"
+  | "kassa.shifts.sync"
+  | "kassa.shifts.post"
+  | "kassa.cheques.create"
+  | "kassa.invoices.create"
+  | "kassa.adjustments.create";
 
 const SOURCE_DATA_TAB_READ_PERMISSIONS = [
   "source.rates.read",
@@ -264,6 +273,12 @@ const SECTION_PERMISSIONS: Record<AppSection, readonly PermissionCode[]> = {
   "finance.payment-calendar": ["finance.payment_calendar.read", "finance.payment_calendar.edit"],
   "finance.balance": ["finance.balance.read", "finance.balance.edit"],
   counterparties: ["counterparties.read"],
+  kassa: ["kassa.shifts.read", "kassa.cheques.read", "kassa.refs.read", "kassa.invoices.create"],
+  "kassa.shift-close": ["kassa.shifts.read"],
+  // Вкладка «Накладные» встраивает warehouse-инбокс (нужен counterparties.read);
+  // доступ кассира через kassa.invoices.* подключается в Фазе 9 (dual-guard).
+  "kassa.invoices": ["counterparties.read"],
+  "kassa.receipts": ["kassa.cheques.read"],
   accounting: [...PERMISSION_GROUPS.accountingRead, ...PERMISSION_GROUPS.accountingWrite],
   "accounting.fixed-assets": ["accounting.fixed_assets.read", "accounting.fixed_assets.edit"],
   "accounting.dz-kz": ["accounting.suppliers.read", "accounting.suppliers.edit"],
@@ -322,6 +337,11 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "invoices.barter.create": ["invoices.barter.create"],
   "invoices.barter.edit": ["invoices.barter.edit"],
   "invoices.barter.pay": ["invoices.barter.pay"],
+  "kassa.shifts.sync": ["kassa.shifts.sync"],
+  "kassa.shifts.post": ["kassa.shifts.post"],
+  "kassa.cheques.create": ["kassa.cheques.create"],
+  "kassa.invoices.create": ["kassa.invoices.create"],
+  "kassa.adjustments.create": ["kassa.adjustments.create"],
 };
 
 const LEGACY_PERMISSION_ALIASES: Record<PermissionCode, readonly PermissionCode[]> = {
