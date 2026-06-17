@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models import PayrollAdjustment, PayrollAdjustmentCategory, PayrollPeriod, PayrollRun
+from app.services.position_registry import admin_payroll_positions
 
 # Должности админского каденса (полумесячная ведомость 1/15) читаются из реестра
 # должностей: archetype okladnik/shift_pool → position_registry.admin_payroll_positions().
@@ -105,13 +106,57 @@ async def assert_production_date_not_locked(session: AsyncSession, work_date: da
         raise PayrollAdjustmentLockedError("Период зафиксирован, изменения невозможны")
 
 
+async def is_admin_date_locked(session: AsyncSession, work_date: date) -> bool:
+    """Дата закрыта для АДМИНСКОЙ (полумесячной) ведомости.
+
+    Учитывает только финализированные полумесячные периоды (``period_type='half_month'``);
+    недельная производственная финализация её НЕ блокирует.
+    """
+    locked_period_id = await session.scalar(
+        select(PayrollPeriod.id)
+        .select_from(PayrollRun)
+        .join(PayrollPeriod, PayrollPeriod.id == PayrollRun.period_id)
+        .where(
+            PayrollRun.status == "finalized",
+            PayrollPeriod.period_type == "half_month",
+            PayrollPeriod.start_date <= work_date,
+            PayrollPeriod.end_date >= work_date,
+        )
+        .limit(1)
+    )
+    return locked_period_id is not None
+
+
+async def is_date_locked_for_role(
+    session: AsyncSession, work_date: date, role: str | None
+) -> bool:
+    """Закрыта ли дата для роли начисления — по каденсу её должности.
+
+    Админ-роли (управляющий, менеджер и т.п. из ``admin_payroll_positions()``) считаются
+    в полумесячной ведомости — для них релевантна полумесячная финализация. Повара,
+    кассиры и субституты считаются в недельной производственной ведомости, и их НЕ должна
+    блокировать финализированная админская полумесячная ведомость (1/15), и наоборот.
+    """
+    if role is not None and role in admin_payroll_positions():
+        return await is_admin_date_locked(session, work_date)
+    return await is_production_date_locked(session, work_date)
+
+
+async def assert_date_not_locked_for_role(
+    session: AsyncSession, work_date: date, role: str | None
+) -> None:
+    if await is_date_locked_for_role(session, work_date, role):
+        raise PayrollAdjustmentLockedError("Период зафиксирован, изменения невозможны")
+
+
 async def load_locked_dates_for_period(
     session: AsyncSession,
     *,
     period_start: date,
     period_end: date,
+    period_type: str | None = None,
 ) -> set[date]:
-    result = await session.execute(
+    query = (
         select(PayrollPeriod.start_date, PayrollPeriod.end_date)
         .select_from(PayrollRun)
         .join(PayrollPeriod, PayrollPeriod.id == PayrollRun.period_id)
@@ -121,6 +166,9 @@ async def load_locked_dates_for_period(
             PayrollPeriod.end_date >= period_start,
         )
     )
+    if period_type is not None:
+        query = query.where(PayrollPeriod.period_type == period_type)
+    result = await session.execute(query)
     locked_dates: set[date] = set()
     for start_date, end_date in result.all():
         current = max(start_date, period_start)

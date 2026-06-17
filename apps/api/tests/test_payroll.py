@@ -5730,7 +5730,9 @@ def adjustment_category(adjustment_type: str = "bonus") -> PayrollAdjustmentCate
     )
 
 
-async def locked_adjustment_date(_session: Any, _work_date: date) -> None:
+async def locked_adjustment_date(
+    _session: Any, _work_date: date, _role: str | None = None
+) -> None:
     raise PayrollAdjustmentLockedError("Период зафиксирован, изменения невозможны")
 
 
@@ -5738,7 +5740,9 @@ def test_create_adjustment_in_finalized_period_409(monkeypatch: pytest.MonkeyPat
     employee = make_employee()
     category = adjustment_category("bonus")
     session = PayrollAdjustmentFakeSession(employee, category=category)
-    monkeypatch.setattr(payroll_adjustment_routes, "assert_date_not_locked", locked_adjustment_date)
+    monkeypatch.setattr(
+        payroll_adjustment_routes, "assert_date_not_locked_for_role", locked_adjustment_date
+    )
 
     with TestClient(app_with_payroll_adjustment_session(session)) as client:
         response = client.post(
@@ -5761,7 +5765,9 @@ def test_patch_delete_in_finalized_period_409(monkeypatch: pytest.MonkeyPatch) -
     employee = make_employee()
     adjustment = make_adjustment(employee, date(2026, 5, 20), "penalty", Decimal("500"))
     session = PayrollAdjustmentFakeSession(employee, adjustment=adjustment)
-    monkeypatch.setattr(payroll_adjustment_routes, "assert_date_not_locked", locked_adjustment_date)
+    monkeypatch.setattr(
+        payroll_adjustment_routes, "assert_date_not_locked_for_role", locked_adjustment_date
+    )
 
     with TestClient(app_with_payroll_adjustment_session(session)) as client:
         patch_response = client.patch(

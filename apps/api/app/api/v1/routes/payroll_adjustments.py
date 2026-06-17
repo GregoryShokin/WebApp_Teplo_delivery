@@ -29,8 +29,8 @@ from app.schemas.payroll_adjustments import (
 )
 from app.services.payroll_adjustment_service import (
     PayrollAdjustmentLockedError,
-    assert_date_not_locked,
-    is_date_locked,
+    assert_date_not_locked_for_role,
+    is_date_locked_for_role,
     load_locked_dates_for_period,
 )
 from app.services.position_registry import (
@@ -93,17 +93,25 @@ async def list_adjustments(
         return []
     start = min(adjustment.work_date for adjustment, _employee, _category in rows)
     end = max(adjustment.work_date for adjustment, _employee, _category in rows)
-    locked_dates = await load_locked_dates_for_period(
+    week_locked = await load_locked_dates_for_period(
         session,
         period_start=start,
         period_end=end,
+        period_type="week",
+    )
+    admin_locked = await load_locked_dates_for_period(
+        session,
+        period_start=start,
+        period_end=end,
+        period_type="half_month",
     )
     return [
         adjustment_payload(
             adjustment,
             employee,
             category,
-            is_locked=adjustment.work_date in locked_dates,
+            is_locked=adjustment.work_date
+            in (admin_locked if adjustment.role in admin_payroll_positions() else week_locked),
         )
         for adjustment, employee, category in rows
     ]
@@ -131,7 +139,7 @@ async def create_adjustment(
     validate_adjustment_date(payload.work_date)
     validate_category_xor(payload.category_id, payload.custom_label)
     category = await get_category_for_payload(session, payload.category_id, payload.type)
-    await ensure_date_unlocked(session, payload.work_date)
+    await ensure_date_unlocked(session, payload.work_date, role)
 
     now = datetime.now(UTC)
     adjustment = PayrollAdjustment(
@@ -180,7 +188,7 @@ async def patch_adjustment(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
     adjustment = await get_adjustment_or_404(session, adjustment_id)
-    await ensure_date_unlocked(session, adjustment.work_date)
+    await ensure_date_unlocked(session, adjustment.work_date, adjustment.role)
     before = adjustment_audit_snapshot(adjustment)
 
     updates = payload.model_dump(exclude_unset=True)
@@ -200,7 +208,7 @@ async def patch_adjustment(
     # а результат — права на новую роль (админ-персонал отдельно от субститутов).
     require_adjustment_type_permission(actor, adjustment.type, adjustment.role)
     require_adjustment_type_permission(actor, next_type, next_role)
-    await ensure_date_unlocked(session, next_work_date)
+    await ensure_date_unlocked(session, next_work_date, next_role)
 
     if "category_id" in updates and "custom_label" in updates:
         raise category_xor_error()
@@ -245,7 +253,7 @@ async def patch_adjustment(
         adjustment,
         employee,
         category,
-        is_locked=await is_date_locked(session, adjustment.work_date),
+        is_locked=await is_date_locked_for_role(session, adjustment.work_date, adjustment.role),
     )
 
 
@@ -260,7 +268,7 @@ async def delete_adjustment(
 ) -> Response:
     adjustment = await get_adjustment_or_404(session, adjustment_id)
     require_adjustment_type_permission(actor, adjustment.type, adjustment.role)
-    await ensure_date_unlocked(session, adjustment.work_date)
+    await ensure_date_unlocked(session, adjustment.work_date, adjustment.role)
     before = adjustment_audit_snapshot(adjustment)
     add_adjustment_event(
         session,
@@ -399,9 +407,13 @@ async def get_category_for_payload(
     return category
 
 
-async def ensure_date_unlocked(session: AsyncSession, work_date: date) -> None:
+async def ensure_date_unlocked(
+    session: AsyncSession, work_date: date, role: str | None
+) -> None:
+    # Блокировка по каденсу должности: производственник (повар/кассир/субститут) —
+    # недельная ведомость, админ — полумесячная. Финализация одной не блокирует другую.
     try:
-        await assert_date_not_locked(session, work_date)
+        await assert_date_not_locked_for_role(session, work_date, role)
     except PayrollAdjustmentLockedError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 

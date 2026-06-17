@@ -525,3 +525,34 @@ async def test_eligible_payout_dates_include_open_week_skip_finalized(
             date(2026, 7, 7),
         ]
         assert date(2026, 6, 9) not in dates
+
+
+async def test_adjustment_lock_is_role_aware(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Премия/штраф производственнику (повар/кассир) проверяется по недельной ведомости,
+    # админу — по полумесячной. Финализация админской 1–15 НЕ должна блокировать повара
+    # за 9 июня, чья недельная ведомость 9–15 ещё открыта (это исходная жалоба владельца).
+    from app.services.payroll_adjustment_service import is_date_locked_for_role
+    from app.services.position_registry import admin_payroll_positions
+
+    admin_role = admin_payroll_positions()[0]
+
+    async with async_session_factory() as session:
+        # Админская полумесячная 1–15 июня финализирована.
+        await _add_finalized_run(
+            session, period_type="half_month", start=date(2026, 6, 1), end=date(2026, 6, 15)
+        )
+        # Производственная неделя 2–8 июня финализирована; неделя 9–15 — нет (её не создаём).
+        await _add_finalized_run(
+            session, period_type="week", start=date(2026, 6, 2), end=date(2026, 6, 8)
+        )
+        await session.commit()
+
+        # Повар на 9 июня: недельная ведомость не закрыта → НЕ заблокировано,
+        # хотя админская полумесячная 1–15 финализирована.
+        assert await is_date_locked_for_role(session, date(2026, 6, 9), "Повар") is False
+        # Та же дата для админ-роли заблокирована — её полумесячная ведомость закрыта.
+        assert await is_date_locked_for_role(session, date(2026, 6, 9), admin_role) is True
+        # Производственная неделя 2–8 закрыта → повар на 5 июня заблокирован.
+        assert await is_date_locked_for_role(session, date(2026, 6, 5), "Повар") is True
