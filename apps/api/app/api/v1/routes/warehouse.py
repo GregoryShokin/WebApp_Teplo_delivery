@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_permission
+from app.api.deps import CurrentActor, ensure_permission, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import IikoProduct, SupplierInvoice
 from app.services.counterparty_bank_match import (
@@ -36,6 +36,7 @@ from app.services.warehouse_invoices import (
     create_warehouse_invoice,
     get_loan_returnable,
     get_warehouse_invoice,
+    invoice_permission_kind,
     list_open_loans,
     list_warehouse_invoices,
     next_invoice_number,
@@ -222,12 +223,13 @@ async def loan_returnable(
     return loan
 
 
-@router.post("/invoices/return", dependencies=OPERATE, status_code=status.HTTP_201_CREATED)
+@router.post("/invoices/return", status_code=status.HTTP_201_CREATED)
 async def post_return(
     payload: ReturnCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
+    ensure_permission(actor, "invoices.barter.create")
     try:
         ret = await create_barter_return(
             session,
@@ -323,13 +325,18 @@ async def get_match_suggestions(
     return _serialize_time_suggestion(sug)
 
 
-@router.post("/match/confirm", dependencies=OPERATE)
+@router.post("/match/confirm")
 async def post_match_confirm(
     payload: MatchConfirmRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    """Подтвердить мэтч накладной с банк-операцией (переиспользует общий банк-мэтч)."""
+    """Подтвердить мэтч накладной с банк-операцией (переиспользует общий банк-мэтч).
+    Сверка с выпиской = часть оплаты → право invoices.{normal|barter}.pay по накладной."""
+    invoice = await session.get(SupplierInvoice, payload.invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    ensure_permission(actor, f"invoices.{await invoice_permission_kind(session, invoice)}.pay")
     try:
         return await confirm_invoice_match(
             session,
@@ -342,7 +349,7 @@ async def post_match_confirm(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
-@router.post("/invoices/{invoice_id}/pay-split", dependencies=OPERATE)
+@router.post("/invoices/{invoice_id}/pay-split")
 async def post_pay_split(
     invoice_id: uuid.UUID,
     payload: PaySplitRequest,
@@ -351,6 +358,10 @@ async def post_pay_split(
 ) -> dict[str, Any]:
     """Оплатить накладную из нескольких источников (банк + касса) одной транзакцией.
     При ``split_staff`` оплата налом из одного кошелька разносится на производство/персонал."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    ensure_permission(actor, f"invoices.{await invoice_permission_kind(session, invoice)}.pay")
     bank_parts = [
         BankPart(bank_operation_id=b.bank_operation_id, amount=b.amount) for b in payload.bank_parts
     ]
@@ -366,11 +377,6 @@ async def post_pay_split(
     ]
     try:
         if payload.split_staff:
-            invoice = await session.get(SupplierInvoice, invoice_id)
-            if invoice is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена"
-                )
             if payload.bank_parts:
                 raise WarehousePaymentError(
                     "Разнесение персонала доступно только при оплате наличными"
@@ -408,12 +414,16 @@ async def post_pay_split(
     return result
 
 
-@router.post("/invoices", dependencies=OPERATE, status_code=status.HTTP_201_CREATED)
+@router.post("/invoices", status_code=status.HTTP_201_CREATED)
 async def post_invoice(
     payload: InvoiceCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
+    ensure_permission(
+        actor,
+        "invoices.barter.create" if payload.mode == "loan" else "invoices.normal.create",
+    )
     try:
         invoice = await create_warehouse_invoice(
             session,

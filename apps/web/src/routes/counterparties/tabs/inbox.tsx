@@ -59,11 +59,18 @@ const STATUS_SEGMENTS: Array<{ value: string; label: string }> = [
 
 export function InboxTab({
   canOperate,
+  canCreate,
+  canPay,
   onOpenCounterparty,
   kind,
   splitPay,
 }: {
+  // canOperate — вспомогательные операции (пуш в iiko). Создание и оплата разведены
+  // на отдельные права (canCreate/canPay), чтобы доступ к обычным и бартерным
+  // накладным настраивался независимо — права пробрасывает страница по типу инбокса.
   canOperate: boolean;
+  canCreate: boolean;
+  canPay: boolean;
   onOpenCounterparty: (id: string) => void;
   // Два инбокса: "barter" (только бартер, обе стороны, создание займа) /
   // "normal" (всё кроме бартера). Без него — старое поведение с сегментами.
@@ -102,7 +109,7 @@ export function InboxTab({
   const distinctCounterparties = new Set(selectedInvoices.map((item) => item.counterparty_id));
   const selectableForBank = selectedInvoices.filter((item) => !item.draft_id);
   const canSendToBank =
-    canOperate &&
+    canPay &&
     selectableForBank.length > 0 &&
     selectableForBank.length === selectedInvoices.length &&
     distinctCounterparties.size === 1;
@@ -258,7 +265,7 @@ export function InboxTab({
               </Button>
             )
           ) : null}
-          {canOperate && !invoice.draft_id && invoice.payment_status !== "paid" ? (
+          {canPay && !invoice.draft_id && invoice.payment_status !== "paid" ? (
             <Button size="sm" variant="outline" onClick={() => setPayTarget(invoice)}>
               <Banknote size={15} aria-hidden="true" />
               Оплатить
@@ -321,13 +328,13 @@ export function InboxTab({
           </Select>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {canOperate ? (
+          {canCreate ? (
             <Button onClick={() => setIsManualOpen(true)} variant="outline">
               <Plus size={16} aria-hidden="true" />
               Добавить вручную
             </Button>
           ) : null}
-          {canOperate ? (
+          {canPay ? (
             <Button
               disabled={!canSendToBank || draftMutation.isPending}
               onClick={() => draftMutation.mutate()}

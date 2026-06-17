@@ -37,6 +37,19 @@ class WarehouseInvoiceError(RuntimeError):
     """Domain error for warehouse invoice creation (maps to HTTP 409/422)."""
 
 
+async def invoice_permission_kind(session: AsyncSession, invoice: SupplierInvoice) -> str:
+    """«barter» для бартерной накладной (явный ``barter_role`` или контрагент-бартер),
+    иначе «normal». По нему роуты выбирают право invoices.normal.* / invoices.barter.*."""
+    if invoice.barter_role is not None:
+        return "barter"
+    relationship = await session.scalar(
+        select(CounterpartyPayableProfile.relationship).where(
+            CounterpartyPayableProfile.counterparty_id == invoice.counterparty_id
+        )
+    )
+    return "barter" if relationship == "barter" else "normal"
+
+
 async def _ensure_barter_relationship(session: AsyncSession, counterparty_id: uuid.UUID) -> None:
     """A counterparty we issue/receive a barter loan with is a barter partner."""
     profile = await session.scalar(

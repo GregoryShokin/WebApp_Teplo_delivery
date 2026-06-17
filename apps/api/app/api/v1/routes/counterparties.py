@@ -18,16 +18,17 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_permission
+from app.api.deps import CurrentActor, ensure_permission, get_current_actor, require_permission
 from app.core.config import get_settings
 from app.db.session import get_session
-from app.models import CounterpartyPaymentDraft
+from app.models import CounterpartyPaymentDraft, SupplierInvoice
 from app.services import counterparty_bank_match as bank_match
 from app.services import counterparty_barter_match as barter
 from app.services import counterparty_matching as matching
 from app.services import counterparty_payments as payments
 from app.services import counterparty_registry as registry
 from app.services.counterparty_invoice_sync import sync_counterparty_invoices
+from app.services.warehouse_invoices import invoice_permission_kind
 
 router = APIRouter()
 
@@ -448,14 +449,19 @@ async def post_allocate_cash(
     return InvoiceRead.model_validate(item)
 
 
-@router.post("/invoices/{invoice_id}/pay", response_model=InvoiceRead, dependencies=OPERATE)
+@router.post("/invoices/{invoice_id}/pay", response_model=InvoiceRead)
 async def post_pay_invoice(
     invoice_id: uuid.UUID,
     payload: ManualPaymentRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> InvoiceRead:
-    """Manually pay (part of) an invoice from a DDS wallet — creates a DDS expense."""
+    """Manually pay (part of) an invoice from a DDS wallet — creates a DDS expense.
+    Право invoices.{normal|barter}.pay по типу накладной (бартер платится из бартер-инбокса)."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    ensure_permission(actor, f"invoices.{await invoice_permission_kind(session, invoice)}.pay")
     try:
         await payments.pay_invoice_from_wallet(
             session,
@@ -824,13 +830,14 @@ async def get_drafts(
     "/drafts",
     response_model=DraftRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=OPERATE,
 )
 async def post_draft(
     payload: DraftCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> DraftRead:
+    # «Отправить в банк» = оплата обычных накладных (бартер в банк не отправляется).
+    ensure_permission(actor, "invoices.normal.pay")
     try:
         draft = await payments.create_payment_draft_for_invoices(
             session, invoice_ids=payload.invoice_ids, actor_user_id=actor.user_id

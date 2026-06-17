@@ -37,6 +37,10 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate }: Props) {
   const permissions = usePermissions();
   const canOperate = permissions.canPerformAction("counterparties.operate");
   const canAdmin = permissions.canPerformAction("counterparties.admin");
+  const canCreateNormal = permissions.canPerformAction("invoices.normal.create");
+  const canPayNormal = permissions.canPerformAction("invoices.normal.pay");
+  const canCreateBarter = permissions.canPerformAction("invoices.barter.create");
+  const canPayBarter = permissions.canPerformAction("invoices.barter.pay");
   const [openId, setOpenId] = useState<string | null>(null);
 
   const dashboardQuery = useQuery({
@@ -132,10 +136,23 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate }: Props) {
       </div>
 
       {activeTab === "normal" ? (
-        <InboxTab kind="normal" splitPay canOperate={canOperate} onOpenCounterparty={setOpenId} />
+        <InboxTab
+          kind="normal"
+          splitPay
+          canOperate={canOperate}
+          canCreate={canCreateNormal}
+          canPay={canPayNormal}
+          onOpenCounterparty={setOpenId}
+        />
       ) : null}
       {activeTab === "barter" ? (
-        <InboxTab kind="barter" canOperate={canOperate} onOpenCounterparty={setOpenId} />
+        <InboxTab
+          kind="barter"
+          canOperate={canOperate}
+          canCreate={canCreateBarter}
+          canPay={canPayBarter}
+          onOpenCounterparty={setOpenId}
+        />
       ) : null}
       {activeTab === "registry" ? (
         <RegistryTab canOperate={canOperate} canAdmin={canAdmin} onOpenCounterparty={setOpenId} />

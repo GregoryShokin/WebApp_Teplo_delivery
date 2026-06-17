@@ -69,7 +69,13 @@ export type AppAction =
   | "finance.rules.manage"
   | "finance.counterparties.edit"
   | "counterparties.operate"
-  | "counterparties.admin";
+  | "counterparties.admin"
+  | "invoices.normal.create"
+  | "invoices.normal.edit"
+  | "invoices.normal.pay"
+  | "invoices.barter.create"
+  | "invoices.barter.edit"
+  | "invoices.barter.pay";
 
 const SOURCE_DATA_TAB_READ_PERMISSIONS = [
   "source.rates.read",
@@ -310,6 +316,12 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "finance.counterparties.edit": ["finance.counterparties.edit"],
   "counterparties.operate": ["counterparties.operate"],
   "counterparties.admin": ["counterparties.admin"],
+  "invoices.normal.create": ["invoices.normal.create"],
+  "invoices.normal.edit": ["invoices.normal.edit"],
+  "invoices.normal.pay": ["invoices.normal.pay"],
+  "invoices.barter.create": ["invoices.barter.create"],
+  "invoices.barter.edit": ["invoices.barter.edit"],
+  "invoices.barter.pay": ["invoices.barter.pay"],
 };
 
 const LEGACY_PERMISSION_ALIASES: Record<PermissionCode, readonly PermissionCode[]> = {

@@ -1218,6 +1218,9 @@ function permissionAreaLabel(code: string, module: string) {
   if (code.startsWith("finance.counterparties.")) return "Контрагенты";
   if (code.startsWith("finance.owner_review.")) return "Проверка собственником";
 
+  if (code.startsWith("invoices.normal.")) return "Обычные накладные";
+  if (code.startsWith("invoices.barter.")) return "Бартерные накладные";
+
   if (code.startsWith("accounting.inventory")) return "Инвентаризации";
   if (code.startsWith("accounting.fixed_assets.")) return "Основные средства";
   if (code.startsWith("accounting.suppliers.")) return "Поставщики";
