@@ -3474,10 +3474,10 @@ function EmployeeScheduleGrid({
               roster.map((employee) => (
                 <tr className="hover:bg-muted/30" key={employee.id}>
                   <td
-                    className="sticky left-0 z-10 border-b border-r bg-card px-3 py-3 align-top"
+                    className="sticky left-0 z-10 border-b border-r bg-card px-3 py-1.5 align-top text-xs"
                     style={{ width: EMPLOYEE_COLUMN_WIDTH, minWidth: EMPLOYEE_COLUMN_WIDTH }}
                   >
-                    <div className="font-medium leading-5">{employee.full_name}</div>
+                    <div className="font-medium leading-tight">{employee.full_name}</div>
                     <EmployeeRoleSubtitle
                       employee={employee}
                       payrollRole={firstVisibleShiftRole(employee, days, shiftByEmployeeDay)}
@@ -3494,11 +3494,11 @@ function EmployeeScheduleGrid({
                     if (showFact) {
                       return (
                         <td
-                          className="h-[72px] border-b border-r p-2 align-top bg-muted/10"
+                          className="min-h-[2rem] border-b border-r bg-muted/10 p-1 align-top"
                           key={day}
                           style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
                         >
-                          <div className="space-y-1">
+                          <div className="space-y-0.5">
                             {ledgerEntries.map((entry) => (
                               <LedgerFactPill entry={entry} key={entry.id} />
                             ))}
@@ -3515,7 +3515,7 @@ function EmployeeScheduleGrid({
                     return (
                       <td
                         className={cn(
-                          "group relative h-[72px] border-b border-r p-2 align-top",
+                          "group relative min-h-[2rem] border-b border-r p-1 align-top",
                           canEditPlan && "cursor-pointer hover:bg-primary/5",
                           isLocked && "bg-muted/10",
                         )}
@@ -3865,21 +3865,20 @@ function ShiftPill({
 
   return (
     <div
-      className={cn("rounded-md border px-2 py-1.5 text-xs", colors.container)}
+      className={cn("rounded border px-1.5 py-0.5 text-[11px] leading-tight", colors.container)}
       title={shiftTitle(shift, estimate, employee, allowanceAssignment)}
     >
-      <div className={cn("font-semibold tabular-nums", colors.primaryText)}>
-        {formatShiftTime(shift)}
-      </div>
-      <div className={cn("mt-1 truncate", colors.secondaryText)}>
-        {payrollRoleLabel(shift.payroll_role)}
-      </div>
-      <AllowanceBadge badge={allowanceBadge} />
-      {estimate ? (
-        <div className={cn("mt-1 tabular-nums", shiftCostClass(estimate, shift.payroll_role))}>
-          {formatMoneyWithCurrency(estimate.total_cost_estimate)}
+      {isFullDayShift(shift) ? null : (
+        <div className={cn("font-semibold tabular-nums", colors.primaryText)}>
+          {formatShiftTime(shift)}
         </div>
-      ) : null}
+      )}
+      <div className="flex items-center gap-1">
+        <span className={cn("min-w-0 truncate", colors.secondaryText)}>
+          {payrollRoleLabel(shift.payroll_role)}
+        </span>
+        <AllowanceBadge badge={allowanceBadge} inline />
+      </div>
     </div>
   );
 }
@@ -3890,14 +3889,21 @@ type AllowanceBadgeInfo = {
   title: string;
 };
 
-function AllowanceBadge({ badge }: { badge: AllowanceBadgeInfo | null }) {
+function AllowanceBadge({
+  badge,
+  inline = false,
+}: {
+  badge: AllowanceBadgeInfo | null;
+  inline?: boolean;
+}) {
   if (!badge) {
     return null;
   }
   return (
     <span
       className={cn(
-        "mt-0.5 inline-flex h-4 min-w-6 items-center justify-center rounded-sm border px-1 text-[10px] font-medium leading-none",
+        "inline-flex h-4 min-w-6 items-center justify-center rounded-sm border px-1 text-[10px] font-medium leading-none",
+        inline ? "shrink-0" : "mt-0.5",
         badge.className,
       )}
       title={badge.title}
@@ -3983,7 +3989,7 @@ function GridDayHeader({ day, ledgerEmpty = false }: { day: string; ledgerEmpty?
 function DisabledScheduleCell({ label }: { label: string }) {
   return (
     <td
-      className="h-[72px] border-b border-r bg-muted/30 p-2 align-middle text-center text-xs leading-4 text-muted-foreground"
+      className="min-h-[2rem] border-b border-r bg-muted/30 p-1 align-middle text-center text-[11px] leading-tight text-muted-foreground"
       style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
       title={label}
     >
@@ -3995,7 +4001,7 @@ function DisabledScheduleCell({ label }: { label: string }) {
 function VacationScheduleCell({ period }: { period: VacationPeriodRead }) {
   return (
     <td
-      className="h-[72px] border-b border-r bg-emerald-50 p-2 align-middle text-center text-xs leading-4 text-emerald-800"
+      className="min-h-[2rem] border-b border-r bg-emerald-50 p-1 align-middle text-center text-[11px] leading-tight text-emerald-800"
       style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
       title={`Отпуск: ${formatShortRange(period.date_start, period.date_end)}`}
     >
@@ -5844,12 +5850,6 @@ function allowanceTitleText(
     return "не начисляется";
   }
   return `получает ${assignment.recipient_full_name ?? "другой сотрудник"}`;
-}
-
-function shiftCostClass(estimate: ShiftCostEstimateRead | undefined, role?: string) {
-  return estimate?.quality_status === "requires_review"
-    ? "text-orange-600"
-    : roleColorClasses(role ?? "").secondaryText;
 }
 
 function fotStatusLevel(run: PayrollForecastRunRead): FotStatusLevel {
