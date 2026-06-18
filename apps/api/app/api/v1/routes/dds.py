@@ -23,7 +23,6 @@ from app.models import (
     DdsArticleAlias,
     ReconciliationCase,
     SourceCredential,
-    TransferGroup,
     Wallet,
 )
 from app.scheduler import run_bank_sync_job
@@ -165,59 +164,76 @@ async def list_wallets(
 
 
 async def _wallet_movement_deltas(session: AsyncSession) -> dict[UUID, Decimal]:
-    """Net cash movement per wallet: classified cashflow plus matched transfers.
+    """Net cash movement per wallet — driven by the FACT of money moving.
 
-    Balance is derived from movements, never from the bank's reported balance — the
-    T-Bank ``otb`` field is inflated by the overdraft limit, so it is not used.
+    Balance is bank reality, not DDS classification:
+
+    * Bank wallets follow their STATEMENT. Every imported bank operation moves the
+      balance by its direction/amount the moment it lands, whether or not it has
+      been classified into a DDS article yet — classification only decides which
+      article a movement is filed under, it never gates the balance. Only
+      operations explicitly marked ``excluded`` are left out. Internal transfers
+      need no special handling: each leg is a real operation on its own account
+      (out of one bank, in to another) that moves its wallet on its own, so the
+      balance never depends on the transfer pair being matched. The bank's own
+      reported balance (T-Bank ``otb``) is never used — it is inflated by the
+      overdraft limit.
+    * Non-bank wallets (cash safe, store cash, funds) have no statement, so their
+      balance comes from the manually booked cashflow entries instead.
 
     Only movements dated AFTER ``opening_balance_date`` are counted: the opening
     snapshot already incorporates everything up to and including that date, so
-    summing earlier movements (e.g. an acquiring statement back-filled by the bank
-    sync) would double-count them. Wallets with no opening date count all movements.
+    summing earlier movements would double-count them. Wallets with no opening
+    date count all movements.
     """
+    bank_types = ("bank", "bank_account")
     deltas: dict[UUID, Decimal] = defaultdict(lambda: Decimal("0"))
 
-    after_opening_cashflow = or_(
+    # Bank wallets: balance IS the statement — every non-excluded operation counts,
+    # classified or not, so "needs review" never hides money from the balance.
+    after_opening_bank = or_(
+        Wallet.opening_balance_date.is_(None),
+        BankOperation.operation_date > Wallet.opening_balance_date,
+    )
+    bank_rows = await session.execute(
+        select(
+            Wallet.id,
+            BankOperation.direction,
+            func.coalesce(func.sum(BankOperation.amount), 0),
+        )
+        .join(Account, Account.id == Wallet.account_id)
+        .join(BankOperation, BankOperation.account_id == Account.id)
+        .where(
+            Wallet.type.in_(bank_types),
+            BankOperation.classification_status != "excluded",
+            after_opening_bank,
+        )
+        .group_by(Wallet.id, BankOperation.direction)
+    )
+    for wallet_id, direction, total in bank_rows:
+        amount = Decimal(total)
+        deltas[wallet_id] += amount if direction == "in" else -amount
+
+    # Non-bank wallets: no statement — balance comes from manual cashflow entries.
+    after_opening_cash = or_(
         Wallet.opening_balance_date.is_(None),
         CashflowTransaction.operation_date > Wallet.opening_balance_date,
     )
-    cashflow_rows = await session.execute(
+    cash_rows = await session.execute(
         select(
             CashflowTransaction.wallet_id,
             CashflowTransaction.direction,
             func.coalesce(func.sum(CashflowTransaction.amount), 0),
         )
         .join(Wallet, Wallet.id == CashflowTransaction.wallet_id)
-        .where(after_opening_cashflow)
+        .where(Wallet.type.not_in(bank_types), after_opening_cash)
         .group_by(CashflowTransaction.wallet_id, CashflowTransaction.direction)
     )
-    for wallet_id, direction, total in cashflow_rows:
+    for wallet_id, direction, total in cash_rows:
         if wallet_id is None:
             continue
         amount = Decimal(total)
         deltas[wallet_id] += amount if direction == "in" else -amount
-
-    after_opening_transfer = or_(
-        Wallet.opening_balance_date.is_(None),
-        TransferGroup.initiated_at > Wallet.opening_balance_date,
-    )
-    transfer_out = await session.execute(
-        select(TransferGroup.from_wallet_id, func.coalesce(func.sum(TransferGroup.amount), 0))
-        .join(Wallet, Wallet.id == TransferGroup.from_wallet_id)
-        .where(after_opening_transfer)
-        .group_by(TransferGroup.from_wallet_id)
-    )
-    for wallet_id, total in transfer_out:
-        deltas[wallet_id] -= Decimal(total)
-
-    transfer_in = await session.execute(
-        select(TransferGroup.to_wallet_id, func.coalesce(func.sum(TransferGroup.amount), 0))
-        .join(Wallet, Wallet.id == TransferGroup.to_wallet_id)
-        .where(after_opening_transfer)
-        .group_by(TransferGroup.to_wallet_id)
-    )
-    for wallet_id, total in transfer_in:
-        deltas[wallet_id] += Decimal(total)
 
     return deltas
 
