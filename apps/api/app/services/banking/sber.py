@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ssl
 from datetime import date
 from typing import Any
 
@@ -90,14 +91,21 @@ class SberClient:
         token = await required_credential(self.session, self.provider, "access_token")
         cert_path = await required_credential(self.session, self.provider, "mtls_cert_path")
         key_path = await required_credential(self.session, self.provider, "mtls_key_path")
-        verify: str | bool = self.settings.sber_api_ca_bundle_path or True
+
+        # httpx 0.28 dropped the `cert=(certfile, keyfile)` argument: passing it is
+        # silently ignored, so the client certificate is never presented and Sber's
+        # gateway answers "400 No required SSL certificate was sent". Build the mTLS
+        # context explicitly and hand it to httpx via `verify=`.
+        ssl_context = ssl.create_default_context(
+            cafile=self.settings.sber_api_ca_bundle_path or None
+        )
+        ssl_context.load_cert_chain(certfile=cert_path, keyfile=key_path)
 
         operations: list[NormalizedBankOperation] = []
         async with httpx.AsyncClient(
             base_url=self.settings.sber_api_base_url.rstrip("/"),
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-            verify=verify,
-            cert=(cert_path, key_path),
+            verify=ssl_context,
             timeout=self.settings.bank_client_timeout_seconds,
         ) as client:
             for account_number in account_numbers:
