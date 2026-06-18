@@ -23,7 +23,10 @@ from app.models import (
     Employee,
     User,
 )
-from app.services.couriers.deposit_service import get_deposit_settings
+from app.services.couriers.deposit_service import (
+    get_deposit_settings,
+    target_cents_for_employee,
+)
 from app.services.couriers.shift_matching import MOSCOW_TZ, worked_minutes_for_shift
 
 UNSET = object()
@@ -89,7 +92,7 @@ async def get_shift_day(session: AsyncSession, work_date: date) -> dict[str, Any
 
     courier_ids = list(shifts_by_courier.keys())
     evals = await _evaluations_for_day(session, courier_ids, work_date)
-    deposits = await _deposit_state_for_day(session, courier_ids, work_date)
+    deposits = await _deposit_state_for_day(session, employee_by_id, work_date)
     reviews = await _reviews_for_day(session, courier_ids, work_date)
 
     couriers: list[dict[str, Any]] = []
@@ -206,13 +209,13 @@ async def _evaluations_for_day(
 
 async def _deposit_state_for_day(
     session: AsyncSession,
-    courier_ids: list[uuid.UUID],
+    employees: dict[uuid.UUID, Employee],
     work_date: date,
 ) -> dict[uuid.UUID, dict[str, Any]]:
+    courier_ids = list(employees.keys())
     if not courier_ids:
         return {}
     settings = await get_deposit_settings(session)
-    default_target = int(settings["target_amount"]) * 100
 
     accounts = {
         account.employee_id: account
@@ -239,7 +242,8 @@ async def _deposit_state_for_day(
     for courier_id in courier_ids:
         account = accounts.get(courier_id)
         opening = account.opening_balance_cents if account is not None else 0
-        target = account.target_amount_cents if account is not None else default_target
+        # целевой депозит — по должности (обычный / старший курьер), не из хранимого счёта
+        target = target_cents_for_employee(settings, employees[courier_id])
         balance = opening
         present = False
         for tx in tx_by_courier.get(courier_id, []):

@@ -19,23 +19,34 @@ from app.models import (
     Employee,
 )
 from app.services.couriers.common import get_courier_or_404
-from app.services.position_registry import courier_positions
+from app.services.position_registry import courier_positions, senior_courier_positions
 
 DepositStatusFilter = Literal["active", "fired", "all"]
 DepositCategoryFilter = Literal["primary", "secondary", "all"]
 
 DEPOSIT_SETTING_KEYS = {
     "target_amount": "couriers.deposit.target_amount",
+    "target_amount_senior": "couriers.deposit.target_amount_senior",
     "withhold_primary": "couriers.deposit.withhold_primary",
     "withhold_secondary": "couriers.deposit.withhold_secondary",
     "auto_withhold_enabled": "couriers.deposit.auto_withhold_enabled",
 }
 DEFAULT_DEPOSIT_SETTINGS: dict[str, int | bool] = {
     "target_amount": 5000,
+    "target_amount_senior": 5000,
     "withhold_primary": 500,
     "withhold_secondary": 200,
     "auto_withhold_enabled": False,
 }
+
+
+def is_senior_courier(employee: Employee) -> bool:
+    return employee.position in senior_courier_positions()
+
+
+def target_cents_for_employee(settings: dict[str, int | bool], employee: Employee) -> int:
+    key = "target_amount_senior" if is_senior_courier(employee) else "target_amount"
+    return _rub_to_cents(settings[key])
 
 
 @dataclass(frozen=True)
@@ -99,12 +110,12 @@ async def update_deposit_settings(
         setting.value = value
         setting.updated_at = now
         setting.updated_by_user_id = changed_by_user_id
-        if name == "target_amount":
-            await session.execute(
-                sqlalchemy_update(CourierDepositAccount).values(
-                    target_amount_cents=_rub_to_cents(value),
-                    updated_at=now,
-                )
+        if name in ("target_amount", "target_amount_senior"):
+            await _bulk_update_targets(
+                session,
+                value,
+                senior=(name == "target_amount_senior"),
+                now=now,
             )
         session.add(
             AppSettingHistory(
@@ -122,21 +133,48 @@ async def ensure_account(
     session: AsyncSession,
     employee_id: uuid.UUID,
 ) -> CourierDepositAccount:
-    await get_courier_or_404(session, employee_id)
+    employee = await get_courier_or_404(session, employee_id)
+    settings = await get_deposit_settings(session)
+    expected_target = target_cents_for_employee(settings, employee)
     account = await session.get(CourierDepositAccount, employee_id)
     if account is not None:
+        # самовыравнивание целевого депозита под должность (обычный / старший курьер)
+        if account.target_amount_cents != expected_target:
+            account.target_amount_cents = expected_target
+            account.updated_at = datetime.now(UTC)
         return account
 
-    settings = await get_deposit_settings(session)
     account = CourierDepositAccount(
         employee_id=employee_id,
-        target_amount_cents=_rub_to_cents(settings["target_amount"]),
+        target_amount_cents=expected_target,
         opening_balance_cents=0,
         opening_date=date.today(),
     )
     session.add(account)
     await session.flush()
     return account
+
+
+async def _bulk_update_targets(
+    session: AsyncSession,
+    rub_value: Any,
+    *,
+    senior: bool,
+    now: datetime,
+) -> None:
+    senior_names = senior_courier_positions()
+    if senior:
+        position_names = senior_names
+    else:
+        position_names = tuple(name for name in courier_positions() if name not in senior_names)
+    if not position_names:
+        return
+    employee_ids = select(Employee.id).where(Employee.position.in_(position_names))
+    await session.execute(
+        sqlalchemy_update(CourierDepositAccount)
+        .where(CourierDepositAccount.employee_id.in_(employee_ids))
+        .values(target_amount_cents=_rub_to_cents(rub_value), updated_at=now)
+    )
 
 
 async def set_opening_balance(

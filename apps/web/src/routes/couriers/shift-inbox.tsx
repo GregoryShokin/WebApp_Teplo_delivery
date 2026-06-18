@@ -420,13 +420,17 @@ function ReadinessChips({ courier }: { courier: CourierShiftDayCourier }) {
       ? { tone: "skip" as const, text: "без оценки" }
       : { tone: "todo" as const, text: "нет оценки" };
 
+  const targetText = formatCents(courier.deposit_target_cents);
   const depositChip = courier.deposit_collected
-    ? { tone: "ok" as const, text: "депозит собран" }
+    ? { tone: "ok" as const, text: `депозит собран · ${targetText}` }
     : courier.deposit_present
-      ? { tone: "ok" as const, text: `депозит ${formatCents(courier.deposit_balance_cents)}` }
+      ? {
+          tone: "ok" as const,
+          text: `депозит ${formatCents(courier.deposit_balance_cents)} из ${targetText}`,
+        }
       : courier.deposit_skipped
         ? { tone: "skip" as const, text: "без депозита" }
-        : { tone: "todo" as const, text: "нет депозита" };
+        : { tone: "todo" as const, text: `нет депозита · цель ${targetText}` };
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">

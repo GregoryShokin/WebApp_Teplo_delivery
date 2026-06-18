@@ -11,6 +11,7 @@ from app.models import CourierDepositTransactionType, CourierEvaluationSource
 
 class CourierDepositSettingsRead(BaseModel):
     target_amount: int
+    target_amount_senior: int
     withhold_primary: int
     withhold_secondary: int
     auto_withhold_enabled: bool
@@ -18,6 +19,7 @@ class CourierDepositSettingsRead(BaseModel):
 
 class CourierDepositSettingsUpdate(BaseModel):
     target_amount: int | None = Field(default=None, ge=0)
+    target_amount_senior: int | None = Field(default=None, ge=0)
     withhold_primary: int | None = Field(default=None, ge=0)
     withhold_secondary: int | None = Field(default=None, ge=0)
     auto_withhold_enabled: bool | None = None

@@ -65,6 +65,7 @@ type CourierDepositsSettingsSectionProps = {
 
 type SettingsDraft = {
   targetAmount: string;
+  targetAmountSenior: string;
   withholdPrimary: string;
   withholdSecondary: string;
 };
@@ -77,6 +78,7 @@ type PendingOpeningUpdate = {
 
 const DEFAULT_SETTINGS: CourierDepositSettings = {
   target_amount: 5000,
+  target_amount_senior: 5000,
   withhold_primary: 500,
   withhold_secondary: 200,
   auto_withhold_enabled: false,
@@ -118,6 +120,7 @@ export function CourierDepositsSettingsSection({
   const currentSettings = settingsQuery.data ?? DEFAULT_SETTINGS;
   const settingsValid =
     isNonNegativeRubInput(settingsDraft.targetAmount) &&
+    isNonNegativeRubInput(settingsDraft.targetAmountSenior) &&
     isNonNegativeRubInput(settingsDraft.withholdPrimary) &&
     isNonNegativeRubInput(settingsDraft.withholdSecondary);
   const settingsDirty = draftSnapshot(settingsDraft) !== draftSnapshot(initialSettingsDraft);
@@ -145,6 +148,7 @@ export function CourierDepositsSettingsSection({
       putCourierDepositSettings({
         auto_withhold_enabled: false,
         target_amount: rubPayloadValue(settingsDraft.targetAmount),
+        target_amount_senior: rubPayloadValue(settingsDraft.targetAmountSenior),
         withhold_primary: rubPayloadValue(settingsDraft.withholdPrimary),
         withhold_secondary: rubPayloadValue(settingsDraft.withholdSecondary),
       }),
@@ -201,14 +205,15 @@ export function CourierDepositsSettingsSection({
         </div>
 
         {settingsQuery.isLoading ? (
-          <div className="grid gap-3 lg:grid-cols-4">
+          <div className="grid gap-3 lg:grid-cols-3 xl:grid-cols-5">
+            <Skeleton className="h-20" />
             <Skeleton className="h-20" />
             <Skeleton className="h-20" />
             <Skeleton className="h-20" />
             <Skeleton className="h-20" />
           </div>
         ) : (
-          <div className="grid gap-3 lg:grid-cols-4">
+          <div className="grid gap-3 lg:grid-cols-3 xl:grid-cols-5">
             <MoneyField
               disabled={!canWrite || settingsMutation.isPending}
               label="Целевой депозит"
@@ -216,6 +221,14 @@ export function CourierDepositsSettingsSection({
                 setSettingsDraft((current) => ({ ...current, targetAmount: value }))
               }
               value={settingsDraft.targetAmount}
+            />
+            <MoneyField
+              disabled={!canWrite || settingsMutation.isPending}
+              label="Целевой депозит старшего курьера"
+              onChange={(value) =>
+                setSettingsDraft((current) => ({ ...current, targetAmountSenior: value }))
+              }
+              value={settingsDraft.targetAmountSenior}
             />
             <MoneyField
               disabled={!canWrite || settingsMutation.isPending}
@@ -592,6 +605,7 @@ function buildCourierSummary(rows: CourierDepositRow[], settings: CourierDeposit
 function settingsToDraft(settings: CourierDepositSettings): SettingsDraft {
   return {
     targetAmount: String(settings.target_amount),
+    targetAmountSenior: String(settings.target_amount_senior),
     withholdPrimary: String(settings.withhold_primary),
     withholdSecondary: String(settings.withhold_secondary),
   };
@@ -600,6 +614,7 @@ function settingsToDraft(settings: CourierDepositSettings): SettingsDraft {
 function draftSnapshot(draft: SettingsDraft) {
   return JSON.stringify({
     targetAmount: rubPayloadValue(draft.targetAmount),
+    targetAmountSenior: rubPayloadValue(draft.targetAmountSenior),
     withholdPrimary: rubPayloadValue(draft.withholdPrimary),
     withholdSecondary: rubPayloadValue(draft.withholdSecondary),
   });

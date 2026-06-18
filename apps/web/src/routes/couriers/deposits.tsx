@@ -291,7 +291,7 @@ export function CourierDepositsRoute({ onNavigate, embedded = false }: CourierDe
                   <TableCell>
                     <ProgressBar value={progressValue(row)} />
                     <div className="mt-1 text-xs text-muted-foreground">
-                      {formatPercent(row.progress_pct)}
+                      {formatPercent(row.progress_pct)} · цель {formatCents(row.target_amount_cents)}
                     </div>
                   </TableCell>
                   <TableCell>

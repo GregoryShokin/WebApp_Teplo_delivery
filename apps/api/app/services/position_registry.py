@@ -271,6 +271,15 @@ def courier_positions() -> tuple[str, ...]:
     return _snapshot.names_by_archetype(ARCHETYPE_COURIER)
 
 
+def senior_courier_positions() -> tuple[str, ...]:
+    """Курьерские должности с ролью старшего курьера (отдельный целевой депозит)."""
+    return tuple(
+        position.name
+        for position in _snapshot.positions
+        if position.access_role_code == "senior_courier"
+    )
+
+
 def vacation_positions() -> tuple[str, ...]:
     """Бывший VACATION_EMPLOYEE_POSITIONS (выводится из архетипа production_percent)."""
     return _snapshot.names_by_archetype(ARCHETYPE_PRODUCTION_PERCENT)

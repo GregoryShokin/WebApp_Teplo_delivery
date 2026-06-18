@@ -1811,6 +1811,7 @@ export type CourierScheduleMatchStatus =
 
 export type CourierDepositSettings = {
   target_amount: number;
+  target_amount_senior: number;
   withhold_primary: number;
   withhold_secondary: number;
   auto_withhold_enabled: boolean;
