@@ -53,6 +53,15 @@ class CheckStatus:
 TBANK_BEARER_TOKEN = CredentialSpec("tbank", "bearer_token", "TBANK_API_ACCESS_TOKEN")
 TBANK_ACCOUNT_NUMBER_ENV = "TBANK_API_ACCOUNT_NUMBER"
 
+# Sber syncs through the same movement pipeline as T-Bank; it needs a (long-lived)
+# access token plus the mTLS cert/key file paths inside the container. The account
+# number rides as metadata on the access_token credential, mirroring T-Bank.
+SBER_ACCESS_TOKEN = CredentialSpec("sber", "access_token", "SBER_API_ACCESS_TOKEN")
+SBER_MTLS_CERT = CredentialSpec("sber", "mtls_cert_path", "SBER_API_TLS_CERT_PATH")
+SBER_MTLS_KEY = CredentialSpec("sber", "mtls_key_path", "SBER_API_TLS_KEY_PATH")
+SBER_CREDENTIALS = (SBER_ACCESS_TOKEN, SBER_MTLS_CERT, SBER_MTLS_KEY)
+SBER_ACCOUNT_NUMBER_ENV = "SBER_API_ACCOUNT_NUMBER"
+
 
 def _env(name: str) -> str:
     return os.environ.get(name, "").strip()
@@ -93,6 +102,13 @@ async def _active_credentials(session: AsyncSession) -> dict[tuple[str, str], Ac
 
 def _tbank_metadata() -> dict[str, Any] | None:
     account_number = _env(TBANK_ACCOUNT_NUMBER_ENV)
+    if not account_number:
+        return None
+    return {"account_number": account_number}
+
+
+def _sber_metadata() -> dict[str, Any] | None:
+    account_number = _env(SBER_ACCOUNT_NUMBER_ENV)
     if not account_number:
         return None
     return {"account_number": account_number}
@@ -156,6 +172,56 @@ async def _sync_tbank_bearer_token() -> str:
     return status
 
 
+async def _sync_credential(
+    spec: CredentialSpec, metadata_json: dict[str, Any] | None = None
+) -> str:
+    value = _env(spec.env_name)
+    if not value:
+        return "missing"
+
+    async with AsyncSessionLocal() as session:
+        active = await _active_credentials(session)
+    current = active.get((spec.provider, spec.kind))
+    if current is None:
+        status = "created"
+    elif current.value == value:
+        if current.metadata_json == metadata_json:
+            return "unchanged"
+        if await _update_active_metadata(
+            provider=spec.provider,
+            kind=spec.kind,
+            value=value,
+            metadata_json=metadata_json,
+        ):
+            return "updated"
+        status = "updated"
+    else:
+        status = "updated"
+
+    async with AsyncSessionLocal() as session:
+        await set_credential(
+            session,
+            provider=spec.provider,
+            kind=spec.kind,
+            value=value,
+            metadata_json=metadata_json,
+        )
+    return status
+
+
+async def _sync_sber_credentials() -> dict[str, str]:
+    metadata = _sber_metadata()
+    return {
+        SBER_ACCESS_TOKEN.kind: await _sync_credential(SBER_ACCESS_TOKEN, metadata),
+        SBER_MTLS_CERT.kind: await _sync_credential(SBER_MTLS_CERT),
+        SBER_MTLS_KEY.kind: await _sync_credential(SBER_MTLS_KEY),
+    }
+
+
+def _sber_is_configured() -> bool:
+    return all(_is_present(spec.env_name) for spec in SBER_CREDENTIALS)
+
+
 async def _check_status() -> CheckStatus:
     async with AsyncSessionLocal() as session:
         active = await _active_credential_values(session)
@@ -176,12 +242,20 @@ async def check() -> int:
     status = await _check_status()
     print(f"iiko_env={status.iiko_state}")
     print(f"tbank_bearer_token=env:{status.tbank_env_state} db:{status.tbank_db_state}")
+    async with AsyncSessionLocal() as session:
+        active = await _active_credential_values(session)
+    for spec in SBER_CREDENTIALS:
+        env_state = "set" if _env(spec.env_name) else "missing"
+        db_state = "set" if active.get((spec.provider, spec.kind)) else "missing"
+        print(f"sber_{spec.kind}=env:{env_state} db:{db_state}")
     return status.exit_code
 
 
 async def sync() -> int:
     print(f"iiko_env={'set' if _iiko_is_configured() else 'missing'}")
     print(f"tbank_bearer_token={await _sync_tbank_bearer_token()}")
+    for kind, kind_status in (await _sync_sber_credentials()).items():
+        print(f"sber_{kind}={kind_status}")
     return (await _check_status()).exit_code
 
 
