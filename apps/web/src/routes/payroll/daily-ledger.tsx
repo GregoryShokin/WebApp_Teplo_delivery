@@ -367,7 +367,7 @@ function ShiftLedgerMatrixTable({
               <th
                 className={cn(
                   EMPLOYEE_COLUMN_CLASS,
-                  "sticky left-0 top-0 z-40 border-b border-r bg-muted/80 px-3 py-3 text-left font-medium text-muted-foreground",
+                  "sticky left-0 top-0 z-40 border-b border-r bg-muted px-3 py-3 text-left font-medium text-muted-foreground",
                 )}
                 rowSpan={2}
               >
@@ -382,7 +382,7 @@ function ShiftLedgerMatrixTable({
                       "sticky top-0 z-30 h-11 border-b border-r px-3 py-2 text-center font-medium transition-all duration-200",
                       day.is_today
                         ? "bg-primary/10 text-primary"
-                        : "bg-muted/70 text-muted-foreground",
+                        : "bg-muted text-muted-foreground",
                     )}
                     colSpan={areTimesCollapsed ? 1 : 3}
                     key={day.date}
@@ -815,7 +815,7 @@ function stickyBodyCellClassName(backgroundClassName: "bg-card" | "bg-muted") {
 function subHeaderClassName(isToday: boolean) {
   return cn(
     "sticky top-11 z-30 border-b border-r px-2 py-2 text-center text-xs font-semibold uppercase text-muted-foreground",
-    isToday ? "bg-primary/10" : "bg-muted/60",
+    isToday ? "bg-primary/10" : "bg-muted",
   );
 }
 

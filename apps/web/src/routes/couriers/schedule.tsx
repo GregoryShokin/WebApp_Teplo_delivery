@@ -406,12 +406,12 @@ export function CourierScheduleRoute({ activeTab, onNavigate }: CourierScheduleR
                 <table className="w-full min-w-[980px] border-collapse text-sm">
                   <thead>
                     <tr className="border-b bg-muted/60">
-                      <th className="sticky left-0 top-0 z-30 w-[240px] border-b bg-muted/95 px-3 py-3 text-left font-medium">
+                      <th className="sticky left-0 top-0 z-30 w-[240px] border-b bg-muted px-3 py-3 text-left font-medium">
                         Курьер
                       </th>
                       {weekDays.map((day, index) => (
                         <th
-                          className="sticky top-0 z-20 w-[108px] border-b bg-muted/95 px-2 py-3 text-center font-medium"
+                          className="sticky top-0 z-20 w-[108px] border-b bg-muted px-2 py-3 text-center font-medium"
                           key={toDateKey(day)}
                         >
                           <div>{WEEKDAY_LABELS[index]}</div>
