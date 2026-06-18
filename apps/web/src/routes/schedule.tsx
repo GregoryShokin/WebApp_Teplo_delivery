@@ -16,6 +16,8 @@ import {
   History,
   LoaderCircle,
   Lock,
+  Maximize2,
+  Minimize2,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -268,7 +270,21 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     { hydrateFromStorage: false },
   );
   const [viewMode, setViewMode] = useState<ViewMode>("employees");
+  const [isGridFullscreen, setIsGridFullscreen] = useState(false);
   const [planFactTableMode, setPlanFactTableMode] = useState<PlanFactTableMode>("days");
+
+  useEffect(() => {
+    if (!isGridFullscreen) {
+      return;
+    }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsGridFullscreen(false);
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [isGridFullscreen]);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createPeriodPreset, setCreatePeriodPreset] = useState<PeriodPreset>("month");
@@ -1116,6 +1132,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     if (!isScheduleTab(value)) {
       return;
     }
+    setIsGridFullscreen(false);
     window.localStorage.setItem(SCHEDULE_ACTIVE_TAB_STORAGE_KEY, value);
     onNavigate(scheduleTabPath(value));
   }
@@ -1266,6 +1283,12 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
                 />
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {currentSchedule && (viewMode === "employees" || viewMode === "stations") ? (
+                  <Button onClick={() => setIsGridFullscreen(true)} variant="outline">
+                    <Maximize2 size={16} aria-hidden="true" />
+                    На весь экран
+                  </Button>
+                ) : null}
                 {canEditSchedule ? (
                   <Button
                     disabled={!isDraft || copyWeekMutation.isPending}
@@ -1326,7 +1349,29 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
             />
           ) : null}
 
-          {!currentSchedule && !schedulesQuery.isLoading ? (
+          <div
+            className={cn(
+              isGridFullscreen &&
+                "fixed inset-0 z-50 flex flex-col gap-3 overflow-auto bg-background p-4",
+            )}
+          >
+            {isGridFullscreen ? (
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-medium text-muted-foreground">
+                  График — {viewMode === "stations" ? "по цехам" : "по сотрудникам"}
+                  {currentSchedule
+                    ? ` · ${formatDate(currentSchedule.date_start)} — ${formatDate(
+                        currentSchedule.date_end,
+                      )}`
+                    : ""}
+                </div>
+                <Button onClick={() => setIsGridFullscreen(false)} size="sm" variant="outline">
+                  <Minimize2 size={16} aria-hidden="true" />
+                  Свернуть
+                </Button>
+              </div>
+            ) : null}
+            {!currentSchedule && !schedulesQuery.isLoading ? (
             <NoSchedulePeriodGrid
               days={visibleDays}
               isLoading={rosterQuery.isLoading}
@@ -1365,6 +1410,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
               shiftByEmployeeDay={shiftByEmployeeDay}
               today={todayIso}
               vacationByEmployeeDay={vacationByEmployeeDay}
+              fullscreen={isGridFullscreen}
             />
           ) : (
             <StationScheduleGrid
@@ -1392,8 +1438,10 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
               rows={stationRows}
               scheduleRange={currentScheduleRange}
               today={todayIso}
+              fullscreen={isGridFullscreen}
             />
           )}
+          </div>
 
           <CreateScheduleDialog
             draft={createDraft}
@@ -3375,6 +3423,7 @@ function EmployeeScheduleGrid({
   shiftByEmployeeDay,
   today,
   vacationByEmployeeDay,
+  fullscreen = false,
 }: {
   cashierAllowanceByDay: Map<string, AllowanceAssignmentRead>;
   costByShiftId: Map<string, ShiftCostEstimateRead>;
@@ -3391,12 +3440,15 @@ function EmployeeScheduleGrid({
   shiftByEmployeeDay: Map<string, ScheduledShiftRead>;
   today: string;
   vacationByEmployeeDay: Map<string, VacationPeriodRead>;
+  fullscreen?: boolean;
 }) {
   const minWidth = EMPLOYEE_COLUMN_WIDTH + days.length * DAY_CELL_WIDTH;
 
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
-      <div className="overflow-auto max-h-[70vh]">
+      <div
+        className={cn("overflow-auto", fullscreen ? "max-h-[calc(100vh-6rem)]" : "max-h-[70vh]")}
+      >
         <table className="border-separate border-spacing-0 text-sm" style={{ minWidth }}>
           <thead>
             <tr>
@@ -3525,6 +3577,7 @@ function StationScheduleGrid({
   rows,
   scheduleRange,
   today,
+  fullscreen = false,
 }: {
   cashierAllowanceByDay: Map<string, AllowanceAssignmentRead>;
   costByShiftId: Map<string, ShiftCostEstimateRead>;
@@ -3540,12 +3593,15 @@ function StationScheduleGrid({
   rows: Array<{ station: string; byDay: Map<string, ScheduledShiftRead[]> }>;
   scheduleRange: PeriodRange;
   today: string;
+  fullscreen?: boolean;
 }) {
   const minWidth = STATION_COLUMN_WIDTH + days.length * DAY_CELL_WIDTH;
 
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
-      <div className="overflow-auto max-h-[70vh]">
+      <div
+        className={cn("overflow-auto", fullscreen ? "max-h-[calc(100vh-6rem)]" : "max-h-[70vh]")}
+      >
         <table className="border-separate border-spacing-0 text-sm" style={{ minWidth }}>
           <thead>
             <tr>
@@ -3682,23 +3738,12 @@ function StationShiftCard({
       <div className={cn("truncate font-medium", roleColorClasses(shift.payroll_role).primaryText)}>
         {shift.employee_full_name}
       </div>
-      <div className={cn("tabular-nums", roleColorClasses(shift.payroll_role).secondaryText)}>
-        {formatShiftTime(shift)}
-      </div>
-      <div className={cn("truncate", roleColorClasses(shift.payroll_role).secondaryText)}>
-        {employee ? employeeRoleLine(employee, shift.payroll_role) : payrollRoleLabel(shift.payroll_role)}
-      </div>
-      <AllowanceBadge badge={allowanceBadge} />
-      {costByShiftId.get(shift.id) ? (
-        <div
-          className={cn(
-            "mt-0.5 tabular-nums",
-            shiftCostClass(costByShiftId.get(shift.id), shift.payroll_role),
-          )}
-        >
-          {formatMoneyWithCurrency(costByShiftId.get(shift.id)?.total_cost_estimate ?? null)}
+      {isFullDayShift(shift) ? null : (
+        <div className={cn("tabular-nums", roleColorClasses(shift.payroll_role).secondaryText)}>
+          {formatShiftTime(shift)}
         </div>
-      ) : null}
+      )}
+      <AllowanceBadge badge={allowanceBadge} />
       {!isLocked ? (
         <EditShiftButton
           businessDate={shift.business_date}
@@ -5681,6 +5726,18 @@ function formatShortDate(value: string) {
 
 function formatShiftTime(shift: ScheduledShiftRead) {
   return `${timeFromDateTime(shift.planned_start_at)}–${timeFromDateTime(shift.planned_end_at)}`;
+}
+
+// Полная смена = рабочий день целиком (10:00–22:00). Для неё время в графике не
+// показываем — это значение по умолчанию.
+const FULL_SHIFT_START = "10:00";
+const FULL_SHIFT_END = "22:00";
+
+function isFullDayShift(shift: ScheduledShiftRead) {
+  return (
+    timeFromDateTime(shift.planned_start_at) === FULL_SHIFT_START &&
+    timeFromDateTime(shift.planned_end_at) === FULL_SHIFT_END
+  );
 }
 
 function formatLedgerTime(entry: ScheduleLedgerEntryRead) {
