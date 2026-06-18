@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Check, ChevronRight, LoaderCircle, Plus, Receipt, Trash2, Warehouse } from "lucide-react";
+import { Check, ChevronRight, LoaderCircle, Plus, Receipt, Trash2, Warehouse, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -259,40 +259,60 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
               onChange={(event) => setIssuedAt(event.target.value)}
             />
 
-            <button
-              type="button"
-              onClick={() => setPickerOpen(true)}
+            <div
               className={cn(
-                "flex w-full items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors hover:bg-muted/60",
+                "flex w-full items-center rounded-md border transition-colors",
                 selectedOp ? "border-emerald-300 bg-emerald-50" : "border-input",
               )}
             >
-              <span className="min-w-0 flex-1">
-                {selectedOp ? (
-                  <>
-                    <span className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-sm">
-                        {selectedOp.counterparty_name_raw ?? "Покупка по карте"}
+              <button
+                type="button"
+                onClick={() => setPickerOpen(true)}
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-l-md px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+              >
+                <span className="min-w-0 flex-1">
+                  {selectedOp ? (
+                    <>
+                      <span className="flex items-baseline justify-between gap-2">
+                        <span className="truncate text-sm">
+                          {selectedOp.counterparty_name_raw ?? "Покупка по карте"}
+                        </span>
+                        <span className="shrink-0 text-sm font-medium tabular-nums">
+                          {formatDdsMoney(selectedOp.amount)}
+                        </span>
                       </span>
-                      <span className="shrink-0 text-sm font-medium tabular-nums">
-                        {formatDdsMoney(selectedOp.amount)}
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {formatDateTime(
+                          selectedOp.purchased_at ?? selectedOp.posted_at ?? selectedOp.operation_date,
+                        )}{" "}
+                        · нажмите, чтобы изменить
                       </span>
+                    </>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">
+                      Операция не выбрана — выберите оплату по карте
                     </span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {formatDateTime(
-                        selectedOp.purchased_at ?? selectedOp.posted_at ?? selectedOp.operation_date,
-                      )}{" "}
-                      · нажмите, чтобы изменить
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-sm text-muted-foreground">
-                    Операция не выбрана — выберите оплату по карте
-                  </span>
-                )}
-              </span>
-              <ChevronRight size={16} className="shrink-0 text-muted-foreground" aria-hidden="true" />
-            </button>
+                  )}
+                </span>
+                <ChevronRight
+                  size={16}
+                  className="shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+              </button>
+              {selectedOp ? (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="mr-1 size-8 shrink-0 text-muted-foreground hover:text-foreground"
+                  aria-label="Сбросить оплату по карте"
+                  onClick={() => setSelectedOp(null)}
+                >
+                  <X size={15} aria-hidden="true" />
+                </Button>
+              ) : null}
+            </div>
 
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-muted-foreground">+ наличными, ₽</span>
@@ -520,6 +540,10 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
           setSelectedOp(op);
           setPickerOpen(false);
         }}
+        onClear={() => {
+          setSelectedOp(null);
+          setPickerOpen(false);
+        }}
       />
     </>
   );
@@ -533,6 +557,7 @@ function OperationPicker({
   day,
   selectedId,
   onPick,
+  onClear,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -541,15 +566,40 @@ function OperationPicker({
   day: string;
   selectedId: string | null;
   onPick: (op: CardTransaction) => void;
+  onClear: () => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[80vh] max-w-md overflow-y-auto">
         <DialogHeader className="space-y-1">
           <DialogTitle>Оплаты по карте за {day}</DialogTitle>
-          <DialogDescription>Выберите одну оплату.</DialogDescription>
+          <DialogDescription>Выберите оплату или «без карты» — для чисто наличного чека.</DialogDescription>
         </DialogHeader>
         <div className="space-y-1">
+          <button
+            type="button"
+            onClick={onClear}
+            className={cn(
+              "flex w-full items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors",
+              selectedId === null
+                ? "border-emerald-300 bg-emerald-50"
+                : "border-transparent hover:bg-muted/60",
+            )}
+          >
+            <span
+              className={cn(
+                "flex size-5 shrink-0 items-center justify-center rounded-full border",
+                selectedId === null
+                  ? "border-emerald-500 bg-emerald-500 text-white"
+                  : "border-muted-foreground/40",
+              )}
+            >
+              {selectedId === null ? <Check size={13} aria-hidden="true" /> : null}
+            </span>
+            <span className="text-sm">
+              Без оплаты картой <span className="text-muted-foreground">— только наличные</span>
+            </span>
+          </button>
           {isLoading ? (
             <div className="rounded-md border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
               Загрузка операций…

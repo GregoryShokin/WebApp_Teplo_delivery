@@ -191,3 +191,58 @@ class KassaShiftPenalty(Base):
     )
 
     shift: Mapped[IikoCashShift] = relationship(back_populates="penalties")
+
+
+class ChequeIikoPayout(Base):
+    """Изъятие (`addPayOut`) в iiko по строке «прочих расходов» чека местного закупа.
+
+    Не-складские расходы чека (питание/прочие затраты на персонал, содержание точек)
+    дублируются в iiko финансовой проводкой-изъятием ``POST /v2/payInOuts/addPayOut``. Тип
+    изъятия (``pay_out_type_id``) инкапсулирует счёт-источник (Главная касса для наличных /
+    «Денежные средства, эквайринг» для карты), корсчёт расхода и статью ДДС iiko, поэтому в
+    запросе передаём только тип + сумму + подразделение.
+
+    Одна строка = одно изъятие = (чек × наша статья ДДС × источник оплаты ``cash``|``card``).
+    Таблица — барьер идемпотентности: проводки iiko НЕОБРАТИМЫ через API (нет ни delete, ни
+    внесения — addPayOut отвергает PAYIN), поэтому повторный прогон НЕ должен задвоить уже
+    проведённое. Также аудит и основа будущей OLAP-сверки (по ``comment``). ``status``:
+    ``posted`` — addPayOut вернул SUCCESS; ``failed`` — ошибка (чек при этом создан, проведение
+    можно повторить, не трогая ``posted``-строки).
+    """
+
+    __tablename__ = "kassa_cheque_iiko_payout"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_cheque_iiko_payout_amount_positive"),
+        CheckConstraint("source in ('cash', 'card')", name="ck_cheque_iiko_payout_source"),
+        CheckConstraint("status in ('posted', 'failed')", name="ck_cheque_iiko_payout_status"),
+        UniqueConstraint(
+            "invoice_id",
+            "dds_article_id",
+            "source",
+            name="uq_cheque_iiko_payout_invoice_article_source",
+        ),
+        Index("ix_cheque_iiko_payout_invoice", "invoice_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    invoice_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("supplier_invoice.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    dds_article_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("dds_articles.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    # Источник оплаты доли расхода: 'cash' (Главная касса) | 'card' (эквайринг).
+    source: Mapped[str] = mapped_column(String(8), nullable=False)
+    # id типа изъятия iiko (payInOutType) — несёт счёт-источник + корсчёт + статью ДДС.
+    pay_out_type_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

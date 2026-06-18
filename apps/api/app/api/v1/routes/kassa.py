@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import uuid
 from datetime import date, datetime, timedelta
 from typing import Annotated
@@ -33,6 +34,7 @@ from app.services.kassa.cheque import (
     list_cheque_articles,
     list_cheques,
 )
+from app.services.kassa.cheque_payout_push import post_cheque_expenses_to_iiko
 from app.services.kassa.iiko_cashshift_sync import (
     get_shift,
     list_shifts,
@@ -44,6 +46,7 @@ from app.services.kassa.iiko_cashshift_sync import (
 from app.services.warehouse_invoice_push import WarehousePushError, push_invoice_to_iiko
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 KASSA_REFS_READ = (Depends(require_permission("kassa.refs.read")),)
 KASSA_CHEQUES_READ = (Depends(require_permission("kassa.cheques.read")),)
@@ -188,6 +191,15 @@ async def create_cheque_endpoint(
     # прочие расходы без товара push пропускает сам. Ошибка/skip не отменяет созданный чек.
     with contextlib.suppress(WarehousePushError):
         await push_invoice_to_iiko(session, invoice.id)
+    # Прочие расходы (питание/прочие затраты на персонал, содержание точек) дублируем в iiko
+    # изъятием addPayOut со счёта по способу оплаты (наличные→Главная касса, карта→эквайринг).
+    # Идемпотентно; сбой отдельной проводки фиксируется в kassa_cheque_iiko_payout, чек не валит.
+    try:
+        await post_cheque_expenses_to_iiko(session, invoice.id)
+        await session.commit()
+    except Exception:  # noqa: BLE001 — iiko-проводка побочна, чек уже создан и закоммичен
+        await session.rollback()
+        logger.exception("Чек %s: не удалось провести прочие расходы в iiko", invoice.id)
     payload_out = await get_cheque(session, invoice.id)
     assert payload_out is not None  # noqa: S101 - just created it
     return payload_out
