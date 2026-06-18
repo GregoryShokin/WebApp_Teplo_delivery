@@ -1,5 +1,5 @@
 import axios from "axios";
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   Banknote,
@@ -58,7 +58,6 @@ import {
   getAccumulationFundAccounts,
   getAccumulationFundSummary,
   getEmployeeAccumulationFund,
-  getPayrollRunLines,
   getPayrollRuns,
   getSettings,
   postAccumulationFundPayout,
@@ -128,35 +127,22 @@ export function PayrollRunsRoute({
   const [recalculatingRunIds, setRecalculatingRunIds] = useState<string[]>([]);
 
   const runs = [...(runsQuery.data ?? [])].sort(compareRunsDesc);
-  const lineQueries = useQueries({
-    queries: runs.map((run) => ({
-      queryKey: ["payroll-run-lines", run.id],
-      queryFn: () => getPayrollRunLines(run.id),
-      enabled: runs.length > 0,
-    })),
-  });
-  const linesByRunId = new Map<string, PayrollLine[]>();
-  runs.forEach((run, index) => {
-    linesByRunId.set(run.id, lineQueries[index]?.data ?? []);
-  });
 
   const targetRatio = getTargetFotRatio(settingsQuery.data);
   const currentWindow = getPayrollWindow();
   const currentRun = runs.find((run) => isSamePeriod(run.period, currentWindow));
   const previousRun = getPreviousRun(runs, currentWindow.start_date);
   const monthRuns = getMonthRuns(runs, new Date());
-  const currentLines = currentRun ? (linesByRunId.get(currentRun.id) ?? []) : [];
-  const previousLines = previousRun ? (linesByRunId.get(previousRun.id) ?? []) : [];
   const monthTotal = monthRuns.reduce((sum, run) => sum + runTotal(run), 0);
   const monthRatios = monthRuns
-    .map((run) => runPayrollRatio(run, linesByRunId.get(run.id) ?? []))
+    .map((run) => runPayrollRatio(run))
     .filter((ratio): ratio is number => ratio !== null);
   const monthAverageRatio =
     monthRatios.length > 0
       ? monthRatios.reduce((sum, ratio) => sum + ratio, 0) / monthRatios.length
       : null;
-  const currentRatio = currentRun ? runPayrollRatio(currentRun, currentLines) : null;
-  const previousRatio = previousRun ? runPayrollRatio(previousRun, previousLines) : null;
+  const currentRatio = currentRun ? runPayrollRatio(currentRun) : null;
+  const previousRatio = previousRun ? runPayrollRatio(previousRun) : null;
   const unfinishedCurrentRun =
     currentRun && !isFinalStatus(currentRun.status) ? currentRun : undefined;
 
@@ -229,7 +215,7 @@ export function PayrollRunsRoute({
     {
       key: "employees",
       header: "Сотрудников",
-      cell: (run) => runEmployeeCount(run, linesByRunId.get(run.id) ?? []),
+      cell: (run) => runEmployeeCount(run),
       className: "tabular-nums",
     },
     {
@@ -241,7 +227,7 @@ export function PayrollRunsRoute({
     {
       key: "ratio",
       header: "% от выручки",
-      cell: (run) => formatRatio(runPayrollRatio(run, linesByRunId.get(run.id) ?? [])),
+      cell: (run) => formatRatio(runPayrollRatio(run)),
       className: "tabular-nums",
     },
     {
@@ -915,15 +901,16 @@ function runTotal(run: PayrollRun) {
   return Number(run.summary.total_payable ?? 0);
 }
 
-function runEmployeeCount(run: PayrollRun, lines: PayrollLine[]) {
-  if (lines.length > 0) {
-    return new Set(lines.map((line) => line.employee_id)).size;
+function runEmployeeCount(run: PayrollRun) {
+  const employeeCount = Number(run.summary.employee_count ?? 0);
+  if (employeeCount > 0) {
+    return employeeCount;
   }
   return Number(run.summary.line_count ?? 0);
 }
 
-function runPayrollRatio(run: PayrollRun, lines: PayrollLine[]) {
-  const revenue = runRevenue(lines);
+function runPayrollRatio(run: PayrollRun) {
+  const revenue = Number(run.summary.revenue_total ?? 0);
   if (!revenue) {
     return null;
   }

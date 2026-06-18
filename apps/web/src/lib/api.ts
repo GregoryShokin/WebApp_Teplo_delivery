@@ -473,6 +473,8 @@ export type PayrollAttendanceWarning = {
 export type PayrollRunSummary = Record<string, unknown> & {
   attendance_warnings?: PayrollAttendanceWarning[];
   attendance_warning_count?: number;
+  revenue_total?: number;
+  employee_count?: number;
 };
 
 export type PayrollPaymentMethod = "business_card" | "cash" | "transfer" | "other";

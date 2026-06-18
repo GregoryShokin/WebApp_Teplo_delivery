@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -1136,7 +1137,60 @@ async def list_runs(session: AsyncSession) -> list[dict[str, Any]]:
         .join(PayrollPeriod, PayrollRun.period_id == PayrollPeriod.id)
         .order_by(desc(PayrollRun.started_at))
     )
-    return [serialize_run(run, period) for run, period in result.all()]
+    rows = result.all()
+    metrics = await _run_line_metrics(session, [run.id for run, _ in rows])
+    return [serialize_run(run, period, metrics=metrics.get(run.id)) for run, period in rows]
+
+
+def _coerce_revenue(value: Any) -> float:
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return amount if amount > 0 else 0.0
+
+
+async def _run_line_metrics(
+    session: AsyncSession, run_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, dict[str, Any]]:
+    """Aggregate per-run revenue and headcount from line components in a single query.
+
+    Mirrors the frontend ``runRevenue`` logic (sum of unique ``daily_revenue`` per
+    date) so the runs list can render the FOT ratio without the client fetching every
+    run's lines (the previous N+1 that flooded the API with one request per run).
+    """
+    if not run_ids:
+        return {}
+    rows = await session.execute(
+        select(
+            PayrollLine.run_id,
+            PayrollLine.employee_id,
+            PayrollLine.components["days"].label("days"),
+        ).where(PayrollLine.run_id.in_(run_ids))
+    )
+    revenue_by_date: dict[uuid.UUID, dict[str, float]] = defaultdict(dict)
+    employees: dict[uuid.UUID, set[uuid.UUID]] = defaultdict(set)
+    for run_id, employee_id, days in rows:
+        employees[run_id].add(employee_id)
+        if not isinstance(days, list):
+            continue
+        bucket = revenue_by_date[run_id]
+        for day in days:
+            if not isinstance(day, Mapping):
+                continue
+            date_key = str(day.get("date") or "")
+            if not date_key or date_key in bucket:
+                continue
+            revenue = _coerce_revenue(day.get("daily_revenue"))
+            if revenue > 0:
+                bucket[date_key] = revenue
+    return {
+        run_id: {
+            "revenue_total": round(sum(revenue_by_date.get(run_id, {}).values()), 2),
+            "employee_count": len(employees.get(run_id, ())),
+        }
+        for run_id in run_ids
+    }
 
 
 async def get_run(session: AsyncSession, run_id: uuid.UUID) -> dict[str, Any]:
@@ -1178,7 +1232,16 @@ def serialize_period(period: PayrollPeriod) -> dict[str, Any]:
     }
 
 
-def serialize_run(run: PayrollRun, period: PayrollPeriod | None = None) -> dict[str, Any]:
+def serialize_run(
+    run: PayrollRun,
+    period: PayrollPeriod | None = None,
+    *,
+    metrics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    summary = dict(run.summary or {})
+    if metrics is not None:
+        summary["revenue_total"] = metrics.get("revenue_total", 0.0)
+        summary["employee_count"] = metrics.get("employee_count", 0)
     data = {
         "id": run.id,
         "period_id": run.period_id,
@@ -1186,7 +1249,7 @@ def serialize_run(run: PayrollRun, period: PayrollPeriod | None = None) -> dict[
         "finished_at": run.finished_at,
         "status": run.status,
         "blocking_issues": run.blocking_issues or [],
-        "summary": run.summary or {},
+        "summary": summary,
         "is_imported_legacy": bool(getattr(run, "is_imported_legacy", False)),
         "payout_cash_total": float(run.payout_cash_total or 0),
     }
