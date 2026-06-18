@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     counterparty_invoice_sync_cron_days: int = 7
     counterparty_invoice_sync_days: int = 30
     counterparty_match_window_days: int = 7
+    # Авто-синк закрытых кассовых смен iiko. Смена закрывается ~22:00–23:30 МСК, поэтому
+    # джоб идёт по cron каждые 30 мин в окне 22:00–01:30 (ловит смену сразу после закрытия;
+    # синк идемпотентен — upsert + барьер posted). Окно прошито в scheduler.py.
+    kassa_cashshift_sync_enabled: bool = True
+    kassa_cashshift_sync_days: int = 3
     teplo_bank_client_mode: Literal["mock", "live"] = "mock"
     bank_sync_providers: str = "tbank"
     bank_client_timeout_seconds: float = 90
