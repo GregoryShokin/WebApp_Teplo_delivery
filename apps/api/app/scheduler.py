@@ -27,7 +27,7 @@ from app.services.banking.classifier import (
     create_or_update_reconciliation_case,
     run_classification_rules,
 )
-from app.services.banking.exceptions import BankCredentialsError
+from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 from app.services.banking.own_accounts import sync_own_accounts
 from app.services.banking.sber import SberClient
 from app.services.banking.tbank import TbankClient
@@ -284,6 +284,12 @@ async def run_bank_sync_job(
             await session.commit()
             logger.warning("Bank credentials error for %s: %s", provider, exc)
             return {"job_id": job_id, "provider": provider, "status": "invalid_credentials"}
+        except BankFetchError as exc:
+            # Isolate a provider's fetch/HTTP failure so it cannot block the other
+            # providers in poll_banks (which syncs sber then tbank sequentially).
+            await session.rollback()
+            logger.warning("Bank fetch error for %s: %s", provider, exc)
+            return {"job_id": job_id, "provider": provider, "status": "fetch_error"}
 
 
 async def sync_bank_provider(
