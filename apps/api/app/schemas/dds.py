@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -279,4 +280,35 @@ class OwnerReviewActionRead(BaseModel):
     status: str
     bank_operation_id: uuid.UUID | None = None
     classification_status: str | None = None
+    rule_id: uuid.UUID | None = None
+
+
+class OperationSplitItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    article_id: uuid.UUID
+    amount: Decimal = Field(gt=0)
+    comment: str | None = None
+
+
+class OperationClassifyRequest(BaseModel):
+    """Multi-article classification of a single bank operation.
+
+    ``action="split"`` spreads the operation across one or more articles (each with
+    its own amount; amounts must sum to the operation amount). The other actions
+    mirror the legacy owner-review flow.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["split", "mark_internal_transfer", "exclude"] = "split"
+    splits: list[OperationSplitItem] = Field(default_factory=list)
+    counterparty_id: uuid.UUID | None = None
+    remember_as_rule: bool = False
+
+
+class OperationClassifyRead(BaseModel):
+    bank_operation_id: uuid.UUID
+    classification_status: str
+    cashflow_transaction_ids: list[uuid.UUID] = Field(default_factory=list)
     rule_id: uuid.UUID | None = None

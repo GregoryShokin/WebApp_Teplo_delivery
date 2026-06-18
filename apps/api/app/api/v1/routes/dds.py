@@ -45,12 +45,15 @@ from app.schemas.dds import (
     DdsCounterpartyPatch,
     DdsCounterpartyRead,
     DdsWalletRead,
+    OperationClassifyRead,
+    OperationClassifyRequest,
     OwnerReviewActionRead,
     OwnerReviewClassifyRequest,
     OwnerReviewListRead,
 )
 from app.services.banking.classifier import (
     apply_operation_action,
+    apply_operation_split,
     close_reconciliation_case,
 )
 from app.services.banking.credentials import set_credential
@@ -716,6 +719,81 @@ async def dismiss_owner_review_case(
     return {"case_id": case.id, "status": case.status, "bank_operation_id": case.bank_operation_id}
 
 
+@router.post(
+    "/operations/{operation_id}/classify",
+    response_model=OperationClassifyRead,
+    dependencies=DDS_CLASSIFY_ACCESS,
+)
+async def classify_operation(
+    operation_id: UUID,
+    payload: OperationClassifyRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    """Classify a bank operation directly: multi-article split, internal transfer, or exclude."""
+    operation = await session.get(BankOperation, operation_id)
+    if operation is None:
+        raise HTTPException(status_code=404, detail="Bank operation not found")
+
+    created_ids: list[UUID] = []
+    if payload.action == "split":
+        if not payload.splits:
+            raise HTTPException(status_code=400, detail="Нужна хотя бы одна статья")
+        try:
+            created_ids = await apply_operation_split(
+                session,
+                operation,
+                splits=[(item.article_id, item.amount, item.comment) for item in payload.splits],
+                counterparty_id=payload.counterparty_id,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    else:
+        await apply_operation_action(
+            session,
+            operation,
+            action=payload.action,
+            counterparty_id=payload.counterparty_id,
+            quality_status="owner_review",
+        )
+        if payload.action == "mark_internal_transfer":
+            await find_and_link_transfer_pairs(session)
+
+    rule_id = None
+    if payload.remember_as_rule and payload.action == "split" and len(payload.splits) == 1:
+        rule = _rule_from_operation_split(
+            operation, payload.splits[0].article_id, payload.counterparty_id
+        )
+        session.add(rule)
+        await session.flush()
+        rule_id = rule.id
+
+    case = await session.scalar(
+        select(ReconciliationCase).where(
+            ReconciliationCase.bank_operation_id == operation.id,
+            ReconciliationCase.kind == "unclassified_operation",
+            ReconciliationCase.status == "pending",
+        )
+    )
+    if case is not None:
+        await close_reconciliation_case(
+            session,
+            case,
+            status="resolved",
+            resolution_payload={
+                "action": payload.action,
+                "splits": len(payload.splits),
+                "rule_id": str(rule_id) if rule_id else None,
+            },
+        )
+    await session.commit()
+    return {
+        "bank_operation_id": operation.id,
+        "classification_status": operation.classification_status,
+        "cashflow_transaction_ids": created_ids,
+        "rule_id": rule_id,
+    }
+
+
 def _wallet_payload(
     wallet: Wallet,
     movement_delta: Decimal = Decimal("0"),
@@ -956,6 +1034,29 @@ def _rule_from_owner_review(
         article_id=payload.article_id,
         counterparty_id=payload.counterparty_id,
         comment=f"Created from owner-review case for {operation.provider_operation_id}",
+    )
+
+
+def _rule_from_operation_split(
+    operation: BankOperation, article_id: UUID, counterparty_id: UUID | None
+) -> ClassificationRule:
+    purpose_pattern = _short_pattern(operation.payment_purpose)
+    counterparty_pattern = (
+        None if operation.counterparty_inn_raw else _short_pattern(operation.counterparty_name_raw)
+    )
+    return ClassificationRule(
+        name=f"Owner review {operation.provider} {operation.provider_operation_id}",
+        priority=50,
+        is_active=True,
+        provider=operation.provider,
+        direction=operation.direction,
+        counterparty_inn_match=operation.counterparty_inn_raw,
+        counterparty_name_pattern=counterparty_pattern,
+        purpose_pattern=purpose_pattern,
+        action="set_article",
+        article_id=article_id,
+        counterparty_id=counterparty_id,
+        comment=f"Created from operation review for {operation.provider_operation_id}",
     )
 
 

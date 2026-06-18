@@ -12,8 +12,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
+import { usePermissions } from "@/lib/permissions";
+import { OperationReviewDialog } from "@/routes/dds/OperationReviewDialog";
 import {
   getDdsBankOperations,
   type BankOperationRead,
@@ -22,14 +23,11 @@ import {
 import {
   BankSyncButton,
   DdsStatusBadge,
-  DetailRow,
   DirectionBadge,
-  JsonPreview,
   PaginationControls,
   ProviderBadge,
   compactText,
   formatDate,
-  formatDateTime,
   formatDdsMoney,
   isoDateDaysAgo,
   statusLabels,
@@ -46,6 +44,8 @@ export function OperationsTab() {
   const [status, setStatus] = useState(initialFilters.classification_status);
   const [offset, setOffset] = useState(0);
   const [selectedOperation, setSelectedOperation] = useState<BankOperationRead | null>(null);
+  const permissions = usePermissions();
+  const canClassify = permissions.canPerformAction("finance.cashflow.classify");
 
   const queryParams: BankOperationsQuery = useMemo(
     () => ({
@@ -210,45 +210,11 @@ export function OperationsTab() {
         onOffsetChange={setOffset}
       />
 
-      <Sheet
-        open={Boolean(selectedOperation)}
-        onOpenChange={(open) => !open && setSelectedOperation(null)}
-      >
-        <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
-          <SheetHeader>
-            <SheetTitle>Операция банка</SheetTitle>
-            <SheetDescription>
-              {selectedOperation
-                ? `${formatDate(selectedOperation.operation_date)} · ${formatDdsMoney(
-                    selectedOperation.amount,
-                  )}`
-                : ""}
-            </SheetDescription>
-          </SheetHeader>
-          {selectedOperation ? (
-            <div className="mt-5 space-y-1">
-              <DetailRow label="Провайдер" value={<ProviderBadge provider={selectedOperation.provider} />} />
-              <DetailRow label="Статус" value={<DdsStatusBadge status={selectedOperation.classification_status} />} />
-              <DetailRow label="Проведено" value={formatDateTime(selectedOperation.posted_at)} />
-              <DetailRow label="Контрагент" value={compactText(selectedOperation.counterparty_name_raw)} />
-              <DetailRow label="ИНН" value={compactText(selectedOperation.counterparty_inn_raw)} />
-              <DetailRow label="Документ" value={compactText(selectedOperation.document_number)} />
-              <DetailRow label="Назначение" value={compactText(selectedOperation.payment_purpose)} />
-              <DetailRow
-                label="Cashflow transaction"
-                value={selectedOperation.cashflow_transaction_id ?? "—"}
-              />
-              <DetailRow label="Transfer group" value={selectedOperation.transfer_group_id ?? "—"} />
-              <div className="pt-4">
-                <div className="mb-2 text-xs font-medium uppercase text-muted-foreground">
-                  Raw payload
-                </div>
-                <JsonPreview value={selectedOperation.raw_payload} />
-              </div>
-            </div>
-          ) : null}
-        </SheetContent>
-      </Sheet>
+      <OperationReviewDialog
+        operation={selectedOperation}
+        canClassify={canClassify}
+        onClose={() => setSelectedOperation(null)}
+      />
     </div>
   );
 }

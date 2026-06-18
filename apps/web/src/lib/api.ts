@@ -2263,6 +2263,19 @@ export type ClassifyPayload = {
   remember_as_rule: boolean;
 };
 
+export type OperationSplitItem = {
+  article_id: string;
+  amount: string;
+  comment?: string | null;
+};
+
+export type OperationClassifyPayload = {
+  action: "split" | "mark_internal_transfer" | "exclude";
+  splits?: OperationSplitItem[];
+  counterparty_id?: string | null;
+  remember_as_rule?: boolean;
+};
+
 export type CredentialRead = {
   id: string;
   provider: DdsProvider;
@@ -2586,6 +2599,13 @@ export async function classifyOwnerReviewCase(
   payload: ClassifyPayload,
 ): Promise<void> {
   await api.post(`/dds/owner-review/${caseId}/classify`, payload);
+}
+
+export async function classifyOperation(
+  operationId: string,
+  payload: OperationClassifyPayload,
+): Promise<void> {
+  await api.post(`/dds/operations/${operationId}/classify`, payload);
 }
 
 export async function dismissOwnerReviewCase(caseId: string): Promise<void> {

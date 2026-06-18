@@ -385,3 +385,70 @@ def _operation_review_payload(operation: BankOperation) -> dict[str, Any]:
         "counterparty_account_raw": operation.counterparty_account_raw,
         "payment_purpose": operation.payment_purpose,
     }
+
+
+async def _clear_operation_cashflow(session: AsyncSession, operation: BankOperation) -> None:
+    """Drop cashflow rows previously booked from this bank operation (re-split).
+
+    Only rows whose ``source`` is this very operation are removed — a pre-booked
+    manual payment (different ``source_kind``) linked to the op is left untouched.
+    """
+    existing = await session.scalars(
+        select(CashflowTransaction).where(
+            CashflowTransaction.source_kind == "bank_operation",
+            CashflowTransaction.source_id == operation.id,
+        )
+    )
+    for transaction in existing.all():
+        await session.delete(transaction)
+    operation.cashflow_transaction_id = None
+    await session.flush()
+
+
+async def apply_operation_split(
+    session: AsyncSession,
+    operation: BankOperation,
+    *,
+    splits: list[tuple[UUID, Decimal, str | None]],
+    counterparty_id: UUID | None = None,
+    quality_status: str = "owner_review",
+) -> list[UUID]:
+    """Spread one bank operation across one or more DDS articles.
+
+    Balance is taken from the statement (see ``_wallet_movement_deltas``), so this
+    only fills DDS analytics — the split amounts must add up to the operation amount
+    but never move the wallet balance. Re-splitting first drops any cashflow already
+    booked from this operation, then books one cashflow row per article.
+    """
+    if not splits:
+        raise ValueError("Нужна хотя бы одна статья")
+    total = sum((amount for _article, amount, _comment in splits), Decimal("0"))
+    if total != Decimal(operation.amount):
+        raise ValueError(
+            f"Сумма по статьям ({total}) не равна сумме операции ({operation.amount})"
+        )
+    wallet = await _wallet_for_operation(session, operation)
+    if wallet is None:
+        raise ValueError("Не найден кошелёк для операции")
+    await _clear_operation_cashflow(session, operation)
+    created: list[UUID] = []
+    for article_id, amount, comment in splits:
+        transaction = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction=operation.direction,
+            amount=amount,
+            operation_date=operation.operation_date,
+            article_id=article_id,
+            counterparty_id=counterparty_id,
+            source_kind="bank_operation",
+            source_id=operation.id,
+            payment_purpose=operation.payment_purpose,
+            comment=comment,
+            quality_status=quality_status,
+        )
+        session.add(transaction)
+        await session.flush()
+        created.append(transaction.id)
+    operation.cashflow_transaction_id = created[0]
+    operation.classification_status = "classified"
+    return created
