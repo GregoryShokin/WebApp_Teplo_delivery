@@ -47,6 +47,15 @@ CASH_WALLET_CODE = "tk_chernikova"
 CARD_TX_WINDOW_HOURS = 48
 CARD_TX_TIGHT_MINUTES = 120
 
+# Чеку местного закупа доступны только эти статьи ДДС (по ИМЕНИ — code/uuid различны
+# dev/prod). Кассир выбирает статью каждой позиции только из этого белого списка.
+CHEQUE_ARTICLE_NAMES = (
+    "Расходы на питание персонала",
+    "Расходы на персонал",
+    "Содержание торговых точек",
+    "Оплата поставщикам",
+)
+
 
 class KassaChequeError(RuntimeError):
     """Доменная ошибка создания чека (маппится на HTTP 409/422)."""
@@ -562,6 +571,20 @@ async def create_cheque(
     await session.commit()
     await session.refresh(invoice)
     return invoice
+
+
+async def list_cheque_articles(session: AsyncSession) -> list[DdsArticle]:
+    """Статьи ДДС, доступные для позиций чека (белый список ``CHEQUE_ARTICLE_NAMES``)."""
+    result = await session.scalars(
+        select(DdsArticle)
+        .where(
+            DdsArticle.name.in_(CHEQUE_ARTICLE_NAMES),
+            DdsArticle.is_active.is_(True),
+            DdsArticle.movement_type == "outflow",
+        )
+        .order_by(DdsArticle.name)
+    )
+    return list(result.all())
 
 
 async def list_cheques(

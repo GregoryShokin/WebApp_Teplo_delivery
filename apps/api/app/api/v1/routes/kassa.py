@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import uuid
 from datetime import date, datetime, timedelta
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
@@ -29,6 +30,7 @@ from app.services.kassa.cheque import (
     create_cheque,
     get_cheque,
     list_card_transactions,
+    list_cheque_articles,
     list_cheques,
 )
 from app.services.kassa.iiko_cashshift_sync import (
@@ -39,6 +41,7 @@ from app.services.kassa.iiko_cashshift_sync import (
     sync_iiko_cashshifts,
     waive_shift_penalty,
 )
+from app.services.warehouse_invoice_push import WarehousePushError, push_invoice_to_iiko
 
 router = APIRouter()
 
@@ -58,14 +61,9 @@ KASSA_PENALTY_WAIVE = (Depends(require_permission("kassa.penalty.waive")),)
 )
 async def list_dds_articles(
     session: Annotated[AsyncSession, Depends(get_session)],
-    movement_type: Literal["inflow", "outflow"] | None = None,
 ) -> list[DdsArticle]:
-    """Активные статьи ДДС для выбора в чеке (расход = ``movement_type='outflow'``)."""
-    conditions = [DdsArticle.is_active.is_(True)]
-    if movement_type is not None:
-        conditions.append(DdsArticle.movement_type == movement_type)
-    result = await session.scalars(select(DdsArticle).where(*conditions).order_by(DdsArticle.name))
-    return list(result.all())
+    """Статьи ДДС для позиций чека — только белый список (4 статьи местного закупа)."""
+    return await list_cheque_articles(session)
 
 
 @router.get(
@@ -186,6 +184,10 @@ async def create_cheque_endpoint(
         )
     except KassaChequeError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    # Складские позиции (с товаром) уходят в iiko приходной накладной от «Местного закупа»;
+    # прочие расходы без товара push пропускает сам. Ошибка/skip не отменяет созданный чек.
+    with contextlib.suppress(WarehousePushError):
+        await push_invoice_to_iiko(session, invoice.id)
     payload_out = await get_cheque(session, invoice.id)
     assert payload_out is not None  # noqa: S101 - just created it
     return payload_out

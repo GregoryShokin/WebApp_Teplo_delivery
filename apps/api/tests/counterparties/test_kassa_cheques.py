@@ -22,8 +22,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import (
+    AppSetting,
     BankOperation,
     CashflowTransaction,
+    IikoProduct,
     InvoiceLineItem,
     InvoicePaymentAllocation,
     Wallet,
@@ -35,6 +37,7 @@ from app.services.kassa.cheque import (
     create_cheque,
     list_card_transactions,
 )
+from app.services.warehouse_invoice_push import prepare_push
 
 ISSUED = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
 OP_DATE = date(2026, 6, 17)
@@ -191,9 +194,14 @@ async def test_cheque_books_dds_per_line_article(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     # Местный закуп: позиции с разными статьями ДДС → отдельные движения по статьям.
+    # Статьи — из белого списка чека (CHEQUE_ARTICLE_NAMES).
     async with async_session_factory() as session:
-        veg = await make_expense_article(session, code="veg", name="Овощи")
-        household = await make_expense_article(session, code="hh", name="Хозтовары")
+        veg = await make_expense_article(
+            session, code="pitanie", name="Расходы на питание персонала"
+        )
+        household = await make_expense_article(
+            session, code="tochki", name="Содержание торговых точек"
+        )
         cp = await make_counterparty(session, name="Местный закуп")
         _, op = await _card_op(session, amount="500.00")
         await session.commit()
@@ -233,6 +241,71 @@ async def test_cheque_books_dds_per_line_article(
             )
         ).all()
         assert {line.dds_article_id for line in lines} == {veg.id, household.id}
+
+
+async def test_cheque_pushes_only_store_lines_to_iiko(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Складская позиция (с товаром) уходит в iiko; прочий расход (без товара) — нет.
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Местный закуп", iiko_guid="LP-GUID")
+        product = IikoProduct(
+            iiko_id="PROD-X", name="Помидоры", type="GOODS", unit="кг", main_unit_guid="U-KG"
+        )
+        session.add(product)
+        session.add(
+            AppSetting(
+                key="iiko.default_store_guid",
+                value={"guid": "ST-1"},
+                value_type="json",
+                category="iiko",
+                display_name="Склад",
+                widget_type="json",
+            )
+        )
+        supplier = await make_expense_article(session, code="sup", name="Оплата поставщикам")
+        other = await make_expense_article(session, code="sod", name="Содержание торговых точек")
+        _, op = await _card_op(session, amount="700.00")
+        await session.commit()
+
+        cheque = await create_cheque(
+            session,
+            counterparty_id=cp.id,
+            article_id=None,
+            issued_at=ISSUED,
+            bank_parts=[ChequeBankPart(bank_operation_id=op.id)],
+            track_nomenclature=True,
+            lines=[
+                ChequeLineInput(
+                    name="Помидоры",
+                    quantity=Decimal("2"),
+                    price=Decimal("250.00"),
+                    dds_article_id=supplier.id,
+                    iiko_product_id=product.id,
+                ),
+                ChequeLineInput(
+                    name="Губки",
+                    quantity=Decimal("1"),
+                    price=Decimal("200.00"),
+                    dds_article_id=other.id,
+                ),
+            ],
+        )
+
+        lines = (
+            await session.scalars(
+                select(InvoiceLineItem)
+                .where(InvoiceLineItem.invoice_id == cheque.id)
+                .order_by(InvoiceLineItem.sort_order)
+            )
+        ).all()
+        assert lines[0].product_guid == "PROD-X"  # складская — с iiko-GUID
+        assert lines[1].product_guid is None  # прочий расход — без товара
+
+        prepared = await prepare_push(session, cheque)
+        assert prepared.xml is not None
+        assert "PROD-X" in prepared.xml  # складская уходит в iiko
+        assert "Губки" not in prepared.xml  # прочий расход в iiko НЕ уходит
 
 
 async def test_nomenclature_total_mismatch_rejected(
