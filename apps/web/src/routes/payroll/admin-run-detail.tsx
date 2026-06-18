@@ -3,12 +3,13 @@ import {
   ArrowLeft,
   CalendarClock,
   CheckCircle2,
+  Landmark,
   LoaderCircle,
   RefreshCw,
   Search,
   Undo2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import {
@@ -26,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
@@ -36,18 +38,26 @@ import {
   apiErrorMessage,
   bulkMarkPayrollPayments,
   createAdminPayrollRun,
+  createRunBankDraft,
   deferPayrollAdvanceRecovery,
   finalizePayrollRun,
   getAdminPayrollRun,
   getAdminPayrollRunLines,
+  getCashWallets,
   getEmployees,
   getPayrollAdvances,
+  getRunBankDraft,
+  getRunPayoutAllocation,
+  setRunPayoutCash,
   unfinalizePayrollRun,
   unmarkPayrollPayment,
+  type CashWallet,
   type Employee,
   type PayrollAdvance,
+  type PayrollBankDraft,
   type PayrollLine,
   type PayrollPaymentMethod,
+  type PayrollRun,
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 
@@ -80,6 +90,7 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
   const canReopenRuns = permissions.canPerformAction("payroll.runs.reopen");
   const canMarkPaid = permissions.canPerformAction("payroll.runs.mark_paid");
   const canManageLoans = permissions.canPerformAction("payroll.loans.issue");
+  const canBankDraft = permissions.canPerformAction("payroll.runs.bank_draft");
   const [isRecalculateDialogOpen, setIsRecalculateDialogOpen] = useState(false);
   const [isUnfinalizeDialogOpen, setIsUnfinalizeDialogOpen] = useState(false);
   const [unfinalizeReason, setUnfinalizeReason] = useState("");
@@ -432,6 +443,10 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
         <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {(runQuery.error as Error).message}
         </div>
+      ) : null}
+
+      {run && run.status === "finalized" && canBankDraft ? (
+        <AdminPayoutCard runId={runId} run={run} totalPayable={totalPayable} />
       ) : null}
 
       <AdminLinesTable
@@ -981,4 +996,377 @@ function formatDateTime(value: string | null) {
     timeStyle: "short",
     timeZone: "Europe/Moscow",
   }).format(new Date(value));
+}
+
+function AdminPayoutCard({
+  runId,
+  run,
+  totalPayable,
+}: {
+  runId: string;
+  run: PayrollRun;
+  totalPayable: number;
+}) {
+  const queryClient = useQueryClient();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  const draftQuery = useQuery<PayrollBankDraft | null>({
+    queryKey: ["admin-run-bank-draft", runId],
+    queryFn: () => getRunBankDraft(runId).catch(() => null),
+  });
+  const allocationQuery = useQuery({
+    queryKey: ["admin-run-payout-allocation", runId],
+    queryFn: () => getRunPayoutAllocation(runId),
+  });
+  const cashWalletsQuery = useQuery({
+    queryKey: ["payroll-cash-wallets"],
+    queryFn: () => getCashWallets(),
+  });
+
+  const draft = draftQuery.data ?? null;
+  const cashWallets = useMemo<CashWallet[]>(() => cashWalletsQuery.data ?? [], [cashWalletsQuery.data]);
+  const allocation = allocationQuery.data;
+
+  const payoutCashTotal = Math.min(moneyValue(run.payout_cash_total ?? 0), totalPayable);
+  const [cashValue, setCashValue] = useState(moneyInputValue(payoutCashTotal));
+  const [walletCode, setWalletCode] = useState<string>("");
+
+  useEffect(() => {
+    setCashValue(moneyInputValue(payoutCashTotal));
+  }, [payoutCashTotal]);
+
+  useEffect(() => {
+    if (!cashWallets.length) {
+      return;
+    }
+    const current = run.payout_cash_wallet_id
+      ? cashWallets.find((wallet) => wallet.id === run.payout_cash_wallet_id)
+      : undefined;
+    setWalletCode((prev) => (prev ? prev : (current?.code ?? "")));
+  }, [run.payout_cash_wallet_id, cashWallets]);
+
+  const cashAmount = parseMoneyInput(cashValue);
+  const cashValid = cashAmount !== null && cashAmount >= 0 && cashAmount <= totalPayable;
+  const needsWallet = cashValid && cashAmount !== null && cashAmount > 0;
+  const walletValid = !needsWallet || walletCode !== "";
+  const previewBank =
+    cashValid && cashAmount !== null ? normalizeMoney(Math.max(0, totalPayable - cashAmount)) : null;
+
+  const currentWalletId = cashWallets.find((wallet) => wallet.code === walletCode)?.id ?? null;
+  const savedWalletId = run.payout_cash_wallet_id ?? null;
+  const cashDirty =
+    cashAmount === null ||
+    normalizeMoney(cashAmount) !== normalizeMoney(payoutCashTotal) ||
+    (needsWallet && currentWalletId !== savedWalletId);
+
+  // Живое превью разнесения: суммы корзин по статьям стабильны (с бэка), а наличная/банковская
+  // разбивка пересчитывается каскадом под введённую наличную сумму (вспомогательная корзина — первой).
+  const previewBuckets = useMemo(() => {
+    const buckets = allocation?.buckets ?? [];
+    let remaining = cashValid && cashAmount !== null ? cashAmount : 0;
+    return buckets.map((bucket) => {
+      const total = moneyValue(bucket.total);
+      const cash = normalizeMoney(Math.min(Math.max(remaining, 0), total));
+      remaining = normalizeMoney(remaining - cash);
+      return {
+        code: bucket.article_code,
+        name: bucket.article_name,
+        total,
+        cash,
+        bank: normalizeMoney(total - cash),
+      };
+    });
+  }, [allocation?.buckets, cashAmount, cashValid]);
+
+  const invalidatePayoutQueries = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["payroll-admin-run", runId] }),
+      queryClient.invalidateQueries({ queryKey: ["payroll-admin-run-lines", runId] }),
+      queryClient.invalidateQueries({ queryKey: ["admin-run-bank-draft", runId] }),
+      queryClient.invalidateQueries({ queryKey: ["admin-run-payout-allocation", runId] }),
+    ]);
+
+  const cashMutation = useMutation({
+    mutationFn: () =>
+      setRunPayoutCash(runId, normalizeMoney(cashAmount ?? 0), needsWallet ? walletCode : null),
+    onSuccess: async () => {
+      await invalidatePayoutQueries();
+      toast.success("Сплит сохранён");
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить сплит")),
+  });
+
+  const draftMutation = useMutation({
+    mutationFn: () => createRunBankDraft(runId),
+    onSuccess: async (next) => {
+      await invalidatePayoutQueries();
+      setIsDialogOpen(false);
+      toast.success(next ? "Черновик сформирован" : "Наличная выплата проведена в ДДС");
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сформировать выплату")),
+  });
+
+  const hasBank = previewBank !== null && previewBank > 0;
+  const actionLabel = hasBank
+    ? draft
+      ? "Обновить черновик"
+      : "Сформировать черновик"
+    : "Провести наличными";
+
+  return (
+    <section className="rounded-lg border bg-card p-4 shadow-sm">
+      <div className="flex items-center gap-2">
+        <Landmark className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+        <h2 className="text-base font-semibold tracking-normal">Выплата администрации</h2>
+      </div>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Укажите наличную сумму и счёт. Остаток уходит одним платежом на счёт ИП. В ДДС выплата
+        разносится по статьям: уборщицы и посудомойки — «Содержание торговых точек», остальные —
+        «Зарплата административного персонала».
+      </p>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-md border bg-background p-3">
+          <div className="text-xs text-muted-foreground">К выплате (ФОТ)</div>
+          <div className="mt-1 font-semibold tabular-nums">{formatMoney(totalPayable)}</div>
+        </div>
+        <div className="rounded-md border bg-background p-3">
+          <Label className="text-xs text-muted-foreground" htmlFor="admin-payout-cash">
+            Наличными итого
+          </Label>
+          <Input
+            className="mt-1"
+            disabled={cashMutation.isPending}
+            id="admin-payout-cash"
+            inputMode="decimal"
+            max={totalPayable}
+            min={0}
+            onChange={(event) => setCashValue(event.target.value)}
+            step="0.01"
+            type="number"
+            value={cashValue}
+          />
+        </div>
+        <div className="rounded-md border bg-background p-3">
+          <Label className="text-xs text-muted-foreground" htmlFor="admin-payout-wallet">
+            Наличный счёт
+          </Label>
+          <select
+            className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
+            disabled={!needsWallet || cashMutation.isPending}
+            id="admin-payout-wallet"
+            onChange={(event) => setWalletCode(event.target.value)}
+            value={walletCode}
+          >
+            <option value="">— выберите счёт —</option>
+            {cashWallets.map((wallet) => (
+              <option key={wallet.id} value={wallet.code}>
+                {wallet.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="rounded-md border bg-muted/30 p-3">
+          <div className="text-xs text-muted-foreground">На счёт ИП (банк)</div>
+          <div className="mt-1 font-semibold tabular-nums">
+            {previewBank === null ? "—" : formatMoney(previewBank)}
+          </div>
+        </div>
+      </div>
+
+      {!cashValid ? (
+        <div className="mt-2 text-xs text-destructive">
+          Введите наличную сумму от 0 до {formatMoney(totalPayable)}.
+        </div>
+      ) : null}
+      {cashValid && needsWallet && !walletValid ? (
+        <div className="mt-2 text-xs text-destructive">
+          Выберите наличный счёт (Сейф или Торговая касса Черникова).
+        </div>
+      ) : null}
+
+      {previewBuckets.length > 0 ? (
+        <div className="mt-4 overflow-hidden rounded-md border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 text-xs text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">Статья ДДС</th>
+                <th className="px-3 py-2 text-right font-medium">Всего</th>
+                <th className="px-3 py-2 text-right font-medium">Наличными</th>
+                <th className="px-3 py-2 text-right font-medium">Банком</th>
+              </tr>
+            </thead>
+            <tbody>
+              {previewBuckets.map((bucket) => (
+                <tr key={bucket.code} className="border-t">
+                  <td className="px-3 py-2">{bucket.name}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatMoney(bucket.total)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatMoney(bucket.cash)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatMoney(bucket.bank)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button
+          disabled={!cashValid || !walletValid || !cashDirty || cashMutation.isPending}
+          onClick={async () => {
+            try {
+              await cashMutation.mutateAsync();
+            } catch {
+              // Toast обрабатывается в onError.
+            }
+          }}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {cashMutation.isPending ? (
+            <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+          ) : (
+            <CheckCircle2 size={15} aria-hidden="true" />
+          )}
+          Сохранить сплит
+        </Button>
+
+        <AlertDialog
+          open={isDialogOpen}
+          onOpenChange={(open) => {
+            if (!draftMutation.isPending) {
+              setIsDialogOpen(open);
+            }
+          }}
+        >
+          <AlertDialogTrigger asChild>
+            <Button disabled={draftMutation.isPending || cashDirty} type="button">
+              {draftMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <Landmark size={16} aria-hidden="true" />
+              )}
+              {actionLabel}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{actionLabel}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {hasBank
+                  ? `${draft ? "Обновит" : "Создаст"} черновик на ${formatMoney(previewBank ?? 0)} на счёт ИП — подписать нужно в приложении банка. Наличная часть и разнесение по статьям ДДС проведутся автоматически.`
+                  : "Проведёт наличную выплату по статьям ДДС. Банковского черновика не будет."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={draftMutation.isPending} type="button">
+                Отмена
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={draftMutation.isPending}
+                onClick={async (event) => {
+                  event.preventDefault();
+                  try {
+                    await draftMutation.mutateAsync();
+                  } catch {
+                    // Toast обрабатывается в onError.
+                  }
+                }}
+                type="button"
+              >
+                {draftMutation.isPending ? (
+                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                ) : (
+                  <Landmark size={16} aria-hidden="true" />
+                )}
+                {hasBank ? (draft ? "Обновить" : "Сформировать") : "Провести"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {cashDirty ? (
+          <span className="text-xs text-muted-foreground">Сначала сохраните сплит.</span>
+        ) : null}
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <PayoutValue
+          label="Черновик в банк"
+          value={draft ? formatMoney(moneyValue(draft.amount)) : "—"}
+        />
+        <PayoutValue
+          label="Статус"
+          value={
+            draftQuery.isLoading ? (
+              <Badge className="rounded-md border-border bg-muted text-muted-foreground shadow-none">
+                Загрузка
+              </Badge>
+            ) : draft ? (
+              <AdminDraftStatusBadge status={draft.status} />
+            ) : (
+              <Badge className="rounded-md border-border bg-muted text-muted-foreground shadow-none">
+                Не создан
+              </Badge>
+            )
+          }
+        />
+        <PayoutValue label="Документ" value={draft?.document_id ?? "—"} />
+        <PayoutValue
+          label="Синхронизация"
+          value={draft?.synced_at ? formatDateTime(draft.synced_at) : "—"}
+        />
+      </div>
+
+      {draft?.last_error ? (
+        <div className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {draft.last_error}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function PayoutValue({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 break-words font-medium tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+const ADMIN_DRAFT_STATUS: Record<string, { label: string; className: string }> = {
+  created: { label: "Создан", className: "border-sky-200 bg-sky-50 text-sky-800" },
+  updated: { label: "Обновлён", className: "border-sky-200 bg-sky-50 text-sky-800" },
+  paid: { label: "Оплачен", className: "border-emerald-200 bg-emerald-50 text-emerald-800" },
+  failed: { label: "Ошибка", className: "border-rose-200 bg-rose-50 text-rose-800" },
+};
+
+function AdminDraftStatusBadge({ status }: { status: string }) {
+  const meta = ADMIN_DRAFT_STATUS[status] ?? {
+    label: status,
+    className: "border-border bg-muted text-muted-foreground",
+  };
+  return <Badge className={`rounded-md shadow-none ${meta.className}`}>{meta.label}</Badge>;
+}
+
+function moneyValue(value: number | string | null | undefined) {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+function moneyInputValue(value: number | string | null | undefined) {
+  return String(moneyValue(value));
+}
+function parseMoneyInput(value: string) {
+  const normalized = value.trim().replace(",", ".");
+  if (!normalized) {
+    return null;
+  }
+  const numeric = Number(normalized);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+function normalizeMoney(value: number) {
+  return Math.round(value * 100) / 100;
 }

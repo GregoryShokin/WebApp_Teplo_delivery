@@ -149,6 +149,12 @@ class PayrollRun(Base):
     payout_cash_total: Mapped[Decimal] = mapped_column(
         Numeric(14, 2), nullable=False, default=0, server_default="0"
     )
+    # Наличный кошелёк, с которого выдаётся наличная часть (Сейф / Торговая касса
+    # Черникова). Нужен для проводок ДДС наличной части админ-ведомости; NULL —
+    # если наличной части нет.
+    payout_cash_wallet_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("wallet.id", ondelete="RESTRICT"), nullable=True
+    )
 
 
 class PayrollRunEvent(Base):

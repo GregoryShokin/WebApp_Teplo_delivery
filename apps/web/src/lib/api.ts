@@ -458,6 +458,7 @@ export type PayrollRun = {
   summary: PayrollRunSummary;
   is_imported_legacy: boolean;
   payout_cash_total: number;
+  payout_cash_wallet_id: string | null;
   period: PayrollPeriod | null;
 };
 
@@ -3129,9 +3130,14 @@ export async function bulkMarkPayrollPayments(
   return response.data;
 }
 
-export async function setRunPayoutCash(runId: string, amountCash: number): Promise<PayrollRun> {
+export async function setRunPayoutCash(
+  runId: string,
+  amountCash: number,
+  cashWalletCode?: string | null,
+): Promise<PayrollRun> {
   const response = await api.patch<PayrollRun>(`/payroll/runs/${runId}/payout-cash`, {
     amount_cash: amountCash,
+    cash_wallet_code: cashWalletCode ?? null,
   });
   return response.data;
 }
@@ -3143,8 +3149,8 @@ export async function createPayoutDrafts(runId: string): Promise<PayrollPayoutDr
   return response.data;
 }
 
-export async function createRunBankDraft(runId: string): Promise<PayrollBankDraft> {
-  const response = await api.post<PayrollBankDraft>(`/payroll/runs/${runId}/bank-draft`);
+export async function createRunBankDraft(runId: string): Promise<PayrollBankDraft | null> {
+  const response = await api.post<PayrollBankDraft | null>(`/payroll/runs/${runId}/bank-draft`);
   return response.data;
 }
 
@@ -3164,6 +3170,41 @@ export async function applyRunPayoutDelta(
   const response = await api.post<PayrollPayoutApplyDeltasResponse>(
     `/payroll/runs/${runId}/bank-draft/apply-delta`,
   );
+  return response.data;
+}
+
+export type PayoutBucket = {
+  article_code: string;
+  article_name: string;
+  total: number;
+  cash: number;
+  bank: number;
+};
+
+export type PayrollPayoutAllocation = {
+  run_id: string;
+  total_payable: number;
+  cash_total: number;
+  bank_total: number;
+  cash_wallet_id: string | null;
+  buckets: PayoutBucket[];
+};
+
+export type CashWallet = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+export async function getRunPayoutAllocation(runId: string): Promise<PayrollPayoutAllocation> {
+  const response = await api.get<PayrollPayoutAllocation>(
+    `/payroll/runs/${runId}/payout-allocation`,
+  );
+  return response.data;
+}
+
+export async function getCashWallets(): Promise<CashWallet[]> {
+  const response = await api.get<CashWallet[]>(`/payroll/cash-wallets`);
   return response.data;
 }
 

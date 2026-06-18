@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -29,6 +29,10 @@ from app.services.banking.base import clean_digits
 # INN when the statement carries one) and only against these manual source kinds.
 PREBOOKED_DATE_WINDOW_DAYS = 3
 PREBOOKABLE_SOURCE_KINDS = ("counterparty_payment", "kassa_cheque", "payroll_payout")
+# Выплата ведомости может быть разнесена в ДДС на несколько проводок по статьям (один
+# банковский перевод → N статей). Тогда одиночный матч по полной сумме не сработает, и мы
+# матчим по сумме ГРУППЫ проводок выплаты с общим source_id (см. ``_match_grouped_payroll``).
+_PAYROLL_PAYOUT_SOURCE_KIND = "payroll_payout"
 
 
 @dataclass(frozen=True)
@@ -340,7 +344,10 @@ async def _find_prebooked_payment(
         query = query.where(CashflowTransaction.id.not_in(claimed))
     candidates = (await session.scalars(query)).all()
     if not candidates:
-        return None
+        # Нет одиночной проводки на полную сумму — возможно, это разнесённая выплата
+        # (один банковский перевод → несколько проводок по статьям ДДС). Пробуем матч
+        # по сумме ГРУППЫ prebooked-проводок выплаты с общим source_id.
+        return await _match_grouped_payroll(session, operation, wallet, low, high, claimed=claimed)
 
     op_inn = clean_digits(operation.counterparty_inn_raw)
     if not op_inn:
@@ -355,6 +362,65 @@ async def _find_prebooked_payment(
             fallback = candidate
     # A candidate with a *different* known INN is never matched — only same-INN or unknown.
     return fallback
+
+
+async def _match_grouped_payroll(
+    session: AsyncSession,
+    operation: BankOperation,
+    wallet: Wallet,
+    low: date,
+    high: date,
+    *,
+    claimed: set[UUID],
+) -> CashflowTransaction | None:
+    """Сматчить банковскую операцию с ГРУППОЙ prebooked-проводок выплаты, разнесённой по
+    статьям ДДС (один банковский перевод на счёт ИП → несколько статей).
+
+    Группа — проводки выплаты (``payroll_payout``) с одним ``source_id`` на том же
+    (банковском) кошельке, не привязанные к операциям. Наличные проводки той же выплаты
+    лежат на наличном кошельке и сюда не попадают, поэтому сумма банковской группы равна
+    сумме перевода. Привязываем операцию к первой проводке группы, остальные столбим как
+    claimed (раскладка уже в ДДС). Матчим только однозначную группу (≥2 проводки).
+    """
+    already_linked = (
+        select(BankOperation.id)
+        .where(BankOperation.cashflow_transaction_id == CashflowTransaction.id)
+        .exists()
+    )
+    query = (
+        select(CashflowTransaction)
+        .where(
+            CashflowTransaction.wallet_id == wallet.id,
+            CashflowTransaction.direction == operation.direction,
+            CashflowTransaction.source_kind == _PAYROLL_PAYOUT_SOURCE_KIND,
+            CashflowTransaction.source_id.is_not(None),
+            CashflowTransaction.operation_date >= low,
+            CashflowTransaction.operation_date <= high,
+            ~already_linked,
+        )
+        .order_by(CashflowTransaction.created_at)
+    )
+    if claimed:
+        query = query.where(CashflowTransaction.id.not_in(claimed))
+    rows = (await session.scalars(query)).all()
+    if not rows:
+        return None
+
+    groups: dict[UUID, list[CashflowTransaction]] = {}
+    for txn in rows:
+        groups.setdefault(txn.source_id, []).append(txn)
+    matches = [
+        txns
+        for txns in groups.values()
+        if len(txns) > 1 and sum((t.amount for t in txns), Decimal("0")) == operation.amount
+    ]
+    if len(matches) != 1:
+        # 0 — подходящей группы нет; >1 — неоднозначно, безопаснее отправить в ручной разбор.
+        return None
+    group = sorted(matches[0], key=lambda t: t.created_at)
+    for extra in group[1:]:
+        claimed.add(extra.id)
+    return group[0]
 
 
 async def _transaction_counterparty_inn(

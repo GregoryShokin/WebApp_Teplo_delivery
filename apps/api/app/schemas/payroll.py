@@ -70,6 +70,9 @@ class PayrollRunPayoutCashPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     amount_cash: Decimal = Field(ge=0)
+    # Код наличного кошелька (Сейф / Торговая касса Черникова). Обязателен, если
+    # наличная сумма больше нуля; игнорируется при нулевой наличной части.
+    cash_wallet_code: str | None = None
 
 
 class PayrollPayoutDraftsResponse(BaseModel):
@@ -87,6 +90,35 @@ class PayrollPayoutDeltaRead(BaseModel):
     new_amount: Decimal
     delta: Decimal
     classification: str
+
+
+class PayoutBucketRead(BaseModel):
+    """Корзина выплаты по статье ДДС с разбивкой на наличную и банковскую части."""
+
+    article_code: str
+    article_name: str
+    total: Decimal
+    cash: Decimal
+    bank: Decimal
+
+
+class PayrollPayoutAllocationRead(BaseModel):
+    """Превью разнесения выплаты ведомости по статьям ДДС при текущем сплите."""
+
+    run_id: uuid.UUID
+    total_payable: Decimal
+    cash_total: Decimal
+    bank_total: Decimal
+    cash_wallet_id: uuid.UUID | None = None
+    buckets: list[PayoutBucketRead]
+
+
+class CashWalletRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    code: str
+    name: str
 
 
 class PayrollBankDraftRead(BaseModel):
@@ -116,6 +148,7 @@ class PayrollRunRead(BaseModel):
     summary: dict[str, Any]
     is_imported_legacy: bool = False
     payout_cash_total: float = 0
+    payout_cash_wallet_id: uuid.UUID | None = None
     period: PayrollPeriodRead | None = None
 
 

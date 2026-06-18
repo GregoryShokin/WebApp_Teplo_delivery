@@ -38,6 +38,8 @@ from app.schemas.payroll import (
     PayrollPaymentsBulkMarkRequest,
     PayrollPaymentsMarkAllRequest,
     PayrollPaymentsMarkAllResponse,
+    CashWalletRead,
+    PayrollPayoutAllocationRead,
     PayrollPayoutApplyDeltasResponse,
     PayrollPayoutDeltaRead,
     PayrollPayoutDraftsResponse,
@@ -76,7 +78,9 @@ from app.services.payroll_payouts import (
     create_or_update_run_draft,
     get_payout_deltas,
     get_run_bank_draft,
+    get_run_payout_allocation,
     get_run_payout_delta,
+    list_cash_wallets,
     set_run_payout_cash,
 )
 from app.services.payroll_personal_report import build_personal_report
@@ -476,6 +480,7 @@ async def patch_run_payout_cash(
             session,
             run_id,
             amount_cash=payload.amount_cash,
+            cash_wallet_code=payload.cash_wallet_code,
             actor_user_id=actor.user_id,
         )
         return await get_run(session, run_id)
@@ -522,14 +527,14 @@ async def post_defer_advance_recovery(
 
 @router.post(
     "/runs/{run_id}/bank-draft",
-    response_model=PayrollBankDraftRead,
+    response_model=PayrollBankDraftRead | None,
     dependencies=PAYROLL_RUNS_BANK_DRAFT_ACCESS,
 )
 async def post_run_bank_draft(
     run_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
-) -> PayrollBankDraftRead:
+) -> PayrollBankDraftRead | None:
     try:
         return await create_or_update_run_draft(
             session,
@@ -544,6 +549,37 @@ async def post_run_bank_draft(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
     except BankFetchError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.get(
+    "/runs/{run_id}/payout-allocation",
+    response_model=PayrollPayoutAllocationRead,
+    dependencies=PAYROLL_RUNS_BANK_DRAFT_ACCESS,
+)
+async def get_run_payout_allocation_endpoint(
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollPayoutAllocationRead:
+    """Превью разнесения выплаты по статьям ДДС (две корзины) при текущем сплите."""
+    try:
+        return await get_run_payout_allocation(session, run_id)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.get(
+    "/cash-wallets",
+    response_model=list[CashWalletRead],
+    dependencies=PAYROLL_RUNS_BANK_DRAFT_ACCESS,
+)
+async def get_cash_wallets_endpoint(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[CashWalletRead]:
+    """Наличные кошельки для выбора при сплите (Сейф, Торговая касса Черникова)."""
+    return await list_cash_wallets(session)
 
 
 @router.get(

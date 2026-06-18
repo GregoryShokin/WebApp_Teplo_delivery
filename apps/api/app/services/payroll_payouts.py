@@ -26,6 +26,11 @@ from app.models import (
 from app.services.banking import BankClient, TbankClient
 from app.services.banking.exceptions import BankFetchError
 from app.services.banking.tbank import build_payment_draft_api_payload
+from app.services.payroll_payout_allocation import (
+    DDS_ARTICLE_ADMIN_PAYROLL,
+    allocate_cash_cascade,
+    build_payout_buckets,
+)
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError, money_text
 
 PAYOUT_REQUISITES_KEY = "payroll.bank_payout_requisites"
@@ -36,6 +41,8 @@ PAYROLL_BANK_DRAFT_STATUSES = frozenset({"created", "updated", "paid", "failed"}
 # settles it inherit this article automatically (production payroll → IP/owner card).
 PAYROLL_PAYOUT_SOURCE_KIND = "payroll_payout"
 PAYROLL_PAYOUT_ARTICLE_CODE = "zarplata_proizvodstvennogo_personala"
+# Типы кошельков, с которых допустима выдача наличной части выплаты (Сейф, касса и т.п.).
+CASH_WALLET_TYPES = frozenset({"cash", "cash_register", "cash_safe", "store_cash"})
 
 
 async def set_run_payout_cash(
@@ -43,12 +50,14 @@ async def set_run_payout_cash(
     run_id: uuid.UUID,
     *,
     amount_cash: Decimal,
+    cash_wallet_code: str | None = None,
     actor_user_id: uuid.UUID | None,
 ) -> PayrollRun:
-    """Set the run-level cash portion of the payroll.
+    """Set the run-level cash portion of the payroll and the cash wallet it is paid from.
 
-    The remainder (total payable minus cash) is what goes to the IP account as a
-    single bank draft. Replaces the former per-employee cash/account split.
+    The remainder (total payable minus cash) is what goes to the IP account as a single
+    bank draft. A non-zero cash part requires a cash wallet (Сейф / Торговая касса
+    Черникова) — that wallet carries the cash-side DDS transactions of the payout.
     """
     run = await _get_payout_run(session, run_id)
     total = await _run_total_payable(session, run_id)
@@ -56,7 +65,18 @@ async def set_run_payout_cash(
     if cash < 0 or cash > total:
         raise PayrollConflictError("Наличная сумма должна быть от 0 до суммы к выплате")
 
+    wallet: Wallet | None = None
+    if cash > 0 and cash_wallet_code:
+        wallet = await _resolve_cash_wallet(session, cash_wallet_code)
+    elif cash > 0 and _is_admin_run(run):
+        # Админ-ведомость разносит наличную часть в ДДС, поэтому наличный счёт обязателен.
+        # Производственная ведомость наличные в ДДС не заводит — счёт опционален (как раньше).
+        raise PayrollConflictError(
+            "Укажите наличный счёт (Сейф или Торговая касса Черникова)"
+        )
+
     run.payout_cash_total = cash
+    run.payout_cash_wallet_id = wallet.id if wallet is not None else None
     _add_payout_event(
         session,
         run=run,
@@ -66,11 +86,28 @@ async def set_run_payout_cash(
             "total_payable": money_text(total),
             "cash_total": money_text(cash),
             "account_total": money_text(total - cash),
+            "cash_wallet_code": wallet.code if wallet is not None else None,
+            "cash_wallet_name": wallet.name if wallet is not None else None,
         },
     )
     await session.commit()
     await session.refresh(run)
     return run
+
+
+def _is_admin_run(run: PayrollRun) -> bool:
+    """Административная (полумесячная) ведомость — помечена ``summary.kind == "admin"``."""
+    return isinstance(run.summary, dict) and run.summary.get("kind") == "admin"
+
+
+async def _resolve_cash_wallet(session: AsyncSession, code: str) -> Wallet:
+    """Найти активный наличный кошелёк по коду (Сейф / Торговая касса Черникова)."""
+    wallet = await session.scalar(select(Wallet).where(Wallet.code == code))
+    if wallet is None or wallet.status != "active":
+        raise PayrollConflictError("Наличный счёт не найден или неактивен")
+    if wallet.type not in CASH_WALLET_TYPES:
+        raise PayrollConflictError("Выбранный счёт не является наличным")
+    return wallet
 
 
 async def create_or_update_run_draft(
@@ -79,7 +116,7 @@ async def create_or_update_run_draft(
     *,
     actor_user_id: uuid.UUID | None,
     bank_client: BankClient | None = None,
-) -> PayrollBankDraft:
+) -> PayrollBankDraft | None:
     run = await _get_payout_run(session, run_id)
     period = await _get_run_period(session, run)
     requisites = await _bank_payout_requisites(session)
@@ -87,6 +124,22 @@ async def create_or_update_run_draft(
     payer_account = _payer_account(settings)
     total_account = await _run_account_amount(session, run)
     if total_account <= 0:
+        if _is_admin_run(run) and _money(run.payout_cash_total) > 0:
+            # Вся выплата административной ведомости наличными: банковского черновика нет,
+            # но наличные всё равно заводим проводками ДДС по статьям.
+            await _upsert_payout_cashflow(session, run, Decimal("0.00"), datetime.now(UTC).date())
+            _add_payout_event(
+                session,
+                run=run,
+                action="payout_cash_booked",
+                actor_user_id=actor_user_id,
+                payload={
+                    "cash_total": money_text(run.payout_cash_total),
+                    "account_total": "0.00",
+                },
+            )
+            await session.commit()
+            return await _get_bank_draft(session, run_id)
         raise PayrollConflictError("РС-часть ведомости равна нулю")
 
     document_id = run_payout_document_id(run_id)
@@ -180,6 +233,66 @@ async def get_run_payout_delta(session: AsyncSession, run_id: uuid.UUID) -> dict
         "delta": delta,
         "classification": _delta_classification(delta),
     }
+
+
+async def get_run_payout_allocation(session: AsyncSession, run_id: uuid.UUID) -> dict[str, Any]:
+    """Превью разнесения выплаты по статьям ДДС при текущем сплите наличные/банк.
+
+    Каскад наличных тот же, что при создании проводок (``_upsert_admin_payout_cashflows``):
+    наличные гасят вспомогательную корзину раньше администрации, банк добивает остаток.
+    """
+    run = await _get_payout_run(session, run_id)
+    total = await _run_total_payable(session, run_id)
+    cash = min(_money(run.payout_cash_total), total)
+    lines = (
+        await session.scalars(select(PayrollLine).where(PayrollLine.run_id == run_id))
+    ).all()
+    buckets = build_payout_buckets(
+        [(line.role, _money(line.total_payable)) for line in lines],
+        default_article_code=DDS_ARTICLE_ADMIN_PAYROLL,
+    )
+    allocations = allocate_cash_cascade(buckets, cash)
+
+    names: dict[str, str] = {}
+    codes = [alloc.article_code for alloc in allocations]
+    if codes:
+        rows = (
+            await session.execute(
+                select(DdsArticle.code, DdsArticle.name).where(DdsArticle.code.in_(codes))
+            )
+        ).all()
+        names = {code: name for code, name in rows}
+
+    return {
+        "run_id": run_id,
+        "total_payable": total,
+        "cash_total": cash,
+        "bank_total": _money(total - cash),
+        "cash_wallet_id": run.payout_cash_wallet_id,
+        "buckets": [
+            {
+                "article_code": alloc.article_code,
+                "article_name": names.get(alloc.article_code, alloc.article_code),
+                "total": alloc.total,
+                "cash": alloc.cash,
+                "bank": alloc.bank,
+            }
+            for alloc in allocations
+        ],
+    }
+
+
+async def list_cash_wallets(session: AsyncSession) -> list[Wallet]:
+    """Активные наличные кошельки для выбора при сплите (Сейф, Торговая касса Черникова)."""
+    return list(
+        (
+            await session.scalars(
+                select(Wallet)
+                .where(Wallet.type.in_(CASH_WALLET_TYPES), Wallet.status == "active")
+                .order_by(Wallet.name)
+            )
+        ).all()
+    )
 
 
 async def apply_run_payout_delta(
@@ -435,14 +548,17 @@ async def _upsert_payout_cashflow(
     amount: Decimal,
     operation_date: date,
 ) -> None:
-    """Pre-book the payroll bank draft as a DDS expense (one row per run).
+    """Pre-book the payroll payout as DDS expense(s) so the imported bank statement settles it.
 
     Mirrors the supplier-invoice prebooked flow: when the bank statement later imports the
     matching outgoing payment, ``classifier._find_prebooked_payment`` links it to this row,
-    so the operation inherits «Зарплата производственного персонала» without manual review.
-    Balance is derived from the statement (see ``dds._wallet_movement_deltas``), so this row
-    only carries the article — it never moves the wallet balance. No-op if the payer wallet
-    isn't provisioned, or if a bank operation has already settled the prior row (keep the link).
+    so the operation inherits the payroll article without manual review. Balance is derived
+    from the statement (see ``dds._wallet_movement_deltas``), so these rows only carry the
+    article — they never move the wallet balance. No-op if the payer wallet isn't provisioned.
+
+    Производственная ведомость — одна проводка «Зарплата производственного персонала».
+    Административная ведомость разносится на несколько проводок по статьям ДДС (банковская
+    часть на счёте ИП + наличная часть на выбранном наличном кошельке).
     """
     settings = get_settings()
     payer_account = _payer_account(settings)
@@ -453,13 +569,23 @@ async def _upsert_payout_cashflow(
     )
     if wallet is None:
         return
-    article_id = await session.scalar(
-        select(DdsArticle.id).where(DdsArticle.code == PAYROLL_PAYOUT_ARTICLE_CODE)
-    )
     period = await _get_run_period(session, run)
     requisites = await _bank_payout_requisites(session)
     purpose = _payment_purpose(requisites, run_id=run.id, period=period)
 
+    if _is_admin_run(run):
+        await _upsert_admin_payout_cashflows(
+            session,
+            run,
+            bank_wallet=wallet,
+            operation_date=operation_date,
+            purpose=purpose,
+        )
+        return
+
+    article_id = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == PAYROLL_PAYOUT_ARTICLE_CODE)
+    )
     existing = await session.scalar(
         select(CashflowTransaction).where(
             CashflowTransaction.source_kind == PAYROLL_PAYOUT_SOURCE_KIND,
@@ -491,6 +617,98 @@ async def _upsert_payout_cashflow(
                 quality_status="final",
             )
         )
+    await session.flush()
+
+
+async def _upsert_admin_payout_cashflows(
+    session: AsyncSession,
+    run: PayrollRun,
+    *,
+    bank_wallet: Wallet,
+    operation_date: date,
+    purpose: str,
+) -> None:
+    """Разнести выплату админ-ведомости на проводки ДДС по статьям.
+
+    Банковская часть — несколько prebooked-проводок на счёте ИП по статьям (одна банковская
+    операция из выписки сматчится с их группой через ``classifier._find_prebooked_payment``
+    по сумме банковских проводок группы). Наличная часть — проводки на выбранном наличном
+    кошельке, сразу ``final`` (в выписку не приходят). Группа пересоздаётся при каждом
+    пересчёте, пока ни одна проводка не привязана к банковской операции; после оплаты
+    раскладка зафиксирована — выходим, не трогая связь.
+    """
+    existing = list(
+        (
+            await session.scalars(
+                select(CashflowTransaction).where(
+                    CashflowTransaction.source_kind == PAYROLL_PAYOUT_SOURCE_KIND,
+                    CashflowTransaction.source_id == run.id,
+                )
+            )
+        ).all()
+    )
+    if existing:
+        settled = await session.scalar(
+            select(BankOperation.id).where(
+                BankOperation.cashflow_transaction_id.in_([txn.id for txn in existing])
+            )
+        )
+        if settled is not None:
+            return
+        for txn in existing:
+            await session.delete(txn)
+        await session.flush()
+
+    lines = (
+        await session.scalars(select(PayrollLine).where(PayrollLine.run_id == run.id))
+    ).all()
+    buckets = build_payout_buckets(
+        [(line.role, _money(line.total_payable)) for line in lines],
+        default_article_code=DDS_ARTICLE_ADMIN_PAYROLL,
+    )
+    allocations = allocate_cash_cascade(buckets, _money(run.payout_cash_total))
+
+    codes = {alloc.article_code for alloc in allocations}
+    article_ids: dict[str, uuid.UUID] = {}
+    if codes:
+        rows = (
+            await session.execute(
+                select(DdsArticle.code, DdsArticle.id).where(DdsArticle.code.in_(codes))
+            )
+        ).all()
+        article_ids = {code: article_id for code, article_id in rows}
+
+    cash_wallet_id = run.payout_cash_wallet_id
+    for alloc in allocations:
+        article_id = article_ids.get(alloc.article_code)
+        if alloc.bank > 0:
+            session.add(
+                CashflowTransaction(
+                    wallet_id=bank_wallet.id,
+                    direction="out",
+                    amount=alloc.bank,
+                    operation_date=operation_date,
+                    article_id=article_id,
+                    source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
+                    source_id=run.id,
+                    payment_purpose=purpose,
+                    quality_status="final",
+                )
+            )
+        if alloc.cash > 0 and cash_wallet_id is not None:
+            session.add(
+                CashflowTransaction(
+                    wallet_id=cash_wallet_id,
+                    direction="out",
+                    amount=alloc.cash,
+                    operation_date=operation_date,
+                    article_id=article_id,
+                    source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
+                    source_id=run.id,
+                    payment_purpose=f"{purpose} (наличные)",
+                    quality_status="final",
+                )
+            )
     await session.flush()
 
 

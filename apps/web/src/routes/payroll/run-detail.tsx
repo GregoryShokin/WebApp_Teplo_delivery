@@ -973,7 +973,7 @@ function RunBankDraftCard({
       await invalidatePayoutQueries();
       setIsDialogOpen(false);
       toast.success(
-        nextDraft.status === "updated" || hasDraft ? "Черновик обновлён" : "Черновик сформирован",
+        nextDraft?.status === "updated" || hasDraft ? "Черновик обновлён" : "Черновик сформирован",
       );
     },
     onError: (error) => {
