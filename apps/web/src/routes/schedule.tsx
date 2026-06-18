@@ -3627,7 +3627,7 @@ function StationScheduleGrid({
               rows.map((row) => (
                 <tr className="hover:bg-muted/30" key={row.station}>
                   <td
-                    className="sticky left-0 z-10 border-b border-r bg-card px-3 py-3 align-top font-medium"
+                    className="sticky left-0 z-10 border-b border-r bg-card px-3 py-1.5 align-top text-xs font-medium"
                     style={{ width: STATION_COLUMN_WIDTH, minWidth: STATION_COLUMN_WIDTH }}
                   >
                     {row.station}
@@ -3643,11 +3643,11 @@ function StationScheduleGrid({
                     if (showFact) {
                       return (
                         <td
-                          className="h-[86px] border-b border-r bg-muted/10 p-2 align-top"
+                          className="min-h-[2rem] border-b border-r bg-muted/10 p-1 align-top"
                           key={day}
                           style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
                         >
-                          <div className="space-y-1">
+                          <div className="space-y-0.5">
                             {ledgerEntries.map((entry) => (
                               <LedgerFactPill entry={entry} key={entry.id} />
                             ))}
@@ -3661,7 +3661,7 @@ function StationScheduleGrid({
                     return (
                       <td
                         className={cn(
-                          "h-[86px] border-b border-r p-2 align-top",
+                          "min-h-[2rem] border-b border-r p-1 align-top",
                           canEditPlan && "cursor-pointer hover:bg-primary/5",
                           isLocked && "bg-muted/10",
                         )}
@@ -3673,7 +3673,7 @@ function StationScheduleGrid({
                         }}
                         style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
                       >
-                        <div className="space-y-1">
+                        <div className="space-y-0.5">
                           {visibleShifts.map((shift) => (
                             <StationShiftCard
                               allowanceAssignment={cashierAllowanceByDay.get(day)}
@@ -3723,7 +3723,7 @@ function StationShiftCard({
   return (
     <div
       className={cn(
-        "group relative w-full rounded-md border px-2 py-1 pr-7 text-left text-xs",
+        "group relative w-full rounded border px-1.5 py-0.5 pr-7 text-left text-[11px] leading-tight",
         !isLocked && "cursor-pointer",
         roleColorClasses(shift.payroll_role).container,
       )}
@@ -3828,29 +3828,20 @@ function RosterRoleSelectLabel({ role }: { role: EmployeeRosterRow["available_ro
 
 function LedgerFactPill({ entry }: { entry: ScheduleLedgerEntryRead }) {
   const colors = roleColorClasses(entry.payroll_role ?? "");
-  const station = entry.station_code || stationForPayrollRole(entry.payroll_role ?? "");
 
   return (
     <div
-      className={cn("rounded-md border px-2 py-1.5 text-xs", colors.container)}
+      className={cn(
+        "flex items-center justify-between gap-1 rounded border px-1.5 py-0.5 text-[11px] leading-tight",
+        colors.container,
+      )}
       title={ledgerFactTitle(entry)}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className={cn("font-semibold tabular-nums", colors.primaryText)}>
-          {formatLedgerTime(entry)}
-        </div>
-        <span className="rounded-sm border border-slate-300 bg-slate-50 px-1 text-[10px] leading-4 text-slate-600">
-          факт
-        </span>
-      </div>
-      <div className={cn("mt-1 truncate", colors.secondaryText)}>
-        {positionRoleLabel(entry.position, entry.payroll_role)}
-      </div>
-      {station && station !== "(без станции)" ? (
-        <div className={cn("mt-0.5 truncate", colors.secondaryText)}>{station}</div>
-      ) : null}
+      <span className={cn("truncate font-semibold tabular-nums", colors.primaryText)}>
+        {formatLedgerTime(entry)}
+      </span>
       {!entry.is_closed ? (
-        <span className="mt-1 inline-flex rounded-sm border border-amber-300 bg-amber-50 px-1 text-[10px] leading-4 text-amber-700">
+        <span className="shrink-0 rounded-sm bg-amber-100 px-1 text-[9px] leading-tight text-amber-700">
           не закрыта
         </span>
       ) : null}
@@ -3906,7 +3897,7 @@ function AllowanceBadge({ badge }: { badge: AllowanceBadgeInfo | null }) {
   return (
     <span
       className={cn(
-        "mt-1 inline-flex h-5 min-w-7 items-center justify-center rounded-sm border px-1 text-[10px] font-medium leading-none",
+        "mt-0.5 inline-flex h-4 min-w-6 items-center justify-center rounded-sm border px-1 text-[10px] font-medium leading-none",
         badge.className,
       )}
       title={badge.title}
@@ -3975,11 +3966,11 @@ function allowanceRoleShortLabel(role: "senior" | "deputy_senior") {
 function GridDayHeader({ day, ledgerEmpty = false }: { day: string; ledgerEmpty?: boolean }) {
   return (
     <th
-      className="sticky top-0 z-20 border-b border-r bg-muted/70 px-2 py-2 text-center font-medium text-muted-foreground"
+      className="sticky top-0 z-20 border-b border-r bg-muted/70 px-2 py-1 text-center text-xs font-medium text-muted-foreground"
       style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
     >
       <div>{weekdayLabels[parseIsoDate(day).getDay()]}</div>
-      <div className="text-base text-foreground">{day.slice(8, 10)}</div>
+      <div className="text-sm text-foreground">{day.slice(8, 10)}</div>
       {ledgerEmpty ? (
         <div className="mt-1 text-[10px] font-normal leading-3 text-muted-foreground">
           Учёт смен пуст
