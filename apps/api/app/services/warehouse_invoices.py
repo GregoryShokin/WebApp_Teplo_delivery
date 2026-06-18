@@ -26,15 +26,34 @@ from app.models import (
     BarterReturnLine,
     Counterparty,
     CounterpartyPayableProfile,
+    DdsArticle,
     IikoProduct,
     InvoiceLineItem,
     InvoicePaymentAllocation,
     SupplierInvoice,
 )
 
+# Статьи ДДС для блока «Траты на персонал» накладной (выбор из двух — питание / прочие).
+# По ИМЕНИ (code/uuid различны dev/prod), как whitelist чека.
+STAFF_ARTICLE_NAMES = ("Расходы на питание персонала", "Расходы на персонал")
+
 
 class WarehouseInvoiceError(RuntimeError):
     """Domain error for warehouse invoice creation (maps to HTTP 409/422)."""
+
+
+async def list_staff_articles(session: AsyncSession) -> list[DdsArticle]:
+    """Статьи ДДС блока «Траты на персонал» накладной (питание / прочие затраты)."""
+    result = await session.scalars(
+        select(DdsArticle)
+        .where(
+            DdsArticle.name.in_(STAFF_ARTICLE_NAMES),
+            DdsArticle.is_active.is_(True),
+            DdsArticle.movement_type == "outflow",
+        )
+        .order_by(DdsArticle.name)
+    )
+    return list(result.all())
 
 
 async def invoice_permission_kind(session: AsyncSession, invoice: SupplierInvoice) -> str:
@@ -82,6 +101,8 @@ class LineInput:
     iiko_product_id: uuid.UUID | None = None
     vat_percent: Decimal | None = None
     is_staff: bool = False
+    # Статья ДДС персональной строки — на неё ляжет «персонал»-часть при оплате.
+    dds_article_id: uuid.UUID | None = None
 
 
 async def next_invoice_number(session: AsyncSession) -> str:
@@ -185,6 +206,9 @@ async def create_warehouse_invoice(
                 vat_percent=Decimal(str(line.vat_percent)) if line.vat_percent else None,
                 vat_sum=vat_sum,
                 is_staff=line.is_staff,
+                # Статья ДДС — только у персональных строк (товарные идут по «Оплата
+                # поставщикам» при оплате); фронт на товарных её не задаёт.
+                dds_article_id=line.dds_article_id if line.is_staff else None,
                 sort_order=index,
             )
         )
@@ -391,9 +415,7 @@ async def list_open_loans(
     return out
 
 
-async def get_loan_returnable(
-    session: AsyncSession, loan_id: uuid.UUID
-) -> dict[str, Any] | None:
+async def get_loan_returnable(session: AsyncSession, loan_id: uuid.UUID) -> dict[str, Any] | None:
     loan = await session.get(SupplierInvoice, loan_id)
     if loan is None or loan.barter_role != "loan":
         return None
@@ -479,9 +501,7 @@ async def create_barter_return(
     if new_total <= 0:
         raise WarehouseInvoiceError("Сумма возврата должна быть больше нуля")
     if new_total > loan_remaining:
-        raise WarehouseInvoiceError(
-            f"Возврат {new_total} превышает остаток займа {loan_remaining}"
-        )
+        raise WarehouseInvoiceError(f"Возврат {new_total} превышает остаток займа {loan_remaining}")
 
     ret = SupplierInvoice(
         counterparty_id=loan.counterparty_id,

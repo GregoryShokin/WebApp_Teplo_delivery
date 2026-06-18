@@ -22,7 +22,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import BankOperation, DdsArticle, SupplierInvoice, Wallet
+from app.models import BankOperation, DdsArticle, InvoiceLineItem, SupplierInvoice, Wallet
 from app.services.counterparty_bank_match import (
     WAREHOUSE_AMOUNT_TOLERANCE_PCT,
     WAREHOUSE_TIGHT_WINDOW_MINUTES,
@@ -147,6 +147,69 @@ async def resolve_staff_article_id(session: AsyncSession) -> uuid.UUID:
     return await _resolve_article_id(session, await _staff_article_code(session))
 
 
+async def _staff_cash_parts(
+    session: AsyncSession,
+    invoice: SupplierInvoice,
+    *,
+    wallet_id: uuid.UUID,
+    operation_date: date,
+    comment: str | None,
+) -> list[CashPart]:
+    """«Персонал»-часть оплаты, разнесённая по статьям ДДС персональных строк накладной.
+
+    Каждая персональная строка несёт свою статью (питание / прочие затраты на персонал),
+    поэтому ``staff_amount`` делится между ними по их статьям. Если у строк статьи нет
+    (старые накладные до разнесения) — фолбэк на единую staff-статью (прежнее поведение).
+    """
+    staff_total = _money(invoice.staff_amount)
+    if staff_total <= 0:
+        return []
+    lines = (
+        await session.scalars(
+            select(InvoiceLineItem).where(
+                InvoiceLineItem.invoice_id == invoice.id,
+                InvoiceLineItem.is_staff.is_(True),
+            )
+        )
+    ).all()
+    sums_by_article: dict[uuid.UUID, Decimal] = {}
+    for line in lines:
+        if line.dds_article_id is not None:
+            sums_by_article[line.dds_article_id] = sums_by_article.get(
+                line.dds_article_id, Decimal("0.00")
+            ) + _money(line.sum)
+    if not sums_by_article:
+        # Legacy / строки без статьи — вся персоналка на единую staff-статью.
+        return [
+            CashPart(
+                wallet_id=wallet_id,
+                amount=staff_total,
+                operation_date=operation_date,
+                article_id=await resolve_staff_article_id(session),
+                comment=comment,
+            )
+        ]
+    # Суммы строк по статьям в сумме == staff_amount (по построению при создании); остаток
+    # округления отдаём последней статье, чтобы Σ частей точно совпала со staff_total.
+    parts: list[CashPart] = []
+    allocated = Decimal("0.00")
+    items = list(sums_by_article.items())
+    for index, (article_id, article_sum) in enumerate(items):
+        amount = staff_total - allocated if index == len(items) - 1 else _money(article_sum)
+        allocated += amount
+        if amount > 0:
+            parts.append(
+                CashPart(
+                    wallet_id=wallet_id,
+                    amount=amount,
+                    operation_date=operation_date,
+                    article_id=article_id,
+                    comment=comment,
+                )
+            )
+    return parts
+
+
 async def build_staff_split_cash_parts(
     session: AsyncSession,
     invoice: SupplierInvoice,
@@ -156,10 +219,10 @@ async def build_staff_split_cash_parts(
     comment: str | None = None,
 ) -> list[CashPart]:
     """Split a fully-cash payment of one invoice into production + «персонал» parts, each on
-    its own DDS article. Used when the manager pays from the cash desk with ``split_staff``."""
-    production = _production_amount(invoice)
-    staff = _money(invoice.staff_amount)
+    its own DDS article. Used when the manager pays from the cash desk with ``split_staff``.
+    The «персонал» part is further split across the staff lines' own DDS articles."""
     parts: list[CashPart] = []
+    production = _production_amount(invoice)
     if production > 0:
         parts.append(
             CashPart(
@@ -170,16 +233,11 @@ async def build_staff_split_cash_parts(
                 comment=comment,
             )
         )
-    if staff > 0:
-        parts.append(
-            CashPart(
-                wallet_id=wallet_id,
-                amount=staff,
-                operation_date=operation_date,
-                article_id=await resolve_staff_article_id(session),
-                comment=comment,
-            )
+    parts.extend(
+        await _staff_cash_parts(
+            session, invoice, wallet_id=wallet_id, operation_date=operation_date, comment=comment
         )
+    )
     return parts
 
 
@@ -255,9 +313,7 @@ async def pay_invoice_split(
     if total <= 0:
         raise WarehousePaymentError("Сумма оплаты должна быть больше нуля")
     if total > remaining:
-        raise WarehousePaymentError(
-            f"Сумма частей {total} превышает остаток накладной {remaining}"
-        )
+        raise WarehousePaymentError(f"Сумма частей {total} превышает остаток накладной {remaining}")
 
     # --- apply in one transaction --------------------------------------------
     try:

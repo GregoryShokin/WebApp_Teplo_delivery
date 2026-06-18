@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Plus, Trash2, Warehouse } from "lucide-react";
+import { LoaderCircle, Plus, Receipt, Trash2, Users, Warehouse } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +33,8 @@ import {
   getNextInvoiceNumber,
   getOpenLoans,
   getProducts,
+  getStaffArticles,
+  type StaffArticle,
   type WarehouseProduct,
 } from "./api";
 
@@ -45,8 +46,10 @@ type DraftLine = {
   quantity: string;
   price: string;
   vat: string;
-  is_staff: boolean;
+  amount: string;
 };
+
+type StaffLine = { key: string; articleId: string; note: string; amount: string };
 
 function emptyLine(): DraftLine {
   return {
@@ -57,11 +60,17 @@ function emptyLine(): DraftLine {
     quantity: "",
     price: "",
     vat: "",
-    is_staff: false,
+    amount: "",
   };
 }
 
+function emptyStaffLine(): StaffLine {
+  return { key: Math.random().toString(36).slice(2), articleId: "", note: "", amount: "" };
+}
+
 const num = (v: string) => Math.max(0, Number(v) || 0);
+// Число → строка суммы/цены без хвостовых нулей (пустая строка для нуля).
+const toAmount = (n: number) => (n > 0 ? String(Math.round(n * 100) / 100) : "");
 
 export function CreateInvoiceDialog({
   open,
@@ -81,6 +90,7 @@ export function CreateInvoiceDialog({
   const [issuedAt, setIssuedAt] = useState("");
   const [number, setNumber] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
+  const [staffLines, setStaffLines] = useState<StaffLine[]>([]);
   const queryClient = useQueryClient();
   const isBarter = kind === "barter";
   const isReturn = isBarter && barterAction === "return";
@@ -101,6 +111,13 @@ export function CreateInvoiceDialog({
     queryFn: getNextInvoiceNumber,
     enabled: open,
   });
+  const staffArticlesQuery = useQuery({
+    queryKey: ["wh", "staff-articles"],
+    queryFn: getStaffArticles,
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const staffArticles = staffArticlesQuery.data ?? [];
 
   useEffect(() => {
     if (open && !number && nextNumberQuery.data) {
@@ -121,6 +138,7 @@ export function CreateInvoiceDialog({
     setIssuedAt("");
     setNumber("");
     setLines([emptyLine()]);
+    setStaffLines([]);
   };
 
   const createMutation = useMutation({
@@ -131,16 +149,36 @@ export function CreateInvoiceDialog({
         mode: isBarter ? "loan" : "normal",
         we_lend: weLend,
         number: number || null,
-        lines: lines
-          .filter((l) => l.name && num(l.quantity) > 0)
-          .map((l) => ({
-            name: l.name,
-            quantity: num(l.quantity),
-            price: num(l.price),
-            iiko_product_id: l.product_id,
-            vat_percent: num(l.vat) > 0 ? num(l.vat) : null,
-            is_staff: l.is_staff,
-          })),
+        lines: [
+          ...lines
+            .filter((l) => l.name && num(l.quantity) > 0)
+            .map((l) => ({
+              name: l.name,
+              quantity: num(l.quantity),
+              price: num(l.price),
+              iiko_product_id: l.product_id,
+              vat_percent: num(l.vat) > 0 ? num(l.vat) : null,
+              is_staff: false,
+            })),
+          // Блок «Траты на персонал» — только у обычной накладной; подпись → наименование,
+          // сумма → цена (кол-во 1), статья ДДС → dds_article_id, без товара.
+          ...(isBarter
+            ? []
+            : staffLines
+                .filter((l) => l.articleId && num(l.amount) > 0)
+                .map((l) => ({
+                  name:
+                    l.note.trim() ||
+                    staffArticles.find((a) => a.id === l.articleId)?.name ||
+                    "Персонал",
+                  quantity: 1,
+                  price: num(l.amount),
+                  iiko_product_id: null,
+                  vat_percent: null,
+                  is_staff: true,
+                  dds_article_id: l.articleId,
+                }))),
+        ],
       }),
     onSuccess: () => {
       onCreated();
@@ -153,21 +191,23 @@ export function CreateInvoiceDialog({
   });
 
   const totals = useMemo(() => {
-    let total = 0;
-    let staff = 0;
-    for (const l of lines) {
-      const s = num(l.quantity) * num(l.price);
-      total += s;
-      if (l.is_staff) staff += s;
-    }
+    const total = lines.reduce(
+      (s, l) => s + (l.amount !== "" ? num(l.amount) : num(l.quantity) * num(l.price)),
+      0,
+    );
+    const staff = staffLines.reduce((s, l) => s + num(l.amount), 0);
     return { total, staff };
-  }, [lines]);
+  }, [lines, staffLines]);
 
   const updateLine = (key: string, patch: Partial<DraftLine>) =>
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  const updateStaffLine = (key: string, patch: Partial<StaffLine>) =>
+    setStaffLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
 
-  const filledLines = lines.filter((l) => l.name && num(l.quantity) > 0).length;
-  const canSave = !!counterpartyId && !!issuedAt && filledLines > 0 && !createMutation.isPending;
+  const filledStore = lines.filter((l) => l.name && num(l.quantity) > 0).length;
+  const filledStaff = staffLines.filter((l) => l.articleId && num(l.amount) > 0).length;
+  const canSave =
+    !!counterpartyId && !!issuedAt && filledStore + filledStaff > 0 && !createMutation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -276,25 +316,25 @@ export function CreateInvoiceDialog({
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="rounded-md border p-3">
             <div className="flex items-center justify-between">
-              <Label>{isBarter ? "Товары займа" : "Строки накладной"}</Label>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setLines((prev) => [...prev, emptyLine()])}
-              >
-                <Plus size={14} aria-hidden="true" />
-                Строка
-              </Button>
+              <span className="flex items-center gap-2 text-sm font-medium">
+                <Warehouse size={16} className="text-sky-600" aria-hidden="true" />
+                {isBarter ? "Товары займа" : "Закупка на склад"}
+              </span>
+              {!isBarter ? (
+                <span className="rounded bg-sky-50 px-2 py-0.5 text-xs text-sky-700">
+                  → iiko · приходная накладная
+                </span>
+              ) : null}
             </div>
 
             <div
               className={cn(
-                "grid items-center gap-2 px-2 text-xs text-muted-foreground",
+                "mt-2 grid items-center gap-2 px-1 text-xs text-muted-foreground",
                 isBarter
-                  ? "grid-cols-[1fr_56px_76px_80px_auto]"
-                  : "grid-cols-[1fr_56px_76px_52px_80px_auto_auto]",
+                  ? "grid-cols-[minmax(0,1fr)_64px_88px_104px_28px]"
+                  : "grid-cols-[minmax(0,1fr)_64px_88px_56px_104px_28px]",
               )}
             >
               <span>Товар</span>
@@ -302,11 +342,10 @@ export function CreateInvoiceDialog({
               <span>Цена</span>
               {!isBarter ? <span>НДС%</span> : null}
               <span className="text-right">Сумма</span>
-              {!isBarter ? <span className="text-center">Перс.</span> : null}
               <span aria-hidden="true" />
             </div>
 
-            <div className="space-y-2">
+            <div className="mt-1.5 space-y-1.5">
               {lines.map((line) => (
                 <LineRow
                   key={line.key}
@@ -322,14 +361,84 @@ export function CreateInvoiceDialog({
                 />
               ))}
             </div>
+
+            <div className="mt-2 flex items-center justify-between">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-muted-foreground"
+                onClick={() => setLines((prev) => [...prev, emptyLine()])}
+              >
+                <Plus size={14} aria-hidden="true" />
+                товар
+              </Button>
+              {totals.total > 0 ? (
+                <span className="text-xs text-muted-foreground">
+                  подытог{" "}
+                  <span className="font-medium text-foreground">{formatRub(totals.total)}</span>
+                </span>
+              ) : null}
+            </div>
           </div>
+
+          {!isBarter ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50/40 p-3">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <Users size={16} className="text-amber-700" aria-hidden="true" />
+                  Траты на персонал
+                </span>
+                <span className="rounded bg-amber-100/70 px-2 py-0.5 text-xs text-amber-800">
+                  только ДДС · не в iiko
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-amber-700">
+                Статья + подпись + сумма, без номенклатуры и склада.
+              </p>
+
+              {staffLines.length > 0 ? (
+                <div className="mt-2 space-y-1.5">
+                  {staffLines.map((line) => (
+                    <StaffLineRow
+                      key={line.key}
+                      line={line}
+                      articles={staffArticles}
+                      onChange={(patch) => updateStaffLine(line.key, patch)}
+                      onRemove={() =>
+                        setStaffLines((prev) => prev.filter((l) => l.key !== line.key))
+                      }
+                    />
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="mt-2 flex items-center justify-between">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground"
+                  onClick={() => setStaffLines((prev) => [...prev, emptyStaffLine()])}
+                >
+                  <Plus size={14} aria-hidden="true" />
+                  трата
+                </Button>
+                {totals.staff > 0 ? (
+                  <span className="text-xs text-amber-700">
+                    подытог <span className="font-medium">{formatRub(totals.staff)}</span>
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap items-center gap-4 rounded-md bg-muted/50 p-2 text-sm tabular-nums">
             <span>
-              Итого: <span className="font-medium">{formatRub(totals.total)}</span>
+              Итого: <span className="font-medium">{formatRub(totals.total + totals.staff)}</span>
             </span>
-            {totals.staff > 0 ? (
-              <span className="text-amber-700">Персонал: {formatRub(totals.staff)}</span>
+            {!isBarter && totals.staff > 0 ? (
+              <span className="text-xs text-muted-foreground">
+                склад {formatRub(totals.total)} + персонал {formatRub(totals.staff)}
+              </span>
             ) : null}
           </div>
             </>
@@ -530,15 +639,13 @@ function LineRow({
   onChange: (patch: Partial<DraftLine>) => void;
   onRemove: () => void;
 }) {
-  const sum = num(line.quantity) * num(line.price);
   return (
     <div
       className={cn(
-        "grid items-center gap-2 rounded-md border p-2",
+        "grid items-center gap-2",
         barter
-          ? "grid-cols-[1fr_56px_76px_80px_auto]"
-          : "grid-cols-[1fr_56px_76px_52px_80px_auto_auto]",
-        line.is_staff && "border-amber-200 bg-amber-50/40",
+          ? "grid-cols-[minmax(0,1fr)_64px_88px_104px_28px]"
+          : "grid-cols-[minmax(0,1fr)_64px_88px_56px_104px_28px]",
       )}
     >
       <ProductSearch
@@ -548,45 +655,104 @@ function LineRow({
         onTextChange={(text) => onChange({ name: text, product_id: null, unit: null })}
       />
       <Input
-        type="number"
-        min={0}
-        placeholder="кол-во"
+        inputMode="decimal"
+        className="text-right"
         value={line.quantity}
-        onChange={(e) => onChange({ quantity: e.target.value })}
         title={line.unit ?? undefined}
+        onChange={(e) =>
+          onChange({
+            quantity: e.target.value,
+            amount: toAmount(num(e.target.value) * num(line.price)),
+          })
+        }
       />
       <Input
-        type="number"
-        min={0}
-        placeholder="цена"
+        inputMode="decimal"
+        className="text-right"
         value={line.price}
-        onChange={(e) => onChange({ price: e.target.value })}
+        onChange={(e) =>
+          onChange({
+            price: e.target.value,
+            amount: toAmount(num(e.target.value) * num(line.quantity)),
+          })
+        }
       />
       {!barter ? (
         <Input
-          type="number"
-          min={0}
-          placeholder="НДС%"
+          inputMode="decimal"
+          className="text-right"
           value={line.vat}
           onChange={(e) => onChange({ vat: e.target.value })}
           title="Ставка НДС, %"
         />
       ) : null}
-      <span className="text-right text-sm tabular-nums text-muted-foreground">{formatRub(sum)}</span>
-      {!barter ? (
-        <label className="flex items-center justify-center" title="Персонал — не уходит в iiko">
-          <Checkbox
-            checked={line.is_staff}
-            onChange={() => onChange({ is_staff: !line.is_staff })}
-            aria-label="Персонал"
-          />
-        </label>
-      ) : null}
+      <Input
+        inputMode="decimal"
+        className="text-right"
+        value={line.amount}
+        title="Сумма строки — цена × кол-во; при вводе суммы цена пересчитывается"
+        onChange={(e) => {
+          const q = num(line.quantity);
+          onChange({
+            amount: e.target.value,
+            price: q > 0 ? toAmount(num(e.target.value) / q) : line.price,
+          });
+        }}
+      />
       <button
         type="button"
         className="text-muted-foreground hover:text-red-600"
         onClick={onRemove}
         aria-label="Удалить строку"
+      >
+        <Trash2 size={15} />
+      </button>
+    </div>
+  );
+}
+
+function StaffLineRow({
+  line,
+  articles,
+  onChange,
+  onRemove,
+}: {
+  line: StaffLine;
+  articles: StaffArticle[];
+  onChange: (patch: Partial<StaffLine>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="grid grid-cols-[1.1fr_1.2fr_76px_28px] items-center gap-2">
+      <Select value={line.articleId} onValueChange={(v) => onChange({ articleId: v })}>
+        <SelectTrigger className="h-9" aria-label="Статья ДДС">
+          <SelectValue placeholder="Статья" />
+        </SelectTrigger>
+        <SelectContent>
+          {articles.map((a) => (
+            <SelectItem key={a.id} value={a.id}>
+              {a.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Input
+        placeholder="Подпись (напр. обеды поварам)"
+        value={line.note}
+        onChange={(e) => onChange({ note: e.target.value })}
+      />
+      <Input
+        inputMode="decimal"
+        className="text-right"
+        placeholder="сумма"
+        value={line.amount}
+        onChange={(e) => onChange({ amount: e.target.value })}
+      />
+      <button
+        type="button"
+        className="text-muted-foreground hover:text-red-600"
+        onClick={onRemove}
+        aria-label="Удалить трату"
       >
         <Trash2 size={15} />
       </button>

@@ -38,6 +38,7 @@ from app.services.warehouse_invoices import (
     get_warehouse_invoice,
     invoice_permission_kind,
     list_open_loans,
+    list_staff_articles,
     list_warehouse_invoices,
     next_invoice_number,
 )
@@ -63,6 +64,9 @@ class LineCreate(BaseModel):
     iiko_product_id: uuid.UUID | None = None
     vat_percent: Decimal | None = None
     is_staff: bool = False
+    # Статья ДДС персональной строки (питание / прочие затраты на персонал) — задаёт,
+    # на какую статью ляжет «персонал»-часть при оплате накладной. Только для is_staff.
+    dds_article_id: uuid.UUID | None = None
 
 
 class InvoiceCreate(BaseModel):
@@ -201,6 +205,14 @@ async def invoice_next_number(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, str]:
     return {"number": await next_invoice_number(session)}
+
+
+@router.get("/staff-articles", dependencies=READ)
+async def staff_articles(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[dict[str, str]]:
+    """Статьи ДДС для блока «Траты на персонал» накладной (питание / прочие затраты)."""
+    return [{"id": str(a.id), "name": a.name} for a in await list_staff_articles(session)]
 
 
 @router.get("/loans", dependencies=READ)
@@ -442,6 +454,7 @@ async def post_invoice(
                     iiko_product_id=line.iiko_product_id,
                     vat_percent=line.vat_percent,
                     is_staff=line.is_staff,
+                    dds_article_id=line.dds_article_id,
                 )
                 for line in payload.lines
             ],

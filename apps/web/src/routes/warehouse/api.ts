@@ -63,6 +63,7 @@ export type LinePayload = {
   iiko_product_id?: string | null;
   vat_percent?: number | null;
   is_staff: boolean;
+  dds_article_id?: string | null;
 };
 
 export type CreateInvoicePayload = {
@@ -119,6 +120,13 @@ export async function createWarehouseInvoice(
 export async function getNextInvoiceNumber(): Promise<string> {
   const response = await api.get<{ number: string }>(`${BASE}/invoices/next-number`);
   return response.data.number;
+}
+
+export type StaffArticle = { id: string; name: string };
+
+export async function getStaffArticles(): Promise<StaffArticle[]> {
+  const response = await api.get<StaffArticle[]>(`${BASE}/staff-articles`);
+  return response.data;
 }
 
 export async function pushInvoiceToIiko(id: string): Promise<WarehouseInvoiceDetail> {
