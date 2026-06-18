@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -11,12 +11,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.models import (
+    Account,
     AppSetting,
+    BankOperation,
+    CashflowTransaction,
+    DdsArticle,
     PayrollBankDraft,
     PayrollLine,
     PayrollPeriod,
     PayrollRun,
     PayrollRunEvent,
+    Wallet,
 )
 from app.services.banking import BankClient, TbankClient
 from app.services.banking.exceptions import BankFetchError
@@ -27,6 +32,10 @@ PAYOUT_REQUISITES_KEY = "payroll.bank_payout_requisites"
 DEFAULT_PAYMENT_PURPOSE_TEMPLATE = "Выплата заработной платы за период {start}–{end}"
 MOCK_PAYER_ACCOUNT = "00000000000000000000"
 PAYROLL_BANK_DRAFT_STATUSES = frozenset({"created", "updated", "paid", "failed"})
+# Pre-booking the payroll draft as a DDS expense lets the imported bank operation that
+# settles it inherit this article automatically (production payroll → IP/owner card).
+PAYROLL_PAYOUT_SOURCE_KIND = "payroll_payout"
+PAYROLL_PAYOUT_ARTICLE_CODE = "zarplata_proizvodstvennogo_personala"
 
 
 async def set_run_payout_cash(
@@ -136,6 +145,7 @@ async def create_or_update_run_draft(
         payload=payload,
         last_error=None,
     )
+    await _upsert_payout_cashflow(session, run, total_account, datetime.now(UTC).date())
     _add_payout_event(
         session,
         run=run,
@@ -222,6 +232,7 @@ async def apply_run_payout_delta(
             },
         )
 
+    await _upsert_payout_cashflow(session, run, new_amount, datetime.now(UTC).date())
     await session.commit()
     return 1
 
@@ -416,6 +427,71 @@ def _payer_account(settings: Settings) -> str:
     if settings.teplo_bank_client_mode == "mock":
         return MOCK_PAYER_ACCOUNT
     raise PayrollConflictError("Не настроен T-Bank расчётный счёт плательщика")
+
+
+async def _upsert_payout_cashflow(
+    session: AsyncSession,
+    run: PayrollRun,
+    amount: Decimal,
+    operation_date: date,
+) -> None:
+    """Pre-book the payroll bank draft as a DDS expense (one row per run).
+
+    Mirrors the supplier-invoice prebooked flow: when the bank statement later imports the
+    matching outgoing payment, ``classifier._find_prebooked_payment`` links it to this row,
+    so the operation inherits «Зарплата производственного персонала» without manual review.
+    Balance is derived from the statement (see ``dds._wallet_movement_deltas``), so this row
+    only carries the article — it never moves the wallet balance. No-op if the payer wallet
+    isn't provisioned, or if a bank operation has already settled the prior row (keep the link).
+    """
+    settings = get_settings()
+    payer_account = _payer_account(settings)
+    wallet = await session.scalar(
+        select(Wallet)
+        .join(Account, Account.id == Wallet.account_id)
+        .where(Account.account_number == payer_account, Wallet.status == "active")
+    )
+    if wallet is None:
+        return
+    article_id = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == PAYROLL_PAYOUT_ARTICLE_CODE)
+    )
+    period = await _get_run_period(session, run)
+    requisites = await _bank_payout_requisites(session)
+    purpose = _payment_purpose(requisites, run_id=run.id, period=period)
+
+    existing = await session.scalar(
+        select(CashflowTransaction).where(
+            CashflowTransaction.source_kind == PAYROLL_PAYOUT_SOURCE_KIND,
+            CashflowTransaction.source_id == run.id,
+        )
+    )
+    if existing is not None:
+        settled = await session.scalar(
+            select(BankOperation.id).where(BankOperation.cashflow_transaction_id == existing.id)
+        )
+        if settled is not None:
+            return
+        existing.wallet_id = wallet.id
+        existing.amount = _money(amount)
+        existing.operation_date = operation_date
+        existing.article_id = article_id
+        existing.payment_purpose = purpose
+    else:
+        session.add(
+            CashflowTransaction(
+                wallet_id=wallet.id,
+                direction="out",
+                amount=_money(amount),
+                operation_date=operation_date,
+                article_id=article_id,
+                source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
+                source_id=run.id,
+                payment_purpose=purpose,
+                quality_status="final",
+            )
+        )
+    await session.flush()
 
 
 async def _get_bank_draft(

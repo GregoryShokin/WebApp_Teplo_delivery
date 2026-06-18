@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -28,7 +28,7 @@ from app.services.banking.base import clean_digits
 # conservatively (same wallet + direction + exact amount, a small date drift, same payee
 # INN when the statement carries one) and only against these manual source kinds.
 PREBOOKED_DATE_WINDOW_DAYS = 3
-PREBOOKABLE_SOURCE_KINDS = ("counterparty_payment", "kassa_cheque")
+PREBOOKABLE_SOURCE_KINDS = ("counterparty_payment", "kassa_cheque", "payroll_payout")
 
 
 @dataclass(frozen=True)
@@ -265,17 +265,16 @@ async def _rule_matches(
 
 
 async def _counterparty_is_own_account(session: AsyncSession, operation: BankOperation) -> bool:
+    # Internal transfers are matched by ACCOUNT NUMBER only, never by INN. An IP and the
+    # owner's personal card share one INN (e.g. Шокина 890307589201), so an INN match would
+    # wrongly flag a payroll/withdrawal to the personal card (40817…) as an internal transfer.
+    # Only our own settlement accounts (40802…, present in the registry) count as internal.
     account_number = clean_digits(operation.counterparty_account_raw)
-    inn = clean_digits(operation.counterparty_inn_raw)
-    if not account_number and not inn:
+    if not account_number:
         return False
-    conditions = []
-    if account_number:
-        conditions.append(OwnAccountsRegistry.account_number == account_number)
-    if inn:
-        conditions.append(OwnAccountsRegistry.legal_entity_inn == inn)
     query = select(OwnAccountsRegistry).where(
-        OwnAccountsRegistry.is_active.is_(True), or_(*conditions)
+        OwnAccountsRegistry.is_active.is_(True),
+        OwnAccountsRegistry.account_number == account_number,
     )
     return await session.scalar(query) is not None
 
