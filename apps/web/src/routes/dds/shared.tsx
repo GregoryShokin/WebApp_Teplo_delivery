@@ -25,7 +25,6 @@ import {
 import { apiErrorMessage, triggerBankSync, type DdsProvider } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
-import { formatMoney } from "@/routes/payroll/runs";
 
 export type DdsActiveTab =
   | "today"
@@ -99,7 +98,16 @@ export function isDdsTab(value: unknown): value is DdsActiveTab {
 
 export function formatDdsMoney(value: string | number | null | undefined) {
   const numeric = Number(value);
-  return Number.isFinite(numeric) ? formatMoney(numeric) : "—";
+  if (!Number.isFinite(numeric)) {
+    return "—";
+  }
+  // ДДС всегда показывает копейки (2 знака); округление только с 3-го знака после запятой.
+  return new Intl.NumberFormat("ru-RU", {
+    style: "currency",
+    currency: "RUB",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(numeric);
 }
 
 export function formatDate(value: string | null | undefined) {
