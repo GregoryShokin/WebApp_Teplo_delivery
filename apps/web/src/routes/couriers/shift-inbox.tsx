@@ -919,6 +919,7 @@ function SubstituteDialog({
   onClear: () => void;
 }) {
   const [selected, setSelected] = useState<string>("");
+  const [search, setSearch] = useState("");
 
   const listQuery = useQuery({
     queryKey: ["courier-list", "substitute"],
@@ -926,17 +927,18 @@ function SubstituteDialog({
     enabled: courier !== null,
   });
 
-  const options = useMemo(
-    () =>
-      (listQuery.data?.rows ?? []).filter(
-        (row: CourierListRow) =>
-          !row.is_courier_placeholder && row.employee_id !== courier?.employee_id,
-      ),
-    [listQuery.data, courier],
-  );
+  const options = useMemo(() => {
+    const base = (listQuery.data?.rows ?? []).filter(
+      (row: CourierListRow) =>
+        !row.is_courier_placeholder && row.employee_id !== courier?.employee_id,
+    );
+    const query = search.trim().toLowerCase();
+    return query ? base.filter((row) => row.full_name.toLowerCase().includes(query)) : base;
+  }, [listQuery.data, courier, search]);
 
   function handleClose() {
     setSelected("");
+    setSearch("");
     onClose();
   }
 
@@ -956,18 +958,41 @@ function SubstituteDialog({
 
         <Label className="grid gap-2">
           <span>Курьер</span>
-          <Select onValueChange={setSelected} value={selected}>
-            <SelectTrigger>
-              <SelectValue placeholder="Выберите курьера" />
-            </SelectTrigger>
-            <SelectContent>
-              {options.map((row) => (
-                <SelectItem key={row.employee_id} value={row.employee_id}>
-                  {row.full_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Input
+            autoFocus
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Начните вводить имя курьера"
+            value={search}
+          />
+          <div className="max-h-56 overflow-y-auto rounded-md border p-1">
+            {listQuery.isLoading ? (
+              <div className="px-2 py-2 text-sm text-muted-foreground">Загрузка…</div>
+            ) : options.length === 0 ? (
+              <div className="px-2 py-2 text-sm text-muted-foreground">
+                {search.trim() ? "Никто не найден" : "Нет доступных курьеров"}
+              </div>
+            ) : (
+              options.map((row) => (
+                <button
+                  className={cn(
+                    "flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground",
+                    row.employee_id === selected && "bg-accent/60",
+                  )}
+                  key={row.employee_id}
+                  onClick={() => setSelected(row.employee_id)}
+                  type="button"
+                >
+                  <span className="line-clamp-1">
+                    {row.full_name}
+                    {row.status !== "active" ? " · уволен" : ""}
+                  </span>
+                  {row.employee_id === selected ? (
+                    <Check size={16} aria-hidden="true" />
+                  ) : null}
+                </button>
+              ))
+            )}
+          </div>
         </Label>
 
         <DialogFooter className="sm:justify-between">
