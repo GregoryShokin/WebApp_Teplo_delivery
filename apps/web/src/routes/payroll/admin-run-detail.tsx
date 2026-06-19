@@ -1059,24 +1059,17 @@ function AdminPayoutCard({
     normalizeMoney(cashAmount) !== normalizeMoney(payoutCashTotal) ||
     (needsWallet && currentWalletId !== savedWalletId);
 
-  // Живое превью разнесения: суммы корзин по статьям стабильны (с бэка), а наличная/банковская
-  // разбивка пересчитывается каскадом под введённую наличную сумму (вспомогательная корзина — первой).
-  const previewBuckets = useMemo(() => {
-    const buckets = allocation?.buckets ?? [];
-    let remaining = cashValid && cashAmount !== null ? cashAmount : 0;
-    return buckets.map((bucket) => {
-      const total = moneyValue(bucket.total);
-      const cash = normalizeMoney(Math.min(Math.max(remaining, 0), total));
-      remaining = normalizeMoney(remaining - cash);
-      return {
+  // Ориентир: сколько ЗП пойдёт на каждую статью ДДС (фактически проводится по «Выплатить»
+  // по выбранным сотрудникам; канал нал/банк определяется через Сейф, не на уровне статьи).
+  const previewBuckets = useMemo(
+    () =>
+      (allocation?.buckets ?? []).map((bucket) => ({
         code: bucket.article_code,
         name: bucket.article_name,
-        total,
-        cash,
-        bank: normalizeMoney(total - cash),
-      };
-    });
-  }, [allocation?.buckets, cashAmount, cashValid]);
+        total: moneyValue(bucket.total),
+      })),
+    [allocation?.buckets],
+  );
 
   const invalidatePayoutQueries = () =>
     Promise.all([
@@ -1101,7 +1094,7 @@ function AdminPayoutCard({
     onSuccess: async (next) => {
       await invalidatePayoutQueries();
       setIsDialogOpen(false);
-      toast.success(next ? "Черновик сформирован" : "Наличная выплата проведена в ДДС");
+      toast.success(next ? "Черновик сформирован" : "Сплит сохранён — черновик не требуется");
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сформировать выплату")),
   });
@@ -1120,9 +1113,10 @@ function AdminPayoutCard({
         <h2 className="text-base font-semibold tracking-normal">Выплата администрации</h2>
       </div>
       <p className="mt-1 text-sm text-muted-foreground">
-        Укажите наличную сумму и счёт. Остаток уходит одним платежом на счёт ИП. В ДДС выплата
-        разносится по статьям: уборщицы и посудомойки — «Содержание торговых точек», остальные —
-        «Зарплата административного персонала».
+        Укажите наличную сумму и счёт. Безналичный остаток уходит одним черновиком на счёт ИП —
+        после оплаты в банке деньги автоматически переводятся в Сейф. В ДДС зарплата проводится
+        по статьям (уборщицы и посудомойки — «Содержание торговых точек», остальные — «Зарплата
+        административного персонала») по факту «Выплатить» — только по выплаченным сотрудникам.
       </p>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -1187,13 +1181,14 @@ function AdminPayoutCard({
 
       {previewBuckets.length > 0 ? (
         <div className="mt-4 overflow-hidden rounded-md border">
+          <div className="border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            Разнесение ЗП по статьям ДДС (проводится по факту «Выплатить»)
+          </div>
           <table className="w-full text-sm">
             <thead className="bg-muted/40 text-xs text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 text-left font-medium">Статья ДДС</th>
-                <th className="px-3 py-2 text-right font-medium">Всего</th>
-                <th className="px-3 py-2 text-right font-medium">Наличными</th>
-                <th className="px-3 py-2 text-right font-medium">Банком</th>
+                <th className="px-3 py-2 text-right font-medium">Сумма</th>
               </tr>
             </thead>
             <tbody>
@@ -1201,8 +1196,6 @@ function AdminPayoutCard({
                 <tr key={bucket.code} className="border-t">
                   <td className="px-3 py-2">{bucket.name}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatMoney(bucket.total)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{formatMoney(bucket.cash)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{formatMoney(bucket.bank)}</td>
                 </tr>
               ))}
             </tbody>
@@ -1255,8 +1248,8 @@ function AdminPayoutCard({
               <AlertDialogTitle>{actionLabel}?</AlertDialogTitle>
               <AlertDialogDescription>
                 {hasBank
-                  ? `${draft ? "Обновит" : "Создаст"} черновик на ${formatMoney(previewBank ?? 0)} на счёт ИП — подписать нужно в приложении банка. Наличная часть и разнесение по статьям ДДС проведутся автоматически.`
-                  : "Проведёт наличную выплату по статьям ДДС. Банковского черновика не будет."}
+                  ? `${draft ? "Обновит" : "Создаст"} черновик на ${formatMoney(previewBank ?? 0)} на счёт ИП — подписать нужно в приложении банка. После оплаты деньги автоматически переведутся в Сейф; зарплата проводится в ДДС по статьям при «Выплатить».`
+                  : "Банковского черновика не будет (всё наличными). Зарплата проводится в ДДС по статьям при «Выплатить»."}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

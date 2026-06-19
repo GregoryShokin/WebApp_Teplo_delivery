@@ -1,16 +1,16 @@
-"""Интеграция: выплата административной ведомости с разнесением по статьям ДДС.
+"""Интеграция: новый порядок выплаты администрации (проводки по «Выплатить»).
 
-Сквозной сценарий по примеру владельца: ФОТ 70 000 (вспомогательный 25 000 →
-«Содержание торговых точек», администрация 45 000 → «Зарплата административного
-персонала»), сплит наличными 20 000 (Сейф) / банком 50 000. Проверяем: каскад наличных,
-проводки ДДС по статьям и кошелькам, идемпотентность и групповой матчинг одной банковской
-операции 50 000 с группой prebooked-проводок.
+Порядок:
+1. «Сформировать черновик» — только заявка в банк, НИКАКИХ проводок ДДС.
+2. Платёж исполнен (статус T-Bank) — внутренний перевод банк→Сейф на безналичную часть.
+3. «Выплатить (N)» — расход ЗП из Сейфа по статьям только по выбранным сотрудникам,
+   инкрементально и без дублей.
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -18,9 +18,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from test_payroll_payouts import RecordingBankClient, create_actor_user
 
+from app.core.config import get_settings
 from app.models import (
     Account,
-    BankOperation,
     CashflowTransaction,
     DdsArticle,
     Employee,
@@ -29,14 +29,17 @@ from app.models import (
     PayrollRun,
     Wallet,
 )
-from app.services.banking.classifier import run_classification_rules
+from app.services.payroll_payments import mark_payments_selected
 from app.services.payroll_payout_allocation import (
     DDS_ARTICLE_ADMIN_PAYROLL,
     DDS_ARTICLE_AUX_PAYROLL,
 )
-from app.core.config import get_settings
 from app.services.payroll_payouts import (
+    BANK_TO_SAFE_SOURCE_KIND,
     MOCK_PAYER_ACCOUNT,
+    PAYROLL_PAYOUT_SOURCE_KIND,
+    SAFE_WALLET_CODE,
+    apply_payroll_draft_status,
     create_or_update_run_draft,
     set_run_payout_cash,
 )
@@ -51,11 +54,6 @@ def _reset_registry():
 
 
 async def _payer_wallet(session: AsyncSession) -> tuple[Account, Wallet]:
-    """Банковский кошелёк плательщика (счёт ИП) — существующий из сида или созданный.
-
-    В тестовой среде ``tbank_api_account_number`` указывает на засеянный счёт, поэтому
-    берём именно его, иначе ``_upsert_payout_cashflow`` спишет на другой кошелёк.
-    """
     settings = get_settings()
     payer_account_num = settings.tbank_api_account_number or MOCK_PAYER_ACCOUNT
     wallet = await session.scalar(
@@ -91,9 +89,15 @@ async def _payer_wallet(session: AsyncSession) -> tuple[Account, Wallet]:
     return account, wallet
 
 
+async def _safe_wallet(session: AsyncSession) -> Wallet:
+    wallet = await session.scalar(select(Wallet).where(Wallet.code == SAFE_WALLET_CODE))
+    assert wallet is not None, "Сейф (cash_safe) должен быть засеян миграцией"
+    return wallet
+
+
 async def _make_admin_run(
     session: AsyncSession, line_specs: list[tuple[str, Decimal]]
-) -> PayrollRun:
+) -> tuple[PayrollRun, list[tuple[uuid.UUID, str]]]:
     period = PayrollPeriod(
         id=uuid.uuid4(),
         period_type="half_month",
@@ -115,6 +119,7 @@ async def _make_admin_run(
     )
     session.add_all([period, run])
     await session.flush()
+    employees: list[tuple[uuid.UUID, str]] = []
     for role, total in line_specs:
         employee = Employee(
             id=uuid.uuid4(),
@@ -149,16 +154,17 @@ async def _make_admin_run(
                 components={},
             )
         )
+        employees.append((employee.id, role))
     await session.commit()
-    return run
+    return run, employees
 
 
-async def _payout_txns(session: AsyncSession, run_id: uuid.UUID) -> list[CashflowTransaction]:
+async def _txns(session: AsyncSession, run_id: uuid.UUID, source_kind: str) -> list[CashflowTransaction]:
     return list(
         (
             await session.scalars(
                 select(CashflowTransaction).where(
-                    CashflowTransaction.source_kind == "payroll_payout",
+                    CashflowTransaction.source_kind == source_kind,
                     CashflowTransaction.source_id == run_id,
                 )
             )
@@ -166,134 +172,116 @@ async def _payout_txns(session: AsyncSession, run_id: uuid.UUID) -> list[Cashflo
     )
 
 
-async def test_admin_payout_splits_articles_and_group_matches(
+async def _article_id(session: AsyncSession, code: str) -> uuid.UUID:
+    return await session.scalar(select(DdsArticle.id).where(DdsArticle.code == code))
+
+
+async def test_admin_draft_books_no_cashflow(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    """Шаг 1: «Сформировать черновик» создаёт только заявку в банк, без проводок ДДС."""
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
-        payer_account, payer_wallet = await _payer_wallet(session)
-        run = await _make_admin_run(
+        await _payer_wallet(session)
+        run, _employees = await _make_admin_run(
             session,
-            [
-                ("Менеджер", Decimal("30000")),
-                ("Управляющий", Decimal("15000")),
-                ("Уборщица", Decimal("15000")),
-                ("Посудомойка", Decimal("10000")),
-            ],
+            [("Менеджер", Decimal("30000")), ("Уборщица", Decimal("15000"))],
         )
-
-        # Сплит: 20 000 наличными с Сейфа, остальное (50 000) банком на счёт ИП.
         await set_run_payout_cash(
-            session,
-            run.id,
-            amount_cash=Decimal("20000"),
-            cash_wallet_code="cash_safe",
+            session, run.id, amount_cash=Decimal("15000"), cash_wallet_code="cash_safe",
             actor_user_id=actor.id,
         )
         draft = await create_or_update_run_draft(
             session, run.id, actor_user_id=actor.id, bank_client=RecordingBankClient()
         )
-        # В банк уходит один черновик на всю банковскую часть.
-        assert draft.amount == Decimal("50000.00")
+        assert draft is not None
+        assert draft.amount == Decimal("30000.00")  # банковская часть = ФОТ 45000 − наличные 15000
 
-        aux_id = await session.scalar(
-            select(DdsArticle.id).where(DdsArticle.code == DDS_ARTICLE_AUX_PAYROLL)
-        )
-        admin_id = await session.scalar(
-            select(DdsArticle.id).where(DdsArticle.code == DDS_ARTICLE_ADMIN_PAYROLL)
-        )
-        cash_wallet = await session.scalar(select(Wallet).where(Wallet.code == "cash_safe"))
-
-        txns = await _payout_txns(session, run.id)
-        by_key: dict[tuple, Decimal] = {}
-        for txn in txns:
-            key = (txn.wallet_id, txn.article_id)
-            by_key[key] = by_key.get(key, Decimal("0")) + txn.amount
-
-        # Банк: содержание 5 000 (недобор после налички) + зарплата админ 45 000.
-        assert by_key[(payer_wallet.id, aux_id)] == Decimal("5000.00")
-        assert by_key[(payer_wallet.id, admin_id)] == Decimal("45000.00")
-        # Наличные с Сейфа: вся наличка ушла на содержание (приоритет вспомогательной корзины).
-        assert by_key[(cash_wallet.id, aux_id)] == Decimal("20000.00")
-        # Наличной части по администрации нет.
-        assert (cash_wallet.id, admin_id) not in by_key
-        # Контроль сумм по кошелькам.
-        assert sum(t.amount for t in txns if t.wallet_id == payer_wallet.id) == Decimal("50000.00")
-        assert sum(t.amount for t in txns if t.wallet_id == cash_wallet.id) == Decimal("20000.00")
-
-        # Идемпотентность: повторный черновик пересоздаёт группу, не плодит проводки.
-        await create_or_update_run_draft(
-            session, run.id, actor_user_id=actor.id, bank_client=RecordingBankClient()
-        )
-        txns_again = await _payout_txns(session, run.id)
-        assert len(txns_again) == len(txns) == 3
-
-        # Групповой матчинг: одна банковская операция 50 000 матчится с группой банковских
-        # проводок выплаты (5 000 + 45 000) и привязывается к одной из них.
-        operation = BankOperation(
-            id=uuid.uuid4(),
-            provider="tbank",
-            provider_operation_id=f"op-{uuid.uuid4()}",
-            account_id=payer_account.id,
-            operation_date=datetime.now(UTC).date(),
-            direction="out",
-            amount=Decimal("50000.00"),
-            currency="RUB",
-            raw_payload={},
-            classification_status="pending",
-        )
-        session.add(operation)
-        await session.commit()
-
-        await run_classification_rules(session, [operation])
-        await session.refresh(operation)
-
-        assert operation.classification_status == "classified"
-        assert operation.cashflow_transaction_id is not None
-        linked = await session.get(CashflowTransaction, operation.cashflow_transaction_id)
-        assert linked is not None
-        assert linked.wallet_id == payer_wallet.id  # привязка к банковской проводке группы
-        assert linked.source_id == run.id
+        # Никаких проводок ДДС на черновике (ни выплаты, ни перевода).
+        assert await _txns(session, run.id, PAYROLL_PAYOUT_SOURCE_KIND) == []
+        assert await _txns(session, run.id, BANK_TO_SAFE_SOURCE_KIND) == []
 
 
-async def test_admin_payout_all_cash_books_only_cash_side(
+async def test_paid_books_bank_to_safe_transfer(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    """Шаг 2: при статусе «исполнен» создаётся внутренний перевод банк→Сейф, идемпотентно."""
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
         _account, payer_wallet = await _payer_wallet(session)
-        run = await _make_admin_run(
+        safe_wallet = await _safe_wallet(session)
+        run, _employees = await _make_admin_run(
             session,
-            [
-                ("Менеджер", Decimal("30000")),
-                ("Уборщица", Decimal("15000")),
-            ],
+            [("Менеджер", Decimal("30000")), ("Уборщица", Decimal("15000"))],
         )
-        # Вся выплата наличными с ТК Черникова — банковской части (и черновика) нет,
-        # но наличные всё равно заводятся проводками ДДС по статьям.
         await set_run_payout_cash(
-            session,
-            run.id,
-            amount_cash=Decimal("45000"),
-            cash_wallet_code="tk_chernikova",
+            session, run.id, amount_cash=Decimal("15000"), cash_wallet_code="cash_safe",
             actor_user_id=actor.id,
         )
         draft = await create_or_update_run_draft(
             session, run.id, actor_user_id=actor.id, bank_client=RecordingBankClient()
         )
-        assert draft is None  # банковского черновика нет
 
-        cash_wallet = await session.scalar(select(Wallet).where(Wallet.code == "tk_chernikova"))
-        aux_id = await session.scalar(
-            select(DdsArticle.id).where(DdsArticle.code == DDS_ARTICLE_AUX_PAYROLL)
+        status = await apply_payroll_draft_status(session, draft=draft, raw_status="executed")
+        assert status == "paid"
+
+        transfer = await _txns(session, run.id, BANK_TO_SAFE_SOURCE_KIND)
+        assert len(transfer) == 2
+        bank_leg = next(t for t in transfer if t.wallet_id == payer_wallet.id)
+        safe_leg = next(t for t in transfer if t.wallet_id == safe_wallet.id)
+        # банк-нога: списание со счёта (для матчинга выписки), Сейф-нога: приток (двигает баланс Сейфа)
+        assert bank_leg.direction == "out" and bank_leg.amount == Decimal("30000.00")
+        assert safe_leg.direction == "in" and safe_leg.amount == Decimal("30000.00")
+
+        # Идемпотентность: повторный «исполнен» не дублирует перевод.
+        await apply_payroll_draft_status(session, draft=draft, raw_status="executed")
+        assert len(await _txns(session, run.id, BANK_TO_SAFE_SOURCE_KIND)) == 2
+
+
+async def test_payout_books_expense_from_safe_incrementally(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Шаг 3: «Выплатить» заводит расход из Сейфа по статьям только по выбранным, без дублей."""
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        await _payer_wallet(session)
+        safe_wallet = await _safe_wallet(session)
+        run, employees = await _make_admin_run(
+            session,
+            [("Менеджер", Decimal("30000")), ("Уборщица", Decimal("15000"))],
         )
-        admin_id = await session.scalar(
-            select(DdsArticle.id).where(DdsArticle.code == DDS_ARTICLE_ADMIN_PAYROLL)
+        by_role = {role: emp_id for emp_id, role in employees}
+        admin_id = await _article_id(session, DDS_ARTICLE_ADMIN_PAYROLL)
+        aux_id = await _article_id(session, DDS_ARTICLE_AUX_PAYROLL)
+
+        # Выплачиваем только менеджера (30000 → «Зарплата админ»).
+        marked = await mark_payments_selected(
+            session, run.id, [by_role["Менеджер"]], paid_at=date(2026, 6, 16), actor_user_id=actor.id
         )
-        txns = await _payout_txns(session, run.id)
-        # Только наличные проводки на ТК Черникова, банковских нет.
-        assert txns and all(t.wallet_id == cash_wallet.id for t in txns)
-        by_article = {t.article_id: t.amount for t in txns}
-        assert by_article[aux_id] == Decimal("15000.00")
-        assert by_article[admin_id] == Decimal("30000.00")
-        assert sum(t.amount for t in txns) == Decimal("45000.00")
+        assert marked == 1
+        expense = await _txns(session, run.id, PAYROLL_PAYOUT_SOURCE_KIND)
+        assert all(t.wallet_id == safe_wallet.id and t.direction == "out" for t in expense)
+        by_article = {t.article_id: t.amount for t in expense}
+        assert by_article == {admin_id: Decimal("30000.00")}
+
+        # Выплачиваем уборщицу (15000 → «Содержание торговых точек»): добавляется расход.
+        marked = await mark_payments_selected(
+            session, run.id, [by_role["Уборщица"]], paid_at=date(2026, 6, 16), actor_user_id=actor.id
+        )
+        assert marked == 1
+        expense = await _txns(session, run.id, PAYROLL_PAYOUT_SOURCE_KIND)
+        totals: dict[uuid.UUID, Decimal] = {}
+        for t in expense:
+            totals[t.article_id] = totals.get(t.article_id, Decimal("0")) + t.amount
+        assert totals == {admin_id: Decimal("30000.00"), aux_id: Decimal("15000.00")}
+
+        # Повторное «Выплатить» уже оплаченных — без дублей (rows пустой → расхода нет).
+        marked = await mark_payments_selected(
+            session, run.id, [by_role["Менеджер"], by_role["Уборщица"]],
+            paid_at=date(2026, 6, 16), actor_user_id=actor.id,
+        )
+        assert marked == 0
+        totals_after: dict[uuid.UUID, Decimal] = {}
+        for t in await _txns(session, run.id, PAYROLL_PAYOUT_SOURCE_KIND):
+            totals_after[t.article_id] = totals_after.get(t.article_id, Decimal("0")) + t.amount
+        assert totals_after == {admin_id: Decimal("30000.00"), aux_id: Decimal("15000.00")}

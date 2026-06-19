@@ -23,6 +23,7 @@ from app.models import (
     PayrollRunEvent,
     Wallet,
 )
+from app.services.bank_payment_status import classify_payment_status
 from app.services.banking import BankClient, TbankClient
 from app.services.banking.exceptions import BankFetchError
 from app.services.banking.tbank import build_payment_draft_api_payload
@@ -43,6 +44,12 @@ PAYROLL_PAYOUT_SOURCE_KIND = "payroll_payout"
 PAYROLL_PAYOUT_ARTICLE_CODE = "zarplata_proizvodstvennogo_personala"
 # Типы кошельков, с которых допустима выдача наличной части выплаты (Сейф, касса и т.п.).
 CASH_WALLET_TYPES = frozenset({"cash", "cash_register", "cash_safe", "store_cash"})
+# Внутренний перевод банк→Сейф под выплату администрации (шаг 2 — при оплате черновика в банке):
+# безналичная часть переводится с расчётного счёта в Сейф, откуда раздаётся по «Выплатить».
+SAFE_WALLET_CODE = "cash_safe"
+BANK_TO_SAFE_SOURCE_KIND = "payroll_bank_to_safe"
+DDS_ARTICLE_TRANSFER_IN_CODE = "postuplenie_perevod_mezhdu_schetami"
+DDS_ARTICLE_TRANSFER_OUT_CODE = "vybytie_perevod_mezhdu_schetami"
 
 
 async def set_run_payout_cash(
@@ -110,6 +117,179 @@ async def _resolve_cash_wallet(session: AsyncSession, code: str) -> Wallet:
     return wallet
 
 
+async def book_bank_to_safe_transfer(session: AsyncSession, run: PayrollRun) -> bool:
+    """Шаг 2: при оплате черновика завести внутренний перевод банк→Сейф на безналичную часть.
+
+    Две проводки с общим source (``payroll_bank_to_safe`` + run.id):
+    - банк-нога (out, статья «Выбытие — Перевод между счетами») на расчётном счёте — служит
+      prebooked-целью: исходящая операция из выписки сматчится с ней и унаследует статью
+      перевода (баланс банка идёт от выписки, эта проводка его не двигает);
+    - Сейф-нога (in, статья «Поступление — Перевод между счетами») — двигает баланс Сейфа,
+      откуда деньги раздаются по «Выплатить».
+
+    Идемпотентно: повторный вызов (дубль webhook / повторный polling) — no-op. Возвращает
+    True, если перевод создан.
+    """
+    existing = await session.scalar(
+        select(CashflowTransaction.id).where(
+            CashflowTransaction.source_kind == BANK_TO_SAFE_SOURCE_KIND,
+            CashflowTransaction.source_id == run.id,
+        )
+    )
+    if existing is not None:
+        return False
+    amount = await _run_account_amount(session, run)
+    if amount <= 0:
+        return False
+
+    settings = get_settings()
+    payer_account = _payer_account(settings)
+    bank_wallet = await session.scalar(
+        select(Wallet)
+        .join(Account, Account.id == Wallet.account_id)
+        .where(Account.account_number == payer_account, Wallet.status == "active")
+    )
+    safe_wallet = await session.scalar(
+        select(Wallet).where(Wallet.code == SAFE_WALLET_CODE, Wallet.status == "active")
+    )
+    if bank_wallet is None or safe_wallet is None:
+        return False
+
+    transfer_out_article = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == DDS_ARTICLE_TRANSFER_OUT_CODE)
+    )
+    transfer_in_article = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == DDS_ARTICLE_TRANSFER_IN_CODE)
+    )
+    operation_date = datetime.now(UTC).date()
+    purpose = "Перевод на Сейф под выплату ЗП администрации"
+    session.add(
+        CashflowTransaction(
+            wallet_id=bank_wallet.id,
+            direction="out",
+            amount=amount,
+            operation_date=operation_date,
+            article_id=transfer_out_article,
+            source_kind=BANK_TO_SAFE_SOURCE_KIND,
+            source_id=run.id,
+            payment_purpose=purpose,
+            quality_status="final",
+        )
+    )
+    session.add(
+        CashflowTransaction(
+            wallet_id=safe_wallet.id,
+            direction="in",
+            amount=amount,
+            operation_date=operation_date,
+            article_id=transfer_in_article,
+            source_kind=BANK_TO_SAFE_SOURCE_KIND,
+            source_id=run.id,
+            payment_purpose=purpose,
+            quality_status="final",
+        )
+    )
+    await session.flush()
+    return True
+
+
+async def apply_payroll_draft_status(
+    session: AsyncSession,
+    *,
+    draft: PayrollBankDraft,
+    raw_status: str | None,
+    commit: bool = True,
+) -> str:
+    """Продвинуть payroll-черновик по статусу банковского платежа (polling/webhook).
+
+    При ``paid`` заводит внутренний перевод банк→Сейф (см. ``book_bank_to_safe_transfer``) —
+    деньги приходят в Сейф, откуда раздаются по «Выплатить». Идемпотентно: блокировка строки
+    сериализует гонку webhook↔polling и дубль-доставку; переход только из created/updated.
+    """
+    outcome = classify_payment_status(raw_status)
+    draft = await session.get(PayrollBankDraft, draft.id, with_for_update=True)
+    if draft is None:
+        return "created"
+
+    if outcome == "paid" and draft.status in ("created", "updated"):
+        run = await session.get(PayrollRun, draft.run_id)
+        if run is not None:
+            await book_bank_to_safe_transfer(session, run)
+        draft.status = "paid"
+        draft.synced_at = datetime.now(UTC)
+    elif outcome == "failed" and draft.status in ("created", "updated"):
+        draft.status = "failed"
+        draft.last_error = f"Платёж отклонён банком: {raw_status}"[:500]
+        draft.synced_at = datetime.now(UTC)
+
+    if commit:
+        await session.commit()
+    return draft.status
+
+
+async def book_payout_expense_for_employees(
+    session: AsyncSession,
+    run: PayrollRun,
+    employee_ids: list[uuid.UUID],
+) -> bool:
+    """Шаг 3: расход ЗП из Сейфа по статьям для выплаченных сотрудников («Выплатить»).
+
+    Только для админ-ведомости. Суммы берутся по строкам указанных сотрудников и разносятся
+    по статьям ДДС (уборщицы/посудомойки → «Содержание торговых точек», остальные →
+    «Зарплата административного персонала»), списываясь с Сейфа. Вызывается из bulk-mark по
+    ВНОВЬ выплаченным сотрудникам, поэтому повторное «Выплатить» уже оплаченных не задваивает.
+    Возвращает True, если создан расход.
+    """
+    if not _is_admin_run(run) or not employee_ids:
+        return False
+    lines = (
+        await session.scalars(
+            select(PayrollLine).where(
+                PayrollLine.run_id == run.id,
+                PayrollLine.employee_id.in_(employee_ids),
+            )
+        )
+    ).all()
+    buckets = build_payout_buckets(
+        [(line.role, _money(line.total_payable)) for line in lines],
+        default_article_code=DDS_ARTICLE_ADMIN_PAYROLL,
+    )
+    if not buckets:
+        return False
+    safe_wallet = await session.scalar(
+        select(Wallet).where(Wallet.code == SAFE_WALLET_CODE, Wallet.status == "active")
+    )
+    if safe_wallet is None:
+        return False
+
+    codes = {bucket.article_code for bucket in buckets}
+    article_rows = (
+        await session.execute(
+            select(DdsArticle.code, DdsArticle.id).where(DdsArticle.code.in_(codes))
+        )
+    ).all()
+    article_ids = {code: article_id for code, article_id in article_rows}
+    operation_date = datetime.now(UTC).date()
+    for bucket in buckets:
+        if bucket.total <= 0:
+            continue
+        session.add(
+            CashflowTransaction(
+                wallet_id=safe_wallet.id,
+                direction="out",
+                amount=bucket.total,
+                operation_date=operation_date,
+                article_id=article_ids.get(bucket.article_code),
+                source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
+                source_id=run.id,
+                payment_purpose="Выплата ЗП администрации (из Сейфа)",
+                quality_status="final",
+            )
+        )
+    await session.flush()
+    return True
+
+
 async def create_or_update_run_draft(
     session: AsyncSession,
     run_id: uuid.UUID,
@@ -124,21 +304,9 @@ async def create_or_update_run_draft(
     payer_account = _payer_account(settings)
     total_account = await _run_account_amount(session, run)
     if total_account <= 0:
-        if _is_admin_run(run) and _money(run.payout_cash_total) > 0:
-            # Вся выплата административной ведомости наличными: банковского черновика нет,
-            # но наличные всё равно заводим проводками ДДС по статьям.
-            await _upsert_payout_cashflow(session, run, Decimal("0.00"), datetime.now(UTC).date())
-            _add_payout_event(
-                session,
-                run=run,
-                action="payout_cash_booked",
-                actor_user_id=actor_user_id,
-                payload={
-                    "cash_total": money_text(run.payout_cash_total),
-                    "account_total": "0.00",
-                },
-            )
-            await session.commit()
+        if _is_admin_run(run):
+            # Вся выплата наличными: банковского черновика нет. Проводки ДДС в админ-ведомости
+            # создаются по «Выплатить» (расход из Сейфа), не на черновике.
             return await _get_bank_draft(session, run_id)
         raise PayrollConflictError("РС-часть ведомости равна нулю")
 
@@ -574,13 +742,8 @@ async def _upsert_payout_cashflow(
     purpose = _payment_purpose(requisites, run_id=run.id, period=period)
 
     if _is_admin_run(run):
-        await _upsert_admin_payout_cashflows(
-            session,
-            run,
-            bank_wallet=wallet,
-            operation_date=operation_date,
-            purpose=purpose,
-        )
+        # Админ-ведомость: проводки ДДС создаются по «Выплатить» (расход из Сейфа) и при
+        # подтверждении платежа (перевод банк→Сейф), а НЕ на черновике.
         return
 
     article_id = await session.scalar(
@@ -617,98 +780,6 @@ async def _upsert_payout_cashflow(
                 quality_status="final",
             )
         )
-    await session.flush()
-
-
-async def _upsert_admin_payout_cashflows(
-    session: AsyncSession,
-    run: PayrollRun,
-    *,
-    bank_wallet: Wallet,
-    operation_date: date,
-    purpose: str,
-) -> None:
-    """Разнести выплату админ-ведомости на проводки ДДС по статьям.
-
-    Банковская часть — несколько prebooked-проводок на счёте ИП по статьям (одна банковская
-    операция из выписки сматчится с их группой через ``classifier._find_prebooked_payment``
-    по сумме банковских проводок группы). Наличная часть — проводки на выбранном наличном
-    кошельке, сразу ``final`` (в выписку не приходят). Группа пересоздаётся при каждом
-    пересчёте, пока ни одна проводка не привязана к банковской операции; после оплаты
-    раскладка зафиксирована — выходим, не трогая связь.
-    """
-    existing = list(
-        (
-            await session.scalars(
-                select(CashflowTransaction).where(
-                    CashflowTransaction.source_kind == PAYROLL_PAYOUT_SOURCE_KIND,
-                    CashflowTransaction.source_id == run.id,
-                )
-            )
-        ).all()
-    )
-    if existing:
-        settled = await session.scalar(
-            select(BankOperation.id).where(
-                BankOperation.cashflow_transaction_id.in_([txn.id for txn in existing])
-            )
-        )
-        if settled is not None:
-            return
-        for txn in existing:
-            await session.delete(txn)
-        await session.flush()
-
-    lines = (
-        await session.scalars(select(PayrollLine).where(PayrollLine.run_id == run.id))
-    ).all()
-    buckets = build_payout_buckets(
-        [(line.role, _money(line.total_payable)) for line in lines],
-        default_article_code=DDS_ARTICLE_ADMIN_PAYROLL,
-    )
-    allocations = allocate_cash_cascade(buckets, _money(run.payout_cash_total))
-
-    codes = {alloc.article_code for alloc in allocations}
-    article_ids: dict[str, uuid.UUID] = {}
-    if codes:
-        rows = (
-            await session.execute(
-                select(DdsArticle.code, DdsArticle.id).where(DdsArticle.code.in_(codes))
-            )
-        ).all()
-        article_ids = {code: article_id for code, article_id in rows}
-
-    cash_wallet_id = run.payout_cash_wallet_id
-    for alloc in allocations:
-        article_id = article_ids.get(alloc.article_code)
-        if alloc.bank > 0:
-            session.add(
-                CashflowTransaction(
-                    wallet_id=bank_wallet.id,
-                    direction="out",
-                    amount=alloc.bank,
-                    operation_date=operation_date,
-                    article_id=article_id,
-                    source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
-                    source_id=run.id,
-                    payment_purpose=purpose,
-                    quality_status="final",
-                )
-            )
-        if alloc.cash > 0 and cash_wallet_id is not None:
-            session.add(
-                CashflowTransaction(
-                    wallet_id=cash_wallet_id,
-                    direction="out",
-                    amount=alloc.cash,
-                    operation_date=operation_date,
-                    article_id=article_id,
-                    source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
-                    source_id=run.id,
-                    payment_purpose=f"{purpose} (наличные)",
-                    quality_status="final",
-                )
-            )
     await session.flush()
 
 

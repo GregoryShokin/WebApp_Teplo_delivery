@@ -139,6 +139,14 @@ async def mark_all_payments(
         payment.method = method
         payment.paid_by_user_id = actor_user_id
         payment.status = "paid"
+
+    # Расход ЗП в ДДС из Сейфа по статьям — только по ВНОВЬ выплаченным сотрудникам нового
+    # порядка выплаты администрации (для админ-ведомости; no-op для производственной).
+    from app.services.payroll_payouts import book_payout_expense_for_employees
+
+    await book_payout_expense_for_employees(
+        session, run, [employee_id for employee_id, _amount, _payment in rows]
+    )
     _add_payment_event(
         session,
         run=run,
@@ -202,6 +210,14 @@ async def mark_payments_selected(
         payment.method = None
         payment.paid_by_user_id = actor_user_id
         payment.status = "paid"
+
+    # Расход ЗП в ДДС из Сейфа по статьям — только по ВНОВЬ выплаченным сотрудникам нового
+    # порядка выплаты администрации (для админ-ведомости; no-op для производственной).
+    from app.services.payroll_payouts import book_payout_expense_for_employees
+
+    await book_payout_expense_for_employees(
+        session, run, [employee_id for employee_id, _amount, _payment in rows]
+    )
     _add_payment_event(
         session,
         run=run,

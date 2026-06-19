@@ -18,8 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.db.session import get_session
-from app.models import CounterpartyPaymentDraft
+from app.models import CounterpartyPaymentDraft, PayrollBankDraft
 from app.services.bank_payment_status import apply_payment_status
+from app.services.payroll_payouts import apply_payroll_draft_status
 
 router = APIRouter()
 
@@ -77,8 +78,20 @@ async def tbank_payment_status(
     draft = await session.scalar(
         select(CounterpartyPaymentDraft).where(CounterpartyPaymentDraft.provider_ref == payment_id)
     )
-    if draft is None:
-        # Неизвестный платёж — отвечаем 200, чтобы банк не ретраил (это не наша ошибка).
-        return {"ok": True, "matched": False}
-    new_status = await apply_payment_status(session, draft=draft, raw_status=raw_status)
-    return {"ok": True, "matched": True, "draft_status": new_status}
+    if draft is not None:
+        new_status = await apply_payment_status(session, draft=draft, raw_status=raw_status)
+        return {"ok": True, "matched": True, "draft_status": new_status}
+
+    # Платёж не от накладной — возможно, это payroll-черновик (выплата администрации):
+    # при «исполнен» заводим внутренний перевод банк→Сейф.
+    payroll_draft = await session.scalar(
+        select(PayrollBankDraft).where(PayrollBankDraft.provider_ref == payment_id)
+    )
+    if payroll_draft is not None:
+        new_status = await apply_payroll_draft_status(
+            session, draft=payroll_draft, raw_status=raw_status
+        )
+        return {"ok": True, "matched": True, "draft_status": new_status}
+
+    # Неизвестный платёж — отвечаем 200, чтобы банк не ретраил (это не наша ошибка).
+    return {"ok": True, "matched": False}

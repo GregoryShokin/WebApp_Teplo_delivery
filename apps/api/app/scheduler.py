@@ -18,6 +18,7 @@ from app.models import (
     BankOperation,
     CounterpartyPaymentDraft,
     OwnAccountsRegistry,
+    PayrollBankDraft,
     ReconciliationCase,
     Wallet,
 )
@@ -35,6 +36,7 @@ from app.services.couriers.iiko_attendance_sync import sync_attendance
 from app.services.couriers.iiko_olap_sync import sync_courier_olap_deliveries
 from app.services.couriers.shift_matching import recalculate_matches
 from app.services.kassa.iiko_cashshift_sync import sync_iiko_cashshifts
+from app.services.payroll_payouts import apply_payroll_draft_status
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
@@ -107,6 +109,41 @@ async def run_payment_status_poll(
         if status == "paid":
             result["paid"] += 1
         elif status == "failed":
+            result["failed"] += 1
+
+    # Те же статусы для payroll-черновиков: при «исполнен» заводим внутренний перевод банк→Сейф.
+    payroll_drafts = (
+        await session.scalars(
+            select(PayrollBankDraft).where(
+                PayrollBankDraft.status.in_(("created", "updated")),
+                PayrollBankDraft.provider_ref.is_not(None),
+            )
+        )
+    ).all()
+    for payroll_draft in payroll_drafts:
+        try:
+            raw = await client.get_payment_status(payroll_draft.provider_ref or "")
+        except BankCredentialsError:
+            logger.warning("payment-status poll: credentials error, прерываю опрос", exc_info=True)
+            result["errors"] += 1
+            break
+        except Exception:  # noqa: BLE001 - сетевая/банк-ошибка одного платежа не валит весь проход
+            logger.warning(
+                "payment-status poll: ошибка по payroll-черновику %s",
+                payroll_draft.id,
+                exc_info=True,
+            )
+            result["errors"] += 1
+            continue
+        result["checked"] += 1
+        if raw is None:
+            continue
+        payroll_status = await apply_payroll_draft_status(
+            session, draft=payroll_draft, raw_status=raw, commit=False
+        )
+        if payroll_status == "paid":
+            result["paid"] += 1
+        elif payroll_status == "failed":
             result["failed"] += 1
     await session.commit()
     return result
