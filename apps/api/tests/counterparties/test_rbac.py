@@ -62,8 +62,10 @@ def test_read_tier_registry(
     assert (
         client.get(f"{BASE}/registry", headers=_manager(async_session_factory)).status_code == 200
     )
+    # Касса (Фаза 9): /registry открыт кассиру через dual-guard kassa.invoices.create —
+    # справочник контрагентов нужен для создания накладной из Кассы.
     assert (
-        client.get(f"{BASE}/registry", headers=_cashier(async_session_factory)).status_code == 403
+        client.get(f"{BASE}/registry", headers=_cashier(async_session_factory)).status_code == 200
     )
 
 
@@ -139,3 +141,73 @@ def test_post_draft_happy_path_as_manager_returns_201(
     body = response.json()
     assert body["status"] == "created"
     assert body["amount"] == 100.0
+
+
+async def _seed_supplier(
+    factory: async_sessionmaker[AsyncSession], *, name: str, inn: str
+) -> uuid.UUID:
+    async with factory() as session:
+        cp = await make_counterparty(session, name=name, inn=inn)
+        await session.commit()
+        return cp.id
+
+
+def test_kassa_enabled_filter_and_toggle(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    cp_id = _run(
+        _seed_supplier(async_session_factory, name="ООО Касса-Поставщик", inn="7705550001")
+    )
+    admin = _admin(async_session_factory)
+
+    # По умолчанию флаг выключен — в kassa_only его нет.
+    before = client.get(f"{BASE}/registry", params={"kassa_only": "true"}, headers=admin)
+    assert before.status_code == 200
+    assert all(row["counterparty_id"] != str(cp_id) for row in before.json())
+
+    # Включаем «Активен в Кассе».
+    on = client.post(f"{BASE}/{cp_id}/kassa-enabled", json={"enabled": True}, headers=admin)
+    assert on.status_code == 200
+    assert on.json()["profile"]["kassa_enabled"] is True
+
+    # Теперь он попадает в kassa_only и помечен флагом.
+    after = {row["counterparty_id"]: row for row in client.get(
+        f"{BASE}/registry", params={"kassa_only": "true"}, headers=admin
+    ).json()}
+    assert str(cp_id) in after
+    assert after[str(cp_id)]["kassa_enabled"] is True
+
+    # Без фильтра присутствует независимо от флага.
+    full = client.get(f"{BASE}/registry", headers=admin)
+    assert any(row["counterparty_id"] == str(cp_id) for row in full.json())
+
+    # Выключаем — снова выпадает из kassa_only.
+    off = client.post(f"{BASE}/{cp_id}/kassa-enabled", json={"enabled": False}, headers=admin)
+    assert off.status_code == 200
+    final = client.get(f"{BASE}/registry", params={"kassa_only": "true"}, headers=admin)
+    assert all(row["counterparty_id"] != str(cp_id) for row in final.json())
+
+
+def test_kassa_enabled_requires_operate(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    cp_id = _run(_seed_supplier(async_session_factory, name="ООО Право-Касса", inn="7705550002"))
+
+    # Кассир не может переключать (нужно counterparties.operate).
+    assert (
+        client.post(
+            f"{BASE}/{cp_id}/kassa-enabled",
+            json={"enabled": True},
+            headers=_cashier(async_session_factory),
+        ).status_code
+        == 403
+    )
+    # Менеджер может.
+    assert (
+        client.post(
+            f"{BASE}/{cp_id}/kassa-enabled",
+            json={"enabled": True},
+            headers=_manager(async_session_factory),
+        ).status_code
+        == 200
+    )

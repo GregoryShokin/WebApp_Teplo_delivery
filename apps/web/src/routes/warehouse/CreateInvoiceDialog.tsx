@@ -77,11 +77,14 @@ export function CreateInvoiceDialog({
   onOpenChange,
   onCreated,
   barter = false,
+  kassaOnly = false,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
   barter?: boolean;
+  // В контуре Кассы дропдаун контрагентов показывает только «Активных в Кассе».
+  kassaOnly?: boolean;
 }) {
   const [kind, setKind] = useState<"normal" | "barter">(barter ? "barter" : "normal");
   const [weLend, setWeLend] = useState(true);
@@ -96,8 +99,8 @@ export function CreateInvoiceDialog({
   const isReturn = isBarter && barterAction === "return";
 
   const registryQuery = useQuery({
-    queryKey: ["cp", "registry", "all"],
-    queryFn: () => getRegistry(),
+    queryKey: ["cp", "registry", kassaOnly ? "kassa" : "all"],
+    queryFn: () => getRegistry(kassaOnly ? { kassa_only: true } : undefined),
     enabled: open,
   });
   // Все GOODS загружаем разом и фильтруем на клиенте — как поиск контрагентов.

@@ -42,6 +42,7 @@ export type RegistryItem = {
   internal_name: string | null;
   payment_delay_days: number | null;
   requisites_verified: boolean;
+  kassa_enabled: boolean;
   unpaid_count: number;
   unpaid_remaining: number;
   receivable_remaining: number;
@@ -66,6 +67,7 @@ export type CounterpartyProfile = {
   manager_phone: string | null;
   requisites: Record<string, unknown>;
   requisites_verified: boolean;
+  kassa_enabled: boolean;
   status: string;
 } | null;
 
@@ -201,6 +203,7 @@ export async function payInvoice(
 export async function getRegistry(params?: {
   category_id?: string;
   include_archived?: boolean;
+  kassa_only?: boolean;
 }): Promise<RegistryItem[]> {
   const response = await api.get<RegistryItem[]>(`${BASE}/registry`, { params });
   return response.data;
@@ -276,6 +279,11 @@ export async function archiveCounterparty(id: string): Promise<CounterpartyCard>
 
 export async function unarchiveCounterparty(id: string): Promise<CounterpartyCard> {
   const response = await api.post<CounterpartyCard>(`${BASE}/${id}/unarchive`);
+  return response.data;
+}
+
+export async function setKassaEnabled(id: string, enabled: boolean): Promise<CounterpartyCard> {
+  const response = await api.post<CounterpartyCard>(`${BASE}/${id}/kassa-enabled`, { enabled });
   return response.data;
 }
 

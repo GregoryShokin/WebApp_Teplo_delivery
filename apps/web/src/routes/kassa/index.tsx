@@ -60,6 +60,7 @@ export function KassaRoute() {
         open={mode === "invoice"}
         onOpenChange={(open) => setMode(open ? "invoice" : null)}
         onCreated={invalidateAfterCreate}
+        kassaOnly
       />
 
       <CreateChequeDialog

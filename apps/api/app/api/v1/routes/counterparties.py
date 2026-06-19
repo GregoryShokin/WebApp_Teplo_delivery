@@ -123,6 +123,7 @@ class RegistryRead(BaseModel):
     internal_name: str | None
     payment_delay_days: int | None
     requisites_verified: bool
+    kassa_enabled: bool
     unpaid_count: int
     unpaid_remaining: float
     receivable_remaining: float
@@ -197,6 +198,12 @@ class RequisitesUpdate(BaseModel):
 
     requisites: dict[str, Any]
     verified: bool = False
+
+
+class KassaEnabledUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
 
 
 class CashAllocationRequest(BaseModel):
@@ -499,9 +506,13 @@ async def get_registry(
     session: Annotated[AsyncSession, Depends(get_session)],
     category_id: uuid.UUID | None = None,
     include_archived: bool = False,
+    kassa_only: bool = False,
 ) -> list[RegistryRead]:
     items = await registry.list_registry(
-        session, category_id=category_id, include_archived=include_archived
+        session,
+        category_id=category_id,
+        include_archived=include_archived,
+        kassa_only=kassa_only,
     )
     return [RegistryRead.model_validate(item) for item in items]
 
@@ -590,6 +601,21 @@ async def put_profile(
             manager_phone=payload.manager_phone,
             status=payload.status,
         )
+    except registry.CounterpartyRegistryError as exc:
+        raise _conflict(exc) from exc
+    card = await registry.get_counterparty_card(session, counterparty_id)
+    return CardRead.model_validate(card)
+
+
+@router.post("/{counterparty_id}/kassa-enabled", response_model=CardRead, dependencies=OPERATE)
+async def post_kassa_enabled(
+    counterparty_id: uuid.UUID,
+    payload: KassaEnabledUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CardRead:
+    """Переключить «Активен в Кассе» — видимость поставщика в дропдауне накладной Кассы."""
+    try:
+        await registry.set_kassa_enabled(session, counterparty_id, enabled=payload.enabled)
     except registry.CounterpartyRegistryError as exc:
         raise _conflict(exc) from exc
     card = await registry.get_counterparty_card(session, counterparty_id)

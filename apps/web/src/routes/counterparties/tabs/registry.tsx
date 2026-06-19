@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -29,6 +30,7 @@ import {
   getLedgerCategories,
   getNeedsSetup,
   getRegistry,
+  setKassaEnabled,
   type RegistryItem,
 } from "../api";
 import { COUNTERPARTY_TYPE_LABELS, formatRub, RelationshipBadge } from "../shared";
@@ -52,6 +54,16 @@ export function RegistryTab({
   const registryQuery = useQuery({
     queryKey: ["cp", "registry", categoryId],
     queryFn: () => getRegistry({ category_id: categoryId === ALL ? undefined : categoryId }),
+  });
+
+  const queryClient = useQueryClient();
+  const kassaMutation = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => setKassaEnabled(id, enabled),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["cp", "registry"] });
+    },
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, "Не удалось переключить «Активен в Кассе»")),
   });
 
   const needsSetup = needsSetupQuery.data?.count ?? 0;
@@ -118,6 +130,22 @@ export function RegistryTab({
         ) : (
           "—"
         ),
+    },
+    {
+      key: "kassa_enabled",
+      header: "Касса",
+      headerClassName: "text-center",
+      className: "text-center",
+      cell: (item) => (
+        <Switch
+          checked={item.kassa_enabled}
+          disabled={!canOperate}
+          onCheckedChange={(value) =>
+            kassaMutation.mutate({ id: item.counterparty_id, enabled: value })
+          }
+          aria-label="Активен в Кассе"
+        />
+      ),
     },
   ];
 

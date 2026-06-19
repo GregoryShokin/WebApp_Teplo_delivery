@@ -135,6 +135,7 @@ class RegistryItem:
     internal_name: str | None
     payment_delay_days: int | None
     requisites_verified: bool
+    kassa_enabled: bool
     unpaid_count: int
     unpaid_remaining: Decimal
     # Barter: open receivables (they owe us). Net balance = unpaid_remaining − receivable_remaining.
@@ -306,6 +307,7 @@ async def list_registry(
     *,
     category_id: uuid.UUID | None = None,
     include_archived: bool = False,
+    kassa_only: bool = False,
 ) -> list[RegistryItem]:
     supplier_ids = select(CounterpartyRole.counterparty_id).where(
         CounterpartyRole.role == "supplier"
@@ -323,6 +325,9 @@ async def list_registry(
         query = query.where(Counterparty.status != ARCHIVED_STATUS)
     if category_id is not None:
         query = query.where(CounterpartyPayableProfile.ledger_category_id == category_id)
+    if kassa_only:
+        # Только помеченные «Активен в Кассе» (NULL-профили отсекаются автоматически).
+        query = query.where(CounterpartyPayableProfile.kassa_enabled.is_(True))
     rows = list(await session.execute(query))
 
     # Open invoices remaining per counterparty, split by direction (payable vs receivable).
@@ -375,6 +380,7 @@ async def list_registry(
                 internal_name=profile.internal_name if profile else None,
                 payment_delay_days=profile.payment_delay_days if profile else None,
                 requisites_verified=bool(profile.requisites_verified) if profile else False,
+                kassa_enabled=bool(profile.kassa_enabled) if profile else False,
                 unpaid_count=payable_count,
                 unpaid_remaining=payable_remaining,
                 receivable_remaining=receivable_remaining,
@@ -483,6 +489,7 @@ def _profile_dict(profile: CounterpartyPayableProfile | None) -> dict[str, Any] 
         "manager_phone": profile.manager_phone,
         "requisites": profile.requisites or {},
         "requisites_verified": profile.requisites_verified,
+        "kassa_enabled": profile.kassa_enabled,
         "status": profile.status,
     }
 
@@ -536,6 +543,20 @@ async def update_profile(
     profile.manager_phone = manager_phone
     if status:
         profile.status = status
+    await session.commit()
+    await session.refresh(profile)
+    return profile
+
+
+async def set_kassa_enabled(
+    session: AsyncSession, counterparty_id: uuid.UUID, *, enabled: bool
+) -> CounterpartyPayableProfile:
+    """Переключить признак «Активен в Кассе» (видимость в дропдауне накладной Кассы)."""
+    counterparty = await session.get(Counterparty, counterparty_id)
+    if counterparty is None:
+        raise CounterpartyRegistryError("Контрагент не найден")
+    profile = await _get_or_create_profile(session, counterparty_id)
+    profile.kassa_enabled = enabled
     await session.commit()
     await session.refresh(profile)
     return profile

@@ -35,6 +35,7 @@ import {
   getLedgerCategories,
   getRegistry,
   getRequisitesSuggestion,
+  setKassaEnabled,
   setRequisites,
   unarchiveCounterparty,
   updateProfile,
@@ -127,6 +128,7 @@ function CardBody({
       {card.relationship === "barter" ? (
         <BarterSection counterpartyId={card.counterparty_id} canOperate={canOperate} />
       ) : null}
+      {canOperate ? <KassaSection card={card} /> : null}
       {canAdmin ? <ArchiveSection card={card} /> : null}
     </div>
   );
@@ -654,6 +656,35 @@ function ArchiveSection({ card }: { card: CardData }) {
       <Button variant="outline" disabled={mutation.isPending} onClick={() => mutation.mutate()}>
         {archived ? "Вернуть из архива" : "В архив"}
       </Button>
+    </Section>
+  );
+}
+
+function KassaSection({ card }: { card: CardData }) {
+  const queryClient = useQueryClient();
+  const enabled = Boolean(card.profile?.kassa_enabled);
+  const mutation = useMutation({
+    mutationFn: (next: boolean) => setKassaEnabled(card.counterparty_id, next),
+    onSuccess: async (_data, next) => {
+      await queryClient.invalidateQueries({ queryKey: ["cp"] });
+      toast.success(next ? "Контрагент активен в Кассе" : "Контрагент скрыт из Кассы");
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось переключить")),
+  });
+
+  return (
+    <Section title="Касса">
+      <label className="flex items-center gap-2 text-sm">
+        <Switch
+          checked={enabled}
+          disabled={mutation.isPending}
+          onCheckedChange={(value) => mutation.mutate(value)}
+        />
+        Активен в Кассе
+      </label>
+      <p className="text-xs text-muted-foreground">
+        Когда включено — поставщик доступен в дропдауне при создании накладной через Кассу.
+      </p>
     </Section>
   );
 }

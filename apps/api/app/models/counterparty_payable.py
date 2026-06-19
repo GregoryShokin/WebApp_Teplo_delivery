@@ -101,6 +101,11 @@ class CounterpartyPayableProfile(Base):
         default="official",
         server_default="official",
     )
+    # Доступен для выбора при создании накладной в контуре «Касса».
+    # На Склад и ДДС-классификацию не влияет; курируется вручную, по умолчанию выкл.
+    kassa_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     requisites: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
