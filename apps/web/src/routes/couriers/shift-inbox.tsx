@@ -169,6 +169,20 @@ export function ShiftInbox() {
 
   const couriers = data?.couriers ?? [];
   const summary = data?.summary ?? { total: 0, ready_count: 0, can_confirm: false };
+  // Курьеры, уже занятые в этот день (своя смена или другая подмена) — их нельзя выбрать
+  // в подмену, иначе появится дубль карточки. Текущий редактируемый плейсхолдер исключён.
+  const busyEmployeeIds = useMemo(
+    () =>
+      new Set(
+        couriers
+          .filter(
+            (item) =>
+              item.action_employee_id && item.employee_id !== substituteTarget?.employee_id,
+          )
+          .map((item) => item.action_employee_id as string),
+      ),
+    [couriers, substituteTarget],
+  );
 
   return (
     <div className="space-y-4">
@@ -349,6 +363,7 @@ export function ShiftInbox() {
       />
       <SubstituteDialog
         courier={substituteTarget}
+        busyEmployeeIds={busyEmployeeIds}
         pending={substituteMutation.isPending || clearSubstituteMutation.isPending}
         onClose={() => setSubstituteTarget(null)}
         onSubmit={(realId) => {
@@ -907,12 +922,14 @@ function DepositSkipDialog({
 
 function SubstituteDialog({
   courier,
+  busyEmployeeIds,
   pending,
   onClose,
   onSubmit,
   onClear,
 }: {
   courier: CourierShiftDayCourier | null;
+  busyEmployeeIds: Set<string>;
   pending: boolean;
   onClose: () => void;
   onSubmit: (realEmployeeId: string) => void;
@@ -972,25 +989,32 @@ function SubstituteDialog({
                 {search.trim() ? "Никто не найден" : "Нет доступных курьеров"}
               </div>
             ) : (
-              options.map((row) => (
-                <button
-                  className={cn(
-                    "flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground",
-                    row.employee_id === selected && "bg-accent/60",
-                  )}
-                  key={row.employee_id}
-                  onClick={() => setSelected(row.employee_id)}
-                  type="button"
-                >
-                  <span className="line-clamp-1">
-                    {row.full_name}
-                    {row.status !== "active" ? " · уволен" : ""}
-                  </span>
-                  {row.employee_id === selected ? (
-                    <Check size={16} aria-hidden="true" />
-                  ) : null}
-                </button>
-              ))
+              options.map((row) => {
+                const busy = busyEmployeeIds.has(row.employee_id);
+                return (
+                  <button
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none",
+                      busy
+                        ? "cursor-not-allowed opacity-50"
+                        : "hover:bg-accent hover:text-accent-foreground",
+                      row.employee_id === selected && "bg-accent/60",
+                    )}
+                    disabled={busy}
+                    key={row.employee_id}
+                    onClick={() => setSelected(row.employee_id)}
+                    type="button"
+                  >
+                    <span className="line-clamp-1">
+                      {row.full_name}
+                      {busy ? " · уже на смене" : row.status !== "active" ? " · уволен" : ""}
+                    </span>
+                    {row.employee_id === selected ? (
+                      <Check size={16} aria-hidden="true" />
+                    ) : null}
+                  </button>
+                );
+              })
             )}
           </div>
         </Label>

@@ -407,6 +407,24 @@ async def set_substitution(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Подменить смену можно только курьером",
         )
+    # Курьер уже работал под своей карточкой за этот день — подмена плейсхолдера им
+    # создала бы дубль карточки, поэтому запрещаем.
+    start_at, end_at = _day_bounds(work_date)
+    own_shift_id = await session.scalar(
+        select(CourierIikoShift.id).where(
+            CourierIikoShift.employee_id == real_employee_id,
+            CourierIikoShift.opened_at >= start_at,
+            CourierIikoShift.opened_at < end_at,
+        )
+    )
+    if own_shift_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"{real.full_name} уже открывал смену под своей карточкой за этот день — "
+                "подменять им плейсхолдер не нужно"
+            ),
+        )
     existing = await session.scalar(
         select(CourierShiftSubstitution).where(
             CourierShiftSubstitution.work_date == work_date,

@@ -22,9 +22,11 @@ class SubstitutionSession:
         *,
         employees: list[Employee] | None = None,
         existing: CourierShiftSubstitution | None = None,
+        own_shift_id: int | None = None,
     ) -> None:
         self.employees = {employee.id: employee for employee in employees or []}
         self.existing = existing
+        self.own_shift_id = own_shift_id
         self.added: list[Any] = []
         self.deleted: list[Any] = []
 
@@ -33,7 +35,10 @@ class SubstitutionSession:
             return self.employees.get(object_id)
         return None
 
-    async def scalar(self, _query: Any) -> Any | None:
+    async def scalar(self, query: Any) -> Any | None:
+        # set_substitution делает два scalar-запроса: своя смена курьера и существующая подмена
+        if "courier_iiko_shift" in str(query).lower():
+            return self.own_shift_id
         return self.existing
 
     def add(self, item: Any) -> None:
@@ -85,6 +90,17 @@ async def test_set_substitution_rejects_non_courier_real() -> None:
     placeholder = courier(placeholder=True)
     real = courier(position="Кассир")
     session = SubstitutionSession(employees=[placeholder, real])
+    with pytest.raises(HTTPException) as exc:
+        await shift_day_service.set_substitution(
+            session, WORK_DATE, placeholder.id, real.id, ACTOR_ID
+        )
+    assert exc.value.status_code == 400
+
+
+async def test_set_substitution_rejects_real_with_own_shift() -> None:
+    placeholder = courier(placeholder=True)
+    real = courier()
+    session = SubstitutionSession(employees=[placeholder, real], own_shift_id=42)
     with pytest.raises(HTTPException) as exc:
         await shift_day_service.set_substitution(
             session, WORK_DATE, placeholder.id, real.id, ACTOR_ID
