@@ -604,6 +604,8 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "source.import_errors.review",
         "finance.store_cash.read",
         "finance.store_cash.enter",
+        "finance.cashflow.read",
+        "finance.cashflow.classify",
         "revisions.read",
         "revisions.import",
         "revisions.create",
