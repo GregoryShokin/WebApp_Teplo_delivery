@@ -18,7 +18,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, ensure_permission, get_current_actor, require_permission
+from app.api.deps import (
+    CurrentActor,
+    ensure_permission,
+    get_current_actor,
+    require_any_permission,
+    require_permission,
+)
 from app.core.config import get_settings
 from app.db.session import get_session
 from app.models import CounterpartyPaymentDraft, SupplierInvoice
@@ -35,6 +41,10 @@ router = APIRouter()
 READ = (Depends(require_permission("counterparties.read")),)
 OPERATE = (Depends(require_permission("counterparties.operate")),)
 ADMIN = (Depends(require_permission("counterparties.admin")),)
+# Справочники для формы накладной (контрагенты, статьи) — доступны и из Кассы.
+INVOICE_REFS = (
+    Depends(require_any_permission(("counterparties.read", "kassa.invoices.create"))),
+)
 
 _DOMAIN_ERRORS = (
     payments.CounterpartyPaymentError,
@@ -484,7 +494,7 @@ async def post_pay_invoice(
 # --- registry & card ----------------------------------------------------------
 
 
-@router.get("/registry", response_model=list[RegistryRead], dependencies=READ)
+@router.get("/registry", response_model=list[RegistryRead], dependencies=INVOICE_REFS)
 async def get_registry(
     session: Annotated[AsyncSession, Depends(get_session)],
     category_id: uuid.UUID | None = None,
@@ -511,7 +521,7 @@ async def get_wallets(
     return [WalletRead.model_validate(wallet) for wallet in await registry.list_wallets(session)]
 
 
-@router.get("/expense-articles", response_model=list[ExpenseArticleRead], dependencies=READ)
+@router.get("/expense-articles", response_model=list[ExpenseArticleRead], dependencies=INVOICE_REFS)
 async def get_expense_articles(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[ExpenseArticleRead]:

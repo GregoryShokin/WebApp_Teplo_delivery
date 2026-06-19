@@ -17,7 +17,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, ensure_permission, get_current_actor, require_permission
+from app.api.deps import (
+    CurrentActor,
+    ensure_any_permission,
+    ensure_permission,
+    get_current_actor,
+    require_any_permission,
+    require_permission,
+)
 from app.db.session import get_session
 from app.models import IikoProduct, SupplierInvoice
 from app.services.counterparty_bank_match import (
@@ -55,6 +62,11 @@ router = APIRouter()
 
 READ = (Depends(require_permission("counterparties.read")),)
 OPERATE = (Depends(require_permission("counterparties.operate")),)
+# Справочники для формы накладной — доступны и из контура Кассы:
+# право «Создавать накладные из Кассы» само открывает номенклатуру/статьи.
+INVOICE_REFS = (
+    Depends(require_any_permission(("counterparties.read", "kassa.invoices.create"))),
+)
 
 
 class LineCreate(BaseModel):
@@ -150,7 +162,7 @@ def _serialize_time_suggestion(sug: TimeMatchSuggestion) -> dict[str, Any]:
     }
 
 
-@router.get("/products", dependencies=READ)
+@router.get("/products", dependencies=INVOICE_REFS)
 async def list_products(
     session: Annotated[AsyncSession, Depends(get_session)],
     q: str | None = None,
@@ -200,14 +212,14 @@ async def post_products_sync(
     }
 
 
-@router.get("/invoices/next-number", dependencies=READ)
+@router.get("/invoices/next-number", dependencies=INVOICE_REFS)
 async def invoice_next_number(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, str]:
     return {"number": await next_invoice_number(session)}
 
 
-@router.get("/staff-articles", dependencies=READ)
+@router.get("/staff-articles", dependencies=INVOICE_REFS)
 async def staff_articles(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[dict[str, str]]:
@@ -432,10 +444,11 @@ async def post_invoice(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
-    ensure_permission(
-        actor,
-        "invoices.barter.create" if payload.mode == "loan" else "invoices.normal.create",
-    )
+    if payload.mode == "loan":
+        ensure_permission(actor, "invoices.barter.create")
+    else:
+        # Обычную накладную может создать и кассир из контура Кассы.
+        ensure_any_permission(actor, ("invoices.normal.create", "kassa.invoices.create"))
     try:
         invoice = await create_warehouse_invoice(
             session,
