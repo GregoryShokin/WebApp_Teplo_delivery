@@ -25,7 +25,6 @@ import { apiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { getRegistry, type RegistryItem } from "../counterparties/api";
-import { CreateCounterpartyDialog } from "../counterparties/CreateCounterpartyDialog";
 import { formatRub } from "../counterparties/shared";
 import { ProductSearch } from "./ProductSearch";
 import {
@@ -99,7 +98,6 @@ export function CreateInvoiceDialog({
   const [unpaidConfirmOpen, setUnpaidConfirmOpen] = useState(false);
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
   const [staffLines, setStaffLines] = useState<StaffLine[]>([]);
-  const [createCpOpen, setCreateCpOpen] = useState(false);
   const queryClient = useQueryClient();
   const isBarter = kind === "barter";
   const isReturn = isBarter && barterAction === "return";
@@ -322,16 +320,6 @@ export function CreateInvoiceDialog({
             <div className="grid gap-2">
               <div className="flex items-center justify-between gap-2">
                 <Label>{isBarter ? "Бартерный контрагент" : "Контрагент"}</Label>
-                {isBarter ? (
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                    onClick={() => setCreateCpOpen(true)}
-                  >
-                    <Plus size={12} aria-hidden="true" />
-                    Добавить
-                  </button>
-                ) : null}
               </div>
               <CounterpartySearch
                 items={counterpartyOptions}
@@ -545,15 +533,6 @@ export function CreateInvoiceDialog({
         ) : null}
       </DialogContent>
       </Dialog>
-      <CreateCounterpartyDialog
-        open={createCpOpen}
-        onOpenChange={setCreateCpOpen}
-        defaultRelationship="barter"
-        onCreated={(cp) => {
-          setCounterpartyId(cp.counterparty_id);
-          void queryClient.invalidateQueries({ queryKey: ["cp", "registry"] });
-        }}
-      />
       <Dialog open={unpaidConfirmOpen} onOpenChange={setUnpaidConfirmOpen}>
         <DialogContent>
           <DialogHeader>
