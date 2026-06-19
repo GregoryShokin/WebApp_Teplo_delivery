@@ -74,6 +74,9 @@ export type CreateInvoicePayload = {
   number?: string | null;
   due_date?: string | null;
   lines: LinePayload[];
+  // Касса: создать сразу оплаченной (списание с ТК Черникова + проводка в iiko).
+  mark_paid?: boolean;
+  paid_amount?: number | null;
 };
 
 export async function getProducts(params?: {

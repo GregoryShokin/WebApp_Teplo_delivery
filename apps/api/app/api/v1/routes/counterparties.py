@@ -124,6 +124,7 @@ class RegistryRead(BaseModel):
     payment_delay_days: int | None
     requisites_verified: bool
     kassa_enabled: bool
+    has_iiko_guid: bool
     unpaid_count: int
     unpaid_remaining: float
     receivable_remaining: float

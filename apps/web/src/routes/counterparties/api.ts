@@ -43,6 +43,7 @@ export type RegistryItem = {
   payment_delay_days: number | null;
   requisites_verified: boolean;
   kassa_enabled: boolean;
+  has_iiko_guid: boolean;
   unpaid_count: number;
   unpaid_remaining: number;
   receivable_remaining: number;

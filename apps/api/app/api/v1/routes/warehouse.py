@@ -7,6 +7,7 @@ line-item product search isn't drowned in dishes/modifiers.
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
@@ -26,7 +27,7 @@ from app.api.deps import (
     require_permission,
 )
 from app.db.session import get_session
-from app.models import IikoProduct, SupplierInvoice
+from app.models import IikoProduct, SupplierInvoice, Wallet
 from app.services.counterparty_bank_match import (
     TimeMatchSuggestion,
     confirm_invoice_match,
@@ -34,6 +35,10 @@ from app.services.counterparty_bank_match import (
 )
 from app.services.counterparty_matching import CounterpartyMatchError
 from app.services.iiko_product_sync import sync_iiko_products
+from app.services.kassa.invoice_paid_push import (
+    counterparty_iiko_guid,
+    post_invoice_payment_to_iiko,
+)
 from app.services.warehouse_invoice_push import WarehousePushError, push_invoice_to_iiko
 from app.services.warehouse_invoices import (
     LineInput,
@@ -91,6 +96,10 @@ class InvoiceCreate(BaseModel):
     due_date: date | None = None
     store_guid: str | None = None
     lines: list[LineCreate] = Field(min_length=1)
+    # Касса: создать сразу оплаченной — списание с ТК Черникова + проводка оплаты в iiko.
+    # paid_amount=None → полная сумма накладной (можно указать меньше для частичной оплаты).
+    mark_paid: bool = False
+    paid_amount: Decimal | None = Field(default=None, gt=0)
 
 
 class ReturnLineCreate(BaseModel):
@@ -438,6 +447,37 @@ async def post_pay_split(
     return result
 
 
+async def _settle_paid_from_kassa(
+    session: AsyncSession,
+    invoice: SupplierInvoice,
+    paid_amount: Decimal | None,
+    actor_user_id: uuid.UUID | None,
+) -> None:
+    """Оплатить только что созданную накладную из контура Кассы: документ в iiko, списание
+    наличных с ТК Черникова (ДДС) и проводка оплаты поставщику в iiko (изъятие)."""
+    amount = paid_amount if paid_amount is not None else invoice.amount
+    # 1) Документ в iiko (incomingInvoice → товар + долг). Сбой push накладную не валит.
+    with contextlib.suppress(WarehousePushError):
+        await push_invoice_to_iiko(session, invoice.id)
+    # 2) ДДС: оплата наличными со счёта ТК Черникова → статус накладной paid/partially_paid.
+    wallet = await session.scalar(select(Wallet).where(Wallet.code == "tk_chernikova"))
+    if wallet is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Кошелёк ТК Черникова не найден",
+        )
+    await pay_invoice_split(
+        session,
+        invoice_id=invoice.id,
+        cash_parts=[CashPart(wallet_id=wallet.id, amount=amount, operation_date=date.today())],
+        actor_user_id=actor_user_id,
+    )
+    # 3) iiko: проводка оплаты поставщику (изъятие из Главной кассы). Побочна —
+    #    статус пишется в raw_payload, накладную не валит.
+    await post_invoice_payment_to_iiko(session, invoice, amount=amount)
+    await session.commit()
+
+
 @router.post("/invoices", status_code=status.HTTP_201_CREATED)
 async def post_invoice(
     payload: InvoiceCreate,
@@ -449,6 +489,16 @@ async def post_invoice(
     else:
         # Обычную накладную может создать и кассир из контура Кассы.
         ensure_any_permission(actor, ("invoices.normal.create", "kassa.invoices.create"))
+    # «Оплачено» из Кассы требует сматченного с iiko контрагента — иначе оплату не провести.
+    if (
+        payload.mark_paid
+        and payload.mode != "loan"
+        and not await counterparty_iiko_guid(session, payload.counterparty_id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Контрагент не сматчен с iiko — оплату провести нельзя",
+        )
     try:
         invoice = await create_warehouse_invoice(
             session,
@@ -477,6 +527,8 @@ async def post_invoice(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+    if payload.mark_paid and payload.mode != "loan":
+        await _settle_paid_from_kassa(session, invoice, payload.paid_amount, actor.user_id)
     result = await get_warehouse_invoice(session, invoice.id)
     assert result is not None
     return result

@@ -136,6 +136,7 @@ class RegistryItem:
     payment_delay_days: int | None
     requisites_verified: bool
     kassa_enabled: bool
+    has_iiko_guid: bool
     unpaid_count: int
     unpaid_remaining: Decimal
     # Barter: open receivables (they owe us). Net balance = unpaid_remaining − receivable_remaining.
@@ -330,6 +331,16 @@ async def list_registry(
         query = query.where(CounterpartyPayableProfile.kassa_enabled.is_(True))
     rows = list(await session.execute(query))
 
+    # Контрагенты, сматченные с iiko (есть alias source='iiko') — нужно для оплаты накладной.
+    have_guid = {
+        cp_id
+        for (cp_id,) in await session.execute(
+            select(CounterpartyAlias.counterparty_id)
+            .where(CounterpartyAlias.source == "iiko")
+            .distinct()
+        )
+    }
+
     # Open invoices remaining per counterparty, split by direction (payable vs receivable).
     open_rows = await session.execute(
         select(
@@ -381,6 +392,7 @@ async def list_registry(
                 payment_delay_days=profile.payment_delay_days if profile else None,
                 requisites_verified=bool(profile.requisites_verified) if profile else False,
                 kassa_enabled=bool(profile.kassa_enabled) if profile else False,
+                has_iiko_guid=counterparty.id in have_guid,
                 unpaid_count=payable_count,
                 unpaid_remaining=payable_remaining,
                 receivable_remaining=receivable_remaining,

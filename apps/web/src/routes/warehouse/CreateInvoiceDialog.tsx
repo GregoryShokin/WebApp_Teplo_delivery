@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -92,6 +93,8 @@ export function CreateInvoiceDialog({
   const [counterpartyId, setCounterpartyId] = useState("");
   const [issuedAt, setIssuedAt] = useState("");
   const [number, setNumber] = useState("");
+  const [markPaid, setMarkPaid] = useState(false);
+  const [paidAmount, setPaidAmount] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
   const [staffLines, setStaffLines] = useState<StaffLine[]>([]);
   const queryClient = useQueryClient();
@@ -103,6 +106,8 @@ export function CreateInvoiceDialog({
     queryFn: () => getRegistry(kassaOnly ? { kassa_only: true } : undefined),
     enabled: open,
   });
+  const selectedCp = registryQuery.data?.find((i) => i.counterparty_id === counterpartyId);
+  const cpHasGuid = selectedCp?.has_iiko_guid ?? false;
   // Все GOODS загружаем разом и фильтруем на клиенте — как поиск контрагентов.
   const productsQuery = useQuery({
     queryKey: ["wh", "products", "goods-all"],
@@ -142,6 +147,8 @@ export function CreateInvoiceDialog({
     setNumber("");
     setLines([emptyLine()]);
     setStaffLines([]);
+    setMarkPaid(false);
+    setPaidAmount("");
   };
 
   const createMutation = useMutation({
@@ -152,6 +159,9 @@ export function CreateInvoiceDialog({
         mode: isBarter ? "loan" : "normal",
         we_lend: weLend,
         number: number || null,
+        ...(kassaOnly && markPaid && !isBarter
+          ? { mark_paid: true, paid_amount: paidAmount ? num(paidAmount) : null }
+          : {}),
         lines: [
           ...lines
             .filter((l) => l.name && num(l.quantity) > 0)
@@ -210,7 +220,11 @@ export function CreateInvoiceDialog({
   const filledStore = lines.filter((l) => l.name && num(l.quantity) > 0).length;
   const filledStaff = staffLines.filter((l) => l.articleId && num(l.amount) > 0).length;
   const canSave =
-    !!counterpartyId && !!issuedAt && filledStore + filledStaff > 0 && !createMutation.isPending;
+    !!counterpartyId &&
+    !!issuedAt &&
+    filledStore + filledStaff > 0 &&
+    !createMutation.isPending &&
+    !(markPaid && !cpHasGuid);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -447,6 +461,42 @@ export function CreateInvoiceDialog({
             </>
           )}
         </div>
+
+        {kassaOnly && !isBarter ? (
+          <div className="space-y-2 rounded-md border p-3">
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <Switch
+                checked={markPaid}
+                disabled={!cpHasGuid}
+                onCheckedChange={(v) => {
+                  setMarkPaid(v);
+                  if (v && !paidAmount) setPaidAmount(String(totals.total + totals.staff));
+                }}
+              />
+              Оплачено с ТК Черникова
+            </label>
+            {counterpartyId && !cpHasGuid ? (
+              <p className="text-xs text-amber-600">
+                Контрагент не сматчен с iiko — оплату провести нельзя.
+              </p>
+            ) : null}
+            {markPaid ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Label className="text-sm">Сумма оплаты</Label>
+                <Input
+                  type="number"
+                  className="w-40"
+                  value={paidAmount}
+                  onChange={(e) => setPaidAmount(e.target.value)}
+                  placeholder={String(totals.total + totals.staff)}
+                />
+                <span className="text-xs text-muted-foreground">
+                  по умолчанию — вся сумма {formatRub(totals.total + totals.staff)}
+                </span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {!isReturn ? (
           <DialogFooter>
