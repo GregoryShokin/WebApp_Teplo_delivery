@@ -32,6 +32,7 @@ class SyncReport:
     matched_couriers: int = 0
     new: int = 0
     updated: int = 0
+    removed: int = 0
     unresolved_employees: int = 0
     errors: list[str] = field(default_factory=list)
 
@@ -41,6 +42,7 @@ class SyncReport:
             "matched_couriers": self.matched_couriers,
             "new": self.new,
             "updated": self.updated,
+            "removed": self.removed,
             "unresolved_employees": self.unresolved_employees,
             "errors": self.errors,
         }
@@ -129,6 +131,9 @@ async def sync_attendance(
         report.matched_couriers = len(courier_records)
         unresolved_iiko_ids = await upsert_attendance_records(session, courier_records, report)
         report.unresolved_employees = len(unresolved_iiko_ids)
+        report.removed = await prune_missing_attendance(
+            session, from_date, to_date, courier_records
+        )
 
         employee_ids = await employee_ids_for_iiko_ids(
             session,
@@ -163,6 +168,44 @@ async def sync_attendance(
         agent_run.result = {"error": str(exc)[:500]}
         await session.commit()
         raise
+
+
+async def prune_missing_attendance(
+    session: AsyncSession,
+    from_date: date,
+    to_date: date,
+    records: Iterable[IikoAttendanceRecord],
+) -> int:
+    """Удаляет явки за синкаемое окно, которых больше нет в выгрузке iiko.
+
+    iiko иногда создаёт лишнюю явку (двойная отметка), а потом убирает её из выгрузки.
+    upsert по (iiko_employee_id, opened_at) такие записи не вычищал — они залипали
+    открытыми (closed_at IS NULL) и курьер вечно «на линии». Сверяем БД с выгрузкой и
+    удаляем исчезнувшие. При ПУСТОЙ выгрузке ничего не трогаем — чтобы частичный/сбойный
+    синк не снёс валидные смены.
+    """
+    records = list(records)
+    if not records:
+        return 0
+    seen = {(record.iiko_employee_id, record.opened_at) for record in records}
+    window_start = datetime.combine(from_date, datetime.min.time(), tzinfo=UTC)
+    window_end = datetime.combine(to_date + timedelta(days=1), datetime.min.time(), tzinfo=UTC)
+    rows = (
+        await session.scalars(
+            select(CourierIikoShift).where(
+                CourierIikoShift.opened_at >= window_start,
+                CourierIikoShift.opened_at < window_end,
+            )
+        )
+    ).all()
+    removed = 0
+    for shift in rows:
+        if (shift.iiko_employee_id, shift.opened_at) not in seen:
+            await session.delete(shift)
+            removed += 1
+    if removed:
+        await session.flush()
+    return removed
 
 
 async def upsert_attendance_records(

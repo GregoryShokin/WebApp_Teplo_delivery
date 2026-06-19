@@ -57,6 +57,15 @@ class AttendanceSyncSession:
         )
 
     async def scalars(self, query: Any) -> FakeScalarResult:
+        if "from courier_iiko_shift" in str(query).lower():
+            params = query.compile().params
+            bounds = sorted(value for value in params.values() if isinstance(value, datetime))
+            if len(bounds) >= 2:
+                start, end = bounds[0], bounds[-1]
+                return FakeScalarResult(
+                    [shift for shift in self.shifts if start <= shift.opened_at < end]
+                )
+            return FakeScalarResult(list(self.shifts))
         params = query.compile().params
         iiko_ids = set()
         for value in params.values():
@@ -67,6 +76,10 @@ class AttendanceSyncSession:
         return FakeScalarResult(
             [employee for employee in self.employees if employee.iiko_id in iiko_ids]
         )
+
+    async def delete(self, item: Any) -> None:
+        if item in self.shifts:
+            self.shifts.remove(item)
 
 
 async def test_iiko_attendance_sync_filters_role_and_is_idempotent() -> None:
@@ -95,6 +108,7 @@ async def test_iiko_attendance_sync_filters_role_and_is_idempotent() -> None:
         "matched_couriers": 2,
         "new": 2,
         "updated": 0,
+        "removed": 0,
         "unresolved_employees": 1,
         "errors": [],
     }
@@ -110,6 +124,39 @@ async def test_iiko_attendance_sync_filters_role_and_is_idempotent() -> None:
     assert session.shifts[1].employee_id is None
     assert session.shifts[1].closed_at is None
     assert "name" not in session.shifts[0].raw_payload
+
+
+async def test_sync_attendance_prunes_phantom_shifts() -> None:
+    courier = make_employee("courier-1")
+    session = AttendanceSyncSession([courier])
+    # Фантом: открытая явка, которой нет в выгрузке iiko (другой opened_at).
+    phantom = CourierIikoShift(
+        id=99,
+        iiko_employee_id="courier-1",
+        opened_at=datetime(2026, 5, 29, 9, 30, tzinfo=UTC),
+        closed_at=None,
+        iiko_role_id="courier-role",
+        attendance_type="P",
+        raw_payload={},
+    )
+    session.shifts.append(phantom)
+
+    report = await sync_attendance(
+        session,
+        from_date=date(2026, 5, 29),
+        to_date=date(2026, 5, 29),
+        attendance_xml=attendance_xml(),
+        courier_role_id="courier-role",
+        recalculate=False,
+    )
+
+    assert report.removed == 1
+    assert phantom not in session.shifts
+    # реальная закрытая явка courier-1 из выгрузки осталась
+    assert any(
+        shift.iiko_employee_id == "courier-1" and shift.closed_at is not None
+        for shift in session.shifts
+    )
 
 
 def test_parse_attendance_xml_skips_bad_rows() -> None:
