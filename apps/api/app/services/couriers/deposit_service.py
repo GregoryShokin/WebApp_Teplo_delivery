@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any, Literal
 
 from fastapi import HTTPException, status
@@ -13,10 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import (
     AppSetting,
     AppSettingHistory,
+    CashflowTransaction,
     CourierDepositAccount,
     CourierDepositTransaction,
     CourierDepositTransactionType,
+    DdsArticle,
     Employee,
+    Wallet,
 )
 from app.services.couriers.common import get_courier_or_404
 from app.services.position_registry import courier_positions, senior_courier_positions
@@ -38,6 +42,12 @@ DEFAULT_DEPOSIT_SETTINGS: dict[str, int | bool] = {
     "withhold_secondary": 200,
     "auto_withhold_enabled": False,
 }
+
+# Возврат депозита курьеру — ЕДИНСТВЕННАЯ депозитная операция с реальным движением денег:
+# наличные физически выдаются курьеру со счёта «Торговая касса Черникова» (= iiko «Главная
+# касса»). Пополнение (TOP_UP) и удержание (FORFEIT) — учётные, денег не двигают.
+COURIER_DEPOSIT_RETURN_ARTICLE_CODE = "vozvrat_depozita_kurera"
+DEPOSIT_RETURN_CASH_WALLET_CODE = "tk_chernikova"
 
 
 def is_senior_courier(employee: Employee) -> bool:
@@ -222,7 +232,45 @@ async def create_transaction(
     account.updated_at = datetime.now(UTC)
     session.add(transaction)
     await session.flush()
+    if _transaction_type_value(transaction_type) == CourierDepositTransactionType.RETURN.value:
+        await _book_deposit_return_cashflow(session, transaction)
     return transaction
+
+
+async def _book_deposit_return_cashflow(
+    session: AsyncSession, transaction: CourierDepositTransaction
+) -> None:
+    """Списать возврат депозита со счёта «Торговая касса Черникова» в ДДС.
+
+    Только для RETURN — реальная выдача наличных курьеру, баланс ТК Черникова (наличный
+    кошелёк, store_cash) уменьшается. Пополнение/удержание депозита денег не двигают и сюда
+    не попадают. iiko-изъятие из «Главной кассы» (тот же физический счёт) проводится
+    отдельным шагом. No-op, если счёт/статья ещё не заведены — возврат не валим.
+    """
+    wallet = await session.scalar(
+        select(Wallet).where(Wallet.code == DEPOSIT_RETURN_CASH_WALLET_CODE)
+    )
+    article_id = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == COURIER_DEPOSIT_RETURN_ARTICLE_CODE)
+    )
+    if wallet is None or article_id is None:
+        return
+    amount = (Decimal(transaction.amount_cents) / Decimal("100")).quantize(Decimal("0.01"))
+    session.add(
+        CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=amount,
+            operation_date=transaction.transaction_date,
+            article_id=article_id,
+            source_kind="courier_deposit_return",
+            source_id=None,
+            payment_purpose=f"Возврат депозита курьеру (операция #{transaction.id})",
+            comment=transaction.comment,
+            quality_status="final",
+        )
+    )
+    await session.flush()
 
 
 async def get_balance(
