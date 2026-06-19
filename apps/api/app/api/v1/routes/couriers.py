@@ -44,7 +44,6 @@ from app.schemas.couriers import (
     CourierShiftReviewUpdate,
     CourierStatisticsDetail,
     CourierStatisticsRow,
-    CourierSubstitutionRequest,
     CourierWorkStatusFilter,
 )
 from app.services.courier_sync import (
@@ -514,7 +513,6 @@ async def get_couriers_list(
                 "employee_id": courier.id,
                 "full_name": courier.full_name,
                 "iiko_id": courier.iiko_id,
-                "is_courier_placeholder": courier.is_courier_placeholder,
                 "status": courier.status,
                 "work_status": work_status,
                 "open_shift_now": open_shift_now,
@@ -873,52 +871,6 @@ async def put_courier_shift_review(
         eval_skipped=changes.get("eval_skipped"),
         deposit_skipped=changes.get("deposit_skipped"),
         deposit_skip_comment=changes.get("deposit_skip_comment", shift_day_service.UNSET),
-    )
-    snapshot = await shift_day_service.get_shift_day(session, work_date)
-    await session.commit()
-    return snapshot
-
-
-@router.put(
-    "/shift-day/{work_date}/courier/{placeholder_id}/substitute",
-    response_model=CourierShiftDayResponse,
-    dependencies=COURIERS_SHIFT_DAY_EDIT_ACCESS,
-)
-async def put_courier_substitution(
-    work_date: date,
-    placeholder_id: uuid.UUID,
-    payload: CourierSubstitutionRequest,
-    session: Annotated[AsyncSession, Depends(get_session)],
-    actor: Annotated[CurrentActor, Depends(get_current_actor)],
-) -> dict[str, Any]:
-    actor_user_id = _require_actor_user_id(actor)
-    await shift_day_service.set_substitution(
-        session,
-        work_date=work_date,
-        placeholder_employee_id=placeholder_id,
-        real_employee_id=payload.real_employee_id,
-        actor_id=actor_user_id,
-    )
-    snapshot = await shift_day_service.get_shift_day(session, work_date)
-    await session.commit()
-    return snapshot
-
-
-@router.delete(
-    "/shift-day/{work_date}/courier/{placeholder_id}/substitute",
-    response_model=CourierShiftDayResponse,
-    dependencies=COURIERS_SHIFT_DAY_EDIT_ACCESS,
-)
-async def delete_courier_substitution(
-    work_date: date,
-    placeholder_id: uuid.UUID,
-    session: Annotated[AsyncSession, Depends(get_session)],
-    actor: Annotated[CurrentActor, Depends(get_current_actor)],
-) -> dict[str, Any]:
-    await shift_day_service.clear_substitution(
-        session,
-        work_date=work_date,
-        placeholder_employee_id=placeholder_id,
     )
     snapshot = await shift_day_service.get_shift_day(session, work_date)
     await session.commit()
