@@ -45,6 +45,7 @@ from app.schemas.dds import (
     DdsCounterpartyPatch,
     DdsCounterpartyRead,
     DdsWalletRead,
+    JournalListRead,
     OperationClassifyRead,
     OperationClassifyRequest,
     OwnerReviewActionRead,
@@ -144,6 +145,105 @@ async def list_cashflow(
         .offset(offset)
     )
     return {"items": [_cashflow_payload(row) for row in rows.all()], "total": total}
+
+
+@router.get("/journal", response_model=JournalListRead, dependencies=DDS_READ_ACCESS)
+async def list_journal(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    status: Literal["all", "marked", "unmarked"] = "all",
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
+    direction: Literal["in", "out"] | None = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
+    """Unified DDS journal: classified cashflow movements + bank operations awaiting review.
+
+    ``status`` is the quick filter: ``marked`` (classified movements), ``unmarked``
+    (operations needing review), or ``all`` (both, newest first). Date window keeps the
+    merged set small enough to sort/paginate in memory.
+    """
+    cf_conditions = []
+    op_conditions = [BankOperation.classification_status == "needs_review"]
+    if date_from is not None:
+        cf_conditions.append(CashflowTransaction.operation_date >= date_from)
+        op_conditions.append(BankOperation.operation_date >= date_from)
+    if date_to is not None:
+        cf_conditions.append(CashflowTransaction.operation_date <= date_to)
+        op_conditions.append(BankOperation.operation_date <= date_to)
+    if direction is not None:
+        cf_conditions.append(CashflowTransaction.direction == direction)
+        op_conditions.append(BankOperation.direction == direction)
+
+    marked_total = int(
+        await session.scalar(
+            select(func.count()).select_from(CashflowTransaction).where(*cf_conditions)
+        )
+        or 0
+    )
+    unmarked_total = int(
+        await session.scalar(
+            select(func.count()).select_from(BankOperation).where(*op_conditions)
+        )
+        or 0
+    )
+
+    rows: list[dict[str, object]] = []
+    if status in ("all", "marked"):
+        cashflow_rows = await session.scalars(
+            select(CashflowTransaction).where(*cf_conditions)
+        )
+        for cf in cashflow_rows.all():
+            rows.append(
+                {
+                    "kind": "cashflow",
+                    "id": cf.id,
+                    "bank_operation_id": cf.source_id
+                    if cf.source_kind == "bank_operation"
+                    else None,
+                    "status": "classified",
+                    "operation_date": cf.operation_date,
+                    "direction": cf.direction,
+                    "amount": _money(cf.amount),
+                    "article_id": cf.article_id,
+                    "counterparty_id": cf.counterparty_id,
+                    "wallet_id": cf.wallet_id,
+                    "provider": None,
+                    "payment_purpose": cf.payment_purpose,
+                    "counterparty_name_raw": None,
+                    "counterparty_inn_raw": None,
+                }
+            )
+    if status in ("all", "unmarked"):
+        operation_rows = await session.scalars(select(BankOperation).where(*op_conditions))
+        for op in operation_rows.all():
+            rows.append(
+                {
+                    "kind": "operation",
+                    "id": op.id,
+                    "bank_operation_id": op.id,
+                    "status": "needs_review",
+                    "operation_date": op.operation_date,
+                    "direction": op.direction,
+                    "amount": _money(op.amount),
+                    "article_id": None,
+                    "counterparty_id": None,
+                    "wallet_id": None,
+                    "provider": op.provider,
+                    "payment_purpose": op.payment_purpose,
+                    "counterparty_name_raw": op.counterparty_name_raw,
+                    "counterparty_inn_raw": op.counterparty_inn_raw,
+                }
+            )
+
+    rows.sort(key=lambda row: (row["operation_date"], row["amount"]), reverse=True)
+    total = len(rows)
+    return {
+        "items": rows[offset : offset + limit],
+        "total": total,
+        "marked_total": marked_total,
+        "unmarked_total": unmarked_total,
+    }
 
 
 @router.get("/wallets", response_model=list[DdsWalletRead], dependencies=DDS_WALLETS_READ_ACCESS)

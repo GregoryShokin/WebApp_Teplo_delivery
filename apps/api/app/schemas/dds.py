@@ -312,3 +312,30 @@ class OperationClassifyRead(BaseModel):
     classification_status: str
     cashflow_transaction_ids: list[uuid.UUID] = Field(default_factory=list)
     rule_id: uuid.UUID | None = None
+
+
+class JournalRow(BaseModel):
+    """One line of the unified DDS journal — a classified cashflow movement
+    (``kind="cashflow"``) or an unclassified bank operation (``kind="operation"``)."""
+
+    kind: Literal["cashflow", "operation"]
+    id: uuid.UUID
+    bank_operation_id: uuid.UUID | None = None
+    status: str  # "classified" | "needs_review"
+    operation_date: date
+    direction: str
+    amount: str
+    article_id: uuid.UUID | None = None
+    counterparty_id: uuid.UUID | None = None
+    wallet_id: uuid.UUID | None = None
+    provider: str | None = None
+    payment_purpose: str | None = None
+    counterparty_name_raw: str | None = None
+    counterparty_inn_raw: str | None = None
+
+
+class JournalListRead(BaseModel):
+    items: list[JournalRow]
+    total: int
+    marked_total: int
+    unmarked_total: int

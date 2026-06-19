@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -10,21 +11,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
+import { usePermissions } from "@/lib/permissions";
 import {
   getDdsArticles,
-  getDdsCashflow,
   getDdsCounterparties,
+  getDdsJournal,
   getDdsWallets,
-  type CashflowQuery,
-  type CashflowTransactionRead,
+  type BankOperationRead,
+  type JournalQuery,
+  type JournalRow,
 } from "@/lib/api";
+import { OperationReviewDialog } from "@/routes/dds/OperationReviewDialog";
 import {
-  DetailRow,
+  DdsStatusBadge,
   DirectionBadge,
   PaginationControls,
-  QualityBadge,
+  ProviderBadge,
   compactText,
   formatDate,
   formatDdsMoney,
@@ -33,17 +36,18 @@ import {
 } from "@/routes/dds/shared";
 
 const LIMIT = 50;
+type StatusFilter = "all" | "marked" | "unmarked";
 
 export function LedgerTab() {
+  const [status, setStatus] = useState<StatusFilter>("all");
   const [dateFrom, setDateFrom] = useState(isoDateDaysAgo(30));
   const [dateTo, setDateTo] = useState(toIsoDate(new Date()));
-  const [walletId, setWalletId] = useState("all");
-  const [articleId, setArticleId] = useState("all");
-  const [direction, setDirection] = useState<CashflowQuery["direction"]>("all");
+  const [direction, setDirection] = useState<"all" | "in" | "out">("all");
   const [offset, setOffset] = useState(0);
-  const [selectedTransaction, setSelectedTransaction] = useState<CashflowTransactionRead | null>(
-    null,
-  );
+  const [selectedRow, setSelectedRow] = useState<JournalRow | null>(null);
+
+  const permissions = usePermissions();
+  const canClassify = permissions.canPerformAction("finance.cashflow.classify");
 
   const walletsQuery = useQuery({ queryKey: ["dds", "wallets"], queryFn: getDdsWallets });
   const articlesQuery = useQuery({ queryKey: ["dds", "articles"], queryFn: getDdsArticles });
@@ -52,22 +56,13 @@ export function LedgerTab() {
     queryFn: () => getDdsCounterparties(),
   });
 
-  const queryParams: CashflowQuery = useMemo(
-    () => ({
-      from: dateFrom,
-      to: dateTo,
-      wallet_id: walletId === "all" ? undefined : walletId,
-      article_id: articleId === "all" ? undefined : articleId,
-      direction,
-      limit: LIMIT,
-      offset,
-    }),
-    [articleId, dateFrom, dateTo, direction, offset, walletId],
+  const params: JournalQuery = useMemo(
+    () => ({ status, from: dateFrom, to: dateTo, direction, limit: LIMIT, offset }),
+    [status, dateFrom, dateTo, direction, offset],
   );
-
-  const cashflowQuery = useQuery({
-    queryKey: ["dds", "cashflow", queryParams],
-    queryFn: () => getDdsCashflow(queryParams),
+  const journalQuery = useQuery({
+    queryKey: ["dds", "journal", params],
+    queryFn: () => getDdsJournal(params),
   });
 
   const walletById = new Map((walletsQuery.data ?? []).map((wallet) => [wallet.id, wallet]));
@@ -80,62 +75,127 @@ export function LedgerTab() {
     setOffset(0);
   }
 
-  const columns: Array<DataTableColumn<CashflowTransactionRead>> = [
+  const markedTotal = journalQuery.data?.marked_total ?? 0;
+  const unmarkedTotal = journalQuery.data?.unmarked_total ?? 0;
+
+  const columns: Array<DataTableColumn<JournalRow>> = [
     {
       key: "date",
       header: "Дата",
-      cell: (transaction) => formatDate(transaction.operation_date),
+      cell: (row) => formatDate(row.operation_date),
       className: "whitespace-nowrap",
     },
     {
-      key: "wallet",
-      header: "Кошелёк",
-      cell: (transaction) => walletById.get(transaction.wallet_id)?.name ?? transaction.wallet_id,
-      className: "min-w-[160px]",
+      key: "source",
+      header: "Счёт / банк",
+      cell: (row) =>
+        row.wallet_id ? (
+          (walletById.get(row.wallet_id)?.name ?? "—")
+        ) : (
+          <ProviderBadge provider={row.provider} />
+        ),
+      className: "min-w-[150px]",
     },
     {
       key: "article",
-      header: "Статья",
-      cell: (transaction) =>
-        transaction.article_id
-          ? articleById.get(transaction.article_id)?.name ?? transaction.article_id
-          : "—",
-      className: "min-w-[180px]",
+      header: "Статья / назначение",
+      cell: (row) =>
+        row.article_id ? (
+          (articleById.get(row.article_id)?.name ?? "—")
+        ) : (
+          <span className="text-muted-foreground">{compactText(row.payment_purpose)}</span>
+        ),
+      className: "min-w-[220px] max-w-[360px] truncate",
     },
     {
       key: "counterparty",
       header: "Контрагент",
-      cell: (transaction) =>
-        transaction.counterparty_id
-          ? counterpartyById.get(transaction.counterparty_id)?.name ?? transaction.counterparty_id
-          : "—",
-      className: "min-w-[160px]",
+      cell: (row) =>
+        row.counterparty_id
+          ? (counterpartyById.get(row.counterparty_id)?.name ?? "—")
+          : compactText(row.counterparty_name_raw),
+      className: "min-w-[150px]",
     },
     {
       key: "direction",
       header: "Направление",
-      cell: (transaction) => <DirectionBadge direction={transaction.direction} />,
+      cell: (row) => <DirectionBadge direction={row.direction} />,
     },
     {
       key: "amount",
       header: "Сумма",
-      cell: (transaction) => formatDdsMoney(transaction.amount),
+      cell: (row) => formatDdsMoney(row.amount),
       className: "font-medium tabular-nums",
     },
     {
-      key: "quality",
-      header: "Статус качества",
-      cell: (transaction) => <QualityBadge quality={transaction.quality_status} />,
+      key: "status",
+      header: "Статус",
+      cell: (row) => <DdsStatusBadge status={row.status} />,
     },
   ];
 
+  // The review modal works on a bank operation — build a partial one from the row.
+  const operationForReview: BankOperationRead | null = selectedRow?.bank_operation_id
+    ? {
+        id: selectedRow.bank_operation_id,
+        provider: selectedRow.provider ?? "tbank",
+        provider_operation_id: "",
+        account_id: null,
+        operation_date: selectedRow.operation_date,
+        posted_at: null,
+        direction: selectedRow.direction,
+        amount: selectedRow.amount,
+        currency: "RUB",
+        counterparty_name_raw: selectedRow.counterparty_name_raw,
+        counterparty_inn_raw: selectedRow.counterparty_inn_raw,
+        counterparty_account_raw: null,
+        payment_purpose: selectedRow.payment_purpose,
+        document_number: null,
+        classification_status: selectedRow.status === "classified" ? "classified" : "needs_review",
+        cashflow_transaction_id: null,
+        transfer_group_id: null,
+        raw_payload: null,
+      }
+    : null;
+
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusTab
+          active={status === "all"}
+          label="Все"
+          count={markedTotal + unmarkedTotal}
+          onClick={() => {
+            setStatus("all");
+            resetPage();
+          }}
+        />
+        <StatusTab
+          active={status === "marked"}
+          label="Размеченные"
+          count={markedTotal}
+          onClick={() => {
+            setStatus("marked");
+            resetPage();
+          }}
+        />
+        <StatusTab
+          active={status === "unmarked"}
+          label="Требуют проверки"
+          count={unmarkedTotal}
+          tone="warning"
+          onClick={() => {
+            setStatus("unmarked");
+            resetPage();
+          }}
+        />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
         <div className="grid gap-2">
-          <Label htmlFor="dds-ledger-from">Дата с</Label>
+          <Label htmlFor="dds-journal-from">Дата с</Label>
           <Input
-            id="dds-ledger-from"
+            id="dds-journal-from"
             type="date"
             value={dateFrom}
             onChange={(event) => {
@@ -145,9 +205,9 @@ export function LedgerTab() {
           />
         </div>
         <div className="grid gap-2">
-          <Label htmlFor="dds-ledger-to">Дата по</Label>
+          <Label htmlFor="dds-journal-to">Дата по</Label>
           <Input
-            id="dds-ledger-to"
+            id="dds-journal-to"
             type="date"
             value={dateTo}
             onChange={(event) => {
@@ -157,55 +217,11 @@ export function LedgerTab() {
           />
         </div>
         <div className="grid gap-2">
-          <Label>Кошелёк</Label>
-          <Select
-            value={walletId}
-            onValueChange={(value) => {
-              setWalletId(value);
-              resetPage();
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Все</SelectItem>
-              {(walletsQuery.data ?? []).map((wallet) => (
-                <SelectItem key={wallet.id} value={wallet.id}>
-                  {wallet.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="grid gap-2">
-          <Label>Статья</Label>
-          <Select
-            value={articleId}
-            onValueChange={(value) => {
-              setArticleId(value);
-              resetPage();
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Все</SelectItem>
-              {(articlesQuery.data ?? []).map((article) => (
-                <SelectItem key={article.id} value={article.id}>
-                  {article.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="grid gap-2">
           <Label>Направление</Label>
           <Select
             value={direction}
             onValueChange={(value) => {
-              setDirection(value as CashflowQuery["direction"]);
+              setDirection(value as "all" | "in" | "out");
               resetPage();
             }}
           >
@@ -223,69 +239,60 @@ export function LedgerTab() {
 
       <DataTable
         columns={columns}
-        rows={cashflowQuery.data?.items ?? []}
-        isLoading={cashflowQuery.isLoading}
-        getRowKey={(transaction) => transaction.id}
-        onRowClick={setSelectedTransaction}
-        emptyMessage="Транзакции не найдены"
+        rows={journalQuery.data?.items ?? []}
+        isLoading={journalQuery.isLoading}
+        getRowKey={(row) => `${row.kind}:${row.id}`}
+        onRowClick={(row) => {
+          if (row.bank_operation_id) {
+            setSelectedRow(row);
+          }
+        }}
+        emptyMessage="Записей не найдено"
       />
 
       <PaginationControls
         limit={LIMIT}
         offset={offset}
-        total={cashflowQuery.data?.total ?? 0}
+        total={journalQuery.data?.total ?? 0}
         onOffsetChange={setOffset}
       />
 
-      <Sheet
-        open={Boolean(selectedTransaction)}
-        onOpenChange={(open) => !open && setSelectedTransaction(null)}
-      >
-        <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
-          <SheetHeader>
-            <SheetTitle>Транзакция ДДС</SheetTitle>
-            <SheetDescription>
-              {selectedTransaction
-                ? `${formatDate(selectedTransaction.operation_date)} · ${formatDdsMoney(
-                    selectedTransaction.amount,
-                  )}`
-                : ""}
-            </SheetDescription>
-          </SheetHeader>
-          {selectedTransaction ? (
-            <div className="mt-5">
-              <DetailRow
-                label="Кошелёк"
-                value={walletById.get(selectedTransaction.wallet_id)?.name ?? selectedTransaction.wallet_id}
-              />
-              <DetailRow
-                label="Статья"
-                value={
-                  selectedTransaction.article_id
-                    ? articleById.get(selectedTransaction.article_id)?.name ??
-                      selectedTransaction.article_id
-                    : "—"
-                }
-              />
-              <DetailRow
-                label="Контрагент"
-                value={
-                  selectedTransaction.counterparty_id
-                    ? counterpartyById.get(selectedTransaction.counterparty_id)?.name ??
-                      selectedTransaction.counterparty_id
-                    : "—"
-                }
-              />
-              <DetailRow label="Направление" value={<DirectionBadge direction={selectedTransaction.direction} />} />
-              <DetailRow label="Назначение" value={compactText(selectedTransaction.payment_purpose)} />
-              <DetailRow label="Комментарий" value={compactText(selectedTransaction.comment)} />
-              <DetailRow label="Источник" value={selectedTransaction.source_kind} />
-              <DetailRow label="Bank operation" value={selectedTransaction.source_id ?? "—"} />
-              <DetailRow label="Transfer group" value={selectedTransaction.transfer_group_id ?? "—"} />
-            </div>
-          ) : null}
-        </SheetContent>
-      </Sheet>
+      <OperationReviewDialog
+        operation={operationForReview}
+        canClassify={canClassify}
+        onClose={() => setSelectedRow(null)}
+      />
     </div>
+  );
+}
+
+function StatusTab({
+  active,
+  label,
+  count,
+  tone,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  count: number;
+  tone?: "warning";
+  onClick: () => void;
+}) {
+  return (
+    <Button className="gap-2" onClick={onClick} size="sm" variant={active ? "default" : "outline"}>
+      {label}
+      <span
+        className={`rounded-full px-1.5 text-xs tabular-nums ${
+          active
+            ? "bg-white/20"
+            : tone === "warning"
+              ? "bg-amber-100 text-amber-700"
+              : "bg-muted text-muted-foreground"
+        }`}
+      >
+        {count}
+      </span>
+    </Button>
   );
 }

@@ -71,6 +71,7 @@ export function OperationReviewDialog({
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["dds", "operations"] }),
+      queryClient.invalidateQueries({ queryKey: ["dds", "journal"] }),
       queryClient.invalidateQueries({ queryKey: ["dds", "cashflow"] }),
       queryClient.invalidateQueries({ queryKey: ["dds", "owner-review"] }),
       queryClient.invalidateQueries({ queryKey: ["dds", "wallets"] }),

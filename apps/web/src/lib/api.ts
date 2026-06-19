@@ -2479,6 +2479,46 @@ export async function getDdsCashflow(
   return response.data;
 }
 
+export type JournalRow = {
+  kind: "cashflow" | "operation";
+  id: string;
+  bank_operation_id: string | null;
+  status: string;
+  operation_date: string;
+  direction: string;
+  amount: string;
+  article_id: string | null;
+  counterparty_id: string | null;
+  wallet_id: string | null;
+  provider: string | null;
+  payment_purpose: string | null;
+  counterparty_name_raw: string | null;
+  counterparty_inn_raw: string | null;
+};
+
+export type JournalQuery = {
+  status?: "all" | "marked" | "unmarked";
+  from?: string;
+  to?: string;
+  direction?: "in" | "out" | "all";
+  limit?: number;
+  offset?: number;
+};
+
+export type JournalListResponse = {
+  items: JournalRow[];
+  total: number;
+  marked_total: number;
+  unmarked_total: number;
+};
+
+export async function getDdsJournal(params: JournalQuery): Promise<JournalListResponse> {
+  const response = await api.get<JournalListResponse>("/dds/journal", {
+    params: cleanDdsParams(params),
+  });
+  return response.data;
+}
+
 export async function getDdsArticles(): Promise<DdsArticleRead[]> {
   const response = await api.get<DdsArticleRead[]>("/dds/articles");
   return response.data;
