@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -12,6 +12,7 @@ from app.models import (
     CourierIikoShift,
     CourierScheduleEntry,
     CourierShiftMatch,
+    CourierShiftSubstitution,
     DeliveryOrder,
     Employee,
 )
@@ -59,8 +60,12 @@ async def get_discipline_breakdown(
     courier_id: uuid.UUID,
     month: date,
 ) -> CourierDisciplineBreakdown:
+    courier = await get_courier_or_404(session, courier_id)
     month_start, month_end = month_bounds(month)
-    matches = await _shift_matches(session, courier_id, month_start, month_end)
+    gained, lost_dates = await _substitution_context(session, courier, month_start, month_end)
+    matches = await _shift_matches_with_subs(
+        session, courier_id, month_start, month_end, gained, lost_dates
+    )
     return _discipline_breakdown(matches)
 
 
@@ -131,7 +136,12 @@ def month_bounds(month: date) -> tuple[date, date]:
 async def _active_couriers(session: AsyncSession) -> list[Employee]:
     result = await session.scalars(
         select(Employee)
-        .where(Employee.position.in_(courier_positions()), Employee.status == "active")
+        .where(
+            Employee.position.in_(courier_positions()),
+            Employee.status == "active",
+            # плейсхолдеры не реальные курьеры — их KPI бессмысленен (данные уходят подменам)
+            Employee.is_courier_placeholder.is_(False),
+        )
         .order_by(Employee.full_name)
     )
     return list(result.all())
@@ -143,8 +153,13 @@ async def _kpi_for_employee(
     month: date,
 ) -> CourierKPI:
     month_start, month_end = month_bounds(month)
-    delivery_rows = await _delivery_rows(session, courier.iiko_id, month_start, month_end)
-    matches = await _shift_matches(session, courier.id, month_start, month_end)
+    gained, lost_dates = await _substitution_context(session, courier, month_start, month_end)
+    delivery_rows = await _delivery_rows_with_subs(
+        session, courier.iiko_id, month_start, month_end, gained, lost_dates
+    )
+    matches = await _shift_matches_with_subs(
+        session, courier.id, month_start, month_end, gained, lost_dates
+    )
     schedules = await _schedule_entries(session, courier.id, month_start, month_end)
     breakdown = _discipline_breakdown(matches)
 
@@ -178,6 +193,97 @@ async def _kpi_for_employee(
         secondary_shifts_worked=secondary_shifts_worked,
         primary_shifts_planned=primary_shifts_planned,
     )
+
+
+def _next_day(value: date) -> date:
+    return value + timedelta(days=1)
+
+
+async def _substitution_context(
+    session: AsyncSession,
+    courier: Employee,
+    month_start: date,
+    month_end: date,
+) -> tuple[list[dict[str, Any]], set[date]]:
+    """Подмены плейсхолдеров, влияющие на KPI курьера за месяц.
+
+    gained — смены/доставки плейсхолдеров, отработанные этим курьером (real = курьер);
+    lost_dates — дни, когда сам курьер-плейсхолдер был подменён (его данные уходят реальному).
+    Подмены редки, поэтому добор данных идёт по дням точечно.
+    """
+    gained_rows = (
+        await session.execute(
+            select(CourierShiftSubstitution, Employee.iiko_id)
+            .join(Employee, Employee.id == CourierShiftSubstitution.placeholder_employee_id)
+            .where(
+                CourierShiftSubstitution.real_employee_id == courier.id,
+                CourierShiftSubstitution.work_date >= month_start,
+                CourierShiftSubstitution.work_date < month_end,
+            )
+        )
+    ).all()
+    gained = [
+        {
+            "placeholder_id": sub.placeholder_employee_id,
+            "placeholder_iiko_id": placeholder_iiko_id,
+            "work_date": sub.work_date,
+        }
+        for sub, placeholder_iiko_id in gained_rows
+    ]
+    lost_dates: set[date] = set()
+    if courier.is_courier_placeholder:
+        lost_dates = set(
+            (
+                await session.scalars(
+                    select(CourierShiftSubstitution.work_date).where(
+                        CourierShiftSubstitution.placeholder_employee_id == courier.id,
+                        CourierShiftSubstitution.work_date >= month_start,
+                        CourierShiftSubstitution.work_date < month_end,
+                    )
+                )
+            ).all()
+        )
+    return gained, lost_dates
+
+
+async def _delivery_rows_with_subs(
+    session: AsyncSession,
+    iiko_id: str | None,
+    month_start: date,
+    month_end: date,
+    gained: list[dict[str, Any]],
+    lost_dates: set[date],
+) -> list[DeliveryOrder]:
+    rows = [
+        row
+        for row in await _delivery_rows(session, iiko_id, month_start, month_end)
+        if row.work_date not in lost_dates
+    ]
+    for entry in gained:
+        day = entry["work_date"]
+        rows.extend(
+            await _delivery_rows(session, entry["placeholder_iiko_id"], day, _next_day(day))
+        )
+    return rows
+
+
+async def _shift_matches_with_subs(
+    session: AsyncSession,
+    courier_id: uuid.UUID,
+    month_start: date,
+    month_end: date,
+    gained: list[dict[str, Any]],
+    lost_dates: set[date],
+) -> list[CourierShiftMatch]:
+    matches = [
+        match
+        for match in await _shift_matches(session, courier_id, month_start, month_end)
+        if match.work_date not in lost_dates
+    ]
+    for entry in gained:
+        day = entry["work_date"]
+        matches.extend(await _shift_matches(session, entry["placeholder_id"], day, _next_day(day)))
+    return matches
 
 
 async def _delivery_rows(

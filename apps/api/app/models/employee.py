@@ -109,6 +109,13 @@ class Employee(Base):
         server_default="false",
         comment="source=app_managed",
     )
+    is_courier_placeholder: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="source=app_managed; общая карточка для смен курьеров без своей карточки iiko",
+    )
     status: Mapped[str] = mapped_column(
         employee_status_enum,
         nullable=False,

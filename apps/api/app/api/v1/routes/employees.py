@@ -63,7 +63,12 @@ from app.schemas.employees import (
     IikoEmployeeRoleRead,
     SyncResultRead,
 )
-from app.services import deposit_service, employee_position_service, notice_service
+from app.services import (
+    deposit_service,
+    employee_position_service,
+    notice_service,
+    position_service,
+)
 from app.services import employee_assignments as employee_assignment_service
 from app.services import employee_change_events as employee_change_event_service
 from app.services import employee_effective_events as employee_effective_event_service
@@ -76,10 +81,8 @@ from app.services.employee_status import (
     is_cook_position,
     position_group_for_position,
 )
-from app.services import position_service
 from app.services.iiko_sync import (
     IikoEmployeeOperationError,
-    IikoEmployeeRole,
     get_iiko_employee_roles,
     sync_employees,
     update_iiko_employee,
@@ -201,6 +204,7 @@ APP_MANAGED_FIELDS = {
     "hire_date",
     "fire_date",
     "requires_role_review",
+    "is_courier_placeholder",
     "pin_code",
     "roles",
 }
@@ -2039,6 +2043,8 @@ async def patch_employee(
                 if roles_hash:
                     review_payload["acknowledged_iiko_roles_hash"] = roles_hash
                     employee.role_review_payload = review_payload
+        elif field == "is_courier_placeholder":
+            employee.is_courier_placeholder = bool(patch.is_courier_placeholder)
         elif field in {"category", "default_cooking_station"} and not applies_to_current_snapshot:
             continue
         else:
@@ -3139,6 +3145,7 @@ def _employee_lifecycle_snapshot(employee: Employee) -> dict[str, Any]:
         "default_cooking_station": employee.default_cooking_station,
         "is_senior": employee.is_senior,
         "is_deputy_senior": employee.is_deputy_senior,
+        "is_courier_placeholder": employee.is_courier_placeholder,
         "status": employee.status,
         "hire_date": employee.hire_date.isoformat() if employee.hire_date else None,
         "tenure_started_at": (

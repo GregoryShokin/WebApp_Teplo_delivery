@@ -53,6 +53,7 @@ from app.models.courier_shift_day import (
     CourierShiftDayStatus,
     CourierShiftReview,
 )
+from app.models.courier_substitution import CourierShiftSubstitution
 from app.models.dds import (
     Account,
     BankOperation,
@@ -162,6 +163,7 @@ __all__ = [
     "CourierShiftMatch",
     "CourierShiftMatchStatus",
     "CourierShiftReview",
+    "CourierShiftSubstitution",
     "DataSource",
     "DdsArticle",
     "DdsArticleAlias",

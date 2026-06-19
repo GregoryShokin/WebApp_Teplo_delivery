@@ -184,6 +184,7 @@ class EmployeeRead(BaseModel):
     default_cooking_station: str | None = None
     is_senior: bool = False
     is_deputy_senior: bool = False
+    is_courier_placeholder: bool = False
     status: EmployeeStatus
     hire_date: date | None = None
     tenure_started_at: date | None = None
@@ -468,6 +469,7 @@ class EmployeePatch(BaseModel):
     default_cooking_station: str | None = Field(default=None, max_length=160)
     is_senior: bool | None = None
     is_deputy_senior: bool | None = None
+    is_courier_placeholder: bool | None = None
     requires_role_review: bool | None = None
     hire_date: date | None = None
     fire_date: date | None = None

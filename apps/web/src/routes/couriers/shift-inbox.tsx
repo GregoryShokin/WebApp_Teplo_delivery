@@ -8,8 +8,10 @@ import {
   Clock3,
   LoaderCircle,
   Lock,
+  RefreshCw,
   RotateCcw,
   Star,
+  UserCog,
   Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -42,13 +44,18 @@ import {
   apiErrorMessage,
   confirmCourierShiftDay,
   createCourierEvaluation,
+  deleteCourierSubstitution,
   getCourierEvaluationCriteria,
+  getCourierList,
   getCourierShiftDay,
   postCourierDepositTransaction,
   putCourierShiftReview,
+  putCourierSubstitution,
+  syncEmployees,
   unconfirmCourierShiftDay,
   type CourierDepositTransactionType,
   type CourierEvaluationCriterion,
+  type CourierListRow,
   type CourierShiftDayCourier,
   type CourierShiftDayResponse,
 } from "@/lib/api";
@@ -68,11 +75,13 @@ export function ShiftInbox() {
   const canEvaluate = permissions.canPerformAction("couriers.evaluations.edit");
   const canDeposit = permissions.canPerformAction("couriers.deposits.edit");
   const canManage = canEvaluate || canDeposit;
+  const canSyncStaff = permissions.canPerformAction("staff.administration.edit");
 
   const [dateKey, setDateKey] = useState(() => toDateKey(new Date()));
   const [evalTarget, setEvalTarget] = useState<CourierShiftDayCourier | null>(null);
   const [depositTarget, setDepositTarget] = useState<CourierShiftDayCourier | null>(null);
   const [skipTarget, setSkipTarget] = useState<CourierShiftDayCourier | null>(null);
+  const [substituteTarget, setSubstituteTarget] = useState<CourierShiftDayCourier | null>(null);
 
   const todayKey = toDateKey(new Date());
   const yesterdayKey = toDateKey(addDays(new Date(), -1));
@@ -128,6 +137,34 @@ export function ShiftInbox() {
       toast.success("Смена откатана в черновик");
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось откатить смену")),
+  });
+
+  const substituteMutation = useMutation({
+    mutationFn: ({ placeholderId, realId }: { placeholderId: string; realId: string }) =>
+      putCourierSubstitution(dateKey, placeholderId, realId),
+    onSuccess: (snapshot) => {
+      applySnapshot(snapshot);
+      toast.success("Курьер назначен на смену");
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось назначить курьера")),
+  });
+
+  const clearSubstituteMutation = useMutation({
+    mutationFn: (placeholderId: string) => deleteCourierSubstitution(dateKey, placeholderId),
+    onSuccess: (snapshot) => {
+      applySnapshot(snapshot);
+      toast.success("Подмена снята");
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось снять подмену")),
+  });
+
+  const syncStaffMutation = useMutation({
+    mutationFn: syncEmployees,
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ["courier-shift-day", dateKey] });
+      toast.success(`Штат обновлён: +${result.created} новых, ${result.updated} изменено`);
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось обновить штат")),
   });
 
   const couriers = data?.couriers ?? [];
@@ -225,13 +262,15 @@ export function ShiftInbox() {
               locked={locked}
               canEvaluate={canEvaluate}
               canDeposit={canDeposit}
+              canManage={canManage}
               evalAllowed={evalAllowed}
               reviewPending={reviewMutation.isPending}
               onEvaluate={() => setEvalTarget(courier)}
               onDeposit={() => setDepositTarget(courier)}
+              onSubstitute={() => setSubstituteTarget(courier)}
               onToggleEvalSkip={(value) =>
                 reviewMutation.mutate({
-                  employeeId: courier.employee_id,
+                  employeeId: courier.action_employee_id ?? courier.employee_id,
                   payload: { eval_skipped: value },
                 })
               }
@@ -240,7 +279,7 @@ export function ShiftInbox() {
                   setSkipTarget(courier);
                 } else {
                   reviewMutation.mutate({
-                    employeeId: courier.employee_id,
+                    employeeId: courier.action_employee_id ?? courier.employee_id,
                     payload: { deposit_skipped: false },
                   });
                 }
@@ -260,6 +299,22 @@ export function ShiftInbox() {
             Эти курьеры открыли смену в iiko, но не привязаны к сотруднику. Сопоставьте их в разделе
             «Штат» — до этого их нельзя оценить и они не входят в подтверждение смены.
           </p>
+          {canSyncStaff ? (
+            <Button
+              className="mt-2"
+              disabled={syncStaffMutation.isPending}
+              onClick={() => syncStaffMutation.mutate()}
+              size="sm"
+              variant="outline"
+            >
+              {syncStaffMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+              ) : (
+                <RefreshCw size={15} aria-hidden="true" />
+              )}
+              Обновить штат из iiko
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -285,11 +340,33 @@ export function ShiftInbox() {
           }
           reviewMutation.mutate(
             {
-              employeeId: skipTarget.employee_id,
+              employeeId: skipTarget.action_employee_id ?? skipTarget.employee_id,
               payload: { deposit_skipped: true, deposit_skip_comment: comment },
             },
             { onSuccess: () => setSkipTarget(null) },
           );
+        }}
+      />
+      <SubstituteDialog
+        courier={substituteTarget}
+        pending={substituteMutation.isPending || clearSubstituteMutation.isPending}
+        onClose={() => setSubstituteTarget(null)}
+        onSubmit={(realId) => {
+          if (!substituteTarget) {
+            return;
+          }
+          substituteMutation.mutate(
+            { placeholderId: substituteTarget.employee_id, realId },
+            { onSuccess: () => setSubstituteTarget(null) },
+          );
+        }}
+        onClear={() => {
+          if (!substituteTarget) {
+            return;
+          }
+          clearSubstituteMutation.mutate(substituteTarget.employee_id, {
+            onSuccess: () => setSubstituteTarget(null),
+          });
         }}
       />
     </div>
@@ -314,10 +391,12 @@ function CourierRow({
   locked,
   canEvaluate,
   canDeposit,
+  canManage,
   evalAllowed,
   reviewPending,
   onEvaluate,
   onDeposit,
+  onSubstitute,
   onToggleEvalSkip,
   onToggleDepositSkip,
 }: {
@@ -325,13 +404,17 @@ function CourierRow({
   locked: boolean;
   canEvaluate: boolean;
   canDeposit: boolean;
+  canManage: boolean;
   evalAllowed: boolean;
   reviewPending: boolean;
   onEvaluate: () => void;
   onDeposit: () => void;
+  onSubstitute: () => void;
   onToggleEvalSkip: (value: boolean) => void;
   onToggleDepositSkip: (value: boolean) => void;
 }) {
+  const needsSubstitution = courier.is_placeholder && courier.substitution === null;
+  const actionsDisabled = courier.action_employee_id === null;
   const tone = locked
     ? "border-border opacity-70"
     : courier.ready
@@ -342,35 +425,77 @@ function CourierRow({
     <div className={cn("rounded-lg border bg-card p-3", tone)}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="min-w-[170px] flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{courier.full_name}</span>
             {courier.category ? (
               <Badge className="rounded-md" variant="secondary">
                 {CATEGORY_LABELS[courier.category]}
               </Badge>
             ) : null}
+            {courier.is_placeholder ? (
+              courier.substitution ? (
+                <Badge className="rounded-md" variant="outline">
+                  открыл под плейсхолдером
+                </Badge>
+              ) : (
+                <Badge className="rounded-md border-amber-300 bg-amber-100 text-amber-800">
+                  плейсхолдер — укажите курьера
+                </Badge>
+              )
+            ) : null}
           </div>
           <div className="mt-0.5 text-xs text-muted-foreground">{shiftSummary(courier)}</div>
         </div>
 
-        <ReadinessChips courier={courier} />
+        {needsSubstitution ? null : <ReadinessChips courier={courier} />}
 
         <div className="flex items-center gap-2">
+          {courier.is_placeholder ? (
+            <Button
+              disabled={locked || !canManage}
+              onClick={onSubstitute}
+              size="sm"
+              variant={needsSubstitution ? "default" : "outline"}
+            >
+              <UserCog size={15} aria-hidden="true" />
+              {needsSubstitution ? "Заменить" : "Сменить"}
+            </Button>
+          ) : null}
           <Button
-            disabled={locked || !canEvaluate || courier.eval_skipped || !evalAllowed}
+            disabled={
+              locked || !canEvaluate || courier.eval_skipped || !evalAllowed || actionsDisabled
+            }
             onClick={onEvaluate}
             size="sm"
-            title={!evalAllowed ? "Оценку можно ставить только за сегодня или вчера" : undefined}
+            title={
+              actionsDisabled
+                ? "Сначала укажите реального курьера"
+                : !evalAllowed
+                  ? "Оценку можно ставить только за сегодня или вчера"
+                  : undefined
+            }
             variant="outline"
           >
             <Star size={15} aria-hidden="true" />
             Оценить
           </Button>
           <Button
-            disabled={locked || !canDeposit || courier.deposit_collected || courier.deposit_skipped}
+            disabled={
+              locked ||
+              !canDeposit ||
+              courier.deposit_collected ||
+              courier.deposit_skipped ||
+              actionsDisabled
+            }
             onClick={onDeposit}
             size="sm"
-            title={courier.deposit_collected ? "Депозит собран" : undefined}
+            title={
+              actionsDisabled
+                ? "Сначала укажите реального курьера"
+                : courier.deposit_collected
+                  ? "Депозит собран"
+                  : undefined
+            }
             variant="outline"
           >
             <Wallet size={15} aria-hidden="true" />
@@ -384,7 +509,7 @@ function CourierRow({
           <label className="flex items-center gap-2">
             <Switch
               checked={courier.eval_skipped}
-              disabled={!canEvaluate || courier.eval_present || reviewPending}
+              disabled={!canEvaluate || courier.eval_present || reviewPending || actionsDisabled}
               onCheckedChange={onToggleEvalSkip}
             />
             Не оценивать
@@ -393,7 +518,11 @@ function CourierRow({
             <Switch
               checked={courier.deposit_skipped}
               disabled={
-                !canDeposit || courier.deposit_collected || courier.deposit_present || reviewPending
+                !canDeposit ||
+                courier.deposit_collected ||
+                courier.deposit_present ||
+                reviewPending ||
+                actionsDisabled
               }
               onCheckedChange={onToggleDepositSkip}
             />
@@ -502,7 +631,7 @@ function EvaluationDialog({
         throw new Error("Выберите критерий");
       }
       return createCourierEvaluation({
-        courier_employee_id: courier.employee_id,
+        courier_employee_id: courier.action_employee_id ?? courier.employee_id,
         criterion_id: criterionId,
         evaluated_at: dateKey,
         comment: comment.trim() || null,
@@ -612,7 +741,7 @@ function DepositDialog({
       if (!courier || cents === null || cents <= 0) {
         throw new Error("Проверьте сумму");
       }
-      return postCourierDepositTransaction(courier.employee_id, {
+      return postCourierDepositTransaction(courier.action_employee_id ?? courier.employee_id, {
         amount_cents: cents,
         comment: comment.trim() || null,
         transaction_date: dateKey,
@@ -770,6 +899,98 @@ function DepositSkipDialog({
             {pending ? <LoaderCircle className="animate-spin" size={16} aria-hidden="true" /> : null}
             Сохранить
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SubstituteDialog({
+  courier,
+  pending,
+  onClose,
+  onSubmit,
+  onClear,
+}: {
+  courier: CourierShiftDayCourier | null;
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: (realEmployeeId: string) => void;
+  onClear: () => void;
+}) {
+  const [selected, setSelected] = useState<string>("");
+
+  const listQuery = useQuery({
+    queryKey: ["courier-list", "substitute"],
+    queryFn: () => getCourierList({ status: "active" }),
+    enabled: courier !== null,
+  });
+
+  const options = useMemo(
+    () =>
+      (listQuery.data?.rows ?? []).filter(
+        (row: CourierListRow) =>
+          !row.is_courier_placeholder && row.employee_id !== courier?.employee_id,
+      ),
+    [listQuery.data, courier],
+  );
+
+  function handleClose() {
+    setSelected("");
+    onClose();
+  }
+
+  const hasSubstitution = courier?.substitution != null;
+
+  return (
+    <Dialog open={courier !== null} onOpenChange={(open) => !open && handleClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Кто работал под плейсхолдером?</DialogTitle>
+          <DialogDescription>
+            {hasSubstitution && courier?.substitution
+              ? `Сейчас назначен: ${courier.substitution.real_full_name}`
+              : "Выберите реального курьера — оценка, депозит и статистика пойдут на него."}
+          </DialogDescription>
+        </DialogHeader>
+
+        <Label className="grid gap-2">
+          <span>Курьер</span>
+          <Select onValueChange={setSelected} value={selected}>
+            <SelectTrigger>
+              <SelectValue placeholder="Выберите курьера" />
+            </SelectTrigger>
+            <SelectContent>
+              {options.map((row) => (
+                <SelectItem key={row.employee_id} value={row.employee_id}>
+                  {row.full_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Label>
+
+        <DialogFooter className="sm:justify-between">
+          {hasSubstitution ? (
+            <Button disabled={pending} onClick={onClear} type="button" variant="ghost">
+              Снять подмену
+            </Button>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <Button onClick={handleClose} type="button" variant="outline">
+              Отмена
+            </Button>
+            <Button disabled={!selected || pending} onClick={() => onSubmit(selected)} type="button">
+              {pending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <Check size={16} aria-hidden="true" />
+              )}
+              Назначить
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

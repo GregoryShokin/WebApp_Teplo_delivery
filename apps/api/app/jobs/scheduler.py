@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.core.config import get_settings
@@ -7,6 +10,7 @@ from app.jobs.counterparty_invoice_sync_job import run_counterparty_invoice_sync
 from app.jobs.employee_sync_job import run_employee_sync_job
 
 _scheduler: BackgroundScheduler | None = None
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 
 def get_scheduler() -> BackgroundScheduler:
@@ -30,6 +34,11 @@ def register_jobs(scheduler: BackgroundScheduler) -> None:
             replace_existing=True,
             max_instances=1,
             coalesce=True,
+            # Тикаем сразу при старте api: контейнер пересоздаётся на каждом деплое, и при
+            # 6-часовом интервале cron-тик почти никогда не доживает до запуска — новые
+            # сотрудники/курьеры из iiko висят несопоставленными. Прогон при старте
+            # подтягивает их без ожидания следующего интервала.
+            next_run_time=datetime.now(MOSCOW_TZ),
         )
     if settings.counterparty_invoice_sync_enabled:
         scheduler.add_job(

@@ -41,6 +41,7 @@ export type AppSection =
 export type AppAction =
   | "staff.create"
   | "staff.import"
+  | "staff.administration.edit"
   | "couriers.deposits.edit"
   | "couriers.evaluations.edit"
   | "couriers.schedule.edit"
@@ -286,6 +287,7 @@ const SECTION_PERMISSIONS: Record<AppSection, readonly PermissionCode[]> = {
 const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "staff.create": PERMISSION_GROUPS.staffCreate,
   "staff.import": ["source.import.run"],
+  "staff.administration.edit": ["staff.administration.edit"],
   "couriers.deposits.edit": ["couriers.deposits.edit"],
   "couriers.evaluations.edit": ["couriers.evaluations.edit"],
   "couriers.schedule.edit": ["couriers.schedule.edit"],

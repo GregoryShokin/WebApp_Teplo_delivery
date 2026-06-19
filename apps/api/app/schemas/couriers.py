@@ -206,9 +206,19 @@ class CourierShiftDayShift(BaseModel):
     worked_minutes: int | None = None
 
 
+class CourierShiftSubstitutionInfo(BaseModel):
+    real_employee_id: uuid.UUID
+    real_full_name: str
+
+
 class CourierShiftDayCourier(BaseModel):
     employee_id: uuid.UUID
+    # На кого фактически идут оценка/депозит: сам курьер, реальный курьер при подмене
+    # или None у плейсхолдера без подмены (действия закрыты).
+    action_employee_id: uuid.UUID | None = None
     full_name: str
+    is_placeholder: bool = False
+    substitution: CourierShiftSubstitutionInfo | None = None
     category: Literal["primary", "secondary"] | None = None
     shifts: list[CourierShiftDayShift]
     eval_present: bool
@@ -253,6 +263,10 @@ class CourierShiftReviewUpdate(BaseModel):
     eval_skipped: bool | None = None
     deposit_skipped: bool | None = None
     deposit_skip_comment: str | None = Field(default=None, max_length=2000)
+
+
+class CourierSubstitutionRequest(BaseModel):
+    real_employee_id: uuid.UUID
 
 
 CourierDepositStatus = Literal["active", "fired", "all"]
@@ -320,6 +334,7 @@ class CourierListRow(BaseModel):
     employee_id: uuid.UUID
     full_name: str
     iiko_id: str
+    is_courier_placeholder: bool = False
     status: str
     work_status: CourierWorkStatus | None
     open_shift_now: bool

@@ -289,7 +289,16 @@ const positionFilterOptions: Array<{
   },
 ];
 
-type Draft = Pick<Employee, "full_name" | "position" | "is_senior" | "is_deputy_senior">;
+const COURIER_PLACEHOLDER_POSITIONS = ["Курьер", "Старший курьер"];
+
+function isCourierPlaceholderPosition(position: string | null | undefined): boolean {
+  return !!position && COURIER_PLACEHOLDER_POSITIONS.includes(position);
+}
+
+type Draft = Pick<
+  Employee,
+  "full_name" | "position" | "is_senior" | "is_deputy_senior" | "is_courier_placeholder"
+>;
 type AssignmentDraft = Pick<EmployeeRoleAssignment, "payroll_role" | "category" | "is_primary"> & {
   id?: string;
   draft_id: string;
@@ -4327,6 +4336,29 @@ function StaffEditor({
           </div>
         ) : null}
 
+        {isCourierPlaceholderPosition(editorPosition) ? (
+          <div className="grid gap-3 rounded-lg border bg-card p-4">
+            <div className="text-sm font-medium">Подменные смены</div>
+            <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
+              <span className="flex flex-col pr-3">
+                <span>Карточка-плейсхолдер</span>
+                <span className="text-xs text-muted-foreground">
+                  Под этой карточкой открывают смену курьеры без своей карточки iiko. На экране
+                  «Смена курьеров» такую смену заменяют реальным курьером.
+                </span>
+              </span>
+              <input
+                checked={draft.is_courier_placeholder}
+                disabled={!canEditEmployee || mutation.isPending}
+                onChange={(event) =>
+                  setDraft({ ...draft, is_courier_placeholder: event.target.checked })
+                }
+                type="checkbox"
+              />
+            </label>
+          </div>
+        ) : null}
+
         <EmployeeDepositSection
           deposit={employeeDeposit}
           employee={employee}
@@ -6533,6 +6565,7 @@ function toDraft(employee: Employee): Draft {
     position: employee.position,
     is_senior: employee.is_senior,
     is_deputy_senior: employee.is_deputy_senior,
+    is_courier_placeholder: employee.is_courier_placeholder,
   };
 }
 
@@ -6542,6 +6575,7 @@ function editorDraftSnapshot(draft: StaffEditorDraft) {
     position: draft.position,
     is_senior: draft.is_senior,
     is_deputy_senior: draft.is_deputy_senior,
+    is_courier_placeholder: draft.is_courier_placeholder,
     assignments: assignmentDraftsSnapshot(draft.assignments),
     pin_code: draft.pin_code,
     pin_confirmation: draft.pin_confirmation,
@@ -6680,6 +6714,9 @@ function buildEmployeePatch(initial: StaffEditorDraft, draft: StaffEditorDraft):
   }
   if (draft.is_deputy_senior !== initial.is_deputy_senior) {
     patch.is_deputy_senior = draft.is_deputy_senior;
+  }
+  if (draft.is_courier_placeholder !== initial.is_courier_placeholder) {
+    patch.is_courier_placeholder = draft.is_courier_placeholder;
   }
 
   const initialRoles = JSON.stringify(assignmentDraftsSnapshot(initial.assignments));

@@ -20,6 +20,7 @@ from app.models import (
     CourierShiftDayStatus,
     CourierShiftMatch,
     CourierShiftReview,
+    CourierShiftSubstitution,
     Employee,
     User,
 )
@@ -28,6 +29,7 @@ from app.services.couriers.deposit_service import (
     target_cents_for_employee,
 )
 from app.services.couriers.shift_matching import MOSCOW_TZ, worked_minutes_for_shift
+from app.services.position_registry import courier_positions
 
 UNSET = object()
 
@@ -91,38 +93,104 @@ async def get_shift_day(session: AsyncSession, work_date: date) -> dict[str, Any
         category_by_courier.setdefault(employee.id, None)
 
     courier_ids = list(shifts_by_courier.keys())
-    evals = await _evaluations_for_day(session, courier_ids, work_date)
-    deposits = await _deposit_state_for_day(session, employee_by_id, work_date)
-    reviews = await _reviews_for_day(session, courier_ids, work_date)
+
+    # Подмены плейсхолдеров за день: оценка/депозит/готовность считаются по реальному
+    # курьеру, а не по плейсхолдер-карточке («Курьер 1»). Плейсхолдер без подмены закрыт
+    # для действий и блокирует подтверждение дня, пока не указан реальный курьер.
+    placeholder_ids = [
+        courier_id
+        for courier_id in courier_ids
+        if employee_by_id[courier_id].is_courier_placeholder
+    ]
+    substitutions = await _substitutions_for_day(session, work_date, placeholder_ids)
+    real_employees = await _load_employees_by_ids(
+        session, {sub.real_employee_id for sub in substitutions.values()}
+    )
+
+    action_by_courier: dict[uuid.UUID, uuid.UUID | None] = {}
+    action_employees: dict[uuid.UUID, Employee] = {}
+    for courier_id in courier_ids:
+        employee = employee_by_id[courier_id]
+        if employee.is_courier_placeholder:
+            sub = substitutions.get(courier_id)
+            action_id = sub.real_employee_id if sub is not None else None
+        else:
+            action_id = courier_id
+        action_by_courier[courier_id] = action_id
+        if action_id is not None:
+            action_employees[action_id] = (
+                real_employees.get(action_id) or employee_by_id.get(action_id) or employee
+            )
+
+    action_ids = [action_id for action_id in {*action_by_courier.values()} if action_id is not None]
+    evals = await _evaluations_for_day(session, action_ids, work_date)
+    deposits = await _deposit_state_for_day(
+        session, {action_id: action_employees[action_id] for action_id in action_ids}, work_date
+    )
+    reviews = await _reviews_for_day(session, action_ids, work_date)
 
     couriers: list[dict[str, Any]] = []
     ready_count = 0
     for courier_id in courier_ids:
         employee = employee_by_id[courier_id]
+        is_placeholder = employee.is_courier_placeholder
+        action_id = action_by_courier[courier_id]
+        sub = substitutions.get(courier_id) if is_placeholder else None
         day_shifts = sorted(shifts_by_courier[courier_id], key=lambda item: item.opened_at)
-        review = reviews.get(courier_id)
-        eval_info = evals.get(courier_id)
-        deposit = deposits[courier_id]
 
-        eval_present = eval_info is not None and eval_info["count"] > 0
-        eval_skipped = bool(review.eval_skipped) if review else False
-        deposit_present = deposit["present"]
-        deposit_skipped = bool(review.deposit_skipped) if review else False
-        deposit_collected = (
-            deposit["target_cents"] > 0
-            and deposit["balance_cents"] >= deposit["target_cents"]
-        )
+        if action_id is not None:
+            review = reviews.get(action_id)
+            eval_info = evals.get(action_id)
+            deposit = deposits[action_id]
+            eval_present = eval_info is not None and eval_info["count"] > 0
+            eval_skipped = bool(review.eval_skipped) if review else False
+            deposit_present = deposit["present"]
+            deposit_skipped = bool(review.deposit_skipped) if review else False
+            deposit_collected = (
+                deposit["target_cents"] > 0
+                and deposit["balance_cents"] >= deposit["target_cents"]
+            )
+            ready = (eval_present or eval_skipped) and (
+                deposit_collected or deposit_present or deposit_skipped
+            )
+            eval_count = eval_info["count"] if eval_info else 0
+            latest_label = eval_info["label"] if eval_info else None
+            latest_score = eval_info["score"] if eval_info else None
+            deposit_balance_cents = deposit["balance_cents"]
+            deposit_target_cents = deposit["target_cents"]
+            deposit_skip_comment = review.deposit_skip_comment if review else None
+        else:
+            eval_present = eval_skipped = False
+            deposit_present = deposit_skipped = deposit_collected = False
+            ready = False
+            eval_count = 0
+            latest_label = None
+            latest_score = None
+            deposit_balance_cents = 0
+            deposit_target_cents = 0
+            deposit_skip_comment = None
 
-        eval_ok = eval_present or eval_skipped
-        deposit_ok = deposit_collected or deposit_present or deposit_skipped
-        ready = eval_ok and deposit_ok
         if ready:
             ready_count += 1
+
+        if is_placeholder and sub is not None:
+            real_employee = action_employees.get(action_id)
+            display_name = real_employee.full_name if real_employee else employee.full_name
+            substitution_info: dict[str, Any] | None = {
+                "real_employee_id": sub.real_employee_id,
+                "real_full_name": display_name,
+            }
+        else:
+            display_name = employee.full_name
+            substitution_info = None
 
         couriers.append(
             {
                 "employee_id": courier_id,
-                "full_name": employee.full_name,
+                "action_employee_id": action_id,
+                "full_name": display_name,
+                "is_placeholder": is_placeholder,
+                "substitution": substitution_info,
                 "category": category_by_courier.get(courier_id),
                 "shifts": [
                     {
@@ -135,15 +203,15 @@ async def get_shift_day(session: AsyncSession, work_date: date) -> dict[str, Any
                 ],
                 "eval_present": eval_present,
                 "eval_skipped": eval_skipped,
-                "eval_count": eval_info["count"] if eval_info else 0,
-                "latest_eval_label": eval_info["label"] if eval_info else None,
-                "latest_eval_score": eval_info["score"] if eval_info else None,
-                "deposit_balance_cents": deposit["balance_cents"],
-                "deposit_target_cents": deposit["target_cents"],
+                "eval_count": eval_count,
+                "latest_eval_label": latest_label,
+                "latest_eval_score": latest_score,
+                "deposit_balance_cents": deposit_balance_cents,
+                "deposit_target_cents": deposit_target_cents,
                 "deposit_collected": deposit_collected,
                 "deposit_present": deposit_present,
                 "deposit_skipped": deposit_skipped,
-                "deposit_skip_comment": review.deposit_skip_comment if review else None,
+                "deposit_skip_comment": deposit_skip_comment,
                 "ready": ready,
             }
         )
@@ -278,6 +346,99 @@ async def _reviews_for_day(
         )
     ).all()
     return {row.courier_employee_id: row for row in rows}
+
+
+async def _substitutions_for_day(
+    session: AsyncSession,
+    work_date: date,
+    placeholder_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, CourierShiftSubstitution]:
+    if not placeholder_ids:
+        return {}
+    rows = (
+        await session.scalars(
+            select(CourierShiftSubstitution).where(
+                CourierShiftSubstitution.work_date == work_date,
+                CourierShiftSubstitution.placeholder_employee_id.in_(placeholder_ids),
+            )
+        )
+    ).all()
+    return {row.placeholder_employee_id: row for row in rows}
+
+
+async def _load_employees_by_ids(
+    session: AsyncSession,
+    ids: set[uuid.UUID],
+) -> dict[uuid.UUID, Employee]:
+    if not ids:
+        return {}
+    rows = (await session.scalars(select(Employee).where(Employee.id.in_(ids)))).all()
+    return {employee.id: employee for employee in rows}
+
+
+async def set_substitution(
+    session: AsyncSession,
+    work_date: date,
+    placeholder_employee_id: uuid.UUID,
+    real_employee_id: uuid.UUID,
+    actor_id: uuid.UUID,
+) -> CourierShiftSubstitution:
+    placeholder = await session.get(Employee, placeholder_employee_id)
+    if placeholder is None or not placeholder.is_courier_placeholder:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Это не карточка-плейсхолдер",
+        )
+    if real_employee_id == placeholder_employee_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Выберите реального курьера, а не плейсхолдер",
+        )
+    real = await session.get(Employee, real_employee_id)
+    if real is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Курьер не найден")
+    if real.is_courier_placeholder:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Нельзя подменить одной плейсхолдер-карточкой другую",
+        )
+    if real.position not in courier_positions():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Подменить смену можно только курьером",
+        )
+    existing = await session.scalar(
+        select(CourierShiftSubstitution).where(
+            CourierShiftSubstitution.work_date == work_date,
+            CourierShiftSubstitution.placeholder_employee_id == placeholder_employee_id,
+        )
+    )
+    if existing is None:
+        existing = CourierShiftSubstitution(
+            work_date=work_date,
+            placeholder_employee_id=placeholder_employee_id,
+        )
+        session.add(existing)
+    existing.real_employee_id = real_employee_id
+    existing.created_by = actor_id
+    await session.flush()
+    return existing
+
+
+async def clear_substitution(
+    session: AsyncSession,
+    work_date: date,
+    placeholder_employee_id: uuid.UUID,
+) -> None:
+    existing = await session.scalar(
+        select(CourierShiftSubstitution).where(
+            CourierShiftSubstitution.work_date == work_date,
+            CourierShiftSubstitution.placeholder_employee_id == placeholder_employee_id,
+        )
+    )
+    if existing is not None:
+        await session.delete(existing)
+        await session.flush()
 
 
 async def set_review(

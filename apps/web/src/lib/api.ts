@@ -211,6 +211,7 @@ export type Employee = {
   default_cooking_station: CookingStation | null;
   is_senior: boolean;
   is_deputy_senior: boolean;
+  is_courier_placeholder: boolean;
   status: EmployeeStatus;
   hire_date: string | null;
   tenure_started_at: string | null;
@@ -238,6 +239,7 @@ export type EmployeePatch = Partial<
     | "default_cooking_station"
     | "is_senior"
     | "is_deputy_senior"
+    | "is_courier_placeholder"
     | "requires_role_review"
     | "hire_date"
     | "fire_date"
@@ -2007,6 +2009,7 @@ export type CourierListRow = {
   employee_id: string;
   full_name: string;
   iiko_id: string;
+  is_courier_placeholder: boolean;
   status: string;
   work_status: CourierWorkStatus | null;
   open_shift_now: boolean;
@@ -4325,9 +4328,17 @@ export type CourierShiftDayShift = {
   worked_minutes: number | null;
 };
 
+export type CourierShiftSubstitutionInfo = {
+  real_employee_id: string;
+  real_full_name: string;
+};
+
 export type CourierShiftDayCourier = {
   employee_id: string;
+  action_employee_id: string | null;
   full_name: string;
+  is_placeholder: boolean;
+  substitution: CourierShiftSubstitutionInfo | null;
   category: CourierScheduleCategory | null;
   shifts: CourierShiftDayShift[];
   eval_present: boolean;
@@ -4401,6 +4412,28 @@ export async function unconfirmCourierShiftDay(
   const response = await api.post<CourierShiftDayResponse>(
     `/couriers/shift-day/${workDate}/unconfirm`,
     null,
+  );
+  return response.data;
+}
+
+export async function putCourierSubstitution(
+  workDate: string,
+  placeholderId: string,
+  realEmployeeId: string,
+): Promise<CourierShiftDayResponse> {
+  const response = await api.put<CourierShiftDayResponse>(
+    `/couriers/shift-day/${workDate}/courier/${placeholderId}/substitute`,
+    { real_employee_id: realEmployeeId },
+  );
+  return response.data;
+}
+
+export async function deleteCourierSubstitution(
+  workDate: string,
+  placeholderId: string,
+): Promise<CourierShiftDayResponse> {
+  const response = await api.delete<CourierShiftDayResponse>(
+    `/couriers/shift-day/${workDate}/courier/${placeholderId}/substitute`,
   );
   return response.data;
 }
