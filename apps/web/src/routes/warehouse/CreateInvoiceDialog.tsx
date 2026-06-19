@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Plus, Receipt, Trash2, Users, Warehouse } from "lucide-react";
+import { LoaderCircle, Plus, Trash2, Users, Warehouse } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import { apiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { getRegistry, type RegistryItem } from "../counterparties/api";
+import { CreateCounterpartyDialog } from "../counterparties/CreateCounterpartyDialog";
 import { formatRub } from "../counterparties/shared";
 import { ProductSearch } from "./ProductSearch";
 import {
@@ -95,8 +96,10 @@ export function CreateInvoiceDialog({
   const [number, setNumber] = useState("");
   const [markPaid, setMarkPaid] = useState(false);
   const [paidAmount, setPaidAmount] = useState("");
+  const [unpaidConfirmOpen, setUnpaidConfirmOpen] = useState(false);
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
   const [staffLines, setStaffLines] = useState<StaffLine[]>([]);
+  const [createCpOpen, setCreateCpOpen] = useState(false);
   const queryClient = useQueryClient();
   const isBarter = kind === "barter";
   const isReturn = isBarter && barterAction === "return";
@@ -108,6 +111,10 @@ export function CreateInvoiceDialog({
   });
   const selectedCp = registryQuery.data?.find((i) => i.counterparty_id === counterpartyId);
   const cpHasGuid = selectedCp?.has_iiko_guid ?? false;
+  // Бартер: контрагент только из бартерных партнёров; обычная накладная — все поставщики.
+  const counterpartyOptions = isBarter
+    ? (registryQuery.data ?? []).filter((i) => i.relationship === "barter")
+    : registryQuery.data ?? [];
   // Все GOODS загружаем разом и фильтруем на клиенте — как поиск контрагентов.
   const productsQuery = useQuery({
     queryKey: ["wh", "products", "goods-all"],
@@ -227,7 +234,8 @@ export function CreateInvoiceDialog({
     !(markPaid && !cpHasGuid);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -312,12 +320,29 @@ export function CreateInvoiceDialog({
             <>
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="grid gap-2">
-              <Label>Контрагент</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label>{isBarter ? "Бартерный контрагент" : "Контрагент"}</Label>
+                {isBarter ? (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                    onClick={() => setCreateCpOpen(true)}
+                  >
+                    <Plus size={12} aria-hidden="true" />
+                    Добавить
+                  </button>
+                ) : null}
+              </div>
               <CounterpartySearch
-                items={registryQuery.data ?? []}
+                items={counterpartyOptions}
                 value={counterpartyId}
                 onPick={setCounterpartyId}
               />
+              {isBarter && counterpartyOptions.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Нет бартерных партнёров. Добавьте контрагента с типом «Бартер».
+                </p>
+              ) : null}
             </div>
             <div className="grid gap-2">
               <Label>Дата и время чека</Label>
@@ -500,7 +525,17 @@ export function CreateInvoiceDialog({
 
         {!isReturn ? (
           <DialogFooter>
-            <Button disabled={!canSave} onClick={() => createMutation.mutate()}>
+            <Button
+              disabled={!canSave}
+              onClick={() => {
+                // В Кассе без тоггла «Оплачено» — переспросить (частая ошибка: забыли отметить).
+                if (kassaOnly && !isBarter && !markPaid) {
+                  setUnpaidConfirmOpen(true);
+                } else {
+                  createMutation.mutate();
+                }
+              }}
+            >
               {createMutation.isPending ? (
                 <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
               ) : null}
@@ -509,7 +544,43 @@ export function CreateInvoiceDialog({
           </DialogFooter>
         ) : null}
       </DialogContent>
-    </Dialog>
+      </Dialog>
+      <CreateCounterpartyDialog
+        open={createCpOpen}
+        onOpenChange={setCreateCpOpen}
+        defaultRelationship="barter"
+        onCreated={(cp) => {
+          setCounterpartyId(cp.counterparty_id);
+          void queryClient.invalidateQueries({ queryKey: ["cp", "registry"] });
+        }}
+      />
+      <Dialog open={unpaidConfirmOpen} onOpenChange={setUnpaidConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Создать без оплаты?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Накладная будет создана{" "}
+            <span className="font-medium text-foreground">неоплаченной</span>. Если вы платили за
+            неё с кассы — вернитесь и включите тоггл «Оплачено с ТК Черникова». Иначе её можно
+            будет оплатить позже во вкладке «Накладные».
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUnpaidConfirmOpen(false)}>
+              Вернуться
+            </Button>
+            <Button
+              onClick={() => {
+                setUnpaidConfirmOpen(false);
+                createMutation.mutate();
+              }}
+            >
+              Создать неоплаченную
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

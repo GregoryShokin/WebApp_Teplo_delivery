@@ -6,10 +6,13 @@ from __future__ import annotations
 import asyncio
 from decimal import Decimal
 
-from cp_helpers import make_counterparty, make_invoice
+from cp_helpers import admin_headers, make_counterparty, make_invoice
+from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.services.kassa import invoice_paid_push as pp
+
+WH = "/api/v1/warehouse"
 
 
 def _run(coro):
@@ -97,3 +100,41 @@ def test_invoice_payment_no_guid_marks_failed(
     raw = _run(scenario())
     assert len(calls) == 0  # iiko не дёрнут — нет GUID
     assert raw["iiko_payment"]["status"] == "failed"
+
+
+def test_pay_kassa_endpoint_blocks_without_iiko_guid(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    async def seed():
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="ООО НетГуид-Касса", inn="7705551111")
+            inv = await make_invoice(session, counterparty_id=cp.id, amount="100.00")
+            await session.commit()
+            return inv.id
+
+    inv_id = _run(seed())
+    headers = _run(admin_headers(async_session_factory))
+    r = client.post(f"{WH}/invoices/{inv_id}/pay-kassa", json={"amount": None}, headers=headers)
+    assert r.status_code == 409
+    assert "iiko" in r.json()["detail"].lower()
+
+
+def test_pay_kassa_endpoint_blocks_already_paid(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    async def seed():
+        async with async_session_factory() as session:
+            cp = await make_counterparty(
+                session, name="ООО Оплач-Касса", inn="7705552222", iiko_guid="G-PAID"
+            )
+            inv = await make_invoice(
+                session, counterparty_id=cp.id, amount="100.00", payment_status="paid"
+            )
+            await session.commit()
+            return inv.id
+
+    inv_id = _run(seed())
+    headers = _run(admin_headers(async_session_factory))
+    r = client.post(f"{WH}/invoices/{inv_id}/pay-kassa", json={"amount": None}, headers=headers)
+    assert r.status_code == 409
+    assert "оплачена" in r.json()["detail"].lower()

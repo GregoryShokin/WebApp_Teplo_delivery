@@ -120,6 +120,16 @@ export async function createWarehouseInvoice(
   return response.data;
 }
 
+export async function payInvoiceFromKassa(
+  id: string,
+  amount?: number | null,
+): Promise<WarehouseInvoiceDetail> {
+  const response = await api.post<WarehouseInvoiceDetail>(`${BASE}/invoices/${id}/pay-kassa`, {
+    amount: amount ?? null,
+  });
+  return response.data;
+}
+
 export async function getNextInvoiceNumber(): Promise<string> {
   const response = await api.get<{ number: string }>(`${BASE}/invoices/next-number`);
   return response.data.number;

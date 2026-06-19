@@ -134,6 +134,11 @@ class CashPartReq(BaseModel):
     comment: str | None = None
 
 
+class KassaPayRequest(BaseModel):
+    # Доплата накладной из Кассы. amount=None → весь остаток.
+    amount: Decimal | None = Field(default=None, gt=0)
+
+
 class PaySplitRequest(BaseModel):
     bank_parts: list[BankPartReq] = Field(default_factory=list)
     cash_parts: list[CashPartReq] = Field(default_factory=list)
@@ -452,13 +457,17 @@ async def _settle_paid_from_kassa(
     invoice: SupplierInvoice,
     paid_amount: Decimal | None,
     actor_user_id: uuid.UUID | None,
+    *,
+    do_push: bool = True,
 ) -> None:
-    """Оплатить только что созданную накладную из контура Кассы: документ в iiko, списание
-    наличных с ТК Черникова (ДДС) и проводка оплаты поставщику в iiko (изъятие)."""
+    """Оплатить накладную из контура Кассы: (опц.) документ в iiko, списание наличных
+    с ТК Черникова (ДДС) и проводка оплаты поставщику в iiko (изъятие). ``do_push=False`` —
+    доплата уже существующей накладной (она была отправлена в iiko ранее)."""
     amount = paid_amount if paid_amount is not None else invoice.amount
     # 1) Документ в iiko (incomingInvoice → товар + долг). Сбой push накладную не валит.
-    with contextlib.suppress(WarehousePushError):
-        await push_invoice_to_iiko(session, invoice.id)
+    if do_push:
+        with contextlib.suppress(WarehousePushError):
+            await push_invoice_to_iiko(session, invoice.id)
     # 2) ДДС: оплата наличными со счёта ТК Черникова → статус накладной paid/partially_paid.
     wallet = await session.scalar(select(Wallet).where(Wallet.code == "tk_chernikova"))
     if wallet is None:
@@ -476,6 +485,38 @@ async def _settle_paid_from_kassa(
     #    статус пишется в raw_payload, накладную не валит.
     await post_invoice_payment_to_iiko(session, invoice, amount=amount)
     await session.commit()
+
+
+@router.post("/invoices/{invoice_id}/pay-kassa")
+async def post_pay_kassa(
+    invoice_id: uuid.UUID,
+    payload: KassaPayRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    """Доплатить уже созданную накладную из Кассы: списание с ТК Черникова + проводка
+    оплаты в iiko. Накладная отправлена в iiko ранее — push не повторяем (защита от дубля)."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    ensure_any_permission(actor, ("kassa.invoices.create", "invoices.normal.pay"))
+    if invoice.payment_status == "paid":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Накладная уже оплачена")
+    if not await counterparty_iiko_guid(session, invoice.counterparty_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Контрагент не сматчен с iiko — оплату провести нельзя",
+        )
+    try:
+        await _settle_paid_from_kassa(
+            session, invoice, payload.amount, actor.user_id, do_push=False
+        )
+    except (WarehousePaymentError, CounterpartyMatchError) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    result = await get_warehouse_invoice(session, invoice_id)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    return result
 
 
 @router.post("/invoices", status_code=status.HTTP_201_CREATED)

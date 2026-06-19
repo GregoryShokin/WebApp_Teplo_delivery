@@ -3,19 +3,23 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { usePermissions } from "@/lib/permissions";
 import { CreateChequeDialog } from "@/routes/kassa/CreateChequeDialog";
 import { CreatePaymentChooser, type PaymentKind } from "@/routes/kassa/CreatePaymentChooser";
+import { KassaInvoicesTab } from "@/routes/kassa/tabs/invoices";
 import { ShiftCloseTab } from "@/routes/kassa/tabs/shift-close";
 import { CreateInvoiceDialog } from "@/routes/warehouse/CreateInvoiceDialog";
 
 type DialogMode = "chooser" | PaymentKind | null;
+type KassaTab = "shifts" | "invoices";
 
 export function KassaRoute() {
   const permissions = usePermissions();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<DialogMode>(null);
+  const [tab, setTab] = useState<KassaTab>("shifts");
 
   const canCreateInvoice = permissions.canPerformAction("kassa.invoices.create");
   const canCreateCheque = permissions.canPerformAction("kassa.cheques.create");
@@ -42,11 +46,22 @@ export function KassaRoute() {
         }
       />
 
-      <ShiftCloseTab
-        canSync={permissions.canPerformAction("kassa.shifts.sync")}
-        canPost={permissions.canPerformAction("kassa.shifts.post")}
-        canWaive={permissions.canPerformAction("kassa.penalty.waive")}
-      />
+      <Tabs value={tab} onValueChange={(value) => setTab(value as KassaTab)}>
+        <TabsList>
+          <TabsTrigger value="shifts">Смены</TabsTrigger>
+          <TabsTrigger value="invoices">Накладные</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {tab === "shifts" ? (
+        <ShiftCloseTab
+          canSync={permissions.canPerformAction("kassa.shifts.sync")}
+          canPost={permissions.canPerformAction("kassa.shifts.post")}
+          canWaive={permissions.canPerformAction("kassa.penalty.waive")}
+        />
+      ) : null}
+
+      {tab === "invoices" ? <KassaInvoicesTab canPay={canCreateInvoice} /> : null}
 
       <CreatePaymentChooser
         open={mode === "chooser"}
