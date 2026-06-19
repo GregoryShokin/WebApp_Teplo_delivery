@@ -13,13 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
 import {
   apiErrorMessage,
   classifyOperation,
@@ -176,22 +170,11 @@ export function OperationReviewDialog({
                   key={row.key}
                   className="grid grid-cols-[minmax(0,1fr)_140px_auto] items-center gap-2"
                 >
-                  <Select
+                  <ArticleCombobox
+                    articles={articles}
                     value={row.articleId}
-                    onValueChange={(value) => updateRow(row.key, { articleId: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Статья ДДС" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Статья не выбрана</SelectItem>
-                      {articles.map((article) => (
-                        <SelectItem key={article.id} value={article.id}>
-                          {article.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onChange={(value) => updateRow(row.key, { articleId: value })}
+                  />
                   <Input
                     className="text-right tabular-nums"
                     inputMode="decimal"
