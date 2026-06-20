@@ -337,6 +337,37 @@ async def test_reverse_sync_skips_our_own_pushed_manual_invoice(
         assert only.payment_status == "paid"
 
 
+async def test_reverse_sync_skips_our_own_pushed_kassa_invoice(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Накладная из Кассы (source='kassa_invoice'), запушенная в iiko, тоже «наша» —
+    обратный синк должен узнавать её по external_id и пропускать, а не плодить iiko-клон.
+    Регресс: дедуп проверял только source='manual' → Кассо-накладные дублировались."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Наш поставщик-Касса", inn="7708888899")
+        await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="232.00",
+            number="K-OUR-1",
+            source="kassa_invoice",
+            external_id="doc-1",  # = iiko doc id assigned on push
+            payment_status="unpaid",
+        )
+        await session.commit()
+
+        result = await ingest_iiko_payables(
+            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([_doc()])
+        )
+        await session.commit()
+
+        assert result.skipped_own_pushed == 1
+        assert result.invoices_created == 0
+        assert await _count(session, SupplierInvoice) == 1
+        only = await session.scalar(select(SupplierInvoice))
+        assert only.source == "kassa_invoice"
+
+
 async def test_reverse_sync_dedupes_pushed_manual_by_number_when_external_id_null(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

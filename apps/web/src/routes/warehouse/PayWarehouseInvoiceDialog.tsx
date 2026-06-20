@@ -120,6 +120,16 @@ export function PayWarehouseInvoiceDialog({
     setEnrich(true);
   }, [invoiceId]);
 
+  // Накладную с «тратами на персонал» по умолчанию разносим: иначе персональная часть
+  // легла бы одной статьёй «Оплата поставщикам» (баг, из-за которого 7744 ушла лумпом).
+  useEffect(() => {
+    if (!detail) return;
+    const hasStaff = (detail.staff_amount ?? 0) > 0;
+    const fullyUnpaid = (detail.remaining ?? 0) + 0.005 >= (detail.amount ?? 0);
+    setSplitStaff(hasStaff && fullyUnpaid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.id]);
+
   function toggleBankOp(id: string) {
     setSelectedBankOps((prev) => {
       const next = new Set(prev);
@@ -233,6 +243,13 @@ export function PayWarehouseInvoiceDialog({
                   </span>
                 </span>
               </label>
+            ) : null}
+
+            {canSplitStaff && !splitStaff ? (
+              <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
+                ⚠️ Без разнесения персональная часть ({formatRub(staffAmount)}) ляжет статьёй
+                «Оплата поставщикам». Для трат на персонал включите разнесение выше.
+              </p>
             ) : null}
 
             {splitStaff ? (

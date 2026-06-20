@@ -41,10 +41,14 @@ from app.services.counterparty_registry import compute_invoice_due_date
 from app.services.iiko_sync import _load_source_credential_env
 
 IIKO_SOURCE = "iiko"
-# Invoices we create in our system and push INTO iiko keep source='manual' but get an
-# external_id assigned from the iiko response (warehouse_invoice_push). The reverse sync
-# must recognise them by that external_id and NOT re-create an iiko-sourced clone.
+# Invoices we create in our system and push INTO iiko get an external_id assigned from the
+# iiko response (warehouse_invoice_push). The reverse sync must recognise them by that
+# external_id and NOT re-create an iiko-sourced clone. They keep their original source —
+# 'manual' (Склад) or 'kassa_invoice' (Касса) — so BOTH must be treated as «our own pushed».
 MANUAL_SOURCE = "manual"
+KASSA_INVOICE_SOURCE = "kassa_invoice"
+# Sources of invoices authored in our system that may be pushed into iiko (round-trip guard).
+OUR_PUSHED_SOURCES = (MANUAL_SOURCE, KASSA_INVOICE_SOURCE)
 SUPPLIERS_ENDPOINT = "/suppliers"
 INVOICE_ENDPOINT = "/documents/export/incomingInvoice"
 # Outgoing invoices = goods we ship out (our AR). In this business only barter
@@ -388,12 +392,13 @@ async def _ingest_documents(
         if not external_id:
             result.skipped_no_id += 1
             continue
-        # Our own invoice pushed into iiko (source='manual'): skip so the reverse sync doesn't
-        # clone it as a second iiko obligation or clobber our fields (issued_at, staff_amount,
-        # push_doc_id, normalized lines). Primary key is external_id (= the iiko doc id). But if
-        # the post-push id lookup failed (replica lag / export error), external_id is still NULL
-        # — fall back to matching the manual row by documentNumber and BACKFILL external_id, so
-        # this branch (and all future syncs) dedupe correctly instead of creating a clone.
+        # Our own invoice pushed into iiko (source='manual' from Склад or 'kassa_invoice' from
+        # Касса): skip so the reverse sync doesn't clone it as a second iiko obligation or clobber
+        # our fields (issued_at, staff_amount, push_doc_id, normalized lines). Primary key is
+        # external_id (= the iiko doc id). But if the post-push id lookup failed (replica lag /
+        # export error), external_id is still NULL — fall back to matching by documentNumber and
+        # BACKFILL external_id, so this branch (and all future syncs) dedupe correctly. Match on
+        # BOTH our authored sources: kassa_invoice was missing here → round-trip clones.
         own_number = _text(doc, "documentNumber") or _text(doc, "transportInvoiceNumber")
         own_conditions = [SupplierInvoice.external_id == external_id]
         if own_number:
@@ -402,7 +407,7 @@ async def _ingest_documents(
             )
         own_pushed = await session.scalar(
             select(SupplierInvoice).where(
-                SupplierInvoice.source == MANUAL_SOURCE,
+                SupplierInvoice.source.in_(OUR_PUSHED_SOURCES),
                 or_(*own_conditions),
             )
         )

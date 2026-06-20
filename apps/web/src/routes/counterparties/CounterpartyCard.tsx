@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { apiErrorMessage } from "@/lib/api";
+import { InvoiceDetailDialog } from "@/routes/warehouse/InvoiceDetailDialog";
 
 import { BarterSection } from "./BarterSection";
 import {
@@ -592,17 +593,38 @@ function BarterBalanceBanner({ card }: { card: CardData }) {
 function InvoicesSection({ card }: { card: CardData }) {
   const payables = card.invoices.filter((invoice) => invoice.direction === "payable");
   const receivables = card.invoices.filter((invoice) => invoice.direction === "receivable");
+  const [detailId, setDetailId] = useState<string | null>(null);
   return (
     <Section title="Накладные">
-      <InvoiceList title={INVOICE_DIRECTION_LABELS.payable} invoices={payables} />
+      <InvoiceList
+        title={INVOICE_DIRECTION_LABELS.payable}
+        invoices={payables}
+        onSelect={setDetailId}
+      />
       {receivables.length > 0 ? (
-        <InvoiceList title={INVOICE_DIRECTION_LABELS.receivable} invoices={receivables} />
+        <InvoiceList
+          title={INVOICE_DIRECTION_LABELS.receivable}
+          invoices={receivables}
+          onSelect={setDetailId}
+        />
       ) : null}
+      <InvoiceDetailDialog
+        invoiceId={detailId}
+        onOpenChange={(open) => !open && setDetailId(null)}
+      />
     </Section>
   );
 }
 
-function InvoiceList({ title, invoices }: { title: string; invoices: CardData["invoices"] }) {
+function InvoiceList({
+  title,
+  invoices,
+  onSelect,
+}: {
+  title: string;
+  invoices: CardData["invoices"];
+  onSelect: (id: string) => void;
+}) {
   return (
     <div className="space-y-2">
       <h4 className="text-xs font-medium uppercase text-muted-foreground">{title}</h4>
@@ -611,9 +633,11 @@ function InvoiceList({ title, invoices }: { title: string; invoices: CardData["i
       ) : (
         <div className="grid gap-2">
           {invoices.slice(0, 20).map((invoice) => (
-            <div
+            <button
               key={invoice.id}
-              className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm"
+              type="button"
+              onClick={() => onSelect(invoice.id)}
+              className="flex items-center justify-between gap-2 rounded-md border p-2 text-left text-sm transition-colors hover:bg-muted/50"
             >
               <span className="min-w-0 truncate">
                 <Badge variant="outline" className="mr-2">
@@ -630,7 +654,7 @@ function InvoiceList({ title, invoices }: { title: string; invoices: CardData["i
                   barterRole={invoice.barter_role}
                 />
               </span>
-            </div>
+            </button>
           ))}
         </div>
       )}

@@ -16,6 +16,7 @@ import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { apiErrorMessage } from "@/lib/api";
 import { getInvoices, type CounterpartyInvoice } from "@/routes/counterparties/api";
 import { formatRub } from "@/routes/counterparties/shared";
+import { InvoiceDetailDialog } from "@/routes/warehouse/InvoiceDetailDialog";
 import { payInvoiceFromKassa } from "@/routes/warehouse/api";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -32,6 +33,7 @@ function formatDate(value: string | null): string {
 export function KassaInvoicesTab({ canPay }: { canPay: boolean }) {
   const queryClient = useQueryClient();
   const [payTarget, setPayTarget] = useState<CounterpartyInvoice | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
 
   const invoicesQuery = useQuery({
@@ -94,12 +96,18 @@ export function KassaInvoicesTab({ canPay }: { canPay: boolean }) {
       key: "actions",
       header: "",
       className: "text-right",
-      cell: (i) =>
-        canPay ? (
-          <Button size="sm" variant="outline" onClick={() => openPay(i)}>
-            Оплатить с ТК Черникова
+      cell: (i) => (
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setDetailId(i.id)}>
+            Детали
           </Button>
-        ) : null,
+          {canPay ? (
+            <Button size="sm" variant="outline" onClick={() => openPay(i)}>
+              Оплатить с ТК Черникова
+            </Button>
+          ) : null}
+        </div>
+      ),
     },
   ];
 
@@ -111,6 +119,11 @@ export function KassaInvoicesTab({ canPay }: { canPay: boolean }) {
         isLoading={invoicesQuery.isLoading}
         getRowKey={(i) => i.id}
         emptyMessage="Неоплаченных накладных нет"
+      />
+
+      <InvoiceDetailDialog
+        invoiceId={detailId}
+        onOpenChange={(open) => !open && setDetailId(null)}
       />
 
       <Dialog open={!!payTarget} onOpenChange={(open) => !open && setPayTarget(null)}>
