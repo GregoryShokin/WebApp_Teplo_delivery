@@ -50,13 +50,16 @@ type StoreLine = {
   unit: string | null;
   quantity: string;
   price: string;
+  // Сумма строки — UI-механизм взаиморасчёта (как в накладных): на бэк не уходит,
+  // там sum = quantity*price; при вводе суммы пересчитывается цена.
+  amount: string;
 };
 type ExpenseLine = { key: string; articleId: string; amount: string; note: string };
 
 let seq = 0;
 function emptyStoreLine(): StoreLine {
   seq += 1;
-  return { key: `s${seq}`, name: "", productId: null, unit: null, quantity: "1", price: "" };
+  return { key: `s${seq}`, name: "", productId: null, unit: null, quantity: "1", price: "", amount: "" };
 }
 function emptyExpenseLine(): ExpenseLine {
   seq += 1;
@@ -70,6 +73,7 @@ function dayLabel(issuedAt: string): string {
 }
 
 const num = (value: string) => Number(value) || 0;
+const toAmount = (n: number) => (n > 0 ? String(Math.round(n * 100) / 100) : "");
 
 type CreateChequeDialogProps = {
   open: boolean;
@@ -148,7 +152,11 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
 
   const cardTotal = selectedOp?.amount ?? 0;
   const storeTotal = useMemo(
-    () => storeLines.reduce((sum, l) => sum + num(l.quantity) * num(l.price), 0),
+    () =>
+      storeLines.reduce(
+        (sum, l) => sum + (l.amount !== "" ? num(l.amount) : num(l.quantity) * num(l.price)),
+        0,
+      ),
     [storeLines],
   );
   const expenseTotal = useMemo(
@@ -342,17 +350,18 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
 
               {storeLines.length > 0 ? (
                 <div className="mt-2 space-y-1.5">
-                  <div className="grid grid-cols-[1fr_46px_34px_64px_28px] gap-1.5 px-1 text-xs text-muted-foreground">
+                  <div className="grid grid-cols-[1fr_44px_26px_56px_64px_24px] gap-1.5 px-1 text-xs text-muted-foreground">
                     <span>Товар</span>
                     <span className="text-center">Кол-во</span>
                     <span className="text-center">Ед.</span>
                     <span className="text-right">Цена</span>
+                    <span className="text-right">Сумма</span>
                     <span />
                   </div>
                   {storeLines.map((line) => (
                     <div
                       key={line.key}
-                      className="grid grid-cols-[1fr_46px_34px_64px_28px] items-center gap-1.5"
+                      className="grid grid-cols-[1fr_44px_26px_56px_64px_24px] items-center gap-1.5"
                     >
                       <ProductSearch
                         value={line.name}
@@ -370,7 +379,12 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
                         inputMode="decimal"
                         aria-label="Количество"
                         value={line.quantity}
-                        onChange={(e) => patchStore(line.key, { quantity: e.target.value })}
+                        onChange={(e) =>
+                          patchStore(line.key, {
+                            quantity: e.target.value,
+                            amount: toAmount(num(e.target.value) * num(line.price)),
+                          })
+                        }
                       />
                       <span className="text-center text-xs text-muted-foreground">
                         {line.unit ?? "—"}
@@ -380,7 +394,26 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
                         inputMode="decimal"
                         aria-label="Цена"
                         value={line.price}
-                        onChange={(e) => patchStore(line.key, { price: e.target.value })}
+                        onChange={(e) =>
+                          patchStore(line.key, {
+                            price: e.target.value,
+                            amount: toAmount(num(e.target.value) * num(line.quantity)),
+                          })
+                        }
+                      />
+                      <Input
+                        className="h-9 px-1 text-right"
+                        inputMode="decimal"
+                        aria-label="Сумма"
+                        title="Сумма строки — цена × кол-во; при вводе суммы цена пересчитывается"
+                        value={line.amount}
+                        onChange={(e) => {
+                          const q = num(line.quantity);
+                          patchStore(line.key, {
+                            amount: e.target.value,
+                            price: q > 0 ? toAmount(num(e.target.value) / q) : line.price,
+                          });
+                        }}
                       />
                       <Button
                         size="icon"
