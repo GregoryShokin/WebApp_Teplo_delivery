@@ -6,7 +6,12 @@ from __future__ import annotations
 import asyncio
 from decimal import Decimal
 
-from cp_helpers import admin_headers, make_counterparty, make_invoice
+from cp_helpers import (
+    admin_headers,
+    make_counterparty,
+    make_expense_article,
+    make_invoice,
+)
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -139,6 +144,51 @@ def test_pay_kassa_endpoint_blocks_already_paid(
     r = client.post(f"{WH}/invoices/{inv_id}/pay-kassa", json={"amount": None}, headers=headers)
     assert r.status_code == 409
     assert "оплачена" in r.json()["detail"].lower()
+
+
+def test_pay_kassa_splits_staff_to_own_article(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession], monkeypatch
+) -> None:
+    """Касса-оплата накладной с «тратами на персонал»: ДДС получает ДВЕ статьи (товар +
+    персонал), а изъятие поставщику в iiko — ТОЛЬКО за товарную часть (персонал «не в iiko»).
+    Регресс: раньше весь итог шёл одной статьёй «Оплата поставщикам» и весь в iiko-изъятие."""
+    calls: list = []
+    _mock_iiko(monkeypatch, calls)
+
+    async def seed():
+        async with async_session_factory() as session:
+            await make_expense_article(
+                session, code="payment_to_supplier", name="Оплата поставщикам"
+            )
+            await make_expense_article(
+                session, code="supplier_staff_payment", name="Оплата поставщику (персонал)"
+            )
+            # Кошелёк ТК Черникова засеян миграцией 0115 — используем существующий.
+            cp = await make_counterparty(
+                session, name="ООО Сплит", inn="7706660000", iiko_guid="G-SPLIT"
+            )
+            inv = await make_invoice(
+                session,
+                counterparty_id=cp.id,
+                amount="399.00",
+                staff_amount="199.00",
+                number="SP-1",
+            )
+            await session.commit()
+            return inv.id
+
+    inv_id = _run(seed())
+    headers = _run(admin_headers(async_session_factory))
+    r = client.post(f"{WH}/invoices/{inv_id}/pay-kassa", json={"amount": None}, headers=headers)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["payment_status"] == "paid"
+    assert data["production_amount"] == 200.0
+    assert len(data["allocations"]) == 2  # товар + персонал на РАЗНЫХ статьях ДДС
+    # iiko-изъятие поставщику — только за товар (200), а не за весь 399.
+    assert len(calls) == 1
+    _path, body = calls[0]
+    assert body["departmentSumMap"] == {pp.CHERNIKOVA_DEPARTMENT_ID: 200.0}
 
 
 def test_kassa_invoice_source_filter(

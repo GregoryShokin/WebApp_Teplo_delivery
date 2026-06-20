@@ -467,7 +467,8 @@ async def _settle_paid_from_kassa(
     с ТК Черникова (ДДС) и проводка оплаты поставщику в iiko (изъятие). ``do_push=False`` —
     доплата уже существующей накладной (она была отправлена в iiko ранее)."""
     amount = paid_amount if paid_amount is not None else invoice.amount
-    # 1) Документ в iiko (incomingInvoice → товар + долг). Сбой push накладную не валит.
+    # 1) Документ в iiko (incomingInvoice → товар + долг). prepare_push исключает строки
+    #    «персонал» → в iiko уходит только товарная часть. Сбой push накладную не валит.
     if do_push:
         with contextlib.suppress(WarehousePushError):
             await push_invoice_to_iiko(session, invoice.id)
@@ -478,15 +479,29 @@ async def _settle_paid_from_kassa(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Кошелёк ТК Черникова не найден",
         )
+    # «Траты на персонал» — отдельная статья ДДС (не «Оплата поставщикам») и НЕ в iiko.
+    # При персональных строках полную оплату разносим на производство/персонал по статьям
+    # строк (build_staff_split_cash_parts), а изъятие поставщику в iiko проводим только за
+    # товарную часть. Без персонала (или доплата уже частично оплаченной) — одна часть.
+    staff_total = invoice.staff_amount or Decimal("0.00")
+    if staff_total > 0 and invoice.payment_status == "unpaid":
+        cash_parts = await build_staff_split_cash_parts(
+            session, invoice, wallet_id=wallet.id, operation_date=date.today()
+        )
+        iiko_amount = invoice.amount - staff_total
+    else:
+        cash_parts = [CashPart(wallet_id=wallet.id, amount=amount, operation_date=date.today())]
+        iiko_amount = amount
     await pay_invoice_split(
         session,
         invoice_id=invoice.id,
-        cash_parts=[CashPart(wallet_id=wallet.id, amount=amount, operation_date=date.today())],
+        cash_parts=cash_parts,
         actor_user_id=actor_user_id,
     )
-    # 3) iiko: проводка оплаты поставщику (изъятие из Главной кассы). Побочна —
-    #    статус пишется в raw_payload, накладную не валит.
-    await post_invoice_payment_to_iiko(session, invoice, amount=amount)
+    # 3) iiko: проводка оплаты поставщику (изъятие из Главной кассы) — ТОЛЬКО за товарную
+    #    часть (персонал «не в iiko»). Побочна — статус в raw_payload, накладную не валит.
+    if iiko_amount > 0:
+        await post_invoice_payment_to_iiko(session, invoice, amount=iiko_amount)
     await session.commit()
 
 
