@@ -368,6 +368,42 @@ async def test_reverse_sync_skips_our_own_pushed_kassa_invoice(
         assert only.source == "kassa_invoice"
 
 
+async def test_reverse_sync_shared_number_prefers_exact_external_id_match(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Несколько Кассо-накладных с ОДНИМ номером (напр. «4»): одна уже привязана к iiko-доку
+    (external_id), другая ещё нет. Синк должен дедупить по ТОЧНОМУ external_id и НЕ пытаться
+    backfill-ить занятый external_id на однономерную накладную (иначе UniqueViolation).
+    Регресс прод-инцидента после добавления kassa_invoice в OUR_PUSHED_SOURCES."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Местный закуп", inn="7706660001")
+        # Уже привязана к iiko-документу doc-1 (= _doc()).
+        await make_invoice(
+            session, counterparty_id=cp.id, amount="4636.00", number="4",
+            source="kassa_invoice", external_id="doc-1", payment_status="unpaid",
+        )
+        # Другая накладная с тем же номером «4», но без external_id (другая покупка).
+        await make_invoice(
+            session, counterparty_id=cp.id, amount="7744.51", number="4",
+            source="kassa_invoice", external_id=None, payment_status="paid",
+        )
+        await session.commit()
+
+        result = await ingest_iiko_payables(
+            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([_doc()])
+        )
+        await session.commit()
+
+        assert result.skipped_own_pushed == 1  # дедуплено по точному external_id
+        assert result.invoices_created == 0
+        assert await _count(session, SupplierInvoice) == 2  # ничего не создано/не сломано
+        # external_id занятой накладной НЕ перенесён на однономерную (она осталась NULL).
+        other = await session.scalar(
+            select(SupplierInvoice).where(SupplierInvoice.amount == 7744.51)
+        )
+        assert other.external_id is None
+
+
 async def test_reverse_sync_dedupes_pushed_manual_by_number_when_external_id_null(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

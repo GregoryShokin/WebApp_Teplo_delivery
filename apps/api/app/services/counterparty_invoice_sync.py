@@ -22,7 +22,7 @@ from pathlib import Path
 from types import ModuleType
 
 import anyio
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -399,21 +399,34 @@ async def _ingest_documents(
         # export error), external_id is still NULL — fall back to matching by documentNumber and
         # BACKFILL external_id, so this branch (and all future syncs) dedupe correctly. Match on
         # BOTH our authored sources: kassa_invoice was missing here → round-trip clones.
-        own_number = _text(doc, "documentNumber") or _text(doc, "transportInvoiceNumber")
-        own_conditions = [SupplierInvoice.external_id == external_id]
-        if own_number:
-            own_conditions.append(
-                and_(SupplierInvoice.external_id.is_(None), SupplierInvoice.number == own_number)
-            )
+        # 1) Точное совпадение по external_id — наша уже привязанная к этому iiko-документу
+        #    накладная. Приоритет именно ему: иначе fallback по номеру мог бы зацепить ДРУГУЮ
+        #    нашу накладную с тем же номером (у Кассо-накладных номер часто общий, напр. «4»).
         own_pushed = await session.scalar(
             select(SupplierInvoice).where(
                 SupplierInvoice.source.in_(OUR_PUSHED_SOURCES),
-                or_(*own_conditions),
+                SupplierInvoice.external_id == external_id,
             )
         )
-        if own_pushed is not None:
-            if own_pushed.external_id is None:
+        # 2) Fallback: пуш прошёл, но обратный id-lookup не сработал (external_id ещё NULL) —
+        #    узнаём накладную по documentNumber и BACKFILL-им external_id. ТОЛЬКО если такой
+        #    кандидат РОВНО один — при общих номерах гадать нельзя (иначе backfill занятого
+        #    external_id → UniqueViolation), пропускаем и оставляем как есть.
+        own_number = _text(doc, "documentNumber") or _text(doc, "transportInvoiceNumber")
+        if own_pushed is None and own_number:
+            candidates = (
+                await session.scalars(
+                    select(SupplierInvoice).where(
+                        SupplierInvoice.source.in_(OUR_PUSHED_SOURCES),
+                        SupplierInvoice.external_id.is_(None),
+                        SupplierInvoice.number == own_number,
+                    )
+                )
+            ).all()
+            if len(candidates) == 1:
+                own_pushed = candidates[0]
                 own_pushed.external_id = external_id
+        if own_pushed is not None:
             result.skipped_own_pushed += 1
             continue
         supplier_guid = _text(doc, counterparty_field)
