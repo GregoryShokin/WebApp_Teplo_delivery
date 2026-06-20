@@ -192,6 +192,7 @@ async def list_invoices(
     in_draft: bool | None = None,
     direction: str | None = None,
     relationship: str | None = None,
+    source: str | None = None,
 ) -> list[InvoiceItem]:
     query = (
         select(SupplierInvoice, Counterparty.name, CounterpartyPayableProfile.ledger_category_id)
@@ -206,6 +207,8 @@ async def list_invoices(
         query = query.where(SupplierInvoice.payment_status.in_(tuple(statuses)))
     if direction is not None:
         query = query.where(SupplierInvoice.direction == direction)
+    if source is not None:
+        query = query.where(SupplierInvoice.source == source)
     if counterparty_id is not None:
         query = query.where(SupplierInvoice.counterparty_id == counterparty_id)
     if category_id is not None:
@@ -779,6 +782,7 @@ async def create_counterparty(
     name: str,
     inn: str | None,
     cp_type: str,
+    relationship: str = "official",
     internal_name: str | None = None,
     ledger_category_id: uuid.UUID | None = None,
     brand_group: str | None = None,
@@ -802,6 +806,7 @@ async def create_counterparty(
     session.add(
         CounterpartyPayableProfile(
             counterparty_id=counterparty.id,
+            relationship=relationship,
             internal_name=internal_name,
             ledger_category_id=ledger_category_id,
             brand_group=brand_group,

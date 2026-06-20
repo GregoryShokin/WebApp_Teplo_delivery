@@ -100,6 +100,9 @@ class InvoiceCreate(BaseModel):
     # paid_amount=None → полная сумма накладной (можно указать меньше для частичной оплаты).
     mark_paid: bool = False
     paid_amount: Decimal | None = Field(default=None, gt=0)
+    # Накладная создана через страницу Касса → помечается source="kassa_invoice"
+    # (вкладка «Накладные» Кассы показывает только такие; на Складе видны все).
+    via_kassa: bool = False
 
 
 class ReturnLineCreate(BaseModel):
@@ -563,6 +566,7 @@ async def post_invoice(
                 for line in payload.lines
             ],
             actor_user_id=actor.user_id,
+            source="kassa_invoice" if payload.via_kassa else "manual",
         )
     except WarehouseInvoiceError as exc:
         raise HTTPException(

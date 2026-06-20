@@ -134,6 +134,7 @@ export async function getInvoices(params?: {
   in_draft?: boolean;
   direction?: string;
   relationship?: string;
+  source?: string;
 }): Promise<CounterpartyInvoice[]> {
   const response = await api.get<CounterpartyInvoice[]>(`${BASE}/invoices`, { params });
   return response.data;
@@ -224,6 +225,7 @@ export type CounterpartyCreatePayload = {
   name: string;
   inn?: string | null;
   type?: string;
+  relationship?: string;
   internal_name?: string | null;
   ledger_category_id?: string | null;
   brand_group?: string | null;

@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -253,6 +253,8 @@ class CounterpartyCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     inn: str | None = Field(default=None, max_length=12)
     type: str = "legal_entity"
+    # Канал оплаты: official (банк) / informal (карта-нал) / barter (зачёт по сальдо).
+    relationship: Literal["official", "informal", "barter"] = "official"
     internal_name: str | None = Field(default=None, max_length=255)
     ledger_category_id: uuid.UUID | None = None
     brand_group: str | None = Field(default=None, max_length=160)
@@ -369,7 +371,7 @@ async def put_category(
 # --- invoices inbox -----------------------------------------------------------
 
 
-@router.get("/invoices", response_model=list[InvoiceRead], dependencies=READ)
+@router.get("/invoices", response_model=list[InvoiceRead], dependencies=INVOICE_REFS)
 async def get_invoices(
     session: Annotated[AsyncSession, Depends(get_session)],
     status_filter: Annotated[str | None, Query(alias="status")] = "unpaid,partially_paid",
@@ -378,6 +380,7 @@ async def get_invoices(
     in_draft: bool | None = None,
     direction: str = "payable",
     relationship: str | None = None,
+    source: str | None = None,
 ) -> list[InvoiceRead]:
     statuses = (
         tuple(part.strip() for part in status_filter.split(",") if part.strip())
@@ -392,6 +395,7 @@ async def get_invoices(
         in_draft=in_draft,
         direction=direction or None,
         relationship=relationship,
+        source=source,
     )
     return [InvoiceRead.model_validate(item) for item in items]
 
@@ -557,6 +561,7 @@ async def post_counterparty(
             name=payload.name,
             inn=payload.inn,
             cp_type=payload.type,
+            relationship=payload.relationship,
             internal_name=payload.internal_name,
             ledger_category_id=payload.ledger_category_id,
             brand_group=payload.brand_group,

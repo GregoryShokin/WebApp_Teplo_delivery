@@ -36,7 +36,12 @@ export function KassaInvoicesTab({ canPay }: { canPay: boolean }) {
 
   const invoicesQuery = useQuery({
     queryKey: ["kassa", "invoices", "unpaid"],
-    queryFn: () => getInvoices({ status: "unpaid,partially_paid", direction: "payable" }),
+    queryFn: () =>
+      getInvoices({
+        status: "unpaid,partially_paid",
+        direction: "payable",
+        source: "kassa_invoice",
+      }),
   });
 
   const payMutation = useMutation({

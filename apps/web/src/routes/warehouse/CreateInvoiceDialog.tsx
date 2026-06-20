@@ -164,6 +164,7 @@ export function CreateInvoiceDialog({
         mode: isBarter ? "loan" : "normal",
         we_lend: weLend,
         number: number || null,
+        via_kassa: kassaOnly,
         ...(kassaOnly && markPaid && !isBarter
           ? { mark_paid: true, paid_amount: paidAmount ? num(paidAmount) : null }
           : {}),

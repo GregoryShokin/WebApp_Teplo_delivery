@@ -77,6 +77,8 @@ export type CreateInvoicePayload = {
   // Касса: создать сразу оплаченной (списание с ТК Черникова + проводка в iiko).
   mark_paid?: boolean;
   paid_amount?: number | null;
+  // Создано через страницу Касса → source="kassa_invoice" (вкладка «Накладные» Кассы).
+  via_kassa?: boolean;
 };
 
 export async function getProducts(params?: {

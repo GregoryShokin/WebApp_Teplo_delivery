@@ -134,6 +134,7 @@ async def create_warehouse_invoice(
     due_date: date | None = None,
     store_guid: str | None = None,
     actor_user_id: uuid.UUID | None = None,
+    source: str = "manual",
 ) -> SupplierInvoice:
     if not lines:
         raise WarehouseInvoiceError("Добавьте хотя бы одну строку накладной")
@@ -161,7 +162,7 @@ async def create_warehouse_invoice(
 
     invoice = SupplierInvoice(
         counterparty_id=counterparty_id,
-        source="manual",
+        source=source,
         direction=direction,
         barter_role=barter_role,
         barter_return_status=barter_return_status,
