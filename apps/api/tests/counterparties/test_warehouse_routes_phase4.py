@@ -200,3 +200,49 @@ def test_kassa_invoice_idempotent_on_duplicate_number(
     second = client.post(f"{BASE}/invoices", json=payload, headers=headers)
     assert second.status_code == 409, second.text
     assert "уже создана" in second.json()["detail"]
+
+
+def test_edit_invoice_lines_recomputes_totals(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """PUT /invoices/{id}: правка позиций неоплаченной накладной пересчитывает суммы и
+    разделяет товар/персонал; статус отправки в iiko сбрасывается на not_pushed."""
+    headers = _admin(async_session_factory)
+
+    async def _cp() -> uuid.UUID:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="Поставщик-правка")
+            await session.commit()
+            return cp.id
+
+    cp_id = _run(_cp())
+    create = client.post(
+        f"{BASE}/invoices",
+        json={
+            "counterparty_id": str(cp_id),
+            "issued_at": ISSUED.isoformat(),
+            "number": "ED-1",
+            "lines": [{"name": "Старое", "quantity": 1, "price": 100}],
+        },
+        headers=headers,
+    )
+    assert create.status_code == 201, create.text
+    inv_id = create.json()["id"]
+
+    edited = client.put(
+        f"{BASE}/invoices/{inv_id}",
+        json={
+            "lines": [
+                {"name": "Молоко", "quantity": 2, "price": 50},
+                {"name": "Питание", "quantity": 1, "price": 300, "is_staff": True},
+            ]
+        },
+        headers=headers,
+    )
+    assert edited.status_code == 200, edited.text
+    data = edited.json()
+    assert data["amount"] == 400.0  # 2*50 + 300
+    assert data["staff_amount"] == 300.0
+    assert data["production_amount"] == 100.0
+    assert data["iiko_push_status"] == "not_pushed"
+    assert sorted(line["name"] for line in data["lines"]) == ["Молоко", "Питание"]

@@ -53,6 +53,7 @@ from app.services.warehouse_invoices import (
     list_staff_articles,
     list_warehouse_invoices,
     next_invoice_number,
+    update_warehouse_invoice,
 )
 from app.services.warehouse_payments import (
     BankPart,
@@ -103,6 +104,13 @@ class InvoiceCreate(BaseModel):
     # Накладная создана через страницу Касса → помечается source="kassa_invoice"
     # (вкладка «Накладные» Кассы показывает только такие; на Складе видны все).
     via_kassa: bool = False
+
+
+class InvoiceUpdate(BaseModel):
+    # Правка позиций неоплаченной накладной (товар + персонал). Контрагент/режим не меняем.
+    lines: list[LineCreate] = Field(min_length=1)
+    issued_at: datetime | None = None
+    number: str | None = None
 
 
 class ReturnLineCreate(BaseModel):
@@ -605,5 +613,48 @@ async def post_invoice(
     if payload.mark_paid and payload.mode != "loan":
         await _settle_paid_from_kassa(session, invoice, payload.paid_amount, actor.user_id)
     result = await get_warehouse_invoice(session, invoice.id)
+    assert result is not None
+    return result
+
+
+@router.put("/invoices/{invoice_id}")
+async def put_invoice(
+    invoice_id: uuid.UUID,
+    payload: InvoiceUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    """Правка позиций неоплаченной (не бартерной) накладной — «переделать и отправить в iiko».
+    Контрагент и режим не меняются; пересчитываются суммы/персонал и сбрасывается статус
+    отправки в iiko, чтобы исправленную накладную можно было запушить."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    kind = await invoice_permission_kind(session, invoice)
+    ensure_any_permission(actor, (f"invoices.{kind}.edit", "kassa.invoices.create"))
+    try:
+        await update_warehouse_invoice(
+            session,
+            invoice,
+            lines=[
+                LineInput(
+                    name=line.name,
+                    quantity=line.quantity,
+                    price=line.price,
+                    iiko_product_id=line.iiko_product_id,
+                    vat_percent=line.vat_percent,
+                    is_staff=line.is_staff,
+                    dds_article_id=line.dds_article_id,
+                )
+                for line in payload.lines
+            ],
+            issued_at=payload.issued_at,
+            number=payload.number,
+        )
+    except WarehouseInvoiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    result = await get_warehouse_invoice(session, invoice_id)
     assert result is not None
     return result

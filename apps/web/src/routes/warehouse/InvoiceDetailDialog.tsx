@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Send } from "lucide-react";
+import { LoaderCircle, Pencil, Send } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,7 @@ import { apiErrorMessage } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { formatRub } from "@/routes/counterparties/shared";
 
+import { InvoiceEditDialog } from "./InvoiceEditDialog";
 import { getWarehouseInvoice, pushInvoiceToIiko } from "./api";
 
 /** Статус отправки накладной в iiko: подпись, цвет, нужна ли кнопка «Отправить». */
@@ -34,7 +36,12 @@ export function InvoiceDetailDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
-  const canPush = usePermissions().canPerformAction("counterparties.operate");
+  const permissions = usePermissions();
+  const canPush = permissions.canPerformAction("counterparties.operate");
+  const canEdit =
+    permissions.canPerformAction("invoices.normal.edit") ||
+    permissions.canPerformAction("kassa.invoices.create");
+  const [editing, setEditing] = useState(false);
   const open = Boolean(invoiceId);
 
   const detailQuery = useQuery({
@@ -60,11 +67,16 @@ export function InvoiceDetailDialog({
   const hasStaff = (detail?.staff_amount ?? 0) > 0;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Накладная {detail?.number ? `№${detail.number}` : ""}</DialogTitle>
-        </DialogHeader>
+    <>
+      <InvoiceEditDialog
+        invoiceId={editing ? invoiceId : null}
+        onOpenChange={(o) => !o && setEditing(false)}
+      />
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Накладная {detail?.number ? `№${detail.number}` : ""}</DialogTitle>
+          </DialogHeader>
 
         {detailQuery.isLoading || !detail ? (
           <div className="flex justify-center py-8 text-muted-foreground">
@@ -84,6 +96,14 @@ export function InvoiceDetailDialog({
                 </span>
               ) : null}
             </div>
+
+            {canEdit && detail.payment_status === "unpaid" && !detail.barter_role ? (
+              <div>
+                <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+                  <Pencil size={14} aria-hidden="true" /> Редактировать позиции
+                </Button>
+              </div>
+            ) : null}
 
             {/* Статус в iiko + переотправка */}
             <div className="flex flex-wrap items-center gap-2 rounded-md border p-3">
@@ -176,7 +196,8 @@ export function InvoiceDetailDialog({
             </div>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

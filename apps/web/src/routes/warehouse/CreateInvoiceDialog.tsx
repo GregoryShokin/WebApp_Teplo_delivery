@@ -39,7 +39,7 @@ import {
   type WarehouseProduct,
 } from "./api";
 
-type DraftLine = {
+export type DraftLine = {
   key: string;
   product_id: string | null;
   name: string;
@@ -50,9 +50,9 @@ type DraftLine = {
   amount: string;
 };
 
-type StaffLine = { key: string; articleId: string; note: string; amount: string };
+export type StaffLine = { key: string; articleId: string; note: string; amount: string };
 
-function emptyLine(): DraftLine {
+export function emptyLine(): DraftLine {
   return {
     key: Math.random().toString(36).slice(2),
     product_id: null,
@@ -65,11 +65,11 @@ function emptyLine(): DraftLine {
   };
 }
 
-function emptyStaffLine(): StaffLine {
+export function emptyStaffLine(): StaffLine {
   return { key: Math.random().toString(36).slice(2), articleId: "", note: "", amount: "" };
 }
 
-const num = (v: string) => Math.max(0, Number(v) || 0);
+export const num = (v: string) => Math.max(0, Number(v) || 0);
 // Число → строка суммы/цены без хвостовых нулей (пустая строка для нуля).
 const toAmount = (n: number) => (n > 0 ? String(Math.round(n * 100) / 100) : "");
 
@@ -730,7 +730,7 @@ function ReturnForm({ onDone }: { onDone: () => void }) {
   );
 }
 
-function LineRow({
+export function LineRow({
   line,
   barter,
   products,
@@ -815,7 +815,7 @@ function LineRow({
   );
 }
 
-function StaffLineRow({
+export function StaffLineRow({
   line,
   articles,
   onChange,

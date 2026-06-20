@@ -19,7 +19,7 @@ from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -236,6 +236,104 @@ async def create_warehouse_invoice(
     return invoice
 
 
+async def update_warehouse_invoice(
+    session: AsyncSession,
+    invoice: SupplierInvoice,
+    *,
+    lines: Sequence[LineInput],
+    issued_at: datetime | None = None,
+    number: str | None = None,
+) -> SupplierInvoice:
+    """Replace an invoice's lines and recompute totals. Only for UNPAID, non-barter invoices
+    (paid allocations are tied to the amount; barter has its own loan/return ledger). The lines
+    are rebuilt exactly like ``create_warehouse_invoice``. iiko push state is reset to
+    ``not_pushed`` (so a corrected invoice can be pushed) UNLESS it was already pushed — then
+    ``external_id`` is kept so the round-trip dedup still recognises it (the stale iiko document
+    is the owner's to delete + re-push)."""
+    if not lines:
+        raise WarehouseInvoiceError("Добавьте хотя бы одну строку накладной")
+    if invoice.barter_role is not None:
+        raise WarehouseInvoiceError("Бартерную накладную редактировать нельзя")
+    if invoice.payment_status != "unpaid":
+        raise WarehouseInvoiceError("Редактировать можно только неоплаченную накладную")
+
+    product_ids = [line.iiko_product_id for line in lines if line.iiko_product_id]
+    products: dict[uuid.UUID, IikoProduct] = {}
+    if product_ids:
+        rows = (
+            await session.scalars(select(IikoProduct).where(IikoProduct.id.in_(product_ids)))
+        ).all()
+        products = {product.id: product for product in rows}
+
+    await session.execute(
+        delete(InvoiceLineItem).where(InvoiceLineItem.invoice_id == invoice.id)
+    )
+
+    total = Decimal("0.00")
+    staff_total = Decimal("0.00")
+    vat_total = Decimal("0.00")
+    mirror: list[dict[str, Any]] = []
+    for index, line in enumerate(lines):
+        product = products.get(line.iiko_product_id) if line.iiko_product_id else None
+        quantity = _qty(line.quantity)
+        price = _money(line.price)
+        line_sum = _money(quantity * price)
+        vat_sum: Decimal | None = None
+        if line.vat_percent:
+            rate = Decimal(str(line.vat_percent))
+            vat_sum = _money(line_sum * rate / (Decimal("100") + rate))
+            vat_total += vat_sum
+        item_name = line.name or (product.name if product else "Позиция")
+        session.add(
+            InvoiceLineItem(
+                invoice_id=invoice.id,
+                iiko_product_id=line.iiko_product_id,
+                product_guid=product.iiko_id if product else None,
+                name=item_name,
+                article=product.code if product else None,
+                unit=product.unit if product else None,
+                quantity=quantity,
+                price=price,
+                sum=line_sum,
+                vat_percent=Decimal(str(line.vat_percent)) if line.vat_percent else None,
+                vat_sum=vat_sum,
+                is_staff=line.is_staff,
+                dds_article_id=line.dds_article_id if line.is_staff else None,
+                sort_order=index,
+            )
+        )
+        total += line_sum
+        if line.is_staff:
+            staff_total += line_sum
+        mirror.append(
+            {
+                "product_id": product.iiko_id if product else None,
+                "article": product.code if product else None,
+                "name": item_name,
+                "quantity": str(quantity),
+                "amount": str(line_sum),
+            }
+        )
+
+    invoice.amount = _money(total)
+    invoice.staff_amount = _money(staff_total)
+    invoice.vat_total = _money(vat_total)
+    invoice.line_items = mirror
+    if issued_at is not None:
+        invoice.issued_at = issued_at
+        invoice.invoice_date = issued_at.date()
+    if number is not None:
+        invoice.number = number
+    # Корректированную накладную снова можно отправить в iiko. Уже запушенную не трогаем
+    # (external_id держит связь для dedup; устаревший iiko-документ владелец правит сам).
+    if invoice.iiko_push_status != "pushed":
+        invoice.iiko_push_status = "not_pushed"
+        invoice.iiko_push_error = None
+    await session.commit()
+    await session.refresh(invoice)
+    return invoice
+
+
 async def list_warehouse_invoices(
     session: AsyncSession,
     *,
@@ -342,6 +440,9 @@ async def get_warehouse_invoice(
             "sum": float(_money(line.sum)),
             "vat_percent": float(line.vat_percent) if line.vat_percent is not None else None,
             "is_staff": line.is_staff,
+            # Для редактирования: сохранить связь с номенклатурой iiko и статьёй персонала.
+            "iiko_product_id": str(line.iiko_product_id) if line.iiko_product_id else None,
+            "dds_article_id": str(line.dds_article_id) if line.dds_article_id else None,
         }
         for line in lines
     ]

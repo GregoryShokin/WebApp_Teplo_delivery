@@ -27,6 +27,7 @@ export type WarehouseInvoiceSummary = {
   remaining: number;
   payment_status: string;
   iiko_push_status: string;
+  barter_role: string | null;
 };
 
 export type WarehouseInvoiceLine = {
@@ -39,6 +40,8 @@ export type WarehouseInvoiceLine = {
   sum: number;
   vat_percent: number | null;
   is_staff: boolean;
+  iiko_product_id: string | null;
+  dds_article_id: string | null;
 };
 
 export type InvoiceAllocation = {
@@ -119,6 +122,20 @@ export async function createWarehouseInvoice(
   payload: CreateInvoicePayload,
 ): Promise<WarehouseInvoiceDetail> {
   const response = await api.post<WarehouseInvoiceDetail>(`${BASE}/invoices`, payload);
+  return response.data;
+}
+
+export type UpdateInvoicePayload = {
+  lines: LinePayload[];
+  issued_at?: string;
+  number?: string | null;
+};
+
+export async function updateWarehouseInvoice(
+  id: string,
+  payload: UpdateInvoicePayload,
+): Promise<WarehouseInvoiceDetail> {
+  const response = await api.put<WarehouseInvoiceDetail>(`${BASE}/invoices/${id}`, payload);
   return response.data;
 }
 
