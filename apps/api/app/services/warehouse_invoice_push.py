@@ -279,6 +279,25 @@ def _fetch_iiko_doc_id(
     return None
 
 
+async def _external_id_owner(
+    session: AsyncSession, *, source: str, external_id: str, exclude_id: uuid.UUID
+) -> uuid.UUID | None:
+    """Id of another invoice already holding ``(source, external_id)``, if any.
+
+    iiko dedupes documents by ``documentNumber`` + partner, so two of OUR invoices that map
+    to the SAME iiko document resolve to the same id — claiming it on the second one would
+    violate ``uq_supplier_invoice_source_external`` and raise ``IntegrityError`` (→ HTTP 500,
+    while the invoice row is already committed → duplicate). We detect it instead and keep the
+    push non-fatal."""
+    return await session.scalar(
+        select(SupplierInvoice.id).where(
+            SupplierInvoice.source == source,
+            SupplierInvoice.external_id == external_id,
+            SupplierInvoice.id != exclude_id,
+        )
+    )
+
+
 async def push_invoice_to_iiko(session: AsyncSession, invoice_id: uuid.UUID) -> SupplierInvoice:
     """Send the invoice to iiko (REAL document). Updates push status; never raises on
     iiko errors — the invoice is kept with ``failed``/``skipped`` status instead."""
@@ -338,7 +357,9 @@ async def push_invoice_to_iiko(session: AsyncSession, invoice_id: uuid.UUID) -> 
         err = result.error or ""
         if "processed" in err.lower() or "deleted document" in err.lower():
             existing_id = await _resolve_id()
-            if existing_id:
+            if existing_id and not await _external_id_owner(
+                session, source=invoice.source, external_id=existing_id, exclude_id=invoice.id
+            ):
                 invoice.external_id = existing_id
                 invoice.iiko_push_status = "pushed"
                 invoice.iiko_pushed_at = datetime.now(UTC)
@@ -351,7 +372,20 @@ async def push_invoice_to_iiko(session: AsyncSession, invoice_id: uuid.UUID) -> 
         return invoice
 
     # Accepted. The reply carries no id — read the real iiko id back via export by number.
-    invoice.external_id = await _resolve_id() or invoice.external_id
+    resolved = await _resolve_id()
+    if resolved and await _external_id_owner(
+        session, source=invoice.source, external_id=resolved, exclude_id=invoice.id
+    ):
+        # Another local invoice already maps to this iiko document → this one is a duplicate.
+        # Claiming its id would violate the unique constraint (HTTP 500). Record it instead.
+        invoice.iiko_push_status = "failed"
+        invoice.iiko_push_error = (
+            f"iiko уже содержит документ №{invoice.number or '—'} "
+            "(привязан к другой накладной — вероятный дубль)"
+        )[:500]
+        await session.commit()
+        return invoice
+    invoice.external_id = resolved or invoice.external_id
     invoice.iiko_push_status = "pushed"
     invoice.iiko_pushed_at = datetime.now(UTC)
     invoice.iiko_push_error = None

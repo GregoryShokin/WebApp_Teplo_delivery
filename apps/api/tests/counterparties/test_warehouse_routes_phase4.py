@@ -169,3 +169,34 @@ def test_pay_split_staff_books_two_articles(
     assert data["payment_status"] == "paid"
     assert data["production_amount"] == 800.0
     assert len(data["allocations"]) == 2  # production + персонал on separate DDS articles
+
+
+def test_kassa_invoice_idempotent_on_duplicate_number(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Повторное «Создать» с тем же номером к тому же контрагенту из Кассы → 409, не дубль.
+
+    Защита от каскада дублей: фронт держит номер после ошибки/двойного клика, а iiko дедупит
+    документы по номеру → второй пуш ловил коллизию external_id и валился в 500 (накладная
+    уже закоммичена). Здесь второй POST должен отбиться до создания строки."""
+    headers = _admin(async_session_factory)
+
+    async def _cp() -> uuid.UUID:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="Поставщик-дубль")
+            await session.commit()
+            return cp.id
+
+    cp_id = _run(_cp())
+    payload = {
+        "counterparty_id": str(cp_id),
+        "issued_at": ISSUED.isoformat(),
+        "number": "К-777",
+        "via_kassa": True,
+        "lines": [{"name": "Молоко", "quantity": 2, "price": 50}],
+    }
+    first = client.post(f"{BASE}/invoices", json=payload, headers=headers)
+    assert first.status_code == 201, first.text
+    second = client.post(f"{BASE}/invoices", json=payload, headers=headers)
+    assert second.status_code == 409, second.text
+    assert "уже создана" in second.json()["detail"]
