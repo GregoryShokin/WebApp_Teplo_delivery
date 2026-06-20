@@ -67,6 +67,9 @@ counterparty_invoice_source_enum = Enum(
     # kassa_cheque = чек со страницы «Касса»: уже оплаченная картой покупка,
     # хранится в supplier_invoice как paid-накладная (см. модуль «Касса»).
     "kassa_cheque",
+    # kassa_invoice = накладная, созданная вручную на странице «Касса» (вкладка
+    # «Накладные» Кассы фильтрует по нему; в «Управлении складом» видны все).
+    "kassa_invoice",
     name="counterparty_invoice_source",
 )
 counterparty_invoice_status_enum = Enum(

@@ -10,6 +10,7 @@ from cp_helpers import admin_headers, make_counterparty, make_invoice
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.services.counterparty_registry import list_invoices
 from app.services.kassa import invoice_paid_push as pp
 
 WH = "/api/v1/warehouse"
@@ -138,3 +139,33 @@ def test_pay_kassa_endpoint_blocks_already_paid(
     r = client.post(f"{WH}/invoices/{inv_id}/pay-kassa", json={"amount": None}, headers=headers)
     assert r.status_code == 409
     assert "оплачена" in r.json()["detail"].lower()
+
+
+def test_kassa_invoice_source_filter(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """source='kassa_invoice' принимается enum-ом, фильтр list_invoices его выделяет."""
+
+    async def scenario():
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="ООО Кассо-Ист", inn="7705559999")
+            await make_invoice(
+                session,
+                counterparty_id=cp.id,
+                amount="100.00",
+                source="kassa_invoice",
+                number="K-1",
+            )
+            await make_invoice(
+                session, counterparty_id=cp.id, amount="200.00", source="manual", number="M-1"
+            )
+            await session.commit()
+            kassa = await list_invoices(
+                session, source="kassa_invoice", direction="payable", counterparty_id=cp.id
+            )
+            both = await list_invoices(session, direction="payable", counterparty_id=cp.id)
+            return sorted(i.number for i in kassa), sorted(i.number for i in both)
+
+    kassa_nums, both_nums = _run(scenario())
+    assert kassa_nums == ["K-1"]  # вкладка Кассы — только kassa_invoice
+    assert both_nums == ["K-1", "M-1"]  # Склад — обе
