@@ -29,7 +29,7 @@ import {
   PaginationControls,
   ProviderBadge,
   compactText,
-  formatDate,
+  formatDateTime,
   formatDdsMoney,
   isoDateDaysAgo,
   toIsoDate,
@@ -81,9 +81,9 @@ export function LedgerTab() {
   const columns: Array<DataTableColumn<JournalRow>> = [
     {
       key: "date",
-      header: "Дата",
-      cell: (row) => formatDate(row.operation_date),
-      className: "whitespace-nowrap",
+      header: "Дата и время",
+      cell: (row) => formatDateTime(row.occurred_at),
+      className: "whitespace-nowrap tabular-nums",
     },
     {
       key: "source",

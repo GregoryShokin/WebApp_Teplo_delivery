@@ -323,6 +323,7 @@ class JournalRow(BaseModel):
     bank_operation_id: uuid.UUID | None = None
     status: str  # "classified" | "needs_review"
     operation_date: date
+    occurred_at: datetime  # business day + real time-of-day (Moscow), drives sort order
     direction: str
     amount: str
     article_id: uuid.UUID | None = None

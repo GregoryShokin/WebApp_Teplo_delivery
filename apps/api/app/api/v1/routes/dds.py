@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
@@ -61,6 +62,7 @@ from app.services.banking.credentials import set_credential
 from app.services.banking.transfer_matching import find_and_link_transfer_pairs
 
 router = APIRouter()
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 DDS_READ_ACCESS = (Depends(require_permission("finance.cashflow.read")),)
 DDS_EDIT_ACCESS = (Depends(require_permission("finance.cashflow.edit")),)
 DDS_RULES_MANAGE_ACCESS = (Depends(require_permission("finance.classification_rules.manage")),)
@@ -190,10 +192,32 @@ async def list_journal(
 
     rows: list[dict[str, object]] = []
     if status in ("all", "marked"):
-        cashflow_rows = await session.scalars(
-            select(CashflowTransaction).where(*cf_conditions)
-        )
-        for cf in cashflow_rows.all():
+        cashflow_list = (
+            await session.scalars(select(CashflowTransaction).where(*cf_conditions))
+        ).all()
+        # Cashflow classified out of a bank operation inherits that operation's
+        # exact ``posted_at`` so it sorts by real banking time, not by the moment
+        # it happened to be classified. One lookup avoids an N+1.
+        bank_source_ids = {
+            cf.source_id
+            for cf in cashflow_list
+            if cf.source_kind == "bank_operation" and cf.source_id is not None
+        }
+        posted_at_by_op: dict[UUID, datetime | None] = {}
+        if bank_source_ids:
+            posted_at_by_op = dict(
+                (
+                    await session.execute(
+                        select(BankOperation.id, BankOperation.posted_at).where(
+                            BankOperation.id.in_(bank_source_ids)
+                        )
+                    )
+                ).all()
+            )
+        for cf in cashflow_list:
+            time_source = cf.created_at
+            if cf.source_kind == "bank_operation" and cf.source_id is not None:
+                time_source = posted_at_by_op.get(cf.source_id) or cf.created_at
             rows.append(
                 {
                     "kind": "cashflow",
@@ -203,6 +227,7 @@ async def list_journal(
                     else None,
                     "status": "classified",
                     "operation_date": cf.operation_date,
+                    "occurred_at": _journal_occurred_at(cf.operation_date, time_source),
                     "direction": cf.direction,
                     "amount": _money(cf.amount),
                     "article_id": cf.article_id,
@@ -224,6 +249,7 @@ async def list_journal(
                     "bank_operation_id": op.id,
                     "status": "needs_review",
                     "operation_date": op.operation_date,
+                    "occurred_at": _journal_occurred_at(op.operation_date, op.posted_at),
                     "direction": op.direction,
                     "amount": _money(op.amount),
                     "article_id": None,
@@ -236,7 +262,7 @@ async def list_journal(
                 }
             )
 
-    rows.sort(key=lambda row: (row["operation_date"], row["amount"]), reverse=True)
+    rows.sort(key=lambda row: (row["occurred_at"], row["amount"]), reverse=True)
     total = len(rows)
     return {
         "items": rows[offset : offset + limit],
@@ -1018,6 +1044,22 @@ def _credential_payload(credential: SourceCredential) -> dict[str, object]:
         "created_at": credential.created_at,
         "updated_at": credential.updated_at,
     }
+
+
+def _journal_occurred_at(operation_date: date, time_source: datetime | None) -> datetime:
+    """Sortable/displayable timestamp for a journal row, in Moscow time.
+
+    The DAY always comes from ``operation_date`` (the business date the row is
+    filed under), so a row never drifts out of its day. The TIME-OF-DAY comes
+    from the best real signal available — the bank ``posted_at`` for bank-backed
+    movements, or the cashflow ``created_at`` for everything booked by hand. When
+    there is no time signal at all the row sits at midnight. This is what lets the
+    journal order same-day operations chronologically instead of by amount.
+    """
+    if time_source is None:
+        return datetime.combine(operation_date, time(0, 0), tzinfo=MOSCOW_TZ)
+    local = time_source.astimezone(MOSCOW_TZ)
+    return datetime.combine(operation_date, local.timetz())
 
 
 def _money(value: Decimal | int | None) -> str:

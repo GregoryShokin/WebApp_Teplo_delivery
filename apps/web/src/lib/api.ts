@@ -2488,6 +2488,7 @@ export type JournalRow = {
   bank_operation_id: string | null;
   status: string;
   operation_date: string;
+  occurred_at: string;
   direction: string;
   amount: string;
   article_id: string | null;
