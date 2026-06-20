@@ -57,7 +57,15 @@ export function AccountsTab() {
                     <div className="truncate font-medium">{account.name}</div>
                     <div className="text-xs text-muted-foreground">{accountGroupLabel(account)}</div>
                   </div>
-                  <div className="tabular-nums">{formatDdsMoney(account.balance)}</div>
+                  <div className="text-right">
+                    <div className="tabular-nums">{formatDdsMoney(account.balance)}</div>
+                    {account.reserved_total !== null ? (
+                      <div className="text-xs tabular-nums text-muted-foreground">
+                        свободно {formatDdsMoney(account.free_total)} · резерв{" "}
+                        {formatDdsMoney(account.reserved_total)}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               ))}
             </div>

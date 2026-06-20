@@ -54,8 +54,10 @@ from app.schemas.dds import (
     OwnerReviewListRead,
 )
 from app.services.banking.classifier import (
+    SAFE_WALLET_CODE,
     apply_operation_action,
     apply_operation_split,
+    book_safe_topup,
     close_reconciliation_case,
 )
 from app.services.banking.credentials import set_credential
@@ -873,6 +875,11 @@ async def classify_operation(
             )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+    elif payload.action == "mark_safe_topup":
+        try:
+            created_ids = await book_safe_topup(session, operation)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
     else:
         await apply_operation_action(
             session,
@@ -924,9 +931,14 @@ def _wallet_payload(
     wallet: Wallet,
     movement_delta: Decimal = Decimal("0"),
     bank_code: str | None = None,
+    reserved_total: Decimal = Decimal("0"),
 ) -> dict[str, object]:
     opening = _money(wallet.opening_balance)
-    balance = _money(Decimal(str(wallet.opening_balance)) + movement_delta)
+    balance_dec = Decimal(str(wallet.opening_balance)) + movement_delta
+    balance = _money(balance_dec)
+    # Подотчётный Сейф несёт раскладку остатка: зарезервировано (намечено под оплаты)
+    # и свободно. Для прочих кошельков понятия резерва нет → null.
+    is_safe = wallet.code == SAFE_WALLET_CODE
     return {
         "id": wallet.id,
         "code": wallet.code,
@@ -940,6 +952,8 @@ def _wallet_payload(
         "opening_balance": opening,
         "opening_balance_date": wallet.opening_balance_date,
         "balance": balance,
+        "reserved_total": _money(reserved_total) if is_safe else None,
+        "free_total": _money(balance_dec - reserved_total) if is_safe else None,
     }
 
 

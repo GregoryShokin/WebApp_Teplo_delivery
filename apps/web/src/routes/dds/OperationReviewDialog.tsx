@@ -31,6 +31,13 @@ import {
 
 type SplitRow = { key: string; articleId: string; amount: string };
 
+const ACTION_TOAST: Record<OperationClassifyPayload["action"], string> = {
+  split: "Операция разнесена по статьям",
+  mark_internal_transfer: "Отмечено как внутренний перевод",
+  exclude: "Операция исключена",
+  mark_safe_topup: "Проведено как пополнение Сейфа",
+};
+
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -77,13 +84,7 @@ export function OperationReviewDialog({
     mutationFn: (payload: OperationClassifyPayload) => classifyOperation(operation!.id, payload),
     onSuccess: async (_data, payload) => {
       await invalidate();
-      toast.success(
-        payload.action === "split"
-          ? "Операция разнесена по статьям"
-          : payload.action === "mark_internal_transfer"
-            ? "Отмечено как внутренний перевод"
-            : "Операция исключена",
-      );
+      toast.success(ACTION_TOAST[payload.action]);
       onClose();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить разбор")),
@@ -227,6 +228,16 @@ export function OperationReviewDialog({
               >
                 Внутренний перевод
               </Button>
+              {operation.direction === "out" ? (
+                <Button
+                  disabled={isBusy}
+                  onClick={() => mutation.mutate({ action: "mark_safe_topup" })}
+                  variant="outline"
+                  title="Перевод на личную карту «Сейф» — учесть как пополнение Сейфа, а не расход"
+                >
+                  Пополнение Сейфа
+                </Button>
+              ) : null}
               <Button
                 disabled={isBusy}
                 onClick={() => mutation.mutate({ action: "exclude" })}

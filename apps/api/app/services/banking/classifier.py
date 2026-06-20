@@ -15,6 +15,7 @@ from app.models import (
     CashflowTransaction,
     ClassificationRule,
     Counterparty,
+    DdsArticle,
     OwnAccountsRegistry,
     ReconciliationCase,
     Wallet,
@@ -33,7 +34,18 @@ PREBOOKABLE_SOURCE_KINDS = (
     "kassa_cheque",
     "payroll_payout",
     "payroll_bank_to_safe",
+    "manual_bank_to_safe",
 )
+
+# «Пополнение Сейфа»: перевод р/с → личная карта (Сейф) учитывается как ВНУТРЕННИЙ
+# перевод транзитом, не расход. У карты физлица нет выписки, поэтому пару проводок
+# заводим вручную (как admin-ЗП book_bank_to_safe_transfer): банк-нога out служит
+# привязкой операции и аналитикой «перевод между счетами» (баланс банка идёт от
+# выписки, она его не двигает), Сейф-нога in двигает баланс Сейфа.
+SAFE_TOPUP_SOURCE_KIND = "manual_bank_to_safe"
+SAFE_WALLET_CODE = "cash_safe"
+TRANSFER_OUT_ARTICLE_CODE = "vybytie_perevod_mezhdu_schetami"
+TRANSFER_IN_ARTICLE_CODE = "postuplenie_perevod_mezhdu_schetami"
 
 
 @dataclass(frozen=True)
@@ -456,3 +468,83 @@ async def apply_operation_split(
     operation.cashflow_transaction_id = created[0]
     operation.classification_status = "classified"
     return created
+
+
+async def book_safe_topup(session: AsyncSession, operation: BankOperation) -> list[UUID]:
+    """Провести исходящий перевод р/с → карта «Сейф» как пополнение Сейфа (транзит).
+
+    Перевод на личную карту владельца — это не расход, а перемещение денег на
+    подотчётный счёт, откуда потом раздаются оплаты. Заводим ДВЕ проводки с общим
+    источником (``manual_bank_to_safe`` + operation.id), как admin-ЗП
+    ``book_bank_to_safe_transfer``:
+
+    * банк-нога (out, «Выбытие — перевод между счетами») на счёте операции — служит
+      привязкой операции и аналитикой перевода; баланс банка идёт от выписки, эта
+      проводка его не двигает;
+    * Сейф-нога (in, «Поступление — перевод между счетами») — двигает баланс Сейфа.
+
+    Перезапуск идемпотентен: прежние ноги этой операции (обычный сплит или прошлый
+    topup) удаляются перед перепроведением.
+    """
+    if operation.direction != "out":
+        raise ValueError(
+            "Пополнение Сейфа доступно только для исходящей операции (перевод с расчётного счёта)"
+        )
+    bank_wallet = await _wallet_for_operation(session, operation)
+    if bank_wallet is None:
+        raise ValueError("Не найден банковский кошелёк операции")
+    safe_wallet = await session.scalar(
+        select(Wallet).where(Wallet.code == SAFE_WALLET_CODE, Wallet.status == "active")
+    )
+    if safe_wallet is None:
+        raise ValueError("Не найден кошелёк «Сейф»")
+    out_article = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == TRANSFER_OUT_ARTICLE_CODE)
+    )
+    in_article = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == TRANSFER_IN_ARTICLE_CODE)
+    )
+    if out_article is None or in_article is None:
+        raise ValueError("Не найдены статьи перевода между счетами")
+
+    # Снести прежние проводки, заведённые из этой операции (re-classify) — и обычный
+    # сплит (``bank_operation``), и прошлый topup (``manual_bank_to_safe``).
+    prior = await session.scalars(
+        select(CashflowTransaction).where(
+            CashflowTransaction.source_id == operation.id,
+            CashflowTransaction.source_kind.in_(("bank_operation", SAFE_TOPUP_SOURCE_KIND)),
+        )
+    )
+    for transaction in prior.all():
+        await session.delete(transaction)
+    operation.cashflow_transaction_id = None
+    await session.flush()
+
+    bank_leg = CashflowTransaction(
+        wallet_id=bank_wallet.id,
+        direction="out",
+        amount=operation.amount,
+        operation_date=operation.operation_date,
+        article_id=out_article,
+        source_kind=SAFE_TOPUP_SOURCE_KIND,
+        source_id=operation.id,
+        payment_purpose=operation.payment_purpose,
+        quality_status="final",
+    )
+    session.add(bank_leg)
+    safe_leg = CashflowTransaction(
+        wallet_id=safe_wallet.id,
+        direction="in",
+        amount=operation.amount,
+        operation_date=operation.operation_date,
+        article_id=in_article,
+        source_kind=SAFE_TOPUP_SOURCE_KIND,
+        source_id=operation.id,
+        payment_purpose=operation.payment_purpose,
+        quality_status="final",
+    )
+    session.add(safe_leg)
+    await session.flush()
+    operation.cashflow_transaction_id = bank_leg.id
+    operation.classification_status = "classified"
+    return [bank_leg.id, safe_leg.id]

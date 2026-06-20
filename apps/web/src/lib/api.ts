@@ -2099,6 +2099,8 @@ export type WalletRead = {
   opening_balance: string;
   opening_balance_date: string | null;
   balance: string;
+  reserved_total: string | null;
+  free_total: string | null;
 };
 
 export type BankOperationRead = {
@@ -2277,7 +2279,7 @@ export type OperationSplitItem = {
 };
 
 export type OperationClassifyPayload = {
-  action: "split" | "mark_internal_transfer" | "exclude";
+  action: "split" | "mark_internal_transfer" | "exclude" | "mark_safe_topup";
   splits?: OperationSplitItem[];
   counterparty_id?: string | null;
   remember_as_rule?: boolean;
