@@ -29,6 +29,7 @@ from app.services.banking.exceptions import BankFetchError
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.payroll_payout_allocation import (
     DDS_ARTICLE_ADMIN_PAYROLL,
+    DDS_ARTICLE_PRODUCTION_PAYROLL,
     allocate_cash_cascade,
     build_payout_buckets,
 )
@@ -75,9 +76,9 @@ async def set_run_payout_cash(
     wallet: Wallet | None = None
     if cash > 0 and cash_wallet_code:
         wallet = await _resolve_cash_wallet(session, cash_wallet_code)
-    elif cash > 0 and _is_admin_run(run):
-        # Админ-ведомость разносит наличную часть в ДДС, поэтому наличный счёт обязателен.
-        # Производственная ведомость наличные в ДДС не заводит — счёт опционален (как раньше).
+    elif cash > 0 and _uses_safe_payout(run):
+        # Сейф-модель разносит наличную часть в ДДС (списание с наличного кошелька при
+        # «Выплатить»), поэтому наличный счёт обязателен (Сейф / Торговая касса Черникова).
         raise PayrollConflictError(
             "Укажите наличный счёт (Сейф или Торговая касса Черникова)"
         )
@@ -108,15 +109,17 @@ def _is_admin_run(run: PayrollRun) -> bool:
 
 
 def _uses_safe_payout(run: PayrollRun) -> bool:
-    """Идёт ли прогон по Сейф-модели (банк→Сейф транзит + раздача с Сейфа).
+    """Все ведомости платятся через Сейф: банк→Сейф транзит + раздача с Сейфа (безнал)
+    и с наличного кошелька (нал).
 
-    Пока это только админская ведомость. На этапе унификации производственной ЗП
-    предикат расширится per-run штампом ``payout_model == "safe"``. Используется как
-    единый гейт вместо разрозненных ``_is_admin_run`` — в частности, не даёт завести
-    транзит банк→Сейф для производственного (direct) прогона, у которого уже есть
-    прямой prebook расхода ЗП (иначе на одну банк-операцию две prebook-цели).
+    Изначально через Сейф шла только админская ведомость; производственная унифицирована
+    2026-06-21 — её прежний прямой prebook расхода ЗП на р/с заменён той же трёхшаговой
+    Сейф-моделью (банковский direct-контур для неё фактически не использовался, грязных
+    данных нет). Единый гейт вместо разрозненных ``_is_admin_run`` в payout-функциях.
+    Для отката производственной на прежний прямой расход — вернуть ``_is_admin_run(run)``
+    (тип ведомости различается там, где нужно, отдельно через ``_is_admin_run``).
     """
-    return _is_admin_run(run)
+    return True
 
 
 async def _resolve_cash_wallet(session: AsyncSession, code: str) -> Wallet:
@@ -182,7 +185,7 @@ async def book_bank_to_safe_transfer(session: AsyncSession, run: PayrollRun) -> 
         select(DdsArticle.id).where(DdsArticle.code == DDS_ARTICLE_TRANSFER_IN_CODE)
     )
     operation_date = datetime.now(UTC).date()
-    purpose = "Перевод на Сейф под выплату ЗП администрации"
+    purpose = "Перевод на Сейф под выплату ЗП"
     session.add(
         CashflowTransaction(
             wallet_id=bank_wallet.id,
@@ -252,15 +255,18 @@ async def book_payout_expense_for_employees(
     run: PayrollRun,
     employee_ids: list[uuid.UUID],
 ) -> bool:
-    """Шаг 3: расход ЗП из Сейфа по статьям для выплаченных сотрудников («Выплатить»).
+    """Шаг 3: расход ЗП по статьям для выплаченных сотрудников («Выплатить»).
 
-    Только для админ-ведомости. Суммы берутся по строкам указанных сотрудников и разносятся
-    по статьям ДДС (уборщицы/посудомойки → «Содержание торговых точек», остальные →
-    «Зарплата административного персонала»), списываясь с Сейфа. Вызывается из bulk-mark по
-    ВНОВЬ выплаченным сотрудникам, поэтому повторное «Выплатить» уже оплаченных не задваивает.
+    Для Сейф-модели (админ + производственная после унификации). Суммы по строкам
+    указанных сотрудников разносятся по статьям ДДС: должность сама маппится на статью
+    (повар/кассир → «Зарплата производственного персонала», вспом. → «Содержание торг.
+    точек», админ → «Зарплата административного персонала»). Безналичная часть списывается
+    с Сейфа (куда пришёл перевод), наличная — с наличного кошелька прогона (ТК Черникова /
+    Сейф). Наличный бюджет каскадируется на уровне прогона: уже списанная наличными часть
+    вычитается, поэтому инкрементальные «Выплатить» не задваивают наличное распределение.
     Возвращает True, если создан расход.
     """
-    if not _is_admin_run(run) or not employee_ids:
+    if not _uses_safe_payout(run) or not employee_ids:
         return False
     lines = (
         await session.scalars(
@@ -270,9 +276,12 @@ async def book_payout_expense_for_employees(
             )
         )
     ).all()
+    default_article = (
+        DDS_ARTICLE_ADMIN_PAYROLL if _is_admin_run(run) else DDS_ARTICLE_PRODUCTION_PAYROLL
+    )
     buckets = build_payout_buckets(
         [(line.role, _money(line.total_payable)) for line in lines],
-        default_article_code=DDS_ARTICLE_ADMIN_PAYROLL,
+        default_article_code=default_article,
     )
     if not buckets:
         return False
@@ -282,6 +291,27 @@ async def book_payout_expense_for_employees(
     if safe_wallet is None:
         return False
 
+    # Наличный бюджет прогона за вычетом уже списанного наличными (cash-проводки = не на Сейфе).
+    cash_wallet: Wallet | None = None
+    if run.payout_cash_wallet_id is not None:
+        cash_wallet = await session.get(Wallet, run.payout_cash_wallet_id)
+    already_cash = Decimal("0")
+    if cash_wallet is not None and cash_wallet.id != safe_wallet.id:
+        already_cash = _money(
+            await session.scalar(
+                select(func.coalesce(func.sum(CashflowTransaction.amount), 0)).where(
+                    CashflowTransaction.source_kind == PAYROLL_PAYOUT_SOURCE_KIND,
+                    CashflowTransaction.source_id == run.id,
+                    CashflowTransaction.direction == "out",
+                    CashflowTransaction.wallet_id == cash_wallet.id,
+                )
+            )
+        )
+    rows_total = sum((bucket.total for bucket in buckets), Decimal("0"))
+    cash_budget = max(Decimal("0"), _money(run.payout_cash_total) - already_cash)
+    cash_for_rows = min(cash_budget, rows_total)
+    allocations = allocate_cash_cascade(buckets, cash_for_rows)
+
     codes = {bucket.article_code for bucket in buckets}
     article_rows = (
         await session.execute(
@@ -290,22 +320,39 @@ async def book_payout_expense_for_employees(
     ).all()
     article_ids = {code: article_id for code, article_id in article_rows}
     operation_date = datetime.now(UTC).date()
-    for bucket in buckets:
-        if bucket.total <= 0:
-            continue
-        session.add(
-            CashflowTransaction(
-                wallet_id=safe_wallet.id,
-                direction="out",
-                amount=bucket.total,
-                operation_date=operation_date,
-                article_id=article_ids.get(bucket.article_code),
-                source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
-                source_id=run.id,
-                payment_purpose="Выплата ЗП администрации (из Сейфа)",
-                quality_status="final",
+    purpose = "Выплата ЗП (из Сейфа)"
+    # Если наличный кошелёк не задан, наличную часть тоже списываем с Сейфа (фолбэк).
+    cash_target = cash_wallet.id if cash_wallet is not None else safe_wallet.id
+    for alloc in allocations:
+        article_id = article_ids.get(alloc.article_code)
+        if alloc.bank > 0:
+            session.add(
+                CashflowTransaction(
+                    wallet_id=safe_wallet.id,
+                    direction="out",
+                    amount=alloc.bank,
+                    operation_date=operation_date,
+                    article_id=article_id,
+                    source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
+                    source_id=run.id,
+                    payment_purpose=purpose,
+                    quality_status="final",
+                )
             )
-        )
+        if alloc.cash > 0:
+            session.add(
+                CashflowTransaction(
+                    wallet_id=cash_target,
+                    direction="out",
+                    amount=alloc.cash,
+                    operation_date=operation_date,
+                    article_id=article_id,
+                    source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
+                    source_id=run.id,
+                    payment_purpose=purpose,
+                    quality_status="final",
+                )
+            )
     await session.flush()
     return True
 
@@ -324,9 +371,9 @@ async def create_or_update_run_draft(
     payer_account = _payer_account(settings)
     total_account = await _run_account_amount(session, run)
     if total_account <= 0:
-        if _is_admin_run(run):
-            # Вся выплата наличными: банковского черновика нет. Проводки ДДС в админ-ведомости
-            # создаются по «Выплатить» (расход из Сейфа), не на черновике.
+        if _uses_safe_payout(run):
+            # Вся выплата наличными: банковского черновика нет. Проводки ДДС в Сейф-модели
+            # создаются по «Выплатить» (расход с наличного кошелька), не на черновике.
             return await _get_bank_draft(session, run_id)
         raise PayrollConflictError("РС-часть ведомости равна нулю")
 
@@ -761,9 +808,11 @@ async def _upsert_payout_cashflow(
     requisites = await _bank_payout_requisites(session)
     purpose = _payment_purpose(requisites, run_id=run.id, period=period)
 
-    if _is_admin_run(run):
-        # Админ-ведомость: проводки ДДС создаются по «Выплатить» (расход из Сейфа) и при
-        # подтверждении платежа (перевод банк→Сейф), а НЕ на черновике.
+    if _uses_safe_payout(run):
+        # Сейф-модель (админ + производственная): проводки ДДС создаются по «Выплатить»
+        # (расход из Сейфа/кассы) и при подтверждении платежа (перевод банк→Сейф), а НЕ на
+        # черновике — поэтому прямой prebook расхода ЗП здесь не нужен. Ветка ниже остаётся
+        # для отката производственной на прежний direct-контур (вернуть _uses_safe_payout).
         return
 
     article_id = await session.scalar(

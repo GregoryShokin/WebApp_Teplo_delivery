@@ -54,6 +54,7 @@ async def test_run_payout_cash_validates_bounds_status_and_legacy(
             session,
             run.id,
             amount_cash=Decimal("300"),
+            cash_wallet_code="tk_chernikova",
             actor_user_id=actor.id,
         )
 
@@ -116,6 +117,7 @@ async def test_run_payout_cash_account_uses_total_payable_after_ndfl(
             session,
             run.id,
             amount_cash=Decimal("100"),
+            cash_wallet_code="tk_chernikova",
             actor_user_id=actor.id,
         )
         assert run.payout_cash_total == Decimal("100.00")
@@ -143,6 +145,7 @@ async def test_create_or_update_drafts_uses_run_account_part_and_writes_events(
             session,
             run.id,
             amount_cash=Decimal("2250"),
+            cash_wallet_code="tk_chernikova",
             actor_user_id=actor.id,
         )
 
