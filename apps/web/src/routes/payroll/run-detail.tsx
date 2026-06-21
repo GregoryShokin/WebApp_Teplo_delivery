@@ -55,10 +55,12 @@ import {
   createPayrollRun,
   createRunBankDraft,
   finalizePayrollRun,
+  getCashWallets,
   getEmployees,
   getPayrollRun,
   getPayrollRunLines,
   getRunBankDraft,
+  getRunPayoutAllocation,
   getRunPayoutDelta,
   getSettings,
   patchPayrollLineDepositOverride,
@@ -66,6 +68,7 @@ import {
   unmarkPayrollPayment,
   unfinalizePayrollRun,
   type AppSetting,
+  type CashWallet,
   type Employee,
   type PayrollBankDraft,
   type PayrollLine,
@@ -506,6 +509,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
           isLoading={bankDraftQuery.isLoading}
           payoutCashTotal={payoutCashTotal}
           runId={runId}
+          savedWalletId={run?.payout_cash_wallet_id ?? null}
           totalAccountAmount={totalAccountAmount}
           totalPayable={totalPayable}
         />
@@ -919,6 +923,7 @@ function RunBankDraftCard({
   isLoading,
   payoutCashTotal,
   runId,
+  savedWalletId,
   totalAccountAmount,
   totalPayable,
 }: {
@@ -926,27 +931,68 @@ function RunBankDraftCard({
   isLoading: boolean;
   payoutCashTotal: number;
   runId: string;
+  savedWalletId: string | null;
   totalAccountAmount: number;
   totalPayable: number;
 }) {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [cashValue, setCashValue] = useState(moneyInputValue(payoutCashTotal));
+  const [walletCode, setWalletCode] = useState<string>("");
   const draftAmount = moneyValue(draft?.amount ?? totalAccountAmount);
   const hasDraft = Boolean(draft);
+
+  const cashWalletsQuery = useQuery({
+    queryKey: ["payroll-cash-wallets"],
+    queryFn: () => getCashWallets(),
+  });
+  const cashWallets = useMemo<CashWallet[]>(
+    () => cashWalletsQuery.data ?? [],
+    [cashWalletsQuery.data],
+  );
+  const allocationQuery = useQuery({
+    queryKey: ["run-payout-allocation", runId],
+    queryFn: () => getRunPayoutAllocation(runId),
+  });
 
   useEffect(() => {
     setCashValue(moneyInputValue(payoutCashTotal));
   }, [payoutCashTotal]);
 
+  useEffect(() => {
+    if (!cashWallets.length) {
+      return;
+    }
+    const current = savedWalletId
+      ? cashWallets.find((wallet) => wallet.id === savedWalletId)
+      : undefined;
+    setWalletCode((prev) => (prev ? prev : (current?.code ?? "")));
+  }, [savedWalletId, cashWallets]);
+
   const cashAmount = parseMoneyInput(cashValue);
   const cashValid = cashAmount !== null && cashAmount >= 0 && cashAmount <= totalPayable;
+  const needsWallet = cashValid && cashAmount !== null && cashAmount > 0;
+  const walletValid = !needsWallet || walletCode !== "";
   const previewAccount =
     cashValid && cashAmount !== null
       ? normalizeMoney(Math.max(0, totalPayable - cashAmount))
       : null;
+  const currentWalletId = cashWallets.find((wallet) => wallet.code === walletCode)?.id ?? null;
   const cashDirty =
-    cashAmount === null || normalizeMoney(cashAmount) !== normalizeMoney(payoutCashTotal);
+    cashAmount === null ||
+    normalizeMoney(cashAmount) !== normalizeMoney(payoutCashTotal) ||
+    (needsWallet && currentWalletId !== savedWalletId);
+
+  // Ориентир разнесения ЗП по статьям ДДС (фактически проводится по «Выплатить»).
+  const previewBuckets = useMemo(
+    () =>
+      (allocationQuery.data?.buckets ?? []).map((bucket) => ({
+        code: bucket.article_code,
+        name: bucket.article_name,
+        total: moneyValue(bucket.total),
+      })),
+    [allocationQuery.data?.buckets],
+  );
 
   const invalidatePayoutQueries = () =>
     Promise.all([
@@ -954,10 +1000,12 @@ function RunBankDraftCard({
       queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", runId] }),
       queryClient.invalidateQueries({ queryKey: ["run-bank-draft", runId] }),
       queryClient.invalidateQueries({ queryKey: ["run-payout-delta", runId] }),
+      queryClient.invalidateQueries({ queryKey: ["run-payout-allocation", runId] }),
     ]);
 
   const cashMutation = useMutation({
-    mutationFn: (amountCash: number) => setRunPayoutCash(runId, amountCash),
+    mutationFn: (amountCash: number) =>
+      setRunPayoutCash(runId, amountCash, needsWallet ? walletCode : null),
     onSuccess: async () => {
       await invalidatePayoutQueries();
       toast.success("Наличная сумма сохранена");
@@ -990,10 +1038,13 @@ function RunBankDraftCard({
         <h2 className="text-base font-semibold tracking-normal">Черновик выплаты в банк</h2>
       </div>
       <p className="mt-1 text-sm text-muted-foreground">
-        Укажите общую наличную сумму по ведомости. Остаток уходит одним платежом на счёт ИП.
+        Укажите наличную сумму и счёт, с которого выдаются наличные. Безналичный остаток уходит
+        одним черновиком на счёт ИП — после оплаты в банке деньги автоматически переводятся в Сейф.
+        В ДДС зарплата проводится по статьям по факту «Выплатить»: безналичная часть списывается с
+        Сейфа, наличная — с выбранного счёта.
       </p>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-md border bg-background p-3">
           <div className="text-xs text-muted-foreground">К выплате (ФОТ)</div>
           <div className="mt-1 font-semibold tabular-nums">{formatMoney(totalPayable)}</div>
@@ -1015,6 +1066,25 @@ function RunBankDraftCard({
             value={cashValue}
           />
         </div>
+        <div className="rounded-md border bg-background p-3">
+          <Label className="text-xs text-muted-foreground" htmlFor="run-payout-wallet">
+            Наличный счёт
+          </Label>
+          <select
+            className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
+            disabled={!needsWallet || cashMutation.isPending}
+            id="run-payout-wallet"
+            onChange={(event) => setWalletCode(event.target.value)}
+            value={walletCode}
+          >
+            <option value="">— выберите счёт —</option>
+            {cashWallets.map((wallet) => (
+              <option key={wallet.id} value={wallet.code}>
+                {wallet.name}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="rounded-md border bg-muted/30 p-3">
           <div className="text-xs text-muted-foreground">На счёт ИП (черновик)</div>
           <div className="mt-1 font-semibold tabular-nums">
@@ -1028,10 +1098,39 @@ function RunBankDraftCard({
           Введите наличную сумму от 0 до {formatMoney(totalPayable)}.
         </div>
       ) : null}
+      {cashValid && needsWallet && !walletValid ? (
+        <div className="mt-2 text-xs text-destructive">
+          Выберите наличный счёт (Сейф или Торговая касса Черникова).
+        </div>
+      ) : null}
+
+      {previewBuckets.length > 0 ? (
+        <div className="mt-4 overflow-hidden rounded-md border">
+          <div className="border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            Разнесение ЗП по статьям ДДС (проводится по факту «Выплатить»)
+          </div>
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 text-xs text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">Статья ДДС</th>
+                <th className="px-3 py-2 text-right font-medium">Сумма</th>
+              </tr>
+            </thead>
+            <tbody>
+              {previewBuckets.map((bucket) => (
+                <tr key={bucket.code} className="border-t">
+                  <td className="px-3 py-2">{bucket.name}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatMoney(bucket.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button
-          disabled={!cashValid || !cashDirty || cashMutation.isPending}
+          disabled={!cashValid || !walletValid || !cashDirty || cashMutation.isPending}
           onClick={async () => {
             if (cashAmount === null) {
               return;
