@@ -2662,6 +2662,63 @@ export async function dismissOwnerReviewCase(caseId: string): Promise<void> {
   await api.post(`/dds/owner-review/${caseId}/dismiss`);
 }
 
+export type SafeAllocationRead = {
+  id: string;
+  wallet_id: string;
+  amount: string;
+  amount_paid: string;
+  outstanding: string;
+  article_id: string | null;
+  counterparty_id: string | null;
+  purpose: string | null;
+  status: "reserved" | "partially_paid" | "paid" | "cancelled";
+  created_at: string;
+};
+
+export type SafeAllocationCreatePayload = {
+  amount: string | number;
+  article_id: string;
+  counterparty_id?: string | null;
+  purpose?: string | null;
+  pay_full?: boolean;
+};
+
+export async function getSafeAllocations(
+  walletId: string,
+  status: "active" | "all" = "active",
+): Promise<SafeAllocationRead[]> {
+  const response = await api.get<SafeAllocationRead[]>(`/dds/wallets/${walletId}/allocations`, {
+    params: { status },
+  });
+  return response.data;
+}
+
+export async function createSafeAllocation(
+  walletId: string,
+  payload: SafeAllocationCreatePayload,
+): Promise<SafeAllocationRead> {
+  const response = await api.post<SafeAllocationRead>(
+    `/dds/wallets/${walletId}/allocations`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function paySafeAllocation(
+  allocationId: string,
+  amount: string | number,
+): Promise<SafeAllocationRead> {
+  const response = await api.post<SafeAllocationRead>(`/dds/allocations/${allocationId}/pay`, {
+    amount,
+  });
+  return response.data;
+}
+
+export async function cancelSafeAllocation(allocationId: string): Promise<SafeAllocationRead> {
+  const response = await api.post<SafeAllocationRead>(`/dds/allocations/${allocationId}/cancel`);
+  return response.data;
+}
+
 export async function triggerBankSync(
   provider: DdsProvider,
   payload: { date_from: string; date_to: string },

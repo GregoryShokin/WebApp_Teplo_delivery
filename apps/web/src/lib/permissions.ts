@@ -68,6 +68,8 @@ export type AppAction =
   | "finance.cashflow.edit"
   | "finance.cashflow.classify"
   | "finance.cashflow.sync"
+  | "finance.safe.allocate"
+  | "finance.safe.confirm_paid"
   | "finance.rules.manage"
   | "finance.counterparties.edit"
   | "counterparties.operate"
@@ -207,6 +209,8 @@ export const PERMISSION_GROUPS = {
   financeWrite: [
     "finance.cashflow.edit",
     "finance.cashflow.classify",
+    "finance.safe.allocate",
+    "finance.safe.confirm_paid",
     "finance.classification_rules.manage",
     "finance.cashflow.integrations.manage",
     "finance.balance.edit",
@@ -322,6 +326,8 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "finance.cashflow.edit": ["finance.cashflow.edit"],
   "finance.cashflow.classify": ["finance.cashflow.classify", "finance.owner_review.prepare"],
   "finance.cashflow.sync": ["finance.cashflow.integrations.manage"],
+  "finance.safe.allocate": ["finance.safe.allocate"],
+  "finance.safe.confirm_paid": ["finance.safe.confirm_paid"],
   "finance.rules.manage": ["finance.classification_rules.manage"],
   "finance.counterparties.edit": ["finance.counterparties.edit"],
   "counterparties.operate": ["counterparties.operate"],

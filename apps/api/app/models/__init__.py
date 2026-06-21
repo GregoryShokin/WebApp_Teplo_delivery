@@ -64,6 +64,7 @@ from app.models.dds import (
     DdsArticleAlias,
     OwnAccountsRegistry,
     ReconciliationCase,
+    SafeAllocation,
     TransferGroup,
     WalletBalanceSnapshot,
 )
@@ -224,6 +225,7 @@ __all__ = [
     "SalaryAdvance",
     "SalaryAdvanceRecovery",
     "ReconciliationCase",
+    "SafeAllocation",
     "Role",
     "RolePermission",
     "RolePermissionEvent",

@@ -334,3 +334,52 @@ class ReconciliationCase(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class SafeAllocation(Base):
+    """Резерв (аллокация) средств подотчётного счёта «Сейф».
+
+    Намерение потратить часть остатка Сейфа на конкретного получателя/статью —
+    деньги ещё на карте, поэтому резерв НЕ создаёт cashflow и НЕ двигает баланс
+    Сейфа, лишь уменьшает «свободно». Реальный расход признаётся при оплате:
+    каждая оплата (в т.ч. частичная) — это отдельная out-``CashflowTransaction``
+    на Сейфе (``source_kind='safe_payout'``, ``source_id`` = этот резерв), а
+    ``amount_paid`` хранит их сумму для быстрого отображения/валидации.
+
+    status: ``reserved`` → ``partially_paid`` → ``paid``; ``cancelled`` — отменён
+    (оплаченные ноги остаются, неоплаченный остаток освобождается).
+    """
+
+    __tablename__ = "safe_allocations"
+    __table_args__ = (
+        Index("ix_safe_allocations_wallet_id", "wallet_id"),
+        Index("ix_safe_allocations_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    wallet_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("wallet.id", ondelete="RESTRICT"), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    amount_paid: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2), nullable=False, default=0, server_default="0"
+    )
+    article_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("dds_articles.id"), nullable=True
+    )
+    counterparty_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("counterparty.id"), nullable=True
+    )
+    purpose: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="reserved", server_default="reserved"
+    )
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )

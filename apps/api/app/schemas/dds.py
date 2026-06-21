@@ -314,6 +314,40 @@ class OperationClassifyRead(BaseModel):
     rule_id: uuid.UUID | None = None
 
 
+class SafeAllocationCreate(BaseModel):
+    """Создание резерва на счёте «Сейф» (намерение потратить под статью/получателя)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0)
+    article_id: uuid.UUID
+    counterparty_id: uuid.UUID | None = None
+    purpose: str | None = None
+    # Сразу оплатить полностью — прямая трата свободных средств (без отдельного шага «Оплачено»).
+    pay_full: bool = False
+
+
+class SafeAllocationPayRequest(BaseModel):
+    """Оплата резерва — полная или частичная (``amount`` ≤ остатка резерва)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0)
+
+
+class SafeAllocationRead(BaseModel):
+    id: uuid.UUID
+    wallet_id: uuid.UUID
+    amount: str
+    amount_paid: str
+    outstanding: str
+    article_id: uuid.UUID | None = None
+    counterparty_id: uuid.UUID | None = None
+    purpose: str | None = None
+    status: str
+    created_at: datetime
+
+
 class JournalRow(BaseModel):
     """One line of the unified DDS journal — a classified cashflow movement
     (``kind="cashflow"``) or an unclassified bank operation (``kind="operation"``)."""

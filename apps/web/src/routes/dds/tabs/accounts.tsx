@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AccountSelect, sortAccounts, useAccountOptions } from "@/components/ui-app/AccountSelect";
 import type { WalletRead } from "@/lib/api";
+import { SafeAccountDialog } from "@/routes/dds/SafeAccountDialog";
 import { formatDdsMoney } from "@/routes/dds/shared";
 
 function accountGroupLabel(wallet: WalletRead): string {
@@ -13,6 +14,7 @@ function accountGroupLabel(wallet: WalletRead): string {
 
 export function AccountsTab() {
   const [selected, setSelected] = useState<string | null>(null);
+  const [safeWallet, setSafeWallet] = useState<WalletRead | null>(null);
   const { data, isLoading } = useAccountOptions();
   const accounts = sortAccounts(data ?? []);
   const picked = accounts.find((account) => account.id === selected) ?? null;
@@ -51,27 +53,57 @@ export function AccountsTab() {
             <div className="h-10 animate-pulse rounded bg-muted/60" />
           ) : (
             <div className="divide-y">
-              {accounts.map((account) => (
-                <div className="flex items-center justify-between gap-3 py-2 text-sm" key={account.id}>
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{account.name}</div>
-                    <div className="text-xs text-muted-foreground">{accountGroupLabel(account)}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="tabular-nums">{formatDdsMoney(account.balance)}</div>
-                    {account.reserved_total !== null ? (
-                      <div className="text-xs tabular-nums text-muted-foreground">
-                        свободно {formatDdsMoney(account.free_total)} · резерв{" "}
-                        {formatDdsMoney(account.reserved_total)}
+              {accounts.map((account) => {
+                const isSafe = account.reserved_total !== null;
+                return (
+                  <div
+                    className={`flex items-center justify-between gap-3 py-2 text-sm ${
+                      isSafe ? "-mx-2 cursor-pointer rounded px-2 hover:bg-muted/40" : ""
+                    }`}
+                    key={account.id}
+                    onClick={isSafe ? () => setSafeWallet(account) : undefined}
+                    role={isSafe ? "button" : undefined}
+                    tabIndex={isSafe ? 0 : undefined}
+                    onKeyDown={
+                      isSafe
+                        ? (event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSafeWallet(account);
+                            }
+                          }
+                        : undefined
+                    }
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{account.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {accountGroupLabel(account)}
+                        {isSafe ? " · подотчётный, нажмите для деталей" : ""}
                       </div>
-                    ) : null}
+                    </div>
+                    <div className="text-right">
+                      <div className="tabular-nums">{formatDdsMoney(account.balance)}</div>
+                      {isSafe ? (
+                        <div className="text-xs tabular-nums text-muted-foreground">
+                          свободно {formatDdsMoney(account.free_total)} · резерв{" "}
+                          {formatDdsMoney(account.reserved_total)}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
       </Card>
+
+      <SafeAccountDialog
+        wallet={safeWallet}
+        open={Boolean(safeWallet)}
+        onClose={() => setSafeWallet(null)}
+      />
     </div>
   );
 }

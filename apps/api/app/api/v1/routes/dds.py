@@ -11,7 +11,12 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, s
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_permission
+from app.api.deps import (
+    CurrentActor,
+    ensure_permission,
+    get_current_actor,
+    require_permission,
+)
 from app.db.session import get_session
 from app.models import (
     Account,
@@ -23,6 +28,7 @@ from app.models import (
     DdsArticle,
     DdsArticleAlias,
     ReconciliationCase,
+    SafeAllocation,
     SourceCredential,
     Wallet,
 )
@@ -52,6 +58,9 @@ from app.schemas.dds import (
     OwnerReviewActionRead,
     OwnerReviewClassifyRequest,
     OwnerReviewListRead,
+    SafeAllocationCreate,
+    SafeAllocationPayRequest,
+    SafeAllocationRead,
 )
 from app.services.banking.classifier import (
     AWAITING_BANK_QUALITY,
@@ -62,6 +71,12 @@ from app.services.banking.classifier import (
     close_reconciliation_case,
 )
 from app.services.banking.credentials import set_credential
+from app.services.banking.safe_allocations import (
+    cancel_allocation,
+    create_allocation,
+    pay_allocation,
+    safe_reserved_total,
+)
 from app.services.banking.transfer_matching import find_and_link_transfer_pairs
 
 router = APIRouter()
@@ -70,6 +85,8 @@ DDS_READ_ACCESS = (Depends(require_permission("finance.cashflow.read")),)
 DDS_EDIT_ACCESS = (Depends(require_permission("finance.cashflow.edit")),)
 DDS_RULES_MANAGE_ACCESS = (Depends(require_permission("finance.classification_rules.manage")),)
 DDS_CLASSIFY_ACCESS = (Depends(require_permission("finance.cashflow.classify")),)
+DDS_SAFE_ALLOCATE_ACCESS = (Depends(require_permission("finance.safe.allocate")),)
+DDS_SAFE_CONFIRM_PAID_ACCESS = (Depends(require_permission("finance.safe.confirm_paid")),)
 DDS_INTEGRATIONS_MANAGE_ACCESS = (
     Depends(require_permission("finance.cashflow.integrations.manage")),
 )
@@ -291,14 +308,22 @@ async def list_wallets(
     bank_by_account = dict(
         (await session.execute(select(Account.id, Account.bank_code))).all()
     )
-    return [
-        _wallet_payload(
-            wallet,
-            deltas.get(wallet.id, Decimal("0")),
-            bank_by_account.get(wallet.account_id),
+    payloads: list[dict[str, object]] = []
+    for wallet in wallets:
+        reserved = (
+            await safe_reserved_total(session, wallet.id)
+            if wallet.code == SAFE_WALLET_CODE
+            else Decimal("0")
         )
-        for wallet in wallets
-    ]
+        payloads.append(
+            _wallet_payload(
+                wallet,
+                deltas.get(wallet.id, Decimal("0")),
+                bank_by_account.get(wallet.account_id),
+                reserved,
+            )
+        )
+    return payloads
 
 
 async def _wallet_movement_deltas(session: AsyncSession) -> dict[UUID, Decimal]:
@@ -942,6 +967,143 @@ async def classify_operation(
         "cashflow_transaction_ids": created_ids,
         "rule_id": rule_id,
     }
+
+
+def _safe_allocation_payload(allocation: SafeAllocation) -> dict[str, object]:
+    outstanding = Decimal(allocation.amount) - Decimal(allocation.amount_paid)
+    return {
+        "id": allocation.id,
+        "wallet_id": allocation.wallet_id,
+        "amount": _money(allocation.amount),
+        "amount_paid": _money(allocation.amount_paid),
+        "outstanding": _money(outstanding),
+        "article_id": allocation.article_id,
+        "counterparty_id": allocation.counterparty_id,
+        "purpose": allocation.purpose,
+        "status": allocation.status,
+        "created_at": allocation.created_at,
+    }
+
+
+async def _safe_free_amount(session: AsyncSession, wallet: Wallet) -> Decimal:
+    """Свободный остаток Сейфа = баланс − Σ непогашенных резервов."""
+    deltas = await _wallet_movement_deltas(session)
+    balance = Decimal(str(wallet.opening_balance)) + deltas.get(wallet.id, Decimal("0"))
+    reserved = await safe_reserved_total(session, wallet.id)
+    return balance - reserved
+
+
+@router.get(
+    "/wallets/{wallet_id}/allocations",
+    response_model=list[SafeAllocationRead],
+    dependencies=DDS_READ_ACCESS,
+)
+async def list_safe_allocations(
+    wallet_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    status_filter: Annotated[Literal["active", "all"], Query(alias="status")] = "active",
+) -> list[dict[str, object]]:
+    """Резервы Сейфа: ``active`` (reserved/partially_paid) или ``all`` (вкл. оплаченные/отменённые)."""
+    conditions = [SafeAllocation.wallet_id == wallet_id]
+    if status_filter == "active":
+        conditions.append(SafeAllocation.status.in_(("reserved", "partially_paid")))
+    rows = await session.scalars(
+        select(SafeAllocation).where(*conditions).order_by(SafeAllocation.created_at.desc())
+    )
+    return [_safe_allocation_payload(allocation) for allocation in rows.all()]
+
+
+@router.post(
+    "/wallets/{wallet_id}/allocations",
+    response_model=SafeAllocationRead,
+    dependencies=DDS_SAFE_ALLOCATE_ACCESS,
+)
+async def create_safe_allocation(
+    wallet_id: UUID,
+    payload: SafeAllocationCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, object]:
+    """Создать резерв на Сейфе. ``pay_full`` — прямая трата свободных (создать и сразу оплатить)."""
+    wallet = await session.get(Wallet, wallet_id)
+    if wallet is None or wallet.code != SAFE_WALLET_CODE:
+        raise HTTPException(status_code=404, detail="Кошелёк «Сейф» не найден")
+    if payload.pay_full:
+        ensure_permission(actor, "finance.safe.confirm_paid")
+    free = await _safe_free_amount(session, wallet)
+    try:
+        allocation = await create_allocation(
+            session,
+            wallet_id=wallet.id,
+            amount=payload.amount,
+            free_amount=free,
+            article_id=payload.article_id,
+            counterparty_id=payload.counterparty_id,
+            purpose=payload.purpose,
+            created_by_user_id=actor.user_id,
+        )
+        if payload.pay_full:
+            await pay_allocation(
+                session,
+                allocation,
+                amount=payload.amount,
+                operation_date=datetime.now(MOSCOW_TZ).date(),
+            )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    await session.commit()
+    await session.refresh(allocation)
+    return _safe_allocation_payload(allocation)
+
+
+@router.post(
+    "/allocations/{allocation_id}/pay",
+    response_model=SafeAllocationRead,
+    dependencies=DDS_SAFE_CONFIRM_PAID_ACCESS,
+)
+async def pay_safe_allocation(
+    allocation_id: UUID,
+    payload: SafeAllocationPayRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    """Оплатить резерв (полностью или частично) — списание с Сейфа, признание расхода."""
+    allocation = await session.get(SafeAllocation, allocation_id, with_for_update=True)
+    if allocation is None:
+        raise HTTPException(status_code=404, detail="Резерв не найден")
+    try:
+        await pay_allocation(
+            session,
+            allocation,
+            amount=payload.amount,
+            operation_date=datetime.now(MOSCOW_TZ).date(),
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    await session.commit()
+    await session.refresh(allocation)
+    return _safe_allocation_payload(allocation)
+
+
+@router.post(
+    "/allocations/{allocation_id}/cancel",
+    response_model=SafeAllocationRead,
+    dependencies=DDS_SAFE_ALLOCATE_ACCESS,
+)
+async def cancel_safe_allocation(
+    allocation_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    """Отменить резерв: неоплаченный остаток освобождается, оплаченные ноги остаются."""
+    allocation = await session.get(SafeAllocation, allocation_id, with_for_update=True)
+    if allocation is None:
+        raise HTTPException(status_code=404, detail="Резерв не найден")
+    try:
+        await cancel_allocation(session, allocation)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    await session.commit()
+    await session.refresh(allocation)
+    return _safe_allocation_payload(allocation)
 
 
 def _wallet_payload(
