@@ -20,7 +20,10 @@ import {
   getDdsArticles,
   getSafeAllocations,
   paySafeAllocation,
+  reconcileSafe,
+  withdrawSafeCash,
   type SafeAllocationRead,
+  type SafeReconcileResult,
   type WalletRead,
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
@@ -63,6 +66,9 @@ export function SafeAccountDialog({
   const [articleId, setArticleId] = useState("none");
   const [purpose, setPurpose] = useState("");
   const [payAmounts, setPayAmounts] = useState<Record<string, string>>({});
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [reconcileActual, setReconcileActual] = useState("");
+  const [reconcileResult, setReconcileResult] = useState<SafeReconcileResult | null>(null);
 
   const invalidate = async () => {
     await Promise.all([
@@ -112,13 +118,41 @@ export function SafeAccountDialog({
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отменить резерв")),
   });
 
+  const withdrawMutation = useMutation({
+    mutationFn: () => withdrawSafeCash(walletId!, withdrawAmount),
+    onSuccess: async () => {
+      await invalidate();
+      toast.success("Наличные сняты в кассу Черникова");
+      setWithdrawAmount("");
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось снять наличные")),
+  });
+
+  const reconcileMutation = useMutation({
+    mutationFn: (applyAdjustment: boolean) =>
+      reconcileSafe(walletId!, reconcileActual, applyAdjustment),
+    onSuccess: async (result) => {
+      setReconcileResult(result);
+      if (result.adjusted) {
+        await invalidate();
+        toast.success("Остаток выровнен по карте");
+      }
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сверить остаток")),
+  });
+
   if (!wallet) {
     return null;
   }
 
   const articles = articlesQuery.data ?? [];
   const allocations = allocationsQuery.data ?? [];
-  const busy = createMutation.isPending || payMutation.isPending || cancelMutation.isPending;
+  const busy =
+    createMutation.isPending ||
+    payMutation.isPending ||
+    cancelMutation.isPending ||
+    withdrawMutation.isPending ||
+    reconcileMutation.isPending;
   const canSubmitCreate = Number(amount) > 0 && articleId !== "none";
 
   return (
@@ -234,6 +268,80 @@ export function SafeAccountDialog({
             })
           )}
         </div>
+
+        {canConfirmPaid ? (
+          <div className="grid gap-3 border-t pt-4">
+            <Label className="text-base font-semibold">Снять наличные в кассу</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                className="h-9 w-40 text-right tabular-nums"
+                inputMode="decimal"
+                placeholder="Сумма"
+                value={withdrawAmount}
+                onChange={(event) => setWithdrawAmount(event.target.value)}
+              />
+              <Button
+                size="sm"
+                disabled={busy || Number(withdrawAmount) <= 0}
+                onClick={() => withdrawMutation.mutate()}
+              >
+                Снять в кассу Черникова
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {canConfirmPaid ? (
+          <div className="grid gap-3 border-t pt-4">
+            <Label className="text-base font-semibold">Сверка с картой</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                className="h-9 w-40 text-right tabular-nums"
+                inputMode="decimal"
+                placeholder="Остаток по карте"
+                value={reconcileActual}
+                onChange={(event) => setReconcileActual(event.target.value)}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || reconcileActual === ""}
+                onClick={() => reconcileMutation.mutate(false)}
+              >
+                Сверить
+              </Button>
+            </div>
+            {reconcileResult ? (
+              <div className="rounded-md border bg-muted/20 p-3 text-sm">
+                <div className="tabular-nums">
+                  Учётный {formatDdsMoney(reconcileResult.accounted)} · по карте{" "}
+                  {formatDdsMoney(reconcileResult.actual)}
+                </div>
+                {Number(reconcileResult.delta) === 0 ? (
+                  <div className="mt-1 font-medium text-emerald-600">Расхождений нет ✓</div>
+                ) : (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-amber-600">
+                      Расхождение {formatDdsMoney(reconcileResult.delta)}
+                    </span>
+                    {!reconcileResult.adjusted ? (
+                      <Button
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => reconcileMutation.mutate(true)}
+                        title="Провести корректирующую проводку и выровнять учётный остаток"
+                      >
+                        Выровнять
+                      </Button>
+                    ) : (
+                      <span className="text-emerald-600">выровнено ✓</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

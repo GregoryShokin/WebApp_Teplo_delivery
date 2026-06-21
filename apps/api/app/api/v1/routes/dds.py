@@ -31,6 +31,7 @@ from app.models import (
     SafeAllocation,
     SourceCredential,
     Wallet,
+    WalletBalanceSnapshot,
 )
 from app.scheduler import run_bank_sync_job
 from app.schemas.dds import (
@@ -61,6 +62,9 @@ from app.schemas.dds import (
     SafeAllocationCreate,
     SafeAllocationPayRequest,
     SafeAllocationRead,
+    SafeCashWithdrawRequest,
+    SafeReconcileRead,
+    SafeReconcileRequest,
 )
 from app.services.banking.classifier import (
     AWAITING_BANK_QUALITY,
@@ -72,6 +76,8 @@ from app.services.banking.classifier import (
 )
 from app.services.banking.credentials import set_credential
 from app.services.banking.safe_allocations import (
+    book_safe_cash_withdrawal,
+    book_safe_drift_adjustment,
     cancel_allocation,
     create_allocation,
     pay_allocation,
@@ -1104,6 +1110,94 @@ async def cancel_safe_allocation(
     await session.commit()
     await session.refresh(allocation)
     return _safe_allocation_payload(allocation)
+
+
+@router.post(
+    "/wallets/{wallet_id}/withdraw-cash",
+    response_model=DdsWalletRead,
+    dependencies=DDS_SAFE_CONFIRM_PAID_ACCESS,
+)
+async def withdraw_safe_cash(
+    wallet_id: UUID,
+    payload: SafeCashWithdrawRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    """Снять наличные с карты «Сейф» в кассу Черникова (перевод между счетами)."""
+    wallet = await session.get(Wallet, wallet_id)
+    if wallet is None or wallet.code != SAFE_WALLET_CODE:
+        raise HTTPException(status_code=404, detail="Кошелёк «Сейф» не найден")
+    free = await _safe_free_amount(session, wallet)
+    if payload.amount > free:
+        raise HTTPException(
+            status_code=400, detail=f"Недостаточно свободных средств: свободно {_money(free)}"
+        )
+    try:
+        await book_safe_cash_withdrawal(
+            session,
+            safe_wallet=wallet,
+            amount=payload.amount,
+            operation_date=datetime.now(MOSCOW_TZ).date(),
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    await session.commit()
+    deltas = await _wallet_movement_deltas(session)
+    reserved = await safe_reserved_total(session, wallet.id)
+    return _wallet_payload(wallet, deltas.get(wallet.id, Decimal("0")), None, reserved)
+
+
+@router.post(
+    "/wallets/{wallet_id}/reconcile",
+    response_model=SafeReconcileRead,
+    dependencies=DDS_SAFE_CONFIRM_PAID_ACCESS,
+)
+async def reconcile_safe(
+    wallet_id: UUID,
+    payload: SafeReconcileRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    """Сверить реальный остаток карты с учётным; опционально выровнять корректировкой."""
+    wallet = await session.get(Wallet, wallet_id)
+    if wallet is None or wallet.code != SAFE_WALLET_CODE:
+        raise HTTPException(status_code=404, detail="Кошелёк «Сейф» не найден")
+    deltas = await _wallet_movement_deltas(session)
+    accounted = Decimal(str(wallet.opening_balance)) + deltas.get(wallet.id, Decimal("0"))
+    actual = payload.actual_balance
+    delta = actual - accounted
+    today = datetime.now(MOSCOW_TZ).date()
+
+    snapshot = await session.scalar(
+        select(WalletBalanceSnapshot).where(
+            WalletBalanceSnapshot.wallet_id == wallet.id,
+            WalletBalanceSnapshot.snapshot_date == today,
+            WalletBalanceSnapshot.source == "manual_statement",
+        )
+    )
+    if snapshot is None:
+        session.add(
+            WalletBalanceSnapshot(
+                wallet_id=wallet.id,
+                snapshot_date=today,
+                balance=actual,
+                source="manual_statement",
+            )
+        )
+    else:
+        snapshot.balance = actual
+
+    adjusted = False
+    if payload.apply_adjustment and delta != 0:
+        await book_safe_drift_adjustment(
+            session, safe_wallet=wallet, delta=delta, operation_date=today
+        )
+        adjusted = True
+    await session.commit()
+    return {
+        "accounted": _money(accounted),
+        "actual": _money(actual),
+        "delta": _money(delta),
+        "adjusted": adjusted,
+    }
 
 
 def _wallet_payload(

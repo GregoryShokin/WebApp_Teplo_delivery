@@ -68,6 +68,9 @@ class DdsWalletRead(BaseModel):
     opening_balance: str
     opening_balance_date: date | None = None
     balance: str
+    # Раскладка подотчётного Сейфа; null для прочих кошельков.
+    reserved_total: str | None = None
+    free_total: str | None = None
 
 
 class DdsAliasCreate(BaseModel):
@@ -346,6 +349,30 @@ class SafeAllocationRead(BaseModel):
     purpose: str | None = None
     status: str
     created_at: datetime
+
+
+class SafeCashWithdrawRequest(BaseModel):
+    """Снятие наличных с карты «Сейф» → касса Черникова (перевод между счетами)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0)
+
+
+class SafeReconcileRequest(BaseModel):
+    """Сверка: ввод реального остатка карты. ``apply_adjustment`` — выровнять учётный остаток."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    actual_balance: Decimal = Field(ge=0)
+    apply_adjustment: bool = False
+
+
+class SafeReconcileRead(BaseModel):
+    accounted: str  # учётный остаток Сейфа
+    actual: str  # реальный остаток карты (введён вручную)
+    delta: str  # реальный − учётный (>0 излишек, <0 недостача)
+    adjusted: bool  # проведена ли корректирующая проводка
 
 
 class JournalRow(BaseModel):

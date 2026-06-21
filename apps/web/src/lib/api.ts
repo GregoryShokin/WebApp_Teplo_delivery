@@ -2719,6 +2719,33 @@ export async function cancelSafeAllocation(allocationId: string): Promise<SafeAl
   return response.data;
 }
 
+export async function withdrawSafeCash(
+  walletId: string,
+  amount: string | number,
+): Promise<WalletRead> {
+  const response = await api.post<WalletRead>(`/dds/wallets/${walletId}/withdraw-cash`, { amount });
+  return response.data;
+}
+
+export type SafeReconcileResult = {
+  accounted: string;
+  actual: string;
+  delta: string;
+  adjusted: boolean;
+};
+
+export async function reconcileSafe(
+  walletId: string,
+  actualBalance: string | number,
+  applyAdjustment: boolean,
+): Promise<SafeReconcileResult> {
+  const response = await api.post<SafeReconcileResult>(`/dds/wallets/${walletId}/reconcile`, {
+    actual_balance: actualBalance,
+    apply_adjustment: applyAdjustment,
+  });
+  return response.data;
+}
+
 export async function triggerBankSync(
   provider: DdsProvider,
   payload: { date_from: string; date_to: string },

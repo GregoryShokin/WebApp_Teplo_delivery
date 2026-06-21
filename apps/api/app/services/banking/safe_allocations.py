@@ -12,15 +12,34 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import CashflowTransaction, SafeAllocation
+from app.models import CashflowTransaction, DdsArticle, SafeAllocation, Wallet
+from app.services.banking.classifier import (
+    SAFE_WALLET_CODE,
+    TRANSFER_IN_ARTICLE_CODE,
+    TRANSFER_OUT_ARTICLE_CODE,
+)
 
 SAFE_PAYOUT_SOURCE_KIND = "safe_payout"
+SAFE_CASH_WITHDRAWAL_SOURCE_KIND = "safe_cash_withdrawal"
+SAFE_RECONCILE_ADJUST_SOURCE_KIND = "safe_reconcile_adjust"
 ACTIVE_RESERVE_STATUSES = ("reserved", "partially_paid")
+# Куда снимаются наличные с карты «Сейф» (параллельный наличный счёт).
+CASH_WITHDRAWAL_WALLET_CODE = "tk_chernikova"
+# Корректировка дрейфа при сверке: недостача → расход, излишек → поступление.
+DRIFT_SHORTAGE_ARTICLE_CODE = "prochie_rashody"
+DRIFT_SURPLUS_ARTICLE_CODE = "prochie_postupleniya"
+
+
+async def _article_id(session: AsyncSession, code: str) -> UUID:
+    article_id = await session.scalar(select(DdsArticle.id).where(DdsArticle.code == code))
+    if article_id is None:
+        raise ValueError(f"Не найдена статья ДДС «{code}»")
+    return article_id
 
 
 async def safe_reserved_total(session: AsyncSession, wallet_id: UUID) -> Decimal:
@@ -114,3 +133,92 @@ async def cancel_allocation(session: AsyncSession, allocation: SafeAllocation) -
         return
     allocation.status = "cancelled"
     await session.flush()
+
+
+async def book_safe_cash_withdrawal(
+    session: AsyncSession,
+    *,
+    safe_wallet: Wallet,
+    amount: Decimal,
+    operation_date: date,
+) -> list[UUID]:
+    """Снятие наличных с карты «Сейф» → касса Черникова (двухногий перевод между счетами).
+
+    Не расход, а перемещение: out с Сейфа + in в наличную кассу. Деньги остаются в
+    учётном контуре до фактической траты и не искажают сверку остатка карты.
+    """
+    if amount <= 0:
+        raise ValueError("Сумма снятия должна быть больше нуля")
+    dest_wallet = await session.scalar(
+        select(Wallet).where(
+            Wallet.code == CASH_WITHDRAWAL_WALLET_CODE, Wallet.status == "active"
+        )
+    )
+    if dest_wallet is None:
+        raise ValueError("Не найдена наличная касса для снятия")
+    out_article = await _article_id(session, TRANSFER_OUT_ARTICLE_CODE)
+    in_article = await _article_id(session, TRANSFER_IN_ARTICLE_CODE)
+    source_id = uuid4()
+    purpose = "Снятие наличных с Сейфа в кассу"
+    out_leg = CashflowTransaction(
+        wallet_id=safe_wallet.id,
+        direction="out",
+        amount=amount,
+        operation_date=operation_date,
+        article_id=out_article,
+        source_kind=SAFE_CASH_WITHDRAWAL_SOURCE_KIND,
+        source_id=source_id,
+        payment_purpose=purpose,
+        quality_status="final",
+    )
+    in_leg = CashflowTransaction(
+        wallet_id=dest_wallet.id,
+        direction="in",
+        amount=amount,
+        operation_date=operation_date,
+        article_id=in_article,
+        source_kind=SAFE_CASH_WITHDRAWAL_SOURCE_KIND,
+        source_id=source_id,
+        payment_purpose=purpose,
+        quality_status="final",
+    )
+    session.add(out_leg)
+    session.add(in_leg)
+    await session.flush()
+    return [out_leg.id, in_leg.id]
+
+
+async def book_safe_drift_adjustment(
+    session: AsyncSession,
+    *,
+    safe_wallet: Wallet,
+    delta: Decimal,
+    operation_date: date,
+) -> UUID:
+    """Выровнять учётный баланс Сейфа на реальный при сверке (``delta`` = реальный − учётный).
+
+    ``delta`` > 0 — излишек (нераспознанное поступление) → in «Прочие поступления»;
+    ``delta`` < 0 — недостача (трата мимо учёта) → out «Прочие расходы».
+    """
+    if delta == 0:
+        raise ValueError("Нет расхождения для корректировки")
+    if delta > 0:
+        direction = "in"
+        article = await _article_id(session, DRIFT_SURPLUS_ARTICLE_CODE)
+    else:
+        direction = "out"
+        article = await _article_id(session, DRIFT_SHORTAGE_ARTICLE_CODE)
+    leg = CashflowTransaction(
+        wallet_id=safe_wallet.id,
+        direction=direction,
+        amount=abs(delta),
+        operation_date=operation_date,
+        article_id=article,
+        source_kind=SAFE_RECONCILE_ADJUST_SOURCE_KIND,
+        source_id=uuid4(),
+        payment_purpose="Корректировка остатка Сейфа по сверке с картой",
+        quality_status="final",
+    )
+    session.add(leg)
+    await session.flush()
+    return leg.id
