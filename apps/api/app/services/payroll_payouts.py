@@ -107,6 +107,18 @@ def _is_admin_run(run: PayrollRun) -> bool:
     return isinstance(run.summary, dict) and run.summary.get("kind") == "admin"
 
 
+def _uses_safe_payout(run: PayrollRun) -> bool:
+    """Идёт ли прогон по Сейф-модели (банк→Сейф транзит + раздача с Сейфа).
+
+    Пока это только админская ведомость. На этапе унификации производственной ЗП
+    предикат расширится per-run штампом ``payout_model == "safe"``. Используется как
+    единый гейт вместо разрозненных ``_is_admin_run`` — в частности, не даёт завести
+    транзит банк→Сейф для производственного (direct) прогона, у которого уже есть
+    прямой prebook расхода ЗП (иначе на одну банк-операцию две prebook-цели).
+    """
+    return _is_admin_run(run)
+
+
 async def _resolve_cash_wallet(session: AsyncSession, code: str) -> Wallet:
     """Найти активный наличный кошелёк по коду (Сейф / Торговая касса Черникова)."""
     wallet = await session.scalar(select(Wallet).where(Wallet.code == code))
@@ -129,7 +141,15 @@ async def book_bank_to_safe_transfer(session: AsyncSession, run: PayrollRun) -> 
 
     Идемпотентно: повторный вызов (дубль webhook / повторный polling) — no-op. Возвращает
     True, если перевод создан.
+
+    Только для Сейф-модели (админская ведомость; производственная — после унификации).
+    Вызывается из ``apply_payroll_draft_status`` безусловно, поэтому гейт здесь: для
+    производственного (direct) прогона прямой prebook расхода ЗП уже создан в
+    ``_upsert_payout_cashflow`` — второй транзит банк→Сейф дал бы две prebook-цели на одну
+    банк-операцию (неверная статья + завышение баланса Сейфа).
     """
+    if not _uses_safe_payout(run):
+        return False
     existing = await session.scalar(
         select(CashflowTransaction.id).where(
             CashflowTransaction.source_kind == BANK_TO_SAFE_SOURCE_KIND,
