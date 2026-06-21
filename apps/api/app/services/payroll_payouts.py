@@ -33,6 +33,14 @@ from app.services.payroll_payout_allocation import (
     allocate_cash_cascade,
     build_payout_buckets,
 )
+from app.services.wallets import (  # реэкспорт для обратной совместимости
+    CASH_WALLET_TYPES,
+    DDS_ARTICLE_TRANSFER_IN_CODE,
+    DDS_ARTICLE_TRANSFER_OUT_CODE,
+    SAFE_WALLET_CODE,
+    CashWalletError,
+    resolve_cash_wallet,
+)
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError, money_text
 
 PAYOUT_REQUISITES_KEY = "payroll.bank_payout_requisites"
@@ -43,14 +51,12 @@ PAYROLL_BANK_DRAFT_STATUSES = frozenset({"created", "updated", "paid", "failed"}
 # settles it inherit this article automatically (production payroll → IP/owner card).
 PAYROLL_PAYOUT_SOURCE_KIND = "payroll_payout"
 PAYROLL_PAYOUT_ARTICLE_CODE = "zarplata_proizvodstvennogo_personala"
-# Типы кошельков, с которых допустима выдача наличной части выплаты (Сейф, касса и т.п.).
-CASH_WALLET_TYPES = frozenset({"cash", "cash_register", "cash_safe", "store_cash"})
-# Внутренний перевод банк→Сейф под выплату администрации (шаг 2 — при оплате черновика в банке):
+# Общие константы/резолвер кошельков вынесены в app.services.wallets (разрыв цикл-импорта
+# deposit↔payroll). Реэкспортируем для обратной совместимости со внешними импортами.
+# CASH_WALLET_TYPES / SAFE_WALLET_CODE / DDS_ARTICLE_TRANSFER_{IN,OUT}_CODE ← wallets.
+# Внутренний перевод банк→Сейф под выплату (шаг 2 — при оплате черновика в банке):
 # безналичная часть переводится с расчётного счёта в Сейф, откуда раздаётся по «Выплатить».
-SAFE_WALLET_CODE = "cash_safe"
 BANK_TO_SAFE_SOURCE_KIND = "payroll_bank_to_safe"
-DDS_ARTICLE_TRANSFER_IN_CODE = "postuplenie_perevod_mezhdu_schetami"
-DDS_ARTICLE_TRANSFER_OUT_CODE = "vybytie_perevod_mezhdu_schetami"
 
 
 async def set_run_payout_cash(
@@ -123,13 +129,15 @@ def _uses_safe_payout(run: PayrollRun) -> bool:
 
 
 async def _resolve_cash_wallet(session: AsyncSession, code: str) -> Wallet:
-    """Найти активный наличный кошелёк по коду (Сейф / Торговая касса Черникова)."""
-    wallet = await session.scalar(select(Wallet).where(Wallet.code == code))
-    if wallet is None or wallet.status != "active":
-        raise PayrollConflictError("Наличный счёт не найден или неактивен")
-    if wallet.type not in CASH_WALLET_TYPES:
-        raise PayrollConflictError("Выбранный счёт не является наличным")
-    return wallet
+    """Найти активный наличный кошелёк по коду (Сейф / Торговая касса Черникова).
+
+    Делегирует в общий ``wallets.resolve_cash_wallet``; ошибку приводит к
+    ``PayrollConflictError`` для единообразной обработки в payroll-роутах.
+    """
+    try:
+        return await resolve_cash_wallet(session, code)
+    except CashWalletError as error:
+        raise PayrollConflictError(str(error)) from error
 
 
 async def book_bank_to_safe_transfer(session: AsyncSession, run: PayrollRun) -> bool:
