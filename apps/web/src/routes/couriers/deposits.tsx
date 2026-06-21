@@ -377,6 +377,7 @@ function CourierOperationDialog({
   const [date, setDate] = useState(todayKey());
   const [amount, setAmount] = useState("");
   const [comment, setComment] = useState("");
+  const [payoutMethod, setPayoutMethod] = useState<"cash_tk" | "cash_safe">("cash_tk");
   const [submitted, setSubmitted] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -393,6 +394,7 @@ function CourierOperationDialog({
     setDate(todayKey());
     setAmount("");
     setComment("");
+    setPayoutMethod("cash_tk");
     setSubmitted(false);
     setConfirmOpen(false);
     setFormError(null);
@@ -409,6 +411,7 @@ function CourierOperationDialog({
         comment: comment.trim() || null,
         transaction_date: date,
         transaction_type: operation.type,
+        payout_method: operation.type === "return" ? payoutMethod : undefined,
       });
     },
     onSuccess: async () => {
@@ -482,6 +485,28 @@ function CourierOperationDialog({
                 <span className="text-sm text-destructive">Введите положительную сумму.</span>
               ) : null}
             </Label>
+
+            {type === "return" ? (
+              <Label className="grid gap-2">
+                <span>Счёт выдачи</span>
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
+                  disabled={mutation.isPending}
+                  onChange={(event) =>
+                    setPayoutMethod(event.target.value as "cash_tk" | "cash_safe")
+                  }
+                  value={payoutMethod}
+                >
+                  <option value="cash_tk">Торговая касса Черникова</option>
+                  <option value="cash_safe">Сейф</option>
+                </select>
+                <span className="text-xs text-muted-foreground">
+                  {payoutMethod === "cash_tk"
+                    ? "Наличные из кассы Черникова + изъятие в iiko."
+                    : "Наличные с карты «Сейф». Изъятие в iiko не делается."}
+                </span>
+              </Label>
+            ) : null}
 
             <Label className="grid gap-2">
               <span>{type === "forfeit" ? "Причина" : "Комментарий"}</span>

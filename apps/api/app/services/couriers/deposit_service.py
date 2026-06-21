@@ -24,6 +24,7 @@ from app.models import (
 )
 from app.services.couriers.common import get_courier_or_404
 from app.services.position_registry import courier_positions, senior_courier_positions
+from app.services.wallets import SAFE_WALLET_CODE, CashWalletError, resolve_cash_wallet
 
 DepositStatusFilter = Literal["active", "fired", "all"]
 DepositCategoryFilter = Literal["primary", "secondary", "all"]
@@ -214,6 +215,7 @@ async def create_transaction(
     transaction_date: date,
     comment: str | None,
     created_by_user_id: uuid.UUID,
+    payout_method: str | None = None,
 ) -> CourierDepositTransaction:
     if amount_cents <= 0:
         raise HTTPException(
@@ -221,6 +223,26 @@ async def create_transaction(
             detail="amount_cents must be greater than 0",
         )
     account = await ensure_account(session, employee_id)
+    is_return = _transaction_type_value(transaction_type) == CourierDepositTransactionType.RETURN.value
+    # Канал выдачи только у возврата; по умолчанию ТК Черникова (legacy).
+    resolved_method = (payout_method or "cash_tk") if is_return else None
+    if resolved_method == "bank_draft":
+        # Банк-черновик появится на этапе 3; до тех пор выдаём только наличными.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Банк-черновик выдачи депозита пока недоступен",
+        )
+    payout_wallet: Wallet | None = None
+    if is_return:
+        wallet_code = (
+            SAFE_WALLET_CODE if resolved_method == "cash_safe" else DEPOSIT_RETURN_CASH_WALLET_CODE
+        )
+        try:
+            payout_wallet = await resolve_cash_wallet(session, wallet_code)
+        except CashWalletError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+            ) from error
     transaction = CourierDepositTransaction(
         account_employee_id=account.employee_id,
         transaction_type=_transaction_type_value(transaction_type),
@@ -228,32 +250,37 @@ async def create_transaction(
         transaction_date=transaction_date,
         comment=comment,
         created_by=created_by_user_id,
+        payout_method=resolved_method,
+        payout_wallet_id=payout_wallet.id if payout_wallet is not None else None,
     )
     account.updated_at = datetime.now(UTC)
     session.add(transaction)
     await session.flush()
-    if _transaction_type_value(transaction_type) == CourierDepositTransactionType.RETURN.value:
-        await _book_deposit_return_cashflow(session, transaction)
+    if is_return:
+        await _book_deposit_return_cashflow(session, transaction, wallet=payout_wallet)
     return transaction
 
 
 async def _book_deposit_return_cashflow(
-    session: AsyncSession, transaction: CourierDepositTransaction
+    session: AsyncSession,
+    transaction: CourierDepositTransaction,
+    *,
+    wallet: Wallet | None,
 ) -> None:
-    """Списать возврат депозита со счёта «Торговая касса Черникова» в ДДС.
+    """Списать возврат депозита с выбранного наличного счёта в ДДС.
 
-    Только для RETURN — реальная выдача наличных курьеру, баланс ТК Черникова (наличный
-    кошелёк, store_cash) уменьшается. Пополнение/удержание депозита денег не двигают и сюда
-    не попадают. iiko-изъятие из «Главной кассы» (тот же физический счёт) проводится
-    отдельным шагом. No-op, если счёт/статья ещё не заведены — возврат не валим.
+    Только для RETURN — реальная выдача наличных курьеру, баланс наличного кошелька
+    (ТК Черникова по умолчанию или Сейф) уменьшается. Пополнение/удержание депозита
+    денег не двигают. iiko-изъятие из «Главной кассы» делается отдельным шагом ТОЛЬКО
+    для ТК Черникова (= iiko Главная касса); для Сейфа iiko не вызывается. No-op, если
+    счёт/статья не заведены — возврат не валим.
     """
-    wallet = await session.scalar(
-        select(Wallet).where(Wallet.code == DEPOSIT_RETURN_CASH_WALLET_CODE)
-    )
+    if wallet is None:
+        return
     article_id = await session.scalar(
         select(DdsArticle.id).where(DdsArticle.code == COURIER_DEPOSIT_RETURN_ARTICLE_CODE)
     )
-    if wallet is None or article_id is None:
+    if article_id is None:
         return
     amount = (Decimal(transaction.amount_cents) / Decimal("100")).quantize(Decimal("0.01"))
     session.add(

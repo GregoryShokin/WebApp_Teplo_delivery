@@ -1875,6 +1875,8 @@ export type CourierDepositTransactionPayload = {
   amount_cents: number;
   transaction_date: string;
   comment?: string | null;
+  // Канал выдачи только для возврата: ТК Черникова (по умолч.) / Сейф / банк-черновик.
+  payout_method?: "cash_tk" | "cash_safe" | "bank_draft";
 };
 
 export type CourierEvaluationSource = "web" | "telegram" | "api";
@@ -4652,4 +4654,115 @@ export function apiErrorDetail(error: unknown) {
 
 export function apiErrorStatus(error: unknown) {
   return axios.isAxiosError(error) ? error.response?.status : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// КДС: очередь упаковки + дашборд скорости кухни
+// ---------------------------------------------------------------------------
+
+export type KdsStage = "pending" | "ready" | "waiting_courier" | "handed";
+export type KdsTapType = "ready" | "waiting_courier" | "handed";
+
+export interface KdsQueueOrder {
+  id: string;
+  iiko_order_id: string;
+  order_number: string | null;
+  status: string | null;
+  is_preorder: boolean;
+  has_hot_item: boolean;
+  complete_before: string | null;
+  when_created: string | null;
+  ready_at: string | null;
+  waiting_courier_at: string | null;
+  handed_to_courier_at: string | null;
+  stage: KdsStage;
+}
+
+export interface KdsQueueResponse {
+  server_time: string;
+  nudge: { ready_minutes: number; waiting_courier_minutes: number };
+  orders: KdsQueueOrder[];
+}
+
+export interface KdsTapEvent {
+  client_event_id: string;
+  iiko_order_id: string;
+  event_type: KdsTapType;
+  effective_at: string;
+  action?: "set" | "rollback" | "edit";
+}
+
+export interface KdsEventResult {
+  client_event_id: string;
+  status: "applied" | "duplicate" | "rejected";
+  reason: string | null;
+  event_id: string | null;
+}
+
+export interface KdsStatBlock {
+  median: number | null;
+  p90: number | null;
+  n: number;
+}
+
+export interface KdsDashboardHourRow {
+  hour: number;
+  segment: "asap" | "preorder";
+  count: number;
+  queue_cook: KdsStatBlock;
+  packing: KdsStatBlock;
+  courier_wait: KdsStatBlock;
+  road: KdsStatBlock;
+}
+
+export interface KdsDashboard {
+  date_from: string;
+  date_to: string;
+  segments: ("asap" | "preorder")[];
+  intervals: ("queue_cook" | "packing" | "courier_wait" | "road")[];
+  by_hour: KdsDashboardHourRow[];
+  peak: { hours: string; count: number } & Record<string, KdsStatBlock | string | number>;
+  kpi: {
+    median_packing_min: number | null;
+    median_courier_wait_min: number | null;
+    hot_late_pct: number | null;
+    hot_late_n: number;
+    rolls_late_pct: number | null;
+    rolls_late_n: number;
+    orders_total: number;
+    orders_with_taps: number;
+  };
+  preorder_punctuality: {
+    ready_on_time_pct: number | null;
+    ready_n: number;
+    delivered_on_time_pct: number | null;
+    delivered_n: number;
+  };
+}
+
+export async function getKdsQueue(): Promise<KdsQueueResponse> {
+  const response = await api.get<KdsQueueResponse>("/kds/queue");
+  return response.data;
+}
+
+export async function recordKdsEvents(
+  events: KdsTapEvent[],
+): Promise<{ results: KdsEventResult[] }> {
+  const response = await api.post<{ results: KdsEventResult[] }>("/kds/events", { events });
+  return response.data;
+}
+
+export async function rollbackKdsEvent(eventId: string): Promise<KdsQueueOrder> {
+  const response = await api.post<KdsQueueOrder>(
+    `/kds/events/${encodeURIComponent(eventId)}/rollback`,
+  );
+  return response.data;
+}
+
+export async function getKdsDashboard(params?: {
+  date_from?: string;
+  date_to?: string;
+}): Promise<KdsDashboard> {
+  const response = await api.get<KdsDashboard>("/kds/dashboard", { params });
+  return response.data;
 }

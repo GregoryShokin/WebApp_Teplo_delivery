@@ -85,6 +85,14 @@ class CourierDepositTransaction(Base):
     amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
     transaction_date: Mapped[date] = mapped_column(Date, nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Канал выдачи для RETURN: NULL/'cash_tk' = ТК Черникова (legacy, + iiko-изъятие),
+    # 'cash_safe' = с Сейфа, 'bank_draft' = безнал через Сейф (этап 3). Для TOP_UP/FORFEIT NULL.
+    payout_method: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payout_wallet_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("wallet.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("user.id", ondelete="RESTRICT"),

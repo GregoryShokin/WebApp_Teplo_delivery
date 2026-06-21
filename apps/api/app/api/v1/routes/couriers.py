@@ -697,12 +697,15 @@ async def post_courier_deposit_transaction(
         transaction_date=payload.transaction_date,
         comment=payload.comment,
         created_by_user_id=actor_user_id,
+        payout_method=payload.payout_method,
     )
     await session.commit()
     await session.refresh(transaction)
-    # Возврат депозита — параллельное изъятие в iiko «Главная касса» (после commit: БД —
-    # источник истины, ошибка iiko не откатывает уже проведённый возврат). No-op для top_up/forfeit.
-    post_deposit_return_to_iiko(transaction)
+    # iiko-изъятие из «Главной кассы» — ТОЛЬКО при выдаче с ТК Черникова (= iiko Главная
+    # касса). Для Сейфа iiko не трогаем (другой счёт), иначе ложное изъятие. После commit:
+    # БД — источник истины, ошибка iiko не откатывает возврат. No-op для top_up/forfeit.
+    if transaction.payout_method in (None, "cash_tk"):
+        post_deposit_return_to_iiko(transaction)
     return await _deposit_transaction_payload(session, transaction)
 
 
