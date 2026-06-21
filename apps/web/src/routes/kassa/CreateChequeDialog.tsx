@@ -85,6 +85,9 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
   const queryClient = useQueryClient();
   const [issuedAt, setIssuedAt] = useState(() => toDateTimeLocalInput(new Date()));
   const [selectedOp, setSelectedOp] = useState<CardTransaction | null>(null);
+  // Ручной ввод суммы чека, когда банк ещё не передал card-операцию. Взаимоисключающе с
+  // selectedOp: чек «ожидает подтверждения банком», операция подтянется и сматчится позже.
+  const [pendingAmount, setPendingAmount] = useState<number | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [cashAmount, setCashAmount] = useState("");
   const [storeLines, setStoreLines] = useState<StoreLine[]>([]);
@@ -150,7 +153,8 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
     }
   }, [cardOps, cardTxQuery.isFetching, selectedOp]);
 
-  const cardTotal = selectedOp?.amount ?? 0;
+  const isPending = !selectedOp && pendingAmount !== null && pendingAmount > 0;
+  const cardTotal = selectedOp?.amount ?? (isPending ? (pendingAmount ?? 0) : 0);
   const storeTotal = useMemo(
     () =>
       storeLines.reduce(
@@ -170,6 +174,7 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
   function reset() {
     setIssuedAt(toDateTimeLocalInput(new Date()));
     setSelectedOp(null);
+    setPendingAmount(null);
     setCashAmount("");
     setStoreLines([]);
     setExpenseLines([emptyExpenseLine()]);
@@ -203,6 +208,7 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
         issued_at: issuedAt,
         bank_parts: selectedOp ? [{ bank_operation_id: selectedOp.bank_operation_id }] : [],
         cash_amount: cash > 0 ? cash : null,
+        pending_card_amount: isPending ? pendingAmount : null,
         track_nomenclature: true,
         lines: [...storePayload, ...expensePayload],
         comment: comment.trim() || null,
@@ -215,7 +221,11 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
         queryClient.invalidateQueries({ queryKey: ["dds", "cashflow"] }),
         queryClient.invalidateQueries({ queryKey: ["dds", "wallets"] }),
       ]);
-      toast.success("Чек создан и проведён в ДДС");
+      toast.success(
+        isPending
+          ? "Чек создан — ожидает подтверждения банком"
+          : "Чек создан и проведён в ДДС",
+      );
       reset();
       onCreated();
       onOpenChange(false);
@@ -270,7 +280,11 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
             <div
               className={cn(
                 "flex w-full items-center rounded-md border transition-colors",
-                selectedOp ? "border-emerald-300 bg-emerald-50" : "border-input",
+                selectedOp
+                  ? "border-emerald-300 bg-emerald-50"
+                  : isPending
+                    ? "border-amber-300 bg-amber-50"
+                    : "border-input",
               )}
             >
               <button
@@ -296,6 +310,20 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
                         · нажмите, чтобы изменить
                       </span>
                     </>
+                  ) : isPending ? (
+                    <>
+                      <span className="flex items-baseline justify-between gap-2">
+                        <span className="truncate text-sm text-amber-800">
+                          Сумма введена вручную
+                        </span>
+                        <span className="shrink-0 text-sm font-medium tabular-nums text-amber-800">
+                          {formatDdsMoney(pendingAmount ?? 0)}
+                        </span>
+                      </span>
+                      <span className="block truncate text-xs text-amber-700">
+                        Ожидает подтверждения банком · сматчится с операцией позже
+                      </span>
+                    </>
                   ) : (
                     <span className="text-sm text-muted-foreground">
                       Операция не выбрана — выберите оплату по карте
@@ -308,14 +336,17 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
                   aria-hidden="true"
                 />
               </button>
-              {selectedOp ? (
+              {selectedOp || isPending ? (
                 <Button
                   type="button"
                   size="icon"
                   variant="ghost"
                   className="mr-1 size-8 shrink-0 text-muted-foreground hover:text-foreground"
                   aria-label="Сбросить оплату по карте"
-                  onClick={() => setSelectedOp(null)}
+                  onClick={() => {
+                    setSelectedOp(null);
+                    setPendingAmount(null);
+                  }}
                 >
                   <X size={15} aria-hidden="true" />
                 </Button>
@@ -569,11 +600,19 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
         isLoading={cardTxQuery.isLoading}
         day={dayLabel(issuedAt)}
         selectedId={selectedOp?.bank_operation_id ?? null}
+        pendingAmount={isPending ? pendingAmount : null}
         onPick={(op) => {
           setSelectedOp(op);
+          setPendingAmount(null);
           setPickerOpen(false);
         }}
         onClear={() => {
+          setSelectedOp(null);
+          setPendingAmount(null);
+          setPickerOpen(false);
+        }}
+        onManual={(amount) => {
+          setPendingAmount(amount);
           setSelectedOp(null);
           setPickerOpen(false);
         }}
@@ -589,8 +628,10 @@ function OperationPicker({
   isLoading,
   day,
   selectedId,
+  pendingAmount,
   onPick,
   onClear,
+  onManual,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -598,9 +639,17 @@ function OperationPicker({
   isLoading: boolean;
   day: string;
   selectedId: string | null;
+  pendingAmount: number | null;
   onPick: (op: CardTransaction) => void;
   onClear: () => void;
+  onManual: (amount: number) => void;
 }) {
+  const [manualInput, setManualInput] = useState("");
+  useEffect(() => {
+    if (open) setManualInput(pendingAmount != null ? String(pendingAmount) : "");
+  }, [open, pendingAmount]);
+  const noCardSelected = selectedId === null && pendingAmount === null;
+  const manualValue = Number(manualInput) || 0;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[80vh] max-w-md overflow-y-auto">
@@ -614,7 +663,7 @@ function OperationPicker({
             onClick={onClear}
             className={cn(
               "flex w-full items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors",
-              selectedId === null
+              noCardSelected
                 ? "border-emerald-300 bg-emerald-50"
                 : "border-transparent hover:bg-muted/60",
             )}
@@ -622,12 +671,12 @@ function OperationPicker({
             <span
               className={cn(
                 "flex size-5 shrink-0 items-center justify-center rounded-full border",
-                selectedId === null
+                noCardSelected
                   ? "border-emerald-500 bg-emerald-500 text-white"
                   : "border-muted-foreground/40",
               )}
             >
-              {selectedId === null ? <Check size={13} aria-hidden="true" /> : null}
+              {noCardSelected ? <Check size={13} aria-hidden="true" /> : null}
             </span>
             <span className="text-sm">
               Без оплаты картой <span className="text-muted-foreground">— только наличные</span>
@@ -683,6 +732,31 @@ function OperationPicker({
               );
             })
           )}
+
+          <div className="mt-2 rounded-md border border-dashed border-amber-300 bg-amber-50/40 p-3">
+            <p className="text-sm font-medium text-amber-900">Добавить сумму чека вручную</p>
+            <p className="mt-0.5 text-xs text-amber-700">
+              Банк ещё не показал оплату (выходные / задержка). Введите сумму — чек будет
+              «ожидать подтверждения банком» и сматчится с операцией позже.
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <Input
+                inputMode="decimal"
+                placeholder="Введите точную сумму до копейки"
+                className="h-9"
+                value={manualInput}
+                onChange={(event) => setManualInput(event.target.value)}
+              />
+              <Button
+                type="button"
+                size="sm"
+                disabled={manualValue <= 0}
+                onClick={() => onManual(Math.round(manualValue * 100) / 100)}
+              >
+                Указать
+              </Button>
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

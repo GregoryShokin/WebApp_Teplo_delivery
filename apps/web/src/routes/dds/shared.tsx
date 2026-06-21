@@ -60,6 +60,7 @@ export const statusLabels: Record<string, string> = {
   needs_review: "Требует разбора",
   excluded: "Исключено",
   matched: "Сопоставлено",
+  awaiting_confirmation: "Ожидает подтверждения",
 };
 
 export const directionLabels: Record<string, string> = {
@@ -197,6 +198,9 @@ export function statusClass(status: string) {
   }
   if (status === "internal_transfer") {
     return "border-sky-200 bg-sky-50 text-sky-700";
+  }
+  if (status === "awaiting_confirmation") {
+    return "border-amber-200 bg-amber-50 text-amber-700";
   }
   if (status === "pending" || status === "needs_review") {
     return "border-orange-200 bg-orange-50 text-orange-700";

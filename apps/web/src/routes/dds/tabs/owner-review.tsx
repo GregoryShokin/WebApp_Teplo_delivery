@@ -73,6 +73,7 @@ export function OwnerReviewTab({ canClassify }: { canClassify: boolean }) {
             <SelectItem value="unclassified_operation">Неразмеченная операция</SelectItem>
             <SelectItem value="invalid_credentials">Проблема с доступом</SelectItem>
             <SelectItem value="unmatched_transfer">Найти перевод</SelectItem>
+            <SelectItem value="unconfirmed_cheque">Чек без подтверждения банком</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -375,6 +376,9 @@ function caseKindLabel(kind: string) {
   }
   if (kind === "unmatched_transfer") {
     return "Найти перевод";
+  }
+  if (kind === "unconfirmed_cheque") {
+    return "Чек без подтверждения банком";
   }
   return kind;
 }

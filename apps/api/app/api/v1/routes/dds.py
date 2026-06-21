@@ -54,6 +54,7 @@ from app.schemas.dds import (
     OwnerReviewListRead,
 )
 from app.services.banking.classifier import (
+    AWAITING_BANK_QUALITY,
     SAFE_WALLET_CODE,
     apply_operation_action,
     apply_operation_split,
@@ -220,6 +221,12 @@ async def list_journal(
             time_source = cf.created_at
             if cf.source_kind == "bank_operation" and cf.source_id is not None:
                 time_source = posted_at_by_op.get(cf.source_id) or cf.created_at
+            # Пендинг-чек (ручной ввод, банк ещё не подтвердил) — отдельный статус журнала.
+            cf_status = (
+                "awaiting_confirmation"
+                if cf.quality_status == AWAITING_BANK_QUALITY
+                else "classified"
+            )
             rows.append(
                 {
                     "kind": "cashflow",
@@ -227,7 +234,7 @@ async def list_journal(
                     "bank_operation_id": cf.source_id
                     if cf.source_kind == "bank_operation"
                     else None,
-                    "status": "classified",
+                    "status": cf_status,
                     "operation_date": cf.operation_date,
                     "occurred_at": _journal_occurred_at(cf.operation_date, time_source),
                     "direction": cf.direction,
@@ -741,10 +748,20 @@ async def list_owner_review_cases(
     session: Annotated[AsyncSession, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
-    kind: Literal["unclassified_operation", "invalid_credentials", "unmatched_transfer"]
+    kind: Literal[
+        "unclassified_operation",
+        "invalid_credentials",
+        "unmatched_transfer",
+        "unconfirmed_cheque",
+    ]
     | None = None,
 ) -> dict[str, object]:
-    allowed_kinds = ("unclassified_operation", "invalid_credentials", "unmatched_transfer")
+    allowed_kinds = (
+        "unclassified_operation",
+        "invalid_credentials",
+        "unmatched_transfer",
+        "unconfirmed_cheque",
+    )
     conditions = [
         ReconciliationCase.status == "pending",
         ReconciliationCase.kind.in_(allowed_kinds),

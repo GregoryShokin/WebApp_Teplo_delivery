@@ -24,6 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    AppSetting,
     BankOperation,
     CashflowTransaction,
     Counterparty,
@@ -31,10 +32,11 @@ from app.models import (
     IikoProduct,
     InvoiceLineItem,
     InvoicePaymentAllocation,
+    ReconciliationCase,
     SupplierInvoice,
     Wallet,
 )
-from app.services.banking.classifier import _wallet_for_operation
+from app.services.banking.classifier import AWAITING_BANK_QUALITY, _wallet_for_operation
 from app.services.counterparty_bank_match import (
     BANK_NOISE_INNS,
     BUSINESS_TZ,
@@ -44,8 +46,23 @@ from app.services.counterparty_bank_match import (
 from app.services.counterparty_matching import _op_already_allocated, _recompute_status
 
 CASH_WALLET_CODE = "tk_chernikova"
+# Бизнес-карта — всегда Т-Банк рублёвый счёт (других карточных счетов нет). На него садится
+# ручной пендинг-чек (полная сумма) до прихода выписки.
+CARD_WALLET_CODE = "tbank_main"
 CARD_TX_WINDOW_HOURS = 48
 CARD_TX_TIGHT_MINUTES = 120
+
+# Матч пендинг-чека с пришедшей card-операцией: окно по ДАТЕ операции (операция несёт
+# реальную дату транзакции, поэтому окно мало даже при понедельничной пачке пт–вс).
+PENDING_CHEQUE_MATCH_WINDOW_DAYS = 3
+# «Через сколько дней без подтверждения банком поднимать чек в Требует разбора» — настройка
+# (Настройки приложения). Сейчас 4 дня (до webhooks), после webhooks владелец ставит 1–2.
+PENDING_CHEQUE_ALERT_SETTING_KEY = "kassa.pending_cheque_alert_days"
+PENDING_CHEQUE_ALERT_DEFAULT_DAYS = 4
+UNCONFIRMED_CHEQUE_CASE_KIND = "unconfirmed_cheque"
+# Аллокация пендинг-карты: покрывает сумму чека (чтобы он не висел в кредиторке), но это
+# не подтверждённая банком оплата. При матче заменяется на обычную 'bank'-аллокацию.
+PENDING_CARD_ALLOCATION_SOURCE = "card_pending"
 
 # Чеку местного закупа доступны только эти статьи ДДС (по ИМЕНИ — code/uuid различны
 # dev/prod). Кассир выбирает статью каждой позиции только из этого белого списка.
@@ -334,6 +351,7 @@ async def create_cheque(
     issued_at: datetime,
     bank_parts: list[ChequeBankPart] | None = None,
     cash_amount: Decimal | None = None,
+    pending_card_amount: Decimal | None = None,
     track_nomenclature: bool = False,
     lines: list[ChequeLineInput] | None = None,
     number: str | None = None,
@@ -348,10 +366,20 @@ async def create_cheque(
     """
     bank_parts = bank_parts or []
     line_inputs = list(lines or [])
+    pending_card = _money(pending_card_amount) if pending_card_amount is not None else None
     if issued_at is None:
         raise KassaChequeError("Укажите дату и время чека")
-    if not bank_parts and not cash_amount:
-        raise KassaChequeError("Укажите хотя бы один источник оплаты: карта или наличные")
+    if pending_card is not None:
+        # Ручной ввод суммы чека (банк ещё не передал операцию). Нельзя смешивать с выбранной
+        # картой — это два взаимоисключающих способа указать карточную оплату.
+        if bank_parts:
+            raise KassaChequeError(
+                "Нельзя одновременно выбрать оплату по карте и ввести сумму вручную"
+            )
+        if pending_card <= 0:
+            raise KassaChequeError("Сумма чека вручную должна быть больше нуля")
+    if not bank_parts and pending_card is None and not cash_amount:
+        raise KassaChequeError("Укажите источник оплаты: карта, ручная сумма или наличные")
 
     counterparty = await session.get(Counterparty, counterparty_id)
     if counterparty is None:
@@ -389,7 +417,9 @@ async def create_cheque(
     if cash_total < 0:
         raise KassaChequeError("Сумма наличной части не может быть отрицательной")
 
-    paid_total = _money(bank_total + cash_total)
+    # Карточная часть: либо разобранная по операциям (bank_total), либо ручной пендинг.
+    card_total = bank_total + (pending_card or Decimal("0.00"))
+    paid_total = _money(card_total + cash_total)
     if paid_total <= 0:
         raise KassaChequeError("Сумма оплаты должна быть больше нуля")
 
@@ -535,6 +565,43 @@ async def create_cheque(
         )
     await session.flush()
 
+    # --- пендинг-карта: одна проводка «Ожидает подтверждения банком» на Т-Банк р/с ----
+    # Полную сумму держим ОДНОЙ проводкой (article_id=None) и не двигаем баланс банка
+    # (он идёт от выписки). Когда придёт реальная card-операция, чек-реконсилер заменит
+    # эту проводку разнесёнными по статьям строками и привяжет операцию (без задвоения).
+    if pending_card is not None:
+        card_wallet = await session.scalar(
+            select(Wallet).where(Wallet.code == CARD_WALLET_CODE, Wallet.status == "active")
+        )
+        if card_wallet is None:
+            raise KassaChequeError("Счёт бизнес-карты (Т-Банк рублёвый) не найден")
+        placeholder = CashflowTransaction(
+            wallet_id=card_wallet.id,
+            direction="out",
+            amount=pending_card,
+            operation_date=issued_at.date(),
+            # С позициями статьи берём из них при матче; без позиций (фолбэк) — единая статья чека.
+            article_id=None if track_nomenclature else article_id,
+            counterparty_id=counterparty_id,
+            source_kind="kassa_cheque",
+            source_id=invoice.id,
+            payment_purpose=f"Чек {invoice.number} (ожидает подтверждения банком)",
+            comment=comment,
+            quality_status=AWAITING_BANK_QUALITY,
+        )
+        session.add(placeholder)
+        await session.flush()
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=invoice.id,
+                source_kind=PENDING_CARD_ALLOCATION_SOURCE,
+                cashflow_transaction_id=placeholder.id,
+                amount=pending_card,
+                created_by_user_id=actor_user_id,
+            )
+        )
+        await session.flush()
+
     # --- наличная часть: движения ДДС по статьям с кассы Черниковой + аллокация --
     if cash_total > 0 and cash_wallet is not None:
         first_cash_txn_id: uuid.UUID | None = None
@@ -571,6 +638,264 @@ async def create_cheque(
     await session.commit()
     await session.refresh(invoice)
     return invoice
+
+
+# --- Пендинг-чек: матч с пришедшей выпиской и эскалация «банк не передал» --------------
+#
+# Ручной чек (полная сумма, ``quality_status='awaiting_bank'``) сводим с реальной card-
+# операцией Т-Банка ПОСЛЕ её импорта (вызывается из синка банка ДО общей классификации,
+# см. ``scheduler.sync_bank_provider``). При матче плейсхолдер заменяется разнесёнными по
+# статьям проводками и операция привязывается к чеку — повторного расхода не возникает.
+
+
+async def _pending_article_sums(
+    session: AsyncSession, invoice: SupplierInvoice, placeholder: CashflowTransaction
+) -> list[tuple[uuid.UUID, Decimal]]:
+    """Разбивка чека по статьям ДДС для разнесения при матче (как при создании)."""
+    lines = (
+        await session.scalars(
+            select(InvoiceLineItem).where(InvoiceLineItem.invoice_id == invoice.id)
+        )
+    ).all()
+    sums: dict[uuid.UUID, Decimal] = {}
+    for line in lines:
+        if line.dds_article_id is None:
+            continue
+        sums[line.dds_article_id] = sums.get(line.dds_article_id, Decimal("0.00")) + _money(
+            line.sum
+        )
+    if sums:
+        return list(sums.items())
+    if placeholder.article_id is not None:
+        return [(placeholder.article_id, _money(invoice.amount))]
+    raise KassaChequeError("Не удалось определить статьи чека для разнесения")
+
+
+def _operation_purchase_date(operation: BankOperation) -> date:
+    """День ПОКУПКИ по карте (authorizationDate), а не день проводки (settlement-лаг 1–3 дня)."""
+    purchased = _purchase_dt(operation)
+    if purchased is not None:
+        return purchased.astimezone(BUSINESS_TZ).date()
+    return operation.operation_date
+
+
+async def _find_matching_card_op(
+    session: AsyncSession, placeholder: CashflowTransaction, window_days: int
+) -> BankOperation | None:
+    """Непривязанная card-операция Т-Банка под пендинг-чек: тот же счёт, точная сумма, день покупки.
+
+    Матчим по ДНЮ ПОКУПКИ (placeholder.operation_date = дата чека): банк проводит покупку
+    позже (settlement), поэтому SQL-окно по дате проводки берём с запасом вперёд, а точную
+    близость считаем по authorizationDate — устойчиво к понедельничной пачке пт–вс.
+    """
+    low = placeholder.operation_date - timedelta(days=window_days)
+    high = placeholder.operation_date + timedelta(days=window_days + 14)
+    candidates = (
+        await session.scalars(
+            select(BankOperation)
+            .where(
+                BankOperation.provider == "tbank",
+                BankOperation.direction == "out",
+                BankOperation.amount == placeholder.amount,
+                BankOperation.transfer_group_id.is_(None),
+                BankOperation.cashflow_transaction_id.is_(None),
+                BankOperation.operation_date >= low,
+                BankOperation.operation_date <= high,
+            )
+            .order_by(BankOperation.operation_date)
+        )
+    ).all()
+    for operation in candidates:
+        if not _is_card_purchase(operation):
+            continue
+        purchase_date = _operation_purchase_date(operation)
+        if abs((purchase_date - placeholder.operation_date).days) > window_days:
+            continue
+        if await _op_already_allocated(session, operation.id):
+            continue
+        wallet = await _wallet_for_operation(session, operation)
+        if wallet is None or wallet.id != placeholder.wallet_id:
+            continue
+        return operation
+    return None
+
+
+async def _settle_pending_cheque(
+    session: AsyncSession, placeholder: CashflowTransaction, operation: BankOperation
+) -> None:
+    """Свести пендинг-чек с операцией: разнести по статьям, привязать операцию, закрыть кейсы."""
+    invoice = await session.get(SupplierInvoice, placeholder.source_id)
+    if invoice is None:
+        return
+    wallet_id = placeholder.wallet_id
+    comment = placeholder.comment
+    paid_total = _money(invoice.amount)
+    card_amount = _money(operation.amount)
+    article_sums = await _pending_article_sums(session, invoice, placeholder)
+
+    # Снять пендинг-проводку и её аллокацию — взамен заведём разнесённые по статьям.
+    pending_allocs = (
+        await session.scalars(
+            select(InvoicePaymentAllocation).where(
+                InvoicePaymentAllocation.invoice_id == invoice.id,
+                InvoicePaymentAllocation.source_kind == PENDING_CARD_ALLOCATION_SOURCE,
+            )
+        )
+    ).all()
+    for alloc in pending_allocs:
+        await session.delete(alloc)
+    await session.delete(placeholder)
+    await session.flush()
+
+    first_txn_id: uuid.UUID | None = None
+    for art_id, share in _allocate_by_articles(card_amount, article_sums, paid_total):
+        transaction = CashflowTransaction(
+            wallet_id=wallet_id,
+            direction="out",
+            amount=share,
+            operation_date=operation.operation_date,
+            article_id=art_id,
+            counterparty_id=invoice.counterparty_id,
+            source_kind="kassa_cheque",
+            source_id=invoice.id,
+            payment_purpose=f"Чек {invoice.number}",
+            comment=comment,
+            quality_status="final",
+        )
+        session.add(transaction)
+        await session.flush()
+        if first_txn_id is None:
+            first_txn_id = transaction.id
+    operation.cashflow_transaction_id = first_txn_id
+    operation.classification_status = "classified"
+    session.add(
+        InvoicePaymentAllocation(
+            invoice_id=invoice.id,
+            source_kind="bank",
+            bank_operation_id=operation.id,
+            amount=card_amount,
+        )
+    )
+    await session.flush()
+    await _resolve_cases(session, bank_operation_id=operation.id, invoice_id=invoice.id)
+    await _recompute_status(session, invoice)
+
+
+async def _resolve_cases(
+    session: AsyncSession, *, bank_operation_id: uuid.UUID, invoice_id: uuid.UUID
+) -> None:
+    """Закрыть pending-кейсы по этой операции и «банк не передал» по этому чеку."""
+    cases = (
+        await session.scalars(
+            select(ReconciliationCase).where(ReconciliationCase.status == "pending")
+        )
+    ).all()
+    for case in cases:
+        is_op_case = case.bank_operation_id == bank_operation_id
+        is_cheque_case = case.kind == UNCONFIRMED_CHEQUE_CASE_KIND and str(
+            (case.payload or {}).get("invoice_id")
+        ) == str(invoice_id)
+        if is_op_case or is_cheque_case:
+            case.status = "resolved"
+            case.resolved_at = datetime.now(UTC)
+            case.resolution_payload = {"reason": "matched_pending_cheque"}
+
+
+async def match_pending_cheque_operations(
+    session: AsyncSession, *, window_days: int = PENDING_CHEQUE_MATCH_WINDOW_DAYS
+) -> int:
+    """Свести все ожидающие подтверждения чеки с пришедшими card-операциями. Без commit."""
+    placeholders = (
+        await session.scalars(
+            select(CashflowTransaction).where(
+                CashflowTransaction.source_kind == "kassa_cheque",
+                CashflowTransaction.quality_status == AWAITING_BANK_QUALITY,
+            )
+        )
+    ).all()
+    matched = 0
+    for placeholder in placeholders:
+        operation = await _find_matching_card_op(session, placeholder, window_days)
+        if operation is None:
+            continue
+        await _settle_pending_cheque(session, placeholder, operation)
+        matched += 1
+    return matched
+
+
+async def get_pending_cheque_alert_days(session: AsyncSession) -> int:
+    """Порог «банк не передал» (дней) из Настроек; по умолчанию 4."""
+    setting = await session.scalar(
+        select(AppSetting).where(AppSetting.key == PENDING_CHEQUE_ALERT_SETTING_KEY)
+    )
+    if setting is None:
+        return PENDING_CHEQUE_ALERT_DEFAULT_DAYS
+    try:
+        days = int(setting.value)
+    except (TypeError, ValueError):
+        return PENDING_CHEQUE_ALERT_DEFAULT_DAYS
+    return days if days > 0 else PENDING_CHEQUE_ALERT_DEFAULT_DAYS
+
+
+async def _has_open_unconfirmed_case(session: AsyncSession, invoice_id: uuid.UUID) -> bool:
+    cases = (
+        await session.scalars(
+            select(ReconciliationCase).where(
+                ReconciliationCase.kind == UNCONFIRMED_CHEQUE_CASE_KIND,
+                ReconciliationCase.status == "pending",
+            )
+        )
+    ).all()
+    return any(str((case.payload or {}).get("invoice_id")) == str(invoice_id) for case in cases)
+
+
+async def escalate_overdue_pending_cheques(
+    session: AsyncSession, *, now: datetime | None = None
+) -> int:
+    """Поднять в «Требует разбора» чеки, которые ждут подтверждения банком дольше порога.
+
+    Создаёт ``ReconciliationCase(kind='unconfirmed_cheque')`` — он попадает в счётчик
+    «Требует разбора: N», который видит менеджер. Без commit (коммитит вызывающий джоб).
+    """
+    moment = now or datetime.now(UTC)
+    cutoff = moment - timedelta(days=await get_pending_cheque_alert_days(session))
+    placeholders = (
+        await session.scalars(
+            select(CashflowTransaction).where(
+                CashflowTransaction.source_kind == "kassa_cheque",
+                CashflowTransaction.quality_status == AWAITING_BANK_QUALITY,
+                CashflowTransaction.created_at <= cutoff,
+            )
+        )
+    ).all()
+    created = 0
+    for placeholder in placeholders:
+        invoice = await session.get(SupplierInvoice, placeholder.source_id)
+        if invoice is None:
+            continue
+        if await _has_open_unconfirmed_case(session, invoice.id):
+            continue
+        session.add(
+            ReconciliationCase(
+                kind=UNCONFIRMED_CHEQUE_CASE_KIND,
+                status="pending",
+                provider="tbank",
+                bank_operation_id=None,
+                payload={
+                    "invoice_id": str(invoice.id),
+                    "cheque_number": invoice.number,
+                    "amount": str(_money(placeholder.amount)),
+                    "issued_at": invoice.issued_at.isoformat() if invoice.issued_at else None,
+                    "waiting_since": placeholder.created_at.isoformat()
+                    if placeholder.created_at
+                    else None,
+                    "reason": "bank_operation_missing",
+                },
+            )
+        )
+        created += 1
+    await session.flush()
+    return created
 
 
 async def list_cheque_articles(session: AsyncSession) -> list[DdsArticle]:

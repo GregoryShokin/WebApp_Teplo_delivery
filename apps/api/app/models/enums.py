@@ -82,6 +82,9 @@ counterparty_invoice_status_enum = Enum(
 invoice_allocation_source_enum = Enum(
     "bank",
     "cash",
+    # Ручной пендинг-чек Кассы: карточная часть введена вручную, банк ещё не подтвердил
+    # (при матче операции заменяется на 'bank'). Значение добавлено миграцией 0129.
+    "card_pending",
     name="invoice_allocation_source",
 )
 counterparty_collection_source_kind_enum = Enum(

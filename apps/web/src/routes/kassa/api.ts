@@ -105,6 +105,8 @@ export type CreateChequePayload = {
   issued_at: string;
   bank_parts: Array<{ bank_operation_id: string; amount?: number | null }>;
   cash_amount?: number | null;
+  // Ручной ввод суммы чека, когда банк ещё не передал card-операцию (взаимоисключающе с bank_parts).
+  pending_card_amount?: number | null;
   track_nomenclature?: boolean;
   lines?: ChequeLinePayload[];
   comment?: string | null;

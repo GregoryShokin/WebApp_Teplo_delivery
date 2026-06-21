@@ -167,6 +167,7 @@ async def create_cheque_endpoint(
                 for part in payload.bank_parts
             ],
             cash_amount=payload.cash_amount,
+            pending_card_amount=payload.pending_card_amount,
             track_nomenclature=payload.track_nomenclature,
             lines=[
                 ChequeLineInput(

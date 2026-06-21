@@ -47,6 +47,14 @@ SAFE_WALLET_CODE = "cash_safe"
 TRANSFER_OUT_ARTICLE_CODE = "vybytie_perevod_mezhdu_schetami"
 TRANSFER_IN_ARTICLE_CODE = "postuplenie_perevod_mezhdu_schetami"
 
+# Чек Кассы, заведённый ВРУЧНУЮ до прихода выписки (банк ещё не передал card-операцию —
+# выходные / задержка webhook): полная сумма «висит» одной проводкой со статусом
+# ``awaiting_bank`` и в баланс банка не влияет (баланс = выписка). Такую проводку НЕ трогает
+# общий prebooked-механизм — у card-операции ИНН процессинговый (шум ТБанка), и развести
+# по статьям её надо в момент матча. Сводит отдельный чек-реконсилер
+# ``match_pending_cheque_operations`` (kassa/cheque.py).
+AWAITING_BANK_QUALITY = "awaiting_bank"
+
 
 @dataclass(frozen=True)
 class ClassificationResult:
@@ -347,6 +355,9 @@ async def _find_prebooked_payment(
             CashflowTransaction.direction == operation.direction,
             CashflowTransaction.amount == operation.amount,
             CashflowTransaction.source_kind.in_(PREBOOKABLE_SOURCE_KINDS),
+            # Пендинг-чек (ручной ввод до выписки) сводит отдельный чек-реконсилер,
+            # а не общий prebooked — иначе он привяжет операцию без разнесения по статьям.
+            CashflowTransaction.quality_status != AWAITING_BANK_QUALITY,
             CashflowTransaction.operation_date >= low,
             CashflowTransaction.operation_date <= high,
             ~already_linked,

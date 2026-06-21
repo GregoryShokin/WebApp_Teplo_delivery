@@ -87,6 +87,9 @@ class ChequeCreate(BaseModel):
     issued_at: datetime
     bank_parts: list[ChequeBankPartCreate] = Field(default_factory=list)
     cash_amount: Decimal | None = None
+    # Ручной ввод суммы чека, когда банк ещё не передал card-операцию (выходные/задержка
+    # webhook). Взаимоисключающе с ``bank_parts``. Чек «ожидает подтверждения банком».
+    pending_card_amount: Decimal | None = None
     track_nomenclature: bool = False
     lines: list[ChequeLineCreate] = Field(default_factory=list)
     number: str | None = None

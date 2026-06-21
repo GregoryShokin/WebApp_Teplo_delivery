@@ -61,6 +61,25 @@ async def poll_banks() -> None:
 
 
 @scheduler.scheduled_job(
+    "cron",
+    hour=9,
+    minute=30,
+    id="escalate_pending_cheques",
+    max_instances=1,
+    coalesce=True,
+)
+async def escalate_pending_cheques() -> None:
+    """Поднять в «Требует разбора» ручные чеки, которые банк не подтвердил дольше порога."""
+    from app.services.kassa.cheque import escalate_overdue_pending_cheques
+
+    async with AsyncSessionLocal() as session:
+        created = await escalate_overdue_pending_cheques(session)
+        await session.commit()
+    if created:
+        logger.info("Эскалация пендинг-чеков: %s новых кейсов «банк не передал»", created)
+
+
+@scheduler.scheduled_job(
     "interval",
     minutes=10,
     id="poll_payment_statuses",
@@ -356,6 +375,13 @@ async def sync_bank_provider(
 
     await session.flush()
     own_accounts_added = await sync_own_accounts(session, provider=provider)
+    if provider == "tbank":
+        # Свести ручные пендинг-чеки Кассы с только что импортированными card-операциями ДО
+        # общей классификации — тогда сматченные операции уже не уйдут в needs_review.
+        from app.services.kassa.cheque import match_pending_cheque_operations
+
+        await match_pending_cheque_operations(session)
+        await session.flush()
     pending_operations = (
         await session.scalars(
             select(BankOperation).where(

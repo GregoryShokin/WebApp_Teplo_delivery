@@ -265,8 +265,15 @@ async def post_cheque_expenses_to_iiko(
             )
         )
     ).all()
+    # ``card_pending`` — ручной пендинг-чек (банк ещё не подтвердил): для iiko это та же
+    # карточная доля (эквайринг), как и обычная 'bank'. Покупка физически уже совершена.
     bank_total = sum(
-        (_money(a.amount) for a in allocations if a.source_kind == "bank"), Decimal("0.00")
+        (
+            _money(a.amount)
+            for a in allocations
+            if a.source_kind in ("bank", "card_pending")
+        ),
+        Decimal("0.00"),
     )
     cash_total = sum(
         (_money(a.amount) for a in allocations if a.source_kind == "cash"), Decimal("0.00")
