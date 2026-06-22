@@ -65,6 +65,9 @@ export function InvoiceDetailDialog({
 
   const iiko = detail ? IIKO_STATUS[detail.iiko_push_status] ?? null : null;
   const hasStaff = (detail?.staff_amount ?? 0) > 0;
+  // Отправка в iiko уместна только для накладных, созданных у нас (вручную / через Кассу).
+  // Накладные source=iiko пришли ИЗ iiko — повторный пуш создал бы дубль документа.
+  const canPushSource = detail?.source === "manual" || detail?.source === "kassa_invoice";
 
   return (
     <>
@@ -105,35 +108,39 @@ export function InvoiceDetailDialog({
               </div>
             ) : null}
 
-            {/* Статус в iiko + переотправка */}
-            <div className="flex flex-wrap items-center gap-2 rounded-md border p-3">
-              {iiko ? (
-                <Badge variant="outline" className={iiko.cls}>
-                  {iiko.label}
-                </Badge>
-              ) : (
-                <Badge variant="outline">{detail.iiko_push_status}</Badge>
-              )}
-              {detail.iiko_push_error ? (
-                <span className="text-xs text-muted-foreground">{detail.iiko_push_error}</span>
-              ) : null}
-              {canPush && iiko?.canSend ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="ml-auto"
-                  disabled={pushMutation.isPending}
-                  onClick={() => pushMutation.mutate()}
-                >
-                  {pushMutation.isPending ? (
-                    <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
-                  ) : (
-                    <Send size={14} aria-hidden="true" />
-                  )}
-                  {detail.iiko_push_status === "failed" ? "Переотправить в iiko" : "Отправить в iiko"}
-                </Button>
-              ) : null}
-            </div>
+            {/* Статус в iiko + переотправка — только для созданных у нас накладных */}
+            {canPushSource ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border p-3">
+                {iiko ? (
+                  <Badge variant="outline" className={iiko.cls}>
+                    {iiko.label}
+                  </Badge>
+                ) : (
+                  <Badge variant="outline">{detail.iiko_push_status}</Badge>
+                )}
+                {detail.iiko_push_error ? (
+                  <span className="text-xs text-muted-foreground">{detail.iiko_push_error}</span>
+                ) : null}
+                {canPush && iiko?.canSend ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="ml-auto"
+                    disabled={pushMutation.isPending}
+                    onClick={() => pushMutation.mutate()}
+                  >
+                    {pushMutation.isPending ? (
+                      <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Send size={14} aria-hidden="true" />
+                    )}
+                    {detail.iiko_push_status === "failed"
+                      ? "Переотправить в iiko"
+                      : "Отправить в iiko"}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
 
             {/* Позиции */}
             <div className="overflow-hidden rounded-md border">
