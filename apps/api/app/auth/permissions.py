@@ -344,6 +344,7 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ("kassa.cheques.read", "Касса", "Смотреть чеки (оплаты картой)"),
     ("kassa.cheques.create", "Касса", "Создавать чеки (оплаты картой)"),
     ("kassa.invoices.create", "Касса", "Создавать накладные из Кассы"),
+    ("kassa.invoices.push", "Касса", "Отправлять накладные из Кассы в iiko"),
     ("kassa.adjustments.create", "Касса", "Создавать корректировки кассы"),
     ("kassa.penalty.waive", "Касса", "Отменять авто-штрафы кассирам за недостачу смены"),
     (
@@ -691,6 +692,7 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "kassa.cheques.read",
         "kassa.cheques.create",
         "kassa.invoices.create",
+        "kassa.invoices.push",
         "kassa.refs.read",
         "settings.general.read",
         "settings.positions.read",
@@ -744,6 +746,7 @@ CASHIER_DEFAULT_PERMISSIONS = frozenset(
         "kassa.cheques.read",
         "kassa.cheques.create",
         "kassa.invoices.create",
+        "kassa.invoices.push",
         "kassa.refs.read",
     }
 )

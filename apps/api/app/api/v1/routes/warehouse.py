@@ -73,6 +73,11 @@ OPERATE = (Depends(require_permission("counterparties.operate")),)
 INVOICE_REFS = (
     Depends(require_any_permission(("counterparties.read", "kassa.invoices.create"))),
 )
+# Отправка накладной в iiko: управляющий/менеджер (counterparties.operate) либо
+# кассир через узкое право (накладные из Кассы тоже должны попадать на склад).
+PUSH = (
+    Depends(require_any_permission(("counterparties.operate", "kassa.invoices.push"))),
+)
 
 
 class LineCreate(BaseModel):
@@ -317,7 +322,7 @@ async def list_invoices(
     )
 
 
-@router.post("/invoices/{invoice_id}/push", dependencies=OPERATE)
+@router.post("/invoices/{invoice_id}/push", dependencies=PUSH)
 async def post_push(
     invoice_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],

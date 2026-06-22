@@ -86,6 +86,7 @@ export type AppAction =
   | "kassa.shifts.post"
   | "kassa.cheques.create"
   | "kassa.invoices.create"
+  | "kassa.invoices.push"
   | "kassa.adjustments.create"
   | "kassa.penalty.waive"
   | "kds.queue.write";
@@ -352,6 +353,7 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "kassa.shifts.post": ["kassa.shifts.post"],
   "kassa.cheques.create": ["kassa.cheques.create"],
   "kassa.invoices.create": ["kassa.invoices.create"],
+  "kassa.invoices.push": ["kassa.invoices.push"],
   "kassa.adjustments.create": ["kassa.adjustments.create"],
   "kassa.penalty.waive": ["kassa.penalty.waive"],
   "kds.queue.write": ["kds.queue.write"],

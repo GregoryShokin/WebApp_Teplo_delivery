@@ -37,7 +37,11 @@ export function InvoiceDetailDialog({
 }) {
   const queryClient = useQueryClient();
   const permissions = usePermissions();
-  const canPush = permissions.canPerformAction("counterparties.operate");
+  // Отправку в iiko может делать управляющий/менеджер (counterparties.operate) и
+  // кассир — через узкое право kassa.invoices.push (накладные из Кассы).
+  const canPush =
+    permissions.canPerformAction("counterparties.operate") ||
+    permissions.canPerformAction("kassa.invoices.push");
   const canEdit =
     permissions.canPerformAction("invoices.normal.edit") ||
     permissions.canPerformAction("kassa.invoices.create");
