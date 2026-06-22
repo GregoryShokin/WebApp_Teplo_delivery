@@ -1789,6 +1789,8 @@ export type DepositConfigPatch = {
 export type DepositPayoutPayload = {
   amount: string;
   comment?: string | null;
+  // Счёт немедленной выдачи: ТК Черникова (по умолч., +iiko) / Сейф / банк-черновик (этап 3).
+  payout_method?: "cash_tk" | "cash_safe" | "bank_draft";
 };
 
 export type DepositWriteoffPayload = {

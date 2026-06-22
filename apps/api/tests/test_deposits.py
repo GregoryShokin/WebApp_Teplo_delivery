@@ -43,8 +43,12 @@ class DepositFakeSession:
             return self.employee
         return None
 
-    async def scalar(self, _query: Any) -> DepositAccount | None:
-        return self.accounts.get(self.employee.id)
+    async def scalar(self, query: Any) -> Any | None:
+        # Аккаунт — только для запроса DepositAccount; прочие (Wallet/Cashflow/DdsArticle для
+        # ДДС-проводки выдачи) фейк не наполняет → None, проводка делает безопасный no-op.
+        if query_entity(query) is DepositAccount:
+            return self.accounts.get(self.employee.id)
+        return None
 
     async def scalars(self, query: Any) -> FakeScalarResult:
         entity = query_entity(query)

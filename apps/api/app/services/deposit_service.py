@@ -9,10 +9,25 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor
-from app.models import AgentAction, AgentRun, DepositAccount, DepositTransaction
+from app.models import (
+    AgentAction,
+    AgentRun,
+    CashflowTransaction,
+    DdsArticle,
+    DepositAccount,
+    DepositTransaction,
+    Wallet,
+)
 from app.services.payroll_calculator import decimal
+from app.services.wallets import SAFE_WALLET_CODE
 
 MONEY = Decimal("0.01")
+
+# Выдача производственного депозита — реальная выдача денег сотруднику. По умолчанию
+# наличными с ТК Черникова (= iiko «Главная касса», +iiko-изъятие), либо с Сейфа (без iiko).
+PRODUCTION_DEPOSIT_PAYOUT_ARTICLE_CODE = "vydacha_depozita_sotrudniku"
+PRODUCTION_DEPOSIT_PAYOUT_SOURCE_KIND = "production_deposit_payout"
+PRODUCTION_DEPOSIT_PAYOUT_TK_WALLET_CODE = "tk_chernikova"
 
 
 async def get_deposit_account(
@@ -76,6 +91,63 @@ def add_transaction(
     )
     session.add(transaction)
     return transaction
+
+
+async def book_production_deposit_payout_cashflow(
+    session: AsyncSession,
+    *,
+    transaction: DepositTransaction,
+    payout_method: str,
+    transaction_date: date,
+    comment: str | None,
+) -> Wallet | None:
+    """Провести немедленную выдачу производственного депозита в ДДС (расход с наличного счёта).
+
+    Списание с ТК Черникова (``cash_tk``) или Сейфа (``cash_safe``) по статье «Выдача
+    депозита». Идемпотентно по ``source_id = transaction.id``. Возвращает кошелёк — роут по
+    нему решает, нужно ли iiko-изъятие (только для ТК Черникова = iiko «Главная касса»).
+    Устойчиво (как курьерский возврат): если кошелёк/статья не заведены — ДДС-проводка
+    пропускается (возврат None / без записи), но выдачу не валим.
+    """
+    wallet_code = (
+        SAFE_WALLET_CODE
+        if payout_method == "cash_safe"
+        else PRODUCTION_DEPOSIT_PAYOUT_TK_WALLET_CODE
+    )
+    wallet = await session.scalar(
+        select(Wallet).where(Wallet.code == wallet_code, Wallet.status == "active")
+    )
+    if wallet is None:
+        return None
+    existing = await session.scalar(
+        select(CashflowTransaction.id).where(
+            CashflowTransaction.source_kind == PRODUCTION_DEPOSIT_PAYOUT_SOURCE_KIND,
+            CashflowTransaction.source_id == transaction.id,
+        )
+    )
+    if existing is not None:
+        return wallet
+    article_id = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == PRODUCTION_DEPOSIT_PAYOUT_ARTICLE_CODE)
+    )
+    if article_id is None:
+        return wallet
+    session.add(
+        CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=transaction.amount,
+            operation_date=transaction_date,
+            article_id=article_id,
+            source_kind=PRODUCTION_DEPOSIT_PAYOUT_SOURCE_KIND,
+            source_id=transaction.id,
+            payment_purpose=f"Выдача депозита сотруднику (операция {transaction.id})",
+            comment=comment,
+            quality_status="final",
+        )
+    )
+    await session.flush()
+    return wallet
 
 
 async def add_deposit_action(

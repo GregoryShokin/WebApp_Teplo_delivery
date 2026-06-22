@@ -406,6 +406,7 @@ function DepositOperationDialog({
 }) {
   const [amount, setAmount] = useState("");
   const [comment, setComment] = useState("");
+  const [payoutMethod, setPayoutMethod] = useState<"cash_tk" | "cash_safe">("cash_tk");
   const [submitted, setSubmitted] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -425,6 +426,7 @@ function DepositOperationDialog({
     // Выдача по умолчанию — весь остаток; списание — пустая сумма.
     setAmount(operation.type === "payout" ? String(balanceNumber(operation.row)) : "");
     setComment("");
+    setPayoutMethod("cash_tk");
     setSubmitted(false);
     setConfirmOpen(false);
     setFormError(null);
@@ -439,6 +441,7 @@ function DepositOperationDialog({
         return postDepositPayout(operation.row.id, {
           amount: normalized,
           comment: comment.trim() || null,
+          payout_method: payoutMethod,
         });
       }
       return postDepositWriteoff(operation.row.id, {
@@ -509,6 +512,28 @@ function DepositOperationDialog({
                 </span>
               ) : null}
             </Label>
+
+            {type === "payout" ? (
+              <Label className="grid gap-2">
+                <span>Счёт выдачи</span>
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
+                  disabled={mutation.isPending}
+                  onChange={(event) =>
+                    setPayoutMethod(event.target.value as "cash_tk" | "cash_safe")
+                  }
+                  value={payoutMethod}
+                >
+                  <option value="cash_tk">Торговая касса Черникова</option>
+                  <option value="cash_safe">Сейф</option>
+                </select>
+                <span className="text-xs text-muted-foreground">
+                  {payoutMethod === "cash_tk"
+                    ? "Наличные из кассы Черникова + изъятие в iiko."
+                    : "Наличные с карты «Сейф». Изъятие в iiko не делается."}
+                </span>
+              </Label>
+            ) : null}
 
             <Label className="grid gap-2">
               <span>{type === "writeoff" ? "Причина" : "Комментарий"}</span>

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -14,6 +14,7 @@ from app.api.deps import CurrentActor, get_current_actor, require_any_permission
 from app.db.session import get_session
 from app.models import DepositAccount, DepositTransaction, Employee
 from app.services import deposit_service
+from app.services.deposit_iiko_payout_production import post_production_deposit_payout_to_iiko
 from app.services.payroll_calculator import (
     decimal,
     employee_deposit_target,
@@ -81,6 +82,9 @@ class DepositConfigRead(BaseModel):
 class DepositPayoutRequest(BaseModel):
     amount: Decimal | None = Field(default=None, gt=0)
     comment: str | None = Field(default=None, max_length=1000)
+    # Счёт немедленной выдачи: ТК Черникова (по умолч., +iiko-изъятие) / Сейф (без iiko).
+    # bank_draft появится на этапе 3; отложенная выдача через ЗП — на этапе 4.
+    payout_method: Literal["cash_tk", "cash_safe", "bank_draft"] = "cash_tk"
 
 
 class DepositWriteoffRequest(BaseModel):
@@ -189,6 +193,12 @@ async def payout_deposit(
     payload: Annotated[DepositPayoutRequest | None, Body()] = None,
 ) -> dict[str, Any]:
     payload = payload or DepositPayoutRequest()
+    if payload.payout_method == "bank_draft":
+        # Банк-черновик выдачи депозита появится на этапе 3.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Банк-черновик выдачи депозита пока недоступен",
+        )
     await _get_employee_or_404(session, employee_id)
     now = datetime.now(UTC)
     account = await deposit_service.get_deposit_account(session, employee_id, for_update=True)
@@ -215,6 +225,14 @@ async def payout_deposit(
         amount=amount,
         now=now,
     )
+    # Реальная выдача денег → проводка ДДС (расход с выбранного наличного счёта).
+    payout_wallet = await deposit_service.book_production_deposit_payout_cashflow(
+        session,
+        transaction=transaction,
+        payout_method=payload.payout_method,
+        transaction_date=now.date(),
+        comment=payload.comment,
+    )
     after = deposit_service.deposit_account_snapshot(account) | {
         "transaction": deposit_service.transaction_payload(transaction),
         "comment": payload.comment,
@@ -233,6 +251,12 @@ async def payout_deposit(
     )
     await session.commit()
     await session.refresh(account)
+    # iiko-изъятие из «Главной кассы» — только при выдаче с ТК Черникова (= iiko Главная
+    # касса). После commit: БД — источник истины, ошибка iiko не откатывает выдачу.
+    if payout_wallet is not None and payout_wallet.code == "tk_chernikova":
+        post_production_deposit_payout_to_iiko(
+            amount=amount, payout_date=now.date(), source_id=transaction.id
+        )
     return _operation_payload(account, transaction)
 
 
