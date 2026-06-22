@@ -251,6 +251,27 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
     totalsMatch &&
     !createMutation.isPending;
 
+  // Человеко-понятная причина, почему чек нельзя создать (иначе кнопка гаснет молча).
+  const disabledReason = createMutation.isPending
+    ? null
+    : !localPurchase
+      ? counterpartiesQuery.isLoading
+        ? "Загружаем контрагентов…"
+        : "Контрагент «Местный закуп» недоступен — обратитесь к управляющему"
+      : !issuedAt
+        ? "Укажите дату и время чека"
+        : filledCount === 0
+          ? "Добавьте хотя бы одну позицию"
+          : !storeValid
+            ? "У товарных строк укажите количество и цену"
+            : !expenseValid
+              ? "У строк прочих расходов укажите сумму"
+              : paidTotal <= 0
+                ? "Укажите оплату — карт-операцию или наличные"
+                : !totalsMatch
+                  ? "Суммы позиций и оплаты не сходятся"
+                  : null;
+
   function patchStore(key: string, patch: Partial<StoreLine>) {
     setStoreLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   }
@@ -583,12 +604,17 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
                 <span className="ml-1 text-xs text-muted-foreground">из {formatDdsMoney(paidTotal)}</span>
               )}
             </div>
-            <Button disabled={!canSave} onClick={() => createMutation.mutate()}>
-              {createMutation.isPending ? (
-                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+            <div className="flex flex-col items-end gap-1">
+              {disabledReason ? (
+                <span className="text-xs text-amber-600">{disabledReason}</span>
               ) : null}
-              Создать чек
-            </Button>
+              <Button disabled={!canSave} onClick={() => createMutation.mutate()}>
+                {createMutation.isPending ? (
+                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                ) : null}
+                Создать чек
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

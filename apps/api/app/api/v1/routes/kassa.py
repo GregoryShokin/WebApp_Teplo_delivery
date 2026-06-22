@@ -48,6 +48,12 @@ from app.services.warehouse_invoice_push import WarehousePushError, push_invoice
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Служебный контрагент-«корзина» местных закупок: жёстко зашит получателем чека по
+# бизнес-карте. Он синтетический (без ИНН/реквизитов), поэтому может оказаться в статусе
+# requires_setup — но в списке для чека должен быть ВСЕГДА, иначе кнопка «Создать чек»
+# молча гаснет (получатель не находится). Поэтому отдаём его независимо от статуса.
+LOCAL_PURCHASE_NAME = "Местный закуп"
+
 KASSA_REFS_READ = (Depends(require_permission("kassa.refs.read")),)
 KASSA_CHEQUES_READ = (Depends(require_permission("kassa.cheques.read")),)
 KASSA_SHIFTS_READ = (Depends(require_permission("kassa.shifts.read")),)
@@ -93,8 +99,14 @@ async def list_counterparties(
     session: Annotated[AsyncSession, Depends(get_session)],
     search: str | None = None,
 ) -> list[Counterparty]:
-    """Активные контрагенты (магазин/поставщик чека); поиск по имени/ИНН."""
-    conditions = [Counterparty.status == "active"]
+    """Контрагенты чека (магазин/поставщик): активные + всегда служебный «Местный закуп».
+
+    «Местный закуп» отдаём независимо от статуса (он синтетический, может быть
+    requires_setup) — иначе кнопка «Создать чек» гаснет без объяснения."""
+    available = or_(
+        Counterparty.status == "active", Counterparty.name == LOCAL_PURCHASE_NAME
+    )
+    conditions = [available]
     if search:
         pattern = f"%{search.strip()}%"
         conditions.append(or_(Counterparty.name.ilike(pattern), Counterparty.inn.ilike(pattern)))
