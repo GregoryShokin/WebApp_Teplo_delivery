@@ -27,7 +27,11 @@ async def test_run_delta_routes_call_run_level_services(monkeypatch) -> None:
     run_id = uuid.uuid4()
     actor_id = uuid.uuid4()
     session = object()
-    actor = CurrentActor(roles=frozenset({"manager"}), user_id=actor_id)
+    actor = CurrentActor(
+        roles=frozenset({"manager"}),
+        user_id=actor_id,
+        permissions=frozenset({"finance.payout_channel.bank_draft"}),
+    )
     calls: list[tuple[str, uuid.UUID, object]] = []
 
     async def fake_get_run_payout_delta(fake_session, fake_run_id):

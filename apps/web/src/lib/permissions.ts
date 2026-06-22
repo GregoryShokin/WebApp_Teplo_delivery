@@ -15,6 +15,8 @@ export type AppSection =
   | "couriers.evaluations"
   | "couriers.statistics"
   | "couriers.schedule"
+  | "kds.packing"
+  | "kitchen.speed"
   | "payroll"
   | "payroll.runs"
   | "payroll.fund"
@@ -85,7 +87,8 @@ export type AppAction =
   | "kassa.cheques.create"
   | "kassa.invoices.create"
   | "kassa.adjustments.create"
-  | "kassa.penalty.waive";
+  | "kassa.penalty.waive"
+  | "kds.queue.write";
 
 const SOURCE_DATA_TAB_READ_PERMISSIONS = [
   "source.rates.read",
@@ -256,6 +259,8 @@ const SECTION_PERMISSIONS: Record<AppSection, readonly PermissionCode[]> = {
   "couriers.evaluations": ["couriers.evaluations.read"],
   "couriers.statistics": ["couriers.statistics.read"],
   "couriers.schedule": ["couriers.schedule.read", "couriers.list.read"],
+  "kds.packing": ["kds.queue.read"],
+  "kitchen.speed": ["kitchen.speed.read"],
   payroll: PERMISSION_GROUPS.payrollRead,
   "payroll.runs": ["payroll.runs.read"],
   "payroll.fund": ["payroll.fund.read"],
@@ -292,7 +297,12 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "staff.create": PERMISSION_GROUPS.staffCreate,
   "staff.import": ["source.import.run"],
   "staff.administration.edit": ["staff.administration.edit"],
-  "couriers.deposits.edit": ["couriers.deposits.edit"],
+  "couriers.deposits.edit": [
+    "couriers.deposits.edit",
+    "couriers.deposits.top_up",
+    "couriers.deposits.return",
+    "couriers.deposits.forfeit",
+  ],
   "couriers.evaluations.edit": ["couriers.evaluations.edit"],
   "couriers.schedule.edit": ["couriers.schedule.edit"],
   "couriers.shifts.sync": ["couriers.shifts.sync"],
@@ -344,6 +354,7 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "kassa.invoices.create": ["kassa.invoices.create"],
   "kassa.adjustments.create": ["kassa.adjustments.create"],
   "kassa.penalty.waive": ["kassa.penalty.waive"],
+  "kds.queue.write": ["kds.queue.write"],
 };
 
 const LEGACY_PERMISSION_ALIASES: Record<PermissionCode, readonly PermissionCode[]> = {

@@ -113,7 +113,16 @@ export function CourierDepositsRoute({ onNavigate, embedded = false }: CourierDe
   void onNavigate;
   const queryClient = useQueryClient();
   const permissions = usePermissions();
-  const canWrite = permissions.canPerformAction("couriers.deposits.edit");
+  // Гранулярные права операций с курьерским депозитом.
+  const canTopUp = permissions.hasPermission("couriers.deposits.top_up");
+  const canReturn = permissions.hasPermission("couriers.deposits.return");
+  const canForfeit = permissions.hasPermission("couriers.deposits.forfeit");
+  const canWrite = canTopUp || canReturn || canForfeit;
+  const channelPerms = {
+    cash_tk: permissions.hasPermission("finance.payout_channel.cash_tk"),
+    cash_safe: permissions.hasPermission("finance.payout_channel.safe"),
+    bank_draft: permissions.hasPermission("finance.payout_channel.bank_draft"),
+  };
   const [statusFilter, setStatusFilter] = useState<CourierDepositStatusFilter>("active");
   const [categoryFilter, setCategoryFilter] = useState<CourierDepositCategoryFilter>("all");
   const [search, setSearch] = useState("");
@@ -314,21 +323,27 @@ export function CourierDepositsRoute({ onNavigate, embedded = false }: CourierDe
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => setPendingOperation({ row, type: "top_up" })}
-                            >
-                              Пополнение
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => setPendingOperation({ row, type: "return" })}
-                            >
-                              Возврат
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => setPendingOperation({ row, type: "forfeit" })}
-                            >
-                              Списание
-                            </DropdownMenuItem>
+                            {canTopUp ? (
+                              <DropdownMenuItem
+                                onClick={() => setPendingOperation({ row, type: "top_up" })}
+                              >
+                                Пополнение
+                              </DropdownMenuItem>
+                            ) : null}
+                            {canReturn ? (
+                              <DropdownMenuItem
+                                onClick={() => setPendingOperation({ row, type: "return" })}
+                              >
+                                Возврат
+                              </DropdownMenuItem>
+                            ) : null}
+                            {canForfeit ? (
+                              <DropdownMenuItem
+                                onClick={() => setPendingOperation({ row, type: "forfeit" })}
+                              >
+                                Списание
+                              </DropdownMenuItem>
+                            ) : null}
                           </DropdownMenuContent>
                         </DropdownMenu>
                         )
@@ -347,6 +362,7 @@ export function CourierDepositsRoute({ onNavigate, embedded = false }: CourierDe
       </section>
 
       <CourierOperationDialog
+        channelPerms={channelPerms}
         operation={pendingOperation}
         onClose={() => setPendingOperation(null)}
         queryClient={queryClient}
@@ -366,10 +382,12 @@ export function CourierDepositsRoute({ onNavigate, embedded = false }: CourierDe
 }
 
 function CourierOperationDialog({
+  channelPerms,
   onClose,
   operation,
   queryClient,
 }: {
+  channelPerms: { cash_tk: boolean; cash_safe: boolean; bank_draft: boolean };
   onClose: () => void;
   operation: PendingOperation | null;
   queryClient: ReturnType<typeof useQueryClient>;
@@ -384,6 +402,15 @@ function CourierOperationDialog({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const type = operation?.type ?? "top_up";
+  const allowedChannels = (
+    [
+      ["cash_tk", channelPerms.cash_tk],
+      ["cash_safe", channelPerms.cash_safe],
+      ["bank_draft", channelPerms.bank_draft],
+    ] as const
+  )
+    .filter(([, ok]) => ok)
+    .map(([key]) => key);
   const requiresConfirmation = type === "return" || type === "forfeit";
   const amountValid = isPositiveRubInput(amount);
   const commentValid = type !== "forfeit" || comment.trim().length > 0;
@@ -396,7 +423,7 @@ function CourierOperationDialog({
     setDate(todayKey());
     setAmount("");
     setComment("");
-    setPayoutMethod("cash_tk");
+    setPayoutMethod(allowedChannels[0] ?? "cash_tk");
     setSubmitted(false);
     setConfirmOpen(false);
     setFormError(null);
@@ -501,9 +528,15 @@ function CourierOperationDialog({
                   }
                   value={payoutMethod}
                 >
-                  <option value="cash_tk">Торговая касса Черникова</option>
-                  <option value="cash_safe">Сейф</option>
-                  <option value="bank_draft">Банк-черновик (через Сейф)</option>
+                  {allowedChannels.includes("cash_tk") ? (
+                    <option value="cash_tk">Торговая касса Черникова</option>
+                  ) : null}
+                  {allowedChannels.includes("cash_safe") ? (
+                    <option value="cash_safe">Сейф</option>
+                  ) : null}
+                  {allowedChannels.includes("bank_draft") ? (
+                    <option value="bank_draft">Банк-черновик (через Сейф)</option>
+                  ) : null}
                 </select>
                 <span className="text-xs text-muted-foreground">
                   {payoutMethod === "cash_tk"

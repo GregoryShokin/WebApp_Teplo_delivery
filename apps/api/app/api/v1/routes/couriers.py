@@ -11,9 +11,17 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_any_permission, require_permission
+from app.api.deps import (
+    CurrentActor,
+    ensure_permission,
+    get_current_actor,
+    require_any_permission,
+    require_permission,
+)
+from app.auth.permissions import payout_channel_permission
 from app.db.session import get_session
 from app.models import (
+    CourierDepositTransactionType,
     CourierEvaluation,
     CourierEvaluationCriterion,
     CourierIikoShift,
@@ -78,7 +86,17 @@ COURIERS_SHIFTS_SYNC_ACCESS = (Depends(require_permission("couriers.shifts.sync"
 COURIERS_EVALUATIONS_READ_ACCESS = (Depends(require_permission("couriers.evaluations.read")),)
 COURIERS_EVALUATIONS_EDIT_ACCESS = (Depends(require_permission("couriers.evaluations.edit")),)
 COURIERS_DEPOSITS_READ_ACCESS = (Depends(require_permission("couriers.deposits.read")),)
-COURIERS_DEPOSITS_EDIT_ACCESS = (Depends(require_permission("couriers.deposits.edit")),)
+# Операции с курьерским депозитом разведены на пополнение/возврат/списание — проверяются
+# динамически по типу операции внутри post_courier_deposit_transaction. Настройка (начальный
+# баланс) — отдельное право couriers.deposits.configure.
+COURIERS_DEPOSITS_CONFIGURE_ACCESS = (
+    Depends(require_permission("couriers.deposits.configure")),
+)
+COURIERS_DEPOSITS_OP_PERMISSIONS = {
+    "top_up": "couriers.deposits.top_up",
+    "return": "couriers.deposits.return",
+    "forfeit": "couriers.deposits.forfeit",
+}
 COURIERS_DEPOSITS_SETTINGS_READ_ACCESS = (
     Depends(
         require_any_permission(("couriers.deposits.configure", "source.deposit_settings.read"))
@@ -96,7 +114,14 @@ COURIERS_SHIFT_DAY_READ_ACCESS = (
 )
 COURIERS_SHIFT_DAY_EDIT_ACCESS = (
     Depends(
-        require_any_permission(("couriers.deposits.edit", "couriers.evaluations.edit"))
+        require_any_permission(
+            (
+                "couriers.deposits.top_up",
+                "couriers.deposits.return",
+                "couriers.deposits.forfeit",
+                "couriers.evaluations.edit",
+            )
+        )
     ),
 )
 CourierSyncMode = Literal["hot", "cold", "custom"]
@@ -655,7 +680,7 @@ async def get_courier_deposit_card(
 @router.put(
     "/{employee_id}/deposit/opening",
     response_model=CourierDepositCardRead,
-    dependencies=COURIERS_DEPOSITS_EDIT_ACCESS,
+    dependencies=COURIERS_DEPOSITS_CONFIGURE_ACCESS,
 )
 async def put_courier_deposit_opening(
     employee_id: uuid.UUID,
@@ -682,7 +707,6 @@ async def put_courier_deposit_opening(
 @router.post(
     "/{employee_id}/deposit/transactions",
     response_model=CourierDepositTransactionRead,
-    dependencies=COURIERS_DEPOSITS_EDIT_ACCESS,
 )
 async def post_courier_deposit_transaction(
     employee_id: uuid.UUID,
@@ -691,6 +715,21 @@ async def post_courier_deposit_transaction(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
     actor_user_id = _require_actor_user_id(actor)
+    # Право на конкретную операцию (пополнение/возврат/списание).
+    tt = payload.transaction_type
+    tt_value = tt.value if isinstance(tt, CourierDepositTransactionType) else str(tt)
+    op_permission = COURIERS_DEPOSITS_OP_PERMISSIONS.get(tt_value)
+    if op_permission is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Неизвестный тип операции с депозитом",
+        )
+    ensure_permission(actor, op_permission)
+    # Возврат с конкретного счёта требует ещё и права на канал (Сейф/ТК Черникова/банк-черновик).
+    if tt_value == "return":
+        channel_perm = payout_channel_permission(payload.payout_method or "cash_tk")
+        if channel_perm is not None:
+            ensure_permission(actor, channel_perm)
     transaction = await deposit_service.create_transaction(
         session,
         employee_id=employee_id,

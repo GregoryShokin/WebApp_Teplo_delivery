@@ -127,6 +127,12 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const canReopenRuns = permissions.canPerformAction("payroll.runs.reopen");
   const canMarkPaid = permissions.canPerformAction("payroll.runs.mark_paid");
   const canBankDraft = permissions.canPerformAction("payroll.runs.bank_draft");
+  // Права на каналы выплаты ЗП (Сейф / ТК Черникова / банк-черновик).
+  const payoutChannelPerms = {
+    safe: permissions.hasPermission("finance.payout_channel.safe"),
+    cash_tk: permissions.hasPermission("finance.payout_channel.cash_tk"),
+    bank_draft: permissions.hasPermission("finance.payout_channel.bank_draft"),
+  };
   const [isRecalculateDialogOpen, setIsRecalculateDialogOpen] = useState(false);
   const [isUnfinalizeDialogOpen, setIsUnfinalizeDialogOpen] = useState(false);
   const [unfinalizeReason, setUnfinalizeReason] = useState("");
@@ -522,6 +528,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
 
       {canManageBankDraft ? (
         <RunBankDraftCard
+          channelPerms={payoutChannelPerms}
           draft={bankDraftQuery.data ?? null}
           isLoading={bankDraftQuery.isLoading}
           payoutCashTotal={payoutCashTotal}
@@ -969,6 +976,7 @@ function KpiCard({
 }
 
 function RunBankDraftCard({
+  channelPerms,
   draft,
   isLoading,
   payoutCashTotal,
@@ -977,6 +985,7 @@ function RunBankDraftCard({
   totalAccountAmount,
   totalPayable,
 }: {
+  channelPerms: { safe: boolean; cash_tk: boolean; bank_draft: boolean };
   draft: PayrollBankDraft | null;
   isLoading: boolean;
   payoutCashTotal: number;
@@ -997,8 +1006,18 @@ function RunBankDraftCard({
     queryFn: () => getCashWallets(),
   });
   const cashWallets = useMemo<CashWallet[]>(
-    () => cashWalletsQuery.data ?? [],
-    [cashWalletsQuery.data],
+    () =>
+      // Показываем только счета, выдача с которых разрешена правами на канал.
+      (cashWalletsQuery.data ?? []).filter((wallet) => {
+        if (wallet.code === "cash_safe") {
+          return channelPerms.safe;
+        }
+        if (wallet.code === "tk_chernikova") {
+          return channelPerms.cash_tk;
+        }
+        return true;
+      }),
+    [cashWalletsQuery.data, channelPerms.safe, channelPerms.cash_tk],
   );
   const allocationQuery = useQuery({
     queryKey: ["run-payout-allocation", runId],
@@ -1212,7 +1231,15 @@ function RunBankDraftCard({
           }}
         >
           <AlertDialogTrigger asChild>
-            <Button disabled={isLoading || mutation.isPending || cashDirty} type="button">
+            <Button
+              disabled={
+                isLoading || mutation.isPending || cashDirty || !channelPerms.bank_draft
+              }
+              title={
+                channelPerms.bank_draft ? undefined : "Нет права на формирование банк-черновиков"
+              }
+              type="button"
+            >
               {mutation.isPending ? (
                 <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
               ) : (

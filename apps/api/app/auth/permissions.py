@@ -10,13 +10,17 @@ ACCESS_ROLE_CODES: tuple[str, ...] = (
     "office_manager",
     "cashier",
     "senior_courier",
+    "kitchen",
 )
-EDITABLE_ROLE_CODES = frozenset({"manager", "office_manager", "cashier", "senior_courier"})
+EDITABLE_ROLE_CODES = frozenset(
+    {"manager", "office_manager", "cashier", "senior_courier", "kitchen"}
+)
 FULL_ACCESS_ROLE_CODES = frozenset({"owner", "admin"})
 
 MODULE_ORDER: tuple[str, ...] = (
     "Штат",
     "Курьеры",
+    "Кухня",
     "Зарплата",
     "Ревизии",
     "Исходные данные",
@@ -90,8 +94,13 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ("couriers.evaluations.read", "Курьеры", "Смотреть оценки курьеров"),
     ("couriers.evaluations.edit", "Курьеры", "Добавлять/редактировать оценки курьеров"),
     ("couriers.deposits.read", "Курьеры", "Смотреть депозиты курьеров"),
-    ("couriers.deposits.edit", "Курьеры", "Редактировать депозиты курьеров"),
+    ("couriers.deposits.top_up", "Курьеры", "Пополнять депозиты курьеров"),
+    ("couriers.deposits.return", "Курьеры", "Возвращать депозиты курьеров"),
+    ("couriers.deposits.forfeit", "Курьеры", "Списывать депозиты курьеров"),
     ("couriers.deposits.configure", "Курьеры", "Настраивать депозиты курьеров"),
+    ("kds.queue.read", "Кухня", "Смотреть очередь упаковки (планшет)"),
+    ("kds.queue.write", "Кухня", "Отмечать статусы упаковки и откаты"),
+    ("kitchen.speed.read", "Кухня", "Смотреть дашборд скорости кухни"),
     ("payroll.runs.read", "Зарплата", "Смотреть расчёты зарплаты"),
     ("payroll.runs.start", "Зарплата", "Запускать расчёт зарплаты"),
     ("payroll.runs.recalculate", "Зарплата", "Пересчитывать зарплату"),
@@ -142,9 +151,19 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Смотреть депозиты производственного персонала",
     ),
     (
+        "payroll.production_deposits.payout",
+        "Зарплата",
+        "Выдавать депозиты производственного персонала",
+    ),
+    (
+        "payroll.production_deposits.write_off",
+        "Зарплата",
+        "Списывать депозиты производственного персонала",
+    ),
+    (
         "payroll.production_deposits.edit",
         "Зарплата",
-        "Редактировать депозиты производственного персонала",
+        "Настраивать депозиты производственного персонала (исключения, начальный баланс)",
     ),
     ("payroll.advances.read", "Зарплата", "Смотреть авансы и займы сотрудников"),
     (
@@ -263,6 +282,17 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ),
     ("finance.safe.allocate", "Финансы", "Резервировать средства Сейфа"),
     ("finance.safe.confirm_paid", "Финансы", "Подтверждать оплаты с Сейфа"),
+    (
+        "finance.payout_channel.cash_tk",
+        "Финансы",
+        "Выдавать с торговой кассы Черникова",
+    ),
+    ("finance.payout_channel.safe", "Финансы", "Выдавать с Сейфа"),
+    (
+        "finance.payout_channel.bank_draft",
+        "Финансы",
+        "Формировать банковские черновики (Т-Банк)",
+    ),
     ("finance.balance.read", "Финансы", "Смотреть баланс"),
     ("finance.balance.edit", "Финансы", "Редактировать баланс"),
     ("finance.wallets.read", "Финансы", "Смотреть кошельки и остатки"),
@@ -367,9 +397,9 @@ LEGACY_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ("couriers.metrics.read", "Курьеры", "Смотреть показатели курьеров"),
     ("couriers.schedule.write", "Курьеры", "Редактировать график курьеров"),
     ("couriers.assess.write", "Курьеры", "Редактировать оценки курьеров"),
+    ("couriers.deposits.edit", "Курьеры", "Редактировать депозиты курьеров"),
     ("couriers.deposits.withhold", "Курьеры", "Вносить удержания депозитов курьеров"),
     ("couriers.deposits.write", "Курьеры", "Редактировать депозиты курьеров"),
-    ("couriers.deposits.return", "Курьеры", "Возвращать депозиты курьеров"),
     ("deposits.read", "Зарплата", "Смотреть депозиты производственного персонала"),
     ("deposits.write", "Зарплата", "Редактировать депозиты производственного персонала"),
     ("vacations.read", "Зарплата", "Смотреть персональные отчёты сотрудников"),
@@ -506,12 +536,32 @@ LEGACY_PERMISSION_ALIASES: dict[str, frozenset[str]] = {
     ),
     "couriers.schedule.write": frozenset({"couriers.schedule.edit", "couriers.shifts.sync"}),
     "couriers.assess.write": frozenset({"couriers.evaluations.edit"}),
-    "couriers.deposits.write": frozenset({"couriers.deposits.edit", "couriers.deposits.configure"}),
+    # Старое единое право правки курьерских депозитов → 3 гранулярных операции.
+    "couriers.deposits.edit": frozenset(
+        {
+            "couriers.deposits.top_up",
+            "couriers.deposits.return",
+            "couriers.deposits.forfeit",
+        }
+    ),
+    "couriers.deposits.write": frozenset(
+        {
+            "couriers.deposits.top_up",
+            "couriers.deposits.return",
+            "couriers.deposits.forfeit",
+            "couriers.deposits.configure",
+        }
+    ),
     "couriers.metrics.read": frozenset({"couriers.statistics.read"}),
-    "couriers.deposits.withhold": frozenset({"couriers.deposits.edit"}),
-    "couriers.deposits.return": frozenset({"couriers.deposits.edit"}),
+    "couriers.deposits.withhold": frozenset({"couriers.deposits.forfeit"}),
     "deposits.read": frozenset({"payroll.production_deposits.read"}),
-    "deposits.write": frozenset({"payroll.production_deposits.edit"}),
+    "deposits.write": frozenset(
+        {
+            "payroll.production_deposits.edit",
+            "payroll.production_deposits.payout",
+            "payroll.production_deposits.write_off",
+        }
+    ),
     "vacations.read": frozenset({"payroll.vacations.read"}),
     "vacations.write": frozenset({"payroll.vacations.edit"}),
     "accumulation_fund.read": frozenset({"payroll.fund.read"}),
@@ -566,8 +616,13 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "couriers.evaluations.read",
         "couriers.evaluations.edit",
         "couriers.deposits.read",
-        "couriers.deposits.edit",
+        "couriers.deposits.top_up",
+        "couriers.deposits.return",
+        "couriers.deposits.forfeit",
         "couriers.deposits.configure",
+        "kds.queue.read",
+        "kds.queue.write",
+        "kitchen.speed.read",
         "payroll.runs.read",
         "payroll.runs.mark_paid",
         "payroll.runs.bank_draft",
@@ -582,6 +637,8 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "payroll.vacations.read",
         "payroll.vacations.edit",
         "payroll.production_deposits.read",
+        "payroll.production_deposits.payout",
+        "payroll.production_deposits.write_off",
         "payroll.production_deposits.edit",
         "payroll.advances.read",
         "payroll.advances.production.issue",
@@ -610,6 +667,9 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "finance.cashflow.classify",
         "finance.safe.allocate",
         "finance.safe.confirm_paid",
+        "finance.payout_channel.cash_tk",
+        "finance.payout_channel.safe",
+        "finance.payout_channel.bank_draft",
         "revisions.read",
         "revisions.import",
         "revisions.create",
@@ -698,12 +758,40 @@ SENIOR_COURIER_DEFAULT_PERMISSIONS = frozenset(
     }
 )
 
+# Узкая роль терминала упаковки: только очередь упаковки, без остального приложения.
+KITCHEN_DEFAULT_PERMISSIONS = frozenset(
+    {
+        "kds.queue.read",
+        "kds.queue.write",
+    }
+)
+
 DEFAULT_ROLE_PERMISSIONS = {
     "manager": MANAGER_DEFAULT_PERMISSIONS,
     "office_manager": OFFICE_MANAGER_DEFAULT_PERMISSIONS,
     "cashier": CASHIER_DEFAULT_PERMISSIONS,
     "senior_courier": SENIOR_COURIER_DEFAULT_PERMISSIONS,
+    "kitchen": KITCHEN_DEFAULT_PERMISSIONS,
 }
+
+
+# Каналы выдачи денег → право на канал. Используется и для немедленной выдачи депозита
+# (cash_tk/cash_safe/bank_draft), и для выбора наличного счёта/банк-черновика зарплаты
+# (tk_chernikova/safe/bank_draft). Право требуется ДОПОЛНИТЕЛЬНО к операционному.
+PAYOUT_CHANNEL_PERMISSIONS: dict[str, str] = {
+    "cash_tk": "finance.payout_channel.cash_tk",
+    "tk_chernikova": "finance.payout_channel.cash_tk",
+    "cash_safe": "finance.payout_channel.safe",
+    "safe": "finance.payout_channel.safe",
+    "bank_draft": "finance.payout_channel.bank_draft",
+}
+
+
+def payout_channel_permission(channel: str | None) -> str | None:
+    """Право на канал выдачи по коду счёта/метода (None — канал не распознан/не требует права)."""
+    if channel is None:
+        return None
+    return PAYOUT_CHANNEL_PERMISSIONS.get(channel)
 
 
 def expand_permission_codes(codes: Iterable[str]) -> frozenset[str]:

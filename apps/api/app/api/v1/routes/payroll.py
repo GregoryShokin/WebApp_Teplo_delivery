@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, ensure_permission, get_current_actor, require_permission
+from app.auth.permissions import payout_channel_permission
 from app.db.session import get_session
 from app.models import (
     AgentAction,
@@ -475,6 +476,11 @@ async def patch_run_payout_cash(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> PayrollRunRead:
+    # Наличная выплата с конкретного счёта требует права на этот канал (Сейф / ТК Черникова).
+    if payload.amount_cash and payload.amount_cash > 0 and payload.cash_wallet_code:
+        channel_perm = payout_channel_permission(payload.cash_wallet_code)
+        if channel_perm is not None:
+            ensure_permission(actor, channel_perm)
     try:
         await set_run_payout_cash(
             session,
@@ -535,6 +541,8 @@ async def post_run_bank_draft(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> PayrollBankDraftRead | None:
+    # Формирование банк-черновика требует права на канал «банк-черновик».
+    ensure_permission(actor, "finance.payout_channel.bank_draft")
     try:
         return await create_or_update_run_draft(
             session,
@@ -631,6 +639,8 @@ async def post_apply_run_bank_draft_delta(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> PayrollPayoutApplyDeltasResponse:
+    # Доплата/пересоздание банк-черновика — тоже канал «банк-черновик».
+    ensure_permission(actor, "finance.payout_channel.bank_draft")
     try:
         applied_count = await apply_run_payout_delta(
             session,

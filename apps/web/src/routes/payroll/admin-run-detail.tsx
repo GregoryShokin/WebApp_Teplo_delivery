@@ -91,6 +91,11 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
   const canMarkPaid = permissions.canPerformAction("payroll.runs.mark_paid");
   const canManageLoans = permissions.canPerformAction("payroll.loans.issue");
   const canBankDraft = permissions.canPerformAction("payroll.runs.bank_draft");
+  const payoutChannelPerms = {
+    safe: permissions.hasPermission("finance.payout_channel.safe"),
+    cash_tk: permissions.hasPermission("finance.payout_channel.cash_tk"),
+    bank_draft: permissions.hasPermission("finance.payout_channel.bank_draft"),
+  };
   const [isRecalculateDialogOpen, setIsRecalculateDialogOpen] = useState(false);
   const [isUnfinalizeDialogOpen, setIsUnfinalizeDialogOpen] = useState(false);
   const [unfinalizeReason, setUnfinalizeReason] = useState("");
@@ -446,7 +451,12 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
       ) : null}
 
       {run && run.status === "finalized" && canBankDraft ? (
-        <AdminPayoutCard runId={runId} run={run} totalPayable={totalPayable} />
+        <AdminPayoutCard
+          channelPerms={payoutChannelPerms}
+          runId={runId}
+          run={run}
+          totalPayable={totalPayable}
+        />
       ) : null}
 
       <AdminLinesTable
@@ -999,10 +1009,12 @@ function formatDateTime(value: string | null) {
 }
 
 function AdminPayoutCard({
+  channelPerms,
   runId,
   run,
   totalPayable,
 }: {
+  channelPerms: { safe: boolean; cash_tk: boolean; bank_draft: boolean };
   runId: string;
   run: PayrollRun;
   totalPayable: number;
@@ -1024,7 +1036,20 @@ function AdminPayoutCard({
   });
 
   const draft = draftQuery.data ?? null;
-  const cashWallets = useMemo<CashWallet[]>(() => cashWalletsQuery.data ?? [], [cashWalletsQuery.data]);
+  const cashWallets = useMemo<CashWallet[]>(
+    // Только счета, выдача с которых разрешена правами на канал.
+    () =>
+      (cashWalletsQuery.data ?? []).filter((wallet) => {
+        if (wallet.code === "cash_safe") {
+          return channelPerms.safe;
+        }
+        if (wallet.code === "tk_chernikova") {
+          return channelPerms.cash_tk;
+        }
+        return true;
+      }),
+    [cashWalletsQuery.data, channelPerms.safe, channelPerms.cash_tk],
+  );
   const allocation = allocationQuery.data;
 
   const payoutCashTotal = Math.min(moneyValue(run.payout_cash_total ?? 0), totalPayable);
@@ -1234,7 +1259,13 @@ function AdminPayoutCard({
           }}
         >
           <AlertDialogTrigger asChild>
-            <Button disabled={draftMutation.isPending || cashDirty} type="button">
+            <Button
+              disabled={draftMutation.isPending || cashDirty || !channelPerms.bank_draft}
+              title={
+                channelPerms.bank_draft ? undefined : "Нет права на формирование банк-черновиков"
+              }
+              type="button"
+            >
               {draftMutation.isPending ? (
                 <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
               ) : (

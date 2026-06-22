@@ -125,6 +125,11 @@ def app_with_session(session: DepositFakeSession):
                 {
                     "payroll.production_deposits.read",
                     "payroll.production_deposits.edit",
+                    "payroll.production_deposits.payout",
+                    "payroll.production_deposits.write_off",
+                    "finance.payout_channel.cash_tk",
+                    "finance.payout_channel.safe",
+                    "finance.payout_channel.bank_draft",
                 }
             ),
         )

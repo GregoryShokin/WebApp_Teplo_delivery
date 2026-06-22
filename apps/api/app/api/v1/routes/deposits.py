@@ -10,7 +10,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_any_permission
+from app.api.deps import (
+    CurrentActor,
+    ensure_permission,
+    get_current_actor,
+    require_any_permission,
+    require_permission,
+)
+from app.auth.permissions import payout_channel_permission
 from app.db.session import get_session
 from app.models import DepositAccount, DepositTransaction, Employee
 from app.services import deposit_schedule, deposit_service
@@ -40,6 +47,10 @@ DEPOSITS_EDIT_ACCESS = (
         require_any_permission(("payroll.production_deposits.edit", "source.deposit_settings.edit"))
     ),
 )
+# Гранулярные права операций (этап RBAC депозитов): выдача и списание — отдельно;
+# настройка (исключения/начальный баланс) остаётся под DEPOSITS_EDIT_ACCESS.
+DEPOSITS_PAYOUT_ACCESS = (Depends(require_permission("payroll.production_deposits.payout")),)
+DEPOSITS_WRITEOFF_ACCESS = (Depends(require_permission("payroll.production_deposits.write_off")),)
 
 
 class DepositEmployeeRead(BaseModel):
@@ -220,7 +231,7 @@ async def patch_deposit_config(
 @router.post(
     "/{employee_id}/payout",
     response_model=DepositOperationRead,
-    dependencies=DEPOSITS_EDIT_ACCESS,
+    dependencies=DEPOSITS_PAYOUT_ACCESS,
 )
 async def payout_deposit(
     employee_id: uuid.UUID,
@@ -229,6 +240,11 @@ async def payout_deposit(
     payload: Annotated[DepositPayoutRequest | None, Body()] = None,
 ) -> dict[str, Any]:
     payload = payload or DepositPayoutRequest()
+    # Немедленная выдача с конкретного счёта требует права на этот канал
+    # (Сейф / ТК Черникова / банк-черновик), помимо права выдавать депозит.
+    channel_perm = payout_channel_permission(payload.payout_method)
+    if channel_perm is not None:
+        ensure_permission(actor, channel_perm)
     employee = await _get_employee_or_404(session, employee_id)
     now = datetime.now(UTC)
     account = await deposit_service.get_deposit_account(session, employee_id, for_update=True)
@@ -324,7 +340,7 @@ async def get_scheduled_payout_settings(
 @router.post(
     "/{employee_id}/schedule-payout",
     response_model=DepositScheduleRead,
-    dependencies=DEPOSITS_EDIT_ACCESS,
+    dependencies=DEPOSITS_PAYOUT_ACCESS,
 )
 async def schedule_deposit_payout(
     employee_id: uuid.UUID,
@@ -354,7 +370,7 @@ async def schedule_deposit_payout(
 @router.delete(
     "/{employee_id}/schedule-payout",
     response_model=DepositScheduleCancelRead,
-    dependencies=DEPOSITS_EDIT_ACCESS,
+    dependencies=DEPOSITS_PAYOUT_ACCESS,
 )
 async def cancel_scheduled_deposit_payout(
     employee_id: uuid.UUID,
@@ -371,7 +387,7 @@ async def cancel_scheduled_deposit_payout(
 @router.post(
     "/{employee_id}/writeoff",
     response_model=DepositOperationRead,
-    dependencies=DEPOSITS_EDIT_ACCESS,
+    dependencies=DEPOSITS_WRITEOFF_ACCESS,
 )
 async def writeoff_deposit(
     employee_id: uuid.UUID,

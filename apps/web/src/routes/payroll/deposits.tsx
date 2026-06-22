@@ -147,7 +147,16 @@ export function PayrollDepositsRoute({ onNavigate }: PayrollDepositsRouteProps) 
   void onNavigate;
   const queryClient = useQueryClient();
   const permissions = usePermissions();
-  const canWrite = permissions.hasPermission("payroll.production_deposits.edit");
+  // Гранулярные права: выдача и списание депозита — отдельно.
+  const canPayout = permissions.hasPermission("payroll.production_deposits.payout");
+  const canWriteoff = permissions.hasPermission("payroll.production_deposits.write_off");
+  const canWrite = canPayout || canWriteoff;
+  // Права на каналы немедленной выдачи.
+  const channelPerms = {
+    cash_tk: permissions.hasPermission("finance.payout_channel.cash_tk"),
+    cash_safe: permissions.hasPermission("finance.payout_channel.safe"),
+    bank_draft: permissions.hasPermission("finance.payout_channel.bank_draft"),
+  };
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [search, setSearch] = useState("");
   const [pendingOperation, setPendingOperation] = useState<PendingOperation | null>(null);
@@ -381,17 +390,21 @@ export function PayrollDepositsRoute({ onNavigate }: PayrollDepositsRouteProps) 
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => setPendingOperation({ row, type: "payout" })}
-                              >
-                                Выдать депозит
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => setPendingOperation({ row, type: "writeoff" })}
-                              >
-                                Списать депозит
-                              </DropdownMenuItem>
-                              {row.scheduled_payout_pending ? (
+                              {canPayout ? (
+                                <DropdownMenuItem
+                                  onClick={() => setPendingOperation({ row, type: "payout" })}
+                                >
+                                  Выдать депозит
+                                </DropdownMenuItem>
+                              ) : null}
+                              {canWriteoff ? (
+                                <DropdownMenuItem
+                                  onClick={() => setPendingOperation({ row, type: "writeoff" })}
+                                >
+                                  Списать депозит
+                                </DropdownMenuItem>
+                              ) : null}
+                              {canPayout && row.scheduled_payout_pending ? (
                                 <DropdownMenuItem
                                   disabled={cancelScheduleMutation.isPending}
                                   onClick={() => cancelScheduleMutation.mutate(row.id)}
@@ -421,6 +434,7 @@ export function PayrollDepositsRoute({ onNavigate }: PayrollDepositsRouteProps) 
       </section>
 
       <DepositOperationDialog
+        channelPerms={channelPerms}
         onClose={() => setPendingOperation(null)}
         operation={pendingOperation}
         queryClient={queryClient}
@@ -436,11 +450,13 @@ export function PayrollDepositsRoute({ onNavigate }: PayrollDepositsRouteProps) 
 }
 
 function DepositOperationDialog({
+  channelPerms,
   onClose,
   operation,
   queryClient,
   scheduledEnabled,
 }: {
+  channelPerms: { cash_tk: boolean; cash_safe: boolean; bank_draft: boolean };
   onClose: () => void;
   operation: PendingOperation | null;
   queryClient: ReturnType<typeof useQueryClient>;
@@ -460,6 +476,16 @@ function DepositOperationDialog({
 
   const type = operation?.type ?? "payout";
   const isScheduled = type === "payout" && scheduledEnabled && payoutMode === "scheduled";
+  // Каналы немедленной выдачи, доступные по правам.
+  const allowedChannels = (
+    [
+      ["cash_tk", channelPerms.cash_tk],
+      ["cash_safe", channelPerms.cash_safe],
+      ["bank_draft", channelPerms.bank_draft],
+    ] as const
+  )
+    .filter(([, ok]) => ok)
+    .map(([key]) => key);
   const balance = operation ? balanceNumber(operation.row) : 0;
   const normalized = normalizeDecimalInput(amount);
   const amountNumber = Number(normalized);
@@ -478,7 +504,7 @@ function DepositOperationDialog({
     // Выдача по умолчанию — весь остаток; списание — пустая сумма.
     setAmount(operation.type === "payout" ? String(balanceNumber(operation.row)) : "");
     setComment("");
-    setPayoutMethod("cash_tk");
+    setPayoutMethod(allowedChannels[0] ?? "cash_tk");
     // При включённой отложенной выдаче режим по умолчанию — «в ближайшей ведомости».
     setPayoutMode(scheduledEnabled ? "scheduled" : "immediate");
     setSubmitted(false);
@@ -623,9 +649,15 @@ function DepositOperationDialog({
                   }
                   value={payoutMethod}
                 >
-                  <option value="cash_tk">Торговая касса Черникова</option>
-                  <option value="cash_safe">Сейф</option>
-                  <option value="bank_draft">Банк-черновик (через Сейф)</option>
+                  {allowedChannels.includes("cash_tk") ? (
+                    <option value="cash_tk">Торговая касса Черникова</option>
+                  ) : null}
+                  {allowedChannels.includes("cash_safe") ? (
+                    <option value="cash_safe">Сейф</option>
+                  ) : null}
+                  {allowedChannels.includes("bank_draft") ? (
+                    <option value="bank_draft">Банк-черновик (через Сейф)</option>
+                  ) : null}
                 </select>
                 <span className="text-xs text-muted-foreground">
                   {payoutMethod === "cash_tk"
