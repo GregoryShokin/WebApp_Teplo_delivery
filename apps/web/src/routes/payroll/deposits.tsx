@@ -61,10 +61,13 @@ import { EmptyState } from "@/components/ui-app/EmptyState";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import {
   apiErrorMessage,
+  cancelScheduledDepositPayout,
   getDeposits,
   getDepositTransactions,
+  getScheduledPayoutEnabled,
   postDepositPayout,
   postDepositWriteoff,
+  scheduleDepositPayout,
   type DepositListItem,
   type DepositTransaction,
   type EmployeeCategory,
@@ -154,6 +157,23 @@ export function PayrollDepositsRoute({ onNavigate }: PayrollDepositsRouteProps) 
     queryKey: [DEPOSITS_QUERY_KEY],
     queryFn: getDeposits,
     staleTime: 60_000,
+  });
+
+  const scheduledEnabledQuery = useQuery({
+    queryKey: ["deposit-scheduled-enabled"],
+    queryFn: getScheduledPayoutEnabled,
+    staleTime: 5 * 60_000,
+  });
+  const scheduledEnabled = scheduledEnabledQuery.data ?? false;
+
+  const cancelScheduleMutation = useMutation({
+    mutationFn: (employeeId: string) => cancelScheduledDepositPayout(employeeId),
+    onSuccess: async () => {
+      toast.success("Запланированная выдача отменена");
+      await queryClient.invalidateQueries({ queryKey: [DEPOSITS_QUERY_KEY] });
+    },
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, "Не удалось отменить выдачу")),
   });
 
   const targetRows = useMemo(
@@ -303,6 +323,17 @@ export function PayrollDepositsRoute({ onNavigate }: PayrollDepositsRouteProps) 
                           {row.position ?? "—"}
                         </span>
                       </button>
+                      {row.scheduled_payout_pending ? (
+                        <Badge
+                          className="mt-1 rounded-md border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-50"
+                          variant="outline"
+                        >
+                          Выдача в ближайшей ведомости
+                          {row.scheduled_payout_amount
+                            ? ` · ${formatMoney(row.scheduled_payout_amount)}`
+                            : " · весь остаток"}
+                        </Badge>
+                      ) : null}
                     </TableCell>
                     <TableCell>
                       {row.category ? (
@@ -360,6 +391,14 @@ export function PayrollDepositsRoute({ onNavigate }: PayrollDepositsRouteProps) 
                               >
                                 Списать депозит
                               </DropdownMenuItem>
+                              {row.scheduled_payout_pending ? (
+                                <DropdownMenuItem
+                                  disabled={cancelScheduleMutation.isPending}
+                                  onClick={() => cancelScheduleMutation.mutate(row.id)}
+                                >
+                                  Отменить запланированную выдачу
+                                </DropdownMenuItem>
+                              ) : null}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         ) : null}
@@ -385,6 +424,7 @@ export function PayrollDepositsRoute({ onNavigate }: PayrollDepositsRouteProps) 
         onClose={() => setPendingOperation(null)}
         operation={pendingOperation}
         queryClient={queryClient}
+        scheduledEnabled={scheduledEnabled}
       />
 
       <DepositHistoryDialog
@@ -399,26 +439,36 @@ function DepositOperationDialog({
   onClose,
   operation,
   queryClient,
+  scheduledEnabled,
 }: {
   onClose: () => void;
   operation: PendingOperation | null;
   queryClient: ReturnType<typeof useQueryClient>;
+  scheduledEnabled: boolean;
 }) {
   const [amount, setAmount] = useState("");
   const [comment, setComment] = useState("");
   const [payoutMethod, setPayoutMethod] = useState<"cash_tk" | "cash_safe" | "bank_draft">(
     "cash_tk",
   );
+  // Режим выдачи депозита: отложенная (в ближайшей ведомости, по умолчанию при включённом
+  // флаге) или немедленная. Удержание/списание режима не имеют.
+  const [payoutMode, setPayoutMode] = useState<"scheduled" | "immediate">("scheduled");
   const [submitted, setSubmitted] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const type = operation?.type ?? "payout";
+  const isScheduled = type === "payout" && scheduledEnabled && payoutMode === "scheduled";
   const balance = operation ? balanceNumber(operation.row) : 0;
   const normalized = normalizeDecimalInput(amount);
   const amountNumber = Number(normalized);
-  const amountValid = validNonNegativeDecimalInput(normalized) && amountNumber > 0;
-  const withinBalance = amountValid && amountNumber <= balance + 1e-9;
+  const amountProvided = normalized.trim().length > 0;
+  // В отложенном режиме сумма необязательна (пусто = весь остаток на момент выплаты).
+  const amountValid = isScheduled
+    ? !amountProvided || (validNonNegativeDecimalInput(normalized) && amountNumber > 0)
+    : validNonNegativeDecimalInput(normalized) && amountNumber > 0;
+  const withinBalance = !amountProvided || amountNumber <= balance + 1e-9;
   const reasonValid = type !== "writeoff" || comment.trim().length > 0;
 
   useEffect(() => {
@@ -429,10 +479,12 @@ function DepositOperationDialog({
     setAmount(operation.type === "payout" ? String(balanceNumber(operation.row)) : "");
     setComment("");
     setPayoutMethod("cash_tk");
+    // При включённой отложенной выдаче режим по умолчанию — «в ближайшей ведомости».
+    setPayoutMode(scheduledEnabled ? "scheduled" : "immediate");
     setSubmitted(false);
     setConfirmOpen(false);
     setFormError(null);
-  }, [operation]);
+  }, [operation, scheduledEnabled]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -440,6 +492,14 @@ function DepositOperationDialog({
         throw new Error("Нет операции");
       }
       if (operation.type === "payout") {
+        if (isScheduled) {
+          // Отложенная выдача: account_choice бэкенда — safe/cash_tk/bank_draft.
+          const accountChoice = payoutMethod === "cash_safe" ? "safe" : payoutMethod;
+          return scheduleDepositPayout(operation.row.id, {
+            amount: amountProvided ? normalized : null,
+            account_choice: accountChoice,
+          });
+        }
         return postDepositPayout(operation.row.id, {
           amount: normalized,
           comment: comment.trim() || null,
@@ -452,7 +512,13 @@ function DepositOperationDialog({
       });
     },
     onSuccess: async () => {
-      toast.success(type === "payout" ? "Депозит выдан" : "Депозит списан");
+      toast.success(
+        type === "writeoff"
+          ? "Депозит списан"
+          : isScheduled
+            ? "Выдача запланирована в ближайшей ведомости"
+            : "Депозит выдан",
+      );
       setConfirmOpen(false);
       onClose();
       await Promise.all([
@@ -497,12 +563,42 @@ function DepositOperationDialog({
           </DialogHeader>
 
           <div className="grid gap-4">
+            {type === "payout" && scheduledEnabled ? (
+              <Label className="grid gap-2">
+                <span>Способ выдачи</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    disabled={mutation.isPending}
+                    onClick={() => setPayoutMode("scheduled")}
+                    type="button"
+                    variant={payoutMode === "scheduled" ? "default" : "outline"}
+                  >
+                    В ближайшей ведомости
+                  </Button>
+                  <Button
+                    disabled={mutation.isPending}
+                    onClick={() => setPayoutMode("immediate")}
+                    type="button"
+                    variant={payoutMode === "immediate" ? "default" : "outline"}
+                  >
+                    Выдать сразу
+                  </Button>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {isScheduled
+                    ? "Выдача попадёт в столбец «Выдача депозита» ближайшей ведомости и выплатится через Сейф. Удержание продолжит копить депозит заново."
+                    : "Немедленная выдача денег прямо сейчас."}
+                </span>
+              </Label>
+            ) : null}
+
             <Label className="grid gap-2">
-              <span>Сумма ₽</span>
+              <span>{isScheduled ? "Сумма ₽ (пусто = весь остаток)" : "Сумма ₽"}</span>
               <Input
                 disabled={mutation.isPending}
                 min={0}
                 onChange={(event) => setAmount(event.target.value)}
+                placeholder={isScheduled ? "Весь накопленный остаток" : undefined}
                 type="number"
                 value={amount}
               />
@@ -517,7 +613,7 @@ function DepositOperationDialog({
 
             {type === "payout" ? (
               <Label className="grid gap-2">
-                <span>Счёт выдачи</span>
+                <span>{isScheduled ? "Счёт выдачи (при выплате)" : "Счёт выдачи"}</span>
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
                   disabled={mutation.isPending}
@@ -542,18 +638,20 @@ function DepositOperationDialog({
               </Label>
             ) : null}
 
-            <Label className="grid gap-2">
-              <span>{type === "writeoff" ? "Причина" : "Комментарий"}</span>
-              <Textarea
-                disabled={mutation.isPending}
-                onChange={(event) => setComment(event.target.value)}
-                placeholder={type === "writeoff" ? "Укажите причину списания" : "Необязательно"}
-                value={comment}
-              />
-              {submitted && !reasonValid ? (
-                <span className="text-sm text-destructive">Для списания нужна причина.</span>
-              ) : null}
-            </Label>
+            {!isScheduled ? (
+              <Label className="grid gap-2">
+                <span>{type === "writeoff" ? "Причина" : "Комментарий"}</span>
+                <Textarea
+                  disabled={mutation.isPending}
+                  onChange={(event) => setComment(event.target.value)}
+                  placeholder={type === "writeoff" ? "Укажите причину списания" : "Необязательно"}
+                  value={comment}
+                />
+                {submitted && !reasonValid ? (
+                  <span className="text-sm text-destructive">Для списания нужна причина.</span>
+                ) : null}
+              </Label>
+            ) : null}
 
             {formError ? (
               <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -577,7 +675,7 @@ function DepositOperationDialog({
               ) : (
                 <Banknote size={16} aria-hidden="true" />
               )}
-              {OPERATION_TITLE[type]}
+              {isScheduled ? "Запланировать выдачу" : OPERATION_TITLE[type]}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -588,11 +686,15 @@ function DepositOperationDialog({
           <AlertDialogHeader>
             <AlertDialogTitle>Подтвердить операцию?</AlertDialogTitle>
             <AlertDialogDescription>
-              {operation
-                ? `${OPERATION_TITLE[operation.type]} на ${formatMoney(
-                    normalized,
-                  )} для «${operation.row.full_name}»? Баланс депозита уменьшится.`
-                : ""}
+              {!operation
+                ? ""
+                : isScheduled
+                  ? `Запланировать выдачу депозита ${
+                      amountProvided ? `на ${formatMoney(normalized)}` : "(весь остаток)"
+                    } для «${operation.row.full_name}» в ближайшей ведомости?`
+                  : `${OPERATION_TITLE[operation.type]} на ${formatMoney(
+                      normalized,
+                    )} для «${operation.row.full_name}»? Баланс депозита уменьшится.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

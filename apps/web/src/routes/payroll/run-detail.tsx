@@ -52,6 +52,7 @@ import {
   apiErrorMessage,
   applyRunPayoutDelta,
   bulkMarkPayrollPayments,
+  cancelScheduledDepositPayout,
   createPayrollRun,
   createRunBankDraft,
   finalizePayrollRun,
@@ -121,6 +122,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const queryClient = useQueryClient();
   const permissions = usePermissions();
   const canRecalculate = permissions.canPerformAction("payroll.runs.recalculate");
+  const canEditDeposits = permissions.hasPermission("payroll.production_deposits.edit");
   const canFinalizeRuns = permissions.canPerformAction("payroll.runs.finalize");
   const canReopenRuns = permissions.canPerformAction("payroll.runs.reopen");
   const canMarkPaid = permissions.canPerformAction("payroll.runs.mark_paid");
@@ -258,6 +260,21 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
       setIsRecalculateDialogOpen(false);
       toast.error(payrollRecalculateErrorMessage(error));
     },
+  });
+
+  // Отмена запланированной выдачи депозита прямо из ведомости (сотрудник передумал
+  // увольняться): снимаем pending-план и пересчитываем прогон, чтобы убрать столбец «Выдача».
+  const cancelDepositPayoutMutation = useMutation({
+    mutationFn: (employeeId: string) => cancelScheduledDepositPayout(employeeId),
+    onSuccess: async () => {
+      toast.success("Запланированная выдача отменена");
+      if (run && run.status === "completed") {
+        await recalculateMutation.mutateAsync(run.period_id);
+      } else {
+        await queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", runId] });
+      }
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отменить выдачу")),
   });
 
   function finalize() {
@@ -524,9 +541,14 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
 
       <PayrollByEmployeeTab
         canManagePayments={canManagePayments}
+        canEditDeposits={canEditDeposits}
+        cancelDepositPayoutPending={
+          cancelDepositPayoutMutation.isPending || recalculateMutation.isPending
+        }
         employeesById={employeesById}
         isLoading={linesQuery.isLoading || runQuery.isLoading}
         lines={lines}
+        onCancelDepositPayout={(employeeId) => cancelDepositPayoutMutation.mutate(employeeId)}
         runId={runId}
         runStatus={run?.status ?? ""}
       />
@@ -536,19 +558,26 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
 
 function PayrollByEmployeeTab({
   canManagePayments,
+  canEditDeposits,
+  cancelDepositPayoutPending,
   employeesById,
   isLoading,
   lines,
+  onCancelDepositPayout,
   runId,
   runStatus,
 }: {
   canManagePayments: boolean;
+  canEditDeposits: boolean;
+  cancelDepositPayoutPending: boolean;
   employeesById: Map<string, Employee>;
   isLoading: boolean;
   lines: PayrollLine[];
+  onCancelDepositPayout: (employeeId: string) => void;
   runId: string;
   runStatus: string;
 }) {
+  const runIsFinal = isFinalStatus(runStatus);
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
@@ -781,7 +810,28 @@ function PayrollByEmployeeTab({
           Выдача депозита
         </SortButton>
       ),
-      cell: (row) => formatMoney(row.line.deposit_payout),
+      cell: (row) => {
+        const amount = row.line.deposit_payout;
+        if (amount <= 0) {
+          return formatMoney(amount);
+        }
+        // Запланированную выдачу можно отменить, пока ведомость не финализирована.
+        return (
+          <div className="flex flex-col items-end gap-0.5">
+            <span>{formatMoney(amount)}</span>
+            {!runIsFinal && canEditDeposits ? (
+              <button
+                className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
+                disabled={cancelDepositPayoutPending}
+                onClick={() => onCancelDepositPayout(row.line.employee_id)}
+                type="button"
+              >
+                Отменить выдачу
+              </button>
+            ) : null}
+          </div>
+        );
+      },
       className: "text-right tabular-nums",
       headerClassName: "text-right",
     },

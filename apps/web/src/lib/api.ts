@@ -1765,6 +1765,15 @@ export type DepositListItem = {
   deposit_target_override?: string | null;
   deposit_withholding_override?: string | null;
   deposit_excluded_reason?: string | null;
+  // Отложенная выдача депозита (этап 4–6): есть ли pending-план и на какую сумму.
+  scheduled_payout_pending?: boolean;
+  scheduled_payout_amount?: string | null;
+};
+
+export type DepositSchedulePayoutPayload = {
+  // Сумма выдачи; пропуск/null = весь накопленный баланс на момент ближайшей ведомости.
+  amount?: string | null;
+  account_choice?: "safe" | "cash_tk" | "bank_draft";
 };
 
 export type DepositTransaction = {
@@ -4240,6 +4249,22 @@ export async function postDepositWriteoff(
 
 export async function postDepositInitialBalance(employeeId: string, amount: string): Promise<void> {
   await api.post(`/deposits/${employeeId}/initial-balance`, { amount });
+}
+
+export async function getScheduledPayoutEnabled(): Promise<boolean> {
+  const response = await api.get<{ enabled: boolean }>("/deposits/scheduled-payout/settings");
+  return response.data.enabled;
+}
+
+export async function scheduleDepositPayout(
+  employeeId: string,
+  payload: DepositSchedulePayoutPayload,
+): Promise<void> {
+  await api.post(`/deposits/${employeeId}/schedule-payout`, payload);
+}
+
+export async function cancelScheduledDepositPayout(employeeId: string): Promise<void> {
+  await api.delete(`/deposits/${employeeId}/schedule-payout`);
 }
 
 export async function getCourierDeposits(
