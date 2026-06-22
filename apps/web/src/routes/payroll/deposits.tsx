@@ -406,7 +406,9 @@ function DepositOperationDialog({
 }) {
   const [amount, setAmount] = useState("");
   const [comment, setComment] = useState("");
-  const [payoutMethod, setPayoutMethod] = useState<"cash_tk" | "cash_safe">("cash_tk");
+  const [payoutMethod, setPayoutMethod] = useState<"cash_tk" | "cash_safe" | "bank_draft">(
+    "cash_tk",
+  );
   const [submitted, setSubmitted] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -520,17 +522,22 @@ function DepositOperationDialog({
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
                   disabled={mutation.isPending}
                   onChange={(event) =>
-                    setPayoutMethod(event.target.value as "cash_tk" | "cash_safe")
+                    setPayoutMethod(
+                      event.target.value as "cash_tk" | "cash_safe" | "bank_draft",
+                    )
                   }
                   value={payoutMethod}
                 >
                   <option value="cash_tk">Торговая касса Черникова</option>
                   <option value="cash_safe">Сейф</option>
+                  <option value="bank_draft">Банк-черновик (через Сейф)</option>
                 </select>
                 <span className="text-xs text-muted-foreground">
                   {payoutMethod === "cash_tk"
                     ? "Наличные из кассы Черникова + изъятие в iiko."
-                    : "Наличные с карты «Сейф». Изъятие в iiko не делается."}
+                    : payoutMethod === "cash_safe"
+                      ? "Наличные с карты «Сейф». Изъятие в iiko не делается."
+                      : "Перевод р/с → Сейф и черновик платежа на ИП Шокину (как ЗП); раздача с Сейфа, iiko не трогаем."}
                 </span>
               </Label>
             ) : null}

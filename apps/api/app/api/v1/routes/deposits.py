@@ -14,6 +14,11 @@ from app.api.deps import CurrentActor, get_current_actor, require_any_permission
 from app.db.session import get_session
 from app.models import DepositAccount, DepositTransaction, Employee
 from app.services import deposit_service
+from app.services.deposit_bank_draft import (
+    PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
+    book_deposit_bank_to_safe_transfer,
+    send_deposit_payout_bank_draft,
+)
 from app.services.deposit_iiko_payout_production import post_production_deposit_payout_to_iiko
 from app.services.payroll_calculator import (
     decimal,
@@ -193,13 +198,7 @@ async def payout_deposit(
     payload: Annotated[DepositPayoutRequest | None, Body()] = None,
 ) -> dict[str, Any]:
     payload = payload or DepositPayoutRequest()
-    if payload.payout_method == "bank_draft":
-        # Банк-черновик выдачи депозита появится на этапе 3.
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Банк-черновик выдачи депозита пока недоступен",
-        )
-    await _get_employee_or_404(session, employee_id)
+    employee = await _get_employee_or_404(session, employee_id)
     now = datetime.now(UTC)
     account = await deposit_service.get_deposit_account(session, employee_id, for_update=True)
     balance = decimal(account.balance) if account else Decimal("0")
@@ -225,7 +224,7 @@ async def payout_deposit(
         amount=amount,
         now=now,
     )
-    # Реальная выдача денег → проводка ДДС (расход с выбранного наличного счёта).
+    # Реальная выдача денег → проводка ДДС (расход с выбранного счёта; для банк-черновика — с Сейфа).
     payout_wallet = await deposit_service.book_production_deposit_payout_cashflow(
         session,
         transaction=transaction,
@@ -233,6 +232,16 @@ async def payout_deposit(
         transaction_date=now.date(),
         comment=payload.comment,
     )
+    # Банк-черновик: транзит банк→Сейф (расход выше списан с Сейфа), сам черновик — после commit.
+    if payload.payout_method == "bank_draft":
+        await book_deposit_bank_to_safe_transfer(
+            session,
+            source_kind=PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
+            source_id=transaction.id,
+            amount=amount,
+            operation_date=now.date(),
+            purpose=f"Выдача депозита {employee.full_name} (через Сейф)",
+        )
     after = deposit_service.deposit_account_snapshot(account) | {
         "transaction": deposit_service.transaction_payload(transaction),
         "comment": payload.comment,
@@ -256,6 +265,14 @@ async def payout_deposit(
     if payout_wallet is not None and payout_wallet.code == "tk_chernikova":
         post_production_deposit_payout_to_iiko(
             amount=amount, payout_date=now.date(), source_id=transaction.id
+        )
+    # Банк-черновик на ИП Шокину (как ЗП) — после commit, ошибка банка не валит выдачу.
+    if payload.payout_method == "bank_draft":
+        await send_deposit_payout_bank_draft(
+            session,
+            document_id=f"teplo-deposit-{transaction.id}",
+            amount=amount,
+            purpose=f"Выдача депозита {employee.full_name} (через Сейф)",
         )
     return _operation_payload(account, transaction)
 

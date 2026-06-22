@@ -103,16 +103,18 @@ async def book_production_deposit_payout_cashflow(
 ) -> Wallet | None:
     """Провести немедленную выдачу производственного депозита в ДДС (расход с наличного счёта).
 
-    Списание с ТК Черникова (``cash_tk``) или Сейфа (``cash_safe``) по статье «Выдача
-    депозита». Идемпотентно по ``source_id = transaction.id``. Возвращает кошелёк — роут по
-    нему решает, нужно ли iiko-изъятие (только для ТК Черникова = iiko «Главная касса»).
-    Устойчиво (как курьерский возврат): если кошелёк/статья не заведены — ДДС-проводка
-    пропускается (возврат None / без записи), но выдачу не валим.
+    Списание с ТК Черникова (``cash_tk``) или Сейфа (``cash_safe``/``bank_draft``) по статье
+    «Выдача депозита». Идемпотентно по ``source_id = transaction.id``. Возвращает кошелёк —
+    роут по нему решает, нужно ли iiko-изъятие (только для ТК Черникова = iiko «Главная
+    касса»). Для банк-черновика (``bank_draft``) расход списывается с Сейфа, а транзит
+    банк→Сейф и сам черновик заводятся отдельно (``deposit_bank_draft``). Устойчиво (как
+    курьерский возврат): если кошелёк/статья не заведены — ДДС-проводка пропускается
+    (возврат None / без записи), но выдачу не валим.
     """
     wallet_code = (
-        SAFE_WALLET_CODE
-        if payout_method == "cash_safe"
-        else PRODUCTION_DEPOSIT_PAYOUT_TK_WALLET_CODE
+        PRODUCTION_DEPOSIT_PAYOUT_TK_WALLET_CODE
+        if payout_method == "cash_tk"
+        else SAFE_WALLET_CODE
     )
     wallet = await session.scalar(
         select(Wallet).where(Wallet.code == wallet_code, Wallet.status == "active")

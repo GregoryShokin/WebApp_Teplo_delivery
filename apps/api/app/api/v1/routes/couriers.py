@@ -3,6 +3,7 @@ from __future__ import annotations
 import http.client as _http_client
 import uuid
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
@@ -65,6 +66,7 @@ from app.services.couriers import (
 )
 from app.services.couriers.deposit_iiko_payout import post_deposit_return_to_iiko
 from app.services.couriers.iiko_olap_sync import sync_courier_olap_deliveries
+from app.services.deposit_bank_draft import send_deposit_payout_bank_draft
 from app.services.position_registry import courier_positions
 
 router = APIRouter()
@@ -706,6 +708,15 @@ async def post_courier_deposit_transaction(
     # БД — источник истины, ошибка iiko не откатывает возврат. No-op для top_up/forfeit.
     if transaction.payout_method in (None, "cash_tk"):
         post_deposit_return_to_iiko(transaction)
+    elif transaction.payout_method == "bank_draft":
+        # Безналичный возврат «как ЗП»: черновик на ИП Шокину (раздача с Сейфа). После
+        # commit, ошибка банка не валит возврат. iiko не трогаем (деньги не через кассу).
+        await send_deposit_payout_bank_draft(
+            session,
+            document_id=f"teplo-courier-deposit-{transaction.id}",
+            amount=(Decimal(transaction.amount_cents) / Decimal("100")).quantize(Decimal("0.01")),
+            purpose=f"Возврат депозита курьеру (операция #{transaction.id}) через Сейф",
+        )
     return await _deposit_transaction_payload(session, transaction)
 
 

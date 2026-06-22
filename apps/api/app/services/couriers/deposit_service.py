@@ -23,6 +23,10 @@ from app.models import (
     Wallet,
 )
 from app.services.couriers.common import get_courier_or_404
+from app.services.deposit_bank_draft import (
+    COURIER_DEPOSIT_RETURN_DRAFT_SOURCE_KIND,
+    book_deposit_bank_to_safe_transfer,
+)
 from app.services.position_registry import courier_positions, senior_courier_positions
 from app.services.wallets import SAFE_WALLET_CODE, CashWalletError, resolve_cash_wallet
 
@@ -226,16 +230,14 @@ async def create_transaction(
     is_return = _transaction_type_value(transaction_type) == CourierDepositTransactionType.RETURN.value
     # Канал выдачи только у возврата; по умолчанию ТК Черникова (legacy).
     resolved_method = (payout_method or "cash_tk") if is_return else None
-    if resolved_method == "bank_draft":
-        # Банк-черновик появится на этапе 3; до тех пор выдаём только наличными.
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Банк-черновик выдачи депозита пока недоступен",
-        )
     payout_wallet: Wallet | None = None
     if is_return:
+        # Наличные ТК Черникова (default) / Сейф; банк-черновик списывает расход тоже с Сейфа
+        # (деньги идут р/с→Сейф→курьер), транзит и сам черновик — отдельно (deposit_bank_draft).
         wallet_code = (
-            SAFE_WALLET_CODE if resolved_method == "cash_safe" else DEPOSIT_RETURN_CASH_WALLET_CODE
+            DEPOSIT_RETURN_CASH_WALLET_CODE
+            if resolved_method == "cash_tk"
+            else SAFE_WALLET_CODE
         )
         try:
             payout_wallet = await resolve_cash_wallet(session, wallet_code)
@@ -258,6 +260,17 @@ async def create_transaction(
     await session.flush()
     if is_return:
         await _book_deposit_return_cashflow(session, transaction, wallet=payout_wallet)
+        if resolved_method == "bank_draft":
+            # Транзит банк→Сейф под безналичный возврат (расход уже списан с Сейфа выше).
+            # source_id=None: id курьерской транзакции целочисленный, в UUID-поле не лезет.
+            await book_deposit_bank_to_safe_transfer(
+                session,
+                source_kind=COURIER_DEPOSIT_RETURN_DRAFT_SOURCE_KIND,
+                source_id=None,
+                amount=(Decimal(amount_cents) / Decimal("100")).quantize(Decimal("0.01")),
+                operation_date=transaction_date,
+                purpose=f"Возврат депозита курьеру (операция #{transaction.id}) через Сейф",
+            )
     return transaction
 
 
