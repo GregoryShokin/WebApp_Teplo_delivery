@@ -493,11 +493,10 @@ function DepositOperationDialog({
       }
       if (operation.type === "payout") {
         if (isScheduled) {
-          // Отложенная выдача: account_choice бэкенда — safe/cash_tk/bank_draft.
-          const accountChoice = payoutMethod === "cash_safe" ? "safe" : payoutMethod;
+          // Способ выплаты (банк/наличка) определится при самой выплате ЗП (run-level сплит),
+          // поэтому счёт здесь не выбираем и не передаём.
           return scheduleDepositPayout(operation.row.id, {
             amount: amountProvided ? normalized : null,
-            account_choice: accountChoice,
           });
         }
         return postDepositPayout(operation.row.id, {
@@ -586,7 +585,7 @@ function DepositOperationDialog({
                 </div>
                 <span className="text-xs text-muted-foreground">
                   {isScheduled
-                    ? "Выдача попадёт в столбец «Выдача депозита» ближайшей ведомости и выплатится через Сейф. Удержание продолжит копить депозит заново."
+                    ? "Выдача попадёт в столбец «Выдача депозита» ближайшей ведомости и будет выплачена вместе с зарплатой (наличными или по банку — определится при выплате). Удержание продолжит копить депозит заново."
                     : "Немедленная выдача денег прямо сейчас."}
                 </span>
               </Label>
@@ -611,9 +610,9 @@ function DepositOperationDialog({
               ) : null}
             </Label>
 
-            {type === "payout" ? (
+            {type === "payout" && !isScheduled ? (
               <Label className="grid gap-2">
-                <span>{isScheduled ? "Счёт выдачи (при выплате)" : "Счёт выдачи"}</span>
+                <span>Счёт выдачи</span>
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
                   disabled={mutation.isPending}
