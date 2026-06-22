@@ -36,7 +36,7 @@ import {
 } from "@/routes/dds/shared";
 
 const LIMIT = 50;
-type StatusFilter = "all" | "marked" | "unmarked";
+type StatusFilter = "all" | "marked" | "unmarked" | "transfers";
 
 export function LedgerTab() {
   const [status, setStatus] = useState<StatusFilter>("all");
@@ -77,6 +77,7 @@ export function LedgerTab() {
 
   const markedTotal = journalQuery.data?.marked_total ?? 0;
   const unmarkedTotal = journalQuery.data?.unmarked_total ?? 0;
+  const transferTotal = journalQuery.data?.transfer_total ?? 0;
 
   const columns: Array<DataTableColumn<JournalRow>> = [
     {
@@ -151,7 +152,12 @@ export function LedgerTab() {
         counterparty_account_raw: null,
         payment_purpose: selectedRow.payment_purpose,
         document_number: null,
-        classification_status: selectedRow.status === "classified" ? "classified" : "needs_review",
+        classification_status:
+          selectedRow.status === "classified"
+            ? "classified"
+            : selectedRow.status === "internal_transfer"
+              ? "internal_transfer"
+              : "needs_review",
         cashflow_transaction_id: null,
         transfer_group_id: null,
         raw_payload: null,
@@ -164,7 +170,7 @@ export function LedgerTab() {
         <StatusTab
           active={status === "all"}
           label="Все"
-          count={markedTotal + unmarkedTotal}
+          count={markedTotal + unmarkedTotal + transferTotal}
           onClick={() => {
             setStatus("all");
             resetPage();
@@ -186,6 +192,15 @@ export function LedgerTab() {
           tone="warning"
           onClick={() => {
             setStatus("unmarked");
+            resetPage();
+          }}
+        />
+        <StatusTab
+          active={status === "transfers"}
+          label="Внутренние переводы"
+          count={transferTotal}
+          onClick={() => {
+            setStatus("transfers");
             resetPage();
           }}
         />

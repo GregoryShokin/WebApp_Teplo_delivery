@@ -178,7 +178,7 @@ async def list_cashflow(
 @router.get("/journal", response_model=JournalListRead, dependencies=DDS_READ_ACCESS)
 async def list_journal(
     session: Annotated[AsyncSession, Depends(get_session)],
-    status: Literal["all", "marked", "unmarked"] = "all",
+    status: Literal["all", "marked", "unmarked", "transfers"] = "all",
     date_from: Annotated[date | None, Query(alias="from")] = None,
     date_to: Annotated[date | None, Query(alias="to")] = None,
     direction: Literal["in", "out"] | None = None,
@@ -193,15 +193,22 @@ async def list_journal(
     """
     cf_conditions = []
     op_conditions = [BankOperation.classification_status == "needs_review"]
+    # Внутренние переводы (счёт→счёт) — это движение денег, поэтому показываем их в
+    # журнале отдельным статусом «Внутренний перевод» (не доход/не расход, проводки-
+    # cashflow у них нет). Баланс их и так учитывает (≠ excluded).
+    transfer_conditions = [BankOperation.classification_status == "internal_transfer"]
     if date_from is not None:
         cf_conditions.append(CashflowTransaction.operation_date >= date_from)
         op_conditions.append(BankOperation.operation_date >= date_from)
+        transfer_conditions.append(BankOperation.operation_date >= date_from)
     if date_to is not None:
         cf_conditions.append(CashflowTransaction.operation_date <= date_to)
         op_conditions.append(BankOperation.operation_date <= date_to)
+        transfer_conditions.append(BankOperation.operation_date <= date_to)
     if direction is not None:
         cf_conditions.append(CashflowTransaction.direction == direction)
         op_conditions.append(BankOperation.direction == direction)
+        transfer_conditions.append(BankOperation.direction == direction)
 
     marked_total = int(
         await session.scalar(
@@ -212,6 +219,12 @@ async def list_journal(
     unmarked_total = int(
         await session.scalar(
             select(func.count()).select_from(BankOperation).where(*op_conditions)
+        )
+        or 0
+    )
+    transfer_total = int(
+        await session.scalar(
+            select(func.count()).select_from(BankOperation).where(*transfer_conditions)
         )
         or 0
     )
@@ -294,6 +307,29 @@ async def list_journal(
                 }
             )
 
+    if status in ("all", "transfers"):
+        transfer_rows = await session.scalars(select(BankOperation).where(*transfer_conditions))
+        for op in transfer_rows.all():
+            rows.append(
+                {
+                    "kind": "operation",
+                    "id": op.id,
+                    "bank_operation_id": op.id,
+                    "status": "internal_transfer",
+                    "operation_date": op.operation_date,
+                    "occurred_at": _journal_occurred_at(op.operation_date, op.posted_at),
+                    "direction": op.direction,
+                    "amount": _money(op.amount),
+                    "article_id": None,
+                    "counterparty_id": None,
+                    "wallet_id": None,
+                    "provider": op.provider,
+                    "payment_purpose": op.payment_purpose,
+                    "counterparty_name_raw": op.counterparty_name_raw,
+                    "counterparty_inn_raw": op.counterparty_inn_raw,
+                }
+            )
+
     rows.sort(key=lambda row: (row["occurred_at"], row["amount"]), reverse=True)
     total = len(rows)
     return {
@@ -301,6 +337,7 @@ async def list_journal(
         "total": total,
         "marked_total": marked_total,
         "unmarked_total": unmarked_total,
+        "transfer_total": transfer_total,
     }
 
 

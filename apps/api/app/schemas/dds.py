@@ -401,3 +401,4 @@ class JournalListRead(BaseModel):
     total: int
     marked_total: int
     unmarked_total: int
+    transfer_total: int = 0

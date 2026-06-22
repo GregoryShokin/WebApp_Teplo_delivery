@@ -2516,7 +2516,7 @@ export type JournalRow = {
 };
 
 export type JournalQuery = {
-  status?: "all" | "marked" | "unmarked";
+  status?: "all" | "marked" | "unmarked" | "transfers";
   from?: string;
   to?: string;
   direction?: "in" | "out" | "all";
@@ -2529,6 +2529,7 @@ export type JournalListResponse = {
   total: number;
   marked_total: number;
   unmarked_total: number;
+  transfer_total: number;
 };
 
 export async function getDdsJournal(params: JournalQuery): Promise<JournalListResponse> {
