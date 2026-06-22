@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
@@ -30,6 +31,7 @@ from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.payroll_payout_allocation import (
     DDS_ARTICLE_ADMIN_PAYROLL,
     DDS_ARTICLE_PRODUCTION_PAYROLL,
+    PayoutBucket,
     allocate_cash_cascade,
     build_payout_buckets,
 )
@@ -57,6 +59,21 @@ PAYROLL_PAYOUT_ARTICLE_CODE = "zarplata_proizvodstvennogo_personala"
 # Внутренний перевод банк→Сейф под выплату (шаг 2 — при оплате черновика в банке):
 # безналичная часть переводится с расчётного счёта в Сейф, откуда раздаётся по «Выплатить».
 BANK_TO_SAFE_SOURCE_KIND = "payroll_bank_to_safe"
+# Отложенная выдача депозита (этап 5): в «Выплатить» — отдельная корзина по своей статье ДДС
+# (не смешивать с зарплатными статьями). «На руки» = ФОТ + выдача депозита; банк-черновик и
+# наличный сплит считаются от этой суммы. iiko-изъятие «Выдача депозита» — для наличной части
+# с ТК Черникова (= iiko Главная касса). Когда выдач нет (deposit_payout_scheduled=0) — инертно.
+DDS_ARTICLE_DEPOSIT_PAYOUT = "vydacha_depozita_sotrudniku"
+DEPOSIT_PAYOUT_TK_WALLET_CODE = "tk_chernikova"
+
+
+@dataclass(frozen=True, slots=True)
+class PayoutExpenseResult:
+    """Итог проводок «Выплатить»: создан ли расход и наличная выдача депозита с ТК Черникова
+    (для iiko-изъятия «Выдача депозита» после commit)."""
+
+    booked: bool
+    deposit_iiko_amount: Decimal
 
 
 async def set_run_payout_cash(
@@ -74,7 +91,7 @@ async def set_run_payout_cash(
     Черникова) — that wallet carries the cash-side DDS transactions of the payout.
     """
     run = await _get_payout_run(session, run_id)
-    total = await _run_total_payable(session, run_id)
+    total = await _run_payout_grand_total(session, run_id)
     cash = _money(amount_cash)
     if cash < 0 or cash > total:
         raise PayrollConflictError("Наличная сумма должна быть от 0 до суммы к выплате")
@@ -262,20 +279,26 @@ async def book_payout_expense_for_employees(
     session: AsyncSession,
     run: PayrollRun,
     employee_ids: list[uuid.UUID],
-) -> bool:
-    """Шаг 3: расход ЗП по статьям для выплаченных сотрудников («Выплатить»).
+) -> PayoutExpenseResult:
+    """Шаг 3: расход ЗП + выдача депозита по статьям для выплаченных сотрудников («Выплатить»).
 
     Для Сейф-модели (админ + производственная после унификации). Суммы по строкам
     указанных сотрудников разносятся по статьям ДДС: должность сама маппится на статью
     (повар/кассир → «Зарплата производственного персонала», вспом. → «Содержание торг.
-    точек», админ → «Зарплата административного персонала»). Безналичная часть списывается
-    с Сейфа (куда пришёл перевод), наличная — с наличного кошелька прогона (ТК Черникова /
-    Сейф). Наличный бюджет каскадируется на уровне прогона: уже списанная наличными часть
-    вычитается, поэтому инкрементальные «Выплатить» не задваивают наличное распределение.
-    Возвращает True, если создан расход.
+    точек», админ → «Зарплата административного персонала»). Запланированная выдача депозита
+    (``deposit_payout_scheduled``) идёт ОТДЕЛЬНОЙ корзиной по статье «Выдача депозита» (не
+    под зарплатной статьёй). Безналичная часть списывается с Сейфа (куда пришёл перевод),
+    наличная — с наличного кошелька прогона (ТК Черникова / Сейф). Наличный бюджет
+    каскадируется на уровне прогона: уже списанная наличными часть вычитается, поэтому
+    инкрементальные «Выплатить» не задваивают наличное распределение.
+
+    Возвращает ``PayoutExpenseResult`` с наличной частью выдачи депозита с ТК Черникова —
+    для iiko-изъятия «Выдача депозита» (после commit). Когда выдач депозита нет, корзина
+    не создаётся и поведение совпадает с прежним (только ЗП).
     """
+    empty = PayoutExpenseResult(booked=False, deposit_iiko_amount=Decimal("0"))
     if not _uses_safe_payout(run) or not employee_ids:
-        return False
+        return empty
     lines = (
         await session.scalars(
             select(PayrollLine).where(
@@ -291,13 +314,19 @@ async def book_payout_expense_for_employees(
         [(line.role, _money(line.total_payable)) for line in lines],
         default_article_code=default_article,
     )
+    # Выдача депозита — отдельной корзиной В КОНЦЕ (наличные гасят сначала ЗП, потом выдачу).
+    deposit_total = sum(
+        (_money(getattr(line, "deposit_payout_scheduled", 0)) for line in lines), Decimal("0")
+    )
+    if deposit_total > 0:
+        buckets = [*buckets, PayoutBucket(DDS_ARTICLE_DEPOSIT_PAYOUT, deposit_total)]
     if not buckets:
-        return False
+        return empty
     safe_wallet = await session.scalar(
         select(Wallet).where(Wallet.code == SAFE_WALLET_CODE, Wallet.status == "active")
     )
     if safe_wallet is None:
-        return False
+        return empty
 
     # Наличный бюджет прогона за вычетом уже списанного наличными (cash-проводки = не на Сейфе).
     cash_wallet: Wallet | None = None
@@ -328,11 +357,13 @@ async def book_payout_expense_for_employees(
     ).all()
     article_ids = {code: article_id for code, article_id in article_rows}
     operation_date = datetime.now(UTC).date()
-    purpose = "Выплата ЗП (из Сейфа)"
     # Если наличный кошелёк не задан, наличную часть тоже списываем с Сейфа (фолбэк).
     cash_target = cash_wallet.id if cash_wallet is not None else safe_wallet.id
+    deposit_iiko_amount = Decimal("0")
     for alloc in allocations:
         article_id = article_ids.get(alloc.article_code)
+        is_deposit = alloc.article_code == DDS_ARTICLE_DEPOSIT_PAYOUT
+        purpose = "Выдача депозита (из Сейфа)" if is_deposit else "Выплата ЗП (из Сейфа)"
         if alloc.bank > 0:
             session.add(
                 CashflowTransaction(
@@ -361,8 +392,15 @@ async def book_payout_expense_for_employees(
                     quality_status="final",
                 )
             )
+            # iiko-изъятие «Выдача депозита» — только наличная часть выдачи с ТК Черникова.
+            if is_deposit and cash_wallet is not None and (
+                cash_wallet.code == DEPOSIT_PAYOUT_TK_WALLET_CODE
+            ):
+                deposit_iiko_amount += alloc.cash
     await session.flush()
-    return True
+    return PayoutExpenseResult(
+        booked=True, deposit_iiko_amount=_money(deposit_iiko_amount)
+    )
 
 
 async def create_or_update_run_draft(
@@ -485,15 +523,23 @@ async def get_run_payout_allocation(session: AsyncSession, run_id: uuid.UUID) ->
     наличные гасят вспомогательную корзину раньше администрации, банк добивает остаток.
     """
     run = await _get_payout_run(session, run_id)
-    total = await _run_total_payable(session, run_id)
-    cash = min(_money(run.payout_cash_total), total)
+    payable = await _run_total_payable(session, run_id)
+    deposit_total = await _run_deposit_payout_total(session, run_id)
+    grand_total = _money(payable + deposit_total)
+    cash = min(_money(run.payout_cash_total), grand_total)
     lines = (
         await session.scalars(select(PayrollLine).where(PayrollLine.run_id == run_id))
     ).all()
+    default_article = (
+        DDS_ARTICLE_ADMIN_PAYROLL if _is_admin_run(run) else DDS_ARTICLE_PRODUCTION_PAYROLL
+    )
     buckets = build_payout_buckets(
         [(line.role, _money(line.total_payable)) for line in lines],
-        default_article_code=DDS_ARTICLE_ADMIN_PAYROLL,
+        default_article_code=default_article,
     )
+    # Выдача депозита — отдельной корзиной в конце (как в book_payout_expense_for_employees).
+    if deposit_total > 0:
+        buckets = [*buckets, PayoutBucket(DDS_ARTICLE_DEPOSIT_PAYOUT, deposit_total)]
     allocations = allocate_cash_cascade(buckets, cash)
 
     names: dict[str, str] = {}
@@ -508,9 +554,11 @@ async def get_run_payout_allocation(session: AsyncSession, run_id: uuid.UUID) ->
 
     return {
         "run_id": run_id,
-        "total_payable": total,
+        "total_payable": payable,
+        "deposit_payout_total": deposit_total,
+        "grand_total": grand_total,
         "cash_total": cash,
-        "bank_total": _money(total - cash),
+        "bank_total": _money(grand_total - cash),
         "cash_wallet_id": run.payout_cash_wallet_id,
         "buckets": [
             {
@@ -757,13 +805,34 @@ async def _run_total_payable(session: AsyncSession, run_id: uuid.UUID) -> Decima
     return _money(amount)
 
 
-async def _run_account_amount(session: AsyncSession, run: PayrollRun) -> Decimal:
-    """РС-часть ведомости = ФОТ − наличные (run-level), не меньше нуля.
+async def _run_deposit_payout_total(session: AsyncSession, run_id: uuid.UUID) -> Decimal:
+    """Сумма запланированной выдачи депозита по ведомости (столбец «Выдача депозита»).
 
-    Наличная сумма ограничивается текущим ФОТ: если после пересчёта ФОТ упал ниже
+    0 для всех обычных ведомостей (deposit_payout_scheduled заполняется только при
+    включённой отложенной выдаче) — тогда выплатной поток ниже работает как раньше.
+    """
+    amount = await session.scalar(
+        select(func.coalesce(func.sum(PayrollLine.deposit_payout_scheduled), 0)).where(
+            PayrollLine.run_id == run_id
+        )
+    )
+    return _money(amount)
+
+
+async def _run_payout_grand_total(session: AsyncSession, run_id: uuid.UUID) -> Decimal:
+    """«На руки» = ФОТ (total_payable) + выдача депозита. База банк-черновика и наличного сплита."""
+    payable = await _run_total_payable(session, run_id)
+    deposit = await _run_deposit_payout_total(session, run_id)
+    return _money(payable + deposit)
+
+
+async def _run_account_amount(session: AsyncSession, run: PayrollRun) -> Decimal:
+    """РС-часть ведомости = «на руки» (ФОТ + выдача депозита) − наличные (run-level), ≥ 0.
+
+    Наличная сумма ограничивается суммой «на руки»: если после пересчёта она упала ниже
     ранее заданной наличной суммы, на счёт ИП ничего не уходит.
     """
-    total = await _run_total_payable(session, run.id)
+    total = await _run_payout_grand_total(session, run.id)
     cash = min(_money(run.payout_cash_total), total)
     return _money(total - cash)
 

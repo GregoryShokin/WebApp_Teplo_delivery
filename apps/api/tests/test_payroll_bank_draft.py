@@ -71,8 +71,13 @@ async def test_create_run_draft_uses_run_account_part_for_one_bank_draft(
             ],
         )
         # Total payable is 6000; owner pays 2250 in cash, so 3750 goes to the account.
+        # Сейф-модель требует наличный счёт при cash > 0 (введено унификацией ЗП, фаза 4.1).
         await set_run_payout_cash(
-            session, run.id, amount_cash=Decimal("2250"), actor_user_id=actor.id
+            session,
+            run.id,
+            amount_cash=Decimal("2250"),
+            cash_wallet_code="tk_chernikova",
+            actor_user_id=actor.id,
         )
 
         draft = await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)

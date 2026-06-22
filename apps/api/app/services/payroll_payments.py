@@ -140,11 +140,10 @@ async def mark_all_payments(
         payment.paid_by_user_id = actor_user_id
         payment.status = "paid"
 
-    # Расход ЗП в ДДС из Сейфа по статьям — только по ВНОВЬ выплаченным сотрудникам нового
-    # порядка выплаты администрации (для админ-ведомости; no-op для производственной).
+    # Расход ЗП + выдача депозита в ДДС из Сейфа по статьям — по ВНОВЬ выплаченным сотрудникам.
     from app.services.payroll_payouts import book_payout_expense_for_employees
 
-    await book_payout_expense_for_employees(
+    payout_result = await book_payout_expense_for_employees(
         session, run, [employee_id for employee_id, _amount, _payment in rows]
     )
     _add_payment_event(
@@ -163,6 +162,7 @@ async def mark_all_payments(
         },
     )
     await session.commit()
+    _post_deposit_payout_iiko(payout_result, run, paid_at)
     return len(rows)
 
 
@@ -211,11 +211,10 @@ async def mark_payments_selected(
         payment.paid_by_user_id = actor_user_id
         payment.status = "paid"
 
-    # Расход ЗП в ДДС из Сейфа по статьям — только по ВНОВЬ выплаченным сотрудникам нового
-    # порядка выплаты администрации (для админ-ведомости; no-op для производственной).
+    # Расход ЗП + выдача депозита в ДДС из Сейфа по статьям — по ВНОВЬ выплаченным сотрудникам.
     from app.services.payroll_payouts import book_payout_expense_for_employees
 
-    await book_payout_expense_for_employees(
+    payout_result = await book_payout_expense_for_employees(
         session, run, [employee_id for employee_id, _amount, _payment in rows]
     )
     _add_payment_event(
@@ -234,7 +233,25 @@ async def mark_payments_selected(
         },
     )
     await session.commit()
+    _post_deposit_payout_iiko(payout_result, run, paid_at)
     return len(rows)
+
+
+def _post_deposit_payout_iiko(payout_result: Any, run: PayrollRun, paid_at: date) -> None:
+    """iiko-изъятие «Выдача депозита» на наличную часть выдачи с ТК Черникова.
+
+    После commit (БД — источник истины). Ошибка iiko не валит выплату (логируется внутри).
+    No-op, если наличной выдачи депозита с ТК Черникова не было (deposit_iiko_amount == 0).
+    """
+    amount = getattr(payout_result, "deposit_iiko_amount", Decimal("0"))
+    if amount and amount > 0:
+        from app.services.deposit_iiko_payout_production import (
+            post_production_deposit_payout_to_iiko,
+        )
+
+        post_production_deposit_payout_to_iiko(
+            amount=amount, payout_date=paid_at, source_id=run.id
+        )
 
 
 async def _get_payment_run(session: AsyncSession, run_id: uuid.UUID) -> PayrollRun:
