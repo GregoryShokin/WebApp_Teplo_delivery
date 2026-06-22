@@ -34,7 +34,7 @@ from app.services.kassa.cheque import (
     list_cheque_articles,
     list_cheques,
 )
-from app.services.kassa.cheque_payout_push import post_cheque_expenses_to_iiko
+from app.services.kassa.cheque_payout_push import post_kassa_payment_to_iiko
 from app.services.kassa.iiko_cashshift_sync import (
     get_shift,
     list_shifts,
@@ -204,11 +204,11 @@ async def create_cheque_endpoint(
     # прочие расходы без товара push пропускает сам. Ошибка/skip не отменяет созданный чек.
     with contextlib.suppress(WarehousePushError):
         await push_invoice_to_iiko(session, invoice.id)
-    # Прочие расходы (питание/прочие затраты на персонал, содержание точек) дублируем в iiko
-    # изъятием addPayOut со счёта по способу оплаты (наличные→Главная касса, карта→эквайринг).
-    # Идемпотентно; сбой отдельной проводки фиксируется в kassa_cheque_iiko_payout, чек не валит.
+    # Все статьи чека (товар → «Оплата поставщикам» + персонал/содержание) дублируем в iiko
+    # изъятиями addPayOut по статьям, счёт по способу оплаты (наличные→Главная касса,
+    # карта→эквайринг). Идемпотентно; сбой проводки фиксируется в kassa_cheque_iiko_payout.
     try:
-        await post_cheque_expenses_to_iiko(session, invoice.id)
+        await post_kassa_payment_to_iiko(session, invoice.id)
         await session.commit()
     except Exception:  # noqa: BLE001 — iiko-проводка побочна, чек уже создан и закоммичен
         await session.rollback()

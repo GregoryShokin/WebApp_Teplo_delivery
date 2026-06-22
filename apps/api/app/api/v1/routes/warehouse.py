@@ -35,10 +35,8 @@ from app.services.counterparty_bank_match import (
 )
 from app.services.counterparty_matching import CounterpartyMatchError
 from app.services.iiko_product_sync import sync_iiko_products
-from app.services.kassa.invoice_paid_push import (
-    counterparty_iiko_guid,
-    post_invoice_payment_to_iiko,
-)
+from app.services.kassa.cheque_payout_push import post_kassa_payment_to_iiko
+from app.services.kassa.invoice_paid_push import counterparty_iiko_guid
 from app.services.warehouse_invoice_push import WarehousePushError, push_invoice_to_iiko
 from app.services.warehouse_invoices import (
     LineInput,
@@ -492,29 +490,26 @@ async def _settle_paid_from_kassa(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Кошелёк ТК Черникова не найден",
         )
-    # «Траты на персонал» — отдельная статья ДДС (не «Оплата поставщикам») и НЕ в iiko.
-    # При персональных строках полную оплату разносим на производство/персонал по статьям
-    # строк (build_staff_split_cash_parts), а изъятие поставщику в iiko проводим только за
-    # товарную часть. Без персонала (или доплата уже частично оплаченной) — одна часть.
+    # «Траты на персонал» — отдельная статья ДДС: полную оплату разносим на производство/
+    # персонал по статьям строк (build_staff_split_cash_parts). Без персонала (или доплата
+    # уже частично оплаченной) — одна часть.
     staff_total = invoice.staff_amount or Decimal("0.00")
     if staff_total > 0 and invoice.payment_status == "unpaid":
         cash_parts = await build_staff_split_cash_parts(
             session, invoice, wallet_id=wallet.id, operation_date=date.today()
         )
-        iiko_amount = invoice.amount - staff_total
     else:
         cash_parts = [CashPart(wallet_id=wallet.id, amount=amount, operation_date=date.today())]
-        iiko_amount = amount
     await pay_invoice_split(
         session,
         invoice_id=invoice.id,
         cash_parts=cash_parts,
         actor_user_id=actor_user_id,
     )
-    # 3) iiko: проводка оплаты поставщику (изъятие из Главной кассы) — ТОЛЬКО за товарную
-    #    часть (персонал «не в iiko»). Побочна — статус в raw_payload, накладную не валит.
-    if iiko_amount > 0:
-        await post_invoice_payment_to_iiko(session, invoice, amount=iiko_amount)
+    # 3) iiko: изъятия оплаты ПО СТАТЬЯМ (товар → «Оплата поставщикам», персонал → свои
+    #    статьи), счёт по способу оплаты (нал → Главная касса, карта/банк → эквайринг).
+    #    Побочно — ошибка iiko не валит оплату (статусы в kassa_cheque_iiko_payout).
+    await post_kassa_payment_to_iiko(session, invoice.id)
     await session.commit()
 
 

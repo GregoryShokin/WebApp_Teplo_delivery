@@ -13,19 +13,20 @@ from cp_helpers import (
     make_bank_operation,
     make_counterparty,
     make_expense_article,
+    make_invoice,
     make_wallet,
 )
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.services.kassa.cheque_payout_push as payout
-from app.models import ChequeIikoPayout, Wallet
+from app.models import ChequeIikoPayout, InvoiceLineItem, InvoicePaymentAllocation, Wallet
 from app.services.kassa.cheque import ChequeBankPart, ChequeLineInput, create_cheque
 from app.services.kassa.cheque_payout_push import (
     _build_payout_type_index,
     _resolve_pay_out_type,
     _split_by_source,
-    post_cheque_expenses_to_iiko,
+    post_kassa_payment_to_iiko,
 )
 
 ISSUED = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
@@ -38,8 +39,23 @@ ACCOUNTS = {
     "id_ekv": "Денежные средства, эквайринг",
     "id_pers": "Затраты на персонал",
     "id_tt": "Содержание торговых точек",
+    "id_sup": "Задолженность перед поставщиками",
 }
 PAYOUT_TYPES = [
+    {
+        "id": "T_SUP_CASH",
+        "transactionType": "PAYOUT",
+        "chiefAccount": "id_kassa",
+        "account": "id_sup",
+        "cashFlowCategory": {"code": "3"},
+    },
+    {
+        "id": "T_SUP_CARD",
+        "transactionType": "PAYOUT",
+        "chiefAccount": "id_ekv",
+        "account": "id_sup",
+        "cashFlowCategory": {"code": "3"},
+    },
     {
         "id": "T_FOOD_CASH",
         "transactionType": "PAYOUT",
@@ -149,8 +165,11 @@ def test_resolve_pay_out_type_by_structure() -> None:
     assert _resolve_pay_out_type(index, TT, "cash") == "T_TT_CASH"
     # PAYIN-тип в индекс не попал.
     assert "T_IGNORE" not in index.values()
+    # Товарная статья «Оплата поставщикам» резолвится в тип на корсчёт поставщиков.
+    assert _resolve_pay_out_type(index, "Оплата поставщикам", "cash") == "T_SUP_CASH"
+    assert _resolve_pay_out_type(index, "Оплата поставщикам", "card") == "T_SUP_CARD"
     # Неизвестная статья → None.
-    assert _resolve_pay_out_type(index, "Оплата поставщикам", "cash") is None
+    assert _resolve_pay_out_type(index, "Неведомая статья", "cash") is None
 
 
 def test_split_by_source() -> None:
@@ -194,7 +213,7 @@ async def test_posts_card_only_expense(
 
         calls: list = []
         _mock_iiko(monkeypatch, calls)
-        report = await post_cheque_expenses_to_iiko(session, cheque.id)
+        report = await post_kassa_payment_to_iiko(session, cheque.id)
         await session.commit()
 
         assert report.posted == 1 and report.failed == 0
@@ -235,7 +254,7 @@ async def test_splits_expense_between_card_and_cash(
 
         calls: list = []
         _mock_iiko(monkeypatch, calls)
-        report = await post_cheque_expenses_to_iiko(session, cheque.id)
+        report = await post_kassa_payment_to_iiko(session, cheque.id)
         await session.commit()
 
         assert report.posted == 2
@@ -247,13 +266,14 @@ async def test_splits_expense_between_card_and_cash(
         assert rows == {("card", "posted"), ("cash", "posted")}
 
 
-async def test_store_line_not_posted_as_payout(
+async def test_supplier_line_posted_with_counteragent(
     async_session_factory: async_sessionmaker[AsyncSession], monkeypatch
 ) -> None:
-    # Складская статья «Оплата поставщикам» уходит накладной, а НЕ изъятием.
+    # Товарная статья «Оплата поставщикам» теперь проводится изъятием (эквайринг) с
+    # контрагентом-поставщиком — корсчёт «Задолженность перед поставщиками».
     async with async_session_factory() as session:
         supplier = await make_expense_article(session, code="sup", name="Оплата поставщикам")
-        cp = await make_counterparty(session, name="Местный закуп")
+        cp = await make_counterparty(session, name="Местный закуп", iiko_guid="SUP-GUID")
         op = await _card_op(session, amount="250.00")
         await session.commit()
         cheque = await create_cheque(
@@ -274,12 +294,15 @@ async def test_store_line_not_posted_as_payout(
 
         calls: list = []
         _mock_iiko(monkeypatch, calls)
-        report = await post_cheque_expenses_to_iiko(session, cheque.id)
+        report = await post_kassa_payment_to_iiko(session, cheque.id)
         await session.commit()
 
-        assert report.posted == 0 and report.failed == 0
-        assert calls == []
-        assert await _payouts(session, cheque.id) == []
+        assert report.posted == 1 and report.failed == 0
+        assert len(calls) == 1
+        assert calls[0]["payOutTypeId"] == "T_SUP_CARD"
+        assert calls[0]["counteragent"] == "SUP-GUID"
+        rows = await _payouts(session, cheque.id)
+        assert len(rows) == 1 and rows[0].status == "posted" and rows[0].source == "card"
 
 
 async def test_idempotent_no_double_post(
@@ -308,10 +331,10 @@ async def test_idempotent_no_double_post(
 
         calls: list = []
         _mock_iiko(monkeypatch, calls)
-        await post_cheque_expenses_to_iiko(session, cheque.id)
+        await post_kassa_payment_to_iiko(session, cheque.id)
         await session.commit()
         # Повторный прогон не должен задвоить уже проведённое изъятие.
-        report2 = await post_cheque_expenses_to_iiko(session, cheque.id)
+        report2 = await post_kassa_payment_to_iiko(session, cheque.id)
         await session.commit()
 
         assert report2.posted == 0 and report2.skipped == 1
@@ -345,7 +368,7 @@ async def test_iiko_error_marks_failed_without_raising(
 
         calls: list = []
         _mock_iiko(monkeypatch, calls, fail=True)
-        report = await post_cheque_expenses_to_iiko(session, cheque.id)
+        report = await post_kassa_payment_to_iiko(session, cheque.id)
         await session.commit()
 
         assert report.failed == 1 and report.posted == 0
@@ -353,3 +376,69 @@ async def test_iiko_error_marks_failed_without_raising(
         assert len(rows) == 1
         assert rows[0].status == "failed"
         assert rows[0].error is not None
+
+
+async def test_invoice_goods_and_staff_split_by_article(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch
+) -> None:
+    # Накладная Кассы (kassa_invoice), оплата картой: товарная строка (без явной статьи) →
+    # «Оплата поставщикам» с контрагентом, персональная → своя статья; всё по эквайрингу.
+    async with async_session_factory() as session:
+        food = await make_expense_article(session, code="finv", name=FOOD)
+        await make_expense_article(session, code="supinv", name="Оплата поставщикам")
+        cp = await make_counterparty(session, name="Местный закуп", iiko_guid="SUP-G")
+        op = await _card_op(session, amount="300.00")
+        inv = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="300.00",
+            staff_amount="100.00",
+            number="ИНВ-1",
+            source="kassa_invoice",
+            issued_at=ISSUED,
+        )
+        session.add(
+            InvoiceLineItem(
+                invoice_id=inv.id,
+                name="Огурцы",
+                quantity=Decimal("1"),
+                price=Decimal("200.00"),
+                sum=Decimal("200.00"),
+                is_staff=False,
+                product_guid="P-1",
+            )
+        )
+        session.add(
+            InvoiceLineItem(
+                invoice_id=inv.id,
+                name="молоко",
+                quantity=Decimal("1"),
+                price=Decimal("100.00"),
+                sum=Decimal("100.00"),
+                is_staff=True,
+                dds_article_id=food.id,
+            )
+        )
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=inv.id,
+                source_kind="bank",
+                bank_operation_id=op.id,
+                amount=Decimal("300.00"),
+            )
+        )
+        await session.commit()
+
+        calls: list = []
+        _mock_iiko(monkeypatch, calls)
+        report = await post_kassa_payment_to_iiko(session, inv.id)
+        await session.commit()
+
+        assert report.posted == 2 and report.failed == 0
+        by_type = {
+            c["payOutTypeId"]: c["departmentSumMap"][payout.CHERNIKOVA_DEPARTMENT_ID] for c in calls
+        }
+        # товар → оплата поставщикам (эквайринг), персонал → своя статья (эквайринг)
+        assert by_type == {"T_SUP_CARD": 200.0, "T_FOOD_CARD": 100.0}
+        sup_call = next(c for c in calls if c["payOutTypeId"] == "T_SUP_CARD")
+        assert sup_call["counteragent"] == "SUP-G"

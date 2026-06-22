@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     ChequeIikoPayout,
+    CounterpartyAlias,
     DdsArticle,
     InvoiceLineItem,
     InvoicePaymentAllocation,
@@ -60,7 +61,15 @@ ARTICLE_TO_IIKO: dict[str, tuple[str, str]] = {
     "Расходы на питание персонала": ("Затраты на персонал", "34"),
     "Расходы на персонал": ("Затраты на персонал", "3.1"),
     "Содержание торговых точек": ("Содержание торговых точек", "36"),
+    # Товарная часть (склад). Корсчёт «Задолженность перед поставщиками» требует
+    # counteragent (iiko-GUID поставщика) — см. _post_one. Так оплата поставок проводится
+    # тем же механизмом по статьям, что и прочие расходы, а не отдельным скопом.
+    "Оплата поставщикам": ("Задолженность перед поставщиками", "3"),
 }
+
+# Статья, на которую относим товарные строки накладной без явной статьи ДДС
+# (is_staff=false, без dds_article_id — склад). В чеках строки уже несут статью.
+SUPPLIER_ARTICLE_NAME = "Оплата поставщикам"
 
 PAYOUT_TYPES_PATH = "/resto/api/v2/entities/payInOutTypes/list"
 ADD_PAYOUT_PATH = "/resto/api/v2/payInOuts/addPayOut"
@@ -119,14 +128,23 @@ def _resolve_pay_out_type(
 
 
 def _add_pay_out(
-    token: str, pay_out_type_id: str, pay_out_date: str, amount: Decimal, comment: str
+    token: str,
+    pay_out_type_id: str,
+    pay_out_date: str,
+    amount: Decimal,
+    comment: str,
+    *,
+    counteragent: str | None = None,
 ) -> None:
-    body = {
+    body: dict[str, Any] = {
         "payOutTypeId": pay_out_type_id,
         "payOutDate": pay_out_date,
         "departmentSumMap": {CHERNIKOVA_DEPARTMENT_ID: float(amount)},
         "comment": comment,
     }
+    # Корсчёт «Задолженность перед поставщиками» (оплата поставок) требует контрагента.
+    if counteragent:
+        body["counteragent"] = counteragent
     data = _iiko_post(token, ADD_PAYOUT_PATH, body)
     result = data.get("result") if isinstance(data, dict) else None
     if result != "SUCCESS":
@@ -158,6 +176,8 @@ async def _post_one(
     index: dict[tuple[str, str, str], str],
     token: str,
     report: ChequePayoutReport,
+    *,
+    counteragent: str | None = None,
 ) -> None:
     """Провести одну долю (статья × источник) с идемпотентностью по таблице трекинга."""
     existing = await session.scalar(
@@ -179,7 +199,9 @@ async def _post_one(
         status, error = "failed", "Тип изъятия iiko не найден (счёт/статья не настроены)"
     else:
         try:
-            _add_pay_out(token, pay_out_type_id, pay_out_date, amount, comment)
+            _add_pay_out(
+                token, pay_out_type_id, pay_out_date, amount, comment, counteragent=counteragent
+            )
         except Exception as exc:  # noqa: BLE001 — фиксируем причину, чек не валим
             status, error = "failed", str(exc)[:500]
             logger.warning(
@@ -215,17 +237,22 @@ async def _post_one(
         report.failed += 1
 
 
-async def post_cheque_expenses_to_iiko(
+async def post_kassa_payment_to_iiko(
     session: AsyncSession, invoice_id: uuid.UUID
 ) -> ChequePayoutReport:
-    """Провести прочие расходы чека в iiko изъятиями. Идемпотентно; ошибка не валит чек.
+    """Провести оплату накладной/чека Кассы в iiko изъятиями ПО СТАТЬЯМ ДДС.
 
-    Складские строки («Оплата поставщикам») сюда не попадают — они уходят приходной
-    накладной (``warehouse_invoice_push``). НЕ коммитит: пишет в сессию, commit — снаружи.
+    Единый механизм для kassa_invoice и kassa_cheque: каждая статья ДДС (включая товарную
+    «Оплата поставщикам») → отдельное изъятие нужного типа. Счёт-источник доли по способу
+    оплаты (карта/банк → эквайринг, наличные → Главная касса; смешанная — пропорционально).
+    Товарные строки склада (is_staff=false без явной статьи) относятся на «Оплата поставщикам»
+    с контрагентом-поставщиком (corr-счёт «Задолженность перед поставщиками»). Идемпотентно по
+    (накладная, статья, источник) через kassa_cheque_iiko_payout; ошибка iiko не валит оплату.
+    НЕ коммитит: пишет в сессию, commit — снаружи.
     """
     report = ChequePayoutReport()
     invoice = await session.get(SupplierInvoice, invoice_id)
-    if invoice is None or invoice.source != "kassa_cheque":
+    if invoice is None or invoice.source not in ("kassa_cheque", "kassa_invoice"):
         return report
 
     lines = (
@@ -233,13 +260,22 @@ async def post_cheque_expenses_to_iiko(
             select(InvoiceLineItem).where(InvoiceLineItem.invoice_id == invoice_id)
         )
     ).all()
+    # Товарные строки без явной статьи (накладные) относим на «Оплата поставщикам»; в чеках
+    # строки уже несут dds_article_id (в т.ч. оплату поставщикам).
+    supplier_article = await session.scalar(
+        select(DdsArticle).where(DdsArticle.name == SUPPLIER_ARTICLE_NAME)
+    )
     sums_by_article: dict[uuid.UUID, Decimal] = {}
     for line in lines:
-        if line.dds_article_id is None:
+        if line.dds_article_id is not None:
+            article_id = line.dds_article_id
+        elif not line.is_staff and supplier_article is not None:
+            article_id = supplier_article.id
+        else:
             continue
-        sums_by_article[line.dds_article_id] = sums_by_article.get(
-            line.dds_article_id, Decimal("0.00")
-        ) + _money(line.sum)
+        sums_by_article[article_id] = sums_by_article.get(article_id, Decimal("0.00")) + _money(
+            line.sum
+        )
     if not sums_by_article:
         return report
 
@@ -249,7 +285,7 @@ async def post_cheque_expenses_to_iiko(
             await session.scalars(select(DdsArticle).where(DdsArticle.id.in_(sums_by_article)))
         ).all()
     }
-    # Только «прочие» статьи (в маппинге); складская «Оплата поставщикам» идёт накладной.
+    # Все статьи, для которых настроен тип изъятия iiko (включая «Оплата поставщикам»).
     expenses = {
         article_id: total
         for article_id, total in sums_by_article.items()
@@ -282,6 +318,16 @@ async def post_cheque_expenses_to_iiko(
     if paid_total <= 0:
         return report
 
+    # iiko-GUID поставщика — нужен для изъятий «Оплата поставщикам» (counteragentType=SUPPLIER).
+    supplier_guid = await session.scalar(
+        select(CounterpartyAlias.alias)
+        .where(
+            CounterpartyAlias.counterparty_id == invoice.counterparty_id,
+            CounterpartyAlias.source == "iiko",
+        )
+        .limit(1)
+    )
+
     pay_out_date = invoice.issued_at.date() if invoice.issued_at else invoice.invoice_date
     pay_out_date_iso = pay_out_date.isoformat()
 
@@ -292,11 +338,21 @@ async def post_cheque_expenses_to_iiko(
 
     for article_id, article_total in expenses.items():
         article = articles[article_id]
+        counteragent = supplier_guid if article.name == SUPPLIER_ARTICLE_NAME else None
         for source, share in _split_by_source(article_total, bank_total, paid_total):
             if share <= 0:
                 continue
             await _post_one(
-                session, invoice, article, source, share, pay_out_date_iso, index, token, report
+                session,
+                invoice,
+                article,
+                source,
+                share,
+                pay_out_date_iso,
+                index,
+                token,
+                report,
+                counteragent=counteragent,
             )
 
     await session.flush()

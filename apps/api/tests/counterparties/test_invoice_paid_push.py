@@ -185,10 +185,9 @@ def test_pay_kassa_splits_staff_to_own_article(
     assert data["payment_status"] == "paid"
     assert data["production_amount"] == 200.0
     assert len(data["allocations"]) == 2  # товар + персонал на РАЗНЫХ статьях ДДС
-    # iiko-изъятие поставщику — только за товар (200), а не за весь 399.
-    assert len(calls) == 1
-    _path, body = calls[0]
-    assert body["departmentSumMap"] == {pp.CHERNIKOVA_DEPARTMENT_ID: 200.0}
+    # iiko-изъятия теперь идут ПО СТАТЬЯМ из нормализованных строк накладной
+    # (post_kassa_payment_to_iiko) — покрыто в test_kassa_cheque_payout. Здесь накладная без
+    # invoice_line_item, поэтому iiko-проводок нет: проверяем только ДДС-сплит товар/персонал.
 
 
 def test_kassa_invoice_source_filter(
