@@ -350,6 +350,72 @@ async def test_cheque_pushes_only_store_lines_to_iiko(
         assert "Губки" not in prepared.xml  # прочий расход в iiko НЕ уходит
 
 
+async def test_cheque_expense_line_with_iiko_guid_not_pushed(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Регресс Ч-2: строка с РАСХОДНОЙ статьёй (питание персонала), но с реальной
+    номенклатурой (iiko-GUID), НЕ должна уходить в iiko приходом. Раньше фильтр пуша
+    смотрел на is_staff (у чека всегда false) и такая строка ошибочно улетала на склад."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Местный закуп", iiko_guid="LP-GUID")
+        for guid, name in (("PROD-VEG", "Помидоры"), ("PROD-BREAD", "Хлеб")):
+            session.add(
+                IikoProduct(
+                    iiko_id=guid, name=name, type="GOODS", unit="кг", main_unit_guid="U-KG"
+                )
+            )
+        session.add(
+            AppSetting(
+                key="iiko.default_store_guid",
+                value={"guid": "ST-1"},
+                value_type="json",
+                category="iiko",
+                display_name="Склад",
+                widget_type="json",
+            )
+        )
+        supplier = await make_expense_article(session, code="sup", name="Оплата поставщикам")
+        staff_meal = await make_expense_article(
+            session, code="meal", name="Расходы на питание персонала"
+        )
+        veg = await session.scalar(select(IikoProduct).where(IikoProduct.iiko_id == "PROD-VEG"))
+        bread = await session.scalar(
+            select(IikoProduct).where(IikoProduct.iiko_id == "PROD-BREAD")
+        )
+        _, op = await _card_op(session, amount="500.00")
+        await session.commit()
+
+        cheque = await create_cheque(
+            session,
+            counterparty_id=cp.id,
+            article_id=None,
+            issued_at=ISSUED,
+            bank_parts=[ChequeBankPart(bank_operation_id=op.id)],
+            track_nomenclature=True,
+            lines=[
+                ChequeLineInput(
+                    name="Помидоры",
+                    quantity=Decimal("1"),
+                    price=Decimal("200.00"),
+                    dds_article_id=supplier.id,
+                    iiko_product_id=veg.id,
+                ),
+                ChequeLineInput(
+                    name="Хлеб",
+                    quantity=Decimal("1"),
+                    price=Decimal("300.00"),
+                    dds_article_id=staff_meal.id,  # питание персонала — РАСХОД
+                    iiko_product_id=bread.id,  # …но с реальной номенклатурой (iiko-GUID)
+                ),
+            ],
+        )
+
+        prepared = await prepare_push(session, cheque)
+        assert prepared.xml is not None
+        assert "PROD-VEG" in prepared.xml  # товар (Оплата поставщикам) уходит
+        assert "PROD-BREAD" not in prepared.xml  # питание персонала в iiko НЕ уходит
+
+
 async def test_nomenclature_total_mismatch_rejected(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

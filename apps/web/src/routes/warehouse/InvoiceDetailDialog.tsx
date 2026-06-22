@@ -69,9 +69,15 @@ export function InvoiceDetailDialog({
 
   const iiko = detail ? IIKO_STATUS[detail.iiko_push_status] ?? null : null;
   const hasStaff = (detail?.staff_amount ?? 0) > 0;
-  // Отправка в iiko уместна только для накладных, созданных у нас (вручную / через Кассу).
-  // Накладные source=iiko пришли ИЗ iiko — повторный пуш создал бы дубль документа.
-  const canPushSource = detail?.source === "manual" || detail?.source === "kassa_invoice";
+  // Отправка в iiko уместна только для документов, созданных у нас (вручную / Касса:
+  // накладная и чек). source=iiko пришли ИЗ iiko — повторный пуш создал бы дубль.
+  const canPushSource =
+    detail?.source === "manual" ||
+    detail?.source === "kassa_invoice" ||
+    detail?.source === "kassa_cheque";
+  // Есть ли что отправлять в iiko: только товарные строки (не расходные статьи). Если
+  // товара нет (всё «персонал»/расходы), iiko-приход не создаётся — кнопку не показываем.
+  const hasGoods = (detail?.lines ?? []).some((line) => !line.is_expense);
 
   return (
     <>
@@ -112,8 +118,20 @@ export function InvoiceDetailDialog({
               </div>
             ) : null}
 
-            {/* Статус в iiko + переотправка — только для созданных у нас накладных */}
+            {/* Статус в iiko + переотправка — только для созданных у нас документов.
+                Если товарных строк нет (всё расходы/персонал) — отправлять нечего, даже
+                если статус ещё «не отправлена»: показываем «не отправляется», без кнопки. */}
             {canPushSource ? (
+              !hasGoods && detail.iiko_push_status !== "pushed" ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-md border p-3">
+                  <Badge variant="outline" className={IIKO_STATUS.skipped.cls}>
+                    {IIKO_STATUS.skipped.label}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    Нет товарных строк для iiko (расходные статьи / персонал)
+                  </span>
+                </div>
+              ) : (
               <div className="flex flex-wrap items-center gap-2 rounded-md border p-3">
                 {iiko ? (
                   <Badge variant="outline" className={iiko.cls}>
@@ -125,7 +143,7 @@ export function InvoiceDetailDialog({
                 {detail.iiko_push_error ? (
                   <span className="text-xs text-muted-foreground">{detail.iiko_push_error}</span>
                 ) : null}
-                {canPush && iiko?.canSend ? (
+                {canPush && iiko?.canSend && hasGoods ? (
                   <Button
                     size="sm"
                     variant="outline"
@@ -144,6 +162,7 @@ export function InvoiceDetailDialog({
                   </Button>
                 ) : null}
               </div>
+              )
             ) : null}
 
             {/* Позиции */}
@@ -165,12 +184,12 @@ export function InvoiceDetailDialog({
                         {line.unit ? (
                           <span className="ml-1 text-xs text-muted-foreground">{line.unit}</span>
                         ) : null}
-                        {line.is_staff ? (
+                        {line.is_expense ? (
                           <Badge
                             variant="outline"
                             className="ml-2 border-amber-200 bg-amber-50 text-[10px] text-amber-700"
                           >
-                            персонал
+                            {line.is_staff ? "персонал" : line.dds_article_name ?? "расход"}
                           </Badge>
                         ) : null}
                       </td>

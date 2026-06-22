@@ -27,17 +27,19 @@ from typing import Any
 from xml.sax.saxutils import escape
 
 import anyio
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     AppSetting,
     CounterpartyAlias,
+    DdsArticle,
     IikoProduct,
     InvoiceLineItem,
     SupplierInvoice,
 )
 from app.services.iiko_inventory import _load_inventory_module
+from app.services.warehouse_invoices import SUPPLIER_PAYMENT_ARTICLE_NAME
 
 STORE_SETTING_KEY = "iiko.default_store_guid"
 IIKO_SOURCE = "iiko"
@@ -167,12 +169,24 @@ async def prepare_push(session: AsyncSession, invoice: SupplierInvoice) -> Prepa
     store_guid = await _store_guid(session, invoice)
     if not store_guid:
         return PreparedPush(None, doc_id, "Не настроен склад (iiko.default_store_guid)")
+    # В iiko уходят ТОЛЬКО товарные строки: без статьи ДДС (склад) или статья «Оплата
+    # поставщикам». Расходные статьи (питание/расходы персонала, содержание точек) — это
+    # затраты, а не складской приход; их в iiko не отправляем. Признак — статья, а не
+    # is_staff: чек кладёт статью «питание персонала» в строку, оставляя is_staff=false, и
+    # раньше такая строка ошибочно улетала приходом. См. project_card_purchase_invoice_gap.
+    goods_articles = select(DdsArticle.id).where(
+        DdsArticle.name == SUPPLIER_PAYMENT_ARTICLE_NAME
+    )
     rows = (
         await session.scalars(
             select(InvoiceLineItem)
             .where(
                 InvoiceLineItem.invoice_id == invoice.id,
                 InvoiceLineItem.is_staff.is_(False),
+                or_(
+                    InvoiceLineItem.dds_article_id.is_(None),
+                    InvoiceLineItem.dds_article_id.in_(goods_articles),
+                ),
             )
             .order_by(InvoiceLineItem.sort_order)
         )

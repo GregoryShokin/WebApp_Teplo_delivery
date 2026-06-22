@@ -37,6 +37,35 @@ from app.models import (
 # По ИМЕНИ (code/uuid различны dev/prod), как whitelist чека.
 STAFF_ARTICLE_NAMES = ("Расходы на питание персонала", "Расходы на персонал")
 
+# Статья ДДС «Оплата поставщикам» — единый признак «товарной» строки: строка идёт в iiko
+# приходом ТОЛЬКО если её статья = эта (или статьи нет вовсе — складская строка накладной).
+# Любая другая статья (питание/расходы персонала, содержание точек и т.п.) — это РАСХОД, а
+# не складской приход, и в iiko не отправляется. Чеки кладут статью в каждую строку
+# (is_staff всегда false), накладные — флаг is_staff + статью только у персональных. Поэтому
+# «товар vs расход» определяем по СТАТЬЕ, а не по is_staff — единый источник истины для
+# пуша, бейджа и разбивки. По ИМЕНИ (code/uuid различны dev/prod), как whitelist чека и
+# cheque_payout_push. См. project_card_purchase_invoice_gap.
+SUPPLIER_PAYMENT_ARTICLE_NAME = "Оплата поставщикам"
+
+
+async def supplier_payment_article_ids(session: AsyncSession) -> set[uuid.UUID]:
+    """UUID-ы статей «Оплата поставщикам» (товарных). Множество — каталог может содержать
+    тёзку (сид + созданная статья); строка-товар может ссылаться на любую из них."""
+    rows = await session.scalars(
+        select(DdsArticle.id).where(DdsArticle.name == SUPPLIER_PAYMENT_ARTICLE_NAME)
+    )
+    return set(rows.all())
+
+
+def line_is_goods(line: InvoiceLineItem, supplier_article_ids: set[uuid.UUID]) -> bool:
+    """Товарная строка (идёт в iiko приходом): НЕ персонал И (без статьи ДДС или статья
+    «Оплата поставщикам»). Накладная помечает персонал флагом is_staff (статья может быть
+    пустой), чек — расходной статьёй (is_staff всегда false). Учитываем оба признака,
+    иначе персональная строка накладной без статьи ложно считается товаром."""
+    if line.is_staff:
+        return False
+    return line.dds_article_id is None or line.dds_article_id in supplier_article_ids
+
 
 class WarehouseInvoiceError(RuntimeError):
     """Domain error for warehouse invoice creation (maps to HTTP 409/422)."""
@@ -417,6 +446,18 @@ async def get_warehouse_invoice(
     summary = _invoice_summary(invoice, counterparty.name if counterparty else "—", allocated)
     summary["due_date"] = invoice.due_date.isoformat() if invoice.due_date else None
     summary["iiko_push_error"] = invoice.iiko_push_error
+
+    # Единая логика «товар vs расход» по статье ДДС (а не по is_staff): чеки кладут статью
+    # «питание персонала» в строку, оставляя is_staff=false — нельзя считать такие строки
+    # товаром. Названия статей нужны фронту для бейджа.
+    supplier_article_ids = await supplier_payment_article_ids(session)
+    article_ids = {line.dds_article_id for line in lines if line.dds_article_id is not None}
+    article_names: dict[uuid.UUID, str] = {}
+    if article_ids:
+        rows_a = await session.execute(
+            select(DdsArticle.id, DdsArticle.name).where(DdsArticle.id.in_(article_ids))
+        )
+        article_names = {aid: name for aid, name in rows_a.all()}
     summary["allocations"] = [
         {
             "id": str(a.id),
@@ -440,12 +481,26 @@ async def get_warehouse_invoice(
             "sum": float(_money(line.sum)),
             "vat_percent": float(line.vat_percent) if line.vat_percent is not None else None,
             "is_staff": line.is_staff,
+            # Расходная строка (не товар → не уходит в iiko): по статье ДДС, единообразно
+            # для чеков и накладных. Название статьи — для бейджа на фронте.
+            "is_expense": not line_is_goods(line, supplier_article_ids),
+            "dds_article_name": (
+                article_names.get(line.dds_article_id) if line.dds_article_id else None
+            ),
             # Для редактирования: сохранить связь с номенклатурой iiko и статьёй персонала.
             "iiko_product_id": str(line.iiko_product_id) if line.iiko_product_id else None,
             "dds_article_id": str(line.dds_article_id) if line.dds_article_id else None,
         }
         for line in lines
     ]
+    # Разбивка «товар / расход» по статье ДДС (чек с is_staff=false тоже разносится верно).
+    if lines:
+        expense_sum = sum(
+            (_money(line.sum) for line in lines if not line_is_goods(line, supplier_article_ids)),
+            Decimal("0.00"),
+        )
+        summary["staff_amount"] = float(expense_sum)
+        summary["production_amount"] = float(_money(invoice.amount) - expense_sum)
     return summary
 
 

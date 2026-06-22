@@ -40,6 +40,10 @@ export type WarehouseInvoiceLine = {
   sum: number;
   vat_percent: number | null;
   is_staff: boolean;
+  // Расходная строка (не товар → не уходит в iiko): по статье ДДС, единообразно для
+  // чеков и накладных. dds_article_name — название статьи для бейджа.
+  is_expense: boolean;
+  dds_article_name: string | null;
   iiko_product_id: string | null;
   dds_article_id: string | null;
 };
