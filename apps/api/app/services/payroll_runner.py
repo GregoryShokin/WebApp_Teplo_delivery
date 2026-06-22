@@ -35,6 +35,12 @@ from app.services.deferred_audit_charge_service import (
     collapse_deferred_charges_on_dismissal,
 )
 from app.services.iiko_revenue import fetch_daily_revenue
+from app.services.deposit_schedule import (
+    is_scheduled_payout_enabled,
+    load_pending_schedules,
+    mark_schedules_processed_for_run,
+    revert_schedules_for_run,
+)
 from app.services.payroll_advance_recovery import (
     apply_advance_recoveries,
     apply_advance_recoveries_to_balances,
@@ -300,6 +306,16 @@ async def run_payroll(
             "attendance_warning_count": len(attendance_warnings),
         }
 
+        # Отложенная выдача депозита (за feature-флагом): pending-планы сотрудников прогона
+        # попадут в столбец «Выдача депозита» и сбросят накопление (удержание копит заново).
+        deposit_payout_schedules: dict[uuid.UUID, dict[str, Any]] = {}
+        if await is_scheduled_payout_enabled(session):
+            pending_schedules = await load_pending_schedules(session, employee_ids)
+            deposit_payout_schedules = {
+                emp_id: {"requested_amount": schedule.requested_amount}
+                for emp_id, schedule in pending_schedules.items()
+            }
+
         await ensure_daily_revenue_cached(
             session,
             period.start_date,
@@ -314,6 +330,7 @@ async def run_payroll(
             entries,
             line_deposit_overrides=line_deposit_overrides,
             rate_versions_override=frozen_rate_versions,
+            deposit_payout_schedules=deposit_payout_schedules,
         )
         if calculation.blocking_issues:
             run.status = "blocked"
@@ -361,6 +378,7 @@ async def run_payroll(
                 entries,
                 line_deposit_overrides=line_deposit_overrides,
                 rate_versions_override=frozen_rate_versions,
+                deposit_payout_schedules=deposit_payout_schedules,
             )
             if calculation.blocking_issues:
                 run.status = "blocked"
@@ -640,6 +658,23 @@ async def update_deposits_and_fund(
             run_id=run.id,
             transaction_type="accrual",
             amount=amount,
+            created_at=now,
+        )
+        session.add(transaction)
+        deposit_transactions.append(transaction)
+
+    # Отложенная выдача депозита: превью payout-транзакции из столбца «Выдача депозита».
+    # Как и накопление, баланс двигается только в finalize (apply_deposit_transactions_to_balances
+    # вычитает payout). deposit_payout_scheduled заполнен на первой строке сотрудника — без дублей.
+    for line in lines:
+        payout = decimal(getattr(line, "deposit_payout_scheduled", 0))
+        if payout <= 0:
+            continue
+        transaction = DepositTransaction(
+            employee_id=line.employee_id,
+            run_id=run.id,
+            transaction_type="payout",
+            amount=payout,
             created_at=now,
         )
         session.add(transaction)
@@ -953,6 +988,16 @@ async def finalize_payroll_run(
 
     deposit_payload = await apply_deposit_transactions_to_balances(session, run, now, reverse=False)
     await apply_advance_recoveries_to_balances(session, run, now, reverse=False)
+    # Запланированная выдача депозита исполнена этим прогоном → планы в processed.
+    payout_employee_ids = (
+        await session.scalars(
+            select(DepositTransaction.employee_id).where(
+                DepositTransaction.run_id == run.id,
+                DepositTransaction.transaction_type == "payout",
+            )
+        )
+    ).all()
+    await mark_schedules_processed_for_run(session, run.id, payout_employee_ids)
 
     run.summary = payroll_summary_with_rate_snapshot(run.summary or {}, locked=True)
     run.status = "finalized"
@@ -1014,6 +1059,8 @@ async def unfinalize_payroll_run(
 
     deposit_payload = await apply_deposit_transactions_to_balances(session, run, now, reverse=True)
     await apply_advance_recoveries_to_balances(session, run, now, reverse=True)
+    # Откат: исполненные планы выдачи депозита возвращаются в pending (как и реверс баланса).
+    await revert_schedules_for_run(session, run.id)
 
     run.status = "completed"
     period.status = "open"

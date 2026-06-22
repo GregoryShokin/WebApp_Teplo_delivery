@@ -4756,6 +4756,77 @@ def test_payroll_calculation_uses_current_deposit_balance_for_target_cap() -> No
     assert result.lines[0].deposit_excluded_for_run is False
 
 
+def test_scheduled_deposit_payout_pays_balance_and_resets_withholding() -> None:
+    # Отложенная выдача: накоплено 14000, выдаём всё → running-баланс сброшен на 0, удержание
+    # копит заново (2000 вместо capped 1000 без сброса). Выдача в столбце, НЕ в «К выплате».
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(category="category_2")
+    entry = make_entry(period, employee, period.start_date)
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        deposit_settings(),
+        deposit_balances={employee.id: Decimal("14000")},
+        deposit_payout_schedules={employee.id: {"requested_amount": None}},
+    )
+
+    line = result.lines[0]
+    assert result.blocking_issues == []
+    assert line.deposit_payout_scheduled == Decimal("14000")
+    assert line.components["deposit_payout"] == 14000
+    # Удержание копит заново: 2000 (а не 1000, как было бы от cap 15000−14000).
+    assert line.deduction == 2000
+    assert line.components["deposit_withholding"] == 2000
+    # Выдача депозита НЕ входит в «К выплате» (только начисления − удержание = 2200 − 2000).
+    assert line.base_pay == 2200
+    assert line.total_payable == 200
+
+
+def test_scheduled_deposit_payout_caps_requested_at_balance() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(category="category_2")
+    entry = make_entry(period, employee, period.start_date)
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        deposit_settings(),
+        deposit_balances={employee.id: Decimal("12000")},
+        deposit_payout_schedules={employee.id: {"requested_amount": Decimal("99999")}},
+    )
+
+    # Нельзя выдать больше накопленного.
+    assert result.lines[0].deposit_payout_scheduled == Decimal("12000")
+
+
+def test_no_scheduled_payout_keeps_capped_withholding() -> None:
+    # Без плана выдачи поведение прежнее: удержание ограничено остатком до цели.
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(category="category_2")
+    entry = make_entry(period, employee, period.start_date)
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        deposit_settings(),
+        deposit_balances={employee.id: Decimal("14000")},
+    )
+
+    line = result.lines[0]
+    assert line.deposit_payout_scheduled == Decimal("0")
+    assert line.deduction == 1000  # cap: 15000 − 14000
+
+
 def test_payroll_calculation_line_deposit_override_zeroes_only_selected_line() -> None:
     period = make_period()
     run_id = uuid.uuid4()
@@ -5903,9 +5974,15 @@ class FinalizeFakeSession:
     async def scalars(self, query: Any) -> FinalizeScalarResult:
         entity = query_entity(query)
         if entity is DepositTransaction:
+            # finalize выбирает employee_id payout-транзакций (для пометки планов выдачи).
+            if query_selected_name(query) == "employee_id":
+                return FinalizeScalarResult(
+                    [tx.employee_id for tx in self.transactions if tx.transaction_type == "payout"]
+                )
             return FinalizeScalarResult(self.transactions)
         if entity is DepositAccount:
             return FinalizeScalarResult(list(self.accounts.values()))
+        # DepositPayoutSchedule и прочее — пусто (планов выдачи в этих тестах нет).
         return FinalizeScalarResult([])
 
     def add(self, item: Any) -> None:

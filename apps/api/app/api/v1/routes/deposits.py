@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentActor, get_current_actor, require_any_permission
 from app.db.session import get_session
 from app.models import DepositAccount, DepositTransaction, Employee
-from app.services import deposit_service
+from app.services import deposit_schedule, deposit_service
 from app.services.deposit_bank_draft import (
     PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
     book_deposit_bank_to_safe_transfer,
@@ -54,6 +54,9 @@ class DepositEmployeeRead(BaseModel):
     is_excluded: bool
     excluded_until: str | None = None
     progress_pct: str
+    # Отложенная выдача депозита (этап 4): есть ли pending-план и на какую сумму.
+    scheduled_payout_pending: bool = False
+    scheduled_payout_amount: str | None = None
 
 
 class DepositTransactionRead(BaseModel):
@@ -92,6 +95,30 @@ class DepositPayoutRequest(BaseModel):
     payout_method: Literal["cash_tk", "cash_safe", "bank_draft"] = "cash_tk"
 
 
+class DepositSchedulePayoutRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Сумма выдачи; None = весь накопленный баланс на момент ближайшей ведомости.
+    amount: Decimal | None = Field(default=None, gt=0)
+    account_choice: Literal["safe", "cash_tk", "bank_draft"] = "safe"
+
+
+class DepositScheduleRead(BaseModel):
+    employee_id: uuid.UUID
+    status: str
+    requested_amount: str | None = None
+    account_choice: str
+    created_at: str | None = None
+
+
+class DepositScheduledPayoutSettingsRead(BaseModel):
+    enabled: bool
+
+
+class DepositScheduleCancelRead(BaseModel):
+    cancelled: bool
+
+
 class DepositWriteoffRequest(BaseModel):
     amount: Decimal = Field(gt=0)
     reason: str | None = Field(default=None, max_length=1000)
@@ -120,6 +147,9 @@ async def list_deposits(
     employees = result.all()
     accounts = await deposit_service.load_accounts(session, [employee.id for employee in employees])
     settings = await load_payroll_settings(session)
+    schedules = await deposit_schedule.load_pending_schedules(
+        session, [employee.id for employee in employees]
+    )
     today = date.today()
     return [
         _deposit_employee_payload(
@@ -127,6 +157,7 @@ async def list_deposits(
             accounts.get(employee.id),
             settings,
             today,
+            schedules.get(employee.id),
         )
         for employee in employees
     ]
@@ -277,6 +308,66 @@ async def payout_deposit(
     return _operation_payload(account, transaction)
 
 
+@router.get(
+    "/scheduled-payout/settings",
+    response_model=DepositScheduledPayoutSettingsRead,
+    dependencies=DEPOSITS_READ_ACCESS,
+)
+async def get_scheduled_payout_settings(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    enabled = await deposit_schedule.is_scheduled_payout_enabled(session)
+    return {"enabled": enabled}
+
+
+@router.post(
+    "/{employee_id}/schedule-payout",
+    response_model=DepositScheduleRead,
+    dependencies=DEPOSITS_EDIT_ACCESS,
+)
+async def schedule_deposit_payout(
+    employee_id: uuid.UUID,
+    payload: DepositSchedulePayoutRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    """Запланировать выдачу депозита в ближайшей ЗП-ведомости (отложенная выдача)."""
+    if not await deposit_schedule.is_scheduled_payout_enabled(session):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Отложенная выдача депозита выключена",
+        )
+    await _get_employee_or_404(session, employee_id)
+    schedule = await deposit_schedule.create_or_replace_schedule(
+        session,
+        employee_id,
+        requested_amount=decimal(payload.amount) if payload.amount is not None else None,
+        account_choice=payload.account_choice,
+        created_by_user_id=actor.user_id,
+    )
+    await session.commit()
+    await session.refresh(schedule)
+    return _schedule_payload(schedule)
+
+
+@router.delete(
+    "/{employee_id}/schedule-payout",
+    response_model=DepositScheduleCancelRead,
+    dependencies=DEPOSITS_EDIT_ACCESS,
+)
+async def cancel_scheduled_deposit_payout(
+    employee_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    """Отменить запланированную выдачу депозита (сотрудник передумал увольняться)."""
+    await _get_employee_or_404(session, employee_id)
+    cancelled = await deposit_schedule.cancel_pending_schedule(session, employee_id)
+    await session.commit()
+    return {"cancelled": cancelled}
+
+
 @router.post(
     "/{employee_id}/writeoff",
     response_model=DepositOperationRead,
@@ -399,6 +490,7 @@ def _deposit_employee_payload(
     account: DepositAccount | None,
     settings: dict[str, Any],
     today: date,
+    schedule: Any | None = None,
 ) -> dict[str, Any]:
     balance = decimal(account.balance) if account else Decimal("0")
     initial_balance = decimal(getattr(account, "initial_balance", 0)) if account else Decimal("0")
@@ -421,6 +513,12 @@ def _deposit_employee_payload(
             getattr(employee, "deposit_excluded_until", None)
         ),
         "progress_pct": deposit_service.decimal_string(progress),
+        "scheduled_payout_pending": schedule is not None,
+        "scheduled_payout_amount": (
+            deposit_service.decimal_string(schedule.requested_amount)
+            if schedule is not None and schedule.requested_amount is not None
+            else None
+        ),
     }
 
 
@@ -432,6 +530,18 @@ def _operation_payload(
         "employee_id": account.employee_id,
         "balance": deposit_service.decimal_string(account.balance),
         "transaction": deposit_service.transaction_payload(transaction),
+    }
+
+
+def _schedule_payload(schedule: Any) -> dict[str, Any]:
+    return {
+        "employee_id": schedule.employee_id,
+        "status": schedule.status,
+        "requested_amount": deposit_service.decimal_string(schedule.requested_amount)
+        if schedule.requested_amount is not None
+        else None,
+        "account_choice": schedule.account_choice,
+        "created_at": schedule.created_at.isoformat() if schedule.created_at else None,
     }
 
 

@@ -130,6 +130,7 @@ async def calculate_payroll_lines(
     entries: Iterable[AttendanceEntry],
     line_deposit_overrides: Mapping[tuple[uuid.UUID, str], Mapping[str, Any]] | None = None,
     rate_versions_override: Iterable[Mapping[str, Any]] | None = None,
+    deposit_payout_schedules: Mapping[uuid.UUID, Mapping[str, Any]] | None = None,
 ) -> PayrollCalculationResult:
     entries = list(entries)
     vacation_days = await vacation_service.vacation_days_for_payroll_period(
@@ -237,6 +238,7 @@ async def calculate_payroll_lines(
         settings,
         deposit_balances=deposit_balances,
         line_deposit_overrides=line_deposit_overrides,
+        deposit_payout_schedules=deposit_payout_schedules,
     )
     result.summary = result.summary | {
         PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY: payroll_rate_snapshot_payload(
@@ -438,6 +440,7 @@ def calculate_payroll_lines_from_inputs(
     settings: Mapping[str, Any],
     deposit_balances: Mapping[uuid.UUID, Decimal] | None = None,
     line_deposit_overrides: Mapping[tuple[uuid.UUID, str], Mapping[str, Any]] | None = None,
+    deposit_payout_schedules: Mapping[uuid.UUID, Mapping[str, Any]] | None = None,
 ) -> PayrollCalculationResult:
     entries = list(entries)
     vacation_days = vacation_days_from_settings(settings)
@@ -707,6 +710,9 @@ def calculate_payroll_lines_from_inputs(
         employee_id: decimal(balance) for employee_id, balance in (deposit_balances or {}).items()
     }
     deposit_overrides = line_deposit_overrides or {}
+    payout_schedules = deposit_payout_schedules or {}
+    # Запланированная выдача применяется один раз на сотрудника (на первой его строке).
+    scheduled_payouts_done: dict[uuid.UUID, Decimal] = {}
     for (employee_id, role), totals in line_totals.items():
         vacation_payout_lump = totals.get("vacation_payout_lump", Decimal("0"))
         total_before_deduction = (
@@ -724,6 +730,21 @@ def calculate_payroll_lines_from_inputs(
         totals["ndfl_taxable_base"] = ndfl["taxable_base"]
         totals["ndfl_components"] = ndfl["components"]
         apply_ndfl_to_day_components(totals, ndfl)
+        # Отложенная выдача депозита: выдаём накопленное (или запрошенную сумму, но не больше
+        # баланса) и СБРАСЫВАЕМ running-баланс на остаток — удержание копит депозит заново
+        # с этой ведомости (по требованию владельца удержание не прекращается). Применяем
+        # один раз на сотрудника (на первой строке), сумма попадает в столбец «Выдача депозита».
+        scheduled_payout = Decimal("0")
+        schedule = payout_schedules.get(employee_id)
+        if schedule is not None and employee_id not in scheduled_payouts_done:
+            available = running_deposit_balances.get(employee_id, Decimal("0"))
+            requested = schedule.get("requested_amount")
+            requested_dec = decimal(requested) if requested is not None else available
+            scheduled_payout = max(min(requested_dec, available), Decimal("0"))
+            running_deposit_balances[employee_id] = max(
+                available - scheduled_payout, Decimal("0")
+            )
+            scheduled_payouts_done[employee_id] = scheduled_payout
         current_deposit_balance = running_deposit_balances.get(employee_id, Decimal("0"))
         # Лумп-выплату исключаем из базы удержания депозита.
         deposit_base = max(
@@ -763,9 +784,11 @@ def calculate_payroll_lines_from_inputs(
                 total_payable=money(total_payable),
                 deposit_excluded_for_run=deposit_excluded_for_run,
                 deposit_exclusion_reason=deposit_exclusion_reason,
+                deposit_payout_scheduled=money(scheduled_payout),
                 components={
                     "days": totals["days"],
                     "deposit_withholding": money(deduction),
+                    "deposit_payout": money(scheduled_payout),
                     "ndfl_withheld": money(ndfl["withheld"]),
                     "ndfl": ndfl["components"],
                     "adjustments": totals["adjustments"],

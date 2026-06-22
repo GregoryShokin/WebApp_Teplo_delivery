@@ -305,6 +305,11 @@ class PayrollLine(Base):
         server_default="false",
     )
     deposit_exclusion_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Запланированная выдача депозита, попавшая в эту ведомость (столбец «Выдача депозита»).
+    # В total_payable НЕ входит — выплачивается отдельно через Сейф-контур (этап 4–5).
+    deposit_payout_scheduled: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
     components: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )
@@ -351,6 +356,45 @@ class DepositTransaction(Base):
     )
     transaction_type: Mapped[str] = mapped_column(String(32), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class DepositPayoutSchedule(Base):
+    """Намерение выдать депозит сотруднику в ближайшей ЗП-ведомости (отложенная выдача).
+
+    Переживает пересчёт ведомости (в отличие от превью ``deposit_transaction``). При расчёте
+    pending-план попадает в столбец «Выдача депозита» строки и выплачивается через Сейф-контур;
+    при финализации становится ``processed`` (``target_run_id`` = прогон выдачи), при откате —
+    обратно ``pending``. Один pending на сотрудника (частичный уникальный индекс).
+    """
+
+    __tablename__ = "deposit_payout_schedule"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('pending', 'processed', 'cancelled')",
+            name="ck_deposit_payout_schedule_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee.id", ondelete="CASCADE"), nullable=False
+    )
+    target_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payroll_run.id", ondelete="SET NULL"), nullable=True
+    )
+    requested_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    account_choice: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="safe", server_default="safe"
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", server_default="pending"
+    )
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
