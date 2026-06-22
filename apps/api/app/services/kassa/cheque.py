@@ -554,6 +554,10 @@ async def create_cheque(
             if first_txn_id is None:
                 first_txn_id = transaction.id
         operation.cashflow_transaction_id = first_txn_id
+        # Операция выбрана и привязана к проводке чека — это и есть её классификация.
+        # Снимаем «требует разбора» (статус + карточку), иначе она задвоится в журнале
+        # с проводкой чека (как делает _settle_pending_cheque для пендинг-ветки).
+        operation.classification_status = "classified"
         session.add(
             InvoicePaymentAllocation(
                 invoice_id=invoice.id,
@@ -563,6 +567,8 @@ async def create_cheque(
                 created_by_user_id=actor_user_id,
             )
         )
+        await session.flush()
+        await _resolve_cases(session, bank_operation_id=operation.id, invoice_id=invoice.id)
     await session.flush()
 
     # --- пендинг-карта: одна проводка «Ожидает подтверждения банком» на Т-Банк р/с ----

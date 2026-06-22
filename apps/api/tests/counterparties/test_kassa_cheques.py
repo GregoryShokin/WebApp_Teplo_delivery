@@ -123,6 +123,48 @@ async def test_create_cheque_card_only_is_paid_and_booked(
         assert op_after.cashflow_transaction_id == txns[0].id
 
 
+async def test_create_cheque_marks_selected_op_classified_and_resolves_case(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Выбор операции в чеке снимает «требует разбора»: статус → classified, кейс закрыт.
+
+    Иначе привязанная операция дублировалась бы в журнале ДДС с проводкой чека и висела
+    в счётчике «Требуют проверки» (фикс 2026-06-22).
+    """
+    from app.models import ReconciliationCase
+
+    async with async_session_factory() as session:
+        article = await make_expense_article(
+            session, code="cheque_classify", name="Расходы на персонал -"
+        )
+        cp = await make_counterparty(session, name="IP KO")
+        _wallet, op = await _card_op(session, amount="408.00")
+        # Карточка «требует разбора», как её заводит классификатор при импорте card-операции.
+        op.classification_status = "needs_review"
+        case = ReconciliationCase(
+            kind="unclassified_operation",
+            status="pending",
+            provider="tbank",
+            bank_operation_id=op.id,
+            payload={},
+        )
+        session.add(case)
+        await session.commit()
+
+        await create_cheque(
+            session,
+            counterparty_id=cp.id,
+            article_id=article.id,
+            issued_at=ISSUED,
+            bank_parts=[ChequeBankPart(bank_operation_id=op.id)],
+        )
+
+        op_after = await session.get(BankOperation, op.id)
+        assert op_after.classification_status == "classified"
+        case_after = await session.get(ReconciliationCase, case.id)
+        assert case_after.status == "resolved"
+
+
 async def test_create_cheque_split_card_plus_cash(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
