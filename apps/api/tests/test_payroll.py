@@ -5157,6 +5157,7 @@ def test_personal_report_returns_periods_and_adjustments() -> None:
         components={
             "days": [],
             "deposit_withholding": "250",
+            "deposit_payout": "15000",
             "adjustments": {
                 "bonuses": [{"amount": "300"}],
                 "penalties": [{"amount": "100"}],
@@ -5221,6 +5222,9 @@ def test_personal_report_returns_periods_and_adjustments() -> None:
     assert payload["totals"]["bonus_total"] == 300
     assert payload["totals"]["penalty_total"] == 100
     assert payload["totals"]["deposit_withholding"] == 250
+    # Выдача депозита из компонентов строки доступна в периоде и в итогах (для «на руки»).
+    assert payload["periods"][1]["deposit_payout"] == 15000
+    assert payload["totals"]["deposit_payout"] == 15000
     assert payload["deposit_transactions"][0]["transaction_type"] == "accrual"
 
 
@@ -5303,6 +5307,53 @@ async def test_personal_report_daily_aggregates_correctly() -> None:
     assert report["periods"][0]["ndfl_withheld"] == 13
     assert report["totals"]["ndfl_withheld"] == 13
     assert report["totals"]["total_payable"] == 537
+
+
+async def test_personal_report_exposes_scheduled_deposit_payout() -> None:
+    # «Выдача депозита» из компонентов строки видна в периоде и итогах (для «на руки»),
+    # при этом total_payable остаётся ФОТ-нетто (без выдачи).
+    employee = make_employee()
+    period = make_period(
+        start=date(2026, 5, 19),
+        end=date(2026, 5, 25),
+        payroll_date=date(2026, 5, 26),
+    )
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 5, 26, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    line = make_payroll_line(
+        run.id,
+        employee.id,
+        total_payable=Decimal("11860.00"),
+        components={
+            "days": [],
+            "deposit_withholding": "0",
+            "deposit_payout": "15000",
+            "adjustments": {},
+        },
+    )
+    session = PersonalReportFakeSession(
+        employees=[employee],
+        line_rows=[(line, run, period)],
+        adjustments=[],
+        deposit_transactions=[],
+    )
+
+    report = await build_personal_report(
+        session,  # type: ignore[arg-type]
+        employee.id,
+        date(2026, 5, 19),
+        date(2026, 5, 25),
+    )
+
+    assert report["periods"][0]["deposit_payout"] == 15000
+    assert report["periods"][0]["total_payable"] == 11860
+    assert report["totals"]["deposit_payout"] == 15000
 
 
 async def test_personal_report_opening_balance_excludes_period_range() -> None:

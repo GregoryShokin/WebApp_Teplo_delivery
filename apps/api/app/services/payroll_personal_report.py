@@ -113,6 +113,7 @@ async def build_personal_report(
         "fund_accrual": 0.0,
         "deduction": 0.0,
         "deposit_withholding": 0.0,
+        "deposit_payout": 0.0,
         "bonus_total": 0.0,
         "penalty_total": 0.0,
         "total_payable": 0.0,
@@ -125,6 +126,9 @@ async def build_personal_report(
     for line, run, period in line_rows:
         bonus_total, penalty_total = component_adjustment_totals(line.components)
         deposit_withholding = money_float(component_value(line.components, "deposit_withholding"))
+        # «Выдача депозита» (запланированная) хранится в компонентах строки и НЕ входит в
+        # total_payable (ФОТ-нетто) — отдаём отдельным полем, чтобы отчёт показывал «на руки».
+        deposit_payout = money_float(component_value(line.components, "deposit_payout"))
         item = {
             "period_id": period.id,
             "run_id": run.id,
@@ -140,6 +144,7 @@ async def build_personal_report(
             "fund_accrual": money_float(line.fund_accrual),
             "deduction": money_float(line.deduction),
             "deposit_withholding": deposit_withholding,
+            "deposit_payout": deposit_payout,
             "bonus_total": bonus_total,
             "penalty_total": penalty_total,
             "total_payable": money_float(line.total_payable),

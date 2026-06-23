@@ -90,7 +90,7 @@ const KIND_META: Record<
     isDeduction: true,
   },
   deposit_payout: {
-    label: "Возврат депозита",
+    label: "Выдача депозита",
     badgeClass: "bg-emerald-50 text-emerald-700",
     isDeduction: false,
   },
@@ -224,12 +224,31 @@ export function PayrollPersonalReportPageTab() {
     if (!openWeek) {
       return [];
     }
-    return operations.filter((row) => {
+    const rows = operations.filter((row) => {
       if (row.periodStart) {
         return row.periodStart === openWeek.period_start;
       }
       return row.date >= openWeek.period_start && row.date <= openWeek.period_end;
     });
+    // Запланированную выдачу депозита показываем из данных периода: она привязана к ведомости,
+    // тогда как deposit_transaction датирована временем прогона и может выпасть из периода.
+    if (openWeek.deposit_payout > 0 && !rows.some((row) => row.kind === "deposit_payout")) {
+      rows.push({
+        id: `dep-payout-${openWeek.period_id}-${openWeek.run_id}`,
+        date: openWeek.period_end,
+        kind: "deposit_payout",
+        amount: String(openWeek.deposit_payout),
+        comment: null,
+        periodStart: openWeek.period_start,
+      });
+      rows.sort((left, right) => {
+        if (left.date !== right.date) {
+          return left.date < right.date ? 1 : -1;
+        }
+        return KIND_ORDER[left.kind] - KIND_ORDER[right.kind] || left.id.localeCompare(right.id);
+      });
+    }
+    return rows;
   }, [openWeek, operations]);
   const hasReportData = Boolean(
     report &&
@@ -287,9 +306,17 @@ export function PayrollPersonalReportPageTab() {
       headerClassName: "text-right",
     },
     {
+      key: "deposit_payout",
+      header: "Выдача депозита",
+      cell: (row) => formatMoney(row.deposit_payout),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
       key: "total_payable",
       header: "К выплате",
-      cell: (row) => formatMoney(row.total_payable),
+      // «На руки» = ФОТ (total_payable) + выдача депозита (в total_payable не входит).
+      cell: (row) => formatMoney(row.total_payable + row.deposit_payout),
       className: "text-right font-semibold tabular-nums",
       headerClassName: "text-right",
     },
@@ -374,8 +401,12 @@ export function PayrollPersonalReportPageTab() {
               <section className="grid gap-3 md:grid-cols-3 2xl:grid-cols-6">
                 <PersonalMetric
                   title="К выплате"
-                  value={formatMoney(report.totals.total_payable)}
-                  description="По найденным периодам"
+                  value={formatMoney(report.totals.total_payable + report.totals.deposit_payout)}
+                  description={
+                    report.totals.deposit_payout > 0
+                      ? "ФОТ + выдача депозита"
+                      : "По найденным периодам"
+                  }
                 />
                 <PersonalMetric
                   title="Начислено"
@@ -467,7 +498,16 @@ export function PayrollPersonalReportPageTab() {
                         <KpiSmall label="Оклад" value={formatMoney(openWeek.base_pay)} />
                         <KpiSmall label="Процент" value={formatMoney(openWeek.percent_pay)} />
                         <KpiSmall label="Удержано" value={formatMoney(openWeek.deduction)} />
-                        <KpiSmall label="К выплате" value={formatMoney(openWeek.total_payable)} />
+                        {openWeek.deposit_payout > 0 ? (
+                          <KpiSmall
+                            label="Выдача депозита"
+                            value={formatMoney(openWeek.deposit_payout)}
+                          />
+                        ) : null}
+                        <KpiSmall
+                          label="К выплате"
+                          value={formatMoney(openWeek.total_payable + openWeek.deposit_payout)}
+                        />
                       </div>
                       <OperationsTable rows={openWeekOperations} />
                     </>

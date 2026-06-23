@@ -635,6 +635,7 @@ export type PayrollPersonalReport = {
     fund_accrual: number;
     deduction: number;
     deposit_withholding: number;
+    deposit_payout: number;
     bonus_total: number;
     penalty_total: number;
     total_payable: number;
@@ -682,6 +683,7 @@ export type PayrollPersonalReport = {
     fund_accrual: number;
     deduction: number;
     deposit_withholding: number;
+    deposit_payout: number;
     bonus_total: number;
     penalty_total: number;
     audit_penalty_total: string;
