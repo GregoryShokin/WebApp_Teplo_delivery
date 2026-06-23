@@ -95,6 +95,7 @@ class ChequeLineInput:
     dds_article_id: uuid.UUID | None = None
     iiko_product_id: uuid.UUID | None = None
     vat_percent: Decimal | None = None
+    amount: Decimal | None = None  # сумма строки с кассы; приоритетна над quantity*price
 
 
 @dataclass
@@ -466,7 +467,10 @@ async def create_cheque(
             product = products.get(line.iiko_product_id) if line.iiko_product_id else None
             quantity = _qty(line.quantity)
             price = _money(line.price)
-            line_sum = _money(quantity * price)
+            # Сумма строки = введённая на кассе (если задана), иначе кол-во×цена. Иначе
+            # построчное округление qty*price расходится с оплатой: на фронте цена
+            # пересчитывается из суммы как round(сумма/кол-во), и qty*round(сумма/кол-во) ≠ сумма.
+            line_sum = _money(line.amount) if line.amount is not None else _money(quantity * price)
             line_article_id = line.dds_article_id or article_id
             if line_article_id is None:
                 raise KassaChequeError(f"У позиции «{line.name}» не указана статья ДДС")

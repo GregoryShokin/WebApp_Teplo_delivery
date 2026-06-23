@@ -65,6 +65,10 @@ class ChequeLineCreate(BaseModel):
     quantity: Decimal
     unit: str | None = None  # ед. изм.: шт / кг / л / порц
     price: Decimal
+    # Сумма строки, введённая на кассе. Приоритетна над quantity*price: цена на фронте
+    # пересчитывается из суммы как round(сумма/кол-во), и построчное qty*price копит
+    # расхождение с оплатой на копейки.
+    amount: Decimal | None = None
     dds_article_id: uuid.UUID | None = None  # статья ДДС позиции (своя у каждой строки)
     iiko_product_id: uuid.UUID | None = None
     vat_percent: Decimal | None = None

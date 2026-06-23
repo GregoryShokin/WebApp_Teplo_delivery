@@ -94,6 +94,7 @@ export type ChequeLinePayload = {
   quantity: number;
   unit?: string | null;
   price: number;
+  amount?: number | null;
   dds_article_id?: string | null;
   iiko_product_id?: string | null;
   vat_percent?: number | null;

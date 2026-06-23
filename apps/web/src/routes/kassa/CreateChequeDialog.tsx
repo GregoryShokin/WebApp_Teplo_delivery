@@ -190,6 +190,9 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
           quantity: num(l.quantity),
           unit: l.unit || null,
           price: num(l.price),
+          // Сумма строки — та же, что в подытоге (введённая или кол-во×цена): бэк проводит
+          // именно её, иначе построчный пересчёт qty×price расходится с оплатой на копейки.
+          amount: l.amount !== "" ? num(l.amount) : num(l.quantity) * num(l.price),
           dds_article_id: supplierArticle?.id ?? null,
           iiko_product_id: l.productId,
         }));
@@ -200,6 +203,7 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
           quantity: 1,
           unit: null,
           price: num(l.amount),
+          amount: num(l.amount),
           dds_article_id: l.articleId,
           iiko_product_id: null,
         }));

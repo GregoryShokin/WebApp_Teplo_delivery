@@ -437,6 +437,48 @@ async def test_nomenclature_total_mismatch_rejected(
             )
 
 
+async def test_cheque_line_amount_overrides_qty_price_rounding(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Сумма строки с кассы приоритетна над qty*price.
+
+    Воспроизводит баг «Сумма позиций не совпадает с оплатой» на копейки: построчное
+    округление qty*price (2×0.99 = 1.98) расходится с оплатой 2.00, но введённые суммы
+    строк (по 1.00) сходятся — их и проводим.
+    """
+    async with async_session_factory() as session:
+        article = await make_expense_article(session, code="goods3", name="Сырьё3")
+        cp = await make_counterparty(session, name="Магазин")
+        _, op = await _card_op(session, amount="2.00")
+        await session.commit()
+
+        cheque = await create_cheque(
+            session,
+            counterparty_id=cp.id,
+            article_id=article.id,
+            issued_at=ISSUED,
+            bank_parts=[ChequeBankPart(bank_operation_id=op.id)],
+            track_nomenclature=True,
+            lines=[
+                ChequeLineInput(
+                    name="A", quantity=Decimal("3"), price=Decimal("0.33"), amount=Decimal("1.00")
+                ),
+                ChequeLineInput(
+                    name="B", quantity=Decimal("3"), price=Decimal("0.33"), amount=Decimal("1.00")
+                ),
+            ],
+        )
+
+        assert cheque.payment_status == "paid"
+        assert cheque.amount == Decimal("2.00")
+        lines = (
+            await session.scalars(
+                select(InvoiceLineItem).where(InvoiceLineItem.invoice_id == cheque.id)
+            )
+        ).all()
+        assert {line.sum for line in lines} == {Decimal("1.00")}
+
+
 async def test_non_card_operation_rejected(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
