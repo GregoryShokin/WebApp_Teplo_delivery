@@ -37,7 +37,12 @@ from app.services.payroll_payouts import (
     get_payout_deltas,
     set_run_payout_cash,
 )
-from app.services.payroll_runner import finalize_payroll_run, run_payroll, unfinalize_payroll_run
+from app.services.payroll_runner import (
+    finalize_payroll_run,
+    run_payroll,
+    serialize_run,
+    unfinalize_payroll_run,
+)
 
 
 async def test_run_payout_cash_validates_bounds_status_and_legacy(
@@ -59,6 +64,12 @@ async def test_run_payout_cash_validates_bounds_status_and_legacy(
         )
 
         assert run.payout_cash_total == Decimal("300.00")
+        assert run.payout_cash_wallet_id is not None
+        # serialize_run обязан отдавать payout_cash_wallet_id: иначе фронт не видит
+        # сохранённый наличный счёт, savedWalletId всегда null → черновик «вечно грязный».
+        serialized = serialize_run(run)
+        assert serialized["payout_cash_wallet_id"] == run.payout_cash_wallet_id
+        assert serialized["payout_cash_total"] == 300.0
 
         with pytest.raises(HTTPException) as too_large:
             await payroll_routes.patch_run_payout_cash(

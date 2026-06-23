@@ -1302,6 +1302,7 @@ def serialize_run(
         "summary": summary,
         "is_imported_legacy": bool(getattr(run, "is_imported_legacy", False)),
         "payout_cash_total": float(run.payout_cash_total or 0),
+        "payout_cash_wallet_id": run.payout_cash_wallet_id,
     }
     if period is not None:
         data["period"] = serialize_period(period)

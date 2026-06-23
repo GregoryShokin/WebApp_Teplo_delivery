@@ -1265,7 +1265,12 @@ function RunBankDraftCard({
           <AlertDialogTrigger asChild>
             <Button
               disabled={
-                isLoading || mutation.isPending || cashDirty || !channelPerms.bank_draft
+                isLoading ||
+                mutation.isPending ||
+                cashDirty ||
+                !cashValid ||
+                !walletValid ||
+                !channelPerms.bank_draft
               }
               title={
                 channelPerms.bank_draft ? undefined : "Нет права на формирование банк-черновиков"
