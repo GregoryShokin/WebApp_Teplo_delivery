@@ -76,6 +76,26 @@ def test_webhook_is_idempotent(
     assert second.json()["draft_status"] == "paid"
 
 
+def test_webhook_account_operation_format_acked_200(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """T-Банк шлёт операции по счёту (формат выписки: operationId/operationStatus),
+    а не статус документа. Без связанного черновика — подтверждаем 200 (не 422),
+    чтобы банк не ретраил."""
+    _run(_seed(async_session_factory))
+    resp = client.post(
+        BASE,
+        json={
+            "operationId": "7ea7de7e-91b3-0059-a742-59a5e96a4d80",
+            "operationStatus": "transaction",
+            "typeOfOperation": "Credit",
+            "rubleAmount": "1000.0",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["matched"] is False
+
+
 def test_webhook_token_enforced_when_configured(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:

@@ -1,18 +1,21 @@
-"""Входящие вебхуки банка (T-Банк «Статус платежа»).
+"""Входящие вебхуки банка (T-Банк).
 
-Банк шлёт POST на ``/api/v1/webhooks/tbank/payment-status`` при смене статуса платежа,
-созданного через API. Авторизация — токеном ``tbank_webhook_token`` в заголовке
+Банк шлёт POST на ``/api/v1/webhooks/tbank/payment-status``. По факту это
+realtime-уведомления об ОПЕРАЦИЯХ ПО СЧЁТУ (формат выписки: ``operationId``,
+``operationStatus``, ``typeOfOperation``, суммы, ``payer``/``receiver``), а не статус
+платёжного документа. Авторизация — токеном ``tbank_webhook_token`` в заголовке
 ``Authorization``; банк может прислать его как ``Bearer <token>``, так и «голым»
-``<token>`` — принимаем оба варианта. Дополнительно — опциональный
-IP-whitelist (6 IP банка). Сопоставление платежа с черновиком — по ``provider_ref`` (id
-платежа у банка), затем авто-гашение накладных (та же логика, что у фонового добора статуса).
-Это входящий контур (банк→мы), без JWT; подключается заявкой на ``openapi@tbank.ru``.
+``<token>`` — принимаем оба варианта. Дополнительно — опциональный IP-whitelist
+(6 IP банка). Если идентификатор из тела совпал с ``provider_ref`` платёжного
+черновика — гасим накладные (как фоновый добор статуса); операции выписки без
+черновика просто подтверждаем 200 (realtime-наполнение ДДС из вебхука — TODO,
+сейчас операции подбирает поллинг выписки). Входящий контур (банк→мы), без JWT;
+подключается заявкой на ``openapi@tbank.ru``.
 """
 
 from __future__ import annotations
 
 import hmac
-import json
 import logging
 from typing import Annotated, Any
 
@@ -29,8 +32,17 @@ from app.services.payroll_payouts import apply_payroll_draft_status
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-_ID_FIELDS = ("paymentId", "documentId", "id", "payment_id", "document_id")
-_STATUS_FIELDS = ("status", "paymentStatus", "documentStatus", "payment_status")
+# Идентификатор: сначала платёжные (статус документа), затем операционные (выписка).
+_ID_FIELDS = (
+    "paymentId",
+    "documentId",
+    "payment_id",
+    "document_id",
+    "operationId",
+    "documentNumber",
+    "id",
+)
+_STATUS_FIELDS = ("paymentStatus", "documentStatus", "payment_status", "operationStatus", "status")
 
 
 def _extract(payload: dict[str, Any], names: tuple[str, ...]) -> str | None:
@@ -95,13 +107,6 @@ async def tbank_payment_status(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Некорректный JSON") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ожидался объект JSON")
-
-    # ВРЕМЕННАЯ ДИАГНОСТИКА (удалить после снятия структуры тела вебхука T-Банка):
-    logger.warning(
-        "tbank webhook DIAG keys=%s body=%s",
-        list(payload.keys()),
-        json.dumps(payload, ensure_ascii=False)[:3000],
-    )
 
     payment_id = _extract(payload, _ID_FIELDS)
     raw_status = _extract(payload, _STATUS_FIELDS)
