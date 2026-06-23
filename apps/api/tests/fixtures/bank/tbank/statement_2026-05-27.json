@@ -113,5 +113,29 @@
       "acct": "",
       "bicRu": ""
     }
+  },
+  {
+    "operationId": "tbank-20260527-hold",
+    "accountNumber": "40702810800000000002",
+    "operationDate": "2026-05-27T13:30:00Z",
+    "typeOfOperation": "Debit",
+    "amount": "999.00",
+    "currency": "RUB",
+    "category": "cardOperation",
+    "operationStatus": "Authorization",
+    "documentNumber": "406",
+    "paymentPurpose": "Авторизационный холд по карте (не проведён)",
+    "payer": {
+      "name": "ИП Шокина Е.А.",
+      "inn": "616100000001",
+      "acct": "40702810800000000002",
+      "bicRu": "044525974"
+    },
+    "receiver": {
+      "name": "Розничный магазин",
+      "inn": "",
+      "acct": "",
+      "bicRu": ""
+    }
   }
 ]

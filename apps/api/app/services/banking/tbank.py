@@ -190,6 +190,9 @@ class TbankClient:
             except FileNotFoundError:
                 continue
             for row in operation_rows(payload):
+                if is_tbank_operation_hold(row):
+                    # Авторизационный холд — не проведён, в журнал/баланс не пускаем (как вебхук).
+                    continue
                 account_number = clean_digits(
                     row.get("accountNumber") or row.get("account_number") or fallback_account
                 )
@@ -230,7 +233,10 @@ class TbankClient:
                     payload = await self._get_json(client, "/api/v1/statement", params)
                     rows = operation_rows(payload)
                     operations.extend(
-                        self._normalize_operation(row, account_number, date_from) for row in rows
+                        self._normalize_operation(row, account_number, date_from)
+                        for row in rows
+                        # Холды (Authorization) не проведены — не двигают баланс; как на вебхуке.
+                        if not is_tbank_operation_hold(row)
                     )
                     cursor = _next_cursor(payload)
                     if not cursor:
@@ -252,69 +258,7 @@ class TbankClient:
     def _normalize_operation(
         self, row: dict[str, Any], account_number: str, fallback_day: date
     ) -> NormalizedBankOperation:
-        direction = _direction(row)
-        block = _counterparty_block(row, direction)
-        counterparty_name = _block_value(
-            block, ("name", "fullName", "shortName", "counterpartyName")
-        )
-        counterparty_inn = _block_value(block, ("inn", "INN", "taxId", "tin"))
-        counterparty_account = _block_value(
-            block, ("acct", "account", "accountNumber", "bankAccount")
-        )
-        if not (counterparty_name or counterparty_inn or counterparty_account):
-            counterparty_name = nested_scalar(
-                row, "counterparty", ("name", "fullName", "shortName")
-            ) or scalar(row, ("counterpartyName", "counteragentName"))
-            counterparty_inn = nested_scalar(
-                row, "counterparty", ("inn", "taxId", "tin")
-            ) or scalar(row, ("counterpartyInn", "inn"))
-            counterparty_account = nested_scalar(
-                row, "counterparty", ("acct", "account", "accountNumber", "bankAccount")
-            ) or scalar(row, ("counterpartyAccount",))
-
-        raw_payload = dict(row)
-        raw_payload.setdefault("accountNumber", account_number)
-        provider_operation_id = (
-            row.get("operationId")
-            or row.get("id")
-            or row.get("ucid")
-            or row.get("documentNumber")
-            or (
-                f"{account_number}:"
-                f"{parse_date(row.get('operationDate'), fallback_day).isoformat()}:"
-                f"{direction}:{money(row.get('amount'))}"
-            )
-        )
-        return NormalizedBankOperation(
-            provider=self.provider,
-            provider_operation_id=str(provider_operation_id),
-            account_number=account_number,
-            operation_date=parse_date(
-                row.get("operationDate")
-                or row.get("transactionDate")
-                or row.get("date")
-                or row.get("documentDate"),
-                fallback_day,
-            ),
-            posted_at=parse_datetime(
-                row.get("operationDate")
-                or row.get("authorizationDate")
-                or row.get("trxnPostDate")
-                or row.get("createdAt")
-            ),
-            direction=direction,
-            amount=money(row.get("amount") or row.get("operationAmount") or row.get("sum")),
-            currency=str(row.get("currency") or row.get("operationCurrency") or "RUB"),
-            counterparty_name_raw=counterparty_name or None,
-            counterparty_inn_raw=clean_digits(counterparty_inn) or None,
-            counterparty_account_raw=clean_digits(counterparty_account) or None,
-            payment_purpose=scalar(
-                row, ("paymentPurpose", "purpose", "description", "operationDescription")
-            )
-            or None,
-            document_number=scalar(row, ("documentNumber", "docNumber", "number")) or None,
-            raw_payload=raw_payload,
-        )
+        return normalize_tbank_statement_row(row, account_number, fallback_day)
 
 
 def _direction(row: dict[str, Any]) -> str:
@@ -344,6 +288,91 @@ def _block_value(block: dict[str, Any], names: tuple[str, ...]) -> str:
         if value not in (None, "") and not isinstance(value, (dict, list)):
             return str(value)
     return ""
+
+
+# Стадия операции в выписке/вебхуке «Операция по счёту»: ``Transaction`` — проведена
+# (считаем деньги), ``Authorization`` — холд (может развернуться), в журнал/баланс НЕ
+# пускаем ни на вебхуке, ни на поллинге.
+TBANK_HOLD_STATUS = "authorization"
+
+
+def is_tbank_operation_hold(row: Mapping[str, Any]) -> bool:
+    """``True`` если операция T-Банка — авторизационный холд, а не проведённая операция."""
+    return str(row.get("operationStatus") or "").strip().casefold() == TBANK_HOLD_STATUS
+
+
+def normalize_tbank_statement_row(
+    row: dict[str, Any], account_number: str, fallback_day: date
+) -> NormalizedBankOperation:
+    """Нормализовать строку выписки T-Банка в общую модель операции.
+
+    Тело вебхука «Операция по счёту» имеет ТОТ ЖЕ формат, что и строка метода выписки
+    (одинаковые имена полей: ``operationId``/``typeOfOperation``/``operationAmount``/
+    ``payer``/``receiver``/``operationStatus`` и т.д., подтверждено реальными данными),
+    поэтому ОДИН парсер на оба источника. Это гарантирует идентичную нормализацию,
+    включая ``provider_operation_id`` (= ``operationId``, универсальный стабильный ключ) и
+    ``operation_date`` — значит дедуп по operationId даёт одну строку независимо от того,
+    пришла операция вебхуком или поллингом, и сохранённые поля не «прыгают» между источниками.
+    """
+    direction = _direction(row)
+    block = _counterparty_block(row, direction)
+    counterparty_name = _block_value(block, ("name", "fullName", "shortName", "counterpartyName"))
+    counterparty_inn = _block_value(block, ("inn", "INN", "taxId", "tin"))
+    counterparty_account = _block_value(block, ("acct", "account", "accountNumber", "bankAccount"))
+    if not (counterparty_name or counterparty_inn or counterparty_account):
+        counterparty_name = nested_scalar(
+            row, "counterparty", ("name", "fullName", "shortName")
+        ) or scalar(row, ("counterpartyName", "counteragentName"))
+        counterparty_inn = nested_scalar(
+            row, "counterparty", ("inn", "taxId", "tin")
+        ) or scalar(row, ("counterpartyInn", "inn"))
+        counterparty_account = nested_scalar(
+            row, "counterparty", ("acct", "account", "accountNumber", "bankAccount")
+        ) or scalar(row, ("counterpartyAccount",))
+
+    raw_payload = dict(row)
+    raw_payload.setdefault("accountNumber", account_number)
+    provider_operation_id = (
+        row.get("operationId")
+        or row.get("id")
+        or row.get("ucid")
+        or row.get("documentNumber")
+        or (
+            f"{account_number}:"
+            f"{parse_date(row.get('operationDate'), fallback_day).isoformat()}:"
+            f"{direction}:{money(row.get('amount'))}"
+        )
+    )
+    return NormalizedBankOperation(
+        provider="tbank",
+        provider_operation_id=str(provider_operation_id),
+        account_number=account_number,
+        operation_date=parse_date(
+            row.get("operationDate")
+            or row.get("transactionDate")
+            or row.get("date")
+            or row.get("documentDate"),
+            fallback_day,
+        ),
+        posted_at=parse_datetime(
+            row.get("operationDate")
+            or row.get("authorizationDate")
+            or row.get("trxnPostDate")
+            or row.get("createdAt")
+        ),
+        direction=direction,
+        amount=money(row.get("amount") or row.get("operationAmount") or row.get("sum")),
+        currency=str(row.get("currency") or row.get("operationCurrency") or "RUB"),
+        counterparty_name_raw=counterparty_name or None,
+        counterparty_inn_raw=clean_digits(counterparty_inn) or None,
+        counterparty_account_raw=clean_digits(counterparty_account) or None,
+        payment_purpose=scalar(
+            row, ("paymentPurpose", "purpose", "description", "operationDescription")
+        )
+        or None,
+        document_number=scalar(row, ("documentNumber", "docNumber", "number")) or None,
+        raw_payload=raw_payload,
+    )
 
 
 def _next_cursor(payload: Any) -> str:

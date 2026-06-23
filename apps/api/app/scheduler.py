@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -48,14 +48,19 @@ SUPPORTED_BANK_PROVIDERS = ("sber", "tbank")
 
 @scheduler.scheduled_job(
     "cron",
-    minute="*/15",
-    hour="8-22",
-    day_of_week="mon-fri",
+    minute=0,
+    hour="*/3",
     id="poll_banks",
     max_instances=1,
     coalesce=True,
 )
 async def poll_banks() -> None:
+    # Сверочный поллинг (раз в 3 часа, ВСЕ 7 дней). Первичный путь наполнения журнала ДДС
+    # для T-Банка — вебхук «Операция по счёту» (realtime); поллинг добирает потерянные банком
+    # события (ретрай-кап 5 попыток) и покрывает выходные, когда вебхук всё равно фаерит, а
+    # старое расписание пн-пт его не страховало. Дедуп в ingest_operations по operationId
+    # делает повторный проход уже принятой операции UPDATE'ом — баланс не задваивается.
+    # Sber вебхука не имеет и остаётся полностью на этом поллинге.
     for provider in _bank_sync_providers():
         await run_bank_sync_job(provider=provider)
 
@@ -355,11 +360,60 @@ async def sync_bank_provider(
     metadata = await client.fetch_account_metadata()
     await _upsert_accounts_from_metadata(session, provider, metadata)
     operations = await client.fetch_statement(date_from=date_from, date_to=date_to)
+    result = await ingest_operations(session, provider=provider, operations=operations)
+    return {
+        "provider": provider,
+        "status": "completed",
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "fetched": len(operations),
+        **result,
+    }
+
+
+async def ingest_operations(
+    session: AsyncSession,
+    *,
+    provider: str,
+    operations: list[NormalizedBankOperation],
+) -> dict[str, object]:
+    """Записать нормализованные операции выписки в журнал и прогнать классификацию.
+
+    Единый сток для ОБОИХ источников: периодического поллинга выписки
+    (``sync_bank_provider``) и realtime-вебхука «Операция по счёту»
+    (``/webhooks/tbank/account-operation``). Дедуп по ``(provider,
+    provider_operation_id)`` делает повторную доставку (поллинг после вебхука, дубль-фаер
+    вебхука, перекрытие периодов выписки) идемпотентной — UPDATE вместо второй вставки,
+    баланс не задваивается. ``operationId`` T-Банка — универсальный и стабильный ключ
+    операции (одинаков у выписки и вебхука; проверка совпадения id вебхук↔выписка — в
+    песочнице, Фаза 5). Порядок шагов критичен и совпадает с прежним поведением поллинга:
+    upsert → ``sync_own_accounts`` (регистрирует новые счета и включает правило внутренних
+    переводов) → (tbank) свод ручных пендинг-чеков Кассы ДО классификации →
+    ``run_classification_rules`` (внутри парует внутренние переводы по уже сохранённым ногам).
+    """
+    # Сериализуем ингест одного провайдера (поллинг vs вебхук vs ручной /bank-sync) на
+    # уровне транзакции: снимает гонку SELECT-then-INSERT и двойной claim prebooked-платежа
+    # двумя почти одновременными прогонами. Лок берётся в текущей транзакции, освобождается
+    # на commit.
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+        {"key": f"bank_ingest:{provider}"},
+    )
 
     inserted = 0
     updated = 0
+    # Внутрибатчевый дедуп по operationId: перекрывающиеся периоды выписки могут вернуть одну
+    # операцию дважды — без in-memory карты два add дали бы IntegrityError на flush (строки
+    # ещё не во flush, SELECT их не видит).
+    seen: dict[str, BankOperation] = {}
     for operation in operations:
         account = await _account_for_operation(session, provider, operation)
+        account_id = account.id if account else None
+        batch_row = seen.get(operation.provider_operation_id)
+        if batch_row is not None:
+            # Дубль в этом же батче — переприменяем поля, но НЕ двоим счётчики.
+            _update_bank_operation(batch_row, operation, account_id)
+            continue
         existing = await session.scalar(
             select(BankOperation).where(
                 BankOperation.provider == provider,
@@ -367,11 +421,14 @@ async def sync_bank_provider(
             )
         )
         if existing is None:
-            session.add(_bank_operation_from_normalized(operation, account.id if account else None))
+            existing = _bank_operation_from_normalized(operation, account_id)
+            session.add(existing)
             inserted += 1
         else:
-            _update_bank_operation(existing, operation, account.id if account else None)
+            await _flag_amount_change_on_classified(session, provider, existing, operation)
+            _update_bank_operation(existing, operation, account_id)
             updated += 1
+        seen[operation.provider_operation_id] = existing
 
     await session.flush()
     own_accounts_added = await sync_own_accounts(session, provider=provider)
@@ -392,11 +449,6 @@ async def sync_bank_provider(
     ).all()
     classification = await run_classification_rules(session, pending_operations)
     return {
-        "provider": provider,
-        "status": "completed",
-        "date_from": date_from.isoformat(),
-        "date_to": date_to.isoformat(),
-        "fetched": len(operations),
         "inserted": inserted,
         "updated": updated,
         "own_accounts_added": own_accounts_added,
@@ -567,6 +619,51 @@ def _bank_operation_from_normalized(
         document_number=operation.document_number,
         raw_payload=operation.raw_payload,
         classification_status="pending",
+    )
+
+
+async def _flag_amount_change_on_classified(
+    session: AsyncSession,
+    provider: str,
+    existing: BankOperation,
+    operation: NormalizedBankOperation,
+) -> None:
+    """Не дать сумме/направлению уже классифицированной операции «уехать» молча.
+
+    При рефайре (поллинг после вебхука / правка проводки банком) ``_update_bank_operation``
+    обновит ``BankOperation.amount`` (баланс по выписке станет верным), но связанный
+    ``CashflowTransaction`` журнала ДДС НЕ пересоберётся (re-classify идёт только по
+    ``pending``) → баланс и журнал разойдутся. Журнал автоматически не трогаем (чтобы не
+    затереть ручную разметку), а заводим reconciliation-кейс на ручную сверку. Если сумма
+    та же — кейса нет (типичный рефайр того же значения проходит молча).
+    """
+    if existing.classification_status == "pending":
+        return  # ещё не классифицирована — переразметится штатно
+    if existing.amount == operation.amount and existing.direction == operation.direction:
+        return
+    logger.warning(
+        "bank ingest %s: сумма/направление операции %s изменились после классификации "
+        "(%s %s → %s %s) — кейс на сверку журнала",
+        provider,
+        existing.provider_operation_id,
+        existing.direction,
+        existing.amount,
+        operation.direction,
+        operation.amount,
+    )
+    await create_or_update_reconciliation_case(
+        session,
+        kind="operation_amount_changed",
+        provider=provider,
+        bank_operation_id=existing.id,
+        payload={
+            "provider_operation_id": existing.provider_operation_id,
+            "old_amount": str(existing.amount),
+            "new_amount": str(operation.amount),
+            "old_direction": existing.direction,
+            "new_direction": operation.direction,
+            "classification_status": existing.classification_status,
+        },
     )
 
 

@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import hmac
 import logging
+from datetime import datetime
 from typing import Annotated, Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
@@ -27,10 +29,16 @@ from app.core.config import Settings, get_settings
 from app.db.session import get_session
 from app.models import CounterpartyPaymentDraft, PayrollBankDraft
 from app.services.bank_payment_status import apply_payment_status
+from app.services.banking.base import clean_digits
+from app.services.banking.tbank import (
+    is_tbank_operation_hold,
+    normalize_tbank_statement_row,
+)
 from app.services.payroll_payouts import apply_payroll_draft_status
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+_MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 # Идентификатор: сначала платёжные (статус документа), затем операционные (выписка).
 _ID_FIELDS = (
@@ -75,13 +83,15 @@ def _extract_token(authorization: str | None) -> str:
     return raw
 
 
-@router.post("/tbank/payment-status")
-async def tbank_payment_status(
-    request: Request,
-    session: Annotated[AsyncSession, Depends(get_session)],
-    settings: Annotated[Settings, Depends(get_settings)],
-    authorization: Annotated[str | None, Header()] = None,
-) -> dict[str, Any]:
+def _authorize_tbank_webhook(
+    request: Request, settings: Settings, authorization: str | None
+) -> None:
+    """Проверить входящий вебхук T-Банка: bearer-токен + опциональный IP-allowlist.
+
+    Один контур авторизации для всех вебхуков банка (``payment-status`` и
+    ``account-operation``) — токен и список IP общие (один кабинет T-Банка). Подписи
+    тела у банковских вебхуков нет, поэтому это вся верификация. Бросает 401/403.
+    """
     if settings.tbank_webhook_token:
         token = _extract_token(authorization)
         # constant-time сравнение секрета.
@@ -100,6 +110,16 @@ async def tbank_payment_status(
     ]
     if allowed and _client_ip(request) not in allowed:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "IP не в списке разрешённых")
+
+
+@router.post("/tbank/payment-status")
+async def tbank_payment_status(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    _authorize_tbank_webhook(request, settings, authorization)
 
     try:
         payload = await request.json()
@@ -134,3 +154,80 @@ async def tbank_payment_status(
 
     # Неизвестный платёж — отвечаем 200, чтобы банк не ретраил (это не наша ошибка).
     return {"ok": True, "matched": False}
+
+
+@router.post("/tbank/account-operation")
+async def tbank_account_operation(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    """Вебхук T-Банка «Операция по счёту» — realtime-наполнение журнала ДДС из выписки.
+
+    Первичный путь наполнения: операцию пишем сразу при получении, поллинг выписки
+    остаётся сверкой (покрывает потерянные события и выходные). Дедуп по
+    ``(provider, provider_operation_id=operationId)`` делает дубль-фаер идемпотентным
+    (UPDATE, а не вторая вставка → баланс не задваивается). Авторизационные холды
+    (``operationStatus=authorization``) подтверждаем 200, но в журнал/баланс НЕ
+    пускаем — деньги считаем только по проведённой операции (``transaction``);
+    финальное событие с тем же ``operationId`` или сверочный поллинг доберут её.
+    Всегда отвечаем 2xx на корректное тело, чтобы банк не ретраил (лимит 5 попыток,
+    дальше дропает — добор за поллингом). Тело — один объект-операция (не массив).
+    """
+    _authorize_tbank_webhook(request, settings, authorization)
+
+    try:
+        payload = await request.json()
+    except Exception as exc:  # noqa: BLE001 - любой кривой body = 400
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Некорректный JSON") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ожидался объект JSON")
+
+    operation_id = _extract(payload, ("operationId", "id"))
+    if not operation_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Нет идентификатора операции")
+
+    account_number = clean_digits(payload.get("accountNumber"))
+    if not account_number:
+        # Без номера счёта операция не привяжется к счёту (account_id=NULL) и выпадет из
+        # баланса (он считается через JOIN по счёту) — молча терять деньги нельзя. Отдаём 422;
+        # сверочный поллинг подберёт операцию со счётом из контекста.
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Нет номера счёта в операции")
+
+    if is_tbank_operation_hold(payload):
+        # Холд (Authorization) — деньги ещё не проведены; не пишем, ждём Transaction.
+        logger.info("tbank account-operation холд (authorization): op=%s — пропуск", operation_id)
+        return {
+            "ok": True,
+            "operation_id": operation_id,
+            "stage": "authorization",
+            "ingested": False,
+        }
+
+    # Импорт здесь, а не на уровне модуля: ingest_operations тянет тяжёлый scheduler.
+    from app.scheduler import ingest_operations
+
+    # Тело вебхука = строка выписки T-Банка → тот же нормализатор, что и поллинг (источник-
+    # инвариантно: provider_operation_id = operationId совпадёт у обоих источников).
+    operation = normalize_tbank_statement_row(
+        payload, account_number, datetime.now(_MOSCOW_TZ).date()
+    )
+    result = await ingest_operations(session, provider="tbank", operations=[operation])
+    await session.commit()
+    logger.info(
+        "tbank account-operation принят: op=%s dir=%s amount=%s inserted=%s updated=%s",
+        operation_id,
+        operation.direction,
+        operation.amount,
+        result.get("inserted"),
+        result.get("updated"),
+    )
+    return {
+        "ok": True,
+        "operation_id": operation_id,
+        "stage": "transaction",
+        "ingested": True,
+        "inserted": result.get("inserted"),
+        "updated": result.get("updated"),
+    }
