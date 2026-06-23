@@ -12,6 +12,7 @@ IP-whitelist (6 IP банка). Сопоставление платежа с ч�
 from __future__ import annotations
 
 import hmac
+import json
 import logging
 from typing import Annotated, Any
 
@@ -94,6 +95,13 @@ async def tbank_payment_status(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Некорректный JSON") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ожидался объект JSON")
+
+    # ВРЕМЕННАЯ ДИАГНОСТИКА (удалить после снятия структуры тела вебхука T-Банка):
+    logger.warning(
+        "tbank webhook DIAG keys=%s body=%s",
+        list(payload.keys()),
+        json.dumps(payload, ensure_ascii=False)[:3000],
+    )
 
     payment_id = _extract(payload, _ID_FIELDS)
     raw_status = _extract(payload, _STATUS_FIELDS)
