@@ -166,12 +166,21 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const lines = linesQuery.data ?? [];
   const targetRatio = getTargetFotRatio(settingsQuery.data);
   const totalPayable = Number(run?.summary.total_payable ?? 0);
+  // «На руки» = ФОТ (total_payable) + запланированная выдача депозита. В total_payable депозит
+  // намеренно не приплюсован (это поле переиспользуется для гашения авансов и базы черновика),
+  // поэтому сворачиваем его в итог только для отображения и наличного/банковского сплита —
+  // ровно как backend считает grand_total (payroll_payouts._run_payout_grand_total).
+  const depositPayoutTotal = lines.reduce(
+    (sum, line) => sum + moneyValue(line.deposit_payout),
+    0,
+  );
+  const grandTotal = normalizeMoney(totalPayable + depositPayoutTotal);
   const totalRevenue = runRevenue(lines);
   const payrollRatio = totalRevenue > 0 ? totalPayable / totalRevenue : null;
   const employeeCount = new Set(lines.map((line) => line.employee_id)).size;
   const totalHours = lines.reduce((sum, line) => sum + lineHours(line), 0);
-  const payoutCashTotal = Math.min(moneyValue(run?.payout_cash_total ?? 0), totalPayable);
-  const totalAccountAmount = normalizeMoney(Math.max(0, totalPayable - payoutCashTotal));
+  const payoutCashTotal = Math.min(moneyValue(run?.payout_cash_total ?? 0), grandTotal);
+  const totalAccountAmount = normalizeMoney(Math.max(0, grandTotal - payoutCashTotal));
   const blockers = run?.blocking_issues ?? [];
   const attendanceWarnings = run?.summary.attendance_warnings ?? [];
   const isLegacyRun = Boolean(run?.is_imported_legacy);
@@ -511,7 +520,15 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
           value={formatHours(totalHours)}
           description="По iiko-явкам"
         />
-        <KpiCard title="ФОТ итого" value={formatMoney(totalPayable)} description="К выплате" />
+        <KpiCard
+          title="К выплате"
+          value={formatMoney(grandTotal)}
+          description={
+            depositPayoutTotal > 0
+              ? `ФОТ ${formatMoney(totalPayable)} + депозит ${formatMoney(depositPayoutTotal)}`
+              : "ФОТ итого"
+          }
+        />
         <KpiCard
           title="% от выручки"
           value={formatRatio(payrollRatio)}
@@ -536,6 +553,8 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
           savedWalletId={run?.payout_cash_wallet_id ?? null}
           totalAccountAmount={totalAccountAmount}
           totalPayable={totalPayable}
+          grandTotal={grandTotal}
+          depositPayoutTotal={depositPayoutTotal}
         />
       ) : null}
 
@@ -871,7 +890,7 @@ function PayrollByEmployeeTab({
           К выплате
         </SortButton>
       ),
-      cell: (row) => formatMoney(row.line.total_payable),
+      cell: (row) => formatMoney(lineOnHand(row.line)),
       className: "text-right font-semibold tabular-nums",
       headerClassName: "text-right",
     },
@@ -984,6 +1003,8 @@ function RunBankDraftCard({
   savedWalletId,
   totalAccountAmount,
   totalPayable,
+  grandTotal,
+  depositPayoutTotal,
 }: {
   channelPerms: { safe: boolean; cash_tk: boolean; bank_draft: boolean };
   draft: PayrollBankDraft | null;
@@ -993,6 +1014,8 @@ function RunBankDraftCard({
   savedWalletId: string | null;
   totalAccountAmount: number;
   totalPayable: number;
+  grandTotal: number;
+  depositPayoutTotal: number;
 }) {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -1039,12 +1062,12 @@ function RunBankDraftCard({
   }, [savedWalletId, cashWallets]);
 
   const cashAmount = parseMoneyInput(cashValue);
-  const cashValid = cashAmount !== null && cashAmount >= 0 && cashAmount <= totalPayable;
+  const cashValid = cashAmount !== null && cashAmount >= 0 && cashAmount <= grandTotal;
   const needsWallet = cashValid && cashAmount !== null && cashAmount > 0;
   const walletValid = !needsWallet || walletCode !== "";
   const previewAccount =
     cashValid && cashAmount !== null
-      ? normalizeMoney(Math.max(0, totalPayable - cashAmount))
+      ? normalizeMoney(Math.max(0, grandTotal - cashAmount))
       : null;
   const currentWalletId = cashWallets.find((wallet) => wallet.code === walletCode)?.id ?? null;
   const cashDirty =
@@ -1115,8 +1138,13 @@ function RunBankDraftCard({
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-md border bg-background p-3">
-          <div className="text-xs text-muted-foreground">К выплате (ФОТ)</div>
-          <div className="mt-1 font-semibold tabular-nums">{formatMoney(totalPayable)}</div>
+          <div className="text-xs text-muted-foreground">К выплате</div>
+          <div className="mt-1 font-semibold tabular-nums">{formatMoney(grandTotal)}</div>
+          {depositPayoutTotal > 0 ? (
+            <div className="mt-1 text-xs text-muted-foreground">
+              ФОТ {formatMoney(totalPayable)} + депозит {formatMoney(depositPayoutTotal)}
+            </div>
+          ) : null}
         </div>
         <div className="rounded-md border bg-background p-3">
           <Label className="text-xs text-muted-foreground" htmlFor="run-payout-cash">
@@ -1127,7 +1155,7 @@ function RunBankDraftCard({
             disabled={cashMutation.isPending}
             id="run-payout-cash"
             inputMode="decimal"
-            max={totalPayable}
+            max={grandTotal}
             min={0}
             onChange={(event) => setCashValue(event.target.value)}
             step="0.01"
@@ -1164,7 +1192,7 @@ function RunBankDraftCard({
 
       {!cashValid ? (
         <div className="mt-2 text-xs text-destructive">
-          Введите наличную сумму от 0 до {formatMoney(totalPayable)}.
+          Введите наличную сумму от 0 до {formatMoney(grandTotal)}.
         </div>
       ) : null}
       {cashValid && needsWallet && !walletValid ? (
@@ -1688,7 +1716,10 @@ function PayrollLineDrawer({ row, runStatus }: { row: PayrollLineRowModel; runSt
         <ComponentValue label="Отпускные" value={formatMoney(row.line.vacation_pay)} />
         <ComponentValue label="Всего удержано" value={formatMoney(row.line.deduction)} />
         <ComponentValue label="Фонд" value={formatMoney(row.line.fund_accrual)} />
-        <ComponentValue label="К выплате" value={formatMoney(row.line.total_payable)} strong />
+        {moneyValue(row.line.deposit_payout) > 0 ? (
+          <ComponentValue label="Выдача депозита" value={formatMoney(row.line.deposit_payout)} />
+        ) : null}
+        <ComponentValue label="К выплате" value={formatMoney(lineOnHand(row.line))} strong />
       </section>
 
       <DepositOverrideControl line={row.line} runStatus={runStatus} />
@@ -2008,9 +2039,15 @@ function compareRows(
     return (left.line.ndfl_withheld - right.line.ndfl_withheld) * modifier;
   }
   if (sortKey === "total") {
-    return (left.line.total_payable - right.line.total_payable) * modifier;
+    return (lineOnHand(left.line) - lineOnHand(right.line)) * modifier;
   }
   return left.employeeName.localeCompare(right.employeeName, "ru") * modifier;
+}
+
+// «На руки» по строке = ФОТ-нетто (total_payable) + выдача депозита (хранится отдельным полем,
+// в total_payable не входит). Депозит проводится поверх ЗП, поэтому в итог его сворачиваем.
+function lineOnHand(line: PayrollLine) {
+  return moneyValue(line.total_payable) + moneyValue(line.deposit_payout);
 }
 
 function lineHours(line: PayrollLine) {
