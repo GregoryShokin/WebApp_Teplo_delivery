@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -48,6 +48,7 @@ async def load_attendance_entries(
     period: PayrollPeriod,
     *,
     iiko_records: Iterable[Mapping[str, Any]] | None = None,
+    force_reload: bool = False,
 ) -> list[AttendanceEntry]:
     # ЗП считаем только для поваров и кассиров; курьеры, управляющий, менеджер
     # и прочие должности из канона имеют отдельные правила оплаты (см. taxonomy.md).
@@ -80,7 +81,7 @@ async def load_attendance_entries(
             employees_for_existing.get(entry.employee_id),
         )
     ]
-    if existing_entries and iiko_records is None:
+    if existing_entries and iiko_records is None and not force_reload:
         return list(existing_entries)
 
     rules = await load_attendance_rules(session)
@@ -93,7 +94,20 @@ async def load_attendance_entries(
             period.end_date,
         )
     if not records:
+        # Свежая выгрузка пустая (или iiko недоступна) — НЕ затираем уже сохранённые
+        # явки, отдаём что есть, даже при force_reload.
         return list(existing_entries)
+
+    if force_reload:
+        # «Пересчитать» перечитывает явки из iiko: сносим старый снапшот периода и
+        # строим заново. Иначе ленивый возврат выше отдаёт устаревший/неполный набор
+        # (напр. смены, добавленные/исправленные в iiko уже после первого расчёта).
+        await session.execute(
+            text("DELETE FROM attendance_entry WHERE period_id = :period_id"),
+            {"period_id": period.id},
+        )
+        await session.flush()
+        existing_entries = []
 
     employees_by_iiko_id = {
         employee.iiko_id: employee for employee in (await session.scalars(select(Employee))).all()

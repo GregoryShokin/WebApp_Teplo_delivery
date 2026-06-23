@@ -59,6 +59,51 @@ from app.services.seniority_allowance_service import (
 
 MONEY = Decimal("0.01")
 FULL_SHIFT_MINUTES = Decimal(12 * 60)
+# Жёсткий предел длительности одной смены (12ч) — тот же кап, что в attendance_loader.
+SHIFT_MAX_MINUTES = 12 * 60
+
+
+def _capped_span_minutes(start: Any, end: Any) -> int:
+    minutes = max(0, int((end - start).total_seconds() // 60))
+    return min(minutes, SHIFT_MAX_MINUTES)
+
+
+def merge_attendance_minutes(shifts: Iterable[tuple[Any, Any, int]]) -> int:
+    """Минуты за день с ОБЪЕДИНЕНИЕМ пересекающихся смен (а не простой суммой).
+
+    ``shifts`` — кортежи ``(started_at, ended_at, minutes_worked)``.
+
+    iiko может отдать на один день несколько табельных событий, которые физически
+    пересекаются (напр. смена 09:30–22:00, открытая менеджером, и открытая самой
+    сотрудницей через iikoFront 17:00–22:00). Простое суммирование задвоило бы часы.
+    Смены с валидным интервалом (``ended_at > started_at``) кластеризуем по
+    пересечению и считаем каждый кластер по союзу интервалов (кап 12ч). Настоящие
+    непересекающиеся сплит-смены остаются разными кластерами и суммируются.
+
+    Смены без валидного интервала (ручной ввод / legacy, где время вырождено)
+    берём по ``minutes_worked`` — он остаётся источником истины по длительности.
+    """
+    items = list(shifts)
+    total = 0
+    timed: list[tuple[Any, Any]] = []
+    for start, end, minutes in items:
+        if start is not None and end is not None and end > start:
+            timed.append((start, end))
+        else:
+            total += max(0, int(minutes or 0))
+    if not timed:
+        return total
+    timed.sort()
+    cur_start, cur_end = timed[0]
+    for start, end in timed[1:]:
+        if start <= cur_end:  # пересечение/смежность → продолжаем тот же кластер
+            if end > cur_end:
+                cur_end = end
+        else:
+            total += _capped_span_minutes(cur_start, cur_end)
+            cur_start, cur_end = start, end
+    total += _capped_span_minutes(cur_start, cur_end)
+    return total
 DEFAULT_WEEKDAY_PREMIUM_AMOUNT = Decimal("200")
 DEFAULT_WEEKDAY_PREMIUM_THRESHOLD_HOURS = Decimal("8")
 WEEKDAY_PREMIUM_WEEKDAYS = {4, 5}
@@ -452,8 +497,12 @@ def calculate_payroll_lines_from_inputs(
             summary={"blocking_issue_count": len(blocking_issues)},
         )
 
-    grouped_minutes: dict[tuple[uuid.UUID, str, date, str | None], int] = defaultdict(int)
-    employee_day_minutes: dict[tuple[uuid.UUID, date], int] = defaultdict(int)
+    # Копим интервалы (started_at, ended_at), а не сумму минут: пересекающиеся явки
+    # одного дня объединяем в merge_attendance_minutes, чтобы дубли iiko не задваивали часы.
+    group_intervals: dict[tuple[uuid.UUID, str, date, str | None], list[tuple[Any, Any, int]]] = (
+        defaultdict(list)
+    )
+    day_intervals: dict[tuple[uuid.UUID, date], list[tuple[Any, Any, int]]] = defaultdict(list)
     group_categories: dict[tuple[uuid.UUID, str, date, str | None], str] = {}
     vacation_group_days: set[tuple[uuid.UUID, date]] = set()
     for entry in entries:
@@ -463,15 +512,20 @@ def calculate_payroll_lines_from_inputs(
             role = vacation_role_for_employee_day(settings, employee, entry.work_date)
             station = None
             group_key = (entry.employee_id, role, entry.work_date, station)
-            grouped_minutes[group_key] = 0
-            employee_day_minutes[employee_day_key] = 0
+            # Отпускной день: смену не оплачиваем, но группа/день должны присутствовать с 0 минут.
+            group_intervals.setdefault(group_key, [])
+            day_intervals.setdefault(employee_day_key, [])
             vacation_group_days.add(employee_day_key)
         else:
             role = payroll_role_for_entry(entry, employee, settings)
             station = (entry.station or "").strip() or None
             group_key = (entry.employee_id, role, entry.work_date, station)
-            grouped_minutes[group_key] += entry.minutes_worked
-            employee_day_minutes[employee_day_key] += entry.minutes_worked
+            group_intervals[group_key].append(
+                (entry.started_at, entry.ended_at, entry.minutes_worked)
+            )
+            day_intervals[employee_day_key].append(
+                (entry.started_at, entry.ended_at, entry.minutes_worked)
+            )
         group_categories[group_key] = category_for_payroll_entry(
             settings,
             employee,
@@ -479,6 +533,13 @@ def calculate_payroll_lines_from_inputs(
             role,
             station,
         )
+
+    grouped_minutes: dict[tuple[uuid.UUID, str, date, str | None], int] = defaultdict(int)
+    for group_key, intervals in group_intervals.items():
+        grouped_minutes[group_key] = merge_attendance_minutes(intervals)
+    employee_day_minutes: dict[tuple[uuid.UUID, date], int] = defaultdict(int)
+    for day_key, intervals in day_intervals.items():
+        employee_day_minutes[day_key] = merge_attendance_minutes(intervals)
 
     for employee_id, work_date in sorted(vacation_days, key=lambda item: (str(item[0]), item[1])):
         if (employee_id, work_date) in vacation_group_days:

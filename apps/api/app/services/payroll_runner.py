@@ -199,6 +199,7 @@ async def run_payroll(
     *,
     iiko_records: Iterable[Mapping[str, Any]] | None = None,
     force_refresh: bool = False,
+    refresh_attendance: bool = False,
 ) -> PayrollRun:
     period = await session.get(PayrollPeriod, period_id)
     if period is None:
@@ -275,7 +276,9 @@ async def run_payroll(
     await session.flush()
 
     try:
-        entries = await load_attendance_entries(session, period, iiko_records=iiko_records)
+        entries = await load_attendance_entries(
+            session, period, iiko_records=iiko_records, force_reload=refresh_attendance
+        )
         blocking_issues = await collect_blocking_issues(session, entries, period=period)
         if blocking_issues:
             run.status = "blocked"

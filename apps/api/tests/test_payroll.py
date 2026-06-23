@@ -84,6 +84,7 @@ from app.services.payroll_calculator import (
     employee_deposit_target,
     fund_accrual_for_day,
     load_employee_allowances_for_entries,
+    merge_attendance_minutes,
     tenure_months_on,
 )
 from app.services.payroll_percent import (
@@ -1167,11 +1168,34 @@ def app_with_deferred_charge_session(session: DeferredChargeFakeSession):
     return app
 
 
+def test_merge_attendance_minutes_unions_contained_iiko_shifts() -> None:
+    """Кейс Тихоновой: 09:30–21:59 ⊇ 17:00–21:59 — союз (749мин) с капом 12ч = 720, без задвоения."""
+    big = (datetime(2026, 6, 22, 9, 30, tzinfo=UTC), datetime(2026, 6, 22, 21, 59, tzinfo=UTC), 720)
+    inner = (datetime(2026, 6, 22, 17, 0, tzinfo=UTC), datetime(2026, 6, 22, 21, 59, tzinfo=UTC), 299)
+    assert merge_attendance_minutes([big, inner]) == 720
+    # Простая сумма дала бы 720 + 299 = 1019 — это и есть исходный баг.
+
+
+def test_merge_attendance_minutes_sums_non_overlapping_split_shifts() -> None:
+    """Настоящие непересекающиеся сплит-смены одного дня по-прежнему суммируются."""
+    morning = (datetime(2026, 6, 22, 9, 0, tzinfo=UTC), datetime(2026, 6, 22, 13, 0, tzinfo=UTC), 240)
+    evening = (datetime(2026, 6, 22, 17, 0, tzinfo=UTC), datetime(2026, 6, 22, 21, 0, tzinfo=UTC), 240)
+    assert merge_attendance_minutes([morning, evening]) == 480
+
+
+def test_merge_attendance_minutes_uses_minutes_for_degenerate_intervals() -> None:
+    """Вырожденный интервал (start == end, ручной ввод/legacy) → берём minutes_worked как есть."""
+    midnight = datetime(2026, 6, 22, 0, 0, tzinfo=UTC)
+    assert merge_attendance_minutes([(midnight, midnight, 480)]) == 480
+    assert merge_attendance_minutes([]) == 0
+
+
 async def fake_load_attendance_entries(
     _session: Any,
     period: PayrollPeriod,
     *,
     iiko_records: Any = None,
+    force_reload: Any = False,
 ) -> list[AttendanceEntry]:
     employee_ids = _session.payroll_employee_ids or {employee.id for employee in _session.employees}
     employees = [employee for employee in _session.employees if employee.id in employee_ids]

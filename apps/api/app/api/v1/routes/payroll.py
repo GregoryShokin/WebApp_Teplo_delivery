@@ -326,7 +326,14 @@ async def post_run(
         period_id = period.id
 
     try:
-        run = await run_payroll(session, period_id, force_refresh=payload.force_refresh)
+        run = await run_payroll(
+            session,
+            period_id,
+            force_refresh=payload.force_refresh,
+            # «Пересчитать» (force_refresh) перечитывает явки из iiko, подхватывая
+            # смены, добавленные/исправленные после первого расчёта.
+            refresh_attendance=payload.force_refresh,
+        )
         return await get_run(session, run.id)
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
