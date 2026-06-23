@@ -6,11 +6,12 @@ realtime-уведомления об ОПЕРАЦИЯХ ПО СЧЁТУ (фор�
 платёжного документа. Авторизация — токеном ``tbank_webhook_token`` в заголовке
 ``Authorization``; банк может прислать его как ``Bearer <token>``, так и «голым»
 ``<token>`` — принимаем оба варианта. Дополнительно — опциональный IP-whitelist
-(6 IP банка). Если идентификатор из тела совпал с ``provider_ref`` платёжного
-черновика — гасим накладные (как фоновый добор статуса); операции выписки без
-черновика просто подтверждаем 200 (realtime-наполнение ДДС из вебхука — TODO,
-сейчас операции подбирает поллинг выписки). Входящий контур (банк→мы), без JWT;
-подключается заявкой на ``openapi@tbank.ru``.
+(6 IP банка). Тело с ``operationId`` (операция по счёту) → realtime-вливание в журнал
+ДДС тем же стоком, что и поллинг (``ingest_operations``, дедуп по ``operationId``);
+поллинг выписки остаётся сверкой. Тело без ``operationId`` (статус платёжного
+документа) → гашение черновика накладной/выплаты по ``provider_ref``. Алиас
+``/tbank/account-operation`` ведёт в тот же вливающий сток. Входящий контур (банк→мы),
+без JWT; подключается заявкой на ``openapi@tbank.ru``.
 """
 
 from __future__ import annotations
@@ -112,6 +113,57 @@ def _authorize_tbank_webhook(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "IP не в списке разрешённых")
 
 
+async def _ingest_tbank_account_operation(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Влить операцию по счёту (тело = строка выписки T-Банка) в журнал ДДС.
+
+    Общая логика для обоих входов: основного ``/tbank/payment-status`` (банк по заявке шлёт
+    операции именно туда) и алиаса ``/tbank/account-operation``. Холд (``authorization``) не
+    пускаем в баланс — ждём ``transaction``. Дедуп по ``operationId`` в ``ingest_operations``
+    делает дубль-фаер идемпотентным. Возврат — тело ответа вебхука.
+    """
+    operation_id = _extract(payload, ("operationId", "id"))
+    if not operation_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Нет идентификатора операции")
+
+    account_number = clean_digits(payload.get("accountNumber"))
+    if not account_number:
+        # Без номера счёта операция не привяжется к счёту (account_id=NULL) и выпадет из
+        # баланса (JOIN по счёту) — молча терять деньги нельзя. 422; сверочный поллинг
+        # подберёт операцию со счётом из контекста.
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Нет номера счёта в операции")
+
+    if is_tbank_operation_hold(payload):
+        logger.info("tbank account-operation холд (authorization): op=%s — пропуск", operation_id)
+        return {"ok": True, "operation_id": operation_id, "stage": "authorization", "ingested": False}
+
+    # Импорт здесь, а не на уровне модуля: ingest_operations тянет тяжёлый scheduler.
+    from app.scheduler import ingest_operations
+
+    operation = normalize_tbank_statement_row(
+        payload, account_number, datetime.now(_MOSCOW_TZ).date()
+    )
+    result = await ingest_operations(session, provider="tbank", operations=[operation])
+    await session.commit()
+    logger.info(
+        "tbank account-operation принят: op=%s dir=%s amount=%s inserted=%s updated=%s",
+        operation_id,
+        operation.direction,
+        operation.amount,
+        result.get("inserted"),
+        result.get("updated"),
+    )
+    return {
+        "ok": True,
+        "operation_id": operation_id,
+        "stage": "transaction",
+        "ingested": True,
+        "inserted": result.get("inserted"),
+        "updated": result.get("updated"),
+    }
+
+
 @router.post("/tbank/payment-status")
 async def tbank_payment_status(
     request: Request,
@@ -127,6 +179,12 @@ async def tbank_payment_status(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Некорректный JSON") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ожидался объект JSON")
+
+    # Банк по заявке шлёт на ЭТОТ URL операции по счёту (формат выписки). Если тело — операция
+    # (есть operationId) → realtime-вливание в журнал ДДС; иначе это статус платёжного
+    # документа → гашение черновика накладной/выплаты по provider_ref (ниже).
+    if _extract(payload, ("operationId",)):
+        return await _ingest_tbank_account_operation(session, payload)
 
     payment_id = _extract(payload, _ID_FIELDS)
     raw_status = _extract(payload, _STATUS_FIELDS)
@@ -184,50 +242,4 @@ async def tbank_account_operation(
     if not isinstance(payload, dict):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ожидался объект JSON")
 
-    operation_id = _extract(payload, ("operationId", "id"))
-    if not operation_id:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Нет идентификатора операции")
-
-    account_number = clean_digits(payload.get("accountNumber"))
-    if not account_number:
-        # Без номера счёта операция не привяжется к счёту (account_id=NULL) и выпадет из
-        # баланса (он считается через JOIN по счёту) — молча терять деньги нельзя. Отдаём 422;
-        # сверочный поллинг подберёт операцию со счётом из контекста.
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Нет номера счёта в операции")
-
-    if is_tbank_operation_hold(payload):
-        # Холд (Authorization) — деньги ещё не проведены; не пишем, ждём Transaction.
-        logger.info("tbank account-operation холд (authorization): op=%s — пропуск", operation_id)
-        return {
-            "ok": True,
-            "operation_id": operation_id,
-            "stage": "authorization",
-            "ingested": False,
-        }
-
-    # Импорт здесь, а не на уровне модуля: ingest_operations тянет тяжёлый scheduler.
-    from app.scheduler import ingest_operations
-
-    # Тело вебхука = строка выписки T-Банка → тот же нормализатор, что и поллинг (источник-
-    # инвариантно: provider_operation_id = operationId совпадёт у обоих источников).
-    operation = normalize_tbank_statement_row(
-        payload, account_number, datetime.now(_MOSCOW_TZ).date()
-    )
-    result = await ingest_operations(session, provider="tbank", operations=[operation])
-    await session.commit()
-    logger.info(
-        "tbank account-operation принят: op=%s dir=%s amount=%s inserted=%s updated=%s",
-        operation_id,
-        operation.direction,
-        operation.amount,
-        result.get("inserted"),
-        result.get("updated"),
-    )
-    return {
-        "ok": True,
-        "operation_id": operation_id,
-        "stage": "transaction",
-        "ingested": True,
-        "inserted": result.get("inserted"),
-        "updated": result.get("updated"),
-    }
+    return await _ingest_tbank_account_operation(session, payload)

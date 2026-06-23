@@ -86,6 +86,21 @@ def test_account_operation_ingests_credit(
     assert op.raw_payload["operationStatus"] == "Transaction"
 
 
+def test_payment_status_route_also_ingests_account_operation(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Банк по заявке шлёт операции по счёту на /tbank/payment-status — этот URL тоже
+    вливает их в журнал ДДС (объединение: реальный трафик идёт на payment-status)."""
+    op_id = "7ea7de7e-91b3-0059-a742-59a5e96a4d80"
+    resp = client.post("/api/v1/webhooks/tbank/payment-status", json=_credit_body(op_id))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["ingested"] is True and body["stage"] == "transaction"
+    assert body["inserted"] == 1 and body["updated"] == 0
+    rows = _run(_ops(async_session_factory, op_id))
+    assert len(rows) == 1 and rows[0].direction == "in"
+
+
 def test_account_operation_hold_not_ingested(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:

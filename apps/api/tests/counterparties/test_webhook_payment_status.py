@@ -76,12 +76,12 @@ def test_webhook_is_idempotent(
     assert second.json()["draft_status"] == "paid"
 
 
-def test_webhook_account_operation_format_acked_200(
+def test_webhook_account_operation_routed_to_ingest(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """T-Банк шлёт операции по счёту (формат выписки: operationId/operationStatus),
-    а не статус документа. Без связанного черновика — подтверждаем 200 (не 422),
-    чтобы банк не ретраил."""
+    """Тело с operationId (операция по счёту) на payment-status уходит в realtime-вливание
+    ДДС, а не в гашение черновика. Без accountNumber вливание отдаёт 422 (не теряем деньги
+    молча) — это доказывает, что роутинг пошёл в вливающий сток, а не вернул matched:false."""
     _run(_seed(async_session_factory))
     resp = client.post(
         BASE,
@@ -92,8 +92,7 @@ def test_webhook_account_operation_format_acked_200(
             "rubleAmount": "1000.0",
         },
     )
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["matched"] is False
+    assert resp.status_code == 422, resp.text
 
 
 def test_webhook_token_enforced_when_configured(
