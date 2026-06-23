@@ -100,5 +100,12 @@ def test_webhook_token_enforced_when_configured(
             headers={"Authorization": "Bearer s3cret"},
         )
         assert ok.status_code == 200 and ok.json()["matched"] is True
+        # «голый» токен без префикса Bearer (так шлёт T-Банк) → тоже 200
+        ok_bare = client.post(
+            BASE,
+            json={"paymentId": "pay-1", "status": "executed"},
+            headers={"Authorization": "s3cret"},
+        )
+        assert ok_bare.status_code == 200 and ok_bare.json()["matched"] is True
     finally:
         client.app.dependency_overrides.pop(get_settings, None)
