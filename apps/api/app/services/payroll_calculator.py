@@ -774,6 +774,10 @@ def calculate_payroll_lines_from_inputs(
     payout_schedules = deposit_payout_schedules or {}
     # Запланированная выдача применяется один раз на сотрудника (на первой его строке).
     scheduled_payouts_done: dict[uuid.UUID, Decimal] = {}
+    # Сотрудники, у кого депозит на момент выдачи был собран ПОЛНОСТЬЮ (баланс ≥ цель):
+    # это финальный вывод (увольнение/полный забор) — удержание в этой ведомости НЕ
+    # запускаем заново ни на одной их строке. При частичной собранности добор продолжается.
+    deposit_fully_collected_at_payout: set[uuid.UUID] = set()
     for (employee_id, role), totals in line_totals.items():
         vacation_payout_lump = totals.get("vacation_payout_lump", Decimal("0"))
         total_before_deduction = (
@@ -792,9 +796,11 @@ def calculate_payroll_lines_from_inputs(
         totals["ndfl_components"] = ndfl["components"]
         apply_ndfl_to_day_components(totals, ndfl)
         # Отложенная выдача депозита: выдаём накопленное (или запрошенную сумму, но не больше
-        # баланса) и СБРАСЫВАЕМ running-баланс на остаток — удержание копит депозит заново
-        # с этой ведомости (по требованию владельца удержание не прекращается). Применяем
-        # один раз на сотрудника (на первой строке), сумма попадает в столбец «Выдача депозита».
+        # баланса) и СБРАСЫВАЕМ running-баланс на остаток. Если на момент выдачи депозит собран
+        # ЧАСТИЧНО (баланс < цели) — удержание копит депозит заново с этой ведомости (правило
+        # владельца: добор не прекращается). Если собран ПОЛНОСТЬЮ (баланс ≥ цели) — это
+        # финальный вывод (увольнение/полный забор): просто выдача, удержание НЕ запускаем.
+        # Применяем один раз на сотрудника (на первой строке); сумма идёт в «Выдача депозита».
         scheduled_payout = Decimal("0")
         schedule = payout_schedules.get(employee_id)
         if schedule is not None and employee_id not in scheduled_payouts_done:
@@ -802,6 +808,9 @@ def calculate_payroll_lines_from_inputs(
             requested = schedule.get("requested_amount")
             requested_dec = decimal(requested) if requested is not None else available
             scheduled_payout = max(min(requested_dec, available), Decimal("0"))
+            target = employee_deposit_target(settings, employees[employee_id])
+            if scheduled_payout > 0 and target is not None and target > 0 and available >= target:
+                deposit_fully_collected_at_payout.add(employee_id)
             running_deposit_balances[employee_id] = max(
                 available - scheduled_payout, Decimal("0")
             )
@@ -816,7 +825,11 @@ def calculate_payroll_lines_from_inputs(
         deposit_excluded_for_run = bool(line_override.get("deposit_excluded_for_run", False))
         deposit_exclusion_reason = optional_text(line_override.get("deposit_exclusion_reason"))
         is_substitute_line = any(bool(day.get("is_substitute")) for day in totals.get("days", []))
-        if deposit_excluded_for_run or is_substitute_line:
+        if (
+            deposit_excluded_for_run
+            or is_substitute_line
+            or employee_id in deposit_fully_collected_at_payout
+        ):
             deduction = Decimal("0")
         else:
             deduction = deposit_withholding(

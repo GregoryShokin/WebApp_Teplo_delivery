@@ -4851,6 +4851,54 @@ def test_no_scheduled_payout_keeps_capped_withholding() -> None:
     assert line.deduction == 1000  # cap: 15000 − 14000
 
 
+def test_scheduled_deposit_payout_full_balance_skips_withholding() -> None:
+    # Депозит собран ПОЛНОСТЬЮ (баланс == цель) и выдаётся (увольнение/полный вывод):
+    # удержание в этой ведомости НЕ запускается — только выдача, без добора.
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(category="category_2")  # цель депозита 15000
+    entry = make_entry(period, employee, period.start_date)
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        deposit_settings(),
+        deposit_balances={employee.id: Decimal("15000")},
+        deposit_payout_schedules={employee.id: {"requested_amount": None}},
+    )
+
+    line = result.lines[0]
+    assert line.deposit_payout_scheduled == Decimal("15000")
+    assert line.deduction == 0
+    assert line.components["deposit_withholding"] == 0
+    # Выдача не входит в «К выплате»; удержания нет → весь base_pay к выплате.
+    assert line.total_payable == line.base_pay
+
+
+def test_scheduled_deposit_payout_over_target_skips_withholding() -> None:
+    # Баланс выше цели — тоже считается полностью собранным: при выдаче удержания нет.
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(category="category_2")
+    entry = make_entry(period, employee, period.start_date)
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        deposit_settings(),
+        deposit_balances={employee.id: Decimal("16000")},
+        deposit_payout_schedules={employee.id: {"requested_amount": None}},
+    )
+
+    line = result.lines[0]
+    assert line.deposit_payout_scheduled == Decimal("16000")
+    assert line.deduction == 0
+
+
 def test_payroll_calculation_line_deposit_override_zeroes_only_selected_line() -> None:
     period = make_period()
     run_id = uuid.uuid4()
