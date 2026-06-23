@@ -267,6 +267,7 @@ class PayrollPersonalReportPeriodRead(BaseModel):
     fund_accrual: float
     deduction: float
     deposit_withholding: float
+    deposit_payout: float = 0
     bonus_total: float
     penalty_total: float
     total_payable: float
@@ -315,6 +316,7 @@ class PayrollPersonalReportTotalsRead(BaseModel):
     fund_accrual: float
     deduction: float
     deposit_withholding: float
+    deposit_payout: float = 0
     bonus_total: float
     penalty_total: float
     audit_penalty_total: str
