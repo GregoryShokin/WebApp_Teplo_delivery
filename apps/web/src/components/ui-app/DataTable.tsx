@@ -16,6 +16,14 @@ export type DataTableColumn<T> = {
   cell: (row: T) => ReactNode;
   className?: string;
   headerClassName?: string;
+  /**
+   * Закрепить колонку слева: остаётся видимой при горизонтальном скролле.
+   * Закреплённые колонки должны идти подряд с начала массива; каждой нужно
+   * задать `width` (px) — по нему считается смещение `left` следующих.
+   */
+  pinned?: "left";
+  /** Ширина колонки в px. Обязательна для закреплённых колонок. */
+  width?: number;
 };
 
 type DataTableProps<T> = {
@@ -48,9 +56,27 @@ export function DataTable<T>({
 }: DataTableProps<T>) {
   const scrollStyle: CSSProperties = { maxHeight };
 
+  // Смещения слева для закреплённых колонок (накапливаем ширины предыдущих pinned).
+  const pinnedLeft = new Map<string, number>();
+  let pinnedAcc = 0;
+  for (const column of columns) {
+    if (column.pinned === "left") {
+      pinnedLeft.set(column.key, pinnedAcc);
+      pinnedAcc += column.width ?? 0;
+    }
+  }
+  const hasPinned = pinnedLeft.size > 0;
+  const pinnedStyle = (column: DataTableColumn<T>): CSSProperties | undefined =>
+    column.pinned === "left"
+      ? { left: pinnedLeft.get(column.key) ?? 0, width: column.width, minWidth: column.width }
+      : undefined;
+
   return (
     <div className={cn("overflow-hidden rounded-lg border bg-card", className)}>
-      <div className="pinned-scrollbar overflow-auto" style={scrollStyle}>
+      <div
+        className={cn("pinned-scrollbar overflow-auto", hasPinned && "[will-change:transform]")}
+        style={scrollStyle}
+      >
         <table className="w-full caption-bottom text-sm">
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
@@ -58,9 +84,11 @@ export function DataTable<T>({
                 <TableHead
                   className={cn(
                     "sticky top-0 z-10 h-10 whitespace-nowrap bg-muted text-xs font-semibold uppercase",
+                    column.pinned === "left" && "left-0 z-30 [will-change:transform]",
                     column.headerClassName,
                   )}
                   key={column.key}
+                  style={pinnedStyle(column)}
                 >
                   {column.header}
                 </TableHead>
@@ -81,6 +109,7 @@ export function DataTable<T>({
               : rows.map((row, rowIndex) => (
                   <TableRow
                     className={cn(
+                      "group",
                       onRowClick ? "cursor-pointer" : undefined,
                       typeof rowClassName === "function" ? rowClassName(row) : rowClassName,
                     )}
@@ -88,7 +117,15 @@ export function DataTable<T>({
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
                   >
                     {columns.map((column) => (
-                      <TableCell className={column.className} key={column.key}>
+                      <TableCell
+                        className={cn(
+                          column.pinned === "left" &&
+                            "sticky left-0 z-20 bg-card [will-change:transform] group-hover:bg-muted/50",
+                          column.className,
+                        )}
+                        key={column.key}
+                        style={pinnedStyle(column)}
+                      >
                         {column.cell(row)}
                       </TableCell>
                     ))}

@@ -609,6 +609,8 @@ function AdminLinesTable({
               ),
             className: "w-10",
             headerClassName: "w-10",
+            pinned: "left",
+            width: 48,
           } satisfies DataTableColumn<AdminLineRowModel>,
         ]
       : []),
@@ -616,11 +618,13 @@ function AdminLinesTable({
       key: "name",
       header: "Имя",
       cell: (row) => (
-        <div className="min-w-[220px]">
+        <div>
           <div className="font-medium">{row.employeeName}</div>
           <div className="text-xs text-muted-foreground">{row.position || "Должность не указана"}</div>
         </div>
       ),
+      pinned: "left",
+      width: 240,
     },
     {
       key: "base_pay",

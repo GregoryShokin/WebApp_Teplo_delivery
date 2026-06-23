@@ -737,6 +737,8 @@ function PayrollByEmployeeTab({
               ),
             className: "w-10",
             headerClassName: "w-10",
+            pinned: "left",
+            width: 48,
           } satisfies DataTableColumn<PayrollLineRowModel>,
         ]
       : []),
@@ -748,13 +750,15 @@ function PayrollByEmployeeTab({
         </SortButton>
       ),
       cell: (row) => (
-        <div className="min-w-[220px]">
+        <div>
           <div className="font-medium">{row.employeeName}</div>
           <div className="text-xs text-muted-foreground">
             {row.employee?.position || "Роль из явок"}
           </div>
         </div>
       ),
+      pinned: "left",
+      width: 240,
     },
     {
       key: "hours",
