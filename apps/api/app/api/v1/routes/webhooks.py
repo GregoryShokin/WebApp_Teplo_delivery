@@ -123,6 +123,20 @@ async def _ingest_tbank_account_operation(
     пускаем в баланс — ждём ``transaction``. Дедуп по ``operationId`` в ``ingest_operations``
     делает дубль-фаер идемпотентным. Возврат — тело ответа вебхука.
     """
+    # OBSERVABILITY-PROBE (временно, ~24ч): логируем КАЖДУЮ входящую операцию по счёту, чтобы
+    # увидеть, шлёт ли банк карт-холды (category=cardOperation, operationStatus=Authorization)
+    # вебхуком в реальном времени. Холды дропаются ниже БЕЗ записи в БД — лог единственный способ
+    # их пронаблюдать. Снять после ответа на вопрос: grep "WEBHOOK-PROBE".
+    logger.info(
+        "WEBHOOK-PROBE op=%s status=%s category=%s type=%s amount=%s acct=%s",
+        payload.get("operationId") or payload.get("id"),
+        payload.get("operationStatus"),
+        payload.get("category"),
+        payload.get("typeOfOperation"),
+        payload.get("operationAmount") or payload.get("amount") or payload.get("sum"),
+        (str(payload.get("accountNumber"))[-4:] if payload.get("accountNumber") else None),
+    )
+
     operation_id = _extract(payload, ("operationId", "id"))
     if not operation_id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Нет идентификатора операции")
