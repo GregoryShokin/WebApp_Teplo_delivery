@@ -16,14 +16,49 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import CounterpartyPaymentDraft, InvoicePaymentAllocation
+from app.core.config import get_settings
+from app.models import (
+    Account,
+    CounterpartyPaymentDraft,
+    DdsArticle,
+    InvoicePaymentAllocation,
+    Wallet,
+)
+from app.services.banking.base import clean_digits
 from app.services.counterparty_matching import (
     _draft_invoices,
     _invoice_remaining,
     _recompute_status,
 )
+
+# Статья ДДС для оплаты поставщику по умолчанию (та же, что у ручной оплаты с кошелька).
+_SUPPLIER_ARTICLE_CODE = "payment_to_supplier"
+
+
+async def _resolve_payer_bank_wallet(
+    session: AsyncSession, draft: CounterpartyPaymentDraft
+) -> Wallet | None:
+    """Банк-кошелёк, с которого ушёл платёж (по номеру счёта плательщика из тела черновика
+    или из настроек). Нужен, чтобы завести prebooked-проводку оплаты, которую заберёт
+    приходящая операция выписки (prebooked-claim) — иначе операция уходит в needs_review."""
+    account_number = None
+    if isinstance(draft.payload, dict):
+        account_number = draft.payload.get("accountNumber")
+    account_number = clean_digits(account_number or get_settings().tbank_api_account_number or "")
+    if not account_number:
+        return None
+    return await session.scalar(
+        select(Wallet)
+        .join(Account, Account.id == Wallet.account_id)
+        .where(
+            Account.account_number == account_number,
+            Wallet.type == "bank",
+            Wallet.status == "active",
+        )
+    )
 
 # Нормализованные строки статусов банка → исход. Точные значения T-Банка уточняются при
 # подключении (банк присылает схему); неизвестный статус оставляет платёж «в банке».
@@ -97,22 +132,42 @@ async def apply_payment_status(
     # защита от реанимации: out-of-order «исполнен» после «отклонён» не воскрешает failed-черновик
     # с уже отвязанными накладными.
     if outcome == "paid" and draft.status in ("created", "updated"):
-        # Гасим остаток каждой накладной аллокацией без bank_operation_id (оплата по статусу
-        # платежа; выписка придёт в ДДС отдельно). Уважает частичную оплату из прямого контура.
+        # Гасим остаток каждой накладной. Если знаем банк-кошелёк плательщика — заводим
+        # prebooked-проводку «Оплата поставщикам» (её заберёт приходящая операция выписки через
+        # prebooked-claim → операция не уходит в needs_review, ДДС-аналитика наполняется,
+        # накладная↔операция связаны). Иначе fallback: статус-аллокация без bank_operation_id.
+        from app.services.counterparty_payments import _apply_wallet_payment
+
+        bank_wallet = await _resolve_payer_bank_wallet(session, draft)
+        supplier_article_id = await session.scalar(
+            select(DdsArticle.id).where(DdsArticle.code == _SUPPLIER_ARTICLE_CODE)
+        )
         for invoice in await _draft_invoices(session, draft.id):
             remaining = await _invoice_remaining(session, invoice)
             if remaining <= 0:
                 continue
-            session.add(
-                InvoicePaymentAllocation(
-                    invoice_id=invoice.id,
-                    source_kind="bank",
-                    bank_operation_id=None,
+            if bank_wallet is not None:
+                await _apply_wallet_payment(
+                    session,
+                    invoice=invoice,
+                    wallet=bank_wallet,
                     amount=remaining,
-                    created_by_user_id=actor_user_id,
+                    operation_date=datetime.now(UTC).date(),
+                    article_id=supplier_article_id,
+                    comment="Оплата по статусу платежа банка",
+                    actor_user_id=actor_user_id,
                 )
-            )
-            await session.flush()
+            else:
+                session.add(
+                    InvoicePaymentAllocation(
+                        invoice_id=invoice.id,
+                        source_kind="bank",
+                        bank_operation_id=None,
+                        amount=remaining,
+                        created_by_user_id=actor_user_id,
+                    )
+                )
+                await session.flush()
             await _recompute_status(session, invoice)
         draft.status = "paid"
         draft.synced_at = datetime.now(UTC)
