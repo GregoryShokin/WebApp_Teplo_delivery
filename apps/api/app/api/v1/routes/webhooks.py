@@ -186,6 +186,16 @@ async def tbank_payment_status(
     if _extract(payload, ("operationId",)):
         return await _ingest_tbank_account_operation(session, payload)
 
+    # ВРЕМЕННАЯ ДИАГНОСТИКА статус-вебхуков (снять после сверки): логируем тело ТОЛЬКО для
+    # не-операций (статус платежа) — банк-данные операций по счёту НЕ логируем.
+    import json as _json
+
+    logger.warning(
+        "tbank webhook СТАТУС-DIAG keys=%s body=%s",
+        sorted(payload.keys()),
+        _json.dumps(payload, ensure_ascii=False)[:1000],
+    )
+
     payment_id = _extract(payload, _ID_FIELDS)
     raw_status = _extract(payload, _STATUS_FIELDS)
     if not payment_id:
