@@ -30,7 +30,7 @@ from app.services.banking.base import (
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 
 PAYMENT_DRAFT_PATH = "/api/v1/payment/create"
-PAYMENT_STATUS_PATH = "/api/v1/payment"  # + /{payment_id}
+PAYMENT_STATUS_PATH = "/api/v1/payment/status"  # POST {"documentIds": [...]}
 DEFAULT_TAX_FIELDS = {
     "taxPayerStatus": "0",
     "kbk": "0",
@@ -143,39 +143,46 @@ class TbankClient:
         )
 
     async def get_payment_status(self, payment_id: str) -> str | None:
-        """Текущий статус платежа по его идентификатору (``provider_ref``). Используется
-        фоновым добором статуса (замена ручного мэчинга). В mock-режиме платежи в банк не
-        уходят → статуса нет (None). Live: ``GET /api/v1/payment/{payment_id}``."""
+        """Текущий статус платёжного документа по его ``documentId`` (provider_ref).
+
+        Метод банка: ``POST /api/v1/payment/status`` с телом ``{"documentIds": [...]}`` →
+        ``{"result": [{"documentId", "status", "comment"}], "resultError": []}``. Контур —
+        business OpenAPI, Bearer-авторизация (mTLS НЕ требуется). Наши платежи создаются как
+        ЧЕРНОВИКИ (``/payment/create`` → documentId), и статус читается именно этим методом, а
+        не ``GET /payment/{paymentId}`` (тот — для исполняемых платежей по paymentId из реестра,
+        у наших черновиков его нет → PAYMENT_NOT_FOUND). В mock-режиме статуса нет (None)."""
         if not payment_id or self.settings.teplo_bank_client_mode == "mock":
             return None
         token = await required_credential(self.session, self.provider, "bearer_token")
         async with httpx.AsyncClient(
             base_url=self.settings.tbank_payment_base_url.rstrip("/"),
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
             timeout=self.settings.tbank_api_timeout_seconds,
         ) as client:
-            response = await client.get(
-                f"{PAYMENT_STATUS_PATH}/{payment_id}",
+            response = await client.post(
+                PAYMENT_STATUS_PATH,
+                json={"documentIds": [payment_id]},
                 headers={"X-Request-Id": str(uuid.uuid4())},
             )
         if response.status_code in {401, 403}:
             raise BankCredentialsError(self.provider, "T-Bank bearer token is invalid or expired")
-        if response.status_code == 404:
-            return None
         if response.status_code >= 400:
             raise BankFetchError(self.provider, f"T-Bank API returned {response.status_code}")
         try:
             payload = response.json()
         except ValueError:
             return None
-        # Только верхний уровень ответа: рекурсивный поиск (_first_scalar) мог бы подхватить
-        # вложенный чужой status (нога/получатель/конверт) и ложно погасить накладные.
         if not isinstance(payload, dict):
             return None
-        for key in ("status", "paymentStatus", "documentStatus", "payment_status"):
-            value = payload.get(key)
-            if value not in (None, ""):
-                return str(value)
+        # Берём статус строго по нашему documentId (в ответе может быть несколько документов).
+        for item in payload.get("result", []):
+            if isinstance(item, dict) and str(item.get("documentId")) == payment_id:
+                value = item.get("status")
+                return str(value) if value not in (None, "") else None
         return None
 
     async def _fetch_mock_statement(
