@@ -9,7 +9,7 @@ Inbox счетов к оплате, отправка пачки накладны
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
@@ -27,13 +27,17 @@ from app.api.deps import (
 )
 from app.core.config import get_settings
 from app.db.session import get_session
-from app.models import CounterpartyPaymentDraft, SupplierInvoice
+from app.models import CounterpartyPaymentDraft, SupplierInvoice, SupplierPrepayment
 from app.services import counterparty_bank_match as bank_match
 from app.services import counterparty_barter_match as barter
 from app.services import counterparty_matching as matching
 from app.services import counterparty_payments as payments
 from app.services import counterparty_registry as registry
-from app.services.counterparty_invoice_sync import sync_counterparty_invoices
+from app.services import supplier_prepayments as prepayments
+from app.services.counterparty_invoice_sync import (
+    list_unlinked_iiko_suppliers,
+    sync_counterparty_invoices,
+)
 from app.services.warehouse_invoices import invoice_permission_kind
 
 router = APIRouter()
@@ -128,6 +132,7 @@ class RegistryRead(BaseModel):
     unpaid_count: int
     unpaid_remaining: float
     receivable_remaining: float
+    prepayment_balance: float
 
 
 class CardRead(BaseModel):
@@ -224,6 +229,48 @@ class ManualPaymentRequest(BaseModel):
     comment: str | None = None
 
 
+class PrepaymentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    counterparty_id: uuid.UUID
+    wallet_id: uuid.UUID
+    amount: Decimal = Field(gt=0)
+    operation_date: date
+    article_id: uuid.UUID | None = None
+    kind: str = "goods"
+    note: str | None = None
+
+
+class PrepaymentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    counterparty_id: uuid.UUID
+    kind: str
+    wallet_id: uuid.UUID | None
+    amount: float
+    amount_settled: float
+    status: str
+    article_id: uuid.UUID | None
+    note: str | None
+    created_at: datetime
+
+
+class SettleFromPrepaymentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prepayment_id: uuid.UUID
+    amount: Decimal | None = Field(default=None, gt=0)
+
+
+class BankPrepaymentDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    counterparty_id: uuid.UUID
+    amount: Decimal = Field(gt=0)
+    article_id: uuid.UUID | None = None
+
+
 class WalletRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -262,6 +309,15 @@ class CounterpartyCreate(BaseModel):
     payment_due_day_of_month: int | None = Field(default=None, ge=1, le=31)
     manager_name: str | None = Field(default=None, max_length=160)
     manager_phone: str | None = Field(default=None, max_length=64)
+    # Привязка к поставщику из справочника iiko (GUID) — заводит alias source='iiko', чтобы
+    # синк накладных узнавал контрагента, а не плодил дубль.
+    iiko_supplier_guid: str | None = Field(default=None, max_length=64)
+
+
+class IikoSupplierOption(BaseModel):
+    guid: str
+    name: str
+    inn: str | None = None
 
 
 class CollectionSourceCreate(BaseModel):
@@ -503,6 +559,106 @@ async def post_pay_invoice(
     return InvoiceRead.model_validate(item)
 
 
+# --- предоплаты поставщикам (дебиторка) ----------------------------------------
+
+
+@router.post(
+    "/prepayments", response_model=PrepaymentRead, status_code=status.HTTP_201_CREATED
+)
+async def post_create_prepayment(
+    payload: PrepaymentCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PrepaymentRead:
+    """Завести предоплату поставщику (дебиторка): реальный расход с кошелька + запись долга."""
+    ensure_permission(actor, "invoices.normal.pay")
+    try:
+        prepayment = await prepayments.create_supplier_prepayment(
+            session,
+            counterparty_id=payload.counterparty_id,
+            wallet_id=payload.wallet_id,
+            amount=payload.amount,
+            operation_date=payload.operation_date,
+            article_id=payload.article_id,
+            kind=payload.kind,
+            note=payload.note,
+            actor_user_id=actor.user_id,
+        )
+    except payments.CounterpartyPaymentError as exc:
+        raise _conflict(exc) from exc
+    return PrepaymentRead.model_validate(prepayment)
+
+
+@router.post(
+    "/prepayments/bank-draft",
+    response_model=DraftRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_prepayment_bank_draft(
+    payload: BankPrepaymentDraftRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> DraftRead:
+    """«Банк по реквизитам»: standalone-черновик в банк по реквизитам контрагента (без
+    накладной). При статусе «исполнен» создаётся предоплата (дебиторка)."""
+    ensure_permission(actor, "invoices.normal.pay")
+    try:
+        draft = await payments.create_standalone_payment_draft(
+            session,
+            counterparty_id=payload.counterparty_id,
+            amount=payload.amount,
+            prepayment_article_id=payload.article_id,
+            actor_user_id=actor.user_id,
+        )
+    except payments.CounterpartyPaymentError as exc:
+        raise _conflict(exc) from exc
+    return DraftRead.model_validate(draft)
+
+
+@router.get("/prepayments", response_model=list[PrepaymentRead], dependencies=READ)
+async def get_prepayments(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    counterparty_id: uuid.UUID | None = None,
+    only_open: bool = True,
+) -> list[PrepaymentRead]:
+    query = select(SupplierPrepayment)
+    if counterparty_id is not None:
+        query = query.where(SupplierPrepayment.counterparty_id == counterparty_id)
+    if only_open:
+        query = query.where(SupplierPrepayment.status.in_(("open", "partially_settled")))
+    query = query.order_by(SupplierPrepayment.created_at.desc())
+    rows = (await session.scalars(query)).all()
+    return [PrepaymentRead.model_validate(row) for row in rows]
+
+
+@router.post("/invoices/{invoice_id}/settle-from-prepayment", response_model=InvoiceRead)
+async def post_settle_from_prepayment(
+    invoice_id: uuid.UUID,
+    payload: SettleFromPrepaymentRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> InvoiceRead:
+    """Погасить (часть) накладной против выданной предоплаты — без движения денег."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    ensure_permission(actor, f"invoices.{await invoice_permission_kind(session, invoice)}.pay")
+    try:
+        await prepayments.settle_invoice_from_prepayment(
+            session,
+            invoice_id=invoice_id,
+            prepayment_id=payload.prepayment_id,
+            amount=payload.amount,
+            actor_user_id=actor.user_id,
+        )
+    except payments.CounterpartyPaymentError as exc:
+        raise _conflict(exc) from exc
+    item = await registry.get_invoice_item(session, invoice_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    return InvoiceRead.model_validate(item)
+
+
 # --- registry & card ----------------------------------------------------------
 
 
@@ -528,6 +684,22 @@ async def get_needs_setup(
 ) -> dict[str, Any]:
     items = await registry.list_needs_setup(session)
     return {"count": len(items), "items": items}
+
+
+@router.get("/iiko-suppliers", response_model=list[IikoSupplierOption], dependencies=ADMIN)
+async def get_iiko_suppliers(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[IikoSupplierOption]:
+    """Поставщики из справочника iiko, ещё не привязанные к контрагенту — кандидаты на онбординг
+    (живой запрос к iiko, поэтому только под admin и не в общем реестре)."""
+    try:
+        rows = await list_unlinked_iiko_suppliers(session)
+    except Exception as exc:  # noqa: BLE001 — сетевая/iiko-ошибка → 502, фронт покажет тост
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Не удалось получить поставщиков iiko: {exc}",
+        ) from exc
+    return [IikoSupplierOption(**row) for row in rows]
 
 
 @router.get("/wallets", response_model=list[WalletRead], dependencies=READ)
@@ -569,6 +741,7 @@ async def post_counterparty(
             payment_due_day_of_month=payload.payment_due_day_of_month,
             manager_name=payload.manager_name,
             manager_phone=payload.manager_phone,
+            iiko_supplier_guid=payload.iiko_supplier_guid,
         )
     except registry.CounterpartyRegistryError as exc:
         raise _conflict(exc) from exc

@@ -32,6 +32,7 @@ from app.models import (
     DdsArticle,
     InvoicePaymentAllocation,
     SupplierInvoice,
+    SupplierPrepayment,
     Wallet,
 )
 
@@ -141,6 +142,9 @@ class RegistryItem:
     unpaid_remaining: Decimal
     # Barter: open receivables (they owe us). Net balance = unpaid_remaining − receivable_remaining.
     receivable_remaining: Decimal
+    # Дебиторка предоплат: мы заплатили вперёд, поставщик должен. Σ открытых supplier_prepayment
+    # (amount − amount_settled). Держим ОТДЕЛЬНО от барт-receivable_remaining.
+    prepayment_balance: Decimal = Decimal("0.00")
 
 
 @dataclass
@@ -377,6 +381,20 @@ async def list_registry(
     alloc_by_dir: dict[tuple[uuid.UUID, str], Decimal] = {
         (cp_id, direction): _money(total) for cp_id, direction, total in alloc_rows
     }
+    # Дебиторка предоплат по контрагенту: Σ открытых supplier_prepayment (amount − settled).
+    prepay_rows = await session.execute(
+        select(
+            SupplierPrepayment.counterparty_id,
+            func.coalesce(
+                func.sum(SupplierPrepayment.amount - SupplierPrepayment.amount_settled), 0
+            ),
+        )
+        .where(SupplierPrepayment.status.in_(("open", "partially_settled")))
+        .group_by(SupplierPrepayment.counterparty_id)
+    )
+    prepay_by_cp: dict[uuid.UUID, Decimal] = {
+        cp_id: _money(total) for cp_id, total in prepay_rows
+    }
 
     def _remaining(cp_id: uuid.UUID, direction: str) -> tuple[int, Decimal]:
         count, total = open_by_dir.get((cp_id, direction), (0, Decimal("0.00")))
@@ -404,6 +422,7 @@ async def list_registry(
                 unpaid_count=payable_count,
                 unpaid_remaining=payable_remaining,
                 receivable_remaining=receivable_remaining,
+                prepayment_balance=prepay_by_cp.get(counterparty.id, Decimal("0.00")),
             )
         )
     items.sort(key=lambda item: item.name.lower())
@@ -795,6 +814,7 @@ async def create_counterparty(
     payment_due_day_of_month: int | None = None,
     manager_name: str | None = None,
     manager_phone: str | None = None,
+    iiko_supplier_guid: str | None = None,
 ) -> Counterparty:
     clean_name = (name or "").strip()
     if not clean_name:
@@ -804,6 +824,20 @@ async def create_counterparty(
         existing = await session.scalar(select(Counterparty).where(Counterparty.inn == clean_inn))
         if existing is not None:
             raise CounterpartyRegistryError("Контрагент с таким ИНН уже существует")
+    # Onboarding a supplier straight from the iiko directory: bind its GUID as an alias so the
+    # reverse invoice-sync recognises this counterparty instead of auto-creating a duplicate
+    # (a prepayment-only supplier has no posted invoice yet, hence no auto-create). Guard against
+    # double-binding the same iiko supplier to two counterparties.
+    clean_guid = (iiko_supplier_guid or "").strip() or None
+    if clean_guid:
+        linked = await session.scalar(
+            select(CounterpartyAlias).where(
+                func.lower(CounterpartyAlias.alias) == clean_guid.lower(),
+                CounterpartyAlias.source == "iiko",
+            )
+        )
+        if linked is not None:
+            raise CounterpartyRegistryError("Этот поставщик iiko уже привязан к контрагенту")
     counterparty = Counterparty(name=clean_name, inn=clean_inn, type=cp_type, status="active")
     session.add(counterparty)
     await session.flush()
@@ -812,7 +846,7 @@ async def create_counterparty(
         CounterpartyPayableProfile(
             counterparty_id=counterparty.id,
             relationship=relationship,
-            internal_name=internal_name,
+            internal_name=internal_name or (clean_name if clean_guid else None),
             ledger_category_id=ledger_category_id,
             brand_group=brand_group,
             payment_delay_days=payment_delay_days,
@@ -821,6 +855,17 @@ async def create_counterparty(
             manager_phone=manager_phone,
         )
     )
+    if clean_guid:
+        session.add(
+            CounterpartyAlias(counterparty_id=counterparty.id, alias=clean_guid, source="iiko")
+        )
+        # Mirror the iiko link as a collection source (same as the auto-sync path) so it shows
+        # on the supplier source-data page.
+        session.add(
+            CounterpartyCollectionSource(
+                counterparty_id=counterparty.id, kind="iiko", value=clean_guid
+            )
+        )
     await session.commit()
     await session.refresh(counterparty)
     return counterparty
@@ -1027,12 +1072,26 @@ async def remove_routing_rule(session: AsyncSession, rule_id: uuid.UUID) -> None
 # --- DDS lookups for manual payment ------------------------------------------
 
 
+# Накопительные/фондовые субсчета Тинькофф — это копилки (деньги туда только откладываются
+# внутренними переводами), а не источник оплаты поставщику. Прячем их из пикеров оплаты,
+# чтобы случайно не «заплатить» накладную из фонда.
+NON_PAYOUT_WALLET_CODES = ("tbank_kopilka", "guarant_fund", "tbank_nakopit")
+
+
 async def list_wallets(session: AsyncSession) -> list[Wallet]:
-    """Active DDS wallets/accounts selectable as the source of a manual payment."""
+    """Active DDS wallets/accounts selectable as the source of a manual payment.
+
+    Savings/fund sub-accounts are excluded — you can't pay a supplier out of a piggy-bank.
+    """
     return list(
         (
             await session.execute(
-                select(Wallet).where(Wallet.status == "active").order_by(Wallet.name)
+                select(Wallet)
+                .where(
+                    Wallet.status == "active",
+                    Wallet.code.notin_(NON_PAYOUT_WALLET_CODES),
+                )
+                .order_by(Wallet.name)
             )
         )
         .scalars()

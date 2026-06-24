@@ -47,6 +47,7 @@ export type RegistryItem = {
   unpaid_count: number;
   unpaid_remaining: number;
   receivable_remaining: number;
+  prepayment_balance: number;
 };
 
 export type CollectionSource = {
@@ -202,6 +203,70 @@ export async function payInvoice(
   return response.data;
 }
 
+// --- предоплаты поставщикам (дебиторка) ---
+export type SupplierPrepayment = {
+  id: string;
+  counterparty_id: string;
+  kind: string;
+  wallet_id: string | null;
+  amount: number;
+  amount_settled: number;
+  status: string;
+  article_id: string | null;
+  note: string | null;
+  created_at: string;
+};
+
+export type PrepaymentCreatePayload = {
+  counterparty_id: string;
+  wallet_id: string;
+  amount: number;
+  operation_date: string;
+  article_id?: string | null;
+  kind?: string;
+  note?: string | null;
+};
+
+export async function createPrepayment(
+  payload: PrepaymentCreatePayload,
+): Promise<SupplierPrepayment> {
+  const response = await api.post<SupplierPrepayment>(`${BASE}/prepayments`, payload);
+  return response.data;
+}
+
+export async function getPrepayments(params?: {
+  counterparty_id?: string;
+  only_open?: boolean;
+}): Promise<SupplierPrepayment[]> {
+  const response = await api.get<SupplierPrepayment[]>(`${BASE}/prepayments`, { params });
+  return response.data;
+}
+
+export type BankPrepaymentDraftPayload = {
+  counterparty_id: string;
+  amount: number;
+  article_id?: string | null;
+};
+
+// «Банк по реквизитам»: standalone-черновик в банк; при оплате превращается в предоплату.
+export async function createBankPrepaymentDraft(
+  payload: BankPrepaymentDraftPayload,
+): Promise<PaymentDraft> {
+  const response = await api.post<PaymentDraft>(`${BASE}/prepayments/bank-draft`, payload);
+  return response.data;
+}
+
+export async function settleInvoiceFromPrepayment(
+  invoiceId: string,
+  payload: { prepayment_id: string; amount?: number },
+): Promise<CounterpartyInvoice> {
+  const response = await api.post<CounterpartyInvoice>(
+    `${BASE}/invoices/${invoiceId}/settle-from-prepayment`,
+    payload,
+  );
+  return response.data;
+}
+
 export async function getRegistry(params?: {
   category_id?: string;
   include_archived?: boolean;
@@ -213,6 +278,18 @@ export async function getRegistry(params?: {
 
 export async function getNeedsSetup(): Promise<NeedsSetup> {
   const response = await api.get<NeedsSetup>(`${BASE}/needs-setup`);
+  return response.data;
+}
+
+export type IikoSupplierOption = {
+  guid: string;
+  name: string;
+  inn: string | null;
+};
+
+// Поставщики из справочника iiko, ещё не привязанные к контрагенту (живой запрос к iiko).
+export async function getIikoSuppliers(): Promise<IikoSupplierOption[]> {
+  const response = await api.get<IikoSupplierOption[]>(`${BASE}/iiko-suppliers`);
   return response.data;
 }
 
@@ -233,6 +310,7 @@ export type CounterpartyCreatePayload = {
   payment_due_day_of_month?: number | null;
   manager_name?: string | null;
   manager_phone?: string | null;
+  iiko_supplier_guid?: string | null;
 };
 
 export async function createCounterparty(

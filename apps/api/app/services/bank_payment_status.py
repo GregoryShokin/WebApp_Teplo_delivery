@@ -22,9 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.models import (
     Account,
+    CashflowTransaction,
     CounterpartyPaymentDraft,
     DdsArticle,
     InvoicePaymentAllocation,
+    SupplierPrepayment,
     Wallet,
 )
 from app.services.banking.base import clean_digits
@@ -142,7 +144,43 @@ async def apply_payment_status(
         supplier_article_id = await session.scalar(
             select(DdsArticle.id).where(DdsArticle.code == _SUPPLIER_ARTICLE_CODE)
         )
-        for invoice in await _draft_invoices(session, draft.id):
+        draft_invoices = await _draft_invoices(session, draft.id)
+        # Standalone-черновик «банк по реквизитам» без накладной → создаём предоплату
+        # (дебиторку) на контрагента + prebooked-проводку (её заберёт операция выписки).
+        if draft.creates_prepayment and not draft_invoices:
+            article_id = draft.prepayment_article_id or await session.scalar(
+                select(DdsArticle.id).where(DdsArticle.code == "advance_to_supplier")
+            )
+            prepay_txn = None
+            if bank_wallet is not None:
+                prepay_txn = CashflowTransaction(
+                    wallet_id=bank_wallet.id,
+                    direction="out",
+                    amount=draft.amount,
+                    operation_date=datetime.now(UTC).date(),
+                    article_id=article_id,
+                    counterparty_id=draft.counterparty_id,
+                    source_kind="supplier_prepayment",
+                    payment_purpose="Предоплата поставщику по статусу платежа",
+                    quality_status="final",
+                )
+                session.add(prepay_txn)
+                await session.flush()
+            prepayment = SupplierPrepayment(
+                counterparty_id=draft.counterparty_id,
+                kind="goods",
+                wallet_id=bank_wallet.id if bank_wallet else None,
+                amount=draft.amount,
+                amount_settled=0,
+                status="open",
+                cashflow_transaction_id=prepay_txn.id if prepay_txn else None,
+                article_id=article_id,
+            )
+            session.add(prepayment)
+            await session.flush()
+            if prepay_txn is not None:
+                prepay_txn.source_id = prepayment.id
+        for invoice in draft_invoices:
             remaining = await _invoice_remaining(session, invoice)
             if remaining <= 0:
                 continue

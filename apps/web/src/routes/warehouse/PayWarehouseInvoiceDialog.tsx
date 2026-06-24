@@ -24,7 +24,12 @@ import {
 } from "@/components/ui/select";
 import { apiErrorMessage } from "@/lib/api";
 
-import { getExpenseArticles, getWallets } from "../counterparties/api";
+import {
+  getExpenseArticles,
+  getPrepayments,
+  getWallets,
+  settleInvoiceFromPrepayment,
+} from "../counterparties/api";
 import { formatDate, formatRub } from "../counterparties/shared";
 import {
   confirmInvoiceMatch,
@@ -99,6 +104,22 @@ export function PayWarehouseInvoiceDialog({
   });
 
   const detail = detailQuery.data;
+  const counterpartyId = detail?.counterparty_id;
+  const prepaymentsQuery = useQuery({
+    queryKey: ["cp", "prepayments", counterpartyId],
+    queryFn: () => getPrepayments({ counterparty_id: counterpartyId!, only_open: true }),
+    enabled: open && Boolean(counterpartyId),
+  });
+  // Гасим из самой ранней открытой предоплаты (FIFO). Сумма = min(остаток, предоплата) — берёт бэк.
+  const openPrepayments = [...(prepaymentsQuery.data ?? [])].sort((a, b) =>
+    a.created_at.localeCompare(b.created_at),
+  );
+  const prepayAvailable = openPrepayments.reduce(
+    (sum, p) => sum + (p.amount - p.amount_settled),
+    0,
+  );
+  const oldestPrepayment = openPrepayments[0];
+
   const remaining = detail?.remaining ?? 0;
   const staffAmount = detail?.staff_amount ?? 0;
   const productionAmount = detail?.production_amount ?? 0;
@@ -204,6 +225,24 @@ export function PayWarehouseInvoiceDialog({
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось провести оплату")),
   });
 
+  const settleMutation = useMutation({
+    mutationFn: () =>
+      settleInvoiceFromPrepayment(invoiceId!, { prepayment_id: oldestPrepayment!.id }),
+    onSuccess: async (updated) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["cp"] }),
+        queryClient.invalidateQueries({ queryKey: ["wh"] }),
+      ]);
+      onOpenChange(false);
+      toast.success(
+        updated.payment_status === "paid"
+          ? "Накладная погашена из предоплаты"
+          : `Погашено из предоплаты, остаток ${formatRub(updated.remaining)}`,
+      );
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось погасить из предоплаты")),
+  });
+
   const canSubmit = splitStaff
     ? cashRows.length === 1 && Boolean(cashRows[0]?.wallet_id) && canSplitStaff
     : selectedTotal > 0 && selectedTotal <= remaining + 0.005 && cashRowsValid;
@@ -227,6 +266,28 @@ export function PayWarehouseInvoiceDialog({
                 </span>
               ) : null}
             </div>
+
+            {prepayAvailable > 0 && remaining > 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-sky-200 bg-sky-50/60 p-3 text-sm">
+                <span className="text-sky-900">
+                  Доступна предоплата поставщика:{" "}
+                  <span className="font-medium tabular-nums">{formatRub(prepayAvailable)}</span>
+                  {" — "}можно погасить без движения денег
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-sky-300"
+                  disabled={settleMutation.isPending || !oldestPrepayment}
+                  onClick={() => settleMutation.mutate()}
+                >
+                  {settleMutation.isPending ? (
+                    <LoaderCircle className="animate-spin" size={14} aria-hidden="true" />
+                  ) : null}
+                  Погасить из предоплаты
+                </Button>
+              </div>
+            ) : null}
 
             {canSplitStaff ? (
               <label className="flex items-start gap-2 rounded-md border border-violet-200 bg-violet-50/50 p-3 text-sm">

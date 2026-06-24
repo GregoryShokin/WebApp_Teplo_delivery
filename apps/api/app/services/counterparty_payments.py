@@ -236,6 +236,111 @@ async def create_payment_draft_for_invoices(
     return draft
 
 
+async def create_standalone_payment_draft(
+    session: AsyncSession,
+    *,
+    counterparty_id: uuid.UUID,
+    amount: Decimal,
+    prepayment_article_id: uuid.UUID | None = None,
+    actor_user_id: uuid.UUID | None = None,
+    bank_client: BankClient | None = None,
+) -> CounterpartyPaymentDraft:
+    """Черновик «банк по реквизитам» без накладной — предоплата поставщику.
+
+    Шлёт платёж в банк по реквизитам контрагента; при статусе «исполнен»
+    (``apply_payment_status``) создаёт supplier_prepayment (дебиторку), а не гасит накладные.
+    """
+    total = _money(amount)
+    if total <= 0:
+        raise CounterpartyPaymentError("Сумма платежа должна быть больше нуля")
+
+    counterparty = await session.get(Counterparty, counterparty_id)
+    if counterparty is None:
+        raise CounterpartyPaymentError("Контрагент не найден")
+    if counterparty.status == "archived":
+        raise CounterpartyPaymentError("Контрагент в архиве — отправка в банк недоступна")
+    profile = await session.scalar(
+        select(CounterpartyPayableProfile).where(
+            CounterpartyPayableProfile.counterparty_id == counterparty_id
+        )
+    )
+    if profile is not None and profile.relationship == "informal":
+        raise CounterpartyPaymentError(
+            "Контрагент оплачивается картой/наличными — отправка в банк недоступна"
+        )
+    if profile is None or not profile.requisites_verified:
+        raise RequisitesNotVerifiedError(
+            "Реквизиты контрагента не подтверждены — отправка в банк недоступна"
+        )
+
+    article_id = prepayment_article_id
+    if article_id is None:
+        article_id = await session.scalar(
+            select(DdsArticle.id).where(DdsArticle.code == "advance_to_supplier")
+        )
+    elif await session.get(DdsArticle, article_id) is None:
+        raise CounterpartyPaymentError("Статья ДДС не найдена")
+
+    settings = get_settings()
+    payer_account = _payer_account(settings)
+    purpose = f"Предоплата поставщику {counterparty.name}"[:210]
+
+    draft = CounterpartyPaymentDraft(
+        id=uuid.uuid4(),
+        counterparty_id=counterparty_id,
+        document_id="",
+        amount=total,
+        status="created",
+        creates_prepayment=True,
+        prepayment_article_id=article_id,
+        created_by_user_id=actor_user_id,
+    )
+    document_id = f"teplo-cp-{draft.id}"
+    draft.document_id = document_id[:64]
+
+    requisites: dict[str, Any] = dict(profile.requisites or {})
+    requisites.setdefault("recipientName", counterparty.name)
+    if counterparty.inn:
+        requisites.setdefault("inn", counterparty.inn)
+
+    try:
+        payload = build_payment_draft_api_payload(
+            document_id=document_id,
+            amount=total,
+            purpose=purpose,
+            requisites=requisites,
+            payer_account=payer_account,
+        )
+    except ValueError as exc:
+        raise CounterpartyPaymentError(f"Реквизиты неполны: {exc}") from exc
+
+    client = bank_client or TbankClient(session)
+    try:
+        result = await client.create_payment_draft(
+            document_id=document_id,
+            amount=total,
+            purpose=purpose,
+            requisites=requisites,
+            payer_account=payer_account,
+        )
+    except BankFetchError as exc:
+        draft.status = "failed"
+        draft.payload = payload
+        draft.last_error = str(exc)
+        session.add(draft)
+        await session.commit()
+        raise
+
+    draft.status = _safe_status(result.status)
+    draft.provider_ref = result.provider_ref
+    draft.payload = payload
+    draft.synced_at = datetime.now(tz=UTC)
+    session.add(draft)
+    await session.commit()
+    await session.refresh(draft)
+    return draft
+
+
 async def cancel_payment_draft(session: AsyncSession, *, draft_id: uuid.UUID) -> None:
     """Unlink invoices and remove a draft that has not been paid/matched yet."""
     draft = await session.get(CounterpartyPaymentDraft, draft_id)

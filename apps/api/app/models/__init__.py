@@ -31,6 +31,7 @@ from app.models.counterparty_payable import (
     InvoicePaymentAllocation,
     SupplierInvoice,
     SupplierInvoiceTombstone,
+    SupplierPrepayment,
 )
 from app.models.courier import (
     CourierIikoShift,
@@ -202,6 +203,7 @@ __all__ = [
     "InvoicePaymentAllocation",
     "SupplierInvoice",
     "SupplierInvoiceTombstone",
+    "SupplierPrepayment",
     "Location",
     "PayrollDeductionCategory",
     "PayrollAdjustment",

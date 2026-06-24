@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
@@ -18,9 +19,12 @@ import {
   apiErrorMessage,
   classifyOperation,
   getDdsArticles,
+  getDdsCounterparties,
   type BankOperationRead,
   type OperationClassifyPayload,
 } from "@/lib/api";
+
+const PREPAYMENT_ARTICLE_CODE = "advance_to_supplier";
 import {
   DdsStatusBadge,
   DirectionBadge,
@@ -53,13 +57,19 @@ export function OperationReviewDialog({
 }) {
   const queryClient = useQueryClient();
   const articlesQuery = useQuery({ queryKey: ["dds", "articles"], queryFn: getDdsArticles });
+  const counterpartiesQuery = useQuery({
+    queryKey: ["dds", "counterparties"],
+    queryFn: () => getDdsCounterparties(),
+  });
   const [rows, setRows] = useState<SplitRow[]>([]);
+  const [counterpartyId, setCounterpartyId] = useState("");
   const [rememberAsRule, setRememberAsRule] = useState(false);
 
   // Reset to a single row covering the whole amount whenever the operation changes.
   useEffect(() => {
     if (operation) {
       setRows([{ key: crypto.randomUUID(), articleId: "none", amount: operation.amount }]);
+      setCounterpartyId("");
       setRememberAsRule(false);
     }
   }, [operation?.id]);
@@ -118,14 +128,33 @@ export function OperationReviewDialog({
       toast.error("Сумма по статьям должна равняться сумме операции");
       return;
     }
+    if (usesAdvance && !counterpartyId) {
+      toast.error("Для статьи «Авансы поставщикам» выберите контрагента");
+      return;
+    }
     mutation.mutate({
       action: "split",
       splits: rows.map((row) => ({ article_id: row.articleId, amount: row.amount })),
+      counterparty_id: counterpartyId || null,
       remember_as_rule: rememberAsRule && rows.length === 1,
     });
   }
 
   const articles = articlesQuery.data ?? [];
+  const counterparties = counterpartiesQuery.data ?? [];
+  // Поиск-селект контрагента; «Не указан» — пункт для сброса (контрагент необязателен).
+  const counterpartyOptions: ComboboxOption[] = [
+    { value: "", label: "Не указан" },
+    ...counterparties.map((cp) => ({
+      value: cp.id,
+      label: cp.name,
+      keywords: cp.inn ?? undefined,
+    })),
+  ];
+  // Статья «Авансы поставщикам»: если выбрана в любой строке — контрагент обязателен,
+  // он же определяет, на кого ляжет дебиторка предоплаты.
+  const advanceArticleId = articles.find((a) => a.code === PREPAYMENT_ARTICLE_CODE)?.id;
+  const usesAdvance = Boolean(advanceArticleId) && rows.some((row) => row.articleId === advanceArticleId);
   const isBusy = mutation.isPending;
 
   return (
@@ -214,8 +243,29 @@ export function OperationReviewDialog({
               ) : null}
             </div>
 
+            <div className="grid gap-1.5">
+              <Label className="text-sm">
+                Контрагент{usesAdvance ? <span className="text-red-600"> *</span> : null}
+              </Label>
+              <Combobox
+                options={counterpartyOptions}
+                value={counterpartyId}
+                onChange={setCounterpartyId}
+                placeholder="Не указан"
+                searchPlaceholder="Поиск по названию или ИНН…"
+              />
+              {usesAdvance ? (
+                <span className="text-xs text-muted-foreground">
+                  Статья «Авансы поставщикам» создаст предоплату (дебиторку) на этого контрагента.
+                </span>
+              ) : null}
+            </div>
+
             <div className="flex flex-wrap gap-2 border-t pt-4">
-              <Button disabled={isBusy || !balanced} onClick={submitSplit}>
+              <Button
+                disabled={isBusy || !balanced || (usesAdvance && !counterpartyId)}
+                onClick={submitSplit}
+              >
                 {isBusy ? (
                   <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
                 ) : null}

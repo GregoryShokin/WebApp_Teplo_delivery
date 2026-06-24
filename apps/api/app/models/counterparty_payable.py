@@ -222,6 +222,14 @@ class CounterpartyPaymentDraft(Base):
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Standalone-черновик «банк по реквизитам» без накладной: при статусе «исполнен» вместо
+    # гашения накладных создаёт предоплату (дебиторку) на контрагента по этой статье.
+    creates_prepayment: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    prepayment_article_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("dds_articles.id", ondelete="SET NULL"), nullable=True
+    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )
@@ -397,7 +405,8 @@ class InvoicePaymentAllocation(Base):
     __tablename__ = "invoice_payment_allocation"
     __table_args__ = (
         CheckConstraint(
-            "not (bank_operation_id is not null and cashflow_transaction_id is not null)",
+            "((bank_operation_id is not null)::int + (cashflow_transaction_id is not null)::int "
+            "+ (prepayment_id is not null)::int) <= 1",
             name="ck_invoice_allocation_single_source",
         ),
         Index("ix_invoice_allocation_invoice", "invoice_id"),
@@ -414,6 +423,11 @@ class InvoicePaymentAllocation(Base):
     )
     cashflow_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("cashflow_transactions.id", ondelete="SET NULL"), nullable=True
+    )
+    # Гашение против выданной предоплаты (source_kind='prepayment'): деньги уже ушли при
+    # создании предоплаты, поэтому ни bank_operation_id, ни cashflow_transaction_id здесь нет.
+    prepayment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("supplier_prepayment.id", ondelete="SET NULL"), nullable=True
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -508,6 +522,62 @@ class SupplierInvoiceTombstone(Base):
     source: Mapped[str] = mapped_column(String(32), nullable=False, default="iiko")
     external_id: Mapped[str] = mapped_column(String(128), nullable=False)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class SupplierPrepayment(Base):
+    """Выданная предоплата поставщику (дебиторка): мы заплатили вперёд — поставщик должен.
+
+    Создаётся реальным расходом денег (out-CashflowTransaction, source_kind=
+    'supplier_prepayment', source_id=prepayment.id), обычно с кошелька «Сейф». Гасится
+    приходящими payable-накладными через InvoicePaymentAllocation(source_kind='prepayment',
+    prepayment_id=...), которая денег НЕ двигает. Это отдельный учёт от кредиторки
+    (неоплаченные накладные) и от товарного бартера (receivable-накладные).
+
+    Остаток = amount − amount_settled («поставщик нам ещё должен»).
+    """
+
+    __tablename__ = "supplier_prepayment"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_supplier_prepayment_amount_positive"),
+        CheckConstraint(
+            "amount_settled >= 0 and amount_settled <= amount",
+            name="ck_supplier_prepayment_settled_range",
+        ),
+        Index("ix_supplier_prepayment_counterparty", "counterparty_id"),
+        Index("ix_supplier_prepayment_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    counterparty_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("counterparty.id", ondelete="RESTRICT"), nullable=False
+    )
+    # Тип аванса для строки баланса «Выданные авансы»: goods/rent/ad/subscription/tax/other.
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="goods")
+    wallet_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("wallet.id", ondelete="SET NULL"), nullable=True
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    amount_settled: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default=text("0")
+    )
+    # open → partially_settled → settled; refunded — предоплата возвращена поставщиком.
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="open", server_default="open"
+    )
+    # Денежный факт, породивший предоплату (out-CashflowTransaction).
+    cashflow_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("cashflow_transactions.id", ondelete="SET NULL"), nullable=True
+    )
+    article_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("dds_articles.id", ondelete="SET NULL"), nullable=True
+    )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

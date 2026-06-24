@@ -18,9 +18,14 @@ from app.models import (
     DdsArticle,
     OwnAccountsRegistry,
     ReconciliationCase,
+    SupplierPrepayment,
     Wallet,
 )
 from app.services.banking.base import clean_digits
+
+# Статья ДДС «Авансы поставщикам»: строка сплита с ней рождает дебиторку
+# (supplier_prepayment) на выбранного контрагента, а не просто расход.
+PREPAYMENT_ARTICLE_CODE = "advance_to_supplier"
 
 # A manually booked DDS entry (e.g. a supplier paid straight from a bank wallet via
 # ``pay_invoice_from_wallet``) records the cash fact before the bank feed does. When the
@@ -36,6 +41,9 @@ PREBOOKABLE_SOURCE_KINDS = (
     "payroll_bank_to_safe",
     "salary_advance_bank_to_safe",
     "manual_bank_to_safe",
+    # Предоплата поставщику через банк: при статусе «исполнен» заводится prebooked-проводка
+    # 'supplier_prepayment', которую забирает приходящая операция выписки (без двойного расхода).
+    "supplier_prepayment",
 )
 
 # «Пополнение Сейфа»: перевод р/с → личная карта (Сейф) учитывается как ВНУТРЕННИЙ
@@ -458,6 +466,18 @@ async def apply_operation_split(
     wallet = await _wallet_for_operation(session, operation)
     if wallet is None:
         raise ValueError("Не найден кошелёк для операции")
+
+    # Строка со статьёй «Авансы поставщикам» создаёт дебиторку на контрагента — без него
+    # непонятно, чья это предоплата, поэтому контрагент обязателен.
+    advance_article_id = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == PREPAYMENT_ARTICLE_CODE)
+    )
+    uses_advance = advance_article_id is not None and any(
+        article_id == advance_article_id for article_id, _amount, _comment in splits
+    )
+    if uses_advance and counterparty_id is None:
+        raise ValueError("Для статьи «Авансы поставщикам» укажите контрагента")
+
     await _clear_operation_cashflow(session, operation)
     created: list[UUID] = []
     for article_id, amount, comment in splits:
@@ -477,6 +497,21 @@ async def apply_operation_split(
         session.add(transaction)
         await session.flush()
         created.append(transaction.id)
+        # Аванс поставщику → дебиторка, привязанная к этой проводке.
+        if advance_article_id is not None and article_id == advance_article_id:
+            session.add(
+                SupplierPrepayment(
+                    counterparty_id=counterparty_id,
+                    kind="goods",
+                    wallet_id=wallet.id,
+                    amount=amount,
+                    amount_settled=Decimal("0.00"),
+                    status="open",
+                    cashflow_transaction_id=transaction.id,
+                    article_id=article_id,
+                )
+            )
+            await session.flush()
     operation.cashflow_transaction_id = created[0]
     operation.classification_status = "classified"
     return created

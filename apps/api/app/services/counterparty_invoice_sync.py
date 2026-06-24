@@ -595,6 +595,44 @@ def fetch_iiko_payables(*, days: int = 30) -> tuple[bytes, bytes, bytes, bytes]:
     return suppliers_xml, invoices_xml, outgoing_xml, products_xml
 
 
+def fetch_iiko_suppliers() -> bytes:
+    """Lightweight fetch of just the iiko ``/suppliers`` directory (no invoices) — for the
+    onboarding picker, where invoices/products would be wasted network round-trips."""
+    module = _load_orders_module()
+    module.load_local_env()
+    client = module.IikoClient()
+    _status, suppliers_xml = client.request(SUPPLIERS_ENDPOINT)
+    return suppliers_xml
+
+
+async def list_unlinked_iiko_suppliers(session: AsyncSession) -> list[dict[str, str | None]]:
+    """iiko suppliers from the directory that have no counterparty yet — onboarding candidates.
+
+    A prepayment-only supplier (we pay first, goods arrive later) never appears on a posted
+    invoice in the sync window, so the reverse sync never auto-creates it. This lets a manager
+    pick such a supplier and create the counterparty + iiko alias up front. Excludes deleted,
+    store-representing, and already-linked (alias source='iiko') suppliers.
+    """
+    await _load_source_credential_env(session)
+    suppliers_xml = await anyio.to_thread.run_sync(fetch_iiko_suppliers)
+    suppliers = _parse_suppliers(suppliers_xml)
+    linked = {
+        alias.lower()
+        for alias in (
+            await session.scalars(
+                select(CounterpartyAlias.alias).where(CounterpartyAlias.source == IIKO_SOURCE)
+            )
+        ).all()
+    }
+    candidates = [
+        {"guid": sp.id, "name": sp.name, "inn": sp.inn}
+        for sp in suppliers.values()
+        if not sp.deleted and not sp.represents_store and sp.id.lower() not in linked
+    ]
+    candidates.sort(key=lambda item: (item["name"] or "").lower())
+    return candidates
+
+
 async def sync_counterparty_invoices(
     session: AsyncSession, *, days: int = 30, run_reason: str = "manual"
 ) -> CounterpartyInvoiceSyncResult:
