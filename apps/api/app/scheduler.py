@@ -20,6 +20,7 @@ from app.models import (
     OwnAccountsRegistry,
     PayrollBankDraft,
     ReconciliationCase,
+    SalaryAdvanceBankDraft,
     Wallet,
 )
 from app.services.bank_payment_status import apply_payment_status
@@ -36,6 +37,7 @@ from app.services.couriers.iiko_attendance_sync import sync_attendance
 from app.services.couriers.iiko_olap_sync import sync_courier_olap_deliveries
 from app.services.couriers.shift_matching import recalculate_matches
 from app.services.kassa.iiko_cashshift_sync import sync_iiko_cashshifts
+from app.services.payroll_advance_service import apply_advance_draft_status
 from app.services.payroll_payouts import apply_payroll_draft_status
 
 logger = logging.getLogger(__name__)
@@ -168,6 +170,42 @@ async def run_payment_status_poll(
         if payroll_status == "paid":
             result["paid"] += 1
         elif payroll_status == "failed":
+            result["failed"] += 1
+
+    # Те же статусы для банк-выдачи авансов/займов: при «исполнен» — транзит банк→Сейф +
+    # резерв Сейфа под выдачу (фактическая выдача сотруднику подтверждается «Выплачено»).
+    advance_drafts = (
+        await session.scalars(
+            select(SalaryAdvanceBankDraft).where(
+                SalaryAdvanceBankDraft.status.in_(("created", "updated")),
+                SalaryAdvanceBankDraft.provider_ref.is_not(None),
+            )
+        )
+    ).all()
+    for advance_draft in advance_drafts:
+        try:
+            raw = await client.get_payment_status(advance_draft.provider_ref or "")
+        except BankCredentialsError:
+            logger.warning("payment-status poll: credentials error, прерываю опрос", exc_info=True)
+            result["errors"] += 1
+            break
+        except Exception:  # noqa: BLE001 - сетевая/банк-ошибка одного платежа не валит весь проход
+            logger.warning(
+                "payment-status poll: ошибка по advance-черновику %s",
+                advance_draft.id,
+                exc_info=True,
+            )
+            result["errors"] += 1
+            continue
+        result["checked"] += 1
+        if raw is None:
+            continue
+        advance_status = await apply_advance_draft_status(
+            session, draft=advance_draft, raw_status=raw, commit=False
+        )
+        if advance_status == "paid":
+            result["paid"] += 1
+        elif advance_status == "failed":
             result["failed"] += 1
     await session.commit()
     return result

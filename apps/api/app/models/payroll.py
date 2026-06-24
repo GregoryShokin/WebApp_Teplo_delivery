@@ -1057,7 +1057,7 @@ class SalaryAdvance(Base):
             "recovered_amount <= amount", name="ck_salary_advance_recovered_le_amount"
         ),
         CheckConstraint(
-            "status in ('issued', 'recovered', 'written_off', 'cancelled')",
+            "status in ('issued', 'awaiting_payout', 'recovered', 'written_off', 'cancelled')",
             name="ck_salary_advance_status",
         ),
         CheckConstraint(
@@ -1143,3 +1143,50 @@ class SalaryAdvanceRecovery(Base):
     )
 
     advance: Mapped[SalaryAdvance] = relationship(back_populates="recoveries")
+
+
+class SalaryAdvanceBankDraft(Base):
+    """Банковский черновик выдачи аванса/займа (Фаза 2) — зеркало ``PayrollBankDraft``.
+
+    Когда счёт-источник выдачи — банковский кошелёк, деньги не уходят мгновенно:
+    создаётся платёжный черновик в Т-Банке, поллинг (``run_payment_status_poll``)
+    ловит статус «исполнен» по ``provider_ref`` (documentId), тогда заводится транзит
+    банк→Сейф и резерв Сейфа (``safe_allocation_id``) со статьёй аванса/займа.
+    Фактическая выдача сотруднику — оплата резерва по кнопке «Выплачено», после чего
+    черновик → ``disbursed``, а ``SalaryAdvance`` → ``issued`` (формируется долг).
+
+    status: ``created``/``updated`` (в банке) → ``paid`` (исполнен, деньги в Сейфе как
+    резерв) → ``disbursed`` (выдан сотруднику); ``failed`` — отклонён банком;
+    ``cancelled`` — отменён до выдачи.
+    """
+
+    __tablename__ = "salary_advance_bank_draft"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('created', 'updated', 'paid', 'disbursed', 'failed', 'cancelled')",
+            name="ck_salary_advance_bank_draft_status",
+        ),
+        UniqueConstraint("advance_id", name="uq_salary_advance_bank_draft_advance_id"),
+        Index("ix_salary_advance_bank_draft_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    advance_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("salary_advance.id", ondelete="CASCADE"), nullable=False
+    )
+    document_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    provider_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Резерв Сейфа, созданный при исполнении платежа (источник кнопки «Выплачено»).
+    safe_allocation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("safe_allocations.id", ondelete="SET NULL"), nullable=True
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

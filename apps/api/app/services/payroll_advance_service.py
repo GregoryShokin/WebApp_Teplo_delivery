@@ -22,7 +22,9 @@ from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models import (
+    Account,
     AppSetting,
     CashflowTransaction,
     DdsArticle,
@@ -30,13 +32,26 @@ from app.models import (
     PayrollPeriod,
     PayrollRun,
     PayrollRunEvent,
+    SafeAllocation,
     SalaryAdvance,
+    SalaryAdvanceBankDraft,
     Wallet,
 )
+from app.services.bank_payment_status import classify_payment_status
+from app.services.banking import BankClient, TbankClient
+from app.services.banking.classifier import (
+    SAFE_WALLET_CODE,
+    TRANSFER_IN_ARTICLE_CODE,
+    TRANSFER_OUT_ARTICLE_CODE,
+)
+from app.services.banking.exceptions import BankFetchError
+from app.services.banking.safe_allocations import cancel_allocation, pay_allocation
+from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.employee_effective_events import get_position_on_date
 from app.services.payroll_admin import _upsert_setting
 from app.services.payroll_advance_availability import available_to_advance
 from app.services.payroll_calculator import decimal
+from app.services.payroll_payouts import _bank_payout_requisites, _payer_account
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
 from app.services.position_registry import admin_payroll_positions
 
@@ -48,8 +63,23 @@ ADVANCE_PAYOUT_SOURCE_KIND = "salary_advance"
 ADVANCE_ARTICLE_CODE = "employee_advance"  # аванс → «Авансы сотрудникам»
 LOAN_ARTICLE_CODE = "vydacha_zaymov_sotrudnikam"  # заём → «Выдача займов сотрудникам»
 # Наличные счета: выдача = прямой расход с кошелька (Фаза 1). Банк-кошелёк (черновик+
-# транзит на Сейф, как у ЗП) — Фаза 2: тут проводка пропускается.
+# транзит на Сейф, как у ЗП) — Фаза 2: см. блок банк-выдачи ниже.
 ADVANCE_CASH_WALLET_CODES = ("tk_chernikova", "cash_safe")
+# Банк-выдача (Фаза 2): транзит безналичной части на Сейф под выдачу аванса/займа.
+# Банк-нога out служит prebooked-целью для приходящей операции выписки (как у ЗП),
+# поэтому source_kind входит в classifier.PREBOOKABLE_SOURCE_KINDS.
+ADVANCE_BANK_TO_SAFE_SOURCE_KIND = "salary_advance_bank_to_safe"
+ADVANCE_BANK_DRAFT_STATUSES = frozenset(
+    {"created", "updated", "paid", "disbursed", "failed", "cancelled"}
+)
+
+
+def _article_code_for(advance: SalaryAdvance) -> str:
+    return LOAN_ARTICLE_CODE if advance.kind == "loan" else ADVANCE_ARTICLE_CODE
+
+
+def _kind_label(advance: SalaryAdvance) -> str:
+    return "займа" if advance.kind == "loan" else "аванса"
 
 
 async def book_advance_payout_cashflow(
@@ -133,7 +163,9 @@ async def _outstanding_loan_principal(
             select(SalaryAdvance).where(
                 SalaryAdvance.employee_id == employee_id,
                 SalaryAdvance.kind == "loan",
-                SalaryAdvance.status == "issued",
+                # Банк-займы «ожидает выплаты» ещё не выданы, но деньги уже зарезервированы —
+                # учитываем в потолке, чтобы не выдать сверх лимита, пока заём в полёте.
+                SalaryAdvance.status.in_(("issued", "awaiting_payout")),
             )
         )
     ).all()
@@ -204,6 +236,7 @@ async def issue_advance(
     comment: str | None = None,
     actor_user_id: uuid.UUID | None = None,
     actor_label: str | None = None,
+    bank_client: BankClient | None = None,
 ) -> SalaryAdvance:
     """Выдать аванс или заём.
 
@@ -270,6 +303,11 @@ async def issue_advance(
         )
         recovery_start = recovery_start_date
 
+    wallet = await session.get(Wallet, wallet_id) if wallet_id is not None else None
+    # Банк-счёт: деньги уходят не мгновенно → выдача ждёт исполнения платежа и фактической
+    # выдачи сотруднику. Долг (удержание из ведомости) формируется только по «Выплачено».
+    is_bank_payout = wallet is not None and wallet.type == "bank"
+
     advance = SalaryAdvance(
         employee_id=employee_id,
         role=role,
@@ -278,7 +316,7 @@ async def issue_advance(
         per_installment_amount=per_installment,
         installments_count=installments,
         recovered_amount=Decimal("0"),
-        status="issued",
+        status="awaiting_payout" if is_bank_payout else "issued",
         issued_on=issued_on,
         recovery_start_date=recovery_start,
         payout_method=payout_method,
@@ -290,9 +328,12 @@ async def issue_advance(
     session.add(advance)
     await session.flush()
     # Выдача = отток денег → проводка ДДС. Наличный счёт (ТК Черникова/Сейф) — прямой расход;
-    # банк-счёт (черновик+транзит на Сейф, как у ЗП) — Фаза 2, тут проводка не создаётся.
-    if wallet_id is not None:
-        wallet = await session.get(Wallet, wallet_id)
+    # банк-счёт — черновик платежа + транзит на Сейф при исполнении (как у ЗП), Фаза 2.
+    if is_bank_payout:
+        await create_advance_bank_draft(
+            session, advance=advance, wallet=wallet, bank_client=bank_client
+        )
+    elif wallet is not None:
         await book_advance_payout_cashflow(session, advance=advance, wallet=wallet)
     await session.commit()
     await session.refresh(advance)
@@ -303,14 +344,33 @@ async def cancel_advance(
     session: AsyncSession,
     advance_id: uuid.UUID,
 ) -> SalaryAdvance:
-    """Отменить выдачу (до начала возврата). Нельзя, если уже что-то удержано."""
+    """Отменить выдачу (до начала возврата). Нельзя, если уже что-то удержано.
+
+    Банк-выдача «ожидает выплаты» тоже отменяется: связанный черновик помечается
+    ``cancelled``, а уже созданный резерв Сейфа освобождается (деньги остаются в Сейфе
+    свободными — на расчётный счёт не возвращаем, by design).
+    """
     advance = await session.get(SalaryAdvance, advance_id)
     if advance is None:
         raise PayrollNotFoundError("Аванс не найден")
     if decimal(advance.recovered_amount) > 0:
         raise PayrollConflictError("По авансу уже есть удержания — отмена невозможна")
-    if advance.status != "issued":
-        raise PayrollConflictError("Аванс не в статусе «выдан»")
+    if advance.status not in ("issued", "awaiting_payout"):
+        raise PayrollConflictError("Аванс нельзя отменить в текущем статусе")
+    if advance.status == "awaiting_payout":
+        draft = await _get_advance_draft(session, advance.id, lock=True)
+        if draft is not None:
+            if draft.safe_allocation_id is not None:
+                allocation = await session.get(
+                    SafeAllocation, draft.safe_allocation_id, with_for_update=True
+                )
+                if allocation is not None and allocation.status in (
+                    "reserved",
+                    "partially_paid",
+                ):
+                    await cancel_allocation(session, allocation)
+            draft.status = "cancelled"
+            draft.synced_at = datetime.now(UTC)
     advance.status = "cancelled"
     await session.commit()
     await session.refresh(advance)
@@ -419,3 +479,367 @@ async def list_advances(
         stmt = stmt.where(SalaryAdvance.status.in_(statuses))
     stmt = stmt.order_by(SalaryAdvance.issued_on.desc(), SalaryAdvance.created_at.desc())
     return list((await session.scalars(stmt)).all())
+
+
+# ---------------------------------------------------------------------------
+# Банк-выдача (Фаза 2): черновик платежа → транзит банк→Сейф + резерв → «Выплачено».
+# ---------------------------------------------------------------------------
+
+
+def _advance_document_id(advance_id: uuid.UUID) -> str:
+    return f"teplo-advance-{advance_id}"
+
+
+def _safe_advance_draft_status(value: str | None, fallback: str) -> str:
+    return value if value in ADVANCE_BANK_DRAFT_STATUSES else fallback
+
+
+async def _get_advance_draft(
+    session: AsyncSession, advance_id: uuid.UUID, *, lock: bool = False
+) -> SalaryAdvanceBankDraft | None:
+    stmt = select(SalaryAdvanceBankDraft).where(
+        SalaryAdvanceBankDraft.advance_id == advance_id
+    )
+    if lock:
+        stmt = stmt.with_for_update()
+    return await session.scalar(stmt)
+
+
+async def list_advance_drafts(
+    session: AsyncSession, advance_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, SalaryAdvanceBankDraft]:
+    """Черновики банк-выдачи по списку авансов (для статуса выплаты в реестре)."""
+    if not advance_ids:
+        return {}
+    rows = (
+        await session.scalars(
+            select(SalaryAdvanceBankDraft).where(
+                SalaryAdvanceBankDraft.advance_id.in_(advance_ids)
+            )
+        )
+    ).all()
+    return {row.advance_id: row for row in rows}
+
+
+def advance_payout_status(
+    advance: SalaryAdvance, draft: SalaryAdvanceBankDraft | None
+) -> str:
+    """Сводный статус выплаты для UI: один код на «наличную» и «банковскую» выдачу.
+
+    ``disbursed`` — деньги отданы сотруднику (наличная выдача сразу, банковская — по
+    «Выплачено»); ``sent_to_bank`` — черновик в банке; ``awaiting_payout`` — исполнен,
+    деньги зарезервированы в Сейфе, ждут выдачи; ``failed`` — отклонён банком;
+    ``cancelled`` — отменено.
+    """
+    if advance.status == "cancelled":
+        return "cancelled"
+    if draft is None:
+        return "disbursed"  # наличная выдача — отток уже проведён при выдаче
+    if draft.status == "disbursed":
+        return "disbursed"
+    if draft.status == "failed":
+        return "failed"
+    if draft.status == "cancelled":
+        return "cancelled"
+    if draft.status == "paid":
+        return "awaiting_payout"
+    return "sent_to_bank"
+
+
+async def create_advance_bank_draft(
+    session: AsyncSession,
+    *,
+    advance: SalaryAdvance,
+    wallet: Wallet,
+    bank_client: BankClient | None = None,
+) -> SalaryAdvanceBankDraft:
+    """Завести черновик платежа в банке под банк-выдачу аванса/займа.
+
+    Реквизиты получателя — общие с зарплатой (``payroll.bank_payout_requisites``): деньги
+    уходят на счёт ИП/владельца, откуда выдаются наличными. При сетевой/банк-ошибке черновик
+    сохраняется со статусом ``failed`` (выдачу не валим — её можно отменить/повторить).
+    """
+    settings = get_settings()
+    payer_account = _payer_account(settings)
+    requisites = await _bank_payout_requisites(session)
+    document_id = _advance_document_id(advance.id)
+    purpose = f"Перевод под выдачу {_kind_label(advance)} сотруднику"
+    try:
+        api_payload = build_payment_draft_api_payload(
+            document_id=document_id,
+            amount=advance.amount,
+            purpose=purpose,
+            requisites=requisites,
+            payer_account=payer_account,
+        )
+    except ValueError as exc:
+        raise PayrollConflictError(str(exc)) from exc
+
+    stored_payload = {"accountNumber": payer_account, "request": api_payload}
+    client = bank_client or TbankClient(session)
+    try:
+        result = await client.create_payment_draft(
+            document_id=document_id,
+            amount=advance.amount,
+            purpose=purpose,
+            requisites=dict(requisites),
+            payer_account=payer_account,
+        )
+    except BankFetchError as exc:
+        draft = SalaryAdvanceBankDraft(
+            advance_id=advance.id,
+            document_id=document_id[:64],
+            amount=advance.amount,
+            status="failed",
+            provider_ref=None,
+            payload=stored_payload,
+            last_error=str(exc)[:500],
+            synced_at=datetime.now(UTC),
+        )
+        session.add(draft)
+        await session.flush()
+        return draft
+
+    draft = SalaryAdvanceBankDraft(
+        advance_id=advance.id,
+        document_id=document_id[:64],
+        amount=advance.amount,
+        status=_safe_advance_draft_status(result.status, "created"),
+        provider_ref=result.provider_ref,
+        payload=stored_payload,
+        last_error=None,
+        synced_at=datetime.now(UTC),
+    )
+    session.add(draft)
+    await session.flush()
+    return draft
+
+
+async def apply_advance_draft_status(
+    session: AsyncSession,
+    *,
+    draft: SalaryAdvanceBankDraft,
+    raw_status: str | None,
+    commit: bool = True,
+) -> str:
+    """Продвинуть банк-черновик выдачи по статусу платежа (polling).
+
+    При ``paid`` заводит транзит банк→Сейф и резерв Сейфа под выдачу (см.
+    ``_book_advance_transit_and_reserve``). Идемпотентно: блокировка строки сериализует
+    гонку, переход только из created/updated. Аванс остаётся ``awaiting_payout`` — долг
+    сотрудника формируется лишь при фактической выдаче («Выплачено»).
+    """
+    outcome = classify_payment_status(raw_status)
+    draft = await session.get(SalaryAdvanceBankDraft, draft.id, with_for_update=True)
+    if draft is None:
+        return "created"
+
+    if outcome == "paid" and draft.status in ("created", "updated"):
+        # Блокируем аванс: сериализует гонку с отменой (cancel_advance) и не даёт завести
+        # транзит/резерв поверх уже отменённой/выданной выдачи.
+        advance = await session.get(SalaryAdvance, draft.advance_id, with_for_update=True)
+        # В paid переходим ТОЛЬКО если аванс ещё ждёт выплаты И транзит+резерв реально заведены.
+        # Если кошельки ещё не настроены — оставляем черновик в created, чтобы следующий поллинг
+        # повторил (иначе «Выплачено» осталось бы навсегда заблокированным без резерва).
+        if (
+            advance is not None
+            and advance.status == "awaiting_payout"
+            and await _book_advance_transit_and_reserve(session, advance=advance, draft=draft)
+        ):
+            draft.status = "paid"
+            draft.synced_at = datetime.now(UTC)
+    elif outcome == "failed" and draft.status in ("created", "updated"):
+        draft.status = "failed"
+        draft.last_error = f"Платёж отклонён банком: {raw_status}"[:500]
+        draft.synced_at = datetime.now(UTC)
+
+    if commit:
+        await session.commit()
+    return draft.status
+
+
+async def _book_advance_transit_and_reserve(
+    session: AsyncSession, *, advance: SalaryAdvance, draft: SalaryAdvanceBankDraft
+) -> bool:
+    """Транзит банк→Сейф на сумму выдачи + резерв Сейфа со статьёй аванса/займа.
+
+    Две ноги транзита с общим source (``salary_advance_bank_to_safe`` + advance.id): банк-нога
+    out (статья «перевод между счетами») — prebooked-цель для приходящей операции выписки
+    (баланс банка идёт от выписки, она его не двигает); Сейф-нога in двигает баланс Сейфа.
+    Затем создаётся ``SafeAllocation(reserved)`` на ту же сумму — деньги «висят» под выдачу,
+    видны в карточке Сейфа и гасятся по «Выплачено». Идемпотентно: резерв создаётся один раз.
+
+    Возвращает ``True``, если транзит+резерв заведены (или уже были); ``False`` — если кошельки
+    не настроены (вызывающий не переводит черновик в ``paid``, чтобы поллинг повторил позже).
+    """
+    if draft.safe_allocation_id is not None:
+        return True
+    existing = await session.scalar(
+        select(CashflowTransaction.id).where(
+            CashflowTransaction.source_kind == ADVANCE_BANK_TO_SAFE_SOURCE_KIND,
+            CashflowTransaction.source_id == advance.id,
+        )
+    )
+    if existing is not None:
+        return True
+
+    amount = decimal(advance.amount).quantize(_CENTS)
+    settings = get_settings()
+    payer_account = _payer_account(settings)
+    bank_wallet = await session.scalar(
+        select(Wallet)
+        .join(Account, Account.id == Wallet.account_id)
+        .where(Account.account_number == payer_account, Wallet.status == "active")
+    )
+    safe_wallet = await session.scalar(
+        select(Wallet).where(Wallet.code == SAFE_WALLET_CODE, Wallet.status == "active")
+    )
+    if bank_wallet is None or safe_wallet is None:
+        # Кошельки не заведены — транзит/резерв не создаём и сигналим неуспех: черновик
+        # останется в created и поллинг повторит, когда кошельки появятся (на проде они есть).
+        return False
+
+    transfer_out_article = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == TRANSFER_OUT_ARTICLE_CODE)
+    )
+    transfer_in_article = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == TRANSFER_IN_ARTICLE_CODE)
+    )
+    operation_date = datetime.now(UTC).date()
+    transit_purpose = f"Перевод на Сейф под выдачу {_kind_label(advance)}"
+    session.add(
+        CashflowTransaction(
+            wallet_id=bank_wallet.id,
+            direction="out",
+            amount=amount,
+            operation_date=operation_date,
+            article_id=transfer_out_article,
+            source_kind=ADVANCE_BANK_TO_SAFE_SOURCE_KIND,
+            source_id=advance.id,
+            payment_purpose=transit_purpose,
+            quality_status="final",
+        )
+    )
+    session.add(
+        CashflowTransaction(
+            wallet_id=safe_wallet.id,
+            direction="in",
+            amount=amount,
+            operation_date=operation_date,
+            article_id=transfer_in_article,
+            source_kind=ADVANCE_BANK_TO_SAFE_SOURCE_KIND,
+            source_id=advance.id,
+            payment_purpose=transit_purpose,
+            quality_status="final",
+        )
+    )
+    await session.flush()
+
+    article_id = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == _article_code_for(advance))
+    )
+    employee_name = await session.scalar(
+        select(Employee.full_name).where(Employee.id == advance.employee_id)
+    )
+    reserve_purpose = f"Выдача {_kind_label(advance)}"
+    if employee_name:
+        reserve_purpose = f"{reserve_purpose} — {employee_name}"
+    allocation = SafeAllocation(
+        wallet_id=safe_wallet.id,
+        amount=amount,
+        amount_paid=Decimal("0"),
+        article_id=article_id,
+        counterparty_id=None,
+        purpose=reserve_purpose,
+        status="reserved",
+        created_by_user_id=advance.created_by_user_id,
+    )
+    session.add(allocation)
+    await session.flush()
+    draft.safe_allocation_id = allocation.id
+    return True
+
+
+async def disburse_bank_advance(
+    session: AsyncSession, *, advance_id: uuid.UUID
+) -> SalaryAdvance:
+    """«Выплачено»: фактическая выдача банк-аванса сотруднику.
+
+    Оплачивает резерв Сейфа (расход с Сейфа со статьёй аванса/займа), помечает черновик
+    ``disbursed`` и переводит аванс в ``issued`` — только теперь формируется долг сотрудника
+    (удержание из ближайшей ведомости). Идемпотентно: повторный вызов на выданном — no-op.
+    """
+    advance = await session.get(SalaryAdvance, advance_id)
+    if advance is None:
+        raise PayrollNotFoundError("Аванс не найден")
+    draft = await _get_advance_draft(session, advance_id, lock=True)
+    if draft is None:
+        raise PayrollConflictError("Это не банковская выдача — отдельное подтверждение не нужно")
+    if draft.status == "disbursed":
+        return advance
+    if draft.status in ("created", "updated"):
+        raise PayrollConflictError("Платёж ещё не исполнен банком — выдать пока нельзя")
+    if draft.status == "failed":
+        raise PayrollConflictError("Платёж отклонён банком — выдача невозможна")
+    if draft.status == "cancelled":
+        raise PayrollConflictError("Выдача отменена")
+    if draft.safe_allocation_id is None:
+        raise PayrollConflictError("Резерв Сейфа под выдачу не найден")
+    allocation = await session.get(
+        SafeAllocation, draft.safe_allocation_id, with_for_update=True
+    )
+    if allocation is None:
+        raise PayrollConflictError("Резерв Сейфа под выдачу не найден")
+
+    outstanding = decimal(allocation.amount) - decimal(allocation.amount_paid)
+    if outstanding > 0:
+        try:
+            await pay_allocation(
+                session,
+                allocation,
+                amount=outstanding,
+                operation_date=datetime.now(UTC).date(),
+            )
+        except ValueError as exc:
+            raise PayrollConflictError(str(exc)) from exc
+    draft.status = "disbursed"
+    draft.synced_at = datetime.now(UTC)
+    advance.status = "issued"
+    await session.commit()
+    await session.refresh(advance)
+    return advance
+
+
+async def sync_advance_after_allocation_change(
+    session: AsyncSession, *, allocation_id: uuid.UUID
+) -> None:
+    """Свести банк-аванс со статусом его резерва Сейфа (когда резерв трогают из карточки Сейфа).
+
+    Оплата/отмена резерва возможна и напрямую в карточке Сейфа — тогда долг сотрудника тоже
+    должен сформироваться/сняться. Вызывается из роутов оплаты/отмены резерва ДО их commit;
+    при полной оплате резерва аванс → ``issued`` (+черновик ``disbursed``), при отмене →
+    ``cancelled`` (+черновик ``cancelled``). Частичная оплата ничего не меняет.
+    """
+    draft = await session.scalar(
+        select(SalaryAdvanceBankDraft)
+        .where(SalaryAdvanceBankDraft.safe_allocation_id == allocation_id)
+        .with_for_update()
+    )
+    if draft is None:
+        return
+    allocation = await session.get(SafeAllocation, allocation_id)
+    advance = await session.get(SalaryAdvance, draft.advance_id, with_for_update=True)
+    if allocation is None or advance is None:
+        return
+    if allocation.status == "paid" and draft.status == "paid":
+        draft.status = "disbursed"
+        draft.synced_at = datetime.now(UTC)
+        advance.status = "issued"
+    elif allocation.status == "cancelled" and draft.status in (
+        "created",
+        "updated",
+        "paid",
+    ):
+        draft.status = "cancelled"
+        draft.synced_at = datetime.now(UTC)
+        advance.status = "cancelled"

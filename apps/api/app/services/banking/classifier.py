@@ -34,6 +34,7 @@ PREBOOKABLE_SOURCE_KINDS = (
     "kassa_cheque",
     "payroll_payout",
     "payroll_bank_to_safe",
+    "salary_advance_bank_to_safe",
     "manual_bank_to_safe",
 )
 

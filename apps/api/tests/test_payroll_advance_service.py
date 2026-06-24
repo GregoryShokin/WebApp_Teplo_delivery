@@ -665,10 +665,13 @@ async def test_loan_payout_uses_loan_article(
     assert article is not None and article.code == "vydacha_zaymov_sotrudnikam"
 
 
-async def test_bank_wallet_payout_skips_cashflow(
+async def test_bank_wallet_payout_creates_draft_no_cashflow(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Выдача через банк-кошелёк проводки не создаёт (Фаза 2: черновик+транзит отдельно)."""
+    """Выдача через банк-кошелёк (Фаза 2): расхода ДДС нет, но создан черновик платежа,
+    а аванс встаёт «ожидает выплаты» (долг сформируется только при «Выплачено»)."""
+    from app.models import SalaryAdvanceBankDraft
+
     async with async_session_factory() as session:
         emp = await _make_okladnik(session)
         await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
@@ -685,4 +688,11 @@ async def test_bank_wallet_payout_skips_cashflow(
             wallet_id=wallet.id,
         )
 
+    assert adv.status == "awaiting_payout"
     assert await _advance_cashflow(async_session_factory, adv.id) is None
+    async with async_session_factory() as session:
+        draft = await session.scalar(
+            select(SalaryAdvanceBankDraft).where(SalaryAdvanceBankDraft.advance_id == adv.id)
+        )
+    assert draft is not None
+    assert draft.status == "created"

@@ -120,6 +120,7 @@ from app.models.payroll import (
     PayrollSeniorityPremium,
     RevenueTier,
     SalaryAdvance,
+    SalaryAdvanceBankDraft,
     SalaryAdvanceRecovery,
     ShiftLedgerEntry,
 )
@@ -227,6 +228,7 @@ __all__ = [
     "RevenueTier",
     "RevenueForecast",
     "SalaryAdvance",
+    "SalaryAdvanceBankDraft",
     "SalaryAdvanceRecovery",
     "ReconciliationCase",
     "SafeAllocation",

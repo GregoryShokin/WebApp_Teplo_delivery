@@ -913,6 +913,13 @@ export type PayrollAdvanceAvailability = {
   note: string | null;
 };
 
+export type PayrollAdvancePayoutStatus =
+  | "disbursed"
+  | "sent_to_bank"
+  | "awaiting_payout"
+  | "failed"
+  | "cancelled";
+
 export type PayrollAdvance = {
   id: string;
   employee_id: string;
@@ -926,7 +933,9 @@ export type PayrollAdvance = {
   issued_on: string;
   recovery_start_date: string | null;
   payout_method: string | null;
+  wallet_id: string | null;
   comment: string | null;
+  payout_status: PayrollAdvancePayoutStatus;
 };
 
 export type PayrollAdvancePayload = {
@@ -3518,6 +3527,11 @@ export async function createPayrollAdvance(
   payload: PayrollAdvancePayload,
 ): Promise<PayrollAdvance> {
   const response = await api.post<PayrollAdvance>("/payroll/advances", payload);
+  return response.data;
+}
+
+export async function markPayrollAdvancePaid(id: string): Promise<PayrollAdvance> {
+  const response = await api.post<PayrollAdvance>(`/payroll/advances/${id}/mark-paid`);
   return response.data;
 }
 

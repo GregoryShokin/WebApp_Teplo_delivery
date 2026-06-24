@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, CircleSlash, LoaderCircle, MoreHorizontal, Plus } from "lucide-react";
+import { Ban, Check, CircleSlash, LoaderCircle, MoreHorizontal, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -39,8 +39,10 @@ import {
   getEmployees,
   getPayrollAdvanceAvailability,
   getPayrollAdvances,
+  markPayrollAdvancePaid,
   writeOffPayrollAdvance,
   type PayrollAdvance,
+  type PayrollAdvancePayoutStatus,
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -48,9 +50,29 @@ import { cn } from "@/lib/utils";
 const KIND_LABEL: Record<string, string> = { advance: "Аванс", loan: "Заём" };
 const STATUS_LABEL: Record<string, string> = {
   issued: "Выдан",
+  awaiting_payout: "Ожидает выплаты",
   recovered: "Погашен",
   written_off: "Списан",
   cancelled: "Отменён",
+};
+
+const PAYOUT_STATUS_LABEL: Record<PayrollAdvancePayoutStatus, string> = {
+  disbursed: "Выплачено",
+  sent_to_bank: "Отправлено в банк",
+  awaiting_payout: "Ожидает выплаты",
+  failed: "Отклонено банком",
+  cancelled: "Отменено",
+};
+
+const PAYOUT_STATUS_VARIANT: Record<
+  PayrollAdvancePayoutStatus,
+  "default" | "secondary" | "destructive" | "outline"
+> = {
+  disbursed: "secondary",
+  sent_to_bank: "outline",
+  awaiting_payout: "default",
+  failed: "destructive",
+  cancelled: "outline",
 };
 const PAYOUT_METHODS = [
   { value: "transfer", label: "Перевод" },
@@ -145,6 +167,15 @@ export function PayrollAdvancesRoute() {
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отменить")),
   });
 
+  const markPaidMutation = useMutation({
+    mutationFn: (id: string) => markPayrollAdvancePaid(id),
+    onSuccess: async () => {
+      toast.success("Выдача подтверждена — списано с Сейфа");
+      await queryClient.invalidateQueries({ queryKey: ["payroll-advances"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось подтвердить выдачу")),
+  });
+
   const writeOffMutation = useMutation({
     mutationFn: (id: string) => writeOffPayrollAdvance(id),
     onSuccess: async () => {
@@ -176,36 +207,67 @@ export function PayrollAdvancesRoute() {
       cell: (row) => formatMoney(row.amount - row.recovered_amount),
     },
     { key: "issued_on", header: "Дата", cell: (row) => formatDate(row.issued_on) },
-    { key: "status", header: "Статус", cell: (row) => STATUS_LABEL[row.status] ?? row.status },
+    {
+      key: "status",
+      header: "Статус",
+      cell: (row) =>
+        row.payout_status === "disbursed" ? (
+          STATUS_LABEL[row.status] ?? row.status
+        ) : (
+          <Badge variant={PAYOUT_STATUS_VARIANT[row.payout_status]}>
+            {PAYOUT_STATUS_LABEL[row.payout_status]}
+          </Badge>
+        ),
+    },
     {
       key: "actions",
       header: "",
-      headerClassName: "w-10",
-      cell: (row) =>
-        row.status === "issued" && (canIssue || canLoan) ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreHorizontal className="h-4 w-4" />
+      headerClassName: "w-32",
+      cell: (row) => {
+        const canMarkPaid = row.payout_status === "awaiting_payout" && (canIssue || canLoan);
+        const canCancel =
+          canIssue &&
+          Number(row.recovered_amount) === 0 &&
+          (row.status === "issued" || row.status === "awaiting_payout");
+        const canWriteOff = canLoan && row.status === "issued";
+        if (!canMarkPaid && !canCancel && !canWriteOff) {
+          return null;
+        }
+        return (
+          <div className="flex items-center justify-end gap-1">
+            {canMarkPaid ? (
+              <Button
+                size="sm"
+                disabled={markPaidMutation.isPending}
+                onClick={() => markPaidMutation.mutate(row.id)}
+              >
+                <Check className="mr-1 h-4 w-4" /> Выплачено
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {canIssue ? (
-                <DropdownMenuItem
-                  disabled={Number(row.recovered_amount) > 0}
-                  onClick={() => cancelMutation.mutate(row.id)}
-                >
-                  <Ban className="mr-2 h-4 w-4" /> Отменить
-                </DropdownMenuItem>
-              ) : null}
-              {canLoan ? (
-                <DropdownMenuItem onClick={() => writeOffMutation.mutate(row.id)}>
-                  <CircleSlash className="mr-2 h-4 w-4" /> Списать остаток
-                </DropdownMenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null,
+            ) : null}
+            {canCancel || canWriteOff ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {canCancel ? (
+                    <DropdownMenuItem onClick={() => cancelMutation.mutate(row.id)}>
+                      <Ban className="mr-2 h-4 w-4" /> Отменить
+                    </DropdownMenuItem>
+                  ) : null}
+                  {canWriteOff ? (
+                    <DropdownMenuItem onClick={() => writeOffMutation.mutate(row.id)}>
+                      <CircleSlash className="mr-2 h-4 w-4" /> Списать остаток
+                    </DropdownMenuItem>
+                  ) : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+          </div>
+        );
+      },
     },
   ];
 

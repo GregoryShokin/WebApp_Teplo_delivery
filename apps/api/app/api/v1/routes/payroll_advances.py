@@ -26,13 +26,16 @@ from app.api.deps import (
 )
 from app.auth.permissions import permission_is_granted
 from app.db.session import get_session
-from app.models import Employee
+from app.models import Employee, SalaryAdvance, SalaryAdvanceBankDraft
 from app.services.employee_effective_events import get_position_on_date
 from app.services.payroll_advance_availability import AdvanceAvailability, available_to_advance
 from app.services.payroll_advance_service import (
+    advance_payout_status,
     cancel_advance,
+    disburse_bank_advance,
     get_loan_max,
     issue_advance,
+    list_advance_drafts,
     list_advances,
     set_loan_max,
     write_off_advance,
@@ -78,7 +81,19 @@ class AdvanceRead(BaseModel):
     issued_on: date
     recovery_start_date: date | None = None
     payout_method: str | None = None
+    wallet_id: uuid.UUID | None = None
     comment: str | None = None
+    # Сводный статус выплаты (наличная/банковская): disbursed / sent_to_bank /
+    # awaiting_payout / failed / cancelled. См. advance_payout_status.
+    payout_status: str = "disbursed"
+
+
+def _advance_read(
+    advance: SalaryAdvance, draft: SalaryAdvanceBankDraft | None
+) -> AdvanceRead:
+    read = AdvanceRead.model_validate(advance)
+    read.payout_status = advance_payout_status(advance, draft)
+    return read
 
 
 class AdvanceIssueRequest(BaseModel):
@@ -168,7 +183,8 @@ async def get_advances(
         else None
     )
     rows = await list_advances(session, employee_id=employee_id, statuses=statuses)
-    return [AdvanceRead.model_validate(row) for row in rows]
+    drafts = await list_advance_drafts(session, [row.id for row in rows])
+    return [_advance_read(row, drafts.get(row.id)) for row in rows]
 
 
 @router.post("", response_model=AdvanceRead, status_code=status.HTTP_201_CREATED)
@@ -205,7 +221,26 @@ async def post_advance(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PayrollConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    return AdvanceRead.model_validate(advance)
+    drafts = await list_advance_drafts(session, [advance.id])
+    return _advance_read(advance, drafts.get(advance.id))
+
+
+@router.post("/{advance_id}/mark-paid", response_model=AdvanceRead)
+async def post_mark_advance_paid(
+    advance_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> AdvanceRead:
+    """«Выплачено»: подтвердить фактическую выдачу банк-аванса (списание резерва с Сейфа)."""
+    ensure_any_permission(actor, _ISSUE_CODES)
+    try:
+        advance = await disburse_bank_advance(session, advance_id=advance_id)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    drafts = await list_advance_drafts(session, [advance.id])
+    return _advance_read(advance, drafts.get(advance.id))
 
 
 @router.post("/{advance_id}/cancel", response_model=AdvanceRead)
@@ -221,7 +256,8 @@ async def post_cancel_advance(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PayrollConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    return AdvanceRead.model_validate(advance)
+    drafts = await list_advance_drafts(session, [advance.id])
+    return _advance_read(advance, drafts.get(advance.id))
 
 
 @router.post(
@@ -240,7 +276,8 @@ async def post_write_off_advance(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PayrollConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    return AdvanceRead.model_validate(advance)
+    drafts = await list_advance_drafts(session, [advance.id])
+    return _advance_read(advance, drafts.get(advance.id))
 
 
 @router.get("/config", response_model=AdvanceConfigRead, dependencies=ADVANCES_READ_ACCESS)

@@ -84,6 +84,7 @@ from app.services.banking.safe_allocations import (
     safe_reserved_total,
 )
 from app.services.banking.transfer_matching import find_and_link_transfer_pairs
+from app.services.payroll_advance_service import sync_advance_after_allocation_change
 
 router = APIRouter()
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
@@ -1122,6 +1123,8 @@ async def pay_safe_allocation(
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    # Если резерв — это банк-выдача аванса/займа, полная оплата формирует долг сотрудника.
+    await sync_advance_after_allocation_change(session, allocation_id=allocation.id)
     await session.commit()
     await session.refresh(allocation)
     return _safe_allocation_payload(allocation)
@@ -1144,6 +1147,8 @@ async def cancel_safe_allocation(
         await cancel_allocation(session, allocation)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    # Отмена резерва банк-выдачи отменяет и сам аванс/заём (деньги остаются в Сейфе).
+    await sync_advance_after_allocation_change(session, allocation_id=allocation.id)
     await session.commit()
     await session.refresh(allocation)
     return _safe_allocation_payload(allocation)
