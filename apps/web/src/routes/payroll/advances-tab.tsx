@@ -21,13 +21,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { AccountSelect, isPayoutWallet } from "@/components/ui-app/AccountSelect";
 import { EmployeeCombobox } from "@/components/ui-app/EmployeeCombobox";
@@ -74,12 +67,6 @@ const PAYOUT_STATUS_VARIANT: Record<
   failed: "destructive",
   cancelled: "outline",
 };
-const PAYOUT_METHODS = [
-  { value: "transfer", label: "Перевод" },
-  { value: "cash", label: "Наличные" },
-  { value: "business_card", label: "Бизнес-карта" },
-  { value: "other", label: "Другое" },
-];
 
 export function PayrollAdvancesRoute() {
   const queryClient = useQueryClient();
@@ -92,7 +79,6 @@ export function PayrollAdvancesRoute() {
   const [issueEmployeeId, setIssueEmployeeId] = useState("");
   const [amount, setAmount] = useState("");
   const [kind, setKind] = useState<"advance" | "loan">("advance");
-  const [payoutMethod, setPayoutMethod] = useState("transfer");
   const [walletId, setWalletId] = useState("");
   const [installmentAmount, setInstallmentAmount] = useState("");
   const [recoveryStartDate, setRecoveryStartDate] = useState("");
@@ -127,7 +113,6 @@ export function PayrollAdvancesRoute() {
     setIssueEmployeeId("");
     setAmount("");
     setKind("advance");
-    setPayoutMethod("transfer");
     setWalletId("");
     setInstallmentAmount("");
     setRecoveryStartDate("");
@@ -141,7 +126,6 @@ export function PayrollAdvancesRoute() {
         employee_id: issueEmployeeId,
         amount: decimalInputPayload(amount),
         kind,
-        payout_method: payoutMethod,
         wallet_id: walletId || undefined,
         installment_amount:
           isLoan && installmentAmount ? decimalInputPayload(installmentAmount) : undefined,
@@ -426,22 +410,6 @@ export function PayrollAdvancesRoute() {
                 </label>
               </>
             ) : null}
-
-            <Label className="grid gap-2">
-              <span>Способ выплаты</span>
-              <Select value={payoutMethod} onValueChange={setPayoutMethod}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAYOUT_METHODS.map((method) => (
-                    <SelectItem key={method.value} value={method.value}>
-                      {method.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Label>
 
             <Label className="grid gap-2">
               <span>Счёт списания</span>
