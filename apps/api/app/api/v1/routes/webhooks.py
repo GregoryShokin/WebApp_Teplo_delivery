@@ -180,6 +180,18 @@ async def tbank_payment_status(
     if not isinstance(payload, dict):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ожидался объект JSON")
 
+    # ВРЕМЕННАЯ ДИАГНОСТИКА (снять после анализа форматов вебхуков): логируем ключи тела и
+    # маркеры статус-документа, чтобы понять, шлёт ли банк статусы платежей отдельно от операций.
+    import json as _json
+
+    logger.warning(
+        "tbank webhook DIAG2 keys=%s has_opId=%s has_docId=%s body=%s",
+        sorted(payload.keys()),
+        "operationId" in payload,
+        any(k in payload for k in ("documentId", "paymentId", "documentStatus", "paymentStatus")),
+        _json.dumps(payload, ensure_ascii=False)[:1500],
+    )
+
     # Банк по заявке шлёт на ЭТОТ URL операции по счёту (формат выписки). Если тело — операция
     # (есть operationId) → realtime-вливание в журнал ДДС; иначе это статус платёжного
     # документа → гашение черновика накладной/выплаты по provider_ref (ниже).
