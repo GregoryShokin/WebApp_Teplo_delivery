@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import uuid
 from collections.abc import Mapping
@@ -163,11 +164,18 @@ class TbankClient:
             },
             timeout=self.settings.tbank_api_timeout_seconds,
         ) as client:
-            response = await client.post(
-                PAYMENT_STATUS_PATH,
-                json={"documentIds": [payment_id]},
-                headers={"X-Request-Id": str(uuid.uuid4())},
-            )
+            for attempt in range(4):
+                response = await client.post(
+                    PAYMENT_STATUS_PATH,
+                    json={"documentIds": [payment_id]},
+                    headers={"X-Request-Id": str(uuid.uuid4())},
+                )
+                # 429 — лимит частоты T-Банка (метод батчевый, опрос по одному его задевает).
+                # Ждём с нарастающей паузой и повторяем; на последней попытке отдаём как есть.
+                if response.status_code == 429 and attempt < 3:
+                    await asyncio.sleep(0.5 * (attempt + 1))
+                    continue
+                break
         if response.status_code in {401, 403}:
             raise BankCredentialsError(self.provider, "T-Bank bearer token is invalid or expired")
         if response.status_code >= 400:
