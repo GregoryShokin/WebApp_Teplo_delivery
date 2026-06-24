@@ -222,8 +222,13 @@ async def list_invoices(
         query = query.where(SupplierInvoice.draft_id.isnot(None))
     elif in_draft is False:
         query = query.where(SupplierInvoice.draft_id.is_(None))
+    # Чистый хронологический порядок по дате накладной (новые сверху). НЕ сортируем по
+    # due_date: срок оплаты есть только у поставщиков с условиями/реквизитами, поэтому
+    # ключ «due_date NULLS LAST» задирал их наверх, а закуп без реквизитов уезжал вниз.
     query = query.order_by(
-        SupplierInvoice.due_date.nulls_last(), SupplierInvoice.invoice_date.nulls_last()
+        SupplierInvoice.invoice_date.desc().nulls_last(),
+        SupplierInvoice.issued_at.desc().nulls_last(),
+        SupplierInvoice.id.desc(),
     )
 
     rows = list(await session.execute(query))
