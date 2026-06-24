@@ -209,7 +209,10 @@ export function InboxTab({
       key: "status",
       header: "Статус",
       cell: (invoice) =>
-        invoice.draft_id ? (
+        // «Отправлено в банк» — только пока накладная не оплачена. Оплаченный статус
+        // приоритетнее: после гашения по статусу платежа draft_id остаётся, но показываем
+        // «Оплачено», а не зависший «Отправлено в банк».
+        invoice.draft_id && invoice.payment_status !== "paid" ? (
           <Badge className="border-sky-200 bg-sky-50 text-sky-700">Отправлено в банк</Badge>
         ) : (
           <InvoiceStatusBadge
