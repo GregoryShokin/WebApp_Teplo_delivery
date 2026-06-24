@@ -486,3 +486,28 @@ class BarterReturnLine(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class SupplierInvoiceTombstone(Base):
+    """Marker for a supplier invoice that was intentionally deleted and must NOT be
+    re-imported by the cyclic iiko sync.
+
+    The reverse sync upserts iiko documents by ``external_id`` (the iiko doc id). When
+    we hard-delete an invoice that still exists (PROCESSED) in iiko and sits inside the
+    sync window, the next run would re-create it. A tombstone keyed by
+    ``(source, external_id)`` tells the sync to skip that document forever — the key is
+    the iiko doc id, so it survives the row being gone.
+    """
+
+    __tablename__ = "supplier_invoice_tombstone"
+    __table_args__ = (
+        UniqueConstraint("source", "external_id", name="uq_supplier_invoice_tombstone"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="iiko")
+    external_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

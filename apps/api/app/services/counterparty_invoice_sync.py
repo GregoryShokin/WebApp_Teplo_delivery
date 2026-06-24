@@ -34,6 +34,7 @@ from app.models import (
     CounterpartyRole,
     CounterpartyRoutingRule,
     SupplierInvoice,
+    SupplierInvoiceTombstone,
 )
 from app.services.counterparty_registry import compute_invoice_due_date
 
@@ -84,6 +85,9 @@ class CounterpartyInvoiceSyncResult:
     skipped_no_id: int = 0
     skipped_unknown_supplier: int = 0
     skipped_zero_amount: int = 0
+    # Documents whose iiko id is tombstoned (intentionally deleted on our side): never
+    # re-import, so a manual cleanup stays gone instead of resurrecting on the next sync.
+    skipped_tombstoned: int = 0
     # Documents that are our own manually-created invoices already pushed into iiko —
     # matched by external_id to an existing source='manual' record, so we skip them
     # instead of creating an iiko-sourced duplicate.
@@ -380,6 +384,7 @@ async def _ingest_documents(
     direction: str,
     result: CounterpartyInvoiceSyncResult,
     name_by_id: dict[str, str] | None = None,
+    tombstoned: frozenset[str] = frozenset(),
 ) -> None:
     # incoming invoices carry the supplier GUID, outgoing the counteragent GUID.
     counterparty_field = "supplier" if direction == "payable" else "counteragentId"
@@ -391,6 +396,10 @@ async def _ingest_documents(
         external_id = _text(doc, "id")
         if not external_id:
             result.skipped_no_id += 1
+            continue
+        # Intentionally deleted on our side — never re-import (keeps manual cleanups gone).
+        if external_id in tombstoned:
+            result.skipped_tombstoned += 1
             continue
         # Our own invoice pushed into iiko (source='manual' from Склад or 'kassa_invoice' from
         # Касса): skip so the reverse sync doesn't clone it as a second iiko obligation or clobber
@@ -534,6 +543,11 @@ async def ingest_iiko_payables(
     result.suppliers_seen = len(suppliers)
     name_by_id = _parse_products(products_xml)
 
+    # Tombstoned iiko doc ids — intentionally deleted, must not be re-imported. Load once.
+    tombstoned = frozenset(
+        (await session.scalars(select(SupplierInvoiceTombstone.external_id))).all()
+    )
+
     # Receivables (outgoing) first: they mark partners as barter, so the payables that
     # follow capture line items for those partners in the same run.
     if outgoing_invoices_xml is not None:
@@ -546,12 +560,19 @@ async def ingest_iiko_payables(
             direction="receivable",
             result=result,
             name_by_id=name_by_id,
+            tombstoned=tombstoned,
         )
 
     incoming = ET.fromstring(invoices_xml).findall(".//document")
     result.invoices_seen = len(incoming)
     await _ingest_documents(
-        session, incoming, suppliers, direction="payable", result=result, name_by_id=name_by_id
+        session,
+        incoming,
+        suppliers,
+        direction="payable",
+        result=result,
+        name_by_id=name_by_id,
+        tombstoned=tombstoned,
     )
 
     return result
