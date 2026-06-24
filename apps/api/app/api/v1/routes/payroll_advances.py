@@ -90,6 +90,8 @@ class AdvanceIssueRequest(BaseModel):
     kind: Literal["advance", "loan"] | None = None
     issued_on: date | None = None
     payout_method: str | None = None
+    # Счёт-источник выдачи (ТК Черникова / Сейф / банк) — определяет проводку ДДС.
+    wallet_id: uuid.UUID | None = None
     installments_count: int = Field(default=1, ge=1)
     # Сумма доли удержания (приоритет над installments_count для займа).
     installment_amount: Decimal | None = Field(default=None, gt=0)
@@ -192,6 +194,7 @@ async def post_advance(
             override_ceiling=payload.override_ceiling,
             issued_on=issued_on,
             payout_method=payload.payout_method,
+            wallet_id=payload.wallet_id,
             installments_count=payload.installments_count,
             installment_amount=payload.installment_amount,
             recovery_start_date=payload.recovery_start_date,

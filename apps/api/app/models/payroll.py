@@ -1091,6 +1091,10 @@ class SalaryAdvance(Base):
     # С какой даты заём попадает в удержание. NULL = с ближайшей ведомости.
     recovery_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     payout_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Счёт-источник выдачи (ТК Черникова / Сейф / банк) — определяет проводку ДДС.
+    wallet_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("wallet.id", ondelete="SET NULL"), nullable=True
+    )
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True

@@ -15,11 +15,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import (
+    CashflowTransaction,
+    DdsArticle,
     Employee,
     EmployeePositionAssignment,
     PayrollLine,
     PayrollPeriod,
     PayrollRate,
+    Wallet,
 )
 from app.services.payroll_admin import run_admin_payroll
 from app.services.payroll_advance_availability import available_to_advance
@@ -591,3 +594,95 @@ async def test_cannot_issue_into_finalized_period(
                 allow_loan=False,
                 issued_on=AS_OF,
             )
+
+
+async def _advance_cashflow(
+    factory: async_sessionmaker[AsyncSession], advance_id: uuid.UUID
+) -> CashflowTransaction | None:
+    async with factory() as session:
+        return await session.scalar(
+            select(CashflowTransaction).where(
+                CashflowTransaction.source_kind == "salary_advance",
+                CashflowTransaction.source_id == advance_id,
+            )
+        )
+
+
+async def test_advance_payout_books_dds_cashflow_with_advance_article(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Выдача аванса наличными (ТК Черникова) → расход в ДДС со статьёй «Авансы сотрудникам»."""
+    async with async_session_factory() as session:
+        emp = await _make_okladnik(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
+        wallet = await session.scalar(select(Wallet).where(Wallet.code == "tk_chernikova"))
+        await session.commit()
+
+        adv = await issue_advance(
+            session,
+            employee_id=emp.id,
+            amount=Decimal("10000"),
+            allow_loan=False,
+            issued_on=AS_OF,
+            payout_method="cash",
+            wallet_id=wallet.id,
+        )
+
+    txn = await _advance_cashflow(async_session_factory, adv.id)
+    assert txn is not None
+    assert txn.direction == "out"
+    assert txn.amount == Decimal("10000.00")
+    async with async_session_factory() as session:
+        article = await session.get(DdsArticle, txn.article_id)
+    assert article is not None and article.code == "employee_advance"
+
+
+async def test_loan_payout_uses_loan_article(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Выдача займа наличными → статья «Выдача займов сотрудникам» (отдельная от аванса)."""
+    async with async_session_factory() as session:
+        emp = await _make_okladnik(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
+        wallet = await session.scalar(select(Wallet).where(Wallet.code == "cash_safe"))
+        await session.commit()
+
+        loan = await issue_advance(
+            session,
+            employee_id=emp.id,
+            amount=Decimal("50000"),
+            allow_loan=True,
+            requested_kind="loan",
+            issued_on=AS_OF,
+            payout_method="cash",
+            wallet_id=wallet.id,
+        )
+
+    txn = await _advance_cashflow(async_session_factory, loan.id)
+    assert txn is not None
+    async with async_session_factory() as session:
+        article = await session.get(DdsArticle, txn.article_id)
+    assert article is not None and article.code == "vydacha_zaymov_sotrudnikam"
+
+
+async def test_bank_wallet_payout_skips_cashflow(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Выдача через банк-кошелёк проводки не создаёт (Фаза 2: черновик+транзит отдельно)."""
+    async with async_session_factory() as session:
+        emp = await _make_okladnik(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
+        wallet = await session.scalar(select(Wallet).where(Wallet.code == "tbank_main"))
+        await session.commit()
+
+        adv = await issue_advance(
+            session,
+            employee_id=emp.id,
+            amount=Decimal("10000"),
+            allow_loan=False,
+            issued_on=AS_OF,
+            payout_method="transfer",
+            wallet_id=wallet.id,
+        )
+
+    assert await _advance_cashflow(async_session_factory, adv.id) is None

@@ -24,11 +24,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     AppSetting,
+    CashflowTransaction,
+    DdsArticle,
     Employee,
     PayrollPeriod,
     PayrollRun,
     PayrollRunEvent,
     SalaryAdvance,
+    Wallet,
 )
 from app.services.employee_effective_events import get_position_on_date
 from app.services.payroll_admin import _upsert_setting
@@ -39,6 +42,55 @@ from app.services.position_registry import admin_payroll_positions
 
 _CENTS = Decimal("0.01")
 PAYOUT_METHODS = ("business_card", "cash", "transfer", "other")
+
+# Проводка ДДС при выдаче аванса/займа: статья по типу, источник по выбранному кошельку.
+ADVANCE_PAYOUT_SOURCE_KIND = "salary_advance"
+ADVANCE_ARTICLE_CODE = "employee_advance"  # аванс → «Авансы сотрудникам»
+LOAN_ARTICLE_CODE = "vydacha_zaymov_sotrudnikam"  # заём → «Выдача займов сотрудникам»
+# Наличные счета: выдача = прямой расход с кошелька (Фаза 1). Банк-кошелёк (черновик+
+# транзит на Сейф, как у ЗП) — Фаза 2: тут проводка пропускается.
+ADVANCE_CASH_WALLET_CODES = ("tk_chernikova", "cash_safe")
+
+
+async def book_advance_payout_cashflow(
+    session: AsyncSession, *, advance: SalaryAdvance, wallet: Wallet | None
+) -> None:
+    """Провести выдачу аванса/займа в ДДС — расход с наличного счёта.
+
+    Статья по ``advance.kind`` (аванс → «Авансы сотрудникам», заём → «Выдача займов
+    сотрудникам»). Идемпотентно по ``source_id = advance.id``. Только для наличных счетов
+    (ТК Черникова / Сейф); банк-выдача проводится отдельно (черновик + транзит, Фаза 2).
+    Устойчиво: если кошелёк/статья не заведены — проводка пропускается, выдачу не валим.
+    """
+    if wallet is None or wallet.code not in ADVANCE_CASH_WALLET_CODES:
+        return
+    existing = await session.scalar(
+        select(CashflowTransaction.id).where(
+            CashflowTransaction.source_kind == ADVANCE_PAYOUT_SOURCE_KIND,
+            CashflowTransaction.source_id == advance.id,
+        )
+    )
+    if existing is not None:
+        return
+    code = LOAN_ARTICLE_CODE if advance.kind == "loan" else ADVANCE_ARTICLE_CODE
+    article_id = await session.scalar(select(DdsArticle.id).where(DdsArticle.code == code))
+    if article_id is None:
+        return
+    label = "займа" if advance.kind == "loan" else "аванса"
+    session.add(
+        CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=advance.amount,
+            operation_date=advance.issued_on,
+            article_id=article_id,
+            source_kind=ADVANCE_PAYOUT_SOURCE_KIND,
+            source_id=advance.id,
+            payment_purpose=f"Выдача {label} сотруднику (операция {advance.id})",
+            quality_status="final",
+        )
+    )
+    await session.flush()
 
 LOAN_MAX_KEY = "payroll.loan_max_amount"
 # Заглушка-дефолт: владелец задаёт реальный потолок в «Настройках».
@@ -145,6 +197,7 @@ async def issue_advance(
     override_ceiling: bool = False,
     issued_on: date | None = None,
     payout_method: str | None = None,
+    wallet_id: uuid.UUID | None = None,
     installments_count: int = 1,
     installment_amount: Decimal | None = None,
     recovery_start_date: date | None = None,
@@ -229,11 +282,18 @@ async def issue_advance(
         issued_on=issued_on,
         recovery_start_date=recovery_start,
         payout_method=payout_method,
+        wallet_id=wallet_id,
         comment=comment,
         created_by_user_id=actor_user_id,
         created_by_label=actor_label,
     )
     session.add(advance)
+    await session.flush()
+    # Выдача = отток денег → проводка ДДС. Наличный счёт (ТК Черникова/Сейф) — прямой расход;
+    # банк-счёт (черновик+транзит на Сейф, как у ЗП) — Фаза 2, тут проводка не создаётся.
+    if wallet_id is not None:
+        wallet = await session.get(Wallet, wallet_id)
+        await book_advance_payout_cashflow(session, advance=advance, wallet=wallet)
     await session.commit()
     await session.refresh(advance)
     return advance

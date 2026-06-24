@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
+import { AccountSelect } from "@/components/ui-app/AccountSelect";
 import { EmployeeCombobox } from "@/components/ui-app/EmployeeCombobox";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import {
@@ -70,6 +71,7 @@ export function PayrollAdvancesRoute() {
   const [amount, setAmount] = useState("");
   const [kind, setKind] = useState<"advance" | "loan">("advance");
   const [payoutMethod, setPayoutMethod] = useState("transfer");
+  const [walletId, setWalletId] = useState("");
   const [installmentAmount, setInstallmentAmount] = useState("");
   const [recoveryStartDate, setRecoveryStartDate] = useState("");
   const [comment, setComment] = useState("");
@@ -104,6 +106,7 @@ export function PayrollAdvancesRoute() {
     setAmount("");
     setKind("advance");
     setPayoutMethod("transfer");
+    setWalletId("");
     setInstallmentAmount("");
     setRecoveryStartDate("");
     setComment("");
@@ -117,6 +120,7 @@ export function PayrollAdvancesRoute() {
         amount: decimalInputPayload(amount),
         kind,
         payout_method: payoutMethod,
+        wallet_id: walletId || undefined,
         installment_amount:
           isLoan && installmentAmount ? decimalInputPayload(installmentAmount) : undefined,
         recovery_start_date: isLoan && recoveryStartDate ? recoveryStartDate : undefined,
@@ -375,6 +379,15 @@ export function PayrollAdvancesRoute() {
                   ))}
                 </SelectContent>
               </Select>
+            </Label>
+
+            <Label className="grid gap-2">
+              <span>Счёт списания</span>
+              <AccountSelect value={walletId} onChange={setWalletId} />
+              <span className="text-xs text-muted-foreground">
+                Наличные (ТК Черникова / Сейф) — прямой расход в ДДС; банк — через черновик и
+                перевод на Сейф.
+              </span>
             </Label>
 
             <Label className="grid gap-2">

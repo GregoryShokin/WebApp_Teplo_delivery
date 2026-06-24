@@ -935,6 +935,7 @@ export type PayrollAdvancePayload = {
   kind?: "advance" | "loan";
   issued_on?: string;
   payout_method?: string;
+  wallet_id?: string;
   installments_count?: number;
   installment_amount?: string;
   recovery_start_date?: string;
