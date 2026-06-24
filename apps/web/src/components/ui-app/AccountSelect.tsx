@@ -22,6 +22,17 @@ export function useAccountOptions() {
   return useQuery({ queryKey: ["dds", "wallets"], queryFn: getDdsWallets });
 }
 
+/**
+ * Накопительные/фондовые счета — НЕ источники выплат: с них напрямую никогда ничего не
+ * выплачивается (только внутренние переводы). Скрываем их в селекторах выбора счёта-источника
+ * выплаты (авансы/займы и т.п.) через `filter={isPayoutWallet}`; в общем просмотре счетов ДДС
+ * они остаются видимыми.
+ */
+export const NON_PAYOUT_WALLET_CODES = ["tbank_kopilka", "guarant_fund", "tbank_nakopit"];
+
+export const isPayoutWallet = (wallet: WalletRead): boolean =>
+  !NON_PAYOUT_WALLET_CODES.includes(wallet.code);
+
 const GROUP_RANK: Record<string, number> = { tbank: 0, sber: 1 };
 
 /** Банки сверху (Тинькофф, затем Сбер), наличные и прочее — ниже; внутри по имени. */

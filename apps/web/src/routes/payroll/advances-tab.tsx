@@ -29,7 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
-import { AccountSelect } from "@/components/ui-app/AccountSelect";
+import { AccountSelect, isPayoutWallet } from "@/components/ui-app/AccountSelect";
 import { EmployeeCombobox } from "@/components/ui-app/EmployeeCombobox";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import {
@@ -445,7 +445,7 @@ export function PayrollAdvancesRoute() {
 
             <Label className="grid gap-2">
               <span>Счёт списания</span>
-              <AccountSelect value={walletId} onChange={setWalletId} />
+              <AccountSelect value={walletId} onChange={setWalletId} filter={isPayoutWallet} />
               <span className="text-xs text-muted-foreground">
                 Наличные (ТК Черникова / Сейф) — прямой расход в ДДС; банк — через черновик и
                 перевод на Сейф.
