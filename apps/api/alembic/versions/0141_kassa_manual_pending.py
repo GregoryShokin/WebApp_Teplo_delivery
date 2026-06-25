@@ -1,6 +1,6 @@
 """add kassa manual pending cheque feature flag setting
 
-Revision ID: 0141_kassa_manual_pending_setting
+Revision ID: 0141_kassa_manual_pending
 Revises: 0140_supplier_prepayment
 Create Date: 2026-06-25
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0141_kassa_manual_pending_setting"
+revision = "0141_kassa_manual_pending"
 down_revision = "0140_supplier_prepayment"
 branch_labels = None
 depends_on = None
