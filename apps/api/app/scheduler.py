@@ -215,6 +215,25 @@ async def run_payment_status_poll(
 
 @scheduler.scheduled_job(
     "interval",
+    minutes=5,
+    id="push_iiko_invoice_payments",
+    max_instances=1,
+    coalesce=True,
+)
+async def push_iiko_invoice_payments() -> None:
+    """Зеркалировать в iiko оплаты iiko-накладных, оплаченных через банк-черновик (Cloud
+    add_payment). Сверочный: сканирует оплаченные накладные без успешного пуша и шлёт; путь
+    гашения НЕ трогает. Ошибки изолированы по накладной, ретраи с капом попыток."""
+    from app.services.counterparty_iiko_payment import mirror_paid_iiko_invoices
+
+    async with AsyncSessionLocal() as session:
+        result = await mirror_paid_iiko_invoices(session)
+    if result.get("ok") or result.get("error"):
+        logger.info("push_iiko_invoice_payments: %s", result)
+
+
+@scheduler.scheduled_job(
+    "interval",
     minutes=30,
     id="iiko_courier_attendance_sync",
     max_instances=1,
