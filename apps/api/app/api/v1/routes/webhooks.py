@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import hmac
 import logging
+import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
@@ -30,7 +32,7 @@ from app.core.config import Settings, get_settings
 from app.db.session import get_session
 from app.models import CounterpartyPaymentDraft, PayrollBankDraft
 from app.services.bank_payment_status import apply_payment_status
-from app.services.banking.base import clean_digits
+from app.services.banking.base import NormalizedBankOperation, clean_digits
 from app.services.banking.tbank import (
     is_tbank_operation_hold,
     normalize_tbank_statement_row,
@@ -113,6 +115,60 @@ def _authorize_tbank_webhook(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "IP не в списке разрешённых")
 
 
+async def _settle_invoice_draft_from_operation(
+    session: AsyncSession, operation: NormalizedBankOperation
+) -> uuid.UUID | None:
+    """Realtime-гашение накладной прямо из вебхука «операция по счёту».
+
+    Раньше черновик доводил до ``paid`` только поллинг (``payment/status`` по ``documentId``);
+    теперь это делает входящая расходная операция. Связь точная: при создании платёжки мы
+    кладём в тело ``documentNumber`` (детерминированно из нашего ``document_id``), а банк
+    возвращает его же в строке выписки — матчим по нему.
+
+    Гасим ДО ``ingest_operations``: ``apply_payment_status`` заводит prebooked-проводку, которую
+    эта же операция заберёт при вливании (порядок: гашение раньше claim). Берём черновик только
+    при ОДНОЗНАЧНОМ совпадении (номер + сумма) — иначе оставляем сверочному поллингу, чтобы не
+    погасить чужой платёж. Идемпотентность и гонку webhook↔polling держит сам
+    ``apply_payment_status`` (row-lock + переход только из created/updated)."""
+    if operation.direction != "out" or not operation.document_number:
+        return None
+    doc_number = str(operation.document_number).strip()
+    if not doc_number:
+        return None
+    drafts = (
+        await session.scalars(
+            select(CounterpartyPaymentDraft).where(
+                CounterpartyPaymentDraft.status.in_(("created", "updated")),
+                CounterpartyPaymentDraft.payload["documentNumber"].astext == doc_number,
+            )
+        )
+    ).all()
+    if len(drafts) != 1:
+        if len(drafts) > 1:
+            logger.warning(
+                "tbank webhook: %d открытых черновиков по documentNumber=%s — оставляю поллингу",
+                len(drafts),
+                doc_number,
+            )
+        return None
+    draft = drafts[0]
+    if (draft.amount - operation.amount).copy_abs() > Decimal("0.01"):
+        logger.warning(
+            "tbank webhook: documentNumber=%s, сумма %s != %s — оставляю поллингу",
+            doc_number,
+            draft.amount,
+            operation.amount,
+        )
+        return None
+    await apply_payment_status(session, draft=draft, raw_status="executed", commit=False)
+    logger.info(
+        "tbank webhook: накладная погашена из операции по счёту — draft=%s documentNumber=%s",
+        draft.id,
+        doc_number,
+    )
+    return draft.id
+
+
 async def _ingest_tbank_account_operation(
     session: AsyncSession, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -136,7 +192,12 @@ async def _ingest_tbank_account_operation(
 
     if is_tbank_operation_hold(payload):
         logger.info("tbank account-operation холд (authorization): op=%s — пропуск", operation_id)
-        return {"ok": True, "operation_id": operation_id, "stage": "authorization", "ingested": False}
+        return {
+            "ok": True,
+            "operation_id": operation_id,
+            "stage": "authorization",
+            "ingested": False,
+        }
 
     # Импорт здесь, а не на уровне модуля: ingest_operations тянет тяжёлый scheduler.
     from app.scheduler import ingest_operations
@@ -144,15 +205,19 @@ async def _ingest_tbank_account_operation(
     operation = normalize_tbank_statement_row(
         payload, account_number, datetime.now(_MOSCOW_TZ).date()
     )
+    # Вебхук — основной путь гашения накладной: расходная операция со «своим» documentNumber
+    # доводит черновик до paid ДО вливания (prebooked-проводку заберёт эта же операция).
+    settled_draft_id = await _settle_invoice_draft_from_operation(session, operation)
     result = await ingest_operations(session, provider="tbank", operations=[operation])
     await session.commit()
     logger.info(
-        "tbank account-operation принят: op=%s dir=%s amount=%s inserted=%s updated=%s",
+        "tbank account-operation принят: op=%s dir=%s amount=%s ins=%s upd=%s settled=%s",
         operation_id,
         operation.direction,
         operation.amount,
         result.get("inserted"),
         result.get("updated"),
+        settled_draft_id,
     )
     return {
         "ok": True,
@@ -161,6 +226,7 @@ async def _ingest_tbank_account_operation(
         "ingested": True,
         "inserted": result.get("inserted"),
         "updated": result.get("updated"),
+        "settled_draft": str(settled_draft_id) if settled_draft_id else None,
     }
 
 

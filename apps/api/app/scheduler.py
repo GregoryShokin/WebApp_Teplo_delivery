@@ -88,14 +88,16 @@ async def escalate_pending_cheques() -> None:
 
 @scheduler.scheduled_job(
     "interval",
-    minutes=10,
+    minutes=60,
     id="poll_payment_statuses",
     max_instances=1,
     coalesce=True,
 )
 async def poll_payment_statuses() -> None:
-    """Фоновый добор статуса исходящих платежей (замена ручного мэчинга): опрашиваем банк по
-    отправленным черновикам и гасим накладные, когда платёж исполнен."""
+    """Сверочный добор статуса исходящих платежей. Основной путь гашения накладных — вебхук
+    «операция по счёту» (realtime, матч по documentNumber, см. webhooks._settle_invoice_draft_
+    from_operation); этот поллинг (раз в час) добирает потерянные/неоднозначные случаи, по
+    которым вебхук не сматчился. payroll-черновики пока доводит только он."""
     async with AsyncSessionLocal() as session:
         await run_payment_status_poll(session)
 

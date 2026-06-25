@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings, get_settings
-from app.models import SupplierInvoice
+from app.models import CounterpartyPaymentDraft, SupplierInvoice
 
 BASE = "/api/v1/webhooks/tbank/payment-status"
 
@@ -93,6 +93,130 @@ def test_webhook_account_operation_routed_to_ingest(
         },
     )
     assert resp.status_code == 422, resp.text
+
+
+_PAYER_ACCOUNT = "40802810000000012345"
+
+
+def _debit_body(
+    operation_id: str,
+    *,
+    doc_number: str = "654321",
+    amount: str = "1000.00",
+    status: str = "Transaction",
+) -> dict:
+    """Расходная операция по счёту (формат выписки T-Банка) — так выглядит исполненная
+    оплата поставщику: банк возвращает наш ``documentNumber`` обратно в строке выписки."""
+    return {
+        "operationId": operation_id,
+        "typeOfOperation": "Debit",
+        "accountNumber": _PAYER_ACCOUNT,
+        "documentNumber": doc_number,
+        "operationAmount": amount,
+        "accountAmount": amount,
+        "rubleAmount": amount,
+        "accountCurrencyDigitalCode": "643",
+        "operationStatus": status,
+        "operationDate": "2026-06-25T10:00:00Z",
+        "trxnPostDate": "2026-06-25T10:00:00Z",
+        "authorizationDate": "2026-06-25T10:00:00Z",
+        "payPurpose": "Оплата поставщику по счёту",
+        "description": "Оплата поставщику",
+        "payer": {"account": _PAYER_ACCOUNT, "name": "ИП Шокина Е.А."},
+        "receiver": {"account": "40702810900000099999", "name": "Поставщик", "inn": "7700000000"},
+    }
+
+
+async def _seed_op(
+    factory, *, doc_number: str = "654321", amount: str = "1000.00"
+) -> tuple[uuid.UUID, uuid.UUID]:
+    """Открытый черновик «банк по реквизитам» с накладной; в payload — наш documentNumber,
+    который банк вернёт в операции по счёту."""
+    async with factory() as session:
+        cp = await make_counterparty(session, name="Поставщик", inn="7700000000")
+        draft = await make_draft(session, counterparty_id=cp.id, amount=amount)
+        draft.provider_ref = "bank-doc-id-1"
+        draft.payload = {"documentNumber": doc_number, "accountNumber": _PAYER_ACCOUNT}
+        await session.flush()
+        inv = await make_invoice(session, counterparty_id=cp.id, amount=amount, draft_id=draft.id)
+        await session.commit()
+        return draft.id, inv.id
+
+
+def test_account_operation_settles_invoice_draft(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Главный сценарий: расходная операция с нашим documentNumber гасит накладную из вебхука."""
+    draft_id, invoice_id = _run(_seed_op(async_session_factory))
+    resp = client.post(BASE, json=_debit_body("op-settle-1"))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["ingested"] is True
+    assert body["settled_draft"] == str(draft_id)
+
+    async def _check() -> tuple[str, str]:
+        async with async_session_factory() as session:
+            inv = await session.get(SupplierInvoice, invoice_id)
+            draft = await session.get(CounterpartyPaymentDraft, draft_id)
+            return inv.payment_status, draft.status
+
+    inv_status, draft_status = _run(_check())
+    assert inv_status == "paid"
+    assert draft_status == "paid"
+
+
+def test_account_operation_no_matching_draft_ingests_only(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """documentNumber не совпадает ни с одним открытым черновиком → только вливание, без гашения."""
+    _run(_seed_op(async_session_factory, doc_number="654321"))
+    resp = client.post(BASE, json=_debit_body("op-nomatch-1", doc_number="999999"))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["settled_draft"] is None
+
+
+def test_account_operation_amount_mismatch_left_to_poll(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Номер совпал, сумма нет (коллизия _document_number) → не гасим, оставляем поллингу."""
+    _run(_seed_op(async_session_factory, doc_number="654321", amount="1000.00"))
+    resp = client.post(BASE, json=_debit_body("op-amt-1", doc_number="654321", amount="2000.00"))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["settled_draft"] is None
+
+
+def test_account_operation_settle_idempotent_on_refire(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Повторная доставка той же операции не задваивает гашение: вторая → черновик уже paid."""
+    from cp_helpers import allocated_total
+
+    draft_id, invoice_id = _run(_seed_op(async_session_factory))
+    first = client.post(BASE, json=_debit_body("op-idem-1"))
+    second = client.post(BASE, json=_debit_body("op-idem-1"))
+    assert first.json()["settled_draft"] == str(draft_id)
+    # Вторая: черновик уже paid (вне фильтра created/updated) → без второй аллокации.
+    assert second.json()["settled_draft"] is None
+
+    async def _alloc() -> object:
+        async with async_session_factory() as session:
+            return await allocated_total(session, invoice_id)
+
+    from decimal import Decimal
+
+    assert _run(_alloc()) == Decimal("1000.00")
+
+
+def test_account_operation_credit_does_not_settle(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Входящая операция (Credit) не гасит исходящий черновик, даже если documentNumber совпал."""
+    _run(_seed_op(async_session_factory, doc_number="654321"))
+    body = _debit_body("op-credit-1", doc_number="654321")
+    body["typeOfOperation"] = "Credit"
+    resp = client.post(BASE, json=body)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["settled_draft"] is None
 
 
 def test_webhook_token_enforced_when_configured(
