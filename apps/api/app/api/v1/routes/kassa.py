@@ -18,6 +18,7 @@ from app.schemas.kassa import (
     ChequeCreate,
     ChequeRead,
     KassaAccountRead,
+    KassaConfigRead,
     KassaCounterpartyRead,
     KassaDdsArticleRead,
     KassaShiftDetailRead,
@@ -43,10 +44,24 @@ from app.services.kassa.iiko_cashshift_sync import (
     sync_iiko_cashshifts,
     waive_shift_penalty,
 )
+from app.services.settings_service import SettingNotFoundError, get_setting
 from app.services.warehouse_invoice_push import WarehousePushError, push_invoice_to_iiko
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Фиче-флаг: блок ручного ввода суммы чека («ожидает подтверждения банком»). По умолчанию
+# выключен (карт-операции приходят вебхуком) — включается тумблером в Настройках → Касса.
+MANUAL_PENDING_SETTING_KEY = "kassa.manual_pending_cheque_enabled"
+
+
+async def _manual_pending_enabled(session: AsyncSession) -> bool:
+    """Прочитать флаг ручного pending. Отсутствие настройки трактуем как ВЫКЛ (безопасный дефолт)."""
+    try:
+        setting = await get_setting(session, MANUAL_PENDING_SETTING_KEY)
+    except SettingNotFoundError:
+        return False
+    return bool(setting.get("value"))
 
 # Служебный контрагент-«корзина» местных закупок: жёстко зашит получателем чека по
 # бизнес-карте. Он синтетический (без ИНН/реквизитов), поэтому может оказаться в статусе
@@ -61,6 +76,14 @@ KASSA_SHIFTS_SYNC = (Depends(require_permission("kassa.shifts.sync")),)
 KASSA_SHIFTS_POST = (Depends(require_permission("kassa.shifts.post")),)
 KASSA_ADJUSTMENTS_CREATE = (Depends(require_permission("kassa.adjustments.create")),)
 KASSA_PENALTY_WAIVE = (Depends(require_permission("kassa.penalty.waive")),)
+
+
+@router.get("/config", response_model=KassaConfigRead, dependencies=KASSA_REFS_READ)
+async def get_kassa_config(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict:
+    """Фиче-флаги Кассы для UI (например, показывать ли ручной ввод суммы чека)."""
+    return {"manual_pending_cheque_enabled": await _manual_pending_enabled(session)}
 
 
 @router.get(
@@ -168,6 +191,13 @@ async def create_cheque_endpoint(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict:
     ensure_permission(actor, "kassa.cheques.create")
+    # Серверный гард kill-switch: ручной pending принимаем, только если включён флаг в
+    # Настройках. Иначе блокируем даже при устаревшем клиенте / прямом вызове API.
+    if payload.pending_card_amount is not None and not await _manual_pending_enabled(session):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ручной ввод суммы чека отключён в настройках Кассы",
+        )
     try:
         invoice = await create_cheque(
             session,

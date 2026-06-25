@@ -31,6 +31,7 @@ import { formatDdsMoney, formatDateTime, toDateTimeLocalInput } from "@/routes/d
 import {
   createCheque,
   getCardTransactions,
+  getKassaConfig,
   getKassaCounterparties,
   getKassaExpenseArticles,
   type CardTransaction,
@@ -131,6 +132,15 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
     refetchInterval: 15_000,
     refetchOnWindowFocus: true,
   });
+  const configQuery = useQuery({
+    queryKey: ["kassa", "config"],
+    queryFn: () => getKassaConfig(),
+    enabled: open,
+    staleTime: 60_000,
+  });
+  // Блок ручного ввода суммы чека показываем, только если включён флаг в Настройках → Касса.
+  // По умолчанию выключен: карт-операции приходят вебхуком, ручной pending — лишь страховка.
+  const manualPendingEnabled = configQuery.data?.manual_pending_cheque_enabled ?? false;
   const cardOps = useMemo(() => cardTxQuery.data ?? [], [cardTxQuery.data]);
   const products = productsQuery.data ?? [];
   const articles = articlesQuery.data ?? [];
@@ -634,6 +644,7 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
         onOpenChange={setPickerOpen}
         ops={cardOps}
         isLoading={cardTxQuery.isLoading}
+        manualPendingEnabled={manualPendingEnabled}
         day={dayLabel(issuedAt)}
         selectedId={selectedOp?.bank_operation_id ?? null}
         pendingAmount={isPending ? pendingAmount : null}
@@ -662,6 +673,7 @@ function OperationPicker({
   onOpenChange,
   ops,
   isLoading,
+  manualPendingEnabled,
   day,
   selectedId,
   pendingAmount,
@@ -673,6 +685,7 @@ function OperationPicker({
   onOpenChange: (open: boolean) => void;
   ops: CardTransaction[];
   isLoading: boolean;
+  manualPendingEnabled: boolean;
   day: string;
   selectedId: string | null;
   pendingAmount: number | null;
@@ -769,30 +782,32 @@ function OperationPicker({
             })
           )}
 
-          <div className="mt-2 rounded-md border border-dashed border-amber-300 bg-amber-50/40 p-3">
-            <p className="text-sm font-medium text-amber-900">Добавить сумму чека вручную</p>
-            <p className="mt-0.5 text-xs text-amber-700">
-              Банк ещё не показал оплату (выходные / задержка). Введите сумму — чек будет
-              «ожидать подтверждения банком» и сматчится с операцией позже.
-            </p>
-            <div className="mt-2 flex items-center gap-2">
-              <Input
-                inputMode="decimal"
-                placeholder="Введите точную сумму до копейки"
-                className="h-9"
-                value={manualInput}
-                onChange={(event) => setManualInput(event.target.value)}
-              />
-              <Button
-                type="button"
-                size="sm"
-                disabled={manualValue <= 0}
-                onClick={() => onManual(Math.round(manualValue * 100) / 100)}
-              >
-                Указать
-              </Button>
+          {manualPendingEnabled && (
+            <div className="mt-2 rounded-md border border-dashed border-amber-300 bg-amber-50/40 p-3">
+              <p className="text-sm font-medium text-amber-900">Добавить сумму чека вручную</p>
+              <p className="mt-0.5 text-xs text-amber-700">
+                Банк ещё не показал оплату (выходные / задержка). Введите сумму — чек будет
+                «ожидать подтверждения банком» и сматчится с операцией позже.
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <Input
+                  inputMode="decimal"
+                  placeholder="Введите точную сумму до копейки"
+                  className="h-9"
+                  value={manualInput}
+                  onChange={(event) => setManualInput(event.target.value)}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={manualValue <= 0}
+                  onClick={() => onManual(Math.round(manualValue * 100) / 100)}
+                >
+                  Указать
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

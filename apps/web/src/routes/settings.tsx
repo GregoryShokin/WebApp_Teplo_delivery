@@ -80,6 +80,7 @@ const CATEGORY_ORDER = [
   "balance",
   "fixed_assets",
   "dz_kz",
+  "kassa",
 ];
 
 const CATEGORY_META: Record<string, CategoryMeta> = {
@@ -110,6 +111,10 @@ const CATEGORY_META: Record<string, CategoryMeta> = {
   dz_kz: {
     label: "Учёт ДЗ/КЗ",
     description: "Правила контроля дебиторской и кредиторской задолженности.",
+  },
+  kassa: {
+    label: "Касса",
+    description: "Параметры модуля Касса: чеки местного закупа и опции их создания.",
   },
 };
 

@@ -40,6 +40,16 @@ export async function getKassaCounterparties(search?: string): Promise<KassaCoun
   return response.data;
 }
 
+// Фиче-флаги Кассы для UI (доступны кассиру по kassa.refs.read).
+export type KassaConfig = {
+  manual_pending_cheque_enabled: boolean;
+};
+
+export async function getKassaConfig(): Promise<KassaConfig> {
+  const response = await api.get<KassaConfig>(`${BASE}/config`);
+  return response.data;
+}
+
 // --- чеки (оплата картой) ------------------------------------------------------
 
 export type CardTransaction = {
