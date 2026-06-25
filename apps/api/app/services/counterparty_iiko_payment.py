@@ -190,6 +190,13 @@ async def push_invoice_payment_to_iiko(
     if amount <= 0:
         raise IikoPaymentError("Сумма оплаты должна быть больше нуля")
 
+    # Креды Cloud живут в DB-vault (SourceCredential), а НЕ в env контейнера — как и все iiko-пути,
+    # грузим IIKO_CLOUD_* в os.environ перед вызовом. До записи pending: сбой загрузки не оставит
+    # orphan-строку. Локальный импорт — против циклов на загрузке модуля.
+    from app.services.iiko_sync import _load_source_credential_env
+
+    await _load_source_credential_env(session)
+
     existing = await session.scalar(
         select(IikoInvoicePaymentPush).where(
             IikoInvoicePaymentPush.idempotency_key == idempotency_key
