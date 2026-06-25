@@ -61,6 +61,8 @@ export const SOURCE_LABELS: Record<string, string> = {
   manual: "Вручную",
   email: "Почта",
   telegram: "Telegram",
+  kassa_invoice: "Касса",
+  kassa_cheque: "Касса (чек)",
 };
 
 export const COLLECTION_KIND_LABELS: Record<string, string> = {

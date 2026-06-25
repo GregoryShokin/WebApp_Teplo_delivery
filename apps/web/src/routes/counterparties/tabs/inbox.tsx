@@ -229,9 +229,12 @@ export function InboxTab({
       className: "text-right",
       cell: (invoice) => {
         // Статус отправки в iiko показываем только для созданных у нас накладных
-        // (вручную / Касса). Накладные source=iiko пришли из iiko — статус неприменим.
-        // Сама отправка/переотправка живёт в диалоге «Детали».
-        const isOurs = invoice.source === "manual" || invoice.source === "kassa_invoice";
+        // (вручную / Касса: накладная и чек). Накладные source=iiko пришли из iiko —
+        // статус неприменим. Сама отправка/переотправка живёт в диалоге «Детали».
+        const isOurs =
+          invoice.source === "manual" ||
+          invoice.source === "kassa_invoice" ||
+          invoice.source === "kassa_cheque";
         const pushBadge =
           isOurs && canOperate ? PUSH_BADGE[invoice.iiko_push_status] : undefined;
         return (

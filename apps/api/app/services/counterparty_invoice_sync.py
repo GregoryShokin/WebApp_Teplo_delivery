@@ -45,11 +45,15 @@ IIKO_SOURCE = "iiko"
 # Invoices we create in our system and push INTO iiko get an external_id assigned from the
 # iiko response (warehouse_invoice_push). The reverse sync must recognise them by that
 # external_id and NOT re-create an iiko-sourced clone. They keep their original source —
-# 'manual' (Склад) or 'kassa_invoice' (Касса) — so BOTH must be treated as «our own pushed».
+# 'manual' (Склад), 'kassa_invoice' (накладная Кассы) или 'kassa_cheque' (чек Кассы — тоже
+# уходит в iiko приходной накладной) — поэтому ВСЕ ТРИ должны считаться «our own pushed».
+# Иначе пушнутый чек затягивается обратно вторым обязательством source='iiko' (round-trip
+# clone): неоплаченный дубль без нормализованных позиций.
 MANUAL_SOURCE = "manual"
 KASSA_INVOICE_SOURCE = "kassa_invoice"
+KASSA_CHEQUE_SOURCE = "kassa_cheque"
 # Sources of invoices authored in our system that may be pushed into iiko (round-trip guard).
-OUR_PUSHED_SOURCES = (MANUAL_SOURCE, KASSA_INVOICE_SOURCE)
+OUR_PUSHED_SOURCES = (MANUAL_SOURCE, KASSA_INVOICE_SOURCE, KASSA_CHEQUE_SOURCE)
 SUPPLIERS_ENDPOINT = "/suppliers"
 INVOICE_ENDPOINT = "/documents/export/incomingInvoice"
 # Outgoing invoices = goods we ship out (our AR). In this business only barter
