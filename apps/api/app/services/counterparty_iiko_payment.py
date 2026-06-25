@@ -23,7 +23,7 @@ import urllib.error
 import urllib.request
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -363,4 +363,166 @@ async def mirror_paid_iiko_invoices(
         else:
             result["error"] += 1
             logger.warning("iiko mirror: iiko отклонил оплату накладной %s: %s", inv_id, res.error)
+    return result
+
+
+# Счёт-источник денег iiko по источнику оплаты доли (зеркало Кассы): карта/банк/pending →
+# эквайринг, наличные → Главная касса. Оба счёта подтверждены реальными 1₽-проводками (201).
+KASSA_MIRROR_ACCOUNT = {
+    "card": IIKO_ACQUIRING_ACCOUNT,
+    "cash": WALLET_TO_IIKO_ACCOUNT["tk_chernikova"],
+}
+
+
+async def _mark_kassa_goods_done(
+    session: AsyncSession, *, invoice_id: uuid.UUID, external_id: str, note: str
+) -> None:
+    """Пометить товарную часть документа Кассы «зеркалирование завершено» — исключить его из
+    будущих проходов джоба (иначе LIMIT-окно из свежих забилось бы ``ok``-документами и хвост-
+    straggler'ы голодали бы). Маркер — спец-строка ``kassa_goods_done:<id>`` (idempotent)."""
+    key = f"kassa_goods_done:{invoice_id}"
+    existing = await session.scalar(
+        select(IikoInvoicePaymentPush).where(IikoInvoicePaymentPush.idempotency_key == key)
+    )
+    if existing is not None:
+        return
+    session.add(
+        IikoInvoicePaymentPush(
+            idempotency_key=key,
+            invoice_id=invoice_id,
+            external_id=external_id or "-",
+            amount=Decimal("0"),
+            account_to="-",
+            status="ok",
+            attempts=0,
+            error=note,
+            request_payload={},
+            response_payload={},
+        )
+    )
+    await session.commit()
+
+
+async def mirror_paid_kassa_invoices(
+    session: AsyncSession, *, limit: int = 100
+) -> dict[str, int]:
+    """Сверочный джоб: зеркалировать в iiko ТОВАРНУЮ оплату оплаченных чеков/накладных Кассы.
+
+    Берём ``source IN (kassa_cheque, kassa_invoice)``, ``payment_status='paid'`` с ``external_id``
+    (товар уже в iiko incomingInvoice) и БЕЗ маркера завершения. Товарную сумму (= сумму документа,
+    тот же фильтр, что у ``prepare_push``) разносим по источникам и шлём ``add_payment`` (НОПЛ) —
+    карта→эквайринг, наличные→Главная касса — ВМЕСТО изъятия «Оплата поставщикам» (его теперь
+    пропускает ``post_kassa_payment_to_iiko(skip_supplier=True)``). Идемпотентно по
+    ``kassa_goods:<id>:<src>`` (отдельный namespace, не пересекается с банковским ``invoice:<id>``);
+    ошибка по доле не валит проход; кап ``MAX_PUSH_ATTEMPTS``. Зеркалим только ПОЛНУЮ оплату —
+    частичные доплаты pay-kassa пока нет (решение владельца).
+
+    BACKLOG: документы, чей товар УЖЕ погашён старым addPayOut (созданы до перехода), НЕ
+    add_payment'им — иначе долг поставщика в iiko гасится дважды; их сразу помечаем завершёнными.
+    """
+    from app.services.kassa.cheque_payout_push import (
+        compute_kassa_goods_split,
+        supplier_goods_already_paid_in_iiko,
+    )
+
+    # Исключаем уже завершённые (маркер kassa_goods_done) — иначе LIMIT-окно забилось бы ok-
+    # документами и хвост голодал бы (банковский mirror исключает done через blocked_invoice_ids).
+    # escape='\\': подчёркивания в литерале — буквальные, не LIKE-wildcard.
+    done_ids = select(IikoInvoicePaymentPush.invoice_id).where(
+        IikoInvoicePaymentPush.idempotency_key.like("kassa\\_goods\\_done:%", escape="\\"),
+        IikoInvoicePaymentPush.status == "ok",
+        IikoInvoicePaymentPush.invoice_id.is_not(None),
+    )
+    rows = (
+        await session.scalars(
+            select(SupplierInvoice)
+            .where(
+                SupplierInvoice.source.in_(("kassa_cheque", "kassa_invoice")),
+                SupplierInvoice.external_id.is_not(None),
+                SupplierInvoice.payment_status == "paid",
+                SupplierInvoice.id.not_in(done_ids),
+            )
+            .order_by(SupplierInvoice.created_at)
+            .limit(limit)
+        )
+    ).all()
+
+    result = {
+        "eligible": len(rows), "ok": 0, "skipped": 0, "error": 0, "no_goods": 0, "backlog": 0
+    }
+    for invoice in rows:
+        # Поля в локали ДО пуша: после commit/rollback доступ к ORM-инстансу мог бы поднять
+        # MissingGreenlet (lazy-IO в async) и оборвать батч.
+        inv_id = invoice.id
+        external_id = invoice.external_id or ""
+        if invoice.issued_at is not None:
+            payment_dt = invoice.issued_at
+        elif invoice.invoice_date is not None:
+            payment_dt = datetime.combine(invoice.invoice_date, time(12, 0), _MSK)
+        else:
+            payment_dt = datetime.now(_MSK)
+
+        # BACKLOG: товар уже погашён старым addPayOut → не add_payment'им (задвоило бы) → done.
+        if await supplier_goods_already_paid_in_iiko(session, inv_id):
+            await _mark_kassa_goods_done(
+                session, invoice_id=inv_id, external_id=external_id, note="backlog: addPayOut"
+            )
+            result["backlog"] += 1
+            continue
+
+        split = await compute_kassa_goods_split(session, inv_id)
+        if split is None:
+            await _mark_kassa_goods_done(
+                session, invoice_id=inv_id, external_id=external_id, note="нет товарной части"
+            )
+            result["no_goods"] += 1
+            continue
+        card_share, cash_share = split
+
+        settled = True  # все нужные доли терминальны (ok / кап) → можно помечать done
+        for src, share in (("card", card_share), ("cash", cash_share)):
+            if share <= 0:
+                continue
+            key = f"kassa_goods:{inv_id}:{src}"
+            existing = await session.scalar(
+                select(IikoInvoicePaymentPush).where(
+                    IikoInvoicePaymentPush.idempotency_key == key
+                )
+            )
+            if existing is not None and existing.status == "ok":
+                result["skipped"] += 1
+                continue
+            if existing is not None and existing.attempts >= MAX_PUSH_ATTEMPTS:
+                logger.warning("kassa mirror: %s исчерпал кап попыток — ручной разбор", key)
+                continue  # терминально (кап) — не блокирует done, но товар частично не погашен
+            try:
+                res = await push_invoice_payment_to_iiko(
+                    session,
+                    external_id=external_id,
+                    amount=share,
+                    account_id=KASSA_MIRROR_ACCOUNT[src],
+                    idempotency_key=key,
+                    payment_dt=payment_dt,
+                    invoice_id=inv_id,
+                )
+            except Exception:  # noqa: BLE001 — ошибка по одной доле не валит весь проход
+                await session.rollback()
+                logger.warning("kassa mirror: ошибка пуша %s", key, exc_info=True)
+                settled = False
+                result["error"] += 1
+                continue
+            if res.skipped:
+                result["skipped"] += 1
+            elif res.ok:
+                result["ok"] += 1
+                logger.info("kassa mirror: товарная оплата %s отправлена в iiko", key)
+            else:
+                settled = False
+                result["error"] += 1
+                logger.warning("kassa mirror: iiko отклонил %s: %s", key, res.error)
+
+        if settled:
+            await _mark_kassa_goods_done(
+                session, invoice_id=inv_id, external_id=external_id, note="зеркалировано"
+            )
     return result

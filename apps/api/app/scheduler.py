@@ -224,12 +224,20 @@ async def push_iiko_invoice_payments() -> None:
     """Зеркалировать в iiko оплаты iiko-накладных, оплаченных через банк-черновик (Cloud
     add_payment). Сверочный: сканирует оплаченные накладные без успешного пуша и шлёт; путь
     гашения НЕ трогает. Ошибки изолированы по накладной, ретраи с капом попыток."""
-    from app.services.counterparty_iiko_payment import mirror_paid_iiko_invoices
+    from app.services.counterparty_iiko_payment import (
+        mirror_paid_iiko_invoices,
+        mirror_paid_kassa_invoices,
+    )
 
     async with AsyncSessionLocal() as session:
         result = await mirror_paid_iiko_invoices(session)
     if result.get("ok") or result.get("error"):
         logger.info("push_iiko_invoice_payments: %s", result)
+    # Те же Cloud add_payment, но для оплаченных чеков/накладных Кассы (товарная часть).
+    async with AsyncSessionLocal() as session:
+        kassa = await mirror_paid_kassa_invoices(session)
+    if kassa.get("ok") or kassa.get("error"):
+        logger.info("push_iiko_kassa_payments: %s", kassa)
 
 
 @scheduler.scheduled_job(

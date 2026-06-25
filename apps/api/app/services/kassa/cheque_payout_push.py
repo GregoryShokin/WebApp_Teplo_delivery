@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -238,7 +238,7 @@ async def _post_one(
 
 
 async def post_kassa_payment_to_iiko(
-    session: AsyncSession, invoice_id: uuid.UUID
+    session: AsyncSession, invoice_id: uuid.UUID, *, skip_supplier: bool = False
 ) -> ChequePayoutReport:
     """Провести оплату накладной/чека Кассы в iiko изъятиями ПО СТАТЬЯМ ДДС.
 
@@ -249,6 +249,11 @@ async def post_kassa_payment_to_iiko(
     с контрагентом-поставщиком (corr-счёт «Задолженность перед поставщиками»). Идемпотентно по
     (накладная, статья, источник) через kassa_cheque_iiko_payout; ошибка iiko не валит оплату.
     НЕ коммитит: пишет в сессию, commit — снаружи.
+
+    ``skip_supplier=True`` — НЕ проводить товарную статью «Оплата поставщикам» изъятием: её
+    гасит правильная «оплата накладной» ``add_payment`` (НОПЛ) сверочным джобом
+    ``mirror_paid_kassa_invoices`` по ``external_id`` накладной. Персональные/прочие статьи
+    (их нет в iiko-документе) по-прежнему идут изъятием. Так товар не задваивается.
     """
     report = ChequePayoutReport()
     invoice = await session.get(SupplierInvoice, invoice_id)
@@ -338,6 +343,8 @@ async def post_kassa_payment_to_iiko(
 
     for article_id, article_total in expenses.items():
         article = articles[article_id]
+        if skip_supplier and article.name == SUPPLIER_ARTICLE_NAME:
+            continue
         counteragent = supplier_guid if article.name == SUPPLIER_ARTICLE_NAME else None
         for source, share in _split_by_source(article_total, bank_total, paid_total):
             if share <= 0:
@@ -357,3 +364,97 @@ async def post_kassa_payment_to_iiko(
 
     await session.flush()
     return report
+
+
+async def compute_kassa_goods_split(
+    session: AsyncSession, invoice_id: uuid.UUID
+) -> tuple[Decimal, Decimal] | None:
+    """(card_share, cash_share) ТОВАРНОЙ части накладной/чека Кассы для зеркала ``add_payment``.
+
+    Товарная сумма = РОВНО то, что ушло в iiko incomingInvoice: тот же фильтр, что у
+    ``warehouse_invoice_push.prepare_push`` — ``is_staff=false`` И (без статьи ДДС ИЛИ статья
+    «Оплата поставщикам») И есть ``product_guid`` (строки без товара iiko не принимает). Иначе
+    add_payment погасил бы долг на сумму ≠ долгу документа, и сальдо поставщика разъехалось бы.
+    Разносим по источникам пропорционально оплате: карта/банк/pending → card (эквайринг),
+    наличные → cash (Главная касса). ``None`` — товарной части нет (зеркалить нечего).
+    """
+    # Фильтр СТРОГО как у prepare_push: статья по ИМЕНИ через in_(подзапрос). name в dds_articles
+    # НЕ unique (unique только code) — матчим ВСЕ одноимённые, иначе товарная сумма зеркала может
+    # стать меньше суммы incomingInvoice (недоплата долга поставщика).
+    supplier_article_ids = select(DdsArticle.id).where(DdsArticle.name == SUPPLIER_ARTICLE_NAME)
+    article_cond = or_(
+        InvoiceLineItem.dds_article_id.is_(None),
+        InvoiceLineItem.dds_article_id.in_(supplier_article_ids),
+    )
+    goods_total = _money(
+        await session.scalar(
+            select(func.coalesce(func.sum(InvoiceLineItem.sum), 0)).where(
+                InvoiceLineItem.invoice_id == invoice_id,
+                InvoiceLineItem.is_staff.is_(False),
+                InvoiceLineItem.product_guid.is_not(None),
+                article_cond,
+            )
+        )
+        or 0
+    )
+    if goods_total <= 0:
+        return None
+
+    allocations = (
+        await session.scalars(
+            select(InvoicePaymentAllocation).where(
+                InvoicePaymentAllocation.invoice_id == invoice_id
+            )
+        )
+    ).all()
+    bank_total = sum(
+        (_money(a.amount) for a in allocations if a.source_kind in ("bank", "card_pending")),
+        Decimal("0.00"),
+    )
+    cash_total = sum(
+        (_money(a.amount) for a in allocations if a.source_kind == "cash"), Decimal("0.00")
+    )
+    paid_total = _money(bank_total + cash_total)
+    if paid_total <= 0:
+        return None
+
+    shares = dict(_split_by_source(goods_total, bank_total, paid_total))
+    return shares["card"], shares["cash"]
+
+
+async def supplier_goods_already_paid_in_iiko(
+    session: AsyncSession, invoice_id: uuid.UUID
+) -> bool:
+    """True — товарная часть («Оплата поставщикам») документа УЖЕ погашена в iiko СТАРЫМ
+    механизмом → зеркалить ``add_payment``'ом НЕЛЬЗЯ (задвоит долг поставщика). Признак BACKLOG.
+
+    Два старых пути (оба до перехода на add_payment):
+    1) изъятие addPayOut «Оплата поставщикам» (``post_kassa_payment_to_iiko``) → ``posted``
+       :class:`ChequeIikoPayout` по supplier-статье;
+    2) старое «ИС»-зеркало накладной Кассы (``invoice_paid_push``, ныне удалён) → отметка
+       ``raw_payload['iiko_payment'].status == 'posted'``.
+    Новые документы создаются с ``skip_supplier=True`` и БЕЗ старого «ИС» → ни того, ни другого
+    (``failed`` = в iiko не прошло → НЕ backlog, такой товар джоб корректно доплатит).
+    """
+    raw = await session.scalar(
+        select(SupplierInvoice.raw_payload).where(SupplierInvoice.id == invoice_id)
+    )
+    if isinstance(raw, dict):
+        iiko_payment = raw.get("iiko_payment")
+        if isinstance(iiko_payment, dict) and iiko_payment.get("status") == "posted":
+            return True
+    supplier_article_id = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.name == SUPPLIER_ARTICLE_NAME).limit(1)
+    )
+    if supplier_article_id is None:
+        return False
+    posted = await session.scalar(
+        select(ChequeIikoPayout.id)
+        .where(
+            ChequeIikoPayout.invoice_id == invoice_id,
+            ChequeIikoPayout.dds_article_id == supplier_article_id,
+            ChequeIikoPayout.status == "posted",
+        )
+        .limit(1)
+    )
+    return posted is not None

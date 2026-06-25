@@ -506,10 +506,12 @@ async def _settle_paid_from_kassa(
         cash_parts=cash_parts,
         actor_user_id=actor_user_id,
     )
-    # 3) iiko: изъятия оплаты ПО СТАТЬЯМ (товар → «Оплата поставщикам», персонал → свои
-    #    статьи), счёт по способу оплаты (нал → Главная касса, карта/банк → эквайринг).
-    #    Побочно — ошибка iiko не валит оплату (статусы в kassa_cheque_iiko_payout).
-    await post_kassa_payment_to_iiko(session, invoice.id)
+    # 3) iiko: изъятия оплаты ПЕРСОНАЛЬНЫХ/прочих статей (персонал → свои статьи), счёт по способу
+    #    оплаты (нал → Главная касса). ТОВАРНУЮ часть («Оплата поставщикам») здесь НЕ проводим
+    #    (skip_supplier=True) — её гасит правильная «оплата накладной» add_payment сверочным джобом
+    #    mirror_paid_kassa_invoices, чтобы товар не задваивался. Побочно — ошибка iiko не валит
+    #    оплату (статусы в kassa_cheque_iiko_payout).
+    await post_kassa_payment_to_iiko(session, invoice.id, skip_supplier=True)
     await session.commit()
 
 

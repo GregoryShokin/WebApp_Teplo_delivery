@@ -56,7 +56,7 @@ MANUAL_PENDING_SETTING_KEY = "kassa.manual_pending_cheque_enabled"
 
 
 async def _manual_pending_enabled(session: AsyncSession) -> bool:
-    """Прочитать флаг ручного pending. Отсутствие настройки трактуем как ВЫКЛ (безопасный дефолт)."""
+    """Прочитать флаг ручного pending. Отсутствие настройки = ВЫКЛ (безопасный дефолт)."""
     try:
         setting = await get_setting(session, MANUAL_PENDING_SETTING_KEY)
     except SettingNotFoundError:
@@ -235,11 +235,13 @@ async def create_cheque_endpoint(
     # прочие расходы без товара push пропускает сам. Ошибка/skip не отменяет созданный чек.
     with contextlib.suppress(WarehousePushError):
         await push_invoice_to_iiko(session, invoice.id)
-    # Все статьи чека (товар → «Оплата поставщикам» + персонал/содержание) дублируем в iiko
-    # изъятиями addPayOut по статьям, счёт по способу оплаты (наличные→Главная касса,
-    # карта→эквайринг). Идемпотентно; сбой проводки фиксируется в kassa_cheque_iiko_payout.
+    # ПЕРСОНАЛЬНЫЕ/прочие статьи чека (питание/содержание) дублируем в iiko изъятиями addPayOut
+    # по статьям, счёт по способу оплаты (наличные→Главная касса, карта→эквайринг). ТОВАРНУЮ часть
+    # («Оплата поставщикам») здесь НЕ проводим (skip_supplier=True) — её гасит правильная «оплата
+    # накладной» add_payment сверочным джобом mirror_paid_kassa_invoices (≤5 мин), чтобы товар не
+    # задваивался. Идемпотентно; сбой проводки фиксируется в kassa_cheque_iiko_payout.
     try:
-        await post_kassa_payment_to_iiko(session, invoice.id)
+        await post_kassa_payment_to_iiko(session, invoice.id, skip_supplier=True)
         await session.commit()
     except Exception:  # noqa: BLE001 — iiko-проводка побочна, чек уже создан и закоммичен
         await session.rollback()
