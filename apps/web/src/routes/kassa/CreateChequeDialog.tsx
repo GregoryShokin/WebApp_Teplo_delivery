@@ -123,7 +123,13 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
     queryFn: () => getCardTransactions({ issued_at: debouncedIssuedAt }),
     enabled: open && Boolean(debouncedIssuedAt),
     placeholderData: keepPreviousData,
-    staleTime: 30_000,
+    staleTime: 10_000,
+    // «Живой» список: webhook кладёт карт-оплату в bank_operations в реальном времени,
+    // поэтому, пока диалог открыт, перезапрашиваем раз в 15с — оплата, прилетевшая по
+    // webhook, появляется без переоткрытия окна. Выбор кассира при этом не сбрасывается
+    // (guard !cardTxQuery.isFetching в useEffect ниже), keepPreviousData убирает мигание.
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
   });
   const cardOps = useMemo(() => cardTxQuery.data ?? [], [cardTxQuery.data]);
   const products = productsQuery.data ?? [];
