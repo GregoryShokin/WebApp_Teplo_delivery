@@ -48,10 +48,14 @@ DEFAULT_DEPOSIT_SETTINGS: dict[str, int | bool] = {
     "auto_withhold_enabled": False,
 }
 
-# Возврат депозита курьеру — ЕДИНСТВЕННАЯ депозитная операция с реальным движением денег:
-# наличные физически выдаются курьеру со счёта «Торговая касса Черникова» (= iiko «Главная
-# касса»). Пополнение (TOP_UP) и удержание (FORFEIT) — учётные, денег не двигают.
+# Денежные депозитные операции отражаются в ДДС по счёту «Торговая касса Черникова»
+# (= iiko «Главная касса»):
+#  • RETURN — наличные физически выдаются курьеру (расход, статья «Возврат депозита курьеру»);
+#  • TOP_UP — часть ЗП курьера оседает в кассе гарантийным депозитом (приход, статья
+#    «Курьерская служба +»).
+# Удержание (FORFEIT) — учётное, денег не двигает.
 COURIER_DEPOSIT_RETURN_ARTICLE_CODE = "vozvrat_depozita_kurera"
+COURIER_DEPOSIT_TOPUP_ARTICLE_CODE = "kurerskaya_sluzhba_2"
 DEPOSIT_RETURN_CASH_WALLET_CODE = "tk_chernikova"
 
 
@@ -228,6 +232,7 @@ async def create_transaction(
         )
     account = await ensure_account(session, employee_id)
     is_return = _transaction_type_value(transaction_type) == CourierDepositTransactionType.RETURN.value
+    is_topup = _transaction_type_value(transaction_type) == CourierDepositTransactionType.TOP_UP.value
     # Канал выдачи только у возврата; по умолчанию ТК Черникова (legacy).
     resolved_method = (payout_method or "cash_tk") if is_return else None
     payout_wallet: Wallet | None = None
@@ -271,6 +276,8 @@ async def create_transaction(
                 operation_date=transaction_date,
                 purpose=f"Возврат депозита курьеру (операция #{transaction.id}) через Сейф",
             )
+    elif is_topup:
+        await _book_deposit_topup_cashflow(session, transaction)
     return transaction
 
 
@@ -306,6 +313,43 @@ async def _book_deposit_return_cashflow(
             source_kind="courier_deposit_return",
             source_id=None,
             payment_purpose=f"Возврат депозита курьеру (операция #{transaction.id})",
+            comment=transaction.comment,
+            quality_status="final",
+        )
+    )
+    await session.flush()
+
+
+async def _book_deposit_topup_cashflow(
+    session: AsyncSession,
+    transaction: CourierDepositTransaction,
+) -> None:
+    """Зачислить пополнение депозита на счёт ТК Черникова в ДДС.
+
+    Только для TOP_UP — часть ЗП курьера оседает гарантийным депозитом наличными в кассе
+    Черникова (= iiko Главная касса), баланс счёта увеличивается на приход по статье
+    «Курьерская служба +». No-op, если счёт/статья не заведены — пополнение не валим.
+    """
+    article_id = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == COURIER_DEPOSIT_TOPUP_ARTICLE_CODE)
+    )
+    if article_id is None:
+        return
+    try:
+        wallet = await resolve_cash_wallet(session, DEPOSIT_RETURN_CASH_WALLET_CODE)
+    except CashWalletError:
+        return
+    amount = (Decimal(transaction.amount_cents) / Decimal("100")).quantize(Decimal("0.01"))
+    session.add(
+        CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="in",
+            amount=amount,
+            operation_date=transaction.transaction_date,
+            article_id=article_id,
+            source_kind="courier_deposit_topup",
+            source_id=None,
+            payment_purpose=f"Пополнение депозита курьера (операция #{transaction.id})",
             comment=transaction.comment,
             quality_status="final",
         )
