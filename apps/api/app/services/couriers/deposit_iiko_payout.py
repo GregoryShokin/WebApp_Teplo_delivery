@@ -5,9 +5,13 @@
 
 * ВОЗВРАТ (RETURN) — изъятие (addPayOut) по типу «Приложение/Возврат депозитов курьерам»
   (chiefAccount=«Главная касса», account=«Возвраты депозитов курьеров», cfc=37). Касса ↓.
-* ПОПОЛНЕНИЕ (TOP_UP) — внесение (addPayIn) по типу «Приложение/Пополнение депозитов
-  курьерам» (chiefAccount=«Главная касса», account=«Пополнение депозитов курьерам», cfc=40).
-  Касса ↑ — синхронно приходу в ДДС (``deposit_service._book_deposit_topup_cashflow``).
+* ПОПОЛНЕНИЕ (TOP_UP) — внесение по PAYIN-типу «Приложение/Пополнение депозитов курьерам»
+  (chiefAccount=«Главная касса», account=«Пополнение депозитов курьерам», cfc=40). Касса ↑ —
+  синхронно приходу в ДДС (``deposit_service._book_deposit_topup_cashflow``).
+
+В этом iiko Server API нет отдельного ``addPayIn`` (404) — единственный метод записи
+payInOut'ов это ``addPayOut`` (405 на GET). Направление берётся из самого типа, поэтому
+внесение проводим тем же ``addPayOut``, передавая в ``payOutTypeId`` id PAYIN-типа.
 
 Резолв типа — по структуре (имена счетов + код статьи), id типа различается dev/prod, имя
 iiko в payInOutTypes/list не отдаёт. Вызываются ПОСЛЕ commit операции (БД — источник истины).
@@ -36,8 +40,9 @@ logger = logging.getLogger(__name__)
 # Подразделение проводки — «Foodmarket Тепло Черникова».
 CHERNIKOVA_DEPARTMENT_ID = "d8d4a22e-3abd-4f02-b82d-7d4712f32729"
 PAYOUT_TYPES_PATH = "/resto/api/v2/entities/payInOutTypes/list"
+# Единственный метод записи payInOut'ов — addPayOut (отдельного addPayIn в этом API нет);
+# направление берётся из самого типа, поэтому им же проводим и внесение (PAYIN-тип).
 ADD_PAYOUT_PATH = "/resto/api/v2/payInOuts/addPayOut"
-ADD_PAYIN_PATH = "/resto/api/v2/payInOuts/addPayIn"
 # Тип изъятия «Приложение/Возврат депозитов курьерам» по (chiefAccount, account, cfc.code).
 RETURN_TYPE_KEY = ("Главная касса", "Возвраты депозитов курьеров", "37")
 # Тип внесения «Приложение/Пополнение депозитов курьерам» (PAYIN) по той же структуре.
@@ -133,16 +138,18 @@ def post_deposit_topup_to_iiko(transaction: CourierDepositTransaction) -> None:
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
         body = {
-            "payInTypeId": type_id,
-            "payInDate": transaction.transaction_date.isoformat(),
+            "payOutTypeId": type_id,
+            "payOutDate": transaction.transaction_date.isoformat(),
             "departmentSumMap": {CHERNIKOVA_DEPARTMENT_ID: float(amount)},
             "comment": f"Пополнение депозита курьера (операция #{transaction.id})",
         }
-        data = _iiko_post(token, ADD_PAYIN_PATH, body)
+        data = _iiko_post(token, ADD_PAYOUT_PATH, body)
         result = data.get("result") if isinstance(data, dict) else None
         if result != "SUCCESS":
             logger.warning(
-                "Пополнение депозита #%s: addPayIn вернул не SUCCESS: %s", transaction.id, data
+                "Пополнение депозита #%s: addPayOut(PAYIN) вернул не SUCCESS: %s",
+                transaction.id,
+                data,
             )
     except Exception as exc:  # noqa: BLE001 — iiko не должен валить уже проведённое пополнение
         logger.warning(
