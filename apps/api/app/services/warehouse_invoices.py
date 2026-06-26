@@ -135,20 +135,56 @@ class LineInput:
 
 
 async def next_invoice_number(session: AsyncSession) -> str:
-    """Next sequential number for a manually-created invoice: max numeric one + 1."""
+    """Следующий свободный целочисленный номер по НАШИМ накладным (manual + kassa_invoice).
+
+    Раньше считался максимум только по ``source='manual'`` → автоподсказка для накладной
+    Кассы повторяла уже занятый kassa-номер (например «4»), а iiko ключует документ по
+    «номер + дата» и отвергает второй такой же за день. Теперь учитываем и kassa_invoice.
+    Берём только нашу серию (manual/kassa_invoice) и только чисто-цифровые номера: серия
+    чеков «Ч-N», iiko-номера поставщиков и суффиксы коллизий «N-2» (см.
+    ``_unique_invoice_number``) в счёт не идут. Финальную уникальность на дату даёт
+    ``_unique_invoice_number`` при создании — это лишь стартовая подсказка.
+    """
     numbers = (
         await session.scalars(
             select(SupplierInvoice.number).where(
-                SupplierInvoice.source == "manual", SupplierInvoice.number.isnot(None)
+                SupplierInvoice.source.in_(("manual", "kassa_invoice")),
+                SupplierInvoice.number.isnot(None),
             )
         )
     ).all()
     top = 0
     for raw in numbers:
-        digits = "".join(ch for ch in (raw or "") if ch.isdigit())
-        if digits:
-            top = max(top, int(digits))
+        value = (raw or "").strip()
+        if value.isdigit():
+            top = max(top, int(value))
     return str(top + 1)
+
+
+async def _unique_invoice_number(
+    session: AsyncSession, base: str, on_date: date, *, exclude_id: uuid.UUID | None = None
+) -> str:
+    """Сделать номер уникальным в пределах ОДНОЙ ДАТЫ (ключ iiko = номер + дата).
+
+    Если базовый номер уже занят другой накладной на эту же дату — добавляем суффикс
+    «-2», «-3»… до первого свободного. Так два разных поставщика с «номером 4» в один
+    день не конфликтуют при пуше в iiko. exclude_id — чтобы при правке не считать саму
+    себя занятой.
+    """
+    base = (base or "").strip() or "1"
+    candidate = base
+    suffix = 2
+    while True:
+        query = select(SupplierInvoice.id).where(
+            SupplierInvoice.number == candidate,
+            SupplierInvoice.invoice_date == on_date,
+        )
+        if exclude_id is not None:
+            query = query.where(SupplierInvoice.id != exclude_id)
+        if await session.scalar(query) is None:
+            return candidate
+        candidate = f"{base}-{suffix}"
+        suffix += 1
 
 
 async def create_warehouse_invoice(
@@ -189,13 +225,19 @@ async def create_warehouse_invoice(
         barter_role = None
         barter_return_status = None
 
+    resolved_number = number or await next_invoice_number(session)
+    # Накладные Кассы/ручные уходят в iiko, который ключует документ по «номер + дата».
+    # Гарантируем уникальность номера на дату чека (бартер/iiko-синканные не трогаем).
+    if mode != "loan" and source in ("manual", "kassa_invoice"):
+        resolved_number = await _unique_invoice_number(session, resolved_number, issued_at.date())
+
     invoice = SupplierInvoice(
         counterparty_id=counterparty_id,
         source=source,
         direction=direction,
         barter_role=barter_role,
         barter_return_status=barter_return_status,
-        number=number or await next_invoice_number(session),
+        number=resolved_number,
         invoice_date=issued_at.date(),
         issued_at=issued_at,
         due_date=due_date,
@@ -351,8 +393,13 @@ async def update_warehouse_invoice(
     if issued_at is not None:
         invoice.issued_at = issued_at
         invoice.invoice_date = issued_at.date()
-    if number is not None:
-        invoice.number = number
+    # Уникальность номера на дату (ключ iiko = номер+дата); себя занятой не считаем.
+    # Пересчитываем при смене номера ИЛИ даты (перенос на дату, где номер уже занят).
+    target_number = number if number is not None else invoice.number
+    if target_number is not None and (number is not None or issued_at is not None):
+        invoice.number = await _unique_invoice_number(
+            session, target_number, invoice.invoice_date, exclude_id=invoice.id
+        )
     # Корректированную накладную снова можно отправить в iiko. Уже запушенную не трогаем
     # (external_id держит связь для dedup; устаревший iiko-документ владелец правит сам).
     if invoice.iiko_push_status != "pushed":

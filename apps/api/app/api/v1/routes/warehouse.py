@@ -571,10 +571,15 @@ async def post_invoice(
     # Идемпотентность Кассы: тот же номер к тому же контрагенту = повторное «Создать» (после
     # ошибки/двойного клика/двух вкладок). Не плодим дубль и не списываем наличные дважды.
     if payload.via_kassa and payload.number and payload.mode != "loan":
+        # Двойной клик/две вкладки = тот же номер тому же контрагенту в ту же дату. Скоуп по
+        # дате (ключ iiko = номер+дата): тот же печатный номер в РАЗНЫЙ день — это другая
+        # накладная, не дубль, блокировать её нельзя. Авто-суффикс «N-2» здесь не ловим —
+        # это узкий edge (кросс-контрагентная коллизия + повторный клик), фронт гасит кнопку.
         dup_id = await session.scalar(
             select(SupplierInvoice.id).where(
                 SupplierInvoice.source == "kassa_invoice",
                 SupplierInvoice.counterparty_id == payload.counterparty_id,
+                SupplierInvoice.invoice_date == payload.issued_at.date(),
                 SupplierInvoice.number == payload.number,
             )
         )

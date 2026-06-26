@@ -11,6 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { apiErrorMessage } from "@/lib/api";
 import { formatRub } from "@/routes/counterparties/shared";
 
@@ -23,12 +25,7 @@ import {
   type DraftLine,
   type StaffLine,
 } from "./CreateInvoiceDialog";
-import {
-  getProducts,
-  getStaffArticles,
-  getWarehouseInvoice,
-  updateWarehouseInvoice,
-} from "./api";
+import { getProducts, getStaffArticles, getWarehouseInvoice, updateWarehouseInvoice } from "./api";
 
 /** Правка позиций НЕОПЛАЧЕННОЙ (не бартерной) накладной: «переделать и отправить в iiko».
  * Контрагент/режим неизменны — меняем только товар/персонал. Переиспользует строки создания. */
@@ -63,6 +60,7 @@ export function InvoiceEditDialog({
 
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [staffLines, setStaffLines] = useState<StaffLine[]>([]);
+  const [number, setNumber] = useState("");
 
   // Инициализируем из накладной при загрузке детали.
   useEffect(() => {
@@ -84,8 +82,14 @@ export function InvoiceEditDialog({
     setStaffLines(
       detail.lines
         .filter((l) => l.is_staff)
-        .map((l) => ({ key: l.id, articleId: l.dds_article_id ?? "", note: l.name, amount: String(l.sum) })),
+        .map((l) => ({
+          key: l.id,
+          articleId: l.dds_article_id ?? "",
+          note: l.name,
+          amount: String(l.sum),
+        })),
     );
+    setNumber(detail.number ?? "");
   }, [detail?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totals = useMemo(() => {
@@ -102,6 +106,7 @@ export function InvoiceEditDialog({
   const saveMutation = useMutation({
     mutationFn: () =>
       updateWarehouseInvoice(invoiceId!, {
+        number: number.trim() || undefined,
         lines: [
           ...lines
             .filter((l) => l.name && num(l.quantity) > 0)
@@ -116,7 +121,10 @@ export function InvoiceEditDialog({
           ...staffLines
             .filter((l) => l.articleId && num(l.amount) > 0)
             .map((l) => ({
-              name: l.note.trim() || staffArticles.find((a) => a.id === l.articleId)?.name || "Персонал",
+              name:
+                l.note.trim() ||
+                staffArticles.find((a) => a.id === l.articleId)?.name ||
+                "Персонал",
               quantity: 1,
               price: num(l.amount),
               iiko_product_id: null,
@@ -145,7 +153,9 @@ export function InvoiceEditDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Редактировать накладную {detail?.number ? `№${detail.number}` : ""}</DialogTitle>
+          <DialogTitle>
+            Редактировать накладную {detail?.number ? `№${detail.number}` : ""}
+          </DialogTitle>
         </DialogHeader>
 
         {!detail ? (
@@ -155,10 +165,22 @@ export function InvoiceEditDialog({
         ) : !editable ? (
           <p className="py-4 text-sm text-amber-600">
             Редактировать можно только неоплаченную обычную накладную. Эта{" "}
-            {detail.barter_role ? "бартерная" : "уже оплачена"} — снимите оплату или измените в iiko.
+            {detail.barter_role ? "бартерная" : "уже оплачена"} — снимите оплату или измените в
+            iiko.
           </p>
         ) : (
           <div className="grid gap-4">
+            <div className="grid max-w-[220px] gap-1.5">
+              <Label htmlFor="invoice-number">Номер</Label>
+              <Input
+                id="invoice-number"
+                value={number}
+                onChange={(e) => setNumber(e.target.value)}
+              />
+              <span className="text-xs text-muted-foreground">
+                Уникален на дату — иначе iiko отклонит дубль
+              </span>
+            </div>
             {/* Закупка на склад */}
             <div className="space-y-2 rounded-md border p-3">
               <div className="flex items-center justify-between">
@@ -180,7 +202,9 @@ export function InvoiceEditDialog({
                   barter={false}
                   products={productsQuery.data ?? []}
                   onChange={(patch) =>
-                    setLines((prev) => prev.map((l) => (l.key === line.key ? { ...l, ...patch } : l)))
+                    setLines((prev) =>
+                      prev.map((l) => (l.key === line.key ? { ...l, ...patch } : l)),
+                    )
                   }
                   onRemove={() => setLines((prev) => prev.filter((l) => l.key !== line.key))}
                 />
