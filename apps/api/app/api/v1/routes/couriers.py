@@ -72,7 +72,10 @@ from app.services.couriers import (
     schedule_service,
     shift_day_service,
 )
-from app.services.couriers.deposit_iiko_payout import post_deposit_return_to_iiko
+from app.services.couriers.deposit_iiko_payout import (
+    post_deposit_return_to_iiko,
+    post_deposit_topup_to_iiko,
+)
 from app.services.couriers.iiko_olap_sync import sync_courier_olap_deliveries
 from app.services.deposit_bank_draft import send_deposit_payout_bank_draft
 from app.services.position_registry import courier_positions
@@ -742,12 +745,16 @@ async def post_courier_deposit_transaction(
     )
     await session.commit()
     await session.refresh(transaction)
-    # iiko-изъятие из «Главной кассы» — ТОЛЬКО при выдаче с ТК Черникова (= iiko Главная
-    # касса). Для Сейфа iiko не трогаем (другой счёт), иначе ложное изъятие. После commit:
-    # БД — источник истины, ошибка iiko не откатывает возврат. No-op для top_up/forfeit.
-    if transaction.payout_method in (None, "cash_tk"):
+    # Денежная синхронизация iiko «Главной кассы» (= ТК Черникова) — после commit (БД —
+    # источник истины, ошибка iiko не откатывает операцию). FORFEIT кассу не двигает.
+    if tt_value == "top_up":
+        # Пополнение — внесение в Главную кассу (касса ↑, синхронно приходу в ДДС).
+        post_deposit_topup_to_iiko(transaction)
+    elif tt_value == "return" and transaction.payout_method in (None, "cash_tk"):
+        # Возврат наличными с ТК Черникова — изъятие из Главной кассы. Для Сейфа iiko не
+        # трогаем (другой счёт), иначе ложное изъятие.
         post_deposit_return_to_iiko(transaction)
-    elif transaction.payout_method == "bank_draft":
+    elif tt_value == "return" and transaction.payout_method == "bank_draft":
         # Безналичный возврат «как ЗП»: черновик на ИП Шокину (раздача с Сейфа). После
         # commit, ошибка банка не валит возврат. iiko не трогаем (деньги не через кассу).
         await send_deposit_payout_bank_draft(
