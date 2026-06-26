@@ -350,6 +350,37 @@ async def test_role_tie_break_by_number_same_date(
         assert roles[b.id] == "return"  # N-002 позже → возврат
 
 
+async def test_explicit_barter_loan_excluded_from_chrono_auto(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Явный заём (barter_role='loan') НЕ участвует в legacy хроно-зачёте: иначе он был бы
+    сведён здесь и помечен paid вторично (двойной учёт), хотя ведётся отдельным путём
+    (BarterReturnLine / barter_return_status). _load_open фильтрует barter_role IS NULL."""
+    async with async_session_factory() as session:
+        cp = await _barter_cp(session, "7710000040")
+        loan = await make_invoice(
+            session, counterparty_id=cp.id, amount="1000.00", direction="receivable",
+            number="L-EXPL", line_items=items("A"), invoice_date=date(2026, 6, 1),
+            barter_role="loan",
+        )
+        # Обычная (barter_role IS NULL) встречная накладная на ту же сумму/номенклатуру:
+        # до фикса хроно-зачёт свёл бы её с явным займом.
+        plain = await make_invoice(
+            session, counterparty_id=cp.id, amount="1000.00", direction="payable",
+            number="P-PLAIN", line_items=items("A"), invoice_date=date(2026, 6, 2),
+        )
+        await session.commit()
+
+        assert await auto_settle_barter(session, cp.id) == 0
+        for inv in (loan, plain):
+            await session.refresh(inv)
+        assert loan.barter_settlement_id is None and loan.payment_status == "unpaid"
+        # И в карточке бартера явный заём не показывается среди открытых (исключён из _load_open).
+        detail = await barter_detail(session, cp.id)
+        assert all(r["id"] != loan.id for r in detail.open_receivables)
+        assert [p["id"] for p in detail.open_payables] == [plain.id]
+
+
 async def test_list_invoices_exposes_barter_role(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

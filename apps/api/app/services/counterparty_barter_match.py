@@ -173,7 +173,14 @@ def _fifo_pick(subsets: Sequence[Sequence[_Ref]]) -> list[_Ref] | None:
 async def _load_open(
     session: AsyncSession, counterparty_id: uuid.UUID
 ) -> tuple[list[_Ref], list[_Ref]]:
-    """Open (unsettled, untouched) payables and receivables for netting."""
+    """Open (unsettled, untouched) payables and receivables for netting.
+
+    Только НЕявный бартер (``barter_role IS NULL`` — iiko-синканные / договорные накладные,
+    роль которых выводится по хронологии). Явные займы/возвраты (``barter_role`` = loan/return)
+    ведутся отдельным путём (``BarterReturnLine`` / ``barter_return_status``) и НЕ участвуют в
+    хроно-зачёте: иначе явный заём (unpaid, settlement_id IS NULL) мог бы быть сведён здесь и
+    помечен ``paid`` второй раз — двойной учёт того же движения.
+    """
     rows = (
         (
             await session.execute(
@@ -181,6 +188,7 @@ async def _load_open(
                     SupplierInvoice.counterparty_id == counterparty_id,
                     SupplierInvoice.payment_status == "unpaid",
                     SupplierInvoice.barter_settlement_id.is_(None),
+                    SupplierInvoice.barter_role.is_(None),
                 )
             )
         )

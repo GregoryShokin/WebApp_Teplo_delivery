@@ -74,6 +74,9 @@ export function OwnerReviewTab({ canClassify }: { canClassify: boolean }) {
             <SelectItem value="invalid_credentials">Проблема с доступом</SelectItem>
             <SelectItem value="unmatched_transfer">Найти перевод</SelectItem>
             <SelectItem value="unconfirmed_cheque">Чек без подтверждения банком</SelectItem>
+            <SelectItem value="payer_wallet_unresolved">
+              Не определён банк-счёт плательщика
+            </SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -129,6 +132,7 @@ function OwnerReviewCard({
 }) {
   const queryClient = useQueryClient();
   const operation = item.operation;
+  const hasOperation = operation != null;
   const [articleId, setArticleId] = useState("none");
   const [counterpartyId, setCounterpartyId] = useState("none");
   const [rememberAsRule, setRememberAsRule] = useState(false);
@@ -153,7 +157,9 @@ function OwnerReviewCard({
     mutationFn: (payload: ClassifyPayload) => classifyOwnerReviewCase(item.id, payload),
     onSuccess: async (_result, payload) => {
       await invalidate();
-      toast.success(payload.remember_as_rule ? "Классифицировано. Правило сохранено" : "Классифицировано");
+      toast.success(
+        payload.remember_as_rule ? "Классифицировано. Правило сохранено" : "Классифицировано",
+      );
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось классифицировать")),
   });
@@ -237,117 +243,139 @@ function OwnerReviewCard({
         </div>
       </CardContent>
       <CardFooter className="grid gap-4 border-t pt-4">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
-          <div className="grid gap-2">
-            <Label>Статья ДДС</Label>
-            <Select disabled={!canClassify} value={articleId} onValueChange={setArticleId}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Не выбрана</SelectItem>
-                {articles.map((article) => (
-                  <SelectItem key={article.id} value={article.id}>
-                    {article.code} · {article.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-2">
-            <Label>Контрагент</Label>
-            <Select disabled={!canClassify} value={counterpartyId} onValueChange={setCounterpartyId}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Не выбран</SelectItem>
-                {counterparties.map((counterparty) => (
-                  <SelectItem key={counterparty.id} value={counterparty.id}>
-                    {counterparty.name}
-                    {counterparty.inn ? ` · ${counterparty.inn}` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {canClassify ? (
-            <Button
-              onClick={() => setIsCreateCounterpartyOpen((value) => !value)}
-              type="button"
-              variant="outline"
-            >
-              <Plus size={16} aria-hidden="true" />
-              Создать нового
-            </Button>
-          ) : null}
-        </div>
-
-        {canClassify && isCreateCounterpartyOpen ? (
-          <div className="grid gap-3 rounded-lg border bg-muted/30 p-3 md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-end">
-            <div className="grid gap-2">
-              <Label htmlFor={`counterparty-name-${item.id}`}>Название</Label>
-              <Input
-                id={`counterparty-name-${item.id}`}
-                value={newCounterpartyName}
-                onChange={(event) => setNewCounterpartyName(event.target.value)}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor={`counterparty-inn-${item.id}`}>ИНН</Label>
-              <Input
-                id={`counterparty-inn-${item.id}`}
-                value={newCounterpartyInn}
-                onChange={(event) => setNewCounterpartyInn(event.target.value)}
-              />
-            </div>
-            <Button
-              disabled={!newCounterpartyName.trim() || createCounterpartyMutation.isPending}
-              onClick={() => createCounterpartyMutation.mutate()}
-            >
-              {createCounterpartyMutation.isPending ? (
-                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+        {hasOperation ? (
+          <>
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
+              <div className="grid gap-2">
+                <Label>Статья ДДС</Label>
+                <Select disabled={!canClassify} value={articleId} onValueChange={setArticleId}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Не выбрана</SelectItem>
+                    {articles.map((article) => (
+                      <SelectItem key={article.id} value={article.id}>
+                        {article.code} · {article.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Контрагент</Label>
+                <Select
+                  disabled={!canClassify}
+                  value={counterpartyId}
+                  onValueChange={setCounterpartyId}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Не выбран</SelectItem>
+                    {counterparties.map((counterparty) => (
+                      <SelectItem key={counterparty.id} value={counterparty.id}>
+                        {counterparty.name}
+                        {counterparty.inn ? ` · ${counterparty.inn}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {canClassify ? (
+                <Button
+                  onClick={() => setIsCreateCounterpartyOpen((value) => !value)}
+                  type="button"
+                  variant="outline"
+                >
+                  <Plus size={16} aria-hidden="true" />
+                  Создать нового
+                </Button>
               ) : null}
-              Сохранить
-            </Button>
-          </div>
-        ) : null}
+            </div>
 
-        <label className="flex items-start gap-3 text-sm">
-          <input
-            checked={rememberAsRule}
-            className="mt-1 h-4 w-4"
-            disabled={!canClassify}
-            onChange={(event) => setRememberAsRule(event.target.checked)}
-            type="checkbox"
-          />
-          <span>
-            <span className="block font-medium">Запомнить как правило</span>
-            <span className="block text-muted-foreground">
-              Если включить, операции с тем же ИНН или паттерном в назначении будут
-              классифицироваться автоматически.
-            </span>
-          </span>
-        </label>
+            {canClassify && isCreateCounterpartyOpen ? (
+              <div className="grid gap-3 rounded-lg border bg-muted/30 p-3 md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-end">
+                <div className="grid gap-2">
+                  <Label htmlFor={`counterparty-name-${item.id}`}>Название</Label>
+                  <Input
+                    id={`counterparty-name-${item.id}`}
+                    value={newCounterpartyName}
+                    onChange={(event) => setNewCounterpartyName(event.target.value)}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor={`counterparty-inn-${item.id}`}>ИНН</Label>
+                  <Input
+                    id={`counterparty-inn-${item.id}`}
+                    value={newCounterpartyInn}
+                    onChange={(event) => setNewCounterpartyInn(event.target.value)}
+                  />
+                </div>
+                <Button
+                  disabled={!newCounterpartyName.trim() || createCounterpartyMutation.isPending}
+                  onClick={() => createCounterpartyMutation.mutate()}
+                >
+                  {createCounterpartyMutation.isPending ? (
+                    <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                  ) : null}
+                  Сохранить
+                </Button>
+              </div>
+            ) : null}
+
+            <label className="flex items-start gap-3 text-sm">
+              <input
+                checked={rememberAsRule}
+                className="mt-1 h-4 w-4"
+                disabled={!canClassify}
+                onChange={(event) => setRememberAsRule(event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                <span className="block font-medium">Запомнить как правило</span>
+                <span className="block text-muted-foreground">
+                  Если включить, операции с тем же ИНН или паттерном в назначении будут
+                  классифицироваться автоматически.
+                </span>
+              </span>
+            </label>
+          </>
+        ) : (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+            Информационный кейс: не определён банк-счёт плательщика, поэтому проводка ДДС по этой
+            оплате не заведена автоматически. Проверьте привязку счёта к кошельку, при необходимости
+            заведите расход вручную и отложите кейс.
+          </div>
+        )}
 
         {canClassify ? (
-        <div className="flex flex-wrap gap-2">
-          <Button disabled={isBusy} onClick={() => classify("set_article")}>
-            {classifyMutation.isPending ? (
-              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+          <div className="flex flex-wrap gap-2">
+            {hasOperation ? (
+              <>
+                <Button disabled={isBusy} onClick={() => classify("set_article")}>
+                  {classifyMutation.isPending ? (
+                    <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                  ) : null}
+                  Классифицировать
+                </Button>
+                <Button
+                  disabled={isBusy}
+                  onClick={() => classify("mark_internal_transfer")}
+                  variant="outline"
+                >
+                  Внутренний перевод
+                </Button>
+                <Button disabled={isBusy} onClick={() => classify("exclude")} variant="outline">
+                  Исключить
+                </Button>
+              </>
             ) : null}
-            Классифицировать
-          </Button>
-          <Button disabled={isBusy} onClick={() => classify("mark_internal_transfer")} variant="outline">
-            Внутренний перевод
-          </Button>
-          <Button disabled={isBusy} onClick={() => classify("exclude")} variant="outline">
-            Исключить
-          </Button>
-          <Button disabled={isBusy} onClick={() => dismissMutation.mutate()} variant="ghost">
-            Отложить
-          </Button>
-        </div>
+            <Button disabled={isBusy} onClick={() => dismissMutation.mutate()} variant="ghost">
+              Отложить
+            </Button>
+          </div>
         ) : (
           <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
             Режим просмотра. Классификация и создание контрагентов скрыты.
@@ -379,6 +407,9 @@ function caseKindLabel(kind: string) {
   }
   if (kind === "unconfirmed_cheque") {
     return "Чек без подтверждения банком";
+  }
+  if (kind === "payer_wallet_unresolved") {
+    return "Не определён банк-счёт плательщика";
   }
   return kind;
 }

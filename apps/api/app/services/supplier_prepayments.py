@@ -135,6 +135,10 @@ async def settle_invoice_from_prepayment(
         raise CounterpartyPaymentError("Предоплата не найдена")
     if prepayment.counterparty_id != invoice.counterparty_id:
         raise CounterpartyPaymentError("Предоплата и накладная относятся к разным контрагентам")
+    if prepayment.status not in OPEN_PREPAYMENT_STATUSES:
+        # Возвращённую/закрытую предоплату (например 'refunded' со стейл amount_settled<amount)
+        # гасить нельзя — иначе списали бы остаток уже не существующей дебиторки.
+        raise CounterpartyPaymentError("Предоплата недоступна для гашения (возвращена или закрыта)")
 
     inv_remaining = await _invoice_remaining(session, invoice)
     pre_remaining = _money(prepayment.amount) - _money(prepayment.amount_settled)

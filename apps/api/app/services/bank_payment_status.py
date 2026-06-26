@@ -13,8 +13,9 @@ webhook «Статус платежа») двигает черновик ``Count
 
 from __future__ import annotations
 
+import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +27,7 @@ from app.models import (
     CounterpartyPaymentDraft,
     DdsArticle,
     InvoicePaymentAllocation,
+    ReconciliationCase,
     SupplierPrepayment,
     Wallet,
 )
@@ -35,6 +37,8 @@ from app.services.counterparty_matching import (
     _invoice_remaining,
     _recompute_status,
 )
+
+logger = logging.getLogger(__name__)
 
 # Статья ДДС для оплаты поставщику по умолчанию (та же, что у ручной оплаты с кошелька).
 _SUPPLIER_ARTICLE_CODE = "payment_to_supplier"
@@ -116,11 +120,16 @@ async def apply_payment_status(
     *,
     draft: CounterpartyPaymentDraft,
     raw_status: str | None,
+    operation_date: date | None = None,
     actor_user_id: uuid.UUID | None = None,
     commit: bool = True,
 ) -> str:
     """Продвинуть черновик и его накладные по статусу платежа. Идемпотентно: повторный
-    «исполнен» по оплаченному черновику — no-op. Возвращает итоговый статус черновика."""
+    «исполнен» по оплаченному черновику — no-op. Возвращает итоговый статус черновика.
+
+    ``operation_date`` — дата фактической банковской операции (есть при гашении из вебхука
+    «операция по счёту»); ею датируем prebooked-проводку ДДС, чтобы она совпала с приходящей
+    операцией выписки (точный prebooked-claim). При поллинге даты нет → дата обработки."""
     outcome = classify_payment_status(raw_status)
 
     # Сериализуем обработку этого черновика блокировкой строки: закрывает гонку webhook↔polling
@@ -145,6 +154,41 @@ async def apply_payment_status(
             select(DdsArticle.id).where(DdsArticle.code == _SUPPLIER_ARTICLE_CODE)
         )
         draft_invoices = await _draft_invoices(session, draft.id)
+        op_date = operation_date or datetime.now(UTC).date()
+        if bank_wallet is None and (draft_invoices or draft.creates_prepayment):
+            # Не нашли банк-кошелёк плательщика (счёт из тела черновика/настроек не привязан к
+            # активному bank-Wallet). Платёж всё равно фиксируем — деньги УЖЕ ушли из банка,
+            # блокировать нельзя; но prebooked-проводку ДДС завести не на чем. Громкий лог +
+            # durable-маркер в payload + видимый кейс owner-review, чтобы пропавший prebook был
+            # виден; сам расход доберётся общей классификацией приходящей операции выписки.
+            logger.warning(
+                "apply_payment_status: банк-кошелёк плательщика не найден "
+                "(draft=%s cp=%s amount=%s) — фиксируем оплату без prebooked-проводки ДДС",
+                draft.id,
+                draft.counterparty_id,
+                draft.amount,
+            )
+            draft.payload = {
+                **(draft.payload or {}),
+                "dds_prebook_skipped": "payer_wallet_unresolved",
+            }
+            # Видимый кейс в панели «Требует разбора» (owner-review), чтобы менеджер проверил
+            # привязку счёта/завёл расход вручную. Кейс без bank_operation_id — закрывается
+            # кнопкой «Отложить» (dismiss), классификация для него недоступна. paid-переход
+            # под row-lock срабатывает один раз на черновик → один кейс, без дублей.
+            session.add(
+                ReconciliationCase(
+                    kind="payer_wallet_unresolved",
+                    status="pending",
+                    provider="tbank",
+                    payload={
+                        "draft_id": str(draft.id),
+                        "counterparty_id": str(draft.counterparty_id),
+                        "amount": str(draft.amount),
+                        "reason": "Не определён банк-счёт плательщика — проводка ДДС не заведена",
+                    },
+                )
+            )
         # Standalone-черновик «банк по реквизитам» без накладной → создаём предоплату
         # (дебиторку) на контрагента + prebooked-проводку (её заберёт операция выписки).
         if draft.creates_prepayment and not draft_invoices:
@@ -157,7 +201,7 @@ async def apply_payment_status(
                     wallet_id=bank_wallet.id,
                     direction="out",
                     amount=draft.amount,
-                    operation_date=datetime.now(UTC).date(),
+                    operation_date=op_date,
                     article_id=article_id,
                     counterparty_id=draft.counterparty_id,
                     source_kind="supplier_prepayment",
@@ -190,7 +234,7 @@ async def apply_payment_status(
                     invoice=invoice,
                     wallet=bank_wallet,
                     amount=remaining,
-                    operation_date=datetime.now(UTC).date(),
+                    operation_date=op_date,
                     article_id=supplier_article_id,
                     comment="Оплата по статусу платежа банка",
                     actor_user_id=actor_user_id,

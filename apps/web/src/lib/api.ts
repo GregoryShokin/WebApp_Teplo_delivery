@@ -2271,7 +2271,9 @@ export type ClassificationRuleCreate = {
 export type OwnerReviewKind =
   | "unclassified_operation"
   | "invalid_credentials"
-  | "unmatched_transfer";
+  | "unmatched_transfer"
+  | "unconfirmed_cheque"
+  | "payer_wallet_unresolved";
 
 export type ReconciliationCaseRead = {
   id: string;

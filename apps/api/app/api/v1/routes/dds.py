@@ -822,6 +822,7 @@ async def list_owner_review_cases(
         "invalid_credentials",
         "unmatched_transfer",
         "unconfirmed_cheque",
+        "payer_wallet_unresolved",
     ]
     | None = None,
 ) -> dict[str, object]:
@@ -830,6 +831,7 @@ async def list_owner_review_cases(
         "invalid_credentials",
         "unmatched_transfer",
         "unconfirmed_cheque",
+        "payer_wallet_unresolved",
     )
     conditions = [
         ReconciliationCase.status == "pending",

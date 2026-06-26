@@ -160,7 +160,13 @@ async def _settle_invoice_draft_from_operation(
             operation.amount,
         )
         return None
-    await apply_payment_status(session, draft=draft, raw_status="executed", commit=False)
+    await apply_payment_status(
+        session,
+        draft=draft,
+        raw_status="executed",
+        operation_date=operation.operation_date,
+        commit=False,
+    )
     logger.info(
         "tbank webhook: накладная погашена из операции по счёту — draft=%s documentNumber=%s",
         draft.id,
