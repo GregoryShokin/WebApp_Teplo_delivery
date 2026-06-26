@@ -309,44 +309,54 @@ export function CourierDepositsRoute({ onNavigate, embedded = false }: CourierDe
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
                       {canWrite ? (
-                        isDepositCollected(row) ? (
-                          <Button size="sm" disabled title="Депозит собран — собирать нечего">
-                            <Plus size={16} aria-hidden="true" />
-                            Собран
-                          </Button>
-                        ) : (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button size="sm">
-                              <Plus size={16} aria-hidden="true" />
-                              Операция
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {canTopUp ? (
-                              <DropdownMenuItem
-                                onClick={() => setPendingOperation({ row, type: "top_up" })}
-                              >
-                                Пополнение
-                              </DropdownMenuItem>
-                            ) : null}
-                            {canReturn ? (
-                              <DropdownMenuItem
-                                onClick={() => setPendingOperation({ row, type: "return" })}
-                              >
-                                Возврат
-                              </DropdownMenuItem>
-                            ) : null}
-                            {canForfeit ? (
-                              <DropdownMenuItem
-                                onClick={() => setPendingOperation({ row, type: "forfeit" })}
-                              >
-                                Списание
-                              </DropdownMenuItem>
-                            ) : null}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                        )
+                        (() => {
+                          // Собранный депозит пополнять нечем, но возврат/списание
+                          // должны оставаться доступны — поэтому прячем только «Пополнение».
+                          const collected = isDepositCollected(row);
+                          const canAddTopUp = canTopUp && !collected;
+                          const hasAnyOperation = canAddTopUp || canReturn || canForfeit;
+                          if (!hasAnyOperation) {
+                            return (
+                              <Button size="sm" disabled title="Нет доступных операций">
+                                <Plus size={16} aria-hidden="true" />
+                                Операция
+                              </Button>
+                            );
+                          }
+                          return (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="sm">
+                                  <Plus size={16} aria-hidden="true" />
+                                  Операция
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {canAddTopUp ? (
+                                  <DropdownMenuItem
+                                    onClick={() => setPendingOperation({ row, type: "top_up" })}
+                                  >
+                                    Пополнение
+                                  </DropdownMenuItem>
+                                ) : null}
+                                {canReturn ? (
+                                  <DropdownMenuItem
+                                    onClick={() => setPendingOperation({ row, type: "return" })}
+                                  >
+                                    Возврат
+                                  </DropdownMenuItem>
+                                ) : null}
+                                {canForfeit ? (
+                                  <DropdownMenuItem
+                                    onClick={() => setPendingOperation({ row, type: "forfeit" })}
+                                  >
+                                    Списание
+                                  </DropdownMenuItem>
+                                ) : null}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          );
+                        })()
                       ) : null}
                       <Button onClick={() => setHistoryCourier(row)} size="sm" variant="outline">
                         <History size={16} aria-hidden="true" />
