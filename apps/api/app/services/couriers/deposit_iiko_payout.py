@@ -113,7 +113,13 @@ def post_deposit_return_to_iiko(transaction: CourierDepositTransaction) -> None:
 
 
 def post_deposit_topup_to_iiko(transaction: CourierDepositTransaction) -> None:
-    """Провести пополнение депозита внесением (addPayIn) в iiko «Главную кассу».
+    """Провести пополнение депозита внесением (PAYIN) в iiko «Главную кассу».
+
+    ВНИМАНИЕ: НЕ вызывается. Этот iiko Server Resto API не умеет внесение: addPayIn=404,
+    addPayOut отвергает PAYIN-тип (409 «Expected PAYOUT transaction type, but was: PAYIN»,
+    проверено 2026-06-26 на типе «Пополнение депозитов курьерам»). Функция оставлена как
+    основа на случай, если найдётся рабочий метод внесения (iikoTransport/Cloud/иной).
+    Сейчас рост Главной кассы по пополнениям проводится вручную в бэк-офисе iiko.
 
     Только TOP_UP; ошибку логирует, не поднимает (операция депозита уже зафиксирована).
     """
