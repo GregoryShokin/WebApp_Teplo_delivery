@@ -37,6 +37,7 @@ from app.models import (
     SalaryAdvanceBankDraft,
     Wallet,
 )
+from app.services.advance_iiko_payout import post_advance_payout_to_iiko
 from app.services.bank_payment_status import classify_payment_status
 from app.services.banking import BankClient, TbankClient
 from app.services.banking.classifier import (
@@ -64,7 +65,9 @@ ADVANCE_ARTICLE_CODE = "employee_advance"  # аванс → «Авансы со�
 LOAN_ARTICLE_CODE = "vydacha_zaymov_sotrudnikam"  # заём → «Выдача займов сотрудникам»
 # Наличные счета: выдача = прямой расход с кошелька (Фаза 1). Банк-кошелёк (черновик+
 # транзит на Сейф, как у ЗП) — Фаза 2: см. блок банк-выдачи ниже.
-ADVANCE_CASH_WALLET_CODES = ("tk_chernikova", "cash_safe")
+# ТК Черникова = iiko «Главная касса»: наличная выдача с неё параллельно изымается в iiko.
+ADVANCE_TK_WALLET_CODE = "tk_chernikova"
+ADVANCE_CASH_WALLET_CODES = (ADVANCE_TK_WALLET_CODE, "cash_safe")
 # Банк-выдача (Фаза 2): транзит безналичной части на Сейф под выдачу аванса/займа.
 # Банк-нога out служит prebooked-целью для приходящей операции выписки (как у ЗП),
 # поэтому source_kind входит в classifier.PREBOOKABLE_SOURCE_KINDS.
@@ -337,6 +340,17 @@ async def issue_advance(
         await book_advance_payout_cashflow(session, advance=advance, wallet=wallet)
     await session.commit()
     await session.refresh(advance)
+    # Наличная выдача с ТК Черникова (= iiko «Главная касса») → параллельное изъятие в iiko.
+    # После commit: БД — источник истины, ошибка iiko не откатывает выдачу (логируется внутри).
+    # Сейф и банк-выдача здесь iiko не трогают (банк изымается при «Выплачено», см. disburse).
+    if not is_bank_payout and wallet is not None and wallet.code == ADVANCE_TK_WALLET_CODE:
+        post_advance_payout_to_iiko(
+            amount=advance.amount,
+            payout_date=advance.issued_on,
+            source_id=advance.id,
+            is_loan=advance.kind == "loan",
+            source="cash",
+        )
     return advance
 
 
@@ -807,18 +821,31 @@ async def disburse_bank_advance(
     advance.status = "issued"
     await session.commit()
     await session.refresh(advance)
+    # Деньги физически выданы сотруднику (нал из Сейфа) → изъятие в iiko по типу «эквайринг»
+    # (безналичный источник выдачи). После commit, не валит выдачу при ошибке. Idempotent:
+    # повторный «Выплачено» вышел выше по early-return (draft уже disbursed) → изъятие однажды.
+    post_advance_payout_to_iiko(
+        amount=advance.amount,
+        payout_date=datetime.now(UTC).date(),
+        source_id=advance.id,
+        is_loan=advance.kind == "loan",
+        source="bank",
+    )
     return advance
 
 
 async def sync_advance_after_allocation_change(
     session: AsyncSession, *, allocation_id: uuid.UUID
-) -> None:
+) -> SalaryAdvance | None:
     """Свести банк-аванс со статусом его резерва Сейфа (когда резерв трогают из карточки Сейфа).
 
     Оплата/отмена резерва возможна и напрямую в карточке Сейфа — тогда долг сотрудника тоже
     должен сформироваться/сняться. Вызывается из роутов оплаты/отмены резерва ДО их commit;
     при полной оплате резерва аванс → ``issued`` (+черновик ``disbursed``), при отмене →
     ``cancelled`` (+черновик ``cancelled``). Частичная оплата ничего не меняет.
+
+    Возвращает ``SalaryAdvance``, если выдача состоялась (резерв оплачен → аванс выдан) —
+    вызывающий роут обязан провести изъятие в iiko ПОСЛЕ commit; иначе ``None``.
     """
     draft = await session.scalar(
         select(SalaryAdvanceBankDraft)
@@ -826,16 +853,17 @@ async def sync_advance_after_allocation_change(
         .with_for_update()
     )
     if draft is None:
-        return
+        return None
     allocation = await session.get(SafeAllocation, allocation_id)
     advance = await session.get(SalaryAdvance, draft.advance_id, with_for_update=True)
     if allocation is None or advance is None:
-        return
+        return None
     if allocation.status == "paid" and draft.status == "paid":
         draft.status = "disbursed"
         draft.synced_at = datetime.now(UTC)
         advance.status = "issued"
-    elif allocation.status == "cancelled" and draft.status in (
+        return advance
+    if allocation.status == "cancelled" and draft.status in (
         "created",
         "updated",
         "paid",
@@ -843,3 +871,4 @@ async def sync_advance_after_allocation_change(
         draft.status = "cancelled"
         draft.synced_at = datetime.now(UTC)
         advance.status = "cancelled"
+    return None

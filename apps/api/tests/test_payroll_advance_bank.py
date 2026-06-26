@@ -36,12 +36,14 @@ from app.services.banking.classifier import (
     TRANSFER_OUT_ARTICLE_CODE,
 )
 from app.services.banking.safe_allocations import SAFE_PAYOUT_SOURCE_KIND
+from app.services.banking.safe_allocations import pay_allocation
 from app.services.payroll_advance_service import (
     ADVANCE_BANK_TO_SAFE_SOURCE_KIND,
     apply_advance_draft_status,
     cancel_advance,
     disburse_bank_advance,
     issue_advance,
+    sync_advance_after_allocation_change,
 )
 from app.services.payroll_payouts import MOCK_PAYER_ACCOUNT
 
@@ -367,3 +369,61 @@ async def test_paid_without_wallets_keeps_draft_pending_for_retry(
         source_kind=ADVANCE_BANK_TO_SAFE_SOURCE_KIND,
         source_id=advance.id,
     ) == []
+
+
+async def test_disburse_triggers_iiko_bank(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """«Выплачено» по банк-выдаче → изъятие в iiko «эквайринг» (source='bank'); до выдачи — нет."""
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "app.services.payroll_advance_service.post_advance_payout_to_iiko",
+        lambda **kw: calls.append(kw),
+    )
+    async with async_session_factory() as session:
+        wallet = await _make_bank_wallet(session)
+        advance = await _issue_bank_advance(session, wallet=wallet)
+    draft = await _draft(async_session_factory, advance.id)
+    async with async_session_factory() as session:
+        await apply_advance_draft_status(session, draft=draft, raw_status="EXECUTED")
+    # Деньги ещё в резерве Сейфа (не выданы) → iiko не дёргается.
+    assert calls == []
+    async with async_session_factory() as session:
+        await disburse_bank_advance(session, advance_id=advance.id)
+    assert len(calls) == 1
+    assert calls[0]["source"] == "bank"
+    assert calls[0]["source_id"] == advance.id
+    assert calls[0]["amount"] == Decimal("10000.00")
+
+
+async def test_pay_reserve_from_safe_card_signals_disbursement(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Оплата резерва из карточки Сейфа выдаёт банк-аванс и возвращает его (роут → iiko)."""
+    async with async_session_factory() as session:
+        wallet = await _make_bank_wallet(session)
+        advance = await _issue_bank_advance(session, wallet=wallet)
+    draft = await _draft(async_session_factory, advance.id)
+    async with async_session_factory() as session:
+        await apply_advance_draft_status(session, draft=draft, raw_status="EXECUTED")
+    draft = await _draft(async_session_factory, advance.id)
+    async with async_session_factory() as session:
+        allocation = await session.get(
+            SafeAllocation, draft.safe_allocation_id, with_for_update=True
+        )
+        await pay_allocation(
+            session, allocation, amount=allocation.amount, operation_date=AS_OF
+        )
+        disbursed = await sync_advance_after_allocation_change(
+            session, allocation_id=allocation.id
+        )
+        await session.commit()
+    # sync вернул аванс → роут проведёт iiko после commit; аванс выдан, черновик disbursed.
+    assert disbursed is not None
+    assert disbursed.id == advance.id
+    refreshed = await _draft(async_session_factory, advance.id)
+    assert refreshed.status == "disbursed"
+    async with async_session_factory() as session:
+        refreshed_advance = await session.get(SalaryAdvance, advance.id)
+    assert refreshed_advance.status == "issued"

@@ -665,6 +665,64 @@ async def test_loan_payout_uses_loan_article(
     assert article is not None and article.code == "vydacha_zaymov_sotrudnikam"
 
 
+async def test_cash_advance_tk_chernikova_triggers_iiko(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Наличная выдача с ТК Черникова (= iiko «Главная касса») → изъятие в iiko (source='cash')."""
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "app.services.payroll_advance_service.post_advance_payout_to_iiko",
+        lambda **kw: calls.append(kw),
+    )
+    async with async_session_factory() as session:
+        emp = await _make_okladnik(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
+        wallet = await session.scalar(select(Wallet).where(Wallet.code == "tk_chernikova"))
+        await session.commit()
+        adv = await issue_advance(
+            session,
+            employee_id=emp.id,
+            amount=Decimal("10000"),
+            allow_loan=False,
+            issued_on=AS_OF,
+            payout_method="cash",
+            wallet_id=wallet.id,
+        )
+    assert len(calls) == 1
+    assert calls[0]["source"] == "cash"
+    assert calls[0]["is_loan"] is False
+    assert calls[0]["source_id"] == adv.id
+    assert calls[0]["amount"] == Decimal("10000.00")
+
+
+async def test_cash_advance_safe_does_not_trigger_iiko(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Наличная выдача с Сейфа → проводка ДДС есть, но iiko НЕ дёргается (Сейф ≠ Главная касса)."""
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "app.services.payroll_advance_service.post_advance_payout_to_iiko",
+        lambda **kw: calls.append(kw),
+    )
+    async with async_session_factory() as session:
+        emp = await _make_okladnik(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
+        wallet = await session.scalar(select(Wallet).where(Wallet.code == "cash_safe"))
+        await session.commit()
+        await issue_advance(
+            session,
+            employee_id=emp.id,
+            amount=Decimal("10000"),
+            allow_loan=False,
+            issued_on=AS_OF,
+            payout_method="cash",
+            wallet_id=wallet.id,
+        )
+    assert calls == []
+
+
 async def test_bank_wallet_payout_creates_draft_no_cashflow(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

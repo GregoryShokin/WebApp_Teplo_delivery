@@ -84,6 +84,7 @@ from app.services.banking.safe_allocations import (
     safe_reserved_total,
 )
 from app.services.banking.transfer_matching import find_and_link_transfer_pairs
+from app.services.advance_iiko_payout import post_advance_payout_to_iiko
 from app.services.payroll_advance_service import sync_advance_after_allocation_change
 
 router = APIRouter()
@@ -1126,9 +1127,22 @@ async def pay_safe_allocation(
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     # Если резерв — это банк-выдача аванса/займа, полная оплата формирует долг сотрудника.
-    await sync_advance_after_allocation_change(session, allocation_id=allocation.id)
+    disbursed_advance = await sync_advance_after_allocation_change(
+        session, allocation_id=allocation.id
+    )
     await session.commit()
     await session.refresh(allocation)
+    # Выдача состоялась через оплату резерва (не кнопкой «Выплачено») → изъятие в iiko
+    # «эквайринг» ПОСЛЕ commit, как делает disburse_bank_advance. Переход в disbursed
+    # однократен, поэтому задвоения с путём «Выплачено» нет; ошибка iiko не валит оплату.
+    if disbursed_advance is not None:
+        post_advance_payout_to_iiko(
+            amount=disbursed_advance.amount,
+            payout_date=datetime.now(MOSCOW_TZ).date(),
+            source_id=disbursed_advance.id,
+            is_loan=disbursed_advance.kind == "loan",
+            source="bank",
+        )
     return _safe_allocation_payload(allocation)
 
 
