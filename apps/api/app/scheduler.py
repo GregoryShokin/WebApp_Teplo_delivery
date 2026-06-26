@@ -27,6 +27,7 @@ from app.services.bank_payment_status import apply_payment_status
 from app.services.banking.base import AccountMeta, NormalizedBankOperation, clean_digits
 from app.services.banking.classifier import (
     create_or_update_reconciliation_case,
+    reconcile_needs_review_prebooked,
     run_classification_rules,
 )
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
@@ -116,7 +117,7 @@ async def run_payment_status_poll(
             )
         )
     ).all()
-    result = {"checked": 0, "paid": 0, "failed": 0, "errors": 0}
+    result = {"checked": 0, "paid": 0, "failed": 0, "errors": 0, "reconciled": 0}
     for draft in drafts:
         try:
             raw = await client.get_payment_status(draft.provider_ref or "")
@@ -209,6 +210,10 @@ async def run_payment_status_poll(
             result["paid"] += 1
         elif advance_status == "failed":
             result["failed"] += 1
+
+    # Сводим «требующие проверки» операции с prebooked-проводками, появившимися позже них
+    # (гонка вебхук↔поллинг) — иначе один платёж висит двумя строками в журнале.
+    result["reconciled"] = await reconcile_needs_review_prebooked(session)
     await session.commit()
     return result
 

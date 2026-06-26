@@ -137,6 +137,54 @@ async def run_classification_rules(
     return ClassificationResult(**counts)
 
 
+async def reconcile_needs_review_prebooked(session: AsyncSession) -> int:
+    """Подхватить «требующие проверки» операции, под которые prebooked-проводка появилась ПОЗЖЕ.
+
+    Гонка вебхук↔поллинг: операция выписки прилетает realtime-вебхуком и уходит в needs_review
+    раньше, чем поллинг статусов создаёт prebooked-проводку (оплата поставщику / транзит ЗП /
+    выдача аванса). На ингесте склейки не было (проводки ещё нет), и сама она потом не
+    подхватывается → дубль в журнале. Этот проход после поллинга сводит их обратно: для каждой
+    непривязанной needs_review-операции ищем подходящую prebooked-проводку тем же
+    ``_find_prebooked_payment`` (тот же кошелёк/сумма/направление/дата/ИНН, FIFO, без чужого ИНН),
+    привязываем и закрываем кейс. Возвращает число склеек.
+    """
+    operations = (
+        await session.scalars(
+            select(BankOperation).where(
+                BankOperation.classification_status == "needs_review",
+                BankOperation.cashflow_transaction_id.is_(None),
+            )
+        )
+    ).all()
+    claimed: set[UUID] = set()
+    linked = 0
+    for operation in operations:
+        prebooked = await _find_prebooked_payment(session, operation, claimed=claimed)
+        if prebooked is None:
+            continue
+        operation.cashflow_transaction_id = prebooked.id
+        operation.classification_status = "classified"
+        claimed.add(prebooked.id)
+        case = await session.scalar(
+            select(ReconciliationCase).where(
+                ReconciliationCase.bank_operation_id == operation.id,
+                ReconciliationCase.kind == "unclassified_operation",
+                ReconciliationCase.status == "pending",
+            )
+        )
+        if case is not None:
+            await close_reconciliation_case(
+                session,
+                case,
+                status="resolved",
+                resolution_payload={"action": "reconcile_prebooked"},
+            )
+        linked += 1
+    if linked:
+        await session.flush()
+    return linked
+
+
 async def apply_operation_action(
     session: AsyncSession,
     operation: BankOperation,
