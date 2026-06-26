@@ -57,6 +57,7 @@ from app.services.warehouse_payments import (
     BankPart,
     CashPart,
     WarehousePaymentError,
+    build_auto_split_cash_parts,
     build_staff_split_cash_parts,
     pay_invoice_split,
     resolve_match_params,
@@ -160,6 +161,10 @@ class PaySplitRequest(BaseModel):
     # part to its own DDS article. Bank parts are not allowed with it (bank lines are
     # classified as one sum), so the staff split stays cash-only on MVP.
     split_staff: bool = False
+    # split_by_lines: статью ДДС менеджер не выбирает — каждая наличная строка (Сейф/ТК)
+    # разносится по статьям из ПОЗИЦИЙ накладной (build_auto_split_cash_parts). cash-only,
+    # поддерживает несколько кошельков и частичную оплату.
+    split_by_lines: bool = False
 
 
 def _serialize_time_suggestion(sug: TimeMatchSuggestion) -> dict[str, Any]:
@@ -428,7 +433,22 @@ async def post_pay_split(
         for c in payload.cash_parts
     ]
     try:
-        if payload.split_staff:
+        if payload.split_by_lines:
+            # Статью ДДС менеджер не выбирает — каждая наличная строка разносится по статьям
+            # из позиций накладной. Поддерживает несколько кошельков и частичную оплату.
+            if payload.bank_parts:
+                raise WarehousePaymentError(
+                    "Разнесение по позициям доступно только при оплате наличными/со счёта"
+                )
+            if not payload.cash_parts:
+                raise WarehousePaymentError("Укажите хотя бы один источник оплаты")
+            cash_parts = await build_auto_split_cash_parts(
+                session,
+                invoice,
+                rows=[(c.wallet_id, c.amount, c.operation_date) for c in payload.cash_parts],
+            )
+            bank_parts = []
+        elif payload.split_staff:
             if payload.bank_parts:
                 raise WarehousePaymentError(
                     "Разнесение персонала доступно только при оплате наличными"

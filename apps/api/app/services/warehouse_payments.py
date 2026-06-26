@@ -241,6 +241,93 @@ async def build_staff_split_cash_parts(
     return parts
 
 
+async def _invoice_article_amounts(
+    session: AsyncSession, invoice: SupplierInvoice
+) -> list[tuple[uuid.UUID, Decimal]]:
+    """Разбивка ПОЛНОЙ суммы накладной по статьям ДДС из её позиций (Σ == invoice.amount).
+
+    Производство (товарные строки) → «Оплата поставщикам»; персонал → по статьям
+    персональных строк (фолбэк на единую staff-статью у старых накладных). iiko-накладные
+    наших строк не имеют (``staff_amount=0``) → вся сумма на «Оплата поставщикам».
+    """
+    amounts: list[tuple[uuid.UUID, Decimal]] = []
+    production = _production_amount(invoice)
+    if production > 0:
+        amounts.append((await resolve_production_article_id(session), production))
+    staff_total = _money(invoice.staff_amount)
+    if staff_total > 0:
+        lines = (
+            await session.scalars(
+                select(InvoiceLineItem).where(
+                    InvoiceLineItem.invoice_id == invoice.id,
+                    InvoiceLineItem.is_staff.is_(True),
+                )
+            )
+        ).all()
+        sums_by_article: dict[uuid.UUID, Decimal] = {}
+        for line in lines:
+            if line.dds_article_id is not None:
+                sums_by_article[line.dds_article_id] = sums_by_article.get(
+                    line.dds_article_id, Decimal("0.00")
+                ) + _money(line.sum)
+        if sums_by_article:
+            allocated = Decimal("0.00")
+            items = list(sums_by_article.items())
+            for index, (article_id, article_sum) in enumerate(items):
+                amount = staff_total - allocated if index == len(items) - 1 else _money(article_sum)
+                allocated += amount
+                if amount > 0:
+                    amounts.append((article_id, amount))
+        else:
+            amounts.append((await resolve_staff_article_id(session), staff_total))
+    return amounts
+
+
+async def build_auto_split_cash_parts(
+    session: AsyncSession,
+    invoice: SupplierInvoice,
+    *,
+    rows: list[tuple[uuid.UUID, Decimal, date]],
+) -> list[CashPart]:
+    """Разнести каждую наличную строку (кошелёк, сумма, дата) по статьям ДДС из ПОЗИЦИЙ
+    накладной — пропорционально доле строки. Менеджер статью НЕ выбирает: она уже в позициях
+    (склад/персонал/содержание). Поддерживает несколько кошельков и частичную оплату.
+
+    Для iiko-накладной (одна статья «Оплата поставщикам») каждая строка = одна часть на её
+    сумму. Остаток округления на строке отдаём последней статье, чтобы Σ частей строки точно
+    совпала с её суммой.
+    """
+    breakdown = await _invoice_article_amounts(session, invoice)
+    if not breakdown:
+        breakdown = [(await resolve_production_article_id(session), _money(invoice.amount))]
+    total = _money(invoice.amount)
+    parts: list[CashPart] = []
+    for wallet_id, raw_amount, op_date in rows:
+        amount = _money(raw_amount)
+        if amount <= 0:
+            continue
+        allocated = Decimal("0.00")
+        last = len(breakdown) - 1
+        for index, (article_id, article_amount) in enumerate(breakdown):
+            if index == last:
+                piece = amount - allocated
+            elif total > 0:
+                piece = _money(amount * article_amount / total)
+            else:
+                piece = _money(amount / len(breakdown))
+            allocated += piece
+            if piece > 0:
+                parts.append(
+                    CashPart(
+                        wallet_id=wallet_id,
+                        amount=piece,
+                        operation_date=op_date,
+                        article_id=article_id,
+                    )
+                )
+    return parts
+
+
 async def pay_invoice_split(
     session: AsyncSession,
     *,

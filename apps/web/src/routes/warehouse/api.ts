@@ -220,9 +220,7 @@ export async function getLoanReturnable(loanId: string): Promise<LoanReturnable>
   return response.data;
 }
 
-export async function createBarterReturn(
-  payload: ReturnPayload,
-): Promise<WarehouseInvoiceDetail> {
+export async function createBarterReturn(payload: ReturnPayload): Promise<WarehouseInvoiceDetail> {
   const response = await api.post<WarehouseInvoiceDetail>(`${BASE}/invoices/return`, payload);
   return response.data;
 }
@@ -266,6 +264,8 @@ export type PaySplitPayload = {
   bank_parts?: BankPartInput[];
   cash_parts?: CashPartInput[];
   split_staff?: boolean;
+  // Статью ДДС не передаём — бэк разносит каждую наличную строку по позициям накладной.
+  split_by_lines?: boolean;
 };
 
 /** Кандидаты банк-операций по дате+времени чека. Возвращает null, если накладная
@@ -275,10 +275,9 @@ export async function getInvoiceMatchSuggestions(
   params?: { window_hours?: number; tolerance_pct?: number; tight_minutes?: number },
 ): Promise<MatchSuggestion | null> {
   try {
-    const response = await api.get<MatchSuggestion>(
-      `${BASE}/invoices/${id}/match-suggestions`,
-      { params },
-    );
+    const response = await api.get<MatchSuggestion>(`${BASE}/invoices/${id}/match-suggestions`, {
+      params,
+    });
     return response.data;
   } catch (error) {
     if ((error as { response?: { status?: number } })?.response?.status === 404) {
