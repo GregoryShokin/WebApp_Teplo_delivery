@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 
 # ИНН наших собственных юрлиц — исключаем из кандидатов на контрагента (мы — покупатель).
 OWN_INNS = frozenset({"890307589201"})
+# Наши расчётные счета — исключаем из реквизитов получателя (в двусторонних документах —
+# актах, счёт-договорах — печатаются реквизиты и поставщика, и наши как плательщика).
+OWN_ACCOUNTS = frozenset({"40802810100002438573"})
 
 _RU_MONTHS = {
     "января": 1, "февраля": 2, "марта": 3, "апреля": 4, "мая": 5, "июня": 6,
@@ -46,7 +49,7 @@ _AMOUNT_PATTERNS = (
     rf"\bвсего[^0-9\-]{{0,20}}?({_MONEY})",
 )
 _ORG_RE = re.compile(
-    r"(?:ООО|ОАО|ЗАО|ПАО|НАО|АО|ИП)\s+[«\"’']?[^»\"’'\n;:|]{2,80}",
+    r"(?:ООО|ОАО|ЗАО|ПАО|НАО|АО|ИП)\s+[«\"’']?[^»\"’'\n;:|/]{2,80}",
     re.IGNORECASE,
 )
 
@@ -66,6 +69,17 @@ class RecognizedInvoice:
     engine: str = "none"
     raw_text_excerpt: str = ""
     notes: list[str] = field(default_factory=list)
+    # Тип документа: invoice — счёт на оплату (материализуем); upd/reconciliation/act —
+    # закрывающие/сверочные документы (НЕ счёт, ingest уводит в ignored); unknown — формат не
+    # опознан (оператор разберёт в needs_review).
+    document_kind: str = "invoice"
+    # Подсказка по продукту для счетов iiko (courierica — ПО курьеров; iiko_license — лицензия
+    # iiko/iikoCloud). Нужна, чтобы развести два регулярных счёта одного поставщика по статьям ДДС.
+    product_hint: str | None = None
+
+    @property
+    def is_payment_invoice(self) -> bool:
+        return self.document_kind == "invoice"
 
     def requisites(self) -> dict[str, str]:
         """Реквизиты в форме, понятной ``build_payment_draft_api_payload`` (для Фазы 2/3)."""
@@ -97,6 +111,8 @@ class RecognizedInvoice:
             "invoice_date": self.invoice_date.isoformat() if self.invoice_date else None,
             "confidence": round(self.confidence, 3),
             "engine": self.engine,
+            "document_kind": self.document_kind,
+            "product_hint": self.product_hint,
             "requisites": self.requisites(),
             "notes": self.notes,
             "text_excerpt": self.raw_text_excerpt[:2000],
@@ -197,7 +213,123 @@ def _pick_recipient(text: str) -> str | None:
             continue
         if name.count("«") > name.count("»"):  # регекс остановился перед закрывающей «»»
             name += "»"
+        if name.count('"') % 2 == 1:  # «АО "АЙКО» — добрать закрывающую прямую кавычку
+            name += '"'
         return name
+    return None
+
+
+# Позитивные маркеры «это счёт на оплату» (его материализуем). Один поставщик может звать
+# документ по-разному: iiko — «счёт на оплату», ЛЕММА — «счёт-договор», Стартер печатает
+# «образец заполнения платёжного поручения».
+_INVOICE_MARKERS = (
+    "счет на оплату", "счёт на оплату",
+    "счет-договор", "счёт-договор", "счет договор", "счёт договор",
+    "счет-оферта", "счёт-оферта",
+    "образец заполнения платежного поручения", "образец заполнения платёжного поручения",
+)
+_PAY_DUE_RE = re.compile(r"(всего|итого|сумма)\s+к\s+оплате", re.IGNORECASE)
+
+# Маркеры закрывающих актов (НЕ счёт на оплату): акт выполненных работ/услуг (Спецавто Юг),
+# акт передачи прав / приёма-передачи (DocsInbox и пр.).
+_ACT_MARKERS = (
+    "о приемке выполненных работ", "о приёмке выполненных работ",
+    "акт сдачи-приемки", "акт сдачи-приёмки",
+    "акт приема-передачи", "акт приёма-передачи",
+    "акт передачи прав",
+)
+
+
+def _classify_document(text: str) -> str:
+    """invoice | upd | reconciliation | act | unknown.
+
+    Только ``invoice`` материализуется в накладную к оплате. Классификация по содержанию, а не
+    по отправителю: «Лицензиар/Лицензиат» сами по себе НЕ признак акта (так оформлены и счета
+    ЛЕММА/iiko), поэтому решает наличие позитивного маркера счёта.
+    """
+    # Нормализуем пробелы: pypdf переносит слова, поэтому многословные маркеры ищем по тексту
+    # со схлопнутыми пробельными последовательностями («Универсальный\nпередаточный\nдокумент»).
+    low = re.sub(r"\s+", " ", text.casefold())
+    # Тип определяем по ЗАГОЛОВКУ документа, а не по упоминаниям в теле: акт передачи прав
+    # ссылается на «счёт-оферту», а счёт-оферта в условиях упоминает «акт сверки» — и то и другое
+    # сбивает поиск по подстроке. Надёжные заголовочные сигналы (начинается с «Акт…», УПД)
+    # проверяем РАНЬШЕ маркеров счёта; неоднозначные body-маркеры — только как фолбэк после них.
+    if re.match(r"\s*акт\s+сверки\b", low):
+        return "reconciliation"
+    if re.match(r"\s*акт\b", low):  # «Акт …» в начале — закрывающий акт (счета так не начинаются)
+        return "act"
+    if "универсальный передаточный документ" in low:  # УПД декларирует себя в шапке
+        return "upd"
+    if any(m in low for m in _INVOICE_MARKERS):
+        return "invoice"
+    # Фолбэки для документов без явного заголовка-«Акт» и без маркера счёта:
+    if "акт сверки" in low:
+        return "reconciliation"
+    if any(m in low for m in _ACT_MARKERS):
+        return "act"
+    # Передаточный акт iiko («Документы для…»): шаблонная подпись сторон без маркера счёта.
+    if "организация, адрес, телефон, факс" in low:
+        return "act"
+    # Общий счёт нестандартного макета: есть слово «счёт» и явная сумма «к оплате».
+    if re.search(r"сч[ёе]т", low) and _PAY_DUE_RE.search(low):
+        return "invoice"
+    return "unknown"
+
+
+_ACC20_RE = re.compile(r"\d{20}")
+
+
+def _extract_party_accounts(text: str, bik: str | None = None) -> tuple[str | None, str | None]:
+    """Расчётный (р/с) и корреспондентский (к/с) счёт ПОЛУЧАТЕЛЯ по структуре счетов ЦБ РФ:
+    р/с начинается с ``40`` (счета клиентов), к/с — с ``301``. В счёте реквизиты получателя идут
+    первыми, поэтому р/с — первый «чужой» 40-счёт (наш отбрасываем по ``OWN_ACCOUNTS``). к/с
+    выбираем по БИК: последние 3 цифры к/с совпадают с последними 3 цифрами БИК банка — так к/с
+    поставщика надёжно отделяется от нашего в двусторонних документах (счёт-договор, акт), где
+    эвристика «по близости» промахивается из-за вёрстки.
+
+    Решает кейс iiko/Стартер, где счёт получателя помечен просто «Сч. №», без метки «р/с»."""
+    rs = None
+    ks_candidates: list[str] = []
+    for m in _ACC20_RE.finditer(text):
+        acc = m.group(0)
+        if acc in OWN_ACCOUNTS:
+            continue
+        if acc.startswith("40") and rs is None:
+            rs = acc
+        elif acc.startswith("301"):
+            ks_candidates.append(acc)
+    ks: str | None = None
+    if bik and len(bik) == 9:
+        ks = next((a for a in ks_candidates if a[-3:] == bik[-3:]), None)
+    if ks is None and ks_candidates:
+        ks = ks_candidates[0]
+    return rs, ks
+
+
+def _pick_number(text: str) -> str | None:
+    # 1) «Счёт [на оплату|-фактура|-договор] № <номер>» (iiko, ЛЕММА).
+    m = re.search(
+        r"сч[ёе]т(?:[-\s]*фактура|[-\s]*договор)?(?:\s+на\s+оплату)?\s*№\s*([\w/][\w\-/]*)",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).strip("-/")
+    # 2) «Счёт <номер> от <дата>» без № (Стартер: «Счет 0000-001175 от 31 марта 2026 г.»).
+    m = re.search(r"сч[ёе]т\s+([0-9][\w\-/]*)\s+от\s+\d", text, re.IGNORECASE)
+    if m:
+        return m.group(1).strip("-/")
+    return None
+
+
+def _iiko_product(text: str, number: str | None) -> str | None:
+    """Развести два регулярных счёта iiko: courierica (ПО курьеров, суффикс -лсп / is-175038 /
+    позиции «Курьерика») vs iiko_license (лицензия iikoCloud, суффикс -лк / ic-109122)."""
+    low = (text + " " + (number or "")).casefold()
+    if "курьерик" in low or "-лсп" in low or "is-175038" in low:
+        return "courierica"
+    if "iikocloud" in low or "-лк" in low or "ic-109122" in low:
+        return "iiko_license"
     return None
 
 
@@ -221,28 +353,35 @@ def _confidence(rec: RecognizedInvoice) -> float:
 def deterministic_recognize(text: str) -> RecognizedInvoice:
     rec = RecognizedInvoice(engine="deterministic", raw_text_excerpt=text[:2000])
     if not text.strip():
+        rec.document_kind = "unknown"  # пустой текст (скан) — пусть решает LLM/оператор
         return rec
+    rec.document_kind = _classify_document(text)
     rec.inn = _pick_inn(text)
     rec.amount = _pick_amount(text)
     rec.recipient_name = _pick_recipient(text)
-    rec.bank_acnt = _labelled_20(
-        text, r"р[\s/.]*с", r"расч[её]тный\s+сч[её]т", r"сч[её]т\s+получателя"
-    )
-    rec.corr_account = _labelled_20(text, r"к[\s/.]*с", r"корр[\w.\s]*сч[её]т")
     bik = re.search(r"БИК[\s:№]*?(\d{9})", text, re.IGNORECASE)
     rec.bank_bik = bik.group(1) if bik else None
+    # Реквизиты получателя по структуре (исключая наши), с откатом на явные метки. к/с разводим
+    # по БИК, поэтому БИК извлекаем раньше счетов.
+    rs, ks = _extract_party_accounts(text, rec.bank_bik)
+    rec.bank_acnt = rs or _labelled_20(
+        text, r"р[\s/.]*с", r"расч[её]тный\s+сч[её]т", r"сч[её]т\s+получателя"
+    )
+    rec.corr_account = ks or _labelled_20(text, r"к[\s/.]*с", r"корр[\w.\s]*сч[её]т")
     kpp = re.search(r"КПП[\s:№]*?(\d{9})", text, re.IGNORECASE)
     rec.kpp = kpp.group(1) if kpp else None
-    num = re.search(
-        r"сч[ёе]т(?:[\s\-]*фактура)?(?:\s+на\s+оплату)?\s*№\s*([\w\-/]+)", text, re.IGNORECASE
-    )
-    rec.invoice_number = num.group(1) if num else None
+    rec.invoice_number = _pick_number(text)
     dm = re.search(
         r"от\s+(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}|\d{1,2}\s+[а-яё]+\s+\d{4})",
         text,
         re.IGNORECASE,
     )
     rec.invoice_date = _parse_date(dm.group(1)) if dm else None
+    rec.product_hint = _iiko_product(text, rec.invoice_number)
+    if rec.product_hint == "courierica":
+        rec.notes.append("iiko: Курьерика (ПО курьеров)")
+    elif rec.product_hint == "iiko_license":
+        rec.notes.append("iiko: лицензия iiko/iikoCloud")
     rec.confidence = _confidence(rec)
     return rec
 
@@ -377,6 +516,11 @@ async def recognize(pdf: bytes, *, settings: Settings) -> RecognizedInvoice:
     """Распознать счёт: детерминированный слой, при нехватке — LLM-фолбэк, затем слияние."""
     text = extract_pdf_text(pdf)
     det = deterministic_recognize(text)
+
+    # Закрывающие/сверочные документы (УПД, акт сверки, передаточный акт) опознаются по тексту
+    # надёжно — не зовём LLM, чтобы он ошибочно не «спас» не-счёт в счёт на оплату.
+    if det.document_kind in ("upd", "reconciliation", "act"):
+        return det
 
     sufficient = (
         det.amount is not None

@@ -40,9 +40,10 @@ from app.services.mail.imap_client import (
 
 logger = logging.getLogger(__name__)
 
-# Отправители, чьи PDF — НЕ почтовые счета на оплату: iiko шлёт операционные отчёты, а его
-# накладные приходят отдельным каналом (iiko-синк), поэтому почту от iiko пропускаем.
-SKIP_SENDER_SUBSTRINGS = ("iiko",)
+# Отправители, чьи PDF целиком игнорируем (заведомый шум). iiko здесь БОЛЬШЕ НЕТ: от него
+# приходят настоящие счета на оплату (лицензии iiko/Курьерика), а его акты/сверки/УПД
+# отсекаются классификатором по типу документа (recognize → document_kind), а не по отправителю.
+SKIP_SENDER_SUBSTRINGS: tuple[str, ...] = ()
 
 
 def _guess_type(inn: str | None) -> str:
@@ -354,15 +355,23 @@ async def process_attachment(
     intake.engine = rec.engine
     intake.confidence = _confidence_decimal(rec.confidence)
 
-    if rec.amount is None:
-        intake.status = "ignored"  # сумма не найдена → это не счёт на оплату
+    # Закрывающие/сверочные документы (УПД, акт сверки, передаточный акт) и всё без суммы — это
+    # не счёт на оплату: фиксируем в журнале как ignored, не материализуем и не показываем в
+    # «Актуальных». Сам PDF остаётся — оператор при желании поднимет через фильтр «Все».
+    if rec.document_kind in ("upd", "reconciliation", "act") or rec.amount is None:
+        intake.status = "ignored"
         return intake.status
 
     cp_id = await _match_or_create_counterparty(session, rec, _sender_email(att.from_addr))
     intake.counterparty_id = cp_id
 
-    if cp_id is None or rec.confidence < settings.invoice_recognition_min_confidence:
-        # Контрагент не определён или распознано неуверенно → оператор подтвердит в Фазе 2.
+    # Авто-материализуем только уверенно опознанный счёт с известным контрагентом. Формат
+    # «unknown» (нет явного маркера счёта) — всегда оператору, чтобы не провести неведомый макет.
+    if (
+        cp_id is None
+        or rec.document_kind != "invoice"
+        or rec.confidence < settings.invoice_recognition_min_confidence
+    ):
         intake.status = "needs_review"
         return intake.status
 
