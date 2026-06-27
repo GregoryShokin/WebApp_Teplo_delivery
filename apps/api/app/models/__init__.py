@@ -40,7 +40,6 @@ from app.models.courier import (
     CourierShiftMatchStatus,
     DeliveryOrder,
 )
-from app.models.email_invoice_intake import EmailInvoiceIntake
 from app.models.courier_deposit import (
     CourierDepositAccount,
     CourierDepositTransaction,
@@ -72,6 +71,7 @@ from app.models.dds import (
     TransferGroup,
     WalletBalanceSnapshot,
 )
+from app.models.email_invoice_intake import EmailInvoiceIntake
 from app.models.employee import (
     Employee,
     EmployeeAllowanceEvent,

@@ -13,10 +13,10 @@ from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.integrations import router as integrations_router
 from app.api.v1.routes.inventory import router as inventory_router
 from app.api.v1.routes.kassa import router as kassa_router
+from app.api.v1.routes.payment_page import router as payment_page_router
 from app.api.v1.routes.payroll import router as payroll_router
 from app.api.v1.routes.payroll_adjustments import router as payroll_adjustments_router
 from app.api.v1.routes.payroll_admin import router as payroll_admin_router
-from app.api.v1.routes.payment_page import router as payment_page_router
 from app.api.v1.routes.payroll_advances import router as payroll_advances_router
 from app.api.v1.routes.positions import router as positions_router
 from app.api.v1.routes.settings import router as settings_router
