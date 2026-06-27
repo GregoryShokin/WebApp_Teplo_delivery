@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, LoaderCircle } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -481,39 +481,14 @@ export function PayrollPersonalReportPageTab() {
                 </section>
               ) : null}
 
-              <Dialog open={openWeek !== null} onOpenChange={(open) => !open && setOpenWeek(null)}>
-                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-                  <DialogHeader>
-                    <DialogTitle>
-                      Ведомость {openWeek ? formatDate(openWeek.period_start) : ""} —{" "}
-                      {openWeek ? formatDate(openWeek.period_end) : ""}
-                    </DialogTitle>
-                    <DialogDescription>
-                      {report.employee_name} · {openWeek?.role}
-                    </DialogDescription>
-                  </DialogHeader>
-                  {openWeek ? (
-                    <>
-                      <div className="grid gap-3 md:grid-cols-4">
-                        <KpiSmall label="Оклад" value={formatMoney(openWeek.base_pay)} />
-                        <KpiSmall label="Процент" value={formatMoney(openWeek.percent_pay)} />
-                        <KpiSmall label="Удержано" value={formatMoney(openWeek.deduction)} />
-                        {openWeek.deposit_payout > 0 ? (
-                          <KpiSmall
-                            label="Выдача депозита"
-                            value={formatMoney(openWeek.deposit_payout)}
-                          />
-                        ) : null}
-                        <KpiSmall
-                          label="К выплате"
-                          value={formatMoney(openWeek.total_payable + openWeek.deposit_payout)}
-                        />
-                      </div>
-                      <OperationsTable rows={openWeekOperations} />
-                    </>
-                  ) : null}
-                </DialogContent>
-              </Dialog>
+              <PayslipDialog
+                open={openWeek !== null}
+                onOpenChange={(open) => !open && setOpenWeek(null)}
+                period={openWeek}
+                employeeName={report.employee_name}
+                operations={openWeekOperations}
+                fundReportTotal={report.totals.fund_accrual}
+              />
             </>
           )}
         </div>
@@ -678,6 +653,199 @@ function OperationsTable({ rows }: { rows: OperationRow[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+const PAYSLIP_COLUMNS: Array<{ kind: OperationKind; withComment: boolean }> = [
+  { kind: "base_pay", withComment: false },
+  { kind: "percent_pay", withComment: false },
+  { kind: "vacation_pay", withComment: false },
+  { kind: "premium", withComment: true },
+  { kind: "deposit_payout", withComment: false },
+  { kind: "manual_penalty", withComment: true },
+  { kind: "audit_penalty", withComment: false },
+  { kind: "deposit_accrual", withComment: false },
+  { kind: "deposit_writeoff", withComment: false },
+  { kind: "ndfl", withComment: false },
+];
+// Фонд показываем отдельным KPI-виджетом, а не колонкой детализации (накопление вне «к выплате»).
+const PAYSLIP_FUND_KINDS = new Set<OperationKind>(["fund_accrual", "fund_payout"]);
+
+function formatPlainAmount(value: number) {
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(Math.abs(value));
+}
+
+// Pivot-ведомость: строки — даты, колонки — типы операций (с парным комментарием у премии и
+// штрафа), крайняя колонка — нетто за день. Колонки строятся динамически по присутствующим типам.
+function PayslipDialog({
+  open,
+  onOpenChange,
+  period,
+  employeeName,
+  operations,
+  fundReportTotal,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  period: PayrollPersonalReportPeriod | null;
+  employeeName: string;
+  operations: OperationRow[];
+  fundReportTotal: number;
+}) {
+  const tableOps = useMemo(
+    () => operations.filter((row) => row.date && !PAYSLIP_FUND_KINDS.has(row.kind)),
+    [operations],
+  );
+  const dates = useMemo(() => {
+    const set = new Set(tableOps.map((row) => row.date));
+    return [...set].sort((left, right) => (left < right ? 1 : -1));
+  }, [tableOps]);
+  const columns = useMemo(
+    () => PAYSLIP_COLUMNS.filter((col) => tableOps.some((row) => row.kind === col.kind)),
+    [tableOps],
+  );
+
+  const cell = (date: string, kind: OperationKind) => {
+    const matched = tableOps.filter((row) => row.date === date && row.kind === kind);
+    const amount = matched.reduce((acc, row) => acc + Number(row.amount || 0), 0);
+    const comment = matched
+      .map((row) => row.comment)
+      .filter((value): value is string => Boolean(value))
+      .join("; ");
+    return { amount, comment };
+  };
+  const dayTotal = (date: string) =>
+    tableOps
+      .filter((row) => row.date === date)
+      .reduce((acc, row) => {
+        const value = Number(row.amount || 0);
+        return acc + (KIND_META[row.kind].isDeduction ? -value : value);
+      }, 0);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+        <DialogHeader>
+          <DialogTitle>
+            Ведомость {period ? formatDate(period.period_start) : ""} —{" "}
+            {period ? formatDate(period.period_end) : ""}
+          </DialogTitle>
+          <DialogDescription>
+            {employeeName} · {period?.role}
+          </DialogDescription>
+        </DialogHeader>
+        {period ? (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <KpiSmall label="Оклад" value={formatMoney(period.base_pay)} />
+              <KpiSmall label="Процент" value={formatMoney(period.percent_pay)} />
+              <KpiSmall label="Удержано" value={formatMoney(period.deduction)} />
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+                <div className="text-xs text-emerald-700">К выплате</div>
+                <div className="mt-1 font-semibold tabular-nums text-emerald-700">
+                  {formatMoney(period.total_payable + period.deposit_payout)}
+                </div>
+              </div>
+              <div className="rounded-md border border-violet-200 bg-violet-50 p-3">
+                <div className="text-xs text-violet-700">Накопит. фонд</div>
+                <div className="mt-1 flex items-baseline gap-1.5">
+                  <span className="font-semibold tabular-nums text-violet-700">
+                    +{formatMoney(period.fund_accrual)}
+                  </span>
+                  <span className="text-xs text-violet-600">за ведомость</span>
+                </div>
+                <div className="text-xs text-violet-600">
+                  за отчёт: {formatMoney(fundReportTotal)}
+                </div>
+              </div>
+            </div>
+
+            {dates.length === 0 ? (
+              <div className="rounded-md border bg-card px-3 py-6 text-center text-sm text-muted-foreground">
+                Операций за период нет
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-md border bg-card">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/35 text-xs text-muted-foreground">
+                      <th className="px-2 py-2 text-left font-medium">Дата</th>
+                      {columns.map((col, index) => (
+                        <Fragment key={col.kind}>
+                          <th
+                            className={cn(
+                              "whitespace-nowrap px-2 py-2 text-right font-medium",
+                              index > 0 && "border-l",
+                            )}
+                          >
+                            {KIND_META[col.kind].label}
+                          </th>
+                          {col.withComment ? (
+                            <th className="px-2 py-2 text-left font-medium">Комментарий</th>
+                          ) : null}
+                        </Fragment>
+                      ))}
+                      <th className="whitespace-nowrap border-l-2 px-2 py-2 text-right font-medium">
+                        Итог дня
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dates.map((date) => {
+                      const total = dayTotal(date);
+                      return (
+                        <tr className="border-b last:border-b-0 even:bg-muted/30" key={date}>
+                          <td className="whitespace-nowrap px-2 py-2 align-top tabular-nums text-muted-foreground">
+                            {formatDate(date)}
+                          </td>
+                          {columns.map((col, index) => {
+                            const data = cell(date, col.kind);
+                            const meta = KIND_META[col.kind];
+                            return (
+                              <Fragment key={col.kind}>
+                                <td
+                                  className={cn(
+                                    "whitespace-nowrap px-2 py-2 text-right align-top font-medium tabular-nums",
+                                    index > 0 && "border-l",
+                                    data.amount === 0
+                                      ? "text-muted-foreground"
+                                      : meta.isDeduction
+                                        ? "text-rose-700"
+                                        : "text-emerald-700",
+                                  )}
+                                >
+                                  {data.amount === 0
+                                    ? ""
+                                    : `${meta.isDeduction ? "−" : "+"}${formatPlainAmount(data.amount)}`}
+                                </td>
+                                {col.withComment ? (
+                                  <td className="px-2 py-2 align-top text-xs leading-snug text-muted-foreground">
+                                    {data.comment || ""}
+                                  </td>
+                                ) : null}
+                              </Fragment>
+                            );
+                          })}
+                          <td
+                            className={cn(
+                              "whitespace-nowrap border-l-2 px-2 py-2 text-right align-top font-semibold tabular-nums",
+                              total < 0 ? "text-rose-700" : "text-emerald-700",
+                            )}
+                          >
+                            {total < 0 ? "−" : "+"}
+                            {formatPlainAmount(total)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }
 
