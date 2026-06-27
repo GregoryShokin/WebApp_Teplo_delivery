@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -31,6 +32,8 @@ from app.db.base import Base
 #                  указывает на исходную, новую накладную НЕ создаём
 #   failed       — ошибка распознавания (см. error)
 #   ignored      — не счёт (нет суммы) / помечено как мусор
+#   excluded     — оператор вручную исключил счёт из рабочего инбокса (отдельная корзина); из неё
+#                  можно вернуть (в previous_status) или удалить навсегда
 EMAIL_INTAKE_STATUSES = (
     "new",
     "recognized",
@@ -39,6 +42,7 @@ EMAIL_INTAKE_STATUSES = (
     "duplicate",
     "failed",
     "ignored",
+    "excluded",
 )
 
 
@@ -53,6 +57,7 @@ class EmailInvoiceIntake(Base):
     __table_args__ = (
         Index("ix_email_invoice_intake_status", "status"),
         Index("ix_email_invoice_intake_invoice", "invoice_id"),
+        Index("ix_email_invoice_intake_scheduled", "scheduled_send_date"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -87,6 +92,10 @@ class EmailInvoiceIntake(Base):
     invoice_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("supplier_invoice.id", ondelete="SET NULL"), nullable=True
     )
+    # Дата плановой авто-отправки в банк (джоба send_scheduled_payments). None = отправка вручную.
+    scheduled_send_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Статус до ручного исключения — чтобы «Вернуть» из «Исключённых» восстановило прежнее место.
+    previous_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any
 from urllib.parse import quote
 
@@ -65,6 +65,8 @@ class IntakeRead(BaseModel):
     invoice_payment_status: str | None
     invoice_in_draft: bool
     has_pdf: bool
+    # Дата плановой авто-отправки в банк (ISO). None = отправка только вручную.
+    scheduled_send_date: str | None
     created_at: datetime
 
 
@@ -90,6 +92,11 @@ class ConfirmIn(BaseModel):
     requisites: ReviewRequisites | None = None
     # Перенести реквизиты в карточку контрагента и пометить проверенными.
     apply_requisites: bool = False
+
+
+class ScheduleSendIn(BaseModel):
+    # Дата, к которой счёт автоматически уйдёт в банк (джоба отправляет, когда дата наступила).
+    send_date: date
 
 
 def _to_read(
@@ -124,6 +131,9 @@ def _to_read(
         invoice_payment_status=invoice_payment_status,
         invoice_in_draft=invoice_draft_id is not None,
         has_pdf=intake.pdf_bytes is not None,
+        scheduled_send_date=(
+            intake.scheduled_send_date.isoformat() if intake.scheduled_send_date else None
+        ),
         created_at=intake.created_at,
     )
 
@@ -133,6 +143,39 @@ async def _get_intake(session: AsyncSession, intake_id: uuid.UUID) -> EmailInvoi
     if intake is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена")
     return intake
+
+
+async def _load_read(session: AsyncSession, intake_id: uuid.UUID) -> IntakeRead:
+    """Перечитать запись с присоединённым контекстом (контрагент, верификация реквизитов, статус
+    накладной) — единый ответ для всех мутаций, как в списке."""
+    row = (
+        await session.execute(
+            select(
+                EmailInvoiceIntake,
+                Counterparty.name,
+                CounterpartyPayableProfile.requisites_verified,
+                SupplierInvoice.payment_status,
+                SupplierInvoice.draft_id,
+            )
+            .outerjoin(Counterparty, Counterparty.id == EmailInvoiceIntake.counterparty_id)
+            .outerjoin(
+                CounterpartyPayableProfile,
+                CounterpartyPayableProfile.counterparty_id == EmailInvoiceIntake.counterparty_id,
+            )
+            .outerjoin(SupplierInvoice, SupplierInvoice.id == EmailInvoiceIntake.invoice_id)
+            .where(EmailInvoiceIntake.id == intake_id)
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена")
+    intake, cp_name, verified, pay_status, draft_id = row
+    return _to_read(
+        intake,
+        cp_name,
+        requisites_verified=verified,
+        invoice_payment_status=pay_status,
+        invoice_draft_id=draft_id,
+    )
 
 
 @router.get("/intakes", response_model=list[IntakeRead], dependencies=READ)
@@ -203,8 +246,6 @@ async def confirm_intake(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> IntakeRead:
     intake = await _get_intake(session, intake_id)
-    if intake.status == "linked":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Счёт уже подтверждён")
     if intake.status == "ignored":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Запись помечена как не счёт"
@@ -226,15 +267,7 @@ async def confirm_intake(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await session.commit()
-    await session.refresh(intake)
-    name = (
-        await session.scalar(
-            select(Counterparty.name).where(Counterparty.id == intake.counterparty_id)
-        )
-        if intake.counterparty_id
-        else None
-    )
-    return _to_read(intake, name)
+    return await _load_read(session, intake_id)
 
 
 @router.post("/intakes/{intake_id}/ignore", response_model=IntakeRead, dependencies=OPERATE)
@@ -260,23 +293,11 @@ async def send_to_bank(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> IntakeRead:
-    """Отправить подтверждённый счёт в банк — переиспользует рабочий контур черновика
-    (``create_payment_draft_for_invoices``). Деньги не списываются: банк-черновик уходит на
-    подтверждение, как у накладных. В dev (mock-режим) реального вызова банка нет."""
+    """Отправить подтверждённый счёт в банк — банк-черновик (как у накладных). Деньги не
+    списываются: уходит на подтверждение. В dev (mock-режим) реального вызова банка нет."""
     intake = await _get_intake(session, intake_id)
-    if intake.status != "linked" or intake.invoice_id is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Счёт ещё не подтверждён")
-    invoice = await session.get(SupplierInvoice, intake.invoice_id)
-    if invoice is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Накладная не найдена")
-    if invoice.draft_id is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Счёт уже отправлен в банк"
-        )
     try:
-        await payments.create_payment_draft_for_invoices(
-            session, invoice_ids=[intake.invoice_id], actor_user_id=actor.user_id
-        )
+        await ingest.send_intake_to_bank(session, intake, actor_user_id=actor.user_id)
     except payments.RequisitesNotVerifiedError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -288,21 +309,97 @@ async def send_to_bank(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail="Банк недоступен, попробуйте позже"
         ) from exc
+    return await _load_read(session, intake_id)
 
-    # Сервис уже закоммитил; перечитываем для актуального ответа.
-    await session.refresh(intake)
+
+@router.post("/intakes/{intake_id}/schedule-send", response_model=IntakeRead, dependencies=OPERATE)
+async def schedule_send(
+    intake_id: uuid.UUID,
+    body: ScheduleSendIn,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> IntakeRead:
+    """Запланировать авто-отправку счёта в банк к заданной дате (джоба отправит, когда дата
+    наступит). Те же условия, что и при ручной отправке: счёт подтверждён, реквизиты проверены,
+    ещё не в банке."""
+    intake = await _get_intake(session, intake_id)
+    if intake.status != "linked" or intake.invoice_id is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Счёт ещё не подтверждён")
     invoice = await session.get(SupplierInvoice, intake.invoice_id)
-    name = (
-        await session.scalar(
-            select(Counterparty.name).where(Counterparty.id == intake.counterparty_id)
+    if invoice is None or invoice.draft_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Счёт уже отправлен в банк"
         )
-        if intake.counterparty_id
-        else None
+    verified = await session.scalar(
+        select(CounterpartyPayableProfile.requisites_verified).where(
+            CounterpartyPayableProfile.counterparty_id == intake.counterparty_id
+        )
     )
-    return _to_read(
-        intake,
-        name,
-        requisites_verified=True,
-        invoice_payment_status=invoice.payment_status if invoice else None,
-        invoice_draft_id=invoice.draft_id if invoice else None,
-    )
+    if not verified:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Реквизиты контрагента не подтверждены — откройте «Разобрать» и подтвердите их",
+        )
+    intake.scheduled_send_date = body.send_date
+    await session.commit()
+    return await _load_read(session, intake_id)
+
+
+@router.post(
+    "/intakes/{intake_id}/cancel-schedule", response_model=IntakeRead, dependencies=OPERATE
+)
+async def cancel_schedule(
+    intake_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> IntakeRead:
+    """Отменить плановую авто-отправку (счёт остаётся готовым к ручной отправке)."""
+    intake = await _get_intake(session, intake_id)
+    intake.scheduled_send_date = None
+    await session.commit()
+    return await _load_read(session, intake_id)
+
+
+@router.post("/intakes/{intake_id}/exclude", response_model=IntakeRead, dependencies=OPERATE)
+async def exclude_intake(
+    intake_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> IntakeRead:
+    """Исключить счёт из рабочего инбокса в корзину «Исключённые» (ручное «не платим этот»)."""
+    intake = await _get_intake(session, intake_id)
+    try:
+        await ingest.exclude_intake(session, intake)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await session.commit()
+    return await _load_read(session, intake_id)
+
+
+@router.post("/intakes/{intake_id}/restore", response_model=IntakeRead, dependencies=OPERATE)
+async def restore_intake(
+    intake_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> IntakeRead:
+    """Вернуть счёт из «Исключённых» обратно в рабочий инбокс."""
+    intake = await _get_intake(session, intake_id)
+    try:
+        await ingest.restore_intake(session, intake)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await session.commit()
+    return await _load_read(session, intake_id)
+
+
+@router.delete(
+    "/intakes/{intake_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=OPERATE
+)
+async def delete_intake(
+    intake_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Удалить исключённый счёт НАВСЕГДА (вместе с накладной, если она не в банке/оплате)."""
+    intake = await _get_intake(session, intake_id)
+    try:
+        await ingest.delete_intake_forever(session, intake)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

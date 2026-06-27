@@ -26,6 +26,7 @@ export type PaymentIntake = {
   invoice_payment_status: string | null;
   invoice_in_draft: boolean;
   has_pdf: boolean;
+  scheduled_send_date: string | null;
   created_at: string;
 };
 
@@ -78,6 +79,36 @@ export async function ignoreIntake(id: string): Promise<PaymentIntake> {
 export async function sendToBank(id: string): Promise<PaymentIntake> {
   const response = await api.post<PaymentIntake>(`${BASE}/intakes/${id}/send-to-bank`);
   return response.data;
+}
+
+// Запланировать авто-отправку в банк к дате (YYYY-MM-DD). Джоба отправит, когда дата наступит.
+export async function scheduleSend(id: string, sendDate: string): Promise<PaymentIntake> {
+  const response = await api.post<PaymentIntake>(`${BASE}/intakes/${id}/schedule-send`, {
+    send_date: sendDate,
+  });
+  return response.data;
+}
+
+export async function cancelSchedule(id: string): Promise<PaymentIntake> {
+  const response = await api.post<PaymentIntake>(`${BASE}/intakes/${id}/cancel-schedule`);
+  return response.data;
+}
+
+// Исключить счёт из рабочего инбокса в корзину «Исключённые».
+export async function excludeIntake(id: string): Promise<PaymentIntake> {
+  const response = await api.post<PaymentIntake>(`${BASE}/intakes/${id}/exclude`);
+  return response.data;
+}
+
+// Вернуть счёт из «Исключённых» в рабочий инбокс.
+export async function restoreIntake(id: string): Promise<PaymentIntake> {
+  const response = await api.post<PaymentIntake>(`${BASE}/intakes/${id}/restore`);
+  return response.data;
+}
+
+// Удалить исключённый счёт навсегда (вместе с накладной, если она не в банке/оплате).
+export async function deleteIntake(id: string): Promise<void> {
+  await api.delete(`${BASE}/intakes/${id}`);
 }
 
 // PDF под авторизацией — тянем blob (прямую ссылку без токена API не отдаст) и возвращаем

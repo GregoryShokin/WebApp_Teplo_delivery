@@ -108,20 +108,24 @@ export function ReviewDialog({
   const canConfirm =
     amount.trim() !== "" && (mode === "existing" ? counterpartyId !== "" : newName.trim() !== "");
 
+  const buildPayload = (apply: boolean) => ({
+    counterparty_id: mode === "existing" ? counterpartyId : null,
+    new_counterparty_name: mode === "new" ? newName.trim() : null,
+    new_counterparty_inn: mode === "new" ? newInn.trim() || null : null,
+    amount: amount.trim(),
+    invoice_number: invoiceNumber.trim() || null,
+    invoice_date: invoiceDate || null,
+    requisites: r,
+    apply_requisites: apply,
+  });
+
+  const invalidate = () =>
+    void queryClient.invalidateQueries({ queryKey: ["payment-page", "intakes"] });
+
   const mutation = useMutation({
-    mutationFn: () =>
-      confirmIntake(intake.id, {
-        counterparty_id: mode === "existing" ? counterpartyId : null,
-        new_counterparty_name: mode === "new" ? newName.trim() : null,
-        new_counterparty_inn: mode === "new" ? newInn.trim() || null : null,
-        amount: amount.trim(),
-        invoice_number: invoiceNumber.trim() || null,
-        invoice_date: invoiceDate || null,
-        requisites: r,
-        apply_requisites: applyReq,
-      }),
+    mutationFn: () => confirmIntake(intake.id, buildPayload(applyReq)),
     onSuccess: (item) => {
-      void queryClient.invalidateQueries({ queryKey: ["payment-page", "intakes"] });
+      invalidate();
       toast.success(
         item.status === "duplicate"
           ? "Это дубль существующей накладной"
@@ -131,6 +135,8 @@ export function ReviewDialog({
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось подтвердить")),
   });
+
+  const busy = mutation.isPending;
 
   return (
     <Dialog open onOpenChange={(open) => (!open ? onClose() : undefined)}>
@@ -229,11 +235,11 @@ export function ReviewDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
             Отмена
           </Button>
-          <Button onClick={() => mutation.mutate()} disabled={!canConfirm || mutation.isPending}>
-            Подтвердить — готов к оплате
+          <Button onClick={() => mutation.mutate()} disabled={!canConfirm || busy}>
+            {intake.status === "linked" ? "Сохранить реквизиты" : "Подтвердить — готов к оплате"}
           </Button>
         </DialogFooter>
       </DialogContent>

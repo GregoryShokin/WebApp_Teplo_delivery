@@ -273,6 +273,26 @@ async def poll_mail_invoices() -> None:
 
 
 @scheduler.scheduled_job(
+    "cron",
+    hour=7,
+    minute=0,
+    id="send_scheduled_payments",
+    max_instances=1,
+    coalesce=True,
+)
+async def send_scheduled_payments() -> None:
+    """«Страница на оплату»: ежедневная авто-отправка счетов с наступившей плановой датой в банк
+    (банк-черновик, как ручная кнопка «Отправить в банк»). Реквизиты не подтверждены / банк
+    недоступен → счёт пропускается до следующего прохода."""
+    from app.services.email_invoice_ingest import run_scheduled_sends
+
+    async with AsyncSessionLocal() as session:
+        result = await run_scheduled_sends(session)
+    if result.get("due"):
+        logger.info("send_scheduled_payments: %s", result)
+
+
+@scheduler.scheduled_job(
     "interval",
     minutes=30,
     id="iiko_courier_attendance_sync",

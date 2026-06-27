@@ -12,11 +12,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from email.utils import parseaddr
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +32,9 @@ from app.models import (
     EmailInvoiceIntake,
     SupplierInvoice,
 )
+from app.services import counterparty_payments as payments
 from app.services import counterparty_registry as registry
+from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 from app.services.invoice_recognition import RecognizedInvoice, recognize
 from app.services.mail.imap_client import (
     FetchedAttachment,
@@ -39,6 +43,7 @@ from app.services.mail.imap_client import (
 )
 
 logger = logging.getLogger(__name__)
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 # Отправители, чьи PDF целиком игнорируем (заведомый шум). iiko здесь БОЛЬШЕ НЕТ: от него
 # приходят настоящие счета на оплату (лицензии iiko/Курьерика), а его акты/сверки/УПД
@@ -319,7 +324,127 @@ async def confirm_intake_with_review(
             session, cp_id, requisites=clean_req, verified=True, actor_user_id=actor_user_id
         )
 
+    # Повторный разбор уже-linked счёта (подтвердить/поправить реквизиты, чтобы открыть отправку):
+    # накладную НЕ пересоздаём — иначе она стала бы «дублем» сама себе. Реквизиты применены выше;
+    # синхронизируем правки полей с существующей накладной.
+    if intake.invoice_id is not None and intake.status == "linked":
+        inv = await session.get(SupplierInvoice, intake.invoice_id)
+        if inv is not None:
+            new_amount = _intake_amount(intake)
+            if new_amount is not None:
+                inv.amount = new_amount
+            inv.number = rec.get("invoice_number") or None
+            iso_date = rec.get("invoice_date")
+            if iso_date:
+                with contextlib.suppress(ValueError):
+                    inv.invoice_date = date.fromisoformat(str(iso_date))
+        return intake.status
+
     return await materialize_from_intake(session, intake, counterparty_id=cp_id)
+
+
+# --- исключение / удаление / плановая отправка («Страница на оплату») ------------------------
+
+
+async def exclude_intake(session: AsyncSession, intake: EmailInvoiceIntake) -> None:
+    """Ручное исключение счёта из рабочего инбокса в корзину «Исключённые». Если по счёту уже
+    создана накладная (не оплачена и не отправлена в банк) — помечаем её ``void``, чтобы убрать
+    из платёжного контура. Плановую отправку снимаем. НЕ коммитит — это делает вызывающий."""
+    if intake.status == "excluded":
+        raise ValueError("Счёт уже в исключённых")
+    invoice = (
+        await session.get(SupplierInvoice, intake.invoice_id) if intake.invoice_id else None
+    )
+    if invoice is not None and invoice.draft_id is not None:
+        raise ValueError("Счёт уже отправлен в банк — исключение недоступно")
+    if invoice is not None and invoice.payment_status not in ("paid", "void"):
+        invoice.payment_status = "void"
+    intake.previous_status = intake.status
+    intake.scheduled_send_date = None
+    intake.status = "excluded"
+
+
+async def restore_intake(session: AsyncSession, intake: EmailInvoiceIntake) -> None:
+    """Вернуть счёт из «Исключённых» в рабочий инбокс — в статус до исключения. void-накладную
+    возвращаем в unpaid. НЕ коммитит."""
+    if intake.status != "excluded":
+        raise ValueError("Счёт не в исключённых")
+    invoice = (
+        await session.get(SupplierInvoice, intake.invoice_id) if intake.invoice_id else None
+    )
+    if invoice is not None and invoice.payment_status == "void":
+        invoice.payment_status = "unpaid"
+    intake.status = intake.previous_status or "needs_review"
+    intake.previous_status = None
+
+
+async def delete_intake_forever(session: AsyncSession, intake: EmailInvoiceIntake) -> None:
+    """Удалить исключённый счёт НАВСЕГДА вместе с созданной накладной (если она не в банке и не
+    оплачена). Доступно только из «Исключённых» — рабочие счета сначала исключают. НЕ коммитит."""
+    if intake.status != "excluded":
+        raise ValueError("Удалять можно только из «Исключённых»")
+    invoice = (
+        await session.get(SupplierInvoice, intake.invoice_id) if intake.invoice_id else None
+    )
+    await session.delete(intake)
+    await session.flush()
+    if invoice is not None and invoice.draft_id is None and invoice.payment_status != "paid":
+        # Накладная почтового счёта живёт только на «Странице на оплату»; у исключённой нет
+        # оплат/черновика, поэтому удаляем её безопасно.
+        await session.delete(invoice)
+
+
+async def send_intake_to_bank(
+    session: AsyncSession, intake: EmailInvoiceIntake, *, actor_user_id: uuid.UUID | None
+) -> None:
+    """Создать банк-черновик по подтверждённому счёту — ОБЩИЙ путь для ручной кнопки «Отправить
+    в банк» и плановой джобы ``send_scheduled_payments``. Деньги не списываются: уходит черновик
+    на подтверждение в банке. Бросает доменные ошибки ``payments.*`` / банковские — вызывающий
+    решает, как показать. ``create_payment_draft_for_invoices`` коммитит сам; снятие плановой
+    даты тоже коммитим, поэтому функция самодостаточна по транзакции."""
+    if intake.status != "linked" or intake.invoice_id is None:
+        raise payments.CounterpartyPaymentError("Счёт ещё не подтверждён")
+    invoice = await session.get(SupplierInvoice, intake.invoice_id)
+    if invoice is None:
+        raise payments.CounterpartyPaymentError("Накладная не найдена")
+    if invoice.draft_id is not None:
+        raise payments.CounterpartyPaymentError("Счёт уже отправлен в банк")
+    await payments.create_payment_draft_for_invoices(
+        session, invoice_ids=[intake.invoice_id], actor_user_id=actor_user_id
+    )
+    if intake.scheduled_send_date is not None:
+        intake.scheduled_send_date = None
+        await session.commit()
+
+
+async def run_scheduled_sends(session: AsyncSession) -> dict[str, int]:
+    """Найти счета с наступившей плановой датой и отправить их в банк. Контрагент с
+    неподтверждёнными реквизитами / ошибка банка — пропускаем (дату НЕ снимаем, повторим в
+    следующий проход). Возвращает счётчики для лога джобы."""
+    today = datetime.now(MOSCOW_TZ).date()
+    rows = (
+        await session.scalars(
+            select(EmailInvoiceIntake).where(
+                EmailInvoiceIntake.status == "linked",
+                EmailInvoiceIntake.scheduled_send_date.is_not(None),
+                EmailInvoiceIntake.scheduled_send_date <= today,
+            )
+        )
+    ).all()
+    result = {"due": len(rows), "sent": 0, "skipped": 0, "errors": 0}
+    for intake in rows:
+        try:
+            await send_intake_to_bank(session, intake, actor_user_id=None)
+            result["sent"] += 1
+        except payments.RequisitesNotVerifiedError:
+            result["skipped"] += 1  # ждём, пока оператор подтвердит реквизиты
+        except (payments.CounterpartyPaymentError, BankFetchError, BankCredentialsError):
+            logger.warning(
+                "send_scheduled_payments: счёт intake=%s не отправлен", intake.id, exc_info=True
+            )
+            result["errors"] += 1
+            await session.rollback()
+    return result
 
 
 async def process_attachment(

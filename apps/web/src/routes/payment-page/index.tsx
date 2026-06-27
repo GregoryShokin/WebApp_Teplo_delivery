@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, RefreshCw, Send, X } from "lucide-react";
+import { Ban, FileText, RefreshCw, RotateCcw, Send, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -24,14 +24,17 @@ import { apiErrorMessage } from "@/lib/api";
 import { formatDate, formatRub, MetricCard } from "@/routes/counterparties/shared";
 
 import {
+  deleteIntake,
+  excludeIntake,
   fetchIntakePdfUrl,
   ignoreIntake,
   listCounterpartyOptions,
   listIntakes,
-  sendToBank,
+  restoreIntake,
   type PaymentIntake,
 } from "./api";
 import { ReviewDialog } from "./ReviewDialog";
+import { SendDialog } from "./SendDialog";
 
 const STATUS_LABELS: Record<string, string> = {
   new: "Новый",
@@ -41,6 +44,7 @@ const STATUS_LABELS: Record<string, string> = {
   duplicate: "Дубль",
   failed: "Ошибка",
   ignored: "Не счёт",
+  excluded: "Исключён",
 };
 
 const STATUS_BADGE: Record<string, string> = {
@@ -48,6 +52,7 @@ const STATUS_BADGE: Record<string, string> = {
   needs_review: "border-amber-200 bg-amber-50 text-amber-700",
   duplicate: "border-sky-200 bg-sky-50 text-sky-700",
   ignored: "border-muted bg-muted text-muted-foreground",
+  excluded: "border-rose-200 bg-rose-50 text-rose-700",
   failed: "border-red-200 bg-red-50 text-red-700",
   new: "border-slate-200 bg-slate-50 text-slate-700",
   recognized: "border-slate-200 bg-slate-50 text-slate-700",
@@ -66,6 +71,7 @@ const FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "linked", label: "Готовы к оплате" },
   { value: "duplicate", label: "Дубли" },
   { value: "ignored", label: "Не счета" },
+  { value: "excluded", label: "Исключённые" },
   { value: "failed", label: "Ошибки" },
   { value: "all", label: "Все" },
 ];
@@ -99,6 +105,7 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
   const [filter, setFilter] = useState("active");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [reviewItem, setReviewItem] = useState<PaymentIntake | null>(null);
+  const [sendItem, setSendItem] = useState<PaymentIntake | null>(null);
 
   const intakesQuery = useQuery({
     queryKey: ["payment-page", "intakes"],
@@ -143,14 +150,36 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
     onSettled: () => setPendingId(null),
   });
 
-  const sendMutation = useMutation({
-    mutationFn: (id: string) => sendToBank(id),
+  const excludeMutation = useMutation({
+    mutationFn: (id: string) => excludeIntake(id),
     onMutate: (id: string) => setPendingId(id),
     onSuccess: () => {
       void invalidate();
-      toast.success("Отправлено в банк — ожидает подтверждения");
+      toast.success("Перенесён в «Исключённые»");
     },
-    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отправить в банк")),
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось исключить")),
+    onSettled: () => setPendingId(null),
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: (id: string) => restoreIntake(id),
+    onMutate: (id: string) => setPendingId(id),
+    onSuccess: () => {
+      void invalidate();
+      toast.success("Возвращён в рабочий список");
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось вернуть")),
+    onSettled: () => setPendingId(null),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteIntake(id),
+    onMutate: (id: string) => setPendingId(id),
+    onSuccess: () => {
+      void invalidate();
+      toast.success("Удалён навсегда");
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось удалить")),
     onSettled: () => setPendingId(null),
   });
 
@@ -250,6 +279,12 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
             ) : (
               rows.map((item) => {
                 const busy = pendingId === item.id;
+                // «В работе» = неразобранные + готовый-к-оплате, ещё не ушедший в банк.
+                const inWork =
+                  ["needs_review", "new", "failed"].includes(item.status) ||
+                  (item.status === "linked" && !item.invoice_in_draft);
+                // Готов к отправке/планированию: статус linked и ещё не ушёл в банк.
+                const isReadyRow = item.status === "linked" && !item.invoice_in_draft;
                 return (
                   <TableRow key={item.id}>
                     <TableCell>
@@ -278,7 +313,7 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
                       {item.confidence != null ? ` · ${Math.round(item.confidence * 100)}%` : ""}
                     </TableCell>
                     <TableCell>
-                      <div className="flex justify-end gap-1">
+                      <div className="flex flex-wrap items-center justify-end gap-1">
                         {item.has_pdf ? (
                           <Button
                             size="sm"
@@ -289,37 +324,91 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
                             <FileText className="h-4 w-4" aria-hidden="true" />
                           </Button>
                         ) : null}
-                        {/* Разобрать: для неразобранных, а также для готового, пока не ушёл в банк
-                            (поправить/подтвердить реквизиты). */}
-                        {["needs_review", "new", "failed"].includes(item.status) ||
-                        (item.status === "linked" && !item.invoice_in_draft) ? (
-                          <Button size="sm" variant="outline" onClick={() => setReviewItem(item)}>
-                            Разобрать
-                          </Button>
-                        ) : null}
-                        {item.status === "linked" &&
-                        !item.invoice_in_draft &&
-                        item.requisites_verified ? (
-                          <Button
-                            size="sm"
-                            disabled={busy}
-                            onClick={() => sendMutation.mutate(item.id)}
-                          >
-                            <Send className="h-4 w-4" aria-hidden="true" />
-                            Отправить в банк
-                          </Button>
-                        ) : null}
-                        {["needs_review", "new", "failed"].includes(item.status) ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            title="Не счёт"
-                            disabled={busy}
-                            onClick={() => ignoreMutation.mutate(item.id)}
-                          >
-                            <X className="h-4 w-4" aria-hidden="true" />
-                          </Button>
-                        ) : null}
+
+                        {item.status === "excluded" ? (
+                          <>
+                            {/* Корзина «Исключённые»: вернуть в работу или удалить навсегда. */}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => restoreMutation.mutate(item.id)}
+                            >
+                              <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                              Вернуть
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-red-600 hover:text-red-700"
+                              title="Удалить навсегда"
+                              disabled={busy}
+                              onClick={() => {
+                                if (window.confirm("Удалить счёт навсегда? Действие необратимо."))
+                                  deleteMutation.mutate(item.id);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" aria-hidden="true" />
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            {/* Разобрать: для неразобранных и для готового, пока не ушёл в банк. */}
+                            {inWork ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setReviewItem(item)}
+                              >
+                                Разобрать
+                              </Button>
+                            ) : null}
+
+                            {isReadyRow ? (
+                              <>
+                                {item.scheduled_send_date ? (
+                                  <Badge className="border-violet-200 bg-violet-50 text-violet-700">
+                                    → банк {formatDate(item.scheduled_send_date)}
+                                  </Badge>
+                                ) : null}
+                                {/* Единая кнопка на всех готовых строках → окно отправки с выбором
+                                    даты (реквизиты сверяются и подтверждаются прямо там). */}
+                                <Button
+                                  size="sm"
+                                  title="Отправить в банк"
+                                  onClick={() => setSendItem(item)}
+                                >
+                                  <Send className="h-4 w-4" aria-hidden="true" />В банк
+                                </Button>
+                              </>
+                            ) : null}
+
+                            {/* Исключить рабочий счёт в «Исключённые» (решение «не платим»). */}
+                            {inWork ? (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                title="Исключить из оплаты"
+                                disabled={busy}
+                                onClick={() => excludeMutation.mutate(item.id)}
+                              >
+                                <Ban className="h-4 w-4" aria-hidden="true" />
+                              </Button>
+                            ) : null}
+
+                            {["needs_review", "new", "failed"].includes(item.status) ? (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                title="Не счёт"
+                                disabled={busy}
+                                onClick={() => ignoreMutation.mutate(item.id)}
+                              >
+                                <X className="h-4 w-4" aria-hidden="true" />
+                              </Button>
+                            ) : null}
+                          </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -336,6 +425,10 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
           counterpartyOptions={counterpartiesQuery.data ?? []}
           onClose={() => setReviewItem(null)}
         />
+      ) : null}
+
+      {sendItem ? (
+        <SendDialog intake={sendItem} onClose={() => setSendItem(null)} />
       ) : null}
     </div>
   );
