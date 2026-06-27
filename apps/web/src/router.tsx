@@ -10,6 +10,7 @@ import { CourierShiftRoute } from "@/routes/couriers/shift";
 import { PayrollRoute } from "@/routes/payroll";
 import { DdsRoute } from "@/routes/dds";
 import { KassaRoute } from "@/routes/kassa";
+import { PaymentPageRoute } from "@/routes/payment-page";
 import { WarehouseInvoicesRoute } from "@/routes/warehouse";
 import { LoginRoute } from "@/routes/login";
 import { AccessControlRoute } from "@/routes/access-control";
@@ -73,6 +74,10 @@ const routes: AppRoute[] = [
         render: ({ navigate }) => <Redirect to="/warehouse/registry" navigate={navigate} />,
       },
     ],
+  },
+  {
+    path: "/payment-page",
+    render: ({ navigate }) => <PaymentPageRoute onNavigate={navigate} />,
   },
   {
     path: "/warehouse",

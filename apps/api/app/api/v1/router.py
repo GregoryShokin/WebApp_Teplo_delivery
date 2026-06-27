@@ -16,6 +16,7 @@ from app.api.v1.routes.kassa import router as kassa_router
 from app.api.v1.routes.payroll import router as payroll_router
 from app.api.v1.routes.payroll_adjustments import router as payroll_adjustments_router
 from app.api.v1.routes.payroll_admin import router as payroll_admin_router
+from app.api.v1.routes.payment_page import router as payment_page_router
 from app.api.v1.routes.payroll_advances import router as payroll_advances_router
 from app.api.v1.routes.positions import router as positions_router
 from app.api.v1.routes.settings import router as settings_router
@@ -54,3 +55,4 @@ api_router.include_router(vacations_router, prefix="/vacations", tags=["vacation
 api_router.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"])
 api_router.include_router(warehouse_router, prefix="/warehouse", tags=["warehouse"])
 api_router.include_router(kassa_router, prefix="/kassa", tags=["kassa"])
+api_router.include_router(payment_page_router, prefix="/payment-page", tags=["payment-page"])

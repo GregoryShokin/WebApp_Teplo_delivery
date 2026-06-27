@@ -452,6 +452,9 @@ async def get_invoices(
         direction=direction or None,
         relationship=relationship,
         source=source,
+        # «Накладные» — производственный контур; почтовые счета (услуги) показываются только
+        # на «Странице на оплату». Если явно просят source='email', не исключаем.
+        exclude_sources=("email",) if source is None else None,
     )
     return [InvoiceRead.model_validate(item) for item in items]
 

@@ -197,6 +197,7 @@ async def list_invoices(
     direction: str | None = None,
     relationship: str | None = None,
     source: str | None = None,
+    exclude_sources: Sequence[str] | None = None,
 ) -> list[InvoiceItem]:
     query = (
         select(SupplierInvoice, Counterparty.name, CounterpartyPayableProfile.ledger_category_id)
@@ -213,6 +214,10 @@ async def list_invoices(
         query = query.where(SupplierInvoice.direction == direction)
     if source is not None:
         query = query.where(SupplierInvoice.source == source)
+    if exclude_sources:
+        # Почтовые счета (непроизводственные услуги) живут на «Странице на оплату», а не
+        # среди производственных накладных — исключаем их из этого списка.
+        query = query.where(SupplierInvoice.source.not_in(tuple(exclude_sources)))
     if counterparty_id is not None:
         query = query.where(SupplierInvoice.counterparty_id == counterparty_id)
     if category_id is not None:

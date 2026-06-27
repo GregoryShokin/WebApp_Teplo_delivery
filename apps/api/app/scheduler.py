@@ -247,6 +247,33 @@ async def push_iiko_invoice_payments() -> None:
 
 @scheduler.scheduled_job(
     "interval",
+    minutes=get_settings().mail_poll_interval_minutes,
+    id="poll_mail_invoices",
+    max_instances=1,
+    coalesce=True,
+)
+async def poll_mail_invoices() -> None:
+    """«Страница на оплату» (Фаза 1): циклический разбор почты. Оба ящика (личный +
+    корпоративный) → распознать новые PDF-счета/УПД (гибрид: регексы + Claude) → создать
+    ``SupplierInvoice(source='email')``. Деньги НЕ двигает — наполняет входящий список.
+    realtime-канала у mail.ru нет, поэтому только поллинг; идемпотентность по SHA-256."""
+    settings = get_settings()
+    if not settings.mail_poll_enabled:
+        return
+    from app.services.email_invoice_ingest import poll_and_ingest
+
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await poll_and_ingest(session, settings=settings)
+        except Exception:  # noqa: BLE001 - проход почты не должен ронять планировщик
+            logger.warning("poll_mail_invoices: проход завершился ошибкой", exc_info=True)
+            return
+    if result.get("status") != "not_configured":
+        logger.info("poll_mail_invoices: %s", result)
+
+
+@scheduler.scheduled_job(
+    "interval",
     minutes=30,
     id="iiko_courier_attendance_sync",
     max_instances=1,

@@ -74,6 +74,30 @@ class Settings(BaseSettings):
     tbank_webhook_token: str | None = None
     tbank_webhook_allowed_ips: str = ""
 
+    # --- Почта: ingest счетов/УПД для «Страницы на оплату» (Фаза 1) ---
+    # Креды обоих ящиков прокидываются из ../.env (MAILRU_*). Пусто = ingest пропускается
+    # (джоба не падает, просто логирует «не настроено»).
+    mailru_email: str | None = None
+    mailru_app_password: str | None = None
+    mailru_workmail: str | None = None
+    mailru_workmail_password: str | None = None
+    mailru_imap_host: str = "imap.mail.ru"
+    mailru_imap_port: int = 993
+    # Циклический опрос почты планировщиком (realtime-канала у mail.ru нет — только поллинг).
+    mail_poll_enabled: bool = True
+    mail_poll_interval_minutes: int = 10
+    # Насколько вглубь сканировать ящик при каждом проходе (IMAP SEARCH SINCE). Идемпотентность
+    # по SHA-256 вложения делает повторный проход того же письма бесплатным.
+    mail_poll_lookback_days: int = 14
+
+    # Распознавание счёта — гибрид: детерминированный парсер (регексы по тексту PDF) +
+    # LLM-фолбэк (Claude по самому PDF) для незнакомых макетов. Без ключа работает только
+    # детерминированный слой, неуверенные счета уходят в «требует проверки».
+    anthropic_api_key: str | None = None
+    invoice_recognition_model: str = "claude-sonnet-4-6"
+    # Ниже порога уверенности счёт не материализуется в накладную, а ждёт оператора.
+    invoice_recognition_min_confidence: float = 0.75
+
     @model_validator(mode="after")
     def validate_production_settings(self) -> Settings:
         if self.environment.casefold() not in PRODUCTION_ENVIRONMENTS:

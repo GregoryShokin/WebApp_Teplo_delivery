@@ -40,6 +40,7 @@ from app.models.courier import (
     CourierShiftMatchStatus,
     DeliveryOrder,
 )
+from app.models.email_invoice_intake import EmailInvoiceIntake
 from app.models.courier_deposit import (
     CourierDepositAccount,
     CourierDepositTransaction,
@@ -180,6 +181,7 @@ __all__ = [
     "DepositPayoutSchedule",
     "DepositTransaction",
     "DeliveryOrder",
+    "EmailInvoiceIntake",
     "Employee",
     "EmployeeAllowanceEvent",
     "EmployeeChangeEvent",
