@@ -677,3 +677,59 @@ async def patch_runner_recompute(
         "mark_vacations_paid_for_payroll_period",
         fake_mark_vacations_paid,
     )
+
+
+async def test_bank_to_safe_transfer_dates_by_operation_date(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Перевод банк→Сейф датируется переданной датой банк-операции, а не моментом обнаружения
+    (иначе при отложенном поллинге встаёт «сегодня» и выглядит позже выплат с Сейфа)."""
+    from datetime import date
+
+    from app.models import Account, CashflowTransaction, Wallet
+    from app.services.payroll_payouts import MOCK_PAYER_ACCOUNT, book_bank_to_safe_transfer
+
+    async with async_session_factory() as session:
+        account = Account(
+            id=uuid.uuid4(),
+            bank_code="tbank",
+            account_number=MOCK_PAYER_ACCOUNT,
+            legal_entity="ИП Шокина Е.А.",
+            status="active",
+        )
+        session.add(account)
+        await session.flush()
+        session.add(
+            Wallet(
+                id=uuid.uuid4(),
+                code=f"bank-pp-{uuid.uuid4().hex[:8]}",
+                name="Тест банк (плательщик)",
+                type="bank",
+                status="active",
+                account_id=account.id,
+                opening_balance=Decimal("0"),
+            )
+        )
+        actor = await create_actor_user(session)
+        _period, run, _emp = await create_payroll_run(
+            session, employee_line_totals=[[Decimal("1000")]]
+        )
+        await set_run_payout_cash(session, run.id, amount_cash=Decimal("0"), actor_user_id=actor.id)
+        await session.commit()
+
+        op_date = date(2026, 5, 4)
+        created = await book_bank_to_safe_transfer(session, run, operation_date=op_date)
+        await session.commit()
+        run_id = run.id
+    assert created
+    async with async_session_factory() as session:
+        legs = (
+            await session.scalars(
+                select(CashflowTransaction).where(
+                    CashflowTransaction.source_kind == "payroll_bank_to_safe",
+                    CashflowTransaction.source_id == run_id,
+                )
+            )
+        ).all()
+    assert len(legs) == 2
+    assert all(leg.operation_date == op_date for leg in legs)

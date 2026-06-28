@@ -634,14 +634,16 @@ async def apply_advance_draft_status(
     *,
     draft: SalaryAdvanceBankDraft,
     raw_status: str | None,
+    operation_date: date | None = None,
     commit: bool = True,
 ) -> str:
-    """Продвинуть банк-черновик выдачи по статусу платежа (polling).
+    """Продвинуть банк-черновик выдачи по статусу платежа (polling/webhook).
 
     При ``paid`` заводит транзит банк→Сейф и резерв Сейфа под выдачу (см.
-    ``_book_advance_transit_and_reserve``). Идемпотентно: блокировка строки сериализует
-    гонку, переход только из created/updated. Аванс остаётся ``awaiting_payout`` — долг
-    сотрудника формируется лишь при фактической выдаче («Выплачено»).
+    ``_book_advance_transit_and_reserve``). ``operation_date`` — дата реальной банк-операции
+    (из вебхука «операция по счёту»), которой датируется транзит; без неё (поллинг) — текущая
+    дата. Идемпотентно: блокировка строки сериализует гонку, переход только из created/updated.
+    Аванс остаётся ``awaiting_payout`` — долг формируется лишь при фактической выдаче.
     """
     outcome = classify_payment_status(raw_status)
     draft = await session.get(SalaryAdvanceBankDraft, draft.id, with_for_update=True)
@@ -658,7 +660,9 @@ async def apply_advance_draft_status(
         if (
             advance is not None
             and advance.status == "awaiting_payout"
-            and await _book_advance_transit_and_reserve(session, advance=advance, draft=draft)
+            and await _book_advance_transit_and_reserve(
+                session, advance=advance, draft=draft, operation_date=operation_date
+            )
         ):
             draft.status = "paid"
             draft.synced_at = datetime.now(UTC)
@@ -673,7 +677,11 @@ async def apply_advance_draft_status(
 
 
 async def _book_advance_transit_and_reserve(
-    session: AsyncSession, *, advance: SalaryAdvance, draft: SalaryAdvanceBankDraft
+    session: AsyncSession,
+    *,
+    advance: SalaryAdvance,
+    draft: SalaryAdvanceBankDraft,
+    operation_date: date | None = None,
 ) -> bool:
     """Транзит банк→Сейф на сумму выдачи + резерв Сейфа со статьёй аванса/займа.
 
@@ -719,7 +727,8 @@ async def _book_advance_transit_and_reserve(
     transfer_in_article = await session.scalar(
         select(DdsArticle.id).where(DdsArticle.code == TRANSFER_IN_ARTICLE_CODE)
     )
-    operation_date = datetime.now(UTC).date()
+    # Дата транзита = дата реальной банк-операции (из вебхука); фолбэк — текущая дата.
+    operation_date = operation_date or datetime.now(UTC).date()
     transit_purpose = f"Перевод на Сейф под выдачу {_kind_label(advance)}"
     session.add(
         CashflowTransaction(

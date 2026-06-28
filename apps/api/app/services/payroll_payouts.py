@@ -35,6 +35,7 @@ from app.services.payroll_payout_allocation import (
     allocate_cash_cascade,
     build_payout_buckets,
 )
+from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError, money_text
 from app.services.wallets import (  # реэкспорт для обратной совместимости
     CASH_WALLET_TYPES,
     DDS_ARTICLE_TRANSFER_IN_CODE,
@@ -43,7 +44,6 @@ from app.services.wallets import (  # реэкспорт для обратной
     CashWalletError,
     resolve_cash_wallet,
 )
-from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError, money_text
 
 PAYOUT_REQUISITES_KEY = "payroll.bank_payout_requisites"
 DEFAULT_PAYMENT_PURPOSE_TEMPLATE = "Выплата заработной платы за период {start}–{end}"
@@ -157,7 +157,9 @@ async def _resolve_cash_wallet(session: AsyncSession, code: str) -> Wallet:
         raise PayrollConflictError(str(error)) from error
 
 
-async def book_bank_to_safe_transfer(session: AsyncSession, run: PayrollRun) -> bool:
+async def book_bank_to_safe_transfer(
+    session: AsyncSession, run: PayrollRun, *, operation_date: date | None = None
+) -> bool:
     """Шаг 2: при оплате черновика завести внутренний перевод банк→Сейф на безналичную часть.
 
     Две проводки с общим source (``payroll_bank_to_safe`` + run.id):
@@ -209,7 +211,11 @@ async def book_bank_to_safe_transfer(session: AsyncSession, run: PayrollRun) -> 
     transfer_in_article = await session.scalar(
         select(DdsArticle.id).where(DdsArticle.code == DDS_ARTICLE_TRANSFER_IN_CODE)
     )
-    operation_date = datetime.now(UTC).date()
+    # Дата перевода = дата реальной банк-операции (приходит из вебхука «операция по счёту»),
+    # а не момент обнаружения. Иначе при отложенном/сверочном поллинге перевод встаёт задним
+    # числом «сегодня» и в журнале выглядит позже выплат с Сейфа. Фолбэк (поллинг без операции
+    # под рукой) — текущая дата.
+    operation_date = operation_date or datetime.now(UTC).date()
     purpose = "Перевод на Сейф под выплату ЗП"
     session.add(
         CashflowTransaction(
@@ -246,13 +252,16 @@ async def apply_payroll_draft_status(
     *,
     draft: PayrollBankDraft,
     raw_status: str | None,
+    operation_date: date | None = None,
     commit: bool = True,
 ) -> str:
     """Продвинуть payroll-черновик по статусу банковского платежа (polling/webhook).
 
     При ``paid`` заводит внутренний перевод банк→Сейф (см. ``book_bank_to_safe_transfer``) —
-    деньги приходят в Сейф, откуда раздаются по «Выплатить». Идемпотентно: блокировка строки
-    сериализует гонку webhook↔polling и дубль-доставку; переход только из created/updated.
+    деньги приходят в Сейф, откуда раздаются по «Выплатить». ``operation_date`` — дата реальной
+    банк-операции (из вебхука «операция по счёту»), которой датируется перевод; без неё (поллинг)
+    берётся текущая дата. Идемпотентно: блокировка строки сериализует гонку webhook↔polling и
+    дубль-доставку; переход только из created/updated.
     """
     outcome = classify_payment_status(raw_status)
     draft = await session.get(PayrollBankDraft, draft.id, with_for_update=True)
@@ -262,7 +271,7 @@ async def apply_payroll_draft_status(
     if outcome == "paid" and draft.status in ("created", "updated"):
         run = await session.get(PayrollRun, draft.run_id)
         if run is not None:
-            await book_bank_to_safe_transfer(session, run)
+            await book_bank_to_safe_transfer(session, run, operation_date=operation_date)
         draft.status = "paid"
         draft.synced_at = datetime.now(UTC)
     elif outcome == "failed" and draft.status in ("created", "updated"):

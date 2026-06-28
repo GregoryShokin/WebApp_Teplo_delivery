@@ -30,13 +30,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.db.session import get_session
-from app.models import CounterpartyPaymentDraft, PayrollBankDraft
+from app.models import CounterpartyPaymentDraft, PayrollBankDraft, SalaryAdvanceBankDraft
 from app.services.bank_payment_status import apply_payment_status
 from app.services.banking.base import NormalizedBankOperation, clean_digits
 from app.services.banking.tbank import (
+    _document_number,
     is_tbank_operation_hold,
     normalize_tbank_statement_row,
 )
+from app.services.payroll_advance_service import apply_advance_draft_status
 from app.services.payroll_payouts import apply_payroll_draft_status
 
 router = APIRouter()
@@ -175,6 +177,108 @@ async def _settle_invoice_draft_from_operation(
     return draft.id
 
 
+async def _settle_payroll_draft_from_operation(
+    session: AsyncSession, operation: NormalizedBankOperation
+) -> uuid.UUID | None:
+    """Realtime-проведение транзита банк→Сейф по выплате ЗП прямо из операции по счёту.
+
+    Раньше payroll-черновик доводил до paid только часовой поллинг — поэтому перевод банк→Сейф
+    появлялся с задержкой и датой обнаружения (мог встать позже выплат с Сейфа). Теперь входящая
+    расходная операция со «своим» ``documentNumber`` (детерминированно из ``document_id``
+    черновика) доводит черновик сразу и датирует перевод реальной датой операции. Берём только при
+    ОДНОЗНАЧНОМ совпадении (номер + сумма), иначе оставляем сверочному поллингу.
+    """
+    if operation.direction != "out" or not operation.document_number:
+        return None
+    doc = str(operation.document_number).strip()
+    if not doc:
+        return None
+    drafts = (
+        await session.scalars(
+            select(PayrollBankDraft).where(PayrollBankDraft.status.in_(("created", "updated")))
+        )
+    ).all()
+    matches = [
+        d
+        for d in drafts
+        if _document_number(d.document_id) == doc
+        and (d.amount - operation.amount).copy_abs() <= Decimal("0.01")
+    ]
+    if len(matches) != 1:
+        if len(matches) > 1:
+            logger.warning(
+                "tbank webhook: %d payroll-черновиков по documentNumber=%s — оставляю поллингу",
+                len(matches),
+                doc,
+            )
+        return None
+    draft = matches[0]
+    await apply_payroll_draft_status(
+        session,
+        draft=draft,
+        raw_status="executed",
+        operation_date=operation.operation_date,
+        commit=False,
+    )
+    logger.info(
+        "tbank webhook: транзит ЗП банк→Сейф проведён из операции — draft=%s documentNumber=%s",
+        draft.id,
+        doc,
+    )
+    return draft.id
+
+
+async def _settle_advance_draft_from_operation(
+    session: AsyncSession, operation: NormalizedBankOperation
+) -> uuid.UUID | None:
+    """Realtime-проведение транзита банк→Сейф по банк-выдаче аванса/займа из операции по счёту.
+
+    Аналогично ЗП: входящая расходная операция со «своим» ``documentNumber`` доводит
+    advance-черновик до paid сразу и датирует транзит+резерв реальной датой операции (вместо
+    отложенного часового поллинга). Только при однозначном совпадении номера и суммы.
+    """
+    if operation.direction != "out" or not operation.document_number:
+        return None
+    doc = str(operation.document_number).strip()
+    if not doc:
+        return None
+    drafts = (
+        await session.scalars(
+            select(SalaryAdvanceBankDraft).where(
+                SalaryAdvanceBankDraft.status.in_(("created", "updated"))
+            )
+        )
+    ).all()
+    matches = [
+        d
+        for d in drafts
+        if _document_number(d.document_id) == doc
+        and (d.amount - operation.amount).copy_abs() <= Decimal("0.01")
+    ]
+    if len(matches) != 1:
+        if len(matches) > 1:
+            logger.warning(
+                "tbank webhook: %d advance-черновиков по documentNumber=%s — оставляю поллингу",
+                len(matches),
+                doc,
+            )
+        return None
+    draft = matches[0]
+    await apply_advance_draft_status(
+        session,
+        draft=draft,
+        raw_status="executed",
+        operation_date=operation.operation_date,
+        commit=False,
+    )
+    logger.info(
+        "tbank webhook: транзит выдачи банк→Сейф проведён из операции — draft=%s documentNumber=%s",
+        draft.id,
+        doc,
+    )
+    return draft.id
+
+
 async def _ingest_tbank_account_operation(
     session: AsyncSession, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -211,9 +315,14 @@ async def _ingest_tbank_account_operation(
     operation = normalize_tbank_statement_row(
         payload, account_number, datetime.now(_MOSCOW_TZ).date()
     )
-    # Вебхук — основной путь гашения накладной: расходная операция со «своим» documentNumber
-    # доводит черновик до paid ДО вливания (prebooked-проводку заберёт эта же операция).
-    settled_draft_id = await _settle_invoice_draft_from_operation(session, operation)
+    # Вебхук — основной путь проведения: расходная операция со «своим» documentNumber доводит
+    # черновик до paid ДО вливания (prebooked-проводку заберёт эта же операция). Один платёж —
+    # один черновик (накладная / ЗП / выдача аванса), short-circuit по documentNumber.
+    settled_draft_id = (
+        await _settle_invoice_draft_from_operation(session, operation)
+        or await _settle_payroll_draft_from_operation(session, operation)
+        or await _settle_advance_draft_from_operation(session, operation)
+    )
     result = await ingest_operations(session, provider="tbank", operations=[operation])
     await session.commit()
     logger.info(
