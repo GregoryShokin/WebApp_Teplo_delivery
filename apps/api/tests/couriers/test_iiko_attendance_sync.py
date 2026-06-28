@@ -91,7 +91,7 @@ async def test_iiko_attendance_sync_filters_role_and_is_idempotent() -> None:
         from_date=date(2026, 5, 29),
         to_date=date(2026, 5, 29),
         attendance_xml=attendance_xml(),
-        courier_role_id="courier-role",
+        courier_role_ids={"courier-role"},
         recalculate=False,
     )
     second = await sync_attendance(
@@ -99,7 +99,7 @@ async def test_iiko_attendance_sync_filters_role_and_is_idempotent() -> None:
         from_date=date(2026, 5, 29),
         to_date=date(2026, 5, 29),
         attendance_xml=attendance_xml(),
-        courier_role_id="courier-role",
+        courier_role_ids={"courier-role"},
         recalculate=False,
     )
 
@@ -146,7 +146,7 @@ async def test_sync_attendance_prunes_phantom_shifts() -> None:
         from_date=date(2026, 5, 29),
         to_date=date(2026, 5, 29),
         attendance_xml=attendance_xml(),
-        courier_role_id="courier-role",
+        courier_role_ids={"courier-role"},
         recalculate=False,
     )
 
@@ -218,3 +218,39 @@ def make_employee(iiko_id: str) -> Employee:
         position="Курьер",
         status="active",
     )
+
+
+def _senior_role_xml() -> str:
+    return """
+    <attendances>
+      <attendance>
+        <employeeId>senior-1</employeeId>
+        <roleId>senior-courier-role</roleId>
+        <dateFrom>2026-05-29T10:32:00+03:00</dateFrom>
+        <attendanceType>P</attendanceType>
+      </attendance>
+    </attendances>
+    """
+
+
+async def test_sync_attendance_includes_all_courier_roles() -> None:
+    # Смена под второй курьерской ролью («Старший курьер») должна подтянуться, если роль
+    # входит в набор (регресс инцидента 2026-06-28: смена Дудникова терялась, т.к. синк
+    # фильтровал по единственной роли «Курьер»).
+    senior = make_employee("senior-1")
+    session = AttendanceSyncSession([senior])
+
+    report = await sync_attendance(
+        session,
+        from_date=date(2026, 5, 29),
+        to_date=date(2026, 5, 29),
+        attendance_xml=_senior_role_xml(),
+        courier_role_ids={"courier-role", "senior-courier-role"},
+        recalculate=False,
+    )
+
+    assert report.matched_couriers == 1
+    assert len(session.shifts) == 1
+    assert session.shifts[0].iiko_employee_id == "senior-1"
+    assert session.shifts[0].employee_id == senior.id
+    assert session.shifts[0].closed_at is None

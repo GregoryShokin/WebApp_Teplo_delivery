@@ -23,7 +23,10 @@ from app.services.iiko_sync import (
 logger = logging.getLogger(__name__)
 ROLE_CACHE_TTL = timedelta(hours=1)
 COURIER_ROLE_MARKERS = ("курьер", "courier")
-_courier_role_cache: tuple[str, datetime] | None = None
+# Все iiko-роли, матчащие маркер курьера: в iiko их НЕСКОЛЬКО («Курьер», «Старший курьер»),
+# и смену можно открыть под любой — фильтровать надо по всему набору, иначе смены старших
+# курьеров теряются (инцидент 2026-06-28: смена Дудникова под ролью «Старший курьер»).
+_courier_role_cache: tuple[frozenset[str], datetime] | None = None
 
 
 @dataclass(slots=True)
@@ -65,25 +68,28 @@ class AttendanceParseResult:
     errors: list[str] = field(default_factory=list)
 
 
-async def resolve_courier_role_id(session: AsyncSession) -> str:
+async def resolve_courier_role_ids(session: AsyncSession) -> set[str]:
+    """ВСЕ iiko-роли курьеров (по маркеру): «Курьер», «Старший курьер» и т.п."""
     global _courier_role_cache
     now = datetime.now(UTC)
     if _courier_role_cache is not None:
-        role_id, cached_at = _courier_role_cache
+        role_ids, cached_at = _courier_role_cache
         if now - cached_at < ROLE_CACHE_TTL:
-            return role_id
+            return set(role_ids)
 
     await _load_source_credential_env(session)
     roles = await anyio.to_thread.run_sync(fetch_iiko_employee_roles)
-    role = next((item for item in roles if is_courier_role_name(item.get("name"))), None)
-    if role is None:
+    role_ids = {
+        rid
+        for item in roles
+        if is_courier_role_name(item.get("name"))
+        and (rid := first_text(item, "id", "roleId"))
+    }
+    if not role_ids:
         raise RuntimeError("В iiko не найдена роль «Курьер» / «Courier»")
-    role_id = first_text(role, "id", "roleId")
-    if not role_id:
-        raise RuntimeError("Роль «Курьер» в iiko найдена, но у неё нет id")
 
-    _courier_role_cache = (role_id, now)
-    return role_id
+    _courier_role_cache = (frozenset(role_ids), now)
+    return role_ids
 
 
 async def sync_attendance(
@@ -93,7 +99,7 @@ async def sync_attendance(
     to_date: date,
     run_reason: str = "manual",
     attendance_xml: bytes | str | None = None,
-    courier_role_id: str | None = None,
+    courier_role_ids: set[str] | None = None,
     recalculate: bool = True,
 ) -> SyncReport:
     if from_date > to_date:
@@ -114,7 +120,7 @@ async def sync_attendance(
     await session.flush()
 
     try:
-        role_id = courier_role_id or await resolve_courier_role_id(session)
+        role_ids = courier_role_ids or await resolve_courier_role_ids(session)
         data = (
             attendance_xml
             if attendance_xml is not None
@@ -126,7 +132,7 @@ async def sync_attendance(
             errors=list(parse_result.errors),
         )
         courier_records = [
-            record for record in parse_result.records if record.iiko_role_id == role_id
+            record for record in parse_result.records if record.iiko_role_id in role_ids
         ]
         report.matched_couriers = len(courier_records)
         unresolved_iiko_ids = await upsert_attendance_records(session, courier_records, report)
