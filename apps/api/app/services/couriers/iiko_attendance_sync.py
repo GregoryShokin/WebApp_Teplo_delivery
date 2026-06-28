@@ -225,6 +225,26 @@ async def prune_missing_attendance(
     return removed
 
 
+async def _find_webhook_shift_same_day(
+    session: AsyncSession,
+    iiko_employee_id: str,
+    opened_at: datetime,
+) -> CourierIikoShift | None:
+    """Вебхук-смена курьера в тот же (UTC) день — кандидат на усыновление поллингом."""
+    day_start = datetime.combine(opened_at.date(), datetime.min.time(), tzinfo=UTC)
+    day_end = day_start + timedelta(days=1)
+    return await session.scalar(
+        select(CourierIikoShift)
+        .where(
+            CourierIikoShift.iiko_employee_id == iiko_employee_id,
+            CourierIikoShift.opened_at >= day_start,
+            CourierIikoShift.opened_at < day_end,
+            CourierIikoShift.raw_payload["_source"].astext == "cloud_webhook",
+        )
+        .limit(1)
+    )
+
+
 async def upsert_attendance_records(
     session: AsyncSession,
     records: Iterable[IikoAttendanceRecord],
@@ -249,6 +269,15 @@ async def upsert_attendance_records(
                     CourierIikoShift.opened_at == record.opened_at,
                 )
             )
+            if existing is None:
+                # Усыновить вебхук-смену того же дня: вебхук заводит смену с ПРИБЛИЗИТЕЛЬНЫМ
+                # opened_at (время получения), а поллинг — источник точного времени. Переносим
+                # запись на реальный opened_at, чтобы не плодить дубль смены за день.
+                existing = await _find_webhook_shift_same_day(
+                    session, record.iiko_employee_id, record.opened_at
+                )
+                if existing is not None:
+                    existing.opened_at = record.opened_at
             if existing is None:
                 existing = CourierIikoShift(
                     iiko_employee_id=record.iiko_employee_id,

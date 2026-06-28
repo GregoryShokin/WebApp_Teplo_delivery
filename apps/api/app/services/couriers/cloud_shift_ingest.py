@@ -1,17 +1,22 @@
 """Ingest смены курьера из вебхука iikoCloud (realtime открытие/закрытие).
 
-Дополняет поллинг ``iiko_attendance_sync``: вебхук заводит запись смены сразу при открытии,
-тогда как выгрузка iiko ``/employees/attendance`` публикует явку с задержкой (см. инцидент
-2026-06-28 — смена открыта в 12:35, в выгрузке появилась к 13:09). Дедуп с поллингом по
-UNIQUE ``(iiko_employee_id, opened_at)``: позже тот же поллинг обогащает/закрывает запись.
+Дополняет поллинг ``iiko_attendance_sync``: вебхук отражает открытие/закрытие смены сразу,
+а выгрузка ``/employees/attendance`` публикует явку с задержкой (инцидент 2026-06-28).
+
+РЕАЛЬНАЯ структура события iikoCloud ``PersonalShift`` (откалибрована 2026-06-28 по логам
+прод-вебхука): ``eventType="PersonalShift"``, ``eventInfo={"id": <employeeId>,
+"roleId": <roleId>, "opened": true|false, "terminalGroupId": ...}``. Времени в ``eventInfo``
+НЕТ — только флаг ``opened`` (true=открытие, false=закрытие). Поэтому для opened_at/closed_at
+берём время ПОЛУЧЕНИЯ (``now``): вебхук realtime, это надёжнее, чем гадать формат/таймзону
+``eventTime``; точные времена для KPI всё равно даёт поллинг (источник истины).
 
 Сохраняем ТОЛЬКО смены курьеров (резолв ``Employee`` по ``iiko_id`` + позиция в
-``courier_positions``); события других сотрудников игнорируем. Парсер полей гибкий — точная
-структура ``eventInfo`` PersonalShift калибруется по реальному payload (endpoint логирует
-сырое событие), поэтому имена полей берём из набора кандидатов.
-
-Запись помечается ``raw_payload["_source"]="cloud_webhook"`` — ``prune_missing_attendance``
-по этому признаку НЕ удаляет свежую открытую вебхук-смену, которой ещё нет в выгрузке iiko.
+``courier_positions``). Логика:
+ * открытие — создаём смену, если открытой ещё нет (иначе не плодим);
+ * закрытие — закрываем последнюю открытую смену курьера (обновляем СУЩЕСТВУЮЩУЮ запись,
+   в т.ч. созданную поллингом → без дублей).
+Вебхук-открытие помечается ``raw_payload["_source"]=cloud_webhook`` — защита от prune; позже
+поллинг «усыновляет» такую смену, проставляя точное время открытия (см. ``upsert_attendance``).
 """
 
 from __future__ import annotations
@@ -25,71 +30,36 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import CourierIikoShift, Employee
-from app.services.couriers.iiko_attendance_sync import first_text, parse_iiko_datetime
+from app.services.couriers.iiko_attendance_sync import first_text
 from app.services.position_registry import courier_positions, ensure_position_registry_fresh
 
 logger = logging.getLogger(__name__)
 
 CLOUD_WEBHOOK_SOURCE = "cloud_webhook"
-
-# Кандидаты имён полей eventInfo (структуру PersonalShift калибруем по реальному payload).
-# Без общего "id" — у событий-заказов это id заказа, дало бы ложный матч.
-_EMPLOYEE_KEYS = ("employeeId", "employee_id", "userId", "user_id", "courierId")
-_OPEN_KEYS = (
-    "openDateTime",
-    "startDateTime",
-    "openDate",
-    "startDate",
-    "startTime",
-    "dateFrom",
-    "openedAt",
-    "shiftOpenDateTime",
-)
-_CLOSE_KEYS = (
-    "closeDateTime",
-    "endDateTime",
-    "closeDate",
-    "endDate",
-    "endTime",
-    "dateTo",
-    "closedAt",
-    "shiftCloseDateTime",
-)
+# employeeId в PersonalShift лежит в поле "id" (НЕ "employeeId"); запасные ключи — на вариации.
+_EMPLOYEE_KEYS = ("id", "employeeId", "employee_id", "userId", "courierId")
 
 
 async def ingest_cloud_shift_event(
     session: AsyncSession, event: dict[str, Any]
 ) -> uuid.UUID | None:
-    """Сохранить смену курьера из одного события вебхука. Возвращает employee_id или None.
+    """Применить событие смены вебхука iikoCloud. Возвращает employee_id курьера или None.
 
-    None — событие не относится к курьеру (другой сотрудник / не нашли) или нет ключевых
-    полей (employee/openDateTime). Не курьера молча пропускаем, отсутствие полей логируем
-    (сигнал к калибровке парсера).
+    None — событие не курьера (другой сотрудник / не нашли) или закрывать нечего. Не курьера
+    молча пропускаем; отсутствие id сотрудника логируем (сигнал к проверке структуры).
     """
     info = event.get("eventInfo") if isinstance(event, dict) else None
     if not isinstance(info, dict):
         return None
 
     emp_iiko_id = first_text(info, *_EMPLOYEE_KEYS)
-    open_raw = first_text(info, *_OPEN_KEYS)
-    if not emp_iiko_id or not open_raw:
-        logger.warning(
-            "cloud shift webhook: не найдены employeeId/openDateTime в eventInfo=%s", info
-        )
+    if not emp_iiko_id:
+        logger.warning("cloud shift webhook: нет id сотрудника в eventInfo=%s", info)
         return None
 
-    try:
-        opened_at = parse_iiko_datetime(open_raw)
-    except Exception:  # noqa: BLE001 — кривая дата = пропуск, не валим вебхук
-        logger.warning("cloud shift webhook: не распарсил дату открытия %r", open_raw)
-        return None
-    close_raw = first_text(info, *_CLOSE_KEYS)
-    closed_at = None
-    if close_raw:
-        try:
-            closed_at = parse_iiko_datetime(close_raw)
-        except Exception:  # noqa: BLE001
-            closed_at = None
+    opened = info.get("opened")
+    role_id = first_text(info, "roleId", "role_id")
+    now = datetime.now(UTC)
 
     # Только курьеры: событие приходит на всех сотрудников, courier_iiko_shift — про курьеров.
     await ensure_position_registry_fresh(session)
@@ -97,27 +67,49 @@ async def ingest_cloud_shift_event(
     if employee is None or employee.position not in courier_positions():
         return None
 
-    existing = await session.scalar(
-        select(CourierIikoShift).where(
+    open_shift = await session.scalar(
+        select(CourierIikoShift)
+        .where(
             CourierIikoShift.iiko_employee_id == emp_iiko_id,
-            CourierIikoShift.opened_at == opened_at,
+            CourierIikoShift.closed_at.is_(None),
         )
+        .order_by(CourierIikoShift.opened_at.desc())
     )
-    if existing is None:
-        existing = CourierIikoShift(iiko_employee_id=emp_iiko_id, opened_at=opened_at)
-        session.add(existing)
 
-    existing.employee_id = employee.id
-    # role/attendance_type вебхук может не нести — поллинг их обогатит при синке выгрузки.
-    existing.iiko_role_id = existing.iiko_role_id or ""
-    existing.attendance_type = existing.attendance_type or ""
-    # Закрытие из вебхука применяем; «открытие» не затирает уже проставленное закрытие.
-    if closed_at is not None:
-        existing.closed_at = closed_at
-    existing.imported_at = datetime.now(UTC)
-    payload = dict(info)
-    payload["_source"] = CLOUD_WEBHOOK_SOURCE
-    existing.raw_payload = payload
+    if opened is True:
+        if open_shift is not None:
+            return employee.id  # уже открыта — не плодим дубль
+        shift = CourierIikoShift(
+            iiko_employee_id=emp_iiko_id,
+            opened_at=now,
+            employee_id=employee.id,
+            iiko_role_id=role_id or "",
+            attendance_type="",
+            raw_payload={
+                **info,
+                "_source": CLOUD_WEBHOOK_SOURCE,
+                "_eventTime": event.get("eventTime"),
+            },
+        )
+        session.add(shift)
+        await session.flush()
+        return employee.id
 
+    # opened=False (или отсутствует) — закрытие: закрываем последнюю открытую смену курьера.
+    if open_shift is None:
+        logger.info(
+            "cloud shift webhook: закрытие %s, но открытой смены нет (доберёт поллинг)",
+            emp_iiko_id,
+        )
+        return None
+    open_shift.closed_at = now
+    open_shift.employee_id = employee.id
+    if role_id:
+        open_shift.iiko_role_id = role_id
+    open_shift.imported_at = now
+    payload = dict(open_shift.raw_payload or {})
+    payload["_closed_via"] = CLOUD_WEBHOOK_SOURCE
+    payload["_closeEventTime"] = event.get("eventTime")
+    open_shift.raw_payload = payload
     await session.flush()
     return employee.id
