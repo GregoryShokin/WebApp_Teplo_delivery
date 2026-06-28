@@ -201,6 +201,17 @@ async def prune_missing_attendance(
     removed = 0
     for shift in rows:
         if (shift.iiko_employee_id, shift.opened_at) not in seen:
+            # Открытую смену, заведённую вебхуком iikoCloud, НЕ трогаем: выгрузка
+            # /employees/attendance публикует явку с задержкой, и до её появления смена
+            # законно отсутствует в seen. Закроется (поллинг даст closed_at) — снова
+            # сверяется штатно. Признак — raw_payload["_source"]=="cloud_webhook".
+            payload = shift.raw_payload
+            if (
+                shift.closed_at is None
+                and isinstance(payload, dict)
+                and payload.get("_source") == "cloud_webhook"
+            ):
+                continue
             await session.delete(shift)
             removed += 1
     if removed:

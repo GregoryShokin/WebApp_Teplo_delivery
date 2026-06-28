@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     tbank_webhook_token: str | None = None
     tbank_webhook_allowed_ips: str = ""
 
+    # Webhook iikoCloud (входящие POST iiko→мы): открытие/закрытие смен курьеров realtime.
+    # Токен сверяется с Authorization: Bearer; список IP (CSV) — опциональный whitelist.
+    # Пусто = проверка отключена (dev). Тот же токен прописывается в подписке iikoCloud.
+    iiko_webhook_token: str | None = None
+    iiko_webhook_allowed_ips: str = ""
+
     # --- Почта: ingest счетов/УПД для «Страницы на оплату» (Фаза 1) ---
     # Креды обоих ящиков прокидываются из ../.env (MAILRU_*). Пусто = ingest пропускается
     # (джоба не падает, просто логирует «не настроено»).

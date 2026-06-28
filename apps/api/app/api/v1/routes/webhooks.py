@@ -19,7 +19,7 @@ from __future__ import annotations
 import hmac
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
@@ -38,6 +38,8 @@ from app.services.banking.tbank import (
     is_tbank_operation_hold,
     normalize_tbank_statement_row,
 )
+from app.services.couriers.cloud_shift_ingest import ingest_cloud_shift_event
+from app.services.couriers.shift_matching import recalculate_matches
 from app.services.payroll_advance_service import apply_advance_draft_status
 from app.services.payroll_payouts import apply_payroll_draft_status
 
@@ -424,3 +426,87 @@ async def tbank_account_operation(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ожидался объект JSON")
 
     return await _ingest_tbank_account_operation(session, payload)
+
+
+def _verify_bearer(authorization: str | None, expected: str | None) -> bool:
+    """Bearer-токен вебхука iikoCloud. expected пуст (dev) → проверка отключена."""
+    if not expected:
+        return True
+    scheme, _, token = (authorization or "").partition(" ")
+    return scheme == "Bearer" and hmac.compare_digest(token, expected)
+
+
+# Типы событий iikoCloud, которые точно НЕ про смены — в ingest не отдаём (если iiko шлёт
+# все типы на один URL). Остальное пробуем как смену; ingest сам отсеет не-курьерские.
+_NON_SHIFT_EVENT_TYPES = frozenset(
+    {
+        "DeliveryOrderUpdate",
+        "DeliveryOrderError",
+        "TableOrderUpdate",
+        "TableOrderError",
+        "ReserveUpdate",
+        "ReserveError",
+        "StopListUpdate",
+        "StopListError",
+    }
+)
+
+
+@router.post("/iiko/employee-shift")
+async def iiko_employee_shift(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    """Вебхук iikoCloud об открытии/закрытии смены сотрудника — realtime для курьеров.
+
+    Тело — массив событий (или один объект). События смен курьеров вливаем в
+    ``courier_iiko_shift`` сразу (поллинг ``/employees/attendance`` публикует явку с
+    задержкой), события других сотрудников/заказов игнорируем. После вливания пересчитываем
+    матчинг затронутых курьеров — смена видна в приложении почти мгновенно. Всегда 200
+    (потерянное добирает поллинг). Каждое событие логируем сырым — структуру PersonalShift
+    калибруем по факту.
+    """
+    if not _verify_bearer(authorization, settings.iiko_webhook_token):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный токен вебхука")
+    allowed = [
+        ip.strip() for ip in (settings.iiko_webhook_allowed_ips or "").split(",") if ip.strip()
+    ]
+    if allowed and _client_ip(request) not in allowed:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "IP не в списке разрешённых")
+
+    try:
+        payload = await request.json()
+    except Exception as exc:  # noqa: BLE001 - кривой body = 400
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Некорректный JSON") from exc
+
+    events = payload if isinstance(payload, list) else [payload]
+    affected: set[uuid.UUID] = set()
+    processed = 0
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        event_type = str(event.get("eventType") or "")
+        logger.info(
+            "iiko employee-shift webhook: type=%s info=%s",
+            event_type,
+            event.get("eventInfo"),
+        )
+        if event_type in _NON_SHIFT_EVENT_TYPES:
+            continue
+        employee_id = await ingest_cloud_shift_event(session, event)
+        if employee_id is not None:
+            affected.add(employee_id)
+            processed += 1
+
+    if affected:
+        now = datetime.now(_MOSCOW_TZ)
+        await recalculate_matches(
+            session,
+            now.date() - timedelta(days=2),
+            now.date() + timedelta(days=1),
+            employee_ids=affected,
+        )
+        await session.commit()
+    return {"ok": True, "processed": processed}
