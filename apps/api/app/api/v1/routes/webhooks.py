@@ -492,7 +492,9 @@ async def iiko_webhook(
         if not isinstance(event, dict):
             continue
         event_type = str(event.get("eventType") or "")
-        logger.info("iiko webhook: type=%s info=%s", event_type, event.get("eventInfo"))
+        # TODO(калибровка вебхуков): пока на WARNING, чтобы видеть сырьё в проде (app-логи
+        # уровня INFO в api не настроены). Вернуть на logger.info после калибровки структур.
+        logger.warning("iiko webhook: type=%s info=%s", event_type, event.get("eventInfo"))
         # Не-сменные типы (заказы и пр.) — пока не наша область, пропускаем (обработчики
         # добавятся в этот же диспетчер). Остальное пробуем как смену; ingest сам отсеет
         # не-курьерские/неполные события (вернёт None).
@@ -515,4 +517,8 @@ async def iiko_webhook(
             employee_ids=affected,
         )
         await session.commit()
+    # TODO(калибровка): WARNING временно для наблюдения итога батча в проде.
+    logger.warning(
+        "iiko webhook итог: events=%d processed=%d skipped=%d", len(events), processed, skipped
+    )
     return {"ok": True, "processed": processed, "skipped": skipped}
