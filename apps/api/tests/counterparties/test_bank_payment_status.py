@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+import pytest
 from cp_helpers import (
     make_account,
     make_counterparty,
@@ -26,6 +27,13 @@ from app.models import (
     SupplierInvoice,
 )
 from app.services.bank_payment_status import apply_payment_status, classify_payment_status
+
+
+async def _no_payer_wallet(session, draft):  # noqa: ANN001, ANN202 - тестовый стаб
+    """Стаб: банк-кошелёк плательщика не резолвится. Нужен, т.к. в тест-окружении задан
+    ``TBANK_API_ACCOUNT_NUMBER`` + засеян ``tbank_main`` с тем же счётом — иначе любой черновик
+    «находит» плательщика и идёт счастливым путём, минуя ветку fallback/маркера."""
+    return None
 
 
 def test_classify_payment_status() -> None:
@@ -47,7 +55,12 @@ async def _alloc_count(session: AsyncSession, invoice_id) -> int:
 
 async def test_paid_settles_all_draft_invoices(
     async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Проверяем fallback-аллокацию (статус-оплата без выписки) → форсим «кошелёк не найден».
+    monkeypatch.setattr(
+        "app.services.bank_payment_status._resolve_payer_bank_wallet", _no_payer_wallet
+    )
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Поставщик")
         draft = await make_draft(session, counterparty_id=cp.id, amount="3000.00")
@@ -163,9 +176,13 @@ async def test_paid_does_not_revive_failed_draft(
 
 async def test_paid_marks_prebook_skipped_when_wallet_unresolved(
     async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Кошелёк плательщика не найден → платёж всё равно фиксируем (деньги УЖЕ ушли), но
     ставим durable-маркер в payload и заводим видимый кейс owner-review."""
+    monkeypatch.setattr(
+        "app.services.bank_payment_status._resolve_payer_bank_wallet", _no_payer_wallet
+    )
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="P")
         draft = await make_draft(session, counterparty_id=cp.id, amount="1000.00")
