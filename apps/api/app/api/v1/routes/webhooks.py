@@ -452,21 +452,24 @@ _NON_SHIFT_EVENT_TYPES = frozenset(
 )
 
 
-@router.post("/iiko/employee-shift")
-async def iiko_employee_shift(
+@router.post("/iiko")
+async def iiko_webhook(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, Any]:
-    """Вебхук iikoCloud об открытии/закрытии смены сотрудника — realtime для курьеров.
+    """Единый приёмник вебхуков iikoCloud (один ``webHooksUri`` на организацию, один токен).
 
-    Тело — массив событий (или один объект). События смен курьеров вливаем в
-    ``courier_iiko_shift`` сразу (поллинг ``/employees/attendance`` публикует явку с
-    задержкой), события других сотрудников/заказов игнорируем. После вливания пересчитываем
-    матчинг затронутых курьеров — смена видна в приложении почти мгновенно. Всегда 200
-    (потерянное добирает поллинг). Каждое событие логируем сырым — структуру PersonalShift
-    калибруем по факту.
+    iikoCloud шлёт ВСЕ подписанные события на один URL, поэтому здесь — диспетчер по
+    ``eventType``:
+      * события смен сотрудников → ``ingest_cloud_shift_event`` (realtime открытие/закрытие
+        смены курьера; поллинг ``/employees/attendance`` публикует явку с задержкой);
+      * заказы/прочее (``DeliveryOrderUpdate`` и т.п.) — пока только логируем; их обработчик
+        (KDS) подключается сюда же, когда вольётся из ветки dds-webhook-ingestion.
+    Тело — массив событий (или один объект). Bearer-токен ``iiko_webhook_token`` + опц.
+    IP-whitelist. Всегда 200 (потерянное добирает поллинг). Каждое событие логируем сырым —
+    структуры событий калибруем по факту.
     """
     if not _verify_bearer(authorization, settings.iiko_webhook_token):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный токен вебхука")
@@ -484,21 +487,24 @@ async def iiko_employee_shift(
     events = payload if isinstance(payload, list) else [payload]
     affected: set[uuid.UUID] = set()
     processed = 0
+    skipped = 0
     for event in events:
         if not isinstance(event, dict):
             continue
         event_type = str(event.get("eventType") or "")
-        logger.info(
-            "iiko employee-shift webhook: type=%s info=%s",
-            event_type,
-            event.get("eventInfo"),
-        )
+        logger.info("iiko webhook: type=%s info=%s", event_type, event.get("eventInfo"))
+        # Не-сменные типы (заказы и пр.) — пока не наша область, пропускаем (обработчики
+        # добавятся в этот же диспетчер). Остальное пробуем как смену; ingest сам отсеет
+        # не-курьерские/неполные события (вернёт None).
         if event_type in _NON_SHIFT_EVENT_TYPES:
+            skipped += 1
             continue
         employee_id = await ingest_cloud_shift_event(session, event)
         if employee_id is not None:
             affected.add(employee_id)
             processed += 1
+        else:
+            skipped += 1
 
     if affected:
         now = datetime.now(_MOSCOW_TZ)
@@ -509,4 +515,4 @@ async def iiko_employee_shift(
             employee_ids=affected,
         )
         await session.commit()
-    return {"ok": True, "processed": processed}
+    return {"ok": True, "processed": processed, "skipped": skipped}

@@ -21,7 +21,7 @@ from app.services.position_registry import (
     reset_position_registry_for_tests,
 )
 
-BASE = "/api/v1/webhooks/iiko/employee-shift"
+BASE = "/api/v1/webhooks/iiko"
 COURIER_IIKO_ID = "courier-iiko-webhook-1"
 
 
@@ -149,3 +149,22 @@ def test_webhook_ignores_non_courier(
         assert shifts == []
     finally:
         reset_position_registry_for_tests()
+
+
+def test_webhook_skips_order_events(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Не-сменные события (заказы KDS) на общий /iiko просто пропускаются, не падают."""
+    response = client.post(
+        BASE,
+        json=[
+            {
+                "eventType": "DeliveryOrderUpdate",
+                "eventInfo": {"id": "order-guid", "order": {"id": "order-guid"}},
+            }
+        ],
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["processed"] == 0
+    assert body["skipped"] == 1
