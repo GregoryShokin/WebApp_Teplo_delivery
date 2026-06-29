@@ -279,7 +279,7 @@ async def test_paid_dates_prebook_by_operation_date(
         )
 
         txn = await session.scalar(
-            select(CashflowTransaction).where(CashflowTransaction.source_id == inv.id)
+            select(CashflowTransaction).where(CashflowTransaction.source_id == draft.id)
         )
         assert txn is not None and txn.source_kind == "counterparty_payment"
         assert txn.operation_date == op_day
@@ -288,6 +288,46 @@ async def test_paid_dates_prebook_by_operation_date(
             select(InvoicePaymentAllocation).where(InvoicePaymentAllocation.invoice_id == inv.id)
         )
         assert alloc.source_kind == "cash"
+
+
+async def test_paid_one_transaction_for_multiple_invoices(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Черновик на НЕСКОЛЬКО накладных → ОДНА prebooked-проводка на сумму платежа (не по
+    накладной), чтобы операция выписки (= Σ) сматчилась через prebooked-claim. Регресс прод-кейса
+    МЯСНОФФ/Егиазарян: дробление по накладным оставляло Σ-операцию в «требует разбора»."""
+    async with async_session_factory() as session:
+        account = await make_account(session, account_number="40802810000000066666")
+        await make_wallet(session, wallet_type="bank", code="bank-payer", account_id=account.id)
+        await make_expense_article(session)  # payment_to_supplier
+        cp = await make_counterparty(session, name="P", inn="7701234567")
+        draft = await make_draft(session, counterparty_id=cp.id, amount="3000.00")
+        draft.payload = {"accountNumber": account.account_number}
+        await session.flush()
+        inv1 = await make_invoice(
+            session, counterparty_id=cp.id, amount="2000.00", number="Н-1", draft_id=draft.id
+        )
+        inv2 = await make_invoice(
+            session, counterparty_id=cp.id, amount="1000.00", number="Н-2", draft_id=draft.id
+        )
+        await session.commit()
+        ids = (inv1.id, inv2.id)
+
+        await apply_payment_status(session, draft=draft, raw_status="executed")
+
+        # Ровно ОДНА проводка на 3000 (Σ), а не две по 2000/1000.
+        txns = (
+            await session.scalars(
+                select(CashflowTransaction).where(
+                    CashflowTransaction.source_kind == "counterparty_payment"
+                )
+            )
+        ).all()
+        assert len(txns) == 1
+        assert txns[0].amount == Decimal("3000.00")
+        # Обе накладные оплачены (отдельными аллокациями, привязанными к этой проводке).
+        for inv_id in ids:
+            assert (await session.get(SupplierInvoice, inv_id)).payment_status == "paid"
         await session.refresh(draft)
         assert "dds_prebook_skipped" not in (draft.payload or {})  # prebook заведён
 

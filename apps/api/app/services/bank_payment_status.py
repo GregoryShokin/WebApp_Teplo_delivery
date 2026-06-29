@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections import defaultdict
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +30,7 @@ from app.models import (
     DdsArticle,
     InvoicePaymentAllocation,
     ReconciliationCase,
+    SupplierInvoice,
     SupplierPrepayment,
     Wallet,
 )
@@ -158,12 +161,10 @@ async def apply_payment_status(
     # защита от реанимации: out-of-order «исполнен» после «отклонён» не воскрешает failed-черновик
     # с уже отвязанными накладными.
     if outcome == "paid" and draft.status in ("created", "updated"):
-        # Гасим остаток каждой накладной. Если знаем банк-кошелёк плательщика — заводим
-        # prebooked-проводку «Оплата поставщикам» (её заберёт приходящая операция выписки через
-        # prebooked-claim → операция не уходит в needs_review, ДДС-аналитика наполняется,
-        # накладная↔операция связаны). Иначе fallback: статус-аллокация без bank_operation_id.
-        from app.services.counterparty_payments import _apply_wallet_payment
-
+        # Гасим накладные черновика. Если знаем банк-кошелёк плательщика — заводим ОДНУ prebooked-
+        # проводку «Оплата поставщикам» на весь платёж (её заберёт приходящая операция выписки
+        # через prebooked-claim → операция не уходит в needs_review). Иначе fallback: статус-
+        # аллокация без bank_operation_id.
         bank_wallet = await _resolve_payer_bank_wallet(session, draft)
         supplier_article_id = await session.scalar(
             select(DdsArticle.id).where(DdsArticle.code == _SUPPLIER_ARTICLE_CODE)
@@ -239,24 +240,57 @@ async def apply_payment_status(
             await session.flush()
             if prepay_txn is not None:
                 prepay_txn.source_id = prepayment.id
+        # Накладные к гашению + статья каждой (счета услуг «Страницы на оплату» несут свою
+        # dds_article_id, складские — дефолтную «Оплата поставщикам»).
+        payable: list[tuple[SupplierInvoice, Decimal, uuid.UUID | None]] = []
         for invoice in draft_invoices:
             remaining = await _invoice_remaining(session, invoice)
-            if remaining <= 0:
-                continue
-            if bank_wallet is not None:
-                await _apply_wallet_payment(
-                    session,
-                    invoice=invoice,
-                    wallet=bank_wallet,
-                    amount=remaining,
-                    operation_date=op_date,
-                    # Счета услуг («Страница на оплату» — ПО/реклама/техподдержка) несут свою
-                    # статью ДДС; складские (без неё) — дефолтная «Оплата поставщикам».
-                    article_id=invoice.dds_article_id or supplier_article_id,
-                    comment="Оплата по статусу платежа банка",
-                    actor_user_id=actor_user_id,
+            if remaining > 0:
+                payable.append(
+                    (invoice, remaining, invoice.dds_article_id or supplier_article_id)
                 )
-            else:
+
+        if bank_wallet is not None:
+            # ОДНА проводка на платёж (на статью), а не по-накладно: операция выписки = Σ накладных
+            # сматчится с ней через prebooked-claim. Дробление по накладным оставляло бы Σ-операцию
+            # без пары (части ≠ сумме). Группируем по статье — обычно одна группа = одна проводка.
+            by_article: dict[uuid.UUID | None, list[tuple[SupplierInvoice, Decimal]]] = (
+                defaultdict(list)
+            )
+            for invoice, remaining, article_id in payable:
+                by_article[article_id].append((invoice, remaining))
+            for article_id, items in by_article.items():
+                group_total = sum((remaining for _, remaining in items), Decimal("0"))
+                txn = CashflowTransaction(
+                    wallet_id=bank_wallet.id,
+                    direction="out",
+                    amount=group_total,
+                    operation_date=op_date,
+                    article_id=article_id,
+                    counterparty_id=draft.counterparty_id,
+                    source_kind="counterparty_payment",
+                    source_id=draft.id,
+                    payment_purpose="Оплата по статусу платежа банка",
+                    quality_status="final",
+                )
+                session.add(txn)
+                await session.flush()
+                for invoice, remaining in items:
+                    session.add(
+                        InvoicePaymentAllocation(
+                            invoice_id=invoice.id,
+                            source_kind="cash",
+                            cashflow_transaction_id=txn.id,
+                            amount=remaining,
+                            created_by_user_id=actor_user_id,
+                        )
+                    )
+                await session.flush()
+                for invoice, _ in items:
+                    await _recompute_status(session, invoice)
+        else:
+            # Банк-кошелёк не резолвится — гашение статус-аллокацией без проводки ДДС.
+            for invoice, remaining, _ in payable:
                 session.add(
                     InvoicePaymentAllocation(
                         invoice_id=invoice.id,
@@ -267,7 +301,7 @@ async def apply_payment_status(
                     )
                 )
                 await session.flush()
-            await _recompute_status(session, invoice)
+                await _recompute_status(session, invoice)
         draft.status = "paid"
         draft.synced_at = datetime.now(UTC)
 
