@@ -22,7 +22,7 @@ from pathlib import Path
 from types import ModuleType
 
 import anyio
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -33,6 +33,8 @@ from app.models import (
     CounterpartyPayableProfile,
     CounterpartyRole,
     CounterpartyRoutingRule,
+    DdsArticle,
+    InvoiceLineItem,
     SupplierInvoice,
     SupplierInvoiceTombstone,
 )
@@ -96,6 +98,9 @@ class CounterpartyInvoiceSyncResult:
     # matched by external_id to an existing source='manual' record, so we skip them
     # instead of creating an iiko-sourced duplicate.
     skipped_own_pushed: int = 0
+    # Own (Касса/Склад) pushed invoices whose amount/date we pulled BACK from iiko because they
+    # were edited there while still unpaid (goods-only iiko sum + our excluded staff/expense lines).
+    own_pushed_updated: int = 0
 
     def as_dict(self) -> dict[str, int]:
         return asdict(self)
@@ -380,6 +385,29 @@ async def _is_barter(session: AsyncSession, counterparty_id: uuid.UUID) -> bool:
     return relationship == "barter"
 
 
+async def _excluded_push_line_sum(session: AsyncSession, invoice_id: uuid.UUID) -> Decimal:
+    """Σ строк накладной, которые НЕ уходят в iiko при пуше (is_staff или не-товарная статья
+    ДДС — питание/расходы персонала, содержание точек). Зеркало фильтра warehouse_invoice_push:
+    iiko-документ несёт только товарные строки, поэтому при обратном подтягивании суммы из iiko
+    эти строки прибавляем, чтобы восстановить полную сумму обязательства."""
+    from app.services.warehouse_invoices import SUPPLIER_PAYMENT_ARTICLE_NAME
+
+    goods_articles = select(DdsArticle.id).where(DdsArticle.name == SUPPLIER_PAYMENT_ARTICLE_NAME)
+    total = await session.scalar(
+        select(func.coalesce(func.sum(InvoiceLineItem.sum), 0)).where(
+            InvoiceLineItem.invoice_id == invoice_id,
+            or_(
+                InvoiceLineItem.is_staff.is_(True),
+                and_(
+                    InvoiceLineItem.dds_article_id.is_not(None),
+                    InvoiceLineItem.dds_article_id.not_in(goods_articles),
+                ),
+            ),
+        )
+    )
+    return Decimal(total or 0)
+
+
 async def _ingest_documents(
     session: AsyncSession,
     documents: list[ET.Element],
@@ -440,6 +468,31 @@ async def _ingest_documents(
                 own_pushed = candidates[0]
                 own_pushed.external_id = external_id
         if own_pushed is not None:
+            # Накладная создана у нас (Касса/Склад) и запушена в iiko. По умолчанию обратный синк
+            # её НЕ трогает (наши поля — источник истины). НО если она ещё НЕ оплачена и НЕ
+            # отправлена в банк, подтягиваем правки суммы/даты, сделанные в iiko: к iiko-сумме
+            # (только товарные строки) прибавляем исключённые при пуше строки (персонал/расходные),
+            # сохраняя payment_status, staff_amount, source и нормализованные позиции.
+            if own_pushed.payment_status == "unpaid" and own_pushed.draft_id is None:
+                iiko_amount = _invoice_amount(doc)
+                if iiko_amount > 0:
+                    new_amount = iiko_amount + await _excluded_push_line_sum(
+                        session, own_pushed.id
+                    )
+                    iiko_date = _parse_iiko_date(
+                        _text(doc, "incomingDate") or _text(doc, "dateIncoming")
+                    )
+                    vat_total, vat_breakdown = _invoice_vat(doc)
+                    if own_pushed.amount != new_amount or (
+                        iiko_date is not None and own_pushed.invoice_date != iiko_date
+                    ):
+                        own_pushed.amount = new_amount
+                        if iiko_date is not None:
+                            own_pushed.invoice_date = iiko_date
+                        own_pushed.vat_total = vat_total
+                        own_pushed.vat_breakdown = vat_breakdown
+                        result.own_pushed_updated += 1
+                        continue
             result.skipped_own_pushed += 1
             continue
         supplier_guid = _text(doc, counterparty_field)

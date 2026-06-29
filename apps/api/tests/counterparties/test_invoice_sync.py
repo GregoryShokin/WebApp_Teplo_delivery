@@ -6,12 +6,14 @@ the parse + upsert pipeline on the real ``teplo_test`` schema.
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from cp_helpers import (
     add_routing_rule,
     invoices_xml,
     make_counterparty,
+    make_draft,
     make_invoice,
     outgoing_invoices_xml,
     suppliers_xml,
@@ -353,6 +355,7 @@ async def test_reverse_sync_skips_our_own_pushed_kassa_invoice(
             source="kassa_invoice",
             external_id="doc-1",  # = iiko doc id assigned on push
             payment_status="unpaid",
+            invoice_date=date(2026, 6, 1),  # = iiko incoming_date → ничего не подтягивать, чистый skip
         )
         await session.commit()
 
@@ -377,10 +380,12 @@ async def test_reverse_sync_shared_number_prefers_exact_external_id_match(
     Регресс прод-инцидента после добавления kassa_invoice в OUR_PUSHED_SOURCES."""
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Местный закуп", inn="7706660001")
-        # Уже привязана к iiko-документу doc-1 (= _doc()).
+        # Уже привязана к iiko-документу doc-1 (= _doc()). Сумма = iiko-доку (232), чтобы
+        # обратное подтягивание суммы не вмешивалось — тест проверяет именно дедуп по external_id.
         await make_invoice(
-            session, counterparty_id=cp.id, amount="4636.00", number="4",
+            session, counterparty_id=cp.id, amount="232.00", number="4",
             source="kassa_invoice", external_id="doc-1", payment_status="unpaid",
+            invoice_date=date(2026, 6, 1),
         )
         # Другая накладная с тем же номером «4», но без external_id (другая покупка).
         await make_invoice(
@@ -435,6 +440,63 @@ async def test_reverse_sync_dedupes_pushed_manual_by_number_when_external_id_nul
         assert only.source == "manual"
         assert only.external_id == "doc-1"  # backfilled from the iiko document id
         assert only.payment_status == "paid"
+
+
+async def test_reverse_sync_pulls_amount_back_for_unpaid_own_pushed(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """own_pushed накладная (Касса), отредактированная в iiko, пока НЕ оплачена и НЕ в банке:
+    обратный синк подтягивает новую сумму из iiko, сохраняя source/payment_status. Регресс
+    прод-кейса 4-2 (правка в iiko не подтягивалась — own_pushed безусловно пропускалась)."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ИП Карпов", inn="7701234567")
+        inv = await make_invoice(
+            session, counterparty_id=cp.id, amount="300.00", number="СЧ-001",
+            source="kassa_invoice", external_id="doc-1", payment_status="unpaid",
+        )
+        await session.commit()
+        inv_id = inv.id
+
+        # iiko-версия документа doc-1 = 232.00 (отредактирована там), позиций-исключений нет.
+        result = await ingest_iiko_payables(
+            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([_doc()])
+        )
+        await session.commit()
+
+        assert result.own_pushed_updated == 1
+        assert result.skipped_own_pushed == 0
+        assert result.invoices_created == 0
+        refreshed = await session.get(SupplierInvoice, inv_id)
+        assert refreshed.amount == Decimal("232.00")  # подтянуто из iiko
+        assert refreshed.source == "kassa_invoice"  # источник и тип сохранены
+        assert refreshed.payment_status == "unpaid"
+
+
+async def test_reverse_sync_keeps_own_pushed_amount_once_in_bank(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """own_pushed накладная, уже отправленная в банк (draft_id задан), НЕ подтягивает сумму из
+    iiko — платёжка сформирована на текущую сумму, менять её под отправленным платежом нельзя."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ИП Карпов", inn="7701234567")
+        draft = await make_draft(session, counterparty_id=cp.id, amount="300.00")
+        inv = await make_invoice(
+            session, counterparty_id=cp.id, amount="300.00", number="СЧ-001",
+            source="kassa_invoice", external_id="doc-1", payment_status="unpaid",
+            draft_id=draft.id,
+        )
+        await session.commit()
+        inv_id = inv.id
+
+        result = await ingest_iiko_payables(
+            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([_doc()])
+        )
+        await session.commit()
+
+        assert result.own_pushed_updated == 0
+        assert result.skipped_own_pushed == 1
+        refreshed = await session.get(SupplierInvoice, inv_id)
+        assert refreshed.amount == Decimal("300.00")  # не тронуто под платежом
 
 
 async def test_ingest_outgoing_is_idempotent(
