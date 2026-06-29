@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { apiErrorMessage } from "@/lib/api";
+import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
+import { apiErrorMessage, getDdsArticles } from "@/lib/api";
 import { formatDate, formatRub } from "@/routes/counterparties/shared";
 
 import {
@@ -62,6 +63,13 @@ export function SendDialog({
   const today = new Date().toISOString().slice(0, 10);
 
   const [date, setDate] = useState(intake.scheduled_send_date ?? today);
+  // Статья ДДС оплаты: уже выбранная на счёте → закреплённая за контрагентом → пусто (на бэке
+  // дефолт «Оплата поставщикам»). Чекбокс закрепляет выбранную статью за контрагентом на будущее.
+  const [ddsArticleId, setDdsArticleId] = useState(
+    intake.invoice_dds_article_id ?? intake.default_dds_article_id ?? "",
+  );
+  const [rememberForCp, setRememberForCp] = useState(false);
+  const articlesQuery = useQuery({ queryKey: ["dds", "articles"], queryFn: getDdsArticles });
   const [r, setR] = useState({
     recipientName: req.recipientName ?? intake.recipient_name ?? "",
     inn: req.inn ?? intake.inn ?? "",
@@ -83,8 +91,12 @@ export function SendDialog({
     mutationFn: async () => {
       // Подтверждаем реквизиты (заносим в карточку + verified), затем отправляем или планируем.
       await confirmIntake(intake.id, { requisites: r, apply_requisites: true });
-      if (isNow) await sendToBank(intake.id);
-      else await scheduleSend(intake.id, date);
+      const choice = {
+        dds_article_id: ddsArticleId || null,
+        remember_for_counterparty: rememberForCp,
+      };
+      if (isNow) await sendToBank(intake.id, choice);
+      else await scheduleSend(intake.id, date, choice);
     },
     onSuccess: () => {
       invalidate();
@@ -186,6 +198,28 @@ export function SendDialog({
               {isNow
                 ? "Сегодня — счёт уйдёт в банк сразу."
                 : "Будущая дата — счёт уйдёт автоматически в этот день."}
+            </p>
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label className="text-xs text-muted-foreground">Статья ДДС оплаты</Label>
+            <ArticleCombobox
+              articles={articlesQuery.data ?? []}
+              value={ddsArticleId || "none"}
+              onChange={(value) => setDdsArticleId(value === "none" ? "" : value)}
+            />
+            <label className="mt-0.5 flex items-center gap-2 text-sm">
+              <input
+                checked={rememberForCp}
+                className="h-4 w-4"
+                onChange={(e) => setRememberForCp(e.target.checked)}
+                type="checkbox"
+              />
+              Закрепить статью за контрагентом
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Не складские поставщики (ПО, реклама, техподдержка) — оплата пойдёт по выбранной
+              статье; без выбора — «Оплата поставщикам».
             </p>
           </div>
         </div>

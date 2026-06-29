@@ -25,6 +25,8 @@ export type PaymentIntake = {
   requisites_verified: boolean;
   invoice_payment_status: string | null;
   invoice_in_draft: boolean;
+  invoice_dds_article_id: string | null;
+  default_dds_article_id: string | null;
   has_pdf: boolean;
   scheduled_send_date: string | null;
   created_at: string;
@@ -75,16 +77,27 @@ export async function ignoreIntake(id: string): Promise<PaymentIntake> {
   return response.data;
 }
 
+// Статья ДДС для оплаты + закрепление за контрагентом (общее для немедленной и плановой отправки).
+export type ArticleChoice = {
+  dds_article_id?: string | null;
+  remember_for_counterparty?: boolean;
+};
+
 // Отправить подтверждённый счёт в банк (банк-черновик, как у накладных). Деньги не списываются.
-export async function sendToBank(id: string): Promise<PaymentIntake> {
-  const response = await api.post<PaymentIntake>(`${BASE}/intakes/${id}/send-to-bank`);
+export async function sendToBank(id: string, choice: ArticleChoice = {}): Promise<PaymentIntake> {
+  const response = await api.post<PaymentIntake>(`${BASE}/intakes/${id}/send-to-bank`, choice);
   return response.data;
 }
 
 // Запланировать авто-отправку в банк к дате (YYYY-MM-DD). Джоба отправит, когда дата наступит.
-export async function scheduleSend(id: string, sendDate: string): Promise<PaymentIntake> {
+export async function scheduleSend(
+  id: string,
+  sendDate: string,
+  choice: ArticleChoice = {},
+): Promise<PaymentIntake> {
   const response = await api.post<PaymentIntake>(`${BASE}/intakes/${id}/schedule-send`, {
     send_date: sendDate,
+    ...choice,
   });
   return response.data;
 }

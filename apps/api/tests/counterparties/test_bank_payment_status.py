@@ -308,3 +308,37 @@ async def test_pending_is_noop(
         await session.refresh(inv)
         assert inv.payment_status == "unpaid"
         assert inv.draft_id == draft.id
+
+
+async def test_paid_uses_invoice_dds_article(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Счёт услуг («Страница на оплату») с заданной dds_article_id гасится ПО ЭТОЙ статье —
+    проводка ДДС идёт по ней, а не по дефолтной «Оплата поставщикам». Банк-кошелёк плательщика
+    резолвится по accountNumber из тела черновика → prebooked-путь, где статья и применяется."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ООО Айко", inn="7700000123")
+        await make_expense_article(session)  # дефолтная «Оплата поставщикам» (fallback)
+        service_article = await make_expense_article(
+            session, code="oplaty_sistem_avtomatizacii", name="Оплаты систем автоматизации"
+        )
+        account = await make_account(session, account_number="40802810000000012345")
+        await make_wallet(session, wallet_type="bank", code="tbank_x", account_id=account.id)
+        draft = await make_draft(session, counterparty_id=cp.id, amount="4260.00")
+        draft.payload = {"accountNumber": "40802810000000012345"}
+        inv = await make_invoice(
+            session, counterparty_id=cp.id, amount="4260.00", draft_id=draft.id
+        )
+        inv.dds_article_id = service_article.id
+        await session.commit()
+        inv_id = inv.id
+
+        await apply_payment_status(session, draft=draft, raw_status="executed")
+
+        refreshed = await session.get(SupplierInvoice, inv_id)
+        assert refreshed.payment_status == "paid"
+        # Проводка ДДС оплаты — по статье счёта, не по дефолтной «Оплата поставщикам».
+        service_txn = await session.scalar(
+            select(CashflowTransaction).where(CashflowTransaction.article_id == service_article.id)
+        )
+        assert service_txn is not None

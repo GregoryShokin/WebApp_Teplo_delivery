@@ -250,7 +250,9 @@ async def apply_payment_status(
                     wallet=bank_wallet,
                     amount=remaining,
                     operation_date=op_date,
-                    article_id=supplier_article_id,
+                    # Счета услуг («Страница на оплату» — ПО/реклама/техподдержка) несут свою
+                    # статью ДДС; складские (без неё) — дефолтная «Оплата поставщикам».
+                    article_id=invoice.dds_article_id or supplier_article_id,
                     comment="Оплата по статусу платежа банка",
                     actor_user_id=actor_user_id,
                 )

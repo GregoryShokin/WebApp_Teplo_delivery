@@ -64,6 +64,10 @@ class IntakeRead(BaseModel):
     # Состояние связанной накладной: оплачена/частично и заведён ли банк-черновик.
     invoice_payment_status: str | None
     invoice_in_draft: bool
+    # Статья ДДС, выбранная для оплаты этого счёта (None → дефолтная «Оплата поставщикам»).
+    invoice_dds_article_id: uuid.UUID | None
+    # Закреплённая за контрагентом статья ДДС — предзаполняет окно оплаты.
+    default_dds_article_id: uuid.UUID | None
     has_pdf: bool
     # Дата плановой авто-отправки в банк (ISO). None = отправка только вручную.
     scheduled_send_date: str | None
@@ -94,9 +98,19 @@ class ConfirmIn(BaseModel):
     apply_requisites: bool = False
 
 
+class SendToBankIn(BaseModel):
+    # Статья ДДС для оплаты этого счёта (None → дефолтная «Оплата поставщикам» при гашении).
+    dds_article_id: uuid.UUID | None = None
+    # Закрепить выбранную статью за контрагентом (предзаполнит окно при следующей оплате).
+    remember_for_counterparty: bool = False
+
+
 class ScheduleSendIn(BaseModel):
     # Дата, к которой счёт автоматически уйдёт в банк (джоба отправляет, когда дата наступила).
     send_date: date
+    # Статья ДДС / закрепление — как при немедленной отправке (счёт уйдёт позже с этой статьёй).
+    dds_article_id: uuid.UUID | None = None
+    remember_for_counterparty: bool = False
 
 
 def _to_read(
@@ -106,6 +120,8 @@ def _to_read(
     requisites_verified: bool | None = False,
     invoice_payment_status: str | None = None,
     invoice_draft_id: uuid.UUID | None = None,
+    invoice_dds_article_id: uuid.UUID | None = None,
+    default_dds_article_id: uuid.UUID | None = None,
 ) -> IntakeRead:
     rec: dict[str, Any] = intake.recognition or {}
     return IntakeRead(
@@ -130,6 +146,8 @@ def _to_read(
         requisites_verified=bool(requisites_verified),
         invoice_payment_status=invoice_payment_status,
         invoice_in_draft=invoice_draft_id is not None,
+        invoice_dds_article_id=invoice_dds_article_id,
+        default_dds_article_id=default_dds_article_id,
         has_pdf=intake.pdf_bytes is not None,
         scheduled_send_date=(
             intake.scheduled_send_date.isoformat() if intake.scheduled_send_date else None
@@ -145,6 +163,34 @@ async def _get_intake(session: AsyncSession, intake_id: uuid.UUID) -> EmailInvoi
     return intake
 
 
+async def _apply_article_choice(
+    session: AsyncSession,
+    intake: EmailInvoiceIntake,
+    *,
+    dds_article_id: uuid.UUID | None,
+    remember_for_counterparty: bool,
+) -> None:
+    """Проставить выбранную статью ДДС на счёт (её берёт гашение ``apply_payment_status``) и
+    опционально закрепить за контрагентом — предзаполнит окно при следующей оплате."""
+    if dds_article_id is None:
+        return
+    if intake.invoice_id is not None:
+        invoice = await session.get(SupplierInvoice, intake.invoice_id)
+        if invoice is not None:
+            invoice.dds_article_id = dds_article_id
+    if remember_for_counterparty and intake.counterparty_id is not None:
+        profile = await session.scalar(
+            select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == intake.counterparty_id
+            )
+        )
+        if profile is None:
+            profile = CounterpartyPayableProfile(counterparty_id=intake.counterparty_id)
+            session.add(profile)
+        profile.default_dds_article_id = dds_article_id
+    await session.flush()
+
+
 async def _load_read(session: AsyncSession, intake_id: uuid.UUID) -> IntakeRead:
     """Перечитать запись с присоединённым контекстом (контрагент, верификация реквизитов, статус
     накладной) — единый ответ для всех мутаций, как в списке."""
@@ -156,6 +202,8 @@ async def _load_read(session: AsyncSession, intake_id: uuid.UUID) -> IntakeRead:
                 CounterpartyPayableProfile.requisites_verified,
                 SupplierInvoice.payment_status,
                 SupplierInvoice.draft_id,
+                SupplierInvoice.dds_article_id,
+                CounterpartyPayableProfile.default_dds_article_id,
             )
             .outerjoin(Counterparty, Counterparty.id == EmailInvoiceIntake.counterparty_id)
             .outerjoin(
@@ -168,13 +216,15 @@ async def _load_read(session: AsyncSession, intake_id: uuid.UUID) -> IntakeRead:
     ).first()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена")
-    intake, cp_name, verified, pay_status, draft_id = row
+    intake, cp_name, verified, pay_status, draft_id, inv_article, default_article = row
     return _to_read(
         intake,
         cp_name,
         requisites_verified=verified,
         invoice_payment_status=pay_status,
         invoice_draft_id=draft_id,
+        invoice_dds_article_id=inv_article,
+        default_dds_article_id=default_article,
     )
 
 
@@ -191,6 +241,8 @@ async def list_intakes(
             CounterpartyPayableProfile.requisites_verified,
             SupplierInvoice.payment_status,
             SupplierInvoice.draft_id,
+            SupplierInvoice.dds_article_id,
+            CounterpartyPayableProfile.default_dds_article_id,
         )
         .outerjoin(Counterparty, Counterparty.id == EmailInvoiceIntake.counterparty_id)
         .outerjoin(
@@ -213,8 +265,10 @@ async def list_intakes(
             requisites_verified=verified,
             invoice_payment_status=pay_status,
             invoice_draft_id=draft_id,
+            invoice_dds_article_id=inv_article,
+            default_dds_article_id=default_article,
         )
-        for intake, cp_name, verified, pay_status, draft_id in rows
+        for intake, cp_name, verified, pay_status, draft_id, inv_article, default_article in rows
     ]
 
 
@@ -290,12 +344,19 @@ async def ignore_intake(
 @router.post("/intakes/{intake_id}/send-to-bank", response_model=IntakeRead, dependencies=OPERATE)
 async def send_to_bank(
     intake_id: uuid.UUID,
+    body: SendToBankIn,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> IntakeRead:
     """Отправить подтверждённый счёт в банк — банк-черновик (как у накладных). Деньги не
     списываются: уходит на подтверждение. В dev (mock-режим) реального вызова банка нет."""
     intake = await _get_intake(session, intake_id)
+    await _apply_article_choice(
+        session,
+        intake,
+        dds_article_id=body.dds_article_id,
+        remember_for_counterparty=body.remember_for_counterparty,
+    )
     try:
         await ingest.send_intake_to_bank(session, intake, actor_user_id=actor.user_id)
     except payments.RequisitesNotVerifiedError as exc:
@@ -339,6 +400,12 @@ async def schedule_send(
             status_code=status.HTTP_409_CONFLICT,
             detail="Реквизиты контрагента не подтверждены — откройте «Разобрать» и подтвердите их",
         )
+    await _apply_article_choice(
+        session,
+        intake,
+        dds_article_id=body.dds_article_id,
+        remember_for_counterparty=body.remember_for_counterparty,
+    )
     intake.scheduled_send_date = body.send_date
     await session.commit()
     return await _load_read(session, intake_id)

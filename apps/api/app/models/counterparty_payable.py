@@ -82,6 +82,11 @@ class CounterpartyPayableProfile(Base):
     ledger_category_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("counterparty_ledger_category.id", ondelete="SET NULL"), nullable=True
     )
+    # Закреплённая за контрагентом статья ДДС: предзаполняет окно оплаты на «Странице на оплату»
+    # (не-складские поставщики — ПО/реклама). None → «Оплата поставщикам».
+    default_dds_article_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("dds_articles.id", ondelete="SET NULL"), nullable=True
+    )
     # Optional brand grouping for analytics ("Амай" over ООО «ТОРА» + ИП Скачкова).
     brand_group: Mapped[str | None] = mapped_column(String(160), nullable=True)
     # Legacy internal name carried from DDS/iiko; the menu shows the legal name.
@@ -307,6 +312,11 @@ class SupplierInvoice(Base):
         ForeignKey("barter_settlement.id", ondelete="SET NULL"), nullable=True
     )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Статья ДДС для оплаты этого счёта (счета услуг со «Страницы на оплату» — ПО/реклама/
+    # техподдержка). None → дефолтная «Оплата поставщикам» при гашении (apply_payment_status).
+    dds_article_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("dds_articles.id", ondelete="SET NULL"), nullable=True
+    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )

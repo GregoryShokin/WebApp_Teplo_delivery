@@ -355,7 +355,7 @@ async def test_reverse_sync_skips_our_own_pushed_kassa_invoice(
             source="kassa_invoice",
             external_id="doc-1",  # = iiko doc id assigned on push
             payment_status="unpaid",
-            invoice_date=date(2026, 6, 1),  # = iiko incoming_date → ничего не подтягивать, чистый skip
+            invoice_date=date(2026, 6, 1),  # = iiko incoming_date → чистый skip без подтягивания
         )
         await session.commit()
 
