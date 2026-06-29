@@ -16,6 +16,7 @@ from cp_helpers import (
     make_bank_operation,
     make_counterparty,
     make_expense_article,
+    make_iiko_product,
     make_invoice,
     make_wallet,
 )
@@ -184,16 +185,19 @@ def test_kassa_invoice_idempotent_on_duplicate_number(
     async def _cp() -> uuid.UUID:
         async with async_session_factory() as session:
             cp = await make_counterparty(session, name="Поставщик-дубль")
+            product = await make_iiko_product(session)
             await session.commit()
-            return cp.id
+            return cp.id, product.id
 
-    cp_id = _run(_cp())
+    cp_id, product_id = _run(_cp())
     payload = {
         "counterparty_id": str(cp_id),
         "issued_at": ISSUED.isoformat(),
         "number": "К-777",
         "via_kassa": True,
-        "lines": [{"name": "Молоко", "quantity": 2, "price": 50}],
+        "lines": [
+            {"name": "Молоко", "quantity": 2, "price": 50, "iiko_product_id": str(product_id)}
+        ],
     }
     first = client.post(f"{BASE}/invoices", json=payload, headers=headers)
     assert first.status_code == 201, first.text
@@ -209,20 +213,23 @@ def test_edit_invoice_lines_recomputes_totals(
     разделяет товар/персонал; статус отправки в iiko сбрасывается на not_pushed."""
     headers = _admin(async_session_factory)
 
-    async def _cp() -> uuid.UUID:
+    async def _cp() -> tuple[uuid.UUID, uuid.UUID]:
         async with async_session_factory() as session:
             cp = await make_counterparty(session, name="Поставщик-правка")
+            product = await make_iiko_product(session)
             await session.commit()
-            return cp.id
+            return cp.id, product.id
 
-    cp_id = _run(_cp())
+    cp_id, product_id = _run(_cp())
     create = client.post(
         f"{BASE}/invoices",
         json={
             "counterparty_id": str(cp_id),
             "issued_at": ISSUED.isoformat(),
             "number": "ED-1",
-            "lines": [{"name": "Старое", "quantity": 1, "price": 100}],
+            "lines": [
+                {"name": "Старое", "quantity": 1, "price": 100, "iiko_product_id": str(product_id)}
+            ],
         },
         headers=headers,
     )
@@ -233,7 +240,7 @@ def test_edit_invoice_lines_recomputes_totals(
         f"{BASE}/invoices/{inv_id}",
         json={
             "lines": [
-                {"name": "Молоко", "quantity": 2, "price": 50},
+                {"name": "Молоко", "quantity": 2, "price": 50, "iiko_product_id": str(product_id)},
                 {"name": "Питание", "quantity": 1, "price": 300, "is_staff": True},
             ]
         },

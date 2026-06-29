@@ -225,11 +225,17 @@ export function CreateInvoiceDialog({
 
   const filledStore = lines.filter((l) => l.name && num(l.quantity) > 0).length;
   const filledStaff = staffLines.filter((l) => l.articleId && num(l.amount) > 0).length;
+  // Товарная строка с названием, но без выбора из номенклатуры iiko — блокируем сохранение
+  // (иначе позиция потеряется при выгрузке в iiko, как было с «зеленью» в накладной №4).
+  const goodsMissingProduct = lines.some(
+    (l) => l.name.trim() && num(l.quantity) > 0 && !l.product_id,
+  );
   const canSave =
     !!counterpartyId &&
     !!issuedAt &&
     filledStore + filledStaff > 0 &&
     !createMutation.isPending &&
+    !goodsMissingProduct &&
     !(markPaid && !cpHasGuid);
 
   return (
@@ -743,13 +749,18 @@ export function LineRow({
   onChange: (patch: Partial<DraftLine>) => void;
   onRemove: () => void;
 }) {
+  // Товарная строка обязана быть выбрана из номенклатуры iiko (есть product_id). Иначе при
+  // выгрузке в iiko строка молча теряется (нет product_guid) — накладная уходит неполной.
+  const needsProduct = !!line.name.trim() && !line.product_id;
   return (
+    <>
     <div
       className={cn(
         "grid items-center gap-2",
         barter
           ? "grid-cols-[minmax(0,1fr)_64px_88px_104px_28px]"
           : "grid-cols-[minmax(0,1fr)_64px_88px_56px_104px_28px]",
+        needsProduct && "rounded-md p-1 ring-1 ring-red-300",
       )}
     >
       <ProductSearch
@@ -812,6 +823,12 @@ export function LineRow({
         <Trash2 size={15} />
       </button>
     </div>
+    {needsProduct ? (
+      <p className="px-1 text-xs text-red-600">
+        Выберите конкретный товар из номенклатуры iiko
+      </p>
+    ) : null}
+    </>
   );
 }
 

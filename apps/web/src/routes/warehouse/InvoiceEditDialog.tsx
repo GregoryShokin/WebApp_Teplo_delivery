@@ -147,7 +147,12 @@ export function InvoiceEditDialog({
 
   const filled = lines.filter((l) => l.name && num(l.quantity) > 0).length;
   const filledStaff = staffLines.filter((l) => l.articleId && num(l.amount) > 0).length;
-  const canSave = !!editable && filled + filledStaff > 0 && !saveMutation.isPending;
+  // Товарная строка без выбора из номенклатуры iiko теряется при выгрузке — блокируем сохранение.
+  const goodsMissingProduct = lines.some(
+    (l) => l.name.trim() && num(l.quantity) > 0 && !l.product_id,
+  );
+  const canSave =
+    !!editable && filled + filledStaff > 0 && !saveMutation.isPending && !goodsMissingProduct;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

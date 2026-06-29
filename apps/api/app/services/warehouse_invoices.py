@@ -134,6 +134,29 @@ class LineInput:
     dds_article_id: uuid.UUID | None = None
 
 
+def _assert_goods_have_product(
+    lines: Sequence[LineInput], products: dict[uuid.UUID, IikoProduct]
+) -> None:
+    """Товарная строка (НЕ персонал и без расходной статьи ДДС) обязана быть сопоставлена с
+    номенклатурой iiko.
+
+    Иначе при выгрузке накладной в iiko строки без ``product_guid`` молча отбрасываются
+    (``warehouse_invoice_push.prepare_push``: ``if not line.product_guid: continue``) — накладная
+    уходит НЕПОЛНОЙ, сумма в iiko < нашей, и расхождение незаметно (статус остаётся ``pushed``).
+    Поэтому требуем явный выбор товара уже на вводе. Персональные (``is_staff``) и расходные (со
+    статьёй ДДС) строки в iiko не идут — для них сопоставление не требуется."""
+    for line in lines:
+        is_goods = not line.is_staff and line.dds_article_id is None
+        if is_goods and (
+            line.iiko_product_id is None or products.get(line.iiko_product_id) is None
+        ):
+            raise WarehouseInvoiceError(
+                f"Позиция «{line.name or '—'}»: выберите конкретный товар из номенклатуры iiko. "
+                "Товарную позицию нельзя сохранить без сопоставления — иначе она потеряется при "
+                "выгрузке накладной в iiko."
+            )
+
+
 async def next_invoice_number(session: AsyncSession) -> str:
     """Следующий свободный целочисленный номер по НАШИМ накладным (manual + kassa_invoice).
 
@@ -213,6 +236,7 @@ async def create_warehouse_invoice(
             await session.scalars(select(IikoProduct).where(IikoProduct.id.in_(product_ids)))
         ).all()
         products = {product.id: product for product in rows}
+    _assert_goods_have_product(lines, products)
 
     # Barter loan: расход (we_lend=мы выдаём) или приход (нам выдают); явная роль «loan».
     if mode == "loan":
@@ -335,6 +359,7 @@ async def update_warehouse_invoice(
             await session.scalars(select(IikoProduct).where(IikoProduct.id.in_(product_ids)))
         ).all()
         products = {product.id: product for product in rows}
+    _assert_goods_have_product(lines, products)
 
     await session.execute(
         delete(InvoiceLineItem).where(InvoiceLineItem.invoice_id == invoice.id)

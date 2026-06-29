@@ -11,7 +11,7 @@ import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from cp_helpers import make_counterparty, make_invoice
+from cp_helpers import make_counterparty, make_iiko_product, make_invoice
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.services.warehouse_invoices import (
@@ -21,18 +21,22 @@ from app.services.warehouse_invoices import (
 )
 
 
-def _goods() -> list[LineInput]:
-    return [LineInput(name="Товар", quantity=Decimal("1"), price=Decimal("100"))]
-
-
 async def _kassa_invoice(
     session: AsyncSession, *, cp_id: uuid.UUID, number: str, when: datetime
 ):
+    product = await make_iiko_product(session)
     return await create_warehouse_invoice(
         session,
         counterparty_id=cp_id,
         issued_at=when,
-        lines=_goods(),
+        lines=[
+            LineInput(
+                name="Товар",
+                quantity=Decimal("1"),
+                price=Decimal("100"),
+                iiko_product_id=product.id,
+            )
+        ],
         number=number,
         source="kassa_invoice",
     )

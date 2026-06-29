@@ -14,7 +14,7 @@ import asyncio
 import uuid
 from collections.abc import Sequence
 
-from cp_helpers import make_counterparty, make_invoice, token_headers
+from cp_helpers import make_counterparty, make_iiko_product, make_invoice, token_headers
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -94,13 +94,26 @@ def _seed_invoice(
     return _run(_seed())
 
 
-def _invoice_payload(cp_id: uuid.UUID, mode: str) -> dict:
+def _seed_product(factory: async_sessionmaker[AsyncSession]) -> uuid.UUID:
+    async def _seed() -> uuid.UUID:
+        async with factory() as session:
+            product = await make_iiko_product(session)
+            await session.commit()
+            return product.id
+
+    return _run(_seed())
+
+
+def _invoice_payload(cp_id: uuid.UUID, mode: str, product_id: uuid.UUID | None = None) -> dict:
+    line: dict[str, object] = {"name": "Товар", "quantity": "1", "price": "100"}
+    if product_id is not None:
+        line["iiko_product_id"] = str(product_id)
     return {
         "counterparty_id": str(cp_id),
         "issued_at": "2026-06-17T12:00:00+00:00",
         "mode": mode,
         "we_lend": False,
-        "lines": [{"name": "Товар", "quantity": "1", "price": "100"}],
+        "lines": [line],
     }
 
 
@@ -126,8 +139,11 @@ def test_normal_create_scope(
         async_session_factory, "wh-normal-create@test.local", ["invoices.normal.create"]
     )
     normal_cp = _seed_counterparty(async_session_factory)
+    product_id = _seed_product(async_session_factory)
     ok = client.post(
-        f"{BASE}/invoices", json=_invoice_payload(normal_cp, "normal"), headers=headers
+        f"{BASE}/invoices",
+        json=_invoice_payload(normal_cp, "normal", product_id),
+        headers=headers,
     )
     assert ok.status_code == 201, ok.text
 
@@ -146,7 +162,10 @@ def test_barter_create_scope(
         async_session_factory, "wh-barter-create@test.local", ["invoices.barter.create"]
     )
     barter_cp = _seed_counterparty(async_session_factory)
-    ok = client.post(f"{BASE}/invoices", json=_invoice_payload(barter_cp, "loan"), headers=headers)
+    product_id = _seed_product(async_session_factory)
+    ok = client.post(
+        f"{BASE}/invoices", json=_invoice_payload(barter_cp, "loan", product_id), headers=headers
+    )
     assert ok.status_code == 201, ok.text
 
     normal_cp = _seed_counterparty(async_session_factory)

@@ -5,15 +5,21 @@ staff-часть оплаты разносится по статьям этих 
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+import pytest
 from cp_helpers import make_counterparty, make_expense_article, make_wallet
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import InvoiceLineItem
-from app.services.warehouse_invoices import LineInput, create_warehouse_invoice
+from app.models import IikoProduct, InvoiceLineItem
+from app.services.warehouse_invoices import (
+    LineInput,
+    WarehouseInvoiceError,
+    create_warehouse_invoice,
+)
 from app.services.warehouse_payments import (
     build_auto_split_cash_parts,
     build_staff_split_cash_parts,
@@ -50,12 +56,43 @@ async def _lines(session: AsyncSession, invoice_id):
     )
 
 
+async def _goods(session: AsyncSession, name: str = "Лосось") -> IikoProduct:
+    """Сопоставимая товарная позиция iiko — для товарных строк накладной (требуют product_guid)."""
+    product = IikoProduct(
+        iiko_id=str(uuid.uuid4()), name=name, type="GOODS", unit="кг", synced_at=ISSUED
+    )
+    session.add(product)
+    await session.flush()
+    return product
+
+
+async def test_create_rejects_goods_line_without_product(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Товарную строку нельзя сохранить без сопоставления с номенклатурой iiko (иначе она
+    потеряется при выгрузке в iiko, как «зелень» в накладной №4)."""
+    async with async_session_factory() as session:
+        await _articles(session)
+        cp = await make_counterparty(session, name="Поставщик")
+        await session.commit()
+        with pytest.raises(WarehouseInvoiceError, match="номенклатур"):
+            await create_warehouse_invoice(
+                session,
+                counterparty_id=cp.id,
+                issued_at=ISSUED,
+                lines=[
+                    LineInput(name="зелень", quantity=Decimal("0.6"), price=Decimal("500")),
+                ],
+            )
+
+
 async def test_create_invoice_with_staff_lines(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
         food, pers = await _articles(session)
         cp = await make_counterparty(session, name="Поставщик")
+        salmon = await _goods(session)
         await session.commit()
 
         invoice = await create_warehouse_invoice(
@@ -63,7 +100,12 @@ async def test_create_invoice_with_staff_lines(
             counterparty_id=cp.id,
             issued_at=ISSUED,
             lines=[
-                LineInput(name="Лосось", quantity=Decimal("5"), price=Decimal("1000")),
+                LineInput(
+                    name="Лосось",
+                    quantity=Decimal("5"),
+                    price=Decimal("1000"),
+                    iiko_product_id=salmon.id,
+                ),
                 LineInput(
                     name="Обеды поварам",
                     quantity=Decimal("1"),
@@ -96,6 +138,7 @@ async def test_staff_split_books_by_line_articles(
     async with async_session_factory() as session:
         food, pers = await _articles(session)
         cp = await make_counterparty(session, name="Поставщик")
+        salmon = await _goods(session)
         await session.commit()
 
         invoice = await create_warehouse_invoice(
@@ -103,7 +146,12 @@ async def test_staff_split_books_by_line_articles(
             counterparty_id=cp.id,
             issued_at=ISSUED,
             lines=[
-                LineInput(name="Лосось", quantity=Decimal("5"), price=Decimal("1000")),
+                LineInput(
+                    name="Лосось",
+                    quantity=Decimal("5"),
+                    price=Decimal("1000"),
+                    iiko_product_id=salmon.id,
+                ),
                 LineInput(
                     name="Обеды",
                     quantity=Decimal("1"),
@@ -144,6 +192,7 @@ async def test_staff_split_fallback_when_lines_have_no_article(
     async with async_session_factory() as session:
         await _articles(session)
         cp = await make_counterparty(session, name="Поставщик")
+        salmon = await _goods(session)
         await session.commit()
 
         invoice = await create_warehouse_invoice(
@@ -151,7 +200,12 @@ async def test_staff_split_fallback_when_lines_have_no_article(
             counterparty_id=cp.id,
             issued_at=ISSUED,
             lines=[
-                LineInput(name="Лосось", quantity=Decimal("5"), price=Decimal("1000")),
+                LineInput(
+                    name="Лосось",
+                    quantity=Decimal("5"),
+                    price=Decimal("1000"),
+                    iiko_product_id=salmon.id,
+                ),
                 LineInput(
                     name="Персоналка без статьи",
                     quantity=Decimal("1"),
@@ -179,13 +233,21 @@ async def test_auto_split_goods_only_across_two_wallets(
     async with async_session_factory() as session:
         await _articles(session)
         cp = await make_counterparty(session, name="Поставщик")
+        salmon = await _goods(session)
         await session.commit()
 
         invoice = await create_warehouse_invoice(
             session,
             counterparty_id=cp.id,
             issued_at=ISSUED,
-            lines=[LineInput(name="Лосось", quantity=Decimal("5"), price=Decimal("1000"))],
+            lines=[
+                LineInput(
+                    name="Лосось",
+                    quantity=Decimal("5"),
+                    price=Decimal("1000"),
+                    iiko_product_id=salmon.id,
+                )
+            ],
         )
         seif = await make_wallet(session, name="Сейф", wallet_type="cash_safe")
         tk = await make_wallet(session, name="ТК Черникова", wallet_type="store_cash")
@@ -215,6 +277,7 @@ async def test_auto_split_single_row_splits_by_line_articles(
     async with async_session_factory() as session:
         food, pers = await _articles(session)
         cp = await make_counterparty(session, name="Поставщик")
+        salmon = await _goods(session)
         await session.commit()
 
         invoice = await create_warehouse_invoice(
@@ -222,7 +285,12 @@ async def test_auto_split_single_row_splits_by_line_articles(
             counterparty_id=cp.id,
             issued_at=ISSUED,
             lines=[
-                LineInput(name="Лосось", quantity=Decimal("5"), price=Decimal("1000")),
+                LineInput(
+                    name="Лосось",
+                    quantity=Decimal("5"),
+                    price=Decimal("1000"),
+                    iiko_product_id=salmon.id,
+                ),
                 LineInput(
                     name="Обеды",
                     quantity=Decimal("1"),

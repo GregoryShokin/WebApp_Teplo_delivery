@@ -31,6 +31,7 @@ from app.models import (
     CounterpartyRole,
     CounterpartyRoutingRule,
     DdsArticle,
+    IikoProduct,
     InvoicePaymentAllocation,
     Organization,
     Role,
@@ -266,6 +267,18 @@ async def make_expense_article(
     session.add(article)
     await session.flush()
     return article
+
+
+async def make_iiko_product(
+    session: AsyncSession, *, name: str = "Товар", unit: str = "кг"
+) -> IikoProduct:
+    """Сопоставимая товарная позиция iiko — товарные строки накладной требуют product_guid."""
+    product = IikoProduct(
+        iiko_id=str(uuid.uuid4()), name=name, type="GOODS", unit=unit, synced_at=datetime.now(UTC)
+    )
+    session.add(product)
+    await session.flush()
+    return product
 
 
 async def make_bank_operation(
