@@ -310,6 +310,10 @@ class OperationClassifyRequest(BaseModel):
     action: Literal["split", "mark_internal_transfer", "exclude", "mark_safe_topup"] = "split"
     splits: list[OperationSplitItem] = Field(default_factory=list)
     counterparty_id: uuid.UUID | None = None
+    # Создать нового контрагента из распознанных данных операции (если его нет в реестре): имя
+    # и ИНН берутся из выписки. Имеет приоритет над counterparty_id (при заданном имени).
+    new_counterparty_name: str | None = None
+    new_counterparty_inn: str | None = None
     remember_as_rule: bool = False
 
 

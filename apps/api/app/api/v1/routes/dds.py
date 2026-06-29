@@ -74,6 +74,7 @@ from app.services.banking.classifier import (
     apply_operation_split,
     book_safe_topup,
     close_reconciliation_case,
+    resolve_or_create_operation_counterparty,
 )
 from app.services.banking.credentials import set_credential
 from app.services.banking.safe_allocations import (
@@ -957,6 +958,19 @@ async def classify_operation(
     if payload.action == "split":
         if not payload.splits:
             raise HTTPException(status_code=400, detail="Нужна хотя бы одна статья")
+        counterparty_id = payload.counterparty_id
+        # Создать контрагента из распознанных данных операции, если оператор это выбрал (его нет
+        # в реестре, но имя/ИНН известны из выписки) — резолв по ИНН или новая карточка.
+        if payload.new_counterparty_name:
+            try:
+                counterparty_id = await resolve_or_create_operation_counterparty(
+                    session,
+                    name=payload.new_counterparty_name,
+                    inn=payload.new_counterparty_inn,
+                    account=operation.counterparty_account_raw,
+                )
+            except ValueError as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
         try:
             created_ids = await apply_operation_split(
                 session,
@@ -965,7 +979,7 @@ async def classify_operation(
                     (item.article_id, item.amount, item.comment, item.invoice_id)
                     for item in payload.splits
                 ],
-                counterparty_id=payload.counterparty_id,
+                counterparty_id=counterparty_id,
             )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error

@@ -21,8 +21,16 @@ from cp_helpers import (
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import InvoicePaymentAllocation, SupplierInvoice
-from app.services.banking.classifier import apply_operation_split
+from app.models import (
+    Counterparty,
+    CounterpartyPayableProfile,
+    InvoicePaymentAllocation,
+    SupplierInvoice,
+)
+from app.services.banking.classifier import (
+    apply_operation_split,
+    resolve_or_create_operation_counterparty,
+)
 
 
 async def _fixture(session: AsyncSession, *, op_amount: str, inv_amount: str):
@@ -194,3 +202,43 @@ async def test_resplit_reverses_prior_invoice_allocation(
 
         assert (await session.get(SupplierInvoice, inv_id)).payment_status == "unpaid"
         assert await _alloc_count(session, op.id) == 0
+
+
+async def test_create_counterparty_from_operation_new(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Контрагента нет в реестре — создаётся из распознанных данных операции (имя/ИНН/счёт),
+    статус requires_setup, расчётный счёт сохранён в реквизитах профиля."""
+    async with async_session_factory() as session:
+        cp_id = await resolve_or_create_operation_counterparty(
+            session, name="ООО СИНАПСИС", inn="3525357535", account="40702810400000123456"
+        )
+        await session.commit()
+
+        cp = await session.get(Counterparty, cp_id)
+        assert cp is not None
+        assert cp.name == "ООО СИНАПСИС"
+        assert cp.inn == "3525357535"
+        assert cp.status == "requires_setup"
+        profile = await session.scalar(
+            select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == cp_id
+            )
+        )
+        assert profile is not None
+        assert profile.requisites.get("bankAcnt") == "40702810400000123456"
+
+
+async def test_create_counterparty_from_operation_reuses_by_inn(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Контрагент с тем же ИНН уже есть (не нашёлся в селекте) — переиспользуем, не плодим дубль."""
+    async with async_session_factory() as session:
+        existing = await make_counterparty(session, name="СИНАПСИС (старый)", inn="3525357535")
+        await session.commit()
+
+        cp_id = await resolve_or_create_operation_counterparty(
+            session, name="ООО СИНАПСИС", inn="3525357535", account=None
+        )
+        assert cp_id == existing.id
+        assert await session.scalar(select(func.count()).select_from(Counterparty)) == 1

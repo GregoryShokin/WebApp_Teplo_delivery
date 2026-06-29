@@ -2312,6 +2312,8 @@ export type OperationClassifyPayload = {
   action: "split" | "mark_internal_transfer" | "exclude" | "mark_safe_topup";
   splits?: OperationSplitItem[];
   counterparty_id?: string | null;
+  new_counterparty_name?: string | null;
+  new_counterparty_inn?: string | null;
   remember_as_rule?: boolean;
 };
 

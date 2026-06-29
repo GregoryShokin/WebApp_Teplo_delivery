@@ -65,6 +65,7 @@ export function OperationReviewDialog({
   });
   const [rows, setRows] = useState<SplitRow[]>([]);
   const [counterpartyId, setCounterpartyId] = useState("");
+  const [createNewCounterparty, setCreateNewCounterparty] = useState(false);
   const [rememberAsRule, setRememberAsRule] = useState(false);
 
   // Reset to a single row covering the whole amount whenever the operation changes.
@@ -74,6 +75,7 @@ export function OperationReviewDialog({
         { key: crypto.randomUUID(), articleId: "none", amount: operation.amount, invoiceId: "" },
       ]);
       setCounterpartyId("");
+      setCreateNewCounterparty(false);
       setRememberAsRule(false);
     }
   }, [operation?.id]);
@@ -142,6 +144,7 @@ export function OperationReviewDialog({
   }
 
   function submitSplit() {
+    if (!operation) return;
     if (rows.some((row) => row.articleId === "none")) {
       toast.error("Выберите статью в каждой строке");
       return;
@@ -150,7 +153,7 @@ export function OperationReviewDialog({
       toast.error("Сумма по статьям должна равняться сумме операции");
       return;
     }
-    if (usesAdvance && !counterpartyId) {
+    if (usesAdvance && !counterpartyId && !createNewCounterparty) {
       toast.error("Для статьи «Авансы поставщикам» выберите контрагента");
       return;
     }
@@ -162,7 +165,9 @@ export function OperationReviewDialog({
         invoice_id:
           row.articleId === supplierPaymentArticleId && row.invoiceId ? row.invoiceId : null,
       })),
-      counterparty_id: counterpartyId || null,
+      counterparty_id: createNewCounterparty ? null : counterpartyId || null,
+      new_counterparty_name: createNewCounterparty ? operation.counterparty_name_raw : null,
+      new_counterparty_inn: createNewCounterparty ? operation.counterparty_inn_raw : null,
       remember_as_rule: rememberAsRule && rows.length === 1,
     });
   }
@@ -295,13 +300,45 @@ export function OperationReviewDialog({
               <Label className="text-sm">
                 Контрагент{usesAdvance ? <span className="text-red-600"> *</span> : null}
               </Label>
-              <Combobox
-                options={counterpartyOptions}
-                value={counterpartyId}
-                onChange={setCounterpartyId}
-                placeholder="Не указан"
-                searchPlaceholder="Поиск по названию или ИНН…"
-              />
+              {createNewCounterparty ? (
+                <div className="flex items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+                  <span>
+                    Будет создан:{" "}
+                    <span className="font-medium">{operation.counterparty_name_raw}</span>
+                    {operation.counterparty_inn_raw ? ` · ИНН ${operation.counterparty_inn_raw}` : ""}
+                  </span>
+                  <Button
+                    onClick={() => setCreateNewCounterparty(false)}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    Отмена
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <Combobox
+                    options={counterpartyOptions}
+                    value={counterpartyId}
+                    onChange={setCounterpartyId}
+                    placeholder="Не указан"
+                    searchPlaceholder="Поиск по названию или ИНН…"
+                  />
+                  {operation.counterparty_name_raw && !counterpartyId ? (
+                    <button
+                      className="self-start text-left text-sm font-medium text-emerald-700 hover:underline"
+                      onClick={() => setCreateNewCounterparty(true)}
+                      type="button"
+                    >
+                      + Создать контрагента из операции: {operation.counterparty_name_raw}
+                      {operation.counterparty_inn_raw
+                        ? ` (ИНН ${operation.counterparty_inn_raw})`
+                        : ""}
+                    </button>
+                  ) : null}
+                </>
+              )}
               {usesAdvance ? (
                 <span className="text-xs text-muted-foreground">
                   Статья «Авансы поставщикам» создаст предоплату (дебиторку) на этого контрагента.
@@ -311,7 +348,9 @@ export function OperationReviewDialog({
 
             <div className="flex flex-wrap gap-2 border-t pt-4">
               <Button
-                disabled={isBusy || !balanced || (usesAdvance && !counterpartyId)}
+                disabled={
+                  isBusy || !balanced || (usesAdvance && !counterpartyId && !createNewCounterparty)
+                }
                 onClick={submitSplit}
               >
                 {isBusy ? (

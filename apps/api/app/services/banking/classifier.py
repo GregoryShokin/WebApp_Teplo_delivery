@@ -492,6 +492,45 @@ async def _clear_operation_cashflow(session: AsyncSession, operation: BankOperat
     await session.flush()
 
 
+async def resolve_or_create_operation_counterparty(
+    session: AsyncSession, *, name: str, inn: str | None, account: str | None
+) -> UUID:
+    """Найти контрагента по ИНН (если есть) или создать нового из распознанных данных банк-
+    операции (имя/ИНН/счёт). Новый — ``status='requires_setup'`` + роль supplier + профиль с
+    реквизитами (расчётный счёт из выписки), чтобы будущие платежи матчились по ИНН и оператору
+    осталось только донастроить карточку."""
+    from app.models import Counterparty, CounterpartyPayableProfile, CounterpartyRole
+
+    clean_name = (name or "").strip()
+    if not clean_name:
+        raise ValueError("В операции не распознано имя контрагента")
+    clean_inn = (inn or "").strip() or None
+    if clean_inn:
+        existing = await session.scalar(select(Counterparty).where(Counterparty.inn == clean_inn))
+        if existing is not None:
+            return existing.id
+    cp_type = "individual" if clean_inn and len(clean_inn) == 12 else "legal_entity"
+    counterparty = Counterparty(
+        name=clean_name, inn=clean_inn, type=cp_type, status="requires_setup"
+    )
+    session.add(counterparty)
+    await session.flush()
+    session.add(CounterpartyRole(counterparty_id=counterparty.id, role="supplier"))
+    requisites: dict[str, str] = {}
+    if clean_inn:
+        requisites["inn"] = clean_inn
+    clean_account = (account or "").strip() or None
+    if clean_account:
+        requisites["bankAcnt"] = clean_account
+    session.add(
+        CounterpartyPayableProfile(
+            counterparty_id=counterparty.id, internal_name=clean_name, requisites=requisites
+        )
+    )
+    await session.flush()
+    return counterparty.id
+
+
 async def apply_operation_split(
     session: AsyncSession,
     operation: BankOperation,
