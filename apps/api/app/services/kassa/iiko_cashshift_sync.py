@@ -28,7 +28,7 @@ from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -38,11 +38,9 @@ from app.models import (
     Employee,
     IikoCashShift,
     IikoCashShiftPayout,
-    InvoicePaymentAllocation,
     KassaShiftPenalty,
     PayrollAdjustment,
     ShiftLedgerEntry,
-    SupplierInvoice,
     Wallet,
 )
 from app.services.payroll_adjustment_service import is_production_date_locked
@@ -779,26 +777,10 @@ async def waive_shift_penalty(
 # --- read (витрина) ------------------------------------------------------------
 
 
-async def _cash_cheque_total(session: AsyncSession, work_date: date) -> Decimal:
-    """Сумма наличных частей чеков (``kassa_cheque``) за день — «прочие наличные расходы по
-    кассе»: админ взял наличные из дневной выручки и купил, оформив чек."""
-    total = await session.scalar(
-        select(func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0))
-        .select_from(InvoicePaymentAllocation)
-        .join(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
-        .where(
-            SupplierInvoice.source == "kassa_cheque",
-            SupplierInvoice.invoice_date == work_date,
-            InvoicePaymentAllocation.source_kind == "cash",
-        )
-    )
-    return Decimal(str(total or 0))
-
-
 async def compute_real_cash_diff(session: AsyncSession, shift: IikoCashShift) -> Decimal | None:
-    """Реальное расхождение кассы (сверка денежного ящика, методология владельца):
+    """Реальное расхождение кассы (сверка денежного ящика смены, методология владельца):
 
-    ``наличная выручка + внесения − изъятия − наличные чеки − изменение остатка``,
+    ``наличная выручка + внесения − изъятия − изменение остатка``,
     где изменение остатка = ``остаток − старт флоута``. Наличная выручка — из ``cash_sales``
     (OLAP, тип «Наличные»), НЕ из завышенного iiko ``salesCash``.
 
@@ -806,6 +788,10 @@ async def compute_real_cash_diff(session: AsyncSession, shift: IikoCashShift) ->
     Изменение остатка вычитается, чтобы разгрузка/пополнение флоута не считались недостачей
     (см. смену 1140: курьеров доплатили из остатка → это не расхождение). Алиса сокращается
     сама: она входит и в наличную выручку, и в изъятия (физически в кассу не приходила).
+
+    Наличные чеки (``kassa_cheque``) в сверку смены НЕ входят: изымать из кассового ящика
+    смены запрещено, такие покупки всегда оплачиваются из ТК Черникова (= Главная касса) и
+    уже учтены как расход ДДС с этого счёта — к ящику кассирской смены отношения не имеют.
     """
     if (
         shift.cash_sales is None
@@ -815,12 +801,8 @@ async def compute_real_cash_diff(session: AsyncSession, shift: IikoCashShift) ->
     ):
         return None
     pay_in = shift.pay_in or Decimal("0")
-    moment = shift.close_date or shift.open_date
-    cash_cheques = (
-        await _cash_cheque_total(session, moment.date()) if moment is not None else Decimal("0")
-    )
     float_change = shift.cash_remain - shift.session_start_cash
-    return shift.cash_sales + pay_in - shift.pay_out - cash_cheques - float_change
+    return shift.cash_sales + pay_in - shift.pay_out - float_change
 
 
 async def _shift_summary(session: AsyncSession, shift: IikoCashShift) -> dict[str, Any]:

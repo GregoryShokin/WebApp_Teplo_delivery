@@ -293,7 +293,7 @@ async def test_post_adjustment_books_real_diff_once(
 async def test_real_cash_diff_formula_and_cash_cheque(
     monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    # База: выручка 16416 + внесения 0 − изъятия 15416 − чеки 0 = 1000.
+    # База: выручка 16416 + внесения 0 − изъятия 15416 = 1000 (недостача).
     _patch(monkeypatch, [_shift("sess-1", pay_out=15416)])
     async with async_session_factory() as session:
         await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
@@ -303,7 +303,8 @@ async def test_real_cash_diff_formula_and_cash_cheque(
         )
         assert await compute_real_cash_diff(session, shift) == Decimal("1000")
 
-        # Наличный чек на 1000 за дату смены = «прочий наличный расход» → расхождение в 0.
+        # Наличный чек на 1000 за дату смены НЕ входит в сверку кассирской смены: изымать из
+        # ящика смены запрещено, чек оплачен из ТК Черникова → расхождение НЕ меняется.
         cp = await make_counterparty(session, name="Магазин")
         invoice = SupplierInvoice(
             counterparty_id=cp.id,
@@ -319,7 +320,7 @@ async def test_real_cash_diff_formula_and_cash_cheque(
             )
         )
         await session.commit()
-        assert await compute_real_cash_diff(session, shift) == Decimal("0")
+        assert await compute_real_cash_diff(session, shift) == Decimal("1000")
 
 
 async def test_real_cash_diff_float_change_vs_real_shortage(
