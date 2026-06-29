@@ -68,17 +68,24 @@ export function OperationReviewDialog({
   const [createNewCounterparty, setCreateNewCounterparty] = useState(false);
   const [rememberAsRule, setRememberAsRule] = useState(false);
 
-  // Reset to a single row covering the whole amount whenever the operation changes.
+  // Существующий контрагент по ИНН из выписки — предзаполняем селект, чтобы не предлагать
+  // создавать дубль уже заведённого (ИНН — надёжный якорь; по имени НЕ матчим).
+  const matchedByInn = operation?.counterparty_inn_raw
+    ? (counterpartiesQuery.data ?? []).find((cp) => cp.inn === operation.counterparty_inn_raw)
+    : undefined;
+
+  // Reset to a single row covering the whole amount whenever the operation changes; контрагента
+  // предзаполняем найденным по ИНН в реестре.
   useEffect(() => {
     if (operation) {
       setRows([
         { key: crypto.randomUUID(), articleId: "none", amount: operation.amount, invoiceId: "" },
       ]);
-      setCounterpartyId("");
+      setCounterpartyId(matchedByInn?.id ?? "");
       setCreateNewCounterparty(false);
       setRememberAsRule(false);
     }
-  }, [operation?.id]);
+  }, [operation?.id, matchedByInn?.id]);
 
   const total = operation ? Number(operation.amount) : 0;
   const allocated = round2(rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0));
@@ -325,7 +332,7 @@ export function OperationReviewDialog({
                     placeholder="Не указан"
                     searchPlaceholder="Поиск по названию или ИНН…"
                   />
-                  {operation.counterparty_name_raw && !counterpartyId ? (
+                  {operation.counterparty_name_raw && !counterpartyId && !matchedByInn ? (
                     <button
                       className="self-start text-left text-sm font-medium text-emerald-700 hover:underline"
                       onClick={() => setCreateNewCounterparty(true)}
