@@ -191,7 +191,7 @@ const statusOptions: StaffStatusFilter[] = [
   "inactive",
   "all",
 ];
-const deprecatedCategoryOptions = new Set<EmployeeCategory>(["freelancer"]);
+const deprecatedCategoryOptions = new Set<EmployeeCategory>();
 const categoryOptions = (Object.keys(EMPLOYEE_CATEGORY_LABELS) as EmployeeCategory[]).filter(
   (category) => !deprecatedCategoryOptions.has(category),
 );
@@ -214,10 +214,10 @@ const cookSecondaryFilterOptions: StaffSecondaryFilterOption[] = [
 ];
 const payrollRoleCategories: Record<PayrollRole, EmployeeCategory[]> = {
   administrator: ["category_2", "category_3", "category_4", "intern"],
-  sushi: ["category_1", "category_2", "category_3", "intern"],
-  pizza: ["category_1", "category_2", "category_3", "intern"],
-  shawarma: ["category_3", "category_4", "intern"],
-  prep: ["category_3", "intern"],
+  sushi: ["category_1", "category_2", "category_3", "intern", "freelancer"],
+  pizza: ["category_1", "category_2", "category_3", "intern", "freelancer"],
+  shawarma: ["category_3", "category_4", "intern", "freelancer"],
+  prep: ["category_3", "intern", "freelancer"],
 };
 
 type CanonicalPosition =

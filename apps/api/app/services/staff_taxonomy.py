@@ -55,10 +55,10 @@ POSITION_PAYROLL_ROLES = {
 
 ROLE_CATEGORIES = {
     "administrator": ("category_2", "category_3", "category_4", "intern"),
-    "sushi": ("category_1", "category_2", "category_3", "intern"),
-    "pizza": ("category_1", "category_2", "category_3", "intern"),
-    "shawarma": ("category_3", "category_4", "intern"),
-    "prep": ("category_3", "intern"),
+    "sushi": ("category_1", "category_2", "category_3", "intern", "freelancer"),
+    "pizza": ("category_1", "category_2", "category_3", "intern", "freelancer"),
+    "shawarma": ("category_3", "category_4", "intern", "freelancer"),
+    "prep": ("category_3", "intern", "freelancer"),
 }
 
 EMPLOYEE_CATEGORIES = (
@@ -69,7 +69,10 @@ EMPLOYEE_CATEGORIES = (
     "intern",
     "freelancer",
 )
-DEPRECATED_EMPLOYEE_CATEGORIES = ("freelancer",)
+# «Внештатный» снова доступна для ролей поваров (внешний/ручная оплата,
+# коэффициент 0). Доступность конкретных пар роль×категория управляется через
+# payroll_role_category_availability; см. миграцию 0146.
+DEPRECATED_EMPLOYEE_CATEGORIES: tuple[str, ...] = ()
 
 COOKING_STATIONS = ("sushi", "pizza", "shawarma")
 
