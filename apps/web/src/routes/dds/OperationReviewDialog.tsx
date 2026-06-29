@@ -20,11 +20,13 @@ import {
   classifyOperation,
   getDdsArticles,
   getDdsCounterparties,
+  getDdsUnpaidInvoices,
   type BankOperationRead,
   type OperationClassifyPayload,
 } from "@/lib/api";
 
 const PREPAYMENT_ARTICLE_CODE = "advance_to_supplier";
+const SUPPLIER_PAYMENT_ARTICLE_CODE = "payment_to_supplier";
 import {
   DdsStatusBadge,
   DirectionBadge,
@@ -33,7 +35,7 @@ import {
   formatDdsMoney,
 } from "@/routes/dds/shared";
 
-type SplitRow = { key: string; articleId: string; amount: string };
+type SplitRow = { key: string; articleId: string; amount: string; invoiceId: string };
 
 const ACTION_TOAST: Record<OperationClassifyPayload["action"], string> = {
   split: "Операция разнесена по статьям",
@@ -68,7 +70,9 @@ export function OperationReviewDialog({
   // Reset to a single row covering the whole amount whenever the operation changes.
   useEffect(() => {
     if (operation) {
-      setRows([{ key: crypto.randomUUID(), articleId: "none", amount: operation.amount }]);
+      setRows([
+        { key: crypto.randomUUID(), articleId: "none", amount: operation.amount, invoiceId: "" },
+      ]);
       setCounterpartyId("");
       setRememberAsRule(false);
     }
@@ -100,6 +104,19 @@ export function OperationReviewDialog({
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить разбор")),
   });
 
+  const supplierPaymentArticleId = (articlesQuery.data ?? []).find(
+    (a) => a.code === SUPPLIER_PAYMENT_ARTICLE_CODE,
+  )?.id;
+  const usesSupplierPayment =
+    Boolean(supplierPaymentArticleId) &&
+    rows.some((row) => row.articleId === supplierPaymentArticleId);
+  // Неоплаченные накладные выбранного контрагента — для привязки оплаты к конкретной поставке.
+  const invoicesQuery = useQuery({
+    queryKey: ["dds", "cp-unpaid-invoices", counterpartyId],
+    queryFn: () => getDdsUnpaidInvoices(counterpartyId),
+    enabled: Boolean(counterpartyId) && usesSupplierPayment,
+  });
+
   if (!operation) {
     return null;
   }
@@ -111,7 +128,12 @@ export function OperationReviewDialog({
   function addRow() {
     setRows((current) => [
       ...current,
-      { key: crypto.randomUUID(), articleId: "none", amount: remainder > 0 ? String(remainder) : "" },
+      {
+        key: crypto.randomUUID(),
+        articleId: "none",
+        amount: remainder > 0 ? String(remainder) : "",
+        invoiceId: "",
+      },
     ]);
   }
 
@@ -134,7 +156,12 @@ export function OperationReviewDialog({
     }
     mutation.mutate({
       action: "split",
-      splits: rows.map((row) => ({ article_id: row.articleId, amount: row.amount })),
+      splits: rows.map((row) => ({
+        article_id: row.articleId,
+        amount: row.amount,
+        invoice_id:
+          row.articleId === supplierPaymentArticleId && row.invoiceId ? row.invoiceId : null,
+      })),
       counterparty_id: counterpartyId || null,
       remember_as_rule: rememberAsRule && rows.length === 1,
     });
@@ -149,6 +176,15 @@ export function OperationReviewDialog({
       value: cp.id,
       label: cp.name,
       keywords: cp.inn ?? undefined,
+    })),
+  ];
+  // Неоплаченные накладные контрагента — варианты привязки для строки «Оплата поставщикам».
+  const invoiceOptions: ComboboxOption[] = [
+    { value: "", label: "Не привязывать" },
+    ...(invoicesQuery.data ?? []).map((inv) => ({
+      value: inv.id,
+      label: `№ ${inv.number ?? "б/н"} · остаток ${formatDdsMoney(inv.remaining)}`,
+      keywords: inv.number ?? undefined,
     })),
   ];
   // Статья «Авансы поставщикам»: если выбрана в любой строке — контрагент обязателен,
@@ -196,31 +232,43 @@ export function OperationReviewDialog({
 
             <div className="grid gap-2">
               {rows.map((row) => (
-                <div
-                  key={row.key}
-                  className="grid grid-cols-[minmax(0,1fr)_140px_auto] items-center gap-2"
-                >
-                  <ArticleCombobox
-                    articles={articles}
-                    value={row.articleId}
-                    onChange={(value) => updateRow(row.key, { articleId: value })}
-                  />
-                  <Input
-                    className="text-right tabular-nums"
-                    inputMode="decimal"
-                    value={row.amount}
-                    onChange={(event) => updateRow(row.key, { amount: event.target.value })}
-                  />
-                  <Button
-                    disabled={rows.length === 1}
-                    onClick={() => removeRow(row.key)}
-                    size="icon"
-                    title="Удалить строку"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <Trash2 size={16} aria-hidden="true" />
-                  </Button>
+                <div key={row.key} className="grid gap-1.5">
+                  <div className="grid grid-cols-[minmax(0,1fr)_140px_auto] items-center gap-2">
+                    <ArticleCombobox
+                      articles={articles}
+                      value={row.articleId}
+                      onChange={(value) => updateRow(row.key, { articleId: value })}
+                    />
+                    <Input
+                      className="text-right tabular-nums"
+                      inputMode="decimal"
+                      value={row.amount}
+                      onChange={(event) => updateRow(row.key, { amount: event.target.value })}
+                    />
+                    <Button
+                      disabled={rows.length === 1}
+                      onClick={() => removeRow(row.key)}
+                      size="icon"
+                      title="Удалить строку"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Trash2 size={16} aria-hidden="true" />
+                    </Button>
+                  </div>
+                  {row.articleId === supplierPaymentArticleId ? (
+                    <Combobox
+                      options={invoiceOptions}
+                      value={row.invoiceId}
+                      onChange={(value) => updateRow(row.key, { invoiceId: value })}
+                      placeholder={
+                        counterpartyId
+                          ? "Накладная для гашения (необязательно)"
+                          : "Сначала выберите контрагента ниже"
+                      }
+                      searchPlaceholder="Поиск по номеру…"
+                    />
+                  ) : null}
                 </div>
               ))}
             </div>

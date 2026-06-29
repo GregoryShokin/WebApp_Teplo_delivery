@@ -26,6 +26,9 @@ from app.services.banking.base import clean_digits
 # Статья ДДС «Авансы поставщикам»: строка сплита с ней рождает дебиторку
 # (supplier_prepayment) на выбранного контрагента, а не просто расход.
 PREPAYMENT_ARTICLE_CODE = "advance_to_supplier"
+# Статья «Оплата поставщикам»: строка разбора с указанной накладной гасит её (банковская
+# аллокация на операцию), а не просто заводит расход. Несколько строк → несколько накладных.
+SUPPLIER_PAYMENT_ARTICLE_CODE = "payment_to_supplier"
 
 # A manually booked DDS entry (e.g. a supplier paid straight from a bank wallet via
 # ``pay_invoice_from_wallet``) records the cash fact before the bank feed does. When the
@@ -493,9 +496,10 @@ async def apply_operation_split(
     session: AsyncSession,
     operation: BankOperation,
     *,
-    splits: list[tuple[UUID, Decimal, str | None]],
+    splits: list[tuple[UUID, Decimal, str | None, UUID | None]],
     counterparty_id: UUID | None = None,
     quality_status: str = "owner_review",
+    actor_user_id: UUID | None = None,
 ) -> list[UUID]:
     """Spread one bank operation across one or more DDS articles.
 
@@ -503,10 +507,23 @@ async def apply_operation_split(
     only fills DDS analytics — the split amounts must add up to the operation amount
     but never move the wallet balance. Re-splitting first drops any cashflow already
     booked from this operation, then books one cashflow row per article.
+
+    Строка со статьёй «Оплата поставщикам» с указанным ``invoice_id`` дополнительно гасит эту
+    накладную на сумму строки (банковская аллокация на операцию). Поддержаны несколько накладных
+    на одну операцию (мультисплит) и частичная оплата (сумма строки ≤ остатка накладной).
     """
+    # Гашение накладной живёт в counterparty-сервисах; верхнеуровневый импорт замкнул бы цикл.
+    from app.models import InvoicePaymentAllocation, SupplierInvoice
+    from app.services.counterparty_bank_match import (
+        CounterpartyMatchError,
+        _apply_bank_allocation,
+        assert_bank_matchable,
+    )
+    from app.services.counterparty_matching import _invoice_remaining, _recompute_status
+
     if not splits:
         raise ValueError("Нужна хотя бы одна статья")
-    total = sum((amount for _article, amount, _comment in splits), Decimal("0"))
+    total = sum((amount for _article, amount, _comment, _invoice in splits), Decimal("0"))
     if total != Decimal(operation.amount):
         raise ValueError(
             f"Сумма по статьям ({total}) не равна сумме операции ({operation.amount})"
@@ -521,14 +538,59 @@ async def apply_operation_split(
         select(DdsArticle.id).where(DdsArticle.code == PREPAYMENT_ARTICLE_CODE)
     )
     uses_advance = advance_article_id is not None and any(
-        article_id == advance_article_id for article_id, _amount, _comment in splits
+        article_id == advance_article_id for article_id, _amount, _comment, _invoice in splits
     )
     if uses_advance and counterparty_id is None:
         raise ValueError("Для статьи «Авансы поставщикам» укажите контрагента")
 
+    # Привязки накладных: валидируем статью и пригодность ДО любых записей.
+    supplier_payment_article_id = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == SUPPLIER_PAYMENT_ARTICLE_CODE)
+    )
+    invoice_by_id: dict[UUID, SupplierInvoice] = {}
+    for article_id, _amount, _comment, invoice_id in splits:
+        if invoice_id is None:
+            continue
+        if supplier_payment_article_id is None or article_id != supplier_payment_article_id:
+            raise ValueError("Накладную можно привязать только к строке «Оплата поставщикам»")
+        invoice = await session.get(SupplierInvoice, invoice_id)
+        if invoice is None:
+            raise ValueError("Накладная не найдена")
+        try:
+            assert_bank_matchable(invoice, operation)
+        except CounterpartyMatchError as error:
+            raise ValueError(str(error)) from error
+        invoice_by_id[invoice_id] = invoice
+
+    # Re-split: снять прежние гашения накладных ЭТОЙ операцией (cashflow чистит
+    # _clear_operation_cashflow, аллокации — здесь), иначе повторный разбор задвоит гашение.
+    prior_allocations = (
+        await session.scalars(
+            select(InvoicePaymentAllocation).where(
+                InvoicePaymentAllocation.bank_operation_id == operation.id,
+                InvoicePaymentAllocation.source_kind == "bank",
+            )
+        )
+    ).all()
+    reaffected_invoice_ids = {alloc.invoice_id for alloc in prior_allocations}
+    for alloc in prior_allocations:
+        await session.delete(alloc)
+    await session.flush()
+
+    # Остаток проверяем ПОСЛЕ снятия прежних аллокаций (иначе повторный разбор той же накладной
+    # увидел бы её занятой собственной прежней аллокацией).
+    for invoice_id, invoice in invoice_by_id.items():
+        remaining = await _invoice_remaining(session, invoice)
+        amount = next(amt for _a, amt, _c, inv in splits if inv == invoice_id)
+        if amount > remaining:
+            raise ValueError(
+                f"Сумма ({amount}) больше остатка накладной "
+                f"{invoice.number or invoice.id} ({remaining})"
+            )
+
     await _clear_operation_cashflow(session, operation)
     created: list[UUID] = []
-    for article_id, amount, comment in splits:
+    for article_id, amount, comment, invoice_id in splits:
         transaction = CashflowTransaction(
             wallet_id=wallet.id,
             direction=operation.direction,
@@ -560,6 +622,22 @@ async def apply_operation_split(
                 )
             )
             await session.flush()
+        # Оплата поставщику с привязкой → гасим накладную на сумму строки.
+        if invoice_id is not None:
+            await _apply_bank_allocation(
+                session,
+                invoice=invoice_by_id[invoice_id],
+                operation=operation,
+                amount=amount,
+                actor_user_id=actor_user_id,
+            )
+
+    # Пересчёт статуса всех затронутых накладных (новые гашения + откатанные прежние).
+    for invoice_id in {*invoice_by_id, *reaffected_invoice_ids}:
+        invoice = invoice_by_id.get(invoice_id) or await session.get(SupplierInvoice, invoice_id)
+        if invoice is not None:
+            await _recompute_status(session, invoice)
+
     operation.cashflow_transaction_id = created[0]
     operation.classification_status = "classified"
     return created

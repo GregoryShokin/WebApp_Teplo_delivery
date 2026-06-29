@@ -292,6 +292,9 @@ class OperationSplitItem(BaseModel):
     article_id: uuid.UUID
     amount: Decimal = Field(gt=0)
     comment: str | None = None
+    # Для статьи «Оплата поставщикам»: конкретная неоплаченная накладная, которую гасит эта
+    # сумма (привязка операции → InvoicePaymentAllocation). Несколько строк → несколько накладных.
+    invoice_id: uuid.UUID | None = None
 
 
 class OperationClassifyRequest(BaseModel):

@@ -2304,6 +2304,8 @@ export type OperationSplitItem = {
   article_id: string;
   amount: string;
   comment?: string | null;
+  // Для статьи «Оплата поставщикам»: накладная, которую гасит эта сумма (привязка операции).
+  invoice_id?: string | null;
 };
 
 export type OperationClassifyPayload = {
@@ -2601,6 +2603,28 @@ export async function createDdsCounterparty(
   payload: CounterpartyCreate,
 ): Promise<CounterpartyRead> {
   const response = await api.post<CounterpartyRead>("/dds/counterparties", payload);
+  return response.data;
+}
+
+// Неоплаченные накладные контрагента — для привязки оплаты при разборе операции
+// (статья «Оплата поставщикам»). direction=payable: гасим только наши обязательства.
+export type DdsUnpaidInvoice = {
+  id: string;
+  number: string | null;
+  invoice_date: string | null;
+  amount: number;
+  remaining: number;
+  payment_status: string;
+};
+
+export async function getDdsUnpaidInvoices(counterpartyId: string): Promise<DdsUnpaidInvoice[]> {
+  const response = await api.get<DdsUnpaidInvoice[]>("/counterparties/invoices", {
+    params: {
+      counterparty_id: counterpartyId,
+      status: "unpaid,partially_paid",
+      direction: "payable",
+    },
+  });
   return response.data;
 }
 

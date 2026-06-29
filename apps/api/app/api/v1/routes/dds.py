@@ -66,6 +66,7 @@ from app.schemas.dds import (
     SafeReconcileRead,
     SafeReconcileRequest,
 )
+from app.services.advance_iiko_payout import post_advance_payout_to_iiko
 from app.services.banking.classifier import (
     AWAITING_BANK_QUALITY,
     SAFE_WALLET_CODE,
@@ -84,7 +85,6 @@ from app.services.banking.safe_allocations import (
     safe_reserved_total,
 )
 from app.services.banking.transfer_matching import find_and_link_transfer_pairs
-from app.services.advance_iiko_payout import post_advance_payout_to_iiko
 from app.services.payroll_advance_service import sync_advance_after_allocation_change
 
 router = APIRouter()
@@ -961,7 +961,10 @@ async def classify_operation(
             created_ids = await apply_operation_split(
                 session,
                 operation,
-                splits=[(item.article_id, item.amount, item.comment) for item in payload.splits],
+                splits=[
+                    (item.article_id, item.amount, item.comment, item.invoice_id)
+                    for item in payload.splits
+                ],
                 counterparty_id=payload.counterparty_id,
             )
         except ValueError as error:
@@ -1052,7 +1055,8 @@ async def list_safe_allocations(
     session: Annotated[AsyncSession, Depends(get_session)],
     status_filter: Annotated[Literal["active", "all"], Query(alias="status")] = "active",
 ) -> list[dict[str, object]]:
-    """Резервы Сейфа: ``active`` (reserved/partially_paid) или ``all`` (вкл. оплаченные/отменённые)."""
+    """Резервы Сейфа: ``active`` (reserved/partially_paid) или ``all``
+    (вкл. оплаченные/отменённые)."""
     conditions = [SafeAllocation.wallet_id == wallet_id]
     if status_filter == "active":
         conditions.append(SafeAllocation.status.in_(("reserved", "partially_paid")))
