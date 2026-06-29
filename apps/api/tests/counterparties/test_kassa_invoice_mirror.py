@@ -22,6 +22,7 @@ from app.models import (
     IikoInvoicePaymentPush,
     InvoiceLineItem,
     InvoicePaymentAllocation,
+    ReconciliationCase,
 )
 
 ACQUIRING = "3f261590-f208-2970-1300-95d2493a3c28"
@@ -212,3 +213,192 @@ async def test_mirror_idempotent_second_run_excluded(
         second = await mod.mirror_paid_kassa_invoices(session)
     assert second["eligible"] == 0
     assert len(calls) == 2  # вторых вызовов нет
+
+
+def test_amount_iiko_representable_matches_iiko_validator() -> None:
+    """iiko бракует ('invalid amount in JSON') суммы, чьи копейки не целые в double — напр.
+    4213.44 → 421343.99999999994 (реальный прод-кейс). Целые и «удачные» дроби проходят."""
+    f = mod._amount_iiko_representable
+    assert f(Decimal("4213.44")) is False  # упавшая на проде накладная №9
+    assert f(Decimal("0.07")) is False
+    for ok in ("959.88", "1778.04", "1642.65", "2705.96", "4213", "100.10", "500.00"):
+        assert f(Decimal(ok)) is True, ok
+
+
+@pytest.mark.asyncio
+async def test_mirror_unrepresentable_amount_opens_case_without_sending(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """«Несчастливая» сумма (4213.44): НЕ шлём в iiko (обречено), помечаем терминально (кап),
+    заводим видимый кейс owner-review и закрываем накладную done с пометкой «ручной разбор»."""
+    inv_id = await _seed_kassa(
+        async_session_factory, source="kassa_invoice", goods="4213.44", card="0.00", cash="4213.44"
+    )
+    calls: list[dict] = []
+    monkeypatch.setattr(mod, "_call_add_payment", _fake_ok(calls))
+
+    async with async_session_factory() as session:
+        result = await mod.mirror_paid_kassa_invoices(session)
+
+    assert calls == []  # обречённую сумму в iiko НЕ отправляем
+    assert result["manual"] == 1 and result["ok"] == 0, result
+
+    rows = await _push_rows(async_session_factory, inv_id)
+    cash_row = next(r for r in rows if r.idempotency_key == f"kassa_goods:{inv_id}:cash")
+    assert cash_row.status == "error"
+    assert cash_row.attempts == mod.MAX_PUSH_ATTEMPTS  # терминально → джоб не долбит
+    assert f"kassa_goods_done:{inv_id}" in {r.idempotency_key for r in rows}
+
+    async with async_session_factory() as session:
+        cases = (
+            await session.scalars(
+                select(ReconciliationCase).where(
+                    ReconciliationCase.kind == "iiko_payment_unsettled"
+                )
+            )
+        ).all()
+    assert len(cases) == 1
+    assert cases[0].status == "pending"
+    assert cases[0].payload["invoice_id"] == str(inv_id)
+
+
+@pytest.mark.asyncio
+async def test_mirror_permanent_reject_opens_case(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Перманентный отказ iiko (4xx) по представимой сумме → сразу кейс owner-review + done,
+    без ожидания капа (раньше копился бы кап и тихо помечался «зеркалировано»)."""
+    inv_id = await _seed_kassa(
+        async_session_factory, source="kassa_invoice", goods="500.00", card="0.00", cash="500.00"
+    )
+
+    def _reject(payload: dict):
+        return 400, {"message": "invalid amount in JSON"}
+
+    monkeypatch.setattr(mod, "_call_add_payment", _reject)
+    async with async_session_factory() as session:
+        result = await mod.mirror_paid_kassa_invoices(session)
+
+    assert result["manual"] == 1, result
+    async with async_session_factory() as session:
+        cases = (
+            await session.scalars(
+                select(ReconciliationCase).where(
+                    ReconciliationCase.kind == "iiko_payment_unsettled"
+                )
+            )
+        ).all()
+    assert len(cases) == 1 and cases[0].payload["invoice_id"] == str(inv_id)
+    rows = await _push_rows(async_session_factory, inv_id)
+    assert f"kassa_goods_done:{inv_id}" in {r.idempotency_key for r in rows}
+
+
+@pytest.mark.asyncio
+async def test_mirror_transient_error_keeps_open_for_retry(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Временный сбой (5xx) → накладную НЕ закрываем и кейс НЕ заводим: вернёмся следующим
+    проходом (отличие от перманентного отказа)."""
+    inv_id = await _seed_kassa(
+        async_session_factory, source="kassa_invoice", goods="500.00", card="0.00", cash="500.00"
+    )
+
+    def _flaky(payload: dict):
+        return 503, {"message": "service unavailable"}
+
+    monkeypatch.setattr(mod, "_call_add_payment", _flaky)
+    async with async_session_factory() as session:
+        result = await mod.mirror_paid_kassa_invoices(session)
+
+    assert result["manual"] == 0
+    rows = await _push_rows(async_session_factory, inv_id)
+    assert f"kassa_goods_done:{inv_id}" not in {r.idempotency_key for r in rows}
+    async with async_session_factory() as session:
+        cases = (
+            await session.scalars(
+                select(ReconciliationCase).where(
+                    ReconciliationCase.kind == "iiko_payment_unsettled"
+                )
+            )
+        ).all()
+    assert cases == []
+    async with async_session_factory() as session:
+        second = await mod.mirror_paid_kassa_invoices(session)
+    assert second["eligible"] == 1  # снова в выборке (не исключена done-маркером)
+
+
+@pytest.mark.asyncio
+async def test_mirror_mixed_terminal_and_transient_opens_case_keeps_open(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Смешанная накладная: card-доля отклонена перманентно (4xx), cash-доля — временно (5xx).
+    Кейс owner-review заводится СРАЗУ (не прячется за transient-долей), но накладную НЕ закрываем
+    — вернёмся за cash-долей следующим проходом."""
+    inv_id = await _seed_kassa(
+        async_session_factory, source="kassa_invoice", goods="600.00", card="700.00", cash="300.00"
+    )
+
+    def _mixed(payload: dict):
+        if payload["amount"] == 420.0:  # card_share — перманентный отказ
+            return 400, {"message": "invalid amount in JSON"}
+        return 503, {"message": "unavailable"}  # cash_share — временный сбой
+
+    monkeypatch.setattr(mod, "_call_add_payment", _mixed)
+    async with async_session_factory() as session:
+        result = await mod.mirror_paid_kassa_invoices(session)
+
+    async with async_session_factory() as session:
+        cases = (
+            await session.scalars(
+                select(ReconciliationCase).where(
+                    ReconciliationCase.kind == "iiko_payment_unsettled"
+                )
+            )
+        ).all()
+    assert len(cases) == 1 and cases[0].payload["invoice_id"] == str(inv_id)
+    rows = await _push_rows(async_session_factory, inv_id)
+    assert f"kassa_goods_done:{inv_id}" not in {r.idempotency_key for r in rows}  # НЕ закрыта
+    assert result["manual"] == 0  # manual растёт только при закрытии done
+
+
+@pytest.mark.asyncio
+async def test_mirror_orphaned_pending_share_opens_case(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Осиротевшая pending-строка доли (in-flight упал между commit и финализацией): push её НЕ
+    переотправляет (skipped/ok=False), но это не «улажено» — заводим кейс ручного разбора."""
+    inv_id = await _seed_kassa(
+        async_session_factory, source="kassa_invoice", goods="500.00", card="0.00", cash="500.00"
+    )
+    async with async_session_factory() as session:
+        session.add(
+            IikoInvoicePaymentPush(
+                idempotency_key=f"kassa_goods:{inv_id}:cash",
+                invoice_id=inv_id,
+                external_id="x",
+                amount=Decimal("500.00"),
+                account_to=GLAVNAYA_KASSA,
+                status="pending",
+                attempts=1,
+                request_payload={},
+                response_payload={},
+            )
+        )
+        await session.commit()
+
+    calls: list[dict] = []
+    monkeypatch.setattr(mod, "_call_add_payment", _fake_ok(calls))
+    async with async_session_factory() as session:
+        result = await mod.mirror_paid_kassa_invoices(session)
+
+    assert calls == []  # pending не переотправляется реальным вызовом
+    assert result["manual"] == 1
+    async with async_session_factory() as session:
+        cases = (
+            await session.scalars(
+                select(ReconciliationCase).where(
+                    ReconciliationCase.kind == "iiko_payment_unsettled"
+                )
+            )
+        ).all()
+    assert len(cases) == 1 and cases[0].payload["invoice_id"] == str(inv_id)

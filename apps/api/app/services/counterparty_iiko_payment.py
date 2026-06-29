@@ -32,7 +32,12 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import CounterpartyPaymentDraft, IikoInvoicePaymentPush, SupplierInvoice
+from app.models import (
+    CounterpartyPaymentDraft,
+    IikoInvoicePaymentPush,
+    ReconciliationCase,
+    SupplierInvoice,
+)
 
 logger = logging.getLogger(__name__)
 _MSK = ZoneInfo("Europe/Moscow")
@@ -57,6 +62,62 @@ WALLET_TO_IIKO_ACCOUNT: dict[str, str] = {
 # Кап ретраев сверочного джоба — после стольких неудачных попыток платёж в iiko больше не шлём
 # автоматически (нужен ручной разбор), чтобы не долбить iiko бесконечно.
 MAX_PUSH_ATTEMPTS = 6
+
+
+def _amount_iiko_representable(amount: Decimal) -> bool:
+    """iiko парсит ``amount`` JSON-числом в double и валидирует целость копеек (``amount*100`` —
+    целое). Десятичные суммы с неточным double (напр. ``4213.44`` → ``421343.99999999994``) iiko
+    отклоняет ``"invalid amount in JSON"`` (проверено на боевом API). Эмулируем ту же проверку,
+    чтобы не слать обречённое (метод НЕ идемпотентен) и сразу звать ручной разбор. Целые суммы и
+    «удачные» дроби (напр. ``959.88`` → ``95988.0``) → True."""
+    return (float(amount) * 100).is_integer()
+
+
+async def _open_iiko_payment_case(
+    session: AsyncSession,
+    *,
+    invoice_id: uuid.UUID,
+    external_id: str,
+    amount: Decimal,
+    reason: str,
+) -> None:
+    """Завести видимый кейс owner-review «оплата в iiko не проведена» (idempotent по накладной).
+
+    Зовём, когда ``add_payment`` провалился НЕОБРАТИМО (непредставимая сумма / исчерпан кап /
+    перманентный отказ iiko): зеркало надо провести в iiko вручную. Без кейса сбой тонул бы в
+    маркере ``kassa_goods_done`` («зеркалировано»), а у нас накладная числилась бы оплаченной."""
+    existing = await session.scalar(
+        select(ReconciliationCase.id)
+        .where(
+            ReconciliationCase.kind == "iiko_payment_unsettled",
+            ReconciliationCase.status == "pending",
+            ReconciliationCase.payload["invoice_id"].astext == str(invoice_id),
+        )
+        .limit(1)
+    )
+    if existing is not None:
+        return
+    session.add(
+        ReconciliationCase(
+            kind="iiko_payment_unsettled",
+            status="pending",
+            provider="iiko",
+            payload={
+                "invoice_id": str(invoice_id),
+                "external_id": external_id or "",
+                "amount": str(amount),
+                "reason": reason,
+            },
+        )
+    )
+    # Самостоятельный commit: кейс должен пережить даже последующий per-item rollback и НЕ зависеть
+    # от того, коммитит ли вызывающий после нас (банковский mirror — не коммитит).
+    await session.commit()
+    logger.warning(
+        "iiko mirror: оплата накладной %s НЕ проведена в iiko (%s) — заведён кейс owner-review",
+        invoice_id,
+        reason,
+    )
 
 
 class IikoPaymentError(RuntimeError):
@@ -215,9 +276,35 @@ async def push_invoice_payment_to_iiko(
         account_id=account_id,
         payment_dt=payment_dt or datetime.now(_MSK),
     )
+    representable = _amount_iiko_representable(amount)
     if dry_run:
         return IikoPushResult(
-            ok=True, skipped=False, status_code=None, payload=payload, response={"dry_run": True}
+            ok=True, skipped=False, status_code=None, payload=payload,
+            response={"dry_run": True, "amount_representable": representable},
+        )
+    if not representable:
+        # iiko парсит amount в double и валидирует целость копеек; суммы с неточным double
+        # (напр. 4213.44 → 421343.9999) он отклоняет 'invalid amount in JSON'. Не шлём — обречено
+        # и НЕ идемпотентно; помечаем терминально (кап), чтобы джоб не долбил, а вызывающий завёл
+        # ручной кейс. existing-счётчик не понижаем.
+        record = existing or IikoInvoicePaymentPush(idempotency_key=idempotency_key)
+        record.invoice_id = invoice_id
+        record.external_id = external_id
+        record.amount = amount
+        record.account_to = account_id
+        record.status = "error"
+        record.attempts = MAX_PUSH_ATTEMPTS
+        record.iiko_document_id = None
+        record.error = "amount_not_representable: сумма не представима для iiko (копейки в double)"
+        record.request_payload = payload
+        record.response_payload = {}
+        record.created_by_user_id = actor_user_id
+        if existing is None:
+            session.add(record)
+        await session.commit()
+        return IikoPushResult(
+            ok=False, skipped=False, status_code=422, payload=payload, response={},
+            error=record.error,
         )
 
     # 1) Durable in-flight маркер ДО необратимого HTTP-вызова.
@@ -354,15 +441,40 @@ async def mirror_paid_iiko_invoices(
             result["error"] += 1
             continue
         if res.skipped:
-            result["skipped"] += 1
+            if res.ok:
+                result["skipped"] += 1
+            else:
+                # осиротевший pending (процесс упал между commit pending и финализацией) — сам
+                # не переотправится, нужен ручной разбор, иначе неоплата в iiko потерялась бы тихо.
+                result["error"] += 1
+                await _open_iiko_payment_case(
+                    session, invoice_id=inv_id, external_id=external_id, amount=draft_amount,
+                    reason="осиротевший pending-пуш add_payment — нужен ручной разбор",
+                )
         elif res.ok:
             result["ok"] += 1
             logger.info(
                 "iiko mirror: оплата накладной %s (%s) отправлена в iiko", inv_id, external_id
             )
-        else:
+        elif (
+            res.status_code is not None
+            and 400 <= res.status_code < 500
+            and res.status_code != 429
+        ):
+            # перманентный отказ iiko (непредставимая сумма / invalid amount / документ) — ретраи
+            # не помогут; раньше это тихо терялось через blocked_invoice_ids (attempts>=кап).
             result["error"] += 1
-            logger.warning("iiko mirror: iiko отклонил оплату накладной %s: %s", inv_id, res.error)
+            logger.warning(
+                "iiko mirror: iiko перманентно отклонил накладную %s: %s", inv_id, res.error
+            )
+            await _open_iiko_payment_case(
+                session, invoice_id=inv_id, external_id=external_id, amount=draft_amount,
+                reason=res.error or f"HTTP {res.status_code}",
+            )
+        else:
+            # временный сбой (429 / 5xx / сеть) — кап доберётся на следующих проходах
+            result["error"] += 1
+            logger.warning("iiko mirror: временный сбой накладной %s: %s", inv_id, res.error)
     return result
 
 
@@ -448,7 +560,8 @@ async def mirror_paid_kassa_invoices(
     ).all()
 
     result = {
-        "eligible": len(rows), "ok": 0, "skipped": 0, "error": 0, "no_goods": 0, "backlog": 0
+        "eligible": len(rows), "ok": 0, "skipped": 0, "error": 0,
+        "no_goods": 0, "backlog": 0, "manual": 0,
     }
     for invoice in rows:
         # Поля в локали ДО пуша: после commit/rollback доступ к ORM-инстансу мог бы поднять
@@ -479,7 +592,13 @@ async def mirror_paid_kassa_invoices(
             continue
         card_share, cash_share = split
 
-        settled = True  # все нужные доли терминальны (ok / кап) → можно помечать done
+        # Доли терминальны (ok / skipped / необратимый провал) → закрываем накладную done; при
+        # временном сбое возвращаемся следующим проходом. НЕОБРАТИМЫЙ провал (непредставимая сумма /
+        # кап / перманентный отказ iiko) НЕ прячем под done — заводим видимый кейс owner-review
+        # (раньше кап тихо помечался «зеркалировано», и неоплата в iiko терялась).
+        terminal_fail: list[str] = []
+        transient = False
+        goods_total = card_share + cash_share
         for src, share in (("card", card_share), ("cash", cash_share)):
             if share <= 0:
                 continue
@@ -493,8 +612,8 @@ async def mirror_paid_kassa_invoices(
                 result["skipped"] += 1
                 continue
             if existing is not None and existing.attempts >= MAX_PUSH_ATTEMPTS:
-                logger.warning("kassa mirror: %s исчерпал кап попыток — ручной разбор", key)
-                continue  # терминально (кап) — не блокирует done, но товар частично не погашен
+                terminal_fail.append(f"{src}: {existing.error or 'исчерпан кап попыток'}")
+                continue
             try:
                 res = await push_invoice_payment_to_iiko(
                     session,
@@ -508,20 +627,57 @@ async def mirror_paid_kassa_invoices(
             except Exception:  # noqa: BLE001 — ошибка по одной доле не валит весь проход
                 await session.rollback()
                 logger.warning("kassa mirror: ошибка пуша %s", key, exc_info=True)
-                settled = False
+                transient = True
                 result["error"] += 1
                 continue
             if res.skipped:
-                result["skipped"] += 1
+                if res.ok:
+                    result["skipped"] += 1
+                else:
+                    # осиротевший pending — сам не переотправится, нужен ручной разбор
+                    terminal_fail.append(f"{src}: осиротевший pending-пуш — ручной разбор")
+                    result["error"] += 1
             elif res.ok:
                 result["ok"] += 1
                 logger.info("kassa mirror: товарная оплата %s отправлена в iiko", key)
-            else:
-                settled = False
+            elif (
+                res.status_code is not None
+                and 400 <= res.status_code < 500
+                and res.status_code != 429
+            ):
+                # перманентный отказ iiko (напр. invalid amount) — ретраи не помогут
+                terminal_fail.append(f"{src}: {res.error or f'HTTP {res.status_code}'}")
                 result["error"] += 1
-                logger.warning("kassa mirror: iiko отклонил %s: %s", key, res.error)
+                logger.warning("kassa mirror: iiko перманентно отклонил %s: %s", key, res.error)
+            else:
+                # временный сбой (429 / 5xx / сеть) — добор на следующем проходе
+                transient = True
+                result["error"] += 1
+                logger.warning("kassa mirror: временный сбой %s: %s", key, res.error)
 
-        if settled:
+        # Кейс заводим СРАЗУ при любом терминальном провале — даже если рядом флапает transient-доля
+        # (иначе терминальный провал прятался бы за ней до её собственного капа). Idempotent по
+        # накладной, так что повторные проходы не плодят дубли.
+        if terminal_fail:
+            reason = "; ".join(terminal_fail)
+            await _open_iiko_payment_case(
+                session,
+                invoice_id=inv_id,
+                external_id=external_id,
+                amount=goods_total,
+                reason=reason,
+            )
+        if transient:
+            continue  # есть transient-доля → накладную НЕ закрываем, доберём следующим проходом
+        if terminal_fail:
+            await _mark_kassa_goods_done(
+                session,
+                invoice_id=inv_id,
+                external_id=external_id,
+                note=f"iiko отклонил оплату (ручной разбор): {'; '.join(terminal_fail)}",
+            )
+            result["manual"] += 1
+        else:
             await _mark_kassa_goods_done(
                 session, invoice_id=inv_id, external_id=external_id, note="зеркалировано"
             )

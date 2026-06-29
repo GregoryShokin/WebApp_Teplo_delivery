@@ -77,6 +77,9 @@ export function OwnerReviewTab({ canClassify }: { canClassify: boolean }) {
             <SelectItem value="payer_wallet_unresolved">
               Не определён банк-счёт плательщика
             </SelectItem>
+            <SelectItem value="iiko_payment_unsettled">
+              Оплата в iiko не проведена
+            </SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -342,6 +345,12 @@ function OwnerReviewCard({
               </span>
             </label>
           </>
+        ) : item.kind === "iiko_payment_unsettled" ? (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+            Оплата накладной не проведена в iiko автоматически (add_payment отклонён — причина в
+            поле «Назначение платежа»). У нас накладная числится оплаченной; проведите оплату в iiko
+            вручную и отложите кейс.
+          </div>
         ) : (
           <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
             Информационный кейс: не определён банк-счёт плательщика, поэтому проводка ДДС по этой
@@ -410,6 +419,9 @@ function caseKindLabel(kind: string) {
   }
   if (kind === "payer_wallet_unresolved") {
     return "Не определён банк-счёт плательщика";
+  }
+  if (kind === "iiko_payment_unsettled") {
+    return "Оплата в iiko не проведена";
   }
   return kind;
 }

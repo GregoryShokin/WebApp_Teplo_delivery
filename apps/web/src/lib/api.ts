@@ -2273,7 +2273,8 @@ export type OwnerReviewKind =
   | "invalid_credentials"
   | "unmatched_transfer"
   | "unconfirmed_cheque"
-  | "payer_wallet_unresolved";
+  | "payer_wallet_unresolved"
+  | "iiko_payment_unsettled";
 
 export type ReconciliationCaseRead = {
   id: string;
