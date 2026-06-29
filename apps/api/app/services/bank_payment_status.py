@@ -103,13 +103,28 @@ FAILED_STATUSES = frozenset(
         "ошибка",
     }
 )
+# Удаление платёжного черновика в банке (T-Банк отдаёт статус ``DELETED`` по
+# ``POST /payment/status``): черновик отозван/не подписан, деньги НЕ ушли. Накладные
+# возвращаем в «неоплачено». Отделено от ``failed`` (отклонён банком) ради ясности статуса.
+DELETED_STATUSES = frozenset(
+    {
+        "deleted",
+        "removed",
+        "удален",
+        "удалён",
+        "удалена",
+        "удалено",
+    }
+)
 
 
 def classify_payment_status(raw_status: str | None) -> str:
-    """Свести строку статуса банка к ``paid`` / ``failed`` / ``pending``."""
+    """Свести строку статуса банка к ``paid`` / ``failed`` / ``deleted`` / ``pending``."""
     value = (raw_status or "").strip().lower()
     if value in PAID_STATUSES:
         return "paid"
+    if value in DELETED_STATUSES:
+        return "deleted"
     if value in FAILED_STATUSES:
         return "failed"
     return "pending"
@@ -254,13 +269,19 @@ async def apply_payment_status(
         draft.status = "paid"
         draft.synced_at = datetime.now(UTC)
 
-    elif outcome == "failed" and draft.status in ("created", "updated"):
-        # Платёж отклонён банком: возвращаем накладные в «неоплачено» (снимаем draft_id), чтобы
-        # их можно было отправить заново.
+    elif outcome in ("failed", "deleted") and draft.status in ("created", "updated"):
+        # Платёж не состоялся — отклонён банком (failed) ИЛИ черновик удалён/отозван в банке
+        # (deleted): деньги НЕ ушли. Возвращаем накладные в «неоплачено» (снимаем draft_id),
+        # чтобы их можно было отправить заново. Фронт завязан на draft_id → бейдж «Отправлено
+        # в банк» сам исчезает, накладная снова доступна к оплате.
         for invoice in await _draft_invoices(session, draft.id):
             invoice.draft_id = None
-        draft.status = "failed"
-        draft.last_error = f"Платёж отклонён банком: {raw_status}"[:500]
+        draft.status = outcome
+        draft.last_error = (
+            "Черновик удалён в банке"
+            if outcome == "deleted"
+            else f"Платёж отклонён банком: {raw_status}"
+        )[:500]
         draft.synced_at = datetime.now(UTC)
 
     if commit:

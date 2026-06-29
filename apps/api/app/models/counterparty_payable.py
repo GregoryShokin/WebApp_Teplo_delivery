@@ -204,7 +204,7 @@ class CounterpartyPaymentDraft(Base):
     __tablename__ = "counterparty_payment_draft"
     __table_args__ = (
         CheckConstraint(
-            "status in ('created', 'updated', 'paid', 'failed')",
+            "status in ('created', 'updated', 'paid', 'failed', 'deleted')",
             name="ck_counterparty_payment_draft_status",
         ),
         Index("ix_counterparty_payment_draft_cp", "counterparty_id"),

@@ -41,6 +41,8 @@ def test_classify_payment_status() -> None:
     assert classify_payment_status("ИСПОЛНЕН") == "paid"
     assert classify_payment_status("declined") == "failed"
     assert classify_payment_status("отклонён") == "failed"
+    assert classify_payment_status("DELETED") == "deleted"
+    assert classify_payment_status("удалён") == "deleted"
     assert classify_payment_status("processing") == "pending"
     assert classify_payment_status(None) == "pending"
 
@@ -149,6 +151,51 @@ async def test_failed_unlinks_invoices(
         refreshed = await session.get(SupplierInvoice, inv_id)
         assert refreshed.draft_id is None  # вернулась в «неоплачено», можно отправить заново
         assert refreshed.payment_status == "unpaid"
+        assert await _alloc_count(session, inv_id) == 0
+
+
+async def test_deleted_unlinks_invoices(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Черновик удалён в банке (T-Банк ``DELETED``): накладные возвращаются в «неоплачено»
+    (снимается draft_id), черновик помечается ``deleted``, деньги не двигались."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="P")
+        draft = await make_draft(session, counterparty_id=cp.id, amount="1000.00")
+        inv = await make_invoice(
+            session, counterparty_id=cp.id, amount="1000.00", draft_id=draft.id
+        )
+        await session.commit()
+        inv_id = inv.id
+
+        status = await apply_payment_status(session, draft=draft, raw_status="DELETED")
+        assert status == "deleted"
+        refreshed = await session.get(SupplierInvoice, inv_id)
+        assert refreshed.draft_id is None  # «Отправлено в банк» → «Не оплачено»
+        assert refreshed.payment_status == "unpaid"
+        assert await _alloc_count(session, inv_id) == 0
+        assert draft.last_error == "Черновик удалён в банке"
+
+
+async def test_deleted_does_not_revive_on_late_paid(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """После DELETED поздний ``executed`` НЕ воскрешает черновик: накладные уже отвязаны,
+    переход разрешён только из created/updated (идемпотентность/защита от out-of-order)."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="P")
+        draft = await make_draft(session, counterparty_id=cp.id, amount="1000.00")
+        inv = await make_invoice(
+            session, counterparty_id=cp.id, amount="1000.00", draft_id=draft.id
+        )
+        await session.commit()
+        inv_id = inv.id
+
+        await apply_payment_status(session, draft=draft, raw_status="DELETED")
+        status = await apply_payment_status(session, draft=draft, raw_status="executed")
+        assert status == "deleted"  # не воскрешён
+        refreshed = await session.get(SupplierInvoice, inv_id)
+        assert refreshed.payment_status == "unpaid" and refreshed.draft_id is None
         assert await _alloc_count(session, inv_id) == 0
 
 
