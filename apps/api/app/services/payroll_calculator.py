@@ -1434,12 +1434,19 @@ def validate_calculation_inputs(
             )
         if not category:
             issues.append(needs_setup_issue(employee))
-        elif role and not role_category_rate_exists(
-            settings,
-            role,
-            category,
-            entry.work_date,
-            entry.station,
+        elif (
+            role
+            # Внештатный (код «6») оплачивается вручную (договорная сумма смены правится прямо
+            # в ведомости), авто-ставки для него нет by design — поэтому отсутствие ставки НЕ
+            # должно блокировать финализацию. Максимальную стоимость смены внедрим отдельно.
+            and category_rule_key(category) != "6"
+            and not role_category_rate_exists(
+                settings,
+                role,
+                category,
+                entry.work_date,
+                entry.station,
+            )
         ):
             issues.append(
                 {

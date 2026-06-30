@@ -4075,7 +4075,13 @@ def test_freelancer_category_does_not_match_legacy_daily_rate() -> None:
         settings,
     )
 
-    assert result.blocking_issues[0]["type"] == "missing_role_category_rate"
+    # Внештатный (код «6») НЕ блокирует финализацию: оплата ручная — сумма смены правится
+    # прямо в ведомости, поэтому отсутствие авто-ставки не должно стопорить расчёт.
+    assert all(
+        issue["type"] != "missing_role_category_rate" for issue in result.blocking_issues
+    )
+    # При этом заданная ставка внештатной категории по-прежнему не применяется авто (base_pay 0).
+    assert result.lines[0].base_pay == 0
 
 
 def test_percent_from_revenue_uses_settings_revenue_mock() -> None:
