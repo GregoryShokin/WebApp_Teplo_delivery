@@ -198,7 +198,10 @@ def test_swap_group_override_excludes_item() -> None:
     assert computation.groups["chefs"]["penalty"] == "2800.00"
 
 
-def test_swap_group_audit_trail_in_adjustment_comment() -> None:
+def test_adjustment_comment_excludes_swap_group_noise() -> None:
+    # Расчётный лист показывает только «Недостача по ревизии <дата>»: построчная
+    # детализация пересортов/номенклатуры в комментарий сотрудника не попадает
+    # (она остаётся в админ-экране ревизии, см. swap_group_comment_line).
     computation = compute(
         [
             swap_item("-10542", "chefs", "salmon", "Сёмга ХК"),
@@ -209,8 +212,9 @@ def test_swap_group_audit_trail_in_adjustment_comment() -> None:
 
     comment = adjustment_comment_for_computation(date(2026, 5, 26), computation)
 
-    assert "Пересорт salmon: Сёмга ХК -10 542 ₽, Сёмга СС +8 895 ₽" in comment
-    assert "итог -1 647 ₽" in comment
+    assert comment == "Недостача по ревизии 2026-05-26"
+    assert "Пересорт" not in comment
+    assert "Сёмга" not in comment
 
 
 def test_common_full_100pct_low_sum() -> None:

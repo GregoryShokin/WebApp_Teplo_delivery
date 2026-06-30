@@ -993,14 +993,12 @@ def adjustment_comment_for_computation(
     business_date: date,
     computation: PenaltyComputation,
 ) -> str:
-    lines = [adjustment_comment(business_date)]
-    swap_groups = getattr(computation, "swap_groups", [])
-    lines.extend(
-        str(row["comment"])
-        for row in swap_groups
-        if _decimal(row.get("effective_shortage")) > 0 and row.get("comment")
-    )
-    return "\n".join(lines)
+    # Расчётный лист показывает только «Недостача по ревизии <дата>» — без
+    # построчной детализации пересортов/номенклатуры (для сотрудника это шум).
+    # Полная разбивка по swap-группам остаётся в админ-экране ревизии
+    # (см. swap_group_comment_line / audits.tsx).
+    del computation
+    return adjustment_comment(business_date)
 
 
 def audit_penalty_work_date(business_date: date) -> date:

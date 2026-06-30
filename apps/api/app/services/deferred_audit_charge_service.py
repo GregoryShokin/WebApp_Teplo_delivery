@@ -452,9 +452,13 @@ def deferred_adjustment_comment(
     charge: DeferredAuditCharge,
     split: DeferredAuditChargeSplit,
 ) -> str:
+    # Расчётный лист: только «Распределённый штраф ревизии <дата>, доля X/Y».
+    # Причина (charge.reason) — внутренний шум (номенклатура/имена/пересорт),
+    # её в персональный отчёт не выносим. Доля X/Y остаётся (показывает, что
+    # штраф разнесён по нескольким выплатам).
     return (
         f"Распределённый штраф ревизии {source_audit_date_string(charge)}, "
-        f"доля {split.split_index}/{charge.splits_count}: {charge.reason[:200]}"
+        f"доля {split.split_index}/{charge.splits_count}"
     )
 
 
