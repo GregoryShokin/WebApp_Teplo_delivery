@@ -463,7 +463,7 @@ def summarize_audit_items(
         item for item in all_items if audit_item_is_considered(item, excluded_ids=excluded_ids)
     ]
     total_shortage_iiko = _money(
-        sum((item_shortage_amount(item) for item in all_items), Decimal("0"))
+        sum((item_raw_shortage_amount(item) for item in all_items), Decimal("0"))
     )
     total_shortage_considered = _money(
         sum(
@@ -788,6 +788,145 @@ async def set_item_exclusion(
     await _compute_penalties(session, audit.id, commit=False)
     await session.commit()
     return await _load_audit_or_404(session, audit.id)
+
+
+async def set_item_shortage_adjustment(
+    session: AsyncSession,
+    audit_id: uuid.UUID,
+    item_id: uuid.UUID,
+    *,
+    amount: Decimal | None,
+    reason: str | None,
+    actor: CurrentActor,
+) -> InventoryAudit:
+    """Ручная корректировка суммы недостачи позиции (костыль межревизионного пересорта).
+
+    `amount` — знаковая дельта к сумме iiko (положительная уменьшает недостачу). None или 0 —
+    сброс корректировки. Доступно только в черновике.
+    """
+    audit = await _load_audit_or_404(session, audit_id)
+    if audit.status != "draft":
+        raise InventoryAuditConflictError(
+            "Корректировать сумму недостачи можно только в черновике"
+        )
+
+    item = next((row for row in audit.items if row.id == item_id), None)
+    if item is None:
+        raise InventoryAuditNotFoundError("Позиция не найдена")
+
+    item_label = getattr(item, "product_name_snapshot", "")
+    previous_adjustment = getattr(item, "manual_shortage_adjustment", None)
+    before = {
+        "item_id": str(item_id),
+        "product_name_snapshot": item_label,
+        "manual_shortage_adjustment": (
+            decimal_string(previous_adjustment) if previous_adjustment is not None else None
+        ),
+        "reason": getattr(item, "manual_shortage_adjustment_reason", None),
+    }
+
+    adjustment = _money(amount) if amount is not None else Decimal("0")
+    if adjustment == Decimal("0"):
+        item.manual_shortage_adjustment = None
+        item.manual_shortage_adjustment_reason = None
+        item.manual_shortage_adjustment_by_user_id = None
+        item.manual_shortage_adjustment_at = None
+        after: dict[str, Any] = {
+            "item_id": str(item_id),
+            "product_name_snapshot": item_label,
+            "manual_shortage_adjustment": None,
+            "reason": None,
+        }
+    else:
+        clean_reason = _clean_optional_text(reason)
+        if clean_reason is None:
+            raise InventoryAuditValidationError(
+                "Укажите причину корректировки суммы недостачи"
+            )
+        raw_signed = item_raw_signed_amount(item)
+        effective = _money(raw_signed + adjustment)
+        # Костыль уменьшает ложную недостачу, а не создаёт переплату в пользу сотрудника:
+        # корректировка не может «перелететь» через ноль (из недостачи сделать излишек).
+        if raw_signed < 0 and effective > 0:
+            raise InventoryAuditValidationError(
+                "Корректировка не может превышать исходную недостачу позиции"
+            )
+        item.manual_shortage_adjustment = adjustment
+        item.manual_shortage_adjustment_reason = clean_reason[:500]
+        item.manual_shortage_adjustment_by_user_id = actor.user_id
+        item.manual_shortage_adjustment_at = datetime.now(UTC)
+        after = {
+            "item_id": str(item_id),
+            "product_name_snapshot": item_label,
+            "manual_shortage_adjustment": decimal_string(adjustment),
+            "raw_amount": decimal_string(raw_signed),
+            "effective_amount": decimal_string(effective),
+            "reason": item.manual_shortage_adjustment_reason,
+        }
+
+    await _write_agent_audit(
+        session,
+        action_type="inventory_item_shortage_adjustment",
+        audit=audit,
+        actor=actor,
+        before=before,
+        after=after,
+        target_table="inventory_audit_item",
+        target_id=item_id,
+    )
+    await session.flush()
+    await _compute_penalties(session, audit.id, commit=False)
+    await session.commit()
+    return await _load_audit_or_404(session, audit.id)
+
+
+async def carryover_suggestions(
+    session: AsyncSession,
+    audit: InventoryAudit,
+) -> dict[uuid.UUID, dict[str, Any]]:
+    """Подсказка межревизионного переноса: для позиции текущей ревизии с недостачей ищем
+    излишек той же позиции в ближайшей предыдущей ревизии и предлагаем уменьшить недостачу
+    на величину излишка (но не больше самой недостачи).
+    """
+    prior_date = await _previous_audit_date(session, audit.business_date)
+    if prior_date is None:
+        return {}
+    prior = await session.scalar(
+        select(InventoryAudit)
+        .options(selectinload(InventoryAudit.items))
+        .where(InventoryAudit.business_date == prior_date)
+    )
+    if prior is None:
+        return {}
+
+    prior_signed_by_position: dict[uuid.UUID, Decimal] = defaultdict(lambda: Decimal("0"))
+    for prior_item in prior.items:
+        position_id = getattr(prior_item, "position_id", None)
+        if position_id is None:
+            continue
+        prior_signed_by_position[position_id] += item_signed_amount(prior_item)
+
+    suggestions: dict[uuid.UUID, dict[str, Any]] = {}
+    for item in audit.items:
+        position_id = getattr(item, "position_id", None)
+        if position_id is None:
+            continue
+        shortage = item_raw_shortage_amount(item)
+        if shortage <= 0:
+            continue
+        prior_surplus = _money(prior_signed_by_position.get(position_id, Decimal("0")))
+        if prior_surplus <= 0:
+            continue
+        suggested = _money(min(prior_surplus, shortage))
+        if suggested <= 0:
+            continue
+        suggestions[item.id] = {
+            "prior_audit_date": prior_date,
+            "prior_amount": decimal_string(prior_surplus),
+            "current_shortage": decimal_string(shortage),
+            "suggested_reduction": decimal_string(suggested),
+        }
+    return suggestions
 
 
 def build_penalty_computation(
@@ -1369,8 +1508,8 @@ def _group_shortages(
     return groups
 
 
-def item_signed_amount(item: Any) -> Decimal:
-    """Signed business amount: shortage < 0, surplus > 0."""
+def item_raw_signed_amount(item: Any) -> Decimal:
+    """Знаковая сумма iiko без ручной корректировки: shortage < 0, surplus > 0."""
     if hasattr(item, "amount") and item.amount is not None:
         return _money(item.amount)
     shortage_amount = _money(getattr(item, "shortage_amount", Decimal("0")))
@@ -1379,7 +1518,33 @@ def item_signed_amount(item: Any) -> Decimal:
     return _money(-shortage_amount)
 
 
+def item_manual_adjustment(item: Any) -> Decimal:
+    """Знаковая ручная корректировка к сумме позиции (0, если не задана)."""
+    value = getattr(item, "manual_shortage_adjustment", None)
+    if value is None:
+        return Decimal("0")
+    return _money(value)
+
+
+def item_has_manual_adjustment(item: Any) -> bool:
+    return getattr(item, "manual_shortage_adjustment", None) is not None
+
+
+def item_signed_amount(item: Any) -> Decimal:
+    """Эффективная знаковая сумма: iiko + ручная корректировка (идёт в расчёт штрафа)."""
+    return _money(item_raw_signed_amount(item) + item_manual_adjustment(item))
+
+
+def item_raw_shortage_amount(item: Any) -> Decimal:
+    """Сумма недостачи по iiko (без ручной корректировки), >= 0."""
+    signed_amount = item_raw_signed_amount(item)
+    if signed_amount >= 0:
+        return Decimal("0")
+    return _money(abs(signed_amount))
+
+
 def item_shortage_amount(item: Any) -> Decimal:
+    """Эффективная сумма недостачи (с учётом ручной корректировки), >= 0."""
     signed_amount = item_signed_amount(item)
     if signed_amount >= 0:
         return Decimal("0")

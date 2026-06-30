@@ -24,7 +24,11 @@ from app.models import (
     PayrollAdjustmentCategory,
     PayrollPeriod,
 )
-from app.schemas.inventory import InventoryAuditItemExclusionPatch, InventoryPositionPatch
+from app.schemas.inventory import (
+    InventoryAuditItemAdjustmentPatch,
+    InventoryAuditItemExclusionPatch,
+    InventoryPositionPatch,
+)
 from app.services import iiko_inventory, inventory_audit_service
 from app.services.inventory_audit_service import (
     DEFAULT_SETTINGS,
@@ -476,6 +480,191 @@ async def test_set_item_exclusion_audit_log(monkeypatch: pytest.MonkeyPatch) -> 
         "excluded": True,
         "reason": "Ошибка учета",
     }
+
+
+@pytest.mark.asyncio
+async def test_shortage_adjustment_reduces_penalty(monkeypatch: pytest.MonkeyPatch) -> None:
+    item = detail_item("3000", "admins", active=True, name="Упаковка")
+    audit = audit_detail_obj([item])
+    session = ItemExclusionServiceSession()
+    install_item_exclusion_fakes(monkeypatch, audit)
+
+    updated = await inventory_audit_service.set_item_shortage_adjustment(
+        session,  # type: ignore[arg-type]
+        audit.id,
+        item.id,
+        amount=Decimal("1000"),
+        reason="Перенос +1000 с ревизии 19.05",
+        actor=finance_actor(),
+    )
+
+    # 100% по admins: недостача 3000 → 2000 после корректировки.
+    assert updated.total_penalty_amount == Decimal("2000.00")
+    payload = inventory_routes.audit_payload(updated, include_items=True)
+    row = next(candidate for candidate in payload["items"] if candidate["id"] == item.id)
+    assert row["amount_iiko"] == "-3000.00"
+    assert row["amount"] == "-2000.00"
+    assert row["manual_shortage_adjustment"] == "1000.00"
+    assert row["has_manual_adjustment"] is True
+    assert row["manual_shortage_adjustment_reason"] == "Перенос +1000 с ревизии 19.05"
+    # «Сырой» итог iiko не меняется, учитываемый — отражает корректировку.
+    assert payload["total_shortage_iiko"] == "3000.00"
+    assert payload["total_shortage_considered"] == "2000.00"
+
+
+@pytest.mark.asyncio
+async def test_shortage_adjustment_requires_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    item = detail_item("3000", "admins", active=True)
+    audit = audit_detail_obj([item])
+    install_item_exclusion_fakes(monkeypatch, audit)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await inventory_routes.patch_audit_item_adjustment(
+            audit.id,
+            item.id,
+            InventoryAuditItemAdjustmentPatch(amount=Decimal("1000")),
+            ItemExclusionServiceSession(),  # type: ignore[arg-type]
+            finance_actor(),
+        )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "Укажите причину корректировки суммы недостачи"
+
+
+@pytest.mark.asyncio
+async def test_shortage_adjustment_cannot_exceed_shortage(monkeypatch: pytest.MonkeyPatch) -> None:
+    item = detail_item("3000", "admins", active=True)
+    audit = audit_detail_obj([item])
+    install_item_exclusion_fakes(monkeypatch, audit)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await inventory_routes.patch_audit_item_adjustment(
+            audit.id,
+            item.id,
+            InventoryAuditItemAdjustmentPatch(amount=Decimal("5000"), reason="слишком много"),
+            ItemExclusionServiceSession(),  # type: ignore[arg-type]
+            finance_actor(),
+        )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "Корректировка не может превышать исходную недостачу позиции"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("audit_status", ["applied", "cancelled"])
+async def test_shortage_adjustment_only_draft(
+    monkeypatch: pytest.MonkeyPatch,
+    audit_status: str,
+) -> None:
+    item = detail_item("3000", "admins", active=True)
+    audit = audit_detail_obj([item])
+    audit.status = audit_status
+    install_item_exclusion_fakes(monkeypatch, audit)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await inventory_routes.patch_audit_item_adjustment(
+            audit.id,
+            item.id,
+            InventoryAuditItemAdjustmentPatch(amount=Decimal("1000"), reason="перенос"),
+            ItemExclusionServiceSession(),  # type: ignore[arg-type]
+            finance_actor(),
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "Корректировать сумму недостачи можно только в черновике"
+
+
+@pytest.mark.asyncio
+async def test_shortage_adjustment_reset_restores_penalty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    item = detail_item("3000", "admins", active=True)
+    audit = audit_detail_obj([item])
+    install_item_exclusion_fakes(monkeypatch, audit)
+
+    await inventory_audit_service.set_item_shortage_adjustment(
+        audit_id=audit.id,
+        item_id=item.id,
+        amount=Decimal("1000"),
+        reason="перенос",
+        actor=finance_actor(),
+        session=ItemExclusionServiceSession(),  # type: ignore[arg-type]
+    )
+    restored = await inventory_audit_service.set_item_shortage_adjustment(
+        ItemExclusionServiceSession(),  # type: ignore[arg-type]
+        audit.id,
+        item.id,
+        amount=None,
+        reason=None,
+        actor=finance_actor(),
+    )
+
+    assert restored.total_penalty_amount == Decimal("3000.00")
+    assert getattr(item, "manual_shortage_adjustment", None) is None
+    payload = inventory_routes.audit_payload(restored, include_items=True)
+    row = next(candidate for candidate in payload["items"] if candidate["id"] == item.id)
+    assert row["has_manual_adjustment"] is False
+    assert row["amount"] == "-3000.00"
+
+
+@pytest.mark.asyncio
+async def test_shortage_adjustment_audit_log(monkeypatch: pytest.MonkeyPatch) -> None:
+    item = detail_item("3000", "admins", active=True, name="Упаковка")
+    audit = audit_detail_obj([item])
+    session = ItemExclusionServiceSession()
+    install_item_exclusion_fakes(monkeypatch, audit)
+
+    await inventory_audit_service.set_item_shortage_adjustment(
+        session,  # type: ignore[arg-type]
+        audit.id,
+        item.id,
+        amount=Decimal("1000"),
+        reason="перенос с прошлой ревизии",
+        actor=finance_actor(),
+    )
+
+    actions = [item for item in session.added if isinstance(item, AgentAction)]
+    assert len(actions) == 1
+    assert actions[0].action_type == "inventory_item_shortage_adjustment"
+    assert actions[0].target_table == "inventory_audit_item"
+    assert actions[0].after_value["manual_shortage_adjustment"] == "1000.00"
+    assert actions[0].after_value["effective_amount"] == "-2000.00"
+    assert actions[0].after_value["reason"] == "перенос с прошлой ревизии"
+
+
+@pytest.mark.asyncio
+async def test_carryover_suggestion_from_prior_surplus(monkeypatch: pytest.MonkeyPatch) -> None:
+    position_id = uuid.uuid4()
+    prior_item = SimpleNamespace(
+        position_id=position_id,
+        amount=Decimal("1000"),
+        shortage_amount=Decimal("0"),
+    )
+    prior_audit = SimpleNamespace(items=[prior_item])
+    current_item = detail_item("1500", "chefs", active=True, name="Креветки")
+    current_item.position_id = position_id
+    audit = audit_detail_obj([current_item])
+
+    async def fake_prev(_session: Any, _business_date: date) -> date:
+        return date(2026, 5, 19)
+
+    class CarryoverSession:
+        async def scalar(self, _query: Any) -> SimpleNamespace:
+            return prior_audit
+
+    monkeypatch.setattr(inventory_audit_service, "_previous_audit_date", fake_prev)
+
+    suggestions = await inventory_audit_service.carryover_suggestions(
+        CarryoverSession(),  # type: ignore[arg-type]
+        audit,
+    )
+
+    assert current_item.id in suggestions
+    suggestion = suggestions[current_item.id]
+    assert suggestion["prior_audit_date"] == date(2026, 5, 19)
+    assert suggestion["prior_amount"] == "1000.00"
+    assert suggestion["current_shortage"] == "1500.00"
+    assert suggestion["suggested_reduction"] == "1000.00"
 
 
 @pytest.mark.asyncio

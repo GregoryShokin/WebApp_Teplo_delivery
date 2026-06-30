@@ -172,6 +172,22 @@ class InventoryAuditItemPatch(BaseModel):
     swap_group_override: str | None = Field(default=None, max_length=64)
 
 
+class InventoryAuditItemAdjustmentPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Знаковая дельта к сумме iiko (положительная уменьшает недостачу). None/0 — сброс.
+    amount: Decimal | None = None
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class CarryoverSuggestionRead(BaseModel):
+    item_id: uuid.UUID
+    prior_audit_date: date
+    prior_amount: str
+    current_shortage: str
+    suggested_reduction: str
+
+
 class InventoryAuditItemRead(BaseModel):
     id: uuid.UUID
     audit_id: uuid.UUID
@@ -183,6 +199,10 @@ class InventoryAuditItemRead(BaseModel):
     is_excluded: bool = False
     exclusion_reason: str | None = None
     amount: str
+    amount_iiko: str | None = None
+    manual_shortage_adjustment: str | None = None
+    manual_shortage_adjustment_reason: str | None = None
+    has_manual_adjustment: bool = False
     swap_group: str | None = None
     swap_group_default: str | None = None
     swap_group_override: str | None = None

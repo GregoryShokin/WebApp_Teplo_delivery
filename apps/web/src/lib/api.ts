@@ -1078,6 +1078,10 @@ export type InventoryAuditItem = {
   allocation_group: InventoryAllocationGroup | null;
   is_considered: boolean;
   amount: string;
+  amount_iiko?: string | null;
+  manual_shortage_adjustment?: string | null;
+  manual_shortage_adjustment_reason?: string | null;
+  has_manual_adjustment?: boolean;
   swap_group: string | null;
   swap_group_default: string | null;
   swap_group_override: string | null;
@@ -1088,6 +1092,14 @@ export type InventoryAuditItem = {
   product_name_snapshot: string;
   shortage_amount: string;
   created_at: string | null;
+};
+
+export type InventoryAuditCarryoverSuggestion = {
+  item_id: string;
+  prior_audit_date: string;
+  prior_amount: string;
+  current_shortage: string;
+  suggested_reduction: string;
 };
 
 export type InventoryAuditExclusionLogItem = {
@@ -4081,6 +4093,27 @@ export async function patchInventoryAuditItemExclusion(
   const response = await api.patch<InventoryAudit>(
     `/inventory/audits/${auditId}/items/${itemId}/exclusion`,
     payload,
+  );
+  return response.data;
+}
+
+export async function patchInventoryAuditItemAdjustment(
+  auditId: string,
+  itemId: string,
+  payload: { amount: string | null; reason?: string | null },
+): Promise<InventoryAudit> {
+  const response = await api.patch<InventoryAudit>(
+    `/inventory/audits/${auditId}/items/${itemId}/adjustment`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function getInventoryAuditCarryoverSuggestions(
+  auditId: string,
+): Promise<InventoryAuditCarryoverSuggestion[]> {
+  const response = await api.get<InventoryAuditCarryoverSuggestion[]>(
+    `/inventory/audits/${auditId}/carryover-suggestions`,
   );
   return response.data;
 }

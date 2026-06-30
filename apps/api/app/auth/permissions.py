@@ -183,6 +183,11 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ("revisions.drafts.edit", "Ревизии", "Редактировать черновик ревизии"),
     ("revisions.items.exclude", "Ревизии", "Исключать позиции из ревизии"),
     (
+        "revisions.items.adjust",
+        "Ревизии",
+        "Корректировать сумму недостачи по позиции",
+    ),
+    (
         "revisions.employees.exclude",
         "Ревизии",
         "Исключать сотрудников из распределения",
@@ -676,6 +681,7 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "revisions.create",
         "revisions.drafts.edit",
         "revisions.items.exclude",
+        "revisions.items.adjust",
         "revisions.employees.exclude",
         "revisions.deferrals.read",
         "counterparties.read",
@@ -708,6 +714,7 @@ OFFICE_MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "revisions.create",
         "revisions.drafts.edit",
         "revisions.items.exclude",
+        "revisions.items.adjust",
         "revisions.employees.exclude",
         "revisions.finalize",
         "revisions.cancel",

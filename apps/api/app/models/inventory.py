@@ -158,6 +158,20 @@ class InventoryAuditItem(Base):
     shortage_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     swap_group_override: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Ручная корректировка суммы недостачи (костыль межревизионного пересорта): знаковая
+    # дельта к amount, effective = amount + manual_shortage_adjustment. Исходная сумма iiko
+    # (amount/shortage_amount) остаётся нетронутой. Используется, когда излишек предыдущей
+    # ревизии «всплывает» ложной недостачей в текущей.
+    manual_shortage_adjustment: Mapped[Decimal | None] = mapped_column(
+        Numeric(14, 2), nullable=True
+    )
+    manual_shortage_adjustment_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    manual_shortage_adjustment_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    manual_shortage_adjustment_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

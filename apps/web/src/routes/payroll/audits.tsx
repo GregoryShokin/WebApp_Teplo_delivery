@@ -67,6 +67,7 @@ import {
   getDeferredChargePayoutOptions,
   getIikoCandidates,
   getInventoryAudit,
+  getInventoryAuditCarryoverSuggestions,
   getInventoryAuditDeferredOnPayout,
   getInventoryAuditPayoutOptions,
   getInventoryAudits,
@@ -77,11 +78,13 @@ import {
   patchInventoryAudit,
   patchInventoryAuditEmployeeExclusion,
   patchInventoryAuditItem,
+  patchInventoryAuditItemAdjustment,
   patchInventoryAuditItemExclusion,
   restoreInventoryAuditDraft,
   type DeferredCharge,
   type DeferredChargeStatus,
   type InventoryAudit,
+  type InventoryAuditCarryoverSuggestion,
   type InventoryDeferredOnPayoutEmployee,
   type InventoryPayoutOption,
   type InventoryAuditExclusionLogRow,
@@ -1437,6 +1440,11 @@ function AuditDetail({
   } | null>(null);
   const [itemExclusionReason, setItemExclusionReason] = useState("");
   const [itemAmountFilter, setItemAmountFilter] = useState<ItemAmountFilter>("all");
+  const [adjustTarget, setAdjustTarget] = useState<{
+    item: InventoryAuditItem;
+    reduction: string;
+    reason: string;
+  } | null>(null);
   const overrideMutation = useMutation({
     mutationFn: ({
       item,
@@ -1498,6 +1506,34 @@ function AuditDetail({
     },
     onError: (error) =>
       toast.error(apiErrorMessage(error, "Не удалось обновить исключение позиции")),
+  });
+  const carryoverQuery = useQuery({
+    queryKey: ["inventory-audit-carryover", audit.id],
+    queryFn: () => getInventoryAuditCarryoverSuggestions(audit.id),
+    enabled: audit.status === "draft",
+  });
+  const suggestionByItem = new Map<string, InventoryAuditCarryoverSuggestion>(
+    (carryoverQuery.data ?? []).map((suggestion) => [suggestion.item_id, suggestion]),
+  );
+  const adjustmentMutation = useMutation({
+    mutationFn: ({
+      item,
+      amount,
+      reason,
+    }: {
+      item: InventoryAuditItem;
+      amount: string | null;
+      reason: string | null;
+    }) => patchInventoryAuditItemAdjustment(audit.id, item.id, { amount, reason }),
+    onSuccess: async (_audit, variables) => {
+      toast.success(
+        variables.amount ? "Сумма недостачи скорректирована" : "Корректировка снята",
+      );
+      setAdjustTarget(null);
+      await invalidateInventory(queryClient, audit.id);
+    },
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, "Не удалось скорректировать сумму недостачи")),
   });
   const payoutOptionsQuery = useQuery({
     queryKey: ["inventory-audit-payout-options", audit.id],
@@ -1775,7 +1811,23 @@ function AuditDetail({
                           finalized={isFinalized}
                           item={row.item}
                           key={row.item.id}
-                          loading={overrideMutation.isPending || itemExclusionMutation.isPending}
+                          loading={
+                            overrideMutation.isPending ||
+                            itemExclusionMutation.isPending ||
+                            adjustmentMutation.isPending
+                          }
+                          suggestion={suggestionByItem.get(row.item.id) ?? null}
+                          onAdjust={(item) => {
+                            const suggestion = suggestionByItem.get(item.id);
+                            const reduction = item.has_manual_adjustment
+                              ? (item.manual_shortage_adjustment ?? "")
+                              : (suggestion?.suggested_reduction ?? "");
+                            setAdjustTarget({
+                              item,
+                              reduction,
+                              reason: item.manual_shortage_adjustment_reason ?? "",
+                            });
+                          }}
                           onExclude={(item) =>
                             setOverrideTarget({
                               item,
@@ -1912,6 +1964,128 @@ function AuditDetail({
               Продолжить
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(adjustTarget)}
+        onOpenChange={(open) => !open && setAdjustTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Корректировка суммы недостачи</DialogTitle>
+          </DialogHeader>
+          {adjustTarget
+            ? (() => {
+                const target = adjustTarget;
+                const iiko = Math.abs(
+                  Number(target.item.amount_iiko ?? target.item.amount) || 0,
+                );
+                const reduction = Number(target.reduction) || 0;
+                const corrected = Math.max(iiko - reduction, 0);
+                const suggestion = suggestionByItem.get(target.item.id) ?? null;
+                const reductionInvalid = reduction <= 0 || reduction > iiko;
+                return (
+                  <div className="grid gap-3 text-sm">
+                    <div className="font-medium">{target.item.product_name_snapshot}</div>
+                    <div className="text-muted-foreground">
+                      Недостача по iiko: {formatMoney(String(iiko))}
+                    </div>
+                    {suggestion ? (
+                      <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                        В ревизии {formatDate(suggestion.prior_audit_date)} по этой позиции был
+                        излишек +{formatMoney(suggestion.prior_amount)} — похоже на пересорт.
+                        Предложено уменьшить недостачу на{" "}
+                        {formatMoney(suggestion.suggested_reduction)}.
+                      </div>
+                    ) : null}
+                    <Label className="grid gap-2">
+                      <span>Уменьшить недостачу на, ₽</span>
+                      <Input
+                        className="mt-1"
+                        type="number"
+                        min={0}
+                        max={iiko}
+                        step="0.01"
+                        value={target.reduction}
+                        onChange={(event) =>
+                          setAdjustTarget((current) =>
+                            current ? { ...current, reduction: event.target.value } : current,
+                          )
+                        }
+                      />
+                    </Label>
+                    <div className="text-muted-foreground">
+                      Станет: {formatMoney(String(corrected))}
+                      {reduction > iiko ? (
+                        <span className="ml-2 text-destructive">
+                          Корректировка больше недостачи
+                        </span>
+                      ) : null}
+                    </div>
+                    <Label className="grid gap-2">
+                      <span>Причина</span>
+                      <Textarea
+                        maxLength={500}
+                        placeholder="Например: перенос излишка с ревизии 19.05 (пересорт креветок)"
+                        value={target.reason}
+                        onChange={(event) =>
+                          setAdjustTarget((current) =>
+                            current
+                              ? { ...current, reason: event.target.value.slice(0, 500) }
+                              : current,
+                          )
+                        }
+                      />
+                    </Label>
+                    <DialogFooter>
+                      {target.item.has_manual_adjustment ? (
+                        <Button
+                          className="mr-auto"
+                          disabled={adjustmentMutation.isPending}
+                          onClick={() =>
+                            adjustmentMutation.mutate({
+                              item: target.item,
+                              amount: null,
+                              reason: null,
+                            })
+                          }
+                          type="button"
+                          variant="ghost"
+                        >
+                          Сбросить корректировку
+                        </Button>
+                      ) : null}
+                      <Button
+                        onClick={() => setAdjustTarget(null)}
+                        type="button"
+                        variant="outline"
+                      >
+                        Отмена
+                      </Button>
+                      <Button
+                        disabled={
+                          adjustmentMutation.isPending || reductionInvalid || !target.reason.trim()
+                        }
+                        onClick={() =>
+                          adjustmentMutation.mutate({
+                            item: target.item,
+                            amount: target.reduction.trim(),
+                            reason: target.reason.trim(),
+                          })
+                        }
+                        type="button"
+                      >
+                        {adjustmentMutation.isPending ? (
+                          <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                        ) : null}
+                        Применить
+                      </Button>
+                    </DialogFooter>
+                  </div>
+                );
+              })()
+            : null}
         </DialogContent>
       </Dialog>
 
@@ -2087,6 +2261,8 @@ function AuditItemRow({
   finalized,
   item,
   loading,
+  suggestion,
+  onAdjust,
   onExclude,
   onMove,
   onToggleInclude,
@@ -2095,6 +2271,8 @@ function AuditItemRow({
   finalized: boolean;
   item: InventoryAuditItem;
   loading: boolean;
+  suggestion: InventoryAuditCarryoverSuggestion | null;
+  onAdjust: (item: InventoryAuditItem) => void;
   onExclude: (item: InventoryAuditItem) => void;
   onMove: (item: InventoryAuditItem) => void;
   onToggleInclude: (item: InventoryAuditItem, nextExcluded: boolean) => void;
@@ -2103,6 +2281,11 @@ function AuditItemRow({
   const canEditSwapGroup = Boolean(
     item.swap_group || item.swap_group_default || item.has_swap_group_override,
   );
+  const hasAdjustment = Boolean(item.has_manual_adjustment);
+  // Корректировать сумму можно у недостач (и у уже скорректированных позиций).
+  const isShortage = Number(item.amount) < 0 || hasAdjustment;
+  const showMenu = canEditSwapGroup || isShortage;
+  const showCarryoverHint = Boolean(suggestion) && !hasAdjustment;
   return (
     <tr
       className={cn(
@@ -2124,12 +2307,47 @@ function AuditItemRow({
               <Info size={14} aria-hidden="true" className="text-muted-foreground" />
             </InlineTooltip>
           ) : null}
+          {hasAdjustment ? (
+            <InlineTooltip
+              content={`Сумма недостачи скорректирована вручную (было ${formatSignedMoney(
+                item.amount_iiko ?? item.amount,
+              )}). Причина: ${item.manual_shortage_adjustment_reason ?? "—"}`}
+            >
+              <Badge variant="outline" className="border-amber-300 text-amber-700">
+                корректировка
+              </Badge>
+            </InlineTooltip>
+          ) : null}
+          {showCarryoverHint && suggestion ? (
+            <InlineTooltip
+              content={`В ревизии ${formatDate(suggestion.prior_audit_date)} по этой позиции был излишек +${formatMoney(
+                suggestion.prior_amount,
+              )} — похоже на пересорт. Можно уменьшить недостачу на ${formatMoney(
+                suggestion.suggested_reduction,
+              )}.`}
+            >
+              <Badge variant="outline" className="border-sky-300 text-sky-700">
+                перенос?
+              </Badge>
+            </InlineTooltip>
+          ) : null}
         </div>
       </td>
       <td className="px-2 py-3">
         <InventoryGroupBadge group={item.allocation_group} />
       </td>
-      <td className="px-2 py-3 text-right tabular-nums">{formatSignedMoney(item.amount)}</td>
+      <td className="px-2 py-3 text-right tabular-nums">
+        {hasAdjustment ? (
+          <div className="flex flex-col items-end leading-tight">
+            <span className="text-xs text-muted-foreground line-through">
+              {formatSignedMoney(item.amount_iiko ?? item.amount)}
+            </span>
+            <span>{formatSignedMoney(item.amount)}</span>
+          </div>
+        ) : (
+          formatSignedMoney(item.amount)
+        )}
+      </td>
       <td className="px-2 py-3 text-center">
         <InlineTooltip
           content={
@@ -2148,7 +2366,7 @@ function AuditItemRow({
         </InlineTooltip>
       </td>
       <td className="px-2 py-3 text-right">
-        {canEditSwapGroup ? (
+        {showMenu ? (
           <span
             title={
               finalized
@@ -2167,12 +2385,23 @@ function AuditItemRow({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => onExclude(item)}>
-                  Исключить из группы (только для этой ревизии)
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => onMove(item)}>
-                  Перенести в группу…
-                </DropdownMenuItem>
+                {canEditSwapGroup ? (
+                  <>
+                    <DropdownMenuItem onSelect={() => onExclude(item)}>
+                      Исключить из группы (только для этой ревизии)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => onMove(item)}>
+                      Перенести в группу…
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
+                {isShortage ? (
+                  <DropdownMenuItem onSelect={() => onAdjust(item)}>
+                    {hasAdjustment
+                      ? "Изменить сумму недостачи…"
+                      : "Скорректировать сумму недостачи…"}
+                  </DropdownMenuItem>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           </span>

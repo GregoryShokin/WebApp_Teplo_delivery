@@ -20,6 +20,7 @@ from app.models import (
     InventoryAuditPosition,
 )
 from app.schemas.inventory import (
+    CarryoverSuggestionRead,
     DeferredOnPayoutResponse,
     IikoInventoryCandidateRead,
     IikoProductRead,
@@ -28,6 +29,7 @@ from app.schemas.inventory import (
     InventoryAuditDetailRead,
     InventoryAuditEmployeeExclusionPatch,
     InventoryAuditImportIikoPayload,
+    InventoryAuditItemAdjustmentPatch,
     InventoryAuditItemCreate,
     InventoryAuditItemExclusionPatch,
     InventoryAuditItemPatch,
@@ -55,6 +57,7 @@ from app.services.inventory_audit_service import (
     apply_audit_penalties,
     audit_item_is_considered,
     cancel_audit,
+    carryover_suggestions,
     compute_penalties,
     create_manual_audit,
     decimal_string,
@@ -62,7 +65,9 @@ from app.services.inventory_audit_service import (
     get_audit_with_items,
     import_audit_from_iiko,
     item_effective_swap_group,
+    item_has_manual_adjustment,
     item_has_swap_group_override,
+    item_raw_signed_amount,
     item_shortage_amount,
     item_signed_amount,
     item_swap_group_override,
@@ -73,6 +78,7 @@ from app.services.inventory_audit_service import (
     restore_cancelled_audit,
     set_employee_exclusion,
     set_item_exclusion,
+    set_item_shortage_adjustment,
     set_penalty_work_date_override,
     summarize_audit_items,
     summarize_swap_groups,
@@ -92,6 +98,7 @@ REVISION_IMPORT_ACCESS = (Depends(require_permission("revisions.import")),)
 REVISION_CREATE_ACCESS = (Depends(require_permission("revisions.create")),)
 REVISION_DRAFT_EDIT_ACCESS = (Depends(require_permission("revisions.drafts.edit")),)
 REVISION_ITEM_EXCLUDE_ACCESS = (Depends(require_permission("revisions.items.exclude")),)
+REVISION_ITEM_ADJUST_ACCESS = (Depends(require_permission("revisions.items.adjust")),)
 REVISION_EMPLOYEE_EXCLUDE_ACCESS = (Depends(require_permission("revisions.employees.exclude")),)
 REVISION_FINALIZE_ACCESS = (Depends(require_permission("revisions.finalize")),)
 REVISION_CANCEL_ACCESS = (Depends(require_permission("revisions.cancel")),)
@@ -645,6 +652,57 @@ async def patch_audit_item_exclusion(
     return audit_payload(audit, include_items=True)
 
 
+@router.patch(
+    "/audits/{audit_id}/items/{item_id}/adjustment",
+    response_model=InventoryAuditDetailRead,
+    dependencies=REVISION_ITEM_ADJUST_ACCESS,
+)
+async def patch_audit_item_adjustment(
+    audit_id: uuid.UUID,
+    item_id: uuid.UUID,
+    payload: InventoryAuditItemAdjustmentPatch,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    try:
+        audit = await set_item_shortage_adjustment(
+            session,
+            audit_id,
+            item_id,
+            amount=payload.amount,
+            reason=payload.reason,
+            actor=actor,
+        )
+    except InventoryAuditNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InventoryAuditConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except InventoryAuditValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return audit_payload(audit, include_items=True)
+
+
+@router.get(
+    "/audits/{audit_id}/carryover-suggestions",
+    response_model=list[CarryoverSuggestionRead],
+    dependencies=REVISION_READ_ACCESS,
+)
+async def audit_carryover_suggestions(
+    audit_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> list[dict[str, Any]]:
+    audit = await load_audit_or_404(session, audit_id)
+    suggestions = await carryover_suggestions(session, audit)
+    return [
+        {"item_id": item_id, **payload}
+        for item_id, payload in suggestions.items()
+    ]
+
+
 @router.post(
     "/audits/{audit_id}/compute",
     response_model=PenaltyComputationRead,
@@ -909,6 +967,16 @@ def item_payload(
         "is_excluded": is_excluded,
         "exclusion_reason": exclusion_reason,
         "amount": decimal_string(item_signed_amount(item)),
+        "amount_iiko": decimal_string(item_raw_signed_amount(item)),
+        "manual_shortage_adjustment": (
+            decimal_string(item.manual_shortage_adjustment)
+            if getattr(item, "manual_shortage_adjustment", None) is not None
+            else None
+        ),
+        "manual_shortage_adjustment_reason": getattr(
+            item, "manual_shortage_adjustment_reason", None
+        ),
+        "has_manual_adjustment": item_has_manual_adjustment(item),
         "swap_group": item_effective_swap_group(item),
         "swap_group_default": getattr(position, "swap_group", None) if position else None,
         "swap_group_override": item_swap_group_override(item),
