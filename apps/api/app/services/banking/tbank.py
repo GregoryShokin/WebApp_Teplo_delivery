@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import uuid
 from collections.abc import Mapping
 from datetime import date
@@ -32,6 +33,7 @@ from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 
 PAYMENT_DRAFT_PATH = "/api/v1/payment/create"
 PAYMENT_STATUS_PATH = "/api/v1/payment/status"  # POST {"documentIds": [...]}
+logger = logging.getLogger(__name__)
 DEFAULT_TAX_FIELDS = {
     "taxPayerStatus": "0",
     "kbk": "0",
@@ -123,6 +125,11 @@ class TbankClient:
         if response.status_code in {401, 403}:
             raise BankCredentialsError(self.provider, "T-Bank bearer token is invalid or expired")
         if response.status_code >= 400:
+            logger.warning(
+                "tbank payment/create %s: %s",
+                response.status_code,
+                response.text[:1000],
+            )
             raise BankFetchError(self.provider, f"T-Bank API returned {response.status_code}")
 
         try:
@@ -179,6 +186,11 @@ class TbankClient:
         if response.status_code in {401, 403}:
             raise BankCredentialsError(self.provider, "T-Bank bearer token is invalid or expired")
         if response.status_code >= 400:
+            logger.warning(
+                "tbank payment/status %s: %s",
+                response.status_code,
+                response.text[:1000],
+            )
             raise BankFetchError(self.provider, f"T-Bank API returned {response.status_code}")
         try:
             payload = response.json()
@@ -474,6 +486,9 @@ def _required_requisite(requisites: Mapping[str, Any], *names: str) -> str:
 def _validate_payment_draft_payload(payload: Mapping[str, Any]) -> None:
     if Decimal(str(payload["amount"])) <= 0:
         raise ValueError("payment amount must be greater than zero")
+    inn = str(payload.get("inn") or "")
+    if len(inn) not in (10, 12):
+        raise ValueError("ИНН получателя должен содержать 10 или 12 цифр")
     if not payload["accountNumber"]:
         raise ValueError("payer account is required")
     if len(str(payload["paymentPurpose"])) > 210:

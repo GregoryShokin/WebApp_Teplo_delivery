@@ -12,11 +12,13 @@ import pytest
 from cp_helpers import make_counterparty, make_draft, make_invoice
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.counterparty_payments import (
     CounterpartyPaymentError,
     RequisitesNotVerifiedError,
     cancel_payment_draft,
     create_payment_draft_for_invoices,
+    create_standalone_payment_draft,
 )
 
 VERIFIED_REQUISITES = {
@@ -35,6 +37,41 @@ async def _verified_supplier(session: AsyncSession, **extra):
         requisites_verified=True,
         **extra,
     )
+
+
+def test_build_payment_draft_rejects_invalid_inn_length() -> None:
+    requisites = dict(
+        VERIFIED_REQUISITES,
+        recipientName="ООО Суши Принт",
+        inn="773444316",
+    )
+
+    with pytest.raises(ValueError, match="10 или 12"):
+        build_payment_draft_api_payload(
+            document_id="teplo-cp-test",
+            amount=Decimal("100.00"),
+            purpose="Оплата поставщику",
+            requisites=requisites,
+            payer_account="40702810999999999999",
+        )
+
+
+def test_build_payment_draft_accepts_legal_entity_inn() -> None:
+    requisites = dict(
+        VERIFIED_REQUISITES,
+        recipientName="ООО Поставщик",
+        inn="7701234567",
+    )
+
+    payload = build_payment_draft_api_payload(
+        document_id="teplo-cp-test",
+        amount=Decimal("100.00"),
+        purpose="Оплата поставщику",
+        requisites=requisites,
+        payer_account="40702810999999999999",
+    )
+
+    assert payload["inn"] == "7701234567"
 
 
 async def test_create_draft_packs_invoices_and_links_them(
@@ -98,6 +135,28 @@ async def test_create_draft_blocked_without_verified_requisites(
         with pytest.raises(RequisitesNotVerifiedError):
             await create_payment_draft_for_invoices(
                 session, invoice_ids=[invoice.id], actor_user_id=None
+            )
+
+
+async def test_create_standalone_draft_rejects_invalid_inn_before_bank(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        supplier = await make_counterparty(
+            session,
+            name="ООО Суши Принт",
+            inn="773444316",
+            requisites=VERIFIED_REQUISITES,
+            requisites_verified=True,
+        )
+        await session.commit()
+
+        with pytest.raises(CounterpartyPaymentError, match="10 или 12"):
+            await create_standalone_payment_draft(
+                session,
+                counterparty_id=supplier.id,
+                amount=Decimal("1000.00"),
+                actor_user_id=None,
             )
 
 
