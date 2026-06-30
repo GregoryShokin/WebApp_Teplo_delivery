@@ -661,9 +661,17 @@ def calculate_payroll_lines_from_inputs(
                 work_date,
                 station,
             )
-            if is_substitute:
+            # Внештатный (код «6») — только ручная оплата: никаких авто-начислений (ставка,
+            # процент, надбавки за стаж и за выходной день обнулены). Остаётся лишь ручная
+            # сумма смены, которую управляющий вносит в ведомости (через премию/корректировку).
+            is_freelancer = category_rule_key(category) == "6"
+            if is_substitute or is_freelancer:
                 seniority_allowance_pay = Decimal("0")
-                seniority_allowance_metadata = {"seniority_allowance_skipped_reason": "substitute"}
+                seniority_allowance_metadata = {
+                    "seniority_allowance_skipped_reason": "freelancer"
+                    if is_freelancer
+                    else "substitute"
+                }
             else:
                 seniority_allowance_pay, seniority_allowance_metadata = (
                     seniority_allowance_details_for_payroll_entry(
@@ -678,7 +686,7 @@ def calculate_payroll_lines_from_inputs(
             )
             percent_components = daily_percent_components.get(work_date, {})
             weekday_premium = Decimal("0")
-            if employee_day_key not in premium_applied_employee_days:
+            if not is_freelancer and employee_day_key not in premium_applied_employee_days:
                 weekday_premium = weekday_premium_for_employee_day(
                     settings,
                     work_date,

@@ -4084,6 +4084,32 @@ def test_freelancer_category_does_not_match_legacy_daily_rate() -> None:
     assert result.lines[0].base_pay == 0
 
 
+def test_freelancer_skips_weekday_premium_and_seniority() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(category="freelancer")
+    # 2026-05-23 — суббота: штатному начислилась бы надбавка выходного (200 ₽). Внештатнику —
+    # никаких авто-начислений (только ручная сумма), поэтому всё по нулям.
+    entry = make_entry(period, employee, date(2026, 5, 23))
+    settings = payroll_settings()
+    settings["payroll.role_category_rates"] = {"Пиццерист": {"6": 5000}}
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    day = result.lines[0].components["days"][0]
+    assert result.lines[0].base_pay == 0
+    assert day["weekday_premium"] == 0
+    assert day["seniority_allowance_pay"] == 0
+    assert result.lines[0].percent_pay == 0
+
+
 def test_percent_from_revenue_uses_settings_revenue_mock() -> None:
     period = make_period()
     run_id = uuid.uuid4()
