@@ -1,0 +1,766 @@
+diff --git a/apps/api/app/api/v1/router.py b/apps/api/app/api/v1/router.py
+index f9be16df..8bd304e5 100644
+--- a/apps/api/app/api/v1/router.py
++++ b/apps/api/app/api/v1/router.py
+@@ -13,10 +13,11 @@ from app.api.v1.routes.health import router as health_router
+ from app.api.v1.routes.integrations import router as integrations_router
+ from app.api.v1.routes.inventory import router as inventory_router
+ from app.api.v1.routes.kassa import router as kassa_router
+-from app.api.v1.routes.payment_page import router as payment_page_router
++from app.api.v1.routes.kds import router as kds_router
+ from app.api.v1.routes.payroll import router as payroll_router
+ from app.api.v1.routes.payroll_adjustments import router as payroll_adjustments_router
+ from app.api.v1.routes.payroll_admin import router as payroll_admin_router
++from app.api.v1.routes.payment_page import router as payment_page_router
+ from app.api.v1.routes.payroll_advances import router as payroll_advances_router
+ from app.api.v1.routes.positions import router as positions_router
+ from app.api.v1.routes.settings import router as settings_router
+@@ -55,4 +56,5 @@ api_router.include_router(vacations_router, prefix="/vacations", tags=["vacation
+ api_router.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"])
+ api_router.include_router(warehouse_router, prefix="/warehouse", tags=["warehouse"])
+ api_router.include_router(kassa_router, prefix="/kassa", tags=["kassa"])
++api_router.include_router(kds_router, prefix="/kds", tags=["kds"])
+ api_router.include_router(payment_page_router, prefix="/payment-page", tags=["payment-page"])
+diff --git a/apps/api/app/api/v1/routes/webhooks.py b/apps/api/app/api/v1/routes/webhooks.py
+index 7924d8d3..84b716ea 100644
+--- a/apps/api/app/api/v1/routes/webhooks.py
++++ b/apps/api/app/api/v1/routes/webhooks.py
+@@ -1,22 +1,18 @@
+ """Входящие вебхуки банка (T-Банк).
+ 
+-Статус платёжного документа (тело без ``operationId``) — единственный вход, который гасит
+-банковский черновик и создаёт ДДС по ``provider_ref``. События с ``operationId`` (операции по
+-счёту/строки выписки) в ДДС-ингест НЕ пропускаются: подтверждаем 200 и игнорируем, чтобы
+-выписка не создавала вторую проводку поверх оплаты, уже зафиксированной статусом черновика.
+-Оба входа (``/tbank/payment-status`` и алиас ``/tbank/account-operation``) авторизуются токеном
+-``tbank_webhook_token`` в заголовке ``Authorization`` (``Bearer <token>`` или «голым») +
+-опциональный IP-whitelist. Входящий контур (банк→мы), без JWT; заявка на ``openapi@tbank.ru``.
++Статус платёжного документа (тело без ``operationId``) — единственный вход, который
++гасит банковский черновик и создаёт ДДС по ``provider_ref``. События с ``operationId``
++— это операции по счёту/строки выписки; в ДДС-ингест они не пропускаются, чтобы выписка
++не создавала вторую проводку поверх оплаты, уже зафиксированной статусом черновика.
++Авторизация — токеном ``tbank_webhook_token`` в заголовке ``Authorization``; банк может
++прислать его как ``Bearer <token>``, так и «голым» ``<token>`` — принимаем оба варианта.
+ """
+ 
+ from __future__ import annotations
+ 
+ import hmac
+ import logging
+-import uuid
+-from datetime import datetime, timedelta
+ from typing import Annotated, Any
+-from zoneinfo import ZoneInfo
+ 
+ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+ from sqlalchemy import select
+@@ -25,19 +21,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
+ from app.core.config import Settings, get_settings
+ from app.db.session import get_session
+ from app.models import CounterpartyPaymentDraft, PayrollBankDraft, SalaryAdvanceBankDraft
++from app.services.advance_bank_draft import apply_advance_draft_status
+ from app.services.bank_payment_status import apply_payment_status
+ from app.services.banking.tbank import is_tbank_operation_hold
+-from app.services.couriers.cloud_shift_ingest import ingest_cloud_shift_event
+-from app.services.couriers.shift_matching import recalculate_matches
+-from app.services.payroll_advance_service import apply_advance_draft_status
++from app.services.kds.sync_service import (
++    get_preorder_horizon_minutes,
++    parse_cloud_order,
++    parse_webhook_event_time,
++    upsert_kds_order,
++)
+ from app.services.payroll_payouts import apply_payroll_draft_status
+ 
+ router = APIRouter()
+ logger = logging.getLogger(__name__)
+-_MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+ 
+-# Идентификатор статусного webhook-а. ``operationId``/``documentNumber`` намеренно НЕ здесь:
+-# их несёт операция по счёту (выписка), а её этот контур в ДДС не пускает.
++# Идентификатор статусного webhook-а. ``operationId`` намеренно не здесь: это операция по счёту.
+ _ID_FIELDS = (
+     "paymentId",
+     "documentId",
+@@ -56,6 +54,15 @@ def _extract(payload: dict[str, Any], names: tuple[str, ...]) -> str | None:
+     return None
+ 
+ 
++def _is_account_operation_payload(payload: dict[str, Any]) -> bool:
++    if _extract(payload, ("operationId",)):
++        return True
++    return any(
++        field in payload
++        for field in ("typeOfOperation", "operationAmount", "accountAmount", "rubleAmount")
++    )
++
++
+ def _client_ip(request: Request) -> str | None:
+     forwarded = request.headers.get("x-forwarded-for")
+     if forwarded:
+@@ -107,30 +114,22 @@ def _authorize_tbank_webhook(
+         raise HTTPException(status.HTTP_403_FORBIDDEN, "IP не в списке разрешённых")
+ 
+ 
+-def _is_account_operation_payload(payload: dict[str, Any]) -> bool:
+-    """Тело — операция по счёту (строка выписки), а не статус платёжного документа."""
+-    if _extract(payload, ("operationId",)):
+-        return True
+-    return any(
+-        field in payload
+-        for field in ("typeOfOperation", "operationAmount", "accountAmount", "rubleAmount")
+-    )
+-
+-
+ def _ack_tbank_account_operation(payload: dict[str, Any]) -> dict[str, Any]:
+-    """Подтвердить webhook операции по счёту, НЕ пропуская его в ДДС.
++    """Подтвердить webhook операции по счёту, не пропуская его в ДДС.
+ 
+-    Деньги по банковским черновикам фиксируются статусом платёжного документа (по
+-    ``provider_ref``). Операции по счёту приходят на тот же URL, но для этого контура
+-    считаются выпиской: в журнал/баланс их не пишем, чтобы выписка не создавала вторую
+-    проводку поверх оплаты, уже зафиксированной статусом черновика.
++    Деньги по банковским черновикам фиксируются статусом платёжного документа. Операционные
++    webhook-и T-Bank могут приходить на тот же URL, но для этого контура они считаются
++    выпиской, а не статусом draft-а.
+     """
+     operation_id = _extract(payload, ("operationId", "id"))
+     if not operation_id:
+         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Нет идентификатора операции")
++
+     stage = "authorization" if is_tbank_operation_hold(payload) else "transaction"
+     logger.info(
+-        "tbank account-operation принят без ДДС-ингеста: op=%s stage=%s", operation_id, stage
++        "tbank account-operation принят без ДДС-ингеста: op=%s stage=%s",
++        operation_id,
++        stage,
+     )
+     return {
+         "ok": True,
+@@ -161,9 +160,8 @@ async def tbank_payment_status(
+     if not isinstance(payload, dict):
+         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ожидался объект JSON")
+ 
+-    # Операции по счёту приходят на тот же URL (формат выписки) — подтверждаем и игнорируем,
+-    # в ДДС не пускаем. Оплату черновика фиксирует статус платёжного документа (по
+-    # provider_ref, ниже), поэтому выписка не создаёт вторую проводку поверх статусной оплаты.
++    # Если тело — операция по счёту, подтверждаем, но не пускаем в ДДС.
++    # Статусный webhook черновика обрабатывается ниже по provider_ref.
+     if _is_account_operation_payload(payload):
+         return _ack_tbank_account_operation(payload)
+ 
+@@ -191,9 +189,8 @@ async def tbank_payment_status(
+         )
+         return {"ok": True, "matched": True, "draft_status": new_status}
+ 
+-    # Банк-выдача аванса/займа (Фаза 2): доводим по статусу платёжного документа так же, как
+-    # накладные и ЗП. Раньше advance доводился из операции по счёту, которую этот контур больше
+-    # не обрабатывает, поэтому статусный webhook — единственный путь довести его до paid.
++    # Платёж может быть черновиком банковской выдачи аванса/займа — при «исполнен» проводим
++    # изъятие в iiko (эквайринг). Зеркало payroll-черновика.
+     advance_draft = await session.scalar(
+         select(SalaryAdvanceBankDraft).where(SalaryAdvanceBankDraft.provider_ref == payment_id)
+     )
+@@ -215,9 +212,8 @@ async def tbank_account_operation(
+ ) -> dict[str, Any]:
+     """Вебхук T-Банка «Операция по счёту».
+ 
+-    Подтверждаем корректное тело, но НЕ пишем операцию в ДДС: источник ДДС-проводки по
+-    банковским черновикам — статус платёжного документа. Так выписка не создаёт вторую
+-    проводку поверх статусной оплаты. Тело — один объект-операция (не массив).
++    Подтверждаем корректное тело, но не пишем операцию в ДДС: для оплат черновиков
++    источником проводки является статус платёжного документа.
+     """
+     _authorize_tbank_webhook(request, settings, authorization)
+ 
+@@ -232,47 +228,24 @@ async def tbank_account_operation(
+ 
+ 
+ def _verify_bearer(authorization: str | None, expected: str | None) -> bool:
+-    """Bearer-токен вебхука iikoCloud. expected пуст (dev) → проверка отключена."""
+     if not expected:
+-        return True
++        return True  # токен не задан (dev) — проверка отключена
+     scheme, _, token = (authorization or "").partition(" ")
+     return scheme == "Bearer" and hmac.compare_digest(token, expected)
+ 
+ 
+-# Типы событий iikoCloud, которые точно НЕ про смены — в ingest не отдаём (если iiko шлёт
+-# все типы на один URL). Остальное пробуем как смену; ingest сам отсеет не-курьерские.
+-_NON_SHIFT_EVENT_TYPES = frozenset(
+-    {
+-        "DeliveryOrderUpdate",
+-        "DeliveryOrderError",
+-        "TableOrderUpdate",
+-        "TableOrderError",
+-        "ReserveUpdate",
+-        "ReserveError",
+-        "StopListUpdate",
+-        "StopListError",
+-    }
+-)
+-
+-
+-@router.post("/iiko")
+-async def iiko_webhook(
++@router.post("/iiko/delivery-order-update")
++async def iiko_delivery_order_update(
+     request: Request,
+     session: Annotated[AsyncSession, Depends(get_session)],
+     settings: Annotated[Settings, Depends(get_settings)],
+     authorization: Annotated[str | None, Header()] = None,
+ ) -> dict[str, Any]:
+-    """Единый приёмник вебхуков iikoCloud (один ``webHooksUri`` на организацию, один токен).
+-
+-    iikoCloud шлёт ВСЕ подписанные события на один URL, поэтому здесь — диспетчер по
+-    ``eventType``:
+-      * события смен сотрудников → ``ingest_cloud_shift_event`` (realtime открытие/закрытие
+-        смены курьера; поллинг ``/employees/attendance`` публикует явку с задержкой);
+-      * заказы/прочее (``DeliveryOrderUpdate`` и т.п.) — пока только логируем; их обработчик
+-        (KDS) подключается сюда же, когда вольётся из ветки dds-webhook-ingestion.
+-    Тело — массив событий (или один объект). Bearer-токен ``iiko_webhook_token`` + опц.
+-    IP-whitelist. Всегда 200 (потерянное добирает поллинг). Каждое событие логируем сырым —
+-    структуры событий калибруем по факту.
++    """Вебхук iikoCloud ``DeliveryOrderUpdate`` — realtime-наполнение очереди КДС.
++
++    Тело — массив событий; берём ``DeliveryOrderUpdate`` (``eventInfo.id`` = GUID доставки,
++    ``eventInfo.order`` = полный заказ). Идемпотентно по ``last_event_at``. Всегда 200, чтобы
++    iiko не ретраил вечно (потерянные события добирает сверочный поллинг ``kds_reconcile``).
+     """
+     if not _verify_bearer(authorization, settings.iiko_webhook_token):
+         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный токен вебхука")
+@@ -284,44 +257,25 @@ async def iiko_webhook(
+ 
+     try:
+         payload = await request.json()
+-    except Exception as exc:  # noqa: BLE001 - кривой body = 400
++    except Exception as exc:  # noqa: BLE001 - любой кривой body = 400
+         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Некорректный JSON") from exc
+ 
+     events = payload if isinstance(payload, list) else [payload]
+-    affected: set[uuid.UUID] = set()
++    horizon = await get_preorder_horizon_minutes(session)
+     processed = 0
+-    skipped = 0
+     for event in events:
+-        if not isinstance(event, dict):
++        if not isinstance(event, dict) or event.get("eventType") != "DeliveryOrderUpdate":
+             continue
+-        event_type = str(event.get("eventType") or "")
+-        # TODO(калибровка вебхуков): пока на WARNING, чтобы видеть сырьё в проде (app-логи
+-        # уровня INFO в api не настроены). Вернуть на logger.info после калибровки структур.
+-        logger.warning("iiko webhook: type=%s info=%s", event_type, event.get("eventInfo"))
+-        # Не-сменные типы (заказы и пр.) — пока не наша область, пропускаем (обработчики
+-        # добавятся в этот же диспетчер). Остальное пробуем как смену; ingest сам отсеет
+-        # не-курьерские/неполные события (вернёт None).
+-        if event_type in _NON_SHIFT_EVENT_TYPES:
+-            skipped += 1
++        info = event.get("eventInfo") or {}
++        order = info.get("order")
++        order_id = info.get("id") or (order or {}).get("id")
++        if not isinstance(order, dict) or not order_id:
+             continue
+-        employee_id = await ingest_cloud_shift_event(session, event)
+-        if employee_id is not None:
+-            affected.add(employee_id)
+-            processed += 1
+-        else:
+-            skipped += 1
+-
+-    if affected:
+-        now = datetime.now(_MOSCOW_TZ)
+-        await recalculate_matches(
+-            session,
+-            now.date() - timedelta(days=2),
+-            now.date() + timedelta(days=1),
+-            employee_ids=affected,
+-        )
++        parsed = parse_cloud_order(str(order_id), order, preorder_horizon_minutes=horizon)
++        event_at = parse_webhook_event_time(event.get("eventTime"))
++        await upsert_kds_order(session, parsed, event_at=event_at)
++        processed += 1
++
++    if processed:
+         await session.commit()
+-    # TODO(калибровка): WARNING временно для наблюдения итога батча в проде.
+-    logger.warning(
+-        "iiko webhook итог: events=%d processed=%d skipped=%d", len(events), processed, skipped
+-    )
+-    return {"ok": True, "processed": processed, "skipped": skipped}
++    return {"ok": True, "processed": processed}
+diff --git a/apps/api/app/core/config.py b/apps/api/app/core/config.py
+index 28b14107..452a124a 100644
+--- a/apps/api/app/core/config.py
++++ b/apps/api/app/core/config.py
+@@ -74,11 +74,18 @@ class Settings(BaseSettings):
+     tbank_webhook_token: str | None = None
+     tbank_webhook_allowed_ips: str = ""
+ 
+-    # Webhook iikoCloud (входящие POST iiko→мы): открытие/закрытие смен курьеров realtime.
+-    # Токен сверяется с Authorization: Bearer; список IP (CSV) — опциональный whitelist.
+-    # Пусто = проверка отключена (dev). Тот же токен прописывается в подписке iikoCloud.
++    # Вебхук iikoCloud «DeliveryOrderUpdate» (входящие POST iiko→мы) для живой очереди КДС.
++    # Токен сверяется с заголовком Authorization: Bearer (его же шлём в webhooks/settings как
++    # authToken). Пусто = проверка отключена (dev). Сверочный поллинг (kds_reconcile) —
++    # страховка, поэтому в проде токен не обязателен, но рекомендуется.
+     iiko_webhook_token: str | None = None
+     iiko_webhook_allowed_ips: str = ""
++    # Публичный URL нашего вебхука для авто-подписки в iikoCloud (POST /api/1/webhooks/settings).
++    iiko_webhook_public_url: str = (
++        "https://teplo-app.ru/api/v1/webhooks/iiko/delivery-order-update"
++    )
++    # Авто-подписка на вебхук iikoCloud при старте (idempotent). Выкл — если настраивают вручную.
++    kds_webhook_autosubscribe_enabled: bool = True
+ 
+     # --- Почта: ingest счетов/УПД для «Страницы на оплату» (Фаза 1) ---
+     # Креды обоих ящиков прокидываются из ../.env (MAILRU_*). Пусто = ingest пропускается
+diff --git a/apps/api/app/models/__init__.py b/apps/api/app/models/__init__.py
+index dc395e36..44ca39f3 100644
+--- a/apps/api/app/models/__init__.py
++++ b/apps/api/app/models/__init__.py
+@@ -40,6 +40,7 @@ from app.models.courier import (
+     CourierShiftMatchStatus,
+     DeliveryOrder,
+ )
++from app.models.email_invoice_intake import EmailInvoiceIntake
+ from app.models.courier_deposit import (
+     CourierDepositAccount,
+     CourierDepositTransaction,
+@@ -71,7 +72,6 @@ from app.models.dds import (
+     TransferGroup,
+     WalletBalanceSnapshot,
+ )
+-from app.models.email_invoice_intake import EmailInvoiceIntake
+ from app.models.employee import (
+     Employee,
+     EmployeeAllowanceEvent,
+@@ -96,6 +96,13 @@ from app.models.kassa import (
+     IikoCashShiftPayout,
+     KassaShiftPenalty,
+ )
++from app.models.kds import (
++    KdsEventAction,
++    KdsEventSource,
++    KdsOrder,
++    KdsOrderEvent,
++    KdsTapType,
++)
+ from app.models.payroll import (
+     AccumulationFundAccount,
+     AccumulationFundTransaction,
+@@ -201,6 +208,11 @@ __all__ = [
+     "IikoCashShiftPayout",
+     "KassaShiftPenalty",
+     "ChequeIikoPayout",
++    "KdsEventAction",
++    "KdsEventSource",
++    "KdsOrder",
++    "KdsOrderEvent",
++    "KdsTapType",
+     "IikoProduct",
+     "IikoInvoicePaymentPush",
+     "InvoiceLineItem",
+diff --git a/apps/api/app/scheduler.py b/apps/api/app/scheduler.py
+index 22eb777d..40203690 100644
+--- a/apps/api/app/scheduler.py
++++ b/apps/api/app/scheduler.py
+@@ -20,14 +20,12 @@ from app.models import (
+     OwnAccountsRegistry,
+     PayrollBankDraft,
+     ReconciliationCase,
+-    SalaryAdvanceBankDraft,
+     Wallet,
+ )
+ from app.services.bank_payment_status import apply_payment_status
+ from app.services.banking.base import AccountMeta, NormalizedBankOperation, clean_digits
+ from app.services.banking.classifier import (
+     create_or_update_reconciliation_case,
+-    reconcile_needs_review_prebooked,
+     run_classification_rules,
+ )
+ from app.services.banking.exceptions import BankCredentialsError, BankFetchError
+@@ -38,7 +36,8 @@ from app.services.couriers.iiko_attendance_sync import sync_attendance
+ from app.services.couriers.iiko_olap_sync import sync_courier_olap_deliveries
+ from app.services.couriers.shift_matching import recalculate_matches
+ from app.services.kassa.iiko_cashshift_sync import sync_iiko_cashshifts
+-from app.services.payroll_advance_service import apply_advance_draft_status
++from app.services.kds.sync_service import poll_active_orders
++from app.services.kds.webhook_subscribe import ensure_webhook_subscription
+ from app.services.payroll_payouts import apply_payroll_draft_status
+ 
+ logger = logging.getLogger(__name__)
+@@ -50,11 +49,9 @@ SUPPORTED_BANK_PROVIDERS = ("sber", "tbank")
+ 
+ 
+ async def poll_banks() -> None:
+-    # РУЧНОЙ запуск. Автоматический polling банковской выписки отключён (снят
+-    # @scheduler.scheduled_job): ДДС по банковским черновикам создаётся статусным webhook-ом
+-    # платёжного документа (по provider_ref), а webhook-и «операция по счёту» в ДДС не
+-    # пропускаются. Функция оставлена для ручной диагностики/разового добора выписки (в т.ч.
+-    # Sber, у которого вебхука нет).
++    # Автоматический polling выписки отключён: ДДС по банковским черновикам создаётся
++    # статусным webhook-ом платежного документа, а webhook-и операций по счёту не
++    # пропускаются в ДДС. Функция оставлена для ручной диагностики/разового запуска.
+     for provider in _bank_sync_providers():
+         await run_bank_sync_job(provider=provider)
+ 
+@@ -79,12 +76,11 @@ async def escalate_pending_cheques() -> None:
+ 
+ 
+ async def poll_payment_statuses() -> None:
+-    """РУЧНОЙ добор статуса исходящих платежей.
++    """Ручной добор статуса исходящих платежей.
+ 
+-    Автоматический scheduler отключён (снят @scheduler.scheduled_job): основной путь гашения
+-    накладных/выплат — статусный webhook платёжного документа по ``provider_ref``. Функция
+-    оставлена для ручного добора статусов, в т.ч. поимки удаления черновика в банке (статус
+-    DELETED → откат накладных в «неоплачено»)."""
++    Автоматический scheduler для polling-а отключён: основной путь — webhook статуса
++    платёжного документа по ``provider_ref``.
++    """
+     async with AsyncSessionLocal() as session:
+         await run_payment_status_poll(session)
+ 
+@@ -103,7 +99,7 @@ async def run_payment_status_poll(
+             )
+         )
+     ).all()
+-    result = {"checked": 0, "paid": 0, "failed": 0, "errors": 0, "reconciled": 0}
++    result = {"checked": 0, "paid": 0, "failed": 0, "errors": 0}
+     for draft in drafts:
+         try:
+             raw = await client.get_payment_status(draft.provider_ref or "")
+@@ -160,77 +156,10 @@ async def run_payment_status_poll(
+             result["paid"] += 1
+         elif payroll_status == "failed":
+             result["failed"] += 1
+-
+-    # Те же статусы для банк-выдачи авансов/займов: при «исполнен» — транзит банк→Сейф +
+-    # резерв Сейфа под выдачу (фактическая выдача сотруднику подтверждается «Выплачено»).
+-    advance_drafts = (
+-        await session.scalars(
+-            select(SalaryAdvanceBankDraft).where(
+-                SalaryAdvanceBankDraft.status.in_(("created", "updated")),
+-                SalaryAdvanceBankDraft.provider_ref.is_not(None),
+-            )
+-        )
+-    ).all()
+-    for advance_draft in advance_drafts:
+-        try:
+-            raw = await client.get_payment_status(advance_draft.provider_ref or "")
+-        except BankCredentialsError:
+-            logger.warning("payment-status poll: credentials error, прерываю опрос", exc_info=True)
+-            result["errors"] += 1
+-            break
+-        except Exception:  # noqa: BLE001 - сетевая/банк-ошибка одного платежа не валит весь проход
+-            logger.warning(
+-                "payment-status poll: ошибка по advance-черновику %s",
+-                advance_draft.id,
+-                exc_info=True,
+-            )
+-            result["errors"] += 1
+-            continue
+-        result["checked"] += 1
+-        if raw is None:
+-            continue
+-        advance_status = await apply_advance_draft_status(
+-            session, draft=advance_draft, raw_status=raw, commit=False
+-        )
+-        if advance_status == "paid":
+-            result["paid"] += 1
+-        elif advance_status == "failed":
+-            result["failed"] += 1
+-
+-    # Сводим «требующие проверки» операции с prebooked-проводками, появившимися позже них
+-    # (гонка вебхук↔поллинг) — иначе один платёж висит двумя строками в журнале.
+-    result["reconciled"] = await reconcile_needs_review_prebooked(session)
+     await session.commit()
+     return result
+ 
+ 
+-@scheduler.scheduled_job(
+-    "interval",
+-    minutes=5,
+-    id="push_iiko_invoice_payments",
+-    max_instances=1,
+-    coalesce=True,
+-)
+-async def push_iiko_invoice_payments() -> None:
+-    """Зеркалировать в iiko оплаты iiko-накладных, оплаченных через банк-черновик (Cloud
+-    add_payment). Сверочный: сканирует оплаченные накладные без успешного пуша и шлёт; путь
+-    гашения НЕ трогает. Ошибки изолированы по накладной, ретраи с капом попыток."""
+-    from app.services.counterparty_iiko_payment import (
+-        mirror_paid_iiko_invoices,
+-        mirror_paid_kassa_invoices,
+-    )
+-
+-    async with AsyncSessionLocal() as session:
+-        result = await mirror_paid_iiko_invoices(session)
+-    if result.get("ok") or result.get("error"):
+-        logger.info("push_iiko_invoice_payments: %s", result)
+-    # Те же Cloud add_payment, но для оплаченных чеков/накладных Кассы (товарная часть).
+-    async with AsyncSessionLocal() as session:
+-        kassa = await mirror_paid_kassa_invoices(session)
+-    if kassa.get("ok") or kassa.get("error"):
+-        logger.info("push_iiko_kassa_payments: %s", kassa)
+-
+-
+ @scheduler.scheduled_job(
+     "interval",
+     minutes=get_settings().mail_poll_interval_minutes,
+@@ -278,6 +207,33 @@ async def send_scheduled_payments() -> None:
+         logger.info("send_scheduled_payments: %s", result)
+ 
+ 
++@scheduler.scheduled_job(
++    "interval",
++    minutes=5,
++    id="push_iiko_invoice_payments",
++    max_instances=1,
++    coalesce=True,
++)
++async def push_iiko_invoice_payments() -> None:
++    """Зеркалировать в iiko оплаты iiko-накладных, оплаченных через банк-черновик (Cloud
++    add_payment). Сверочный: сканирует оплаченные накладные без успешного пуша и шлёт; путь
++    гашения НЕ трогает. Ошибки изолированы по накладной, ретраи с капом попыток."""
++    from app.services.counterparty_iiko_payment import (
++        mirror_paid_iiko_invoices,
++        mirror_paid_kassa_invoices,
++    )
++
++    async with AsyncSessionLocal() as session:
++        result = await mirror_paid_iiko_invoices(session)
++    if result.get("ok") or result.get("error"):
++        logger.info("push_iiko_invoice_payments: %s", result)
++    # Те же Cloud add_payment, но для оплаченных чеков/накладных Кассы (товарная часть).
++    async with AsyncSessionLocal() as session:
++        kassa = await mirror_paid_kassa_invoices(session)
++    if kassa.get("ok") or kassa.get("error"):
++        logger.info("push_iiko_kassa_payments: %s", kassa)
++
++
+ @scheduler.scheduled_job(
+     "interval",
+     minutes=30,
+@@ -381,6 +337,43 @@ async def run_iiko_cashshift_sync_once() -> dict[str, object]:
+     return payload
+ 
+ 
++# КДС: вебхук iikoCloud — основной realtime-канал очереди; этот сверочный поллинг —
++# страховка от потерянных событий и «зависших» доставленных заказов (рабочие часы).
++@scheduler.scheduled_job(
++    "cron",
++    minute="*/5",
++    hour="8-23",
++    id="kds_reconcile",
++    max_instances=1,
++    coalesce=True,
++)
++async def kds_reconcile_job() -> None:
++    await run_with_iiko_backoff(run_kds_reconcile_once)
++
++
++async def run_kds_reconcile_once() -> dict[str, object]:
++    async with AsyncSessionLocal() as session:
++        result = await poll_active_orders(session)
++    payload = result.as_dict()
++    logger.info("kds reconcile completed: %s", payload)
++    return payload
++
++
++# Авто-подписка на вебхук iikoCloud: один раз при старте + ежедневно (idempotent).
++@scheduler.scheduled_job(
++    "cron",
++    hour=7,
++    id="kds_webhook_autosubscribe",
++    max_instances=1,
++    coalesce=True,
++    next_run_time=datetime.now(MOSCOW_TZ),
++)
++async def kds_webhook_autosubscribe_job() -> None:
++    async with AsyncSessionLocal() as session:
++        result = await ensure_webhook_subscription(session)
++    logger.info("kds webhook autosubscribe: %s", result)
++
++
+ async def run_with_iiko_backoff(operation: Callable[[], Awaitable[object]]) -> None:
+     for attempt in range(1, IIKO_COURIER_JOB_RETRIES + 1):
+         try:
+@@ -451,8 +444,8 @@ async def run_bank_sync_job(
+             logger.warning("Bank credentials error for %s: %s", provider, exc)
+             return {"job_id": job_id, "provider": provider, "status": "invalid_credentials"}
+         except BankFetchError as exc:
+-            # Isolate a provider's fetch/HTTP failure so it cannot block the other
+-            # providers in poll_banks (which syncs sber then tbank sequentially).
++            # Isolate a provider's fetch/HTTP failure so a manual multi-provider sync can
++            # continue with the next provider.
+             await session.rollback()
+             logger.warning("Bank fetch error for %s: %s", provider, exc)
+             return {"job_id": job_id, "provider": provider, "status": "fetch_error"}
+@@ -484,24 +477,18 @@ async def ingest_operations(
+ ) -> dict[str, object]:
+     """Записать нормализованные операции выписки в журнал и прогнать классификацию.
+ 
+-    Единый сток для ОБОИХ источников: периодического поллинга выписки
+-    (``sync_bank_provider``) и realtime-вебхука «Операция по счёту»
+-    (``/webhooks/tbank/account-operation``). Дедуп по ``(provider,
+-    provider_operation_id)`` делает повторную доставку (поллинг после вебхука, дубль-фаер
+-    вебхука, перекрытие периодов выписки) идемпотентной — UPDATE вместо второй вставки,
+-    баланс не задваивается. ⚠️ operationId T-Банка НЕ стабилен: банк присваивает РАЗНЫЕ
+-    operationId одной и той же операции при вебхуке vs повторном поллинге выписки → дедуп только
+-    по нему её не ловит (прод: гарант-фонд/tbank_main задваивались). Поэтому есть fallback-дедуп
+-    по стабильному ключу выписки (document_number + счёт + направление + сумма + дата операции).
+-    Порядок шагов критичен и совпадает с прежним поведением поллинга:
++    Сток для явного/ручного импорта выписки. Автоматический polling выписки и webhook-и
++    «Операция по счёту» не являются основным контуром ДДС по банковским черновикам:
++    проводка создаётся статусным webhook-ом платежного документа. Дедуп по ``(provider,
++    provider_operation_id)`` всё равно сохраняем для ручных повторных прогонов и
++    перекрывающихся периодов выписки. Порядок шагов критичен:
+     upsert → ``sync_own_accounts`` (регистрирует новые счета и включает правило внутренних
+     переводов) → (tbank) свод ручных пендинг-чеков Кассы ДО классификации →
+     ``run_classification_rules`` (внутри парует внутренние переводы по уже сохранённым ногам).
+     """
+-    # Сериализуем ингест одного провайдера (поллинг vs вебхук vs ручной /bank-sync) на
+-    # уровне транзакции: снимает гонку SELECT-then-INSERT и двойной claim prebooked-платежа
+-    # двумя почти одновременными прогонами. Лок берётся в текущей транзакции, освобождается
+-    # на commit.
++    # Сериализуем ингест одного провайдера на уровне транзакции: снимает гонку
++    # SELECT-then-INSERT и двойной claim prebooked-платежа двумя почти одновременными
++    # ручными прогонами. Лок берётся в текущей транзакции, освобождается на commit.
+     await session.execute(
+         text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+         {"key": f"bank_ingest:{provider}"},
+@@ -513,23 +500,10 @@ async def ingest_operations(
+     # операцию дважды — без in-memory карты два add дали бы IntegrityError на flush (строки
+     # ещё не во flush, SELECT их не видит).
+     seen: dict[str, BankOperation] = {}
+-    # Стабильный ключ выписки на случай нестабильного operationId (см. docstring): один и тот же
+-    # платёжный документ на одном счёте с тем же направлением/суммой/датой = та же операция.
+-    # account_id+direction+amount в ключе, чтобы НЕ слить встречные ноги перевода (у них общий
+-    # document_number, но разные счёт/направление).
+-    seen_stable: dict[tuple, BankOperation] = {}
+     for operation in operations:
+         account = await _account_for_operation(session, provider, operation)
+         account_id = account.id if account else None
+-        stable_key = (
+-            (account_id, operation.document_number, operation.direction,
+-             operation.amount, operation.operation_date)
+-            if operation.document_number
+-            else None
+-        )
+         batch_row = seen.get(operation.provider_operation_id)
+-        if batch_row is None and stable_key is not None:
+-            batch_row = seen_stable.get(stable_key)
+         if batch_row is not None:
+             # Дубль в этом же батче — переприменяем поля, но НЕ двоим счётчики.
+             _update_bank_operation(batch_row, operation, account_id)
+@@ -540,19 +514,6 @@ async def ingest_operations(
+                 BankOperation.provider_operation_id == operation.provider_operation_id,
+             )
+         )
+-        # Fallback: тот же документ пришёл под НОВЫМ operationId (вебхук↔поллинг) → это дубль,
+-        # обновляем существующую строку, а не вставляем вторую.
+-        if existing is None and stable_key is not None:
+-            existing = await session.scalar(
+-                select(BankOperation).where(
+-                    BankOperation.provider == provider,
+-                    BankOperation.account_id == account_id,
+-                    BankOperation.document_number == operation.document_number,
+-                    BankOperation.direction == operation.direction,
+-                    BankOperation.amount == operation.amount,
+-                    BankOperation.operation_date == operation.operation_date,
+-                )
+-            )
+         if existing is None:
+             existing = _bank_operation_from_normalized(operation, account_id)
+             session.add(existing)
+@@ -562,8 +523,6 @@ async def ingest_operations(
+             _update_bank_operation(existing, operation, account_id)
+             updated += 1
+         seen[operation.provider_operation_id] = existing
+-        if stable_key is not None:
+-            seen_stable[stable_key] = existing
+ 
+     await session.flush()
+     own_accounts_added = await sync_own_accounts(session, provider=provider)
+@@ -765,7 +724,7 @@ async def _flag_amount_change_on_classified(
+ ) -> None:
+     """Не дать сумме/направлению уже классифицированной операции «уехать» молча.
+ 
+-    При рефайре (поллинг после вебхука / правка проводки банком) ``_update_bank_operation``
++    При повторном импорте выписки или правке проводки банком ``_update_bank_operation``
+     обновит ``BankOperation.amount`` (баланс по выписке станет верным), но связанный
+     ``CashflowTransaction`` журнала ДДС НЕ пересоберётся (re-classify идёт только по
+     ``pending``) → баланс и журнал разойдутся. Журнал автоматически не трогаем (чтобы не
+diff --git a/apps/web/src/components/layout/AppLayout.tsx b/apps/web/src/components/layout/AppLayout.tsx
+index 84b2a3c7..290b06bf 100644
+--- a/apps/web/src/components/layout/AppLayout.tsx
++++ b/apps/web/src/components/layout/AppLayout.tsx
+@@ -94,6 +94,12 @@ const navGroups: NavGroup[] = [
+       { label: "График", href: "/couriers/schedule", icon: CalendarRange, section: "couriers.schedule" },
+     ],
+   },
++  {
++    title: "Кухня",
++    items: [
++      { label: "Скорость кухни", href: "/kitchen/speed", icon: Flame, section: "kitchen.speed" },
++    ],
++  },
+   {
+     title: "Финансы",
+     items: [
+diff --git a/apps/web/src/router.tsx b/apps/web/src/router.tsx
+index bfa1b897..b89073b8 100644
+--- a/apps/web/src/router.tsx
++++ b/apps/web/src/router.tsx
+@@ -10,6 +10,8 @@ import { CourierShiftRoute } from "@/routes/couriers/shift";
+ import { PayrollRoute } from "@/routes/payroll";
+ import { DdsRoute } from "@/routes/dds";
+ import { KassaRoute } from "@/routes/kassa";
++import { PackingKioskRoute } from "@/routes/kds/packing";
++import { KitchenSpeedRoute } from "@/routes/kitchen/speed";
+ import { PaymentPageRoute } from "@/routes/payment-page";
+ import { WarehouseInvoicesRoute } from "@/routes/warehouse";
+ import { LoginRoute } from "@/routes/login";
+@@ -447,6 +449,16 @@ const routes: AppRoute[] = [
+       { path: ":unknown", render: () => <KassaRoute /> },
+     ],
+   },
++  {
++    // Экран упаковки (КДС-лайт) — полноэкранный kiosk для iPad, без app-chrome.
++    path: "/kds/packing",
++    layout: false,
++    render: () => <PackingKioskRoute />,
++  },
++  {
++    path: "/kitchen/speed",
++    render: () => <KitchenSpeedRoute />,
++  },
+   {
+     path: "/payment-calendar",
+     render: () => <EmptyModule name="Платёжный календарь" />,
+diff --git a/apps/web/src/routes/settings.tsx b/apps/web/src/routes/settings.tsx
+index acb6c2cf..71955f62 100644
+--- a/apps/web/src/routes/settings.tsx
++++ b/apps/web/src/routes/settings.tsx
+@@ -80,7 +80,6 @@ const CATEGORY_ORDER = [
+   "balance",
+   "fixed_assets",
+   "dz_kz",
+-  "kassa",
+ ];
+ 
+ const CATEGORY_META: Record<string, CategoryMeta> = {
+@@ -112,9 +111,9 @@ const CATEGORY_META: Record<string, CategoryMeta> = {
+     label: "Учёт ДЗ/КЗ",
+     description: "Правила контроля дебиторской и кредиторской задолженности.",
+   },
+-  kassa: {
+-    label: "Касса",
+-    description: "Параметры модуля Касса: чеки местного закупа и опции их создания.",
++  kitchen: {
++    label: "Кухня (КДС)",
++    description: "Пороги самонуджа упаковки, горизонт предзаказа и параметры iikoCloud.",
+   },
+ };
+ 
