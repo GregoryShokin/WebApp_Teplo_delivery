@@ -1566,6 +1566,7 @@ function AuditDetail({
   const snapshot = audit.computation_snapshot;
   const groups = snapshot?.groups ?? {};
   const penalties = snapshot?.employee_penalties ?? [];
+  const prepaidRevisionCharges = snapshot?.prepaid_revision_charges ?? [];
   const recipientRows: InventoryEmployeeRecipient[] = snapshot?.employee_recipients?.length
     ? snapshot.employee_recipients
     : penalties.map((penalty) => ({
@@ -1881,6 +1882,25 @@ function AuditDetail({
           {snapshot ? (
             <>
               <GroupSnapshotTable groups={groups} />
+              {prepaidRevisionCharges.length ? (
+                <div className="rounded-md border px-3 py-2 text-sm">
+                  <div className="mb-2 font-medium">Изъято с уволенных</div>
+                  <div className="space-y-1">
+                    {prepaidRevisionCharges.map((charge) => (
+                      <div
+                        className="flex flex-wrap items-center gap-x-2 gap-y-1"
+                        key={`${charge.employee_id}-${charge.work_date}`}
+                      >
+                        <span>{charge.full_name}</span>
+                        <span className="text-muted-foreground">·</span>
+                        <span className="tabular-nums">{formatMoney(charge.amount)}</span>
+                        <span className="text-muted-foreground">·</span>
+                        <span className="tabular-nums">{formatDate(charge.work_date)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <PanelTitle title="Распределение" />
               {recipientRows.length ? (
                 <div className="rounded-md border">
@@ -2504,7 +2524,13 @@ function GroupSnapshotTable({ groups }: { groups: Record<string, InventoryGroupS
                   %
                 </td>
                 <td className="p-3 text-right font-medium tabular-nums">
-                  {formatMoney(snapshot.penalty ?? "0")}
+                  <div>{formatMoney(snapshot.penalty ?? "0")}</div>
+                  {Number(snapshot.prepaid ?? 0) > 0 && snapshot.gross_penalty ? (
+                    <div className="mt-1 text-xs font-normal text-muted-foreground">
+                      было {formatMoney(snapshot.gross_penalty)} → стало{" "}
+                      {formatMoney(snapshot.penalty ?? "0")}
+                    </div>
+                  ) : null}
                 </td>
               </tr>
             );

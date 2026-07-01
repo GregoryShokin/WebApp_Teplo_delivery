@@ -1192,6 +1192,7 @@ export type InventoryComputationSnapshot = {
   employee_penalties?: InventoryEmployeePenalty[];
   employee_penalties_by_id?: Record<string, string>;
   employee_recipients?: InventoryEmployeeRecipient[];
+  prepaid_revision_charges?: InventoryPrepaidRevisionCharge[];
   skipped_items?: Array<{ item_id?: string; reason?: string }>;
   swap_groups?: InventorySwapGroupSummary[];
   warnings?: string[];
@@ -1205,6 +1206,8 @@ export type InventoryGroupSnapshot = {
   rate_reason?: string;
   rate_percent?: string;
   penalty?: string;
+  gross_penalty?: string;
+  prepaid?: string;
   threshold?: string;
   items?: Array<Record<string, unknown>>;
   recipients?: Record<
@@ -1224,6 +1227,14 @@ export type InventoryEmployeeRecipient = InventoryEmployeePenalty & {
   recipient_group?: "chefs" | "admins" | string;
   is_excluded?: boolean;
   exclusion_reason?: string | null;
+};
+
+export type InventoryPrepaidRevisionCharge = {
+  employee_id: string;
+  full_name: string;
+  amount: string;
+  work_date: string;
+  group: "chefs" | "admins" | string;
 };
 
 export type InventoryComputation = {

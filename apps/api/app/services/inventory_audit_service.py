@@ -36,7 +36,9 @@ from app.services.payroll_adjustment_service import (
 
 ALLOCATION_GROUPS = {"chefs", "common", "admins"}
 INVENTORY_ADJUSTMENT_CATEGORY_CODE = "inventory_shortage"
+MANUAL_INVENTORY_ADJUSTMENT_CATEGORY_CODE = "audit_penalty"
 INVENTORY_ADJUSTMENT_COMMENT_PREFIX = "Недостача по ревизии"
+DEFERRED_INVENTORY_ADJUSTMENT_COMMENT_PREFIX = "Распределённый штраф ревизии"
 SWAP_GROUP_MAX_LENGTH = 64
 DEFAULT_SETTINGS = {
     "inventory.threshold_zero": Decimal("5000"),
@@ -938,6 +940,7 @@ def build_penalty_computation(
     admins: list[Any],
     employee_exclusions: dict[uuid.UUID, str] | None = None,
     item_exclusions: dict[uuid.UUID, str] | None = None,
+    prepaid_charges: list[dict] | None = None,
 ) -> PenaltyComputation:
     effective_settings = {**DEFAULT_SETTINGS, **(settings or {})}
     exclusions = employee_exclusions or {}
@@ -949,6 +952,116 @@ def build_penalty_computation(
     swap_groups = groups.pop("_swap_groups", [])
     employee_penalties: dict[uuid.UUID, Decimal] = defaultdict(lambda: Decimal("0"))
     warnings: list[str] = []
+
+    prepaid_by_id: dict[uuid.UUID, Decimal] = defaultdict(lambda: Decimal("0"))
+    prepaid_group_by_id: dict[uuid.UUID, str] = {}
+    prepaid_name_by_id: dict[uuid.UUID, str] = {}
+    prepaid_position_by_id: dict[uuid.UUID, str] = {}
+    prepaid_work_dates: dict[uuid.UUID, date] = {}
+    for charge in prepaid_charges or []:
+        raw_employee_id = charge.get("employee_id")
+        if raw_employee_id is None:
+            continue
+        employee_id = (
+            raw_employee_id
+            if isinstance(raw_employee_id, uuid.UUID)
+            else uuid.UUID(str(raw_employee_id))
+        )
+        amount = _money(charge.get("amount"))
+        if amount <= 0:
+            continue
+        prepaid_by_id[employee_id] += amount
+        full_name = str(charge.get("full_name") or "").strip()
+        if full_name:
+            prepaid_name_by_id.setdefault(employee_id, full_name)
+        position = str(charge.get("position") or "").strip()
+        if position:
+            prepaid_position_by_id.setdefault(employee_id, position)
+        group = str(charge.get("group") or "").strip()
+        if group not in {"chefs", "admins"}:
+            group = _manual_revision_charge_group(position)
+        if group in {"chefs", "admins"}:
+            prepaid_group_by_id.setdefault(employee_id, group)
+        work_date = charge.get("work_date")
+        if isinstance(work_date, datetime):
+            work_date = work_date.date()
+        if isinstance(work_date, str):
+            work_date = date.fromisoformat(work_date)
+        if isinstance(work_date, date):
+            existing = prepaid_work_dates.get(employee_id)
+            if existing is None or work_date < existing:
+                prepaid_work_dates[employee_id] = work_date
+
+    chef_ids = {employee.id for employee in included_chefs}
+    admin_ids = {employee.id for employee in included_admins}
+    for employee_id in prepaid_by_id:
+        if employee_id in chef_ids:
+            prepaid_group_by_id[employee_id] = "chefs"
+        elif employee_id in admin_ids:
+            prepaid_group_by_id[employee_id] = "admins"
+    valid_prepaid_ids = {
+        employee_id
+        for employee_id in prepaid_by_id
+        if prepaid_group_by_id.get(employee_id) in {"chefs", "admins"}
+    }
+    prepaid_chefs = _money(
+        sum(
+            (
+                amount
+                for employee_id, amount in prepaid_by_id.items()
+                if prepaid_group_by_id.get(employee_id) == "chefs"
+            ),
+            Decimal("0"),
+        )
+    )
+    prepaid_admins = _money(
+        sum(
+            (
+                amount
+                for employee_id, amount in prepaid_by_id.items()
+                if prepaid_group_by_id.get(employee_id) == "admins"
+            ),
+            Decimal("0"),
+        )
+    )
+    prepayer_ids = valid_prepaid_ids & (chef_ids | admin_ids)
+    for _employee_id in sorted(set(prepaid_by_id) - valid_prepaid_ids, key=str):
+        warnings.append("Изъятие по уволенному без роли ревизии пропущено")
+
+    def prepaid_employee_name(employee_id: uuid.UUID) -> str:
+        name = _employee_name_by_id(employee_id, chefs, admins)
+        if name == str(employee_id):
+            return prepaid_name_by_id.get(employee_id, name)
+        return name
+
+    prepaid_revision_charge_rows = [
+        {
+            "employee_id": str(employee_id),
+            "full_name": prepaid_employee_name(employee_id),
+            "position": _employee_position_by_id(employee_id, chefs, admins)
+            or prepaid_position_by_id.get(employee_id),
+            "amount": decimal_string(prepaid_by_id[employee_id]),
+            "work_date": prepaid_work_dates[employee_id].isoformat(),
+            "group": prepaid_group_by_id[employee_id],
+        }
+        for employee_id in sorted(
+            valid_prepaid_ids,
+            key=prepaid_employee_name,
+        )
+        if employee_id in prepaid_work_dates
+    ]
+
+    included_chefs = [employee for employee in included_chefs if employee.id not in prepayer_ids]
+    included_admins = [employee for employee in included_admins if employee.id not in prepayer_ids]
+
+    for group_key, prepaid_amount in (
+        ("chefs", prepaid_chefs),
+        ("admins", prepaid_admins),
+    ):
+        gross = _decimal(groups[group_key]["penalty"])
+        groups[group_key]["gross_penalty"] = decimal_string(gross)
+        groups[group_key]["prepaid"] = decimal_string(prepaid_amount)
+        groups[group_key]["penalty"] = decimal_string(max(Decimal("0"), gross - prepaid_amount))
 
     _distribute_group(
         group_key="chefs",
@@ -1043,6 +1156,7 @@ def build_penalty_computation(
             for employee_id, amount in employee_penalties.items()
         },
         "employee_recipients": employee_recipient_rows,
+        "prepaid_revision_charges": prepaid_revision_charge_rows,
         "skipped_items": skipped_items,
         "swap_groups": swap_groups,
         "warnings": warnings,
@@ -1318,12 +1432,20 @@ async def _compute_penalties(
         period_start=period_start,
         period_end=period_end,
     )
+    penalty_work_date = effective_penalty_work_date(audit)
+    payout_period_start, payout_period_end, _payout = payroll_period_for_date(penalty_work_date)
+    prepaid_charges = await _load_prepaid_revision_charges(
+        session,
+        period_start=payout_period_start,
+        period_end=payout_period_end,
+    )
     computation = build_penalty_computation(
         audit=audit,
         items=audit.items,
         settings=settings,
         chefs=chefs,
         admins=admins,
+        prepaid_charges=prepaid_charges,
         employee_exclusions={
             exclusion.employee_id: exclusion.reason
             for exclusion in getattr(audit, "employee_exclusions", [])
@@ -1877,6 +1999,55 @@ async def _load_period_employees(
     ).all()
 
 
+async def _load_prepaid_revision_charges(
+    session: AsyncSession,
+    *,
+    period_start: date,
+    period_end: date,
+) -> list[dict]:
+    auto_comment = or_(
+        PayrollAdjustment.comment.like(f"{INVENTORY_ADJUSTMENT_COMMENT_PREFIX}%"),
+        PayrollAdjustment.comment.like(f"{DEFERRED_INVENTORY_ADJUSTMENT_COMMENT_PREFIX}%"),
+    )
+    rows = (
+        await session.execute(
+            select(
+                PayrollAdjustment.employee_id,
+                PayrollAdjustment.amount,
+                PayrollAdjustment.work_date,
+                PayrollAdjustment.comment,
+                Employee.full_name,
+                Employee.position,
+            )
+            .join(Employee, Employee.id == PayrollAdjustment.employee_id)
+            .join(
+                PayrollAdjustmentCategory,
+                PayrollAdjustmentCategory.id == PayrollAdjustment.category_id,
+            )
+            .where(
+                PayrollAdjustment.type == "penalty",
+                PayrollAdjustmentCategory.code == MANUAL_INVENTORY_ADJUSTMENT_CATEGORY_CODE,
+                PayrollAdjustment.work_date >= period_start,
+                PayrollAdjustment.work_date <= period_end,
+                or_(PayrollAdjustment.comment.is_(None), ~auto_comment),
+            )
+            .order_by(PayrollAdjustment.work_date, PayrollAdjustment.id)
+        )
+    ).all()
+    return [
+        {
+            "employee_id": row.employee_id,
+            "amount": _money(row.amount),
+            "work_date": row.work_date,
+            "comment": row.comment,
+            "full_name": row.full_name,
+            "position": row.position,
+            "group": _manual_revision_charge_group(row.position),
+        }
+        for row in rows
+    ]
+
+
 async def _get_or_create_inventory_category(
     session: AsyncSession,
 ) -> PayrollAdjustmentCategory:
@@ -2017,4 +2188,12 @@ def _employee_position_by_id(employee_id: uuid.UUID, *groups: list[Any]) -> str 
         for employee in group:
             if employee.id == employee_id:
                 return employee.position
+    return None
+
+
+def _manual_revision_charge_group(position: str | None) -> str | None:
+    if position == "Повар":
+        return "chefs"
+    if position == "Кассир":
+        return "admins"
     return None

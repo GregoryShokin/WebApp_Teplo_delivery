@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import select
 
 from app.api.deps import CurrentActor
 from app.api.v1.routes import inventory as inventory_routes
@@ -18,6 +19,7 @@ from app.models import (
     AgentRun,
     AttendanceEntry,
     Employee,
+    EmployeePositionAssignment,
     InventoryAuditItemExclusion,
     InventoryAuditPosition,
     PayrollAdjustment,
@@ -329,6 +331,285 @@ def test_employee_exclusion_redistributes_penalty_to_remaining_recipients() -> N
     assert recipients["Beta"]["is_excluded"] is True
     assert recipients["Beta"]["amount"] == "0.00"
     assert recipients["Beta"]["exclusion_reason"] == "Не работал с инвентаризацией"
+
+
+def test_prepaid_revision_charge_reduces_pool_and_excludes_payer() -> None:
+    leaving = employee("Leaving Cook")
+    alpha = employee("Alpha")
+    beta = employee("Beta")
+
+    computation = compute(
+        [item("15000", "chefs")],
+        chefs=[leaving, alpha, beta],
+        prepaid_charges=[
+            {
+                "employee_id": leaving.id,
+                "amount": Decimal("500.00"),
+                "work_date": date(2026, 5, 26),
+                "comment": "Ручной выкуп ревизии",
+            }
+        ],
+    )
+
+    assert computation.groups["chefs"]["gross_penalty"] == "7500.00"
+    assert computation.groups["chefs"]["prepaid"] == "500.00"
+    assert computation.groups["chefs"]["penalty"] == "7000.00"
+    assert computation.employee_penalties == {
+        alpha.id: Decimal("3500.00"),
+        beta.id: Decimal("3500.00"),
+    }
+    assert leaving.id not in computation.employee_penalties
+    recipients = computation.groups["chefs"]["recipients"]["chefs"]["items"]
+    assert {row["full_name"] for row in recipients} == {"Alpha", "Beta"}
+    assert computation.snapshot["prepaid_revision_charges"] == [
+        {
+            "employee_id": str(leaving.id),
+            "full_name": "Leaving Cook",
+            "position": "Повар",
+            "amount": "500.00",
+            "work_date": "2026-05-26",
+            "group": "chefs",
+        }
+    ]
+
+
+def test_prepaid_revision_charge_clamps_pool_to_zero() -> None:
+    leaving = employee("Leaving Cook")
+
+    computation = compute(
+        [item("15000", "chefs")],
+        chefs=[leaving],
+        prepaid_charges=[
+            {
+                "employee_id": leaving.id,
+                "amount": Decimal("8000.00"),
+                "work_date": date(2026, 5, 26),
+                "comment": "Ручной выкуп ревизии",
+            }
+        ],
+    )
+
+    assert computation.groups["chefs"]["gross_penalty"] == "7500.00"
+    assert computation.groups["chefs"]["prepaid"] == "8000.00"
+    assert computation.groups["chefs"]["penalty"] == "0.00"
+    assert computation.employee_penalties == {}
+    assert computation.groups["chefs"]["recipients"] == {}
+    assert computation.warnings == []
+
+
+def test_prepaid_revision_charge_uses_period_role_membership() -> None:
+    chef = employee("Cook", "Повар")
+    leaving_admin = employee("Leaving Cashier", "Кассир")
+    active_admin = employee("Active Cashier", "Кассир")
+
+    computation = compute(
+        [item("15000", "chefs"), item("1000", "admins")],
+        chefs=[chef],
+        admins=[leaving_admin, active_admin],
+        prepaid_charges=[
+            {
+                "employee_id": leaving_admin.id,
+                "amount": Decimal("250.00"),
+                "work_date": date(2026, 5, 26),
+                "comment": "Ручной выкуп ревизии",
+            }
+        ],
+    )
+
+    assert computation.groups["chefs"]["gross_penalty"] == "7500.00"
+    assert computation.groups["chefs"]["prepaid"] == "0.00"
+    assert computation.groups["chefs"]["penalty"] == "7500.00"
+    assert computation.groups["admins"]["gross_penalty"] == "1000.00"
+    assert computation.groups["admins"]["prepaid"] == "250.00"
+    assert computation.groups["admins"]["penalty"] == "750.00"
+    assert computation.employee_penalties == {
+        chef.id: Decimal("7500.00"),
+        active_admin.id: Decimal("750.00"),
+    }
+    assert computation.snapshot["prepaid_revision_charges"][0]["group"] == "admins"
+
+
+def test_prepaid_revision_charge_from_former_cook_reduces_pool() -> None:
+    former_cook_id = uuid.uuid4()
+    alpha = employee("Alpha")
+    beta = employee("Beta")
+
+    computation = compute(
+        [item("15000", "chefs")],
+        chefs=[alpha, beta],
+        prepaid_charges=[
+            {
+                "employee_id": former_cook_id,
+                "full_name": "Валерий Кудря",
+                "position": "Повар",
+                "amount": Decimal("700.00"),
+                "work_date": date(2026, 6, 23),
+                "comment": "удержание след ревизия",
+            }
+        ],
+    )
+
+    assert computation.groups["chefs"]["gross_penalty"] == "7500.00"
+    assert computation.groups["chefs"]["prepaid"] == "700.00"
+    assert computation.groups["chefs"]["penalty"] == "6800.00"
+    assert computation.employee_penalties == {
+        alpha.id: Decimal("3400.00"),
+        beta.id: Decimal("3400.00"),
+    }
+    assert computation.snapshot["prepaid_revision_charges"] == [
+        {
+            "employee_id": str(former_cook_id),
+            "full_name": "Валерий Кудря",
+            "position": "Повар",
+            "amount": "700.00",
+            "work_date": "2026-06-23",
+            "group": "chefs",
+        }
+    ]
+    assert computation.warnings == []
+
+
+def test_build_penalty_computation_prepaid_default_none_keeps_previous_behavior() -> None:
+    cook = employee("Cook")
+
+    computation = build_penalty_computation(
+        audit=audit_obj(),
+        items=[item("7000", "chefs")],
+        settings=None,
+        chefs=[cook],
+        admins=[],
+    )
+
+    assert computation.groups["chefs"]["penalty"] == "2800.00"
+    assert computation.employee_penalties == {cook.id: Decimal("2800.00")}
+    assert computation.snapshot["prepaid_revision_charges"] == []
+
+
+@pytest.mark.asyncio
+async def test_load_prepaid_revision_charges_uses_manual_revision_category(
+    async_session_factory: Any,
+) -> None:
+    async with async_session_factory() as session:
+        employee_row = Employee(
+            id=uuid.uuid4(),
+            full_name="Manual Cook",
+            iiko_id=f"iiko-{uuid.uuid4()}",
+            category="category_2",
+            status="active",
+            is_senior=False,
+            is_deputy_senior=False,
+            pin_hash="hashed-pin",
+            pin_set_at=datetime(2026, 5, 1, tzinfo=UTC),
+            created_at=datetime(2026, 5, 1, tzinfo=UTC),
+            updated_at=datetime(2026, 5, 1, tzinfo=UTC),
+        )
+        session.add(employee_row)
+        session.add(
+            EmployeePositionAssignment(
+                id=uuid.uuid4(),
+                employee_id=employee_row.id,
+                position="Повар",
+                effective_from=date(2026, 5, 1),
+                effective_to=None,
+                comment="test",
+            )
+        )
+
+        async def category_for(
+            code: str,
+            display_name: str,
+            *,
+            sort_order: int,
+        ) -> PayrollAdjustmentCategory:
+            category = await session.scalar(
+                select(PayrollAdjustmentCategory).where(PayrollAdjustmentCategory.code == code)
+            )
+            if category is not None:
+                return category
+            category = PayrollAdjustmentCategory(
+                id=uuid.uuid4(),
+                type="penalty",
+                code=code,
+                display_name=display_name,
+                is_active=True,
+                sort_order=sort_order,
+            )
+            session.add(category)
+            await session.flush()
+            return category
+
+        manual_category = await category_for(
+            "audit_penalty",
+            "Штраф по ревизии",
+            sort_order=45,
+        )
+        inventory_category = await inventory_audit_service._get_or_create_inventory_category(
+            session
+        )
+        deferred_category = await category_for(
+            "audit_deferred",
+            "Распределённый штраф ревизии",
+            sort_order=55,
+        )
+        session.add_all(
+            [
+                PayrollAdjustment(
+                    id=uuid.uuid4(),
+                    employee_id=employee_row.id,
+                    work_date=date(2026, 6, 15),
+                    type="penalty",
+                    category_id=manual_category.id,
+                    amount=Decimal("500.00"),
+                    comment="Ручной выкуп ревизии",
+                ),
+                PayrollAdjustment(
+                    id=uuid.uuid4(),
+                    employee_id=employee_row.id,
+                    work_date=date(2026, 6, 15),
+                    type="penalty",
+                    category_id=inventory_category.id,
+                    amount=Decimal("700.00"),
+                    comment="Ручная строка в системной категории",
+                ),
+                PayrollAdjustment(
+                    id=uuid.uuid4(),
+                    employee_id=employee_row.id,
+                    work_date=date(2026, 6, 15),
+                    type="penalty",
+                    category_id=deferred_category.id,
+                    amount=Decimal("900.00"),
+                    comment="Распределённый штраф ревизии 2026-06-08, доля 1/4",
+                ),
+                PayrollAdjustment(
+                    id=uuid.uuid4(),
+                    employee_id=employee_row.id,
+                    work_date=date(2026, 6, 22),
+                    type="penalty",
+                    category_id=manual_category.id,
+                    amount=Decimal("300.00"),
+                    comment="Ручной выкуп вне периода",
+                ),
+            ]
+        )
+        await session.flush()
+
+        rows = await inventory_audit_service._load_prepaid_revision_charges(
+            session,
+            period_start=date(2026, 6, 9),
+            period_end=date(2026, 6, 15),
+        )
+
+    assert rows == [
+        {
+            "employee_id": employee_row.id,
+            "amount": Decimal("500.00"),
+            "work_date": date(2026, 6, 15),
+            "comment": "Ручной выкуп ревизии",
+            "full_name": "Manual Cook",
+            "position": "Повар",
+            "group": "chefs",
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -1763,6 +2044,7 @@ def compute(
     settings: dict[str, Decimal] | None = None,
     employee_exclusions: dict[uuid.UUID, str] | None = None,
     item_exclusions: dict[uuid.UUID, str] | None = None,
+    prepaid_charges: list[dict] | None = None,
 ):
     return build_penalty_computation(
         audit=audit_obj(),
@@ -1772,6 +2054,7 @@ def compute(
         admins=admins or [],
         employee_exclusions=employee_exclusions,
         item_exclusions=item_exclusions,
+        prepaid_charges=prepaid_charges,
     )
 
 
@@ -2125,12 +2408,25 @@ def install_item_exclusion_fakes(
     ) -> list[Any]:
         return []
 
+    async def fake_load_prepaid_revision_charges(
+        _session: Any,
+        *,
+        period_start: date,
+        period_end: date,
+    ) -> list[dict]:
+        return []
+
     monkeypatch.setattr(inventory_audit_service, "_load_audit_or_404", fake_load_audit)
     monkeypatch.setattr(inventory_audit_service, "_inventory_settings", fake_inventory_settings)
     monkeypatch.setattr(
         inventory_audit_service,
         "_load_period_employees",
         fake_load_period_employees,
+    )
+    monkeypatch.setattr(
+        inventory_audit_service,
+        "_load_prepaid_revision_charges",
+        fake_load_prepaid_revision_charges,
     )
 
 
