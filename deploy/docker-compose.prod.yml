@@ -45,6 +45,8 @@ services:
       dockerfile: Dockerfile
     container_name: teplo-scheduler
     command: python -m app.scheduler_runner
+    healthcheck:
+      disable: true
     restart: always
     env_file:
       - ./.env.prod
