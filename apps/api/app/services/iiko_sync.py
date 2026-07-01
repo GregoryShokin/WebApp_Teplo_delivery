@@ -243,7 +243,11 @@ async def _load_source_credential_env(session: AsyncSession) -> None:
         return
 
     for key, value in payload.items():
-        if isinstance(value, str) and key.startswith("IIKO_SERVER_") and not os.environ.get(key):
+        if (
+            isinstance(value, str)
+            and key.startswith(("IIKO_SERVER_", "IIKO_CLOUD_"))
+            and not os.environ.get(key)
+        ):
             os.environ[key] = value
 
 

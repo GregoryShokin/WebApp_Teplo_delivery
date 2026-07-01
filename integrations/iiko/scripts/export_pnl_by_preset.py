@@ -8,6 +8,7 @@ Secrets are loaded from .env/ENV and are never printed or written to outputs.
 
 from __future__ import annotations
 
+import argparse
 import calendar
 import csv
 import datetime as dt
@@ -47,7 +48,7 @@ PERIODS: list[tuple[dt.date, dt.date]] = [
     (dt.date(2026, 2, 1), dt.date(2026, 2, 28)),
     (dt.date(2026, 3, 1), dt.date(2026, 3, 31)),
     (dt.date(2026, 4, 1), dt.date(2026, 4, 30)),
-    (dt.date(2026, 5, 1), dt.date(2026, 5, 17)),
+    (dt.date(2026, 5, 1), dt.date(2026, 5, 31)),
 ]
 
 CSV_FIELDS = [
@@ -67,6 +68,46 @@ def period_label(start: dt.date, end: dt.date) -> str:
     if full_month:
         return f"{start.year:04d}-{start.month:02d}"
     return f"{start.isoformat()}_{end.isoformat()}"
+
+
+def parse_month_period(value: str) -> tuple[dt.date, dt.date]:
+    match = re.fullmatch(r"(\d{4})-(\d{2})", value.strip())
+    if not match:
+        raise argparse.ArgumentTypeError("month must be YYYY-MM")
+    year = int(match.group(1))
+    month = int(match.group(2))
+    if not 1 <= month <= 12:
+        raise argparse.ArgumentTypeError("month must be between 01 and 12")
+    last_day = calendar.monthrange(year, month)[1]
+    return dt.date(year, month, 1), dt.date(year, month, last_day)
+
+
+def assert_full_month(start: dt.date, end: dt.date) -> None:
+    last_day = calendar.monthrange(start.year, start.month)[1]
+    expected_end = dt.date(start.year, start.month, last_day)
+    if start.day != 1 or end != expected_end:
+        raise SystemExit(
+            f"Refusing non-full-month period {start.isoformat()}..{end.isoformat()}; "
+            "OPIU requires a full calendar month."
+        )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Read-only full-month export of the iiko P&L-by-warehouses preset.")
+    parser.add_argument(
+        "--month",
+        action="append",
+        type=parse_month_period,
+        help="Full calendar month to export, in YYYY-MM format. Can be repeated. Defaults to documented months.",
+    )
+    return parser.parse_args()
+
+
+def requested_periods(args: argparse.Namespace) -> list[tuple[dt.date, dt.date]]:
+    periods = args.month or PERIODS
+    for start, end in periods:
+        assert_full_month(start, end)
+    return periods
 
 
 def money_decimal(value: Any) -> Decimal:
@@ -211,9 +252,9 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def write_report(rows: list[dict[str, Any]], manifest: list[dict[str, Any]]) -> None:
+def write_report(rows: list[dict[str, Any]], manifest: list[dict[str, Any]], periods: list[tuple[dt.date, dt.date]]) -> None:
     stats = aggregate(rows)
-    labels = [period_label(start, end) for start, end in PERIODS]
+    labels = [period_label(start, end) for start, end in periods]
     raw_files = [
         entry["file"]
         for entry in manifest
@@ -223,7 +264,7 @@ def write_report(rows: list[dict[str, Any]], manifest: list[dict[str, Any]]) -> 
     lines: list[str] = [
         "# iiko P&L preset export",
         "",
-        "Дата выгрузки: 2026-05-18.",
+        f"Дата выгрузки: {dt.date.today().isoformat()}.",
         "",
         "Режим: read-only. Выполнены только GET-запросы к `byPresetId`; авторизация через `POST /auth` возможна только при истекшем токене. Google Sheets, iiko-данные и настройки не изменялись.",
         "",
@@ -245,7 +286,7 @@ def write_report(rows: list[dict[str, Any]], manifest: list[dict[str, Any]]) -> 
         "| --- | --- | ---: | --- |",
     ]
 
-    for start, end in PERIODS:
+    for start, end in periods:
         label = period_label(start, end)
         stores = ", ".join(sorted(stats["stores_by_period"].get(label, set()))) or "-"
         lines.append(
@@ -313,12 +354,14 @@ def write_report(rows: list[dict[str, Any]], manifest: list[dict[str, Any]]) -> 
 
 
 def main() -> int:
+    args = parse_args()
+    periods = requested_periods(args)
     load_local_env()
     client = IikoClient()
     manifest: list[dict[str, Any]] = []
     all_rows: list[dict[str, Any]] = []
 
-    for start, end in PERIODS:
+    for start, end in periods:
         try:
             rows = fetch_period(client, manifest, start, end)
         except (IikoHTTPError, TimeoutError, OSError, RuntimeError) as exc:
@@ -354,7 +397,7 @@ def main() -> int:
 
     normalized = normalize_rows(all_rows)
     write_csv(OUTPUT_CSV, normalized)
-    write_report(normalized, manifest)
+    write_report(normalized, manifest, periods)
     write_json(RAW_DIR / "manifest.json", manifest)
     print(f"wrote {rel(OUTPUT_CSV)}: {len(normalized)} rows")
     print(f"wrote {rel(OUTPUT_REPORT)}")

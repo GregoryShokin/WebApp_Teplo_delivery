@@ -194,6 +194,63 @@ async def test_inn_mismatch_not_linked(
         assert await _cashflow_count(session) == 1
 
 
+async def test_brand_group_inn_mismatch_links_prebooked_payment(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """One supplier brand can pay through another legal entity: Амай = ТОРА + Скачкова.
+
+    The payment-status webhook/polling prebooks the invoice's DDS expense on the invoice
+    counterparty. The later bank statement can carry a different receiver INN from the
+    same brand group; it should claim the prebooked row, not leave a duplicate review row.
+    """
+    async with async_session_factory() as session:
+        account = await make_account(session)
+        wallet = await make_wallet(
+            session, name="T-Bank", wallet_type="bank", account_id=account.id
+        )
+        await make_expense_article(session)
+        tora = await make_counterparty(
+            session, name='ООО "ТОРА"', inn="7700000001", brand_group="Амай"
+        )
+        skachkova = await make_counterparty(
+            session,
+            name="ИП Скачкова Эльвира Махамаджановна",
+            inn="770000000002",
+            brand_group="Амай",
+        )
+        invoice = await make_invoice(
+            session, counterparty_id=tora.id, amount="3561.60", number="DX-1"
+        )
+        await session.commit()
+
+        await pay_invoice_from_wallet(
+            session,
+            invoice_id=invoice.id,
+            wallet_id=wallet.id,
+            amount=Decimal("3561.60"),
+            operation_date=PAY_DATE,
+            actor_user_id=None,
+        )
+        prebooked = await session.scalar(select(CashflowTransaction))
+
+        op = await make_bank_operation(
+            session,
+            amount="3561.60",
+            direction="out",
+            inn=skachkova.inn,
+            name=skachkova.name,
+            account_id=account.id,
+            operation_date=PAY_DATE,
+        )
+        op.payment_purpose = 'Оплата поставщику ООО "ТОРА" по счетам DX-1'
+        result = await run_classification_rules(session, [op])
+
+        assert result.classified == 1
+        assert op.cashflow_transaction_id == prebooked.id
+        assert op.classification_status == "classified"
+        assert await _cashflow_count(session) == 1
+
+
 async def test_date_outside_window_not_linked(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

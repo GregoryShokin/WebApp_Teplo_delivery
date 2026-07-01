@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -185,6 +185,9 @@ async def list_journal(
     date_from: Annotated[date | None, Query(alias="from")] = None,
     date_to: Annotated[date | None, Query(alias="to")] = None,
     direction: Literal["in", "out"] | None = None,
+    wallet_id: UUID | None = None,
+    article_id: UUID | None = None,
+    counterparty_id: UUID | None = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict[str, object]:
@@ -212,6 +215,36 @@ async def list_journal(
         cf_conditions.append(CashflowTransaction.direction == direction)
         op_conditions.append(BankOperation.direction == direction)
         transfer_conditions.append(BankOperation.direction == direction)
+    if wallet_id is not None:
+        cf_conditions.append(CashflowTransaction.wallet_id == wallet_id)
+        wallet = await session.get(Wallet, wallet_id)
+        if wallet is not None and wallet.account_id is not None:
+            op_conditions.append(BankOperation.account_id == wallet.account_id)
+            transfer_conditions.append(BankOperation.account_id == wallet.account_id)
+        else:
+            op_conditions.append(false())
+            transfer_conditions.append(false())
+    if article_id is not None:
+        cf_conditions.append(CashflowTransaction.article_id == article_id)
+        op_conditions.append(false())
+        transfer_conditions.append(false())
+    if counterparty_id is not None:
+        cf_conditions.append(CashflowTransaction.counterparty_id == counterparty_id)
+        counterparty = await session.get(Counterparty, counterparty_id)
+        if counterparty is None:
+            op_conditions.append(false())
+            transfer_conditions.append(false())
+        else:
+            raw_counterparty_conditions = [
+                func.lower(BankOperation.counterparty_name_raw) == counterparty.name.strip().lower()
+            ]
+            if counterparty.inn:
+                raw_counterparty_conditions.append(
+                    BankOperation.counterparty_inn_raw == counterparty.inn
+                )
+            raw_counterparty_match = or_(*raw_counterparty_conditions)
+            op_conditions.append(raw_counterparty_match)
+            transfer_conditions.append(raw_counterparty_match)
 
     marked_total = int(
         await session.scalar(
@@ -233,6 +266,17 @@ async def list_journal(
     )
 
     rows: list[dict[str, object]] = []
+    wallet_id_by_account_id: dict[UUID, UUID] = {}
+    if status in ("all", "unmarked", "transfers"):
+        wallet_id_by_account_id = {
+            account_id: wallet_id
+            for account_id, wallet_id in (
+                await session.execute(
+                    select(Wallet.account_id, Wallet.id).where(Wallet.account_id.is_not(None))
+                )
+            ).all()
+            if account_id is not None
+        }
     if status in ("all", "marked"):
         cashflow_list = (
             await session.scalars(select(CashflowTransaction).where(*cf_conditions))
@@ -302,7 +346,9 @@ async def list_journal(
                     "amount": _money(op.amount),
                     "article_id": None,
                     "counterparty_id": None,
-                    "wallet_id": None,
+                    "wallet_id": wallet_id_by_account_id.get(op.account_id)
+                    if op.account_id is not None
+                    else None,
                     "provider": op.provider,
                     "payment_purpose": op.payment_purpose,
                     "counterparty_name_raw": op.counterparty_name_raw,
@@ -325,7 +371,9 @@ async def list_journal(
                     "amount": _money(op.amount),
                     "article_id": None,
                     "counterparty_id": None,
-                    "wallet_id": None,
+                    "wallet_id": wallet_id_by_account_id.get(op.account_id)
+                    if op.account_id is not None
+                    else None,
                     "provider": op.provider,
                     "payment_purpose": op.payment_purpose,
                     "counterparty_name_raw": op.counterparty_name_raw,

@@ -17,6 +17,7 @@ from __future__ import annotations
 import calendar
 import csv
 import datetime as dt
+import argparse
 import json
 import re
 import time
@@ -68,7 +69,7 @@ PERIODS: list[tuple[dt.date, dt.date]] = [
     (dt.date(2026, 2, 1), dt.date(2026, 2, 28)),
     (dt.date(2026, 3, 1), dt.date(2026, 3, 31)),
     (dt.date(2026, 4, 1), dt.date(2026, 4, 30)),
-    (dt.date(2026, 5, 1), dt.date(2026, 5, 19)),
+    (dt.date(2026, 5, 1), dt.date(2026, 5, 31)),
 ]
 
 OPIU_DIRECTIONS = ["Роллы", "Пицца", "ГЦ", "Бар"]
@@ -101,6 +102,46 @@ def period_label(start: dt.date, end: dt.date) -> str:
     if start.day == 1 and start.month == end.month and start.year == end.year:
         return f"{start.year:04d}-{start.month:02d}"
     return f"{start.isoformat()}_{end.isoformat()}"
+
+
+def parse_month_period(value: str) -> tuple[dt.date, dt.date]:
+    match = re.fullmatch(r"(\d{4})-(\d{2})", value.strip())
+    if not match:
+        raise argparse.ArgumentTypeError("month must be YYYY-MM")
+    year = int(match.group(1))
+    month = int(match.group(2))
+    if month < 1 or month > 12:
+        raise argparse.ArgumentTypeError("month must be between 01 and 12")
+    last_day = calendar.monthrange(year, month)[1]
+    return dt.date(year, month, 1), dt.date(year, month, last_day)
+
+
+def assert_full_month(start: dt.date, end: dt.date) -> None:
+    last_day = calendar.monthrange(start.year, start.month)[1]
+    expected_end = dt.date(start.year, start.month, last_day)
+    if start.day != 1 or end != expected_end:
+        raise SystemExit(
+            f"Refusing non-full-month period {start.isoformat()}..{end.isoformat()}; "
+            "OPIU requires a full calendar month."
+        )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Export full-month iiko revenue/food cost by OPIU direction.")
+    parser.add_argument(
+        "--month",
+        action="append",
+        type=parse_month_period,
+        help="Full calendar month to export, in YYYY-MM format. Can be repeated. Defaults to documented months.",
+    )
+    return parser.parse_args()
+
+
+def requested_periods(args: argparse.Namespace) -> list[tuple[dt.date, dt.date]]:
+    periods = args.month or PERIODS
+    for start, end in periods:
+        assert_full_month(start, end)
+    return periods
 
 
 def safe_filename(value: str) -> str:
@@ -680,6 +721,7 @@ def report_direction_summary(pivot_rows: list[dict[str, Any]], metric: str, mont
 def write_report(
     *,
     grouping: str,
+    periods: list[tuple[dt.date, dt.date]],
     discovery: list[dict[str, Any]],
     columns: dict[str, Any],
     presets: list[dict[str, Any]],
@@ -785,15 +827,15 @@ def write_report(
             "",
             "Выручка без скидок:",
             "",
-            *report_direction_summary(pivot_rows, "revenue_without_discount", [period_label(start, end) for start, end in PERIODS]),
+            *report_direction_summary(pivot_rows, "revenue_without_discount", [period_label(start, end) for start, end in periods]),
             "",
             "Выручка со скидкой:",
             "",
-            *report_direction_summary(pivot_rows, "revenue_with_discount", [period_label(start, end) for start, end in PERIODS]),
+            *report_direction_summary(pivot_rows, "revenue_with_discount", [period_label(start, end) for start, end in periods]),
             "",
             "Food cost:",
             "",
-            *report_direction_summary(pivot_rows, "food_cost", [period_label(start, end) for start, end in PERIODS]),
+            *report_direction_summary(pivot_rows, "food_cost", [period_label(start, end) for start, end in periods]),
             "",
             "## Сравнение с iiko_monthly_gross_margin.csv",
             "",
@@ -864,7 +906,7 @@ def write_report(
             "",
             "1. Использовать этот processed-снимок как программный источник для финального P&L 2026 по выручке, скидкам и food cost.",
             "2. Если появятся unmapped-направления, запросить у владельца управленческий маппинг до сборки P&L.",
-            "3. После закрытия мая заменить MTD-период 2026-05-01 — 2026-05-19 на полный месяц отдельной выгрузкой.",
+            "3. Не использовать MTD/неполные периоды для ОПиУ; если полный месяц недоступен, строку нужно оставить незаполненной до свежей выгрузки.",
             "",
             "## Run manifest",
             "",
@@ -876,6 +918,8 @@ def write_report(
 
 
 def main() -> None:
+    args = parse_args()
+    periods = requested_periods(args)
     load_local_env()
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
@@ -888,7 +932,7 @@ def main() -> None:
     print(f"selected grouping={grouping}")
 
     monthly_rows: dict[str, list[dict[str, Any]]] = {}
-    for start, end in PERIODS:
+    for start, end in periods:
         month = period_label(start, end)
         rows = fetch_preset_period(
             client,
@@ -911,6 +955,7 @@ def main() -> None:
     write_existing_comparison(existing_comparison)
     write_report(
         grouping=grouping,
+        periods=periods,
         discovery=discovery,
         columns=columns,
         presets=presets,

@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -43,6 +45,9 @@ export function LedgerTab() {
   const [dateFrom, setDateFrom] = useState(isoDateDaysAgo(30));
   const [dateTo, setDateTo] = useState(toIsoDate(new Date()));
   const [direction, setDirection] = useState<"all" | "in" | "out">("all");
+  const [walletId, setWalletId] = useState("all");
+  const [articleId, setArticleId] = useState("all");
+  const [counterpartyId, setCounterpartyId] = useState("all");
   const [offset, setOffset] = useState(0);
   const [selectedRow, setSelectedRow] = useState<JournalRow | null>(null);
 
@@ -57,8 +62,18 @@ export function LedgerTab() {
   });
 
   const params: JournalQuery = useMemo(
-    () => ({ status, from: dateFrom, to: dateTo, direction, limit: LIMIT, offset }),
-    [status, dateFrom, dateTo, direction, offset],
+    () => ({
+      status,
+      from: dateFrom,
+      to: dateTo,
+      direction,
+      wallet_id: walletId,
+      article_id: articleId,
+      counterparty_id: counterpartyId,
+      limit: LIMIT,
+      offset,
+    }),
+    [articleId, counterpartyId, dateFrom, dateTo, direction, offset, status, walletId],
   );
   const journalQuery = useQuery({
     queryKey: ["dds", "journal", params],
@@ -70,9 +85,53 @@ export function LedgerTab() {
   const counterpartyById = new Map(
     (counterpartiesQuery.data ?? []).map((counterparty) => [counterparty.id, counterparty]),
   );
+  const walletOptions = useMemo<ComboboxOption[]>(
+    () => [
+      { value: "all", label: "Все счета" },
+      ...(walletsQuery.data ?? []).map((wallet) => ({
+        value: wallet.id,
+        label: wallet.name,
+        keywords: `${wallet.code} ${wallet.bank_code ?? ""}`,
+      })),
+    ],
+    [walletsQuery.data],
+  );
+  const articleOptions = useMemo<ComboboxOption[]>(
+    () => [
+      { value: "all", label: "Все статьи" },
+      ...(articlesQuery.data ?? []).map((article) => ({
+        value: article.id,
+        label: article.name,
+        keywords: article.code,
+      })),
+    ],
+    [articlesQuery.data],
+  );
+  const counterpartyOptions = useMemo<ComboboxOption[]>(
+    () => [
+      { value: "all", label: "Все контрагенты" },
+      ...(counterpartiesQuery.data ?? []).map((counterparty) => ({
+        value: counterparty.id,
+        label: counterparty.name,
+        keywords: counterparty.inn ?? "",
+      })),
+    ],
+    [counterpartiesQuery.data],
+  );
 
   function resetPage() {
     setOffset(0);
+  }
+
+  function clearFilters() {
+    setStatus("all");
+    setDateFrom(isoDateDaysAgo(30));
+    setDateTo(toIsoDate(new Date()));
+    setDirection("all");
+    setWalletId("all");
+    setArticleId("all");
+    setCounterpartyId("all");
+    resetPage();
   }
 
   const markedTotal = journalQuery.data?.marked_total ?? 0;
@@ -206,50 +265,101 @@ export function LedgerTab() {
         />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="grid gap-2">
-          <Label htmlFor="dds-journal-from">Дата с</Label>
-          <Input
-            id="dds-journal-from"
-            type="date"
-            value={dateFrom}
-            onChange={(event) => {
-              setDateFrom(event.target.value);
-              resetPage();
-            }}
-          />
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+        <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-2">
+            <Label htmlFor="dds-journal-from">Дата с</Label>
+            <Input
+              id="dds-journal-from"
+              type="date"
+              value={dateFrom}
+              onChange={(event) => {
+                setDateFrom(event.target.value);
+                resetPage();
+              }}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="dds-journal-to">Дата по</Label>
+            <Input
+              id="dds-journal-to"
+              type="date"
+              value={dateTo}
+              onChange={(event) => {
+                setDateTo(event.target.value);
+                resetPage();
+              }}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label>Направление</Label>
+            <Select
+              value={direction}
+              onValueChange={(value) => {
+                setDirection(value as "all" | "in" | "out");
+                resetPage();
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Любое</SelectItem>
+                <SelectItem value="in">Поступление</SelectItem>
+                <SelectItem value="out">Списание</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="dds-journal-wallet">Счёт</Label>
+            <Combobox
+              id="dds-journal-wallet"
+              options={walletOptions}
+              value={walletId}
+              onChange={(value) => {
+                setWalletId(value);
+                resetPage();
+              }}
+              placeholder="Все счета"
+              searchPlaceholder="Поиск счёта"
+              emptyMessage="Счета не найдены"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="dds-journal-article">Статья</Label>
+            <Combobox
+              id="dds-journal-article"
+              options={articleOptions}
+              value={articleId}
+              onChange={(value) => {
+                setArticleId(value);
+                resetPage();
+              }}
+              placeholder="Все статьи"
+              searchPlaceholder="Поиск статьи"
+              emptyMessage="Статьи не найдены"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="dds-journal-counterparty">Контрагент</Label>
+            <Combobox
+              id="dds-journal-counterparty"
+              options={counterpartyOptions}
+              value={counterpartyId}
+              onChange={(value) => {
+                setCounterpartyId(value);
+                resetPage();
+              }}
+              placeholder="Все контрагенты"
+              searchPlaceholder="Поиск по названию или ИНН"
+              emptyMessage="Контрагенты не найдены"
+            />
+          </div>
         </div>
-        <div className="grid gap-2">
-          <Label htmlFor="dds-journal-to">Дата по</Label>
-          <Input
-            id="dds-journal-to"
-            type="date"
-            value={dateTo}
-            onChange={(event) => {
-              setDateTo(event.target.value);
-              resetPage();
-            }}
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label>Направление</Label>
-          <Select
-            value={direction}
-            onValueChange={(value) => {
-              setDirection(value as "all" | "in" | "out");
-              resetPage();
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Любое</SelectItem>
-              <SelectItem value="in">Поступление</SelectItem>
-              <SelectItem value="out">Списание</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <Button className="w-fit gap-2" onClick={clearFilters} type="button" variant="outline">
+          <X size={16} aria-hidden="true" />
+          Сбросить
+        </Button>
       </div>
 
       <DataTable
