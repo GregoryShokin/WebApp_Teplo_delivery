@@ -189,3 +189,46 @@ def test_intra_batch_duplicate_operation_id_collapses(
 
     _run(_flow())
     assert _run(_count(async_session_factory)) == 1
+
+
+def test_different_operation_id_same_document_dedup(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """T-Банк присваивает РАЗНЫЕ operationId одной операции (вебхук vs повторный поллинг). Дедуп
+    по стабильному ключу (documentNumber+счёт+направление+сумма+дата) держит одну строку — баланс
+    не задваивается. Регресс прод-дублей гарант-фонда/tbank_main (июнь 2026)."""
+    acct = "40802810000000012345"
+
+    async def _flow() -> None:
+        async with async_session_factory() as session:
+            op = normalize_tbank_statement_row(_statement_row("opid-A"), acct, date.today())
+            await ingest_operations(session, provider="tbank", operations=[op])
+            await session.commit()
+        # Тот же документ (documentNumber=777), но НОВЫЙ operationId — поллинг переприсвоил.
+        async with async_session_factory() as session:
+            op = normalize_tbank_statement_row(_statement_row("opid-B"), acct, date.today())
+            await ingest_operations(session, provider="tbank", operations=[op])
+            await session.commit()
+
+    _run(_flow())
+    assert _run(_count(async_session_factory)) == 1  # дедуп по documentNumber, не задвоилось
+
+
+def test_same_document_opposite_direction_not_merged(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Встречные ноги (общий documentNumber, но разное направление) НЕ сливаются — иначе перевод
+    исчез бы. Направление входит в стабильный ключ дедупа."""
+    acct = "40802810000000012345"
+
+    async def _flow() -> None:
+        async with async_session_factory() as session:
+            in_op = normalize_tbank_statement_row(_statement_row("d-in"), acct, date.today())
+            out_row = _statement_row("d-out")
+            out_row["typeOfOperation"] = "Debit"
+            out_op = normalize_tbank_statement_row(out_row, acct, date.today())
+            await ingest_operations(session, provider="tbank", operations=[in_op, out_op])
+            await session.commit()
+
+    _run(_flow())
+    assert _run(_count(async_session_factory)) == 2  # обе ноги, разное направление

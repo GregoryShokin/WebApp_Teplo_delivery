@@ -505,9 +505,11 @@ async def ingest_operations(
     (``/webhooks/tbank/account-operation``). Дедуп по ``(provider,
     provider_operation_id)`` делает повторную доставку (поллинг после вебхука, дубль-фаер
     вебхука, перекрытие периодов выписки) идемпотентной — UPDATE вместо второй вставки,
-    баланс не задваивается. ``operationId`` T-Банка — универсальный и стабильный ключ
-    операции (одинаков у выписки и вебхука; проверка совпадения id вебхук↔выписка — в
-    песочнице, Фаза 5). Порядок шагов критичен и совпадает с прежним поведением поллинга:
+    баланс не задваивается. ⚠️ operationId T-Банка НЕ стабилен: банк присваивает РАЗНЫЕ
+    operationId одной и той же операции при вебхуке vs повторном поллинге выписки → дедуп только
+    по нему её не ловит (прод: гарант-фонд/tbank_main задваивались). Поэтому есть fallback-дедуп
+    по стабильному ключу выписки (document_number + счёт + направление + сумма + дата операции).
+    Порядок шагов критичен и совпадает с прежним поведением поллинга:
     upsert → ``sync_own_accounts`` (регистрирует новые счета и включает правило внутренних
     переводов) → (tbank) свод ручных пендинг-чеков Кассы ДО классификации →
     ``run_classification_rules`` (внутри парует внутренние переводы по уже сохранённым ногам).
@@ -527,10 +529,23 @@ async def ingest_operations(
     # операцию дважды — без in-memory карты два add дали бы IntegrityError на flush (строки
     # ещё не во flush, SELECT их не видит).
     seen: dict[str, BankOperation] = {}
+    # Стабильный ключ выписки на случай нестабильного operationId (см. docstring): один и тот же
+    # платёжный документ на одном счёте с тем же направлением/суммой/датой = та же операция.
+    # account_id+direction+amount в ключе, чтобы НЕ слить встречные ноги перевода (у них общий
+    # document_number, но разные счёт/направление).
+    seen_stable: dict[tuple, BankOperation] = {}
     for operation in operations:
         account = await _account_for_operation(session, provider, operation)
         account_id = account.id if account else None
+        stable_key = (
+            (account_id, operation.document_number, operation.direction,
+             operation.amount, operation.operation_date)
+            if operation.document_number
+            else None
+        )
         batch_row = seen.get(operation.provider_operation_id)
+        if batch_row is None and stable_key is not None:
+            batch_row = seen_stable.get(stable_key)
         if batch_row is not None:
             # Дубль в этом же батче — переприменяем поля, но НЕ двоим счётчики.
             _update_bank_operation(batch_row, operation, account_id)
@@ -541,6 +556,19 @@ async def ingest_operations(
                 BankOperation.provider_operation_id == operation.provider_operation_id,
             )
         )
+        # Fallback: тот же документ пришёл под НОВЫМ operationId (вебхук↔поллинг) → это дубль,
+        # обновляем существующую строку, а не вставляем вторую.
+        if existing is None and stable_key is not None:
+            existing = await session.scalar(
+                select(BankOperation).where(
+                    BankOperation.provider == provider,
+                    BankOperation.account_id == account_id,
+                    BankOperation.document_number == operation.document_number,
+                    BankOperation.direction == operation.direction,
+                    BankOperation.amount == operation.amount,
+                    BankOperation.operation_date == operation.operation_date,
+                )
+            )
         if existing is None:
             existing = _bank_operation_from_normalized(operation, account_id)
             session.add(existing)
@@ -550,6 +578,8 @@ async def ingest_operations(
             _update_bank_operation(existing, operation, account_id)
             updated += 1
         seen[operation.provider_operation_id] = existing
+        if stable_key is not None:
+            seen_stable[stable_key] = existing
 
     await session.flush()
     own_accounts_added = await sync_own_accounts(session, provider=provider)
