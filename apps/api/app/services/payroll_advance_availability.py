@@ -66,14 +66,27 @@ def _half_month_bounds(as_of: date) -> tuple[date, date]:
 
 
 async def _open_weekly_period(session: AsyncSession, as_of: date) -> PayrollPeriod | None:
-    return await session.scalar(
+    containing = await session.scalar(
         select(PayrollPeriod)
         .where(
             PayrollPeriod.period_type == "week",
+            PayrollPeriod.status != "finalized",
             PayrollPeriod.start_date <= as_of,
             PayrollPeriod.end_date >= as_of,
         )
         .order_by(PayrollPeriod.start_date.desc())
+        .limit(1)
+    )
+    if containing is not None:
+        return containing
+    return await session.scalar(
+        select(PayrollPeriod)
+        .where(
+            PayrollPeriod.period_type == "week",
+            PayrollPeriod.status != "finalized",
+            PayrollPeriod.payroll_date >= as_of,
+        )
+        .order_by(PayrollPeriod.payroll_date, PayrollPeriod.start_date)
         .limit(1)
     )
 
@@ -131,14 +144,15 @@ async def _production_earned(
     period = await _open_weekly_period(session, as_of)
     if period is None:
         return Decimal("0.00"), None, None, "Нет открытого недельного периода"
-    # Только уже загруженные явки ≤ as_of (без live-iiko). Процентный пул считается
-    # по всем сотрудникам этих дней, поэтому грузим явки периода целиком, усекая по дате.
+    earned_through = min(as_of, period.end_date)
+    # Только уже загруженные явки внутри рабочего периода (без live-iiko). В день выплаты
+    # as_of может быть позже end_date, но заработанное считаем только до конца недели.
     entries = list(
         (
             await session.scalars(
                 select(AttendanceEntry).where(
                     AttendanceEntry.period_id == period.id,
-                    AttendanceEntry.work_date <= as_of,
+                    AttendanceEntry.work_date <= earned_through,
                 )
             )
         ).all()
@@ -148,7 +162,7 @@ async def _production_earned(
     provisional = PayrollPeriod(
         period_type="week",
         start_date=period.start_date,
-        end_date=as_of,
+        end_date=earned_through,
         payroll_date=period.payroll_date,
         status="open",
     )

@@ -119,6 +119,36 @@ async def test_production_earned_sums_total_payable_and_truncates_entries(
         assert captured["entry_dates"] == [date(2026, 6, 4)]
 
 
+async def test_production_earned_uses_open_week_by_payroll_date(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    async with async_session_factory() as session:
+        cook = await _make_cook(session)
+        period = await _make_week(session)
+        session.add(_entry(cook.id, period.id, WEEK_END))
+        session.add(_entry(cook.id, period.id, date(2026, 6, 9)))  # день выплаты, вне недели
+        await session.commit()
+
+        captured: dict = {}
+
+        async def fake_calc(_session, provisional, _run_id, entries):
+            captured["period_end"] = provisional.end_date
+            captured["entry_dates"] = sorted(entry.work_date for entry in entries)
+            line = PayrollLine(employee_id=cook.id, role="Повар", total_payable=Decimal("3000"))
+            return PayrollCalculationResult(lines=[line], blocking_issues=[], summary={})
+
+        monkeypatch.setattr(avail, "calculate_payroll_lines", fake_calc)
+
+        result = await available_to_advance(session, cook, date(2026, 6, 9))
+        assert result.basis == "production"
+        assert result.earned_to_date == Decimal("3000.00")
+        assert result.available == Decimal("3000.00")
+        assert (result.period_start, result.period_end) == (WEEK_START, date(2026, 6, 9))
+        assert captured["period_end"] == WEEK_END
+        assert captured["entry_dates"] == [WEEK_END]
+
+
 async def test_production_earned_no_attendance_returns_note(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
