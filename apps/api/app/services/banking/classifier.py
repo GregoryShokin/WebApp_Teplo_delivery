@@ -15,6 +15,7 @@ from app.models import (
     CashflowTransaction,
     ClassificationRule,
     Counterparty,
+    CounterpartyPayableProfile,
     DdsArticle,
     OwnAccountsRegistry,
     ReconciliationCase,
@@ -439,9 +440,13 @@ async def _find_prebooked_payment(
         candidate_inn = await _transaction_counterparty_inn(session, candidate)
         if candidate_inn == op_inn:
             return candidate
+        if await _transaction_counterparty_shares_brand_group(session, candidate, op_inn):
+            return candidate
         if candidate_inn is None and fallback is None:
             fallback = candidate
-    # A candidate with a *different* known INN is never matched — only same-INN or unknown.
+    # A candidate with a *different* known INN is matched only through an explicit shared
+    # supplier brand group (e.g. Амай: ООО ТОРА + ИП Скачкова); otherwise only same-INN or
+    # unknown-INN candidates are safe.
     return fallback
 
 
@@ -454,6 +459,38 @@ async def _transaction_counterparty_inn(
         select(Counterparty.inn).where(Counterparty.id == transaction.counterparty_id)
     )
     return clean_digits(inn) or None
+
+
+async def _transaction_counterparty_shares_brand_group(
+    session: AsyncSession, transaction: CashflowTransaction, operation_inn: str
+) -> bool:
+    """prebooked-проводка и операция выписки — один поставщик под разными юрлицами (общая
+    ``CounterpartyPayableProfile.brand_group``). Кейс Амай: проводка на ООО «ТОРА», а деньги
+    ушли на ИП Скачкова — один бренд-поставщик, поэтому матч допустим несмотря на разные ИНН."""
+    if transaction.counterparty_id is None or not operation_inn:
+        return False
+    candidate_group = await session.scalar(
+        select(CounterpartyPayableProfile.brand_group).where(
+            CounterpartyPayableProfile.counterparty_id == transaction.counterparty_id
+        )
+    )
+    candidate_group_norm = (candidate_group or "").strip().casefold()
+    if not candidate_group_norm:
+        return False
+
+    rows = await session.execute(
+        select(Counterparty.inn, CounterpartyPayableProfile.brand_group).join(
+            CounterpartyPayableProfile,
+            CounterpartyPayableProfile.counterparty_id == Counterparty.id,
+        )
+    )
+    for inn, group in rows:
+        if (
+            (group or "").strip().casefold() == candidate_group_norm
+            and clean_digits(inn) == operation_inn
+        ):
+            return True
+    return False
 
 
 def _contains(value: str | None, pattern: str) -> bool:

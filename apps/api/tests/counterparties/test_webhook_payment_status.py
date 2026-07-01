@@ -1,4 +1,9 @@
-"""Webhook «Статус платежа» T-Банка: авторизация, сопоставление по provider_ref, гашение."""
+"""Webhook «Статус платежа» T-Банка: авторизация, сопоставление по provider_ref, гашение.
+
+Оплату черновика фиксирует ТОЛЬКО статус платёжного документа (по ``provider_ref``). Тело с
+``operationId`` (операция по счёту) на этом URL игнорируется — не гасит черновик и не пишется
+в ДДС, чтобы выписка не задваивала статусную оплату.
+"""
 
 from __future__ import annotations
 
@@ -76,37 +81,32 @@ def test_webhook_is_idempotent(
     assert second.json()["draft_status"] == "paid"
 
 
-def test_webhook_account_operation_routed_to_ingest(
+def test_webhook_deleted_status_reverts_invoice_to_unpaid(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Тело с operationId (операция по счёту) на payment-status уходит в realtime-вливание
-    ДДС, а не в гашение черновика. Без accountNumber вливание отдаёт 422 (не теряем деньги
-    молча) — это доказывает, что роутинг пошёл в вливающий сток, а не вернул matched:false."""
-    _run(_seed(async_session_factory))
-    resp = client.post(
-        BASE,
-        json={
-            "operationId": "7ea7de7e-91b3-0059-a742-59a5e96a4d80",
-            "operationStatus": "transaction",
-            "typeOfOperation": "Credit",
-            "rubleAmount": "1000.0",
-        },
-    )
-    assert resp.status_code == 422, resp.text
+    """Статус DELETED (черновик отозван в банке) → накладная возвращается в «неоплачено»
+    (draft_id снят), черновик становится deleted. Деньги не двигались."""
+    draft_id, invoice_id = _run(_seed(async_session_factory))
+    resp = client.post(BASE, json={"paymentId": "pay-1", "status": "DELETED"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["draft_status"] == "deleted"
+
+    async def _check() -> tuple[str, object]:
+        async with async_session_factory() as session:
+            inv = await session.get(SupplierInvoice, invoice_id)
+            return inv.payment_status, inv.draft_id
+
+    inv_status, inv_draft_id = _run(_check())
+    assert inv_status != "paid"
+    assert inv_draft_id is None  # накладная снова доступна к оплате
 
 
 _PAYER_ACCOUNT = "40802810000000012345"
 
 
-def _debit_body(
-    operation_id: str,
-    *,
-    doc_number: str = "654321",
-    amount: str = "1000.00",
-    status: str = "Transaction",
-) -> dict:
-    """Расходная операция по счёту (формат выписки T-Банка) — так выглядит исполненная
-    оплата поставщику: банк возвращает наш ``documentNumber`` обратно в строке выписки."""
+def _debit_body(operation_id: str, *, doc_number: str = "654321", amount: str = "1000.00") -> dict:
+    """Расходная операция по счёту (формат выписки T-Банка). На статусный контур такое тело
+    приходит как выписка — раньше гасило черновик по documentNumber, теперь игнорируется."""
     return {
         "operationId": operation_id,
         "typeOfOperation": "Debit",
@@ -115,11 +115,8 @@ def _debit_body(
         "operationAmount": amount,
         "accountAmount": amount,
         "rubleAmount": amount,
-        "accountCurrencyDigitalCode": "643",
-        "operationStatus": status,
+        "operationStatus": "Transaction",
         "operationDate": "2026-06-25T10:00:00Z",
-        "trxnPostDate": "2026-06-25T10:00:00Z",
-        "authorizationDate": "2026-06-25T10:00:00Z",
         "payPurpose": "Оплата поставщику по счёту",
         "description": "Оплата поставщику",
         "payer": {"account": _PAYER_ACCOUNT, "name": "ИП Шокина Е.А."},
@@ -130,8 +127,7 @@ def _debit_body(
 async def _seed_op(
     factory, *, doc_number: str = "654321", amount: str = "1000.00"
 ) -> tuple[uuid.UUID, uuid.UUID]:
-    """Открытый черновик «банк по реквизитам» с накладной; в payload — наш documentNumber,
-    который банк вернёт в операции по счёту."""
+    """Открытый черновик «банк по реквизитам» с накладной; documentNumber в payload."""
     async with factory() as session:
         cp = await make_counterparty(session, name="Поставщик", inn="7700000000")
         draft = await make_draft(session, counterparty_id=cp.id, amount=amount)
@@ -143,16 +139,17 @@ async def _seed_op(
         return draft.id, inv.id
 
 
-def test_account_operation_settles_invoice_draft(
+def test_operation_like_body_ignored_not_settled(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Главный сценарий: расходная операция с нашим documentNumber гасит накладную из вебхука."""
+    """Операция по счёту (есть operationId) на статусном URL игнорируется, НЕ гасит черновик:
+    оплату фиксирует только статус платёжного документа. Регресс: раньше документ-матч гасил."""
     draft_id, invoice_id = _run(_seed_op(async_session_factory))
     resp = client.post(BASE, json=_debit_body("op-settle-1"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["ingested"] is True
-    assert body["settled_draft"] == str(draft_id)
+    assert body["ingested"] is False and body["settled_draft"] is None
+    assert body["reason"] == "account_operation_ignored"
 
     async def _check() -> tuple[str, str]:
         async with async_session_factory() as session:
@@ -161,62 +158,21 @@ def test_account_operation_settles_invoice_draft(
             return inv.payment_status, draft.status
 
     inv_status, draft_status = _run(_check())
-    assert inv_status == "paid"
-    assert draft_status == "paid"
+    # Черновик и накладная не двинулись — ждут статусный webhook платёжного документа.
+    assert inv_status != "paid"
+    assert draft_status in ("created", "updated")
 
 
-def test_account_operation_no_matching_draft_ingests_only(
+def test_operation_like_body_without_account_still_acked(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """documentNumber не совпадает ни с одним открытым черновиком → только вливание, без гашения."""
-    _run(_seed_op(async_session_factory, doc_number="654321"))
-    resp = client.post(BASE, json=_debit_body("op-nomatch-1", doc_number="999999"))
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["settled_draft"] is None
-
-
-def test_account_operation_amount_mismatch_left_to_poll(
-    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
-) -> None:
-    """Номер совпал, сумма нет (коллизия _document_number) → не гасим, оставляем поллингу."""
-    _run(_seed_op(async_session_factory, doc_number="654321", amount="1000.00"))
-    resp = client.post(BASE, json=_debit_body("op-amt-1", doc_number="654321", amount="2000.00"))
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["settled_draft"] is None
-
-
-def test_account_operation_settle_idempotent_on_refire(
-    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
-) -> None:
-    """Повторная доставка той же операции не задваивает гашение: вторая → черновик уже paid."""
-    from cp_helpers import allocated_total
-
-    draft_id, invoice_id = _run(_seed_op(async_session_factory))
-    first = client.post(BASE, json=_debit_body("op-idem-1"))
-    second = client.post(BASE, json=_debit_body("op-idem-1"))
-    assert first.json()["settled_draft"] == str(draft_id)
-    # Вторая: черновик уже paid (вне фильтра created/updated) → без второй аллокации.
-    assert second.json()["settled_draft"] is None
-
-    async def _alloc() -> object:
-        async with async_session_factory() as session:
-            return await allocated_total(session, invoice_id)
-
-    from decimal import Decimal
-
-    assert _run(_alloc()) == Decimal("1000.00")
-
-
-def test_account_operation_credit_does_not_settle(
-    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
-) -> None:
-    """Входящая операция (Credit) не гасит исходящий черновик, даже если documentNumber совпал."""
-    _run(_seed_op(async_session_factory, doc_number="654321"))
-    body = _debit_body("op-credit-1", doc_number="654321")
-    body["typeOfOperation"] = "Credit"
+    """Тело-операция без accountNumber тоже просто подтверждается (счёт больше не нужен —
+    в ДДС не пишем), 200 + reason=account_operation_ignored, без 422."""
+    body = _debit_body("op-nomatch-1", doc_number="999999")
+    del body["accountNumber"]
     resp = client.post(BASE, json=body)
     assert resp.status_code == 200, resp.text
-    assert resp.json()["settled_draft"] is None
+    assert resp.json()["reason"] == "account_operation_ignored"
 
 
 def test_webhook_token_enforced_when_configured(

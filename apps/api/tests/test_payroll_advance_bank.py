@@ -428,36 +428,22 @@ async def test_pay_reserve_from_safe_card_signals_disbursement(
     assert refreshed_advance.status == "issued"
 
 
-async def test_webhook_settles_advance_from_operation_with_op_date(
+async def test_advance_settled_by_payment_status(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Realtime-привязка: входящая операция по счёту со «своим» documentNumber доводит
-    advance-черновик до paid и датирует транзит ДАТОЙ ОПЕРАЦИИ (не «сегодня»)."""
-    from datetime import date
-
-    from app.api.v1.routes.webhooks import _settle_advance_draft_from_operation
-    from app.services.banking.base import NormalizedBankOperation
-    from app.services.banking.tbank import _document_number
+    """Advance-черновик доводится статусом платёжного документа (webhook по provider_ref):
+    при executed — транзит банк→Сейф + резерв Сейфа. Операции по счёту advance больше не
+    доводят (этот контур переведён на статусный webhook)."""
+    from app.services.payroll_advance_service import apply_advance_draft_status
 
     async with async_session_factory() as session:
         wallet = await _make_bank_wallet(session)
         advance = await _issue_bank_advance(session, wallet=wallet)
     draft = await _draft(async_session_factory, advance.id)
-    op_date = date(2026, 5, 4)  # заведомо не «сегодня»
-    op = NormalizedBankOperation(
-        provider="tbank",
-        provider_operation_id=f"op-{uuid.uuid4().hex}",
-        account_number=MOCK_PAYER_ACCOUNT,
-        operation_date=op_date,
-        direction="out",
-        amount=Decimal("10000.00"),
-        document_number=_document_number(draft.document_id),
-        raw_payload={},
-    )
     async with async_session_factory() as session:
-        settled = await _settle_advance_draft_from_operation(session, op)
+        status = await apply_advance_draft_status(session, draft=draft, raw_status="executed")
         await session.commit()
-    assert settled is not None
+    assert status == "paid"
 
     draft = await _draft(async_session_factory, advance.id)
     assert draft.status == "paid"
@@ -468,36 +454,3 @@ async def test_webhook_settles_advance_from_operation_with_op_date(
         source_id=advance.id,
     )
     assert len(legs) == 2
-    assert all(leg.operation_date == op_date for leg in legs)
-
-
-async def test_webhook_advance_settle_skips_amount_mismatch(
-    async_session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    """Тот же documentNumber, но другая сумма → не проводим (оставляем поллингу)."""
-    from datetime import date
-
-    from app.api.v1.routes.webhooks import _settle_advance_draft_from_operation
-    from app.services.banking.base import NormalizedBankOperation
-    from app.services.banking.tbank import _document_number
-
-    async with async_session_factory() as session:
-        wallet = await _make_bank_wallet(session)
-        advance = await _issue_bank_advance(session, wallet=wallet)
-    draft = await _draft(async_session_factory, advance.id)
-    op = NormalizedBankOperation(
-        provider="tbank",
-        provider_operation_id=f"op-{uuid.uuid4().hex}",
-        account_number=MOCK_PAYER_ACCOUNT,
-        operation_date=date(2026, 5, 4),
-        direction="out",
-        amount=Decimal("9999.00"),
-        document_number=_document_number(draft.document_id),
-        raw_payload={},
-    )
-    async with async_session_factory() as session:
-        settled = await _settle_advance_draft_from_operation(session, op)
-        await session.commit()
-    assert settled is None
-    draft = await _draft(async_session_factory, advance.id)
-    assert draft.status == "created"

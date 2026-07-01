@@ -49,21 +49,12 @@ IIKO_COURIER_JOB_RETRIES = 3
 SUPPORTED_BANK_PROVIDERS = ("sber", "tbank")
 
 
-@scheduler.scheduled_job(
-    "cron",
-    minute=0,
-    hour="*",
-    id="poll_banks",
-    max_instances=1,
-    coalesce=True,
-)
 async def poll_banks() -> None:
-    # Сверочный поллинг (раз в час, ВСЕ 7 дней). Первичный путь наполнения журнала ДДС
-    # для T-Банка — вебхук «Операция по счёту» (realtime); поллинг добирает потерянные банком
-    # события (ретрай-кап 5 попыток) и покрывает выходные, когда вебхук всё равно фаерит, а
-    # старое расписание пн-пт его не страховало. Дедуп в ingest_operations по operationId
-    # делает повторный проход уже принятой операции UPDATE'ом — баланс не задваивается.
-    # Sber вебхука не имеет и остаётся полностью на этом поллинге.
+    # РУЧНОЙ запуск. Автоматический polling банковской выписки отключён (снят
+    # @scheduler.scheduled_job): ДДС по банковским черновикам создаётся статусным webhook-ом
+    # платёжного документа (по provider_ref), а webhook-и «операция по счёту» в ДДС не
+    # пропускаются. Функция оставлена для ручной диагностики/разового добора выписки (в т.ч.
+    # Sber, у которого вебхука нет).
     for provider in _bank_sync_providers():
         await run_bank_sync_job(provider=provider)
 
@@ -87,20 +78,13 @@ async def escalate_pending_cheques() -> None:
         logger.info("Эскалация пендинг-чеков: %s новых кейсов «банк не передал»", created)
 
 
-@scheduler.scheduled_job(
-    "interval",
-    minutes=15,
-    id="poll_payment_statuses",
-    max_instances=1,
-    coalesce=True,
-)
 async def poll_payment_statuses() -> None:
-    """Сверочный добор статуса исходящих платежей. Основной путь гашения накладных — вебхук
-    «операция по счёту» (realtime, матч по documentNumber, см. webhooks._settle_invoice_draft_
-    from_operation); этот поллинг (каждые 15 мин) добирает потерянные/неоднозначные случаи, по
-    которым вебхук не сматчился, и ЛОВИТ УДАЛЕНИЕ черновика (статус DELETED → откат накладных в
-    «неоплачено») — удаление денег не двигает, операции по счёту нет, вебхук про него молчит.
-    payroll-черновики доводит только он."""
+    """РУЧНОЙ добор статуса исходящих платежей.
+
+    Автоматический scheduler отключён (снят @scheduler.scheduled_job): основной путь гашения
+    накладных/выплат — статусный webhook платёжного документа по ``provider_ref``. Функция
+    оставлена для ручного добора статусов, в т.ч. поимки удаления черновика в банке (статус
+    DELETED → откат накладных в «неоплачено»)."""
     async with AsyncSessionLocal() as session:
         await run_payment_status_poll(session)
 
