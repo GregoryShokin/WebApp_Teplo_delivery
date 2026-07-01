@@ -550,6 +550,7 @@ export type PayrollLine = {
   deduction: number;
   deposit_withholding: number;
   deposit_payout: number;
+  advance_issued: number;
   ndfl_deduction: number;
   total_payable: number;
   deposit_excluded_for_run: boolean;

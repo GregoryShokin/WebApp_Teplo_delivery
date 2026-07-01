@@ -895,6 +895,7 @@ def serialize_payroll_line(
         update={
             "deposit_withholding": money_float(components.get("deposit_withholding", 0)),
             "deposit_payout": payouts_by_employee.get(line.employee_id, 0),
+            "advance_issued": money_float(components.get("advance_issued", 0)),
             "ndfl_deduction": money_float(getattr(line, "ndfl_withheld", 0)),
             "payment_status": "paid" if is_paid else "pending",
             "amount_cash": money_float(payment.amount_cash) if payment is not None else 0,

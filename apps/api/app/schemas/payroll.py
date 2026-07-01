@@ -178,6 +178,7 @@ class PayrollLineRead(BaseModel):
     deduction: float
     deposit_withholding: float = 0
     deposit_payout: float = 0
+    advance_issued: float = 0
     ndfl_deduction: float = 0
     total_payable: float
     deposit_excluded_for_run: bool = False

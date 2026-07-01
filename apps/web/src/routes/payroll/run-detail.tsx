@@ -98,6 +98,7 @@ type SortKey =
   | "penalties_total"
   | "deposit_withholding"
   | "deposit_payout"
+  | "advance_issued"
   | "fund_accrual"
   | "ndfl_deduction"
   | "total";
@@ -881,6 +882,26 @@ function PayrollByEmployeeTab({
             ) : null}
           </div>
         );
+      },
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "advance_issued",
+      header: (
+        <SortButton
+          active={sortKey === "advance_issued"}
+          onClick={() => setSort("advance_issued")}
+        >
+          Авансы/займы
+        </SortButton>
+      ),
+      cell: (row) => {
+        const amount = row.line.advance_issued;
+        if (amount <= 0) {
+          return formatMoney(amount);
+        }
+        return <span className="text-emerald-700">+{formatMoney(amount)}</span>;
       },
       className: "text-right tabular-nums",
       headerClassName: "text-right",
@@ -1748,6 +1769,9 @@ function PayrollLineDrawer({ row, runStatus }: { row: PayrollLineRowModel; runSt
         {moneyValue(row.line.deposit_payout) > 0 ? (
           <ComponentValue label="Выдача депозита" value={formatMoney(row.line.deposit_payout)} />
         ) : null}
+        {moneyValue(row.line.advance_issued) > 0 ? (
+          <ComponentValue label="Авансы/займы" value={formatMoney(row.line.advance_issued)} />
+        ) : null}
         <ComponentValue label="К выплате" value={formatMoney(lineOnHand(row.line))} strong />
       </section>
 
@@ -2061,6 +2085,9 @@ function compareRows(
   if (sortKey === "deposit_payout") {
     return (left.line.deposit_payout - right.line.deposit_payout) * modifier;
   }
+  if (sortKey === "advance_issued") {
+    return (left.line.advance_issued - right.line.advance_issued) * modifier;
+  }
   if (sortKey === "fund_accrual") {
     return (left.line.fund_accrual - right.line.fund_accrual) * modifier;
   }
@@ -2073,8 +2100,8 @@ function compareRows(
   return left.employeeName.localeCompare(right.employeeName, "ru") * modifier;
 }
 
-// «На руки» по строке = ФОТ-нетто (total_payable) + выдача депозита (хранится отдельным полем,
-// в total_payable не входит). Депозит проводится поверх ЗП, поэтому в итог его сворачиваем.
+// «На руки» по строке = сумма ведомости (total_payable, включая аванс/заём через ведомость)
+// + выдача депозита (хранится отдельно и в total_payable не входит).
 function lineOnHand(line: PayrollLine) {
   return moneyValue(line.total_payable) + moneyValue(line.deposit_payout);
 }

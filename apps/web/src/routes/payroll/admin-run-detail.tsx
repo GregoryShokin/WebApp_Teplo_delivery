@@ -664,6 +664,19 @@ function AdminLinesTable({
       headerClassName: "text-right",
     },
     {
+      key: "advance_issued",
+      header: "Авансы/займы",
+      cell: (row) => {
+        const amount = Number(row.line.advance_issued ?? 0);
+        if (amount <= 0) {
+          return <span className="text-muted-foreground">0 ₽</span>;
+        }
+        return <span className="text-emerald-700">+{formatMoney(amount)}</span>;
+      },
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
       key: "total",
       header: "К выплате",
       cell: (row) => formatMoney(row.line.total_payable),
