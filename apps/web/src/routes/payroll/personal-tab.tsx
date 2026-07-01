@@ -24,6 +24,7 @@ import {
   apiErrorMessage,
   getEmployeePayrollReport,
   getEmployees,
+  type Employee,
   type PayrollPersonalReport,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -136,6 +137,15 @@ const KIND_ORDER: Record<OperationKind, number> = {
   ndfl: 12,
 };
 
+const PERSONAL_REPORT_POSITIONS = new Set(["Повар", "Кассир"]);
+const PERSONAL_REPORT_PAYROLL_ROLES = new Set([
+  "administrator",
+  "sushi",
+  "pizza",
+  "shawarma",
+  "prep",
+]);
+
 export function PayrollPersonalReportPageTab() {
   const defaultRange = useMemo(() => defaultPersonalReportRange(), []);
   const [employeeId, setEmployeeId] = useState("");
@@ -154,13 +164,11 @@ export function PayrollPersonalReportPageTab() {
     queryKey: ["employees", "payroll-personal-report"],
     queryFn: () => getEmployees({ status: "all" }),
   });
-  // Персональный отчёт ведётся только по поварам и кассирам.
+  // Персональный отчёт ведётся по поварам/кассирам и сотрудникам, которые выходят в этих ролях.
   const eligibleEmployees = useMemo(
     () =>
       (employeesQuery.data ?? [])
-        .filter(
-          (employee) => employee.position === "Повар" || employee.position === "Кассир",
-        )
+        .filter(hasPersonalReportRole)
         .sort((left, right) => left.full_name.localeCompare(right.full_name, "ru")),
     [employeesQuery.data],
   );
@@ -494,6 +502,15 @@ export function PayrollPersonalReportPageTab() {
         </div>
       ) : null}
     </section>
+  );
+}
+
+function hasPersonalReportRole(employee: Employee) {
+  if (PERSONAL_REPORT_POSITIONS.has(employee.position ?? "")) {
+    return true;
+  }
+  return employee.assignments.some((assignment) =>
+    PERSONAL_REPORT_PAYROLL_ROLES.has(assignment.payroll_role),
   );
 }
 
