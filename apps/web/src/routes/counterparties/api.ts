@@ -131,11 +131,18 @@ export async function getLedgerCategories(): Promise<LedgerCategory[]> {
 export async function getInvoices(params?: {
   status?: string;
   counterparty_id?: string;
+  // Мультивыбор поставщиков — CSV из UUID (как status).
+  counterparty_ids?: string;
   category_id?: string;
   in_draft?: boolean;
   direction?: string;
   relationship?: string;
   source?: string;
+  // Диапазон по дате накладной (ISO YYYY-MM-DD), включительно.
+  date_from?: string;
+  date_to?: string;
+  // Только «наши» накладные без документа в iiko (не отправлены / упал пуш).
+  not_in_iiko?: boolean;
 }): Promise<CounterpartyInvoice[]> {
   const response = await api.get<CounterpartyInvoice[]>(`${BASE}/invoices`, { params });
   return response.data;

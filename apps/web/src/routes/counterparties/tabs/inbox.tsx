@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Banknote, LoaderCircle, Plus, Send } from "lucide-react";
+import { Banknote, Check, LoaderCircle, Plus, Send, Store } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { DateRangePopover } from "@/components/ui/date-range-popover";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { apiErrorMessage } from "@/lib/api";
 
@@ -21,6 +23,7 @@ import {
   createDraft,
   getInvoices,
   getLedgerCategories,
+  getRegistry,
   type CounterpartyInvoice,
 } from "../api";
 import {
@@ -88,14 +91,38 @@ export function InboxTab({
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [payTarget, setPayTarget] = useState<CounterpartyInvoice | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  // Быстрые фильтры: период по дате накладной, мультивыбор поставщиков, «только не в iiko».
+  const [dateFrom, setDateFrom] = useState<string | null>(null);
+  const [dateTo, setDateTo] = useState<string | null>(null);
+  const [supplierIds, setSupplierIds] = useState<string[]>([]);
+  const [onlyNotIiko, setOnlyNotIiko] = useState(false);
 
   const isBarter = kind === "barter";
   const forcedRelationship = kind === "barter" ? "barter" : kind === "normal" ? "non_barter" : null;
   const effectiveRelationship = forcedRelationship ?? (relationship === ALL ? undefined : relationship);
 
   const categoriesQuery = useQuery({ queryKey: ["cp", "categories"], queryFn: getLedgerCategories });
+  const registryQuery = useQuery({ queryKey: ["cp", "registry", "filter"], queryFn: () => getRegistry() });
+  const supplierOptions = useMemo(
+    () =>
+      (registryQuery.data ?? [])
+        .map((item) => ({ value: item.counterparty_id, label: item.name, keywords: item.inn ?? "" }))
+        .sort((a, b) => a.label.localeCompare(b.label, "ru")),
+    [registryQuery.data],
+  );
+  const supplierCsv = supplierIds.join(",");
   const invoicesQuery = useQuery({
-    queryKey: ["cp", "invoices", categoryId, effectiveRelationship ?? "all", statusFilter],
+    queryKey: [
+      "cp",
+      "invoices",
+      categoryId,
+      effectiveRelationship ?? "all",
+      statusFilter,
+      dateFrom ?? "",
+      dateTo ?? "",
+      supplierCsv,
+      onlyNotIiko,
+    ],
     queryFn: () =>
       getInvoices({
         status: statusFilter,
@@ -103,9 +130,21 @@ export function InboxTab({
         relationship: effectiveRelationship,
         // Бартер двусторонний (займы нам + наши возвраты) — показываем обе стороны.
         direction: isBarter || relationship === "barter" ? "" : undefined,
+        date_from: dateFrom ?? undefined,
+        date_to: dateTo ?? undefined,
+        counterparty_ids: supplierCsv || undefined,
+        not_in_iiko: onlyNotIiko || undefined,
       }),
   });
   const invoices = invoicesQuery.data ?? [];
+  const hasActiveFilters = !!dateFrom || !!dateTo || supplierIds.length > 0 || onlyNotIiko;
+  function resetFilters() {
+    setDateFrom(null);
+    setDateTo(null);
+    setSupplierIds([]);
+    setOnlyNotIiko(false);
+    setSelected(new Set());
+  }
 
   const selectedInvoices = invoices.filter((item) => selected.has(item.id));
   const distinctCounterparties = new Set(selectedInvoices.map((item) => item.counterparty_id));
@@ -229,12 +268,9 @@ export function InboxTab({
       className: "text-right",
       cell: (invoice) => {
         // Статус отправки в iiko показываем только для созданных у нас накладных
-        // (вручную / Касса: накладная и чек). Накладные source=iiko пришли из iiko —
-        // статус неприменим. Сама отправка/переотправка живёт в диалоге «Детали».
-        const isOurs =
-          invoice.source === "manual" ||
-          invoice.source === "kassa_invoice" ||
-          invoice.source === "kassa_cheque";
+        // (вручную / Касса). Накладные source=iiko пришли из iiko — статус неприменим.
+        // Сама отправка/переотправка живёт в диалоге «Детали».
+        const isOurs = invoice.source === "manual" || invoice.source === "kassa_invoice";
         const pushBadge =
           isOurs && canOperate ? PUSH_BADGE[invoice.iiko_push_status] : undefined;
         return (
@@ -291,6 +327,53 @@ export function InboxTab({
             {segment.label}
           </Button>
         ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-2">
+        <DateRangePopover
+          from={dateFrom}
+          to={dateTo}
+          onChange={(nextFrom, nextTo) => {
+            setDateFrom(nextFrom);
+            setDateTo(nextTo);
+            setSelected(new Set());
+          }}
+        />
+        <MultiSelect
+          options={supplierOptions}
+          selected={supplierIds}
+          onChange={(next) => {
+            setSupplierIds(next);
+            setSelected(new Set());
+          }}
+          placeholder="Все поставщики"
+          searchPlaceholder="Поиск поставщика…"
+          emptyMessage="Поставщики не найдены"
+          icon={<Store className="h-4 w-4" aria-hidden="true" />}
+        />
+        {!isBarter ? (
+          <Button
+            type="button"
+            variant={onlyNotIiko ? "secondary" : "outline"}
+            className="h-9"
+            aria-pressed={onlyNotIiko}
+            onClick={() => {
+              setOnlyNotIiko((value) => !value);
+              setSelected(new Set());
+            }}
+          >
+            <Check size={15} aria-hidden="true" />
+            Только не в iiko
+          </Button>
+        ) : null}
+        {hasActiveFilters ? (
+          <Button type="button" variant="ghost" className="h-9" onClick={resetFilters}>
+            Сбросить
+          </Button>
+        ) : null}
+        <span className="ml-auto text-xs text-muted-foreground">
+          {invoicesQuery.isLoading ? "Загрузка…" : `Показано: ${invoices.length}`}
+        </span>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">

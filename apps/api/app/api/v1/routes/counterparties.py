@@ -437,21 +437,42 @@ async def get_invoices(
     direction: str = "payable",
     relationship: str | None = None,
     source: str | None = None,
+    # Мультивыбор поставщиков передаётся CSV-строкой UUID (как status) — надёжнее, чем
+    # массив в query, независимо от сериализации на клиенте.
+    counterparty_ids: Annotated[str | None, Query()] = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    not_in_iiko: bool | None = None,
 ) -> list[InvoiceRead]:
     statuses = (
         tuple(part.strip() for part in status_filter.split(",") if part.strip())
         if status_filter
         else None
     )
+    cp_ids: list[uuid.UUID] | None = None
+    if counterparty_ids:
+        try:
+            cp_ids = [
+                uuid.UUID(part.strip()) for part in counterparty_ids.split(",") if part.strip()
+            ] or None
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Некорректный counterparty_ids",
+            ) from exc
     items = await registry.list_invoices(
         session,
         statuses=statuses,
         counterparty_id=counterparty_id,
+        counterparty_ids=cp_ids,
         category_id=category_id,
         in_draft=in_draft,
         direction=direction or None,
         relationship=relationship,
         source=source,
+        date_from=date_from,
+        date_to=date_to,
+        not_in_iiko=not_in_iiko,
         # «Накладные» — производственный контур; почтовые счета (услуги) показываются только
         # на «Странице на оплату». Если явно просят source='email', не исключаем.
         exclude_sources=("email",) if source is None else None,

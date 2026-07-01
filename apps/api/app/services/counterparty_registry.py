@@ -192,12 +192,16 @@ async def list_invoices(
     *,
     statuses: Sequence[str] | None = None,
     counterparty_id: uuid.UUID | None = None,
+    counterparty_ids: Sequence[uuid.UUID] | None = None,
     category_id: uuid.UUID | None = None,
     in_draft: bool | None = None,
     direction: str | None = None,
     relationship: str | None = None,
     source: str | None = None,
     exclude_sources: Sequence[str] | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    not_in_iiko: bool | None = None,
 ) -> list[InvoiceItem]:
     query = (
         select(SupplierInvoice, Counterparty.name, CounterpartyPayableProfile.ledger_category_id)
@@ -220,6 +224,20 @@ async def list_invoices(
         query = query.where(SupplierInvoice.source.not_in(tuple(exclude_sources)))
     if counterparty_id is not None:
         query = query.where(SupplierInvoice.counterparty_id == counterparty_id)
+    if counterparty_ids:
+        query = query.where(SupplierInvoice.counterparty_id.in_(tuple(counterparty_ids)))
+    if date_from is not None:
+        query = query.where(SupplierInvoice.invoice_date >= date_from)
+    if date_to is not None:
+        query = query.where(SupplierInvoice.invoice_date <= date_to)
+    if not_in_iiko:
+        # «Не в iiko» = наши накладные (созданы вручную / из Кассы), для которых документ
+        # в iiko ещё не создан: never-pushed или упавший пуш. source=iiko по определению
+        # уже в iiko, а skipped — намеренно без iiko, поэтому оба сюда не попадают.
+        query = query.where(
+            SupplierInvoice.source.in_(("manual", "kassa_invoice")),
+            SupplierInvoice.iiko_push_status.in_(("not_pushed", "failed")),
+        )
     if category_id is not None:
         query = query.where(CounterpartyPayableProfile.ledger_category_id == category_id)
     if relationship == "non_barter":
