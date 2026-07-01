@@ -29,12 +29,14 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    CashflowTransaction,
     ChequeIikoPayout,
     CounterpartyAlias,
     DdsArticle,
     InvoiceLineItem,
     InvoicePaymentAllocation,
     SupplierInvoice,
+    Wallet,
 )
 from app.services.kassa.iiko_cashshift_sync import (
     _auth_token,
@@ -42,6 +44,7 @@ from app.services.kassa.iiko_cashshift_sync import (
     _iiko_get,
     _iiko_post,
 )
+from app.services.wallets import CASH_WALLET_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +240,47 @@ async def _post_one(
         report.failed += 1
 
 
+async def _bank_cash_totals(
+    session: AsyncSession, allocations: list[InvoicePaymentAllocation]
+) -> tuple[Decimal, Decimal]:
+    """Разнести оплату на банк (→ эквайринг) и наличные (→ Главная касса) для зеркала iiko.
+
+    ``bank``/``card_pending`` — всегда эквайринг. ``cash`` — по РЕАЛЬНОМУ кошельку списания:
+    банковский счёт (тип НЕ из ``CASH_WALLET_TYPES``, напр. оплата kassa-накладной банк-черновиком
+    списывается с р/с) → эквайринг; наличный кошелёк → Главная касса. Раньше любой ``cash`` шёл на
+    Главную кассу — банк-оплата Кассы ошибочно зеркалилась туда (баг накладной Карпова №4-2:
+    оплата с «Тинькофф · Рублёвый счёт» ушла в iiko на Главную кассу вместо эквайринга)."""
+    cash_cf_ids = [
+        a.cashflow_transaction_id
+        for a in allocations
+        if a.source_kind == "cash" and a.cashflow_transaction_id is not None
+    ]
+    wtype_by_cf: dict[uuid.UUID, str] = {}
+    if cash_cf_ids:
+        rows = await session.execute(
+            select(CashflowTransaction.id, Wallet.type)
+            .join(Wallet, Wallet.id == CashflowTransaction.wallet_id)
+            .where(CashflowTransaction.id.in_(cash_cf_ids))
+        )
+        wtype_by_cf = {cf_id: wtype for cf_id, wtype in rows.all()}
+    bank_total = Decimal("0.00")
+    cash_total = Decimal("0.00")
+    for a in allocations:
+        amount = _money(a.amount)
+        if a.source_kind in ("bank", "card_pending"):
+            bank_total += amount
+        elif a.source_kind == "cash":
+            wtype = wtype_by_cf.get(a.cashflow_transaction_id)
+            # cash-аллокация с БАНКОВСКОГО кошелька = банк-оплата → эквайринг; наличный кошелёк ИЛИ
+            # отсутствие cashflow-связи (wtype=None, напр. ручная allocate-cash) → Главная касса
+            # (безопасный дефолт: неизвестный источник считаем наличными, как было исторически).
+            if wtype is not None and wtype not in CASH_WALLET_TYPES:
+                bank_total += amount
+            else:
+                cash_total += amount
+    return bank_total, cash_total
+
+
 async def post_kassa_payment_to_iiko(
     session: AsyncSession, invoice_id: uuid.UUID, *, skip_supplier: bool = False
 ) -> ChequePayoutReport:
@@ -306,19 +350,9 @@ async def post_kassa_payment_to_iiko(
             )
         )
     ).all()
-    # ``card_pending`` — ручной пендинг-чек (банк ещё не подтвердил): для iiko это та же
-    # карточная доля (эквайринг), как и обычная 'bank'. Покупка физически уже совершена.
-    bank_total = sum(
-        (
-            _money(a.amount)
-            for a in allocations
-            if a.source_kind in ("bank", "card_pending")
-        ),
-        Decimal("0.00"),
-    )
-    cash_total = sum(
-        (_money(a.amount) for a in allocations if a.source_kind == "cash"), Decimal("0.00")
-    )
+    # Разнос банк(эквайринг)/наличные(Главная касса) по РЕАЛЬНОМУ кошельку: cash-аллокация с
+    # банк-счёта (оплата kassa-накладной банк-черновиком) идёт на эквайринг, не на Главную кассу.
+    bank_total, cash_total = await _bank_cash_totals(session, list(allocations))
     paid_total = _money(bank_total + cash_total)
     if paid_total <= 0:
         return report
@@ -407,13 +441,7 @@ async def compute_kassa_goods_split(
             )
         )
     ).all()
-    bank_total = sum(
-        (_money(a.amount) for a in allocations if a.source_kind in ("bank", "card_pending")),
-        Decimal("0.00"),
-    )
-    cash_total = sum(
-        (_money(a.amount) for a in allocations if a.source_kind == "cash"), Decimal("0.00")
-    )
+    bank_total, cash_total = await _bank_cash_totals(session, list(allocations))
     paid_total = _money(bank_total + cash_total)
     if paid_total <= 0:
         return None

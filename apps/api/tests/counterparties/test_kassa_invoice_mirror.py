@@ -12,12 +12,13 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from cp_helpers import make_counterparty, make_expense_article, make_invoice
+from cp_helpers import make_counterparty, make_expense_article, make_invoice, make_wallet
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.services.counterparty_iiko_payment as mod
 from app.models import (
+    CashflowTransaction,
     ChequeIikoPayout,
     IikoInvoicePaymentPush,
     InvoiceLineItem,
@@ -105,6 +106,56 @@ async def _seed_kassa(
             inv.raw_payload = {"iiko_payment": {"status": "posted"}}
         await session.commit()
         return inv.id
+
+
+@pytest.mark.asyncio
+async def test_mirror_bank_paid_kassa_goes_to_acquiring(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Оплата kassa-накладной банк-черновиком: cash-аллокация с БАНКОВСКОГО кошелька зеркалится
+    на эквайринг, а НЕ на Главную кассу (баг накладной Карпова №4-2 — оплата с р/с ушла на кассу).
+    Различие — по реальному типу кошелька cashflow, а не по source_kind аллокации."""
+    ext = f"doc-{uuid.uuid4()}"
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Поставщик-банк", inn="7712345699")
+        art = await make_expense_article(session)  # «Оплата поставщикам»
+        bank_wallet = await make_wallet(
+            session, name="Тинькофф · Рублёвый счёт", wallet_type="bank"
+        )
+        inv = await make_invoice(
+            session, counterparty_id=cp.id, amount=Decimal("500.00"),
+            source="kassa_invoice", external_id=ext, payment_status="paid", issued_at=ISSUED,
+        )
+        session.add(
+            InvoiceLineItem(
+                invoice_id=inv.id, name="Товар", quantity=Decimal("1"), price=Decimal("500"),
+                sum=Decimal("500"), product_guid="prod-bank", dds_article_id=art.id, is_staff=False,
+            )
+        )
+        cf = CashflowTransaction(
+            wallet_id=bank_wallet.id, direction="out", amount=Decimal("500.00"),
+            operation_date=ISSUED.date(), article_id=art.id,
+            source_kind="counterparty_payment", source_id=inv.id, quality_status="final",
+        )
+        session.add(cf)
+        await session.flush()
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=inv.id, source_kind="cash",
+                cashflow_transaction_id=cf.id, amount=Decimal("500.00"),
+            )
+        )
+        await session.commit()
+
+    calls: list[dict] = []
+    monkeypatch.setattr(mod, "_call_add_payment", _fake_ok(calls))
+    async with async_session_factory() as session:
+        result = await mod.mirror_paid_kassa_invoices(session)
+
+    assert result["ok"] == 1, result
+    assert len(calls) == 1
+    assert calls[0]["accountId"] == ACQUIRING  # эквайринг, НЕ Главная касса (8ccc8f0f)
+    assert calls[0]["amount"] == 500.0
 
 
 async def _push_rows(factory, invoice_id) -> list[IikoInvoicePaymentPush]:
