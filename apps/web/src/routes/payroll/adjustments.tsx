@@ -92,6 +92,11 @@ const typeLabels: Record<PayrollAdjustmentType, string> = {
   bonus: "Премия",
   penalty: "Штраф",
 };
+const hiddenManualAdjustmentCategoryCodes = new Set(["inventory_shortage", "audit_deferred"]);
+const hiddenManualAdjustmentCategoryNames = new Set([
+  "Недостача по ревизии",
+  "Распределённый штраф ревизии",
+]);
 
 const targetPositions = new Set([
   "Повар",
@@ -549,8 +554,10 @@ function AdjustmentDialog({
     });
   }, [employeeRoles, open]);
 
-  const categories = categoriesQuery.data ?? [];
-  const selectedCategory = categories.find((category) => category.id === draft.category_id) ?? null;
+  const allCategories = categoriesQuery.data ?? [];
+  const categories = allCategories.filter(isVisibleManualAdjustmentCategory);
+  const selectedCategory =
+    allCategories.find((category) => category.id === draft.category_id) ?? null;
   const canSubmit =
     Boolean(draft.employee_id) &&
     Boolean(draft.work_date) &&
@@ -986,6 +993,13 @@ function draftFromAdjustment(
 
 function adjustmentLabel(adjustment: PayrollAdjustment) {
   return adjustment.category_display_name || adjustment.custom_label || "Без категории";
+}
+
+function isVisibleManualAdjustmentCategory(category: PayrollAdjustmentCategory) {
+  return (
+    !hiddenManualAdjustmentCategoryCodes.has(category.code) &&
+    !hiddenManualAdjustmentCategoryNames.has(category.display_name)
+  );
 }
 
 function compareEmployeesForSelect(left: Employee, right: Employee) {
