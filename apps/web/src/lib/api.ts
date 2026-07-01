@@ -2551,6 +2551,9 @@ export type JournalQuery = {
   from?: string;
   to?: string;
   direction?: "in" | "out" | "all";
+  wallet_id?: string;
+  article_id?: string;
+  counterparty_id?: string;
   limit?: number;
   offset?: number;
 };
