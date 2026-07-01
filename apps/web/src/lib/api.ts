@@ -461,6 +461,7 @@ export type PayrollRun = {
   is_imported_legacy: boolean;
   payout_cash_total: number;
   payout_cash_wallet_id: string | null;
+  needs_recalc: boolean;
   period: PayrollPeriod | null;
 };
 

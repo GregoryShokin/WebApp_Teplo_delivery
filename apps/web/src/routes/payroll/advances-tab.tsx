@@ -73,12 +73,15 @@ export function PayrollAdvancesRoute() {
   const permissions = usePermissions();
   const canIssue = permissions.canPerformAction("payroll.advances.issue");
   const canLoan = permissions.canPerformAction("payroll.loans.issue");
+  const canBackdate = permissions.hasPermission("payroll.advances.backdate");
 
   const [employeeFilter, setEmployeeFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [issueEmployeeId, setIssueEmployeeId] = useState("");
   const [amount, setAmount] = useState("");
   const [kind, setKind] = useState<"advance" | "loan">("advance");
+  const [issuedOn, setIssuedOn] = useState(todayIso);
+  const [viaPayroll, setViaPayroll] = useState(false);
   const [walletId, setWalletId] = useState("");
   const [installmentAmount, setInstallmentAmount] = useState("");
   const [recoveryStartDate, setRecoveryStartDate] = useState("");
@@ -98,8 +101,8 @@ export function PayrollAdvancesRoute() {
   const advances = advancesQuery.data ?? [];
 
   const availabilityQuery = useQuery({
-    queryKey: ["payroll-advance-availability", issueEmployeeId],
-    queryFn: () => getPayrollAdvanceAvailability(issueEmployeeId),
+    queryKey: ["payroll-advance-availability", issueEmployeeId, issuedOn],
+    queryFn: () => getPayrollAdvanceAvailability(issueEmployeeId, issuedOn),
     enabled: Boolean(issueEmployeeId) && dialogOpen,
   });
   const availability = availabilityQuery.data ?? null;
@@ -108,11 +111,14 @@ export function PayrollAdvancesRoute() {
   const overEarned = amountNumber > available;
   const isLoan = kind === "loan";
   const advanceOverEarned = kind === "advance" && overEarned;
+  const isBackdated = issuedOn < todayIso();
 
   function resetForm() {
     setIssueEmployeeId("");
     setAmount("");
     setKind("advance");
+    setIssuedOn(todayIso());
+    setViaPayroll(false);
     setWalletId("");
     setInstallmentAmount("");
     setRecoveryStartDate("");
@@ -126,7 +132,9 @@ export function PayrollAdvancesRoute() {
         employee_id: issueEmployeeId,
         amount: decimalInputPayload(amount),
         kind,
-        wallet_id: walletId || undefined,
+        issued_on: issuedOn,
+        payout_method: viaPayroll ? "payroll" : undefined,
+        wallet_id: viaPayroll ? undefined : walletId || undefined,
         installment_amount:
           isLoan && installmentAmount ? decimalInputPayload(installmentAmount) : undefined,
         recovery_start_date: isLoan && recoveryStartDate ? recoveryStartDate : undefined,
@@ -412,13 +420,53 @@ export function PayrollAdvancesRoute() {
             ) : null}
 
             <Label className="grid gap-2">
-              <span>Счёт списания</span>
-              <AccountSelect value={walletId} onChange={setWalletId} filter={isPayoutWallet} />
+              <span>Дата выдачи</span>
+              <Input
+                type="date"
+                value={issuedOn}
+                max={todayIso()}
+                min={canBackdate ? undefined : todayIso()}
+                onChange={(event) => {
+                  const value = event.target.value || todayIso();
+                  setIssuedOn(value);
+                  if (value < todayIso()) setViaPayroll(false);
+                }}
+              />
               <span className="text-xs text-muted-foreground">
-                Наличные (ТК Черникова / Сейф) — прямой расход в ДДС; банк — через черновик и
-                перевод на Сейф.
+                {isBackdated
+                  ? "Задним числом: деньги уже выданы — выберите счёт выдачи ниже."
+                  : canBackdate
+                    ? "Сегодня или задним числом. Будущей датой нельзя."
+                    : "Только сегодня. Для прошлых дат нужно отдельное право."}
               </span>
             </Label>
+
+            {!isBackdated ? (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={viaPayroll}
+                  onChange={(event) => setViaPayroll(event.target.checked)}
+                />
+                Выдать через ведомость (добавить к ближайшей зарплатной выплате)
+              </label>
+            ) : null}
+
+            {viaPayroll ? (
+              <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                Сумма уйдёт вместе с зарплатой по ближайшей незафинализированной ведомости —
+                отдельный счёт не нужен.
+              </div>
+            ) : (
+              <Label className="grid gap-2">
+                <span>Счёт списания</span>
+                <AccountSelect value={walletId} onChange={setWalletId} filter={isPayoutWallet} />
+                <span className="text-xs text-muted-foreground">
+                  Наличные (ТК Черникова / Сейф) — прямой расход в ДДС; банк — через черновик и
+                  перевод на Сейф.
+                </span>
+              </Label>
+            )}
 
             <Label className="grid gap-2">
               <span>Комментарий</span>
@@ -445,6 +493,11 @@ export function PayrollAdvancesRoute() {
       </Dialog>
     </div>
   );
+}
+
+function todayIso() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
 function formatMoney(value: number) {

@@ -34,7 +34,10 @@ from app.models import (
 )
 from app.services.employee_effective_events import get_position_on_date
 from app.services.payroll_adjustment_service import load_adjustments_for_period
-from app.services.payroll_advance_recovery import apply_advance_recoveries
+from app.services.payroll_advance_recovery import (
+    apply_advance_issuances,
+    apply_advance_recoveries,
+)
 from app.services.payroll_calculator import adjustment_component, decimal, money, money_string
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
 from app.services.position_registry import (
@@ -229,16 +232,17 @@ async def run_admin_payroll(
             return run
 
         advance_summary = await apply_advance_recoveries(session, period, run, lines)
+        advance_issue_summary = await apply_advance_issuances(session, period, run, lines)
         for line in lines:
             session.add(line)
-        # Итог к выплате — ПОСЛЕ удержаний авансов/займов (накопленный выше — начисления).
+        # Итог к выплате — ПОСЛЕ удержаний и выдач авансов/займов (накопленный выше — начисления).
         summary["total_payable"] = money(
             sum((decimal(line.total_payable) for line in lines), Decimal("0"))
         )
         run.status = "completed"
         run.finished_at = datetime.now(UTC)
         run.blocking_issues = []
-        run.summary = {**summary, **advance_summary}
+        run.summary = {**summary, **advance_summary, **advance_issue_summary}
         await session.commit()
         await session.refresh(run)
         return run

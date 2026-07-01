@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -249,3 +249,59 @@ def test_put_config_forbidden_for_manager(
         json={"loan_max": "200000"},
     )
     assert resp.status_code == 403
+
+
+def test_future_date_rejected(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    employee_id = _seed_okladnik(async_session_factory)
+    tomorrow = (datetime.now(UTC).date() + timedelta(days=1)).isoformat()
+    resp = client.post(
+        "/api/v1/payroll/advances",
+        headers={"X-User-Role": "owner"},
+        json={"employee_id": str(employee_id), "amount": "5000", "issued_on": tomorrow},
+    )
+    assert resp.status_code == 422
+
+
+def test_today_date_allowed_without_backdate(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    employee_id = _seed_okladnik(async_session_factory)
+    today = datetime.now(UTC).date().isoformat()
+    resp = client.post(
+        "/api/v1/payroll/advances",
+        headers={"X-User-Role": "owner"},
+        json={"employee_id": str(employee_id), "amount": "5000", "issued_on": today},
+    )
+    assert resp.status_code == 201
+
+
+def test_backdate_forbidden_without_permission(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    employee_id = _seed_okladnik(async_session_factory)
+    # office_manager имеет право A (выдача), но НЕ имеет payroll.advances.backdate.
+    resp = client.post(
+        "/api/v1/payroll/advances",
+        headers={"X-User-Role": "office_manager"},
+        json={"employee_id": str(employee_id), "amount": "10000", "issued_on": AS_OF},
+    )
+    assert resp.status_code == 403
+
+
+def test_backdate_allowed_for_manager(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    employee_id = _seed_okladnik(async_session_factory)
+    # manager (Управляющий) имеет право backdate → прошлая дата разрешена.
+    resp = client.post(
+        "/api/v1/payroll/advances",
+        headers={"X-User-Role": "manager"},
+        json={"employee_id": str(employee_id), "amount": "10000", "issued_on": AS_OF},
+    )
+    assert resp.status_code == 201

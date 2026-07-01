@@ -51,6 +51,7 @@ LOAN_ISSUE_ACCESS = (Depends(require_permission("payroll.loans.issue")),)
 _ISSUE_ADMIN = "payroll.advances.admin.issue"
 _ISSUE_PRODUCTION = "payroll.advances.production.issue"
 _LOAN_ISSUE = "payroll.loans.issue"
+_BACKDATE = "payroll.advances.backdate"
 _ISSUE_CODES = (_ISSUE_ADMIN, _ISSUE_PRODUCTION)
 
 
@@ -194,8 +195,18 @@ async def post_advance(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> AdvanceRead:
     employee = await _require_employee(session, payload.employee_id)
-    issued_on = payload.issued_on or datetime.now(UTC).date()
-    position = await get_position_on_date(session, employee.id, issued_on)
+    today = datetime.now(UTC).date()
+    # Будущей датой нельзя никому; прошлой — только по отдельному праву backdate;
+    # сегодняшней/без даты — по обычному праву выдачи (проверяется ниже по пайплайну).
+    if payload.issued_on is not None and payload.issued_on > today:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Нельзя провести выдачу будущей датой",
+        )
+    if payload.issued_on is not None and payload.issued_on < today:
+        ensure_permission(actor, _BACKDATE)
+    permission_date = payload.issued_on or today
+    position = await get_position_on_date(session, employee.id, permission_date)
     position = position or employee.position or ""
     issue_code = _ISSUE_ADMIN if position in admin_payroll_positions() else _ISSUE_PRODUCTION
     ensure_permission(actor, issue_code)
@@ -208,7 +219,7 @@ async def post_advance(
             allow_loan=allow_loan,
             requested_kind=payload.kind,
             override_ceiling=payload.override_ceiling,
-            issued_on=issued_on,
+            issued_on=payload.issued_on,
             payout_method=payload.payout_method,
             wallet_id=payload.wallet_id,
             installments_count=payload.installments_count,

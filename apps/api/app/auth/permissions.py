@@ -177,6 +177,11 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Выдавать авансы административному персоналу",
     ),
     ("payroll.loans.issue", "Зарплата", "Выдавать займы (сверх заработанного)"),
+    (
+        "payroll.advances.backdate",
+        "Зарплата",
+        "Проводить авансы/займы задним числом (прошлой датой)",
+    ),
     ("revisions.read", "Ревизии", "Смотреть ревизии"),
     ("revisions.import", "Ревизии", "Импортировать ревизию"),
     ("revisions.create", "Ревизии", "Создавать ревизию вручную"),
@@ -649,6 +654,7 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "payroll.advances.read",
         "payroll.advances.production.issue",
         "payroll.advances.admin.issue",
+        "payroll.advances.backdate",
         "source.rates.read",
         "source.revenue_percent.read",
         "source.deductions.read",
@@ -710,6 +716,7 @@ OFFICE_MANAGER_DEFAULT_PERMISSIONS = frozenset(
     - {
         "payroll.runs.reopen",
         "payroll.loans.issue",
+        "payroll.advances.backdate",
         "revisions.import",
         "revisions.create",
         "revisions.drafts.edit",

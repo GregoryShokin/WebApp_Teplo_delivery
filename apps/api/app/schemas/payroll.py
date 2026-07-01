@@ -149,6 +149,7 @@ class PayrollRunRead(BaseModel):
     is_imported_legacy: bool = False
     payout_cash_total: float = 0
     payout_cash_wallet_id: uuid.UUID | None = None
+    needs_recalc: bool = False
     period: PayrollPeriodRead | None = None
 
 

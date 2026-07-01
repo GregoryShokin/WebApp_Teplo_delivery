@@ -185,10 +185,14 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const attendanceWarnings = run?.summary.attendance_warnings ?? [];
   const isLegacyRun = Boolean(run?.is_imported_legacy);
   const isFinal = run ? isFinalStatus(run.status) : false;
+  // После расчёта появились авансы/займы, не учтённые в итоге (в т.ч. выданные задним
+  // числом) — финализация заблокирована до пересчёта.
+  const needsRecalc = run?.status === "completed" && Boolean(run?.needs_recalc);
   const canFinalize =
     Boolean(run) &&
     run?.status === "completed" &&
     blockers.length === 0 &&
+    !needsRecalc &&
     !isFinal &&
     canFinalizeRuns;
   const canUnfinalize = Boolean(run) && isFinal && canReopenRuns && !isLegacyRun;
@@ -486,6 +490,22 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
                 {blockers.map((issue, index) => (
                   <BlockingIssue issue={issue} key={index} onNavigate={onNavigate} />
                 ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {needsRecalc ? (
+        <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold">Ведомость устарела — пересчитайте</div>
+              <div className="mt-1 text-sm">
+                После расчёта появились авансы или займы (например, проведённые задним числом),
+                ещё не учтённые в удержаниях. Нажмите «Пересчитать», чтобы обновить итоги —
+                финализация заблокирована до пересчёта.
               </div>
             </div>
           </div>

@@ -34,16 +34,18 @@ from app.services.deferred_audit_charge_service import (
     apply_pending_splits_for_run,
     collapse_deferred_charges_on_dismissal,
 )
-from app.services.iiko_revenue import fetch_daily_revenue
 from app.services.deposit_schedule import (
     is_scheduled_payout_enabled,
     load_pending_schedules,
     mark_schedules_processed_for_run,
     revert_schedules_for_run,
 )
+from app.services.iiko_revenue import fetch_daily_revenue
 from app.services.payroll_advance_recovery import (
+    apply_advance_issuances,
     apply_advance_recoveries,
     apply_advance_recoveries_to_balances,
+    run_has_unaccounted_advances,
 )
 from app.services.payroll_calculator import (
     DAILY_REVENUE_CONFIG_KEY,
@@ -400,6 +402,9 @@ async def run_payroll(
             await session.flush()
 
         advance_summary = await apply_advance_recoveries(session, period, run, calculation.lines)
+        advance_issue_summary = await apply_advance_issuances(
+            session, period, run, calculation.lines
+        )
         subledger_summary = await update_deposits_and_fund(session, period, run, calculation.lines)
         paid_vacations = await vacation_service.mark_vacations_paid_for_payroll_period(
             session,
@@ -415,6 +420,7 @@ async def run_payroll(
             | deferred_charge_summary
             | subledger_summary
             | advance_summary
+            | advance_issue_summary
             | attendance_warning_summary
             | {"vacations_marked_paid": paid_vacations}
             # Итог к выплате — ПОСЛЕ удержаний авансов/займов (перекрывает начисленный).
@@ -982,6 +988,11 @@ async def finalize_payroll_run(
         raise PayrollNotFoundError("Payroll period not found")
     if period.status == "finalized":
         raise PayrollConflictError("Payroll period is already finalized")
+    if await run_has_unaccounted_advances(session, run, period):
+        raise PayrollConflictError(
+            "Ведомость устарела: появились авансы/займы, не учтённые в расчёте. "
+            "Пересчитайте ведомость перед финализацией."
+        )
 
     now = datetime.now(UTC)
     previous_run_status = run.status
@@ -1254,7 +1265,10 @@ async def get_run(session: AsyncSession, run_id: uuid.UUID) -> dict[str, Any]:
     if row is None:
         raise PayrollNotFoundError("Payroll run not found")
     run, period = row
-    return serialize_run(run, period)
+    needs_recalc = False
+    if run.status == "completed":
+        needs_recalc = await run_has_unaccounted_advances(session, run, period)
+    return serialize_run(run, period, needs_recalc=needs_recalc)
 
 
 async def get_run_lines(session: AsyncSession, run_id: uuid.UUID) -> list[PayrollLine]:
@@ -1287,6 +1301,7 @@ def serialize_run(
     period: PayrollPeriod | None = None,
     *,
     metrics: dict[str, Any] | None = None,
+    needs_recalc: bool = False,
 ) -> dict[str, Any]:
     summary = dict(run.summary or {})
     if metrics is not None:
@@ -1303,6 +1318,7 @@ def serialize_run(
         "is_imported_legacy": bool(getattr(run, "is_imported_legacy", False)),
         "payout_cash_total": float(run.payout_cash_total or 0),
         "payout_cash_wallet_id": run.payout_cash_wallet_id,
+        "needs_recalc": bool(needs_recalc),
     }
     if period is not None:
         data["period"] = serialize_period(period)

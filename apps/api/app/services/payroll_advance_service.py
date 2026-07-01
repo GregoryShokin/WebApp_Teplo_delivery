@@ -29,6 +29,8 @@ from app.models import (
     CashflowTransaction,
     DdsArticle,
     Employee,
+    PayrollLine,
+    PayrollPayment,
     PayrollPeriod,
     PayrollRun,
     PayrollRunEvent,
@@ -51,13 +53,13 @@ from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.employee_effective_events import get_position_on_date
 from app.services.payroll_admin import _upsert_setting
 from app.services.payroll_advance_availability import available_to_advance
-from app.services.payroll_calculator import decimal
+from app.services.payroll_calculator import decimal, money
 from app.services.payroll_payouts import _bank_payout_requisites, _payer_account
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
 from app.services.position_registry import admin_payroll_positions
 
 _CENTS = Decimal("0.01")
-PAYOUT_METHODS = ("business_card", "cash", "transfer", "other")
+PAYOUT_METHODS = ("business_card", "cash", "transfer", "other", "payroll")
 
 # Проводка ДДС при выдаче аванса/займа: статья по типу, источник по выбранному кошельку.
 ADVANCE_PAYOUT_SOURCE_KIND = "salary_advance"
@@ -194,6 +196,22 @@ async def _date_in_finalized_period(
     return locked is not None
 
 
+async def _earliest_unfinalized_period(
+    session: AsyncSession, *, admin: bool
+) -> PayrollPeriod | None:
+    """Самая ранняя выплата нужного пайплайна, куда ещё можно добавить выдачу/удержание."""
+    period_type = "half_month" if admin else "week"
+    return await session.scalar(
+        select(PayrollPeriod)
+        .where(
+            PayrollPeriod.period_type == period_type,
+            PayrollPeriod.status != "finalized",
+        )
+        .order_by(PayrollPeriod.payroll_date, PayrollPeriod.start_date)
+        .limit(1)
+    )
+
+
 def _per_installment(amount: Decimal, count: int) -> Decimal:
     """Размер равной доли (остаток копеек добирается на возврате, до остатка баланса)."""
     count = max(int(count), 1)
@@ -258,18 +276,43 @@ async def issue_advance(
     employee = await session.get(Employee, employee_id)
     if employee is None:
         raise PayrollNotFoundError("Сотрудник не найден")
-    issued_on = issued_on or datetime.now(UTC).date()
+    requested_issued_on = issued_on or datetime.now(UTC).date()
     amount = decimal(amount).quantize(_CENTS)
     if amount <= 0:
         raise PayrollConflictError("Сумма должна быть больше нуля")
     if payout_method is not None and payout_method not in PAYOUT_METHODS:
         raise PayrollConflictError("Неизвестный способ выплаты")
+    if payout_method == "payroll" and wallet_id is not None:
+        raise PayrollConflictError("Для выдачи через ведомость отдельный счёт не выбирается")
 
-    availability = await available_to_advance(session, employee, issued_on)
-    role = await get_position_on_date(session, employee_id, issued_on)
+    role = await get_position_on_date(session, employee_id, requested_issued_on)
     role = role or employee.position or ""
+    # Без даты — привязываем к ближайшей нефинализированной выплате нужного пайплайна;
+    # заработанное считаем на конец её периода (к выплате период отработан целиком).
+    target_period: PayrollPeriod | None = None
+    if issued_on is None:
+        target_period = await _earliest_unfinalized_period(
+            session, admin=role in admin_payroll_positions()
+        )
+        if target_period is not None:
+            issued_on = target_period.payroll_date
+            role = await get_position_on_date(session, employee_id, target_period.end_date)
+            role = role or employee.position or ""
+        else:
+            issued_on = requested_issued_on
+    else:
+        issued_on = requested_issued_on
+
+    if target_period is None:
+        availability_as_of = issued_on
+    elif target_period.period_type == "week":
+        availability_as_of = target_period.payroll_date
+    else:
+        availability_as_of = target_period.end_date
+    availability = await available_to_advance(session, employee, availability_as_of)
+    finalization_date = target_period.end_date if target_period is not None else issued_on
     if await _date_in_finalized_period(
-        session, issued_on, admin=role in admin_payroll_positions()
+        session, finalization_date, admin=role in admin_payroll_positions()
     ):
         raise PayrollConflictError(
             "Период этой даты уже финализирован — выдача в закрытую ведомость невозможна"
@@ -332,7 +375,11 @@ async def issue_advance(
     await session.flush()
     # Выдача = отток денег → проводка ДДС. Наличный счёт (ТК Черникова/Сейф) — прямой расход;
     # банк-счёт — черновик платежа + транзит на Сейф при исполнении (как у ЗП), Фаза 2.
-    if is_bank_payout:
+    if payout_method == "payroll":
+        # Выдача через ведомость: сумма добавляется к ближайшей выплате, отдельного оттока
+        # денег нет (ДДС проведётся зарплатной статьёй при выплате ведомости).
+        await _apply_payroll_advance_to_existing_run(session, advance=advance)
+    elif is_bank_payout:
         await create_advance_bank_draft(
             session, advance=advance, wallet=wallet, bank_client=bank_client
         )
@@ -352,6 +399,113 @@ async def issue_advance(
             source="cash",
         )
     return advance
+
+
+async def _apply_payroll_advance_to_existing_run(
+    session: AsyncSession, *, advance: SalaryAdvance
+) -> None:
+    """Если ведомость дня выплаты уже рассчитана, сразу добавляем выдачу в её строку."""
+    admin = advance.role in admin_payroll_positions()
+    period_type = "half_month" if admin else "week"
+    period = await session.scalar(
+        select(PayrollPeriod)
+        .where(
+            PayrollPeriod.period_type == period_type,
+            PayrollPeriod.status != "finalized",
+            PayrollPeriod.payroll_date == advance.issued_on,
+        )
+        .order_by(PayrollPeriod.start_date)
+        .limit(1)
+    )
+    if period is None:
+        return
+    run = await session.scalar(
+        select(PayrollRun)
+        .where(PayrollRun.period_id == period.id, PayrollRun.status != "finalized")
+        .order_by(PayrollRun.started_at.desc())
+        .limit(1)
+    )
+    if run is None:
+        return
+    line = await session.scalar(
+        select(PayrollLine)
+        .where(PayrollLine.run_id == run.id, PayrollLine.employee_id == advance.employee_id)
+        .order_by(PayrollLine.role)
+        .limit(1)
+    )
+    if line is None:
+        raise PayrollConflictError("У сотрудника нет строки в выбранной ведомости")
+    paid_payment_id = await session.scalar(
+        select(PayrollPayment.id).where(
+            PayrollPayment.run_id == run.id,
+            PayrollPayment.employee_id == advance.employee_id,
+            PayrollPayment.status == "paid",
+        )
+    )
+    if paid_payment_id is not None:
+        raise PayrollConflictError(
+            "Сотруднику уже отмечена выплата в этой ведомости — сначала снимите отметку выплаты"
+        )
+    from app.services.payroll_advance_recovery import apply_advance_issuance_to_line
+
+    amount = apply_advance_issuance_to_line(line, advance)
+    summary = dict(run.summary or {})
+    summary["advance_issued_total"] = money(
+        decimal(summary.get("advance_issued_total", 0)) + amount
+    )
+    summary["advance_issued_count"] = int(summary.get("advance_issued_count", 0) or 0) + 1
+    summary["total_payable"] = money(decimal(summary.get("total_payable", 0)) + amount)
+    run.summary = summary
+
+
+async def _remove_payroll_advance_from_existing_run(
+    session: AsyncSession, *, advance: SalaryAdvance
+) -> None:
+    admin = advance.role in admin_payroll_positions()
+    period_type = "half_month" if admin else "week"
+    period = await session.scalar(
+        select(PayrollPeriod)
+        .where(
+            PayrollPeriod.period_type == period_type,
+            PayrollPeriod.payroll_date == advance.issued_on,
+        )
+        .order_by(PayrollPeriod.start_date)
+        .limit(1)
+    )
+    if period is None:
+        return
+    if period.status == "finalized":
+        raise PayrollConflictError("Ведомость уже финализирована — отмена выдачи невозможна")
+    run = await session.scalar(
+        select(PayrollRun)
+        .where(PayrollRun.period_id == period.id, PayrollRun.status != "finalized")
+        .order_by(PayrollRun.started_at.desc())
+        .limit(1)
+    )
+    if run is None:
+        return
+    line = await session.scalar(
+        select(PayrollLine)
+        .where(PayrollLine.run_id == run.id, PayrollLine.employee_id == advance.employee_id)
+        .order_by(PayrollLine.role)
+        .limit(1)
+    )
+    if line is None:
+        return
+    from app.services.payroll_advance_recovery import remove_advance_issuance_from_line
+
+    amount = remove_advance_issuance_from_line(line, advance)
+    if amount <= 0:
+        return
+    summary = dict(run.summary or {})
+    summary["advance_issued_total"] = money(
+        max(decimal(summary.get("advance_issued_total", 0)) - amount, Decimal("0"))
+    )
+    summary["advance_issued_count"] = max(int(summary.get("advance_issued_count", 0) or 0) - 1, 0)
+    summary["total_payable"] = money(
+        max(decimal(summary.get("total_payable", 0)) - amount, Decimal("0"))
+    )
+    run.summary = summary
 
 
 async def cancel_advance(
@@ -385,6 +539,8 @@ async def cancel_advance(
                     await cancel_allocation(session, allocation)
             draft.status = "cancelled"
             draft.synced_at = datetime.now(UTC)
+    if advance.payout_method == "payroll":
+        await _remove_payroll_advance_from_existing_run(session, advance=advance)
     advance.status = "cancelled"
     await session.commit()
     await session.refresh(advance)
