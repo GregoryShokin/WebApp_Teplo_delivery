@@ -28,14 +28,6 @@ import {
   type AdminPayoutMode,
 } from "@/lib/api";
 
-const ADMIN_POSITIONS = [
-  "Управляющий",
-  "Менеджер",
-  "Системный администратор",
-  "Уборщица",
-  "Старший курьер",
-];
-
 const PAYOUT_MODE_OPTIONS: Array<{ value: AdminPayoutMode; label: string }> = [
   { value: "split", label: "Пополам (½ + ½)" },
   { value: "first_half", label: "Всё на 15-е" },
@@ -91,8 +83,11 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
   const overrides = salariesQuery.data?.overrides ?? [];
   const defaultByPosition = new Map(defaults.map((item) => [item.position, item]));
   const overrideByEmployee = new Map(overrides.map((item) => [item.employee_id, item]));
+  // Список окладных должностей ведём от сервера (реестр должностей), а НЕ хардкодом —
+  // иначе новые должности (напр. «Помощник менеджера») не появятся в таблице.
+  const adminPositions = defaults.map((item) => item.position);
   const adminEmployees = (employeesQuery.data ?? []).filter((employee) =>
-    ADMIN_POSITIONS.includes(employee.position ?? ""),
+    adminPositions.includes(employee.position ?? ""),
   );
 
   const onMutationError = (error: unknown) => {
@@ -228,7 +223,7 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
               </tr>
             </thead>
             <tbody>
-              {ADMIN_POSITIONS.map((position) => {
+              {adminPositions.map((position) => {
                 const current = defaultByPosition.get(position);
                 const draftValue = defaultAmounts[position] ?? "";
                 const parsed = Number(draftValue);
