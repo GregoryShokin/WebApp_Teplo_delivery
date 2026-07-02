@@ -125,6 +125,7 @@ from app.models.payroll import (
     SalaryAdvance,
     SalaryAdvanceBankDraft,
     SalaryAdvanceRecovery,
+    SalaryAdvanceRecoveryOverride,
     ShiftLedgerEntry,
 )
 from app.models.payroll_forecast import PayrollForecastRun, ShiftCostEstimate
@@ -236,6 +237,7 @@ __all__ = [
     "SalaryAdvance",
     "SalaryAdvanceBankDraft",
     "SalaryAdvanceRecovery",
+    "SalaryAdvanceRecoveryOverride",
     "ReconciliationCase",
     "SafeAllocation",
     "Role",

@@ -32,6 +32,7 @@ from app.models import (
     PayrollRun,
     SalaryAdvance,
     SalaryAdvanceRecovery,
+    SalaryAdvanceRecoveryOverride,
 )
 from app.services.payroll_calculator import decimal, money
 from app.services.position_registry import admin_payroll_positions
@@ -74,6 +75,20 @@ async def _outstanding_advances(
     return by_emp
 
 
+async def _recovery_overrides(
+    session: AsyncSession, period_id: uuid.UUID
+) -> dict[uuid.UUID, Decimal]:
+    """Ручные суммы удержания за период (окно «Удержания сотрудника»): advance_id → сумма."""
+    rows = (
+        await session.scalars(
+            select(SalaryAdvanceRecoveryOverride).where(
+                SalaryAdvanceRecoveryOverride.period_id == period_id
+            )
+        )
+    ).all()
+    return {row.advance_id: decimal(row.amount) for row in rows}
+
+
 async def apply_advance_recoveries(
     session: AsyncSession,
     period: PayrollPeriod,
@@ -93,6 +108,8 @@ async def apply_advance_recoveries(
     if not advances_by_emp:
         return {"advance_recovery_count": 0, "advance_recovered_total": money(Decimal("0"))}
 
+    overrides = await _recovery_overrides(session, period.id)
+
     lines_by_emp: dict[uuid.UUID, list[PayrollLine]] = defaultdict(list)
     for line in lines:
         lines_by_emp[line.employee_id].append(line)
@@ -103,7 +120,11 @@ async def apply_advance_recoveries(
         emp_lines = lines_by_emp.get(employee_id, [])
         for advance in advances:
             outstanding = decimal(advance.amount) - decimal(advance.recovered_amount)
-            due = min(decimal(advance.per_installment_amount), outstanding)
+            if advance.id in overrides:
+                # Ручная сумма из окна «Удержания»: 0 = отложить, = остатку = закрыть досрочно.
+                due = min(overrides[advance.id], outstanding)
+            else:
+                due = min(decimal(advance.per_installment_amount), outstanding)
             for line in emp_lines:
                 if due <= 0:
                     break

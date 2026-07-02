@@ -30,6 +30,7 @@ from app.services.payroll_advance_service import (
     cancel_advance,
     issue_advance,
     set_advance_recovery_deferral,
+    set_advance_recovery_overrides,
     set_loan_max,
     write_off_advance,
 )
@@ -329,6 +330,78 @@ async def test_advance_recovered_in_admin_run_and_finalize(
         await session.refresh(adv)
         assert adv.recovered_amount == Decimal("10000.00")
         assert adv.status == "recovered"
+
+
+async def test_recovery_override_full_loan_payoff(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Окно «Удержания»: override = весь остаток → досрочное полное гашение займа."""
+    async with async_session_factory() as session:
+        emp = await _make_okladnik(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
+        period = await _make_first_half_period(session)
+        await session.commit()
+
+        loan = await issue_advance(
+            session,
+            employee_id=emp.id,
+            amount=Decimal("30000"),
+            allow_loan=True,
+            requested_kind="loan",
+            installments_count=3,
+            issued_on=AS_OF,
+            payout_method="transfer",
+        )
+        run = await run_admin_payroll(session, period.id)
+        line = await _one_line(session, run.id)
+        # По умолчанию удерживается доля 10000 из 30000.
+        assert line.advance_recovered == Decimal("10000.00")
+        assert line.total_payable == Decimal("35000.00")
+
+        # Сотрудник гасит заём целиком сейчас — override на весь остаток.
+        await set_advance_recovery_overrides(
+            session,
+            run_id=run.id,
+            items=[(loan.id, Decimal("30000"))],
+        )
+        run = await run_admin_payroll(session, period.id)
+        line = await _one_line(session, run.id)
+        assert line.advance_recovered == Decimal("30000.00")
+        assert line.total_payable == Decimal("15000.00")  # 45000 − 30000
+
+        await finalize_payroll_run(session, run.id)
+        await session.refresh(loan)
+        assert loan.recovered_amount == Decimal("30000.00")
+        assert loan.status == "recovered"
+
+
+async def test_recovery_override_rejects_over_outstanding(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Нельзя удержать больше остатка долга."""
+    async with async_session_factory() as session:
+        emp = await _make_okladnik(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
+        period = await _make_first_half_period(session)
+        await session.commit()
+
+        loan = await issue_advance(
+            session,
+            employee_id=emp.id,
+            amount=Decimal("30000"),
+            allow_loan=True,
+            requested_kind="loan",
+            installments_count=3,
+            issued_on=AS_OF,
+            payout_method="transfer",
+        )
+        run = await run_admin_payroll(session, period.id)
+        with pytest.raises(PayrollConflictError):
+            await set_advance_recovery_overrides(
+                session,
+                run_id=run.id,
+                items=[(loan.id, Decimal("40000"))],
+            )
 
 
 async def test_unfinalize_reverses_advance_recovery(

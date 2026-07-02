@@ -18,6 +18,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +38,8 @@ from app.models import (
     SafeAllocation,
     SalaryAdvance,
     SalaryAdvanceBankDraft,
+    SalaryAdvanceRecovery,
+    SalaryAdvanceRecoveryOverride,
     Wallet,
 )
 from app.services.advance_iiko_payout import post_advance_payout_to_iiko
@@ -633,6 +636,170 @@ async def set_advance_recovery_deferral(
     await session.commit()
     await session.refresh(advance)
     return advance
+
+
+async def set_advance_recovery_overrides(
+    session: AsyncSession,
+    *,
+    run_id: uuid.UUID,
+    items: list[tuple[uuid.UUID, Decimal]],
+    reason: str | None = None,
+    actor_user_id: uuid.UUID | None = None,
+) -> None:
+    """Задать ручные суммы удержания авансов/займов в этой ведомости (окно «Удержания»).
+
+    Для каждого аванса: ``0`` — отложить удержание в этом периоде, ``= остатку долга`` —
+    закрыть досрочно, между — частично. Ключ (advance_id, period_id) переживает пересчёт.
+    Вызывающий код обязан после этого пересчитать ведомость.
+    """
+    run = await session.get(PayrollRun, run_id)
+    if run is None:
+        raise PayrollNotFoundError("Ведомость не найдена")
+    if run.is_imported_legacy:
+        raise PayrollConflictError("Импортированная ведомость — правка удержаний недоступна")
+    if run.status == "finalized":
+        raise PayrollConflictError("Ведомость финализирована — сначала верните её в работу")
+    period = await session.get(PayrollPeriod, run.period_id)
+    if period is None:
+        raise PayrollNotFoundError("Период ведомости не найден")
+    admin = period.period_type == "half_month"
+
+    applied: list[dict[str, Any]] = []
+    for advance_id, raw_amount in items:
+        advance = await session.get(SalaryAdvance, advance_id)
+        if advance is None:
+            raise PayrollNotFoundError("Аванс/заём не найден")
+        if advance.status != "issued":
+            raise PayrollConflictError(
+                "Правка удержания доступна только для действующего аванса/займа"
+            )
+        # Аванс/заём должен относиться к пайплайну этой ведомости (админ/производство).
+        if (advance.role in admin_payroll_positions()) != admin:
+            raise PayrollConflictError("Этот аванс/заём гасится в другой ведомости")
+        amount = decimal(raw_amount).quantize(_CENTS)
+        outstanding = (decimal(advance.amount) - decimal(advance.recovered_amount)).quantize(_CENTS)
+        if amount < 0:
+            raise PayrollConflictError("Сумма удержания не может быть отрицательной")
+        if amount > outstanding:
+            raise PayrollConflictError(
+                f"Сумма удержания больше остатка долга ({money(outstanding)} ₽)"
+            )
+        existing = await session.scalar(
+            select(SalaryAdvanceRecoveryOverride).where(
+                SalaryAdvanceRecoveryOverride.advance_id == advance.id,
+                SalaryAdvanceRecoveryOverride.period_id == period.id,
+            )
+        )
+        if existing is None:
+            session.add(
+                SalaryAdvanceRecoveryOverride(
+                    advance_id=advance.id,
+                    period_id=period.id,
+                    amount=amount,
+                    created_by_user_id=actor_user_id,
+                )
+            )
+        else:
+            existing.amount = amount
+        applied.append({"advance_id": str(advance.id), "amount": money(amount)})
+
+    session.add(
+        PayrollRunEvent(
+            run_id=run.id,
+            period_id=run.period_id,
+            action="advance_recovery_override",
+            actor_user_id=actor_user_id,
+            payload={"items": applied, "reason": reason},
+        )
+    )
+    await session.commit()
+
+
+async def get_employee_recovery_detail(
+    session: AsyncSession,
+    *,
+    run_id: uuid.UUID,
+    employee_id: uuid.UUID,
+) -> dict[str, Any]:
+    """Детализация удержаний сотрудника в ведомости: начислено, к выплате и построчно
+    авансы/займы (остаток, доля по умолчанию, текущее удержание, ручной override)."""
+    from app.services.payroll_advance_recovery import (
+        _outstanding_advances,
+        _recovery_overrides,
+    )
+
+    run = await session.get(PayrollRun, run_id)
+    if run is None:
+        raise PayrollNotFoundError("Ведомость не найдена")
+    period = await session.get(PayrollPeriod, run.period_id)
+    if period is None:
+        raise PayrollNotFoundError("Период ведомости не найден")
+    employee = await session.get(Employee, employee_id)
+    if employee is None:
+        raise PayrollNotFoundError("Сотрудник не найден")
+    admin = period.period_type == "half_month"
+
+    lines = (
+        await session.scalars(
+            select(PayrollLine).where(
+                PayrollLine.run_id == run.id, PayrollLine.employee_id == employee_id
+            )
+        )
+    ).all()
+    net = sum((decimal(line.total_payable) for line in lines), Decimal("0"))
+    recovered_now = sum((decimal(line.advance_recovered) for line in lines), Decimal("0"))
+    accrued = net + recovered_now
+
+    advances_by_emp = await _outstanding_advances(
+        session, {employee_id}, admin=admin, period_end=period.end_date
+    )
+    advances = advances_by_emp.get(employee_id, [])
+    overrides = await _recovery_overrides(session, period.id)
+
+    applied_rows = (
+        await session.scalars(
+            select(SalaryAdvanceRecovery).where(SalaryAdvanceRecovery.run_id == run.id)
+        )
+    ).all()
+    applied_by_advance: dict[uuid.UUID, Decimal] = {}
+    for row in applied_rows:
+        applied_by_advance[row.advance_id] = (
+            applied_by_advance.get(row.advance_id, Decimal("0")) + decimal(row.amount)
+        )
+
+    recovery_items: list[dict[str, Any]] = []
+    for advance in advances:
+        outstanding = (decimal(advance.amount) - decimal(advance.recovered_amount)).quantize(_CENTS)
+        default_installment = min(decimal(advance.per_installment_amount), outstanding)
+        override = overrides.get(advance.id)
+        recovery_items.append(
+            {
+                "advance_id": str(advance.id),
+                "kind": advance.kind,
+                "issued_on": advance.issued_on,
+                "amount": money(advance.amount),
+                "recovered_prior": money(advance.recovered_amount),
+                "outstanding": money(outstanding),
+                "default_installment": money(default_installment),
+                "current_recovery": money(applied_by_advance.get(advance.id, Decimal("0"))),
+                "override_amount": money(override) if override is not None else None,
+                "max_amount": money(outstanding),
+            }
+        )
+
+    return {
+        "run_id": str(run.id),
+        "employee_id": str(employee_id),
+        "employee_name": employee.full_name,
+        "role": employee.position,
+        "period_start": period.start_date,
+        "period_end": period.end_date,
+        "payroll_date": period.payroll_date,
+        "accrued": money(accrued),
+        "net": money(net),
+        "total_recovered": money(recovered_now),
+        "items": recovery_items,
+    }
 
 
 async def list_advances(

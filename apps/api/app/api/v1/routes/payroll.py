@@ -28,6 +28,8 @@ from app.models import (
 from app.schemas.inventory import PayoutOptionRead
 from app.schemas.payroll import (
     AdvanceRecoveryDeferralRequest,
+    EmployeeRecoveryDetailRead,
+    RecoveryOverridesRequest,
     DeferredChargeCreate,
     DeferredChargeRead,
     PayrollAggregateRead,
@@ -63,7 +65,11 @@ from app.services.deferred_audit_charge_service import (
 )
 from app.services.inventory_audit_service import list_open_production_payouts
 from app.services.payroll_admin import run_admin_payroll
-from app.services.payroll_advance_service import set_advance_recovery_deferral
+from app.services.payroll_advance_service import (
+    get_employee_recovery_detail,
+    set_advance_recovery_deferral,
+    set_advance_recovery_overrides,
+)
 from app.services.payroll_aggregate_service import build_aggregate
 from app.services.payroll_config import list_enabled_role_categories
 from app.services.payroll_payments import (
@@ -522,6 +528,59 @@ async def post_defer_advance_recovery(
             run_id=run_id,
             advance_id=advance_id,
             defer=payload.defer,
+            reason=payload.reason,
+            actor_user_id=actor.user_id,
+        )
+        run = await session.get(PayrollRun, run_id)
+        period = await session.get(PayrollPeriod, run.period_id)
+        if period.period_type == "half_month":
+            await run_admin_payroll(session, run.period_id)
+        else:
+            await run_payroll(session, run.period_id, force_refresh=True)
+        return await get_run(session, run_id)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.get(
+    "/runs/{run_id}/employees/{employee_id}/recoveries",
+    response_model=EmployeeRecoveryDetailRead,
+    dependencies=PAYROLL_RUNS_READ_ACCESS,
+)
+async def get_employee_recoveries(
+    run_id: uuid.UUID,
+    employee_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict:
+    """Детализация удержаний сотрудника в ведомости (окно «Удержания сотрудника»)."""
+    try:
+        return await get_employee_recovery_detail(
+            session, run_id=run_id, employee_id=employee_id
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.put(
+    "/runs/{run_id}/recoveries",
+    response_model=PayrollRunRead,
+    dependencies=PAYROLL_LOANS_ISSUE_ACCESS,
+)
+async def put_run_recoveries(
+    run_id: uuid.UUID,
+    payload: RecoveryOverridesRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict:
+    """Задать ручные суммы удержания авансов/займов в ведомости и пересчитать её."""
+    try:
+        await set_advance_recovery_overrides(
+            session,
+            run_id=run_id,
+            items=[(item.advance_id, item.amount) for item in payload.items],
             reason=payload.reason,
             actor_user_id=actor.user_id,
         )

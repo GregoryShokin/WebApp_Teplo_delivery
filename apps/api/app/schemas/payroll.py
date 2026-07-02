@@ -40,6 +40,48 @@ class AdvanceRecoveryDeferralRequest(BaseModel):
     reason: str | None = None
 
 
+class RecoveryOverrideItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    advance_id: uuid.UUID
+    # Сумма удержания в этом периоде: 0 — отложить, = остатку долга — закрыть досрочно.
+    amount: Decimal = Field(ge=0)
+
+
+class RecoveryOverridesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[RecoveryOverrideItem] = Field(min_length=1)
+    reason: str | None = None
+
+
+class RecoveryLineRead(BaseModel):
+    advance_id: uuid.UUID
+    kind: str
+    issued_on: date
+    amount: float
+    recovered_prior: float
+    outstanding: float
+    default_installment: float
+    current_recovery: float
+    override_amount: float | None = None
+    max_amount: float
+
+
+class EmployeeRecoveryDetailRead(BaseModel):
+    run_id: uuid.UUID
+    employee_id: uuid.UUID
+    employee_name: str
+    role: str | None = None
+    period_start: date
+    period_end: date
+    payroll_date: date
+    accrued: float
+    net: float
+    total_recovered: float
+    items: list[RecoveryLineRead]
+
+
 class PayrollPaymentMarkRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

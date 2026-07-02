@@ -62,6 +62,7 @@ import {
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 
+import { RecoveryDialog } from "./recovery-dialog";
 import { formatDate, formatMoney, formatPeriodRange } from "./runs";
 
 type PayrollAdminRunDetailRouteProps = {
@@ -525,6 +526,7 @@ function AdminLinesTable({
     return map;
   }, [loans]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<Set<string>>(new Set());
+  const [recoveryEmployeeId, setRecoveryEmployeeId] = useState<string | null>(null);
 
   const unpaidEmployeeIds = useMemo(
     () =>
@@ -768,9 +770,21 @@ function AdminLinesTable({
           rows={rows}
           isLoading={isLoading}
           getRowKey={(row) => row.line.id}
+          onRowClick={(row) => setRecoveryEmployeeId(row.line.employee_id)}
           emptyMessage="Сотрудники по фильтру не найдены"
         />
       )}
+
+      <RecoveryDialog
+        employeeId={recoveryEmployeeId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRecoveryEmployeeId(null);
+          }
+        }}
+        open={recoveryEmployeeId !== null}
+        runId={runId}
+      />
     </div>
   );
 }

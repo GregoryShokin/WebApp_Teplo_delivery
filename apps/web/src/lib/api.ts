@@ -3615,6 +3615,55 @@ export async function deferPayrollAdvanceRecovery(
   return response.data;
 }
 
+export type RecoveryLine = {
+  advance_id: string;
+  kind: string;
+  issued_on: string;
+  amount: number;
+  recovered_prior: number;
+  outstanding: number;
+  default_installment: number;
+  current_recovery: number;
+  override_amount: number | null;
+  max_amount: number;
+};
+
+export type EmployeeRecoveryDetail = {
+  run_id: string;
+  employee_id: string;
+  employee_name: string;
+  role: string | null;
+  period_start: string;
+  period_end: string;
+  payroll_date: string;
+  accrued: number;
+  net: number;
+  total_recovered: number;
+  items: RecoveryLine[];
+};
+
+export async function getEmployeeRecoveries(
+  runId: string,
+  employeeId: string,
+): Promise<EmployeeRecoveryDetail> {
+  const response = await api.get<EmployeeRecoveryDetail>(
+    `/payroll/runs/${runId}/employees/${employeeId}/recoveries`,
+  );
+  return response.data;
+}
+
+export async function setPayrollRecoveryOverrides(
+  runId: string,
+  items: { advance_id: string; amount: number }[],
+  reason?: string,
+): Promise<PayrollRun> {
+  const response = await api.put<PayrollRun>(`/payroll/runs/${runId}/recoveries`, {
+    items,
+    reason,
+  });
+  return response.data;
+}
+
 export async function getPayrollAdvanceConfig(): Promise<PayrollAdvanceConfig> {
   const response = await api.get<PayrollAdvanceConfig>("/payroll/advances/config");
   return response.data;

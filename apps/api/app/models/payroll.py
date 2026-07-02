@@ -1145,6 +1145,44 @@ class SalaryAdvanceRecovery(Base):
     advance: Mapped[SalaryAdvance] = relationship(back_populates="recoveries")
 
 
+class SalaryAdvanceRecoveryOverride(Base):
+    """Ручное переопределение суммы удержания аванса/займа в конкретном периоде.
+
+    Окно «Удержания сотрудника»: вместо дефолтной доли (`per_installment_amount`
+    для займа, вся сумма для аванса) при расчёте ведомости этого периода удерживается
+    заданная сумма — ``0`` откладывает удержание, ``= остатку долга`` закрывает досрочно,
+    между — частичное гашение. Ключ (advance_id, period_id) переживает пересчёт:
+    превью-строки `salary_advance_recovery` удаляются на ре-расчёте, override — нет.
+    """
+
+    __tablename__ = "salary_advance_recovery_override"
+    __table_args__ = (
+        UniqueConstraint("advance_id", "period_id", name="uq_advance_recovery_override"),
+        CheckConstraint(
+            "amount >= 0", name="ck_advance_recovery_override_amount_non_negative"
+        ),
+        Index("ix_advance_recovery_override_period", "period_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    advance_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("salary_advance.id", ondelete="CASCADE"), nullable=False
+    )
+    period_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("payroll_period.id", ondelete="CASCADE"), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class SalaryAdvanceBankDraft(Base):
     """Банковский черновик выдачи аванса/займа (Фаза 2) — зеркало ``PayrollBankDraft``.
 
