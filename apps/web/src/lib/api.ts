@@ -3435,6 +3435,7 @@ export type EmployeePayoutCreate = {
   wallet_id: string;
   payout_date: string; // YYYY-MM-DD
   kind?: EmployeePayoutKind;
+  article_id?: string | null;
   note?: string | null;
 };
 

@@ -418,6 +418,7 @@ async def post_employee_payout(
             wallet_id=payload.wallet_id,
             payout_date=payload.payout_date,
             kind=payload.kind,
+            article_id=payload.article_id,
             note=payload.note,
             created_by_user_id=actor.user_id,
         )

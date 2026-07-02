@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Plus, RefreshCw } from "lucide-react";
+import { LoaderCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/ui-app/PageHeader";
@@ -11,7 +11,6 @@ import { usePermissions } from "@/lib/permissions";
 
 import { getInvoices, syncInvoices } from "../counterparties/api";
 import { CounterpartyCard } from "../counterparties/CounterpartyCard";
-import { CreatePrepaymentDialog } from "../counterparties/CreatePrepaymentDialog";
 import { MetricCard, formatRub, isOverdue } from "../counterparties/shared";
 import { InboxTab } from "../counterparties/tabs/inbox";
 import { RegistryTab } from "../counterparties/tabs/registry";
@@ -46,7 +45,6 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate, embedded = false
   const canCreateBarter = permissions.canPerformAction("invoices.barter.create");
   const canPayBarter = permissions.canPerformAction("invoices.barter.pay");
   const [openId, setOpenId] = useState<string | null>(null);
-  const [prepayOpen, setPrepayOpen] = useState(false);
 
   const dashboardQuery = useQuery({
     queryKey: ["cp", "invoices", "dashboard"],
@@ -178,21 +176,6 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate, embedded = false
         onClose={() => setOpenId(null)}
       />
 
-      {!embedded && canPayNormal ? (
-        <>
-          <Button
-            type="button"
-            size="icon"
-            aria-label="Создать платёж"
-            title="Создать платёж"
-            className="fixed bottom-6 right-6 z-40 h-14 w-14 rounded-full shadow-lg"
-            onClick={() => setPrepayOpen(true)}
-          >
-            <Plus size={24} aria-hidden="true" />
-          </Button>
-          <CreatePrepaymentDialog open={prepayOpen} onOpenChange={setPrepayOpen} />
-        </>
-      ) : null}
     </div>
   );
 }

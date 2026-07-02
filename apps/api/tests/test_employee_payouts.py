@@ -13,7 +13,7 @@ from app.services.employee_payouts import (
     EMPLOYEE_PAYOUT_SOURCE_KIND,
     create_cash_employee_payout,
 )
-from app.services.payroll_runner import PayrollConflictError
+from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
 
 
 async def _make_employee(session: AsyncSession) -> Employee:
@@ -129,4 +129,61 @@ async def test_non_positive_amount_rejected(
                 amount=Decimal("0"),
                 wallet_id=wallet.id,
                 payout_date=date(2026, 5, 20),
+            )
+
+
+async def test_explicit_article_id_used(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Явный article_id (выбор в диалоге плавающей кнопки) применяется вместо дефолта."""
+    async with async_session_factory() as session:
+        employee = await _make_employee(session)
+        wallet = await _make_wallet(session, wallet_type="store_cash")
+        article = DdsArticle(
+            id=uuid.uuid4(),
+            code=f"test-art-{uuid.uuid4().hex[:8]}",
+            name="Тест выплата",
+            movement_type="outflow",
+            activity_type="operating",
+            is_active=True,
+        )
+        session.add(article)
+        await session.commit()
+
+        payout = await create_cash_employee_payout(
+            session,
+            employee_id=employee.id,
+            amount=Decimal("3000"),
+            wallet_id=wallet.id,
+            payout_date=date(2026, 5, 20),
+            kind="salary",
+            article_id=article.id,
+        )
+        await session.commit()
+        assert payout.article_id == article.id
+        txn = await session.scalar(
+            select(CashflowTransaction).where(
+                CashflowTransaction.source_kind == EMPLOYEE_PAYOUT_SOURCE_KIND,
+                CashflowTransaction.source_id == payout.id,
+            )
+        )
+        assert txn is not None and txn.article_id == article.id
+
+
+async def test_unknown_article_id_rejected(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        employee = await _make_employee(session)
+        wallet = await _make_wallet(session, wallet_type="store_cash")
+        await session.commit()
+
+        with pytest.raises(PayrollNotFoundError):
+            await create_cash_employee_payout(
+                session,
+                employee_id=employee.id,
+                amount=Decimal("3000"),
+                wallet_id=wallet.id,
+                payout_date=date(2026, 5, 20),
+                article_id=uuid.uuid4(),
             )

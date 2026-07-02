@@ -259,6 +259,8 @@ class EmployeePayoutCreate(BaseModel):
     payout_date: date
     # owner_salary — гашение долга ЗП собственника (on_demand); salary/other — разовые выплаты.
     kind: str = "owner_salary"
+    # Явная статья ДДС (выбор в диалоге); None → дефолт «Зарплата собственника».
+    article_id: uuid.UUID | None = None
     note: str | None = Field(default=None, max_length=500)
 
 

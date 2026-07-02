@@ -42,6 +42,7 @@ import { RoleBadge } from "@/components/ui-app/RoleBadge";
 import { clearSession, getAuthSnapshot, subscribeAuth, type AuthUser } from "@/lib/auth";
 import { logout } from "@/lib/api";
 import { usePermissions, type AppSection } from "@/lib/permissions";
+import { GlobalActionFab } from "@/components/layout/GlobalActionFab";
 import { cn } from "@/lib/utils";
 
 type Navigate = (path: string) => void;
@@ -193,6 +194,8 @@ export function AppLayout({ children, currentPath, onNavigate }: AppLayoutProps)
           <div className="mx-auto w-full max-w-[1320px]">{children}</div>
         </main>
       </div>
+
+      <GlobalActionFab />
     </div>
   );
 }

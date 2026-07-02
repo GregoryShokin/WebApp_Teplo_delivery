@@ -49,6 +49,7 @@ async def create_cash_employee_payout(
     wallet_id: uuid.UUID,
     payout_date: date,
     kind: str = EMPLOYEE_PAYOUT_KIND_OWNER_SALARY,
+    article_id: uuid.UUID | None = None,
     article_code: str = OWNER_SALARY_ARTICLE_CODE,
     note: str | None = None,
     created_by_user_id: uuid.UUID | None = None,
@@ -56,8 +57,9 @@ async def create_cash_employee_payout(
     """Разовая выплата сотруднику наличными/с подотчётного счёта (прямая out-проводка).
 
     Деньги уходят сразу (``status='paid'``): создаётся ``EmployeePayout`` и out-
-    ``CashflowTransaction`` на выбранном наличном/сейфовом кошельке со статьёй ДДС (по
-    умолчанию «Зарплата собственника»), связанные через ``cashflow_transaction_id``.
+    ``CashflowTransaction`` на выбранном наличном/сейфовом кошельке со статьёй ДДС,
+    связанные через ``cashflow_transaction_id``. Статья: явный ``article_id`` (выбор в
+    диалоге), иначе разрешается по ``article_code`` (по умолчанию «Зарплата собственника»).
     Банковские счета отклоняются (нужен контур черновик+Сейф из Трека B).
 
     Возвращает созданный ``EmployeePayout``. Не коммитит — коммит на вызывающем.
@@ -83,9 +85,17 @@ async def create_cash_employee_payout(
             "используйте «Создать выплату сотруднику» из плавающей кнопки"
         )
 
-    article_id = await session.scalar(
-        select(DdsArticle.id).where(DdsArticle.code == article_code)
-    )
+    if article_id is not None:
+        resolved_article_id = await session.scalar(
+            select(DdsArticle.id).where(DdsArticle.id == article_id)
+        )
+        if resolved_article_id is None:
+            raise PayrollNotFoundError("Статья ДДС не найдена")
+    else:
+        resolved_article_id = await session.scalar(
+            select(DdsArticle.id).where(DdsArticle.code == article_code)
+        )
+    article_id = resolved_article_id
 
     payout = EmployeePayout(
         id=uuid.uuid4(),
