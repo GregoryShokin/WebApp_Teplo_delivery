@@ -23,6 +23,7 @@ from app.services.payroll_admin import (
     compute_on_demand_debt,
     latest_admin_period_dates,
     next_admin_period_dates,
+    okladnik_earned_to_date,
     run_admin_payroll,
     set_admin_payroll_exclusion,
     set_dishwasher_shift,
@@ -233,6 +234,65 @@ async def test_on_demand_debt_accrued_minus_payouts(
         debt = await compute_on_demand_debt(session, [employee.id])
         assert debt[employee.id]["paid"] == Decimal("10000.00")
         assert debt[employee.id]["debt"] == Decimal("20000.00")
+
+
+async def test_on_demand_adjustments_fold_into_debt_not_auto_paid(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """on_demand: премия на строке НЕ уходит в авто-выплату ведомости (к выплате 0),
+    а складывается в долг (accrual_amount = ½ оклада + премия − штраф)."""
+    async with async_session_factory() as session:
+        employee = await _make_admin_employee(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("60000"))
+        await set_okladnik_payout_mode(session, "Управляющий", "on_demand")
+        period = await _make_period(session)
+        session.add(
+            PayrollAdjustment(
+                id=uuid.uuid4(),
+                employee_id=employee.id,
+                work_date=date(2026, 5, 10),
+                type="bonus",
+                role="Управляющий",
+                custom_label="Премия",
+                amount=Decimal("5000"),
+            )
+        )
+        await session.commit()
+
+        run = await run_admin_payroll(session, period.id)
+        assert run.status == "completed"
+        lines = await _lines(session, run.id)
+        assert len(lines) == 1
+        line = lines[0]
+        # Премия видна в колонке, но к выплате по ведомости — 0 (не утекает в авто-выплату).
+        assert line.premium == Decimal("5000.00")
+        assert line.total_payable == Decimal("0.00")
+        # Долг = ½ оклада + премия = 30000 + 5000 = 35000.
+        assert Decimal(line.components["proration"]["accrual_amount"]) == Decimal("35000.00")
+        assert float(run.summary["total_payable"]) == 0.0
+
+        debt = await compute_on_demand_debt(session, [employee.id])
+        assert debt[employee.id]["debt"] == Decimal("35000.00")
+
+
+def test_okladnik_earned_to_date_on_demand_returns_accrual() -> None:
+    """on_demand: «заработано на дату» = прорейт-начисление (в долг), а не 0 (payout base).
+
+    Иначе потолок аванса «в пределах заработанного» для собственника схлопнулся бы в 0.
+    """
+    employee = Employee(hire_date=None, fire_date=None)
+    period = PayrollPeriod(
+        id=uuid.uuid4(),
+        period_type="half_month",
+        start_date=date(2026, 5, 1),
+        end_date=date(2026, 5, 15),
+        payroll_date=date(2026, 5, 15),
+        status="open",
+    )
+    earned = okladnik_earned_to_date(
+        Decimal("60000"), "on_demand", employee, period, date(2026, 5, 15)
+    )
+    assert earned == Decimal("30000.00")
 
 
 async def test_senior_courier_gets_admin_oklad(

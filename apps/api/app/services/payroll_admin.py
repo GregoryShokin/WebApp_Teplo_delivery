@@ -364,6 +364,19 @@ async def calculate_admin_payroll_lines(
             }
 
         line_total = (base_pay + premium - penalty).quantize(_CENTS)
+
+        proration_data = components.get("proration")
+        if isinstance(proration_data, dict) and proration_data.get("on_demand"):
+            # on_demand: НИЧЕГО не выплачивается через ведомость (иначе премия/штраф на строке
+            # утекли бы в авто-выплату ведомости — банк-черновик/наличный сплит). Чистую
+            # корректировку складываем в долг (accrual_amount), к выплате по ведомости = 0.
+            # Выплата — только вручную по кнопке «Включить в выплату».
+            net_accrual = (
+                decimal(proration_data.get("accrual_amount", "0")) + premium - penalty
+            ).quantize(_CENTS)
+            proration_data["accrual_amount"] = money_string(net_accrual)
+            line_total = Decimal("0.00")
+
         total_payable += line_total
         lines.append(
             PayrollLine(
@@ -405,7 +418,8 @@ async def compute_on_demand_debt(
     """Накопительный долг ЗП собственника (режим оклада ``on_demand``).
 
     ``accrued`` = Σ ``accrual_amount`` по всем on_demand-строкам сотрудника (по одной на
-    период — пересчёт заменяет строки, дублей нет); ``paid`` = Σ ``amount`` выплат
+    период — пересчёт заменяет строки, лишь у проведённых ведомостей есть строки, дублей
+    нет); ``paid`` = Σ ``amount`` выплат
     ``EmployeePayout(kind='owner_salary', status in ('pending','paid'))``; ``debt`` =
     ``accrued − paid`` (может быть отрицательным при переплате). Возвращает записи только
     для сотрудников, у которых есть начисления или выплаты.
@@ -623,7 +637,12 @@ def okladnik_earned_to_date(
     Возвращает база-оклада, пропорциональную календарным дням от начала периода до
     `as_of`. Это «в пределах заработанного» — потолок аванса (право A) для окладника.
     """
-    base, _ = _okladnik_base_pay(oklad, mode, employee, period, as_of=as_of)
+    base, proration = _okladnik_base_pay(oklad, mode, employee, period, as_of=as_of)
+    if proration.get("on_demand"):
+        # on_demand: к выплате база = 0, но ЗАРАБОТАНО = прорейт-начисление (в долг).
+        # Это потолок «в пределах заработанного» для аванса — иначе он схлопнулся бы в 0.
+        raw = proration.get("accrual_amount")
+        return decimal(raw) if raw is not None else Decimal("0.00")
     return base
 
 

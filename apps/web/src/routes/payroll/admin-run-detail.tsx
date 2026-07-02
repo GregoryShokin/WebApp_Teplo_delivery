@@ -551,7 +551,11 @@ function AdminLinesTable({
     () =>
       Array.from(
         new Set(
-          lines.filter((line) => line.payment_status !== "paid").map((line) => line.employee_id),
+          lines
+            // on_demand-строки не выплачиваются через ведомость (к выплате 0, платятся
+            // вручную по кнопке «Включить в выплату») — исключаем из массовой отметки.
+            .filter((line) => line.payment_status !== "paid" && !line.on_demand)
+            .map((line) => line.employee_id),
         ),
       ),
     [lines],
@@ -641,7 +645,7 @@ function AdminLinesTable({
               />
             ),
             cell: (row: AdminLineRowModel) =>
-              row.line.payment_status === "paid" ? null : (
+              row.line.payment_status === "paid" || row.line.on_demand ? null : (
                 <Checkbox
                   aria-label={`Выбрать ${row.employeeName}`}
                   checked={selectedEmployeeIds.has(row.line.employee_id)}
