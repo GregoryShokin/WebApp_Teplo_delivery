@@ -26,7 +26,8 @@ from app.core.config import Settings, get_settings
 from app.db.session import get_session
 from app.models import CounterpartyPaymentDraft, PayrollBankDraft, SalaryAdvanceBankDraft
 from app.services.bank_payment_status import apply_payment_status
-from app.services.banking.tbank import is_tbank_operation_hold
+from app.services.banking.base import clean_digits
+from app.services.banking.tbank import is_tbank_operation_hold, normalize_tbank_statement_row
 from app.services.couriers.cloud_shift_ingest import ingest_cloud_shift_event
 from app.services.couriers.shift_matching import recalculate_matches
 from app.services.payroll_advance_service import apply_advance_draft_status
@@ -117,31 +118,62 @@ def _is_account_operation_payload(payload: dict[str, Any]) -> bool:
     )
 
 
-def _ack_tbank_account_operation(payload: dict[str, Any]) -> dict[str, Any]:
-    """Подтвердить webhook операции по счёту, НЕ пропуская его в ДДС.
+async def _ingest_tbank_account_operation(
+    session: AsyncSession, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Влить операцию по счёту (строку выписки T-Банка) в журнал ``bank_operations``.
 
-    Деньги по банковским черновикам фиксируются статусом платёжного документа (по
-    ``provider_ref``). Операции по счёту приходят на тот же URL, но для этого контура
-    считаются выпиской: в журнал/баланс их не пишем, чтобы выписка не создавала вторую
-    проводку поверх оплаты, уже зафиксированной статусом черновика.
+    Realtime-выписка приходит на тот же URL, что и статус черновика. Черновики этим путём
+    НЕ гасим — их доводит статусный webhook по ``provider_ref``; здесь только пишем операцию
+    в выписку (баланс банка + пикер карт-оплат Кассы) и прогоняем классификацию. Анти-дубль
+    с оплатой черновика — общий prebooked-механизм классификатора (операция «забирает» уже
+    заведённую статусом проводку, а не создаёт вторую; поздние prebooked добирает
+    ``reconcile_needs_review_prebooked``). Холд (``authorization``) в баланс не пускаем.
+    Дедуп по ``operationId`` + стабильному ключу выписки в ``ingest_operations`` делает
+    повторную доставку идемпотентной.
     """
     operation_id = _extract(payload, ("operationId", "id"))
     if not operation_id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Нет идентификатора операции")
-    stage = "authorization" if is_tbank_operation_hold(payload) else "transaction"
+
+    account_number = clean_digits(payload.get("accountNumber"))
+    if not account_number:
+        # Без номера счёта операция не привяжется к счёту (account_id=NULL) и выпадет из
+        # баланса (JOIN по счёту). 422; сверочный поллинг подберёт её со счётом из контекста.
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Нет номера счёта в операции")
+
+    if is_tbank_operation_hold(payload):
+        logger.info("tbank account-operation холд (authorization): op=%s — пропуск", operation_id)
+        return {
+            "ok": True,
+            "operation_id": operation_id,
+            "stage": "authorization",
+            "ingested": False,
+        }
+
+    # Импорт здесь, а не на уровне модуля: ingest_operations тянет тяжёлый scheduler.
+    from app.scheduler import ingest_operations
+
+    operation = normalize_tbank_statement_row(
+        payload, account_number, datetime.now(_MOSCOW_TZ).date()
+    )
+    result = await ingest_operations(session, provider="tbank", operations=[operation])
+    await session.commit()
     logger.info(
-        "tbank account-operation принят без ДДС-ингеста: op=%s stage=%s", operation_id, stage
+        "tbank account-operation влит в выписку: op=%s dir=%s amount=%s ins=%s upd=%s",
+        operation_id,
+        operation.direction,
+        operation.amount,
+        result.get("inserted"),
+        result.get("updated"),
     )
     return {
         "ok": True,
         "operation_id": operation_id,
-        "stage": stage,
-        "ingested": False,
-        "inserted": 0,
-        "updated": 0,
-        "settled_draft": None,
-        "skipped": True,
-        "reason": "account_operation_ignored",
+        "stage": "transaction",
+        "ingested": True,
+        "inserted": result.get("inserted"),
+        "updated": result.get("updated"),
     }
 
 
@@ -161,11 +193,11 @@ async def tbank_payment_status(
     if not isinstance(payload, dict):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ожидался объект JSON")
 
-    # Операции по счёту приходят на тот же URL (формат выписки) — подтверждаем и игнорируем,
-    # в ДДС не пускаем. Оплату черновика фиксирует статус платёжного документа (по
-    # provider_ref, ниже), поэтому выписка не создаёт вторую проводку поверх статусной оплаты.
+    # Операции по счёту приходят на тот же URL (формат выписки) — вливаем в выписку (баланс
+    # банка + пикер карт-оплат Кассы), но черновики отсюда НЕ гасим: их доводит статус
+    # платёжного документа (по provider_ref, ниже). Анти-дубль — prebooked-механизм классификатора.
     if _is_account_operation_payload(payload):
-        return _ack_tbank_account_operation(payload)
+        return await _ingest_tbank_account_operation(session, payload)
 
     payment_id = _extract(payload, _ID_FIELDS)
     raw_status = _extract(payload, _STATUS_FIELDS)
@@ -210,14 +242,15 @@ async def tbank_payment_status(
 @router.post("/tbank/account-operation")
 async def tbank_account_operation(
     request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, Any]:
-    """Вебхук T-Банка «Операция по счёту».
+    """Вебхук T-Банка «Операция по счёту» (алиас; банк шлёт выписку и на /payment-status).
 
-    Подтверждаем корректное тело, но НЕ пишем операцию в ДДС: источник ДДС-проводки по
-    банковским черновикам — статус платёжного документа. Так выписка не создаёт вторую
-    проводку поверх статусной оплаты. Тело — один объект-операция (не массив).
+    Вливаем строку выписки в ``bank_operations`` (баланс банка + пикер карт-оплат Кассы),
+    но черновики отсюда НЕ гасим — их доводит статус платёжного документа. Анти-дубль с
+    оплатой черновика — prebooked-механизм классификатора. Тело — один объект-операция.
     """
     _authorize_tbank_webhook(request, settings, authorization)
 
@@ -228,7 +261,7 @@ async def tbank_account_operation(
     if not isinstance(payload, dict):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ожидался объект JSON")
 
-    return _ack_tbank_account_operation(payload)
+    return await _ingest_tbank_account_operation(session, payload)
 
 
 def _verify_bearer(authorization: str | None, expected: str | None) -> bool:
