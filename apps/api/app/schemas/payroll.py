@@ -264,6 +264,12 @@ class EmployeePayoutCreate(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
+class EmployeePayoutConfirmRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bank_operation_id: uuid.UUID
+
+
 class EmployeePayoutRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -277,6 +283,9 @@ class EmployeePayoutRead(BaseModel):
     cashflow_transaction_id: uuid.UUID | None = None
     status: str
     note: str | None = None
+    provider_ref: str | None = None
+    bank_operation_id: uuid.UUID | None = None
+    safe_allocation_id: uuid.UUID | None = None
     created_at: datetime
 
 

@@ -1281,6 +1281,23 @@ class EmployeePayout(Base):
         String(32), nullable=False, default="paid", server_default="paid"
     )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # --- Банковский контур (Track B2/B3): состояние черновика Т-Банк + Сейф-резерв + привязка ---
+    # Наличная/сейфовая выплата (status='paid' сразу) эти поля не использует.
+    document_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Резерв Сейфа, созданный при исполнении банковской выплаты (источник «Выплачено»).
+    safe_allocation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("safe_allocations.id", ondelete="SET NULL"), nullable=True
+    )
+    # Привязанная банковская операция из выписки (ручное подтверждение выплаты).
+    bank_operation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("bank_operations.id", ondelete="SET NULL"), nullable=True
+    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )

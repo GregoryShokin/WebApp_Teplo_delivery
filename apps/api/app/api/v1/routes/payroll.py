@@ -24,10 +24,12 @@ from app.models import (
     PayrollRun,
     PayrollRunEvent,
     User,
+    Wallet,
 )
 from app.schemas.inventory import PayoutOptionRead
 from app.schemas.payroll import (
     AdvanceRecoveryDeferralRequest,
+    EmployeePayoutConfirmRequest,
     EmployeePayoutCreate,
     EmployeePayoutRead,
     EmployeeRecoveryDetailRead,
@@ -66,7 +68,12 @@ from app.services.deferred_audit_charge_service import (
     list_deferred_charges,
 )
 from app.services.inventory_audit_service import list_open_production_payouts
-from app.services.employee_payouts import create_cash_employee_payout
+from app.services.employee_payouts import (
+    BANK_PAYOUT_WALLET_TYPES,
+    confirm_employee_payout_by_operation,
+    create_bank_employee_payout,
+    create_cash_employee_payout,
+)
 from app.services.payroll_admin import compute_on_demand_debt, run_admin_payroll
 from app.services.payroll_advance_service import (
     get_employee_recovery_detail,
@@ -409,18 +416,68 @@ async def post_employee_payout(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> EmployeePayoutRead:
-    """Разовая выплата сотруднику наличными/с Сейфа (гашение долга ЗП собственника и т.п.)."""
+    """Разовая выплата сотруднику.
+
+    Наличный/сейфовый счёт — прямая проводка (``paid`` сразу). Банковский счёт — черновик
+    Т-Банк по реквизитам ИП (``pending``), подтверждается привязкой к операции выписки.
+    """
+    wallet = await session.get(Wallet, payload.wallet_id)
+    if wallet is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Счёт не найден")
+    is_bank = wallet.type in BANK_PAYOUT_WALLET_TYPES
     try:
-        payout = await create_cash_employee_payout(
+        if is_bank:
+            payout = await create_bank_employee_payout(
+                session,
+                employee_id=payload.employee_id,
+                amount=payload.amount,
+                wallet_id=payload.wallet_id,
+                payout_date=payload.payout_date,
+                kind=payload.kind,
+                article_id=payload.article_id,
+                note=payload.note,
+                created_by_user_id=actor.user_id,
+            )
+        else:
+            payout = await create_cash_employee_payout(
+                session,
+                employee_id=payload.employee_id,
+                amount=payload.amount,
+                wallet_id=payload.wallet_id,
+                payout_date=payload.payout_date,
+                kind=payload.kind,
+                article_id=payload.article_id,
+                note=payload.note,
+                created_by_user_id=actor.user_id,
+            )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    await session.commit()
+    await session.refresh(payout)
+    return EmployeePayoutRead.model_validate(payout)
+
+
+@router.post(
+    "/employee-payouts/{payout_id}/confirm",
+    response_model=EmployeePayoutRead,
+    dependencies=(Depends(require_permission("payroll.employee_payouts.create")),),
+)
+async def post_employee_payout_confirm(
+    payout_id: uuid.UUID,
+    payload: EmployeePayoutConfirmRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> EmployeePayoutRead:
+    """Подтвердить банковскую выплату привязкой к реальной исходящей операции выписки."""
+    try:
+        payout = await confirm_employee_payout_by_operation(
             session,
-            employee_id=payload.employee_id,
-            amount=payload.amount,
-            wallet_id=payload.wallet_id,
-            payout_date=payload.payout_date,
-            kind=payload.kind,
-            article_id=payload.article_id,
-            note=payload.note,
-            created_by_user_id=actor.user_id,
+            payout_id=payout_id,
+            bank_operation_id=payload.bank_operation_id,
         )
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

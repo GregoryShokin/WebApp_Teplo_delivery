@@ -3450,6 +3450,9 @@ export type EmployeePayout = {
   cashflow_transaction_id: string | null;
   status: string;
   note: string | null;
+  provider_ref: string | null;
+  bank_operation_id: string | null;
+  safe_allocation_id: string | null;
   created_at: string;
 };
 
@@ -3457,6 +3460,17 @@ export async function createEmployeePayout(
   payload: EmployeePayoutCreate,
 ): Promise<EmployeePayout> {
   const response = await api.post<EmployeePayout>("/payroll/employee-payouts", payload);
+  return response.data;
+}
+
+export async function confirmEmployeePayout(
+  payoutId: string,
+  bankOperationId: string,
+): Promise<EmployeePayout> {
+  const response = await api.post<EmployeePayout>(
+    `/payroll/employee-payouts/${payoutId}/confirm`,
+    { bank_operation_id: bankOperationId },
+  );
   return response.data;
 }
 
