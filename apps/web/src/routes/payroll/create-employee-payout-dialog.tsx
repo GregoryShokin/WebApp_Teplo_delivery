@@ -28,13 +28,15 @@ import {
   getDdsArticles,
   getDdsBankOperations,
   getDdsWallets,
-  getEmployees,
+  getOnDemandEmployees,
   type EmployeePayout,
   type WalletRead,
 } from "@/lib/api";
 
 const BANK_WALLET_TYPES = new Set(["bank", "bank_account"]);
-const SALARY_ARTICLE_HINT = "зарплат";
+// Допустимые счета-источники выплаты: Сейф, Сбербанк, Тинькофф рублёвый, Торговая касса Черникова.
+const PAYOUT_WALLET_CODES = new Set(["cash_safe", "sber_main", "tbank_main", "tk_chernikova"]);
+const DEFAULT_ARTICLE_CODE = "zarplata_administrativnogo_personala";
 
 function todayInput(): string {
   const now = new Date();
@@ -75,8 +77,8 @@ export function CreateEmployeePayoutDialog({
   const [note, setNote] = useState("");
 
   const employeesQuery = useQuery({
-    queryKey: ["fab-payout-employees"],
-    queryFn: () => getEmployees({ status: "active" }),
+    queryKey: ["fab-on-demand-employees"],
+    queryFn: getOnDemandEmployees,
     enabled: open,
   });
   const walletsQuery = useQuery({
@@ -98,7 +100,10 @@ export function CreateEmployeePayoutDialog({
     [employeesQuery.data],
   );
   const wallets = useMemo(
-    () => (walletsQuery.data ?? []).filter((wallet) => wallet.status === "active"),
+    () =>
+      (walletsQuery.data ?? []).filter(
+        (wallet) => wallet.status === "active" && PAYOUT_WALLET_CODES.has(wallet.code),
+      ),
     [walletsQuery.data],
   );
   const articles = useMemo(
@@ -127,9 +132,7 @@ export function CreateEmployeePayoutDialog({
     if (!open || articleId || articles.length === 0) {
       return;
     }
-    const salary =
-      articles.find((a) => a.code === "zarplata_sobstvennika") ??
-      articles.find((a) => a.name.toLowerCase().includes(SALARY_ARTICLE_HINT));
+    const salary = articles.find((a) => a.code === DEFAULT_ARTICLE_CODE);
     if (salary) {
       setArticleId(salary.id);
     }
@@ -142,7 +145,7 @@ export function CreateEmployeePayoutDialog({
         amount: Number(amount),
         wallet_id: walletId,
         payout_date: payoutDate,
-        kind: "salary",
+        kind: "owner_salary",
         article_id: articleId || null,
         note: note.trim() ? note.trim() : null,
       }),

@@ -1249,7 +1249,7 @@ class EmployeePayout(Base):
     __table_args__ = (
         CheckConstraint("amount > 0", name="ck_employee_payout_amount_positive"),
         CheckConstraint(
-            "status in ('draft', 'pending', 'paid', 'failed', 'cancelled')",
+            "status in ('draft', 'pending', 'included', 'paid', 'failed', 'cancelled')",
             name="ck_employee_payout_status",
         ),
         Index("ix_employee_payout_employee", "employee_id"),
@@ -1297,6 +1297,11 @@ class EmployeePayout(Base):
     # Привязанная банковская операция из выписки (ручное подтверждение выплаты).
     bank_operation_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("bank_operations.id", ondelete="SET NULL"), nullable=True
+    )
+    # Ведомость, в выплату которой включена сумма (status='included', «Включить в выплату»);
+    # эти суммы формируют total_payable on_demand-строки и платятся вместе с ведомостью.
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payroll_run.id", ondelete="SET NULL"), nullable=True
     )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True

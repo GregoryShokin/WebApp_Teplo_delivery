@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -14,28 +14,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  apiErrorMessage,
-  createEmployeePayout,
-  getCashWallets,
-  type EmployeePayoutKind,
-} from "@/lib/api";
+import { apiErrorMessage, includeOnDemandPayout } from "@/lib/api";
 
 import { formatMoney } from "./runs";
-
-function todayInput(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${now.getFullYear()}-${month}-${day}`;
-}
 
 function Kpi({ label, value, tone }: { label: string; value: string; tone?: "rose" | "emerald" }) {
   const color = tone === "rose" ? "text-rose-700" : tone === "emerald" ? "text-emerald-700" : "";
@@ -50,73 +31,60 @@ function Kpi({ label, value, tone }: { label: string; value: string; tone?: "ros
 export function EmployeePayoutDialog({
   open,
   onOpenChange,
+  runId,
   employeeId,
   employeeName,
   accrued,
   paid,
-  debt,
-  kind = "owner_salary",
+  remaining,
   onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  runId: string;
   employeeId: string | null;
   employeeName: string;
   accrued: number;
   paid: number;
-  debt: number;
-  kind?: EmployeePayoutKind;
+  remaining: number;
   onSaved?: () => void;
 }) {
   const queryClient = useQueryClient();
   const [amount, setAmount] = useState("");
-  const [walletId, setWalletId] = useState("");
-  const [payoutDate, setPayoutDate] = useState(todayInput());
   const [note, setNote] = useState("");
 
-  const walletsQuery = useQuery({
-    queryKey: ["cash-wallets"],
-    queryFn: getCashWallets,
-    enabled: open,
-  });
-  const wallets = walletsQuery.data ?? [];
-
-  // Сброс формы при каждом открытии: сумма = текущий долг (но не отрицательная).
+  // Сброс при открытии: сумма = текущий остаток (но не отрицательная).
   useEffect(() => {
     if (open) {
-      setAmount(debt > 0 ? String(debt) : "");
-      setPayoutDate(todayInput());
+      setAmount(remaining > 0 ? String(remaining) : "");
       setNote("");
-      setWalletId("");
     }
-  }, [open, debt]);
+  }, [open, remaining]);
 
   const mutation = useMutation({
     mutationFn: () =>
-      createEmployeePayout({
+      includeOnDemandPayout(runId, {
         employee_id: employeeId ?? "",
         amount: Number(amount),
-        wallet_id: walletId,
-        payout_date: payoutDate,
-        kind,
         note: note.trim() ? note.trim() : null,
       }),
     onSuccess: async () => {
-      toast.success("Выплата проведена");
-      await queryClient.invalidateQueries({ queryKey: ["payroll-admin-run-lines"] });
-      await queryClient.invalidateQueries({ queryKey: ["payroll-admin-run"] });
+      toast.success("Сумма включена в выплату ведомости");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["payroll-admin-run-lines"] }),
+        queryClient.invalidateQueries({ queryKey: ["payroll-admin-run"] }),
+      ]);
       onSaved?.();
       onOpenChange(false);
     },
     onError: (error) => {
-      toast.error(apiErrorMessage(error, "Не удалось провести выплату"));
+      toast.error(apiErrorMessage(error, "Не удалось включить в выплату"));
     },
   });
 
   const amountValue = Number(amount);
   const amountValid = Number.isFinite(amountValue) && amountValue > 0;
-  const canSubmit =
-    Boolean(employeeId) && amountValid && Boolean(walletId) && Boolean(payoutDate) && !mutation.isPending;
+  const canSubmit = Boolean(employeeId) && amountValid && !mutation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -124,50 +92,29 @@ export function EmployeePayoutDialog({
         <DialogHeader>
           <DialogTitle>Включить в выплату</DialogTitle>
           <DialogDescription>
-            {employeeName} — выплата ЗП «по востребованию» наличными или с Сейфа. Уменьшает
-            накопленный долг и проводит расход в ДДС.
+            {employeeName} — сумма попадёт в «К выплате» этой ведомости и оплатится вместе с ней
+            (тем счётом, которым платится вся ведомость). Остаток уменьшится сразу.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid grid-cols-3 gap-2">
           <Kpi label="Начислено" value={formatMoney(accrued)} />
           <Kpi label="Выплачено" value={formatMoney(paid)} tone="emerald" />
-          <Kpi label="Долг" value={formatMoney(debt)} tone={debt > 0 ? "rose" : undefined} />
+          <Kpi
+            label="Остаток"
+            value={formatMoney(remaining)}
+            tone={remaining > 0 ? "rose" : undefined}
+          />
         </div>
 
         <div className="space-y-3">
           <Label className="block space-y-1">
-            <span className="text-sm">Сумма выплаты, ₽</span>
+            <span className="text-sm">Сумма к выплате, ₽</span>
             <Input
               inputMode="decimal"
               onChange={(event) => setAmount(event.target.value)}
               placeholder="0"
               value={amount}
-            />
-          </Label>
-
-          <Label className="block space-y-1">
-            <span className="text-sm">Счёт-источник</span>
-            <Select onValueChange={setWalletId} value={walletId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Выберите счёт" />
-              </SelectTrigger>
-              <SelectContent>
-                {wallets.map((wallet) => (
-                  <SelectItem key={wallet.id} value={wallet.id}>
-                    {wallet.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Label>
-
-          <Label className="block space-y-1">
-            <span className="text-sm">Дата выплаты</span>
-            <Input
-              onChange={(event) => setPayoutDate(event.target.value)}
-              type="date"
-              value={payoutDate}
             />
           </Label>
 
@@ -189,7 +136,7 @@ export function EmployeePayoutDialog({
             {mutation.isPending ? (
               <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
             ) : null}
-            Провести выплату
+            Включить в выплату
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -849,10 +849,8 @@ function AdminLinesTable({
 
       <EmployeePayoutDialog
         accrued={payoutRow?.line.on_demand_accrued ?? 0}
-        debt={payoutRow?.line.on_demand_debt ?? 0}
         employeeId={payoutRow?.line.employee_id ?? null}
         employeeName={payoutRow?.employeeName ?? ""}
-        kind="owner_salary"
         onOpenChange={(open) => {
           if (!open) {
             setPayoutRow(null);
@@ -860,6 +858,8 @@ function AdminLinesTable({
         }}
         open={payoutRow !== null}
         paid={payoutRow?.line.on_demand_paid ?? 0}
+        remaining={payoutRow?.line.on_demand_debt ?? 0}
+        runId={runId}
       />
     </div>
   );
@@ -874,13 +874,15 @@ function OnDemandPayoutCell({
   line: PayrollLine;
   onPay: () => void;
 }) {
-  const debt = Number(line.on_demand_debt ?? 0);
+  const remaining = Number(line.on_demand_debt ?? 0);
   return (
     <div className="flex flex-col items-start gap-1">
       <span className="text-xs text-muted-foreground">
-        Долг:{" "}
-        <span className={`tabular-nums ${debt > 0 ? "font-medium text-rose-700" : "text-foreground"}`}>
-          {formatMoney(debt)}
+        Остаток:{" "}
+        <span
+          className={`tabular-nums ${remaining > 0 ? "font-medium text-rose-700" : "text-foreground"}`}
+        >
+          {formatMoney(remaining)}
         </span>
       </span>
       {canCreatePayout ? (

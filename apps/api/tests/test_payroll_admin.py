@@ -21,6 +21,7 @@ from app.models import (
 )
 from app.services.payroll_admin import (
     compute_on_demand_debt,
+    create_included_payout,
     latest_admin_period_dates,
     next_admin_period_dates,
     okladnik_earned_to_date,
@@ -186,7 +187,8 @@ async def test_on_demand_mode_accrues_debt_not_paid(
         assert line.total_payable == Decimal("0.00")
         proration = line.components["proration"]
         assert proration["on_demand"] is True
-        assert Decimal(proration["accrual_amount"]) == Decimal("30000.00")
+        # Полный месячный оклад начисляется сразу (в первом полупериоде), не ½.
+        assert Decimal(proration["accrual_amount"]) == Decimal("60000.00")
 
 
 async def test_on_demand_debt_accrued_minus_payouts(
@@ -202,13 +204,13 @@ async def test_on_demand_debt_accrued_minus_payouts(
 
         await run_admin_payroll(session, period.id)
 
-        # Начислено 30000, ничего не выплачено → долг 30000.
+        # Начислено 60000 (полный оклад), ничего не выплачено → остаток 60000.
         debt = await compute_on_demand_debt(session, [employee.id])
-        assert debt[employee.id]["accrued"] == Decimal("30000.00")
+        assert debt[employee.id]["accrued"] == Decimal("60000.00")
         assert debt[employee.id]["paid"] == Decimal("0.00")
-        assert debt[employee.id]["debt"] == Decimal("30000.00")
+        assert debt[employee.id]["debt"] == Decimal("60000.00")
 
-        # Выплата 10000 (paid) уменьшает долг до 20000; черновик (draft) не учитывается.
+        # Выплата 10000 (paid) уменьшает остаток до 50000; черновик (draft) не учитывается.
         session.add(
             EmployeePayout(
                 id=uuid.uuid4(),
@@ -233,7 +235,7 @@ async def test_on_demand_debt_accrued_minus_payouts(
 
         debt = await compute_on_demand_debt(session, [employee.id])
         assert debt[employee.id]["paid"] == Decimal("10000.00")
-        assert debt[employee.id]["debt"] == Decimal("20000.00")
+        assert debt[employee.id]["debt"] == Decimal("50000.00")
 
 
 async def test_on_demand_adjustments_fold_into_debt_not_auto_paid(
@@ -267,12 +269,46 @@ async def test_on_demand_adjustments_fold_into_debt_not_auto_paid(
         # Премия видна в колонке, но к выплате по ведомости — 0 (не утекает в авто-выплату).
         assert line.premium == Decimal("5000.00")
         assert line.total_payable == Decimal("0.00")
-        # Долг = ½ оклада + премия = 30000 + 5000 = 35000.
-        assert Decimal(line.components["proration"]["accrual_amount"]) == Decimal("35000.00")
+        # Остаток = полный оклад + премия = 60000 + 5000 = 65000.
+        assert Decimal(line.components["proration"]["accrual_amount"]) == Decimal("65000.00")
         assert float(run.summary["total_payable"]) == 0.0
 
         debt = await compute_on_demand_debt(session, [employee.id])
+        assert debt[employee.id]["debt"] == Decimal("65000.00")
+
+
+async def test_on_demand_include_bumps_payable_and_reduces_remaining(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Включить в выплату»: сумма попадает в total_payable строки и уменьшает остаток;
+    переживает пересчёт."""
+    async with async_session_factory() as session:
+        employee = await _make_admin_employee(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("60000"))
+        await set_okladnik_payout_mode(session, "Управляющий", "on_demand")
+        period = await _make_period(session)
+        await session.commit()
+
+        run = await run_admin_payroll(session, period.id)
+        lines = await _lines(session, run.id)
+        assert lines[0].total_payable == Decimal("0.00")
+
+        # Включаем 25000 в выплату ведомости.
+        await create_included_payout(
+            session, run_id=run.id, employee_id=employee.id, amount=Decimal("25000")
+        )
+        await session.commit()
+
+        lines = await _lines(session, run.id)
+        assert lines[0].total_payable == Decimal("25000.00")
+        debt = await compute_on_demand_debt(session, [employee.id])
+        assert debt[employee.id]["paid"] == Decimal("25000.00")
         assert debt[employee.id]["debt"] == Decimal("35000.00")
+
+        # Пересчёт ведомости: включённая сумма сохраняется в total_payable.
+        run2 = await run_admin_payroll(session, period.id)
+        lines2 = await _lines(session, run2.id)
+        assert lines2[0].total_payable == Decimal("25000.00")
 
 
 def test_okladnik_earned_to_date_on_demand_returns_accrual() -> None:
@@ -292,7 +328,8 @@ def test_okladnik_earned_to_date_on_demand_returns_accrual() -> None:
     earned = okladnik_earned_to_date(
         Decimal("60000"), "on_demand", employee, period, date(2026, 5, 15)
     )
-    assert earned == Decimal("30000.00")
+    # Полный оклад начисляется в первом полупериоде.
+    assert earned == Decimal("60000.00")
 
 
 async def test_senior_courier_gets_admin_oklad(

@@ -287,6 +287,9 @@ async def calculate_admin_payroll_lines(
         adjustments_by_employee.setdefault(employee_id, []).extend(items)
 
     payout_modes = await _load_okladnik_payout_modes(session)
+    # Суммы, включённые в выплату этой ведомости вручную («Включить в выплату») — формируют
+    # total_payable on_demand-строк (платятся вместе с ведомостью).
+    included_by_employee = await load_included_payouts_by_employee(session, run_id)
     dishwasher_pool = await _load_dishwasher_pool(session)
     dishwasher_rate = _dishwasher_shift_rate(dishwasher_pool, period)
     shift_counts = await _load_dishwasher_shift_counts(
@@ -367,15 +370,14 @@ async def calculate_admin_payroll_lines(
 
         proration_data = components.get("proration")
         if isinstance(proration_data, dict) and proration_data.get("on_demand"):
-            # on_demand: НИЧЕГО не выплачивается через ведомость (иначе премия/штраф на строке
-            # утекли бы в авто-выплату ведомости — банк-черновик/наличный сплит). Чистую
-            # корректировку складываем в долг (accrual_amount), к выплате по ведомости = 0.
-            # Выплата — только вручную по кнопке «Включить в выплату».
+            # on_demand: полный оклад ± корректировки идёт в остаток (accrual_amount), а к
+            # выплате по ведомости — только суммы, включённые вручную («Включить в выплату»,
+            # status included/paid для этой ведомости). Остальное остаётся «на потом».
             net_accrual = (
                 decimal(proration_data.get("accrual_amount", "0")) + premium - penalty
             ).quantize(_CENTS)
             proration_data["accrual_amount"] = money_string(net_accrual)
-            line_total = Decimal("0.00")
+            line_total = included_by_employee.get(employee.id, Decimal("0")).quantize(_CENTS)
 
         total_payable += line_total
         lines.append(
@@ -407,22 +409,24 @@ async def calculate_admin_payroll_lines(
     return lines, blocking_issues, summary
 
 
-# owner_salary — выплата гасит накопленный долг ЗП собственника (режим оклада on_demand).
+# owner_salary — выплата уменьшает остаток ЗП по востребованию (режим оклада on_demand).
 EMPLOYEE_PAYOUT_KIND_OWNER_SALARY = "owner_salary"
+# Статусы выплат, уменьшающих остаток: included (включено в выплату ведомости), pending
+# (банк-черновик в полёте), paid (проведено). draft/failed/cancelled — не уменьшают.
+_ONDEMAND_PAYOUT_STATUSES = ("included", "pending", "paid")
 
 
 async def compute_on_demand_debt(
     session: AsyncSession,
     employee_ids: Iterable[uuid.UUID],
 ) -> dict[uuid.UUID, dict[str, Decimal]]:
-    """Накопительный долг ЗП собственника (режим оклада ``on_demand``).
+    """Остаток ЗП «по востребованию» (режим оклада ``on_demand``).
 
-    ``accrued`` = Σ ``accrual_amount`` по всем on_demand-строкам сотрудника (по одной на
-    период — пересчёт заменяет строки, лишь у проведённых ведомостей есть строки, дублей
-    нет); ``paid`` = Σ ``amount`` выплат
-    ``EmployeePayout(kind='owner_salary', status in ('pending','paid'))``; ``debt`` =
-    ``accrued − paid`` (может быть отрицательным при переплате). Возвращает записи только
-    для сотрудников, у которых есть начисления или выплаты.
+    ``accrued`` = Σ ``accrual_amount`` по всем on_demand-строкам сотрудника (полный оклад за
+    месяц, по одной строке на период; пересчёт заменяет строки, дублей нет); ``paid`` = Σ
+    ``amount`` выплат ``EmployeePayout(kind='owner_salary')`` со статусом included/pending/paid;
+    ``debt`` (= остаток, «сколько ещё можно забрать») = ``accrued − paid`` (может быть
+    отрицательным при переплате). Возвращает записи только для сотрудников с начислениями/выплатами.
     """
     unique_ids = list({eid for eid in employee_ids})
     if not unique_ids:
@@ -443,7 +447,7 @@ async def compute_on_demand_debt(
             continue
         accrued[line.employee_id] = accrued.get(line.employee_id, Decimal("0")) + decimal(raw)
 
-    # Выплачено: EmployeePayout(kind=owner_salary), учтённые (pending/paid).
+    # Выплачено/включено: EmployeePayout(kind=owner_salary), учтённые статусы.
     paid_rows = await session.execute(
         select(
             EmployeePayout.employee_id,
@@ -452,7 +456,7 @@ async def compute_on_demand_debt(
         .where(
             EmployeePayout.employee_id.in_(unique_ids),
             EmployeePayout.kind == EMPLOYEE_PAYOUT_KIND_OWNER_SALARY,
-            EmployeePayout.status.in_(("pending", "paid")),
+            EmployeePayout.status.in_(_ONDEMAND_PAYOUT_STATUSES),
         )
         .group_by(EmployeePayout.employee_id)
     )
@@ -466,6 +470,112 @@ async def compute_on_demand_debt(
             continue
         result[eid] = {"accrued": a, "paid": p, "debt": (a - p).quantize(_CENTS)}
     return result
+
+
+async def load_included_payouts_by_employee(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+) -> dict[uuid.UUID, Decimal]:
+    """Σ включённых в выплату ЭТОЙ ведомости сумм по сотруднику (status included/paid).
+
+    Формирует ``total_payable`` on_demand-строки: сумма платится вместе с ведомостью.
+    """
+    rows = await session.execute(
+        select(
+            EmployeePayout.employee_id,
+            func.coalesce(func.sum(EmployeePayout.amount), 0),
+        )
+        .where(
+            EmployeePayout.run_id == run_id,
+            EmployeePayout.kind == EMPLOYEE_PAYOUT_KIND_OWNER_SALARY,
+            EmployeePayout.status.in_(("included", "paid")),
+        )
+        .group_by(EmployeePayout.employee_id)
+    )
+    return {eid: decimal(total).quantize(_CENTS) for eid, total in rows.all()}
+
+
+async def create_included_payout(
+    session: AsyncSession,
+    *,
+    run_id: uuid.UUID,
+    employee_id: uuid.UUID,
+    amount: Decimal,
+    note: str | None = None,
+    created_by_user_id: uuid.UUID | None = None,
+) -> "EmployeePayout":
+    """«Включить в выплату»: включить сумму ЗП по востребованию в выплату ведомости.
+
+    Создаёт ``EmployeePayout(kind=owner_salary, status='included', run_id)`` без счёта и
+    проводки — сумма платится ВМЕСТЕ с ведомостью (формирует ``total_payable`` on_demand-строки),
+    остаток уменьшается сразу. Отдельной проводки нет: расход проводит выплата ведомости.
+    Доступно только для строки в режиме «по востребованию» незафинализированной ведомости.
+    """
+    amount = decimal(amount).quantize(_CENTS)
+    if amount <= 0:
+        raise PayrollConflictError("Сумма должна быть больше нуля")
+    run = await session.get(PayrollRun, run_id)
+    if run is None:
+        raise PayrollNotFoundError("Ведомость не найдена")
+    if run.status == "finalized":
+        raise PayrollConflictError("Ведомость зафинализирована — изменения невозможны")
+
+    line = await session.scalar(
+        select(PayrollLine).where(
+            PayrollLine.run_id == run_id, PayrollLine.employee_id == employee_id
+        )
+    )
+    if line is None:
+        raise PayrollNotFoundError("Строка сотрудника в ведомости не найдена")
+    components = line.components if isinstance(line.components, dict) else {}
+    proration = components.get("proration")
+    if not isinstance(proration, dict) or not proration.get("on_demand"):
+        raise PayrollConflictError(
+            "«Включить в выплату» доступно только для режима «по востребованию»"
+        )
+
+    payout = EmployeePayout(
+        id=uuid.uuid4(),
+        employee_id=employee_id,
+        kind=EMPLOYEE_PAYOUT_KIND_OWNER_SALARY,
+        amount=amount,
+        payout_date=datetime.now(UTC).date(),
+        run_id=run_id,
+        status="included",
+        note=(note.strip() if isinstance(note, str) and note.strip() else None),
+        created_by_user_id=created_by_user_id,
+    )
+    session.add(payout)
+    await session.flush()
+
+    # total_payable on_demand-строки = Σ включённых в эту ведомость сумм.
+    included = await load_included_payouts_by_employee(session, run_id)
+    line.total_payable = included.get(employee_id, amount).quantize(_CENTS)
+    await session.flush()
+    return payout
+
+
+async def list_on_demand_employees(session: AsyncSession) -> list[Employee]:
+    """Активные сотрудники в режиме оклада «по востребованию» (для диалога выплаты).
+
+    Режим задаётся ПО ДОЛЖНОСТИ; берём должности с ``on_demand`` и сотрудников, чья текущая
+    должность (``Employee.position``) в их числе.
+    """
+    modes = await _load_okladnik_payout_modes(session)
+    on_demand_positions = [
+        position for position, mode in modes.items() if mode == PAYOUT_MODE_ON_DEMAND
+    ]
+    if not on_demand_positions:
+        return []
+    rows = await session.scalars(
+        select(Employee)
+        .where(
+            Employee.position.in_(on_demand_positions),
+            Employee.status == "active",
+        )
+        .order_by(Employee.full_name)
+    )
+    return list(rows.all())
 
 
 async def _load_admin_employees(
@@ -595,12 +705,34 @@ def _okladnik_base_pay(
     полная база полупериода (как в расчёте ведомости).
     """
     is_first_half = period.start_date.day == 1
+
+    if mode == PAYOUT_MODE_ON_DEMAND:
+        # По востребованию: ПОЛНЫЙ месячный оклад начисляется сразу — в периоде, начинающемся
+        # 1-го числа; во втором полупериоде начисление 0 (уже начислено за месяц). К выплате
+        # по ведомости автоматически 0 — сумму включает вручную «Включить в выплату».
+        # Строка всегда помечается on_demand (даже с нулевым начислением), чтобы показать остаток.
+        accrue = oklad if is_first_half else Decimal("0")
+        if accrue <= 0:
+            return Decimal("0.00"), {
+                "applied": False,
+                "payout_mode": mode,
+                "is_first_half": is_first_half,
+                "on_demand": True,
+                "accrual_amount": money_string(Decimal("0.00")),
+            }
+        base, proration = _prorated_amount(accrue, employee, period, as_of=as_of)
+        proration["payout_mode"] = mode
+        proration["is_first_half"] = is_first_half
+        proration["on_demand"] = True
+        proration["accrual_amount"] = money_string(base)
+        return Decimal("0.00"), proration
+
     if mode == PAYOUT_MODE_FIRST_HALF:
         amount = oklad if is_first_half else Decimal("0")
     elif mode == PAYOUT_MODE_SECOND_HALF:
         amount = oklad if not is_first_half else Decimal("0")
     else:
-        # split и on_demand начисляют ½ оклада за полупериод.
+        # split — ½ оклада за полупериод.
         amount = oklad / 2
 
     if amount <= 0:
@@ -614,14 +746,6 @@ def _okladnik_base_pay(
     base, proration = _prorated_amount(amount, employee, period, as_of=as_of)
     proration["payout_mode"] = mode
     proration["is_first_half"] = is_first_half
-
-    if mode == PAYOUT_MODE_ON_DEMAND:
-        # Начисляется в долг, но автоматически не выплачивается: база к выплате = 0,
-        # величину начисления храним для расчёта задолженности (этапы A2/A3).
-        proration["on_demand"] = True
-        proration["accrual_amount"] = money_string(base)
-        return Decimal("0.00"), proration
-
     return base, proration
 
 

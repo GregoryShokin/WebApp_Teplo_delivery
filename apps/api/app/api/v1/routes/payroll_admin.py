@@ -27,6 +27,9 @@ from app.api.v1.routes.payroll import (
 )
 from app.db.session import get_session
 from app.schemas.payroll import (
+    EmployeePayoutRead,
+    OnDemandEmployeeRead,
+    OnDemandIncludeRequest,
     PayrollLineRead,
     PayrollPeriodRead,
     PayrollRunCreate,
@@ -36,7 +39,9 @@ from app.services.payroll_admin import (
     auto_create_next_admin_period,
     clear_admin_oklad_override,
     compute_on_demand_debt,
+    create_included_payout,
     get_dishwasher_pool,
+    list_on_demand_employees,
     list_admin_oklady,
     list_admin_runs,
     list_dishwasher_employees,
@@ -237,6 +242,53 @@ async def get_admin_run_lines(
         )
         for line in lines
     ]
+
+
+@router.get(
+    "/on-demand-employees",
+    response_model=list[OnDemandEmployeeRead],
+    dependencies=(Depends(require_permission("payroll.employee_payouts.create")),),
+)
+async def get_on_demand_employees(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> list[OnDemandEmployeeRead]:
+    """Сотрудники в режиме оклада «по востребованию» — для диалога «Создать выплату»."""
+    employees = await list_on_demand_employees(session)
+    return [OnDemandEmployeeRead.model_validate(employee) for employee in employees]
+
+
+@router.post(
+    "/runs/{run_id}/on-demand-include",
+    response_model=EmployeePayoutRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=(Depends(require_permission("payroll.employee_payouts.create")),),
+)
+async def post_on_demand_include(
+    run_id: uuid.UUID,
+    payload: OnDemandIncludeRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> EmployeePayoutRead:
+    """«Включить в выплату»: включить сумму ЗП по востребованию в выплату этой ведомости."""
+    try:
+        payout = await create_included_payout(
+            session,
+            run_id=run_id,
+            employee_id=payload.employee_id,
+            amount=payload.amount,
+            note=payload.note,
+            created_by_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    await session.commit()
+    await session.refresh(payout)
+    return EmployeePayoutRead.model_validate(payout)
 
 
 # --------------------------------------------------------------------------- #

@@ -42,7 +42,7 @@ _CENTS = Decimal("0.01")
 # Денежный факт выплаты (out-проводка) помечается этим source_kind, source_id = payout.id.
 EMPLOYEE_PAYOUT_SOURCE_KIND = "employee_payout"
 # Статья ДДС по умолчанию для выплаты ЗП собственника.
-OWNER_SALARY_ARTICLE_CODE = "zarplata_sobstvennika"
+DEFAULT_PAYOUT_ARTICLE_CODE = "zarplata_administrativnogo_personala"
 EMPLOYEE_PAYOUT_KIND_OWNER_SALARY = "owner_salary"
 # owner_salary — гашение долга ЗП собственника (on_demand); salary — разовая ЗП; other — прочее.
 ALLOWED_PAYOUT_KINDS = (EMPLOYEE_PAYOUT_KIND_OWNER_SALARY, "salary", "other")
@@ -72,7 +72,7 @@ async def create_cash_employee_payout(
     payout_date: date,
     kind: str = EMPLOYEE_PAYOUT_KIND_OWNER_SALARY,
     article_id: uuid.UUID | None = None,
-    article_code: str = OWNER_SALARY_ARTICLE_CODE,
+    article_code: str = DEFAULT_PAYOUT_ARTICLE_CODE,
     note: str | None = None,
     created_by_user_id: uuid.UUID | None = None,
 ) -> EmployeePayout:
@@ -166,7 +166,7 @@ async def create_bank_employee_payout(
     payout_date: date,
     kind: str = EMPLOYEE_PAYOUT_KIND_OWNER_SALARY,
     article_id: uuid.UUID | None = None,
-    article_code: str = OWNER_SALARY_ARTICLE_CODE,
+    article_code: str = DEFAULT_PAYOUT_ARTICLE_CODE,
     note: str | None = None,
     created_by_user_id: uuid.UUID | None = None,
     bank_client: BankClient | None = None,
@@ -227,6 +227,12 @@ async def create_bank_employee_payout(
     )
     session.add(payout)
     await session.flush()
+
+    # Черновик платежа умеет создавать только Т-Банк. Для прочих банков (Сбербанк) черновик
+    # не заводим — выплата остаётся ``pending`` и подтверждается привязкой к операции выписки.
+    account = await session.get(Account, wallet.account_id) if wallet.account_id else None
+    if account is None or account.bank_code != "tbank":
+        return payout
 
     settings = get_settings()
     payer_account = _payer_account(settings)

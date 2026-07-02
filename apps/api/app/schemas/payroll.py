@@ -270,6 +270,22 @@ class EmployeePayoutConfirmRequest(BaseModel):
     bank_operation_id: uuid.UUID
 
 
+class OnDemandIncludeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    employee_id: uuid.UUID
+    amount: Decimal = Field(gt=0)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class OnDemandEmployeeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    full_name: str
+    position: str | None = None
+
+
 class EmployeePayoutRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

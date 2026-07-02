@@ -86,11 +86,11 @@ async def test_cash_payout_books_provodka_and_links(
         assert payout.note == "тест"
         assert payout.cashflow_transaction_id is not None
 
-        # Статья по умолчанию — «Зарплата собственника».
+        # Статья по умолчанию — «Зарплата административного персонала».
         article_code = await session.scalar(
             select(DdsArticle.code).where(DdsArticle.id == payout.article_id)
         )
-        assert article_code == "zarplata_sobstvennika"
+        assert article_code == "zarplata_administrativnogo_personala"
 
         # Ровно одна out-проводка с source_kind=employee_payout, source_id=payout.id.
         txn = await session.scalar(

@@ -3474,6 +3474,28 @@ export async function confirmEmployeePayout(
   return response.data;
 }
 
+export type OnDemandEmployee = {
+  id: string;
+  full_name: string;
+  position: string | null;
+};
+
+export async function getOnDemandEmployees(): Promise<OnDemandEmployee[]> {
+  const response = await api.get<OnDemandEmployee[]>("/payroll/admin/on-demand-employees");
+  return response.data;
+}
+
+export async function includeOnDemandPayout(
+  runId: string,
+  payload: { employee_id: string; amount: number; note?: string | null },
+): Promise<EmployeePayout> {
+  const response = await api.post<EmployeePayout>(
+    `/payroll/admin/runs/${runId}/on-demand-include`,
+    payload,
+  );
+  return response.data;
+}
+
 export async function getPayoutDeltas(runId: string): Promise<PayrollPayoutDelta[]> {
   const response = await api.get<PayrollPayoutDelta[]>(
     `/payroll/runs/${runId}/payouts/deltas`,
