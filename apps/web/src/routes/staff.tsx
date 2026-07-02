@@ -2224,6 +2224,11 @@ function EmployeeChangeHistoryPreview({
                   <div className="mt-1 text-xs text-muted-foreground">
                     {formatDateTime(change.changed_at)} · {changeTypeLabel(change.change_type)}
                   </div>
+                  {change.effective_from ? (
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      действует с {formatDate(change.effective_from)}
+                    </div>
+                  ) : null}
                 </div>
                 <EmployeeChangeStatusBadge status={change.status} />
               </div>
