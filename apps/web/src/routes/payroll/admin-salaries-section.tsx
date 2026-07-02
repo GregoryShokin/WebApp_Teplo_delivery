@@ -106,8 +106,8 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
   const assignedCashierId = assistantOverride?.employee_id ?? "";
   const selectedCashierId = assistantCashierId || assignedCashierId;
   const assistantDefaultAmount = defaultByPosition.get(ASSISTANT_POSITION)?.amount ?? null;
-  const assignedCashier = (employeesQuery.data ?? []).find((e) => e.id === assignedCashierId);
-  const assistantExcluded = Boolean(assignedCashier?.admin_payroll_excluded);
+  const selectedCashier = (employeesQuery.data ?? []).find((e) => e.id === selectedCashierId);
+  const assistantExcluded = Boolean(selectedCashier?.admin_payroll_excluded);
   const assistantCurrentAmount =
     assistantOverride && assistantOverride.employee_id === selectedCashierId
       ? assistantOverride.amount
@@ -453,10 +453,10 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
                       <Checkbox
                         aria-label="Не платить помощнику менеджера"
                         checked={assistantExcluded}
-                        disabled={!canWrite || isBusy || !assignedCashierId}
+                        disabled={!canWrite || isBusy || !selectedCashierId}
                         onChange={(event) =>
                           toggleExclusion.mutate({
-                            employeeId: assignedCashierId,
+                            employeeId: selectedCashierId,
                             excluded: event.target.checked,
                           })
                         }
