@@ -339,6 +339,36 @@ async def test_on_demand_full_oklad_both_halves_deduped_per_month(
         assert debt[employee.id]["debt"] == Decimal("60000.00")
 
 
+async def test_cashier_acting_as_assistant_manager_in_admin_run(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Кассир с персональным окладом «Помощник менеджера» идёт в админ-ведомость по этой
+    должности (СВЕРХ своей производственной ЗП), хотя его основная должность — Кассир."""
+    async with async_session_factory() as session:
+        cashier = await _make_admin_employee(session, position="Кассир")
+        # Персональный оклад помощника менеджера для кассира = назначение «исполняющего».
+        await _set_oklad(
+            session,
+            position="Помощник менеджера",
+            amount=Decimal("6000"),
+            employee_id=cashier.id,
+        )
+        period = await _make_period(session)
+        await session.commit()
+
+        run = await run_admin_payroll(session, period.id)
+        assert run.status == "completed"
+        lines = await _lines(session, run.id)
+        assert len(lines) == 1
+        line = lines[0]
+        assert line.employee_id == cashier.id
+        # В админ-ведомости он идёт как «Помощник менеджера», не как «Кассир».
+        assert line.role == "Помощник менеджера"
+        # split по умолчанию → ½ от 6000 = 3000 за первую половину.
+        assert line.base_pay == Decimal("3000.00")
+        assert line.total_payable == Decimal("3000.00")
+
+
 async def test_assistant_manager_position_seeded_with_oklad(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

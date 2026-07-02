@@ -272,8 +272,19 @@ async def calculate_admin_payroll_lines(
     period: PayrollPeriod,
     run_id: uuid.UUID,
 ) -> tuple[list[PayrollLine], list[dict[str, Any]], dict[str, Any]]:
-    employees = await _load_admin_employees(session, period)
-    employee_ids = [employee.id for employee in employees]
+    primary_employees = await _load_admin_employees(session, period)
+    primary_ids = {employee.id for employee in primary_employees}
+    # «Исполняющие» другую окладную должность через персональный оклад (напр. кассир исполняет
+    # помощника менеджера): их основная должность неадминская, но они получают админ-оклад
+    # СВЕРХ основной ЗП. Каждый идёт в админ-ведомость по должности override'а (forced_position).
+    acting_employees = await _load_acting_admin_employees(
+        session, period, exclude_ids=primary_ids
+    )
+    work_items: list[tuple[Employee, str | None]] = [
+        (employee, None) for employee in primary_employees
+    ]
+    work_items += [(employee, position) for employee, position in acting_employees]
+    employee_ids = [employee.id for employee, _ in work_items]
 
     adjustments_by_key = await load_adjustments_for_period(
         session,
@@ -302,21 +313,25 @@ async def calculate_admin_payroll_lines(
     skipped_wrong_position: list[dict[str, Any]] = []
     total_payable = Decimal("0")
 
-    for employee in employees:
-        position = await get_position_on_date(session, employee.id, period.end_date)
-        position = position or employee.position
-        if position not in admin_payroll_positions():
-            # На дату периода сотрудник был на другой (неадминской) должности — например
-            # повар, позже повышенный в управляющие. За этот период он считается по своей
-            # тогдашней должности (производственная ведомость), не здесь.
-            skipped_wrong_position.append(
-                {
-                    "employee_id": str(employee.id),
-                    "employee_name": employee.full_name,
-                    "period_position": position,
-                }
-            )
-            continue
+    for employee, forced_position in work_items:
+        if forced_position is not None:
+            # «Исполняющий» — считаем по назначенной окладной должности (не по основной).
+            position = forced_position
+        else:
+            position = await get_position_on_date(session, employee.id, period.end_date)
+            position = position or employee.position
+            if position not in admin_payroll_positions():
+                # На дату периода сотрудник был на другой (неадминской) должности — например
+                # повар, позже повышенный в управляющие. За этот период он считается по своей
+                # тогдашней должности (производственная ведомость), не здесь.
+                skipped_wrong_position.append(
+                    {
+                        "employee_id": str(employee.id),
+                        "employee_name": employee.full_name,
+                        "period_position": position,
+                    }
+                )
+                continue
 
         premium, penalty, bonus_items, penalty_items = _sum_adjustments(
             adjustments_by_employee.get(employee.id, [])
@@ -592,6 +607,56 @@ async def _load_admin_employees(
         )
     )
     return list(result.all())
+
+
+async def _load_acting_admin_employees(
+    session: AsyncSession,
+    period: PayrollPeriod,
+    *,
+    exclude_ids: set[uuid.UUID],
+) -> list[tuple[Employee, str]]:
+    """Сотрудники, ИСПОЛНЯЮЩИЕ окладную должность, не являющуюся их основной.
+
+    Признак — активный персональный админ-оклад (``PayrollRate`` с employee_id) на окладную
+    должность, которая ОТЛИЧАЕТСЯ от текущей должности сотрудника. Пример: кассир получает
+    персональный оклад «Помощник менеджера» → идёт в админ-ведомость по этой должности СВЕРХ
+    своей производственной ЗП. Обычный персональный оклад по СВОЕЙ должности (override для
+    управляющего-управляющим) сюда не попадает — он покрыт `_load_admin_employees`.
+
+    Возвращает список ``(employee, acting_position)``. ``exclude_ids`` — id основных
+    админ-сотрудников (их не дублируем).
+    """
+    rows = await session.execute(
+        select(Employee, PayrollRate.position_group)
+        .join(PayrollRate, PayrollRate.employee_id == Employee.id)
+        .where(
+            PayrollRate.category == ADMIN_OKLAD_CATEGORY,
+            PayrollRate.rate_type == "monthly",
+            PayrollRate.is_active.is_(True),
+            PayrollRate.position_group.in_(okladnik_positions()),
+            PayrollRate.effective_from <= period.end_date,
+            or_(
+                PayrollRate.effective_to.is_(None),
+                PayrollRate.effective_to > period.end_date,
+            ),
+            Employee.admin_payroll_excluded.is_(False),
+            or_(Employee.hire_date.is_(None), Employee.hire_date <= period.end_date),
+            or_(Employee.fire_date.is_(None), Employee.fire_date >= period.start_date),
+        )
+    )
+    acting: list[tuple[Employee, str]] = []
+    seen: set[uuid.UUID] = set()
+    for employee, position in rows.all():
+        if employee.id in exclude_ids or employee.id in seen:
+            continue
+        primary = await get_position_on_date(session, employee.id, period.end_date)
+        primary = primary or employee.position
+        if primary == position:
+            # Override по СВОЕЙ должности — это обычный персональный оклад, не «исполняющий».
+            continue
+        acting.append((employee, position))
+        seen.add(employee.id)
+    return acting
 
 
 async def load_admin_oklad(

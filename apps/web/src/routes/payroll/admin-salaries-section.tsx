@@ -35,6 +35,12 @@ const PAYOUT_MODE_OPTIONS: Array<{ value: AdminPayoutMode; label: string }> = [
   { value: "on_demand", label: "По требованию (долг)" },
 ];
 
+// Помощника менеджера сейчас исполняет кассир: назначается точечно через персональный оклад
+// (override с этой должностью на конкретного кассира) — он идёт в админ-ведомость СВЕРХ своей
+// производственной ЗП. Выбор — только из кассиров.
+const ASSISTANT_POSITION = "Помощник менеджера";
+const CASHIER_POSITION = "Кассир";
+
 function defaultEffectiveFrom() {
   // 1-е число прошлого месяца: дефолт «Действует с» так, чтобы только что заданный
   // оклад применился к текущей расчётной ведомости (самый недавний полумесячный
@@ -78,6 +84,8 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
   const [defaultAmounts, setDefaultAmounts] = useState<Record<string, string>>({});
   const [overrideAmounts, setOverrideAmounts] = useState<Record<string, string>>({});
   const [poolDraft, setPoolDraft] = useState<string>("");
+  const [assistantCashierId, setAssistantCashierId] = useState("");
+  const [assistantAmount, setAssistantAmount] = useState("");
 
   const defaults = salariesQuery.data?.defaults ?? [];
   const overrides = salariesQuery.data?.overrides ?? [];
@@ -89,6 +97,25 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
   const adminEmployees = (employeesQuery.data ?? []).filter((employee) =>
     adminPositions.includes(employee.position ?? ""),
   );
+
+  // «Помощник менеджера» — исполняет кассир. Назначение = персональный оклад с этой должностью.
+  const cashiers = (employeesQuery.data ?? []).filter(
+    (employee) => employee.position === CASHIER_POSITION,
+  );
+  const assistantOverride = overrides.find((item) => item.position === ASSISTANT_POSITION) ?? null;
+  const assignedCashierId = assistantOverride?.employee_id ?? "";
+  const selectedCashierId = assistantCashierId || assignedCashierId;
+  const assistantDefaultAmount = defaultByPosition.get(ASSISTANT_POSITION)?.amount ?? null;
+  const assignedCashier = (employeesQuery.data ?? []).find((e) => e.id === assignedCashierId);
+  const assistantExcluded = Boolean(assignedCashier?.admin_payroll_excluded);
+  const assistantCurrentAmount =
+    assistantOverride && assistantOverride.employee_id === selectedCashierId
+      ? assistantOverride.amount
+      : assistantDefaultAmount;
+  const assistantParsed = Number(assistantAmount);
+  const canSaveAssistant =
+    canWrite && Boolean(selectedCashierId) && assistantAmount.trim() !== "" && assistantParsed > 0;
+  const showAssistantRow = defaultByPosition.has(ASSISTANT_POSITION);
 
   const onMutationError = (error: unknown) => {
     toast.error(apiErrorMessage(error));
@@ -143,6 +170,27 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
     onError: onMutationError,
   });
 
+  const saveAssistant = useMutation({
+    mutationFn: async (vars: { employeeId: string; amount: number }) => {
+      // Помощник менеджера — один: при смене кассира снимаем прежнее назначение.
+      if (assistantOverride && assistantOverride.employee_id !== vars.employeeId) {
+        await deleteAdminSalaryOverride(assistantOverride.employee_id);
+      }
+      return putAdminSalaryOverride(vars.employeeId, {
+        position: ASSISTANT_POSITION,
+        amount: vars.amount,
+        effective_from: effectiveFrom,
+      });
+    },
+    onSuccess: async () => {
+      setAssistantAmount("");
+      setAssistantCashierId("");
+      await invalidate();
+      toast.success("Помощник менеджера назначен — пересчитайте ведомость");
+    },
+    onError: onMutationError,
+  });
+
   const savePayoutMode = useMutation({
     mutationFn: (vars: { position: string; mode: AdminPayoutMode }) =>
       putAdminPayoutMode(vars.position, vars.mode),
@@ -177,6 +225,7 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
     saveDefault.isPending ||
     saveOverride.isPending ||
     clearOverride.isPending ||
+    saveAssistant.isPending ||
     savePayoutMode.isPending ||
     savePool.isPending ||
     toggleExclusion.isPending;
@@ -335,7 +384,7 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
             <LoaderCircle className="animate-spin" size={16} aria-hidden="true" /> Загрузка
             сотрудников…
           </div>
-        ) : adminEmployees.length === 0 ? (
+        ) : adminEmployees.length === 0 && !showAssistantRow ? (
           <div className="rounded-md border bg-card px-3 py-4 text-sm text-muted-foreground">
             Нет активных сотрудников на админ-должностях.
           </div>
@@ -353,6 +402,95 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
                 </tr>
               </thead>
               <tbody>
+                {showAssistantRow ? (
+                  <tr className="border-t bg-primary/5">
+                    <td className="px-3 py-2">
+                      <Select
+                        disabled={!canWrite || isBusy}
+                        onValueChange={setAssistantCashierId}
+                        value={selectedCashierId}
+                      >
+                        <SelectTrigger className="w-48">
+                          <SelectValue placeholder="Выберите кассира" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {cashiers.length === 0 ? (
+                            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                              Нет кассиров в штате
+                            </div>
+                          ) : (
+                            cashiers.map((cashier) => (
+                              <SelectItem key={cashier.id} value={cashier.id}>
+                                {cashier.full_name}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </td>
+                    <td className="px-3 py-2 font-medium">{ASSISTANT_POSITION}</td>
+                    <td className="px-3 py-2 tabular-nums">
+                      {assistantExcluded ? "—" : formatMoney(assistantCurrentAmount)}
+                      {assistantOverride &&
+                      assistantOverride.employee_id === selectedCashierId &&
+                      !assistantExcluded ? (
+                        <span className="ml-1 text-xs text-primary">(персональный)</span>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2">
+                      <Input
+                        className="w-40"
+                        disabled={!canWrite || isBusy || !selectedCashierId}
+                        inputMode="numeric"
+                        onChange={(event) => setAssistantAmount(event.target.value)}
+                        placeholder={
+                          assistantDefaultAmount != null ? String(assistantDefaultAmount) : "оклад"
+                        }
+                        value={assistantAmount}
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <Checkbox
+                        aria-label="Не платить помощнику менеджера"
+                        checked={assistantExcluded}
+                        disabled={!canWrite || isBusy || !assignedCashierId}
+                        onChange={(event) =>
+                          toggleExclusion.mutate({
+                            employeeId: assignedCashierId,
+                            excluded: event.target.checked,
+                          })
+                        }
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          disabled={!canSaveAssistant || isBusy}
+                          onClick={() =>
+                            saveAssistant.mutate({
+                              employeeId: selectedCashierId,
+                              amount: assistantParsed,
+                            })
+                          }
+                          size="sm"
+                          variant="outline"
+                        >
+                          Сохранить
+                        </Button>
+                        {assistantOverride ? (
+                          <Button
+                            disabled={!canWrite || isBusy}
+                            onClick={() => clearOverride.mutate(assistantOverride.employee_id)}
+                            size="sm"
+                            variant="ghost"
+                          >
+                            Сбросить
+                          </Button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
                 {adminEmployees.map((employee) => {
                   const position = employee.position ?? "";
                   const override = overrideByEmployee.get(employee.id);
