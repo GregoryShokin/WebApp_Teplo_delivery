@@ -677,3 +677,39 @@ def test_put_category_coefficients_requires_finance_manager(
     )
 
     assert response.status_code == 403
+
+
+async def test_list_rate_positions_excludes_okladnik_monthly_only(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Матрица «Ставки» = только дневные ставки; окладные должности (monthly) сюда не попадают."""
+    from app.services.payroll_config import _list_rate_positions
+
+    async with async_session_factory() as session:
+        session.add(
+            PayrollRate(
+                id=uuid.uuid4(),
+                position_group="Тест-дневная-должность",
+                category="category_1",
+                rate_type="daily",
+                amount=1000,
+                is_active=True,
+                effective_from=date(2026, 1, 1),
+            )
+        )
+        session.add(
+            PayrollRate(
+                id=uuid.uuid4(),
+                position_group="Тест-окладник",
+                category="admin",
+                rate_type="monthly",
+                amount=6000,
+                is_active=True,
+                effective_from=date(2026, 1, 1),
+            )
+        )
+        await session.commit()
+
+        positions = await _list_rate_positions(session)
+        assert "Тест-дневная-должность" in positions
+        assert "Тест-окладник" not in positions

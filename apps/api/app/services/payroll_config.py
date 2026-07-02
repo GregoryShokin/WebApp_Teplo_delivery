@@ -669,7 +669,14 @@ async def _update_rate_version(
 
 
 async def _list_rate_positions(session: AsyncSession) -> list[str]:
-    rate_positions = await session.scalars(select(PayrollRate.position_group).distinct())
+    # Матрица «Ставки» = ДНЕВНЫЕ ставки полной смены. Берём только должности с daily-ставками
+    # + должности с настроенной доступностью категорий. Окладные должности (админ-оклад
+    # rate_type='monthly') сюда НЕ попадают — их оклады живут в «Оклады администрации».
+    rate_positions = await session.scalars(
+        select(PayrollRate.position_group)
+        .where(PayrollRate.rate_type == "daily")
+        .distinct()
+    )
     availability_positions = await session.scalars(
         select(PayrollRoleCategoryAvailability.position_group).distinct()
     )
