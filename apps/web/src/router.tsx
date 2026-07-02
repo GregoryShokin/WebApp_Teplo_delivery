@@ -50,6 +50,12 @@ function Redirect({ to, navigate }: { to: string; navigate: Navigate }): null {
   return null;
 }
 
+// SPA-навигация из любого компонента: pushState + popstate ловит AppRouter.
+export function navigateTo(path: string) {
+  window.history.pushState({}, "", path);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
 const routes: AppRoute[] = [
   {
     path: "/login",

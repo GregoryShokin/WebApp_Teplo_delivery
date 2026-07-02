@@ -25,6 +25,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { navigateTo } from "@/router";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -644,6 +645,20 @@ function AdminLinesTable({
         <div>
           <div className="font-medium">{row.employeeName}</div>
           <div className="text-xs text-muted-foreground">{row.position || "Должность не указана"}</div>
+          {row.employee?.requires_position_review ? (
+            <button
+              className="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-800 hover:bg-amber-100"
+              onClick={(event) => {
+                event.stopPropagation();
+                navigateTo(`/staff?employee=${row.line.employee_id}`);
+              }}
+              title="Должность требует проверки — открыть карточку сотрудника"
+              type="button"
+            >
+              <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+              должность на проверке
+            </button>
+          ) : null}
         </div>
       ),
       pinned: "left",

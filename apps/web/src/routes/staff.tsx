@@ -495,6 +495,23 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
     }
   }, [selectedEmployeeId]);
 
+  // Deep-link из ведомости (?employee=<id>): открыть карточку и вычистить параметр.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const employeeParam = params.get("employee");
+    if (!employeeParam) {
+      return;
+    }
+    setSelectedEmployeeId(employeeParam);
+    params.delete("employee");
+    const query = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}`,
+    );
+  }, []);
+
   const employeesQuery = useQuery({
     queryKey: ["employees", status, category],
     queryFn: () =>
