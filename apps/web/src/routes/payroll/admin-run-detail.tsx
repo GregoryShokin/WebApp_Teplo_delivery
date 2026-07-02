@@ -694,7 +694,7 @@ function AdminLinesTable({
           return (
             <div className="flex flex-col items-end">
               <span>{formatMoney(onDemandPeriodAccrual(row.line))}</span>
-              <span className="text-xs text-amber-700">в долг</span>
+              <span className="text-xs text-muted-foreground">оклад за месяц</span>
             </div>
           );
         }

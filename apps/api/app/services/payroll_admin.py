@@ -370,13 +370,9 @@ async def calculate_admin_payroll_lines(
 
         proration_data = components.get("proration")
         if isinstance(proration_data, dict) and proration_data.get("on_demand"):
-            # on_demand: полный оклад ± корректировки идёт в остаток (accrual_amount), а к
-            # выплате по ведомости — только суммы, включённые вручную («Включить в выплату»,
+            # on_demand: остаток = полный месячный оклад (accrual_amount из _okladnik_base_pay);
+            # к выплате по ведомости — только суммы, включённые вручную («Включить в выплату»,
             # status included/paid для этой ведомости). Остальное остаётся «на потом».
-            net_accrual = (
-                decimal(proration_data.get("accrual_amount", "0")) + premium - penalty
-            ).quantize(_CENTS)
-            proration_data["accrual_amount"] = money_string(net_accrual)
             line_total = included_by_employee.get(employee.id, Decimal("0")).quantize(_CENTS)
 
         total_payable += line_total
@@ -432,11 +428,12 @@ async def compute_on_demand_debt(
     if not unique_ids:
         return {}
 
-    # Начислено: суммируем accrual_amount из components on_demand-строк (по всем периодам).
+    # Начислено: оклад по месяцам. Обе половины месяца несут полный оклад — считаем ОДИН раз
+    # на (сотрудник, месяц), затем суммируем по месяцам (остаток накапливается по месяцам).
     line_rows = await session.scalars(
         select(PayrollLine).where(PayrollLine.employee_id.in_(unique_ids))
     )
-    accrued: dict[uuid.UUID, Decimal] = {}
+    accrued_by_month: dict[tuple[uuid.UUID, str], Decimal] = {}
     for line in line_rows.all():
         components = line.components if isinstance(line.components, dict) else {}
         proration = components.get("proration")
@@ -445,7 +442,11 @@ async def compute_on_demand_debt(
         raw = proration.get("accrual_amount")
         if raw is None:
             continue
-        accrued[line.employee_id] = accrued.get(line.employee_id, Decimal("0")) + decimal(raw)
+        month = str(proration.get("period_month") or line.run_id)
+        accrued_by_month[(line.employee_id, month)] = decimal(raw)
+    accrued: dict[uuid.UUID, Decimal] = {}
+    for (eid, _month), value in accrued_by_month.items():
+        accrued[eid] = accrued.get(eid, Decimal("0")) + value
 
     # Выплачено/включено: EmployeePayout(kind=owner_salary), учтённые статусы.
     paid_rows = await session.execute(
@@ -707,24 +708,16 @@ def _okladnik_base_pay(
     is_first_half = period.start_date.day == 1
 
     if mode == PAYOUT_MODE_ON_DEMAND:
-        # По востребованию: ПОЛНЫЙ месячный оклад начисляется сразу — в периоде, начинающемся
-        # 1-го числа; во втором полупериоде начисление 0 (уже начислено за месяц). К выплате
-        # по ведомости автоматически 0 — сумму включает вручную «Включить в выплату».
-        # Строка всегда помечается on_demand (даже с нулевым начислением), чтобы показать остаток.
-        accrue = oklad if is_first_half else Decimal("0")
-        if accrue <= 0:
-            return Decimal("0.00"), {
-                "applied": False,
-                "payout_mode": mode,
-                "is_first_half": is_first_half,
-                "on_demand": True,
-                "accrual_amount": money_string(Decimal("0.00")),
-            }
-        base, proration = _prorated_amount(accrue, employee, period, as_of=as_of)
+        # По востребованию: ПОЛНЫЙ месячный оклад — это остаток, доступный к выдаче. Показываем
+        # его на КАЖДОЙ ведомости месяца (и 1–15, и 16–конец), чтобы текущая ведомость всегда
+        # отражала сумму, а в остатке считаем оклад ОДИН раз на месяц (дедуп по period_month).
+        # К выплате по ведомости автоматически 0 — сумму включает вручную «Включить в выплату».
+        base, proration = _prorated_amount(oklad, employee, period, as_of=as_of)
         proration["payout_mode"] = mode
         proration["is_first_half"] = is_first_half
         proration["on_demand"] = True
         proration["accrual_amount"] = money_string(base)
+        proration["period_month"] = f"{period.start_date.year:04d}-{period.start_date.month:02d}"
         return Decimal("0.00"), proration
 
     if mode == PAYOUT_MODE_FIRST_HALF:

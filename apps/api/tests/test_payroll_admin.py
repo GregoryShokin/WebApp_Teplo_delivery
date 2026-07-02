@@ -238,11 +238,13 @@ async def test_on_demand_debt_accrued_minus_payouts(
         assert debt[employee.id]["debt"] == Decimal("50000.00")
 
 
-async def test_on_demand_adjustments_fold_into_debt_not_auto_paid(
+async def test_on_demand_premium_not_auto_paid(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """on_demand: премия на строке НЕ уходит в авто-выплату ведомости (к выплате 0),
-    а складывается в долг (accrual_amount = ½ оклада + премия − штраф)."""
+    """on_demand: премия на строке НЕ уходит в авто-выплату ведомости (к выплате 0).
+
+    Остаток = полный оклад (корректировки в остаток не складываются — редкий случай для
+    собственника; премия видна в своей колонке, но по ведомости не платится и в остаток не идёт)."""
     async with async_session_factory() as session:
         employee = await _make_admin_employee(session)
         await _set_oklad(session, position="Управляющий", amount=Decimal("60000"))
@@ -266,15 +268,14 @@ async def test_on_demand_adjustments_fold_into_debt_not_auto_paid(
         lines = await _lines(session, run.id)
         assert len(lines) == 1
         line = lines[0]
-        # Премия видна в колонке, но к выплате по ведомости — 0 (не утекает в авто-выплату).
         assert line.premium == Decimal("5000.00")
         assert line.total_payable == Decimal("0.00")
-        # Остаток = полный оклад + премия = 60000 + 5000 = 65000.
-        assert Decimal(line.components["proration"]["accrual_amount"]) == Decimal("65000.00")
+        # Остаток = полный оклад (без премии).
+        assert Decimal(line.components["proration"]["accrual_amount"]) == Decimal("60000.00")
         assert float(run.summary["total_payable"]) == 0.0
 
         debt = await compute_on_demand_debt(session, [employee.id])
-        assert debt[employee.id]["debt"] == Decimal("65000.00")
+        assert debt[employee.id]["debt"] == Decimal("60000.00")
 
 
 async def test_on_demand_include_bumps_payable_and_reduces_remaining(
@@ -309,6 +310,33 @@ async def test_on_demand_include_bumps_payable_and_reduces_remaining(
         run2 = await run_admin_payroll(session, period.id)
         lines2 = await _lines(session, run2.id)
         assert lines2[0].total_payable == Decimal("25000.00")
+
+
+async def test_on_demand_full_oklad_both_halves_deduped_per_month(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """on_demand: обе половины месяца показывают полный оклад, но в остатке он ОДИН раз/месяц."""
+    async with async_session_factory() as session:
+        employee = await _make_admin_employee(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("60000"))
+        await set_okladnik_payout_mode(session, "Управляющий", "on_demand")
+        first = await _make_period(session)
+        second = await _make_second_half_period(session)
+        await session.commit()
+
+        run1 = await run_admin_payroll(session, first.id)
+        run2 = await run_admin_payroll(session, second.id)
+
+        # Обе половины: начислено = полный оклад.
+        line1 = (await _lines(session, run1.id))[0]
+        line2 = (await _lines(session, run2.id))[0]
+        assert Decimal(line1.components["proration"]["accrual_amount"]) == Decimal("60000.00")
+        assert Decimal(line2.components["proration"]["accrual_amount"]) == Decimal("60000.00")
+
+        # Остаток: оклад считается один раз за месяц (60000, не 120000).
+        debt = await compute_on_demand_debt(session, [employee.id])
+        assert debt[employee.id]["accrued"] == Decimal("60000.00")
+        assert debt[employee.id]["debt"] == Decimal("60000.00")
 
 
 def test_okladnik_earned_to_date_on_demand_returns_accrual() -> None:
