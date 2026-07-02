@@ -112,9 +112,11 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
     assistantOverride && assistantOverride.employee_id === selectedCashierId
       ? assistantOverride.amount
       : assistantDefaultAmount;
-  const assistantParsed = Number(assistantAmount);
+  // Пусто в «Персональный» = взять оклад по должности (6000), не заставляем перепечатывать.
+  const assistantEffectiveAmount =
+    assistantAmount.trim() !== "" ? Number(assistantAmount) : (assistantDefaultAmount ?? 0);
   const canSaveAssistant =
-    canWrite && Boolean(selectedCashierId) && assistantAmount.trim() !== "" && assistantParsed > 0;
+    canWrite && Boolean(selectedCashierId) && Number.isFinite(assistantEffectiveAmount) && assistantEffectiveAmount > 0;
   const showAssistantRow = defaultByPosition.has(ASSISTANT_POSITION);
 
   const onMutationError = (error: unknown) => {
@@ -469,7 +471,7 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
                           onClick={() =>
                             saveAssistant.mutate({
                               employeeId: selectedCashierId,
-                              amount: assistantParsed,
+                              amount: assistantEffectiveAmount,
                             })
                           }
                           size="sm"
