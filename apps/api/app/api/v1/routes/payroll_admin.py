@@ -22,6 +22,7 @@ from app.api.deps import CurrentActor, ensure_permission, get_current_actor, req
 from app.api.v1.routes.payroll import (
     get_deposit_payouts_by_employee,
     get_payments_by_employee,
+    line_is_on_demand,
     serialize_payroll_line,
 )
 from app.db.session import get_session
@@ -34,6 +35,7 @@ from app.schemas.payroll import (
 from app.services.payroll_admin import (
     auto_create_next_admin_period,
     clear_admin_oklad_override,
+    compute_on_demand_debt,
     get_dishwasher_pool,
     list_admin_oklady,
     list_admin_runs,
@@ -225,8 +227,15 @@ async def get_admin_run_lines(
     payments_by_employee = await get_payments_by_employee(
         session, run_id, (line.employee_id for line in lines)
     )
+    on_demand_ids = [line.employee_id for line in lines if line_is_on_demand(line)]
+    on_demand_debt_by_employee = (
+        await compute_on_demand_debt(session, on_demand_ids) if on_demand_ids else {}
+    )
     return [
-        serialize_payroll_line(line, payouts_by_employee, payments_by_employee) for line in lines
+        serialize_payroll_line(
+            line, payouts_by_employee, payments_by_employee, on_demand_debt_by_employee
+        )
+        for line in lines
     ]
 
 

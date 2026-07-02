@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.models import (
     DishwasherShift,
     Employee,
+    EmployeePayout,
     EmployeePositionAssignment,
     PayrollAdjustment,
     PayrollLine,
@@ -19,6 +20,7 @@ from app.models import (
     PayrollRun,
 )
 from app.services.payroll_admin import (
+    compute_on_demand_debt,
     latest_admin_period_dates,
     next_admin_period_dates,
     run_admin_payroll,
@@ -160,6 +162,77 @@ async def test_admin_run_full_period_is_half_oklad(
         assert line.base_pay == Decimal("30000.00")
         assert line.total_payable == Decimal("30000.00")
         assert line.ndfl_withheld == Decimal("0")
+
+
+async def test_on_demand_mode_accrues_debt_not_paid(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Режим on_demand: оклад начисляется в долг (components.proration.accrual_amount),
+    но к автовыплате база = 0 — собственник получает по востребованию."""
+    async with async_session_factory() as session:
+        await _make_admin_employee(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("60000"))
+        await set_okladnik_payout_mode(session, "Управляющий", "on_demand")
+        period = await _make_period(session)
+        await session.commit()
+
+        run = await run_admin_payroll(session, period.id)
+        assert run.status == "completed"
+        lines = await _lines(session, run.id)
+        assert len(lines) == 1
+        line = lines[0]
+        assert line.base_pay == Decimal("0.00")
+        assert line.total_payable == Decimal("0.00")
+        proration = line.components["proration"]
+        assert proration["on_demand"] is True
+        assert Decimal(proration["accrual_amount"]) == Decimal("30000.00")
+
+
+async def test_on_demand_debt_accrued_minus_payouts(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Долг ЗП собственника = Σ начислено (on_demand-строки) − Σ выплат EmployeePayout."""
+    async with async_session_factory() as session:
+        employee = await _make_admin_employee(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("60000"))
+        await set_okladnik_payout_mode(session, "Управляющий", "on_demand")
+        period = await _make_period(session)
+        await session.commit()
+
+        await run_admin_payroll(session, period.id)
+
+        # Начислено 30000, ничего не выплачено → долг 30000.
+        debt = await compute_on_demand_debt(session, [employee.id])
+        assert debt[employee.id]["accrued"] == Decimal("30000.00")
+        assert debt[employee.id]["paid"] == Decimal("0.00")
+        assert debt[employee.id]["debt"] == Decimal("30000.00")
+
+        # Выплата 10000 (paid) уменьшает долг до 20000; черновик (draft) не учитывается.
+        session.add(
+            EmployeePayout(
+                id=uuid.uuid4(),
+                employee_id=employee.id,
+                kind="owner_salary",
+                amount=Decimal("10000.00"),
+                payout_date=date(2026, 5, 20),
+                status="paid",
+            )
+        )
+        session.add(
+            EmployeePayout(
+                id=uuid.uuid4(),
+                employee_id=employee.id,
+                kind="owner_salary",
+                amount=Decimal("5000.00"),
+                payout_date=date(2026, 5, 21),
+                status="draft",
+            )
+        )
+        await session.commit()
+
+        debt = await compute_on_demand_debt(session, [employee.id])
+        assert debt[employee.id]["paid"] == Decimal("10000.00")
+        assert debt[employee.id]["debt"] == Decimal("20000.00")
 
 
 async def test_senior_courier_gets_admin_oklad(

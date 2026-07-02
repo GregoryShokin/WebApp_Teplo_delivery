@@ -1228,3 +1228,62 @@ class SalaryAdvanceBankDraft(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class EmployeePayout(Base):
+    """Разовая выплата сотруднику вне обычной ведомости (леджер «выплачено»).
+
+    Общий леджер двух сценариев: (1) ЗП собственника «по востребованию» — оклад в режиме
+    ``on_demand`` начисляется в долг с 1-го числа, а гасится произвольными суммами по кнопке
+    «Включить в выплату»; (2) разовая «Выплата сотруднику» из плавающей кнопки. Создаётся
+    реальным расходом денег (out-``CashflowTransaction`` со статьёй ДДС,
+    ``source_kind='employee_payout'``, ``source_id`` = id этого payout'а).
+
+    Долг собственника = Σ начислено (``accrual_amount`` on_demand-строк финализированных
+    ведомостей) − Σ ``amount`` его payout'ов. Наличный источник гасит сразу
+    (``status='paid'``); банковский источник (T-Bank/ИП) в Треке B заведёт черновик + транзит
+    на Сейф с резервом (доп. поля появятся в B2), до исполнения ``status='pending'``.
+    """
+
+    __tablename__ = "employee_payout"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_employee_payout_amount_positive"),
+        CheckConstraint(
+            "status in ('draft', 'pending', 'paid', 'failed', 'cancelled')",
+            name="ck_employee_payout_status",
+        ),
+        Index("ix_employee_payout_employee", "employee_id"),
+        Index("ix_employee_payout_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee.id", ondelete="RESTRICT"), nullable=False
+    )
+    # owner_salary — ЗП собственника по востребованию; salary — разовая выплата; other.
+    kind: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="owner_salary", server_default="owner_salary"
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    payout_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # Источник денег: наличные/банк/Сейф. Nullable, пока не выбран (черновик Трека B).
+    wallet_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("wallet.id", ondelete="SET NULL"), nullable=True
+    )
+    article_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("dds_articles.id", ondelete="SET NULL"), nullable=True
+    )
+    # Денежный факт (out-проводка), породивший выплату.
+    cashflow_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("cashflow_transactions.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="paid", server_default="paid"
+    )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

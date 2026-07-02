@@ -234,6 +234,12 @@ class PayrollLineRead(BaseModel):
     paid_amount: float | None = None
     paid_at: date | None = None
     paid_method: str | None = None
+    # Режим оклада «по востребованию» (ЗП собственника): начисляется в долг, не выплачивается
+    # автоматически. debt = accrued − paid (накопительно по всем периодам).
+    on_demand: bool = False
+    on_demand_accrued: float = 0
+    on_demand_paid: float = 0
+    on_demand_debt: float = 0
     components: dict[str, Any]
 
 
@@ -242,6 +248,34 @@ class PayrollLineDepositOverridePatch(BaseModel):
 
     deposit_excluded_for_run: bool
     deposit_exclusion_reason: str | None = None
+
+
+class EmployeePayoutCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    employee_id: uuid.UUID
+    amount: Decimal = Field(gt=0)
+    wallet_id: uuid.UUID
+    payout_date: date
+    # owner_salary — гашение долга ЗП собственника (on_demand); salary/other — разовые выплаты.
+    kind: str = "owner_salary"
+    note: str | None = Field(default=None, max_length=500)
+
+
+class EmployeePayoutRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    employee_id: uuid.UUID
+    kind: str
+    amount: float
+    payout_date: date
+    wallet_id: uuid.UUID | None = None
+    article_id: uuid.UUID | None = None
+    cashflow_transaction_id: uuid.UUID | None = None
+    status: str
+    note: str | None = None
+    created_at: datetime
 
 
 class DeferredChargeCreate(BaseModel):

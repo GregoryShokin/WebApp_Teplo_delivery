@@ -564,6 +564,12 @@ export type PayrollLine = {
   payout_status: PayrollPayoutStatus;
   draft_status: string | null;
   overpaid_amount: number;
+  // Режим оклада «по востребованию» (ЗП собственника): начисляется в долг, не выплачивается
+  // автоматически. debt = accrued − paid (накопительно по всем периодам).
+  on_demand: boolean;
+  on_demand_accrued: number;
+  on_demand_paid: number;
+  on_demand_debt: number;
   components: Record<string, unknown>;
 };
 
@@ -572,7 +578,7 @@ export type PayrollLineDepositOverridePatch = {
   deposit_exclusion_reason?: string | null;
 };
 
-export type AdminPayoutMode = "split" | "first_half" | "second_half";
+export type AdminPayoutMode = "split" | "first_half" | "second_half" | "on_demand";
 
 export type AdminSalaryDefault = {
   position: string;
@@ -3418,6 +3424,38 @@ export async function getRunPayoutAllocation(runId: string): Promise<PayrollPayo
 
 export async function getCashWallets(): Promise<CashWallet[]> {
   const response = await api.get<CashWallet[]>(`/payroll/cash-wallets`);
+  return response.data;
+}
+
+export type EmployeePayoutKind = "owner_salary" | "salary" | "other";
+
+export type EmployeePayoutCreate = {
+  employee_id: string;
+  amount: number;
+  wallet_id: string;
+  payout_date: string; // YYYY-MM-DD
+  kind?: EmployeePayoutKind;
+  note?: string | null;
+};
+
+export type EmployeePayout = {
+  id: string;
+  employee_id: string;
+  kind: string;
+  amount: number;
+  payout_date: string;
+  wallet_id: string | null;
+  article_id: string | null;
+  cashflow_transaction_id: string | null;
+  status: string;
+  note: string | null;
+  created_at: string;
+};
+
+export async function createEmployeePayout(
+  payload: EmployeePayoutCreate,
+): Promise<EmployeePayout> {
+  const response = await api.post<EmployeePayout>("/payroll/employee-payouts", payload);
   return response.data;
 }
 

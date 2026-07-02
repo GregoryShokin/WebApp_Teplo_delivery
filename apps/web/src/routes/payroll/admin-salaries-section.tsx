@@ -40,6 +40,7 @@ const PAYOUT_MODE_OPTIONS: Array<{ value: AdminPayoutMode; label: string }> = [
   { value: "split", label: "Пополам (½ + ½)" },
   { value: "first_half", label: "Всё на 15-е" },
   { value: "second_half", label: "Всё на 1-е" },
+  { value: "on_demand", label: "По требованию (долг)" },
 ];
 
 function defaultEffectiveFrom() {

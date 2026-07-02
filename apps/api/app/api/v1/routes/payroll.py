@@ -28,6 +28,8 @@ from app.models import (
 from app.schemas.inventory import PayoutOptionRead
 from app.schemas.payroll import (
     AdvanceRecoveryDeferralRequest,
+    EmployeePayoutCreate,
+    EmployeePayoutRead,
     EmployeeRecoveryDetailRead,
     RecoveryOverridesRequest,
     DeferredChargeCreate,
@@ -64,7 +66,8 @@ from app.services.deferred_audit_charge_service import (
     list_deferred_charges,
 )
 from app.services.inventory_audit_service import list_open_production_payouts
-from app.services.payroll_admin import run_admin_payroll
+from app.services.employee_payouts import create_cash_employee_payout
+from app.services.payroll_admin import compute_on_demand_debt, run_admin_payroll
 from app.services.payroll_advance_service import (
     get_employee_recovery_detail,
     set_advance_recovery_deferral,
@@ -383,9 +386,50 @@ async def get_lines(
     payments_by_employee = await get_payments_by_employee(
         session, run_id, (line.employee_id for line in lines)
     )
+    on_demand_ids = [line.employee_id for line in lines if line_is_on_demand(line)]
+    on_demand_debt_by_employee = (
+        await compute_on_demand_debt(session, on_demand_ids) if on_demand_ids else {}
+    )
     return [
-        serialize_payroll_line(line, payouts_by_employee, payments_by_employee) for line in lines
+        serialize_payroll_line(
+            line, payouts_by_employee, payments_by_employee, on_demand_debt_by_employee
+        )
+        for line in lines
     ]
+
+
+@router.post(
+    "/employee-payouts",
+    response_model=EmployeePayoutRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=(Depends(require_permission("payroll.employee_payouts.create")),),
+)
+async def post_employee_payout(
+    payload: EmployeePayoutCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> EmployeePayoutRead:
+    """Разовая выплата сотруднику наличными/с Сейфа (гашение долга ЗП собственника и т.п.)."""
+    try:
+        payout = await create_cash_employee_payout(
+            session,
+            employee_id=payload.employee_id,
+            amount=payload.amount,
+            wallet_id=payload.wallet_id,
+            payout_date=payload.payout_date,
+            kind=payload.kind,
+            note=payload.note,
+            created_by_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    await session.commit()
+    await session.refresh(payout)
+    return EmployeePayoutRead.model_validate(payout)
 
 
 @router.patch(
@@ -940,16 +984,26 @@ async def get_payments_by_employee(
     return {payment.employee_id: payment for payment in result.all()}
 
 
+def line_is_on_demand(line: PayrollLine) -> bool:
+    """Строка ведомости в режиме оклада «по востребованию» (ЗП собственника)."""
+    components = line.components if isinstance(line.components, dict) else {}
+    proration = components.get("proration")
+    return isinstance(proration, dict) and bool(proration.get("on_demand"))
+
+
 def serialize_payroll_line(
     line: PayrollLine,
     payouts_by_employee: dict[uuid.UUID, float],
     payments_by_employee: dict[uuid.UUID, PayrollPayment] | None = None,
+    on_demand_debt_by_employee: dict[uuid.UUID, dict[str, Any]] | None = None,
 ) -> PayrollLineRead:
     components = line.components if isinstance(line.components, dict) else {}
     if getattr(line, "ndfl_withheld", None) is None:
         line.ndfl_withheld = Decimal("0")
     payment = (payments_by_employee or {}).get(line.employee_id)
     is_paid = payment is not None and payment.status == "paid"
+    is_on_demand = line_is_on_demand(line)
+    debt = (on_demand_debt_by_employee or {}).get(line.employee_id) if is_on_demand else None
     return PayrollLineRead.model_validate(line).model_copy(
         update={
             "deposit_withholding": money_float(components.get("deposit_withholding", 0)),
@@ -965,6 +1019,10 @@ def serialize_payroll_line(
             "paid_amount": money_float(payment.amount) if is_paid else None,
             "paid_at": payment.paid_at if is_paid else None,
             "paid_method": payment.method if is_paid else None,
+            "on_demand": is_on_demand,
+            "on_demand_accrued": money_float(debt["accrued"]) if debt is not None else 0,
+            "on_demand_paid": money_float(debt["paid"]) if debt is not None else 0,
+            "on_demand_debt": money_float(debt["debt"]) if debt is not None else 0,
         }
     )
 

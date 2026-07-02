@@ -58,6 +58,7 @@ export type AppAction =
   | "payroll.runs.bank_draft"
   | "payroll.advances.issue"
   | "payroll.loans.issue"
+  | "payroll.employee_payouts.create"
   | "payroll.fund.edit"
   | "payroll.adjustments.edit"
   | "payroll.source-data.edit"
@@ -321,6 +322,7 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
     "payroll.loans.issue",
   ],
   "payroll.loans.issue": ["payroll.loans.issue"],
+  "payroll.employee_payouts.create": ["payroll.employee_payouts.create"],
   "payroll.fund.edit": ["payroll.fund.edit"],
   "payroll.adjustments.edit": [
     "payroll.adjustments.edit",

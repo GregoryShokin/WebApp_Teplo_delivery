@@ -63,8 +63,21 @@ import {
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 
+import { EmployeePayoutDialog } from "./employee-payout-dialog";
 import { RecoveryDialog } from "./recovery-dialog";
 import { formatDate, formatMoney, formatPeriodRange } from "./runs";
+
+/** Начисление текущего периода для on_demand-строки (½ оклада, из components.proration). */
+function onDemandPeriodAccrual(line: PayrollLine): number {
+  const components = (line.components ?? {}) as Record<string, unknown>;
+  const proration = (components.proration ?? {}) as Record<string, unknown>;
+  const raw = proration.accrual_amount;
+  if (typeof raw === "number") {
+    return raw;
+  }
+  const parsed = typeof raw === "string" ? Number(raw) : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 type PayrollAdminRunDetailRouteProps = {
   runId: string;
@@ -93,6 +106,7 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
   const canReopenRuns = permissions.canPerformAction("payroll.runs.reopen");
   const canMarkPaid = permissions.canPerformAction("payroll.runs.mark_paid");
   const canManageLoans = permissions.canPerformAction("payroll.loans.issue");
+  const canCreatePayout = permissions.canPerformAction("payroll.employee_payouts.create");
   const canBankDraft = permissions.canPerformAction("payroll.runs.bank_draft");
   const payoutChannelPerms = {
     safe: permissions.hasPermission("finance.payout_channel.safe"),
@@ -484,6 +498,7 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
 
       <AdminLinesTable
         canManagePayments={canManagePayments}
+        canCreatePayout={canCreatePayout}
         canDeferLoans={canManageLoans && run?.status !== "finalized"}
         employeesById={employeesById}
         isLoading={linesQuery.isLoading || runQuery.isLoading}
@@ -498,6 +513,7 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
 
 function AdminLinesTable({
   canManagePayments,
+  canCreatePayout,
   canDeferLoans,
   employeesById,
   isLoading,
@@ -507,6 +523,7 @@ function AdminLinesTable({
   runId,
 }: {
   canManagePayments: boolean;
+  canCreatePayout: boolean;
   canDeferLoans: boolean;
   employeesById: Map<string, Employee>;
   isLoading: boolean;
@@ -528,6 +545,7 @@ function AdminLinesTable({
   }, [loans]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<Set<string>>(new Set());
   const [recoveryEmployeeId, setRecoveryEmployeeId] = useState<string | null>(null);
+  const [payoutRow, setPayoutRow] = useState<AdminLineRowModel | null>(null);
 
   const unpaidEmployeeIds = useMemo(
     () =>
@@ -668,6 +686,14 @@ function AdminLinesTable({
       key: "base_pay",
       header: "Начислено",
       cell: (row) => {
+        if (row.line.on_demand) {
+          return (
+            <div className="flex flex-col items-end">
+              <span>{formatMoney(onDemandPeriodAccrual(row.line))}</span>
+              <span className="text-xs text-amber-700">в долг</span>
+            </div>
+          );
+        }
         const shifts = dishwasherShiftCount(row.line);
         return (
           <div className="flex flex-col items-end">
@@ -717,7 +743,14 @@ function AdminLinesTable({
     {
       key: "total",
       header: "К выплате",
-      cell: (row) => formatMoney(row.line.total_payable),
+      cell: (row) =>
+        row.line.on_demand ? (
+          <span className="text-muted-foreground" title="Оклад «по востребованию» — не выплачивается автоматически">
+            —
+          </span>
+        ) : (
+          formatMoney(row.line.total_payable)
+        ),
       className: "text-right font-semibold tabular-nums",
       headerClassName: "text-right",
     },
@@ -738,7 +771,16 @@ function AdminLinesTable({
     {
       key: "payment",
       header: "Выплата",
-      cell: (row) => <PaymentCell canManagePayments={canManagePayments} line={row.line} />,
+      cell: (row) =>
+        row.line.on_demand ? (
+          <OnDemandPayoutCell
+            canCreatePayout={canCreatePayout}
+            line={row.line}
+            onPay={() => setPayoutRow(row)}
+          />
+        ) : (
+          <PaymentCell canManagePayments={canManagePayments} line={row.line} />
+        ),
       className: "min-w-[210px]",
     },
   ];
@@ -800,6 +842,56 @@ function AdminLinesTable({
         open={recoveryEmployeeId !== null}
         runId={runId}
       />
+
+      <EmployeePayoutDialog
+        accrued={payoutRow?.line.on_demand_accrued ?? 0}
+        debt={payoutRow?.line.on_demand_debt ?? 0}
+        employeeId={payoutRow?.line.employee_id ?? null}
+        employeeName={payoutRow?.employeeName ?? ""}
+        kind="owner_salary"
+        onOpenChange={(open) => {
+          if (!open) {
+            setPayoutRow(null);
+          }
+        }}
+        open={payoutRow !== null}
+        paid={payoutRow?.line.on_demand_paid ?? 0}
+      />
+    </div>
+  );
+}
+
+function OnDemandPayoutCell({
+  canCreatePayout,
+  line,
+  onPay,
+}: {
+  canCreatePayout: boolean;
+  line: PayrollLine;
+  onPay: () => void;
+}) {
+  const debt = Number(line.on_demand_debt ?? 0);
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <span className="text-xs text-muted-foreground">
+        Долг:{" "}
+        <span className={`tabular-nums ${debt > 0 ? "font-medium text-rose-700" : "text-foreground"}`}>
+          {formatMoney(debt)}
+        </span>
+      </span>
+      {canCreatePayout ? (
+        <Button
+          onClick={(event) => {
+            event.stopPropagation();
+            onPay();
+          }}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Включить в выплату
+        </Button>
+      ) : null}
     </div>
   );
 }
