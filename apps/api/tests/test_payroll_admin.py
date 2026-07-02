@@ -339,6 +339,28 @@ async def test_on_demand_full_oklad_both_halves_deduped_per_month(
         assert debt[employee.id]["debt"] == Decimal("60000.00")
 
 
+async def test_assistant_manager_position_seeded_with_oklad(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Миграция 0156: «Помощник менеджера» — окладник-админ с дефолтным окладом 6000 ₽."""
+    from app.services import position_registry
+    from app.services.payroll_admin import list_admin_oklady
+
+    async with async_session_factory() as session:
+        await position_registry.refresh_position_registry(session)
+        try:
+            assert "Помощник менеджера" in position_registry.okladnik_positions()
+            assert "Помощник менеджера" in position_registry.admin_payroll_positions()
+
+            data = await list_admin_oklady(session, as_of=date(2026, 6, 1))
+            row = next(
+                d for d in data["defaults"] if d["position"] == "Помощник менеджера"
+            )
+            assert row["amount"] == 6000
+        finally:
+            position_registry.reset_position_registry_for_tests()
+
+
 def test_okladnik_earned_to_date_on_demand_returns_accrual() -> None:
     """on_demand: «заработано на дату» = прорейт-начисление (в долг), а не 0 (payout base).
 

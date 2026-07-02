@@ -91,6 +91,7 @@ def test_seed_reproduces_canonical_behavior(edit_client: TestClient) -> None:
         "Кассир",
         "Управляющий",
         "Менеджер",
+        "Помощник менеджера",
         "Системный администратор",
         "Уборщица",
         "Посудомойка",
@@ -323,7 +324,7 @@ async def test_sync_iiko_links_known_and_imports_unknown_as_excluded(
     assert body["imported"] == 1
     # Повар слинкован по имени; остальным активным должностям реестра без роли
     # iiko заводим роль (provision). Бармен исключён — не провизионится.
-    assert body["provisioned"] == 8
+    assert body["provisioned"] == 9
 
     by_name = {item["name"]: item for item in body["positions"]}
     assert by_name["Повар"]["iiko_role_id"] == "role-cook"

@@ -94,6 +94,9 @@ DEFAULT_POSITIONS: tuple[PositionInfo, ...] = (
         "Менеджер", "okladnik", "administration",
         participates_in_access=True, access_role_code="office_manager",
     ),
+    PositionInfo(
+        "Помощник менеджера", "okladnik", "administration", schedule_type="FIXED",
+    ),
     PositionInfo("Уборщица", "okladnik", "auxiliary", schedule_type="FIXED"),
     PositionInfo("Посудомойка", "shift_pool", "auxiliary"),
 )
