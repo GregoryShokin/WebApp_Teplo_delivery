@@ -108,6 +108,7 @@ async def _set_oklad(
     position: str,
     amount: Decimal,
     employee_id: uuid.UUID | None = None,
+    effective_from: date = date(2026, 1, 1),
 ) -> None:
     session.add(
         PayrollRate(
@@ -119,7 +120,7 @@ async def _set_oklad(
             rate_type="monthly",
             amount=amount,
             is_active=True,
-            effective_from=date(2026, 1, 1),
+            effective_from=effective_from,
         )
     )
     await session.flush()
@@ -367,6 +368,39 @@ async def test_cashier_acting_as_assistant_manager_in_admin_run(
         # split по умолчанию → ½ от 6000 = 3000 за первую половину.
         assert line.base_pay == Decimal("3000.00")
         assert line.total_payable == Decimal("3000.00")
+
+
+async def test_acting_assistant_effective_on_payout_date_enters_second_half_run(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Назначение «исполняющего» с датой = дата ВЫПЛАТЫ попадает во вторую половину месяца.
+
+    Период 16–31 мая, выплата 1 июня. Оклад помощника менеджера действует с 1 июня (дата
+    выплаты). По концу периода (31 мая) он бы НЕ применился — а по дате выплаты (1 июня)
+    применяется, и кассир попадает в ведомость. Регресс на «сотрудник на 1-е число не
+    подтягивается при пересчёте».
+    """
+    async with async_session_factory() as session:
+        cashier = await _make_admin_employee(session, position="Кассир")
+        await _set_oklad(
+            session,
+            position="Помощник менеджера",
+            amount=Decimal("6000"),
+            employee_id=cashier.id,
+            effective_from=date(2026, 6, 1),  # = payroll_date второй половины мая
+        )
+        period = await _make_second_half_period(session)  # 16–31 мая, выплата 1 июня
+        await session.commit()
+
+        run = await run_admin_payroll(session, period.id)
+        assert run.status == "completed"
+        lines = await _lines(session, run.id)
+        assert len(lines) == 1
+        line = lines[0]
+        assert line.employee_id == cashier.id
+        assert line.role == "Помощник менеджера"
+        # split по умолчанию → ½ от 6000 за вторую половину.
+        assert line.base_pay == Decimal("3000.00")
 
 
 async def test_assistant_manager_position_seeded_with_oklad(

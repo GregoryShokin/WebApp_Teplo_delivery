@@ -314,11 +314,15 @@ async def calculate_admin_payroll_lines(
     total_payable = Decimal("0")
 
     for employee, forced_position in work_items:
+        # «Исполняющий» проверяется/оплачивается по дате ВЫПЛАТЫ ведомости (payroll_date), чтобы
+        # назначение на 1-е число попало в ведомость, которая 1-го и выплачивается. Основные
+        # админы — по концу периода (их должность/оклад привязаны к отработанному периоду).
+        as_of = period.payroll_date if forced_position is not None else period.end_date
         if forced_position is not None:
             # «Исполняющий» — считаем по назначенной окладной должности (не по основной).
             position = forced_position
         else:
-            position = await get_position_on_date(session, employee.id, period.end_date)
+            position = await get_position_on_date(session, employee.id, as_of)
             position = position or employee.position
             if position not in admin_payroll_positions():
                 # На дату периода сотрудник был на другой (неадминской) должности — например
@@ -353,7 +357,7 @@ async def calculate_admin_payroll_lines(
                 "adjustments": {"bonuses": bonus_items, "penalties": penalty_items},
             }
         else:
-            oklad = await load_admin_oklad(session, employee.id, position, period.end_date)
+            oklad = await load_admin_oklad(session, employee.id, position, as_of)
             if oklad is None:
                 # Нет применимого оклада (ни дефолта должности, ни персонального) —
                 # сотрудник просто не попадает в ведомость. Не ошибка (системные/AI-аккаунты,
@@ -625,6 +629,10 @@ async def _load_acting_admin_employees(
 
     Возвращает список ``(employee, acting_position)``. ``exclude_ids`` — id основных
     админ-сотрудников (их не дублируем).
+
+    Дата назначения сверяется с ДАТОЙ ВЫПЛАТЫ ведомости (``payroll_date``), а не с концом
+    периода: назначение «Действует с 1-го числа» должно попасть в ведомость, которая 1-го и
+    выплачивается (вторая половина месяца: период 16–конец, выплата — 1-е следующего месяца).
     """
     rows = await session.execute(
         select(Employee, PayrollRate.position_group)
@@ -634,10 +642,10 @@ async def _load_acting_admin_employees(
             PayrollRate.rate_type == "monthly",
             PayrollRate.is_active.is_(True),
             PayrollRate.position_group.in_(okladnik_positions()),
-            PayrollRate.effective_from <= period.end_date,
+            PayrollRate.effective_from <= period.payroll_date,
             or_(
                 PayrollRate.effective_to.is_(None),
-                PayrollRate.effective_to > period.end_date,
+                PayrollRate.effective_to > period.payroll_date,
             ),
             Employee.admin_payroll_excluded.is_(False),
             or_(Employee.hire_date.is_(None), Employee.hire_date <= period.end_date),
