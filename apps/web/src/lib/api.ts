@@ -3662,6 +3662,20 @@ export async function getPayrollAdvances(
   return response.data;
 }
 
+export type AdvanceIssueWallet = {
+  id: string;
+  code: string;
+  name: string;
+  channel: "cash" | "bank";
+};
+
+// Счета выдачи аванса/займа: наличные (ТК Черникова/Сейф) + банковский расчётный.
+// Банк-выдача создаёт черновик платежа в Т-Банке; ДДС из выписки, изъятие в iiko по «исполнен».
+export async function getAdvanceIssueWallets(): Promise<AdvanceIssueWallet[]> {
+  const response = await api.get<AdvanceIssueWallet[]>("/payroll/advances/issue-wallets");
+  return response.data;
+}
+
 export async function createPayrollAdvance(
   payload: PayrollAdvancePayload,
 ): Promise<PayrollAdvance> {

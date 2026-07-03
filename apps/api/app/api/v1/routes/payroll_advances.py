@@ -15,6 +15,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -26,7 +27,7 @@ from app.api.deps import (
 )
 from app.auth.permissions import permission_is_granted
 from app.db.session import get_session
-from app.models import Employee, SalaryAdvance, SalaryAdvanceBankDraft
+from app.models import Account, Employee, SalaryAdvance, SalaryAdvanceBankDraft, Wallet
 from app.services.employee_effective_events import get_position_on_date
 from app.services.payroll_advance_availability import AdvanceAvailability, available_to_advance
 from app.services.payroll_advance_service import (
@@ -40,6 +41,7 @@ from app.services.payroll_advance_service import (
     set_loan_max,
     write_off_advance,
 )
+from app.services.payroll_payouts import list_cash_wallets
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
 from app.services.position_registry import admin_payroll_positions
 
@@ -186,6 +188,56 @@ async def get_advances(
     rows = await list_advances(session, employee_id=employee_id, statuses=statuses)
     drafts = await list_advance_drafts(session, [row.id for row in rows])
     return [_advance_read(row, drafts.get(row.id)) for row in rows]
+
+
+class AdvanceIssueWalletRead(BaseModel):
+    """Счёт выдачи: наличный (ДДС+iiko сразу) или банковский (черновик→вебхук→iiko)."""
+
+    id: uuid.UUID
+    code: str
+    name: str
+    channel: Literal["cash", "bank"]
+
+
+async def _resolve_bank_issue_wallet(session: AsyncSession) -> Wallet | None:
+    """Кошелёк банковской выдачи = активный счёт, привязанный к настроенному счёту
+    исходящих платежей Т-Банка (расчётный). Источник истины — конфиг платежей, не хардкод."""
+    from app.core.config import get_settings
+    from app.services.deposit_bank_draft import _payer_account
+
+    payer_account = _payer_account(get_settings())
+    if not payer_account:
+        return None
+    return await session.scalar(
+        select(Wallet)
+        .join(Account, Account.id == Wallet.account_id)
+        .where(Account.account_number == payer_account, Wallet.status == "active")
+    )
+
+
+@router.get(
+    "/issue-wallets",
+    response_model=list[AdvanceIssueWalletRead],
+    dependencies=ADVANCES_READ_ACCESS,
+)
+async def get_issue_wallets(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[AdvanceIssueWalletRead]:
+    """Счета для выдачи аванса/займа: наличные (ТК Черникова/Сейф) + банковский расчётный.
+
+    Наличная выдача проводится в ДДС сразу (+ изъятие в iiko для ТК Черникова);
+    банковская — создаёт черновик платежа в Т-Банке, ДДС из выписки, iiko по «исполнен».
+    """
+    wallets = [
+        AdvanceIssueWalletRead(id=w.id, code=w.code, name=w.name, channel="cash")
+        for w in await list_cash_wallets(session)
+    ]
+    bank = await _resolve_bank_issue_wallet(session)
+    if bank is not None:
+        wallets.append(
+            AdvanceIssueWalletRead(id=bank.id, code=bank.code, name=bank.name, channel="bank")
+        )
+    return wallets
 
 
 @router.post("", response_model=AdvanceRead, status_code=status.HTTP_201_CREATED)
