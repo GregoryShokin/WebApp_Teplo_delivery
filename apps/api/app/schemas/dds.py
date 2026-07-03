@@ -326,6 +326,37 @@ class TransactionClassifyRequest(BaseModel):
     counterparty_id: uuid.UUID | None = None
 
 
+class CashflowSplitItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    article_id: uuid.UUID
+    amount: Decimal = Field(gt=0)
+    comment: str | None = None
+    # Для статьи «перевод между счетами»: счёт-получатель — заводит встречную ногу перевода
+    # (наличному получателю) + TransferGroup. Допустим только у строки с транзитной статьёй.
+    transfer_wallet_id: uuid.UUID | None = None
+
+
+class CashflowClassifyRequest(BaseModel):
+    """Полный разбор РУЧНОЙ проводки ДДС (без bank-операции), сохраняющий баланс кошелька.
+
+    ``action="split"`` разносит проводку по нескольким статьям (Σ сумм = сумма проводки); строка
+    с транзитной статьёй и ``transfer_wallet_id`` дополнительно заводит перевод между счетами.
+    ``exclude`` — мягко исключить проводку из ДДС и из баланса.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["split", "exclude"] = "split"
+    splits: list[CashflowSplitItem] = Field(default_factory=list)
+    counterparty_id: uuid.UUID | None = None
+
+
+class CashflowClassifyRead(BaseModel):
+    transaction_id: uuid.UUID
+    cashflow_transaction_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
 class OperationClassifyRead(BaseModel):
     bank_operation_id: uuid.UUID
     classification_status: str

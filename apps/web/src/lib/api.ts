@@ -2348,6 +2348,21 @@ export type OperationClassifyPayload = {
   remember_as_rule?: boolean;
 };
 
+export type CashflowSplitItem = {
+  article_id: string;
+  amount: string;
+  comment?: string | null;
+  // Счёт-получатель для строки со статьёй «перевод между счетами» (заводит встречную ногу).
+  transfer_wallet_id?: string | null;
+};
+
+// Полный разбор РУЧНОЙ проводки ДДС (без bank-операции), сохраняющий баланс кошелька.
+export type CashflowClassifyPayload = {
+  action: "split" | "exclude";
+  splits?: CashflowSplitItem[];
+  counterparty_id?: string | null;
+};
+
 export type CredentialRead = {
   id: string;
   provider: DdsProvider;
@@ -2747,11 +2762,11 @@ export async function classifyOperation(
   await api.post(`/dds/operations/${operationId}/classify`, payload);
 }
 
-export async function classifyTransaction(
+export async function classifyCashflowTransaction(
   transactionId: string,
-  payload: { article_id: string | null; counterparty_id: string | null },
+  payload: CashflowClassifyPayload,
 ): Promise<void> {
-  await api.patch(`/dds/transactions/${transactionId}`, payload);
+  await api.post(`/dds/transactions/${transactionId}/classify`, payload);
 }
 
 export async function dismissOwnerReviewCase(caseId: string): Promise<void> {

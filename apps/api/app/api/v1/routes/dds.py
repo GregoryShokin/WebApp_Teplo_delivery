@@ -38,6 +38,8 @@ from app.schemas.dds import (
     BankOperationListRead,
     BankSyncQueuedRead,
     BankSyncRequest,
+    CashflowClassifyRead,
+    CashflowClassifyRequest,
     CashflowTransactionListRead,
     ClassificationRuleCreate,
     ClassificationRulePatch,
@@ -68,6 +70,11 @@ from app.schemas.dds import (
     TransactionClassifyRequest,
 )
 from app.services.advance_iiko_payout import post_advance_payout_to_iiko
+from app.services.banking.cashflow_classify import (
+    EXCLUDED_QUALITY,
+    apply_cashflow_exclude,
+    apply_cashflow_split,
+)
 from app.services.banking.classifier import (
     AWAITING_BANK_QUALITY,
     SAFE_WALLET_CODE,
@@ -310,6 +317,8 @@ async def list_journal(
             # строку кликабельной для назначения статьи (для ручных проводок без bank-операции).
             if cf.quality_status == AWAITING_BANK_QUALITY:
                 cf_status = "awaiting_confirmation"
+            elif cf.quality_status == EXCLUDED_QUALITY:
+                cf_status = "excluded"
             elif cf.article_id is None:
                 cf_status = "needs_review"
             else:
@@ -476,6 +485,7 @@ async def _wallet_movement_deltas(session: AsyncSession) -> dict[UUID, Decimal]:
         deltas[wallet_id] += amount if direction == "in" else -amount
 
     # Non-bank wallets: no statement — balance comes from manual cashflow entries.
+    # Мягко исключённые проводки (ручной разбор) из баланса выпадают — как excluded у банка.
     after_opening_cash = or_(
         Wallet.opening_balance_date.is_(None),
         CashflowTransaction.operation_date > Wallet.opening_balance_date,
@@ -487,7 +497,11 @@ async def _wallet_movement_deltas(session: AsyncSession) -> dict[UUID, Decimal]:
             func.coalesce(func.sum(CashflowTransaction.amount), 0),
         )
         .join(Wallet, Wallet.id == CashflowTransaction.wallet_id)
-        .where(Wallet.type.not_in(bank_types), after_opening_cash)
+        .where(
+            Wallet.type.not_in(bank_types),
+            CashflowTransaction.quality_status != EXCLUDED_QUALITY,
+            after_opening_cash,
+        )
         .group_by(CashflowTransaction.wallet_id, CashflowTransaction.direction)
     )
     for wallet_id, direction, total in cash_rows:
@@ -1113,6 +1127,50 @@ async def classify_transaction(
         "article_id": txn.article_id,
         "counterparty_id": txn.counterparty_id,
     }
+
+
+@router.post(
+    "/transactions/{transaction_id}/classify",
+    response_model=CashflowClassifyRead,
+    dependencies=DDS_CLASSIFY_ACCESS,
+)
+async def classify_transaction_full(
+    transaction_id: UUID,
+    payload: CashflowClassifyRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    """Полный разбор РУЧНОЙ проводки ДДС (без bank-операции): мультисплит по статьям (в т.ч.
+    строка «перевод между счетами» со счётом-получателем) или мягкое исключение.
+
+    Каждое действие сохраняет баланс кошелька (проводка сама двигает баланс, в отличие от
+    операции выписки). Проводки, порождённые из bank-операции, разбираются через операцию
+    выписки (``/operations/{id}/classify``), поэтому здесь отклоняются.
+    """
+    txn = await session.get(CashflowTransaction, transaction_id)
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Проводка не найдена")
+    if txn.source_kind == "bank_operation":
+        raise HTTPException(
+            status_code=400,
+            detail="Эту проводку разбирают через операцию выписки",
+        )
+    try:
+        if payload.action == "split":
+            created_ids = await apply_cashflow_split(
+                session,
+                txn,
+                splits=[
+                    (item.article_id, item.amount, item.comment, item.transfer_wallet_id)
+                    for item in payload.splits
+                ],
+                counterparty_id=payload.counterparty_id,
+            )
+        else:
+            created_ids = await apply_cashflow_exclude(session, txn)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    await session.commit()
+    return {"transaction_id": txn.id, "cashflow_transaction_ids": created_ids}
 
 
 def _safe_allocation_payload(allocation: SafeAllocation) -> dict[str, object]:
