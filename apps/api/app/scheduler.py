@@ -49,12 +49,21 @@ IIKO_COURIER_JOB_RETRIES = 3
 SUPPORTED_BANK_PROVIDERS = ("sber", "tbank")
 
 
+@scheduler.scheduled_job(
+    "cron",
+    minute=0,
+    hour="*",
+    id="poll_banks",
+    max_instances=1,
+    coalesce=True,
+)
 async def poll_banks() -> None:
-    # РУЧНОЙ запуск. Автоматический polling банковской выписки отключён (снят
-    # @scheduler.scheduled_job): ДДС по банковским черновикам создаётся статусным webhook-ом
-    # платёжного документа (по provider_ref), а webhook-и «операция по счёту» в ДДС не
-    # пропускаются. Функция оставлена для ручной диагностики/разового добора выписки (в т.ч.
-    # Sber, у которого вебхука нет).
+    # Почасовой polling выписки банков (Sber + T-Bank). Для Sber это ЕДИНСТВЕННЫЙ источник
+    # данных — вебхука у него нет; для T-Bank — сверка/фоллбэк к realtime-вебхуку «операция по
+    # счёту» (если вебхук не доставит, поллинг доберёт). Черновики этим путём НЕ гасятся (их
+    # доводит статусный webhook по provider_ref); анти-дубль с оплатой черновика — prebooked-
+    # механизм классификатора. Дедуп по operationId + стабильному ключу выписки в
+    # ingest_operations делает повторный прогон идемпотентным.
     for provider in _bank_sync_providers():
         await run_bank_sync_job(provider=provider)
 
