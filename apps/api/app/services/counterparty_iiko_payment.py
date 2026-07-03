@@ -23,7 +23,7 @@ import urllib.error
 import urllib.request
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -71,6 +71,50 @@ def _amount_iiko_representable(amount: Decimal) -> bool:
     чтобы не слать обречённое (метод НЕ идемпотентен) и сразу звать ручной разбор. Целые суммы и
     «удачные» дроби (напр. ``959.88`` → ``95988.0``) → True."""
     return (float(amount) * 100).is_integer()
+
+
+# Окно ожидания появления документа в iiko Cloud. add_payment (Cloud) видит документ не сразу после
+# его создания в iikoServer — между Server и Cloud есть задержка/рассинхрон репликации. «incoming
+# invoice not found» в пределах этого окна — НЕ перманентный отказ (документ доедет и оплата
+# пройдёт), поэтому сверочный джоб продолжает ретраить. За окном считаем, что документ в Cloud так и
+# не появился, и заводим ручной кейс (реальный сбой синхронизации на стороне iiko).
+IIKO_SYNC_GRACE = timedelta(days=5)
+
+
+def _is_incoming_invoice_not_found(response: dict | None, error: str | None) -> bool:
+    """iiko Cloud add_payment вернул «incoming invoice not found»: документ есть в iikoServer,
+    но ещё не виден в Cloud (рассинхрон Server↔Cloud). Отличаем ВРЕМЕННУЮ ошибку от настоящих
+    перманентных 4xx (invalid amount и т.п.), ретраить которые бессмысленно."""
+    blob = ""
+    if isinstance(response, dict):
+        blob += json.dumps(response, ensure_ascii=False)
+    if error:
+        blob += " " + error
+    blob = blob.lower()
+    return "not found" in blob and "invoic" in blob
+
+
+def _within_iiko_sync_grace(invoice: SupplierInvoice) -> bool:
+    """Документ создан в iiko недавно (grace-окно) → ждём его появления в Cloud, ретраим."""
+    anchor = invoice.iiko_pushed_at or invoice.created_at
+    if anchor is None:
+        return True
+    if anchor.tzinfo is None:
+        anchor = anchor.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - anchor) < IIKO_SYNC_GRACE
+
+
+async def _cap_push_attempts(session: AsyncSession, *, idempotency_key: str) -> None:
+    """Заблокировать авто-ретраи пуша (attempts=кап) — терминальный провал, который сам не
+    рассосётся (перманентный отказ iiko / документ не появился в Cloud за grace-окно)."""
+    record = await session.scalar(
+        select(IikoInvoicePaymentPush).where(
+            IikoInvoicePaymentPush.idempotency_key == idempotency_key
+        )
+    )
+    if record is not None and record.attempts < MAX_PUSH_ATTEMPTS:
+        record.attempts = MAX_PUSH_ATTEMPTS
+        await session.commit()
 
 
 async def _open_iiko_payment_case(
@@ -358,6 +402,12 @@ async def push_invoice_payment_to_iiko(
     record.iiko_document_id = iiko_doc
     record.error = error
     record.response_payload = response if isinstance(response, dict) else {"raw": response}
+    # «Документ не найден в Cloud» — не перманентный отказ, а рассинхрон iikoServer↔Cloud: документ
+    # есть в Server, add_payment пройдёт, когда он доедет в Cloud. НЕ засчитываем попыткой в кап
+    # MAX_PUSH_ATTEMPTS — сверочный джоб продолжает ретраить; предохранитель по возрасту документа
+    # на стороне джоба (заведёт ручной кейс, если документ не появится за grace-окно).
+    if not ok and _is_incoming_invoice_not_found(record.response_payload, error):
+        record.attempts = max(0, record.attempts - 1)
     await session.commit()
 
     return IikoPushResult(
@@ -461,16 +511,43 @@ async def mirror_paid_iiko_invoices(
             and 400 <= res.status_code < 500
             and res.status_code != 429
         ):
-            # перманентный отказ iiko (непредставимая сумма / invalid amount / документ) — ретраи
-            # не помогут; раньше это тихо терялось через blocked_invoice_ids (attempts>=кап).
             result["error"] += 1
-            logger.warning(
-                "iiko mirror: iiko перманентно отклонил накладную %s: %s", inv_id, res.error
-            )
-            await _open_iiko_payment_case(
-                session, invoice_id=inv_id, external_id=external_id, amount=draft_amount,
-                reason=res.error or f"HTTP {res.status_code}",
-            )
+            not_found = _is_incoming_invoice_not_found(res.response, res.error)
+            if not_found and _within_iiko_sync_grace(invoice):
+                # Документ ещё не виден в iiko Cloud (рассинхрон iikoServer↔Cloud) — НЕ терминал:
+                # add_payment пройдёт, когда документ доедет в Cloud. Кейс — для видимости; ретрай
+                # следующим проходом (attempts для not-found не капится).
+                await _open_iiko_payment_case(
+                    session, invoice_id=inv_id, external_id=external_id, amount=draft_amount,
+                    reason=(
+                        "документ ещё не виден в iiko Cloud (рассинхрон iikoServer↔Cloud) — "
+                        "оплата дойдёт автоматически после синхронизации"
+                    ),
+                )
+                logger.warning(
+                    "iiko mirror: накладная %s ещё не в iiko Cloud — ждём синхронизации", inv_id
+                )
+            elif not_found:
+                # Документ не появился в Cloud за grace-окно → терминал: attempts для not-found
+                # компенсируется и сам до капа не дойдёт — блокируем ретраи явно.
+                await _cap_push_attempts(session, idempotency_key=f"invoice:{inv_id}")
+                await _open_iiko_payment_case(
+                    session, invoice_id=inv_id, external_id=external_id, amount=draft_amount,
+                    reason="документ не появился в iiko Cloud за отведённое окно — ручной разбор",
+                )
+                logger.warning(
+                    "iiko mirror: накладная %s не появилась в iiko Cloud — терминал", inv_id
+                )
+            else:
+                # Настоящий перманентный отказ iiko (invalid amount и т.п.) — кейс; attempts растёт
+                # естественно до капа (blocked_invoice_ids), авто-ретраи прекращаются сами.
+                logger.warning(
+                    "iiko mirror: iiko перманентно отклонил накладную %s: %s", inv_id, res.error
+                )
+                await _open_iiko_payment_case(
+                    session, invoice_id=inv_id, external_id=external_id, amount=draft_amount,
+                    reason=res.error or f"HTTP {res.status_code}",
+                )
         else:
             # временный сбой (429 / 5xx / сеть) — кап доберётся на следующих проходах
             result["error"] += 1
@@ -645,10 +722,27 @@ async def mirror_paid_kassa_invoices(
                 and 400 <= res.status_code < 500
                 and res.status_code != 429
             ):
-                # перманентный отказ iiko (напр. invalid amount) — ретраи не помогут
-                terminal_fail.append(f"{src}: {res.error or f'HTTP {res.status_code}'}")
-                result["error"] += 1
-                logger.warning("kassa mirror: iiko перманентно отклонил %s: %s", key, res.error)
+                if _is_incoming_invoice_not_found(res.response, res.error) and (
+                    _within_iiko_sync_grace(invoice)
+                ):
+                    # Документ ещё не в iiko Cloud (рассинхрон Server↔Cloud) — НЕ терминал: ретраим
+                    # следующим проходом (накладную НЕ закрываем done), кейс — для видимости.
+                    transient = True
+                    result["error"] += 1
+                    await _open_iiko_payment_case(
+                        session, invoice_id=inv_id, external_id=external_id, amount=goods_total,
+                        reason=(
+                            "документ ещё не виден в iiko Cloud (рассинхрон iikoServer↔Cloud) — "
+                            "оплата дойдёт автоматически после синхронизации"
+                        ),
+                    )
+                    logger.warning("kassa mirror: %s ещё не в iiko Cloud — ждём синхронизации", key)
+                else:
+                    # перманентный отказ iiko (invalid amount и т.п.) ИЛИ документ не появился за
+                    # grace-окно — ручной разбор.
+                    terminal_fail.append(f"{src}: {res.error or f'HTTP {res.status_code}'}")
+                    result["error"] += 1
+                    logger.warning("kassa mirror: iiko перманентно отклонил %s: %s", key, res.error)
             else:
                 # временный сбой (429 / 5xx / сеть) — добор на следующем проходе
                 transient = True
