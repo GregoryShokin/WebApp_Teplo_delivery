@@ -317,6 +317,15 @@ class OperationClassifyRequest(BaseModel):
     remember_as_rule: bool = False
 
 
+class TransactionClassifyRequest(BaseModel):
+    """Ручная разметка проводки ДДС (статья/контрагент) — для ручных проводок без bank-операции."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    article_id: uuid.UUID | None = None
+    counterparty_id: uuid.UUID | None = None
+
+
 class OperationClassifyRead(BaseModel):
     bank_operation_id: uuid.UUID
     classification_status: str

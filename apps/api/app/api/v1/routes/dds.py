@@ -65,6 +65,7 @@ from app.schemas.dds import (
     SafeCashWithdrawRequest,
     SafeReconcileRead,
     SafeReconcileRequest,
+    TransactionClassifyRequest,
 )
 from app.services.advance_iiko_payout import post_advance_payout_to_iiko
 from app.services.banking.classifier import (
@@ -305,11 +306,14 @@ async def list_journal(
             if cf.source_kind == "bank_operation" and cf.source_id is not None:
                 time_source = posted_at_by_op.get(cf.source_id) or cf.created_at
             # Пендинг-чек (ручной ввод, банк ещё не подтвердил) — отдельный статус журнала.
-            cf_status = (
-                "awaiting_confirmation"
-                if cf.quality_status == AWAITING_BANK_QUALITY
-                else "classified"
-            )
+            # Проводка без статьи (article_id пуст) — требует ручной разметки: фронт делает такую
+            # строку кликабельной для назначения статьи (для ручных проводок без bank-операции).
+            if cf.quality_status == AWAITING_BANK_QUALITY:
+                cf_status = "awaiting_confirmation"
+            elif cf.article_id is None:
+                cf_status = "needs_review"
+            else:
+                cf_status = "classified"
             rows.append(
                 {
                     "kind": "cashflow",
@@ -1080,6 +1084,34 @@ async def classify_operation(
         "classification_status": operation.classification_status,
         "cashflow_transaction_ids": created_ids,
         "rule_id": rule_id,
+    }
+
+
+@router.patch("/transactions/{transaction_id}", dependencies=DDS_CLASSIFY_ACCESS)
+async def classify_transaction(
+    transaction_id: UUID,
+    payload: TransactionClassifyRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    """Вручную разметить проводку ДДС (статья + контрагент).
+
+    Для РУЧНЫХ проводок без bank-операции (напр. снятых с авто-разметки или заведённых при
+    сведении касс), которые нельзя разобрать через операцию выписки. Пустой ``article_id``
+    возвращает проводку в статус «требует разметки». Не влияет на баланс — только аналитика.
+    """
+    txn = await session.get(CashflowTransaction, transaction_id)
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Проводка не найдена")
+    if payload.article_id is not None and await session.get(DdsArticle, payload.article_id) is None:
+        raise HTTPException(status_code=400, detail="Статья не найдена")
+    txn.article_id = payload.article_id
+    txn.counterparty_id = payload.counterparty_id
+    txn.quality_status = "manual_override"
+    await session.commit()
+    return {
+        "id": txn.id,
+        "article_id": txn.article_id,
+        "counterparty_id": txn.counterparty_id,
     }
 
 

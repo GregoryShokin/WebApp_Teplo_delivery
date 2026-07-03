@@ -2747,6 +2747,13 @@ export async function classifyOperation(
   await api.post(`/dds/operations/${operationId}/classify`, payload);
 }
 
+export async function classifyTransaction(
+  transactionId: string,
+  payload: { article_id: string | null; counterparty_id: string | null },
+): Promise<void> {
+  await api.patch(`/dds/transactions/${transactionId}`, payload);
+}
+
 export async function dismissOwnerReviewCase(caseId: string): Promise<void> {
   await api.post(`/dds/owner-review/${caseId}/dismiss`);
 }

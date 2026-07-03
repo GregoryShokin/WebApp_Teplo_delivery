@@ -25,6 +25,7 @@ import {
   type JournalRow,
 } from "@/lib/api";
 import { OperationReviewDialog } from "@/routes/dds/OperationReviewDialog";
+import { CashflowClassifyDialog } from "@/routes/dds/CashflowClassifyDialog";
 import {
   DdsStatusBadge,
   DirectionBadge,
@@ -50,6 +51,7 @@ export function LedgerTab() {
   const [counterpartyId, setCounterpartyId] = useState("all");
   const [offset, setOffset] = useState(0);
   const [selectedRow, setSelectedRow] = useState<JournalRow | null>(null);
+  const [selectedCashflowRow, setSelectedCashflowRow] = useState<JournalRow | null>(null);
 
   const permissions = usePermissions();
   const canClassify = permissions.canPerformAction("finance.cashflow.classify");
@@ -370,6 +372,9 @@ export function LedgerTab() {
         onRowClick={(row) => {
           if (row.bank_operation_id) {
             setSelectedRow(row);
+          } else if (row.kind === "cashflow") {
+            // Ручная проводка без bank-операции — размечаем статью/контрагента напрямую.
+            setSelectedCashflowRow(row);
           }
         }}
         emptyMessage="Записей не найдено"
@@ -386,6 +391,12 @@ export function LedgerTab() {
         operation={operationForReview}
         canClassify={canClassify}
         onClose={() => setSelectedRow(null)}
+      />
+
+      <CashflowClassifyDialog
+        row={selectedCashflowRow}
+        canClassify={canClassify}
+        onClose={() => setSelectedCashflowRow(null)}
       />
     </div>
   );
