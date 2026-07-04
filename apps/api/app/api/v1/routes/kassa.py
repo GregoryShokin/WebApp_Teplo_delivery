@@ -221,6 +221,7 @@ async def create_cheque_endpoint(
                     iiko_product_id=line.iiko_product_id,
                     vat_percent=line.vat_percent,
                     amount=line.amount,
+                    is_return=line.is_return,
                 )
                 for line in payload.lines
             ],

@@ -5,7 +5,17 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Check, ChevronRight, LoaderCircle, Plus, Receipt, Trash2, Warehouse, X } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  LoaderCircle,
+  Plus,
+  Receipt,
+  Trash2,
+  Undo2,
+  Warehouse,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -54,17 +64,29 @@ type StoreLine = {
   // Сумма строки — UI-механизм взаиморасчёта (как в накладных): на бэк не уходит,
   // там sum = quantity*price; при вводе суммы пересчитывается цена.
   amount: string;
+  // Позиция возвращена в магазин: остаётся в чеке (сверка с бумажным чеком копейка в
+  // копейку), помечается красным и не проводится — чек проводится net.
+  isReturn: boolean;
 };
-type ExpenseLine = { key: string; articleId: string; amount: string; note: string };
+type ExpenseLine = { key: string; articleId: string; amount: string; note: string; isReturn: boolean };
 
 let seq = 0;
 function emptyStoreLine(): StoreLine {
   seq += 1;
-  return { key: `s${seq}`, name: "", productId: null, unit: null, quantity: "1", price: "", amount: "" };
+  return {
+    key: `s${seq}`,
+    name: "",
+    productId: null,
+    unit: null,
+    quantity: "1",
+    price: "",
+    amount: "",
+    isReturn: false,
+  };
 }
 function emptyExpenseLine(): ExpenseLine {
   seq += 1;
-  return { key: `e${seq}`, articleId: "", amount: "", note: "" };
+  return { key: `e${seq}`, articleId: "", amount: "", note: "", isReturn: false };
 }
 
 function dayLabel(issuedAt: string): string {
@@ -170,7 +192,6 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
   }, [cardOps, cardTxQuery.isFetching, selectedOp]);
 
   const isPending = !selectedOp && pendingAmount !== null && pendingAmount > 0;
-  const cardTotal = selectedOp?.amount ?? (isPending ? (pendingAmount ?? 0) : 0);
   const storeTotal = useMemo(
     () =>
       storeLines.reduce(
@@ -183,9 +204,38 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
     () => expenseLines.reduce((sum, l) => sum + num(l.amount), 0),
     [expenseLines],
   );
+  // Gross — все позиции как на бумажном чеке (включая возвращённые); net — к проведению.
   const linesTotal = storeTotal + expenseTotal;
+  const returnedTotal = useMemo(
+    () =>
+      storeLines.reduce(
+        (sum, l) =>
+          sum + (l.isReturn ? (l.amount !== "" ? num(l.amount) : num(l.quantity) * num(l.price)) : 0),
+        0,
+      ) + expenseLines.reduce((sum, l) => sum + (l.isReturn ? num(l.amount) : 0), 0),
+    [storeLines, expenseLines],
+  );
+  const hasReturns = returnedTotal > 0;
+  // С возвратами карт-часть проводится net: операция − возвраты (сервер считает так же).
+  const cardTotal = selectedOp
+    ? hasReturns
+      ? Math.max(selectedOp.amount - returnedTotal, 0)
+      : selectedOp.amount
+    : isPending
+      ? (pendingAmount ?? 0)
+      : 0;
   const cash = num(cashAmount);
   const paidTotal = cardTotal + cash;
+  // Подсказка рассинхрона с банком: по выбранной покупке уже есть возврат в выписке.
+  const bankRefund = selectedOp?.refund_amount ?? null;
+  const refundHint =
+    selectedOp && bankRefund
+      ? !hasReturns
+        ? `Банк показывает возврат ${formatDdsMoney(bankRefund)} по этой покупке — отметьте возвращённые позиции кнопкой ↩`
+        : Math.abs(returnedTotal - bankRefund) >= 0.01
+          ? `Помеченные возвраты (${formatDdsMoney(returnedTotal)}) не сходятся с возвратом банка (${formatDdsMoney(bankRefund)})`
+          : null
+      : null;
 
   function reset() {
     setIssuedAt(toDateTimeLocalInput(new Date()));
@@ -211,6 +261,7 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
           amount: l.amount !== "" ? num(l.amount) : num(l.quantity) * num(l.price),
           dds_article_id: supplierArticle?.id ?? null,
           iiko_product_id: l.productId,
+          is_return: l.isReturn,
         }));
       const expensePayload: ChequeLinePayload[] = expenseLines
         .filter((l) => l.articleId && num(l.amount) > 0)
@@ -222,6 +273,7 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
           amount: num(l.amount),
           dds_article_id: l.articleId,
           iiko_product_id: null,
+          is_return: l.isReturn,
         }));
       return createCheque({
         counterparty_id: localPurchase?.id ?? "",
@@ -260,7 +312,17 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
   const filledCount =
     storeLines.filter((l) => l.name.trim() && num(l.quantity) > 0).length +
     expenseLines.filter((l) => l.articleId && num(l.amount) > 0).length;
-  const totalsMatch = Math.abs(linesTotal - paidTotal) < 0.01;
+  // С возвратами сверка «как на бумаге»: ВСЕ позиции (включая возвращённые) == сумме
+  // операции копейка в копейку; net при этом равен оплате автоматически. Без возвратов —
+  // прежняя сверка позиций с оплатой.
+  const totalsMatch = hasReturns
+    ? Boolean(selectedOp) && Math.abs(linesTotal - (selectedOp?.amount ?? 0)) < 0.01
+    : Math.abs(linesTotal - paidTotal) < 0.01;
+  // Возврат — только при одной выбранной карт-операции, без наличных и ручного пендинга
+  // (зеркало серверных гардов create_cheque).
+  const returnsValid =
+    !hasReturns ||
+    (Boolean(selectedOp) && cash === 0 && returnedTotal < (selectedOp?.amount ?? 0) - 0.005);
   const canSave =
     Boolean(localPurchase) &&
     Boolean(issuedAt) &&
@@ -269,6 +331,7 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
     storeValid &&
     expenseValid &&
     totalsMatch &&
+    returnsValid &&
     !createMutation.isPending;
 
   // Человеко-понятная причина, почему чек нельзя создать (иначе кнопка гаснет молча).
@@ -286,11 +349,19 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
             ? "У товарных строк укажите количество и цену"
             : !expenseValid
               ? "У строк прочих расходов укажите сумму"
-              : paidTotal <= 0
-                ? "Укажите оплату — карт-операцию или наличные"
-                : !totalsMatch
-                  ? "Суммы позиций и оплаты не сходятся"
-                  : null;
+              : hasReturns && !selectedOp
+                ? "Возврат позиций — только при выбранной карт-операции"
+                : hasReturns && cash > 0
+                  ? "Возврат не сочетается с наличной частью"
+                  : hasReturns && returnedTotal >= (selectedOp?.amount ?? 0)
+                    ? "Возвраты не могут покрывать всю операцию"
+                    : paidTotal <= 0
+                      ? "Укажите оплату — карт-операцию или наличные"
+                      : !totalsMatch
+                        ? hasReturns
+                          ? "Позиции (с возвратами) должны сойтись с суммой операции"
+                          : "Суммы позиций и оплаты не сходятся"
+                        : null;
 
   function patchStore(key: string, patch: Partial<StoreLine>) {
     setStoreLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -350,6 +421,12 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
                         )}{" "}
                         · нажмите, чтобы изменить
                       </span>
+                      {hasReturns ? (
+                        <span className="block truncate text-xs text-red-700">
+                          возврат {formatDdsMoney(returnedTotal)} · к проведению{" "}
+                          {formatDdsMoney(cardTotal)}
+                        </span>
+                      ) : null}
                     </>
                   ) : isPending ? (
                     <>
@@ -394,6 +471,12 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
               ) : null}
             </div>
 
+            {refundHint ? (
+              <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {refundHint}
+              </p>
+            ) : null}
+
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-muted-foreground">+ наличными, ₽</span>
               <Input
@@ -422,18 +505,22 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
 
               {storeLines.length > 0 ? (
                 <div className="mt-2 space-y-1.5">
-                  <div className="grid grid-cols-[1fr_44px_26px_56px_64px_24px] gap-1.5 px-1 text-xs text-muted-foreground">
+                  <div className="grid grid-cols-[1fr_44px_26px_56px_64px_24px_24px] gap-1.5 px-1 text-xs text-muted-foreground">
                     <span>Товар</span>
                     <span className="text-center">Кол-во</span>
                     <span className="text-center">Ед.</span>
                     <span className="text-right">Цена</span>
                     <span className="text-right">Сумма</span>
                     <span />
+                    <span />
                   </div>
                   {storeLines.map((line) => (
                     <div
                       key={line.key}
-                      className="grid grid-cols-[1fr_44px_26px_56px_64px_24px] items-center gap-1.5"
+                      className={cn(
+                        "grid grid-cols-[1fr_44px_26px_56px_64px_24px_24px] items-center gap-1.5",
+                        line.isReturn && "rounded-md bg-red-50 ring-1 ring-red-200",
+                      )}
                     >
                       <ProductSearch
                         value={line.name}
@@ -490,6 +577,23 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
                       <Button
                         size="icon"
                         variant="ghost"
+                        className={cn(
+                          "size-9",
+                          line.isReturn
+                            ? "text-red-600 hover:text-red-700"
+                            : "text-muted-foreground",
+                        )}
+                        aria-label={
+                          line.isReturn ? "Снять пометку возврата" : "Пометить как возврат"
+                        }
+                        title="Позиция возвращена в магазин — останется в чеке, но не будет проведена"
+                        onClick={() => patchStore(line.key, { isReturn: !line.isReturn })}
+                      >
+                        <Undo2 size={14} aria-hidden="true" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
                         className="size-9"
                         aria-label="Удалить товар"
                         onClick={() =>
@@ -541,7 +645,10 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
                   {expenseLines.map((line) => (
                     <div
                       key={line.key}
-                      className="grid grid-cols-[1.1fr_1fr_74px_28px] items-center gap-1.5"
+                      className={cn(
+                        "grid grid-cols-[1.1fr_1fr_74px_28px_28px] items-center gap-1.5",
+                        line.isReturn && "rounded-md bg-red-50 ring-1 ring-red-200",
+                      )}
                     >
                       <Select
                         value={line.articleId}
@@ -572,6 +679,23 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
                         value={line.amount}
                         onChange={(e) => patchExpense(line.key, { amount: e.target.value })}
                       />
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className={cn(
+                          "size-9",
+                          line.isReturn
+                            ? "text-red-600 hover:text-red-700"
+                            : "text-muted-foreground",
+                        )}
+                        aria-label={
+                          line.isReturn ? "Снять пометку возврата" : "Пометить как возврат"
+                        }
+                        title="Позиция возвращена в магазин — останется в чеке, но не будет проведена"
+                        onClick={() => patchExpense(line.key, { isReturn: !line.isReturn })}
+                      >
+                        <Undo2 size={14} aria-hidden="true" />
+                      </Button>
                       <Button
                         size="icon"
                         variant="ghost"
@@ -618,7 +742,21 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
             <div className="text-sm tabular-nums">
               <span className="text-muted-foreground">Итого </span>
               <span className="font-medium">{formatDdsMoney(linesTotal)}</span>
-              {!totalsMatch && paidTotal > 0 ? (
+              {hasReturns ? (
+                <>
+                  <span className="ml-1 text-xs text-red-600">
+                    − возврат {formatDdsMoney(returnedTotal)}
+                  </span>
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    = {formatDdsMoney(Math.max(linesTotal - returnedTotal, 0))} к проведению
+                  </span>
+                  {!totalsMatch && selectedOp ? (
+                    <span className="ml-1 text-xs text-destructive">
+                      ≠ операции {formatDdsMoney(selectedOp.amount)}
+                    </span>
+                  ) : null}
+                </>
+              ) : !totalsMatch && paidTotal > 0 ? (
                 <span className="ml-1 text-xs text-destructive">≠ оплате {formatDdsMoney(paidTotal)}</span>
               ) : (
                 <span className="ml-1 text-xs text-muted-foreground">из {formatDdsMoney(paidTotal)}</span>
@@ -776,6 +914,12 @@ function OperationPicker({
                     <span className="block truncate text-xs text-muted-foreground">
                       {formatDateTime(op.purchased_at ?? op.posted_at ?? op.operation_date)}
                     </span>
+                    {op.refund_amount ? (
+                      <span className="block truncate text-xs text-amber-700">
+                        по покупке есть возврат {formatDdsMoney(op.refund_amount)} — введите чек
+                        полностью и отметьте позиции
+                      </span>
+                    ) : null}
                   </span>
                 </button>
               );

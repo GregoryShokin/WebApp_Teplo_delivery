@@ -316,6 +316,9 @@ async def post_kassa_payment_to_iiko(
     )
     sums_by_article: dict[uuid.UUID, Decimal] = {}
     for line in lines:
+        if line.is_return:
+            # Возвращённая позиция чека не проводится (документ проведён net).
+            continue
         if line.dds_article_id is not None:
             article_id = line.dds_article_id
         elif not line.is_staff and supplier_article is not None:
@@ -425,6 +428,7 @@ async def compute_kassa_goods_split(
             select(func.coalesce(func.sum(InvoiceLineItem.sum), 0)).where(
                 InvoiceLineItem.invoice_id == invoice_id,
                 InvoiceLineItem.is_staff.is_(False),
+                InvoiceLineItem.is_return.is_(False),
                 InvoiceLineItem.product_guid.is_not(None),
                 article_cond,
             )

@@ -64,6 +64,10 @@ class CardTransactionRead(BaseModel):
     purpose: str | None = None
     tier: int | None = None
     minutes_delta: int | None = None
+    # Возврат(ы) по этой покупке, уже пришедшие в выписку (refundIn, тот же rrn).
+    # UI подсвечивает: «по покупке есть возврат — отметьте позиции».
+    refund_amount: Decimal | None = None
+    refund_count: int = 0
 
 
 class ChequeLineCreate(BaseModel):
@@ -80,6 +84,9 @@ class ChequeLineCreate(BaseModel):
     dds_article_id: uuid.UUID | None = None  # статья ДДС позиции (своя у каждой строки)
     iiko_product_id: uuid.UUID | None = None
     vat_percent: Decimal | None = None
+    # Позиция возвращена в магазин: остаётся в чеке (gross-сверка копейка в копейку),
+    # но не проводится — чек проводится net, разница = ожидаемый возврат от банка.
+    is_return: bool = False
 
 
 class ChequeBankPartCreate(BaseModel):
@@ -128,6 +135,7 @@ class ChequeLineRead(BaseModel):
     vat_percent: float | None = None
     dds_article_id: uuid.UUID | None = None
     dds_article_name: str | None = None
+    is_return: bool = False  # позиция возвращена (красная строка, не проведена)
 
 
 class ChequeRead(BaseModel):
@@ -136,7 +144,8 @@ class ChequeRead(BaseModel):
     counterparty_id: uuid.UUID
     counterparty_name: str
     issued_at: str | None = None
-    amount: float
+    amount: float  # проведено (net, без возвращённых позиций)
+    returned_total: float = 0.0  # сумма возвращённых позиций (gross = amount + returned_total)
     payment_status: str
     article_id: uuid.UUID | None = None
     article_name: str | None = None

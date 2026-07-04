@@ -183,6 +183,8 @@ async def prepare_push(session: AsyncSession, invoice: SupplierInvoice) -> Prepa
             .where(
                 InvoiceLineItem.invoice_id == invoice.id,
                 InvoiceLineItem.is_staff.is_(False),
+                # Возвращённые позиции чека Кассы (товар вернули в магазин) на склад не приходуются.
+                InvoiceLineItem.is_return.is_(False),
                 or_(
                     InvoiceLineItem.dds_article_id.is_(None),
                     InvoiceLineItem.dds_article_id.in_(goods_articles),

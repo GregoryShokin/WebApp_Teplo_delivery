@@ -62,6 +62,9 @@ export type CardTransaction = {
   purpose: string | null;
   tier: number | null;
   minutes_delta: number | null;
+  // Возврат(ы) по этой покупке, уже пришедшие в выписку (refundIn с тем же rrn).
+  refund_amount: number | null;
+  refund_count: number;
 };
 
 export type ChequeAllocation = {
@@ -83,6 +86,7 @@ export type ChequeLine = {
   vat_percent: number | null;
   dds_article_id: string | null;
   dds_article_name: string | null;
+  is_return: boolean; // позиция возвращена (красная строка, не проведена)
 };
 
 export type Cheque = {
@@ -91,7 +95,8 @@ export type Cheque = {
   counterparty_id: string;
   counterparty_name: string;
   issued_at: string | null;
-  amount: number;
+  amount: number; // проведено (net, без возвращённых позиций)
+  returned_total: number; // сумма возвращённых позиций
   payment_status: string;
   article_id: string | null;
   article_name: string | null;
@@ -108,6 +113,9 @@ export type ChequeLinePayload = {
   dds_article_id?: string | null;
   iiko_product_id?: string | null;
   vat_percent?: number | null;
+  // Позиция возвращена в магазин: остаётся в чеке (сверка «копейка в копейку»),
+  // но не проводится — чек проводится net.
+  is_return?: boolean;
 };
 
 export type CreateChequePayload = {

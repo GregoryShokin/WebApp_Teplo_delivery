@@ -86,6 +86,13 @@ def _qty(value: Any) -> Decimal:
     return Decimal(str(value)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
 
 
+def _line_sum(line: ChequeLineInput) -> Decimal:
+    """Сумма строки: введённая на кассе приоритетна над quantity*price (см. ChequeLineInput)."""
+    if line.amount is not None:
+        return _money(line.amount)
+    return _money(_qty(line.quantity) * _money(line.price))
+
+
 @dataclass
 class ChequeLineInput:
     name: str
@@ -96,6 +103,9 @@ class ChequeLineInput:
     iiko_product_id: uuid.UUID | None = None
     vat_percent: Decimal | None = None
     amount: Decimal | None = None  # сумма строки с кассы; приоритетна над quantity*price
+    # Позиция возвращена в магазин: участвует в сверке gross-суммы с бумажным чеком и
+    # карт-операцией (копейка в копейку), но не проводится — ДДС/iiko/аллокации без неё.
+    is_return: bool = False
 
 
 @dataclass
@@ -117,6 +127,10 @@ class CardTxnCandidate:
     purpose: str | None
     tier: int | None
     minutes_delta: int | None
+    # Возврат(ы) по этой покупке, уже пришедшие в выписку (refundIn с тем же rrn,
+    # непривязанные). UI подсвечивает: «по покупке есть возврат — отметьте позиции».
+    refund_amount: Decimal | None = None
+    refund_count: int = 0
 
 
 def _is_card_purchase(operation: BankOperation) -> bool:
@@ -144,6 +158,30 @@ def _is_card_purchase(operation: BankOperation) -> bool:
         return False
     account = str(receiver.get("acct") or operation.counterparty_account_raw or "")
     return not inn and not account
+
+
+# Категория T-Банка у возврата карт-покупки (деньги вернулись на счёт). Возврат несёт
+# ТЕ ЖЕ rrn/authCode, что исходная покупка (подтверждено боевой выпиской), поэтому связь
+# «покупка ↔ возврат» детерминированная, без фаззи-матча по суммам/мерчанту.
+TBANK_REFUND_CATEGORY = "refundIn"
+
+
+def _is_card_refund(operation: BankOperation) -> bool:
+    """True, если операция — возврат карт-покупки (``refundIn``)."""
+    if operation.direction != "in" or operation.transfer_group_id is not None:
+        return False
+    raw = operation.raw_payload or {}
+    return str(raw.get("category") or "").strip() == TBANK_REFUND_CATEGORY
+
+
+def _op_rrn_auth(operation: BankOperation) -> tuple[str, str] | None:
+    """``(rrn, authCode)`` карт-операции — общий ключ покупки и её возврата."""
+    raw = operation.raw_payload or {}
+    rrn = str(raw.get("rrn") or "").strip()
+    auth = str(raw.get("authCode") or "").strip()
+    if not rrn or not auth:
+        return None
+    return rrn, auth
 
 
 def _card_merchant_label(operation: BankOperation) -> str | None:
@@ -275,11 +313,16 @@ async def list_card_transactions(
         )
 
     candidates: list[CardTxnCandidate] = []
+    refund_key_by_op: dict[uuid.UUID, tuple | None] = {}
     for operation in operations:
         if not _is_card_purchase(operation):
             continue
         if operation.id in allocated_ids:
             continue
+        rrn_auth = _op_rrn_auth(operation)
+        refund_key_by_op[operation.id] = (
+            (operation.account_id, *rrn_auth) if rrn_auth is not None else None
+        )
 
         purchased_at = _purchase_dt(operation)
         tier: int | None = None
@@ -312,6 +355,35 @@ async def list_card_transactions(
                 minutes_delta=minutes_delta,
             )
         )
+
+    # Возвраты по показанным покупкам, уже пришедшие в выписку: непривязанный refundIn с
+    # тем же rrn/authCode на том же счёте. UI подсветит «по покупке есть возврат — отметьте
+    # позиции», и чек сразу создастся net.
+    keys = {key for key in refund_key_by_op.values() if key is not None}
+    if keys:
+        rrns = {rrn for _, rrn, _ in keys}
+        refund_rows = (
+            await session.scalars(
+                select(BankOperation).where(
+                    BankOperation.provider == "tbank",
+                    BankOperation.direction == "in",
+                    BankOperation.cashflow_transaction_id.is_(None),
+                    BankOperation.raw_payload["category"].astext == TBANK_REFUND_CATEGORY,
+                    BankOperation.raw_payload["rrn"].astext.in_(rrns),
+                )
+            )
+        ).all()
+        refunds_by_key: dict[tuple, list[BankOperation]] = {}
+        for refund in refund_rows:
+            rrn_auth = _op_rrn_auth(refund)
+            if rrn_auth is None:
+                continue
+            refunds_by_key.setdefault((refund.account_id, *rrn_auth), []).append(refund)
+        for candidate in candidates:
+            matched = refunds_by_key.get(refund_key_by_op.get(candidate.bank_operation_id) or ())
+            if matched:
+                candidate.refund_amount = _money(sum(abs(r.amount) for r in matched))
+                candidate.refund_count = len(matched)
 
     if issued_utc is not None:
         candidates.sort(
@@ -382,6 +454,26 @@ async def create_cheque(
     if not bank_parts and pending_card is None and not cash_amount:
         raise KassaChequeError("Укажите источник оплаты: карта, ручная сумма или наличные")
 
+    # Возвращённые позиции: чек вводится gross (как на бумаге, сверка копейка в копейку),
+    # проводится net. Ожидаемый от банка возврат = сумма помеченных строк.
+    returned_total = _money(
+        sum((_line_sum(line) for line in line_inputs if line.is_return), Decimal("0.00"))
+    )
+    if returned_total > 0:
+        # MVP-контур возврата: ровно одна карт-операция, без наличной части и без ручного
+        # пендинга. Наличный возврат курьеру отдают на месте — такой чек вносится сразу net,
+        # без пометок.
+        if pending_card is not None:
+            raise KassaChequeError("Возврат нельзя сочетать с ручным вводом суммы чека")
+        if len(bank_parts) != 1:
+            raise KassaChequeError("Возврат поддерживается только при одной карт-операции")
+        if cash_amount:
+            raise KassaChequeError("Возврат поддерживается только при оплате картой без наличных")
+        if bank_parts[0].amount is not None:
+            raise KassaChequeError("При возврате сумма карт-части определяется автоматически")
+        if not track_nomenclature:
+            raise KassaChequeError("Возврат отмечается на позициях — включите позиции чека")
+
     counterparty = await session.get(Counterparty, counterparty_id)
     if counterparty is None:
         raise KassaChequeError("Контрагент не найден")
@@ -407,6 +499,13 @@ async def create_cheque(
             raise KassaChequeError("Не удалось определить счёт по банковской операции")
         op_amount = _money(abs(operation.amount))
         amount = _money(part.amount) if part.amount is not None else op_amount
+        if returned_total > 0:
+            # Проводим net (покупка − возвраты). Недоиспользованный остаток операции
+            # (op − аллокация) — это и есть «ждём возврат от банка»: по нему уборщик
+            # match_card_refund_operations привяжет пришедший refundIn.
+            if returned_total >= op_amount:
+                raise KassaChequeError("Сумма возвратов не может быть не меньше суммы операции")
+            amount = _money(op_amount - returned_total)
         if amount <= 0:
             raise KassaChequeError("Сумма банковской части должна быть больше нуля")
         if amount > op_amount:
@@ -462,7 +561,7 @@ async def create_cheque(
                 await session.scalars(select(IikoProduct).where(IikoProduct.id.in_(product_ids)))
             ).all()
             products = {product.id: product for product in rows}
-        lines_total = Decimal("0.00")
+        lines_total = Decimal("0.00")  # gross: ВСЕ строки, включая возвращённые
         for index, line in enumerate(line_inputs):
             product = products.get(line.iiko_product_id) if line.iiko_product_id else None
             quantity = _qty(line.quantity)
@@ -470,7 +569,7 @@ async def create_cheque(
             # Сумма строки = введённая на кассе (если задана), иначе кол-во×цена. Иначе
             # построчное округление qty*price расходится с оплатой: на фронте цена
             # пересчитывается из суммы как round(сумма/кол-во), и qty*round(сумма/кол-во) ≠ сумма.
-            line_sum = _money(line.amount) if line.amount is not None else _money(quantity * price)
+            line_sum = _line_sum(line)
             line_article_id = line.dds_article_id or article_id
             if line_article_id is None:
                 raise KassaChequeError(f"У позиции «{line.name}» не указана статья ДДС")
@@ -478,7 +577,8 @@ async def create_cheque(
             if line.vat_percent:
                 rate = Decimal(str(line.vat_percent))
                 vat_sum = _money(line_sum * rate / (Decimal("100") + rate))  # gross-inclusive
-                vat_total += vat_sum
+                if not line.is_return:
+                    vat_total += vat_sum
             item_name = line.name or (product.name if product else "Позиция")
             session.add(
                 InvoiceLineItem(
@@ -495,13 +595,16 @@ async def create_cheque(
                     vat_sum=vat_sum,
                     dds_article_id=line_article_id,
                     is_staff=False,
+                    is_return=line.is_return,
                     sort_order=index,
                 )
             )
             lines_total += line_sum
-            article_totals[line_article_id] = (
-                article_totals.get(line_article_id, Decimal("0.00")) + line_sum
-            )
+            if not line.is_return:
+                # Возвращённая позиция не проводится: ни в статьи ДДС, ни в iiko.
+                article_totals[line_article_id] = (
+                    article_totals.get(line_article_id, Decimal("0.00")) + line_sum
+                )
             mirror.append(
                 {
                     "product_id": product.iiko_id if product else None,
@@ -509,9 +612,20 @@ async def create_cheque(
                     "name": item_name,
                     "quantity": str(quantity),
                     "amount": str(line_sum),
+                    "is_return": line.is_return,
                 }
             )
-        if _money(lines_total) != paid_total:
+        if returned_total > 0:
+            # Gross-сверка «как на бумаге»: все позиции (включая возвращённые) должны
+            # сойтись с суммой карт-операции копейка в копейку. Net при этом равен оплате
+            # автоматически (paid_total = операция − возвраты).
+            op_amount = _money(abs(resolved_bank[0][0].amount))
+            if _money(lines_total) != op_amount:
+                raise KassaChequeError(
+                    f"Сумма позиций {_money(lines_total)} (с возвратами) не совпадает "
+                    f"с суммой операции {op_amount}"
+                )
+        elif _money(lines_total) != paid_total:
             raise KassaChequeError(
                 f"Сумма позиций {_money(lines_total)} не совпадает с оплатой {paid_total}"
             )
@@ -574,6 +688,12 @@ async def create_cheque(
         await session.flush()
         await _resolve_cases(session, bank_operation_id=operation.id, invoice_id=invoice.id)
     await session.flush()
+
+    # Возврат мог уже прийти в выписку (чек вносится на следующий день) — привязываем
+    # сразу, не дожидаясь следующего синка банка.
+    if returned_total > 0 and resolved_bank:
+        await _attach_refunds_for_purchase(session, resolved_bank[0][0])
+        await session.flush()
 
     # --- пендинг-карта: одна проводка «Ожидает подтверждения банком» на Т-Банк р/с ----
     # Полную сумму держим ОДНОЙ проводкой (article_id=None) и не двигаем баланс банка
@@ -669,7 +789,7 @@ async def _pending_article_sums(
     ).all()
     sums: dict[uuid.UUID, Decimal] = {}
     for line in lines:
-        if line.dds_article_id is None:
+        if line.dds_article_id is None or line.is_return:
             continue
         sums[line.dds_article_id] = sums.get(line.dds_article_id, Decimal("0.00")) + _money(
             line.sum
@@ -833,6 +953,123 @@ async def match_pending_cheque_operations(
     return matched
 
 
+# --- Возвраты карт-покупок (refundIn): молчаливая привязка к чеку, ждущему возврат -----
+#
+# Чек с возвращёнными позициями проведён net, а его карт-операция «недоиспользована»:
+# |операция| − bank-аллокация = ожидаемый от банка возврат. Когда refundIn приезжает в
+# выписку (поллинг/вебхук — оба через ingest_operations), он опознаётся по rrn/authCode
+# исходной покупки и привязывается к ДДС-проводке чека БЕЗ участия человека — строка не
+# попадает в «Требует разбора». Всё, что не сошлось, остаётся needs_review (фаза 2 — кейс).
+
+
+async def _attach_refunds_for_purchase(session: AsyncSession, purchase: BankOperation) -> int:
+    """Привязать пришедшие refundIn к карт-покупке, по которой чек ждёт возврат.
+
+    Гейты: покупка классифицирована чеком Кассы (есть bank-аллокация, все — на
+    ``kassa_cheque``), ожидание = |операция| − Σ аллокаций > 0. Возвраты того же
+    rrn/authCode на том же счёте привязываются по очереди, пока не выберут ожидание;
+    каждый получает ссылку на ДДС-проводку чека и статус ``classified``. Возврат больше
+    остатка ожидания не привязывается (останется в разборе). Идемпотентно, без commit.
+    """
+    if purchase.cashflow_transaction_id is None:
+        return 0
+    rrn_auth = _op_rrn_auth(purchase)
+    if rrn_auth is None:
+        return 0
+    alloc_rows = (
+        await session.execute(
+            select(InvoicePaymentAllocation.amount, SupplierInvoice.source)
+            .join(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
+            .where(InvoicePaymentAllocation.bank_operation_id == purchase.id)
+        )
+    ).all()
+    # Ожидание возврата — конструкция чека Кассы; операции, разнесённые иначе (ручная
+    # классификация, оплата накладной), возвраты не приманивают.
+    if not alloc_rows or any(source != "kassa_cheque" for _, source in alloc_rows):
+        return 0
+    alloc_total = sum((_money(amount) for amount, _ in alloc_rows), Decimal("0.00"))
+    expected = _money(abs(purchase.amount)) - alloc_total
+    if expected <= 0:
+        return 0
+
+    rrn, auth = rrn_auth
+    refunds = (
+        await session.scalars(
+            select(BankOperation)
+            .where(
+                BankOperation.provider == purchase.provider,
+                BankOperation.direction == "in",
+                BankOperation.account_id == purchase.account_id,
+                BankOperation.transfer_group_id.is_(None),
+                BankOperation.raw_payload["category"].astext == TBANK_REFUND_CATEGORY,
+                BankOperation.raw_payload["rrn"].astext == rrn,
+                BankOperation.raw_payload["authCode"].astext == auth,
+            )
+            .order_by(BankOperation.operation_date)
+        )
+    ).all()
+    outstanding = expected - sum(
+        (_money(abs(r.amount)) for r in refunds if r.cashflow_transaction_id is not None),
+        Decimal("0.00"),
+    )
+    attached = 0
+    for refund in refunds:
+        if refund.cashflow_transaction_id is not None:
+            continue
+        amount = _money(abs(refund.amount))
+        if amount > outstanding:
+            continue
+        refund.cashflow_transaction_id = purchase.cashflow_transaction_id
+        refund.classification_status = "classified"
+        outstanding = _money(outstanding - amount)
+        attached += 1
+    return attached
+
+
+async def match_card_refund_operations(session: AsyncSession) -> int:
+    """Свести непривязанные возвраты (refundIn) с чеками, ждущими возврат. Без commit.
+
+    Вызывается из ``ingest_operations`` ДО общей классификации (как матч пендинг-чеков),
+    поэтому покрывает оба пути выписки — поллинг и вебхук. Возвращает число привязанных.
+    """
+    refund_rows = (
+        await session.scalars(
+            select(BankOperation).where(
+                BankOperation.provider == "tbank",
+                BankOperation.direction == "in",
+                BankOperation.cashflow_transaction_id.is_(None),
+                BankOperation.transfer_group_id.is_(None),
+                BankOperation.raw_payload["category"].astext == TBANK_REFUND_CATEGORY,
+            )
+        )
+    ).all()
+    matched = 0
+    seen_purchases: set[uuid.UUID] = set()
+    for refund in refund_rows:
+        rrn_auth = _op_rrn_auth(refund)
+        if rrn_auth is None:
+            continue
+        rrn, auth = rrn_auth
+        purchase = await session.scalar(
+            select(BankOperation).where(
+                BankOperation.provider == "tbank",
+                BankOperation.direction == "out",
+                BankOperation.account_id == refund.account_id,
+                BankOperation.cashflow_transaction_id.is_not(None),
+                BankOperation.raw_payload["category"].astext == "cardOperation",
+                BankOperation.raw_payload["rrn"].astext == rrn,
+                BankOperation.raw_payload["authCode"].astext == auth,
+            )
+        )
+        if purchase is None or purchase.id in seen_purchases:
+            continue
+        # Один вызов закрывает ВСЕ подходящие возвраты этой покупки — повторный проход
+        # по второй строке того же rrn не нужен.
+        seen_purchases.add(purchase.id)
+        matched += await _attach_refunds_for_purchase(session, purchase)
+    return matched
+
+
 async def get_pending_cheque_alert_days(session: AsyncSession) -> int:
     """Порог «банк не передал» (дней) из Настроек; по умолчанию 4."""
     setting = await session.scalar(
@@ -980,6 +1217,9 @@ async def _cheque_payload(session: AsyncSession, invoice: SupplierInvoice) -> di
             select(DdsArticle.id, DdsArticle.name).where(DdsArticle.id.in_(article_ids))
         )
         article_names = {row[0]: row[1] for row in rows.all()}
+    returned_total = sum(
+        (_money(line.sum) for line in lines if line.is_return), Decimal("0.00")
+    )
     return {
         "id": invoice.id,
         "number": invoice.number,
@@ -987,6 +1227,7 @@ async def _cheque_payload(session: AsyncSession, invoice: SupplierInvoice) -> di
         "counterparty_name": counterparty.name if counterparty else "—",
         "issued_at": invoice.issued_at.isoformat() if invoice.issued_at else None,
         "amount": float(_money(invoice.amount)),
+        "returned_total": float(returned_total),
         "payment_status": invoice.payment_status,
         "article_id": article_row[0] if article_row else None,
         "article_name": article_row[1] if article_row else None,
@@ -1012,6 +1253,7 @@ async def _cheque_payload(session: AsyncSession, invoice: SupplierInvoice) -> di
                 "vat_percent": float(line.vat_percent) if line.vat_percent is not None else None,
                 "dds_article_id": line.dds_article_id,
                 "dds_article_name": article_names.get(line.dds_article_id),
+                "is_return": line.is_return,
             }
             for line in lines
         ],

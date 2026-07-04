@@ -398,6 +398,11 @@ class InvoiceLineItem(Base):
     is_staff: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Позиция возвращена в магазин (чек Кассы): остаётся в чеке для сверки «копейка в
+    # копейку» с бумажным чеком/операцией, но НЕ проводится (ДДС/iiko/аллокации = net).
+    is_return: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

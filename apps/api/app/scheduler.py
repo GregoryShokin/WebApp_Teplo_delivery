@@ -579,9 +579,15 @@ async def ingest_operations(
     if provider == "tbank":
         # Свести ручные пендинг-чеки Кассы с только что импортированными card-операциями ДО
         # общей классификации — тогда сматченные операции уже не уйдут в needs_review.
-        from app.services.kassa.cheque import match_pending_cheque_operations
+        from app.services.kassa.cheque import (
+            match_card_refund_operations,
+            match_pending_cheque_operations,
+        )
 
         await match_pending_cheque_operations(session)
+        # Возвраты карт-покупок (refundIn) — к чекам, ждущим возврат: тоже ДО классификации,
+        # чтобы возврат не осел в needs_review.
+        await match_card_refund_operations(session)
         await session.flush()
     pending_operations = (
         await session.scalars(
