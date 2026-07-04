@@ -77,14 +77,23 @@ async def poll_banks() -> None:
     coalesce=True,
 )
 async def escalate_pending_cheques() -> None:
-    """Поднять в «Требует разбора» ручные чеки, которые банк не подтвердил дольше порога."""
-    from app.services.kassa.cheque import escalate_overdue_pending_cheques
+    """Поднять в «Требует разбора» ручные чеки, которые банк не подтвердил дольше порога,
+    и чеки, ждущие возврат карт-покупки дольше порога."""
+    from app.services.kassa.cheque import (
+        escalate_missing_cheque_refunds,
+        escalate_overdue_pending_cheques,
+    )
 
     async with AsyncSessionLocal() as session:
         created = await escalate_overdue_pending_cheques(session)
+        created_refunds = await escalate_missing_cheque_refunds(session)
         await session.commit()
     if created:
         logger.info("Эскалация пендинг-чеков: %s новых кейсов «банк не передал»", created)
+    if created_refunds:
+        logger.info(
+            "Эскалация возвратов: %s новых кейсов «возврат не пришёл»", created_refunds
+        )
 
 
 async def poll_payment_statuses() -> None:

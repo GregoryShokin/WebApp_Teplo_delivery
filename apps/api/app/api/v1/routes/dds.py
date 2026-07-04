@@ -1006,6 +1006,31 @@ async def dismiss_owner_review_case(
 
 
 @router.post(
+    "/owner-review/{case_id}/apply-card-refund",
+    response_model=OwnerReviewActionRead,
+    dependencies=DDS_OWNER_REVIEW_PREPARE_ACCESS,
+)
+async def apply_card_refund_owner_review_case(
+    case_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    """«Учесть возврат» по кейсу «возврат по проведённому чеку».
+
+    Книжит входящую проводку «Возврат расходов» по операции возврата (история чека и
+    iiko не мутируются), привязывает операцию и закрывает кейс.
+    """
+    case = await _pending_case_or_404(session, case_id)
+    from app.services.kassa.cheque import KassaChequeError, apply_card_refund_case
+
+    try:
+        await apply_card_refund_case(session, case)
+    except KassaChequeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await session.commit()
+    return {"case_id": case.id, "status": case.status, "bank_operation_id": case.bank_operation_id}
+
+
+@router.post(
     "/operations/{operation_id}/classify",
     response_model=OperationClassifyRead,
     dependencies=DDS_CLASSIFY_ACCESS,

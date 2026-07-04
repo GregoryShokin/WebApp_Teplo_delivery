@@ -2305,7 +2305,9 @@ export type OwnerReviewKind =
   | "unmatched_transfer"
   | "unconfirmed_cheque"
   | "payer_wallet_unresolved"
-  | "iiko_payment_unsettled";
+  | "iiko_payment_unsettled"
+  | "card_refund_after_cheque"
+  | "cheque_refund_missing";
 
 export type ReconciliationCaseRead = {
   id: string;
@@ -2771,6 +2773,12 @@ export async function classifyCashflowTransaction(
 
 export async function dismissOwnerReviewCase(caseId: string): Promise<void> {
   await api.post(`/dds/owner-review/${caseId}/dismiss`);
+}
+
+export async function applyCardRefundCase(caseId: string): Promise<void> {
+  // «Учесть возврат»: входящая проводка «Возврат расходов» по операции возврата,
+  // привязка операции к чеку и закрытие кейса (история чека и iiko не мутируются).
+  await api.post(`/dds/owner-review/${caseId}/apply-card-refund`);
 }
 
 export type SafeAllocationRead = {

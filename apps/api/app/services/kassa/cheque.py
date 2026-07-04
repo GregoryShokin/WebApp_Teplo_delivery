@@ -36,7 +36,11 @@ from app.models import (
     SupplierInvoice,
     Wallet,
 )
-from app.services.banking.classifier import AWAITING_BANK_QUALITY, _wallet_for_operation
+from app.services.banking.classifier import (
+    AWAITING_BANK_QUALITY,
+    _wallet_for_operation,
+    close_reconciliation_case,
+)
 from app.services.counterparty_bank_match import (
     BANK_NOISE_INNS,
     BUSINESS_TZ,
@@ -63,6 +67,17 @@ UNCONFIRMED_CHEQUE_CASE_KIND = "unconfirmed_cheque"
 # Аллокация пендинг-карты: покрывает сумму чека (чтобы он не висел в кредиторке), но это
 # не подтверждённая банком оплата. При матче заменяется на обычную 'bank'-аллокацию.
 PENDING_CARD_ALLOCATION_SOURCE = "card_pending"
+
+# Возврат пришёл по чеку, который его не ждал (проведён полностью) либо больше остатка
+# ожидания — кейс в «Требует разбора» с действием «Учесть возврат».
+CARD_REFUND_CASE_KIND = "card_refund_after_cheque"
+# Чек ждёт возврат (позиции исключены), а банк его не прислал дольше порога.
+REFUND_MISSING_CASE_KIND = "cheque_refund_missing"
+REFUND_WAIT_ALERT_SETTING_KEY = "kassa.refund_wait_alert_days"
+REFUND_WAIT_ALERT_DEFAULT_DAYS = 7
+# Служебная входящая статья для «Учесть возврат» (get-or-create по code).
+EXPENSE_REFUND_ARTICLE_CODE = "expense_refund"
+EXPENSE_REFUND_ARTICLE_NAME = "Возврат расходов"
 
 # Чеку местного закупа доступны только эти статьи ДДС (по ИМЕНИ — code/uuid различны
 # dev/prod). Кассир выбирает статью каждой позиции только из этого белого списка.
@@ -962,52 +977,93 @@ async def match_pending_cheque_operations(
 # попадает в «Требует разбора». Всё, что не сошлось, остаётся needs_review (фаза 2 — кейс).
 
 
-async def _attach_refunds_for_purchase(session: AsyncSession, purchase: BankOperation) -> int:
-    """Привязать пришедшие refundIn к карт-покупке, по которой чек ждёт возврат.
+async def _cheque_expectation(
+    session: AsyncSession, purchase: BankOperation
+) -> tuple[SupplierInvoice, Decimal] | None:
+    """(чек Кассы, ожидание возврата = |операция| − Σ bank-аллокаций) по карт-покупке.
 
-    Гейты: покупка классифицирована чеком Кассы (есть bank-аллокация, все — на
-    ``kassa_cheque``), ожидание = |операция| − Σ аллокаций > 0. Возвраты того же
-    rrn/authCode на том же счёте привязываются по очереди, пока не выберут ожидание;
-    каждый получает ссылку на ДДС-проводку чека и статус ``classified``. Возврат больше
-    остатка ожидания не привязывается (останется в разборе). Идемпотентно, без commit.
+    ``None`` — операция разнесена не чеком (ручная классификация, оплата накладной):
+    такие операции возвраты не приманивают. Ожидание может быть 0 — чек проведён
+    полностью, возврата не ждали (кейс фазы 2).
     """
     if purchase.cashflow_transaction_id is None:
-        return 0
-    rrn_auth = _op_rrn_auth(purchase)
-    if rrn_auth is None:
-        return 0
+        return None
     alloc_rows = (
         await session.execute(
-            select(InvoicePaymentAllocation.amount, SupplierInvoice.source)
+            select(InvoicePaymentAllocation.amount, SupplierInvoice)
             .join(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
             .where(InvoicePaymentAllocation.bank_operation_id == purchase.id)
         )
     ).all()
-    # Ожидание возврата — конструкция чека Кассы; операции, разнесённые иначе (ручная
-    # классификация, оплата накладной), возвраты не приманивают.
-    if not alloc_rows or any(source != "kassa_cheque" for _, source in alloc_rows):
-        return 0
+    if not alloc_rows or any(invoice.source != "kassa_cheque" for _, invoice in alloc_rows):
+        return None
     alloc_total = sum((_money(amount) for amount, _ in alloc_rows), Decimal("0.00"))
     expected = _money(abs(purchase.amount)) - alloc_total
+    return alloc_rows[0][1], expected
+
+
+async def _refunds_of_purchase(
+    session: AsyncSession, purchase: BankOperation
+) -> list[BankOperation]:
+    """Все refundIn того же rrn/authCode на том же счёте (привязанные и нет)."""
+    rrn_auth = _op_rrn_auth(purchase)
+    if rrn_auth is None:
+        return []
+    rrn, auth = rrn_auth
+    return list(
+        (
+            await session.scalars(
+                select(BankOperation)
+                .where(
+                    BankOperation.provider == purchase.provider,
+                    BankOperation.direction == "in",
+                    BankOperation.account_id == purchase.account_id,
+                    BankOperation.transfer_group_id.is_(None),
+                    BankOperation.raw_payload["category"].astext == TBANK_REFUND_CATEGORY,
+                    BankOperation.raw_payload["rrn"].astext == rrn,
+                    BankOperation.raw_payload["authCode"].astext == auth,
+                )
+                .order_by(BankOperation.operation_date)
+            )
+        ).all()
+    )
+
+
+async def _resolve_refund_missing_cases(
+    session: AsyncSession, purchase_operation_id: uuid.UUID
+) -> None:
+    """Закрыть pending-кейсы «возврат не пришёл» по покупке — ожидание выбрано."""
+    cases = (
+        await session.scalars(
+            select(ReconciliationCase).where(
+                ReconciliationCase.kind == REFUND_MISSING_CASE_KIND,
+                ReconciliationCase.bank_operation_id == purchase_operation_id,
+                ReconciliationCase.status == "pending",
+            )
+        )
+    ).all()
+    for case in cases:
+        await close_reconciliation_case(
+            session, case, status="resolved", resolution_payload={"reason": "refund_attached"}
+        )
+
+
+async def _attach_refunds_for_purchase(session: AsyncSession, purchase: BankOperation) -> int:
+    """Привязать пришедшие refundIn к карт-покупке, по которой чек ждёт возврат.
+
+    Гейты: покупка классифицирована чеком Кассы, ожидание > 0. Возвраты того же
+    rrn/authCode привязываются по очереди, пока не выберут ожидание; каждый получает
+    ссылку на ДДС-проводку чека и статус ``classified``. Возврат больше остатка
+    ожидания не привязывается (кейс поднимет матчер). Идемпотентно, без commit.
+    """
+    expectation = await _cheque_expectation(session, purchase)
+    if expectation is None:
+        return 0
+    _invoice, expected = expectation
     if expected <= 0:
         return 0
 
-    rrn, auth = rrn_auth
-    refunds = (
-        await session.scalars(
-            select(BankOperation)
-            .where(
-                BankOperation.provider == purchase.provider,
-                BankOperation.direction == "in",
-                BankOperation.account_id == purchase.account_id,
-                BankOperation.transfer_group_id.is_(None),
-                BankOperation.raw_payload["category"].astext == TBANK_REFUND_CATEGORY,
-                BankOperation.raw_payload["rrn"].astext == rrn,
-                BankOperation.raw_payload["authCode"].astext == auth,
-            )
-            .order_by(BankOperation.operation_date)
-        )
-    ).all()
+    refunds = await _refunds_of_purchase(session, purchase)
     outstanding = expected - sum(
         (_money(abs(r.amount)) for r in refunds if r.cashflow_transaction_id is not None),
         Decimal("0.00"),
@@ -1023,14 +1079,57 @@ async def _attach_refunds_for_purchase(session: AsyncSession, purchase: BankOper
         refund.classification_status = "classified"
         outstanding = _money(outstanding - amount)
         attached += 1
+    if attached and outstanding <= 0:
+        await _resolve_refund_missing_cases(session, purchase.id)
     return attached
+
+
+async def _ensure_late_refund_case(
+    session: AsyncSession,
+    *,
+    refund: BankOperation,
+    purchase: BankOperation,
+    invoice: SupplierInvoice,
+    expected: Decimal,
+) -> bool:
+    """Поднять кейс «возврат по проведённому чеку» (дедуп по pending kind+операция)."""
+    existing = await session.scalar(
+        select(ReconciliationCase.id).where(
+            ReconciliationCase.kind == CARD_REFUND_CASE_KIND,
+            ReconciliationCase.bank_operation_id == refund.id,
+            ReconciliationCase.status == "pending",
+        )
+    )
+    if existing is not None:
+        return False
+    session.add(
+        ReconciliationCase(
+            kind=CARD_REFUND_CASE_KIND,
+            status="pending",
+            provider=refund.provider,
+            bank_operation_id=refund.id,
+            payload={
+                "invoice_id": str(invoice.id),
+                "cheque_number": invoice.number,
+                "refund_amount": str(_money(abs(refund.amount))),
+                "purchase_operation_id": str(purchase.id),
+                "purchase_amount": str(_money(abs(purchase.amount))),
+                "rrn": (_op_rrn_auth(refund) or ("", ""))[0],
+                # Чек не ждал возврат вовсе или возврат больше остатка ожидания.
+                "reason": "cheque_did_not_expect" if expected <= 0 else "exceeds_expected",
+            },
+        )
+    )
+    return True
 
 
 async def match_card_refund_operations(session: AsyncSession) -> int:
     """Свести непривязанные возвраты (refundIn) с чеками, ждущими возврат. Без commit.
 
     Вызывается из ``ingest_operations`` ДО общей классификации (как матч пендинг-чеков),
-    поэтому покрывает оба пути выписки — поллинг и вебхук. Возвращает число привязанных.
+    поэтому покрывает оба пути выписки — поллинг и вебхук. Точный матч привязывается
+    молча; возврат по чеку, который его НЕ ждал (или больше остатка ожидания), поднимает
+    кейс «Требует разбора» с действием «Учесть возврат». Возвращает число привязанных.
     """
     refund_rows = (
         await session.scalars(
@@ -1061,13 +1160,184 @@ async def match_card_refund_operations(session: AsyncSession) -> int:
                 BankOperation.raw_payload["authCode"].astext == auth,
             )
         )
-        if purchase is None or purchase.id in seen_purchases:
+        if purchase is None:
             continue
-        # Один вызов закрывает ВСЕ подходящие возвраты этой покупки — повторный проход
-        # по второй строке того же rrn не нужен.
-        seen_purchases.add(purchase.id)
-        matched += await _attach_refunds_for_purchase(session, purchase)
+        expectation = await _cheque_expectation(session, purchase)
+        if expectation is None:
+            # Покупка разнесена не чеком — обычный разбор выписки, не наш кейс.
+            continue
+        invoice, expected = expectation
+        if purchase.id not in seen_purchases:
+            # Один вызов закрывает ВСЕ подходящие возвраты этой покупки.
+            seen_purchases.add(purchase.id)
+            matched += await _attach_refunds_for_purchase(session, purchase)
+        if refund.cashflow_transaction_id is None:
+            # Чек есть, но возврат не влез в ожидание (или его не ждали) — фаза 2: кейс.
+            await _ensure_late_refund_case(
+                session, refund=refund, purchase=purchase, invoice=invoice, expected=expected
+            )
     return matched
+
+
+async def apply_card_refund_case(
+    session: AsyncSession, case: ReconciliationCase
+) -> dict[str, Any]:
+    """Действие «Учесть возврат» по кейсу «возврат по проведённому чеку». Без commit.
+
+    Книжит входящую ДДС-проводку (кошелёк операции возврата, служебная статья «Возврат
+    расходов») — история чека НЕ мутируется, iiko остаётся как проведено (изъятия
+    необратимы). Возврат привязывается к проводке (classified), кейс закрывается.
+    Повтор по уже привязанному возврату просто закрывает кейс.
+    """
+    if case.kind != CARD_REFUND_CASE_KIND:
+        raise KassaChequeError("Кейс не является возвратом по чеку")
+    if case.bank_operation_id is None:
+        raise KassaChequeError("Кейс не привязан к операции возврата")
+    refund = await session.get(BankOperation, case.bank_operation_id)
+    if refund is None:
+        raise KassaChequeError("Операция возврата не найдена")
+
+    invoice: SupplierInvoice | None = None
+    raw_invoice_id = (case.payload or {}).get("invoice_id")
+    if raw_invoice_id:
+        invoice = await session.get(SupplierInvoice, uuid.UUID(str(raw_invoice_id)))
+
+    if refund.cashflow_transaction_id is not None:
+        # Уже учтён (гонка/повторный клик) — просто закрываем кейс.
+        await close_reconciliation_case(
+            session, case, status="resolved", resolution_payload={"reason": "already_linked"}
+        )
+        return {"transaction_id": refund.cashflow_transaction_id, "already_linked": True}
+
+    wallet = await _wallet_for_operation(session, refund)
+    if wallet is None:
+        raise KassaChequeError("Не удалось определить счёт по операции возврата")
+
+    article = await session.scalar(
+        select(DdsArticle).where(DdsArticle.code == EXPENSE_REFUND_ARTICLE_CODE)
+    )
+    if article is None:
+        article = DdsArticle(
+            code=EXPENSE_REFUND_ARTICLE_CODE,
+            name=EXPENSE_REFUND_ARTICLE_NAME,
+            movement_type="inflow",
+            activity_type="operating",
+            is_active=True,
+            description=(
+                "Служебная: возвраты карт-покупок по проведённым чекам Кассы "
+                "(кнопка «Учесть возврат» в «Требует разбора»)"
+            ),
+        )
+        session.add(article)
+        await session.flush()
+
+    transaction = CashflowTransaction(
+        wallet_id=wallet.id,
+        direction="in",
+        amount=_money(abs(refund.amount)),
+        operation_date=refund.operation_date,
+        article_id=article.id,
+        counterparty_id=invoice.counterparty_id if invoice else None,
+        source_kind="kassa_cheque_refund",
+        source_id=invoice.id if invoice else None,
+        payment_purpose=(
+            f"Возврат по чеку {invoice.number}" if invoice else "Возврат карт-покупки"
+        ),
+        quality_status="final",
+    )
+    session.add(transaction)
+    await session.flush()
+    refund.cashflow_transaction_id = transaction.id
+    refund.classification_status = "classified"
+    await close_reconciliation_case(
+        session,
+        case,
+        status="resolved",
+        resolution_payload={"cashflow_transaction_id": str(transaction.id)},
+    )
+    return {"transaction_id": transaction.id, "already_linked": False}
+
+
+async def get_refund_wait_alert_days(session: AsyncSession) -> int:
+    """Порог «возврат не пришёл» (дней) из Настроек; по умолчанию 7 (постинг банка 1–3 дня)."""
+    setting = await session.scalar(
+        select(AppSetting).where(AppSetting.key == REFUND_WAIT_ALERT_SETTING_KEY)
+    )
+    if setting is None:
+        return REFUND_WAIT_ALERT_DEFAULT_DAYS
+    try:
+        days = int(setting.value)
+    except (TypeError, ValueError):
+        return REFUND_WAIT_ALERT_DEFAULT_DAYS
+    return days if days > 0 else REFUND_WAIT_ALERT_DEFAULT_DAYS
+
+
+async def escalate_missing_cheque_refunds(
+    session: AsyncSession, *, now: datetime | None = None
+) -> int:
+    """Поднять в «Требует разбора» чеки, ждущие возврат дольше порога. Без commit.
+
+    Ожидание = |операция| − аллокация − уже привязанные возвраты. Кейс с дедупом по
+    pending (kind + покупка); закрывается автоматически при привязке возврата
+    (``_attach_refunds_for_purchase``) либо руками («Отложить»).
+    """
+    moment = now or datetime.now(UTC)
+    cutoff = moment - timedelta(days=await get_refund_wait_alert_days(session))
+    rows = (
+        await session.execute(
+            select(BankOperation, InvoicePaymentAllocation.amount, SupplierInvoice)
+            .join(
+                InvoicePaymentAllocation,
+                InvoicePaymentAllocation.bank_operation_id == BankOperation.id,
+            )
+            .join(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
+            .where(SupplierInvoice.source == "kassa_cheque")
+        )
+    ).all()
+    created = 0
+    for purchase, alloc_amount, invoice in rows:
+        expected = _money(abs(purchase.amount)) - _money(alloc_amount)
+        if expected <= 0:
+            continue
+        if invoice.created_at is not None and invoice.created_at > cutoff:
+            continue
+        refunds = await _refunds_of_purchase(session, purchase)
+        attached_total = sum(
+            (_money(abs(r.amount)) for r in refunds if r.cashflow_transaction_id is not None),
+            Decimal("0.00"),
+        )
+        outstanding = expected - attached_total
+        if outstanding <= 0:
+            continue
+        existing = await session.scalar(
+            select(ReconciliationCase.id).where(
+                ReconciliationCase.kind == REFUND_MISSING_CASE_KIND,
+                ReconciliationCase.bank_operation_id == purchase.id,
+                ReconciliationCase.status == "pending",
+            )
+        )
+        if existing is not None:
+            continue
+        session.add(
+            ReconciliationCase(
+                kind=REFUND_MISSING_CASE_KIND,
+                status="pending",
+                provider=purchase.provider,
+                bank_operation_id=purchase.id,
+                payload={
+                    "invoice_id": str(invoice.id),
+                    "cheque_number": invoice.number,
+                    "expected_refund": str(outstanding),
+                    "waiting_since": (
+                        invoice.created_at.isoformat() if invoice.created_at else None
+                    ),
+                    "reason": "refund_not_received",
+                },
+            )
+        )
+        created += 1
+    await session.flush()
+    return created
 
 
 async def get_pending_cheque_alert_days(session: AsyncSession) -> int:

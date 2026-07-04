@@ -18,6 +18,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   apiErrorMessage,
+  applyCardRefundCase,
   classifyOwnerReviewCase,
   createDdsCounterparty,
   dismissOwnerReviewCase,
@@ -80,6 +81,8 @@ export function OwnerReviewTab({ canClassify }: { canClassify: boolean }) {
             <SelectItem value="iiko_payment_unsettled">
               Оплата в iiko не проведена
             </SelectItem>
+            <SelectItem value="card_refund_after_cheque">Возврат по проведённому чеку</SelectItem>
+            <SelectItem value="cheque_refund_missing">Возврат не пришёл от банка</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -176,6 +179,15 @@ function OwnerReviewCard({
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отложить кейс")),
   });
 
+  const applyRefundMutation = useMutation({
+    mutationFn: () => applyCardRefundCase(item.id),
+    onSuccess: async () => {
+      await invalidate();
+      toast.success("Возврат учтён — входящая проводка создана");
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось учесть возврат")),
+  });
+
   const createCounterpartyMutation = useMutation({
     mutationFn: () =>
       createDdsCounterparty({
@@ -209,7 +221,16 @@ function OwnerReviewCard({
     !canClassify ||
     classifyMutation.isPending ||
     dismissMutation.isPending ||
-    createCounterpartyMutation.isPending;
+    createCounterpartyMutation.isPending ||
+    applyRefundMutation.isPending;
+
+  // Кейсы возвратов карт-покупок: своя механика вместо стандартной классификации.
+  const isCardRefund = item.kind === "card_refund_after_cheque";
+  const isRefundMissing = item.kind === "cheque_refund_missing";
+  const payloadText = (key: string) => {
+    const value = item.payload?.[key];
+    return value == null ? "—" : String(value);
+  };
 
   return (
     <Card>
@@ -246,7 +267,22 @@ function OwnerReviewCard({
         </div>
       </CardContent>
       <CardFooter className="grid gap-4 border-t pt-4">
-        {hasOperation ? (
+        {isCardRefund ? (
+          <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
+            Банк прислал возврат {payloadText("refund_amount")} ₽ по чеку{" "}
+            <span className="font-medium">{payloadText("cheque_number")}</span>, который его не
+            ждал (чек проведён полностью). «Учесть возврат» создаст входящую проводку «Возврат
+            расходов» и закроет кейс — сам чек и iiko не меняются (изъятия в iiko необратимы;
+            при желании поправьте их там вручную).
+          </div>
+        ) : isRefundMissing ? (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+            Чек <span className="font-medium">{payloadText("cheque_number")}</span> ждёт возврат{" "}
+            {payloadText("expected_refund")} ₽ (позиции исключены при вводе), но банк его не
+            прислал дольше порога. Проверьте у кассира/в банке, действительно ли возврат был;
+            если пометка ошибочна — разберите чек, иначе отложите кейс до прихода денег.
+          </div>
+        ) : hasOperation ? (
           <>
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
               <div className="grid gap-2">
@@ -361,7 +397,14 @@ function OwnerReviewCard({
 
         {canClassify ? (
           <div className="flex flex-wrap gap-2">
-            {hasOperation ? (
+            {isCardRefund ? (
+              <Button disabled={isBusy} onClick={() => applyRefundMutation.mutate()}>
+                {applyRefundMutation.isPending ? (
+                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                ) : null}
+                Учесть возврат
+              </Button>
+            ) : isRefundMissing ? null : hasOperation ? (
               <>
                 <Button disabled={isBusy} onClick={() => classify("set_article")}>
                   {classifyMutation.isPending ? (
@@ -422,6 +465,12 @@ function caseKindLabel(kind: string) {
   }
   if (kind === "iiko_payment_unsettled") {
     return "Оплата в iiko не проведена";
+  }
+  if (kind === "card_refund_after_cheque") {
+    return "Возврат по проведённому чеку";
+  }
+  if (kind === "cheque_refund_missing") {
+    return "Возврат не пришёл от банка";
   }
   return kind;
 }

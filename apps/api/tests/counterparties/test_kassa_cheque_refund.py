@@ -23,12 +23,24 @@ from cp_helpers import (
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import BankOperation, CashflowTransaction, InvoiceLineItem, InvoicePaymentAllocation
+from app.models import (
+    BankOperation,
+    CashflowTransaction,
+    DdsArticle,
+    InvoiceLineItem,
+    InvoicePaymentAllocation,
+    ReconciliationCase,
+)
 from app.services.kassa.cheque import (
+    CARD_REFUND_CASE_KIND,
+    EXPENSE_REFUND_ARTICLE_CODE,
+    REFUND_MISSING_CASE_KIND,
     ChequeBankPart,
     ChequeLineInput,
     KassaChequeError,
+    apply_card_refund_case,
     create_cheque,
+    escalate_missing_cheque_refunds,
     list_card_transactions,
     match_card_refund_operations,
 )
@@ -431,3 +443,160 @@ async def test_goods_split_excludes_returned_lines(
         card_share, cash_share = split
         assert card_share == Decimal("5500.00")
         assert cash_share == Decimal("0.00")
+
+
+# --- Фаза 2: поздний возврат (чек не ждал) и эскалация «возврат не пришёл» --------------
+
+
+async def _gross_cheque(session: AsyncSession, op, *, article) -> object:
+    """Чек 6000 без возвратных пометок — проведён полностью (возврата не ждёт)."""
+    cp = await make_counterparty(session, name="Местный закуп")
+    return await create_cheque(
+        session,
+        counterparty_id=cp.id,
+        article_id=None,
+        issued_at=ISSUED,
+        bank_parts=[ChequeBankPart(bank_operation_id=op.id)],
+        track_nomenclature=True,
+        lines=[
+            ChequeLineInput(
+                name="Товар",
+                quantity=Decimal("1"),
+                price=Decimal("6000.00"),
+                dds_article_id=article.id,
+            )
+        ],
+    )
+
+
+async def _pending_cases(session: AsyncSession, kind: str) -> list[ReconciliationCase]:
+    return list(
+        (
+            await session.scalars(
+                select(ReconciliationCase).where(
+                    ReconciliationCase.kind == kind,
+                    ReconciliationCase.status == "pending",
+                )
+            )
+        ).all()
+    )
+
+
+async def test_late_refund_creates_case(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Чек проведён полностью (возврата не ждали) → пришедший refundIn не привязывается,
+    # а поднимает кейс «возврат по проведённому чеку». Дедуп по pending-кейсу.
+    async with async_session_factory() as session:
+        article = await make_expense_article(session, code="personal", name="Расходы на персонал")
+        account, _, op = await _purchase_op(session, amount="6000.00")
+        await session.commit()
+
+        cheque = await _gross_cheque(session, op, article=article)
+        refund = await _refund_op(session, account.id, amount="500.00")
+        await session.flush()
+
+        assert await match_card_refund_operations(session) == 0
+        await session.flush()
+        cases = await _pending_cases(session, CARD_REFUND_CASE_KIND)
+        assert len(cases) == 1
+        case = cases[0]
+        assert case.bank_operation_id == refund.id
+        assert case.payload["invoice_id"] == str(cheque.id)
+        assert case.payload["reason"] == "cheque_did_not_expect"
+
+        # Повторный прогон не плодит дублей.
+        assert await match_card_refund_operations(session) == 0
+        await session.flush()
+        assert len(await _pending_cases(session, CARD_REFUND_CASE_KIND)) == 1
+
+
+async def test_oversized_refund_creates_case(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Возврат больше остатка ожидания: не привязывается, кейс с reason=exceeds_expected.
+    async with async_session_factory() as session:
+        article = await make_expense_article(session, code="personal", name="Расходы на персонал")
+        account, _, op = await _purchase_op(session, amount="6000.00")
+        await session.commit()
+
+        await _net_cheque(session, op, article=article)  # ждём 500
+        refund = await _refund_op(session, account.id, amount="600.00")
+        await session.flush()
+
+        assert await match_card_refund_operations(session) == 0
+        await session.flush()
+        cases = await _pending_cases(session, CARD_REFUND_CASE_KIND)
+        assert len(cases) == 1
+        assert cases[0].bank_operation_id == refund.id
+        assert cases[0].payload["reason"] == "exceeds_expected"
+
+
+async def test_apply_card_refund_case_books_inflow(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # «Учесть возврат»: входящая проводка «Возврат расходов», операция classified, кейс resolved.
+    async with async_session_factory() as session:
+        article = await make_expense_article(session, code="personal", name="Расходы на персонал")
+        account, wallet, op = await _purchase_op(session, amount="6000.00")
+        await session.commit()
+
+        cheque = await _gross_cheque(session, op, article=article)
+        refund = await _refund_op(session, account.id, amount="500.00")
+        await session.flush()
+        await match_card_refund_operations(session)
+        await session.flush()
+        case = (await _pending_cases(session, CARD_REFUND_CASE_KIND))[0]
+
+        result = await apply_card_refund_case(session, case)
+        await session.flush()
+        assert result["already_linked"] is False
+
+        await session.refresh(refund)
+        await session.refresh(case)
+        assert case.status == "resolved"
+        assert refund.classification_status == "classified"
+        txn = await session.get(CashflowTransaction, refund.cashflow_transaction_id)
+        assert txn is not None
+        assert txn.direction == "in"
+        assert txn.amount == Decimal("500.00")
+        assert txn.wallet_id == wallet.id
+        assert txn.source_kind == "kassa_cheque_refund"
+        assert txn.source_id == cheque.id
+        refund_article = await session.get(DdsArticle, txn.article_id)
+        assert refund_article.code == EXPENSE_REFUND_ARTICLE_CODE
+        assert refund_article.movement_type == "inflow"
+
+
+async def test_escalate_missing_cheque_refunds(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Чек ждёт возврат дольше порога → кейс; привязка возврата закрывает кейс.
+    from datetime import timedelta
+
+    async with async_session_factory() as session:
+        article = await make_expense_article(session, code="personal", name="Расходы на персонал")
+        account, _, op = await _purchase_op(session, amount="6000.00")
+        await session.commit()
+
+        cheque = await _net_cheque(session, op, article=article)  # ждём 500
+
+        # Свежий чек — до порога кейса нет.
+        assert await escalate_missing_cheque_refunds(session) == 0
+
+        # Смотрим «из будущего», за порогом (7 дней по умолчанию).
+        future = datetime.now(UTC) + timedelta(days=8)
+        assert await escalate_missing_cheque_refunds(session, now=future) == 1
+        cases = await _pending_cases(session, REFUND_MISSING_CASE_KIND)
+        assert len(cases) == 1
+        assert cases[0].bank_operation_id == op.id
+        assert cases[0].payload["invoice_id"] == str(cheque.id)
+        # Дедуп.
+        assert await escalate_missing_cheque_refunds(session, now=future) == 0
+
+        # Возврат пришёл и привязался → кейс закрыт автоматически.
+        await _refund_op(session, account.id, amount="500.00")
+        await session.flush()
+        assert await match_card_refund_operations(session) == 1
+        await session.flush()
+        assert await _pending_cases(session, REFUND_MISSING_CASE_KIND) == []
