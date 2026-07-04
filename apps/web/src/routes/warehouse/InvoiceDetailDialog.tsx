@@ -178,11 +178,21 @@ export function InvoiceDetailDialog({
                 </thead>
                 <tbody>
                   {detail.lines.map((line) => (
-                    <tr key={line.id} className="border-t">
-                      <td className="px-3 py-2">
-                        {line.name}
+                    <tr key={line.id} className={line.is_return ? "border-t bg-red-50" : "border-t"}>
+                      <td className={line.is_return ? "px-3 py-2 text-red-700" : "px-3 py-2"}>
+                        <span className={line.is_return ? "line-through decoration-red-400" : undefined}>
+                          {line.name}
+                        </span>
                         {line.unit ? (
                           <span className="ml-1 text-xs text-muted-foreground">{line.unit}</span>
+                        ) : null}
+                        {line.is_return ? (
+                          <Badge
+                            variant="outline"
+                            className="ml-2 border-red-200 bg-red-50 text-[10px] text-red-700"
+                          >
+                            возврат
+                          </Badge>
                         ) : null}
                         {line.is_expense ? (
                           <Badge
@@ -195,7 +205,15 @@ export function InvoiceDetailDialog({
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">{line.quantity}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatRub(line.price)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{formatRub(line.sum)}</td>
+                      <td
+                        className={
+                          line.is_return
+                            ? "px-3 py-2 text-right tabular-nums text-red-700 line-through decoration-red-400"
+                            : "px-3 py-2 text-right tabular-nums"
+                        }
+                      >
+                        {formatRub(line.sum)}
+                      </td>
                     </tr>
                   ))}
                   {detail.lines.length === 0 ? (
@@ -223,6 +241,15 @@ export function InvoiceDetailDialog({
                   {formatRub(detail.remaining)}
                 </span>
               </span>
+              {detail.returned_total ? (
+                <span className="text-muted-foreground">
+                  Возврат в магазин:{" "}
+                  <span className="font-medium tabular-nums text-red-700">
+                    {formatRub(detail.returned_total)}
+                  </span>
+                  <span className="ml-1 text-xs">(не проведён, ждём деньги от банка)</span>
+                </span>
+              ) : null}
             </div>
           </div>
         )}

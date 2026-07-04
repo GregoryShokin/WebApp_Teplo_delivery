@@ -556,6 +556,9 @@ async def get_warehouse_invoice(
             # Расходная строка (не товар → не уходит в iiko): по статье ДДС, единообразно
             # для чеков и накладных. Название статьи — для бейджа на фронте.
             "is_expense": not line_is_goods(line, supplier_article_ids),
+            # Позиция возвращена в магазин (чек Кассы): хранится для gross-следа,
+            # но не проведена — фронт показывает красной строкой.
+            "is_return": line.is_return,
             "dds_article_name": (
                 article_names.get(line.dds_article_id) if line.dds_article_id else None
             ),
@@ -566,13 +569,21 @@ async def get_warehouse_invoice(
         for line in lines
     ]
     # Разбивка «товар / расход» по статье ДДС (чек с is_staff=false тоже разносится верно).
+    # Возвращённые позиции не проведены — не входят ни в товар, ни в расход.
     if lines:
         expense_sum = sum(
-            (_money(line.sum) for line in lines if not line_is_goods(line, supplier_article_ids)),
+            (
+                _money(line.sum)
+                for line in lines
+                if not line.is_return and not line_is_goods(line, supplier_article_ids)
+            ),
             Decimal("0.00"),
         )
         summary["staff_amount"] = float(expense_sum)
         summary["production_amount"] = float(_money(invoice.amount) - expense_sum)
+        summary["returned_total"] = float(
+            sum((_money(line.sum) for line in lines if line.is_return), Decimal("0.00"))
+        )
     return summary
 
 

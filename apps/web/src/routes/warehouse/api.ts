@@ -43,6 +43,9 @@ export type WarehouseInvoiceLine = {
   // Расходная строка (не товар → не уходит в iiko): по статье ДДС, единообразно для
   // чеков и накладных. dds_article_name — название статьи для бейджа.
   is_expense: boolean;
+  // Позиция возвращена в магазин (чек Кассы): в чеке остаётся для gross-следа,
+  // но не проведена — показывается красной строкой.
+  is_return?: boolean;
   dds_article_name: string | null;
   iiko_product_id: string | null;
   dds_article_id: string | null;
@@ -61,6 +64,8 @@ export type WarehouseInvoiceDetail = WarehouseInvoiceSummary & {
   iiko_push_error: string | null;
   lines: WarehouseInvoiceLine[];
   allocations: InvoiceAllocation[];
+  // Сумма возвращённых позиций чека (gross = amount + returned_total).
+  returned_total?: number;
 };
 
 export type LinePayload = {
