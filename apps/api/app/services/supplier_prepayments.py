@@ -111,6 +111,38 @@ async def prepayment_remaining(prepayment: SupplierPrepayment) -> Decimal:
     return _money(prepayment.amount) - _money(prepayment.amount_settled)
 
 
+async def cancel_supplier_prepayment(session: AsyncSession, prepayment_id: uuid.UUID) -> None:
+    """Снять ошибочно заведённую предоплату вместе с её денежным фактом.
+
+    Только пока дебиторка не тронута: ни рубля не зачтено накладными. Удаляется
+    и запись, и породившая её out-CashflowTransaction (баланс кошелька
+    восстанавливается). Гашеную предоплату отменить нельзя — сначала снимают
+    аллокации.
+    """
+    prepayment = await session.get(SupplierPrepayment, prepayment_id)
+    if prepayment is None:
+        raise CounterpartyPaymentError("Предоплата не найдена")
+    if _money(prepayment.amount_settled) > 0 or prepayment.status != "open":
+        raise CounterpartyPaymentError(
+            "Предоплата уже начала гаситься накладными — отмена невозможна"
+        )
+    allocation_id = await session.scalar(
+        select(InvoicePaymentAllocation.id)
+        .where(InvoicePaymentAllocation.prepayment_id == prepayment.id)
+        .limit(1)
+    )
+    if allocation_id is not None:
+        raise CounterpartyPaymentError(
+            "Предоплата уже начала гаситься накладными — отмена невозможна"
+        )
+    if prepayment.cashflow_transaction_id is not None:
+        transaction = await session.get(CashflowTransaction, prepayment.cashflow_transaction_id)
+        if transaction is not None:
+            await session.delete(transaction)
+    await session.delete(prepayment)
+    await session.commit()
+
+
 async def settle_invoice_from_prepayment(
     session: AsyncSession,
     *,

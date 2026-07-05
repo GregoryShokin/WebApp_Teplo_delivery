@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AccountSelect, sortAccounts, useAccountOptions } from "@/components/ui-app/AccountSelect";
 import type { WalletRead } from "@/lib/api";
@@ -10,6 +11,11 @@ function accountGroupLabel(wallet: WalletRead): string {
   if (wallet.bank_code === "tbank") return "Тинькофф";
   if (wallet.bank_code === "sber") return "Сбербанк";
   return "Наличные";
+}
+
+// 1 целевой, 2/5/11 целевых — резервы Сейфа под конкретных получателей.
+function targetedReservesLabel(count: number): string {
+  return count % 10 === 1 && count % 100 !== 11 ? "целевой" : "целевых";
 }
 
 export function AccountsTab() {
@@ -76,7 +82,16 @@ export function AccountsTab() {
                     }
                   >
                     <div className="min-w-0">
-                      <div className="truncate font-medium">{account.name}</div>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="truncate font-medium">{account.name}</div>
+                        {isSafe && (account.active_allocations ?? 0) > 0 ? (
+                          <Badge className="shrink-0 border-amber-200 bg-amber-50 text-amber-700 tabular-nums">
+                            {account.active_allocations}{" "}
+                            {targetedReservesLabel(account.active_allocations ?? 0)} ·{" "}
+                            {formatDdsMoney(account.reserved_total)}
+                          </Badge>
+                        ) : null}
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         {accountGroupLabel(account)}
                         {isSafe ? " · подотчётный, нажмите для деталей" : ""}

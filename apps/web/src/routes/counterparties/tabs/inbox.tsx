@@ -160,7 +160,12 @@ export function InboxTab({
     onSuccess: async (draft) => {
       await queryClient.invalidateQueries({ queryKey: ["cp"] });
       setSelected(new Set());
-      toast.success(`Черновик на ${formatRub(draft.amount)} отправлен в банк`);
+      // Неофициальный поставщик: получатель — карта ИП (Сейф), не реквизиты поставщика.
+      toast.success(
+        draft.pays_via_safe
+          ? `Черновик выплаты на карту ИП создан (неофициальный поставщик) — ${formatRub(draft.amount)}`
+          : `Черновик на ${formatRub(draft.amount)} отправлен в банк`,
+      );
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отправить в банк")),
   });

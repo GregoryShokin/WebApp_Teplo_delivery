@@ -97,6 +97,12 @@ class DdsArticle(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )
+    # Доступна администратору в форме «Выплата из кассы» (аналог kassa_enabled у
+    # контрагентов). Курируется владельцем; только расходные статьи без собственных
+    # контуров выдачи (движковые переводы, возврат депозита курьера и т.п. — нельзя).
+    kassa_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -184,6 +190,11 @@ class CashflowTransaction(Base):
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     quality_status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="auto", server_default="auto"
+    )
+    # Автор проводки — заполняется ручными контурами (выплата из кассы): по нему
+    # действует правило «свою кассовую запись можно править только в день создания».
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -354,6 +365,14 @@ class SafeAllocation(Base):
     __table_args__ = (
         Index("ix_safe_allocations_wallet_id", "wallet_id"),
         Index("ix_safe_allocations_status", "status"),
+        # Один черновик выплаты — один авто-резерв (страховка идемпотентности
+        # paid-перехода поверх row-lock черновика).
+        Index(
+            "uq_safe_allocations_source_draft",
+            "source_draft_id",
+            unique=True,
+            postgresql_where=text("source_draft_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -371,6 +390,11 @@ class SafeAllocation(Base):
         ForeignKey("counterparty.id"), nullable=True
     )
     purpose: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Происхождение авто-резерва: черновик выплаты на карту ИП (неофициальный поставщик),
+    # по оплате которого резерв создан. NULL — резерв заведён вручную.
+    source_draft_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("counterparty_payment_draft.id", ondelete="SET NULL"), nullable=True
+    )
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="reserved", server_default="reserved"
     )

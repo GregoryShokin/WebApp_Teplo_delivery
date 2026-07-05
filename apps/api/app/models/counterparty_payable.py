@@ -235,6 +235,12 @@ class CounterpartyPaymentDraft(Base):
     prepayment_article_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("dds_articles.id", ondelete="SET NULL"), nullable=True
     )
+    # Выплата через Сейф (неофициальный поставщик): черновик выписан на карту ИП, при
+    # статусе «исполнен» вместо расхода «Оплата поставщикам» заводится перевод р/с→Сейф
+    # и целевой резерв Сейфа на поставщика; накладные гасятся аллокациями без ДДС-расхода.
+    pays_via_safe: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )

@@ -4,6 +4,7 @@ import contextlib
 import logging
 import uuid
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -21,10 +22,17 @@ from app.schemas.kassa import (
     KassaConfigRead,
     KassaCounterpartyRead,
     KassaDdsArticleRead,
+    KassaJournalRead,
+    KassaPayoutArticleRead,
+    KassaPayoutContextRead,
+    KassaPayoutCreate,
+    KassaPayoutEmployeeRead,
+    KassaPayoutResultRead,
     KassaShiftDetailRead,
     KassaShiftRead,
     KassaShiftSyncReport,
 )
+from app.services.advance_iiko_payout import post_advance_payout_to_iiko
 from app.services.kassa.cheque import (
     ChequeBankPart,
     ChequeLineInput,
@@ -43,6 +51,19 @@ from app.services.kassa.iiko_cashshift_sync import (
     post_shift_cash_circuit,
     sync_iiko_cashshifts,
     waive_shift_penalty,
+)
+from app.services.kassa.payouts import (
+    KassaPayoutError,
+    KassaPayoutResult,
+    create_payout,
+    delete_payout,
+    get_kassa_wallet,
+    kassa_balance,
+    kassa_journal,
+    kassa_today,
+    list_payout_articles,
+    list_payout_employees,
+    update_payout,
 )
 from app.services.settings_service import SettingNotFoundError, get_setting
 from app.services.warehouse_invoice_push import WarehousePushError, push_invoice_to_iiko
@@ -76,6 +97,10 @@ KASSA_SHIFTS_SYNC = (Depends(require_permission("kassa.shifts.sync")),)
 KASSA_SHIFTS_POST = (Depends(require_permission("kassa.shifts.post")),)
 KASSA_ADJUSTMENTS_CREATE = (Depends(require_permission("kassa.adjustments.create")),)
 KASSA_PENALTY_WAIVE = (Depends(require_permission("kassa.penalty.waive")),)
+# Кассовый журнал и «Выплата из кассы» — свои права, НЕ переиспользуют общий ДДС
+# (finance.cashflow.* администратору не положены).
+KASSA_JOURNAL_READ = (Depends(require_permission("kassa.journal.read")),)
+KASSA_PAYOUTS_CREATE = (Depends(require_permission("kassa.payouts.create")),)
 
 
 @router.get("/config", response_model=KassaConfigRead, dependencies=KASSA_REFS_READ)
@@ -363,3 +388,168 @@ async def waive_shift_penalty_endpoint(
     payload = await get_shift(session, shift_id)
     assert payload is not None  # noqa: S101 - shift exists
     return payload
+
+
+# --- Кассовый журнал и «Выплата из кассы» (ТК Черникова) -------------------------
+
+
+@router.get("/journal", response_model=KassaJournalRead, dependencies=KASSA_JOURNAL_READ)
+async def kassa_journal_endpoint(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    date_from: date | None = None,
+    date_to: date | None = None,
+    direction: str | None = Query(None, pattern="^(in|out)$"),
+    search: str | None = None,
+) -> dict:
+    """Журнал кассы: зеркало ДДС строго по ТК Черникова, других счетов не видно.
+
+    По умолчанию — текущий месяц. Остаток «в кассе сейчас» считается по всем
+    движениям, приход/расход — за выбранный период."""
+    today = kassa_today()
+    range_from = date_from or today.replace(day=1)
+    range_to = date_to or today
+    try:
+        return await kassa_journal(
+            session,
+            date_from=range_from,
+            date_to=range_to,
+            direction=direction,
+            search=search,
+            actor_user_id=actor.user_id,
+        )
+    except KassaPayoutError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.get(
+    "/payout-articles",
+    response_model=list[KassaPayoutArticleRead],
+    dependencies=KASSA_PAYOUTS_CREATE,
+)
+async def list_payout_articles_endpoint(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[dict]:
+    """Статьи, разрешённые владельцем для выплат из кассы (флаг «касса», только расход)."""
+    return await list_payout_articles(session)
+
+
+@router.get(
+    "/payout-employees",
+    response_model=list[KassaPayoutEmployeeRead],
+    dependencies=KASSA_PAYOUTS_CREATE,
+)
+async def list_payout_employees_endpoint(
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    """Активные сотрудники — получатели аванса/займа из кассы."""
+    return await list_payout_employees(session)
+
+
+@router.get(
+    "/payout-context",
+    response_model=KassaPayoutContextRead,
+    dependencies=KASSA_PAYOUTS_CREATE,
+)
+async def payout_context_endpoint(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict:
+    """Счёт и учётный остаток для строки контекста формы выплаты."""
+    try:
+        wallet = await get_kassa_wallet(session)
+        balance = await kassa_balance(session, wallet)
+    except KassaPayoutError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return {"wallet_name": wallet.name, "balance": float(balance)}
+
+
+@router.post(
+    "/payouts",
+    response_model=KassaPayoutResultRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_payout_endpoint(
+    payload: KassaPayoutCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict:
+    """Выдать наличные из кассы: статья решает маршрут (леджер/дебиторка/проводка).
+
+    Дата операции — всегда сегодня. Сумма больше учётного остатка не блокируется
+    (предупреждение показывает фронт)."""
+    ensure_permission(actor, "kassa.payouts.create")
+    try:
+        result = await create_payout(
+            session,
+            article_id=payload.article_id,
+            amount=payload.amount,
+            comment=payload.comment,
+            employee_id=payload.employee_id,
+            counterparty_id=payload.counterparty_id,
+            actor_user_id=actor.user_id,
+        )
+    except KassaPayoutError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    _mirror_advance_payout_to_iiko(result)
+    return result.as_dict()
+
+
+@router.patch("/payouts/{transaction_id}", response_model=KassaPayoutResultRead)
+async def update_payout_endpoint(
+    transaction_id: uuid.UUID,
+    payload: KassaPayoutCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict:
+    """Исправить СВОЮ кассовую запись в день создания.
+
+    Голая проводка правится на месте; аванс/предоплата пересоздаются (отмена +
+    новая выдача), у записи появляется новый id."""
+    ensure_permission(actor, "kassa.payouts.create")
+    try:
+        result = await update_payout(
+            session,
+            transaction_id=transaction_id,
+            article_id=payload.article_id,
+            amount=payload.amount,
+            comment=payload.comment,
+            employee_id=payload.employee_id,
+            counterparty_id=payload.counterparty_id,
+            actor_user_id=actor.user_id,
+        )
+    except KassaPayoutError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    _mirror_advance_payout_to_iiko(result)
+    return result.as_dict()
+
+
+@router.delete("/payouts/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_payout_endpoint(
+    transaction_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    """Удалить СВОЮ кассовую запись в день создания (аванс — отмена, предоплата — снятие)."""
+    ensure_permission(actor, "kassa.payouts.create")
+    try:
+        await delete_payout(
+            session, transaction_id=transaction_id, actor_user_id=actor.user_id
+        )
+    except KassaPayoutError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+def _mirror_advance_payout_to_iiko(result: KassaPayoutResult) -> None:
+    """Наличный аванс/заём с ТК Черникова зеркалится изъятием в iiko «Главная касса».
+
+    Тот же контур, что при выдаче со страницы авансов (payroll_advances): вызывается
+    ПОСЛЕ commit, ошибка iiko выдачу не откатывает (логируется внутри)."""
+    advance = result.advance
+    if advance is None:
+        return
+    post_advance_payout_to_iiko(
+        amount=Decimal(str(advance.amount)),
+        payout_date=advance.issued_on,
+        source_id=advance.id,
+        is_loan=advance.kind == "loan",
+    )

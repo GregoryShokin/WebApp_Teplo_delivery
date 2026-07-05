@@ -544,6 +544,16 @@ async def cancel_advance(
             draft.synced_at = datetime.now(UTC)
     if advance.payout_method == "payroll":
         await _remove_payroll_advance_from_existing_run(session, advance=advance)
+    # Наличная выдача книжила ДДС-расход с кассы/Сейфа — снять его, иначе после
+    # отмены в журнале остаётся висящий расход и баланс счёта врёт.
+    cash_tx = await session.scalar(
+        select(CashflowTransaction).where(
+            CashflowTransaction.source_kind == ADVANCE_PAYOUT_SOURCE_KIND,
+            CashflowTransaction.source_id == advance.id,
+        )
+    )
+    if cash_tx is not None:
+        await session.delete(cash_tx)
     advance.status = "cancelled"
     await session.commit()
     await session.refresh(advance)

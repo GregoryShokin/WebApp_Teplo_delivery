@@ -2157,6 +2157,7 @@ export type WalletRead = {
   balance: string;
   reserved_total: string | null;
   free_total: string | null;
+  active_allocations: number | null;
 };
 
 export type BankOperationRead = {
@@ -2223,6 +2224,8 @@ export type DdsArticleRead = {
   activity_type: string;
   parent_id: string | null;
   is_active: boolean;
+  // Доступна администратору в «Выплате из кассы» (только расходные, без движковых).
+  kassa_enabled: boolean;
   description: string | null;
   aliases: DdsAliasRead[];
 };
@@ -2234,6 +2237,7 @@ export type DdsArticleCreate = {
   activity_type: string;
   parent_id?: string | null;
   is_active?: boolean;
+  kassa_enabled?: boolean;
   description?: string | null;
 };
 
@@ -2789,7 +2793,10 @@ export type SafeAllocationRead = {
   outstanding: string;
   article_id: string | null;
   counterparty_id: string | null;
+  counterparty_name: string | null;
   purpose: string | null;
+  // Происхождение авто-резерва: черновик выплаты на карту ИП (неофициальный поставщик).
+  source_draft_id: string | null;
   status: "reserved" | "partially_paid" | "paid" | "cancelled";
   created_at: string;
 };

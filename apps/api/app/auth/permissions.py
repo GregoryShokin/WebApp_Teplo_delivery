@@ -367,6 +367,16 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Касса",
         "Смотреть справочники Кассы (статьи ДДС, счета, контрагенты)",
     ),
+    (
+        "kassa.journal.read",
+        "Касса",
+        "Смотреть кассовый журнал (движения по ТК Черникова)",
+    ),
+    (
+        "kassa.payouts.create",
+        "Касса",
+        "Выдавать наличные из кассы по разрешённым статьям",
+    ),
     ("settings.general.read", "Настройки и доступы", "Смотреть настройки"),
     ("settings.general.edit", "Настройки и доступы", "Редактировать настройки"),
     ("settings.positions.read", "Настройки и доступы", "Смотреть реестр должностей"),
@@ -711,6 +721,8 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "kassa.invoices.create",
         "kassa.invoices.push",
         "kassa.refs.read",
+        "kassa.journal.read",
+        "kassa.payouts.create",
         "settings.general.read",
         "settings.positions.read",
     }
@@ -767,6 +779,8 @@ CASHIER_DEFAULT_PERMISSIONS = frozenset(
         "kassa.invoices.create",
         "kassa.invoices.push",
         "kassa.refs.read",
+        "kassa.journal.read",
+        "kassa.payouts.create",
     }
 )
 

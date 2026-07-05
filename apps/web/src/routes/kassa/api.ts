@@ -254,3 +254,117 @@ export async function waiveKassaShiftPenalty(id: string): Promise<KassaShiftDeta
   const response = await api.post<KassaShiftDetail>(`${BASE}/shifts/${id}/waive-penalty`);
   return response.data;
 }
+
+// --- кассовый журнал и «Выплата из кассы» (ТК Черникова) -------------------------
+
+// Маршрут выплаты по статье: сотрудниковые статьи ведут в авансовый леджер,
+// предоплата — в дебиторку поставщика, прочие — голая расходная проводка.
+export type KassaPayoutFlow =
+  | "expense"
+  | "employee_advance"
+  | "employee_loan"
+  | "supplier_prepayment";
+
+export type KassaJournalItem = {
+  id: string;
+  operation_date: string;
+  direction: "in" | "out";
+  amount: number;
+  article_id: string | null;
+  article_name: string | null;
+  purpose: string | null;
+  comment: string | null;
+  source_kind: string;
+  counterparty_label: string | null;
+  employee_id: string | null;
+  counterparty_id: string | null;
+  kassa_flow: KassaPayoutFlow | null;
+  editable: boolean;
+  created_at: string;
+};
+
+export type KassaJournal = {
+  wallet_name: string;
+  balance: number;
+  period_in: number;
+  period_out: number;
+  items: KassaJournalItem[];
+};
+
+export type KassaPayoutArticle = {
+  id: string;
+  code: string;
+  name: string;
+  flow: KassaPayoutFlow;
+};
+
+export type KassaPayoutEmployee = {
+  id: string;
+  full_name: string;
+  position: string | null;
+};
+
+export type KassaPayoutContext = {
+  wallet_name: string;
+  balance: number;
+};
+
+export type KassaPayoutPayload = {
+  article_id: string;
+  amount: number;
+  comment?: string | null;
+  employee_id?: string | null;
+  counterparty_id?: string | null;
+};
+
+export type KassaPayoutResult = {
+  kind: KassaPayoutFlow;
+  transaction_id: string | null;
+  advance_id: string | null;
+  prepayment_id: string | null;
+};
+
+export async function getKassaJournal(params: {
+  date_from?: string;
+  date_to?: string;
+  direction?: "in" | "out";
+  search?: string;
+}): Promise<KassaJournal> {
+  const response = await api.get<KassaJournal>(`${BASE}/journal`, { params });
+  return response.data;
+}
+
+export async function getKassaPayoutArticles(): Promise<KassaPayoutArticle[]> {
+  const response = await api.get<KassaPayoutArticle[]>(`${BASE}/payout-articles`);
+  return response.data;
+}
+
+export async function getKassaPayoutEmployees(): Promise<KassaPayoutEmployee[]> {
+  const response = await api.get<KassaPayoutEmployee[]>(`${BASE}/payout-employees`);
+  return response.data;
+}
+
+export async function getKassaPayoutContext(): Promise<KassaPayoutContext> {
+  const response = await api.get<KassaPayoutContext>(`${BASE}/payout-context`);
+  return response.data;
+}
+
+export async function createKassaPayout(payload: KassaPayoutPayload): Promise<KassaPayoutResult> {
+  const response = await api.post<KassaPayoutResult>(`${BASE}/payouts`, payload);
+  return response.data;
+}
+
+export async function updateKassaPayout(
+  transactionId: string,
+  payload: KassaPayoutPayload,
+): Promise<KassaPayoutResult> {
+  const response = await api.patch<KassaPayoutResult>(
+    `${BASE}/payouts/${transactionId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteKassaPayout(transactionId: string): Promise<void> {
+  await api.delete(`${BASE}/payouts/${transactionId}`);
+}

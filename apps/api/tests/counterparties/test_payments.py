@@ -242,25 +242,28 @@ async def test_cancel_paid_draft_is_rejected(
             await cancel_payment_draft(session, draft_id=draft.id)
 
 
-async def test_create_draft_blocked_for_informal_counterparty(
+async def test_create_draft_for_informal_goes_via_safe(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    """Неофициальный поставщик — не ошибка, а черновик выплаты на карту ИП (через Сейф).
+
+    Подробности контура — в ``test_informal_safe_payout``.
+    """
     async with async_session_factory() as session:
         supplier = await make_counterparty(
             session,
             name="Местный закуп",
             inn="7709990000",
-            requisites=VERIFIED_REQUISITES,
-            requisites_verified=True,
-            relationship="informal",  # paid by card/cash, never bank
+            relationship="informal",  # оплачивается наличными через Сейф, не по своим реквизитам
         )
         invoice = await make_invoice(session, counterparty_id=supplier.id, amount="500.00")
         await session.commit()
 
-        with pytest.raises(CounterpartyPaymentError, match="картой/наличными"):
-            await create_payment_draft_for_invoices(
-                session, invoice_ids=[invoice.id], actor_user_id=None
-            )
+        draft = await create_payment_draft_for_invoices(
+            session, invoice_ids=[invoice.id], actor_user_id=None
+        )
+        assert draft.pays_via_safe is True
+        assert draft.status == "created"
 
 
 async def test_create_draft_rejects_receivable_invoice(

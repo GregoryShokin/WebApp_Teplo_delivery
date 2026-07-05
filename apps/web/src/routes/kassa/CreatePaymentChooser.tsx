@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { FileText, Receipt } from "lucide-react";
+import { Banknote, FileText, Receipt } from "lucide-react";
 
 import {
   Dialog,
@@ -9,13 +9,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-export type PaymentKind = "invoice" | "cheque";
+export type PaymentKind = "invoice" | "cheque" | "payout";
 
 type CreatePaymentChooserProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   canInvoice: boolean;
   canCheque: boolean;
+  canPayout: boolean;
   onPick: (kind: PaymentKind) => void;
 };
 
@@ -24,6 +25,7 @@ export function CreatePaymentChooser({
   onOpenChange,
   canInvoice,
   canCheque,
+  canPayout,
   onPick,
 }: CreatePaymentChooserProps) {
   return (
@@ -49,6 +51,14 @@ export function CreatePaymentChooser({
               title="Чек"
               description="Уже оплаченная картой покупка — уходит в ДДС по выбранной статье."
               onClick={() => onPick("cheque")}
+            />
+          ) : null}
+          {canPayout ? (
+            <ChoiceCard
+              icon={<Banknote size={20} aria-hidden="true" />}
+              title="Выплата из кассы"
+              description="Выдача наличных по разрешённой статье: аренда, авансы, расчёты."
+              onClick={() => onPick("payout")}
             />
           ) : null}
         </div>

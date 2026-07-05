@@ -223,3 +223,79 @@ class KassaShiftSyncReport(BaseModel):
     posted: int
     penalized: int
     skipped: int
+
+
+# --- Кассовый журнал и «Выплата из кассы» (ТК Черникова) -------------------------
+
+
+class KassaJournalItemRead(BaseModel):
+    """Строка журнала — движение ДДС по ТК Черникова (системное или ручное)."""
+
+    id: uuid.UUID
+    operation_date: date
+    direction: str  # in | out
+    amount: float
+    article_id: uuid.UUID | None = None
+    article_name: str | None = None
+    purpose: str | None = None
+    comment: str | None = None
+    source_kind: str
+    # Сотрудник (аванс/заём) или поставщик (предоплата) — подпись строки.
+    counterparty_label: str | None = None
+    # Получатели для предзаполнения формы правки.
+    employee_id: uuid.UUID | None = None
+    counterparty_id: uuid.UUID | None = None
+    # Маршрут кассовой выплаты (None — запись другого контура).
+    kassa_flow: str | None = None
+    # Своя сегодняшняя кассовая запись — доступны «Изменить»/«Удалить».
+    editable: bool
+    created_at: datetime
+
+
+class KassaJournalRead(BaseModel):
+    wallet_name: str
+    balance: float
+    period_in: float
+    period_out: float
+    items: list[KassaJournalItemRead] = Field(default_factory=list)
+
+
+class KassaPayoutArticleRead(BaseModel):
+    """Статья, разрешённая для выплаты из кассы, с маршрутом формы."""
+
+    id: uuid.UUID
+    code: str
+    name: str
+    flow: str  # expense | employee_advance | employee_loan | supplier_prepayment
+
+
+class KassaPayoutEmployeeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    full_name: str
+    position: str | None = None
+
+
+class KassaPayoutContextRead(BaseModel):
+    """Строка контекста формы: «Счёт: … · в кассе N ₽»."""
+
+    wallet_name: str
+    balance: float
+
+
+class KassaPayoutCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    article_id: uuid.UUID
+    amount: Decimal = Field(gt=0)
+    comment: str | None = None
+    employee_id: uuid.UUID | None = None  # обязателен для статей аванса/займа
+    counterparty_id: uuid.UUID | None = None  # обязателен для предоплаты поставщику
+
+
+class KassaPayoutResultRead(BaseModel):
+    kind: str
+    transaction_id: uuid.UUID | None = None
+    advance_id: uuid.UUID | None = None
+    prepayment_id: uuid.UUID | None = None

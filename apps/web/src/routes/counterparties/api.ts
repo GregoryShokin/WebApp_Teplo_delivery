@@ -108,6 +108,8 @@ export type PaymentDraft = {
   status: string;
   provider_ref: string | null;
   last_error: string | null;
+  // Выплата через Сейф (неофициальный поставщик): черновик выписан на карту ИП.
+  pays_via_safe: boolean;
   created_at: string;
 };
 

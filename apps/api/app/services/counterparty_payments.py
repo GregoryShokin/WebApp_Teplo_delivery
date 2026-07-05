@@ -10,7 +10,7 @@ matched (see ``counterparty_matching``).
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.models import (
+    AppSetting,
     CashflowTransaction,
     Counterparty,
     CounterpartyPayableProfile,
@@ -39,6 +40,8 @@ DRAFTABLE_STATUSES = frozenset({"unpaid", "partially_paid"})
 DRAFT_STATUSES = frozenset({"created", "updated", "paid", "failed"})
 # DDS article a manual supplier payment books to by default.
 DEFAULT_SUPPLIER_ARTICLE_CODE = "payment_to_supplier"
+# Реквизиты вывода на карту ИП — те же, что у зарплатного черновика (см. payroll_payouts).
+PAYOUT_REQUISITES_KEY = "payroll.bank_payout_requisites"
 
 
 class CounterpartyPaymentError(RuntimeError):
@@ -107,6 +110,35 @@ def _payment_purpose(
     return f"{base[:budget].rstrip()}. {suffix}"[:210]
 
 
+def _informal_payment_purpose(
+    counterparty: Counterparty, invoices: Sequence[SupplierInvoice]
+) -> str:
+    """Назначение выплаты на карту ИП под закуп у неофициального поставщика.
+
+    Без НДС-блока (это перевод на собственную карту, а не оплата поставщику по счёту) —
+    только маркировка «кому и за какие счета», она же уходит в purpose целевого резерва.
+    """
+    numbers = [f"№{inv.number}" for inv in invoices if inv.number]
+    base = f"Закуп: {counterparty.name}"
+    if numbers:
+        word = "счёт" if len(numbers) == 1 else "счета"
+        base = f"{base}, {word} {', '.join(numbers)}"
+    return " ".join(base.split())[:210]
+
+
+async def _ip_card_requisites(session: AsyncSession) -> dict[str, Any]:
+    """Реквизиты карты ИП для выплат через Сейф — источник тот же, что у зарплатного
+    черновика (``payroll.bank_payout_requisites``)."""
+    setting = await session.scalar(
+        select(AppSetting).where(AppSetting.key == PAYOUT_REQUISITES_KEY)
+    )
+    if setting is None or not isinstance(setting.value, Mapping):
+        raise CounterpartyPaymentError(
+            f"Не настроены реквизиты выплат на карту ИП ({PAYOUT_REQUISITES_KEY})"
+        )
+    return dict(setting.value)
+
+
 def _safe_status(status: str | None) -> str:
     # Свежесозданный черновик может быть только created/updated. Терминальные paid/failed
     # выставляются ИСКЛЮЧИТЕЛЬНО через apply_payment_status — иначе платёж минует гашение/откат
@@ -159,11 +191,12 @@ async def create_payment_draft_for_invoices(
             CounterpartyPayableProfile.counterparty_id == counterparty_id
         )
     )
-    if profile is not None and profile.relationship == "informal":
-        raise CounterpartyPaymentError(
-            "Контрагент оплачивается картой/наличными — отправка в банк недоступна"
-        )
-    if profile is None or not profile.requisites_verified:
+    # Неофициальный поставщик: своих банк-реквизитов у него нет и они не проверяются —
+    # черновик выписывается на карту ИП (реквизиты зарплатных выплат), деньги приходят
+    # на Сейф, а контроль «поставщик получил наличные» несёт целевой резерв Сейфа,
+    # который заводит paid-переход (см. bank_payment_status.apply_payment_status).
+    pays_via_safe = profile is not None and profile.relationship == "informal"
+    if not pays_via_safe and (profile is None or not profile.requisites_verified):
         raise RequisitesNotVerifiedError(
             "Реквизиты контрагента не подтверждены — отправка в банк недоступна"
         )
@@ -177,7 +210,17 @@ async def create_payment_draft_for_invoices(
 
     settings = get_settings()
     payer_account = _payer_account(settings)
-    purpose = _payment_purpose(counterparty, invoices, _aggregate_vat(invoices))
+
+    requisites: dict[str, Any]
+    if pays_via_safe:
+        requisites = await _ip_card_requisites(session)
+        purpose = _informal_payment_purpose(counterparty, invoices)
+    else:
+        requisites = dict(profile.requisites or {})
+        requisites.setdefault("recipientName", counterparty.name)
+        if counterparty.inn:
+            requisites.setdefault("inn", counterparty.inn)
+        purpose = _payment_purpose(counterparty, invoices, _aggregate_vat(invoices))
 
     draft = CounterpartyPaymentDraft(
         id=uuid.uuid4(),
@@ -185,15 +228,11 @@ async def create_payment_draft_for_invoices(
         document_id="",
         amount=total,
         status="created",
+        pays_via_safe=pays_via_safe,
         created_by_user_id=actor_user_id,
     )
     document_id = f"teplo-cp-{draft.id}"
     draft.document_id = document_id[:64]
-
-    requisites: dict[str, Any] = dict(profile.requisites or {})
-    requisites.setdefault("recipientName", counterparty.name)
-    if counterparty.inn:
-        requisites.setdefault("inn", counterparty.inn)
 
     try:
         payload = build_payment_draft_api_payload(

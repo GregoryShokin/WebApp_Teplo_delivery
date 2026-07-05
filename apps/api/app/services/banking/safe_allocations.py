@@ -53,21 +53,39 @@ async def safe_reserved_total(session: AsyncSession, wallet_id: UUID) -> Decimal
     return Decimal(total or 0)
 
 
+async def safe_active_allocations_count(session: AsyncSession, wallet_id: UUID) -> int:
+    """Число активных резервов кошелька — для бейджа «N целевых» на плитке Сейфа."""
+    count = await session.scalar(
+        select(func.count())
+        .select_from(SafeAllocation)
+        .where(
+            SafeAllocation.wallet_id == wallet_id,
+            SafeAllocation.status.in_(ACTIVE_RESERVE_STATUSES),
+        )
+    )
+    return int(count or 0)
+
+
 async def create_allocation(
     session: AsyncSession,
     *,
     wallet_id: UUID,
     amount: Decimal,
-    free_amount: Decimal,
+    free_amount: Decimal | None,
     article_id: UUID | None = None,
     counterparty_id: UUID | None = None,
     purpose: str | None = None,
+    source_draft_id: UUID | None = None,
     created_by_user_id: UUID | None = None,
 ) -> SafeAllocation:
-    """Создать резерв. Запрет перерезервирования: ``amount`` ≤ свободно (``free_amount``)."""
+    """Создать резерв. Запрет перерезервирования: ``amount`` ≤ свободно (``free_amount``).
+
+    ``free_amount=None`` — без проверки: авто-резерв под оплаченный банковский черновик
+    (``source_draft_id``), где перевод р/с→Сейф уже пополнил баланс ровно на эту сумму.
+    """
     if amount <= 0:
         raise ValueError("Сумма резерва должна быть больше нуля")
-    if amount > free_amount:
+    if free_amount is not None and amount > free_amount:
         raise ValueError(
             f"Недостаточно свободных средств на Сейфе: свободно {free_amount}, запрошено {amount}"
         )
@@ -78,6 +96,7 @@ async def create_allocation(
         article_id=article_id,
         counterparty_id=counterparty_id,
         purpose=purpose,
+        source_draft_id=source_draft_id,
         status="reserved",
         created_by_user_id=created_by_user_id,
     )

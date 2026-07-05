@@ -10,6 +10,10 @@ Webhook-и «операция по счёту» в ДДС не пропуска�
 оплаты не возникает. Если банк-кошелёк плательщика не определён — накладные всё равно гасятся
 статус-аллокацией без ДДС-проводки (+ кейс owner-review). Статусы ``deleted/удалён`` (черновик
 отозван в банке) трактуются как ``failed``: накладные возвращаются в «неоплачено».
+
+Черновик «через Сейф» (``pays_via_safe``, неофициальный поставщик — платёж на карту ИП):
+вместо расхода «Оплата поставщикам» paid-переход заводит транзит р/с→Сейф и целевой
+резерв Сейфа на поставщика; расход по статье случится при выплате резерва.
 """
 
 from __future__ import annotations
@@ -31,21 +35,31 @@ from app.models import (
     DdsArticle,
     InvoicePaymentAllocation,
     ReconciliationCase,
+    SafeAllocation,
     SupplierInvoice,
     SupplierPrepayment,
     Wallet,
 )
 from app.services.banking.base import clean_digits
+from app.services.banking.safe_allocations import create_allocation
 from app.services.counterparty_matching import (
     _draft_invoices,
     _invoice_remaining,
     _recompute_status,
+)
+from app.services.wallets import (
+    DDS_ARTICLE_TRANSFER_IN_CODE,
+    DDS_ARTICLE_TRANSFER_OUT_CODE,
+    SAFE_WALLET_CODE,
 )
 
 logger = logging.getLogger(__name__)
 
 # Статья ДДС для оплаты поставщику по умолчанию (та же, что у ручной оплаты с кошелька).
 _SUPPLIER_ARTICLE_CODE = "payment_to_supplier"
+# source_kind транзитной пары р/с→Сейф при оплате черновика «через Сейф»
+# (source_id = черновик). По образцу payroll_payouts.book_bank_to_safe_transfer.
+SUPPLIER_BANK_TO_SAFE_SOURCE_KIND = "supplier_bank_to_safe"
 
 
 async def _resolve_payer_bank_wallet(
@@ -69,6 +83,129 @@ async def _resolve_payer_bank_wallet(
             Wallet.status == "active",
         )
     )
+
+
+async def _settle_draft_via_safe(
+    session: AsyncSession,
+    *,
+    draft: CounterpartyPaymentDraft,
+    bank_wallet: Wallet | None,
+    article_id: uuid.UUID | None,
+    operation_date: date,
+) -> None:
+    """Оплата черновика «через Сейф» (неофициальный поставщик): вместо расхода «Оплата
+    поставщикам» — транзит р/с→Сейф + целевой резерв Сейфа на поставщика.
+
+    Расход по статье случится позже, при выплате резерва (``pay_allocation``). Идемпотентно:
+    транзит — по (source_kind, source_id = черновик), резерв — по ``source_draft_id``
+    (уникальный индекс как страховка поверх row-lock черновика). Резерв создаётся
+    безусловно, без проверки «свободно»: транзит уже пополнил Сейф ровно на эту сумму.
+    Устойчиво: отсутствие Сейф-кошелька не валит вебхук — громкий лог + кейс разбора.
+    """
+    safe_wallet = await session.scalar(
+        select(Wallet).where(Wallet.code == SAFE_WALLET_CODE, Wallet.status == "active")
+    )
+    if safe_wallet is None:
+        logger.warning(
+            "apply_payment_status: кошелёк «Сейф» не найден (draft=%s cp=%s amount=%s) — "
+            "транзит и целевой резерв не заведены",
+            draft.id,
+            draft.counterparty_id,
+            draft.amount,
+        )
+        draft.payload = {
+            **(draft.payload or {}),
+            "safe_transfer_skipped": "safe_wallet_missing",
+        }
+        session.add(
+            ReconciliationCase(
+                kind="safe_wallet_unresolved",
+                status="pending",
+                provider="tbank",
+                payload={
+                    "draft_id": str(draft.id),
+                    "counterparty_id": str(draft.counterparty_id),
+                    "amount": str(draft.amount),
+                    "reason": "Кошелёк «Сейф» не найден — перевод и целевой резерв не заведены",
+                },
+            )
+        )
+        return
+
+    purpose = (
+        str((draft.payload or {}).get("paymentPurpose") or "").strip()
+        or "Закуп у неофициального поставщика"
+    )
+
+    existing_transfer = await session.scalar(
+        select(CashflowTransaction.id).where(
+            CashflowTransaction.source_kind == SUPPLIER_BANK_TO_SAFE_SOURCE_KIND,
+            CashflowTransaction.source_id == draft.id,
+        )
+    )
+    if existing_transfer is None:
+        transfer_purpose = f"Перевод на Сейф — {purpose}"
+        transfer_out_article = await session.scalar(
+            select(DdsArticle.id).where(DdsArticle.code == DDS_ARTICLE_TRANSFER_OUT_CODE)
+        )
+        transfer_in_article = await session.scalar(
+            select(DdsArticle.id).where(DdsArticle.code == DDS_ARTICLE_TRANSFER_IN_CODE)
+        )
+        if bank_wallet is not None:
+            # Банк-нога — prebooked-цель для исходящей операции выписки: баланс банка идёт
+            # от выписки, эта проводка его не двигает (как в book_bank_to_safe_transfer).
+            session.add(
+                CashflowTransaction(
+                    wallet_id=bank_wallet.id,
+                    direction="out",
+                    amount=draft.amount,
+                    operation_date=operation_date,
+                    article_id=transfer_out_article,
+                    source_kind=SUPPLIER_BANK_TO_SAFE_SOURCE_KIND,
+                    source_id=draft.id,
+                    payment_purpose=transfer_purpose,
+                    quality_status="final",
+                )
+            )
+        # Сейф-нога двигает баланс Сейфа: деньги пришли на карту ИП. Заводится и без
+        # банк-ноги (payer-кошелёк не привязан — кейс уже создан выше по paid-переходу):
+        # приход на карту от этого не менее реален.
+        session.add(
+            CashflowTransaction(
+                wallet_id=safe_wallet.id,
+                direction="in",
+                amount=draft.amount,
+                operation_date=operation_date,
+                article_id=transfer_in_article,
+                source_kind=SUPPLIER_BANK_TO_SAFE_SOURCE_KIND,
+                source_id=draft.id,
+                payment_purpose=transfer_purpose,
+                quality_status="final",
+            )
+        )
+        await session.flush()
+
+    existing_allocation = await session.scalar(
+        select(SafeAllocation.id).where(SafeAllocation.source_draft_id == draft.id)
+    )
+    if existing_allocation is None:
+        logger.info(
+            "apply_payment_status: авто-резерв Сейфа под черновик %s на %s "
+            "(без проверки «свободно» — транзит уже пополнил Сейф)",
+            draft.id,
+            draft.amount,
+        )
+        await create_allocation(
+            session,
+            wallet_id=safe_wallet.id,
+            amount=draft.amount,
+            free_amount=None,
+            article_id=article_id,
+            counterparty_id=draft.counterparty_id,
+            purpose=purpose,
+            source_draft_id=draft.id,
+        )
+
 
 # Нормализованные строки статусов банка → исход. Точные значения T-Банка уточняются при
 # подключении (банк присылает схему); неизвестный статус оставляет платёж «в банке».
@@ -167,6 +304,9 @@ async def apply_payment_status(
         # проводку «Оплата поставщикам» на весь платёж (её заберёт приходящая операция выписки
         # через prebooked-claim → операция не уходит в needs_review). Иначе fallback: статус-
         # аллокация без bank_operation_id.
+        # Черновик «через Сейф» (pays_via_safe, неофициальный поставщик) — отдельная ветка:
+        # накладные гасятся аллокациями БЕЗ расходной проводки, вместо неё транзит р/с→Сейф
+        # и целевой резерв Сейфа (см. _settle_draft_via_safe).
         bank_wallet = await _resolve_payer_bank_wallet(session, draft)
         supplier_article_id = await session.scalar(
             select(DdsArticle.id).where(DdsArticle.code == _SUPPLIER_ARTICLE_CODE)
@@ -252,7 +392,7 @@ async def apply_payment_status(
                     (invoice, remaining, invoice.dds_article_id or supplier_article_id)
                 )
 
-        if bank_wallet is not None:
+        if bank_wallet is not None and not draft.pays_via_safe:
             # ОДНА проводка на платёж (на статью), а не по-накладно: операция выписки = Σ накладных
             # сматчится с ней через prebooked-claim. Дробление по накладным оставляло бы Σ-операцию
             # без пары (части ≠ сумме). Группируем по статье — обычно одна группа = одна проводка.
@@ -292,6 +432,9 @@ async def apply_payment_status(
                     await _recompute_status(session, invoice)
         else:
             # Банк-кошелёк не резолвится — гашение статус-аллокацией без проводки ДДС.
+            # Черновик «через Сейф» идёт сюда же осознанно: расходной проводки при оплате
+            # черновика нет — расход по статье случится при выплате целевого резерва
+            # (pay_allocation), а деньги на Сейф заводит транзит ниже.
             for invoice, remaining, _ in payable:
                 session.add(
                     InvoicePaymentAllocation(
@@ -304,6 +447,14 @@ async def apply_payment_status(
                 )
                 await session.flush()
                 await _recompute_status(session, invoice)
+        if draft.pays_via_safe and not draft.creates_prepayment:
+            await _settle_draft_via_safe(
+                session,
+                draft=draft,
+                bank_wallet=bank_wallet,
+                article_id=supplier_article_id,
+                operation_date=op_date,
+            )
         draft.status = "paid"
         draft.synced_at = datetime.now(UTC)
 

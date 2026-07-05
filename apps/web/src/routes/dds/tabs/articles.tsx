@@ -233,6 +233,7 @@ function ArticleSheet({
       code: article.code,
       description: article.description ?? "",
       is_active: article.is_active,
+      kassa_enabled: article.kassa_enabled,
       movement_type: article.movement_type as MovementType,
       name: article.name,
       parent_id: article.parent_id ?? "none",
@@ -346,6 +347,7 @@ type ArticleDraft = {
   code: string;
   description: string;
   is_active: boolean;
+  kassa_enabled: boolean;
   movement_type: MovementType;
   name: string;
   parent_id: string;
@@ -434,6 +436,23 @@ function ArticleForm({
         />
         Активна
       </label>
+      <div className="grid gap-1">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            checked={draft.kassa_enabled}
+            className="h-4 w-4"
+            disabled={disabled || draft.movement_type !== "outflow"}
+            onChange={(event) => setField("kassa_enabled", event.target.checked)}
+            type="checkbox"
+          />
+          Доступна в кассе
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Администратор сможет выдавать наличные по этой статье в форме «Выплата из кассы».
+          Только расходные статьи; статьям с собственными контурами выдачи (переводы, возврат
+          депозита курьера, зарплата) флаг не включить.
+        </p>
+      </div>
     </div>
   );
 }
@@ -444,6 +463,7 @@ function articleDraft(): ArticleDraft {
     code: "",
     description: "",
     is_active: true,
+    kassa_enabled: false,
     movement_type: "outflow",
     name: "",
     parent_id: "none",
@@ -456,6 +476,7 @@ function toArticlePayload(draft: ArticleDraft): DdsArticleCreate {
     code: draft.code.trim() || generateArticleCode(draft.name),
     description: compactText(draft.description, ""),
     is_active: draft.is_active,
+    kassa_enabled: draft.kassa_enabled,
     movement_type: draft.movement_type,
     name: draft.name,
     parent_id: draft.parent_id === "none" ? null : draft.parent_id,

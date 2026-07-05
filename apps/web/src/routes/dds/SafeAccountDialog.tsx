@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -222,7 +223,22 @@ export function SafeAccountDialog({
                 <div key={allocation.id} className="rounded-md border p-3 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="font-medium">{article?.name ?? "Без статьи"}</div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-medium">{article?.name ?? "Без статьи"}</span>
+                        {allocation.source_draft_id ? (
+                          // Авто-резерв: создан оплатой черновика выплаты на карту ИП
+                          // (неофициальный поставщик) — деньги уже пришли на Сейф.
+                          <Badge
+                            className="border-amber-200 bg-amber-50 text-amber-700"
+                            title="Создан автоматически при оплате банковской выплаты на карту ИП"
+                          >
+                            из банковской выплаты
+                          </Badge>
+                        ) : null}
+                      </div>
+                      {allocation.counterparty_name ? (
+                        <div className="text-xs font-medium">{allocation.counterparty_name}</div>
+                      ) : null}
                       {allocation.purpose ? (
                         <div className="text-xs text-muted-foreground">{allocation.purpose}</div>
                       ) : null}

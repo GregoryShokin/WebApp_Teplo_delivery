@@ -90,6 +90,7 @@ export type AppAction =
   | "kassa.invoices.push"
   | "kassa.adjustments.create"
   | "kassa.penalty.waive"
+  | "kassa.payouts.create"
   | "kds.queue.write";
 
 const SOURCE_DATA_TAB_READ_PERMISSIONS = [
@@ -283,7 +284,14 @@ const SECTION_PERMISSIONS: Record<AppSection, readonly PermissionCode[]> = {
   "finance.payment-calendar": ["finance.payment_calendar.read", "finance.payment_calendar.edit"],
   "finance.balance": ["finance.balance.read", "finance.balance.edit"],
   counterparties: ["counterparties.read"],
-  kassa: ["kassa.shifts.read", "kassa.cheques.read", "kassa.refs.read", "kassa.invoices.create"],
+  kassa: [
+    "kassa.shifts.read",
+    "kassa.cheques.read",
+    "kassa.refs.read",
+    "kassa.invoices.create",
+    "kassa.journal.read",
+    "kassa.payouts.create",
+  ],
   accounting: [...PERMISSION_GROUPS.accountingRead, ...PERMISSION_GROUPS.accountingWrite],
   "accounting.fixed-assets": ["accounting.fixed_assets.read", "accounting.fixed_assets.edit"],
   "accounting.dz-kz": ["accounting.suppliers.read", "accounting.suppliers.edit"],
@@ -358,6 +366,7 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "kassa.invoices.push": ["kassa.invoices.push"],
   "kassa.adjustments.create": ["kassa.adjustments.create"],
   "kassa.penalty.waive": ["kassa.penalty.waive"],
+  "kassa.payouts.create": ["kassa.payouts.create"],
   "kds.queue.write": ["kds.queue.write"],
 };
 

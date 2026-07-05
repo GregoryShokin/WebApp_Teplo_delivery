@@ -91,9 +91,11 @@ from app.services.banking.safe_allocations import (
     cancel_allocation,
     create_allocation,
     pay_allocation,
+    safe_active_allocations_count,
     safe_reserved_total,
 )
 from app.services.banking.transfer_matching import find_and_link_transfer_pairs
+from app.services.kassa.payouts import KassaPayoutError, ensure_article_kassa_eligible
 from app.services.payroll_advance_service import sync_advance_after_allocation_change
 
 router = APIRouter()
@@ -417,17 +419,16 @@ async def list_wallets(
     )
     payloads: list[dict[str, object]] = []
     for wallet in wallets:
-        reserved = (
-            await safe_reserved_total(session, wallet.id)
-            if wallet.code == SAFE_WALLET_CODE
-            else Decimal("0")
-        )
+        is_safe = wallet.code == SAFE_WALLET_CODE
+        reserved = await safe_reserved_total(session, wallet.id) if is_safe else Decimal("0")
+        active_count = await safe_active_allocations_count(session, wallet.id) if is_safe else 0
         payloads.append(
             _wallet_payload(
                 wallet,
                 deltas.get(wallet.id, Decimal("0")),
                 bank_by_account.get(wallet.account_id),
                 reserved,
+                active_count,
             )
         )
     return payloads
@@ -532,6 +533,7 @@ async def create_article(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, object]:
     article = DdsArticle(**payload.model_dump())
+    _ensure_kassa_flag_allowed(article)
     session.add(article)
     await session.commit()
     await session.refresh(article)
@@ -551,9 +553,22 @@ async def patch_article(
     article = await _article_or_404(session, article_id)
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(article, key, value)
+    _ensure_kassa_flag_allowed(article)
     await session.commit()
     await session.refresh(article)
     return (await _article_payloads(session, [article]))[0]
+
+
+def _ensure_kassa_flag_allowed(article: DdsArticle) -> None:
+    """Флаг «доступна в кассе» — только расходным статьям без своих контуров выдачи."""
+    if not article.kassa_enabled:
+        return
+    try:
+        ensure_article_kassa_eligible(article)
+    except KassaPayoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
 
 
 @router.delete(
@@ -1198,7 +1213,9 @@ async def classify_transaction_full(
     return {"transaction_id": txn.id, "cashflow_transaction_ids": created_ids}
 
 
-def _safe_allocation_payload(allocation: SafeAllocation) -> dict[str, object]:
+def _safe_allocation_payload(
+    allocation: SafeAllocation, counterparty_name: str | None = None
+) -> dict[str, object]:
     outstanding = Decimal(allocation.amount) - Decimal(allocation.amount_paid)
     return {
         "id": allocation.id,
@@ -1208,10 +1225,24 @@ def _safe_allocation_payload(allocation: SafeAllocation) -> dict[str, object]:
         "outstanding": _money(outstanding),
         "article_id": allocation.article_id,
         "counterparty_id": allocation.counterparty_id,
+        "counterparty_name": counterparty_name,
         "purpose": allocation.purpose,
+        # Происхождение: авто-резерв, созданный оплатой черновика выплаты на карту ИП
+        # (неофициальный поставщик) — в UI помечается «из банковской выплаты».
+        "source_draft_id": allocation.source_draft_id,
         "status": allocation.status,
         "created_at": allocation.created_at,
     }
+
+
+async def _allocation_counterparty_name(
+    session: AsyncSession, allocation: SafeAllocation
+) -> str | None:
+    if allocation.counterparty_id is None:
+        return None
+    return await session.scalar(
+        select(Counterparty.name).where(Counterparty.id == allocation.counterparty_id)
+    )
 
 
 async def _safe_free_amount(session: AsyncSession, wallet: Wallet) -> Decimal:
@@ -1237,10 +1268,15 @@ async def list_safe_allocations(
     conditions = [SafeAllocation.wallet_id == wallet_id]
     if status_filter == "active":
         conditions.append(SafeAllocation.status.in_(("reserved", "partially_paid")))
-    rows = await session.scalars(
-        select(SafeAllocation).where(*conditions).order_by(SafeAllocation.created_at.desc())
-    )
-    return [_safe_allocation_payload(allocation) for allocation in rows.all()]
+    rows = (
+        await session.execute(
+            select(SafeAllocation, Counterparty.name)
+            .outerjoin(Counterparty, Counterparty.id == SafeAllocation.counterparty_id)
+            .where(*conditions)
+            .order_by(SafeAllocation.created_at.desc())
+        )
+    ).all()
+    return [_safe_allocation_payload(allocation, name) for allocation, name in rows]
 
 
 @router.post(
@@ -1283,7 +1319,9 @@ async def create_safe_allocation(
         raise HTTPException(status_code=400, detail=str(error)) from error
     await session.commit()
     await session.refresh(allocation)
-    return _safe_allocation_payload(allocation)
+    return _safe_allocation_payload(
+        allocation, await _allocation_counterparty_name(session, allocation)
+    )
 
 
 @router.post(
@@ -1326,7 +1364,9 @@ async def pay_safe_allocation(
             is_loan=disbursed_advance.kind == "loan",
             source="bank",
         )
-    return _safe_allocation_payload(allocation)
+    return _safe_allocation_payload(
+        allocation, await _allocation_counterparty_name(session, allocation)
+    )
 
 
 @router.post(
@@ -1350,7 +1390,9 @@ async def cancel_safe_allocation(
     await sync_advance_after_allocation_change(session, allocation_id=allocation.id)
     await session.commit()
     await session.refresh(allocation)
-    return _safe_allocation_payload(allocation)
+    return _safe_allocation_payload(
+        allocation, await _allocation_counterparty_name(session, allocation)
+    )
 
 
 @router.post(
@@ -1384,7 +1426,10 @@ async def withdraw_safe_cash(
     await session.commit()
     deltas = await _wallet_movement_deltas(session)
     reserved = await safe_reserved_total(session, wallet.id)
-    return _wallet_payload(wallet, deltas.get(wallet.id, Decimal("0")), None, reserved)
+    active_count = await safe_active_allocations_count(session, wallet.id)
+    return _wallet_payload(
+        wallet, deltas.get(wallet.id, Decimal("0")), None, reserved, active_count
+    )
 
 
 @router.post(
@@ -1446,12 +1491,14 @@ def _wallet_payload(
     movement_delta: Decimal = Decimal("0"),
     bank_code: str | None = None,
     reserved_total: Decimal = Decimal("0"),
+    active_allocations: int = 0,
 ) -> dict[str, object]:
     opening = _money(wallet.opening_balance)
     balance_dec = Decimal(str(wallet.opening_balance)) + movement_delta
     balance = _money(balance_dec)
     # Подотчётный Сейф несёт раскладку остатка: зарезервировано (намечено под оплаты)
-    # и свободно. Для прочих кошельков понятия резерва нет → null.
+    # и свободно, плюс число активных резервов (бейдж «N целевых» на плитке).
+    # Для прочих кошельков понятия резерва нет → null.
     is_safe = wallet.code == SAFE_WALLET_CODE
     return {
         "id": wallet.id,
@@ -1468,6 +1515,7 @@ def _wallet_payload(
         "balance": balance,
         "reserved_total": _money(reserved_total) if is_safe else None,
         "free_total": _money(balance_dec - reserved_total) if is_safe else None,
+        "active_allocations": active_allocations if is_safe else None,
     }
 
 
@@ -1517,6 +1565,7 @@ async def _article_payloads(
             "activity_type": article.activity_type,
             "parent_id": article.parent_id,
             "is_active": article.is_active,
+            "kassa_enabled": article.kassa_enabled,
             "description": article.description,
             "aliases": aliases_by_article.get(article.id, []),
         }

@@ -163,6 +163,8 @@ class DraftRead(BaseModel):
     status: str
     provider_ref: str | None
     last_error: str | None
+    # Выплата через Сейф (неофициальный поставщик): черновик выписан на карту ИП.
+    pays_via_safe: bool = False
     created_at: Any
 
 

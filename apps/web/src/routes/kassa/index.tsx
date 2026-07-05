@@ -8,12 +8,14 @@ import { PageHeader } from "@/components/ui-app/PageHeader";
 import { usePermissions } from "@/lib/permissions";
 import { CreateChequeDialog } from "@/routes/kassa/CreateChequeDialog";
 import { CreatePaymentChooser, type PaymentKind } from "@/routes/kassa/CreatePaymentChooser";
+import { KassaPayoutDialog } from "@/routes/kassa/KassaPayoutDialog";
 import { KassaInvoicesTab } from "@/routes/kassa/tabs/invoices";
+import { KassaJournalTab } from "@/routes/kassa/tabs/journal";
 import { ShiftCloseTab } from "@/routes/kassa/tabs/shift-close";
 import { CreateInvoiceDialog } from "@/routes/warehouse/CreateInvoiceDialog";
 
 type DialogMode = "chooser" | PaymentKind | null;
-type KassaTab = "shifts" | "invoices";
+type KassaTab = "shifts" | "invoices" | "journal";
 
 export function KassaRoute() {
   const permissions = usePermissions();
@@ -23,7 +25,9 @@ export function KassaRoute() {
 
   const canCreateInvoice = permissions.canPerformAction("kassa.invoices.create");
   const canCreateCheque = permissions.canPerformAction("kassa.cheques.create");
-  const canCreate = canCreateInvoice || canCreateCheque;
+  const canPayout = permissions.canPerformAction("kassa.payouts.create");
+  const canJournal = permissions.hasPermission("kassa.journal.read");
+  const canCreate = canCreateInvoice || canCreateCheque || canPayout;
 
   function invalidateAfterCreate() {
     queryClient.invalidateQueries({ queryKey: ["kassa"] });
@@ -35,7 +39,7 @@ export function KassaRoute() {
     <div className="space-y-5">
       <PageHeader
         title="Касса"
-        description="Закрытие смены iiko и создание платежей — накладных и чеков."
+        description="Закрытие смены iiko, создание платежей и кассовый журнал."
         action={
           canCreate ? (
             <Button onClick={() => setMode("chooser")}>
@@ -50,6 +54,7 @@ export function KassaRoute() {
         <TabsList>
           <TabsTrigger value="shifts">Смены</TabsTrigger>
           <TabsTrigger value="invoices">Накладные</TabsTrigger>
+          {canJournal ? <TabsTrigger value="journal">Кассовый журнал</TabsTrigger> : null}
         </TabsList>
       </Tabs>
 
@@ -63,11 +68,14 @@ export function KassaRoute() {
 
       {tab === "invoices" ? <KassaInvoicesTab canPay={canCreateInvoice} /> : null}
 
+      {tab === "journal" && canJournal ? <KassaJournalTab canPayout={canPayout} /> : null}
+
       <CreatePaymentChooser
         open={mode === "chooser"}
         onOpenChange={(open) => setMode(open ? "chooser" : null)}
         canInvoice={canCreateInvoice}
         canCheque={canCreateCheque}
+        canPayout={canPayout}
         onPick={(kind) => setMode(kind)}
       />
 
@@ -82,6 +90,17 @@ export function KassaRoute() {
         open={mode === "cheque"}
         onOpenChange={(open) => setMode(open ? "cheque" : null)}
         onCreated={invalidateAfterCreate}
+      />
+
+      <KassaPayoutDialog
+        open={mode === "payout"}
+        onOpenChange={(open) => setMode(open ? "payout" : null)}
+        onSaved={() => {
+          // Запись сразу видна в журнале — переключаем на него после создания.
+          if (canJournal) {
+            setTab("journal");
+          }
+        }}
       />
     </div>
   );

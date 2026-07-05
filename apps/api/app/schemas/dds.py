@@ -71,6 +71,8 @@ class DdsWalletRead(BaseModel):
     # Раскладка подотчётного Сейфа; null для прочих кошельков.
     reserved_total: str | None = None
     free_total: str | None = None
+    # Число активных резервов Сейфа — бейдж «N целевых» на плитке; null для прочих.
+    active_allocations: int | None = None
 
 
 class DdsAliasCreate(BaseModel):
@@ -98,6 +100,7 @@ class DdsArticleRead(BaseModel):
     activity_type: str
     parent_id: uuid.UUID | None = None
     is_active: bool
+    kassa_enabled: bool = False
     description: str | None = None
     aliases: list[DdsAliasRead] = Field(default_factory=list)
 
@@ -111,6 +114,7 @@ class DdsArticleCreate(BaseModel):
     activity_type: str
     parent_id: uuid.UUID | None = None
     is_active: bool = True
+    kassa_enabled: bool = False
     description: str | None = None
 
 
@@ -123,6 +127,7 @@ class DdsArticlePatch(BaseModel):
     activity_type: str | None = None
     parent_id: uuid.UUID | None = None
     is_active: bool | None = None
+    kassa_enabled: bool | None = None
     description: str | None = None
 
 
@@ -393,7 +398,11 @@ class SafeAllocationRead(BaseModel):
     outstanding: str
     article_id: uuid.UUID | None = None
     counterparty_id: uuid.UUID | None = None
+    # Имя контрагента-получателя (кому предназначены деньги) — для строки резерва.
+    counterparty_name: str | None = None
     purpose: str | None = None
+    # Происхождение авто-резерва: черновик выплаты на карту ИП (неофициальный поставщик).
+    source_draft_id: uuid.UUID | None = None
     status: str
     created_at: datetime
 
