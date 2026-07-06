@@ -2625,6 +2625,73 @@ export async function getDdsArticles(): Promise<DdsArticleRead[]> {
   return response.data;
 }
 
+// --- Окно «Новый платёж» (FAB): контекст формы и «просто трата» без получателя ---
+
+export type NewPaymentFlow =
+  | "expense"
+  | "employee_payout"
+  | "employee_advance"
+  | "employee_loan"
+  | "supplier_prepayment"
+  | "supplier_invoices";
+
+export type NewPaymentArticle = {
+  id: string;
+  code: string;
+  name: string;
+  flow: NewPaymentFlow;
+};
+
+export type NewPaymentWallet = {
+  id: string;
+  code: string;
+  name: string;
+  bank_code: string | null;
+};
+
+export type NewPaymentEmployee = {
+  id: string;
+  full_name: string;
+  position: string | null;
+  on_demand: boolean;
+};
+
+export type NewPaymentContext = {
+  articles: NewPaymentArticle[];
+  wallets: NewPaymentWallet[];
+  employees: NewPaymentEmployee[];
+};
+
+export type NewPaymentExpenseDraftPayload = {
+  article_id: string;
+  amount: number;
+  purpose: string;
+};
+
+export type NewPaymentExpenseDraft = {
+  id: string;
+  amount: number;
+  status: string;
+  provider_ref: string | null;
+  last_error: string | null;
+  created_at: string;
+};
+
+export async function getNewPaymentContext(): Promise<NewPaymentContext> {
+  const response = await api.get<NewPaymentContext>("/dds/new-payment/context");
+  return response.data;
+}
+
+export async function createNewPaymentExpenseDraft(
+  payload: NewPaymentExpenseDraftPayload,
+): Promise<NewPaymentExpenseDraft> {
+  const response = await api.post<NewPaymentExpenseDraft>(
+    "/dds/new-payment/expense-draft",
+    payload,
+  );
+  return response.data;
+}
+
 export async function createDdsArticle(payload: DdsArticleCreate): Promise<DdsArticleRead> {
   const response = await api.post<DdsArticleRead>("/dds/articles", payload);
   return response.data;

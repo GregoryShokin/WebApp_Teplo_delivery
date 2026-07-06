@@ -34,6 +34,7 @@ from app.services.banking import BankClient, TbankClient
 from app.services.banking.exceptions import BankFetchError
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.counterparty_matching import _invoice_remaining, _recompute_status
+from app.services.new_payment import ensure_expense_article_allowed
 
 MOCK_PAYER_ACCOUNT = "00000000000000000000"
 DRAFTABLE_STATUSES = frozenset({"unpaid", "partially_paid"})
@@ -359,6 +360,97 @@ async def create_standalone_payment_draft(
             document_id=document_id,
             amount=total,
             purpose=purpose,
+            requisites=requisites,
+            payer_account=payer_account,
+        )
+    except BankFetchError as exc:
+        draft.status = "failed"
+        draft.payload = payload
+        draft.last_error = str(exc)
+        session.add(draft)
+        await session.commit()
+        raise
+
+    draft.status = _safe_status(result.status)
+    draft.provider_ref = result.provider_ref
+    draft.payload = payload
+    draft.synced_at = datetime.now(tz=UTC)
+    session.add(draft)
+    await session.commit()
+    await session.refresh(draft)
+    return draft
+
+
+async def create_expense_payment_draft(
+    session: AsyncSession,
+    *,
+    article_id: uuid.UUID,
+    amount: Decimal,
+    purpose: str,
+    actor_user_id: uuid.UUID | None = None,
+    bank_client: BankClient | None = None,
+) -> CounterpartyPaymentDraft:
+    """Черновик «просто траты» без получателя — свободный вывод на Сейф по статье.
+
+    Окно «Новый платёж», статья без собственного контура (аренда, хозрасходы…):
+    платёж уходит на карту ИП (реквизиты зарплатных выплат), контрагента и накладных
+    у черновика нет. При статусе «исполнен» ``apply_payment_status`` заводит транзит
+    р/с→Сейф и целёвку ЦЕЛЕВОЙ статьи с назначением из формы
+    (``target_article_id``/``target_purpose``) — её можно оплатить с Сейфа или
+    передать в кассу на выдачу. При отказе банка целёвки нет.
+    """
+    total = _money(amount)
+    if total <= 0:
+        raise CounterpartyPaymentError("Сумма платежа должна быть больше нуля")
+    purpose_clean = " ".join((purpose or "").split())
+    if not purpose_clean:
+        raise CounterpartyPaymentError("Укажите назначение платежа")
+
+    article = await session.get(DdsArticle, article_id)
+    if article is None:
+        raise CounterpartyPaymentError("Статья ДДС не найдена")
+    try:
+        ensure_expense_article_allowed(article)
+    except ValueError as exc:
+        raise CounterpartyPaymentError(str(exc)) from exc
+
+    settings = get_settings()
+    payer_account = _payer_account(settings)
+    requisites = await _ip_card_requisites(session)
+
+    draft = CounterpartyPaymentDraft(
+        id=uuid.uuid4(),
+        counterparty_id=None,
+        document_id="",
+        amount=total,
+        status="created",
+        pays_via_safe=True,
+        target_article_id=article.id,
+        target_purpose=purpose_clean,
+        created_by_user_id=actor_user_id,
+    )
+    document_id = f"teplo-cp-{draft.id}"
+    draft.document_id = document_id[:64]
+    # Перевод на собственную карту ИП — без НДС-блока (как у informal-закупа).
+    bank_purpose = purpose_clean[:210]
+
+    try:
+        payload = build_payment_draft_api_payload(
+            document_id=document_id,
+            amount=total,
+            purpose=bank_purpose,
+            requisites=requisites,
+            payer_account=payer_account,
+        )
+    except ValueError as exc:
+        raise CounterpartyPaymentError(f"Реквизиты неполны: {exc}") from exc
+
+    client = bank_client or TbankClient(session)
+    try:
+        result = await client.create_payment_draft(
+            document_id=document_id,
+            amount=total,
+            purpose=bank_purpose,
             requisites=requisites,
             payer_account=payer_account,
         )

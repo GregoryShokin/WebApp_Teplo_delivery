@@ -91,7 +91,8 @@ export type AppAction =
   | "kassa.adjustments.create"
   | "kassa.penalty.waive"
   | "kassa.payouts.create"
-  | "kds.queue.write";
+  | "kds.queue.write"
+  | "payments.create";
 
 const SOURCE_DATA_TAB_READ_PERMISSIONS = [
   "source.rates.read",
@@ -368,6 +369,17 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "kassa.penalty.waive": ["kassa.penalty.waive"],
   "kassa.payouts.create": ["kassa.payouts.create"],
   "kds.queue.write": ["kds.queue.write"],
+  // Окно «Новый платёж» (FAB): видно при любом из прав его маршрутов — список
+  // зеркалит NEW_PAYMENT_PERMISSION_CODES бэкенда (services/new_payment.py).
+  // Права займов здесь нет: займ требует ещё и issue-права авансов (см. бэкенд),
+  // а пользователь с одним правом займов не создаст в окне ни одного платежа.
+  "payments.create": [
+    "finance.safe.allocate",
+    "payroll.employee_payouts.create",
+    "payroll.advances.admin.issue",
+    "payroll.advances.production.issue",
+    "invoices.normal.pay",
+  ],
 };
 
 const LEGACY_PERMISSION_ALIASES: Record<PermissionCode, readonly PermissionCode[]> = {

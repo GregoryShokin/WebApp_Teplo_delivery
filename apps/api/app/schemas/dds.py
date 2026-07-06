@@ -436,6 +436,68 @@ class SafeReconcileRead(BaseModel):
     adjusted: bool  # проведена ли корректирующая проводка
 
 
+class NewPaymentArticleRead(BaseModel):
+    """Статья селекта окна «Новый платёж» + её маршрут (какие поля достраивать)."""
+
+    id: uuid.UUID
+    code: str
+    name: str
+    flow: Literal[
+        "expense",
+        "employee_payout",
+        "employee_advance",
+        "employee_loan",
+        "supplier_prepayment",
+        "supplier_invoices",
+    ]
+
+
+class NewPaymentWalletRead(BaseModel):
+    """Счёт списания (активный банковский кошелёк); ``bank_code`` — банк счёта."""
+
+    id: uuid.UUID
+    code: str
+    name: str
+    bank_code: str | None = None
+
+
+class NewPaymentEmployeeRead(BaseModel):
+    """Сотрудник для маршрутов выплат/авансов; ``on_demand`` — режим «по востребованию»."""
+
+    id: uuid.UUID
+    full_name: str
+    position: str | None = None
+    on_demand: bool
+
+
+class NewPaymentContextRead(BaseModel):
+    articles: list[NewPaymentArticleRead]
+    wallets: list[NewPaymentWalletRead]
+    employees: list[NewPaymentEmployeeRead]
+
+
+class NewPaymentExpenseDraftCreate(BaseModel):
+    """«Просто трата» без получателя: банковский черновик на карту ИП с целевой статьёй."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    article_id: uuid.UUID
+    amount: Decimal = Field(gt=0)
+    # Назначение уходит в банк (лимит платёжки) и в purpose будущей целёвки Сейфа.
+    purpose: str = Field(min_length=1, max_length=210)
+
+
+class NewPaymentExpenseDraftRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    amount: float
+    status: str
+    provider_ref: str | None = None
+    last_error: str | None = None
+    created_at: datetime
+
+
 class JournalRow(BaseModel):
     """One line of the unified DDS journal — a classified cashflow movement
     (``kind="cashflow"``) or an unclassified bank operation (``kind="operation"``)."""

@@ -216,8 +216,10 @@ class CounterpartyPaymentDraft(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    counterparty_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("counterparty.id", ondelete="RESTRICT"), nullable=False
+    # NULL — черновик «просто траты» без получателя (свободный вывод на Сейф по статье,
+    # окно «Новый платёж»): деньги уходят на карту ИП, контрагента у платежа нет.
+    counterparty_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("counterparty.id", ondelete="RESTRICT"), nullable=True
     )
     document_id: Mapped[str] = mapped_column(String(64), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
@@ -241,6 +243,14 @@ class CounterpartyPaymentDraft(Base):
     pays_via_safe: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Свободный вывод на Сейф по статье (окно «Новый платёж», статья без получателя):
+    # целевая статья и назначение авто-целёвки, которую заводит paid-переход вместо
+    # жёстких «Оплата поставщикам» + purpose из накладных. Заполнены только у
+    # via-safe черновиков «просто траты» (counterparty_id IS NULL, накладных нет).
+    target_article_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("dds_articles.id", ondelete="SET NULL"), nullable=True
+    )
+    target_purpose: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )

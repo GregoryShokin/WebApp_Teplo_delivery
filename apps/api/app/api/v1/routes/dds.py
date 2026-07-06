@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
     CurrentActor,
+    ensure_any_permission,
     ensure_permission,
     get_current_actor,
     require_permission,
@@ -25,6 +26,7 @@ from app.models import (
     ClassificationRule,
     Counterparty,
     CounterpartyAlias,
+    CounterpartyPaymentDraft,
     DdsArticle,
     DdsArticleAlias,
     ReconciliationCase,
@@ -56,6 +58,9 @@ from app.schemas.dds import (
     DdsCounterpartyRead,
     DdsWalletRead,
     JournalListRead,
+    NewPaymentContextRead,
+    NewPaymentExpenseDraftCreate,
+    NewPaymentExpenseDraftRead,
     OperationClassifyRead,
     OperationClassifyRequest,
     OwnerReviewActionRead,
@@ -100,11 +105,20 @@ from app.services.banking.safe_allocations import (
     safe_reserved_total,
     transfer_allocation_to_kassa,
 )
+from app.services.banking import BankCredentialsError, BankFetchError
 from app.services.banking.transfer_matching import find_and_link_transfer_pairs
+from app.services.counterparty_payments import (
+    CounterpartyPaymentError,
+    create_expense_payment_draft,
+)
 from app.services.kassa.payouts import (
     KassaPayoutError,
     ensure_article_kassa_eligible,
     kassa_pending_payload,
+)
+from app.services.new_payment import (
+    NEW_PAYMENT_PERMISSION_CODES,
+    build_new_payment_context,
 )
 from app.services.payroll_advance_service import (
     list_kassa_pending_advances,
@@ -547,6 +561,55 @@ async def list_articles(
 ) -> list[dict[str, object]]:
     result = await session.scalars(select(DdsArticle).order_by(DdsArticle.code))
     return await _article_payloads(session, result.all())
+
+
+@router.get("/new-payment/context", response_model=NewPaymentContextRead)
+async def get_new_payment_context(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, object]:
+    """Контекст окна «Новый платёж»: статьи (по правам пользователя), счета, сотрудники.
+
+    Свой справочник вместо ``/dds/articles``+``/dds/wallets``: окно доступно и без
+    прав чтения ДДС (например, менеджеру с правом оплаты накладных), а фильтрация
+    статей по маршрутам/правам делается на бэке — фронт только рендерит.
+    """
+    ensure_any_permission(actor, NEW_PAYMENT_PERMISSION_CODES)
+    return await build_new_payment_context(session, permissions=actor.permissions)
+
+
+@router.post(
+    "/new-payment/expense-draft",
+    response_model=NewPaymentExpenseDraftRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=DDS_SAFE_ALLOCATE_ACCESS,
+)
+async def post_new_payment_expense_draft(
+    payload: NewPaymentExpenseDraftCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> CounterpartyPaymentDraft:
+    """«Просто трата» без получателя: черновик на карту ИП с целевой статьёй/назначением.
+
+    Право — как у ручного резерва Сейфа (``finance.safe.allocate``): итог оплаты
+    черновика — та же целёвка, только пополненная транзитом с р/с. Подтверждение
+    всегда в банке; проводки и целёвку создаёт вебхук-контур (paid-переход).
+    """
+    try:
+        return await create_expense_payment_draft(
+            session,
+            article_id=payload.article_id,
+            amount=payload.amount,
+            purpose=payload.purpose,
+            actor_user_id=actor.user_id,
+        )
+    except CounterpartyPaymentError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except BankCredentialsError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    except BankFetchError as exc:
+        # Черновик уже сохранён со status='failed' — отдаём причину, а не голый 500.
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 @router.post(

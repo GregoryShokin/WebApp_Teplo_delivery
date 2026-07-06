@@ -11,23 +11,33 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { usePermissions } from "@/lib/permissions";
-import { CreatePrepaymentDialog } from "@/routes/counterparties/CreatePrepaymentDialog";
-import { CreateEmployeePayoutDialog } from "@/routes/payroll/create-employee-payout-dialog";
+import { NewPaymentDialog } from "@/routes/dds/NewPaymentDialog";
+
+// Пресеты окна «Новый платёж»: пункт FAB открывает окно с предвыбранной статьёй.
+const PRESET_SUPPLIER_PREPAYMENT = "advance_to_supplier";
+const PRESET_EMPLOYEE_PAYOUT = "zarplata_administrativnogo_personala";
 
 /**
  * Кроссстраничная плавающая кнопка «+»: всплывающее меню действий над кнопкой (стопкой).
  * Пункты показываются по правам; кнопка скрыта, если ни одно действие недоступно.
+ * Все пункты ведут в единое окно «Новый платёж» (драйвер — статья ДДС).
  */
 export function GlobalActionFab() {
   const permissions = usePermissions();
+  const canNewPayment = permissions.canPerformAction("payments.create");
   const canPrepay = permissions.canPerformAction("invoices.normal.pay");
   const canEmployeePayout = permissions.canPerformAction("payroll.employee_payouts.create");
 
-  const [prepayOpen, setPrepayOpen] = useState(false);
-  const [payoutOpen, setPayoutOpen] = useState(false);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [presetArticleCode, setPresetArticleCode] = useState<string | null>(null);
 
-  if (!canPrepay && !canEmployeePayout) {
+  if (!canNewPayment) {
     return null;
+  }
+
+  function openPayment(preset: string | null) {
+    setPresetArticleCode(preset);
+    setPaymentOpen(true);
   }
 
   return (
@@ -47,29 +57,27 @@ export function GlobalActionFab() {
         <DropdownMenuContent align="end" className="w-60" side="top" sideOffset={12}>
           <DropdownMenuLabel>Создать</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem disabled>
+          <DropdownMenuItem onSelect={() => openPayment(null)}>
             Создать новый платёж
-            <span className="ml-auto text-xs text-muted-foreground">скоро</span>
           </DropdownMenuItem>
           {canPrepay ? (
-            <DropdownMenuItem onSelect={() => setPrepayOpen(true)}>
+            <DropdownMenuItem onSelect={() => openPayment(PRESET_SUPPLIER_PREPAYMENT)}>
               Создать аванс поставщику
             </DropdownMenuItem>
           ) : null}
           {canEmployeePayout ? (
-            <DropdownMenuItem onSelect={() => setPayoutOpen(true)}>
+            <DropdownMenuItem onSelect={() => openPayment(PRESET_EMPLOYEE_PAYOUT)}>
               Создать выплату сотруднику
             </DropdownMenuItem>
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {canPrepay ? (
-        <CreatePrepaymentDialog onOpenChange={setPrepayOpen} open={prepayOpen} />
-      ) : null}
-      {canEmployeePayout ? (
-        <CreateEmployeePayoutDialog onOpenChange={setPayoutOpen} open={payoutOpen} />
-      ) : null}
+      <NewPaymentDialog
+        onOpenChange={setPaymentOpen}
+        open={paymentOpen}
+        presetArticleCode={presetArticleCode}
+      />
     </>
   );
 }

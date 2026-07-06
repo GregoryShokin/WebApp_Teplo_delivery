@@ -33,6 +33,7 @@ from app.services.banking.classifier import (
     TRANSFER_OUT_ARTICLE_CODE,
 )
 from app.services.banking.exceptions import BankFetchError
+from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.payroll_calculator import decimal
 from app.services.payroll_payouts import _bank_payout_requisites, _payer_account
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
@@ -104,7 +105,7 @@ async def create_cash_employee_payout(
     if wallet.type not in CASH_PAYOUT_WALLET_TYPES:
         raise PayrollConflictError(
             "С банковского счёта выплата проводится через черновик и Сейф — "
-            "используйте «Создать выплату сотруднику» из плавающей кнопки"
+            "используйте окно «Новый платёж» из плавающей кнопки"
         )
 
     if article_id is not None:

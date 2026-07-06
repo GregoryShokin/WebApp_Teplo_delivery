@@ -157,7 +157,8 @@ class DraftRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    counterparty_id: uuid.UUID
+    # None — черновик «просто траты» без получателя (окно «Новый платёж», 0161).
+    counterparty_id: uuid.UUID | None = None
     document_id: str
     amount: float
     status: str
@@ -1094,7 +1095,13 @@ async def post_draft(
 async def post_cancel_draft(
     draft_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> None:
+    # Черновик «просто траты» (без контрагента) — из финансового контура: отменять
+    # его правом контрагентского оператора нельзя, нужен уровень создателя.
+    draft = await session.get(CounterpartyPaymentDraft, draft_id)
+    if draft is not None and draft.counterparty_id is None:
+        ensure_permission(actor, "finance.safe.allocate")
     try:
         await payments.cancel_payment_draft(session, draft_id=draft_id)
     except payments.CounterpartyPaymentError as exc:

@@ -93,8 +93,13 @@ async def _settle_draft_via_safe(
     article_id: uuid.UUID | None,
     operation_date: date,
 ) -> None:
-    """Оплата черновика «через Сейф» (неофициальный поставщик): вместо расхода «Оплата
-    поставщикам» — транзит р/с→Сейф + целевой резерв Сейфа на поставщика.
+    """Оплата черновика «через Сейф» (платёж на карту ИП): вместо расхода по статье —
+    транзит р/с→Сейф + целевой резерв Сейфа.
+
+    Два случая: неофициальный поставщик (резерв «Оплата поставщикам» на контрагента,
+    purpose — из назначения платежа по накладным) и «просто трата» без получателя
+    (окно «Новый платёж»: резерв ЦЕЛЕВОЙ статьи черновика ``target_article_id`` с
+    назначением ``target_purpose``, контрагента нет).
 
     Расход по статье случится позже, при выплате резерва (``pay_allocation``). Идемпотентно:
     транзит — по (source_kind, source_id = черновик), резерв — по ``source_draft_id``
@@ -124,7 +129,9 @@ async def _settle_draft_via_safe(
                 provider="tbank",
                 payload={
                     "draft_id": str(draft.id),
-                    "counterparty_id": str(draft.counterparty_id),
+                    "counterparty_id": (
+                        str(draft.counterparty_id) if draft.counterparty_id else None
+                    ),
                     "amount": str(draft.amount),
                     "reason": "Кошелёк «Сейф» не найден — перевод и целевой резерв не заведены",
                 },
@@ -133,7 +140,8 @@ async def _settle_draft_via_safe(
         return
 
     purpose = (
-        str((draft.payload or {}).get("paymentPurpose") or "").strip()
+        (draft.target_purpose or "").strip()
+        or str((draft.payload or {}).get("paymentPurpose") or "").strip()
         or "Закуп у неофициального поставщика"
     )
 
@@ -200,7 +208,9 @@ async def _settle_draft_via_safe(
             wallet_id=safe_wallet.id,
             amount=draft.amount,
             free_amount=None,
-            article_id=article_id,
+            # «Просто трата» несёт целевую статью в черновике; неофициальный закуп —
+            # дефолтную «Оплата поставщикам» (расход признается при выплате резерва).
+            article_id=draft.target_article_id or article_id,
             counterparty_id=draft.counterparty_id,
             purpose=purpose,
             source_draft_id=draft.id,
@@ -313,7 +323,9 @@ async def apply_payment_status(
         )
         draft_invoices = await _draft_invoices(session, draft.id)
         op_date = operation_date or datetime.now(UTC).date()
-        if bank_wallet is None and (draft_invoices or draft.creates_prepayment):
+        if bank_wallet is None and (
+            draft_invoices or draft.creates_prepayment or draft.pays_via_safe
+        ):
             # Не нашли банк-кошелёк плательщика (счёт из тела черновика/настроек не привязан к
             # активному bank-Wallet). Платёж всё равно фиксируем — деньги УЖЕ ушли из банка,
             # блокировать нельзя; но prebooked-проводку ДДС завести не на чем. Громкий лог +
@@ -341,7 +353,9 @@ async def apply_payment_status(
                     provider="tbank",
                     payload={
                         "draft_id": str(draft.id),
-                        "counterparty_id": str(draft.counterparty_id),
+                        "counterparty_id": (
+                            str(draft.counterparty_id) if draft.counterparty_id else None
+                        ),
                         "amount": str(draft.amount),
                         "reason": "Не определён банк-счёт плательщика — проводка ДДС не заведена",
                     },
