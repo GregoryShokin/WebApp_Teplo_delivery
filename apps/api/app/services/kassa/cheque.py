@@ -1279,7 +1279,12 @@ async def match_card_refund_operations(session: AsyncSession) -> int:
         )
     ).all()
     matched = 0
-    for refund in refund_rows:
+    for refund_row in refund_rows:
+        # Блокируем строку и перечитываем под локом: закрывает гонку с apply_card_refund_case
+        # (ручной «Учесть возврат») — иначе оба могли бы учесть один возврат дважды.
+        refund = await session.get(BankOperation, refund_row.id, with_for_update=True)
+        if refund is None or refund.cashflow_transaction_id is not None:
+            continue
         status, targets = await _match_refund(session, refund)
         if status == "unique":
             invoice, purchase, _out = targets[0]
@@ -1289,10 +1294,14 @@ async def match_card_refund_operations(session: AsyncSession) -> int:
 
 
 async def _resolve_target_cheque(
-    session: AsyncSession, case: ReconciliationCase, invoice_id: uuid.UUID | None
+    session: AsyncSession, case: ReconciliationCase, invoice_id: uuid.UUID | None, amount: Decimal
 ) -> tuple[SupplierInvoice, BankOperation] | None:
     """Определить чек, к которому «Учесть возврат» привяжет возврат: явный выбор оператора
-    (invoice_id) либо единственный кандидат из payload. None — сирота (проводим отдельно)."""
+    (invoice_id) либо единственный кандидат из payload. None — сирота (проводим отдельно).
+
+    Проверяет АКТУАЛЬНОЕ состояние (payload кейса — снимок и мог устареть): выбранный чек
+    обязан быть среди кандидатов кейса И иметь остаток ожидания ≥ суммы возврата (иначе
+    «Учесть» переполнил бы ожидание чека / потерял бы возврат другого)."""
     chosen: str | None = str(invoice_id) if invoice_id else None
     if chosen is None:
         candidates = (case.payload or {}).get("candidates") or []
@@ -1300,11 +1309,9 @@ async def _resolve_target_cheque(
             chosen = str(candidates[0].get("invoice_id"))
     if not chosen:
         return None
-    # Оператор мог выбрать только чек из списка кандидатов кейса (защита от произвольного id).
-    allowed = {
-        str(c.get("invoice_id")) for c in ((case.payload or {}).get("candidates") or [])
-    }
-    if allowed and chosen not in allowed:
+    # Выбрать можно ТОЛЬКО чек из кандидатов кейса (в т.ч. запрещает выбор при 0 кандидатов).
+    allowed = {str(c.get("invoice_id")) for c in ((case.payload or {}).get("candidates") or [])}
+    if chosen not in allowed:
         raise KassaChequeError("Выбранный чек не относится к этому возврату")
     invoice = await session.get(SupplierInvoice, uuid.UUID(chosen))
     if invoice is None or invoice.source != "kassa_cheque":
@@ -1312,6 +1319,13 @@ async def _resolve_target_cheque(
     purchase = await _cheque_purchase_op(session, invoice.id)
     if purchase is None or purchase.cashflow_transaction_id is None:
         return None
+    # Пере-проверяем остаток по актуальным данным (кандидат мог быть погашен другим возвратом).
+    expected = await _cheque_expected_refund(session, invoice.id)
+    outstanding = expected - await _attached_refund_total(session, purchase.cashflow_transaction_id)
+    if amount > outstanding:
+        raise KassaChequeError(
+            "Выбранный чек уже получил ожидаемый возврат — выберите другой чек"
+        )
     return invoice, purchase
 
 
@@ -1345,7 +1359,7 @@ async def apply_card_refund_case(
         )
         return {"transaction_id": refund.cashflow_transaction_id, "already_linked": True}
 
-    target = await _resolve_target_cheque(session, case, invoice_id)
+    target = await _resolve_target_cheque(session, case, invoice_id, _money(abs(refund.amount)))
     if target is not None:
         # Привязка к чеку: гасит ожидание, чек уже проведён net — новую проводку НЕ заводим.
         invoice, purchase = target
@@ -1481,6 +1495,9 @@ async def escalate_missing_cheque_refunds(
         created += 1
 
     # (б) Возвраты, пришедшие раньше порога и всё ещё не сматченные однозначно с чеком.
+    # operation_date — только дата (без времени), поэтому берём порог на день СТРОЖЕ
+    # (moment − (N+1) дней), чтобы точно прошло ≥ N суток и не эскалировать раньше срока.
+    stale_before = (moment - timedelta(days=await get_refund_wait_alert_days(session) + 1)).date()
     stale_refunds = (
         await session.scalars(
             select(BankOperation).where(
@@ -1489,7 +1506,7 @@ async def escalate_missing_cheque_refunds(
                 BankOperation.cashflow_transaction_id.is_(None),
                 BankOperation.transfer_group_id.is_(None),
                 BankOperation.raw_payload["category"].astext == TBANK_REFUND_CATEGORY,
-                BankOperation.operation_date <= cutoff.date(),
+                BankOperation.operation_date <= stale_before,
             )
         )
     ).all()

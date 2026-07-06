@@ -561,3 +561,120 @@ async def test_goods_split_excludes_returned_lines(
         card_share, cash_share = split
         assert card_share == Decimal("5500.00")
         assert cash_share == Decimal("0.00")
+
+
+# --- Закалка по адверс-ревью: over-attach, пустой allowed, API-роут с invoice_id ----------
+
+
+async def test_apply_rejects_when_chosen_cheque_already_refunded(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Два чека по 500, два возврата по 500 → два ambiguous-кейса. Учли r1→A (A погашен);
+    # попытка учесть r2 тоже в A отклоняется (остаток A уже 0), возврат B не теряется.
+    async with async_session_factory() as session:
+        article = await make_expense_article(session, code="personal", name="Расходы на персонал")
+        account, wallet, op1 = await _purchase_op(session, amount="1000.00")
+        _, _, op2 = await _purchase_op(session, amount="1000.00", account=account, wallet=wallet)
+        await session.commit()
+        cheque_a = await _net_cheque(session, op1, article=article, ret="500.00", keep="500.00")
+        r1 = await _refund_op(session, account.id, amount="500.00")
+        r2 = await _refund_op(session, account.id, amount="500.00")
+        await session.flush()
+        await _net_cheque(session, op2, article=article, ret="500.00", keep="500.00")
+
+        future = datetime.now(UTC) + timedelta(days=10)
+        await escalate_missing_cheque_refunds(session, now=future)
+        await session.flush()
+        cases = await _pending_cases(session, CARD_REFUND_CASE_KIND)
+        assert len(cases) == 2
+
+        c1 = next(c for c in cases if c.bank_operation_id == r1.id)
+        await apply_card_refund_case(session, c1, invoice_id=cheque_a.id)
+        await session.flush()
+
+        c2 = next(c for c in cases if c.bank_operation_id == r2.id)
+        with pytest.raises(KassaChequeError, match="уже получил"):
+            await apply_card_refund_case(session, c2, invoice_id=cheque_a.id)
+
+
+async def test_apply_rejects_invoice_not_among_candidates(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # no_matching-кейс (сумму никто не ждёт) → кандидатов нет → любой invoice_id отклоняется.
+    async with async_session_factory() as session:
+        article = await make_expense_article(session, code="personal", name="Расходы на персонал")
+        account, wallet, op1 = await _purchase_op(session, amount="6000.00")
+        _, _, op2 = await _purchase_op(session, amount="1000.00", account=account, wallet=wallet)
+        await session.commit()
+        await _gross_cheque(session, op1, article=article)  # ждёт 0
+        other = await _net_cheque(session, op2, article=article, ret="500.00", keep="500.00")
+        # 800 не вписывается ни в один чек (other ждёт 500 < 800) → no_matching.
+        refund = await _refund_op(session, account.id, amount="800.00")
+        await session.flush()
+        future = datetime.now(UTC) + timedelta(days=10)
+        await escalate_missing_cheque_refunds(session, now=future)
+        await session.flush()
+        case = next(
+            c
+            for c in await _pending_cases(session, CARD_REFUND_CASE_KIND)
+            if c.bank_operation_id == refund.id
+        )
+        assert case.payload["reason"] == "no_matching_cheque"
+        with pytest.raises(KassaChequeError, match="не относится"):
+            await apply_card_refund_case(session, case, invoice_id=other.id)
+
+
+def test_apply_card_refund_route_forwards_invoice_id(
+    client, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    # РЕГРЕСС: HTTP-роут ДОЛЖЕН пробросить invoice_id → ambiguous с выбором A привязывает
+    # возврат к проводке A (а не заводит оторванную проводку).
+    import asyncio
+
+    async def _setup() -> tuple[str, str, object, object]:
+        async with async_session_factory() as session:
+            article = await make_expense_article(
+                session, code="personal", name="Расходы на персонал"
+            )
+            account, wallet, op1 = await _purchase_op(session, amount="1000.00")
+            _, _, op2 = await _purchase_op(session, amount="1000.00", account=account, wallet=wallet)
+            await session.commit()
+            cheque_a = await _net_cheque(session, op1, article=article, ret="500.00", keep="500.00")
+            await _net_cheque(session, op2, article=article, ret="500.00", keep="500.00")
+            refund = await _refund_op(session, account.id, amount="500.00")
+            await session.commit()
+            future = datetime.now(UTC) + timedelta(days=10)
+            await escalate_missing_cheque_refunds(session, now=future)
+            await session.commit()
+            case = (
+                await session.scalars(
+                    select(ReconciliationCase).where(
+                        ReconciliationCase.kind == CARD_REFUND_CASE_KIND,
+                        ReconciliationCase.status == "pending",
+                        ReconciliationCase.bank_operation_id == refund.id,
+                    )
+                )
+            ).first()
+            return str(case.id), str(cheque_a.id), refund.id, op1.id
+
+    case_id, cheque_a_id, refund_id, op1_id = asyncio.run(_setup())
+    resp = client.post(
+        f"/api/v1/dds/owner-review/{case_id}/apply-card-refund",
+        headers={"X-User-Role": "admin"},
+        params={"invoice_id": cheque_a_id},
+    )
+    assert resp.status_code == 200, resp.text
+
+    async def _check() -> tuple[object, object, str]:
+        async with async_session_factory() as session:
+            refund = await session.get(BankOperation, refund_id)
+            op1 = await session.get(BankOperation, op1_id)
+            return (
+                refund.cashflow_transaction_id,
+                op1.cashflow_transaction_id,
+                refund.classification_status,
+            )
+
+    ref_txn, op_txn, cls = asyncio.run(_check())
+    assert ref_txn is not None and ref_txn == op_txn  # привязан к проводке чека A, не сирота
+    assert cls == "classified"

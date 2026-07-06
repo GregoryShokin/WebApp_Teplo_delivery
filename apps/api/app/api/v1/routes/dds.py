@@ -1122,17 +1122,19 @@ async def dismiss_owner_review_case(
 async def apply_card_refund_owner_review_case(
     case_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
+    invoice_id: UUID | None = None,
 ) -> dict[str, object]:
     """«Учесть возврат» по кейсу «возврат по проведённому чеку».
 
-    Книжит входящую проводку «Возврат расходов» по операции возврата (история чека и
-    iiko не мутируются), привязывает операцию и закрывает кейс.
+    Если возврат относится к конкретному чеку (единственный кандидат или явно выбранный
+    ``invoice_id`` при неоднозначности) — привязывает возврат к чеку и гасит его ожидание.
+    Иначе (сирота) — заводит входящую проводку «Возврат расходов». Чек и iiko не мутируются.
     """
     case = await _pending_case_or_404(session, case_id)
     from app.services.kassa.cheque import KassaChequeError, apply_card_refund_case
 
     try:
-        await apply_card_refund_case(session, case)
+        await apply_card_refund_case(session, case, invoice_id=invoice_id)
     except KassaChequeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await session.commit()
