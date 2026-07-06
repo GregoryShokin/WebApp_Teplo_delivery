@@ -1164,11 +1164,16 @@ async def _attach_refund_to_cheque(
     invoice: SupplierInvoice,
     purchase: BankOperation,
 ) -> None:
-    """Привязать возврат к проводке чека: classified + закрыть pending-кейсы по нему/чеку."""
+    """Привязать возврат к проводке чека: classified + закрыть кейсы по нему; missing-кейс
+    чека гасим ТОЛЬКО когда ожидание закрыто полностью (частичный возврат — ещё ждём остаток)."""
     refund.cashflow_transaction_id = purchase.cashflow_transaction_id
     refund.classification_status = "classified"
+    await session.flush()  # чтобы _attached_refund_total увидел эту привязку
     await _resolve_refund_op_cases(session, refund.id)
-    await _resolve_refund_missing_cases(session, purchase.id)
+    expected = await _cheque_expected_refund(session, invoice.id)
+    outstanding = expected - await _attached_refund_total(session, purchase.cashflow_transaction_id)
+    if outstanding <= 0:
+        await _resolve_refund_missing_cases(session, purchase.id)
 
 
 async def _attach_matching_refunds_for_cheque(
@@ -1366,7 +1371,12 @@ async def apply_card_refund_case(
         await _attach_refund_to_cheque(session, refund, invoice, purchase)
         return {"linked_invoice_id": str(invoice.id), "already_linked": False}
 
-    # Сирота: отдельная входящая проводка «Возврат расходов».
+    # Неоднозначность (несколько кандидатов), но чек не выбран — НЕ уходим в сироту молча
+    # (иначе ожидания чеков не погасятся, а возврат ляжет как чужой доход). Требуем выбор.
+    if (case.payload or {}).get("candidates"):
+        raise KassaChequeError("Выберите чек, к которому относится возврат")
+
+    # Сирота (кандидатов нет): отдельная входящая проводка «Возврат расходов».
     wallet = await _wallet_for_operation(session, refund)
     if wallet is None:
         raise KassaChequeError("Не удалось определить счёт по операции возврата")

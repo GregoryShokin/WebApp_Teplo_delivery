@@ -597,6 +597,62 @@ async def test_apply_rejects_when_chosen_cheque_already_refunded(
             await apply_card_refund_case(session, c2, invoice_id=cheque_a.id)
 
 
+async def test_apply_ambiguous_without_selection_rejected(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # «Учесть возврат» на неоднозначном кейсе БЕЗ выбора чека → отказ (не молчаливая сирота).
+    async with async_session_factory() as session:
+        article = await make_expense_article(session, code="personal", name="Расходы на персонал")
+        account, wallet, op1 = await _purchase_op(session, amount="1000.00")
+        _, _, op2 = await _purchase_op(session, amount="1000.00", account=account, wallet=wallet)
+        await session.commit()
+        await _net_cheque(session, op1, article=article, ret="500.00", keep="500.00")
+        await _net_cheque(session, op2, article=article, ret="500.00", keep="500.00")
+        refund = await _refund_op(session, account.id, amount="500.00")
+        await session.flush()
+        future = datetime.now(UTC) + timedelta(days=10)
+        await escalate_missing_cheque_refunds(session, now=future)
+        await session.flush()
+        case = next(
+            c
+            for c in await _pending_cases(session, CARD_REFUND_CASE_KIND)
+            if c.bank_operation_id == refund.id
+        )
+        with pytest.raises(KassaChequeError, match="Выберите чек"):
+            await apply_card_refund_case(session, case)  # invoice_id не задан
+        await session.refresh(refund)
+        assert refund.cashflow_transaction_id is None  # ничего не учли молча
+
+
+async def test_partial_refund_keeps_missing_case_until_full(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Частичный возврат НЕ гасит missing-кейс, пока ожидание не закрыто полностью.
+    async with async_session_factory() as session:
+        article = await make_expense_article(session, code="personal", name="Расходы на персонал")
+        account, _, op = await _purchase_op(session, amount="6000.00")
+        await session.commit()
+        await _net_cheque(session, op, article=article)  # ждёт 500
+
+        future = datetime.now(UTC) + timedelta(days=10)
+        await escalate_missing_cheque_refunds(session, now=future)
+        await session.flush()
+        assert len(await _pending_cases(session, REFUND_MISSING_CASE_KIND)) == 1
+
+        await _refund_op(session, account.id, amount="300.00")
+        await session.flush()
+        assert await match_card_refund_operations(session) == 1
+        await session.flush()
+        # 200 ещё ждём → missing-кейс НЕ закрыт.
+        assert len(await _pending_cases(session, REFUND_MISSING_CASE_KIND)) == 1
+
+        await _refund_op(session, account.id, amount="200.00")
+        await session.flush()
+        assert await match_card_refund_operations(session) == 1
+        await session.flush()
+        assert await _pending_cases(session, REFUND_MISSING_CASE_KIND) == []
+
+
 async def test_apply_rejects_invoice_not_among_candidates(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

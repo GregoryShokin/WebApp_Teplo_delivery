@@ -191,7 +191,7 @@ function OwnerReviewCard({
       applyCardRefundCase(item.id, chosenChequeId !== "none" ? chosenChequeId : undefined),
     onSuccess: async () => {
       await invalidate();
-      toast.success("Возврат учтён — входящая проводка создана");
+      toast.success("Возврат учтён");
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось учесть возврат")),
   });
