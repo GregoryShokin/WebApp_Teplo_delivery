@@ -19,6 +19,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -261,6 +262,7 @@ async def issue_advance(
     actor_user_id: uuid.UUID | None = None,
     actor_label: str | None = None,
     bank_client: BankClient | None = None,
+    kassa_pending: bool = False,
 ) -> SalaryAdvance:
     """Выдать аванс или заём.
 
@@ -273,6 +275,13 @@ async def issue_advance(
     Для займа рассрочка задаётся либо суммой доли (`installment_amount`, приоритет),
     либо числом периодов (`installments_count`); `recovery_start_date` откладывает
     начало удержания (применяется только к займу).
+
+    `kassa_pending=True` — не выдача, а РАЗРЕШЕНИЕ на выдачу через кассу (страница
+    авансов при счёте «ТК Черникова»): аванс создаётся в ``awaiting_payout`` без
+    проводки ДДС, без iiko и без удержаний — их проведёт администратор кассы по
+    «Выплачено» (``disburse_kassa_advance``), датой подтверждения. Самовыдача
+    админом из формы «Выплата из кассы» этот флаг не передаёт и остаётся
+    одношаговой.
     """
     if requested_kind not in (None, "advance", "loan"):
         raise PayrollConflictError("Неизвестный тип выдачи")
@@ -356,6 +365,16 @@ async def issue_advance(
     # Банк-счёт: деньги уходят не мгновенно → выдача ждёт исполнения платежа и фактической
     # выдачи сотруднику. Долг (удержание из ведомости) формируется только по «Выплачено».
     is_bank_payout = wallet is not None and wallet.type == "bank"
+    if kassa_pending:
+        # Разрешение на выдачу через кассу возможно только на ТК Черникова: деньги —
+        # наличные кассы, перевод с Сейфа не требуется.
+        if wallet is None or wallet.code != ADVANCE_TK_WALLET_CODE:
+            raise PayrollConflictError(
+                "Разрешение на выдачу через кассу доступно только для счёта "
+                "«Торговая касса Черникова»"
+            )
+        if payout_method is None:
+            payout_method = "cash"
 
     advance = SalaryAdvance(
         employee_id=employee_id,
@@ -365,7 +384,7 @@ async def issue_advance(
         per_installment_amount=per_installment,
         installments_count=installments,
         recovered_amount=Decimal("0"),
-        status="awaiting_payout" if is_bank_payout else "issued",
+        status="awaiting_payout" if is_bank_payout or kassa_pending else "issued",
         issued_on=issued_on,
         recovery_start_date=recovery_start,
         payout_method=payout_method,
@@ -377,8 +396,12 @@ async def issue_advance(
     session.add(advance)
     await session.flush()
     # Выдача = отток денег → проводка ДДС. Наличный счёт (ТК Черникова/Сейф) — прямой расход;
-    # банк-счёт — черновик платежа + транзит на Сейф при исполнении (как у ЗП), Фаза 2.
-    if payout_method == "payroll":
+    # банк-счёт — черновик платежа + транзит на Сейф при исполнении (как у ЗП), Фаза 2;
+    # kassa-разрешение — ничего: обязательство не начато, проводку/удержания/iiko проведёт
+    # администратор кассы по «Выплачено».
+    if kassa_pending:
+        pass
+    elif payout_method == "payroll":
         # Выдача через ведомость: сумма добавляется к ближайшей выплате, отдельного оттока
         # денег нет (ДДС проведётся зарплатной статьёй при выплате ведомости).
         await _apply_payroll_advance_to_existing_run(session, advance=advance)
@@ -392,8 +415,14 @@ async def issue_advance(
     await session.refresh(advance)
     # Наличная выдача с ТК Черникова (= iiko «Главная касса») → параллельное изъятие в iiko.
     # После commit: БД — источник истины, ошибка iiko не откатывает выдачу (логируется внутри).
-    # Сейф и банк-выдача здесь iiko не трогают (банк изымается при «Выплачено», см. disburse).
-    if not is_bank_payout and wallet is not None and wallet.code == ADVANCE_TK_WALLET_CODE:
+    # Сейф и банк-выдача здесь iiko не трогают (банк изымается при «Выплачено», см. disburse);
+    # kassa-разрешение — тоже нет (изъятие при исполнении, см. disburse_kassa_advance).
+    if (
+        not is_bank_payout
+        and not kassa_pending
+        and wallet is not None
+        and wallet.code == ADVANCE_TK_WALLET_CODE
+    ):
         post_advance_payout_to_iiko(
             amount=advance.amount,
             payout_date=advance.issued_on,
@@ -875,12 +904,16 @@ def advance_payout_status(
 
     ``disbursed`` — деньги отданы сотруднику (наличная выдача сразу, банковская — по
     «Выплачено»); ``sent_to_bank`` — черновик в банке; ``awaiting_payout`` — исполнен,
-    деньги зарезервированы в Сейфе, ждут выдачи; ``failed`` — отклонён банком;
-    ``cancelled`` — отменено.
+    деньги зарезервированы в Сейфе, ждут выдачи; ``awaiting_kassa`` — разрешение на
+    выдачу через кассу, ждёт администратора; ``failed`` — отклонён банком;
+    ``cancelled`` — отменено (``cancelled_by_kassa`` — отклонено администратором кассы).
     """
     if advance.status == "cancelled":
-        return "cancelled"
+        return "cancelled_by_kassa" if advance.kassa_cancelled_at is not None else "cancelled"
     if draft is None:
+        if advance.status == "awaiting_payout":
+            # Кассовое разрешение: выдачи ещё не было, ждёт «Выплачено» в модуле «Касса».
+            return "awaiting_kassa"
         return "disbursed"  # наличная выдача — отток уже проведён при выдаче
     if draft.status == "disbursed":
         return "disbursed"
@@ -1214,3 +1247,106 @@ async def sync_advance_after_allocation_change(
         draft.synced_at = datetime.now(UTC)
         advance.status = "cancelled"
     return None
+
+
+# ---------------------------------------------------------------------------
+# Разрешения на выдачу через кассу (этап 3): pending-выдача → «Выплачено» админом.
+# ---------------------------------------------------------------------------
+
+# Дата кассовых операций — календарный день МСК (как в kassa.payouts.kassa_today).
+_KASSA_TZ = ZoneInfo("Europe/Moscow")
+
+
+async def _kassa_pending_advance_locked(
+    session: AsyncSession, advance_id: uuid.UUID
+) -> SalaryAdvance:
+    """Взять кассовое разрешение под row-lock с проверками состояния (гонки → 409).
+
+    Кассовое разрешение = ``awaiting_payout`` + счёт «ТК Черникова» + БЕЗ банковского
+    черновика (банк-выдача живёт своим контуром «черновик → Сейф → Выплачено»).
+    """
+    advance = await session.get(SalaryAdvance, advance_id, with_for_update=True)
+    if advance is None:
+        raise PayrollNotFoundError("Выдача не найдена")
+    draft = await _get_advance_draft(session, advance_id)
+    if draft is not None:
+        raise PayrollConflictError(
+            "Это банковская выдача — она подтверждается со страницы авансов, не через кассу"
+        )
+    if advance.status == "issued":
+        raise PayrollConflictError("Разрешение уже исполнено — деньги выданы из кассы")
+    if advance.status == "cancelled":
+        raise PayrollConflictError("Разрешение уже отменено")
+    if advance.status != "awaiting_payout":
+        raise PayrollConflictError("Выдача не в статусе ожидания кассы")
+    wallet = await session.get(Wallet, advance.wallet_id) if advance.wallet_id else None
+    if wallet is None or wallet.code != ADVANCE_TK_WALLET_CODE:
+        raise PayrollConflictError("Это не кассовое разрешение — выдача идёт другим счётом")
+    return advance
+
+
+async def list_kassa_pending_advances(
+    session: AsyncSession,
+) -> list[tuple[SalaryAdvance, str]]:
+    """Ожидающие разрешения на авансы/займы через кассу (для вкладки «К выдаче»).
+
+    Возвращает пары (выдача, имя сотрудника), новые сверху.
+    """
+    rows = (
+        await session.execute(
+            select(SalaryAdvance, Employee.full_name)
+            .join(Employee, Employee.id == SalaryAdvance.employee_id)
+            .join(Wallet, Wallet.id == SalaryAdvance.wallet_id)
+            .outerjoin(
+                SalaryAdvanceBankDraft,
+                SalaryAdvanceBankDraft.advance_id == SalaryAdvance.id,
+            )
+            .where(
+                SalaryAdvance.status == "awaiting_payout",
+                Wallet.code == ADVANCE_TK_WALLET_CODE,
+                SalaryAdvanceBankDraft.id.is_(None),
+            )
+            .order_by(SalaryAdvance.created_at.desc())
+        )
+    ).all()
+    return [(advance, full_name) for advance, full_name in rows]
+
+
+async def disburse_kassa_advance(
+    session: AsyncSession, *, advance_id: uuid.UUID
+) -> SalaryAdvance:
+    """«Выплачено» администратором кассы: исполнить разрешение на аванс/заём.
+
+    Только вся сумма. Наличная проводка из ТК Черникова + активация в леджере датой
+    подтверждения (``issued_on`` = сегодня МСК, удержания от неё) — до этого момента
+    обязательства не существовало. Вызывающий роут обязан провести изъятие в iiko
+    ПОСЛЕ commit (``post_advance_payout_to_iiko(source="cash")``, как у наличной
+    выдачи — ошибка iiko выдачу не валит). Повторное исполнение → конфликт (409).
+    """
+    advance = await _kassa_pending_advance_locked(session, advance_id)
+    wallet = await session.get(Wallet, advance.wallet_id)
+    advance.issued_on = datetime.now(_KASSA_TZ).date()
+    advance.status = "issued"
+    await book_advance_payout_cashflow(session, advance=advance, wallet=wallet)
+    await session.commit()
+    await session.refresh(advance)
+    return advance
+
+
+async def cancel_kassa_advance(
+    session: AsyncSession, *, advance_id: uuid.UUID, by_kassa_admin: bool
+) -> SalaryAdvance:
+    """Отменить кассовое разрешение (двусторонне): админ кассы или сам создатель.
+
+    ``by_kassa_admin=True`` ставит отметку «отменено кассой» — создатель увидит её
+    на странице авансов. Отзыв создателем после исполнения админом → конфликт (409,
+    «уже исполнено»), после отмены — тоже конфликт (гонки видимы). Проводок нет:
+    разрешение не двигало деньги.
+    """
+    advance = await _kassa_pending_advance_locked(session, advance_id)
+    advance.status = "cancelled"
+    if by_kassa_admin:
+        advance.kassa_cancelled_at = datetime.now(UTC)
+    await session.commit()
+    await session.refresh(advance)
+    return advance

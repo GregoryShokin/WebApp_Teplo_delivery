@@ -17,7 +17,13 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import CashflowTransaction, DdsArticle, SafeAllocation, Wallet
+from app.models import (
+    CashflowTransaction,
+    DdsArticle,
+    SafeAllocation,
+    SalaryAdvanceBankDraft,
+    Wallet,
+)
 from app.services.banking.classifier import (
     SAFE_WALLET_CODE,
     TRANSFER_IN_ARTICLE_CODE,
@@ -27,6 +33,10 @@ from app.services.banking.classifier import (
 SAFE_PAYOUT_SOURCE_KIND = "safe_payout"
 SAFE_CASH_WITHDRAWAL_SOURCE_KIND = "safe_cash_withdrawal"
 SAFE_RECONCILE_ADJUST_SOURCE_KIND = "safe_reconcile_adjust"
+# Двухногое перемещение при передаче целёвки Сейф → касса (source_id = резерв).
+ALLOCATION_TO_KASSA_SOURCE_KIND = "safe_allocation_to_kassa"
+# Выдача целёвки наличными из кассы, вкладка «К выдаче» (source_id = резерв).
+KASSA_TARGET_PAYOUT_SOURCE_KIND = "kassa_target_payout"
 ACTIVE_RESERVE_STATUSES = ("reserved", "partially_paid")
 # Куда снимаются наличные с карты «Сейф» (параллельный наличный счёт).
 CASH_WITHDRAWAL_WALLET_CODE = "tk_chernikova"
@@ -111,8 +121,14 @@ async def pay_allocation(
     *,
     amount: Decimal,
     operation_date: date,
+    source_kind: str = SAFE_PAYOUT_SOURCE_KIND,
+    created_by_user_id: UUID | None = None,
 ) -> UUID:
-    """Провести оплату резерва (полную или частичную): out-проводка с Сейфа + обновить статус."""
+    """Провести оплату резерва (полную или частичную): out-проводка + обновить статус.
+
+    Кошелёк ноги — текущий ``allocation.wallet_id``: у резерва на Сейфе это Сейф,
+    у переданного в кассу — касса (``source_kind='kassa_target_payout'``).
+    """
     if allocation.status == "cancelled":
         raise ValueError("Резерв отменён — оплата невозможна")
     if allocation.status == "paid":
@@ -130,10 +146,11 @@ async def pay_allocation(
         operation_date=operation_date,
         article_id=allocation.article_id,
         counterparty_id=allocation.counterparty_id,
-        source_kind=SAFE_PAYOUT_SOURCE_KIND,
+        source_kind=source_kind,
         source_id=allocation.id,
         payment_purpose=allocation.purpose,
         quality_status="final",
+        created_by_user_id=created_by_user_id,
     )
     session.add(leg)
     allocation.amount_paid = Decimal(allocation.amount_paid) + amount
@@ -145,13 +162,128 @@ async def pay_allocation(
 
 
 async def cancel_allocation(session: AsyncSession, allocation: SafeAllocation) -> None:
-    """Отменить резерв. Оплаченные ноги остаются, неоплаченный остаток освобождается."""
+    """Отменить резерв. Оплаченные ноги остаются, неоплаченный остаток освобождается.
+
+    Для целёвки, переданной в кассу, отмена работает так же: резерв снимается,
+    деньги остаются в кассе свободными наличными, обратных проводок нет
+    (возврат на Сейф — руками обычным переводом, вне этого контура).
+    """
     if allocation.status == "paid":
         raise ValueError("Нельзя отменить полностью оплаченный резерв")
     if allocation.status == "cancelled":
         return
     allocation.status = "cancelled"
     await session.flush()
+
+
+async def kassa_targets_total(session: AsyncSession, kassa_wallet_id: UUID) -> Decimal:
+    """Σ непогашенных остатков целёвок, переданных в кассу («целевые в кассе»)."""
+    outstanding = func.sum(SafeAllocation.amount - SafeAllocation.amount_paid)
+    total = await session.scalar(
+        select(func.coalesce(outstanding, 0)).where(
+            SafeAllocation.wallet_id == kassa_wallet_id,
+            SafeAllocation.location == "kassa",
+            SafeAllocation.status.in_(ACTIVE_RESERVE_STATUSES),
+        )
+    )
+    return Decimal(total or 0)
+
+
+async def kassa_targets_count(session: AsyncSession, kassa_wallet_id: UUID) -> int:
+    """Число активных целёвок в кассе — для бейджа «К выдаче» и плитки кассы."""
+    count = await session.scalar(
+        select(func.count())
+        .select_from(SafeAllocation)
+        .where(
+            SafeAllocation.wallet_id == kassa_wallet_id,
+            SafeAllocation.location == "kassa",
+            SafeAllocation.status.in_(ACTIVE_RESERVE_STATUSES),
+        )
+    )
+    return int(count or 0)
+
+
+async def allocation_advance_draft_id(
+    session: AsyncSession, allocation_id: UUID
+) -> UUID | None:
+    """Черновик банк-выдачи аванса, привязанный к резерву (таким передача запрещена)."""
+    return await session.scalar(
+        select(SalaryAdvanceBankDraft.id).where(
+            SalaryAdvanceBankDraft.safe_allocation_id == allocation_id
+        )
+    )
+
+
+async def transfer_allocation_to_kassa(
+    session: AsyncSession,
+    allocation: SafeAllocation,
+    *,
+    operation_date: date,
+) -> list[UUID]:
+    """Передать целёвку в кассу: перемещение ВСЕГО остатка Сейф → касса + смена локации.
+
+    Двухногий перевод (по механике снятия наличных) на непогашенный остаток резерва —
+    частичная передача запрещена by design (частичной бывает только выдача из кассы).
+    Резерв меняет ``wallet_id`` на кассу и ``location`` на ``kassa``: он перестаёт
+    считаться в резервах Сейфа (инвариант баланса Сейфа сходится, свободно не меняется)
+    и появляется в «целевых в кассе». Вызывающий обязан держать row-lock резерва
+    (повторная передача отсекается проверкой локации).
+    """
+    if allocation.status not in ACTIVE_RESERVE_STATUSES:
+        raise ValueError("Передать в кассу можно только активный резерв")
+    if allocation.location != "safe":
+        raise ValueError("Резерв уже передан в кассу")
+    outstanding = Decimal(allocation.amount) - Decimal(allocation.amount_paid)
+    if outstanding <= 0:
+        raise ValueError("У резерва нет непогашенного остатка")
+    # Страховка идемпотентности поверх row-lock: одна целёвка — одно перемещение.
+    existing = await session.scalar(
+        select(CashflowTransaction.id).where(
+            CashflowTransaction.source_kind == ALLOCATION_TO_KASSA_SOURCE_KIND,
+            CashflowTransaction.source_id == allocation.id,
+        )
+    )
+    if existing is not None:
+        raise ValueError("Резерв уже передан в кассу")
+    dest_wallet = await session.scalar(
+        select(Wallet).where(
+            Wallet.code == CASH_WITHDRAWAL_WALLET_CODE, Wallet.status == "active"
+        )
+    )
+    if dest_wallet is None:
+        raise ValueError("Не найдена наличная касса для передачи")
+    out_article = await _article_id(session, TRANSFER_OUT_ARTICLE_CODE)
+    in_article = await _article_id(session, TRANSFER_IN_ARTICLE_CODE)
+    label = allocation.purpose or "целевой резерв"
+    purpose = f"Передача целёвки в кассу: {label}"
+    out_leg = CashflowTransaction(
+        wallet_id=allocation.wallet_id,
+        direction="out",
+        amount=outstanding,
+        operation_date=operation_date,
+        article_id=out_article,
+        source_kind=ALLOCATION_TO_KASSA_SOURCE_KIND,
+        source_id=allocation.id,
+        payment_purpose=purpose,
+        quality_status="final",
+    )
+    in_leg = CashflowTransaction(
+        wallet_id=dest_wallet.id,
+        direction="in",
+        amount=outstanding,
+        operation_date=operation_date,
+        article_id=in_article,
+        source_kind=ALLOCATION_TO_KASSA_SOURCE_KIND,
+        source_id=allocation.id,
+        payment_purpose=purpose,
+        quality_status="final",
+    )
+    session.add(out_leg)
+    session.add(in_leg)
+    allocation.wallet_id = dest_wallet.id
+    allocation.location = "kassa"
+    await session.flush()
+    return [out_leg.id, in_leg.id]
 
 
 async def book_safe_cash_withdrawal(

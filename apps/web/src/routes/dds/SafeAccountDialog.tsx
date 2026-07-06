@@ -22,6 +22,7 @@ import {
   getSafeAllocations,
   paySafeAllocation,
   reconcileSafe,
+  transferSafeAllocationToKassa,
   withdrawSafeCash,
   type SafeAllocationRead,
   type SafeReconcileResult,
@@ -119,6 +120,17 @@ export function SafeAccountDialog({
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отменить резерв")),
   });
 
+  // «Передать в кассу»: целёвка переезжает в ТК Черникова вместе с деньгами (весь
+  // остаток) и дальше выдаётся администратором из вкладки «К выдаче» Кассы.
+  const transferMutation = useMutation({
+    mutationFn: (id: string) => transferSafeAllocationToKassa(id),
+    onSuccess: async () => {
+      await invalidate();
+      toast.success("Целёвка передана в кассу — выдаст администратор");
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось передать в кассу")),
+  });
+
   const withdrawMutation = useMutation({
     mutationFn: () => withdrawSafeCash(walletId!, withdrawAmount),
     onSuccess: async () => {
@@ -152,6 +164,7 @@ export function SafeAccountDialog({
     createMutation.isPending ||
     payMutation.isPending ||
     cancelMutation.isPending ||
+    transferMutation.isPending ||
     withdrawMutation.isPending ||
     reconcileMutation.isPending;
   const canSubmitCreate = Number(amount) > 0 && articleId !== "none";
@@ -266,6 +279,15 @@ export function SafeAccountDialog({
                         onClick={() => payMutation.mutate({ id: allocation.id, amt: payValue })}
                       >
                         Оплатить
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => transferMutation.mutate(allocation.id)}
+                        title="Перевести весь остаток целёвки наличными в ТК Черникова — выдаст администратор из вкладки «К выдаче»"
+                      >
+                        Передать в кассу
                       </Button>
                       {canAllocate ? (
                         <Button

@@ -69,6 +69,7 @@ from app.schemas.dds import (
     SafeReconcileRequest,
     TransactionClassifyRequest,
 )
+from app.schemas.kassa import KassaPendingRead
 from app.services.advance_iiko_payout import post_advance_payout_to_iiko
 from app.services.banking.cashflow_classify import (
     EXCLUDED_QUALITY,
@@ -86,17 +87,29 @@ from app.services.banking.classifier import (
 )
 from app.services.banking.credentials import set_credential
 from app.services.banking.safe_allocations import (
+    CASH_WITHDRAWAL_WALLET_CODE,
+    allocation_advance_draft_id,
     book_safe_cash_withdrawal,
     book_safe_drift_adjustment,
     cancel_allocation,
     create_allocation,
+    kassa_targets_count,
+    kassa_targets_total,
     pay_allocation,
     safe_active_allocations_count,
     safe_reserved_total,
+    transfer_allocation_to_kassa,
 )
 from app.services.banking.transfer_matching import find_and_link_transfer_pairs
-from app.services.kassa.payouts import KassaPayoutError, ensure_article_kassa_eligible
-from app.services.payroll_advance_service import sync_advance_after_allocation_change
+from app.services.kassa.payouts import (
+    KassaPayoutError,
+    ensure_article_kassa_eligible,
+    kassa_pending_payload,
+)
+from app.services.payroll_advance_service import (
+    list_kassa_pending_advances,
+    sync_advance_after_allocation_change,
+)
 
 router = APIRouter()
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
@@ -420,8 +433,21 @@ async def list_wallets(
     payloads: list[dict[str, object]] = []
     for wallet in wallets:
         is_safe = wallet.code == SAFE_WALLET_CODE
-        reserved = await safe_reserved_total(session, wallet.id) if is_safe else Decimal("0")
-        active_count = await safe_active_allocations_count(session, wallet.id) if is_safe else 0
+        is_kassa = wallet.code == CASH_WITHDRAWAL_WALLET_CODE
+        reserved = Decimal("0")
+        active_count = 0
+        pending_payout_count: int | None = None
+        if is_safe:
+            reserved = await safe_reserved_total(session, wallet.id)
+            active_count = await safe_active_allocations_count(session, wallet.id)
+        elif is_kassa:
+            # Торговая касса: «целевые» = переданные целёвки, «к выдаче» = они же +
+            # ожидающие разрешения на авансы/займы (для подписи на «Деньгах сегодня»).
+            reserved = await kassa_targets_total(session, wallet.id)
+            active_count = await kassa_targets_count(session, wallet.id)
+            pending_payout_count = active_count + len(
+                await list_kassa_pending_advances(session)
+            )
         payloads.append(
             _wallet_payload(
                 wallet,
@@ -429,6 +455,7 @@ async def list_wallets(
                 bank_by_account.get(wallet.account_id),
                 reserved,
                 active_count,
+                pending_payout_count,
             )
         )
     return payloads
@@ -1231,6 +1258,8 @@ def _safe_allocation_payload(
         # (неофициальный поставщик) — в UI помечается «из банковской выплаты».
         "source_draft_id": allocation.source_draft_id,
         "status": allocation.status,
+        # Где живёт целёвка: 'safe' — на карте Сейф, 'kassa' — передана в кассу.
+        "location": allocation.location,
         "created_at": allocation.created_at,
     }
 
@@ -1338,6 +1367,11 @@ async def pay_safe_allocation(
     allocation = await session.get(SafeAllocation, allocation_id, with_for_update=True)
     if allocation is None:
         raise HTTPException(status_code=404, detail="Резерв не найден")
+    if allocation.location != "safe":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Целёвка передана в кассу — выдача только из модуля «Касса»",
+        )
     try:
         await pay_allocation(
             session,
@@ -1393,6 +1427,65 @@ async def cancel_safe_allocation(
     return _safe_allocation_payload(
         allocation, await _allocation_counterparty_name(session, allocation)
     )
+
+
+@router.post(
+    "/allocations/{allocation_id}/transfer-to-kassa",
+    response_model=SafeAllocationRead,
+    dependencies=DDS_SAFE_CONFIRM_PAID_ACCESS,
+)
+async def transfer_safe_allocation_to_kassa(
+    allocation_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    """«Передать в кассу»: целёвка переезжает вместе с деньгами (весь остаток).
+
+    Двухногое перемещение Сейф → ТК Черникова на непогашенный остаток + смена
+    локации резерва: он уходит из резервов Сейфа и появляется во вкладке
+    «К выдаче» Кассы. Частичная передача запрещена; повторная — конфликт (409,
+    row-lock резерва сериализует двойной клик).
+    """
+    allocation = await session.get(SafeAllocation, allocation_id, with_for_update=True)
+    if allocation is None:
+        raise HTTPException(status_code=404, detail="Резерв не найден")
+    # Резерв банк-выдачи аванса/займа передавать нельзя: его путь прежний — оплата
+    # с Сейфа по «Выплачено» (sync_advance_after_allocation_change активирует долг).
+    if await allocation_advance_draft_id(session, allocation.id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Этот резерв привязан к банковской выдаче аванса/займа — "
+            "он выдаётся оплатой с Сейфа, передача в кассу недоступна",
+        )
+    try:
+        await transfer_allocation_to_kassa(
+            session,
+            allocation,
+            operation_date=datetime.now(MOSCOW_TZ).date(),
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    await session.commit()
+    await session.refresh(allocation)
+    return _safe_allocation_payload(
+        allocation, await _allocation_counterparty_name(session, allocation)
+    )
+
+
+@router.get(
+    "/kassa-targets", response_model=KassaPendingRead, dependencies=DDS_WALLETS_READ_ACCESS
+)
+async def list_dds_kassa_targets(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    """Целевые в Торговой кассе + ожидающие разрешения (read-only, «Деньги сегодня»).
+
+    Тот же состав, что во вкладке «К выдаче» Кассы, но без кнопок выдачи — выдаёт
+    только администратор в модуле «Касса». Права — менеджерские (кошельки ДДС).
+    """
+    try:
+        return await kassa_pending_payload(session)
+    except KassaPayoutError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.post(
@@ -1492,14 +1585,17 @@ def _wallet_payload(
     bank_code: str | None = None,
     reserved_total: Decimal = Decimal("0"),
     active_allocations: int = 0,
+    pending_payout_count: int | None = None,
 ) -> dict[str, object]:
     opening = _money(wallet.opening_balance)
     balance_dec = Decimal(str(wallet.opening_balance)) + movement_delta
     balance = _money(balance_dec)
     # Подотчётный Сейф несёт раскладку остатка: зарезервировано (намечено под оплаты)
     # и свободно, плюс число активных резервов (бейдж «N целевых» на плитке).
+    # Торговая касса Черникова — то же для переданных целёвок («целевые в кассе»),
+    # плюс pending_payout_count: позиции «К выдаче» (целёвки + разрешения на авансы).
     # Для прочих кошельков понятия резерва нет → null.
-    is_safe = wallet.code == SAFE_WALLET_CODE
+    has_targets = wallet.code in (SAFE_WALLET_CODE, CASH_WITHDRAWAL_WALLET_CODE)
     return {
         "id": wallet.id,
         "code": wallet.code,
@@ -1513,9 +1609,10 @@ def _wallet_payload(
         "opening_balance": opening,
         "opening_balance_date": wallet.opening_balance_date,
         "balance": balance,
-        "reserved_total": _money(reserved_total) if is_safe else None,
-        "free_total": _money(balance_dec - reserved_total) if is_safe else None,
-        "active_allocations": active_allocations if is_safe else None,
+        "reserved_total": _money(reserved_total) if has_targets else None,
+        "free_total": _money(balance_dec - reserved_total) if has_targets else None,
+        "active_allocations": active_allocations if has_targets else None,
+        "pending_payout_count": pending_payout_count,
     }
 
 

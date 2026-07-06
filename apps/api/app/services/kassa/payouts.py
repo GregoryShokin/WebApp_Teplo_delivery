@@ -37,9 +37,17 @@ from app.models import (
     CounterpartyPayableProfile,
     DdsArticle,
     Employee,
+    SafeAllocation,
     SalaryAdvance,
     SupplierPrepayment,
     Wallet,
+)
+from app.services.banking.safe_allocations import (
+    ACTIVE_RESERVE_STATUSES,
+    KASSA_TARGET_PAYOUT_SOURCE_KIND,
+    kassa_targets_count,
+    kassa_targets_total,
+    pay_allocation,
 )
 from app.services.wallets import CashWalletError, resolve_cash_wallet
 
@@ -501,6 +509,113 @@ async def delete_payout(
     await _remove_payout_target(session, transaction, kind, target)
 
 
+# --- Вкладка «К выдаче»: целёвки в кассе и разрешения на авансы/займы -----------
+
+
+async def _kassa_pending_advances(session: AsyncSession) -> list[dict[str, Any]]:
+    """Ожидающие разрешения на авансы/займы (pending-выдачи со страницы авансов)."""
+    from app.services.payroll_advance_service import list_kassa_pending_advances
+
+    return [
+        {
+            "id": advance.id,
+            "employee_id": advance.employee_id,
+            "employee_name": employee_name,
+            "kind": advance.kind,
+            "amount": float(_money(advance.amount)),
+            "comment": advance.comment,
+            "created_by_label": advance.created_by_label,
+            "created_at": advance.created_at,
+        }
+        for advance, employee_name in await list_kassa_pending_advances(session)
+    ]
+
+
+async def kassa_pending_payload(session: AsyncSession) -> dict[str, Any]:
+    """Состав вкладки «К выдаче»: целёвки в кассе + ожидающие разрешения + итоги.
+
+    Этот же payload отдаёт read-only диалог «Целевые в Торговой кассе» на «Деньгах
+    сегодня» (там без кнопок выдачи — выдаёт только администратор в Кассе).
+    """
+    wallet = await get_kassa_wallet(session)
+    rows = (
+        await session.execute(
+            select(SafeAllocation, DdsArticle.name, Counterparty.name)
+            .outerjoin(DdsArticle, DdsArticle.id == SafeAllocation.article_id)
+            .outerjoin(Counterparty, Counterparty.id == SafeAllocation.counterparty_id)
+            .where(
+                SafeAllocation.wallet_id == wallet.id,
+                SafeAllocation.location == "kassa",
+                SafeAllocation.status.in_(ACTIVE_RESERVE_STATUSES),
+            )
+            .order_by(SafeAllocation.created_at.desc())
+        )
+    ).all()
+    targets = [
+        {
+            "id": allocation.id,
+            "article_id": allocation.article_id,
+            "article_name": article_name,
+            "counterparty_id": allocation.counterparty_id,
+            "counterparty_name": counterparty_name,
+            "purpose": allocation.purpose,
+            "amount": float(_money(allocation.amount)),
+            "amount_paid": float(_money(allocation.amount_paid)),
+            "outstanding": float(
+                _money(Decimal(str(allocation.amount)) - Decimal(str(allocation.amount_paid)))
+            ),
+            # Происхождение: авто-целёвка закупа из оплаченного банковского черновика.
+            "from_bank_payout": allocation.source_draft_id is not None,
+            "created_at": allocation.created_at,
+        }
+        for allocation, article_name, counterparty_name in rows
+    ]
+    permissions = await _kassa_pending_advances(session)
+    targets_total = sum(Decimal(str(target["outstanding"])) for target in targets)
+    return {
+        "wallet_name": wallet.name,
+        "balance": float(await kassa_balance(session, wallet)),
+        "targets": targets,
+        "permissions": permissions,
+        "targets_total": float(_money(targets_total)),
+        "pending_count": len(targets) + len(permissions),
+    }
+
+
+async def pay_kassa_target(
+    session: AsyncSession,
+    *,
+    allocation_id: uuid.UUID,
+    amount: Decimal,
+    actor_user_id: uuid.UUID | None = None,
+) -> uuid.UUID:
+    """«Выдано»: расход целёвки наличными из кассы (полный или частичный).
+
+    Семантика оплат — как у ``pay_allocation`` на Сейфе (``amount_paid``/статусы),
+    только кошелёк — касса и свой ``source_kind``; статья и контрагент — целёвки.
+    Сумма больше учётного остатка кассы не блокируется (предупреждение на фронте).
+    """
+    wallet = await get_kassa_wallet(session)
+    allocation = await session.get(SafeAllocation, allocation_id, with_for_update=True)
+    if allocation is None:
+        raise KassaPayoutError("Целёвка не найдена")
+    if allocation.location != "kassa" or allocation.wallet_id != wallet.id:
+        raise KassaPayoutError("Целёвка не передана в кассу — оплата идёт с Сейфа")
+    try:
+        transaction_id = await pay_allocation(
+            session,
+            allocation,
+            amount=_money(amount),
+            operation_date=kassa_today(),
+            source_kind=KASSA_TARGET_PAYOUT_SOURCE_KIND,
+            created_by_user_id=actor_user_id,
+        )
+    except ValueError as exc:
+        raise KassaPayoutError(str(exc)) from exc
+    await session.commit()
+    return transaction_id
+
+
 async def kassa_journal(
     session: AsyncSession,
     *,
@@ -629,11 +744,17 @@ async def kassa_journal(
             }
         )
 
+    # Шапка «в кассе N ₽ · из них целевые M ₽» + бейдж вкладки «К выдаче».
+    targets_total = await kassa_targets_total(session, wallet.id)
+    pending_advances = await _kassa_pending_advances(session)
+    targets_count = await kassa_targets_count(session, wallet.id)
     return {
         "wallet_name": wallet.name,
         "balance": float(balance),
         "period_in": float(_money(period_in)),
         "period_out": float(_money(period_out)),
+        "targets_total": float(_money(targets_total)),
+        "pending_count": targets_count + len(pending_advances),
         "items": items,
     }
 

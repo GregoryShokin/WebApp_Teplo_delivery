@@ -1,21 +1,24 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { usePermissions } from "@/lib/permissions";
+import { getKassaPending } from "@/routes/kassa/api";
 import { CreateChequeDialog } from "@/routes/kassa/CreateChequeDialog";
 import { CreatePaymentChooser, type PaymentKind } from "@/routes/kassa/CreatePaymentChooser";
 import { KassaPayoutDialog } from "@/routes/kassa/KassaPayoutDialog";
 import { KassaInvoicesTab } from "@/routes/kassa/tabs/invoices";
 import { KassaJournalTab } from "@/routes/kassa/tabs/journal";
+import { KassaPendingTab } from "@/routes/kassa/tabs/pending";
 import { ShiftCloseTab } from "@/routes/kassa/tabs/shift-close";
 import { CreateInvoiceDialog } from "@/routes/warehouse/CreateInvoiceDialog";
 
 type DialogMode = "chooser" | PaymentKind | null;
-type KassaTab = "shifts" | "invoices" | "journal";
+type KassaTab = "shifts" | "invoices" | "journal" | "pending";
 
 export function KassaRoute() {
   const permissions = usePermissions();
@@ -28,6 +31,14 @@ export function KassaRoute() {
   const canPayout = permissions.canPerformAction("kassa.payouts.create");
   const canJournal = permissions.hasPermission("kassa.journal.read");
   const canCreate = canCreateInvoice || canCreateCheque || canPayout;
+
+  // Бейдж-счётчик «К выдаче»: целёвки в кассе + ожидающие разрешения на авансы/займы.
+  const pendingQuery = useQuery({
+    queryKey: ["kassa", "pending"],
+    queryFn: getKassaPending,
+    enabled: canPayout,
+  });
+  const pendingCount = pendingQuery.data?.pending_count ?? 0;
 
   function invalidateAfterCreate() {
     queryClient.invalidateQueries({ queryKey: ["kassa"] });
@@ -55,6 +66,16 @@ export function KassaRoute() {
           <TabsTrigger value="shifts">Смены</TabsTrigger>
           <TabsTrigger value="invoices">Накладные</TabsTrigger>
           {canJournal ? <TabsTrigger value="journal">Кассовый журнал</TabsTrigger> : null}
+          {canPayout ? (
+            <TabsTrigger value="pending" className="gap-1.5">
+              К выдаче
+              {pendingCount > 0 ? (
+                <Badge className="border-amber-200 bg-amber-50 text-amber-700 tabular-nums">
+                  {pendingCount}
+                </Badge>
+              ) : null}
+            </TabsTrigger>
+          ) : null}
         </TabsList>
       </Tabs>
 
@@ -69,6 +90,8 @@ export function KassaRoute() {
       {tab === "invoices" ? <KassaInvoicesTab canPay={canCreateInvoice} /> : null}
 
       {tab === "journal" && canJournal ? <KassaJournalTab canPayout={canPayout} /> : null}
+
+      {tab === "pending" && canPayout ? <KassaPendingTab /> : null}
 
       <CreatePaymentChooser
         open={mode === "chooser"}

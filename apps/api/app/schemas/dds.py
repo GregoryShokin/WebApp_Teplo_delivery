@@ -68,11 +68,14 @@ class DdsWalletRead(BaseModel):
     opening_balance: str
     opening_balance_date: date | None = None
     balance: str
-    # Раскладка подотчётного Сейфа; null для прочих кошельков.
+    # Раскладка подотчётного Сейфа и Торговой кассы (целёвки); null для прочих кошельков.
     reserved_total: str | None = None
     free_total: str | None = None
-    # Число активных резервов Сейфа — бейдж «N целевых» на плитке; null для прочих.
+    # Число активных резервов/целёвок — бейдж «N целевых» на плитке; null для прочих.
     active_allocations: int | None = None
+    # Только Торговая касса: позиции «К выдаче» (целёвки в кассе + ожидающие
+    # разрешения на авансы/займы) — подпись «к выдаче N» на «Деньгах сегодня».
+    pending_payout_count: int | None = None
 
 
 class DdsAliasCreate(BaseModel):
@@ -404,6 +407,8 @@ class SafeAllocationRead(BaseModel):
     # Происхождение авто-резерва: черновик выплаты на карту ИП (неофициальный поставщик).
     source_draft_id: uuid.UUID | None = None
     status: str
+    # Где живёт целёвка: 'safe' — на карте «Сейф», 'kassa' — передана в Торговую кассу.
+    location: str
     created_at: datetime
 
 

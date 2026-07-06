@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, ArrowRight, Banknote, Coins, Lock } from "lucide-react";
 
@@ -11,6 +11,8 @@ import {
   getDdsWallets,
   type WalletRead,
 } from "@/lib/api";
+import { KassaTargetsDialog } from "@/routes/dds/KassaTargetsDialog";
+import { SafeAccountDialog } from "@/routes/dds/SafeAccountDialog";
 import { BankSyncButton, formatDdsMoney } from "@/routes/dds/shared";
 
 type WalletGroupKey = "tbank" | "sber" | "cash" | "reserve";
@@ -88,6 +90,19 @@ export function TodayTab({ onNavigate }: { onNavigate: (path: string) => void })
     "finance.owner_review.prepare",
     "finance.cashflow.classify",
   ]);
+  // Вторые двери: карточка Сейфа и read-only «Целевые в Торговой кассе».
+  const [safeWallet, setSafeWallet] = useState<WalletRead | null>(null);
+  const [kassaTargetsOpen, setKassaTargetsOpen] = useState(false);
+
+  // Сейф → его карточка (вторая дверь, путь через «Счета» остаётся);
+  // Торговая касса → read-only «Целевые в Торговой кассе» (выдаёт админ в Кассе).
+  const handleWalletClick = (wallet: WalletRead) => {
+    if (wallet.type === "cash_safe") {
+      setSafeWallet(wallet);
+    } else if (wallet.pending_payout_count !== null) {
+      setKassaTargetsOpen(true);
+    }
+  };
   const walletsQuery = useQuery({ queryKey: ["dds", "wallets"], queryFn: getDdsWallets });
   const ownerReviewQuery = useQuery({
     queryKey: ["dds", "owner-review", "today"],
@@ -169,7 +184,12 @@ export function TodayTab({ onNavigate }: { onNavigate: (path: string) => void })
         {groups.buckets
           .filter((group) => walletsQuery.isLoading || group.items.length > 0)
           .map((group) => (
-            <GroupCard key={group.key} group={group} loading={walletsQuery.isLoading} />
+            <GroupCard
+              key={group.key}
+              group={group}
+              loading={walletsQuery.isLoading}
+              onWalletClick={handleWalletClick}
+            />
           ))}
       </div>
 
@@ -178,7 +198,7 @@ export function TodayTab({ onNavigate }: { onNavigate: (path: string) => void })
           <CardContent className="grid gap-2 p-4">
             <div className="text-sm font-medium">Прочее</div>
             {groups.orphans.map((wallet) => (
-              <WalletRow key={wallet.id} wallet={wallet} />
+              <WalletRow key={wallet.id} wallet={wallet} onClick={handleWalletClick} />
             ))}
           </CardContent>
         </Card>
@@ -189,6 +209,18 @@ export function TodayTab({ onNavigate }: { onNavigate: (path: string) => void })
           Кошельки пока не найдены. Откройте «Доступы» и подключите банки или добавьте кассу.
         </div>
       ) : null}
+
+      <SafeAccountDialog
+        wallet={safeWallet}
+        open={Boolean(safeWallet)}
+        onClose={() => setSafeWallet(null)}
+      />
+
+      <KassaTargetsDialog
+        open={kassaTargetsOpen}
+        onClose={() => setKassaTargetsOpen(false)}
+        onNavigate={onNavigate}
+      />
     </div>
   );
 }
@@ -196,9 +228,11 @@ export function TodayTab({ onNavigate }: { onNavigate: (path: string) => void })
 function GroupCard({
   group,
   loading,
+  onWalletClick,
 }: {
   group: (typeof GROUP_CONFIG)[number] & { items: WalletRead[]; total: number };
   loading: boolean;
+  onWalletClick: (wallet: WalletRead) => void;
 }) {
   const Icon = group.icon;
   return (
@@ -220,7 +254,9 @@ function GroupCard({
           {loading ? (
             <div className="h-10 animate-pulse rounded bg-muted/60" />
           ) : group.items.length > 0 ? (
-            group.items.map((wallet) => <WalletRow key={wallet.id} wallet={wallet} />)
+            group.items.map((wallet) => (
+              <WalletRow key={wallet.id} wallet={wallet} onClick={onWalletClick} />
+            ))
           ) : (
             <div className="text-xs text-muted-foreground">Нет кошельков в группе.</div>
           )}
@@ -230,16 +266,55 @@ function GroupCard({
   );
 }
 
-function WalletRow({ wallet }: { wallet: WalletRead }) {
+function WalletRow({
+  wallet,
+  onClick,
+}: {
+  wallet: WalletRead;
+  onClick?: (wallet: WalletRead) => void;
+}) {
+  // Кликабельны Сейф (карточка резервов) и Торговая касса (целевые «К выдаче»).
+  const isSafe = wallet.type === "cash_safe";
+  const hasTargets = wallet.reserved_total !== null;
+  const clickable = Boolean(onClick) && (isSafe || wallet.pending_payout_count !== null);
   return (
-    <div className="flex items-center justify-between gap-3 text-sm">
+    <div
+      className={cn(
+        "flex items-center justify-between gap-3 text-sm",
+        clickable && "-mx-2 cursor-pointer rounded px-2 py-1 transition hover:bg-background/70",
+      )}
+      onClick={clickable ? () => onClick?.(wallet) : undefined}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={
+        clickable
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onClick?.(wallet);
+              }
+            }
+          : undefined
+      }
+    >
       <div className="min-w-0">
         <div className="truncate font-medium">{wallet.name}</div>
         <div className="text-xs text-muted-foreground">{TYPE_LABELS[wallet.type] ?? wallet.type}</div>
       </div>
       <div className="text-right">
         <div className="tabular-nums font-medium">{formatDdsMoney(wallet.balance)}</div>
-        {numeric(wallet.opening_balance) > 0 ? (
+        {hasTargets ? (
+          // Сейф: «свободно X · целевые Y»; Торговая касса: + «к выдаче N».
+          <div className="text-xs tabular-nums text-muted-foreground">
+            свободно {formatDdsMoney(wallet.free_total)} ·{" "}
+            <span className={numeric(wallet.reserved_total) > 0 ? "text-amber-600" : undefined}>
+              целевые {formatDdsMoney(wallet.reserved_total)}
+            </span>
+            {wallet.pending_payout_count !== null && wallet.pending_payout_count > 0 ? (
+              <> · к выдаче {wallet.pending_payout_count}</>
+            ) : null}
+          </div>
+        ) : numeric(wallet.opening_balance) > 0 ? (
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
             нач. {formatDdsMoney(wallet.opening_balance)}
           </div>

@@ -925,8 +925,12 @@ export type PayrollAdvancePayoutStatus =
   | "disbursed"
   | "sent_to_bank"
   | "awaiting_payout"
+  // Разрешение на выдачу через кассу: уйдёт в кассу — выдаст администратор.
+  | "awaiting_kassa"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  // Разрешение отклонено администратором кассы.
+  | "cancelled_by_kassa";
 
 export type PayrollAdvance = {
   id: string;
@@ -2155,9 +2159,12 @@ export type WalletRead = {
   opening_balance: string;
   opening_balance_date: string | null;
   balance: string;
+  // Раскладка подотчётного Сейфа и Торговой кассы (целёвки); null для прочих.
   reserved_total: string | null;
   free_total: string | null;
   active_allocations: number | null;
+  // Только Торговая касса: позиции «К выдаче» (целёвки в кассе + разрешения на авансы).
+  pending_payout_count: number | null;
 };
 
 export type BankOperationRead = {
@@ -2798,6 +2805,8 @@ export type SafeAllocationRead = {
   // Происхождение авто-резерва: черновик выплаты на карту ИП (неофициальный поставщик).
   source_draft_id: string | null;
   status: "reserved" | "partially_paid" | "paid" | "cancelled";
+  // Где живёт целёвка: 'safe' — на карте «Сейф», 'kassa' — передана в Торговую кассу.
+  location: "safe" | "kassa";
   created_at: string;
 };
 
@@ -2842,6 +2851,56 @@ export async function paySafeAllocation(
 
 export async function cancelSafeAllocation(allocationId: string): Promise<SafeAllocationRead> {
   const response = await api.post<SafeAllocationRead>(`/dds/allocations/${allocationId}/cancel`);
+  return response.data;
+}
+
+/** «Передать в кассу»: целёвка переезжает в ТК Черникова вместе с деньгами (весь остаток). */
+export async function transferSafeAllocationToKassa(
+  allocationId: string,
+): Promise<SafeAllocationRead> {
+  const response = await api.post<SafeAllocationRead>(
+    `/dds/allocations/${allocationId}/transfer-to-kassa`,
+  );
+  return response.data;
+}
+
+// Целёвки в Торговой кассе + ожидающие разрешения (read-only диалог «Денег сегодня»).
+export type DdsKassaTarget = {
+  id: string;
+  article_id: string | null;
+  article_name: string | null;
+  counterparty_id: string | null;
+  counterparty_name: string | null;
+  purpose: string | null;
+  amount: number;
+  amount_paid: number;
+  outstanding: number;
+  from_bank_payout: boolean;
+  created_at: string;
+};
+
+export type DdsKassaAdvancePermission = {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  kind: "advance" | "loan";
+  amount: number;
+  comment: string | null;
+  created_by_label: string | null;
+  created_at: string;
+};
+
+export type DdsKassaTargets = {
+  wallet_name: string;
+  balance: number;
+  targets: DdsKassaTarget[];
+  permissions: DdsKassaAdvancePermission[];
+  targets_total: number;
+  pending_count: number;
+};
+
+export async function getDdsKassaTargets(): Promise<DdsKassaTargets> {
+  const response = await api.get<DdsKassaTargets>("/dds/kassa-targets");
   return response.data;
 }
 
@@ -3720,6 +3779,12 @@ export async function markPayrollAdvancePaid(id: string): Promise<PayrollAdvance
 
 export async function cancelPayrollAdvance(id: string): Promise<PayrollAdvance> {
   const response = await api.post<PayrollAdvance>(`/payroll/advances/${id}/cancel`);
+  return response.data;
+}
+
+/** Отозвать разрешение на выдачу через кассу (пока админ не исполнил; после — 409). */
+export async function revokeKassaPayrollAdvance(id: string): Promise<PayrollAdvance> {
+  const response = await api.post<PayrollAdvance>(`/payroll/advances/${id}/revoke-kassa`);
   return response.data;
 }
 

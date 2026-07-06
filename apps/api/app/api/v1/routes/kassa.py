@@ -28,9 +28,11 @@ from app.schemas.kassa import (
     KassaPayoutCreate,
     KassaPayoutEmployeeRead,
     KassaPayoutResultRead,
+    KassaPendingRead,
     KassaShiftDetailRead,
     KassaShiftRead,
     KassaShiftSyncReport,
+    KassaTargetPayoutRequest,
 )
 from app.services.advance_iiko_payout import post_advance_payout_to_iiko
 from app.services.kassa.cheque import (
@@ -60,11 +62,18 @@ from app.services.kassa.payouts import (
     get_kassa_wallet,
     kassa_balance,
     kassa_journal,
+    kassa_pending_payload,
     kassa_today,
     list_payout_articles,
     list_payout_employees,
+    pay_kassa_target,
     update_payout,
 )
+from app.services.payroll_advance_service import (
+    cancel_kassa_advance,
+    disburse_kassa_advance,
+)
+from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
 from app.services.settings_service import SettingNotFoundError, get_setting
 from app.services.warehouse_invoice_push import WarehousePushError, push_invoice_to_iiko
 
@@ -537,6 +546,102 @@ async def delete_payout_endpoint(
         )
     except KassaPayoutError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+# --- Вкладка «К выдаче»: целёвки в кассе и разрешения на авансы/займы ------------
+
+
+@router.get("/pending", response_model=KassaPendingRead, dependencies=KASSA_PAYOUTS_CREATE)
+async def kassa_pending_endpoint(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict:
+    """Позиции «К выдаче»: целёвки, переданные в кассу, + ожидающие разрешения.
+
+    Целёвке доступна частичная выдача, разрешению — только вся сумма."""
+    try:
+        return await kassa_pending_payload(session)
+    except KassaPayoutError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/targets/{allocation_id}/payout",
+    response_model=KassaPendingRead,
+    dependencies=KASSA_PAYOUTS_CREATE,
+)
+async def pay_kassa_target_endpoint(
+    allocation_id: uuid.UUID,
+    payload: KassaTargetPayoutRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict:
+    """«Выдано»: расход целёвки наличными из кассы (частично можно, сверх остатка — нет).
+
+    Проводка по статье целёвки с её контрагентом, датой сегодня — строка сразу видна
+    в кассовом журнале. Сумма больше учётного остатка кассы не блокируется
+    (предупреждение показывает фронт)."""
+    try:
+        await pay_kassa_target(
+            session,
+            allocation_id=allocation_id,
+            amount=payload.amount,
+            actor_user_id=actor.user_id,
+        )
+        return await kassa_pending_payload(session)
+    except KassaPayoutError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/advance-permissions/{advance_id}/disburse",
+    response_model=KassaPendingRead,
+    dependencies=KASSA_PAYOUTS_CREATE,
+)
+async def disburse_kassa_advance_endpoint(
+    advance_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict:
+    """«Выплачено»: исполнить разрешение на аванс/заём (только вся сумма).
+
+    Наличная проводка из ТК Черникова + активация долга датой подтверждения
+    (удержания от неё) + изъятие в iiko после commit (ошибка iiko выдачу не валит).
+    Повторное исполнение и исполнение отменённого — 409."""
+    try:
+        advance = await disburse_kassa_advance(session, advance_id=advance_id)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    # Тот же контур, что у наличной выдачи с ТК: после commit, ошибка не откатывает.
+    post_advance_payout_to_iiko(
+        amount=advance.amount,
+        payout_date=advance.issued_on,
+        source_id=advance.id,
+        is_loan=advance.kind == "loan",
+        source="cash",
+    )
+    return await kassa_pending_payload(session)
+
+
+@router.post(
+    "/advance-permissions/{advance_id}/cancel",
+    response_model=KassaPendingRead,
+    dependencies=KASSA_PAYOUTS_CREATE,
+)
+async def cancel_kassa_advance_endpoint(
+    advance_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict:
+    """Отменить разрешение со стороны кассы: создатель увидит «отменено кассой».
+
+    Проводок нет (разрешение денег не двигало). Уже исполненное — 409."""
+    try:
+        await cancel_kassa_advance(session, advance_id=advance_id, by_kassa_admin=True)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return await kassa_pending_payload(session)
 
 
 def _mirror_advance_payout_to_iiko(result: KassaPayoutResult) -> None:

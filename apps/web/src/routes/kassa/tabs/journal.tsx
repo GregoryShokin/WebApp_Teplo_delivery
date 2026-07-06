@@ -150,7 +150,13 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
         <MetricCard
           label="В кассе сейчас"
           value={journal ? formatRub(journal.balance) : "—"}
-          hint={journal?.wallet_name}
+          hint={
+            journal
+              ? journal.targets_total > 0
+                ? `${journal.wallet_name} · из них целевые ${formatRub(journal.targets_total)}`
+                : journal.wallet_name
+              : null
+          }
         />
         <MetricCard
           label="Приход за период"

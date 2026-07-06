@@ -288,6 +288,9 @@ export type KassaJournal = {
   balance: number;
   period_in: number;
   period_out: number;
+  // Шапка «в кассе N ₽ · из них целевые M ₽» + бейдж вкладки «К выдаче».
+  targets_total: number;
+  pending_count: number;
   items: KassaJournalItem[];
 };
 
@@ -367,4 +370,74 @@ export async function updateKassaPayout(
 
 export async function deleteKassaPayout(transactionId: string): Promise<void> {
   await api.delete(`${BASE}/payouts/${transactionId}`);
+}
+
+// --- вкладка «К выдаче»: целёвки в кассе + разрешения на авансы/займы ------------
+
+export type KassaTarget = {
+  id: string;
+  article_id: string | null;
+  article_name: string | null;
+  counterparty_id: string | null;
+  counterparty_name: string | null;
+  // Происхождение (например, накладные закупа) — из назначения целёвки.
+  purpose: string | null;
+  amount: number;
+  amount_paid: number;
+  outstanding: number;
+  // Авто-целёвка оплаченного банковского черновика закупа.
+  from_bank_payout: boolean;
+  created_at: string;
+};
+
+export type KassaAdvancePermission = {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  kind: "advance" | "loan";
+  amount: number;
+  comment: string | null;
+  created_by_label: string | null;
+  created_at: string;
+};
+
+export type KassaPending = {
+  wallet_name: string;
+  balance: number;
+  targets: KassaTarget[];
+  permissions: KassaAdvancePermission[];
+  targets_total: number;
+  pending_count: number;
+};
+
+export async function getKassaPending(): Promise<KassaPending> {
+  const response = await api.get<KassaPending>(`${BASE}/pending`);
+  return response.data;
+}
+
+/** «Выдано»: расход целёвки наличными из кассы (частично можно, сверх остатка — 409). */
+export async function payKassaTarget(
+  allocationId: string,
+  amount: number,
+): Promise<KassaPending> {
+  const response = await api.post<KassaPending>(`${BASE}/targets/${allocationId}/payout`, {
+    amount,
+  });
+  return response.data;
+}
+
+/** «Выплачено»: исполнить разрешение на аванс/заём (только вся сумма). */
+export async function disburseKassaAdvancePermission(advanceId: string): Promise<KassaPending> {
+  const response = await api.post<KassaPending>(
+    `${BASE}/advance-permissions/${advanceId}/disburse`,
+  );
+  return response.data;
+}
+
+/** Отменить разрешение со стороны кассы — создатель увидит «отменено кассой». */
+export async function cancelKassaAdvancePermission(advanceId: string): Promise<KassaPending> {
+  const response = await api.post<KassaPending>(
+    `${BASE}/advance-permissions/${advanceId}/cancel`,
+  );
+  return response.data;
 }

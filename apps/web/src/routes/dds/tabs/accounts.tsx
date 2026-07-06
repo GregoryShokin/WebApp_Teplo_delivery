@@ -60,7 +60,9 @@ export function AccountsTab() {
           ) : (
             <div className="divide-y">
               {accounts.map((account) => {
-                const isSafe = account.reserved_total !== null;
+                // Именно Сейф: у Торговой кассы теперь тоже есть reserved_total
+                // (целёвки), но её карточка — read-only диалог на «Деньгах сегодня».
+                const isSafe = account.type === "cash_safe";
                 return (
                   <div
                     className={`flex items-center justify-between gap-3 py-2 text-sm ${

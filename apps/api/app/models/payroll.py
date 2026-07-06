@@ -1096,6 +1096,11 @@ class SalaryAdvance(Base):
         ForeignKey("wallet.id", ondelete="SET NULL"), nullable=True
     )
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Разрешение на выдачу через кассу отклонено администратором кассы (создатель
+    # видит статус «отменено кассой»). NULL — отменено самим создателем / не касса.
+    kassa_cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )

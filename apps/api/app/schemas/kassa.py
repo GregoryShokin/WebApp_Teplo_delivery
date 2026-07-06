@@ -257,7 +257,63 @@ class KassaJournalRead(BaseModel):
     balance: float
     period_in: float
     period_out: float
+    # Шапка «в кассе N ₽ · из них целевые M ₽» + бейдж вкладки «К выдаче».
+    targets_total: float
+    pending_count: int
     items: list[KassaJournalItemRead] = Field(default_factory=list)
+
+
+# --- Вкладка «К выдаче»: целёвки в кассе + разрешения на авансы/займы ------------
+
+
+class KassaTargetRead(BaseModel):
+    """Целёвка, переданная в кассу: выдаётся наличными по статье с контрагентом."""
+
+    id: uuid.UUID
+    article_id: uuid.UUID | None = None
+    article_name: str | None = None
+    counterparty_id: uuid.UUID | None = None
+    counterparty_name: str | None = None
+    # Происхождение (например, накладные закупа) — из назначения резерва.
+    purpose: str | None = None
+    amount: float
+    amount_paid: float
+    outstanding: float
+    # Авто-целёвка оплаченного банковского черновика закупа («из банковской выплаты»).
+    from_bank_payout: bool
+    created_at: datetime
+
+
+class KassaAdvancePermissionRead(BaseModel):
+    """Ожидающее разрешение на аванс/заём через кассу (выдаёт админ, вся сумма)."""
+
+    id: uuid.UUID
+    employee_id: uuid.UUID
+    employee_name: str
+    kind: str  # advance | loan
+    amount: float
+    comment: str | None = None
+    created_by_label: str | None = None
+    created_at: datetime
+
+
+class KassaPendingRead(BaseModel):
+    """Состав вкладки «К выдаче» (он же — read-only диалог на «Деньгах сегодня»)."""
+
+    wallet_name: str
+    balance: float
+    targets: list[KassaTargetRead] = Field(default_factory=list)
+    permissions: list[KassaAdvancePermissionRead] = Field(default_factory=list)
+    targets_total: float
+    pending_count: int
+
+
+class KassaTargetPayoutRequest(BaseModel):
+    """«Выдано»: сумма выдачи целёвки (частичная допустима, больше остатка — нет)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0)
 
 
 class KassaPayoutArticleRead(BaseModel):

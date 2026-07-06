@@ -32,6 +32,7 @@ import {
   getEmployees,
   getPayrollAdvanceAvailability,
   getPayrollAdvances,
+  revokeKassaPayrollAdvance,
   writeOffPayrollAdvance,
   type PayrollAdvance,
 } from "@/lib/api";
@@ -39,9 +40,11 @@ import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 const PAYROLL_WALLET = "payroll";
+const KASSA_WALLET_CODE = "tk_chernikova";
 const KIND_LABEL: Record<string, string> = { advance: "Аванс", loan: "Заём" };
 const STATUS_LABEL: Record<string, string> = {
   issued: "Выдан",
+  awaiting_payout: "Ожидает выдачи",
   recovered: "Погашен",
   written_off: "Списан",
   cancelled: "Отменён",
@@ -97,6 +100,11 @@ export function PayrollAdvancesRoute() {
   const advanceOverEarned = kind === "advance" && overEarned;
   const isBackdated = issuedOn < todayIso();
   const throughPayroll = walletId === PAYROLL_WALLET;
+  // ТК Черникова сегодняшней датой = разрешение на выдачу через кассу (не мгновенно);
+  // задним числом деньги уже выданы — остаётся мгновенная фиксация.
+  const selectedWallet = issueWallets.find((wallet) => wallet.id === walletId) ?? null;
+  const viaKassaPermission =
+    !throughPayroll && !isBackdated && selectedWallet?.code === KASSA_WALLET_CODE;
 
   function resetForm() {
     setIssueEmployeeId("");
@@ -125,14 +133,21 @@ export function PayrollAdvancesRoute() {
         comment: comment.trim() || undefined,
         override_ceiling: isLoan ? overrideCeiling : false,
       }),
-    onSuccess: async () => {
-      toast.success(isLoan ? "Заём добавлен в ведомость" : "Аванс добавлен в ведомость");
+    onSuccess: async (created) => {
+      toast.success(
+        created.payout_status === "awaiting_kassa"
+          ? "Разрешение создано — уйдёт в кассу, выдаст администратор"
+          : isLoan
+            ? "Заём добавлен в ведомость"
+            : "Аванс добавлен в ведомость",
+      );
       setDialogOpen(false);
       resetForm();
       await queryClient.invalidateQueries({ queryKey: ["payroll-advances"] });
       await queryClient.invalidateQueries({ queryKey: ["payroll-runs"] });
       await queryClient.invalidateQueries({ queryKey: ["payroll-run"] });
       await queryClient.invalidateQueries({ queryKey: ["payroll-run-lines"] });
+      await queryClient.invalidateQueries({ queryKey: ["kassa"] });
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось выдать")),
   });
@@ -144,6 +159,17 @@ export function PayrollAdvancesRoute() {
       await queryClient.invalidateQueries({ queryKey: ["payroll-advances"] });
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отменить")),
+  });
+
+  // Отзыв разрешения на выдачу через кассу — до исполнения администратором (после — 409).
+  const revokeMutation = useMutation({
+    mutationFn: (id: string) => revokeKassaPayrollAdvance(id),
+    onSuccess: async () => {
+      toast.success("Разрешение отозвано");
+      await queryClient.invalidateQueries({ queryKey: ["payroll-advances"] });
+      await queryClient.invalidateQueries({ queryKey: ["kassa"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отозвать")),
   });
 
   const writeOffMutation = useMutation({
@@ -185,13 +211,38 @@ export function PayrollAdvancesRoute() {
       cell: (row) => formatMoney(row.amount - row.recovered_amount),
     },
     { key: "issued_on", header: "Дата", cell: (row) => formatDate(row.issued_on) },
-    { key: "status", header: "Статус", cell: (row) => STATUS_LABEL[row.status] ?? row.status },
+    {
+      key: "status",
+      header: "Статус",
+      cell: (row) => {
+        // Кассовые состояния: разрешение в пути и отклонение админом кассы.
+        if (row.payout_status === "awaiting_kassa") {
+          return (
+            <Badge className="border-amber-200 bg-amber-50 text-amber-700">Ждёт кассу</Badge>
+          );
+        }
+        if (row.payout_status === "cancelled_by_kassa") {
+          return <span className="text-muted-foreground">Отменено кассой</span>;
+        }
+        return STATUS_LABEL[row.status] ?? row.status;
+      },
+    },
     {
       key: "actions",
       header: "",
       headerClassName: "w-10",
       cell: (row) =>
-        row.status === "issued" && (canIssue || canLoan) ? (
+        row.payout_status === "awaiting_kassa" && canIssue ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={revokeMutation.isPending}
+            onClick={() => revokeMutation.mutate(row.id)}
+            title="Отозвать разрешение, пока администратор кассы его не исполнил"
+          >
+            Отозвать
+          </Button>
+        ) : row.status === "issued" && (canIssue || canLoan) ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -419,10 +470,17 @@ export function PayrollAdvancesRoute() {
                   </option>
                 ))}
               </select>
-              <span className="text-xs text-muted-foreground">
+              <span
+                className={cn(
+                  "text-xs",
+                  viaKassaPermission ? "font-medium text-amber-600" : "text-muted-foreground",
+                )}
+              >
                 {throughPayroll
                   ? "Сумма уйдёт вместе с зарплатой по ближайшей незафинализированной ведомости."
-                  : "Наличные — расход в ДДС сразу; банк — черновик платежа в Т-Банке. Удержание — из ближайшей ЗП."}
+                  : viaKassaPermission
+                    ? "Уйдёт в кассу — выдаст администратор. Деньги и удержания появятся после фактической выдачи."
+                    : "Наличные — расход в ДДС сразу; банк — черновик платежа в Т-Банке. Удержание — из ближайшей ЗП."}
               </span>
             </Label>
 

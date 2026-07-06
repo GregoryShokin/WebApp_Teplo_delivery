@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -359,10 +360,16 @@ class SafeAllocation(Base):
 
     status: ``reserved`` → ``partially_paid`` → ``paid``; ``cancelled`` — отменён
     (оплаченные ноги остаются, неоплаченный остаток освобождается).
+
+    location: ``safe`` — резерв на карте «Сейф»; ``kassa`` — передан в Торговую
+    кассу Черникова вместе с деньгами (двухногое перемещение всего остатка),
+    ``wallet_id`` при этом тоже меняется на кассу — выдача идёт наличными из
+    вкладки «К выдаче» модуля «Касса».
     """
 
     __tablename__ = "safe_allocations"
     __table_args__ = (
+        CheckConstraint("location in ('safe', 'kassa')", name="ck_safe_allocations_location"),
         Index("ix_safe_allocations_wallet_id", "wallet_id"),
         Index("ix_safe_allocations_status", "status"),
         # Один черновик выплаты — один авто-резерв (страховка идемпотентности
@@ -397,6 +404,9 @@ class SafeAllocation(Base):
     )
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="reserved", server_default="reserved"
+    )
+    location: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="safe", server_default="safe"
     )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id"), nullable=True

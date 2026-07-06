@@ -31,8 +31,10 @@ from app.models import Account, Employee, SalaryAdvance, SalaryAdvanceBankDraft,
 from app.services.employee_effective_events import get_position_on_date
 from app.services.payroll_advance_availability import AdvanceAvailability, available_to_advance
 from app.services.payroll_advance_service import (
+    ADVANCE_TK_WALLET_CODE,
     advance_payout_status,
     cancel_advance,
+    cancel_kassa_advance,
     disburse_bank_advance,
     get_loan_max,
     issue_advance,
@@ -263,6 +265,14 @@ async def post_advance(
     issue_code = _ISSUE_ADMIN if position in admin_payroll_positions() else _ISSUE_PRODUCTION
     ensure_permission(actor, issue_code)
     allow_loan = permission_is_granted(_LOAN_ISSUE, actor.permissions)
+    # Счёт «ТК Черникова» сегодняшней датой — не мгновенная выплата, а РАЗРЕШЕНИЕ на
+    # выдачу через кассу (исполнит администратор во вкладке «К выдаче»). Задним числом
+    # деньги уже выданы — остаётся мгновенная фиксация, как раньше. Отдельного права
+    # нет: разрешение покрыто правом выдачи авансов/займов.
+    kassa_pending = False
+    if payload.wallet_id is not None and (payload.issued_on is None or payload.issued_on >= today):
+        wallet = await session.get(Wallet, payload.wallet_id)
+        kassa_pending = wallet is not None and wallet.code == ADVANCE_TK_WALLET_CODE
     try:
         advance = await issue_advance(
             session,
@@ -279,6 +289,7 @@ async def post_advance(
             recovery_start_date=payload.recovery_start_date,
             comment=payload.comment,
             actor_user_id=actor.user_id,
+            kassa_pending=kassa_pending,
         )
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -315,6 +326,30 @@ async def post_cancel_advance(
     ensure_any_permission(actor, _ISSUE_CODES)
     try:
         advance = await cancel_advance(session, advance_id)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    drafts = await list_advance_drafts(session, [advance.id])
+    return _advance_read(advance, drafts.get(advance.id))
+
+
+@router.post("/{advance_id}/revoke-kassa", response_model=AdvanceRead)
+async def post_revoke_kassa_advance(
+    advance_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> AdvanceRead:
+    """Отозвать разрешение на выдачу через кассу (пока администратор не исполнил).
+
+    Только для pending-разрешений: после исполнения админом — 409 «уже выдано»
+    (выданный аванс снимается обычной отменой выдачи, это другая операция).
+    """
+    ensure_any_permission(actor, _ISSUE_CODES)
+    try:
+        advance = await cancel_kassa_advance(
+            session, advance_id=advance_id, by_kassa_admin=False
+        )
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PayrollConflictError as exc:
