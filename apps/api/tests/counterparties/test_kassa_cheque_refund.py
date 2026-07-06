@@ -65,13 +65,15 @@ async def _purchase_op(
     amount: str,
     card: str = CARD,
     account=None,
+    wallet=None,
 ):
     """Счёт + карт-кошелёк + карт-покупка (cardNumber + свой rrn/authCode, как в выписке)."""
     if account is None:
         account = await make_account(session)
-    wallet = await make_wallet(
-        session, name="Тинькофф карта", wallet_type="bank", account_id=account.id
-    )
+    if wallet is None:
+        wallet = await make_wallet(
+            session, name="Тинькофф карта", wallet_type="bank", account_id=account.id
+        )
     op = await make_bank_operation(
         session,
         amount=amount,
@@ -84,6 +86,9 @@ async def _purchase_op(
     return account, wallet, op
 
 
+_refund_doc_seq = 0
+
+
 async def _refund_op(
     session: AsyncSession,
     account_id,
@@ -91,7 +96,10 @@ async def _refund_op(
     amount: str,
     card: str = CARD,
 ) -> BankOperation:
-    """Настоящий возврат refundIn: свой rrn, БЕЗ authCode, тот же cardNumber."""
+    """Настоящий возврат refundIn: свой rrn, БЕЗ authCode, тот же cardNumber, свой
+    documentNumber (у боевого возврата он есть → ingest-дедуп по stable_key работает)."""
+    global _refund_doc_seq
+    _refund_doc_seq += 1
     return await make_bank_operation(
         session,
         amount=amount,
@@ -99,7 +107,7 @@ async def _refund_op(
         operation_date=REFUND_DATE,
         category="refundIn",
         account_id=account_id,
-        raw_payload={"cardNumber": card, "rrn": REFUND_RRN},
+        raw_payload={"cardNumber": card, "rrn": REFUND_RRN, "documentNumber": f"D{_refund_doc_seq}"},
         classification_status="pending",
     )
 
@@ -319,16 +327,18 @@ async def test_refund_not_attached_to_other_card(
         assert refund.cashflow_transaction_id is None
 
 
-async def test_ambiguous_refund_not_attached_and_escalates(
+async def test_ambiguous_refund_escalates_and_apply_links_to_chosen_cheque(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    # Два чека на одной карте ждут по 500 → возврат 500 не привязывается; эскалация = ambiguous.
+    # Два чека на одной карте ждут по 500 → возврат 500 неоднозначен; эскалация ambiguous с
+    # кандидатами. «Учесть возврат» с выбором чека A ПРИВЯЗЫВАЕТ возврат к A (гасит ожидание A),
+    # закрывает missing-кейс A; B не тронут.
     async with async_session_factory() as session:
         article = await make_expense_article(session, code="personal", name="Расходы на персонал")
-        account, _, op1 = await _purchase_op(session, amount="1000.00")
-        _, _, op2 = await _purchase_op(session, amount="1000.00", account=account)
+        account, wallet, op1 = await _purchase_op(session, amount="1000.00")
+        _, _, op2 = await _purchase_op(session, amount="1000.00", account=account, wallet=wallet)
         await session.commit()
-        await _net_cheque(session, op1, article=article, ret="500.00", keep="500.00")
+        cheque_a = await _net_cheque(session, op1, article=article, ret="500.00", keep="500.00")
         await _net_cheque(session, op2, article=article, ret="500.00", keep="500.00")
         refund = await _refund_op(session, account.id, amount="500.00")
         await session.flush()
@@ -338,12 +348,86 @@ async def test_ambiguous_refund_not_attached_and_escalates(
         assert refund.cashflow_transaction_id is None
 
         future = datetime.now(UTC) + timedelta(days=10)
-        assert await escalate_missing_cheque_refunds(session, now=future) >= 1
+        await escalate_missing_cheque_refunds(session, now=future)
+        await session.flush()
         cases = await _pending_cases(session, CARD_REFUND_CASE_KIND)
         assert len(cases) == 1
-        assert cases[0].bank_operation_id == refund.id
-        assert cases[0].payload["reason"] == "ambiguous"
-        assert len(cases[0].payload["candidate_cheques"]) == 2
+        case = cases[0]
+        assert case.payload["reason"] == "ambiguous"
+        assert len(case.payload["candidates"]) == 2
+        # missing-кейсы подняты по обоим чекам.
+        assert len(await _pending_cases(session, REFUND_MISSING_CASE_KIND)) == 2
+
+        result = await apply_card_refund_case(session, case, invoice_id=cheque_a.id)
+        await session.flush()
+        assert result["linked_invoice_id"] == str(cheque_a.id)
+        await session.refresh(refund)
+        await session.refresh(op1)
+        # Привязан к проводке чека A (НЕ отдельная inflow-проводка) → ожидание A погашено.
+        assert refund.cashflow_transaction_id == op1.cashflow_transaction_id
+        assert refund.classification_status == "classified"
+        assert case.status == "resolved"
+        # missing-кейс A закрыт; B (реально ещё ждёт) остаётся.
+        remaining = await _pending_cases(session, REFUND_MISSING_CASE_KIND)
+        assert len(remaining) == 1
+        assert remaining[0].payload["invoice_id"] != str(cheque_a.id)
+
+
+async def test_apply_wrong_invoice_rejected(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # «Учесть возврат» нельзя привязать к чеку, которого нет среди кандидатов кейса.
+    async with async_session_factory() as session:
+        article = await make_expense_article(session, code="personal", name="Расходы на персонал")
+        account, wallet, op1 = await _purchase_op(session, amount="1000.00")
+        _, _, op2 = await _purchase_op(session, amount="1000.00", account=account, wallet=wallet)
+        await session.commit()
+        await _net_cheque(session, op1, article=article, ret="500.00", keep="500.00")
+        await _net_cheque(session, op2, article=article, ret="500.00", keep="500.00")
+        # чужой чек на другой карте
+        acc2, _, op3 = await _purchase_op(session, amount="6000.00", card="220070******3867")
+        other = await _net_cheque(session, op3, article=article, ret="500.00", keep="5500.00")
+        refund = await _refund_op(session, account.id, amount="500.00")
+        await session.flush()
+        future = datetime.now(UTC) + timedelta(days=10)
+        await escalate_missing_cheque_refunds(session, now=future)
+        await session.flush()
+        case = (await _pending_cases(session, CARD_REFUND_CASE_KIND))[0]
+        with pytest.raises(KassaChequeError, match="не относится"):
+            await apply_card_refund_case(session, case, invoice_id=other.id)
+
+
+async def test_split_refund_attaches_partial(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Банк прислал возврат двумя операциями (300+200) на ожидание 500 у ОДНОГО чека →
+    # каждая привязывается как частичная; ожидание гасится в ноль; missing-кейса не остаётся.
+    async with async_session_factory() as session:
+        article = await make_expense_article(session, code="personal", name="Расходы на персонал")
+        account, _, op = await _purchase_op(session, amount="6000.00")
+        await session.commit()
+        await _net_cheque(session, op, article=article)  # ждёт 500
+
+        r1 = await _refund_op(session, account.id, amount="300.00")
+        await session.flush()
+        assert await match_card_refund_operations(session) == 1  # 300 вписалось (уникальный чек)
+        await session.flush()
+        await session.refresh(r1)
+        await session.refresh(op)
+        assert r1.cashflow_transaction_id == op.cashflow_transaction_id
+
+        r2 = await _refund_op(session, account.id, amount="200.00")
+        await session.flush()
+        assert await match_card_refund_operations(session) == 1  # 200 добило остаток
+        await session.flush()
+        await session.refresh(r2)
+        assert r2.cashflow_transaction_id == op.cashflow_transaction_id
+
+        # Ожидание погашено (300+200==500) → эскалация не поднимает missing.
+        future = datetime.now(UTC) + timedelta(days=10)
+        await escalate_missing_cheque_refunds(session, now=future)
+        await session.flush()
+        assert await _pending_cases(session, REFUND_MISSING_CASE_KIND) == []
 
 
 async def test_unmatched_refund_escalates_and_apply_books_inflow(

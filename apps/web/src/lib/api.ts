@@ -2853,10 +2853,13 @@ export async function dismissOwnerReviewCase(caseId: string): Promise<void> {
   await api.post(`/dds/owner-review/${caseId}/dismiss`);
 }
 
-export async function applyCardRefundCase(caseId: string): Promise<void> {
-  // «Учесть возврат»: входящая проводка «Возврат расходов» по операции возврата,
-  // привязка операции к чеку и закрытие кейса (история чека и iiko не мутируются).
-  await api.post(`/dds/owner-review/${caseId}/apply-card-refund`);
+export async function applyCardRefundCase(caseId: string, invoiceId?: string): Promise<void> {
+  // «Учесть возврат»: если возврат относится к чеку (единственный кандидат или выбранный
+  // invoiceId при неоднозначности) — привязка к чеку гасит его ожидание; иначе (сирота) —
+  // входящая проводка «Возврат расходов». Чек и iiko не мутируются.
+  await api.post(`/dds/owner-review/${caseId}/apply-card-refund`, null, {
+    params: invoiceId ? { invoice_id: invoiceId } : undefined,
+  });
 }
 
 export type SafeAllocationRead = {

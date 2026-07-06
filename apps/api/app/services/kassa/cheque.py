@@ -1029,18 +1029,34 @@ def _refund_after_cheque(refund: BankOperation, invoice: SupplierInvoice) -> boo
     )
 
 
+async def _cheque_purchase_op(
+    session: AsyncSession, invoice_id: uuid.UUID
+) -> BankOperation | None:
+    """Карт-покупка чека (bank-аллокация с привязанной ДДС-проводкой)."""
+    return await session.scalar(
+        select(BankOperation)
+        .join(
+            InvoicePaymentAllocation, InvoicePaymentAllocation.bank_operation_id == BankOperation.id
+        )
+        .where(
+            InvoicePaymentAllocation.invoice_id == invoice_id,
+            InvoicePaymentAllocation.source_kind == "bank",
+            BankOperation.cashflow_transaction_id.is_not(None),
+        )
+        .limit(1)
+    )
+
+
 async def _candidate_cheques_for_refund(
     session: AsyncSession, refund: BankOperation
-) -> list[tuple[SupplierInvoice, BankOperation]]:
-    """Чеки Кассы, ожидающие РОВНО сумму этого возврата, по ТОЙ ЖЕ карте, в окне.
+) -> list[tuple[SupplierInvoice, BankOperation, Decimal]]:
+    """Чеки Кассы с НЕзакрытым ожиданием возврата по ТОЙ ЖЕ карте, в окне.
 
-    Ключ надёжного пер-транзакционного матча банк не даёт, поэтому связываем возврат с
-    ЧЕКОМ по декларации кассира: карта покупки чека == карта возврата И остаток ожидания
-    (Σ is_return − уже привязанные возвраты) == сумме возврата. Возвращает (чек, покупка);
-    len>1 = неоднозначность (несколько чеков ждут ту же сумму на той же карте)."""
+    Надёжного пер-транзакционного ключа «покупка↔возврат» банк не даёт, поэтому кандидатов
+    отбираем по карте + положительному остатку ожидания (Σ is_return − привязанные возвраты).
+    Возвращает (чек, покупка, остаток). Разбор exact/partial/ambiguous — в ``_match_refund``."""
     card = _op_card(refund)
-    amount = _money(abs(refund.amount))
-    if card is None or amount <= 0:
+    if card is None:
         return []
     rows = (
         await session.execute(
@@ -1060,7 +1076,7 @@ async def _candidate_cheques_for_refund(
             )
         )
     ).all()
-    result: list[tuple[SupplierInvoice, BankOperation]] = []
+    result: list[tuple[SupplierInvoice, BankOperation, Decimal]] = []
     seen: set[uuid.UUID] = set()
     for invoice, purchase in rows:
         if invoice.id in seen:
@@ -1072,12 +1088,38 @@ async def _candidate_cheques_for_refund(
         outstanding = expected - await _attached_refund_total(
             session, purchase.cashflow_transaction_id
         )
-        if outstanding != amount:
+        if outstanding <= 0:
             continue
         if not _refund_after_cheque(refund, invoice):
             continue
-        result.append((invoice, purchase))
+        result.append((invoice, purchase, outstanding))
     return result
+
+
+async def _match_refund(
+    session: AsyncSession, refund: BankOperation
+) -> tuple[str, list[tuple[SupplierInvoice, BankOperation, Decimal]]]:
+    """Разобрать возврат по кандидатам-чекам. Возвращает (status, targets):
+
+    - ``'unique'`` + [единственный (чек, покупка, остаток)] — привязывать автоматически.
+      Приоритет точному совпадению суммы (outstanding == сумма); если точного нет, но
+      возврат ВПИСЫВАЕТСЯ (сумма < остаток) ровно в один чек — тоже уникально (частичный).
+    - ``'ambiguous'`` + [список подходящих] — несколько чеков подходят, нужен ручной выбор.
+    - ``'none'`` + [] — ни один чек не ждёт возврат такого размера (сирота: кассир не
+      отметил возврат / возврат не по чеку)."""
+    amount = _money(abs(refund.amount))
+    if amount <= 0:
+        return ("none", [])
+    cands = await _candidate_cheques_for_refund(session, refund)
+    fit = [c for c in cands if amount <= c[2]]  # возврат вписывается в остаток
+    if not fit:
+        return ("none", [])
+    exact = [c for c in fit if c[2] == amount]
+    if len(exact) == 1:
+        return ("unique", [exact[0]])
+    if not exact and len(fit) == 1:
+        return ("unique", [fit[0]])
+    return ("ambiguous", fit)
 
 
 async def _resolve_refund_missing_cases(
@@ -1159,9 +1201,9 @@ async def _attach_matching_refunds_for_cheque(
     ).all()
     attached = 0
     for refund in refunds:
-        candidates = await _candidate_cheques_for_refund(session, refund)
-        if len(candidates) == 1 and candidates[0][0].id == invoice.id:
-            await _attach_refund_to_cheque(session, refund, invoice, purchase)
+        status, targets = await _match_refund(session, refund)
+        if status == "unique" and targets[0][0].id == invoice.id:
+            await _attach_refund_to_cheque(session, refund, invoice, targets[0][1])
             attached += 1
     return attached
 
@@ -1169,9 +1211,12 @@ async def _attach_matching_refunds_for_cheque(
 async def _ensure_unmatched_refund_case(
     session: AsyncSession,
     refund: BankOperation,
-    candidates: list[tuple[SupplierInvoice, BankOperation]],
+    candidates: list[tuple[SupplierInvoice, BankOperation, Decimal]],
 ) -> bool:
-    """Поднять кейс «возврат по чеку» (не сматчен либо неоднозначен). Дедуп по операции."""
+    """Поднять кейс «возврат по чеку» (не сматчен либо неоднозначен). Дедуп по операции.
+
+    В payload кладём кандидатов (чек+покупка+остаток), чтобы «Учесть возврат» мог привязать
+    возврат к ВЫБРАННОМУ чеку (гасит его ожидание), а не завести оторванную проводку."""
     existing = await session.scalar(
         select(ReconciliationCase.id).where(
             ReconciliationCase.kind == CARD_REFUND_CASE_KIND,
@@ -1183,6 +1228,15 @@ async def _ensure_unmatched_refund_case(
         return False
     raw = refund.raw_payload or {}
     merch = raw.get("merch") if isinstance(raw.get("merch"), dict) else {}
+    candidate_payload = [
+        {
+            "invoice_id": str(inv.id),
+            "purchase_operation_id": str(pur.id),
+            "cheque_number": inv.number,
+            "outstanding": str(out),
+        }
+        for inv, pur, out in candidates
+    ]
     session.add(
         ReconciliationCase(
             kind=CARD_REFUND_CASE_KIND,
@@ -1193,10 +1247,11 @@ async def _ensure_unmatched_refund_case(
                 "refund_amount": str(_money(abs(refund.amount))),
                 "card": _op_card(refund),
                 "merchant": str((merch or {}).get("name") or "") or None,
-                # 0 кандидатов — ни один чек не ждёт эту сумму (кассир не отметил возврат
-                # или это возврат не по чеку); >1 — несколько чеков ждут ту же сумму.
+                # 0 кандидатов — ни один чек не ждёт возврат такого размера (кассир не отметил
+                # возврат / возврат не по чеку); >1 — несколько чеков подходят, нужен выбор.
                 "reason": "no_matching_cheque" if not candidates else "ambiguous",
-                "candidate_cheques": [inv.number for inv, _ in candidates] or None,
+                "candidates": candidate_payload or None,
+                "candidate_cheques": [inv.number for inv, _, _ in candidates] or None,
             },
         )
     )
@@ -1225,36 +1280,63 @@ async def match_card_refund_operations(session: AsyncSession) -> int:
     ).all()
     matched = 0
     for refund in refund_rows:
-        candidates = await _candidate_cheques_for_refund(session, refund)
-        if len(candidates) == 1:
-            invoice, purchase = candidates[0]
+        status, targets = await _match_refund(session, refund)
+        if status == "unique":
+            invoice, purchase, _out = targets[0]
             await _attach_refund_to_cheque(session, refund, invoice, purchase)
             matched += 1
     return matched
 
 
+async def _resolve_target_cheque(
+    session: AsyncSession, case: ReconciliationCase, invoice_id: uuid.UUID | None
+) -> tuple[SupplierInvoice, BankOperation] | None:
+    """Определить чек, к которому «Учесть возврат» привяжет возврат: явный выбор оператора
+    (invoice_id) либо единственный кандидат из payload. None — сирота (проводим отдельно)."""
+    chosen: str | None = str(invoice_id) if invoice_id else None
+    if chosen is None:
+        candidates = (case.payload or {}).get("candidates") or []
+        if len(candidates) == 1:
+            chosen = str(candidates[0].get("invoice_id"))
+    if not chosen:
+        return None
+    # Оператор мог выбрать только чек из списка кандидатов кейса (защита от произвольного id).
+    allowed = {
+        str(c.get("invoice_id")) for c in ((case.payload or {}).get("candidates") or [])
+    }
+    if allowed and chosen not in allowed:
+        raise KassaChequeError("Выбранный чек не относится к этому возврату")
+    invoice = await session.get(SupplierInvoice, uuid.UUID(chosen))
+    if invoice is None or invoice.source != "kassa_cheque":
+        return None
+    purchase = await _cheque_purchase_op(session, invoice.id)
+    if purchase is None or purchase.cashflow_transaction_id is None:
+        return None
+    return invoice, purchase
+
+
 async def apply_card_refund_case(
-    session: AsyncSession, case: ReconciliationCase
+    session: AsyncSession,
+    case: ReconciliationCase,
+    *,
+    invoice_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     """Действие «Учесть возврат» по кейсу «возврат по проведённому чеку». Без commit.
 
-    Книжит входящую ДДС-проводку (кошелёк операции возврата, служебная статья «Возврат
-    расходов») — история чека НЕ мутируется, iiko остаётся как проведено (изъятия
-    необратимы). Возврат привязывается к проводке (classified), кейс закрывается.
-    Повтор по уже привязанному возврату просто закрывает кейс.
+    Если возврат относится к конкретному чеку (единственный кандидат или явный выбор
+    оператора ``invoice_id``) — ПРИВЯЗЫВАЕМ его к ДДС-проводке чека (гасит ожидание чека,
+    закрывает кейсы «возврат не пришёл» — иначе они висели бы вечно). Иначе (сирота: кассир
+    не отметил возврат / возврат не по чеку) — заводим отдельную входящую проводку «Возврат
+    расходов». История чека и iiko не мутируются. Повтор по привязанному возврату — no-op.
     """
     if case.kind != CARD_REFUND_CASE_KIND:
         raise KassaChequeError("Кейс не является возвратом по чеку")
     if case.bank_operation_id is None:
         raise KassaChequeError("Кейс не привязан к операции возврата")
-    refund = await session.get(BankOperation, case.bank_operation_id)
+    # Блокируем строку возврата: закрывает гонку с realtime-матчером (двойной учёт).
+    refund = await session.get(BankOperation, case.bank_operation_id, with_for_update=True)
     if refund is None:
         raise KassaChequeError("Операция возврата не найдена")
-
-    invoice: SupplierInvoice | None = None
-    raw_invoice_id = (case.payload or {}).get("invoice_id")
-    if raw_invoice_id:
-        invoice = await session.get(SupplierInvoice, uuid.UUID(str(raw_invoice_id)))
 
     if refund.cashflow_transaction_id is not None:
         # Уже учтён (гонка/повторный клик) — просто закрываем кейс.
@@ -1263,10 +1345,17 @@ async def apply_card_refund_case(
         )
         return {"transaction_id": refund.cashflow_transaction_id, "already_linked": True}
 
+    target = await _resolve_target_cheque(session, case, invoice_id)
+    if target is not None:
+        # Привязка к чеку: гасит ожидание, чек уже проведён net — новую проводку НЕ заводим.
+        invoice, purchase = target
+        await _attach_refund_to_cheque(session, refund, invoice, purchase)
+        return {"linked_invoice_id": str(invoice.id), "already_linked": False}
+
+    # Сирота: отдельная входящая проводка «Возврат расходов».
     wallet = await _wallet_for_operation(session, refund)
     if wallet is None:
         raise KassaChequeError("Не удалось определить счёт по операции возврата")
-
     article = await session.scalar(
         select(DdsArticle).where(DdsArticle.code == EXPENSE_REFUND_ARTICLE_CODE)
     )
@@ -1278,25 +1367,20 @@ async def apply_card_refund_case(
             activity_type="operating",
             is_active=True,
             description=(
-                "Служебная: возвраты карт-покупок по проведённым чекам Кассы "
+                "Служебная: возвраты карт-покупок, не сопоставленные с чеком "
                 "(кнопка «Учесть возврат» в «Требует разбора»)"
             ),
         )
         session.add(article)
         await session.flush()
-
     transaction = CashflowTransaction(
         wallet_id=wallet.id,
         direction="in",
         amount=_money(abs(refund.amount)),
         operation_date=refund.operation_date,
         article_id=article.id,
-        counterparty_id=invoice.counterparty_id if invoice else None,
         source_kind="kassa_cheque_refund",
-        source_id=invoice.id if invoice else None,
-        payment_purpose=(
-            f"Возврат по чеку {invoice.number}" if invoice else "Возврат карт-покупки"
-        ),
+        payment_purpose="Возврат карт-покупки",
         quality_status="final",
     )
     session.add(transaction)
@@ -1410,11 +1494,12 @@ async def escalate_missing_cheque_refunds(
         )
     ).all()
     for refund in stale_refunds:
-        candidates = await _candidate_cheques_for_refund(session, refund)
-        if len(candidates) == 1:
+        status, targets = await _match_refund(session, refund)
+        if status == "unique":
             # Однозначный матч добьёт realtime-матчер на следующем синке — не наш кейс.
             continue
-        if await _ensure_unmatched_refund_case(session, refund, candidates):
+        # 'ambiguous' → targets = подходящие чеки (для выбора оператором); 'none' → [].
+        if await _ensure_unmatched_refund_case(session, refund, targets):
             created += 1
 
     await session.flush()

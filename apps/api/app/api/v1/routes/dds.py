@@ -997,6 +997,8 @@ async def list_owner_review_cases(
         "unconfirmed_cheque",
         "payer_wallet_unresolved",
         "iiko_payment_unsettled",
+        "card_refund_after_cheque",
+        "cheque_refund_missing",
     ]
     | None = None,
 ) -> dict[str, object]:
@@ -1007,6 +1009,8 @@ async def list_owner_review_cases(
         "unconfirmed_cheque",
         "payer_wallet_unresolved",
         "iiko_payment_unsettled",
+        "card_refund_after_cheque",
+        "cheque_refund_missing",
     )
     conditions = [
         ReconciliationCase.status == "pending",
