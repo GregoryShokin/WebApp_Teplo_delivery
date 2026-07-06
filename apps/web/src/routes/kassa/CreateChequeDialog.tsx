@@ -226,15 +226,13 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
       : 0;
   const cash = num(cashAmount);
   const paidTotal = cardTotal + cash;
-  // Подсказка рассинхрона с банком: по выбранной покупке уже есть возврат в выписке.
+  // Card-scoped подсказка: на карте выбранной покупки есть непривязанный возврат в выписке
+  // (надёжной привязки к конкретной покупке банк не даёт — кассир решает сам). Точную
+  // сверку по сумме делает матчер после создания чека.
   const bankRefund = selectedOp?.refund_amount ?? null;
   const refundHint =
-    selectedOp && bankRefund
-      ? !hasReturns
-        ? `Банк показывает возврат ${formatDdsMoney(bankRefund)} по этой покупке — отметьте возвращённые позиции кнопкой ↩`
-        : Math.abs(returnedTotal - bankRefund) >= 0.01
-          ? `Помеченные возвраты (${formatDdsMoney(returnedTotal)}) не сходятся с возвратом банка (${formatDdsMoney(bankRefund)})`
-          : null
+    selectedOp && bankRefund && !hasReturns
+      ? `На этой карте есть непривязанный возврат ${formatDdsMoney(bankRefund)} — если он по этой покупке, отметьте возвращённые позиции кнопкой ↩`
       : null;
 
   function reset() {
@@ -916,8 +914,8 @@ function OperationPicker({
                     </span>
                     {op.refund_amount ? (
                       <span className="block truncate text-xs text-amber-700">
-                        по покупке есть возврат {formatDdsMoney(op.refund_amount)} — введите чек
-                        полностью и отметьте позиции
+                        на карте есть возврат {formatDdsMoney(op.refund_amount)} — если по этой
+                        покупке, введите чек полностью и отметьте позиции
                       </span>
                     ) : null}
                   </span>

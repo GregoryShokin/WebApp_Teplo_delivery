@@ -269,11 +269,22 @@ function OwnerReviewCard({
       <CardFooter className="grid gap-4 border-t pt-4">
         {isCardRefund ? (
           <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
-            Банк прислал возврат {payloadText("refund_amount")} ₽ по чеку{" "}
-            <span className="font-medium">{payloadText("cheque_number")}</span>, который его не
-            ждал (чек проведён полностью). «Учесть возврат» создаст входящую проводку «Возврат
-            расходов» и закроет кейс — сам чек и iiko не меняются (изъятия в iiko необратимы;
-            при желании поправьте их там вручную).
+            Банк прислал возврат {payloadText("refund_amount")} ₽ по карте{" "}
+            {payloadText("card")}
+            {item.payload?.merchant ? ` (${payloadText("merchant")})` : ""}.{" "}
+            {item.payload?.reason === "ambiguous" ? (
+              <>
+                Ту же сумму ждут несколько чеков (
+                {Array.isArray(item.payload?.candidate_cheques)
+                  ? (item.payload.candidate_cheques as string[]).join(", ")
+                  : "—"}
+                ) — сопоставить автоматически нельзя.
+              </>
+            ) : (
+              <>Ни один чек не ждёт эту сумму — вероятно, кассир не отметил возврат в чеке.</>
+            )}{" "}
+            «Учесть возврат» создаст входящую проводку «Возврат расходов» и закроет кейс — чеки
+            и iiko не меняются (изъятия в iiko необратимы; при желании поправьте их вручную).
           </div>
         ) : isRefundMissing ? (
           <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">

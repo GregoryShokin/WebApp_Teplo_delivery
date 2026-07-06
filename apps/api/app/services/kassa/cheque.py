@@ -20,7 +20,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -142,8 +142,8 @@ class CardTxnCandidate:
     purpose: str | None
     tier: int | None
     minutes_delta: int | None
-    # Возврат(ы) по этой покупке, уже пришедшие в выписку (refundIn с тем же rrn,
-    # непривязанные). UI подсвечивает: «по покупке есть возврат — отметьте позиции».
+    # Непривязанные возвраты (refundIn) на ТОЙ ЖЕ КАРТЕ, уже пришедшие в выписку (надёжного
+    # ключа к конкретной покупке нет). UI подсвечивает: «на карте есть возврат — отметьте позиции».
     refund_amount: Decimal | None = None
     refund_count: int = 0
 
@@ -175,9 +175,15 @@ def _is_card_purchase(operation: BankOperation) -> bool:
     return not inn and not account
 
 
-# Категория T-Банка у возврата карт-покупки (деньги вернулись на счёт). Возврат несёт
-# ТЕ ЖЕ rrn/authCode, что исходная покупка (подтверждено боевой выпиской), поэтому связь
-# «покупка ↔ возврат» детерминированная, без фаззи-матча по суммам/мерчанту.
+# Категория T-Банка у возврата карт-покупки (деньги вернулись на счёт).
+#
+# ⚠️ Надёжного ПЕР-ТРАНЗАКЦИОННОГО ключа «покупка ↔ возврат» банк НЕ даёт (проверено боевой
+# выпиской 2026-07-06, чек Ч-22): у настоящего возврата (``refundIn``) свой ``rrn``
+# (≠ покупке), ``authCode`` отсутствует, а ``ucid`` — идентификатор ПАЧКИ (десятки операций
+# под одним ``ucid``). Совпадают только ``cardNumber``/мерчант/``ucid`` — все НЕ уникальны.
+# Поэтому возврат матчим не к покупке, а к ЧЕКУ по декларации кассира: та же карта +
+# сумма возврата == ожидаемому возврату чека (Σ помеченных строк ``is_return``). Для
+# reversal-«отмены» rrn совпадал бы, но это частный случай — не полагаемся на него.
 TBANK_REFUND_CATEGORY = "refundIn"
 
 
@@ -189,14 +195,12 @@ def _is_card_refund(operation: BankOperation) -> bool:
     return str(raw.get("category") or "").strip() == TBANK_REFUND_CATEGORY
 
 
-def _op_rrn_auth(operation: BankOperation) -> tuple[str, str] | None:
-    """``(rrn, authCode)`` карт-операции — общий ключ покупки и её возврата."""
+def _op_card(operation: BankOperation) -> str | None:
+    """Маскированный номер карты (``cardNumber``) — общий у покупки и её возврата на одной
+    карте. Единственный устойчивый признак для card-scoped сопоставления возврата с чеком."""
     raw = operation.raw_payload or {}
-    rrn = str(raw.get("rrn") or "").strip()
-    auth = str(raw.get("authCode") or "").strip()
-    if not rrn or not auth:
-        return None
-    return rrn, auth
+    card = str(raw.get("cardNumber") or "").strip()
+    return card or None
 
 
 def _card_merchant_label(operation: BankOperation) -> str | None:
@@ -328,16 +332,13 @@ async def list_card_transactions(
         )
 
     candidates: list[CardTxnCandidate] = []
-    refund_key_by_op: dict[uuid.UUID, tuple | None] = {}
+    card_by_op: dict[uuid.UUID, str | None] = {}
     for operation in operations:
         if not _is_card_purchase(operation):
             continue
         if operation.id in allocated_ids:
             continue
-        rrn_auth = _op_rrn_auth(operation)
-        refund_key_by_op[operation.id] = (
-            (operation.account_id, *rrn_auth) if rrn_auth is not None else None
-        )
+        card_by_op[operation.id] = _op_card(operation)
 
         purchased_at = _purchase_dt(operation)
         tier: int | None = None
@@ -371,31 +372,37 @@ async def list_card_transactions(
             )
         )
 
-    # Возвраты по показанным покупкам, уже пришедшие в выписку: непривязанный refundIn с
-    # тем же rrn/authCode на том же счёте. UI подсветит «по покупке есть возврат — отметьте
-    # позиции», и чек сразу создастся net.
-    keys = {key for key in refund_key_by_op.values() if key is not None}
-    if keys:
-        rrns = {rrn for _, rrn, _ in keys}
+    # Card-scoped подсказка о возвратах: у показанных покупок ищем непривязанные refundIn
+    # НА ТОЙ ЖЕ КАРТЕ (надёжного ключа к конкретной покупке банк не даёт — см. _op_card).
+    # Показываем «на карте есть непривязанный возврат N ₽» — кассир решает, к этой ли покупке,
+    # и отмечает позиции. Точную привязку по (карта + сумма ожидаемого возврата) делает матчер.
+    cards = {card for card in card_by_op.values() if card}
+    if cards:
         refund_rows = (
             await session.scalars(
                 select(BankOperation).where(
                     BankOperation.provider == "tbank",
                     BankOperation.direction == "in",
                     BankOperation.cashflow_transaction_id.is_(None),
+                    BankOperation.transfer_group_id.is_(None),
                     BankOperation.raw_payload["category"].astext == TBANK_REFUND_CATEGORY,
-                    BankOperation.raw_payload["rrn"].astext.in_(rrns),
+                    BankOperation.raw_payload["cardNumber"].astext.in_(cards),
                 )
             )
         ).all()
-        refunds_by_key: dict[tuple, list[BankOperation]] = {}
+        refunds_by_card: dict[str, list[BankOperation]] = {}
         for refund in refund_rows:
-            rrn_auth = _op_rrn_auth(refund)
-            if rrn_auth is None:
-                continue
-            refunds_by_key.setdefault((refund.account_id, *rrn_auth), []).append(refund)
+            card = _op_card(refund)
+            if card is not None:
+                refunds_by_card.setdefault(card, []).append(refund)
         for candidate in candidates:
-            matched = refunds_by_key.get(refund_key_by_op.get(candidate.bank_operation_id) or ())
+            card = card_by_op.get(candidate.bank_operation_id)
+            # Возврат не может превышать покупку — показываем только правдоподобные по сумме.
+            matched = [
+                r
+                for r in refunds_by_card.get(card or "", [])
+                if _money(abs(r.amount)) <= candidate.amount
+            ]
             if matched:
                 candidate.refund_amount = _money(sum(abs(r.amount) for r in matched))
                 candidate.refund_count = len(matched)
@@ -705,9 +712,9 @@ async def create_cheque(
     await session.flush()
 
     # Возврат мог уже прийти в выписку (чек вносится на следующий день) — привязываем
-    # сразу, не дожидаясь следующего синка банка.
+    # сразу, не дожидаясь следующего синка банка (только если ЭТОТ чек — единственный кандидат).
     if returned_total > 0 and resolved_bank:
-        await _attach_refunds_for_purchase(session, resolved_bank[0][0])
+        await _attach_matching_refunds_for_cheque(session, invoice, resolved_bank[0][0])
         await session.flush()
 
     # --- пендинг-карта: одна проводка «Ожидает подтверждения банком» на Т-Банк р/с ----
@@ -970,63 +977,107 @@ async def match_pending_cheque_operations(
 
 # --- Возвраты карт-покупок (refundIn): молчаливая привязка к чеку, ждущему возврат -----
 #
-# Чек с возвращёнными позициями проведён net, а его карт-операция «недоиспользована»:
-# |операция| − bank-аллокация = ожидаемый от банка возврат. Когда refundIn приезжает в
-# выписку (поллинг/вебхук — оба через ingest_operations), он опознаётся по rrn/authCode
-# исходной покупки и привязывается к ДДС-проводке чека БЕЗ участия человека — строка не
-# попадает в «Требует разбора». Всё, что не сошлось, остаётся needs_review (фаза 2 — кейс).
+# Чек с возвращёнными позициями проведён net, ожидаемый от банка возврат = Σ строк is_return.
+# Надёжного пер-транзакционного ключа «покупка↔возврат» банк НЕ даёт (см. _op_card), поэтому
+# refundIn сопоставляется с ЧЕКОМ по декларации кассира: та же карта покупки + остаток
+# ожидания == сумме возврата. Когда refundIn приезжает в выписку (поллинг/вебхук — оба через
+# ingest_operations), однозначное совпадение привязывается к ДДС-проводке чека БЕЗ участия
+# человека — строка не попадает в «Требует разбора». Несопоставленное/неоднозначное с
+# задержкой поднимает escalate_missing_cheque_refunds (даёт время создать чек).
 
 
-async def _cheque_expectation(
-    session: AsyncSession, purchase: BankOperation
-) -> tuple[SupplierInvoice, Decimal] | None:
-    """(чек Кассы, ожидание возврата = |операция| − Σ bank-аллокаций) по карт-покупке.
+# Окно матчинга возврата к чеку: возврат не раньше чем за 2 дня до даты чека и не позже
+# +60 дней (постинг банка 1–3 дня, но берём с большим запасом). Защита от древних совпадений.
+REFUND_MATCH_WINDOW_DAYS = 60
 
-    ``None`` — операция разнесена не чеком (ручная классификация, оплата накладной):
-    такие операции возвраты не приманивают. Ожидание может быть 0 — чек проведён
-    полностью, возврата не ждали (кейс фазы 2).
-    """
-    if purchase.cashflow_transaction_id is None:
-        return None
-    alloc_rows = (
+
+async def _cheque_expected_refund(session: AsyncSession, invoice_id: uuid.UUID) -> Decimal:
+    """Ожидаемый возврат чека = Σ сумм помеченных строк ``is_return`` (декларация кассира)."""
+    total = await session.scalar(
+        select(func.coalesce(func.sum(InvoiceLineItem.sum), 0)).where(
+            InvoiceLineItem.invoice_id == invoice_id,
+            InvoiceLineItem.is_return.is_(True),
+        )
+    )
+    return _money(total or 0)
+
+
+async def _attached_refund_total(
+    session: AsyncSession, cheque_txn_id: uuid.UUID | None
+) -> Decimal:
+    """Σ уже привязанных к проводке чека возвратов refundIn (для остатка ожидания)."""
+    if cheque_txn_id is None:
+        return Decimal("0.00")
+    total = await session.scalar(
+        select(func.coalesce(func.sum(func.abs(BankOperation.amount)), 0)).where(
+            BankOperation.cashflow_transaction_id == cheque_txn_id,
+            BankOperation.direction == "in",
+            BankOperation.raw_payload["category"].astext == TBANK_REFUND_CATEGORY,
+        )
+    )
+    return _money(total or 0)
+
+
+def _refund_after_cheque(refund: BankOperation, invoice: SupplierInvoice) -> bool:
+    """Возврат попадает во временное окно чека (не сильно раньше и не слишком позже)."""
+    base = invoice.invoice_date or (invoice.issued_at.date() if invoice.issued_at else None)
+    if base is None:
+        return True
+    return (
+        refund.operation_date >= base - timedelta(days=2)
+        and refund.operation_date <= base + timedelta(days=REFUND_MATCH_WINDOW_DAYS)
+    )
+
+
+async def _candidate_cheques_for_refund(
+    session: AsyncSession, refund: BankOperation
+) -> list[tuple[SupplierInvoice, BankOperation]]:
+    """Чеки Кассы, ожидающие РОВНО сумму этого возврата, по ТОЙ ЖЕ карте, в окне.
+
+    Ключ надёжного пер-транзакционного матча банк не даёт, поэтому связываем возврат с
+    ЧЕКОМ по декларации кассира: карта покупки чека == карта возврата И остаток ожидания
+    (Σ is_return − уже привязанные возвраты) == сумме возврата. Возвращает (чек, покупка);
+    len>1 = неоднозначность (несколько чеков ждут ту же сумму на той же карте)."""
+    card = _op_card(refund)
+    amount = _money(abs(refund.amount))
+    if card is None or amount <= 0:
+        return []
+    rows = (
         await session.execute(
-            select(InvoicePaymentAllocation.amount, SupplierInvoice)
-            .join(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
-            .where(InvoicePaymentAllocation.bank_operation_id == purchase.id)
+            select(SupplierInvoice, BankOperation)
+            .join(
+                InvoicePaymentAllocation,
+                InvoicePaymentAllocation.invoice_id == SupplierInvoice.id,
+            )
+            .join(BankOperation, BankOperation.id == InvoicePaymentAllocation.bank_operation_id)
+            .where(
+                SupplierInvoice.source == "kassa_cheque",
+                InvoicePaymentAllocation.source_kind == "bank",
+                BankOperation.account_id == refund.account_id,
+                BankOperation.raw_payload["cardNumber"].astext == card,
+                BankOperation.raw_payload["category"].astext == "cardOperation",
+                BankOperation.cashflow_transaction_id.is_not(None),
+            )
         )
     ).all()
-    if not alloc_rows or any(invoice.source != "kassa_cheque" for _, invoice in alloc_rows):
-        return None
-    alloc_total = sum((_money(amount) for amount, _ in alloc_rows), Decimal("0.00"))
-    expected = _money(abs(purchase.amount)) - alloc_total
-    return alloc_rows[0][1], expected
-
-
-async def _refunds_of_purchase(
-    session: AsyncSession, purchase: BankOperation
-) -> list[BankOperation]:
-    """Все refundIn того же rrn/authCode на том же счёте (привязанные и нет)."""
-    rrn_auth = _op_rrn_auth(purchase)
-    if rrn_auth is None:
-        return []
-    rrn, auth = rrn_auth
-    return list(
-        (
-            await session.scalars(
-                select(BankOperation)
-                .where(
-                    BankOperation.provider == purchase.provider,
-                    BankOperation.direction == "in",
-                    BankOperation.account_id == purchase.account_id,
-                    BankOperation.transfer_group_id.is_(None),
-                    BankOperation.raw_payload["category"].astext == TBANK_REFUND_CATEGORY,
-                    BankOperation.raw_payload["rrn"].astext == rrn,
-                    BankOperation.raw_payload["authCode"].astext == auth,
-                )
-                .order_by(BankOperation.operation_date)
-            )
-        ).all()
-    )
+    result: list[tuple[SupplierInvoice, BankOperation]] = []
+    seen: set[uuid.UUID] = set()
+    for invoice, purchase in rows:
+        if invoice.id in seen:
+            continue
+        seen.add(invoice.id)
+        expected = await _cheque_expected_refund(session, invoice.id)
+        if expected <= 0:
+            continue
+        outstanding = expected - await _attached_refund_total(
+            session, purchase.cashflow_transaction_id
+        )
+        if outstanding != amount:
+            continue
+        if not _refund_after_cheque(refund, invoice):
+            continue
+        result.append((invoice, purchase))
+    return result
 
 
 async def _resolve_refund_missing_cases(
@@ -1048,51 +1099,79 @@ async def _resolve_refund_missing_cases(
         )
 
 
-async def _attach_refunds_for_purchase(session: AsyncSession, purchase: BankOperation) -> int:
-    """Привязать пришедшие refundIn к карт-покупке, по которой чек ждёт возврат.
+async def _resolve_refund_op_cases(session: AsyncSession, refund_id: uuid.UUID) -> None:
+    """Закрыть pending-кейсы «возврат по чеку» по этой операции возврата — она привязана."""
+    cases = (
+        await session.scalars(
+            select(ReconciliationCase).where(
+                ReconciliationCase.kind == CARD_REFUND_CASE_KIND,
+                ReconciliationCase.bank_operation_id == refund_id,
+                ReconciliationCase.status == "pending",
+            )
+        )
+    ).all()
+    for case in cases:
+        await close_reconciliation_case(
+            session, case, status="resolved", resolution_payload={"reason": "refund_attached"}
+        )
 
-    Гейты: покупка классифицирована чеком Кассы, ожидание > 0. Возвраты того же
-    rrn/authCode привязываются по очереди, пока не выберут ожидание; каждый получает
-    ссылку на ДДС-проводку чека и статус ``classified``. Возврат больше остатка
-    ожидания не привязывается (кейс поднимет матчер). Идемпотентно, без commit.
-    """
-    expectation = await _cheque_expectation(session, purchase)
-    if expectation is None:
-        return 0
-    _invoice, expected = expectation
-    if expected <= 0:
-        return 0
 
-    refunds = await _refunds_of_purchase(session, purchase)
-    outstanding = expected - sum(
-        (_money(abs(r.amount)) for r in refunds if r.cashflow_transaction_id is not None),
-        Decimal("0.00"),
-    )
+async def _attach_refund_to_cheque(
+    session: AsyncSession,
+    refund: BankOperation,
+    invoice: SupplierInvoice,
+    purchase: BankOperation,
+) -> None:
+    """Привязать возврат к проводке чека: classified + закрыть pending-кейсы по нему/чеку."""
+    refund.cashflow_transaction_id = purchase.cashflow_transaction_id
+    refund.classification_status = "classified"
+    await _resolve_refund_op_cases(session, refund.id)
+    await _resolve_refund_missing_cases(session, purchase.id)
+
+
+async def _attach_matching_refunds_for_cheque(
+    session: AsyncSession, invoice: SupplierInvoice, purchase: BankOperation
+) -> int:
+    """При создании чека привязать уже пришедшие возвраты по его карте (если однозначно).
+
+    Возврат привязывается, только если ЭТОТ чек — единственный кандидат для него
+    (``_candidate_cheques_for_refund``): исключает захват возврата чужого чека той же суммы.
+    Без commit."""
+    card = _op_card(purchase)
+    if card is None or purchase.cashflow_transaction_id is None:
+        return 0
+    if await _cheque_expected_refund(session, invoice.id) <= 0:
+        return 0
+    refunds = (
+        await session.scalars(
+            select(BankOperation)
+            .where(
+                BankOperation.provider == "tbank",
+                BankOperation.direction == "in",
+                BankOperation.account_id == purchase.account_id,
+                BankOperation.cashflow_transaction_id.is_(None),
+                BankOperation.transfer_group_id.is_(None),
+                BankOperation.raw_payload["category"].astext == TBANK_REFUND_CATEGORY,
+                BankOperation.raw_payload["cardNumber"].astext == card,
+            )
+            .order_by(BankOperation.operation_date)
+        )
+    ).all()
     attached = 0
     for refund in refunds:
-        if refund.cashflow_transaction_id is not None:
-            continue
-        amount = _money(abs(refund.amount))
-        if amount > outstanding:
-            continue
-        refund.cashflow_transaction_id = purchase.cashflow_transaction_id
-        refund.classification_status = "classified"
-        outstanding = _money(outstanding - amount)
-        attached += 1
-    if attached and outstanding <= 0:
-        await _resolve_refund_missing_cases(session, purchase.id)
+        candidates = await _candidate_cheques_for_refund(session, refund)
+        if len(candidates) == 1 and candidates[0][0].id == invoice.id:
+            await _attach_refund_to_cheque(session, refund, invoice, purchase)
+            attached += 1
     return attached
 
 
-async def _ensure_late_refund_case(
+async def _ensure_unmatched_refund_case(
     session: AsyncSession,
-    *,
     refund: BankOperation,
-    purchase: BankOperation,
-    invoice: SupplierInvoice,
-    expected: Decimal,
+    candidates: list[tuple[SupplierInvoice, BankOperation]],
 ) -> bool:
-    """Поднять кейс «возврат по проведённому чеку» (дедуп по pending kind+операция)."""
+    """Поднять кейс «возврат по чеку» (не сматчен либо неоднозначен). Дедуп по операции."""
     existing = await session.scalar(
         select(ReconciliationCase.id).where(
             ReconciliationCase.kind == CARD_REFUND_CASE_KIND,
@@ -1102,6 +1181,8 @@ async def _ensure_late_refund_case(
     )
     if existing is not None:
         return False
+    raw = refund.raw_payload or {}
+    merch = raw.get("merch") if isinstance(raw.get("merch"), dict) else {}
     session.add(
         ReconciliationCase(
             kind=CARD_REFUND_CASE_KIND,
@@ -1109,14 +1190,13 @@ async def _ensure_late_refund_case(
             provider=refund.provider,
             bank_operation_id=refund.id,
             payload={
-                "invoice_id": str(invoice.id),
-                "cheque_number": invoice.number,
                 "refund_amount": str(_money(abs(refund.amount))),
-                "purchase_operation_id": str(purchase.id),
-                "purchase_amount": str(_money(abs(purchase.amount))),
-                "rrn": (_op_rrn_auth(refund) or ("", ""))[0],
-                # Чек не ждал возврат вовсе или возврат больше остатка ожидания.
-                "reason": "cheque_did_not_expect" if expected <= 0 else "exceeds_expected",
+                "card": _op_card(refund),
+                "merchant": str((merch or {}).get("name") or "") or None,
+                # 0 кандидатов — ни один чек не ждёт эту сумму (кассир не отметил возврат
+                # или это возврат не по чеку); >1 — несколько чеков ждут ту же сумму.
+                "reason": "no_matching_cheque" if not candidates else "ambiguous",
+                "candidate_cheques": [inv.number for inv, _ in candidates] or None,
             },
         )
     )
@@ -1124,13 +1204,14 @@ async def _ensure_late_refund_case(
 
 
 async def match_card_refund_operations(session: AsyncSession) -> int:
-    """Свести непривязанные возвраты (refundIn) с чеками, ждущими возврат. Без commit.
+    """Привязать непривязанные возвраты (refundIn) к чекам, ждущим ровно эту сумму. Без commit.
 
     Вызывается из ``ingest_operations`` ДО общей классификации (как матч пендинг-чеков),
-    поэтому покрывает оба пути выписки — поллинг и вебхук. Точный матч привязывается
-    молча; возврат по чеку, который его НЕ ждал (или больше остатка ожидания), поднимает
-    кейс «Требует разбора» с действием «Учесть возврат». Возвращает число привязанных.
-    """
+    поэтому покрывает оба пути выписки — поллинг и вебхук. Привязывает ТОЛЬКО однозначные
+    точные совпадения (единственный чек той же карты с остатком ожидания == сумме возврата).
+    Несопоставленные/неоднозначные возвраты НЕ трогаем — их (с задержкой, дав время создать
+    чек) поднимает в «Требует разбора» ``escalate_missing_cheque_refunds``. Возвращает число
+    привязанных."""
     refund_rows = (
         await session.scalars(
             select(BankOperation).where(
@@ -1143,39 +1224,12 @@ async def match_card_refund_operations(session: AsyncSession) -> int:
         )
     ).all()
     matched = 0
-    seen_purchases: set[uuid.UUID] = set()
     for refund in refund_rows:
-        rrn_auth = _op_rrn_auth(refund)
-        if rrn_auth is None:
-            continue
-        rrn, auth = rrn_auth
-        purchase = await session.scalar(
-            select(BankOperation).where(
-                BankOperation.provider == "tbank",
-                BankOperation.direction == "out",
-                BankOperation.account_id == refund.account_id,
-                BankOperation.cashflow_transaction_id.is_not(None),
-                BankOperation.raw_payload["category"].astext == "cardOperation",
-                BankOperation.raw_payload["rrn"].astext == rrn,
-                BankOperation.raw_payload["authCode"].astext == auth,
-            )
-        )
-        if purchase is None:
-            continue
-        expectation = await _cheque_expectation(session, purchase)
-        if expectation is None:
-            # Покупка разнесена не чеком — обычный разбор выписки, не наш кейс.
-            continue
-        invoice, expected = expectation
-        if purchase.id not in seen_purchases:
-            # Один вызов закрывает ВСЕ подходящие возвраты этой покупки.
-            seen_purchases.add(purchase.id)
-            matched += await _attach_refunds_for_purchase(session, purchase)
-        if refund.cashflow_transaction_id is None:
-            # Чек есть, но возврат не влез в ожидание (или его не ждали) — фаза 2: кейс.
-            await _ensure_late_refund_case(
-                session, refund=refund, purchase=purchase, invoice=invoice, expected=expected
-            )
+        candidates = await _candidate_cheques_for_refund(session, refund)
+        if len(candidates) == 1:
+            invoice, purchase = candidates[0]
+            await _attach_refund_to_cheque(session, refund, invoice, purchase)
+            matched += 1
     return matched
 
 
@@ -1275,38 +1329,43 @@ async def get_refund_wait_alert_days(session: AsyncSession) -> int:
 async def escalate_missing_cheque_refunds(
     session: AsyncSession, *, now: datetime | None = None
 ) -> int:
-    """Поднять в «Требует разбора» чеки, ждущие возврат дольше порога. Без commit.
+    """Поднять в «Требует разбора» отложенные кейсы возвратов. Без commit.
 
-    Ожидание = |операция| − аллокация − уже привязанные возвраты. Кейс с дедупом по
-    pending (kind + покупка); закрывается автоматически при привязке возврата
-    (``_attach_refunds_for_purchase``) либо руками («Отложить»).
+    Две ветки (обе с задержкой ``kassa.refund_wait_alert_days``, чтобы realtime-матчер и
+    создание чека успели сработать):
+    (а) ЧЕК ЖДЁТ ВОЗВРАТ (позиции исключены), а он не пришёл — кейс ``cheque_refund_missing``
+        (дедуп по покупке; авто-резолв при привязке возврата).
+    (б) ВОЗВРАТ НЕ СМАТЧЕН ни с одним чеком (сумму никто не ждёт) либо неоднозначен — кейс
+        ``card_refund_after_cheque`` с кнопкой «Учесть возврат» (дедуп по операции возврата).
     """
     moment = now or datetime.now(UTC)
     cutoff = moment - timedelta(days=await get_refund_wait_alert_days(session))
+    created = 0
+
+    # (а) Чеки, ждущие возврат дольше порога.
     rows = (
         await session.execute(
-            select(BankOperation, InvoicePaymentAllocation.amount, SupplierInvoice)
+            select(SupplierInvoice, BankOperation)
             .join(
                 InvoicePaymentAllocation,
-                InvoicePaymentAllocation.bank_operation_id == BankOperation.id,
+                InvoicePaymentAllocation.invoice_id == SupplierInvoice.id,
             )
-            .join(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
-            .where(SupplierInvoice.source == "kassa_cheque")
+            .join(BankOperation, BankOperation.id == InvoicePaymentAllocation.bank_operation_id)
+            .where(
+                SupplierInvoice.source == "kassa_cheque",
+                InvoicePaymentAllocation.source_kind == "bank",
+            )
         )
     ).all()
-    created = 0
-    for purchase, alloc_amount, invoice in rows:
-        expected = _money(abs(purchase.amount)) - _money(alloc_amount)
+    for invoice, purchase in rows:
+        expected = await _cheque_expected_refund(session, invoice.id)
         if expected <= 0:
             continue
         if invoice.created_at is not None and invoice.created_at > cutoff:
             continue
-        refunds = await _refunds_of_purchase(session, purchase)
-        attached_total = sum(
-            (_money(abs(r.amount)) for r in refunds if r.cashflow_transaction_id is not None),
-            Decimal("0.00"),
+        outstanding = expected - await _attached_refund_total(
+            session, purchase.cashflow_transaction_id
         )
-        outstanding = expected - attached_total
         if outstanding <= 0:
             continue
         existing = await session.scalar(
@@ -1336,6 +1395,28 @@ async def escalate_missing_cheque_refunds(
             )
         )
         created += 1
+
+    # (б) Возвраты, пришедшие раньше порога и всё ещё не сматченные однозначно с чеком.
+    stale_refunds = (
+        await session.scalars(
+            select(BankOperation).where(
+                BankOperation.provider == "tbank",
+                BankOperation.direction == "in",
+                BankOperation.cashflow_transaction_id.is_(None),
+                BankOperation.transfer_group_id.is_(None),
+                BankOperation.raw_payload["category"].astext == TBANK_REFUND_CATEGORY,
+                BankOperation.operation_date <= cutoff.date(),
+            )
+        )
+    ).all()
+    for refund in stale_refunds:
+        candidates = await _candidate_cheques_for_refund(session, refund)
+        if len(candidates) == 1:
+            # Однозначный матч добьёт realtime-матчер на следующем синке — не наш кейс.
+            continue
+        if await _ensure_unmatched_refund_case(session, refund, candidates):
+            created += 1
+
     await session.flush()
     return created
 
