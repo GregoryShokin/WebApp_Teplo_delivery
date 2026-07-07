@@ -151,21 +151,23 @@ class CardTxnCandidate:
 def _is_card_purchase(operation: BankOperation) -> bool:
     """True, если операция — покупка по бизнес-карте (а не платёж контрагенту/перевод).
 
-    Инверсия логики складского мэтча: для накладных card-операции — «шум», для чека это
-    как раз цель. Первичный признак — ``raw_payload['category'] == 'cardOperation'``; резерв
-    (если на боевом токене признака нет) — расход без реквизитов контрагента. Эквайринговый
-    «шум» ТБанка (зачисления/комиссия) исключаем — это не покупка.
+    ``category`` у боевого токена T-Банка есть у КАЖДОЙ операции и является решающим:
+    ``cardOperation`` — покупка по карте (наша цель), любая другая (``contragentOutcome`` —
+    оплата поставщику, ``fee``/``tax``/``budget`` и т.п.) — НЕ покупка, даже если у неё
+    пустой блок контрагента и есть ``merch``/``cardNumber`` (боевой кейс: оплаты поставщикам
+    ошибочно попадали в пикер чеков). Фолбэк по реквизитам — только для легаси-операций без
+    ``category`` (неизвестный токен).
     """
     if operation.direction != "out" or operation.transfer_group_id is not None:
         return False
     raw = operation.raw_payload or {}
-    # Карточная покупка по бизнес-карте — самый надёжный признак ``category``. У неё
-    # реквизиты получателя = процессинг эмитента (АО «ТБанк», ИНН 7710140679 из
-    # BANK_NOISE_INNS), а реальный мерчант лежит в ``merch``/``description``. Поэтому
-    # проверяем cardOperation ДО BANK_NOISE-фильтра — иначе любая карт-покупка ложно
-    # отсекается как эквайринговый «шум» (подтверждено боевой операцией «Магнит»).
-    if str(raw.get("category") or "").strip() == "cardOperation":
+    category = str(raw.get("category") or "").strip()
+    if category == "cardOperation":
         return True
+    if category:
+        # Категория есть, но не карт-операция → это не покупка по карте.
+        return False
+    # Легаси-операция без category — эвристика: расход без реквизитов контрагента.
     receiver = _receiver_block(raw)
     inn = str(receiver.get("inn") or operation.counterparty_inn_raw or "")
     name = str(receiver.get("name") or operation.counterparty_name_raw or "")

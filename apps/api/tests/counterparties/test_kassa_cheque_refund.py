@@ -734,3 +734,30 @@ def test_apply_card_refund_route_forwards_invoice_id(
     ref_txn, op_txn, cls = asyncio.run(_check())
     assert ref_txn is not None and ref_txn == op_txn  # привязан к проводке чека A, не сирота
     assert cls == "classified"
+
+
+async def test_picker_excludes_non_card_operations(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # В «Оплаты по карте» попадают ТОЛЬКО cardOperation. Оплата поставщику
+    # (contragentOutcome) с пустым контрагентом и merch/cardNumber — НЕ попадает (боевой баг).
+    async with async_session_factory() as session:
+        account = await make_account(session)
+        await make_wallet(
+            session, name="Тинькофф карта", wallet_type="bank", account_id=account.id
+        )
+        card = await make_bank_operation(
+            session, amount="500.00", operation_date=OP_DATE, posted_at=ISSUED,
+            category="cardOperation", account_id=account.id,
+            raw_payload={"cardNumber": CARD, "merch": {"name": "MAGNIT", "city": "Volgodonsk"}},
+        )
+        supplier = await make_bank_operation(
+            session, amount="3230.00", operation_date=OP_DATE, posted_at=ISSUED,
+            category="contragentOutcome", account_id=account.id,
+            raw_payload={"cardNumber": CARD, "merch": {"name": "TBank.Kontragent", "city": "MOSCOW"}},
+        )
+        await session.commit()
+        candidates = await list_card_transactions(session, date_from=OP_DATE, date_to=OP_DATE)
+        ids = {c.bank_operation_id for c in candidates}
+        assert card.id in ids
+        assert supplier.id not in ids
