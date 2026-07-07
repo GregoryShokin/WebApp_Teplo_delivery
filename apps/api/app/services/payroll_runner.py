@@ -451,7 +451,9 @@ async def collapse_dismissed_deferred_charge_recipients(
 ) -> list[Any]:
     dismissed_ids = await session.scalars(
         select(Employee.id).where(
-            Employee.status == "inactive",
+            # `dismissing` — увольнение ещё идёт (расчёты не закрыты); их отложенные
+            # штрафы тоже схлопываем, иначе сотрудник застрянет в dismissing.
+            Employee.status.in_(("inactive", "dismissing")),
             Employee.fire_date.is_not(None),
             Employee.fire_date >= period.start_date,
             Employee.fire_date <= period.end_date,

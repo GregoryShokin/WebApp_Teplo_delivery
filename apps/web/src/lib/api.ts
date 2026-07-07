@@ -155,7 +155,7 @@ export type PositionsSyncResult = {
   positions: Position[];
 };
 
-export type EmployeeStatus = "active" | "inactive" | "requires_setup";
+export type EmployeeStatus = "active" | "inactive" | "requires_setup" | "dismissing";
 export type EmployeeCategory =
   | "category_1"
   | "category_2"
@@ -3258,6 +3258,11 @@ export async function updateEmployeeDismissalReason(
 
 export async function reinstateEmployee(id: string): Promise<Employee> {
   const response = await api.post<Employee>(`/employees/${id}/reinstate`);
+  return response.data;
+}
+
+export async function cancelDismissal(id: string): Promise<Employee> {
+  const response = await api.post<Employee>(`/employees/${id}/cancel-dismissal`);
   return response.data;
 }
 

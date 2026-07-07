@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from app.api.deps import CurrentActor
 from app.api.v1.routes import employees as employee_routes
 from app.api.v1.routes.employees import (
+    cancel_dismissal,
     change_employee_pin,
     create_employee,
     create_employee_dismissal_reason,
@@ -2507,13 +2508,15 @@ async def test_dismiss_employee_sets_status_fire_date_reason_and_audit(
 
     actions = [item for item in session.added if isinstance(item, AgentAction)]
     events = [item for item in session.added if isinstance(item, EmployeeChangeEvent)]
-    assert updated.status == "inactive"
+    # Отложенное увольнение: сотрудник переходит в `dismissing` (не сразу inactive);
+    # авто-перевод в inactive делает dismissal-reconcile после закрытия расчётов.
+    assert updated.status == "dismissing"
     assert updated.fire_date == SYNC_TODAY
     assert updated.fire_reason == "Переезд"
     assert session.committed is True
     assert len(actions) == 1
     assert actions[0].before_value["status"] == "active"
-    assert actions[0].after_value["status"] == "inactive"
+    assert actions[0].after_value["status"] == "dismissing"
     assert actions[0].after_value["fire_reason"] == "Переезд"
     assert len(events) == 1
     assert events[0].change_type == "dismiss"
@@ -2663,7 +2666,7 @@ async def test_dismiss_employee_regular_reason_without_comment_is_allowed(
     )
 
     events = [item for item in session.added if isinstance(item, EmployeeChangeEvent)]
-    assert updated.status == "inactive"
+    assert updated.status == "dismissing"
     assert updated.fire_reason == "Перевод"
     assert events[0].reason_code == "transfer"
     assert events[0].comment is None
@@ -2689,7 +2692,7 @@ async def test_dismiss_employee_finance_manager_ok(monkeypatch: pytest.MonkeyPat
         ),
     )
 
-    assert updated.status == "inactive"
+    assert updated.status == "dismissing"
     assert updated.fire_date == SYNC_TODAY
 
 
@@ -3017,7 +3020,7 @@ def test_dismiss_employee_endpoint_returns_200(monkeypatch: pytest.MonkeyPatch) 
     app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json()["status"] == "inactive"
+    assert response.json()["status"] == "dismissing"
     assert response.json()["fire_date"] == SYNC_TODAY.isoformat()
     assert response.json()["fire_reason"] == "Сезон завершён"
 
@@ -3042,6 +3045,42 @@ async def test_reinstate_employee_restores_computed_status() -> None:
     assert updated.fire_date is None
     assert updated.fire_reason is None
     assert session.committed is True
+
+
+async def test_cancel_dismissal_returns_employee_to_active() -> None:
+    employee = make_employee(
+        iiko_id="iiko-cd1",
+        full_name="Changed Mind",
+        status="dismissing",
+        fire_date=SYNC_TODAY,
+        fire_reason="Ошибка",
+    )
+    session = FakeSession([employee])
+
+    updated = await cancel_dismissal(
+        employee.id,
+        session,  # type: ignore[arg-type]
+        CurrentActor(roles=frozenset({"owner"})),
+    )
+
+    assert updated.status == "active"
+    assert updated.fire_date is None
+    assert updated.fire_reason is None
+    assert session.committed is True
+
+
+async def test_cancel_dismissal_when_not_dismissing_returns_409() -> None:
+    employee = make_employee(iiko_id="iiko-cd2", full_name="Still Active")
+    session = FakeSession([employee])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await cancel_dismissal(
+            employee.id,
+            session,  # type: ignore[arg-type]
+            CurrentActor(roles=frozenset({"owner"})),
+        )
+
+    assert exc_info.value.status_code == 409
 
 
 async def test_reinstate_employee_finance_manager_returns_403() -> None:

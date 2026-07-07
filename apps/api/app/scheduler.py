@@ -37,6 +37,7 @@ from app.services.banking.tbank import TbankClient, _document_number
 from app.services.couriers.iiko_attendance_sync import sync_attendance
 from app.services.couriers.iiko_olap_sync import sync_courier_olap_deliveries
 from app.services.couriers.shift_matching import recalculate_matches
+from app.services.dismissal_reconciliation_service import reconcile_all_dismissing
 from app.services.kassa.iiko_cashshift_sync import sync_iiko_cashshifts
 from app.services.payroll_advance_service import apply_advance_draft_status
 from app.services.payroll_payouts import apply_payroll_draft_status
@@ -94,6 +95,23 @@ async def escalate_pending_cheques() -> None:
         logger.info(
             "Эскалация возвратов: %s новых кейсов «возврат не пришёл»", created_refunds
         )
+
+
+@scheduler.scheduled_job(
+    "interval",
+    minutes=60,
+    id="reconcile_dismissing_employees",
+    max_instances=1,
+    coalesce=True,
+)
+async def reconcile_dismissing_employees_job() -> None:
+    """Завершает отложенные увольнения: переводит `dismissing` → `inactive`, если
+    все расчёты закрыты (депозит, ЗП, займы, штрафы ревизии). Страховка к
+    событийным хукам; идемпотентен (пропускает незакрытые расчёты)."""
+    async with AsyncSessionLocal() as session:
+        flipped = await reconcile_all_dismissing(session)
+        if flipped:
+            logger.info("dismissal-reconcile: завершено увольнений: %d", len(flipped))
 
 
 @scheduler.scheduled_job(

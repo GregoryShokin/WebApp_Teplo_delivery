@@ -1386,7 +1386,12 @@ def plan_employee_sync(
             elif canonical_position is not None and employee.requires_position_review:
                 employee.requires_position_review = False
                 changed = True
-            if employee.status != "inactive" or employee.fire_date is None:
+            # `dismissing` — липкий: сотрудник в процессе увольнения уже деактивирован
+            # в iiko, синк НЕ должен сваливать его в inactive до закрытия расчётов.
+            if (
+                employee.status not in ("inactive", "dismissing")
+                or employee.fire_date is None
+            ):
                 employee.status = "inactive"
                 employee.fire_date = record.fire_date or sync_today
                 deactivated = True
@@ -1405,7 +1410,9 @@ def plan_employee_sync(
             if record.hire_date and employee.hire_date != record.hire_date:
                 employee.hire_date = record.hire_date
                 changed = True
-            if mode == "incremental":
+            # `dismissing` не трогаем: не чистим fire_date и не пересчитываем статус,
+            # даже если iiko временно ещё отдаёт сотрудника активным.
+            if mode == "incremental" and employee.status != "dismissing":
                 if (
                     not is_cook_position(employee.position)
                     and employee.default_cooking_station is not None
@@ -1441,7 +1448,11 @@ def plan_employee_sync(
 
     if mode == "reset":
         for employee in existing_by_iiko_id.values():
-            if employee.iiko_id in seen_iiko_ids or _is_ghost_employee(employee):
+            if (
+                employee.iiko_id in seen_iiko_ids
+                or _is_ghost_employee(employee)
+                or employee.status == "dismissing"  # липкий: не сбрасывать reset'ом
+            ):
                 continue
             before = _employee_snapshot(employee)
             deactivated = False
@@ -1469,7 +1480,7 @@ def plan_employee_sync(
         ghost_cleanup_employees.append(employee)
         before = _employee_snapshot(employee)
         changed = False
-        if employee.status != "inactive":
+        if employee.status not in ("inactive", "dismissing"):
             employee.status = "inactive"
             changed = True
         if employee.fire_date is None:

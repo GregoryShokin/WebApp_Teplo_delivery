@@ -8,7 +8,13 @@ import { cn } from "@/lib/utils";
 const ALL_OPTION_VALUE = "all";
 
 function employeeOptionLabel(employee: Employee) {
-  return `${employee.full_name}${employee.status === "inactive" ? " · уволен" : ""}`;
+  const suffix =
+    employee.status === "inactive"
+      ? " · уволен"
+      : employee.status === "dismissing"
+        ? " · в увольнении"
+        : "";
+  return `${employee.full_name}${suffix}`;
 }
 
 /**

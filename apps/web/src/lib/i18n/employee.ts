@@ -10,12 +10,14 @@ import type {
 export const EMPLOYEE_STATUS_LABELS: Record<EmployeeStatus, string> = {
   active: "Активен",
   requires_setup: "Требует проверки",
+  dismissing: "В увольнении",
   inactive: "Уволен",
 };
 
 export const EMPLOYEE_STATUS_COLORS: Record<EmployeeStatus, "green" | "yellow" | "zinc"> = {
   active: "green",
   requires_setup: "yellow",
+  dismissing: "yellow",
   inactive: "zinc",
 };
 
@@ -87,6 +89,7 @@ export const EMPLOYEE_CHANGE_TYPE_LABELS: Record<string, string> = {
   notice_given: "Уведомление об уходе",
   notice_cancelled: "Отмена уведомления об уходе",
   dismiss: "Увольнение",
+  cancel_dismissal: "Отмена увольнения",
   reinstate: "Восстановление",
   iiko_sync_create: "Создание из IIko",
   iiko_sync_update: "Обновление из IIko",

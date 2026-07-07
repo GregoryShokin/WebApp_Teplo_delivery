@@ -3,7 +3,9 @@ from __future__ import annotations
 from sqlalchemy import Enum
 
 location_status_enum = Enum("active", "inactive", name="location_status")
-employee_status_enum = Enum("active", "inactive", "requires_setup", name="employee_status")
+employee_status_enum = Enum(
+    "active", "inactive", "requires_setup", "dismissing", name="employee_status"
+)
 counterparty_type_enum = Enum(
     "legal_entity",
     "individual",

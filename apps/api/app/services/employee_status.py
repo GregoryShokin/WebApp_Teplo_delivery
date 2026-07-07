@@ -18,10 +18,10 @@ from app.services.staff_taxonomy import (
     EMPLOYEE_CATEGORIES as TAXONOMY_EMPLOYEE_CATEGORIES,
 )
 
-EmployeeStatus = Literal["active", "inactive", "requires_setup"]
+EmployeeStatus = Literal["active", "inactive", "requires_setup", "dismissing"]
 PositionGroup = Literal["cook", "cashier", "no_role"] | None
 
-EMPLOYEE_STATUSES = frozenset({"active", "inactive", "requires_setup"})
+EMPLOYEE_STATUSES = frozenset({"active", "inactive", "requires_setup", "dismissing"})
 EMPLOYEE_CATEGORIES = frozenset(TAXONOMY_EMPLOYEE_CATEGORIES)
 COOKING_STATIONS = frozenset(COOKING_STATIONS)
 COOK_PAYROLL_ROLES = frozenset({"sushi", "pizza", "shawarma", "prep"})
@@ -35,7 +35,16 @@ def compute_status(
     is_iiko_deleted: bool,
     position_group: PositionGroup,
     assignments: Iterable[object] | None = None,
+    *,
+    respect_dismissing: bool = True,
 ) -> EmployeeStatus:
+    # `dismissing` — липкий: сотрудник уволен, но держится «на книгах» до
+    # закрытия расчётов. iiko-синк / пересчёт статуса НЕ должны сбивать его в
+    # inactive или обратно в active; перевод в inactive делает только
+    # dismissal-reconcile после закрытия всех расчётов. Отмена увольнения зовёт
+    # с ``respect_dismissing=False``, чтобы пересчитать «естественный» статус.
+    if respect_dismissing and getattr(employee, "status", None) == "dismissing":
+        return "dismissing"
     if employee.fire_date is not None:
         return "inactive"
     if is_iiko_deleted:

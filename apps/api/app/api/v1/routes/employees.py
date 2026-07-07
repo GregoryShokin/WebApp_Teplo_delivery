@@ -9,7 +9,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import ValidationError
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -65,7 +65,9 @@ from app.schemas.employees import (
     SyncResultRead,
 )
 from app.services import (
+    deposit_schedule,
     deposit_service,
+    dismissal_reconciliation_service,
     employee_position_service,
     notice_service,
     position_service,
@@ -904,7 +906,7 @@ async def dismiss_employee(
         actor=actor,
         action=StaffAction.DISMISS,
     )
-    if employee.status == "inactive" or employee.fire_date is not None:
+    if employee.status in ("inactive", "dismissing") or employee.fire_date is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Сотрудник уже уволен")
     try:
         dismissal_reason = await employee_change_event_service.resolve_dismissal_reason(
@@ -929,7 +931,17 @@ async def dismiss_employee(
         for_update=True,
     )
     deposit_balance = decimal(deposit_account.balance) if deposit_account else Decimal("0")
-    deposit_decision = _resolve_dismiss_deposit_decision(dismiss_payload, deposit_balance)
+    # Авто-детект: если выдача депозита уже забронирована в ближайшей ведомости
+    # (pending-план) — не требуем от менеджера решения по депозиту, он гасится
+    # через ведомость (и учитывается расчётом при переводе dismissing→inactive).
+    deposit_scheduled = False
+    if isinstance(session, AsyncSession):
+        deposit_scheduled = (
+            await deposit_schedule.get_pending_schedule(session, employee_id) is not None
+        )
+    deposit_decision = _resolve_dismiss_deposit_decision(
+        dismiss_payload, deposit_balance, deposit_scheduled=deposit_scheduled
+    )
     active_notice = await notice_service.get_active_notice(session, employee_id, fire_date)
     before = _employee_lifecycle_snapshot(employee)
     try:
@@ -943,7 +955,11 @@ async def dismiss_employee(
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     now = datetime.now(UTC)
-    employee.status = "inactive"
+    # Отложенное увольнение: сотрудник переходит в `dismissing` (снят с работы —
+    # iiko деактивирован выше, график чистим ниже), а в `inactive` его переведёт
+    # dismissal-reconcile только после закрытия ВСЕХ расчётов (или сразу здесь,
+    # если расчётов нет). См. dismissal_reconciliation_service.
+    employee.status = "dismissing"
     employee.fire_date = fire_date
     employee.fire_reason = dismissal_reason.display_text
     employee.updated_at = now
@@ -965,6 +981,13 @@ async def dismiss_employee(
         now=now,
         agent_run_id=agent_run_id,
     )
+    # Снять с работы сразу: удаляем будущие плановые смены (с даты увольнения).
+    await session.execute(
+        delete(ScheduledShift).where(
+            ScheduledShift.employee_id == employee.id,
+            ScheduledShift.business_date >= fire_date,
+        )
+    )
     await _apply_dismiss_deposit_decision(
         session,
         employee_id=employee.id,
@@ -977,6 +1000,13 @@ async def dismiss_employee(
         comment=dismiss_payload.deposit_comment,
     )
     await forfeit_active_fund_on_dismiss(session, employee, fire_date=fire_date, now=now)
+
+    # Если по сотруднику вообще нет открытых расчётов — сразу завершаем увольнение
+    # (dismissing → inactive). Иначе он остаётся в dismissing до закрытия расчётов.
+    if isinstance(session, AsyncSession):
+        await dismissal_reconciliation_service.reconcile_dismissing_employee(
+            session, employee.id, actor=actor
+        )
 
     await session.commit()
     await session.refresh(employee)
@@ -1007,6 +1037,11 @@ async def reinstate_employee(
         actor=actor,
         action=StaffAction.REINSTATE,
     )
+    if employee.status == "dismissing":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Сотрудник в процессе увольнения — используйте «Отменить увольнение»",
+        )
     before = _employee_lifecycle_snapshot(employee)
     now = datetime.now(UTC)
     employee.fire_date = None
@@ -1038,6 +1073,75 @@ async def reinstate_employee(
         actor=actor,
     )
 
+    await session.commit()
+    await session.refresh(employee)
+    if isinstance(session, AsyncSession):
+        return await _get_employee_or_404(
+            session,
+            employee_id,
+            include_assignments=True,
+            actor=actor,
+            action=StaffAction.READ,
+        )
+    return employee
+
+
+@router.post(
+    "/{employee_id}/cancel-dismissal",
+    response_model=EmployeeRead,
+    dependencies=STAFF_REINSTATE_ACCESS,
+)
+async def cancel_dismissal(
+    employee_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> Employee:
+    """Отменить увольнение, пока сотрудник в `dismissing` (расчёты не закрыты).
+
+    Возвращает сотрудника в естественный статус (обычно `active`). Финансовые
+    последствия dismiss (депозит/фонд) вручную, если уже были проведены; график
+    (будущие смены) при отмене нужно перепланировать заново.
+    """
+    employee = await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.REINSTATE,
+    )
+    if employee.status != "dismissing":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Сотрудник не в процессе увольнения",
+        )
+    before = _employee_lifecycle_snapshot(employee)
+    now = datetime.now(UTC)
+    employee.fire_date = None
+    employee.fire_reason = None
+    assignments = None
+    if isinstance(session, AsyncSession):
+        assignments = await employee_assignment_service.get_assignments(
+            session,
+            employee.id,
+            date.today(),
+        )
+    employee.status = compute_status(
+        employee,
+        is_iiko_deleted=False,
+        position_group=position_group_for_position(employee.position),
+        assignments=assignments,
+        respect_dismissing=False,
+    )
+    employee.updated_at = now
+    after = _employee_lifecycle_snapshot(employee)
+    await _add_employee_lifecycle_action(
+        session,
+        action_type="cancel_dismissal",
+        employee=employee,
+        before=before,
+        after=after,
+        now=now,
+        actor=actor,
+    )
     await session.commit()
     await session.refresh(employee)
     if isinstance(session, AsyncSession):
@@ -3288,11 +3392,14 @@ def _allowance_change_summary(allowance_type: str, is_enabled: bool) -> str:
 def _resolve_dismiss_deposit_decision(
     payload: EmployeeDismissRequest,
     balance: Decimal,
+    *,
+    deposit_scheduled: bool = False,
 ) -> DismissDepositDecision:
     balance = decimal(balance)
     action = payload.deposit_action
     if action == DepositDismissAction.NONE:
-        if balance > 0:
+        # Если выдача депозита уже забронирована в ведомость — решение не требуется.
+        if balance > 0 and not deposit_scheduled:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Депозит не пуст, выберите действие",

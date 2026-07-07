@@ -145,6 +145,7 @@ import {
   patchEmployeeAssignment,
   patchEmployeePositionAssignment,
   recordEmployeeNotice,
+  cancelDismissal,
   reinstateEmployee,
   setEmployeeHireDate,
   syncEmployees,
@@ -187,6 +188,7 @@ type StaffSecondaryFilterOption = {
 const statusOptions: StaffStatusFilter[] = [
   "current",
   "active",
+  "dismissing",
   "requires_setup",
   "inactive",
   "all",
@@ -641,7 +643,10 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
   const employeesBeforePositionFilter = useMemo(() => {
     const needle = debouncedSearch.trim().toLowerCase();
     return (employeesQuery.data ?? []).filter((employee) => {
-      const matchesStatus = status === "current" ? employee.status !== "inactive" : true;
+      const matchesStatus =
+        status === "current"
+          ? employee.status !== "inactive" && employee.status !== "dismissing"
+          : true;
       const matchesSearch = needle ? employee.full_name.toLowerCase().includes(needle) : true;
       const employeeIsCook = isCookPosition(employee.position);
       const matchesGroup =
@@ -3612,6 +3617,18 @@ function StaffEditor({
       toast.error(apiErrorMessage(error, "Не удалось восстановить сотрудника"));
     },
   });
+  const cancelDismissalMutation = useMutation({
+    mutationFn: () => cancelDismissal(employee.id),
+    onSuccess: () => {
+      toast.success("Увольнение отменено");
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      void queryClient.invalidateQueries({ queryKey: ["employees", "changes"] });
+      void queryClient.invalidateQueries({ queryKey: ["employees", employee.id, "changes"] });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось отменить увольнение"));
+    },
+  });
   const hireDateMutation = useMutation({
     mutationFn: () =>
       setEmployeeHireDate(employee.id, {
@@ -3768,7 +3785,8 @@ function StaffEditor({
   const canDismiss = canDismissStaffEmployee(employee, permissions);
   const canReinstate = canReinstateStaffEmployee(employee, permissions);
   const canDismissStatus = employee.status === "active" || employee.status === "requires_setup";
-  const canManageHireDate = canEditEmployee && employee.status !== "inactive";
+  const canManageHireDate =
+    canEditEmployee && employee.status !== "inactive" && employee.status !== "dismissing";
   const hireDateMin = dateInputYearsAgo(10);
   const hireDateMax = todayDateInputValue();
   const hireDateIsValid =
@@ -4493,10 +4511,12 @@ function StaffEditor({
       </div>
 
       <div className="grid gap-2 rounded-lg border bg-muted/30 p-4 text-sm">
-        {employee.status === "inactive" ? (
+        {employee.status === "inactive" || employee.status === "dismissing" ? (
           <InfoRow label="Дата увольнения" value={formatDate(employee.fire_date)} />
         ) : null}
-        {canViewChangeHistory && employee.status === "inactive" && employee.fire_reason ? (
+        {canViewChangeHistory &&
+        (employee.status === "inactive" || employee.status === "dismissing") &&
+        employee.fire_reason ? (
           <InfoRow label="Причина" value={employee.fire_reason} />
         ) : null}
         {positionRequiresPin(employee.position) ? (
@@ -4555,6 +4575,23 @@ function StaffEditor({
               <RotateCcw size={16} aria-hidden="true" />
             )}
             Восстановить
+          </Button>
+        ) : null}
+
+        {employee.status === "dismissing" && canReinstate ? (
+          <Button
+            className="w-full"
+            disabled={cancelDismissalMutation.isPending}
+            onClick={() => cancelDismissalMutation.mutate()}
+            type="button"
+            variant="outline"
+          >
+            {cancelDismissalMutation.isPending ? (
+              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+            ) : (
+              <RotateCcw size={16} aria-hidden="true" />
+            )}
+            Отменить увольнение
           </Button>
         ) : null}
       </div>
