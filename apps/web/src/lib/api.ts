@@ -202,6 +202,18 @@ export type EmployeeNoticeInfo = {
   will_trigger_full_payout: boolean;
 };
 
+export type FreelancerCard = {
+  period_from: string;
+  period_to: string;
+  placeholder_employee_id: string;
+  // Имя плейсхолдера «Внештат №N» — видно всем со Штатом.
+  placeholder_name: string | null;
+  // Открытый ПИН открытия смены. Приходит null, если у пользователя нет права
+  // staff.freelancer_pin.read (серверный гейт). null → строку с ПИН не показываем.
+  pin_code: string | null;
+  archived_at: string | null;
+};
+
 export type Employee = {
   id: string;
   full_name: string;
@@ -212,6 +224,10 @@ export type Employee = {
   is_senior: boolean;
   is_deputy_senior: boolean;
   is_courier_placeholder: boolean;
+  is_freelancer_placeholder?: boolean;
+  is_freelancer_temp?: boolean;
+  freelancer_shift_rate?: string | null;
+  freelancer_card?: FreelancerCard | null;
   status: EmployeeStatus;
   hire_date: string | null;
   tenure_started_at: string | null;
@@ -421,6 +437,31 @@ export type EmployeeCreatePayload = {
   }>;
   is_senior?: boolean;
   is_deputy_senior?: boolean;
+  // Контур «вне штата»: временный внештатник через пул iiko-плейсхолдеров.
+  is_freelancer?: boolean;
+  freelancer_shift_rate?: number;
+  period_from?: string;
+  period_to?: string;
+};
+
+export type FreelancerCardPatchPayload = {
+  period_from?: string;
+  period_to?: string;
+  freelancer_shift_rate?: number;
+};
+
+export type FreelancerAttendanceCase = {
+  id: string;
+  placeholder_employee_id: string;
+  placeholder_name: string | null;
+  work_date: string;
+  minutes: number;
+  opened_at: string | null;
+  status: string;
+  resolved_employee_id: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type EmployeePinChangePayload = {
@@ -3167,6 +3208,33 @@ export async function getIikoEmployeeRoles(): Promise<IikoEmployeeRole[]> {
 
 export async function createEmployee(payload: EmployeeCreatePayload): Promise<Employee> {
   const response = await api.post<Employee>("/employees/", payload);
+  return response.data;
+}
+
+export async function patchFreelancerCard(
+  employeeId: string,
+  payload: FreelancerCardPatchPayload,
+): Promise<Employee> {
+  const response = await api.patch<Employee>(`/employees/${employeeId}/freelancer-card`, payload);
+  return response.data;
+}
+
+export async function listFreelancerAttendanceCases(
+  status: "open" | "resolved" | "dismissed" | "all" = "open",
+): Promise<FreelancerAttendanceCase[]> {
+  const response = await api.get<FreelancerAttendanceCase[]>(
+    "/employees/freelancer/attendance-cases",
+    { params: { status } },
+  );
+  return response.data;
+}
+
+export async function dismissFreelancerAttendanceCase(
+  caseId: string,
+): Promise<FreelancerAttendanceCase> {
+  const response = await api.post<FreelancerAttendanceCase>(
+    `/employees/freelancer/attendance-cases/${caseId}/dismiss`,
+  );
   return response.data;
 }
 

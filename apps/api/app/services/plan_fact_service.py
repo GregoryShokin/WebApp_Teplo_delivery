@@ -220,7 +220,11 @@ async def _load_shift_rows(
     result = await session.execute(
         select(ScheduledShift, Employee)
         .join(Employee, Employee.id == ScheduledShift.employee_id)
-        .where(ScheduledShift.shift_schedule_id == shift_schedule_id)
+        # Плейсхолдеры пула «Внештат №N» из план-факта исключаем (в UI их нет).
+        .where(
+            ScheduledShift.shift_schedule_id == shift_schedule_id,
+            Employee.is_freelancer_placeholder.is_(False),
+        )
         .order_by(ScheduledShift.business_date, Employee.full_name)
     )
     return [

@@ -173,6 +173,19 @@ class EmployeeNoticeInfo(BaseModel):
     will_trigger_full_payout: bool
 
 
+class FreelancerCardRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    period_from: date
+    period_to: date
+    placeholder_employee_id: uuid.UUID
+    # Имя плейсхолдера «Внештат №N» и открытый ПИН — управляющий должен всегда
+    # видеть, к какому плейсхолдеру привязан внештатник и его ПИН открытия смены.
+    placeholder_name: str | None = None
+    pin_code: str | None = None
+    archived_at: datetime | None = None
+
+
 class EmployeeRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -185,7 +198,19 @@ class EmployeeRead(BaseModel):
     is_senior: bool = False
     is_deputy_senior: bool = False
     is_courier_placeholder: bool = False
+    is_freelancer_placeholder: bool = False
+    is_freelancer_temp: bool = False
+    freelancer_shift_rate: Decimal | None = None
+    freelancer_card: FreelancerCardRead | None = None
     status: EmployeeStatus
+
+    @field_validator("is_freelancer_placeholder", "is_freelancer_temp", mode="before")
+    @classmethod
+    def _default_bool_false(cls, value: object) -> object:
+        # Transient/незалитые карточки (fake-session в тестах) отдают None вместо
+        # server_default false — трактуем как False, как это делает БД.
+        return False if value is None else value
+
     hire_date: date | None = None
     tenure_started_at: date | None = None
     fire_date: date | None = None
@@ -308,6 +333,11 @@ class EmployeeCreateRequest(BaseModel):
     roles: list[EmployeeCreateRoleRequest] = Field(default_factory=list)
     is_senior: bool = False
     is_deputy_senior: bool = False
+    # Контур «вне штата»: временный внештатник через пул iiko-плейсхолдеров.
+    is_freelancer: bool = False
+    freelancer_shift_rate: Decimal | None = Field(default=None, gt=0)
+    period_from: date | None = None
+    period_to: date | None = None
 
     @field_validator("full_name")
     @classmethod
@@ -335,6 +365,54 @@ class EmployeeCreateRequest(BaseModel):
         if len(set(payroll_roles)) != len(payroll_roles):
             raise ValueError("Роли не должны повторяться")
         return self
+
+    @model_validator(mode="after")
+    def validate_freelancer(self) -> EmployeeCreateRequest:
+        if not self.is_freelancer:
+            return self
+        if self.freelancer_shift_rate is None or self.freelancer_shift_rate <= 0:
+            raise ValueError("Укажите договорную ставку за смену больше нуля")
+        if self.period_from is None or self.period_to is None:
+            raise ValueError("Укажите период работы внештатника (от и до)")
+        if self.period_to < self.period_from:
+            raise ValueError("Дата окончания раньше даты начала")
+        if (self.period_to - self.period_from).days > 29:
+            raise ValueError("Период больше 30 дней — заводите сотрудника в штат, а не внештат")
+        return self
+
+
+class FreelancerCardPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    period_from: date | None = None
+    period_to: date | None = None
+    freelancer_shift_rate: Decimal | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_any(self) -> FreelancerCardPatch:
+        if (
+            self.period_from is None
+            and self.period_to is None
+            and self.freelancer_shift_rate is None
+        ):
+            raise ValueError("Нет изменений карточки внештатника")
+        return self
+
+
+class FreelancerAttendanceCaseRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    placeholder_employee_id: uuid.UUID
+    placeholder_name: str | None = None
+    work_date: date
+    minutes: int
+    opened_at: datetime | None = None
+    status: str
+    resolved_employee_id: uuid.UUID | None = None
+    note: str | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class EmployeePinChangeRequest(BaseModel):

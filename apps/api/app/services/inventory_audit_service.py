@@ -808,9 +808,7 @@ async def set_item_shortage_adjustment(
     """
     audit = await _load_audit_or_404(session, audit_id)
     if audit.status != "draft":
-        raise InventoryAuditConflictError(
-            "Корректировать сумму недостачи можно только в черновике"
-        )
+        raise InventoryAuditConflictError("Корректировать сумму недостачи можно только в черновике")
 
     item = next((row for row in audit.items if row.id == item_id), None)
     if item is None:
@@ -842,9 +840,7 @@ async def set_item_shortage_adjustment(
     else:
         clean_reason = _clean_optional_text(reason)
         if clean_reason is None:
-            raise InventoryAuditValidationError(
-                "Укажите причину корректировки суммы недостачи"
-            )
+            raise InventoryAuditValidationError("Укажите причину корректировки суммы недостачи")
         raw_signed = item_raw_signed_amount(item)
         effective = _money(raw_signed + adjustment)
         # Костыль уменьшает ложную недостачу, а не создаёт переплату в пользу сотрудника:
@@ -1383,9 +1379,7 @@ async def set_penalty_work_date_override(
     Не коммитит — вызывающая сторона коммитит вместе с остальными правками.
     """
     if audit.status != "draft":
-        raise InventoryAuditConflictError(
-            "Перенести дату списания можно только в черновике"
-        )
+        raise InventoryAuditConflictError("Перенести дату списания можно только в черновике")
     if override is not None:
         default_date = audit_penalty_work_date(audit.business_date)
         if override < default_date:
@@ -1992,6 +1986,9 @@ async def _load_period_employees(
             .where(
                 Employee.position == position,
                 or_(ledger_exists, scheduled_exists),
+                # Плейсхолдеры пула «Внештат №N» в ревизии не участвуют (их явка
+                # перекладывается на реального внештатника, который и попадёт сюда).
+                Employee.is_freelancer_placeholder.is_(False),
             )
             .order_by(Employee.full_name)
         )

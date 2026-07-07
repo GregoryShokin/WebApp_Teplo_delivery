@@ -200,7 +200,13 @@ async def list_new_payment_employees(
         position for position, mode in modes.items() if mode == PAYOUT_MODE_ON_DEMAND
     }
     rows = await session.scalars(
-        select(Employee).where(Employee.status == "active").order_by(Employee.full_name)
+        select(Employee)
+        # Плейсхолдеры пула «Внештат №N» не выбираемы в окне платежа.
+        .where(
+            Employee.status == "active",
+            Employee.is_freelancer_placeholder.is_(False),
+        )
+        .order_by(Employee.full_name)
     )
     return [
         {

@@ -31,6 +31,7 @@ from app.models.enums import employee_status_enum
 
 if TYPE_CHECKING:
     from app.models.employee_position_assignment import EmployeePositionAssignment
+    from app.models.freelancer import FreelancerTempCard
 
 _employee_position_assignment = table(
     "employee_position_assignment",
@@ -65,6 +66,10 @@ class Employee(Base):
         CheckConstraint(
             "deposit_withholding_override is null or deposit_withholding_override >= 0",
             name="deposit_withholding_override_non_negative",
+        ),
+        CheckConstraint(
+            "freelancer_shift_rate is null or freelancer_shift_rate > 0",
+            name="ck_employee_freelancer_shift_rate_positive",
         ),
     )
 
@@ -115,6 +120,35 @@ class Employee(Base):
         default=False,
         server_default="false",
         comment="source=app_managed; общая карточка для смен курьеров без своей карточки iiko",
+    )
+    is_freelancer_placeholder: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment=(
+            "source=app_managed; системная карточка пула «Внештат №N» — держит "
+            "реальную iiko-карту, к которой привязываются временные внештатники; "
+            "скрыта из штатных списков"
+        ),
+    )
+    is_freelancer_temp: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment=(
+            "source=app_managed; временный внештатник («однодневка») с реальным "
+            "именем, привязан к плейсхолдеру пула; своей iiko-карты нет"
+        ),
+    )
+    freelancer_shift_rate: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+        comment=(
+            "source=app_managed; договорная ставка внештатника за 12-часовую смену, ₽. "
+            "Начисление = ставка/12 × фактические часы явки (без доплат пт/сб и +1ч)"
+        ),
     )
     status: Mapped[str] = mapped_column(
         employee_status_enum,
@@ -243,6 +277,16 @@ class Employee(Base):
         back_populates="employee",
         cascade="all, delete-orphan",
         order_by=lambda: EmployeePendingIikoAction.effective_on,
+    )
+    # Карточка временного внештатника (для этой строки как внештатника). Плейсхолдер
+    # с обратной стороны привязки сюда НЕ попадает (только employee_id).
+    freelancer_card: Mapped[FreelancerTempCard | None] = relationship(
+        "FreelancerTempCard",
+        primaryjoin="Employee.id == FreelancerTempCard.employee_id",
+        foreign_keys="FreelancerTempCard.employee_id",
+        viewonly=True,
+        uselist=False,
+        lazy="selectin",
     )
 
     @property

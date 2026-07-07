@@ -20,6 +20,7 @@ from app.models import (
     ShiftLedgerEntry,
 )
 from app.services.employee_position_service import position_at
+from app.services.freelancer import attendance as freelancer_attendance
 from app.services.iiko_sync import _load_source_credential_env
 from app.services.position_registry import production_payroll_positions
 from app.services.settings_service import SettingNotFoundError, get_setting_model
@@ -112,6 +113,17 @@ async def load_attendance_entries(
     employees_by_iiko_id = {
         employee.iiko_id: employee for employee in (await session.scalars(select(Employee))).all()
     }
+    # Пул «Внештат №N»: явку с плейсхолдера перенаправляем на внештатника по дате.
+    # Индекс грузим лишь при наличии плейсхолдеров — иначе лишний запрос ни к чему.
+    has_placeholder = any(
+        getattr(emp, "is_freelancer_placeholder", False)
+        for emp in employees_by_iiko_id.values()
+    )
+    binding_index = (
+        await freelancer_attendance.load_binding_index(session)
+        if has_placeholder
+        else freelancer_attendance.BindingIndex({})
+    )
     entries: list[AttendanceEntry] = []
 
     for record in records:
@@ -125,6 +137,27 @@ async def load_attendance_entries(
         employee = employees_by_iiko_id.get(iiko_id)
         if employee is None:
             continue
+        if employee.is_freelancer_placeholder:
+            started_at = parse_datetime(first_value(record, "dateFrom", "OpenTime", "started_at"))
+            if started_at is None:
+                continue
+            work_date = started_at.astimezone(MOSCOW_TZ).date()
+            ended_at = parse_datetime(first_value(record, "dateTo", "CloseTime", "ended_at"))
+            case_minutes = (
+                max(0, int((ended_at - started_at).total_seconds() // 60))
+                if ended_at is not None
+                else 0
+            )
+            employee = await freelancer_attendance.remap_attendance_employee(
+                session,
+                employee,
+                work_date,
+                index=binding_index,
+                minutes=case_minutes,
+                opened_at=started_at,
+            )
+            if employee is None:
+                continue
         entry = build_attendance_entry(record, period, employee, rules)
         if entry.work_date < period.start_date or entry.work_date > period.end_date:
             continue

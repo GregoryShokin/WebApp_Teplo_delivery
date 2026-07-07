@@ -699,7 +699,8 @@ def calculate_payroll_lines_from_inputs(
             fund_rate = _fund_rate_for_months(settings, tenure_months_on(employee, work_date))
             fund_accrual = (
                 Decimal("0")
-                if is_substitute
+                # Внештатник не участвует в накопительном фонде (как и подменный).
+                if is_substitute or is_freelancer
                 else fund_accrual_for_day(
                     settings,
                     employee,
@@ -707,13 +708,22 @@ def calculate_payroll_lines_from_inputs(
                     base_pay_with_premium,
                 )
             )
-            rate_details = role_category_rate_details(
-                settings,
-                role,
-                category,
-                work_date,
-                station,
-            )
+            if is_freelancer:
+                # В ведомости показываем договорную ставку карточки как базовую.
+                freelancer_rate = decimal(getattr(employee, "freelancer_shift_rate", None) or 0)
+                rate_details = (
+                    {"amount": freelancer_rate, "rate_type": "freelancer_card"}
+                    if freelancer_rate > 0
+                    else None
+                )
+            else:
+                rate_details = role_category_rate_details(
+                    settings,
+                    role,
+                    category,
+                    work_date,
+                    station,
+                )
         key = (employee_id, role)
         totals = line_totals.setdefault(key, _new_line_totals())
         totals["base_pay"] += base_pay_with_premium
@@ -1926,7 +1936,13 @@ def base_shift_pay(
     work_date: date | None = None,
     station: str | None = None,
 ) -> Decimal:
-    rate = role_category_rate(settings, role, category, work_date, station) or Decimal("0")
+    if category_rule_key(category) == "6":
+        # Внештатный: ставка берётся из карточки (договорная за 12ч-смену), а не из
+        # тарифной сетки. Начисление = ставка/12 × часы явки = ставка × (мин/720).
+        # Доплаты пт/сб и +1ч на внештатника не распространяются (см. ниже по расчёту).
+        rate = decimal(getattr(employee, "freelancer_shift_rate", None) or 0)
+    else:
+        rate = role_category_rate(settings, role, category, work_date, station) or Decimal("0")
     return rate * shift_pay_ratio(minutes)
 
 

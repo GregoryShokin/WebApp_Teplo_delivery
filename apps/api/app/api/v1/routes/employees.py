@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client as _http_client
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -10,7 +11,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import ValidationError
 from sqlalchemy import delete, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_object_session
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentActor, get_current_actor
@@ -30,6 +31,8 @@ from app.models import (
     EmployeePositionAssignment,
     EmployeePositionEvent,
     EmployeeRoleAssignment,
+    FreelancerAttendanceCase,
+    FreelancerTempCard,
     ScheduledShift,
     ShiftLedgerEntry,
 )
@@ -61,6 +64,8 @@ from app.schemas.employees import (
     EmployeeRoleAssignmentCreate,
     EmployeeRoleAssignmentPatch,
     EmployeeRoleAssignmentRead,
+    FreelancerAttendanceCaseRead,
+    FreelancerCardPatch,
     IikoEmployeeRoleRead,
     SyncResultRead,
 )
@@ -84,6 +89,8 @@ from app.services.employee_status import (
     is_cook_position,
     position_group_for_position,
 )
+from app.services.freelancer import attendance as freelancer_attendance
+from app.services.freelancer import pool as freelancer_pool
 from app.services.iiko_sync import (
     IikoEmployeeOperationError,
     get_iiko_employee_roles,
@@ -176,6 +183,42 @@ async def _require_dismissal_reasons_edit(
     if permission_is_granted("source.dismissal_reasons.edit", actor.permissions):
         return
     ensure_any_staff_access(actor, StaffAction.EDIT)
+
+
+# Право просмотра ПИН внештатника: ПИН видят только те, кто выдаёт смены
+# (владелец/админ/управляющий), а не все со Штатом.
+FREELANCER_PIN_READ_PERMISSION = "staff.freelancer_pin.read"
+
+
+def _actor_can_see_freelancer_pin(actor: CurrentActor | None) -> bool:
+    if actor is None:
+        return False
+    return permission_is_granted(FREELANCER_PIN_READ_PERMISSION, actor.permissions)
+
+
+def _redact_freelancer_pin(employee: Employee, *, can_see_pin: bool) -> None:
+    """Скрывает открытый ПИН внештатника из ответа, если нет права его видеть.
+
+    Карточку отвязываем от сессии (expunge) и лишь затем зануляем pin_code на
+    detached-объекте — так изменение не попадёт в БД ни autoflush'ем, ни commit'ом.
+    placeholder_name при этом остаётся видимым (скрываем только сам ПИН).
+    """
+    if can_see_pin:
+        return
+    card = getattr(employee, "freelancer_card", None)
+    if card is None or card.pin_code is None:
+        return
+    session = async_object_session(card)
+    if session is not None:
+        session.expunge(card)
+    card.pin_code = None
+
+
+def _redact_freelancer_pins(employees: Iterable[Employee], *, can_see_pin: bool) -> None:
+    if can_see_pin:
+        return
+    for employee in employees:
+        _redact_freelancer_pin(employee, can_see_pin=False)
 
 
 STAFF_READ_ACCESS = (Depends(_require_staff_read),)
@@ -275,7 +318,14 @@ async def list_employees(
     actor: Annotated[CurrentActor | None, Depends(get_current_actor)] = None,
 ) -> list[Employee] | list[EmployeeRead]:
     today = date.today()
-    query = select(Employee).options(selectinload(Employee.role_assignments))
+    query = select(Employee).options(
+        selectinload(Employee.role_assignments),
+        # Карточку внештатника и её плейсхолдер грузим eager-цепочкой, иначе
+        # обращение к placeholder_name при сериализации даст async lazy-load.
+        selectinload(Employee.freelancer_card).selectinload(FreelancerTempCard.placeholder),
+    )
+    # Плейсхолдеры пула «Внештат №N» — системные строки, из Штата скрыты.
+    query = query.where(Employee.is_freelancer_placeholder.is_(False))
     if actor is not None:
         query = query.where(employee_access_filter(actor, StaffAction.READ))
     # Когда задано окно присутствия (present_from/present_to) — не фильтруем по
@@ -321,6 +371,7 @@ async def list_employees(
     if actor is not None:
         employees = filter_employees_by_staff_access(employees, actor, StaffAction.READ)
     await _attach_active_notices(session, employees, today)
+    _redact_freelancer_pins(employees, can_see_pin=_actor_can_see_freelancer_pin(actor))
     if include_pending:
         rows: list[EmployeeRead] = []
         for employee in employees:
@@ -381,6 +432,124 @@ async def list_iiko_employee_roles(
         if position.status == "active"
         and can_access_position(actor, position.name, StaffAction.CREATE)
     ]
+
+
+@router.get(
+    "/freelancer/attendance-cases",
+    response_model=list[FreelancerAttendanceCaseRead],
+    dependencies=STAFF_READ_ACCESS,
+)
+async def list_freelancer_attendance_cases(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    status_filter: Annotated[str, Query(alias="status")] = "open",
+) -> list[FreelancerAttendanceCaseRead]:
+    """Кейсы разбора: явка на плейсхолдер пула в дату без привязанного внештатника."""
+    query = select(FreelancerAttendanceCase, Employee.full_name).join(
+        Employee,
+        Employee.id == FreelancerAttendanceCase.placeholder_employee_id,
+    )
+    if status_filter != "all":
+        query = query.where(FreelancerAttendanceCase.status == status_filter)
+    query = query.order_by(
+        FreelancerAttendanceCase.work_date.desc(),
+        FreelancerAttendanceCase.created_at.desc(),
+    )
+    rows = (await session.execute(query)).all()
+    result: list[FreelancerAttendanceCaseRead] = []
+    for case, placeholder_name in rows:
+        payload = FreelancerAttendanceCaseRead.model_validate(case)
+        payload.placeholder_name = placeholder_name
+        result.append(payload)
+    return result
+
+
+@router.post(
+    "/freelancer/attendance-cases/{case_id}/dismiss",
+    response_model=FreelancerAttendanceCaseRead,
+    dependencies=STAFF_WRITE_ACCESS,
+)
+async def dismiss_freelancer_attendance_case(
+    case_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> FreelancerAttendanceCaseRead:
+    case = await session.get(FreelancerAttendanceCase, case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="Кейс не найден")
+    case.status = "dismissed"
+    case.updated_at = datetime.now(UTC)
+    await session.commit()
+    await session.refresh(case)
+    placeholder = await session.get(Employee, case.placeholder_employee_id)
+    payload = FreelancerAttendanceCaseRead.model_validate(case)
+    payload.placeholder_name = placeholder.full_name if placeholder is not None else None
+    return payload
+
+
+@router.patch(
+    "/{employee_id}/freelancer-card",
+    response_model=EmployeeRead,
+    dependencies=STAFF_WRITE_ACCESS,
+)
+async def patch_freelancer_card(
+    employee_id: uuid.UUID,
+    payload: FreelancerCardPatch,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> Employee:
+    """Правка карточки внештатника: ставка и/или период (в пределах 30 дней от начала)."""
+    employee = await _get_employee_or_404(
+        session,
+        employee_id,
+        actor=actor,
+        action=StaffAction.EDIT,
+    )
+    if not employee.is_freelancer_temp:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Сотрудник не является временным внештатником",
+        )
+    card = await freelancer_pool.get_card_for_employee(session, employee_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="Карточка внештатника не найдена")
+    if card.archived_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Карточка архивирована — правка недоступна",
+        )
+
+    now = datetime.now(UTC)
+    if payload.freelancer_shift_rate is not None:
+        employee.freelancer_shift_rate = payload.freelancer_shift_rate
+        employee.updated_at = now
+    if payload.period_from is not None or payload.period_to is not None:
+        try:
+            card = await freelancer_pool.update_card_period(
+                session,
+                card,
+                period_from=payload.period_from,
+                period_to=payload.period_to,
+            )
+        except freelancer_pool.FreelancerError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+        # Обновлённый период мог накрыть ранее незакрытые кейсы разбора.
+        await freelancer_attendance.resolve_cases_for_card(session, card)
+        employee.hire_date = card.period_from
+        employee.tenure_started_at = card.period_from
+
+    await session.commit()
+    await session.refresh(employee)
+    return await _get_employee_or_404(
+        session,
+        employee_id,
+        include_assignments=True,
+        actor=actor,
+        action=StaffAction.READ,
+    )
 
 
 @router.get(
@@ -728,6 +897,20 @@ async def create_employee(
             detail="Должность недоступна для создания сотрудника",
         )
     ensure_position_access(actor, canonical_position, StaffAction.CREATE)
+    # Блок дубля имени среди активных (архивные не в счёт) — для обоих контуров.
+    try:
+        await freelancer_pool.ensure_unique_active_name(session, payload.full_name)
+    except freelancer_pool.DuplicateActiveNameError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    if payload.is_freelancer:
+        return await _create_freelancer_employee(
+            session,
+            payload,
+            actor,
+            canonical_position=canonical_position,
+        )
+
     _validate_premium_flags(
         canonical_position,
         is_senior=payload.is_senior,
@@ -872,6 +1055,160 @@ async def create_employee(
         action_type="create" if created else "upsert_from_iiko_create",
         employee=employee,
         before=before,
+        after=after,
+        now=now,
+        actor=actor,
+    )
+
+    await session.commit()
+    await session.refresh(employee)
+    return await _get_employee_or_404(
+        session,
+        employee.id,
+        include_assignments=True,
+        actor=actor,
+        action=StaffAction.READ,
+    )
+
+
+async def _create_freelancer_employee(
+    session: AsyncSession,
+    payload: EmployeeCreateRequest,
+    actor: CurrentActor,
+    *,
+    canonical_position: str,
+) -> Employee:
+    """Создаёт временного внештатника через пул iiko-плейсхолдеров «Внештат №N».
+
+    Своей iiko-карты у внештатника нет: он привязывается к свободному плейсхолдеру,
+    у которого обновляется ПИН. Категория — freelancer автоматически. Реальное имя
+    живёт в нашей системе (график, смены, ведомости).
+    """
+    if canonical_position != "Повар":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Внештатник доступен только для должности «Повар».",
+        )
+    assert payload.period_from is not None and payload.period_to is not None
+    assert payload.freelancer_shift_rate is not None
+
+    # Категория — freelancer принудительно (без выбора в форме).
+    freelancer_roles = [
+        role.model_copy(update={"category": "freelancer"}) for role in payload.roles
+    ]
+    roles_payload = payload.model_copy(update={"roles": freelancer_roles, "category": None})
+    resolved_roles = await _resolve_create_roles(
+        session,
+        roles_payload,
+        position=canonical_position,
+    )
+    if not resolved_roles:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Для внештатника укажите станцию (роль повара).",
+        )
+
+    try:
+        role_id = await _ensure_iiko_role_for_position(session, canonical_position, actor)
+        allocation = await freelancer_pool.allocate_placeholder(
+            session,
+            iiko_position=canonical_position,
+            iiko_role_id=role_id,
+            period_from=payload.period_from,
+            period_to=payload.period_to,
+            pin_code=payload.pin_code,
+        )
+    except _http_client.IncompleteRead as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="iiko не отвечает — внештатник не создан. Попробуйте через минуту.",
+        ) from exc
+    except IikoEmployeeOperationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    now = datetime.now(UTC)
+    today = date.today()
+    employee = Employee(
+        full_name=payload.full_name,
+        iiko_id=freelancer_pool.synthetic_freelancer_iiko_id(),
+        position=canonical_position,
+        category="freelancer",
+        is_freelancer_temp=True,
+        freelancer_shift_rate=payload.freelancer_shift_rate,
+        hire_date=payload.period_from,
+        tenure_started_at=payload.period_from,
+        pin_hash=hash_password(payload.pin_code),
+        pin_assumed_from_iiko=False,
+        pin_set_at=now,
+    )
+    session.add(employee)
+    await session.flush()
+
+    await employee_position_service.change_position(
+        session,
+        employee.id,
+        canonical_position,
+        effective_from=today,
+        comment="Initial position (freelancer)",
+        actor=actor,
+    )
+
+    assignment_snapshots: list[dict[str, Any]] = []
+    try:
+        for role in sorted(resolved_roles, key=lambda item: not item.is_primary):
+            assignment = await employee_assignment_service.add_role(
+                session,
+                employee.id,
+                role.payroll_role,
+                role.category,
+                is_primary=role.is_primary,
+                effective_from=today,
+                commit=False,
+            )
+            assignment_snapshots.append(_employee_assignment_snapshot(assignment))
+    except employee_assignment_service.EmployeeAssignmentError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    assignments = await employee_assignment_service.get_assignments(session, employee.id, today)
+    employee.status = compute_status(
+        employee,
+        is_iiko_deleted=False,
+        position_group=position_group_for_position(canonical_position),
+        assignments=assignments,
+    )
+    employee.updated_at = now
+
+    card = await freelancer_pool.create_temp_card(
+        session,
+        employee_id=employee.id,
+        placeholder_id=allocation.placeholder.id,
+        period_from=payload.period_from,
+        period_to=payload.period_to,
+        created_by=actor.user_id,
+        pin_code=payload.pin_code,
+    )
+    # Явка на плейсхолдер за этот период, ранее ушедшая в кейс разбора, закрывается.
+    await freelancer_attendance.resolve_cases_for_card(session, card)
+
+    after = {
+        **_employee_lifecycle_snapshot(employee),
+        "roles": assignment_snapshots,
+        "freelancer_shift_rate": str(payload.freelancer_shift_rate),
+        "freelancer_period_from": payload.period_from.isoformat(),
+        "freelancer_period_to": payload.period_to.isoformat(),
+        "placeholder_employee_id": str(allocation.placeholder.id),
+        "placeholder_name": allocation.placeholder.full_name,
+        "placeholder_created": allocation.created_new,
+    }
+    await _add_employee_lifecycle_action(
+        session,
+        action_type="create_freelancer",
+        employee=employee,
+        before=None,
         after=after,
         now=now,
         actor=actor,
@@ -2426,7 +2763,12 @@ async def _get_employee_or_404(
     if include_assignments and isinstance(session, AsyncSession):
         employee = await session.scalar(
             select(Employee)
-            .options(selectinload(Employee.role_assignments))
+            .options(
+                selectinload(Employee.role_assignments),
+                # Карточка внештатника + плейсхолдер: eager-цепочка, чтобы
+                # placeholder_name сериализовался без async lazy-load.
+                selectinload(Employee.freelancer_card).selectinload(FreelancerTempCard.placeholder),
+            )
             .where(Employee.id == employee_id)
         )
     else:
@@ -2435,6 +2777,7 @@ async def _get_employee_or_404(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сотрудник не найден")
     if actor is not None:
         ensure_employee_access(actor, employee, action)
+    _redact_freelancer_pin(employee, can_see_pin=_actor_can_see_freelancer_pin(actor))
     return employee
 
 

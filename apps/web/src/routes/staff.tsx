@@ -675,10 +675,6 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
       ),
     [permissions],
   );
-  const allowedCreatePositions = useMemo(
-    () => new Set(canonicalPositions.filter((position) => canCreateStaffPosition(position, permissions))),
-    [permissions],
-  );
 
   useEffect(() => {
     if (!visiblePositionFilterOptions.some((option) => option.value === positionFilter)) {
@@ -1333,7 +1329,6 @@ export function StaffRoute({ onNavigate }: { onNavigate?: (path: string) => void
       </Sheet>
 
       <CreateEmployeeDialog
-        allowedPositions={allowedCreatePositions}
         isPending={createMutation.isPending}
         onCreate={(payload) => createMutation.mutate(payload)}
         onOpenChange={setCreateOpen}
@@ -2547,7 +2542,6 @@ function createRoleRow(isPrimary = false): CreateEmployeeRoleRow {
 }
 
 function CreateEmployeeDialog({
-  allowedPositions,
   isPending,
   onCreate,
   onOpenChange,
@@ -2556,7 +2550,6 @@ function CreateEmployeeDialog({
   rolesError,
   rolesLoading,
 }: {
-  allowedPositions: ReadonlySet<CanonicalPosition>;
   isPending: boolean;
   onCreate: (payload: EmployeeCreatePayload) => void;
   onOpenChange: (open: boolean) => void;
@@ -2572,6 +2565,10 @@ function CreateEmployeeDialog({
   const [cashierCategory, setCashierCategory] = useState<EmployeeCategory | "">("");
   const [isSenior, setIsSenior] = useState(false);
   const [isDeputySenior, setIsDeputySenior] = useState(false);
+  const [isFreelancer, setIsFreelancer] = useState(false);
+  const [freelancerRate, setFreelancerRate] = useState("");
+  const [periodFrom, setPeriodFrom] = useState("");
+  const [periodTo, setPeriodTo] = useState("");
 
   const filteredRoles = useMemo(
     // Список приходит из реестра должностей и уже отфильтрован сервером по праву
@@ -2601,8 +2598,23 @@ function CreateEmployeeDialog({
       setCashierCategory("");
       setIsSenior(false);
       setIsDeputySenior(false);
+      setIsFreelancer(false);
+      setFreelancerRate("");
+      setPeriodFrom("");
+      setPeriodTo("");
     }
   }, [open]);
+
+  // «Вне штата»: категория внештатника проставляется автоматически (freelancer),
+  // надбавки не применяются. Доступно только для поваров.
+  useEffect(() => {
+    if (isFreelancer) {
+      setIsSenior(false);
+      setIsDeputySenior(false);
+      setCashierCategory("");
+      setRoleRows((rows) => rows.map((row) => ({ ...row, category: "freelancer" })));
+    }
+  }, [isFreelancer]);
 
   useEffect(() => {
     if (!selectedPosition) {
@@ -2658,11 +2670,33 @@ function CreateEmployeeDialog({
           }
           return isCategoryAllowedForRole(row.payroll_role, row.category);
         })));
+  const freelancerRateNumber = Number(freelancerRate.replace(",", "."));
+  const freelancerRateValid =
+    freelancerRate.trim() !== "" &&
+    Number.isFinite(freelancerRateNumber) &&
+    freelancerRateNumber > 0;
+  const freelancerPeriodDays =
+    periodFrom && periodTo
+      ? Math.round(
+          (new Date(periodTo).getTime() - new Date(periodFrom).getTime()) / 86_400_000,
+        )
+      : null;
+  const freelancerPeriodValid =
+    Boolean(periodFrom) &&
+    Boolean(periodTo) &&
+    periodFrom <= periodTo &&
+    freelancerPeriodDays !== null &&
+    freelancerPeriodDays <= 29;
+  const freelancerPositionValid = selectedPosition === "Повар";
+  const freelancerValid =
+    !isFreelancer ||
+    (freelancerRateValid && freelancerPeriodValid && freelancerPositionValid);
   const canSubmit =
     nameIsValid &&
     pinIsValid &&
     Boolean(iikoRoleId) &&
     rolesAreValid &&
+    freelancerValid &&
     !isPending &&
     !rolesLoading;
 
@@ -2675,23 +2709,38 @@ function CreateEmployeeDialog({
       full_name: trimmedName,
       pin_code: pinCode,
       position: iikoRoleId,
-      roles: showCashierCategory
-        ? [
-            {
-              payroll_role: "administrator",
-              category: cashierCategory as EmployeeCategory,
-              is_primary: true,
-            },
-          ]
-        : showCookRoleSection
-          ? roleRows.map((row) => ({
-              payroll_role: row.payroll_role as PayrollRole,
-              category: row.category as EmployeeCategory,
-              is_primary: row.is_primary,
-            }))
-          : [],
-      is_senior: isSenior,
-      is_deputy_senior: isDeputySenior,
+      roles: isFreelancer
+        ? // Внештатник — только повар; категория freelancer проставляется автоматически.
+          roleRows.map((row) => ({
+            payroll_role: row.payroll_role as PayrollRole,
+            category: "freelancer" as EmployeeCategory,
+            is_primary: row.is_primary,
+          }))
+        : showCashierCategory
+          ? [
+              {
+                payroll_role: "administrator",
+                category: cashierCategory as EmployeeCategory,
+                is_primary: true,
+              },
+            ]
+          : showCookRoleSection
+            ? roleRows.map((row) => ({
+                payroll_role: row.payroll_role as PayrollRole,
+                category: row.category as EmployeeCategory,
+                is_primary: row.is_primary,
+              }))
+            : [],
+      is_senior: isFreelancer ? false : isSenior,
+      is_deputy_senior: isFreelancer ? false : isDeputySenior,
+      ...(isFreelancer
+        ? {
+            is_freelancer: true,
+            freelancer_shift_rate: freelancerRateNumber,
+            period_from: periodFrom,
+            period_to: periodTo,
+          }
+        : {}),
     });
   }
 
@@ -2754,6 +2803,21 @@ function CreateEmployeeDialog({
             </div>
           ) : null}
 
+          <label className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-sm">
+            <div className="grid gap-0.5">
+              <span className="font-medium">Вне штата (внештатник)</span>
+              <span className="text-xs text-muted-foreground">
+                Временная карточка через пул «Внештат №N». Доступно для повара.
+              </span>
+            </div>
+            <input
+              checked={isFreelancer}
+              disabled={isPending}
+              onChange={(event) => setIsFreelancer(event.target.checked)}
+              type="checkbox"
+            />
+          </label>
+
           <Label className="grid gap-2">
             <span>ФИО</span>
             <Input
@@ -2805,7 +2869,58 @@ function CreateEmployeeDialog({
             </Select>
           </Label>
 
-          {showCashierCategory ? (
+          {isFreelancer ? (
+            <div className="grid gap-3 rounded-lg border bg-card p-4">
+              <div className="text-sm font-medium">Условия внештатника</div>
+              {!freelancerPositionValid ? (
+                <span className="text-xs text-destructive">
+                  Внештатник доступен только для должности «Повар».
+                </span>
+              ) : null}
+              <Label className="grid gap-2">
+                <span>Договорная ставка за смену (12 ч), ₽</span>
+                <Input
+                  autoComplete="off"
+                  inputMode="decimal"
+                  onChange={(event) =>
+                    setFreelancerRate(event.target.value.replace(/[^\d.,]/g, ""))
+                  }
+                  placeholder="3600"
+                  value={freelancerRate}
+                />
+                {freelancerRate && !freelancerRateValid ? (
+                  <span className="text-xs text-destructive">
+                    Ставка должна быть больше нуля
+                  </span>
+                ) : null}
+              </Label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Label className="grid gap-2">
+                  <span>Период с</span>
+                  <Input
+                    onChange={(event) => setPeriodFrom(event.target.value)}
+                    type="date"
+                    value={periodFrom}
+                  />
+                </Label>
+                <Label className="grid gap-2">
+                  <span>по</span>
+                  <Input
+                    onChange={(event) => setPeriodTo(event.target.value)}
+                    type="date"
+                    value={periodTo}
+                  />
+                </Label>
+              </div>
+              {periodFrom && periodTo && !freelancerPeriodValid ? (
+                <span className="text-xs text-destructive">
+                  Период — максимум 30 дней от начала. Дольше — заводите в штат.
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+
+          {showCashierCategory && !isFreelancer ? (
             <div className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2">
               <StaticField label="Роль" value={PAYROLL_ROLE_LABELS.administrator} />
 
@@ -2836,7 +2951,9 @@ function CreateEmployeeDialog({
           {showCookRoleSection ? (
             <div className="grid gap-3 rounded-lg border bg-card p-4">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-medium">Роли и категории</div>
+                <div className="text-sm font-medium">
+                  {isFreelancer ? "Роль" : "Роли и категории"}
+                </div>
                 <Button
                   disabled={isPending || !hasUnusedCreateRole}
                   onClick={addRoleRow}
@@ -2855,7 +2972,11 @@ function CreateEmployeeDialog({
                   const rowRoleOptions = roleOptionsForRow(row);
                   return (
                     <div
-                      className="grid gap-3 rounded-md border bg-background p-3 lg:grid-cols-[120px_1fr_1fr_auto] lg:items-end"
+                      className={`grid gap-3 rounded-md border bg-background p-3 lg:items-end ${
+                        isFreelancer
+                          ? "lg:grid-cols-[120px_1fr_auto]"
+                          : "lg:grid-cols-[120px_1fr_1fr_auto]"
+                      }`}
                       key={row.id}
                     >
                       <label className="flex h-10 items-center gap-2 text-sm">
@@ -2895,7 +3016,7 @@ function CreateEmployeeDialog({
                         </Label>
                       )}
 
-                      {row.payroll_role && rowCategories.length === 1 ? (
+                      {isFreelancer ? null : row.payroll_role && rowCategories.length === 1 ? (
                         <StaticField
                           label="Категория"
                           value={EMPLOYEE_CATEGORY_LABELS[rowCategories[0]]}
@@ -2947,7 +3068,7 @@ function CreateEmployeeDialog({
             </div>
           ) : null}
 
-          {premiumOptions?.is_senior || premiumOptions?.is_deputy_senior ? (
+          {(premiumOptions?.is_senior || premiumOptions?.is_deputy_senior) && !isFreelancer ? (
             <div className="grid gap-3 rounded-lg border bg-card p-4">
               <div className="text-sm font-medium">Надбавки</div>
               {premiumOptions.is_senior ? (
@@ -4153,6 +4274,29 @@ function StaffEditor({
             </Button>
           ) : null}
         </div>
+
+        {employee.is_freelancer_temp && employee.freelancer_card ? (
+          <div className="grid gap-3 rounded-lg border bg-card p-4">
+            <div className="text-sm font-medium">Внештатник</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge className="rounded-md border-amber-300 bg-amber-50 text-amber-800 shadow-none dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                {employee.freelancer_card.placeholder_name ?? "Плейсхолдер пула"}
+              </Badge>
+              {employee.freelancer_card.pin_code ? (
+                <Badge className="rounded-md border-border bg-background font-mono text-foreground shadow-none">
+                  ПИН {employee.freelancer_card.pin_code}
+                </Badge>
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Смену открывают под картой iiko «{employee.freelancer_card.placeholder_name ?? "Внештат"}
+              ».
+              {employee.freelancer_card.pin_code
+                ? " ПИН передайте внештатнику для открытия смены."
+                : null}
+            </p>
+          </div>
+        ) : null}
 
         {canViewChangeHistory || canEditEmployee ? (
           <PositionHistorySection
@@ -5513,12 +5657,37 @@ function EmployeeTags({
     substituteCount > 0 ? `${substituteCount} подмен` : null,
   ].filter((tag): tag is string => Boolean(tag));
 
-  if (tags.length === 0 && !roleTag && !employee.active_notice && !pending) {
+  const freelancerBadge = employee.is_freelancer_temp
+    ? [
+        "вне штата",
+        employee.freelancer_card?.period_to
+          ? `до ${employee.freelancer_card.period_to.slice(8, 10)}.${employee.freelancer_card.period_to.slice(5, 7)}`
+          : null,
+        employee.freelancer_shift_rate
+          ? `${Math.round(Number(employee.freelancer_shift_rate)).toLocaleString("ru-RU")} ₽`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
+
+  if (
+    tags.length === 0 &&
+    !roleTag &&
+    !employee.active_notice &&
+    !pending &&
+    !freelancerBadge
+  ) {
     return <span className="text-sm text-muted-foreground">Без надбавок</span>;
   }
 
   return (
     <div className={cn("flex flex-wrap gap-2", compact ? "max-w-[240px]" : undefined)}>
+      {freelancerBadge ? (
+        <Badge className="rounded-md border-amber-300 bg-amber-50 text-amber-800 shadow-none dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          {freelancerBadge}
+        </Badge>
+      ) : null}
       {employee.active_notice ? (
         <Badge className={noticeBadgeClass(employee.active_notice.will_trigger_full_payout)}>
           Уведомил об уходе
@@ -6313,15 +6482,6 @@ function canReadStaffPosition(position: CanonicalPosition, permissions: StaffPer
   if (area === "cashiers") return permissions.hasAnyPermission(["staff.cashiers.read"]);
   if (area === "auxiliary") return permissions.hasAnyPermission(["staff.auxiliary.read"]);
   if (area === "couriers") return permissions.hasPermission("staff.couriers.read");
-  return false;
-}
-
-function canCreateStaffPosition(position: CanonicalPosition, permissions: StaffPermissions) {
-  const area = staffAreaForPosition(position);
-  if (area === "administration") return permissions.hasPermission("staff.administration.create");
-  if (area === "cooks") return permissions.hasPermission("staff.cooks.create");
-  if (area === "cashiers") return permissions.hasPermission("staff.cashiers.create");
-  if (area === "couriers") return permissions.hasPermission("staff.couriers.create");
   return false;
 }
 

@@ -43,6 +43,7 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Штат",
         "Смотреть историю изменений администрации",
     ),
+    ("staff.freelancer_pin.read", "Штат", "Смотреть ПИН внештатника"),
     ("staff.cooks.read", "Штат", "Смотреть поваров"),
     ("staff.cooks.create", "Штат", "Создавать поваров"),
     ("staff.cooks.edit", "Штат", "Редактировать поваров"),
@@ -607,6 +608,7 @@ LEGACY_PERMISSION_ALIASES: dict[str, frozenset[str]] = {
 
 MANAGER_DEFAULT_PERMISSIONS = frozenset(
     {
+        "staff.freelancer_pin.read",
         "staff.cooks.read",
         "staff.cooks.create",
         "staff.cooks.edit",
@@ -654,6 +656,9 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "payroll.runs.bank_draft",
         "payroll.runs.admin.start",
         "payroll.runs.admin.recalculate",
+        # Управляющий ведёт ЗП (выплаты сотрудникам): выдано миграцией 0153 —
+        # держим дефолт кода в синхроне с сидом БД.
+        "payroll.employee_payouts.create",
         "payroll.accruals.read",
         "payroll.adjustments.edit",
         "payroll.bonuses.add",
@@ -756,6 +761,8 @@ OFFICE_MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "kassa.adjustments.create",
         # Отмена авто-штрафов за недостачу — точечное право (только owner/admin).
         "kassa.penalty.waive",
+        # ПИН внештатника — только у тех, кто выдаёт смены (owner/admin/управляющий).
+        "staff.freelancer_pin.read",
     }
 )
 

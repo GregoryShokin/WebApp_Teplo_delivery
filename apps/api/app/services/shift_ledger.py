@@ -29,6 +29,7 @@ from app.services.attendance_loader import (
     parse_datetime,
 )
 from app.services.employee_assignments import get_assignments
+from app.services.freelancer import attendance as freelancer_attendance
 from app.services.position_registry import production_payroll_positions
 from app.services.staff_taxonomy import PAYROLL_ROLE_LABELS
 
@@ -317,6 +318,18 @@ async def load_iiko_attendance_snapshots(
     employees_by_iiko_id = {
         employee.iiko_id: employee for employee in (await session.scalars(select(Employee))).all()
     }
+    # Индекс привязок пула «Внештат №N»: явку с плейсхолдера перенаправляем на
+    # временного внештатника, чья карточка покрывает дату явки. Грузим индекс
+    # лишь при наличии плейсхолдеров — иначе лишний запрос ни к чему.
+    has_placeholder = any(
+        getattr(emp, "is_freelancer_placeholder", False)
+        for emp in employees_by_iiko_id.values()
+    )
+    binding_index = (
+        await freelancer_attendance.load_binding_index(session)
+        if has_placeholder
+        else freelancer_attendance.BindingIndex({})
+    )
     grouped: dict[tuple[uuid.UUID, datetime], AttendanceSnapshot] = {}
     skipped_missing_employee_iiko_ids: set[str] = set()
     skipped_missing_employee_records = 0
@@ -340,6 +353,24 @@ async def load_iiko_attendance_snapshots(
             continue
 
         ended_at = parse_datetime(first_value(record, "dateTo", "CloseTime", "ended_at"))
+
+        if employee.is_freelancer_placeholder:
+            case_minutes = (
+                max(0, int((ended_at - started_at).total_seconds() // 60))
+                if ended_at is not None
+                else 0
+            )
+            employee = await freelancer_attendance.remap_attendance_employee(
+                session,
+                employee,
+                work_date,
+                index=binding_index,
+                minutes=case_minutes,
+                opened_at=started_at,
+            )
+            if employee is None:
+                # Явка на плейсхолдер без привязки — кейс разбора, в леджер не пишем.
+                continue
         note = first_text(record, "notes", "comment")
         snapshot_key = (employee.id, started_at)
         previous = grouped.get(snapshot_key)

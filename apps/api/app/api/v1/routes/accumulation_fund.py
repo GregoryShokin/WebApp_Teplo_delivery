@@ -209,6 +209,8 @@ async def get_initial_balance_roster(
             select(Employee).where(
                 Employee.status == "active",
                 Employee.position.in_(production_payroll_positions()),
+                # Плейсхолдеры пула «Внештат №N» в фонд не входят.
+                Employee.is_freelancer_placeholder.is_(False),
             )
         )
     ).all()
@@ -475,6 +477,8 @@ async def list_fund_accounts(
         .where(
             AccumulationFundAccount.year == year,
             Employee.position.in_(production_payroll_positions()),
+            # Плейсхолдеры пула «Внештат №N» из списка фонда исключаем.
+            Employee.is_freelancer_placeholder.is_(False),
         )
         .order_by(Employee.full_name)
     )

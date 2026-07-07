@@ -152,7 +152,11 @@ async def list_deposits(
 ) -> list[dict[str, Any]]:
     result = await session.scalars(
         select(Employee)
-        .where(Employee.position.in_(production_payroll_positions()))
+        # Плейсхолдеры пула «Внештат №N» — не сотрудники, депозитов у них нет.
+        .where(
+            Employee.position.in_(production_payroll_positions()),
+            Employee.is_freelancer_placeholder.is_(False),
+        )
         .order_by(Employee.full_name)
     )
     employees = result.all()
@@ -271,7 +275,8 @@ async def payout_deposit(
         amount=amount,
         now=now,
     )
-    # Реальная выдача денег → проводка ДДС (расход с выбранного счёта; для банк-черновика — с Сейфа).
+    # Реальная выдача денег → проводка ДДС (расход с выбранного счёта; для
+    # банк-черновика — с Сейфа).
     payout_wallet = await deposit_service.book_production_deposit_payout_cashflow(
         session,
         transaction=transaction,

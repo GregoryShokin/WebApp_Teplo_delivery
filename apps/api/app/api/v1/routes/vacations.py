@@ -88,19 +88,18 @@ async def get_vacation_roster(
     employees = (
         await session.scalars(
             select(Employee)
+            # Плейсхолдеры пула «Внештат №N» в отпускной реестр не попадают.
             .where(
                 Employee.position.in_(vacation_positions()),
                 Employee.status == "active",
+                Employee.is_freelancer_placeholder.is_(False),
             )
             .order_by(Employee.full_name)
         )
     ).all()
     rows: list[VacationRosterRow] = []
     for employee in employees:
-        if (
-            employee.position not in vacation_positions()
-            or employee.status != "active"
-        ):
+        if employee.position not in vacation_positions() or employee.status != "active":
             continue
         balance = await vacation_service.get_vacation_balance(
             session,

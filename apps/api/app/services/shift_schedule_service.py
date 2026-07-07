@@ -69,7 +69,12 @@ async def get_schedule_with_shifts(
     result = await session.execute(
         select(ScheduledShift, Employee)
         .join(Employee, Employee.id == ScheduledShift.employee_id)
-        .where(ScheduledShift.shift_schedule_id == schedule_id)
+        # Плейсхолдеры пула «Внештат №N» не показываем в графике (их смены —
+        # исторические, поглощённые; реальный внештатник виден под своим именем).
+        .where(
+            ScheduledShift.shift_schedule_id == schedule_id,
+            Employee.is_freelancer_placeholder.is_(False),
+        )
         .order_by(ScheduledShift.business_date, Employee.full_name)
     )
     rows = [
@@ -430,7 +435,13 @@ async def list_employees_roster(session: AsyncSession) -> list[dict[str, Any]]:
     today = _business_today()
     substitute_pairs = await payroll_config.get_substitute_pairs(session)
     result = await session.scalars(
-        select(Employee).where(Employee.status == "active").order_by(Employee.full_name)
+        select(Employee)
+        # Плейсхолдеры пула «Внештат №N» — системные строки, в график их не берём.
+        .where(
+            Employee.status == "active",
+            Employee.is_freelancer_placeholder.is_(False),
+        )
+        .order_by(Employee.full_name)
     )
     roster: list[dict[str, Any]] = []
     for employee in result.all():

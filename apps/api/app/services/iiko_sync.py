@@ -314,6 +314,7 @@ async def update_iiko_employee(
     iiko_id: str,
     full_name: str | None = None,
     position: str | None = None,
+    pin_code: str | None = None,
 ) -> IikoEmployeeUpdateResult:
     await _load_source_credential_env(session)
     return await anyio.to_thread.run_sync(
@@ -321,6 +322,7 @@ async def update_iiko_employee(
         iiko_id,
         full_name,
         position,
+        pin_code,
     )
 
 
@@ -640,6 +642,7 @@ def _update_iiko_employee_sync(
     iiko_id: str,
     full_name: str | None,
     position: str | None,
+    pin_code: str | None = None,
 ) -> IikoEmployeeUpdateResult:
     iiko_id = iiko_id.strip()
     if not iiko_id:
@@ -648,6 +651,16 @@ def _update_iiko_employee_sync(
     target_full_name = full_name.strip() if full_name is not None else None
     if full_name is not None and not target_full_name:
         raise IikoEmployeeOperationError("ФИО сотрудника обязательно", status_code=400)
+
+    # pin_code == "" — явный сброс ПИН плейсхолдера (при архивации внештатника);
+    # непустое значение — установка ПИН нового внештатника.
+    target_pin: str | None = None
+    if pin_code is not None:
+        target_pin = pin_code.strip()
+        if target_pin and re.fullmatch(r"\d{4}", target_pin) is None:
+            raise IikoEmployeeOperationError(
+                "ПИН-код должен состоять из 4 цифр", status_code=400
+            )
 
     canonical_position = canonical_position_name(position) if position is not None else None
     if position is not None and canonical_position is None:
@@ -683,6 +696,7 @@ def _update_iiko_employee_sync(
             data,
             full_name=target_full_name,
             role=target_role,
+            pin_code=target_pin,
         )
         _request_iiko_with_incomplete_read_retry(
             client,
@@ -810,6 +824,7 @@ def _build_iiko_employee_update_xml(
     *,
     full_name: str | None,
     role: IikoEmployeeRole | None,
+    pin_code: str | None = None,
 ) -> bytes:
     try:
         root = ET.fromstring(data)
@@ -825,6 +840,9 @@ def _build_iiko_employee_update_xml(
 
     if full_name is not None:
         _set_xml_text(employee, "name", full_name)
+    if pin_code is not None:
+        # Непустой — установить ПИН нового внештатника; пустой — сброс при архивации.
+        _set_xml_text(employee, "pinCode", pin_code)
     if role is not None:
         _set_xml_text(employee, "mainRoleId", role.id)
         _set_xml_text(employee, "rolesIds", role.id)
@@ -1453,6 +1471,10 @@ def plan_employee_sync(
                 or _is_ghost_employee(employee)
                 or employee.status == "dismissing"  # липкий: не сбрасывать reset'ом
             ):
+                continue
+            # Временные внештатники живут без своей iiko-карты (синтетический
+            # iiko_id), поэтому их отсутствие в выгрузке iiko — норма, не увольнение.
+            if getattr(employee, "is_freelancer_temp", False):
                 continue
             before = _employee_snapshot(employee)
             deactivated = False

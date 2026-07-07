@@ -82,6 +82,7 @@ from app.models.employee import (
     EmployeeRoleAssignment,
 )
 from app.models.employee_position_assignment import EmployeePositionAssignment
+from app.models.freelancer import FreelancerAttendanceCase, FreelancerTempCard
 from app.models.iiko_product import IikoProduct
 from app.models.inventory import (
     InventoryAudit,
@@ -193,6 +194,8 @@ __all__ = [
     "EmployeePositionAssignment",
     "EmployeePositionEvent",
     "EmployeeRoleAssignment",
+    "FreelancerAttendanceCase",
+    "FreelancerTempCard",
     "InventoryAudit",
     "InventoryAuditEmployeeExclusion",
     "InventoryAuditItem",

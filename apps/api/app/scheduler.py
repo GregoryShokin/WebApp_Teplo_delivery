@@ -501,6 +501,29 @@ async def run_iiko_cashshift_sync_once() -> dict[str, object]:
     return payload
 
 
+@scheduler.scheduled_job(
+    "cron",
+    hour=3,
+    minute=15,
+    id="archive_expired_freelancer_cards",
+    max_instances=1,
+    coalesce=True,
+)
+async def archive_expired_freelancer_cards() -> None:
+    """Ежедневная автоархивация внештатников с истёкшим периодом (03:15 МСК).
+
+    Карточка уходит в inactive, плейсхолдер освобождается (сброс ПИН). Физического
+    удаления нет — история смен/ведомостей/выплат остаётся на архивной строке.
+    """
+    from app.services.freelancer import pool as freelancer_pool
+
+    async with AsyncSessionLocal() as session:
+        archived = await freelancer_pool.archive_expired_cards(session)
+        await session.commit()
+    if archived:
+        logger.info("archive_expired_freelancer_cards: архивировано карточек=%s", archived)
+
+
 async def run_with_iiko_backoff(operation: Callable[[], Awaitable[object]]) -> None:
     for attempt in range(1, IIKO_COURIER_JOB_RETRIES + 1):
         try:
