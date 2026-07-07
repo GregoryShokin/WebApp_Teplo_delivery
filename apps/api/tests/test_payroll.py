@@ -6011,6 +6011,52 @@ def test_patch_delete_in_finalized_period_409(monkeypatch: pytest.MonkeyPatch) -
     assert session.deleted == []
 
 
+def test_patch_adjustment_full_payload_with_null_label_moves_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Регресс: фронт при правке шлёт ОБА поля — category_id (со значением) и custom_label=null.
+
+    Перенос даты штрафа не должен падать XOR-ошибкой «укажите категорию или своё название, но
+    не оба поля»: взаимоисключение проверяется по ЗНАЧЕНИЯМ, а не по факту наличия ключей.
+    """
+    employee = make_employee()
+    adjustment = make_adjustment(employee, date(2026, 6, 30), "penalty", Decimal("77"))
+    session = PayrollAdjustmentFakeSession(
+        employee, category=adjustment.category, adjustment=adjustment
+    )
+
+    async def _unlocked(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    async def _not_locked(*_args: Any, **_kwargs: Any) -> bool:
+        return False
+
+    monkeypatch.setattr(
+        payroll_adjustment_routes, "assert_date_not_locked_for_role", _unlocked
+    )
+    monkeypatch.setattr(payroll_adjustment_routes, "is_date_locked_for_role", _not_locked)
+
+    with TestClient(app_with_payroll_adjustment_session(session)) as client:
+        response = client.patch(
+            f"/api/v1/payroll/adjustments/{adjustment.id}",
+            headers={"X-User-Role": "finance_manager"},
+            json={
+                "employee_id": str(employee.id),
+                "work_date": "2026-06-29",
+                "type": "penalty",
+                "amount": "77",
+                "category_id": str(adjustment.category_id),
+                "custom_label": None,
+                "comment": "зап калифорния",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert adjustment.work_date == date(2026, 6, 29)
+    assert adjustment.category_id == adjustment.category.id
+    assert adjustment.custom_label is None
+
+
 def test_create_for_non_payroll_position_422() -> None:
     # Курьер не входит в круг получателей премий/штрафов (в отличие от админ-персонала,
     # который теперь допустим наравне с поварами и кассирами).

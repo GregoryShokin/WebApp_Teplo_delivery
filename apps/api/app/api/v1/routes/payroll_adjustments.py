@@ -210,17 +210,19 @@ async def patch_adjustment(
     require_adjustment_type_permission(actor, next_type, next_role)
     await ensure_date_unlocked(session, next_work_date, next_role)
 
-    if "category_id" in updates and "custom_label" in updates:
-        raise category_xor_error()
-    if "category_id" in updates:
-        next_category_id = updates["category_id"]
-        next_custom_label = None
-    elif "custom_label" in updates:
-        next_category_id = None
-        next_custom_label = clean_optional_text(updates["custom_label"])
-    else:
-        next_category_id = adjustment.category_id
-        next_custom_label = adjustment.custom_label
+    # Клиент шлёт ОБА ключа (category_id и custom_label): одно поле со значением, второе — null
+    # (взаимоисключающие режимы «категория» / «своё название»). Поэтому XOR проверяем по
+    # ЗНАЧЕНИЯМ (validate_category_xor), а не по факту наличия ключей — иначе любая правка записи
+    # с категорией (перенос даты, суммы) падала бы с «укажите категорию или своё название, но не
+    # оба поля». Присланный null у противоположного поля естественно гасит его в БД.
+    next_category_id = (
+        updates["category_id"] if "category_id" in updates else adjustment.category_id
+    )
+    next_custom_label = (
+        clean_optional_text(updates["custom_label"])
+        if "custom_label" in updates
+        else adjustment.custom_label
+    )
     validate_category_xor(next_category_id, next_custom_label)
     category = await get_category_for_payload(session, next_category_id, next_type)
 
