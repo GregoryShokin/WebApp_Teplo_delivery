@@ -30,6 +30,7 @@ from app.models import (
     EmployeePositionAssignment,
     EmployeePositionEvent,
     EmployeeRoleAssignment,
+    ScheduledShift,
     ShiftLedgerEntry,
 )
 from app.schemas.employees import (
@@ -267,13 +268,38 @@ async def list_employees(
     cooking_station: Annotated[str | None, Query(alias="cooking_station")] = None,
     search: str | None = None,
     include_pending: bool = False,
+    present_from: Annotated[date | None, Query()] = None,
+    present_to: Annotated[date | None, Query()] = None,
     actor: Annotated[CurrentActor | None, Depends(get_current_actor)] = None,
 ) -> list[Employee] | list[EmployeeRead]:
     today = date.today()
     query = select(Employee).options(selectinload(Employee.role_assignments))
     if actor is not None:
         query = query.where(employee_access_filter(actor, StaffAction.READ))
-    if status_filter:
+    # Когда задано окно присутствия (present_from/present_to) — не фильтруем по
+    # статусу: возвращаем активных ИЛИ присутствующих в периоде любого статуса
+    # (отработал по табелю / был в графике). Иначе — обычный фильтр по статусу.
+    if present_from is not None and present_to is not None:
+        ledger_exists = (
+            select(ShiftLedgerEntry.id)
+            .where(
+                ShiftLedgerEntry.employee_id == Employee.id,
+                ShiftLedgerEntry.work_date >= present_from,
+                ShiftLedgerEntry.work_date <= present_to,
+            )
+            .exists()
+        )
+        scheduled_exists = (
+            select(ScheduledShift.id)
+            .where(
+                ScheduledShift.employee_id == Employee.id,
+                ScheduledShift.business_date >= present_from,
+                ScheduledShift.business_date <= present_to,
+            )
+            .exists()
+        )
+        query = query.where(or_(Employee.status == "active", ledger_exists, scheduled_exists))
+    elif status_filter:
         if status_filter not in EMPLOYEE_STATUSES:
             raise HTTPException(status_code=400, detail="Некорректный статус сотрудника")
         query = query.where(Employee.status == status_filter)

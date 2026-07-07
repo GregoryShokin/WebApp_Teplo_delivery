@@ -1991,7 +1991,6 @@ async def _load_period_employees(
             select(Employee)
             .where(
                 Employee.position == position,
-                Employee.status == "active",
                 or_(ledger_exists, scheduled_exists),
             )
             .order_by(Employee.full_name)

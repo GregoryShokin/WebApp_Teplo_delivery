@@ -3135,6 +3135,64 @@ async def test_list_employees_manager_filters_administration() -> None:
     }
 
 
+@pytest.mark.asyncio
+async def test_list_employees_present_window_includes_inactive_with_shift(
+    async_session_factory: Any,
+) -> None:
+    """present_from/present_to возвращает активных + присутствующих любого статуса.
+
+    Уволенный со сменой в окне — попадает; уволенный без смен — нет;
+    активный без смен — попадает всегда.
+    """
+    present_from = date(2026, 6, 9)
+    present_to = date(2026, 6, 15)
+
+    def _emp(full_name: str, *, status: str, fire_date: date | None) -> Employee:
+        return Employee(
+            id=uuid.uuid4(),
+            full_name=full_name,
+            iiko_id=f"iiko-{uuid.uuid4()}",
+            category="category_2",
+            status=status,
+            fire_date=fire_date,
+            is_senior=False,
+            is_deputy_senior=False,
+            pin_hash="hashed-pin",
+            pin_set_at=datetime(2026, 5, 1, tzinfo=UTC),
+            created_at=datetime(2026, 5, 1, tzinfo=UTC),
+            updated_at=datetime(2026, 5, 1, tzinfo=UTC),
+        )
+
+    async with async_session_factory() as session:
+        inactive_present = _emp("Inactive Present", status="inactive", fire_date=present_to)
+        inactive_absent = _emp("Inactive Absent", status="inactive", fire_date=date(2026, 5, 1))
+        active_absent = _emp("Active Absent", status="active", fire_date=None)
+        session.add_all([inactive_present, inactive_absent, active_absent])
+        session.add(
+            ShiftLedgerEntry(
+                id=uuid.uuid4(),
+                employee_id=inactive_present.id,
+                work_date=date(2026, 6, 10),
+                source="fallback_primary",
+                opened_at=datetime(2026, 6, 10, 8, 0, tzinfo=UTC),
+                closed_at=datetime(2026, 6, 10, 17, 0, tzinfo=UTC),
+            )
+        )
+        await session.flush()
+
+        rows = await list_employees(
+            session,  # type: ignore[arg-type]
+            present_from=present_from,
+            present_to=present_to,
+            actor=None,
+        )
+        returned_ids = {employee.id for employee in rows}
+
+    assert inactive_present.id in returned_ids
+    assert active_absent.id in returned_ids
+    assert inactive_absent.id not in returned_ids
+
+
 async def test_get_employee_manager_for_administration_returns_403() -> None:
     employee = make_employee(
         iiko_id="iiko-admin-detail",

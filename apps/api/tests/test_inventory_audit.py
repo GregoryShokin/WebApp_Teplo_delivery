@@ -25,6 +25,7 @@ from app.models import (
     PayrollAdjustment,
     PayrollAdjustmentCategory,
     PayrollPeriod,
+    ShiftLedgerEntry,
 )
 from app.schemas.inventory import (
     InventoryAuditItemAdjustmentPatch,
@@ -610,6 +611,85 @@ async def test_load_prepaid_revision_charges_uses_manual_revision_category(
             "group": "chefs",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_load_period_employees_by_table_presence_not_status(
+    async_session_factory: Any,
+) -> None:
+    """Раздача ревизии гейтится присутствием по табелю, а не статусом.
+
+    Уволенный повар, отработавший смену в периоде, остаётся получателем доли
+    (увольнение не закрывает должностное назначение, поэтому позиция резолвится).
+    Активный повар без смен в периоде — не попадает.
+    """
+    period_start = date(2026, 6, 9)
+    period_end = date(2026, 6, 15)
+
+    def _cook(full_name: str, *, status: str, fire_date: date | None) -> Employee:
+        return Employee(
+            id=uuid.uuid4(),
+            full_name=full_name,
+            iiko_id=f"iiko-{uuid.uuid4()}",
+            category="category_2",
+            status=status,
+            fire_date=fire_date,
+            is_senior=False,
+            is_deputy_senior=False,
+            pin_hash="hashed-pin",
+            pin_set_at=datetime(2026, 5, 1, tzinfo=UTC),
+            created_at=datetime(2026, 5, 1, tzinfo=UTC),
+            updated_at=datetime(2026, 5, 1, tzinfo=UTC),
+        )
+
+    async with async_session_factory() as session:
+        fired_worked = _cook("Fired Worked Cook", status="inactive", fire_date=period_end)
+        active_no_shift = _cook("Active No Shift Cook", status="active", fire_date=None)
+        session.add_all([fired_worked, active_no_shift])
+        for cook in (fired_worked, active_no_shift):
+            session.add(
+                EmployeePositionAssignment(
+                    id=uuid.uuid4(),
+                    employee_id=cook.id,
+                    position="Повар",
+                    effective_from=date(2026, 1, 1),
+                    effective_to=None,
+                    comment="test",
+                )
+            )
+        # Смена уволенного попадает в период; у активного смена — вне периода.
+        session.add_all(
+            [
+                ShiftLedgerEntry(
+                    id=uuid.uuid4(),
+                    employee_id=fired_worked.id,
+                    work_date=date(2026, 6, 10),
+                    source="fallback_primary",
+                    opened_at=datetime(2026, 6, 10, 8, 0, tzinfo=UTC),
+                    closed_at=datetime(2026, 6, 10, 17, 0, tzinfo=UTC),
+                ),
+                ShiftLedgerEntry(
+                    id=uuid.uuid4(),
+                    employee_id=active_no_shift.id,
+                    work_date=date(2026, 6, 1),
+                    source="fallback_primary",
+                    opened_at=datetime(2026, 6, 1, 8, 0, tzinfo=UTC),
+                    closed_at=datetime(2026, 6, 1, 17, 0, tzinfo=UTC),
+                ),
+            ]
+        )
+        await session.flush()
+
+        recipients = await inventory_audit_service._load_period_employees(
+            session,
+            position="Повар",
+            period_start=period_start,
+            period_end=period_end,
+        )
+        recipient_ids = {employee.id for employee in recipients}
+
+    assert fired_worked.id in recipient_ids
+    assert active_no_shift.id not in recipient_ids
 
 
 @pytest.mark.asyncio

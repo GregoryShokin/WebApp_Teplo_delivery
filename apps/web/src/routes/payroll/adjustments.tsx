@@ -171,8 +171,8 @@ export function PayrollAdjustmentsRoute({
   const [deleteTarget, setDeleteTarget] = useState<PayrollAdjustment | null>(null);
 
   const employeesQuery = useQuery({
-    queryKey: ["employees", "payroll-adjustments"],
-    queryFn: () => getEmployees({ status: "all" }),
+    queryKey: ["employees", "payroll-adjustments", dateFrom, dateTo],
+    queryFn: () => getEmployees({ presentFrom: dateFrom, presentTo: dateTo }),
   });
   const adjustmentsQuery = useQuery({
     queryKey: ["payroll-adjustments", typeFilter, employeeFilter, dateFrom, dateTo],
@@ -188,7 +188,7 @@ export function PayrollAdjustmentsRoute({
   const targetEmployees = useMemo(
     () =>
       (employeesQuery.data ?? [])
-        .filter((employee) => employee.status === "active" && isAdjustmentEligible(employee))
+        .filter((employee) => isAdjustmentEligible(employee))
         .sort(compareEmployeesForSelect),
     [employeesQuery.data],
   );

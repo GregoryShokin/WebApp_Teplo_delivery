@@ -3080,6 +3080,8 @@ export async function getEmployees(filters: {
   category?: EmployeeCategory;
   cookingStation?: CookingStation;
   includePending?: boolean;
+  presentFrom?: string;
+  presentTo?: string;
 }): Promise<Employee[]> {
   const params: Record<string, string | boolean> = {};
   if (filters.status && filters.status !== "all") {
@@ -3093,6 +3095,12 @@ export async function getEmployees(filters: {
   }
   if (filters.includePending) {
     params.include_pending = true;
+  }
+  if (filters.presentFrom) {
+    params.present_from = filters.presentFrom;
+  }
+  if (filters.presentTo) {
+    params.present_to = filters.presentTo;
   }
   const response = await api.get<Employee[]>("/employees/", { params });
   return response.data;
