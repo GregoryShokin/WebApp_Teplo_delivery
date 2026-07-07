@@ -152,12 +152,16 @@ async def _ingest_tbank_account_operation(
         }
 
     # Импорт здесь, а не на уровне модуля: ingest_operations тянет тяжёлый scheduler.
-    from app.scheduler import ingest_operations
+    from app.scheduler import ingest_operations, settle_counterparty_draft_from_operation
 
     operation = normalize_tbank_statement_row(
         payload, account_number, datetime.now(_MOSCOW_TZ).date()
     )
     result = await ingest_operations(session, provider="tbank", operations=[operation])
+    # Выписку фиксируем БЕЗУСЛОВНО отдельной транзакцией → приём вебхука всегда 200 и не
+    # зависит от доводки. Отделено намеренно: провал доводки не должен ни ронять приём
+    # (иначе банк ретраит и после серии отключит endpoint — инцидент 30.06), ни коммитить
+    # половину доведённого черновика.
     await session.commit()
     logger.info(
         "tbank account-operation влит в выписку: op=%s dir=%s amount=%s ins=%s upd=%s",
@@ -167,6 +171,24 @@ async def _ingest_tbank_account_operation(
         result.get("inserted"),
         result.get("updated"),
     )
+
+    # Near-realtime доводка ОПЛАТЫ черновика: новая исходящая операция может быть исполнением
+    # нашего банковского черновика — доводим его авторитетным статусом сразу, не дожидаясь
+    # 15-мин поллинга. Только для НОВОЙ операции (inserted>0), чтобы 4-кратная переотдача
+    # вебхука не била лишний раз. СВОЯ транзакция с rollback на ошибке: провал (в т.ч.
+    # DB-ошибка на flush) не отравляет приём вебхука и не оставляет частичную доводку —
+    # доберёт поллинг. Удаление черновика так не ускоряется (банк операцию по счёту не шлёт).
+    if result.get("inserted") and operation.direction == "out":
+        try:
+            await settle_counterparty_draft_from_operation(session, operation=operation)
+            await session.commit()
+        except Exception:  # noqa: BLE001 - изолируем: приём вебхука важнее доводки
+            await session.rollback()
+            logger.warning(
+                "realtime-доводка черновика по операции %s не удалась — доведёт поллинг",
+                operation_id,
+                exc_info=True,
+            )
     return {
         "ok": True,
         "operation_id": operation_id,

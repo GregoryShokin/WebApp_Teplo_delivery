@@ -33,7 +33,7 @@ from app.services.banking.classifier import (
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 from app.services.banking.own_accounts import sync_own_accounts
 from app.services.banking.sber import SberClient
-from app.services.banking.tbank import TbankClient
+from app.services.banking.tbank import TbankClient, _document_number
 from app.services.couriers.iiko_attendance_sync import sync_attendance
 from app.services.couriers.iiko_olap_sync import sync_courier_olap_deliveries
 from app.services.couriers.shift_matching import recalculate_matches
@@ -230,6 +230,80 @@ async def run_payment_status_poll(
     result["reconciled"] = await reconcile_needs_review_prebooked(session)
     await session.commit()
     return result
+
+
+async def settle_counterparty_draft_from_operation(
+    session: AsyncSession,
+    *,
+    operation: NormalizedBankOperation,
+    client: TbankClient | None = None,
+) -> str | None:
+    """Near-realtime доводка ОПЛАТЫ банковского черновика по входящей операции выписки.
+
+    Т-Банк на исполнение платежа шлёт «операцию по счёту» (в теле есть documentNumber, но НЕТ
+    documentId), а по documentId статус доступен только опросом. Здесь входящую исходящую
+    проведённую операцию матчим к ``created/updated`` ``CounterpartyPaymentDraft`` по
+    documentNumber (детерминированно выводится из ``draft.document_id`` = ``teplo-cp-<id>``
+    тем же ``_document_number``, что мы шлём банку) И по точной сумме. Требуем РОВНО одного
+    кандидата — при 0/неоднозначности не трогаем (доведёт 15-мин поллинг), т.к. documentNumber
+    6-значный и слабо-уникален. Статусу из тела операции («Active») НЕ доверяем: берём
+    АВТОРИТЕТНЫЙ статус банка ``get_payment_status(provider_ref)`` и доводим штатным
+    ``apply_payment_status`` (идемпотентно, row-lock, переход только из created/updated).
+    Затем ``reconcile_needs_review_prebooked`` — чтобы та же операция забрала свежую
+    prebooked-проводку, а не встала второй строкой. Не коммитит: коммит на вызывающем
+    (обработчике вебхука, в одной транзакции с ингестом операции). Удаление черновика этим
+    путём НЕ ускоряется — банк на удаление операцию по счёту не шлёт (остаётся за поллингом).
+    """
+    if operation.direction != "out":
+        return None
+    raw_num = (operation.document_number or "").strip()
+    if not raw_num:
+        return None
+    try:
+        op_num = int(raw_num)
+    except ValueError:
+        return None
+
+    candidates = (
+        await session.scalars(
+            select(CounterpartyPaymentDraft).where(
+                CounterpartyPaymentDraft.status.in_(("created", "updated")),
+                CounterpartyPaymentDraft.provider_ref.is_not(None),
+                CounterpartyPaymentDraft.amount == operation.amount,
+            )
+        )
+    ).all()
+    matches = [d for d in candidates if int(_document_number(d.document_id)) == op_num]
+    if len(matches) != 1:
+        # 0 — операция не от нашего черновика; >1 — неоднозначно. Безопасно отдаём поллингу.
+        return None
+
+    draft = matches[0]
+    client = client or TbankClient(session)
+    try:
+        raw_status = await client.get_payment_status(draft.provider_ref or "")
+    except BankFetchError:
+        # Сетевая/429 — не доводим сейчас, но и НЕ валим приём вебхука: доберёт поллинг.
+        logger.warning(
+            "realtime-доводка: get_payment_status по черновику %s не удался — доведёт поллинг",
+            draft.id,
+            exc_info=True,
+        )
+        return None
+    if raw_status is None:
+        return None
+
+    status = await apply_payment_status(
+        session,
+        draft=draft,
+        raw_status=raw_status,
+        operation_date=operation.operation_date,
+        commit=False,
+    )
+    if status == "paid":
+        # Свежая prebooked-проводка должна забрать эту же операцию (иначе две строки до поллинга).
+        await reconcile_needs_review_prebooked(session)
+    return status
 
 
 @scheduler.scheduled_job(
