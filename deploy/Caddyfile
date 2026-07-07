@@ -8,13 +8,23 @@
 
     # API and OAuth callbacks go to the FastAPI container. We use `handle`
     # (not `handle_path`) so the /api prefix reaches FastAPI untouched.
+    # lb_try_duration: пережить окно пересоздания контейнера api при деплое — иначе
+    # входящие webhook'и банка/iiko роняются в 502 (dial: connection refused / no such
+    # host), пока новый контейнер поднимается. Ретрай только при неудачном dial (запрос
+    # до backend не дошёл) — POST-webhook безопасно повторить, дубля не будет.
     handle /api/* {
-        reverse_proxy api:8000
+        reverse_proxy api:8000 {
+            lb_try_duration 15s
+            lb_try_interval 500ms
+        }
     }
 
     # SPA + static assets from the web container.
     handle {
-        reverse_proxy web:80
+        reverse_proxy web:80 {
+            lb_try_duration 15s
+            lb_try_interval 500ms
+        }
     }
 
     log {

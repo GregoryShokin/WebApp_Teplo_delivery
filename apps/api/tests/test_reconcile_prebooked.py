@@ -148,6 +148,50 @@ async def test_reconcile_ignores_amount_mismatch(
     assert op.classification_status == "needs_review"
 
 
+async def test_reconcile_links_via_safe_transfer_leg(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Регресс: via-safe нога (перевод р/с→Сейф на карту ИП, source_kind
+    ``supplier_bank_to_safe``, без контрагента) должна подхватывать исходящую
+    операцию-перевод, даже если у операции есть процессинговый ИНН карты.
+    Раньше source_kind не был в ``PREBOOKABLE_SOURCE_KINDS`` → операция висела в
+    «требует разбора» (инцидент «Оплата тарифа нейросети», 07.07)."""
+    async with async_session_factory() as session:
+        wallet = await _bank_wallet(session)
+        # У операции-перевода на собственную карту ИП есть ИНН (890307589201) — он не
+        # должен мешать привязке к ноге без контрагента (fallback по unknown-INN).
+        op = await _needs_review_op(
+            session, account_id=wallet.account_id, amount=Decimal("18600.00"), inn="890307589201"
+        )
+        transfer_out_article = await session.scalar(
+            select(DdsArticle.id).where(DdsArticle.code == "vybytie_perevod_mezhdu_schetami")
+        )
+        leg = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("18600.00"),
+            operation_date=OP_DATE,
+            article_id=transfer_out_article,
+            source_kind="supplier_bank_to_safe",
+            payment_purpose="Перевод на Сейф — Оплата тарифа нейросети",
+            quality_status="final",
+        )
+        session.add(leg)
+        await session.flush()
+        await session.commit()
+        op_id, leg_id = op.id, leg.id
+
+    async with async_session_factory() as session:
+        linked = await reconcile_needs_review_prebooked(session)
+        await session.commit()
+    assert linked == 1
+
+    async with async_session_factory() as session:
+        op = await session.get(BankOperation, op_id)
+    assert op.cashflow_transaction_id == leg_id
+    assert op.classification_status == "classified"
+
+
 async def test_reconcile_skips_mismatched_inn(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

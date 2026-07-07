@@ -96,13 +96,23 @@ async def escalate_pending_cheques() -> None:
         )
 
 
+@scheduler.scheduled_job(
+    "interval",
+    minutes=15,
+    id="poll_payment_statuses",
+    max_instances=1,
+    coalesce=True,
+)
 async def poll_payment_statuses() -> None:
-    """РУЧНОЙ добор статуса исходящих платежей.
+    """Периодический добор статуса исходящих платежей — страховка к статусному webhook.
 
-    Автоматический scheduler отключён (снят @scheduler.scheduled_job): основной путь гашения
-    накладных/выплат — статусный webhook платёжного документа по ``provider_ref``. Функция
-    оставлена для ручного добора статусов, в т.ч. поимки удаления черновика в банке (статус
-    DELETED → откат накладных в «неоплачено»)."""
+    Основной (realtime) путь гашения — статусный webhook платёжного документа по
+    ``provider_ref``. Но webhook хрупок: любое пересоздание контейнера api (деплой) роняет
+    входящий webhook в 502, а банк после серии отказов перестаёт слать (инцидент 30.06→07.07:
+    оплата черновиков замолчала на неделю, деньги ушли из банка без отражения в ДДС).
+    Поэтому polling возвращён как надёжная сверка: каждые 15 мин опрашивает все «отправленные
+    в банк» черновики (``created/updated``), применяет ``EXECUTED→paid`` / ``failed`` / ``DELETED``
+    и сводит осиротевшие needs_review-операции с prebooked-проводками. Идемпотентен."""
     async with AsyncSessionLocal() as session:
         await run_payment_status_poll(session)
 
