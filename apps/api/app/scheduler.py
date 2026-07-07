@@ -41,6 +41,7 @@ from app.services.dismissal_reconciliation_service import reconcile_all_dismissi
 from app.services.kassa.iiko_cashshift_sync import sync_iiko_cashshifts
 from app.services.payroll_advance_service import apply_advance_draft_status
 from app.services.payroll_payouts import apply_payroll_draft_status
+from app.services.payroll_runner import refresh_current_week_advance_window
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
@@ -112,6 +113,32 @@ async def reconcile_dismissing_employees_job() -> None:
         flipped = await reconcile_all_dismissing(session)
         if flipped:
             logger.info("dismissal-reconcile: завершено увольнений: %d", len(flipped))
+
+
+@scheduler.scheduled_job(
+    "cron",
+    hour=0,
+    minute=30,
+    id="refresh_production_advance_window",
+    max_instances=1,
+    coalesce=True,
+)
+async def refresh_production_advance_window_job() -> None:
+    """Ночной свип «окна заработанного» для авансов производственникам (повар/кассир).
+
+    В 00:30 МСК, после закрытия заведения (смены закрыты), заводит недельный период
+    текущей (идущей) недели вт→пн и перечитывает явки iiko за отработанные дни —
+    чтобы аванс был доступен по факту заработанного среди недели, а не только в день
+    выплаты, когда стартует расчёт. Полный расчёт не запускает; депозит/фонд не
+    задеваются (двигаются строго в finalize). Идемпотентно."""
+    async with AsyncSessionLocal() as session:
+        period = await refresh_current_week_advance_window(session)
+    if period is not None:
+        logger.info(
+            "advance-window: обновлено окно недели %s–%s",
+            period.start_date,
+            period.end_date,
+        )
 
 
 @scheduler.scheduled_job(

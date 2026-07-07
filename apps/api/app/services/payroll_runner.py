@@ -6,8 +6,9 @@ from collections.abc import Iterable, Mapping
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import desc, or_, select, text
+from sqlalchemy import desc, exists, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -70,6 +71,7 @@ class PayrollConflictError(RuntimeError):
 
 
 REVENUE_CACHE_DISPLAY_NAME = "Дневная выручка iiko"
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 
 def compute_next_payroll_period_dates(today: date) -> tuple[date, date, date]:
@@ -162,6 +164,24 @@ async def auto_create_next_period(
     *,
     today: date | None = None,
 ) -> PayrollPeriod:
+    # Сначала — самая ранняя нефинализированная неделя БЕЗ прогона. Такую заводит
+    # ночной свип «окна авансов» (`refresh_current_week_advance_window`) до payday;
+    # без этой ветки кнопка «рассчитать» (append-after-latest) создала бы следующую
+    # неделю ПОВЕРХ пред-созданной и пропустила бы её. Когда пред-созданных недель
+    # нет — ветка ничего не находит и поведение прежнее (append-after-latest).
+    pending = await session.scalar(
+        select(PayrollPeriod)
+        .where(
+            PayrollPeriod.period_type == "week",
+            PayrollPeriod.status != "finalized",
+            ~exists().where(PayrollRun.period_id == PayrollPeriod.id),
+        )
+        .order_by(PayrollPeriod.start_date)
+        .limit(1)
+    )
+    if pending is not None:
+        return pending
+
     existing = await session.scalar(select(PayrollPeriod).order_by(desc(PayrollPeriod.start_date)))
     if existing is None:
         start_date, end_date, payroll_date = compute_next_payroll_period_dates(
@@ -192,6 +212,69 @@ async def auto_create_next_period(
     session.add(period)
     await session.commit()
     await session.refresh(period)
+    return period
+
+
+def current_week_bounds(today: date) -> tuple[date, date, date]:
+    """Границы ТЕКУЩЕЙ (идущей) недельной ЗП-недели, содержащей ``today``.
+
+    Неделя вт→пн, выплата в следующий вторник. В отличие от
+    ``compute_next_payroll_period_dates`` (даёт уже завершённую неделю К ВЫПЛАТЕ),
+    здесь возвращается неделя, которая отрабатывается ПРЯМО СЕЙЧАС — её earned-to-date
+    нужен для аванса среди недели. Пример: today=пт → неделя вт(этой)–пн(следующего).
+    """
+    days_since_tuesday = (today.weekday() - 1) % 7
+    start_date = today - timedelta(days=days_since_tuesday)
+    end_date = start_date + timedelta(days=6)
+    payroll_date = end_date + timedelta(days=1)
+    return start_date, end_date, payroll_date
+
+
+async def ensure_weekly_period(
+    session: AsyncSession, start_date: date, end_date: date, payroll_date: date
+) -> PayrollPeriod:
+    """Get-or-create недельного периода по точным границам (без commit; flush)."""
+    existing = await session.scalar(
+        select(PayrollPeriod).where(
+            PayrollPeriod.period_type == "week",
+            PayrollPeriod.start_date == start_date,
+            PayrollPeriod.end_date == end_date,
+        )
+    )
+    if existing is not None:
+        return existing
+    period = PayrollPeriod(
+        period_type="week",
+        start_date=start_date,
+        end_date=end_date,
+        payroll_date=payroll_date,
+        status="open",
+    )
+    session.add(period)
+    await session.flush()
+    return period
+
+
+async def refresh_current_week_advance_window(
+    session: AsyncSession, *, today: date | None = None
+) -> PayrollPeriod | None:
+    """Ночной свип «окна заработанного» для авансов производственникам (повар/кассир).
+
+    По календарю МСК определяет текущую (идущую) неделю вт→пн, гарантирует её
+    недельный период и перечитывает явки iiko за уже отработанные дни. НЕ запускает
+    полный расчёт (`run_payroll`) — только период + явки, из которых
+    ``available_to_advance`` считает earned-to-date на лету. Депозит/фонд не
+    задеваются (двигаются строго в finalize). Идемпотентно: при пустой выгрузке iiko
+    загрузчик сохранённые явки не затирает; финализированную неделю не трогаем.
+    """
+    today = today or datetime.now(MOSCOW_TZ).date()
+    start_date, end_date, payroll_date = current_week_bounds(today)
+    period = await ensure_weekly_period(session, start_date, end_date, payroll_date)
+    if period.status == "finalized":
+        await session.commit()
+        return period
+    await load_attendance_entries(session, period, force_reload=True)
+    await session.commit()
     return period
 
 
