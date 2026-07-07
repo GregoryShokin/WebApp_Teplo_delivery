@@ -172,11 +172,14 @@ export function PayrollPersonalReportPageTab() {
         .sort((left, right) => left.full_name.localeCompare(right.full_name, "ru")),
     [employeesQuery.data],
   );
-  // Уволенные скрыты по умолчанию; toggle добавляет их к активным.
+  // Уволенные (inactive) скрыты по умолчанию; toggle добавляет их. Сотрудники «в
+  // увольнении» (dismissing) видны как активные — расчёты по ним ещё идут, их карточка
+  // нужна в персональном отчёте до полного закрытия долга.
   const statusFilteredEmployees = useMemo(
     () =>
       eligibleEmployees.filter(
-        (employee) => showFired || employee.status === "active",
+        (employee) =>
+          showFired || employee.status === "active" || employee.status === "dismissing",
       ),
     [eligibleEmployees, showFired],
   );
