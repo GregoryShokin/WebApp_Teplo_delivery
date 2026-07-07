@@ -116,6 +116,81 @@ class ShiftLedgerEntry(Base):
     )
 
 
+class FreelancerShiftSettlement(Base):
+    """Факт НАЛИЧНОЙ выдачи внештатнику за ОДНУ смену (вариант Б).
+
+    Единица смены — явка ``attendance_entry`` открытого недельного периода (тот же
+    источник, что кормит авансы производственников). Сумма смены считается на лету
+    (``payroll_calculator.freelancer_shift_amount(ставка_карточки, minutes)``) и как
+    «непогашенное» в БД НЕ хранится. Здесь персистится ТОЛЬКО факт оплаты налом —
+    по одной строке на оплаченную явку (уникально по ``attendance_entry_id``).
+
+    Статусы:
+    - ``paid_cash`` — смена выдана наличными из кассы (ТК Черникова); ведомость исключает
+                      её сумму из «к выплате» (в ФОТ/аналитике остаётся); повтор — 409;
+    - ``void``      — оплата аннулирована (реверс); из активной сверки исключается.
+
+    «Непогашенные» смены = явки открытого периода МИНУС строки этой таблицы. При
+    финализации период уходит из «открытых» → неоплаченные смены исчезают из кассы,
+    их платит ведомость (они в gross), а оплаченные налом вычтены из net.
+    """
+
+    __tablename__ = "freelancer_shift_settlement"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('paid_cash', 'void')",
+            name="ck_freelancer_shift_settlement_status",
+        ),
+        CheckConstraint(
+            "amount >= 0",
+            name="ck_freelancer_shift_settlement_amount",
+        ),
+        CheckConstraint(
+            "minutes >= 0",
+            name="ck_freelancer_shift_settlement_minutes",
+        ),
+        UniqueConstraint(
+            "attendance_entry_id",
+            name="uq_freelancer_shift_settlement_entry",
+        ),
+        Index("ix_freelancer_shift_settlement_period", "period_id", "status"),
+        Index("ix_freelancer_shift_settlement_employee", "employee_id", "work_date"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee.id", ondelete="RESTRICT"), nullable=False
+    )
+    # Оплаченная явка (единица смены). CASCADE: если явку удалят — факт оплаты не осиротеет.
+    attendance_entry_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("attendance_entry.id", ondelete="CASCADE"), nullable=False
+    )
+    # Период явки — для сверки с ведомостью по границам периода (быстрый фильтр).
+    period_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("payroll_period.id", ondelete="CASCADE"), nullable=False
+    )
+    work_date: Mapped[date] = mapped_column(Date, nullable=False)
+    minutes: Mapped[int] = mapped_column(nullable=False, default=0)
+    # Сумма, фактически выданная налом за смену (снимок формулы на момент выдачи).
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="paid_cash", server_default="paid_cash"
+    )
+    cashflow_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("cashflow_transactions.id", ondelete="SET NULL"), nullable=True
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class PayrollRun(Base):
     __tablename__ = "payroll_run"
     __table_args__ = (

@@ -1927,6 +1927,17 @@ def category_coeff(settings: Mapping[str, Any], category: str, work_date: date) 
     )
 
 
+def freelancer_shift_amount(rate: Any, minutes: int) -> Decimal:
+    """Начисление внештатника за ОДНУ смену: ставка/12 × часы = ставка × (мин/720).
+
+    Единый расчёт для ведомости (``base_shift_pay``) и посменной выдачи из кассы
+    (``services/freelancer/shift_settlement``), чтобы обе стороны считали ОДИНАКОВО.
+    Доплаты пт/сб и +1ч на внештатника не распространяются, надбавок/премий/процента нет.
+    Пустая ставка (None/0) → 0 (не падаем).
+    """
+    return decimal(rate or 0) * shift_pay_ratio(minutes)
+
+
 def base_shift_pay(
     settings: Mapping[str, Any],
     role: str,
@@ -1938,11 +1949,10 @@ def base_shift_pay(
 ) -> Decimal:
     if category_rule_key(category) == "6":
         # Внештатный: ставка берётся из карточки (договорная за 12ч-смену), а не из
-        # тарифной сетки. Начисление = ставка/12 × часы явки = ставка × (мин/720).
-        # Доплаты пт/сб и +1ч на внештатника не распространяются (см. ниже по расчёту).
-        rate = decimal(getattr(employee, "freelancer_shift_rate", None) or 0)
-    else:
-        rate = role_category_rate(settings, role, category, work_date, station) or Decimal("0")
+        # тарифной сетки. Начисление считает общая функция (см. freelancer_shift_amount),
+        # ей же пользуется посменная выдача из кассы — расчёт строго одинаковый.
+        return freelancer_shift_amount(getattr(employee, "freelancer_shift_rate", None), minutes)
+    rate = role_category_rate(settings, role, category, work_date, station) or Decimal("0")
     return rate * shift_pay_ratio(minutes)
 
 

@@ -404,17 +404,65 @@ export type KassaAdvancePermission = {
   created_at: string;
 };
 
+/** Внештатник с непогашенным: одна строка (имя + Σ неоплаченных смен открытого периода). */
+export type KassaFreelancer = {
+  employee_id: string;
+  name: string;
+  unpaid_total: number;
+  shift_count: number;
+};
+
+/** Смена внештатника открытого периода (для модалки): единица = явка. */
+export type KassaFreelancerShift = {
+  attendance_entry_id: string;
+  work_date: string;
+  hours: number;
+  amount: number;
+  paid: boolean;
+};
+
 export type KassaPending = {
   wallet_name: string;
   balance: number;
   targets: KassaTarget[];
   permissions: KassaAdvancePermission[];
+  freelancers: KassaFreelancer[];
   targets_total: number;
   pending_count: number;
 };
 
+export type KassaFreelancerSyncReport = {
+  freelancers: KassaFreelancer[];
+};
+
 export async function getKassaPending(): Promise<KassaPending> {
   const response = await api.get<KassaPending>(`${BASE}/pending`);
+  return response.data;
+}
+
+/** Смены внештатника открытого периода (для модалки выдачи). */
+export async function getKassaFreelancerShifts(
+  employeeId: string,
+): Promise<KassaFreelancerShift[]> {
+  const response = await api.get<{ shifts: KassaFreelancerShift[] }>(
+    `${BASE}/freelancer-shifts/${employeeId}`,
+  );
+  return response.data.shifts;
+}
+
+/** «Синхронизировать смены»: перечитать явки текущей недели из iiko + вернуть список. */
+export async function syncKassaFreelancerShifts(): Promise<KassaFreelancerSyncReport> {
+  const response = await api.post<KassaFreelancerSyncReport>(`${BASE}/freelancer-shifts/sync`);
+  return response.data;
+}
+
+/** «Выплатить»: выдать выбранные смены (явки) внештатника целиком (движок пишет статью ЗП). */
+export async function payKassaFreelancerShifts(
+  attendanceEntryIds: string[],
+): Promise<KassaPending> {
+  const response = await api.post<KassaPending>(`${BASE}/freelancer-shifts/payout`, {
+    attendance_entry_ids: attendanceEntryIds,
+  });
   return response.data;
 }
 

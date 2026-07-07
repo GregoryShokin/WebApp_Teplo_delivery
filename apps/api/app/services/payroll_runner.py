@@ -59,6 +59,10 @@ from app.services.payroll_calculator import (
     payroll_rate_snapshot_payload,
     summarize_lines,
 )
+from app.services.payroll_freelancer_settlement import (
+    apply_freelancer_cash_settlements,
+    run_has_stale_freelancer_settlements,
+)
 from app.services.position_registry import production_payroll_positions
 
 
@@ -488,6 +492,11 @@ async def run_payroll(
         advance_issue_summary = await apply_advance_issuances(
             session, period, run, calculation.lines
         )
+        # Внештат: смены, уже выданные наличными из кассы (paid_cash), исключаем из
+        # «к выплате» (в ФОТ остаются). Мутирует net строк по образцу возврата авансов.
+        freelancer_cash_summary = await apply_freelancer_cash_settlements(
+            session, period, run, calculation.lines
+        )
         subledger_summary = await update_deposits_and_fund(session, period, run, calculation.lines)
         paid_vacations = await vacation_service.mark_vacations_paid_for_payroll_period(
             session,
@@ -504,6 +513,7 @@ async def run_payroll(
             | subledger_summary
             | advance_summary
             | advance_issue_summary
+            | freelancer_cash_summary
             | attendance_warning_summary
             | {"vacations_marked_paid": paid_vacations}
             # Итог к выплате — ПОСЛЕ удержаний авансов/займов (перекрывает начисленный).
@@ -1078,6 +1088,11 @@ async def finalize_payroll_run(
             "Ведомость устарела: появились авансы/займы, не учтённые в расчёте. "
             "Пересчитайте ведомость перед финализацией."
         )
+    if await run_has_stale_freelancer_settlements(session, run, period):
+        raise PayrollConflictError(
+            "Ведомость устарела: посменные выплаты внештатников изменились после расчёта. "
+            "Пересчитайте ведомость перед финализацией."
+        )
 
     now = datetime.now(UTC)
     previous_run_status = run.status
@@ -1087,6 +1102,9 @@ async def finalize_payroll_run(
 
     deposit_payload = await apply_deposit_transactions_to_balances(session, run, now, reverse=False)
     await apply_advance_recoveries_to_balances(session, run, now, reverse=False)
+    # Внештат (вариант Б): отдельного перехода смен нет — при финализации период уходит из
+    # «открытых», его неоплаченные смены исчезают из кассы, их сумма уже в gross ведомости
+    # (которая их и платит), а оплаченные налом вычтены из net на расчёте.
     # Запланированная выдача депозита исполнена этим прогоном → планы в processed.
     payout_employee_ids = (
         await session.scalars(
@@ -1158,6 +1176,8 @@ async def unfinalize_payroll_run(
 
     deposit_payload = await apply_deposit_transactions_to_balances(session, run, now, reverse=True)
     await apply_advance_recoveries_to_balances(session, run, now, reverse=True)
+    # Откат внештата: дефинализация возвращает период в «открытые» → его неоплаченные смены
+    # снова видны в кассе. Оплаченные налом (paid_cash) не трогаем — они уже выданы.
     # Откат: исполненные планы выдачи депозита возвращаются в pending (как и реверс баланса).
     await revert_schedules_for_run(session, run.id)
 

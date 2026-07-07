@@ -534,6 +534,13 @@ async def _kassa_pending_advances(session: AsyncSession) -> list[dict[str, Any]]
     ]
 
 
+async def _kassa_pending_freelancers(session: AsyncSession) -> list[dict[str, Any]]:
+    """Внештатники с непогашенным: одна строка на человека (Σ неоплаченных смен)."""
+    from app.services.freelancer.shift_settlement import list_unpaid_freelancers
+
+    return await list_unpaid_freelancers(session)
+
+
 async def kassa_pending_payload(session: AsyncSession) -> dict[str, Any]:
     """Состав вкладки «К выдаче»: целёвки в кассе + ожидающие разрешения + итоги.
 
@@ -574,14 +581,16 @@ async def kassa_pending_payload(session: AsyncSession) -> dict[str, Any]:
         for allocation, article_name, counterparty_name in rows
     ]
     permissions = await _kassa_pending_advances(session)
+    freelancers = await _kassa_pending_freelancers(session)
     targets_total = sum(Decimal(str(target["outstanding"])) for target in targets)
     return {
         "wallet_name": wallet.name,
         "balance": float(await kassa_balance(session, wallet)),
         "targets": targets,
         "permissions": permissions,
+        "freelancers": freelancers,
         "targets_total": float(_money(targets_total)),
-        "pending_count": len(targets) + len(permissions),
+        "pending_count": len(targets) + len(permissions) + len(freelancers),
     }
 
 

@@ -1,11 +1,19 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { HandCoins } from "lucide-react";
+import { ChevronRight, HandCoins, LoaderCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiErrorMessage } from "@/lib/api";
@@ -13,9 +21,13 @@ import { formatRub } from "@/routes/counterparties/shared";
 import {
   cancelKassaAdvancePermission,
   disburseKassaAdvancePermission,
+  getKassaFreelancerShifts,
   getKassaPending,
+  payKassaFreelancerShifts,
   payKassaTarget,
+  syncKassaFreelancerShifts,
   type KassaAdvancePermission,
+  type KassaFreelancer,
   type KassaTarget,
 } from "@/routes/kassa/api";
 
@@ -31,6 +43,7 @@ const KIND_LABEL: Record<KassaAdvancePermission["kind"], string> = {
 export function KassaPendingTab() {
   const queryClient = useQueryClient();
   const pendingQuery = useQuery({ queryKey: ["kassa", "pending"], queryFn: getKassaPending });
+  const [activeFreelancer, setActiveFreelancer] = useState<KassaFreelancer | null>(null);
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["kassa"] });
@@ -64,9 +77,40 @@ export function KassaPendingTab() {
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отменить")),
   });
 
+  const syncShiftsMutation = useMutation({
+    mutationFn: () => syncKassaFreelancerShifts(),
+    onSuccess: (report) => {
+      const count = report.freelancers.length;
+      toast.success(
+        count ? `Смены синхронизированы: внештатников к выдаче ${count}` : "Смены синхронизированы",
+      );
+      invalidate();
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось синхронизировать смены")),
+  });
+
+  const payShiftsMutation = useMutation({
+    mutationFn: (ids: string[]) => payKassaFreelancerShifts(ids),
+    onSuccess: () => {
+      toast.success("Выплачено — записи в кассовом журнале");
+      setActiveFreelancer(null);
+      invalidate();
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось выдать")),
+  });
+
   const pending = pendingQuery.data;
   const busy =
-    payTargetMutation.isPending || disburseMutation.isPending || cancelMutation.isPending;
+    payTargetMutation.isPending ||
+    disburseMutation.isPending ||
+    cancelMutation.isPending ||
+    syncShiftsMutation.isPending ||
+    payShiftsMutation.isPending;
+  const isEmpty =
+    !!pending &&
+    pending.targets.length === 0 &&
+    pending.permissions.length === 0 &&
+    pending.freelancers.length === 0;
 
   if (pendingQuery.isLoading) {
     return <div className="h-24 animate-pulse rounded-lg bg-muted/60" />;
@@ -74,6 +118,23 @@ export function KassaPendingTab() {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-end">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => syncShiftsMutation.mutate()}
+          title="Подтянуть свежие закрытые смены внештатников из iiko"
+        >
+          {syncShiftsMutation.isPending ? (
+            <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
+          ) : (
+            <RefreshCw size={14} aria-hidden="true" />
+          )}
+          Синхронизировать смены
+        </Button>
+      </div>
+
       <Card>
         <CardContent className="pt-5">
           <div className="text-sm text-muted-foreground">Наличные администраторов</div>
@@ -91,10 +152,11 @@ export function KassaPendingTab() {
         </CardContent>
       </Card>
 
-      {pending && pending.targets.length === 0 && pending.permissions.length === 0 ? (
+      {isEmpty ? (
         <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
           К выдаче ничего нет: целёвки передаются из Сейфа («Передать в кассу»), разрешения
-          на авансы и займы приходят со страницы «Авансы и займы».
+          на авансы и займы приходят со страницы «Авансы и займы», а смены внештатников
+          подтягиваются кнопкой «Синхронизировать смены».
         </div>
       ) : null}
 
@@ -160,7 +222,212 @@ export function KassaPendingTab() {
           ))}
         </div>
       ) : null}
+
+      {pending && pending.freelancers.length > 0 ? (
+        <FreelancersSection
+          freelancers={pending.freelancers}
+          busy={busy}
+          onOpen={setActiveFreelancer}
+        />
+      ) : null}
+
+      <FreelancerShiftsDialog
+        freelancer={activeFreelancer}
+        balance={pending?.balance ?? 0}
+        paying={payShiftsMutation.isPending}
+        onClose={() => setActiveFreelancer(null)}
+        onPay={(ids) => payShiftsMutation.mutate(ids)}
+      />
     </div>
+  );
+}
+
+const shiftDayFormatter = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit" });
+
+function formatShiftDay(iso: string): string {
+  const parsed = new Date(`${iso}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? iso : shiftDayFormatter.format(parsed);
+}
+
+/**
+ * Выплаты за смены внештатников: ОДНА строка на человека (имя + «к выдаче N ₽» = сумма его
+ * неоплаченных смен). Клик открывает модалку со сменами построчно.
+ */
+function FreelancersSection({
+  freelancers,
+  busy,
+  onOpen,
+}: {
+  freelancers: KassaFreelancer[];
+  busy: boolean;
+  onOpen: (freelancer: KassaFreelancer) => void;
+}) {
+  return (
+    <div className="grid gap-2">
+      <Label className="text-base font-semibold">Выплаты за смены внештатников</Label>
+      {freelancers.map((freelancer) => (
+        <button
+          key={freelancer.employee_id}
+          type="button"
+          disabled={busy}
+          onClick={() => onOpen(freelancer)}
+          className="flex items-center justify-between gap-2 rounded-md border p-3 text-left text-sm hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <div className="min-w-0">
+            <div className="font-medium">{freelancer.name}</div>
+            <div className="text-xs text-muted-foreground">
+              {freelancer.shift_count} смен · нажмите, чтобы выбрать
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="text-right font-medium tabular-nums">
+              к выдаче {formatRub(freelancer.unpaid_total)}
+            </div>
+            <ChevronRight size={16} className="text-muted-foreground" aria-hidden="true" />
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Модалка смен внештатника: смены построчно (дата · часы · сумма) чекбоксами. Неоплаченные
+ * по умолчанию отмечены; оплаченные — как выданные/недоступны. Внизу итог по отмеченным и
+ * «Выплатить N ₽» — каждая выбранная смена выдаётся целиком (сумму/статью пишет движок).
+ */
+function FreelancerShiftsDialog({
+  freelancer,
+  balance,
+  paying,
+  onClose,
+  onPay,
+}: {
+  freelancer: KassaFreelancer | null;
+  balance: number;
+  paying: boolean;
+  onClose: () => void;
+  onPay: (attendanceEntryIds: string[]) => void;
+}) {
+  const employeeId = freelancer?.employee_id ?? null;
+  const shiftsQuery = useQuery({
+    queryKey: ["kassa", "freelancer-shifts", employeeId],
+    queryFn: () => getKassaFreelancerShifts(employeeId as string),
+    enabled: !!employeeId,
+  });
+  // Выбор ведём по attendance_entry_id; при первой загрузке неоплаченные отмечены.
+  const [selected, setSelected] = useState<Set<string> | null>(null);
+  const shifts = shiftsQuery.data;
+
+  const effectiveSelected = useMemo(() => {
+    if (selected) return selected;
+    if (!shifts) return new Set<string>();
+    return new Set(shifts.filter((shift) => !shift.paid).map((shift) => shift.attendance_entry_id));
+  }, [selected, shifts]);
+
+  const chosen = (shifts ?? []).filter(
+    (shift) => !shift.paid && effectiveSelected.has(shift.attendance_entry_id),
+  );
+  const selectedTotal = chosen.reduce((sum, shift) => sum + shift.amount, 0);
+  const overBalance = selectedTotal > 0 && selectedTotal > balance;
+
+  const toggle = (id: string) => {
+    setSelected((prev) => {
+      const base = prev ?? effectiveSelected;
+      const next = new Set(base);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <Dialog
+      open={!!freelancer}
+      onOpenChange={(open) => {
+        if (!open) {
+          setSelected(null);
+          onClose();
+        }
+      }}
+    >
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{freelancer?.name}</DialogTitle>
+          <DialogDescription>
+            Отметьте смены — каждая выдаётся целиком. Статью и сумму пишет движок.
+          </DialogDescription>
+        </DialogHeader>
+
+        {shiftsQuery.isLoading ? (
+          <div className="h-24 animate-pulse rounded-lg bg-muted/60" />
+        ) : shifts && shifts.length > 0 ? (
+          <div className="grid max-h-[50vh] gap-2 overflow-y-auto">
+            {shifts.map((shift) => {
+              const checked = shift.paid || effectiveSelected.has(shift.attendance_entry_id);
+              return (
+                <label
+                  key={shift.attendance_entry_id}
+                  className={
+                    shift.paid
+                      ? "flex items-center justify-between gap-2 rounded-md border border-dashed p-3 text-sm opacity-60"
+                      : "flex cursor-pointer items-center justify-between gap-2 rounded-md border p-3 text-sm hover:bg-muted/40"
+                  }
+                >
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 shrink-0"
+                      checked={checked}
+                      disabled={shift.paid || paying}
+                      onChange={() => toggle(shift.attendance_entry_id)}
+                    />
+                    <div className="min-w-0">
+                      <div className="font-medium">смена {formatShiftDay(shift.work_date)}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {shift.hours} ч{shift.paid ? " · выдано" : ""}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right font-medium tabular-nums">
+                    {formatRub(shift.amount)}
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            Непогашенных смен нет.
+          </div>
+        )}
+
+        {overBalance ? (
+          <p className="text-xs font-medium text-amber-600">
+            Сумма больше учётного остатка кассы ({formatRub(balance)}) — выдача пройдёт, но остаток
+            уйдёт в минус. Проверьте суммы.
+          </p>
+        ) : null}
+
+        <DialogFooter className="flex-row items-center justify-between gap-2 sm:justify-between">
+          <div className="text-xs text-muted-foreground">
+            {chosen.length > 0 ? `Выбрано ${chosen.length} · ${formatRub(selectedTotal)}` : "—"}
+          </div>
+          <Button
+            size="sm"
+            disabled={paying || chosen.length === 0}
+            onClick={() => onPay(chosen.map((shift) => shift.attendance_entry_id))}
+          >
+            {paying ? (
+              <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
+            ) : (
+              <HandCoins size={14} aria-hidden="true" />
+            )}
+            Выплатить{chosen.length > 0 ? ` ${formatRub(selectedTotal)}` : ""}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

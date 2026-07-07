@@ -297,6 +297,31 @@ class KassaAdvancePermissionRead(BaseModel):
     created_at: datetime
 
 
+class KassaFreelancerRead(BaseModel):
+    """Внештатник с непогашенным: одна строка (имя + Σ неоплаченных смен открытого периода)."""
+
+    employee_id: uuid.UUID
+    name: str
+    unpaid_total: float
+    shift_count: int
+
+
+class KassaFreelancerShiftRead(BaseModel):
+    """Смена внештатника открытого периода (для модалки): единица = явка."""
+
+    attendance_entry_id: uuid.UUID
+    work_date: date
+    hours: float
+    amount: float
+    paid: bool
+
+
+class KassaFreelancerShiftsRead(BaseModel):
+    """Детализация смен внештатника для модалки выдачи."""
+
+    shifts: list[KassaFreelancerShiftRead] = Field(default_factory=list)
+
+
 class KassaPendingRead(BaseModel):
     """Состав вкладки «К выдаче» (он же — read-only диалог на «Деньгах сегодня»)."""
 
@@ -304,6 +329,7 @@ class KassaPendingRead(BaseModel):
     balance: float
     targets: list[KassaTargetRead] = Field(default_factory=list)
     permissions: list[KassaAdvancePermissionRead] = Field(default_factory=list)
+    freelancers: list[KassaFreelancerRead] = Field(default_factory=list)
     targets_total: float
     pending_count: int
 
@@ -314,6 +340,20 @@ class KassaTargetPayoutRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     amount: Decimal = Field(gt=0)
+
+
+class KassaFreelancerShiftPayoutRequest(BaseModel):
+    """«Выплатить»: мультивыбор смен (явок) внештатника — каждая выдаётся целиком."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    attendance_entry_ids: list[uuid.UUID] = Field(min_length=1)
+
+
+class KassaFreelancerSyncReport(BaseModel):
+    """Итог «Синхронизировать смены»: обновлённый список внештатников с непогашенным."""
+
+    freelancers: list[KassaFreelancerRead] = Field(default_factory=list)
 
 
 class KassaPayoutArticleRead(BaseModel):

@@ -36,6 +36,9 @@ from app.schemas.kassa import (
     KassaPayoutCreate,
     KassaPayoutEmployeeRead,
     KassaPayoutResultRead,
+    KassaFreelancerShiftPayoutRequest,
+    KassaFreelancerShiftsRead,
+    KassaFreelancerSyncReport,
     KassaPendingRead,
     KassaShiftDetailRead,
     KassaShiftRead,
@@ -89,6 +92,12 @@ from app.services.kassa.payouts import (
     list_payout_employees,
     pay_kassa_target,
     update_payout,
+)
+from app.services.freelancer.shift_settlement import (
+    FreelancerShiftSettlementError,
+    freelancer_shift_details,
+    pay_freelancer_shifts,
+    sync_freelancer_shifts,
 )
 from app.services.payroll_advance_service import (
     cancel_kassa_advance,
@@ -857,6 +866,70 @@ async def cancel_kassa_advance_endpoint(
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return await kassa_pending_payload(session)
+
+
+@router.post(
+    "/freelancer-shifts/sync",
+    response_model=KassaFreelancerSyncReport,
+    dependencies=KASSA_PAYOUTS_CREATE,
+)
+async def sync_freelancer_shifts_endpoint(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict:
+    """«Синхронизировать смены»: перечитать явки текущей недели из iiko + вернуть список.
+
+    Дёргает ночное окно авансов (``refresh_current_week_advance_window``): гарантирует
+    недельный период и грузит явки iiko за отработанные дни, чтобы свежие смены появились
+    в «К выдаче». Ошибка iiko — 502 (как у прочих ручных синков)."""
+    try:
+        return await sync_freelancer_shifts(session)
+    except FreelancerShiftSettlementError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — сбой выгрузки iiko отдаём как 502
+        logger.exception("freelancer shift sync failed")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Не удалось синхронизировать смены из iiko — попробуйте позже",
+        ) from exc
+
+
+@router.get(
+    "/freelancer-shifts/{employee_id}",
+    response_model=KassaFreelancerShiftsRead,
+    dependencies=KASSA_PAYOUTS_CREATE,
+)
+async def freelancer_shift_details_endpoint(
+    employee_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict:
+    """Смены внештатника открытого периода (для модалки): дата · часы · сумма · оплачена ли."""
+    return {"shifts": await freelancer_shift_details(session, employee_id)}
+
+
+@router.post(
+    "/freelancer-shifts/payout",
+    response_model=KassaPendingRead,
+    dependencies=KASSA_PAYOUTS_CREATE,
+)
+async def pay_freelancer_shifts_endpoint(
+    payload: KassaFreelancerShiftPayoutRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict:
+    """«Выплатить»: выдать наличные из ТК Черникова за выбранные смены (каждую целиком).
+
+    Движок пишет статью «Зарплата производственного персонала» сам (админ не вводит ни
+    сумму, ни статью). Запрос атомарен: уже выданная налом смена — 409. Сумма больше
+    остатка кассы не блокируется (предупреждение показывает фронт)."""
+    try:
+        await pay_freelancer_shifts(
+            session,
+            attendance_entry_ids=payload.attendance_entry_ids,
+            actor_user_id=actor.user_id,
+        )
+    except FreelancerShiftSettlementError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return await kassa_pending_payload(session)
 
