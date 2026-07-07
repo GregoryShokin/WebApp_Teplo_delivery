@@ -355,3 +355,80 @@ class KassaPayoutResultRead(BaseModel):
     transaction_id: uuid.UUID | None = None
     advance_id: uuid.UUID | None = None
     prepayment_id: uuid.UUID | None = None
+
+
+# --- «Внесение в кассу»: пресеты и приход по пресету -----------------------------
+
+
+class KassaPayinPresetOptionRead(BaseModel):
+    """Пресет внесения для формы кассира: имя + шаблон комментария (без статьи ДДС)."""
+
+    id: uuid.UUID
+    name: str
+    comment_template: str | None = None
+
+
+class KassaPayinCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preset_id: uuid.UUID
+    amount: Decimal = Field(gt=0)
+    comment: str | None = None
+
+
+class KassaPayinUpdate(BaseModel):
+    """Правка своего сегодняшнего внесения: сумма и комментарий (статья пресета неизменна)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0)
+    comment: str | None = None
+
+
+class KassaPayinResultRead(BaseModel):
+    transaction_id: uuid.UUID | None = None
+    preset_id: uuid.UUID | None = None
+
+
+class KassaPayinPresetArticleRead(BaseModel):
+    """Приходная статья ДДС, доступная для привязки к пресету (каталог в Настройках)."""
+
+    id: uuid.UUID
+    code: str
+    name: str
+    activity_type: str
+
+
+class KassaPayinPresetCounterpartyRead(BaseModel):
+    """Активный контрагент для привязки к пресету (каталог в Настройках)."""
+
+    id: uuid.UUID
+    name: str
+
+
+class KassaPayinPresetRead(BaseModel):
+    """Строка каталога пресетов внесения (Настройки → Касса)."""
+
+    id: uuid.UUID
+    name: str
+    mechanism: str
+    article_id: uuid.UUID
+    article_name: str
+    counterparty_id: uuid.UUID | None = None
+    counterparty_name: str | None = None
+    comment_template: str | None = None
+    is_active: bool
+    sort_order: int
+
+
+class KassaPayinPresetWrite(BaseModel):
+    """Создание/правка пресета внесения (владелец, из Настроек)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    article_id: uuid.UUID
+    counterparty_id: uuid.UUID | None = None
+    comment_template: str | None = None
+    is_active: bool = True
+    sort_order: int = 0

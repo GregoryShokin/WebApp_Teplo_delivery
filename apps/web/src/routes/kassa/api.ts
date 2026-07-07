@@ -265,6 +265,9 @@ export type KassaPayoutFlow =
   | "employee_loan"
   | "supplier_prepayment";
 
+// Маршрут строки журнала: выплаты + приход по пресету («Внесение в кассу»).
+export type KassaJournalFlow = KassaPayoutFlow | "payin";
+
 export type KassaJournalItem = {
   id: string;
   operation_date: string;
@@ -278,7 +281,7 @@ export type KassaJournalItem = {
   counterparty_label: string | null;
   employee_id: string | null;
   counterparty_id: string | null;
-  kassa_flow: KassaPayoutFlow | null;
+  kassa_flow: KassaJournalFlow | null;
   editable: boolean;
   created_at: string;
 };
@@ -440,4 +443,118 @@ export async function cancelKassaAdvancePermission(advanceId: string): Promise<K
     `${BASE}/advance-permissions/${advanceId}/cancel`,
   );
   return response.data;
+}
+
+// --- «Внесение в кассу» по пресетам ---------------------------------------------
+
+/** Пресет внесения для формы кассира: имя + шаблон комментария (без статьи ДДС). */
+export type KassaPayinPresetOption = {
+  id: string;
+  name: string;
+  comment_template: string | null;
+};
+
+export type KassaPayinResult = {
+  transaction_id: string | null;
+  preset_id: string | null;
+};
+
+export async function getKassaPayinPresets(): Promise<KassaPayinPresetOption[]> {
+  const response = await api.get<KassaPayinPresetOption[]>(`${BASE}/payin-presets`);
+  return response.data;
+}
+
+export async function createKassaPayin(payload: {
+  preset_id: string;
+  amount: number;
+  comment?: string | null;
+}): Promise<KassaPayinResult> {
+  const response = await api.post<KassaPayinResult>(`${BASE}/payins`, payload);
+  return response.data;
+}
+
+export async function updateKassaPayin(
+  transactionId: string,
+  payload: { amount: number; comment?: string | null },
+): Promise<KassaPayinResult> {
+  const response = await api.patch<KassaPayinResult>(`${BASE}/payins/${transactionId}`, payload);
+  return response.data;
+}
+
+export async function deleteKassaPayin(transactionId: string): Promise<void> {
+  await api.delete(`${BASE}/payins/${transactionId}`);
+}
+
+// --- каталог пресетов внесения (Настройки → Касса) ------------------------------
+
+export type KassaPayinPreset = {
+  id: string;
+  name: string;
+  mechanism: string;
+  article_id: string;
+  article_name: string;
+  counterparty_id: string | null;
+  counterparty_name: string | null;
+  comment_template: string | null;
+  is_active: boolean;
+  sort_order: number;
+};
+
+export type KassaPayinPresetArticle = {
+  id: string;
+  code: string;
+  name: string;
+  activity_type: string;
+};
+
+export type KassaPayinPresetCounterparty = {
+  id: string;
+  name: string;
+};
+
+export type KassaPayinPresetPayload = {
+  name: string;
+  article_id: string;
+  counterparty_id?: string | null;
+  comment_template?: string | null;
+  is_active?: boolean;
+  sort_order?: number;
+};
+
+export async function getKassaPayinPresetsAll(): Promise<KassaPayinPreset[]> {
+  const response = await api.get<KassaPayinPreset[]>(`${BASE}/payin-presets/all`);
+  return response.data;
+}
+
+export async function getKassaPayinPresetArticles(): Promise<KassaPayinPresetArticle[]> {
+  const response = await api.get<KassaPayinPresetArticle[]>(`${BASE}/payin-preset-articles`);
+  return response.data;
+}
+
+export async function getKassaPayinPresetCounterparties(): Promise<
+  KassaPayinPresetCounterparty[]
+> {
+  const response = await api.get<KassaPayinPresetCounterparty[]>(
+    `${BASE}/payin-preset-counterparties`,
+  );
+  return response.data;
+}
+
+export async function createKassaPayinPreset(
+  payload: KassaPayinPresetPayload,
+): Promise<KassaPayinPreset> {
+  const response = await api.post<KassaPayinPreset>(`${BASE}/payin-presets`, payload);
+  return response.data;
+}
+
+export async function updateKassaPayinPreset(
+  presetId: string,
+  payload: KassaPayinPresetPayload,
+): Promise<KassaPayinPreset> {
+  const response = await api.patch<KassaPayinPreset>(`${BASE}/payin-presets/${presetId}`, payload);
+  return response.data;
+}
+
+export async function deleteKassaPayinPreset(presetId: string): Promise<void> {
+  await api.delete(`${BASE}/payin-presets/${presetId}`);
 }

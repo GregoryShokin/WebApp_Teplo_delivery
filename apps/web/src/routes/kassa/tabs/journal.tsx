@@ -26,10 +26,16 @@ import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { apiErrorMessage } from "@/lib/api";
 import { formatRub } from "@/routes/counterparties/shared";
 import {
+  deleteKassaPayin,
   deleteKassaPayout,
   getKassaJournal,
   type KassaJournalItem,
 } from "@/routes/kassa/api";
+import {
+  KassaPayinDialog,
+  payinEditTargetFromJournalItem,
+  type KassaPayinEditTarget,
+} from "@/routes/kassa/KassaPayinDialog";
 import {
   editTargetFromJournalItem,
   KassaPayoutDialog,
@@ -59,6 +65,7 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
   const [direction, setDirection] = useState<"all" | "in" | "out">("all");
   const [search, setSearch] = useState("");
   const [editTarget, setEditTarget] = useState<KassaPayoutEditTarget | null>(null);
+  const [payinEditTarget, setPayinEditTarget] = useState<KassaPayinEditTarget | null>(null);
   const [deleteItem, setDeleteItem] = useState<KassaJournalItem | null>(null);
 
   const range = useMemo(() => monthRange(month), [month]);
@@ -73,7 +80,9 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (transactionId: string) => deleteKassaPayout(transactionId),
+    // Внесение и выплата снимаются разными эндпоинтами (свой контур у каждого).
+    mutationFn: (item: KassaJournalItem) =>
+      item.kassa_flow === "payin" ? deleteKassaPayin(item.id) : deleteKassaPayout(item.id),
     onSuccess: () => {
       toast.success("Запись удалена из журнала");
       setDeleteItem(null);
@@ -132,7 +141,11 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => setEditTarget(editTargetFromJournalItem(item))}
+              onClick={() =>
+                item.kassa_flow === "payin"
+                  ? setPayinEditTarget(payinEditTargetFromJournalItem(item))
+                  : setEditTarget(editTargetFromJournalItem(item))
+              }
             >
               Изменить
             </Button>
@@ -212,6 +225,13 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
         editTarget={editTarget}
       />
 
+      <KassaPayinDialog
+        open={payinEditTarget !== null}
+        onOpenChange={(open) => !open && setPayinEditTarget(null)}
+        onSaved={() => setPayinEditTarget(null)}
+        editTarget={payinEditTarget}
+      />
+
       <AlertDialog open={Boolean(deleteItem)} onOpenChange={() => setDeleteItem(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -222,14 +242,16 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
                 ? "Выдача будет отменена: запись уйдёт из леджера авансов, расход снимется с кассы."
                 : deleteItem?.kassa_flow === "supplier_prepayment"
                   ? "Предоплата будет снята вместе с дебиторкой поставщика, расход снимется с кассы."
-                  : "Запись будет удалена из кассового журнала, остаток кассы пересчитается."}
+                  : deleteItem?.kassa_flow === "payin"
+                    ? "Внесение будет удалено из журнала, приход снимется с кассы, остаток пересчитается."
+                    : "Запись будет удалена из кассового журнала, остаток кассы пересчитается."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
               disabled={deleteMutation.isPending}
-              onClick={() => deleteItem && deleteMutation.mutate(deleteItem.id)}
+              onClick={() => deleteItem && deleteMutation.mutate(deleteItem)}
             >
               Удалить
             </AlertDialogAction>

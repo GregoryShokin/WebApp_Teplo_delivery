@@ -49,6 +49,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { PageHeader } from "@/components/ui-app/PageHeader";
+import { PayinPresetsPanel } from "@/routes/settings-payin-presets";
 import { PositionsPanel } from "@/routes/settings-positions";
 import { usePermissions } from "@/lib/permissions";
 import {
@@ -289,6 +290,7 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
   const showPositionsPanel =
     canViewPositions && (!selectedCategory || selectedCategory === "positions");
   const showSubstitutePairsPanel = !selectedCategory || selectedCategory === "payroll";
+  const showPayinPresetsPanel = !selectedCategory || selectedCategory === "kassa";
   const substitutePairs = substitutePairsQuery.data?.pairs ?? [];
   const substitutePairsDirty = !valuesEqual(substituteDrafts, substitutePairs);
   const substitutePairsError = validateSubstitutePairs(substituteDrafts);
@@ -418,6 +420,8 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
             onSave={() => substitutePairsMutation.mutate(substituteDrafts)}
           />
         ) : null}
+
+        {showPayinPresetsPanel ? <PayinPresetsPanel canEdit={canWriteSettings} /> : null}
 
         {groupedSettings.map(([category, items]) => (
           <section className="space-y-3" key={category}>

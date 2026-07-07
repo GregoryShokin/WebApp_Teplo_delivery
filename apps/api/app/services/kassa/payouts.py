@@ -59,6 +59,9 @@ KASSA_WALLET_CODE = "tk_chernikova"
 # Источник голой расходной проводки «Выплата из кассы».
 KASSA_PAYOUT_SOURCE_KIND = "kassa_payout"
 
+# Источник приходной проводки «Внесение в кассу» по пресету (см. services/kassa/payins.py).
+KASSA_PAYIN_SOURCE_KIND = "kassa_payin"
+
 # Статьи-маршруты (коды продублированы из профильных сервисов, чтобы не тянуть
 # их тяжёлые модули на импорт; равенство закреплено тестами test_kassa_payouts).
 EMPLOYEE_ADVANCE_ARTICLE_CODE = "employee_advance"  # payroll_advance_service
@@ -693,6 +696,14 @@ async def kassa_journal(
         employee_id: uuid.UUID | None = None
         if transaction.source_kind == KASSA_PAYOUT_SOURCE_KIND:
             flow = "expense"
+            editable = (
+                actor_user_id is not None
+                and transaction.created_by_user_id == actor_user_id
+                and transaction.operation_date == today
+            )
+        elif transaction.source_kind == KASSA_PAYIN_SOURCE_KIND:
+            # Внесение по пресету — приход; правится/удаляется как своя сегодняшняя запись.
+            flow = "payin"
             editable = (
                 actor_user_id is not None
                 and transaction.created_by_user_id == actor_user_id

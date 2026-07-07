@@ -10,6 +10,7 @@ import { usePermissions } from "@/lib/permissions";
 import { getKassaPending } from "@/routes/kassa/api";
 import { CreateChequeDialog } from "@/routes/kassa/CreateChequeDialog";
 import { CreatePaymentChooser, type PaymentKind } from "@/routes/kassa/CreatePaymentChooser";
+import { KassaPayinDialog } from "@/routes/kassa/KassaPayinDialog";
 import { KassaPayoutDialog } from "@/routes/kassa/KassaPayoutDialog";
 import { KassaInvoicesTab } from "@/routes/kassa/tabs/invoices";
 import { KassaJournalTab } from "@/routes/kassa/tabs/journal";
@@ -120,6 +121,17 @@ export function KassaRoute() {
         onOpenChange={(open) => setMode(open ? "payout" : null)}
         onSaved={() => {
           // Запись сразу видна в журнале — переключаем на него после создания.
+          if (canJournal) {
+            setTab("journal");
+          }
+        }}
+      />
+
+      <KassaPayinDialog
+        open={mode === "payin"}
+        onOpenChange={(open) => setMode(open ? "payin" : null)}
+        onSaved={() => {
+          // Приход сразу зелёной строкой в журнале — переключаемся на него.
           if (canJournal) {
             setTab("journal");
           }

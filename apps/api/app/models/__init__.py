@@ -94,6 +94,7 @@ from app.models.kassa import (
     ChequeIikoPayout,
     IikoCashShift,
     IikoCashShiftPayout,
+    KassaPayinPreset,
     KassaShiftPenalty,
 )
 from app.models.payroll import (
@@ -202,6 +203,7 @@ __all__ = [
     "IikoCashShift",
     "IikoCashShiftPayout",
     "KassaShiftPenalty",
+    "KassaPayinPreset",
     "ChequeIikoPayout",
     "IikoProduct",
     "IikoInvoicePaymentPush",

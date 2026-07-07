@@ -246,3 +246,65 @@ class ChequeIikoPayout(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class KassaPayinPreset(Base):
+    """Именованный пресет «Внесение в кассу»: человеческое имя → статья ДДС + контур.
+
+    Кассир в форме внесения выбирает пресет по имени («Деньги за масло», «Приход от
+    „В гостях у Алисы“»), а бэкенд подставляет статью ДДС, фиксированного контрагента и
+    шаблон комментария и проводит приход на ТК Черникова (``CashflowTransaction`` с
+    ``direction='in'``, ``source_kind='kassa_payin'``). Никакой статьи ДДС кассир не
+    видит — только имя. Каталог курирует владелец в «Настройках → Касса».
+
+    ``mechanism`` — контур учёта: ``income`` (голый приход по статье) — единственный в
+    v1; поле-заготовка под будущие ``advance_return``/``loan_return``/``supplier_refund``
+    (гашение леджеров авансов/дебиторки при возврате). ``article_id`` — только приходная
+    (``inflow``) статья и не ``technical`` (переводы между счетами нельзя — повиснет
+    полунога перевода). ``counterparty_id`` — необязательный фиксированный контрагент
+    строки (напр. партнёр «В гостях у Алисы»: приход по «Поступление с торг. точек» с
+    ``source_kind='kassa_payin'`` не задваивает авто-контур смены ``kassa_cashshift``).
+    ``comment_template`` — автоподстановка в назначение (кассир может переопределить).
+    ``is_active``/``sort_order`` — витрина каталога.
+    """
+
+    __tablename__ = "kassa_payin_preset"
+    __table_args__ = (
+        CheckConstraint(
+            "mechanism in ('income')",
+            name="ck_kassa_payin_preset_mechanism",
+        ),
+        Index("ix_kassa_payin_preset_active_sort", "is_active", "sort_order"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    mechanism: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="income", server_default="income"
+    )
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("dds_articles.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    counterparty_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("counterparty.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    comment_template: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )

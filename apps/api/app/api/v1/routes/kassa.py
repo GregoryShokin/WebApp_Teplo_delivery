@@ -23,6 +23,14 @@ from app.schemas.kassa import (
     KassaCounterpartyRead,
     KassaDdsArticleRead,
     KassaJournalRead,
+    KassaPayinCreate,
+    KassaPayinPresetArticleRead,
+    KassaPayinPresetCounterpartyRead,
+    KassaPayinPresetOptionRead,
+    KassaPayinPresetRead,
+    KassaPayinPresetWrite,
+    KassaPayinResultRead,
+    KassaPayinUpdate,
     KassaPayoutArticleRead,
     KassaPayoutContextRead,
     KassaPayoutCreate,
@@ -53,6 +61,19 @@ from app.services.kassa.iiko_cashshift_sync import (
     post_shift_cash_circuit,
     sync_iiko_cashshifts,
     waive_shift_penalty,
+)
+from app.services.kassa.payins import (
+    KassaPayinError,
+    create_payin,
+    create_preset,
+    delete_payin,
+    delete_preset,
+    list_active_presets,
+    list_all_presets,
+    list_preset_articles,
+    list_preset_counterparties,
+    update_payin,
+    update_preset,
 )
 from app.services.kassa.payouts import (
     KassaPayoutError,
@@ -110,6 +131,10 @@ KASSA_PENALTY_WAIVE = (Depends(require_permission("kassa.penalty.waive")),)
 # (finance.cashflow.* администратору не положены).
 KASSA_JOURNAL_READ = (Depends(require_permission("kassa.journal.read")),)
 KASSA_PAYOUTS_CREATE = (Depends(require_permission("kassa.payouts.create")),)
+# Внесение по пресету — то же право, что и выплата (кассовые движения ТК Черникова).
+# Каталог пресетов курирует владелец — под общими правами Настроек.
+KASSA_SETTINGS_READ = (Depends(require_permission("settings.general.read")),)
+KASSA_SETTINGS_EDIT = (Depends(require_permission("settings.general.edit")),)
 
 
 @router.get("/config", response_model=KassaConfigRead, dependencies=KASSA_REFS_READ)
@@ -546,6 +571,198 @@ async def delete_payout_endpoint(
         )
     except KassaPayoutError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+# --- «Внесение в кассу» по пресетам (ТК Черникова) ------------------------------
+
+
+@router.get(
+    "/payin-presets",
+    response_model=list[KassaPayinPresetOptionRead],
+    dependencies=KASSA_PAYOUTS_CREATE,
+)
+async def list_payin_presets_endpoint(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[dict]:
+    """Активные пресеты внесения для формы кассира (имя + шаблон комментария)."""
+    return await list_active_presets(session)
+
+
+@router.post(
+    "/payins",
+    response_model=KassaPayinResultRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_payin_endpoint(
+    payload: KassaPayinCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict:
+    """Провести приход на ТК Черникова по пресету (дата — сегодня; iiko не трогаем)."""
+    ensure_permission(actor, "kassa.payouts.create")
+    try:
+        return await create_payin(
+            session,
+            preset_id=payload.preset_id,
+            amount=payload.amount,
+            comment=payload.comment,
+            actor_user_id=actor.user_id,
+        )
+    except KassaPayinError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.patch("/payins/{transaction_id}", response_model=KassaPayinResultRead)
+async def update_payin_endpoint(
+    transaction_id: uuid.UUID,
+    payload: KassaPayinUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict:
+    """Исправить сумму/комментарий СВОЕГО сегодняшнего внесения (статья пресета неизменна)."""
+    ensure_permission(actor, "kassa.payouts.create")
+    try:
+        return await update_payin(
+            session,
+            transaction_id=transaction_id,
+            amount=payload.amount,
+            comment=payload.comment,
+            actor_user_id=actor.user_id,
+        )
+    except KassaPayinError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.delete("/payins/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_payin_endpoint(
+    transaction_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    """Удалить СВОЁ сегодняшнее внесение (приход снимается с кассы)."""
+    ensure_permission(actor, "kassa.payouts.create")
+    try:
+        await delete_payin(session, transaction_id=transaction_id, actor_user_id=actor.user_id)
+    except KassaPayinError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+# --- Каталог пресетов внесения (Настройки → Касса, курирует владелец) ------------
+
+
+@router.get(
+    "/payin-presets/all",
+    response_model=list[KassaPayinPresetRead],
+    dependencies=KASSA_SETTINGS_READ,
+)
+async def list_payin_presets_all_endpoint(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[dict]:
+    """Все пресеты каталога (вкл. выключенные) с именами статьи/контрагента — для Настроек."""
+    return await list_all_presets(session)
+
+
+@router.get(
+    "/payin-preset-articles",
+    response_model=list[KassaPayinPresetArticleRead],
+    dependencies=KASSA_SETTINGS_READ,
+)
+async def list_payin_preset_articles_endpoint(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[dict]:
+    """Приходные статьи ДДС для привязки к пресету (выпадашка в Настройках)."""
+    return await list_preset_articles(session)
+
+
+@router.get(
+    "/payin-preset-counterparties",
+    response_model=list[KassaPayinPresetCounterpartyRead],
+    dependencies=KASSA_SETTINGS_READ,
+)
+async def list_payin_preset_counterparties_endpoint(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[dict]:
+    """Активные контрагенты для привязки к пресету (выпадашка в Настройках)."""
+    return await list_preset_counterparties(session)
+
+
+@router.post(
+    "/payin-presets",
+    response_model=KassaPayinPresetRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=KASSA_SETTINGS_EDIT,
+)
+async def create_payin_preset_endpoint(
+    payload: KassaPayinPresetWrite,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict:
+    """Завести пресет внесения (владелец)."""
+    try:
+        preset = await create_preset(
+            session,
+            name=payload.name,
+            article_id=payload.article_id,
+            counterparty_id=payload.counterparty_id,
+            comment_template=payload.comment_template,
+            is_active=payload.is_active,
+            sort_order=payload.sort_order,
+            actor_user_id=actor.user_id,
+        )
+    except KassaPayinError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return await _preset_read(session, preset.id)
+
+
+@router.patch(
+    "/payin-presets/{preset_id}",
+    response_model=KassaPayinPresetRead,
+    dependencies=KASSA_SETTINGS_EDIT,
+)
+async def update_payin_preset_endpoint(
+    preset_id: uuid.UUID,
+    payload: KassaPayinPresetWrite,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict:
+    """Изменить пресет внесения (владелец)."""
+    try:
+        await update_preset(
+            session,
+            preset_id=preset_id,
+            name=payload.name,
+            article_id=payload.article_id,
+            counterparty_id=payload.counterparty_id,
+            comment_template=payload.comment_template,
+            is_active=payload.is_active,
+            sort_order=payload.sort_order,
+        )
+    except KassaPayinError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return await _preset_read(session, preset_id)
+
+
+@router.delete(
+    "/payin-presets/{preset_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=KASSA_SETTINGS_EDIT,
+)
+async def delete_payin_preset_endpoint(
+    preset_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Удалить пресет внесения (владелец). Проведённые по нему внесения остаются в журнале."""
+    try:
+        await delete_preset(session, preset_id=preset_id)
+    except KassaPayinError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+async def _preset_read(session: AsyncSession, preset_id: uuid.UUID) -> dict:
+    """Одна строка каталога после создания/правки (из общего list, отфильтрованного по id)."""
+    for item in await list_all_presets(session):
+        if item["id"] == preset_id:
+            return item
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пресет не найден")
 
 
 # --- Вкладка «К выдаче»: целёвки в кассе и разрешения на авансы/займы ------------
