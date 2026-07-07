@@ -306,7 +306,12 @@ export type EmployeePositionAssignmentDeletePayload = {
   acknowledge_closed_period?: boolean;
 };
 
-export type DepositDismissAction = "payout_full" | "payout_partial" | "write_off" | "none";
+export type DepositDismissAction =
+  | "payout_full"
+  | "payout_partial"
+  | "write_off"
+  | "schedule_payout"
+  | "none";
 
 export type EmployeeDismissPayload = {
   fire_date?: string;

@@ -207,6 +207,7 @@ class DepositDismissAction(StrEnum):
     PAYOUT_FULL = "payout_full"
     PAYOUT_PARTIAL = "payout_partial"
     WRITE_OFF = "write_off"
+    SCHEDULE_PAYOUT = "schedule_payout"  # поместить выдачу депозита в ближайшую ведомость
     NONE = "none"
 
 

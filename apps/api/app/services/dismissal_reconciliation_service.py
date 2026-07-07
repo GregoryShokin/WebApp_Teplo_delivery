@@ -35,6 +35,7 @@ from app.models import (
     DepositAccount,
     DepositPayoutSchedule,
     Employee,
+    EmployeePayout,
     PayrollLine,
     PayrollPayment,
     PayrollPeriod,
@@ -54,6 +55,7 @@ class SettlementState:
     payroll_settled: bool
     advances_settled: bool
     revision_settled: bool
+    payouts_settled: bool
 
     @property
     def fully_settled(self) -> bool:
@@ -62,6 +64,7 @@ class SettlementState:
             and self.payroll_settled
             and self.advances_settled
             and self.revision_settled
+            and self.payouts_settled
         )
 
     def outstanding(self) -> list[str]:
@@ -75,6 +78,8 @@ class SettlementState:
             pending.append("займы/авансы")
         if not self.revision_settled:
             pending.append("штрафы ревизии")
+        if not self.payouts_settled:
+            pending.append("разовые выплаты")
         return pending
 
 
@@ -183,6 +188,21 @@ async def _revision_settled(session: AsyncSession, employee_id: uuid.UUID) -> bo
     return not bool(has_open_charge)
 
 
+async def _payouts_settled(session: AsyncSession, employee_id: uuid.UUID) -> bool:
+    # Разовые выплаты вне ведомости (EmployeePayout): фрилансерские «К выдаче»,
+    # выплаты собственнику и т.п. `pending`/`included` = мы ещё должны и не выдали
+    # → долг не закрыт. `paid`/`failed`/`cancelled`/`draft` — не блокируют.
+    has_unpaid_payout = await session.scalar(
+        select(
+            exists().where(
+                EmployeePayout.employee_id == employee_id,
+                EmployeePayout.status.in_(("pending", "included")),
+            )
+        )
+    )
+    return not bool(has_unpaid_payout)
+
+
 async def settlement_state(
     session: AsyncSession, employee_id: uuid.UUID
 ) -> SettlementState:
@@ -191,6 +211,7 @@ async def settlement_state(
         payroll_settled=await _payroll_settled(session, employee_id),
         advances_settled=await _advances_settled(session, employee_id),
         revision_settled=await _revision_settled(session, employee_id),
+        payouts_settled=await _payouts_settled(session, employee_id),
     )
 
 

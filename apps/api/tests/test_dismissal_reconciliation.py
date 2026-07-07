@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from app.models import DepositPayoutSchedule, Employee, SalaryAdvance
+from app.models import DepositPayoutSchedule, Employee, EmployeePayout, SalaryAdvance
 from app.services import dismissal_reconciliation_service
 
 
@@ -76,6 +76,38 @@ async def test_reconcile_keeps_dismissing_with_outstanding_loan(
         assert state.advances_settled is False
         assert state.fully_settled is False
         assert "займы/авансы" in state.outstanding()
+
+        flipped = await dismissal_reconciliation_service.reconcile_dismissing_employee(
+            session, employee.id
+        )
+        assert flipped is False
+        assert employee.status == "dismissing"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_keeps_dismissing_with_pending_employee_payout(
+    async_session_factory: Any,
+) -> None:
+    async with async_session_factory() as session:
+        employee = _dismissing_employee("Payout Pending")
+        session.add(employee)
+        await session.flush()
+        session.add(
+            EmployeePayout(
+                id=uuid.uuid4(),
+                employee_id=employee.id,
+                kind="salary",
+                amount=Decimal("3000.00"),
+                payout_date=date(2026, 7, 7),
+                status="pending",
+            )
+        )
+        await session.flush()
+
+        state = await dismissal_reconciliation_service.settlement_state(session, employee.id)
+        assert state.payouts_settled is False
+        assert state.fully_settled is False
+        assert "разовые выплаты" in state.outstanding()
 
         flipped = await dismissal_reconciliation_service.reconcile_dismissing_employee(
             session, employee.id

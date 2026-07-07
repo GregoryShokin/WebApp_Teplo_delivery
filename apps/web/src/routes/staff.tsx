@@ -133,6 +133,7 @@ import {
   dismissEmployee,
   getEmployeeAccumulationFund,
   getDeposits,
+  getScheduledPayoutEnabled,
   getEmployeeChanges,
   getEmployeeDismissalReasons,
   getEmployeePositionHistory,
@@ -3531,6 +3532,11 @@ function StaffEditor({
     queryFn: () => getSettings(),
     enabled: isDepositTargetPosition(employee.position),
   });
+  const scheduledPayoutEnabledQuery = useQuery({
+    queryKey: ["deposits", "scheduled-payout-enabled"],
+    queryFn: getScheduledPayoutEnabled,
+    enabled: isDepositTargetPosition(employee.position),
+  });
   const recentAdjustmentsQuery = useQuery({
     queryKey: ["payroll-adjustments", employee.id, "recent"],
     queryFn: () =>
@@ -3551,6 +3557,10 @@ function StaffEditor({
   );
   const dismissDepositBalance = numericAmount(employeeDeposit?.balance);
   const dismissDepositHasBalance = dismissDepositBalance > 0;
+  // Выдача депозита уже запланирована в ведомость (со страницы «Депозиты» или из
+  // прошлого увольнения) — увольнение депозит не трогает, вопрос не показываем.
+  const dismissDepositScheduled = Boolean(employeeDeposit?.scheduled_payout_pending);
+  const canScheduleDepositPayout = scheduledPayoutEnabledQuery.data === true;
   const noticeDaysToFire =
     employee.active_notice && dismissFireDate
       ? daysBetweenDateStrings(employee.active_notice.notice_date, dismissFireDate)
@@ -3563,6 +3573,8 @@ function StaffEditor({
   );
   const dismissDepositValid =
     !dismissDepositHasBalance ||
+    dismissDepositScheduled ||
+    dismissDepositAction === "schedule_payout" ||
     (dismissDepositDecision.isValid && dismissDepositAction !== "none");
   const dismissalReasons = dismissalReasonOptions(dismissalReasonsQuery.data ?? []);
   const selectedDismissalReason =
@@ -3578,10 +3590,15 @@ function StaffEditor({
         fire_date: dismissFireDate,
         reason_code: dismissalReason.code,
         comment: dismissComment.trim() || undefined,
-        deposit_action: dismissDepositHasBalance ? dismissDepositAction : "none",
+        deposit_action:
+          dismissDepositHasBalance && !dismissDepositScheduled ? dismissDepositAction : "none",
         deposit_comment: dismissDepositComment.trim() || undefined,
       };
-      if (dismissDepositHasBalance && dismissDepositAction === "payout_partial") {
+      if (
+        dismissDepositHasBalance &&
+        !dismissDepositScheduled &&
+        dismissDepositAction === "payout_partial"
+      ) {
         payload.deposit_payout_amount = decimalPayload(dismissDepositAmount);
       }
       if (dismissalReason.id) {
@@ -5124,6 +5141,13 @@ function StaffEditor({
                   </div>
                 </div>
 
+                {dismissDepositScheduled ? (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    Выдача депозита уже запланирована в ближайшую ведомость — увольнение
+                    депозит не трогает.
+                  </div>
+                ) : (
+                  <>
                 {employee.active_notice ? (
                   <div
                     className={cn(
@@ -5144,6 +5168,20 @@ function StaffEditor({
                 )}
 
                 <div className="grid gap-2 text-sm">
+                  {canScheduleDepositPayout ? (
+                    <label className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
+                      <input
+                        checked={dismissDepositAction === "schedule_payout"}
+                        name="dismiss-deposit-action"
+                        onChange={() => setDismissDepositAction("schedule_payout")}
+                        type="radio"
+                      />
+                      <span>
+                        Поместить в ближайшую ведомость (
+                        {formatDepositMoney(dismissDepositBalance)}, через Сейф)
+                      </span>
+                    </label>
+                  ) : null}
                   <label className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
                     <input
                       checked={dismissDepositAction === "payout_full"}
@@ -5211,6 +5249,8 @@ function StaffEditor({
                     value={dismissDepositComment}
                   />
                 </Label>
+                  </>
+                )}
               </section>
             ) : null}
           </div>

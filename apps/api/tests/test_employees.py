@@ -3096,6 +3096,18 @@ def test_resolve_dismiss_deposit_decision_scheduled_forces_none() -> None:
     assert decision.writeoff_amount == Decimal("0")
 
 
+def test_resolve_dismiss_deposit_decision_schedule_payout_keeps_balance() -> None:
+    # «Поместить в ближайшую ведомость»: депозит не выплачивается и не списывается
+    # здесь — остаётся на балансе, выдача пройдёт через ведомость (план создаст роут).
+    decision = employee_routes._resolve_dismiss_deposit_decision(
+        EmployeeDismissRequest(deposit_action=DepositDismissAction.SCHEDULE_PAYOUT),
+        Decimal("7000"),
+    )
+    assert decision.action == DepositDismissAction.SCHEDULE_PAYOUT
+    assert decision.payout_amount == Decimal("0")
+    assert decision.writeoff_amount == Decimal("0")
+
+
 async def test_reinstate_employee_finance_manager_returns_403() -> None:
     employee = make_employee(
         iiko_id="iiko-24",

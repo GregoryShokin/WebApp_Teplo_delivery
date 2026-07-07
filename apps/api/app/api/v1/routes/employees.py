@@ -942,6 +942,17 @@ async def dismiss_employee(
     deposit_decision = _resolve_dismiss_deposit_decision(
         dismiss_payload, deposit_balance, deposit_scheduled=deposit_scheduled
     )
+    # Проверяем фича-флаг ДО деактивации в iiko, чтобы не оставить iiko-деактивацию
+    # при откате транзакции.
+    if (
+        deposit_decision.action == DepositDismissAction.SCHEDULE_PAYOUT
+        and isinstance(session, AsyncSession)
+        and not await deposit_schedule.is_scheduled_payout_enabled(session)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Отложенная выдача депозита выключена в настройках",
+        )
     active_notice = await notice_service.get_active_notice(session, employee_id, fire_date)
     before = _employee_lifecycle_snapshot(employee)
     try:
@@ -999,6 +1010,19 @@ async def dismiss_employee(
         actor=actor,
         comment=dismiss_payload.deposit_comment,
     )
+    # SCHEDULE_PAYOUT: создаём pending-план выдачи депозита в ближайшую ведомость
+    # (полный баланс, счёт-источник Сейф). Расчёт увидит его и не даст уволить, пока
+    # выдача не пройдёт через ведомость. Депозит остаётся на балансе.
+    if deposit_decision.action == DepositDismissAction.SCHEDULE_PAYOUT and isinstance(
+        session, AsyncSession
+    ):
+        await deposit_schedule.create_or_replace_schedule(
+            session,
+            employee.id,
+            requested_amount=None,
+            account_choice="safe",
+            created_by_user_id=actor.user_id,
+        )
     await forfeit_active_fund_on_dismiss(session, employee, fire_date=fire_date, now=now)
 
     # Если по сотруднику вообще нет открытых расчётов — сразу завершаем увольнение
@@ -1124,6 +1148,8 @@ async def cancel_dismissal(
             employee.id,
             date.today(),
         )
+        # Сотрудник остаётся — отменяем запланированную выдачу депозита (если была).
+        await deposit_schedule.cancel_pending_schedule(session, employee_id)
     employee.status = compute_status(
         employee,
         is_iiko_deleted=False,
@@ -3428,6 +3454,16 @@ def _resolve_dismiss_deposit_decision(
             detail="Депозит пуст, действие не требуется",
         )
 
+    if action == DepositDismissAction.SCHEDULE_PAYOUT:
+        # Депозит не трогаем здесь — увольнение создаст pending-план выдачи в
+        # ближайшую ведомость (см. dismiss_employee), выдача пройдёт через ведомость.
+        return DismissDepositDecision(
+            action=action,
+            payout_amount=Decimal("0"),
+            writeoff_amount=Decimal("0"),
+            balance=balance,
+        )
+
     if action == DepositDismissAction.PAYOUT_FULL:
         return DismissDepositDecision(
             action=action,
@@ -3470,7 +3506,9 @@ async def _apply_dismiss_deposit_decision(
     actor: CurrentActor,
     comment: str | None,
 ) -> None:
-    if decision.action == DepositDismissAction.NONE:
+    # SCHEDULE_PAYOUT: депозит остаётся на балансе, выдача пойдёт через ведомость
+    # (pending-план создаёт dismiss_employee) — здесь ничего не проводим.
+    if decision.action in (DepositDismissAction.NONE, DepositDismissAction.SCHEDULE_PAYOUT):
         return
 
     before = deposit_service.deposit_account_snapshot(account)
