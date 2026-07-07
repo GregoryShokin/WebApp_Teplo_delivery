@@ -3083,6 +3083,19 @@ async def test_cancel_dismissal_when_not_dismissing_returns_409() -> None:
     assert exc_info.value.status_code == 409
 
 
+def test_resolve_dismiss_deposit_decision_scheduled_forces_none() -> None:
+    # Забронированная выдача депозита в ведомость → увольнение не трогает депозит,
+    # даже если менеджер выбрал write_off (защита от конфликтующей проводки).
+    decision = employee_routes._resolve_dismiss_deposit_decision(
+        EmployeeDismissRequest(deposit_action=DepositDismissAction.WRITE_OFF),
+        Decimal("7000"),
+        deposit_scheduled=True,
+    )
+    assert decision.action == DepositDismissAction.NONE
+    assert decision.payout_amount == Decimal("0")
+    assert decision.writeoff_amount == Decimal("0")
+
+
 async def test_reinstate_employee_finance_manager_returns_403() -> None:
     employee = make_employee(
         iiko_id="iiko-24",

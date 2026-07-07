@@ -3396,10 +3396,21 @@ def _resolve_dismiss_deposit_decision(
     deposit_scheduled: bool = False,
 ) -> DismissDepositDecision:
     balance = decimal(balance)
+    # Если выдача депозита уже забронирована в ведомость (pending-план) — увольнение
+    # НЕ трогает депозит вообще: он гасится через ведомость. Любое решение менеджера
+    # игнорируем (даже write_off/payout_full по умолчанию из диалога), чтобы не создать
+    # конфликтующую проводку dismissal_payout/writeoff, которая обнулит депозит мимо
+    # расписания (инцидент Ирины Бондаренко).
+    if deposit_scheduled:
+        return DismissDepositDecision(
+            action=DepositDismissAction.NONE,
+            payout_amount=Decimal("0"),
+            writeoff_amount=Decimal("0"),
+            balance=balance,
+        )
     action = payload.deposit_action
     if action == DepositDismissAction.NONE:
-        # Если выдача депозита уже забронирована в ведомость — решение не требуется.
-        if balance > 0 and not deposit_scheduled:
+        if balance > 0:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Депозит не пуст, выберите действие",
