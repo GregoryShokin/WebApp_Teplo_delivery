@@ -513,6 +513,9 @@ class NewPaymentExpenseDraftCreate(BaseModel):
     article_id: uuid.UUID | None = None
     amount: Decimal | None = Field(default=None, gt=0)
     purpose: str | None = Field(default=None, max_length=210)
+    # Банк-плательщик черновика: bank_draft (Т-Банк, по умолчанию) или bank_draft_sber (Сбер).
+    # Сбер доступен только для свободного расхода — прочие маршруты остаются в Т-Банке.
+    channel: Literal["bank_draft", "bank_draft_sber"] = "bank_draft"
 
     @model_validator(mode="after")
     def _require_lines_or_single(self) -> NewPaymentExpenseDraftCreate:

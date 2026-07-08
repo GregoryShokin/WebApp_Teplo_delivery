@@ -609,6 +609,7 @@ async def post_new_payment_expense_draft(
         return await create_expense_payment_draft(
             session,
             lines=lines,
+            channel=payload.channel,
             actor_user_id=actor.user_id,
         )
     except CounterpartyPaymentError as exc:
