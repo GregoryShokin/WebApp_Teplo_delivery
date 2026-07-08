@@ -26,6 +26,7 @@ from app.models import (
 from app.services.bank_payment_status import apply_payment_status
 from app.services.banking.base import AccountMeta, NormalizedBankOperation, clean_digits
 from app.services.banking.classifier import (
+    absorb_auto_classified_counterparty_payment,
     create_or_update_reconciliation_case,
     reconcile_needs_review_prebooked,
     run_classification_rules,
@@ -176,7 +177,7 @@ async def run_payment_status_poll(
             )
         )
     ).all()
-    result = {"checked": 0, "paid": 0, "failed": 0, "errors": 0, "reconciled": 0}
+    result = {"checked": 0, "paid": 0, "failed": 0, "errors": 0, "reconciled": 0, "absorbed": 0}
     for draft in drafts:
         try:
             raw = await client.get_payment_status(draft.provider_ref or "")
@@ -273,6 +274,9 @@ async def run_payment_status_poll(
     # Сводим «требующие проверки» операции с prebooked-проводками, появившимися позже них
     # (гонка вебхук↔поллинг) — иначе один платёж висит двумя строками в журнале.
     result["reconciled"] = await reconcile_needs_review_prebooked(session)
+    # И поглощаем авто-классифицированные (правилом) операции той же prebooked-проводкой оплаты —
+    # иначе платёж поставщику с правилом классификации двоится (auto-строка + prebooked-проводка).
+    result["absorbed"] = await absorb_auto_classified_counterparty_payment(session)
     await session.commit()
     return result
 
@@ -348,6 +352,9 @@ async def settle_counterparty_draft_from_operation(
     if status == "paid":
         # Свежая prebooked-проводка должна забрать эту же операцию (иначе две строки до поллинга).
         await reconcile_needs_review_prebooked(session)
+        # Операция уже могла быть авто-классифицирована правилом в свою строку (у поставщика есть
+        # правило) — поглощаем её той же prebooked-проводкой, иначе платёж останется задвоенным.
+        await absorb_auto_classified_counterparty_payment(session)
     return status
 
 

@@ -6,8 +6,9 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models import (
     Account,
@@ -195,6 +196,102 @@ async def reconcile_needs_review_prebooked(session: AsyncSession) -> int:
     if linked:
         await session.flush()
     return linked
+
+
+async def _cashflow_row_has_dependents(session: AsyncSession, transaction_id: UUID) -> bool:
+    """Есть ли у проводки зависимые записи (аллокации накладных / предоплаты / выплаты).
+
+    Такую проводку нельзя удалять как «пустую» авто-строку — за ней стоит гашение накладной,
+    дебиторка или выплата. Авто-строка правила ``set_article`` их не создаёт, но проверяем на
+    всякий случай, чтобы поглотитель не снёс ручную/содержательную разметку.
+    """
+    from app.models import EmployeePayout, InvoicePaymentAllocation
+
+    for model in (InvoicePaymentAllocation, SupplierPrepayment, EmployeePayout):
+        exists = await session.scalar(
+            select(model.id).where(model.cashflow_transaction_id == transaction_id).limit(1)
+        )
+        if exists is not None:
+            return True
+    return False
+
+
+async def absorb_auto_classified_counterparty_payment(session: AsyncSession) -> int:
+    """Свести авто-классифицированную операцию выписки с prebooked-проводкой оплаты поставщику.
+
+    Гонка «правило↔пометка оплаты»: операция выписки приходит и на ингесте СРАЗУ
+    классифицируется правилом (у поставщика есть правило классификации) в собственную
+    ``bank_operation``-проводку — ДО того, как черновик помечается ``paid`` и создаёт
+    prebooked-проводку ``counterparty_payment``. Тогда один платёж описан ДВУМЯ строками, а
+    ``reconcile_needs_review_prebooked`` их не сводит (та операция уже ``classified``, а не
+    ``needs_review``). Здесь для каждой prebooked-проводки оплаты поставщику, ещё не привязанной
+    к операции выписки, ищем авто-строку того же платежа ДЕТЕРМИНИРОВАННО — по documentNumber
+    черновика (== documentNumber операции; тот же ключ, что мы шлём банку) вместе с суммой,
+    кошельком и направлением ``out``. Найдя: перепривязываем операцию к prebooked-проводке и
+    удаляем авто-строку. Трогаем только ``quality_status='auto'`` строки без зависимостей
+    (аллокаций / предоплат / выплат) — ручную разметку не задеваем. Возвращает число склеек.
+    Идемпотентно; запускать ПОСЛЕ ``reconcile_needs_review_prebooked``.
+    """
+    from app.models import CounterpartyPaymentDraft
+    from app.services.banking.tbank import _document_number
+
+    auto_txn = aliased(CashflowTransaction)
+    prebooked_rows = (
+        await session.scalars(
+            select(CashflowTransaction).where(
+                CashflowTransaction.source_kind == "counterparty_payment",
+                CashflowTransaction.direction == "out",
+                ~(
+                    select(BankOperation.id)
+                    .where(BankOperation.cashflow_transaction_id == CashflowTransaction.id)
+                    .exists()
+                ),
+            )
+        )
+    ).all()
+    absorbed = 0
+    for prebooked in prebooked_rows:
+        if prebooked.source_id is None:
+            continue
+        draft = await session.get(CounterpartyPaymentDraft, prebooked.source_id)
+        if draft is None or not draft.document_id:
+            continue
+        docnum = _document_number(draft.document_id)
+        operation = (
+            await session.scalars(
+                select(BankOperation)
+                .join(auto_txn, auto_txn.id == BankOperation.cashflow_transaction_id)
+                .where(
+                    BankOperation.direction == "out",
+                    BankOperation.amount == prebooked.amount,
+                    BankOperation.document_number == docnum,
+                    auto_txn.source_kind == "bank_operation",
+                    auto_txn.quality_status == "auto",
+                    auto_txn.wallet_id == prebooked.wallet_id,
+                )
+            )
+        ).first()
+        if operation is None:
+            continue
+        auto_row = await session.get(CashflowTransaction, operation.cashflow_transaction_id)
+        if auto_row is None or await _cashflow_row_has_dependents(session, auto_row.id):
+            continue
+        # Перепривязываем операцию к prebooked-проводке, затем удаляем осиротевшую авто-строку —
+        # но только если её больше не держит ни одна операция (иначе оставим как есть).
+        operation.cashflow_transaction_id = prebooked.id
+        operation.classification_status = "classified"
+        await session.flush()
+        still_linked = await session.scalar(
+            select(func.count())
+            .select_from(BankOperation)
+            .where(BankOperation.cashflow_transaction_id == auto_row.id)
+        )
+        if still_linked:
+            continue
+        await session.delete(auto_row)
+        await session.flush()
+        absorbed += 1
+    return absorbed
 
 
 async def apply_operation_action(
