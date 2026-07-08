@@ -67,6 +67,7 @@ export type CounterpartyProfile = {
   payment_due_day_of_month: number | null;
   manager_name: string | null;
   manager_phone: string | null;
+  default_dds_article_id: string | null;
   requisites: Record<string, unknown>;
   requisites_verified: boolean;
   kassa_enabled: boolean;
@@ -338,6 +339,7 @@ export type ProfileUpdatePayload = {
   payment_due_day_of_month?: number | null;
   manager_name?: string | null;
   manager_phone?: string | null;
+  default_dds_article_id?: string | null;
   status?: string | null;
 };
 

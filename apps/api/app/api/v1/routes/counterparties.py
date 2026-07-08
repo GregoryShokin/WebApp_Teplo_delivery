@@ -199,6 +199,7 @@ class ProfileUpdate(BaseModel):
     payment_due_day_of_month: int | None = Field(default=None, ge=1, le=31)
     manager_name: str | None = Field(default=None, max_length=160)
     manager_phone: str | None = Field(default=None, max_length=64)
+    default_dds_article_id: uuid.UUID | None = None
     status: str | None = None
 
 
@@ -805,6 +806,7 @@ async def put_profile(
             payment_due_day_of_month=payload.payment_due_day_of_month,
             manager_name=payload.manager_name,
             manager_phone=payload.manager_phone,
+            default_dds_article_id=payload.default_dds_article_id,
             status=payload.status,
         )
     except registry.CounterpartyRegistryError as exc:

@@ -22,7 +22,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
-import { apiErrorMessage } from "@/lib/api";
+import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
+import { apiErrorMessage, getDdsArticles } from "@/lib/api";
 import { InvoiceDetailDialog } from "@/routes/warehouse/InvoiceDetailDialog";
 
 import { BarterSection } from "./BarterSection";
@@ -147,11 +148,13 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean }) {
   const queryClient = useQueryClient();
   const categoriesQuery = useQuery({ queryKey: ["cp", "categories"], queryFn: getLedgerCategories });
+  const articlesQuery = useQuery({ queryKey: ["dds", "articles"], queryFn: getDdsArticles });
   const profile = card.profile;
   const [relationship, setRelationship] = useState("official");
   const [internalName, setInternalName] = useState("");
   const [brandGroup, setBrandGroup] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [ddsArticleId, setDdsArticleId] = useState("");
   const [delayDays, setDelayDays] = useState("");
   const [dueDay, setDueDay] = useState("");
   const [managerName, setManagerName] = useState("");
@@ -162,6 +165,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     setInternalName(profile?.internal_name ?? "");
     setBrandGroup(profile?.brand_group ?? "");
     setCategoryId(profile?.ledger_category_id ?? "");
+    setDdsArticleId(profile?.default_dds_article_id ?? "");
     setDelayDays(profile?.payment_delay_days != null ? String(profile.payment_delay_days) : "");
     setDueDay(
       profile?.payment_due_day_of_month != null ? String(profile.payment_due_day_of_month) : "",
@@ -177,6 +181,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
         internal_name: internalName || null,
         brand_group: brandGroup || null,
         ledger_category_id: categoryId || null,
+        default_dds_article_id: ddsArticleId || null,
         payment_delay_days: delayDays ? Number(delayDays) : null,
         payment_due_day_of_month: dueDay ? Number(dueDay) : null,
         manager_name: managerName || null,
@@ -236,6 +241,18 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
               ))}
             </SelectContent>
           </Select>
+        </Field>
+        <Field label="Статья ДДС по умолчанию">
+          <ArticleCombobox
+            articles={articlesQuery.data ?? []}
+            value={ddsArticleId}
+            onChange={setDdsArticleId}
+            disabled={disabled}
+            placeholder="Не выбрана"
+          />
+          <p className="text-xs text-muted-foreground">
+            Подставляется в окно «В банк» при оплате счетов этого контрагента.
+          </p>
         </Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Отсрочка, дней">

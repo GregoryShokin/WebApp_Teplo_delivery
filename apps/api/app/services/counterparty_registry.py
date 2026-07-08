@@ -549,6 +549,7 @@ def _profile_dict(profile: CounterpartyPayableProfile | None) -> dict[str, Any] 
         "payment_due_day_of_month": profile.payment_due_day_of_month,
         "manager_name": profile.manager_name,
         "manager_phone": profile.manager_phone,
+        "default_dds_article_id": profile.default_dds_article_id,
         "requisites": profile.requisites or {},
         "requisites_verified": profile.requisites_verified,
         "kassa_enabled": profile.kassa_enabled,
@@ -586,6 +587,7 @@ async def update_profile(
     payment_due_day_of_month: int | None = None,
     manager_name: str | None = None,
     manager_phone: str | None = None,
+    default_dds_article_id: uuid.UUID | None = None,
     status: str | None = None,
 ) -> CounterpartyPayableProfile:
     counterparty = await session.get(Counterparty, counterparty_id)
@@ -603,6 +605,9 @@ async def update_profile(
     profile.payment_due_day_of_month = payment_due_day_of_month
     profile.manager_name = manager_name
     profile.manager_phone = manager_phone
+    # Статья ДДС по умолчанию для оплат этого контрагента (та же колонка, что
+    # закрепляет чекбокс «Закрепить за контрагентом» в окне оплаты «Страницы на оплату»).
+    profile.default_dds_article_id = default_dds_article_id
     if status:
         profile.status = status
     await session.commit()
