@@ -505,6 +505,52 @@ async def test_kassa_balance_excludes_soft_excluded_transactions(
         assert after - before == Decimal("800.00")
 
 
+async def test_journal_hides_soft_excluded_transactions(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Исключённая проводка (quality_status='excluded') не показывается в списке журнала
+    и не считается в итогах периода — синхронно с остатком. Регресс: исключённая
+    корректировка кассы висела в журнале и двоила расход периода."""
+    async with async_session_factory() as session:
+        user = await _make_user(session)
+        wallet = await _tk_wallet(session)
+        today = kassa_today()
+        session.add_all(
+            [
+                CashflowTransaction(
+                    wallet_id=wallet.id,
+                    direction="out",
+                    amount=Decimal("300"),
+                    operation_date=today,
+                    source_kind="manual",
+                    quality_status="final",
+                    payment_purpose="реальный расход кассы",
+                ),
+                CashflowTransaction(
+                    wallet_id=wallet.id,
+                    direction="out",
+                    amount=Decimal("500"),
+                    operation_date=today,
+                    source_kind="manual_adjustment",
+                    quality_status="excluded",
+                    payment_purpose="исключённая корректировка кассы",
+                ),
+            ]
+        )
+        await session.commit()
+
+        journal = await kassa_journal(
+            session,
+            date_from=today.replace(day=1),
+            date_to=today,
+            actor_user_id=user.id,
+        )
+        purposes = {item["purpose"] for item in journal["items"]}
+        assert "реальный расход кассы" in purposes
+        # Исключённая проводка скрыта из списка журнала.
+        assert "исключённая корректировка кассы" not in purposes
+
+
 async def test_journal_metrics_directions_and_search(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

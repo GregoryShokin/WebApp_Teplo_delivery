@@ -651,8 +651,12 @@ async def kassa_journal(
     wallet = await get_kassa_wallet(session)
     balance = await kassa_balance(session, wallet)
 
+    # Мягко-исключённые проводки (quality_status='excluded', ручной разбор) НЕ входят
+    # ни в остаток, ни в итоги/список журнала — как в плитке ДДС. Иначе исключённая
+    # запись висит в журнале и двоит расход периода, хотя из баланса уже выкинута.
     period_filter = (
         CashflowTransaction.wallet_id == wallet.id,
+        CashflowTransaction.quality_status != EXCLUDED_QUALITY,
         CashflowTransaction.operation_date >= date_from,
         CashflowTransaction.operation_date <= date_to,
     )
