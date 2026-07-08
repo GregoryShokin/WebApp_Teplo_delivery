@@ -5129,6 +5129,18 @@ export async function postCourierDepositTransaction(
   return response.data;
 }
 
+// Удаление доступно только для пополнений (top_up) — бэкенд сносит и проводку ДДС, и запись.
+// Требует права couriers.deposits.delete. Возвращает обновлённую карточку депозита.
+export async function deleteCourierDepositTransaction(
+  employeeId: string,
+  transactionId: number,
+): Promise<CourierDepositCard> {
+  const response = await api.delete<CourierDepositCard>(
+    `/couriers/${employeeId}/deposit/transactions/${transactionId}`,
+  );
+  return response.data;
+}
+
 export async function getCourierEvaluationCriteria(): Promise<CourierEvaluationCriterion[]> {
   const response = await api.get<CourierEvaluationCriterion[]>("/couriers/evaluation-criteria");
   return response.data;

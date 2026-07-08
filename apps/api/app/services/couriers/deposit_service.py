@@ -58,6 +58,15 @@ DEFAULT_DEPOSIT_SETTINGS: dict[str, int | bool] = {
 COURIER_DEPOSIT_RETURN_ARTICLE_CODE = "vozvrat_depozita_kurera"
 COURIER_DEPOSIT_TOPUP_ARTICLE_CODE = "kurerskaya_sluzhba_2"
 DEPOSIT_RETURN_CASH_WALLET_CODE = "tk_chernikova"
+# source_kind приходной проводки ДДС по пополнению депозита. Связь проводки с операцией
+# депозита держится на source_kind + назначении платежа с номером операции: source_id у
+# курьерских проводок = None (целочисленный id не влезает в UUID-поле). Держим и книжирование,
+# и удаление на одних константах, чтобы связь не разъехалась.
+COURIER_DEPOSIT_TOPUP_SOURCE_KIND = "courier_deposit_topup"
+
+
+def _topup_payment_purpose(transaction_id: int) -> str:
+    return f"Пополнение депозита курьера (операция #{transaction_id})"
 
 
 def is_senior_courier(employee: Employee) -> bool:
@@ -350,13 +359,59 @@ async def _book_deposit_topup_cashflow(
             amount=amount,
             operation_date=transaction.transaction_date,
             article_id=article_id,
-            source_kind="courier_deposit_topup",
+            source_kind=COURIER_DEPOSIT_TOPUP_SOURCE_KIND,
             source_id=None,
-            payment_purpose=f"Пополнение депозита курьера (операция #{transaction.id})",
+            payment_purpose=_topup_payment_purpose(transaction.id),
             comment=transaction.comment,
             quality_status="final",
         )
     )
+    await session.flush()
+
+
+async def delete_topup_transaction(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+    transaction_id: int,
+) -> None:
+    """Удалить пополнение депозита курьера вместе с его приходной проводкой в ДДС.
+
+    Разрешено ТОЛЬКО для TOP_UP: пополнение не затрагивает iiko/банк, поэтому его можно
+    физически снести без внешних последствий. Возврат (RETURN) и списание (FORFEIT) удалять
+    нельзя — ошибочный возврат/списание исправляют обратным пополнением (у возврата уже прошло
+    изъятие в iiko «Главной кассе» и/или банк-черновик, автоматически откатить нельзя).
+
+    Сносим строку CourierDepositTransaction и связанную приходную CashflowTransaction
+    (source_kind='courier_deposit_topup' + назначение платежа с номером операции). Баланс
+    депозита и наличного кошелька ТК Черникова откатываются автоматически (оба считаются по
+    движениям). Если проводки ДДС нет (статья/счёт не были заведены на момент пополнения) —
+    просто удаляем запись пополнения.
+    """
+    transaction = await session.get(CourierDepositTransaction, transaction_id)
+    if transaction is None or transaction.account_employee_id != employee_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Операция депозита не найдена",
+        )
+    if _enum_value(transaction.transaction_type) != CourierDepositTransactionType.TOP_UP.value:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Удалять можно только пополнения депозита. Ошибочный возврат или списание "
+                "исправьте обратным пополнением."
+            ),
+        )
+    cashflow_rows = (
+        await session.scalars(
+            select(CashflowTransaction).where(
+                CashflowTransaction.source_kind == COURIER_DEPOSIT_TOPUP_SOURCE_KIND,
+                CashflowTransaction.payment_purpose == _topup_payment_purpose(transaction.id),
+            )
+        )
+    ).all()
+    for row in cashflow_rows:
+        await session.delete(row)
+    await session.delete(transaction)
     await session.flush()
 
 

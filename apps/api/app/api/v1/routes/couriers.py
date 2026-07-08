@@ -98,6 +98,11 @@ COURIERS_DEPOSITS_OP_PERMISSIONS = {
     "return": "couriers.deposits.return",
     "forfeit": "couriers.deposits.forfeit",
 }
+# Удаление пополнения (вместе с проводкой ДДС) — отдельное «опасное» право. Без него история
+# только для просмотра. Возврат/списание удалять нельзя (правятся обратным пополнением).
+COURIERS_DEPOSITS_DELETE_ACCESS = (
+    Depends(require_permission("couriers.deposits.delete")),
+)
 COURIERS_DEPOSITS_SETTINGS_READ_ACCESS = (
     Depends(
         require_any_permission(("couriers.deposits.configure", "source.deposit_settings.read"))
@@ -763,6 +768,35 @@ async def post_courier_deposit_transaction(
             provider=channel_provider(transaction.payout_method),
         )
     return await _deposit_transaction_payload(session, transaction)
+
+
+@router.delete(
+    "/{employee_id}/deposit/transactions/{transaction_id}",
+    response_model=CourierDepositCardRead,
+    dependencies=COURIERS_DEPOSITS_DELETE_ACCESS,
+)
+async def delete_courier_deposit_transaction(
+    employee_id: uuid.UUID,
+    transaction_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
+    # Удаляем ТОЛЬКО пополнение (проверка типа — в сервисе) вместе с его проводкой ДДС.
+    # iiko/банк не трогаем: пополнение туда не попадает. Возврат наличными уже сделал изъятие
+    # из «Главной кассы», поэтому его удаление сервис запрещает.
+    await deposit_service.delete_topup_transaction(
+        session,
+        employee_id=employee_id,
+        transaction_id=transaction_id,
+    )
+    account = await deposit_service.ensure_account(session, employee_id)
+    transactions = await deposit_service.list_transactions(session, employee_id)
+    balance = await deposit_service.get_balance(session, employee_id)
+    await session.commit()
+    return {
+        "account": deposit_service.account_payload(account),
+        "balance_cents": balance,
+        "transactions": await _deposit_transaction_payloads(session, transactions),
+    }
 
 
 @router.get(

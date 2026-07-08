@@ -117,6 +117,8 @@ export function CourierDepositsRoute({ onNavigate, embedded = false }: CourierDe
   const canTopUp = permissions.hasPermission("couriers.deposits.top_up");
   const canReturn = permissions.hasPermission("couriers.deposits.return");
   const canForfeit = permissions.hasPermission("couriers.deposits.forfeit");
+  // Удаление пополнений — отдельное «опасное» право; без него история только для просмотра.
+  const canDeleteTopup = permissions.hasPermission("couriers.deposits.delete");
   const canWrite = canTopUp || canReturn || canForfeit;
   const channelPerms = {
     cash_tk: permissions.hasPermission("finance.payout_channel.cash_tk"),
@@ -379,6 +381,7 @@ export function CourierDepositsRoute({ onNavigate, embedded = false }: CourierDe
       />
 
       <CourierDepositHistoryDrawer
+        canDeleteTopup={canDeleteTopup}
         courier={historyCourier}
         onOpenChange={(open) => {
           if (!open) {

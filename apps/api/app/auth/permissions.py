@@ -98,6 +98,7 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ("couriers.deposits.top_up", "Курьеры", "Пополнять депозиты курьеров"),
     ("couriers.deposits.return", "Курьеры", "Возвращать депозиты курьеров"),
     ("couriers.deposits.forfeit", "Курьеры", "Списывать депозиты курьеров"),
+    ("couriers.deposits.delete", "Курьеры", "Удалять пополнения депозитов курьеров"),
     ("couriers.deposits.configure", "Курьеры", "Настраивать депозиты курьеров"),
     ("kds.queue.read", "Кухня", "Смотреть очередь упаковки (планшет)"),
     ("kds.queue.write", "Кухня", "Отмечать статусы упаковки и откаты"),
