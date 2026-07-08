@@ -40,6 +40,7 @@ from app.services.kassa.payouts import (
     create_payout,
     delete_payout,
     ensure_article_kassa_eligible,
+    kassa_balance,
     kassa_journal,
     kassa_today,
     list_payout_articles,
@@ -453,6 +454,55 @@ async def test_journal_shows_only_tk_chernikova(
         assert "Расход Сейфа (не касса)" not in purposes
         assert journal["period_out"] == 300.0
         assert journal["wallet_name"]
+
+
+async def test_kassa_balance_excludes_soft_excluded_transactions(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Мягко-исключённая проводка (quality_status='excluded') НЕ влияет на остаток кассы —
+    ровно как плитка ДДС (_wallet_movement_deltas). Регресс прод-бага: исключённая ручная
+    корректировка кассы −500 двоила остаток между плиткой (игнорит) и окном/журналом (учитывал).
+    """
+    async with async_session_factory() as session:
+        wallet = await _tk_wallet(session)
+        today = kassa_today()
+        before = await kassa_balance(session, wallet)
+        session.add_all(
+            [
+                CashflowTransaction(
+                    wallet_id=wallet.id,
+                    direction="in",
+                    amount=Decimal("1000"),
+                    operation_date=today,
+                    source_kind="manual",
+                    quality_status="final",
+                    payment_purpose="приход",
+                ),
+                CashflowTransaction(
+                    wallet_id=wallet.id,
+                    direction="out",
+                    amount=Decimal("200"),
+                    operation_date=today,
+                    source_kind="manual",
+                    quality_status="final",
+                    payment_purpose="расход",
+                ),
+                CashflowTransaction(
+                    wallet_id=wallet.id,
+                    direction="out",
+                    amount=Decimal("500"),
+                    operation_date=today,
+                    source_kind="manual_adjustment",
+                    quality_status="excluded",
+                    payment_purpose="лишняя корректировка кассы",
+                ),
+            ]
+        )
+        await session.commit()
+
+        after = await kassa_balance(session, wallet)
+        # Учтены только final (+1000 −200 = +800); исключённая −500 в баланс не входит.
+        assert after - before == Decimal("800.00")
 
 
 async def test_journal_metrics_directions_and_search(

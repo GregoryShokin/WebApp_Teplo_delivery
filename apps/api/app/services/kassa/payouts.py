@@ -42,6 +42,7 @@ from app.models import (
     SupplierPrepayment,
     Wallet,
 )
+from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 from app.services.banking.safe_allocations import (
     ACTIVE_RESERVE_STATUSES,
     KASSA_TARGET_PAYOUT_SOURCE_KIND,
@@ -173,7 +174,11 @@ async def get_kassa_wallet(session: AsyncSession) -> Wallet:
 async def kassa_balance(session: AsyncSession, wallet: Wallet) -> Decimal:
     """Учётный остаток кассы: вступительный остаток + движения ДДС после него.
 
-    Наличный кошелёк без выписки — баланс от проводок (как в ДДС «Кошельки»).
+    Наличный кошелёк без выписки — баланс от проводок, ТОЧНО как плитка ДДС
+    «Кошельки» (``_wallet_movement_deltas``): мягко-исключённые проводки
+    (``quality_status='excluded'``, ручной разбор) в баланс НЕ входят. Фильтр
+    обязан совпадать с ``_wallet_movement_deltas`` — иначе плитка/окно/журнал
+    кассы разъезжаются (был баг: исключённая корректировка кассы двоила остаток).
     """
     after_opening = or_(
         Wallet.opening_balance_date.is_(None),
@@ -185,7 +190,11 @@ async def kassa_balance(session: AsyncSession, wallet: Wallet) -> Decimal:
             func.coalesce(func.sum(CashflowTransaction.amount), 0),
         )
         .join(Wallet, Wallet.id == CashflowTransaction.wallet_id)
-        .where(CashflowTransaction.wallet_id == wallet.id, after_opening)
+        .where(
+            CashflowTransaction.wallet_id == wallet.id,
+            CashflowTransaction.quality_status != EXCLUDED_QUALITY,
+            after_opening,
+        )
         .group_by(CashflowTransaction.direction)
     )
     delta = Decimal("0")
