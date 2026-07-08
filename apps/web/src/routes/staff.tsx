@@ -2665,7 +2665,15 @@ function CreateEmployeeDialog({
       (roleRows.length > 0 &&
         primaryCount === 1 &&
         roleRows.every((row) => {
-          if (!row.payroll_role || !row.category) {
+          if (!row.payroll_role) {
+            return false;
+          }
+          // Внештатник: категория не выбирается пользователем (поле скрыто) и
+          // жёстко проставляется как «freelancer» при отправке — не требуем её здесь.
+          if (isFreelancer) {
+            return true;
+          }
+          if (!row.category) {
             return false;
           }
           return isCategoryAllowedForRole(row.payroll_role, row.category);
