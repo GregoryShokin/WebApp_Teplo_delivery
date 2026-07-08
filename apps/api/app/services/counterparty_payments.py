@@ -34,6 +34,11 @@ from app.models import (
 )
 from app.services.banking import BankClient, TbankClient
 from app.services.banking.exceptions import BankFetchError
+from app.services.banking.payout import (
+    channel_provider,
+    payer_account_for,
+    payout_client_for,
+)
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.counterparty_matching import _invoice_remaining, _recompute_status
 from app.services.new_payment import ensure_expense_article_allowed
@@ -404,6 +409,7 @@ async def create_expense_payment_draft(
     article_id: uuid.UUID | None = None,
     amount: Decimal | None = None,
     purpose: str | None = None,
+    channel: str | None = None,
     actor_user_id: uuid.UUID | None = None,
     bank_client: BankClient | None = None,
 ) -> CounterpartyPaymentDraft:
@@ -416,7 +422,15 @@ async def create_expense_payment_draft(
     Сейфа на каждую строку — их можно оплатить с Сейфа или передать в кассу, и расход
     разнесётся по статьям. Одиночный платёж — транш из одной строки (``article_id`` /
     ``amount`` / ``purpose``, обратная совместимость). При отказе банка целёвок нет.
+
+    ``channel`` выбирает банк-плательщика: ``bank_draft`` (по умолчанию, Т-Банк) или
+    ``bank_draft_sber`` (Сбер). Черновик выписывается тем же интерфейсом (``BankClient``),
+    но клиент и счёт-плательщик берутся через фабрику ``banking.payout``; провайдер
+    запоминается на черновике (``bank_provider``), чтобы транзит р/с→Сейф сел на счёт
+    нужного банка. Сбер задаётся ТОЛЬКО в этом (свободном) маршруте — накладные,
+    предоплата и informal-закуп остаются в Т-Банке.
     """
+    provider = channel_provider(channel) or "tbank"
     # Обратная совместимость: одиночный платёж = транш из одной строки.
     if lines is None:
         if article_id is None or amount is None:
@@ -449,7 +463,11 @@ async def create_expense_payment_draft(
         raise CounterpartyPaymentError("Сумма платежа должна быть больше нуля")
 
     settings = get_settings()
-    payer_account = _payer_account(settings)
+    payer_account = payer_account_for(settings, provider)
+    if not payer_account:
+        raise CounterpartyPaymentError(
+            f"Не настроен расчётный счёт плательщика ({provider})"
+        )
     requisites = await _ip_card_requisites(session)
 
     single = len(prepared) == 1
@@ -460,6 +478,7 @@ async def create_expense_payment_draft(
         amount=total,
         status="created",
         pays_via_safe=True,
+        bank_provider=provider,
         # Одиночный платёж дублирует статью/назначение в поля черновика (наглядность и
         # обратная совместимость); транш из нескольких строк несёт разбивку только в строках.
         target_article_id=prepared[0][0].id if single else None,
@@ -476,6 +495,8 @@ async def create_expense_payment_draft(
         bank_purpose = f"Транш {len(prepared)} платежей: {summary}"[:210]
 
     try:
+        # payload — запись черновика в едином (Т-Банк) формате; ``accountNumber`` = счёт
+        # выбранного провайдера, по нему paid-переход находит банк-кошелёк плательщика.
         payload = build_payment_draft_api_payload(
             document_id=document_id,
             amount=total,
@@ -486,7 +507,7 @@ async def create_expense_payment_draft(
     except ValueError as exc:
         raise CounterpartyPaymentError(f"Реквизиты неполны: {exc}") from exc
 
-    client = bank_client or TbankClient(session)
+    client = bank_client or payout_client_for(provider, session)
     try:
         result = await client.create_payment_draft(
             document_id=document_id,

@@ -42,6 +42,7 @@ from app.models import (
     Wallet,
 )
 from app.services.banking.base import clean_digits
+from app.services.banking.payout import payer_account_for
 from app.services.banking.safe_allocations import create_allocation
 from app.services.counterparty_matching import (
     _draft_invoices,
@@ -68,11 +69,16 @@ async def _resolve_payer_bank_wallet(
 ) -> Wallet | None:
     """Банк-кошелёк, с которого ушёл платёж (по номеру счёта плательщика из тела черновика
     или из настроек). Нужен, чтобы завести prebooked-проводку оплаты, которую заберёт
-    приходящая операция выписки (prebooked-claim) — иначе операция уходит в needs_review."""
+    приходящая операция выписки (prebooked-claim) — иначе операция уходит в needs_review.
+
+    Fallback-счёт берётся по банку черновика (``bank_provider``): у свободного вывода через
+    Сбер это Сбер-счёт, у прочих — Т-Банк (по умолчанию), чтобы транзит р/с→Сейф сел на
+    кошелёк нужного банка."""
     account_number = None
     if isinstance(draft.payload, dict):
         account_number = draft.payload.get("accountNumber")
-    account_number = clean_digits(account_number or get_settings().tbank_api_account_number or "")
+    fallback_account = payer_account_for(get_settings(), draft.bank_provider or "tbank")
+    account_number = clean_digits(account_number or fallback_account or "")
     if not account_number:
         return None
     return await session.scalar(
@@ -127,7 +133,7 @@ async def _settle_draft_via_safe(
             ReconciliationCase(
                 kind="safe_wallet_unresolved",
                 status="pending",
-                provider="tbank",
+                provider=draft.bank_provider or "tbank",
                 payload={
                     "draft_id": str(draft.id),
                     "counterparty_id": (
@@ -394,7 +400,7 @@ async def apply_payment_status(
                 ReconciliationCase(
                     kind="payer_wallet_unresolved",
                     status="pending",
-                    provider="tbank",
+                    provider=draft.bank_provider or "tbank",
                     payload={
                         "draft_id": str(draft.id),
                         "counterparty_id": (
