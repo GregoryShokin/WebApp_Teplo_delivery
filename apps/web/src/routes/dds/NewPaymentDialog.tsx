@@ -118,7 +118,7 @@ export function NewPaymentDialog({
   });
   const selectedWallet = wallets.find((wallet) => wallet.id === walletId) ?? null;
   const expenseChannel: "bank_draft" | "bank_draft_sber" =
-    selectedWallet?.bank_code === "sber" ? "bank_draft_sber" : "bank_draft";
+    !hasNonExpenseRow && selectedWallet?.bank_code === "sber" ? "bank_draft_sber" : "bank_draft";
 
   const needsCounterparties = rows.some((row) => flowOf(row) === "supplier_prepayment");
   const registryQuery = useQuery({
@@ -239,7 +239,7 @@ export function NewPaymentDialog({
           counterparty_id: row.counterpartyId || null,
         }));
       if (expenseLines.length > 0) {
-        tasks.push(createNewPaymentExpenseDraft({ lines: expenseLines }));
+        tasks.push(createNewPaymentExpenseDraft({ lines: expenseLines, channel: expenseChannel }));
       }
       // Остальные маршруты — каждая строка своим механизмом (разные получатели).
       for (const row of rows) {
@@ -318,12 +318,24 @@ export function NewPaymentDialog({
                 <SelectContent>
                   {wallets.map((wallet) => (
                     <SelectItem
-                      disabled={wallet.bank_code !== "tbank"}
+                      disabled={
+                        wallet.bank_code === "tbank"
+                          ? false
+                          : wallet.bank_code === "sber"
+                            ? hasNonExpenseRow
+                            : true
+                      }
                       key={wallet.id}
                       value={wallet.id}
                     >
                       {wallet.name}
-                      {wallet.bank_code !== "tbank" ? " — черновики создаются в Т-Банке" : ""}
+                      {wallet.bank_code === "tbank"
+                        ? ""
+                        : wallet.bank_code === "sber"
+                          ? hasNonExpenseRow
+                            ? " — только для свободного расхода"
+                            : " — черновик через Сбер (расход на Сейф)"
+                          : " — черновики создаются в Т-Банке"}
                     </SelectItem>
                   ))}
                 </SelectContent>
