@@ -140,6 +140,32 @@ async def test_expense_draft_targets_ip_card(
         assert DraftRead.model_validate(draft).counterparty_id is None
 
 
+async def test_expense_draft_channel_selects_bank_provider(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Граница Сбер-контура: свободный расход можно выписать через Сбер,
+    # по умолчанию (без канала) — Т-Банк. Накладные/предоплата канал не принимают.
+    async with async_session_factory() as session:
+        article = await _free_expense_article(session)
+
+        default_draft = await create_expense_payment_draft(
+            session,
+            article_id=article.id,
+            amount=Decimal("1000.00"),
+            purpose="Свободный расход (Т-Банк по умолчанию)",
+        )
+        assert default_draft.bank_provider == "tbank"
+
+        sber_draft = await create_expense_payment_draft(
+            session,
+            article_id=article.id,
+            amount=Decimal("1200.00"),
+            purpose="Свободный расход через Сбер",
+            channel="bank_draft_sber",
+        )
+        assert sber_draft.bank_provider == "sber"
+
+
 async def test_expense_paid_books_transfer_and_targeted_allocation(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
