@@ -43,6 +43,7 @@ import {
   type CourierDepositRow,
   type CourierDepositSettings,
 } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 import { CourierDepositHistoryDrawer } from "./CourierDepositHistoryDrawer";
@@ -88,6 +89,7 @@ export function CourierDepositsSettingsSection({
   canWrite,
 }: CourierDepositsSettingsSectionProps) {
   const queryClient = useQueryClient();
+  const canDeleteTopup = usePermissions().hasPermission("couriers.deposits.delete");
   const [settingsDraft, setSettingsDraft] = useState<SettingsDraft>(() =>
     settingsToDraft(DEFAULT_SETTINGS),
   );
@@ -464,6 +466,7 @@ export function CourierDepositsSettingsSection({
       </AlertDialog>
 
       <CourierDepositHistoryDrawer
+        canDeleteTopup={canDeleteTopup}
         courier={historyCourier}
         onOpenChange={(open) => {
           if (!open) {
