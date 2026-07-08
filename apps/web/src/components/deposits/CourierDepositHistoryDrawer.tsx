@@ -46,14 +46,14 @@ import {
 
 type CourierDepositHistoryDrawerProps = {
   // Право на удаление пополнений (couriers.deposits.delete). Без него — только просмотр.
-  canDeleteTopup: boolean;
+  canDeleteTopup?: boolean;
   courier: CourierDepositRow | null;
   onOpenChange: (open: boolean) => void;
   open: boolean;
 };
 
 export function CourierDepositHistoryDrawer({
-  canDeleteTopup,
+  canDeleteTopup = false,
   courier,
   onOpenChange,
   open,
