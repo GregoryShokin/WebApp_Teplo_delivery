@@ -29,6 +29,7 @@ from app.models import (
     DdsArticle,
     Employee,
     EmployeePositionAssignment,
+    ExpenseDraftLine,
     InvoicePaymentAllocation,
     SafeAllocation,
 )
@@ -39,6 +40,7 @@ from app.services.bank_payment_status import (
 from app.services.counterparty_payments import (
     DEFAULT_SUPPLIER_ARTICLE_CODE,
     CounterpartyPaymentError,
+    ExpenseLineInput,
     create_expense_payment_draft,
     create_payment_draft_for_invoices,
 )
@@ -222,6 +224,109 @@ async def test_expense_failed_creates_no_allocation(
         assert await _draft_reserve(session, draft.id) is None
 
 
+async def _two_free_expense_articles(session: AsyncSession) -> tuple[DdsArticle, DdsArticle]:
+    articles = (
+        await session.scalars(
+            select(DdsArticle)
+            .where(DdsArticle.is_active.is_(True), DdsArticle.movement_type == "outflow")
+            .order_by(DdsArticle.code)
+        )
+    ).all()
+    free = [a for a in articles if new_payment_article_flow(a) == "expense"]
+    assert len(free) >= 2, "в сидах должно быть ≥2 свободных статей"
+    return free[0], free[1]
+
+
+async def test_expense_multiline_tranche_splits_into_per_line_reserves(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Транш нескольких статей: один черновик на сумму → по целёвке на строку по статьям."""
+    async with async_session_factory() as session:
+        _account, payer_wallet = await _payer_wallet(session)
+        safe_wallet = await _safe_wallet(session)
+        a1, a2 = await _two_free_expense_articles(session)
+
+        draft = await create_expense_payment_draft(
+            session,
+            lines=[
+                ExpenseLineInput(article_id=a1.id, amount=Decimal("2000.00"), purpose="Аренда"),
+                ExpenseLineInput(article_id=a2.id, amount=Decimal("500.00"), purpose="Реклама"),
+            ],
+        )
+        # Один черновик на сумму строк; одиночной target-статьи у транша нет.
+        assert draft.amount == Decimal("2500.00")
+        assert draft.target_article_id is None
+        lines = (
+            await session.scalars(
+                select(ExpenseDraftLine).where(ExpenseDraftLine.draft_id == draft.id)
+            )
+        ).all()
+        assert {line.amount for line in lines} == {Decimal("2000.00"), Decimal("500.00")}
+
+        status = await apply_payment_status(session, draft=draft, raw_status="executed")
+        assert status == "paid"
+
+        # Транзит р/с→Сейф один на всю сумму (2 ноги), но целёвки — по строке.
+        legs = await _transfer_legs(session, draft.id)
+        assert len(legs) == 2
+        safe_in = sum(t.amount for t in legs if t.wallet_id == safe_wallet.id)
+        assert safe_in == Decimal("2500.00")
+        assert any(t.wallet_id == payer_wallet.id for t in legs)
+
+        reserves = (
+            await session.scalars(
+                select(SafeAllocation).where(SafeAllocation.source_draft_id == draft.id)
+            )
+        ).all()
+        assert len(reserves) == 2
+        by_article = {r.article_id: r for r in reserves}
+        assert by_article[a1.id].amount == Decimal("2000.00")
+        assert by_article[a1.id].purpose == "Аренда"
+        assert by_article[a2.id].amount == Decimal("500.00")
+        assert by_article[a2.id].purpose == "Реклама"
+        assert all(r.counterparty_id is None for r in reserves)
+        assert all(r.source_draft_line_id is not None for r in reserves)
+
+        # Повторный paid не плодит целёвки (идемпотентность по строке).
+        await apply_payment_status(session, draft=draft, raw_status="executed")
+        again = (
+            await session.scalars(
+                select(SafeAllocation).where(SafeAllocation.source_draft_id == draft.id)
+            )
+        ).all()
+        assert len(again) == 2
+
+
+async def test_expense_line_counterparty_tags_reserve(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Строка свободного вывода с контрагентом → целёвка Сейфа помечена им (атрибуция)."""
+    async with async_session_factory() as session:
+        await _payer_wallet(session)
+        await _safe_wallet(session)
+        article = await _free_expense_article(session)
+        supplier = await make_counterparty(session, name="ООО Сервис", inn="7711111119")
+
+        draft = await create_expense_payment_draft(
+            session,
+            lines=[
+                ExpenseLineInput(
+                    article_id=article.id,
+                    amount=Decimal("500.00"),
+                    purpose="Подписка",
+                    counterparty_id=supplier.id,
+                ),
+            ],
+        )
+        await apply_payment_status(session, draft=draft, raw_status="executed")
+
+        reserve = await _draft_reserve(session, draft.id)
+        assert reserve is not None
+        assert reserve.counterparty_id == supplier.id
+        assert reserve.article_id == article.id
+        assert reserve.amount == Decimal("500.00")
+
+
 async def test_expense_rejects_articles_with_own_circuits(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -259,15 +364,18 @@ async def test_expense_rejects_articles_with_own_circuits(
             )
 
 
-async def test_expense_requires_purpose_and_positive_amount(
+async def test_expense_optional_purpose_defaults_to_article_name(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
         article = await _free_expense_article(session)
-        with pytest.raises(CounterpartyPaymentError, match="назначение"):
-            await create_expense_payment_draft(
-                session, article_id=article.id, amount=Decimal("100"), purpose="   "
-            )
+        # Пустое назначение допустимо — подставляется имя статьи (в банк и в целёвку).
+        draft = await create_expense_payment_draft(
+            session, article_id=article.id, amount=Decimal("100"), purpose="   "
+        )
+        assert draft.target_purpose == article.name
+        assert draft.payload["paymentPurpose"] == article.name
+        # Нулевая/отрицательная сумма всё так же запрещена.
         with pytest.raises(CounterpartyPaymentError, match="больше нуля"):
             await create_expense_payment_draft(
                 session, article_id=article.id, amount=Decimal("0"), purpose="x"

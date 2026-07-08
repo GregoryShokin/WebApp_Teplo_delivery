@@ -33,6 +33,7 @@ from app.models import (
     CashflowTransaction,
     CounterpartyPaymentDraft,
     DdsArticle,
+    ExpenseDraftLine,
     InvoicePaymentAllocation,
     ReconciliationCase,
     SafeAllocation,
@@ -193,8 +194,51 @@ async def _settle_draft_via_safe(
         )
         await session.flush()
 
+    # Транш «Нового платежа»: строки разбивки → по одной целёвке Сейфа на строку
+    # (идемпотентность по строке). Расход разнесётся по статьям при выплате с Сейфа.
+    lines = (
+        await session.scalars(
+            select(ExpenseDraftLine)
+            .where(ExpenseDraftLine.draft_id == draft.id)
+            .order_by(ExpenseDraftLine.position)
+        )
+    ).all()
+    if lines:
+        for line in lines:
+            existing_line_alloc = await session.scalar(
+                select(SafeAllocation.id).where(
+                    SafeAllocation.source_draft_line_id == line.id
+                )
+            )
+            if existing_line_alloc is not None:
+                continue
+            logger.info(
+                "apply_payment_status: авто-резерв Сейфа под строку %s черновика %s на %s",
+                line.id,
+                draft.id,
+                line.amount,
+            )
+            await create_allocation(
+                session,
+                wallet_id=safe_wallet.id,
+                amount=line.amount,
+                free_amount=None,
+                article_id=line.article_id,
+                # Атрибуция расхода: кому платим (если у статьи есть привязанные контрагенты).
+                counterparty_id=line.counterparty_id,
+                purpose=line.purpose,
+                source_draft_id=draft.id,
+                source_draft_line_id=line.id,
+            )
+        return
+
+    # Одиночный via-safe резерв без строк транша: «просто трата» старого формата
+    # (target-статья) или неофициальный закуп (дефолтная «Оплата поставщикам»).
     existing_allocation = await session.scalar(
-        select(SafeAllocation.id).where(SafeAllocation.source_draft_id == draft.id)
+        select(SafeAllocation.id).where(
+            SafeAllocation.source_draft_id == draft.id,
+            SafeAllocation.source_draft_line_id.is_(None),
+        )
     )
     if existing_allocation is None:
         logger.info(

@@ -2690,11 +2690,19 @@ export type NewPaymentFlow =
   | "supplier_prepayment"
   | "supplier_invoices";
 
+export type NewPaymentArticleCounterparty = {
+  counterparty_id: string;
+  name: string;
+  inn: string | null;
+};
+
 export type NewPaymentArticle = {
   id: string;
   code: string;
   name: string;
   flow: NewPaymentFlow;
+  // Закреплённые за статьёй контрагенты — «кому платим» для свободного вывода.
+  counterparties?: NewPaymentArticleCounterparty[];
 };
 
 export type NewPaymentWallet = {
@@ -2717,10 +2725,17 @@ export type NewPaymentContext = {
   employees: NewPaymentEmployee[];
 };
 
-export type NewPaymentExpenseDraftPayload = {
+export type NewPaymentExpenseLine = {
   article_id: string;
   amount: number;
   purpose: string;
+  // Необязательная атрибуция: кому платим (для статей с привязанными контрагентами).
+  counterparty_id?: string | null;
+};
+
+export type NewPaymentExpenseDraftPayload = {
+  // Транш свободного вывода на Сейф: одна или несколько строк (статья, сумма, назначение).
+  lines: NewPaymentExpenseLine[];
 };
 
 export type NewPaymentExpenseDraft = {

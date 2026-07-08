@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { LoaderCircle, Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -24,71 +24,48 @@ import {
 } from "@/components/ui/select";
 import {
   apiErrorMessage,
-  confirmEmployeePayout,
-  createEmployeePayout,
   createNewPaymentExpenseDraft,
   createPayrollAdvance,
-  getDdsBankOperations,
   getNewPaymentContext,
-  type EmployeePayout,
+  type NewPaymentArticle,
+  type NewPaymentArticleCounterparty,
   type NewPaymentFlow,
 } from "@/lib/api";
-import {
-  createBankPrepaymentDraft,
-  createDraft,
-  getInvoices,
-  getRegistry,
-} from "@/routes/counterparties/api";
+import { createBankPrepaymentDraft, getRegistry } from "@/routes/counterparties/api";
 import { formatRub } from "@/routes/counterparties/shared";
 
-function todayInput(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${now.getFullYear()}-${month}-${day}`;
-}
+/** Маршруты построчного конструктора: у всех сумма вводится вручную. Оплата накладных
+ *  (сумма из накладных) и разовая выплата сотруднику (двухшаговая) — отдельные потоки. */
+const ROW_FLOWS: ReadonlySet<NewPaymentFlow> = new Set([
+  "expense",
+  "supplier_prepayment",
+  "employee_advance",
+  "employee_loan",
+]);
 
-function daysAgoInput(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${month}-${day}`;
-}
+type PaymentRow = {
+  key: string;
+  articleId: string;
+  amount: string;
+  counterpartyId: string; // маршрут supplier_prepayment
+  employeeId: string; // маршруты employee_advance / employee_loan
+  purpose: string; // expense — назначение (опц.); аванс/займ — комментарий (опц.)
+};
 
-/** Ввод суммы: запятая → точка, как в остальных денежных формах. */
 function normalizeAmount(value: string): string {
   return value.trim().replace(",", ".");
 }
 
-/** Плашка «Что произойдёт»: жёлтая — Сейф-маршруты, нейтральная — прямые платежи. */
-function PlanCard({ tone, children }: { tone: "warning" | "neutral"; children: ReactNode }) {
-  return tone === "warning" ? (
-    <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-      {children}
-    </div>
-  ) : (
-    <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
-      {children}
-    </div>
-  );
+function emptyRow(key: string, articleId = ""): PaymentRow {
+  return { key, articleId, amount: "", counterpartyId: "", employeeId: "", purpose: "" };
 }
 
-// Маршруты, где черновик создаёт только Т-Банк (свободная трата, аванс/займ,
-// предоплата, накладные) — счёт списания зафиксирован на расчётном Т-Банка.
-const TBANK_ONLY_FLOWS: ReadonlySet<NewPaymentFlow> = new Set([
-  "expense",
-  "employee_advance",
-  "employee_loan",
-  "supplier_prepayment",
-  "supplier_invoices",
-]);
-
 /**
- * Единое окно «Новый платёж» (FAB): драйвер — статья ДДС, форма достраивает поля
- * и показывает плашку «Что произойдёт» ДО создания. Ничего не изобретает —
- * маршрутизирует на существующие механизмы; все маршруты создают банковский
- * черновик, подтверждение всегда в банке (проводки заводит вебхук-контур).
+ * Окно «Новый платёж» — построчный конструктор: несколько платежей за один раз.
+ * Каждая строка — статья ДДС (слева) + сумма (справа). Статьям, которым нужны
+ * доп-данные (контрагент для аванса поставщику, сотрудник для аванса/займа), строка
+ * подсвечивается жёлтым и открывает модалку по клику «Заполнить». При создании строки
+ * свободного вывода объединяются в один транш на Сейф, остальные создают свой платёж.
  */
 export function NewPaymentDialog({
   open,
@@ -97,43 +74,47 @@ export function NewPaymentDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Пресет FAB-пункта: код статьи, предвыбранной при открытии. */
+  /** Пресет FAB-пункта: код статьи первой строки (напр. «аванс поставщику»). */
   presetArticleCode?: string | null;
 }) {
   const queryClient = useQueryClient();
+  const rowSeq = useRef(0);
+  const nextKey = () => {
+    rowSeq.current += 1;
+    return `row-${rowSeq.current}`;
+  };
 
-  const [articleId, setArticleId] = useState("");
   const [walletId, setWalletId] = useState("");
-  const [amount, setAmount] = useState("");
-  const [purpose, setPurpose] = useState("");
-  const [employeeId, setEmployeeId] = useState("");
-  const [payoutDate, setPayoutDate] = useState(todayInput());
-  const [counterpartyId, setCounterpartyId] = useState("");
-  const [invoiceIds, setInvoiceIds] = useState<string[]>([]);
-  // Двухшаговый маршрут выплаты сотруднику: после pending-черновика — привязка операции.
-  const [step, setStep] = useState<"form" | "link">("form");
-  const [pendingPayout, setPendingPayout] = useState<EmployeePayout | null>(null);
-  const [operationId, setOperationId] = useState("");
+  const [rows, setRows] = useState<PaymentRow[]>([]);
+  const [modalRowKey, setModalRowKey] = useState<string | null>(null);
 
   const contextQuery = useQuery({
     queryKey: ["new-payment", "context"],
     queryFn: getNewPaymentContext,
     enabled: open,
   });
-  const articles = useMemo(() => contextQuery.data?.articles ?? [], [contextQuery.data]);
+  const articles = useMemo<NewPaymentArticle[]>(
+    () => (contextQuery.data?.articles ?? []).filter((item) => ROW_FLOWS.has(item.flow)),
+    [contextQuery.data],
+  );
   const wallets = useMemo(() => contextQuery.data?.wallets ?? [], [contextQuery.data]);
   const employees = useMemo(() => contextQuery.data?.employees ?? [], [contextQuery.data]);
+  const tbankWallet = wallets.find((wallet) => wallet.bank_code === "tbank") ?? null;
 
-  const article = articles.find((item) => item.id === articleId) ?? null;
-  const flow: NewPaymentFlow | null = article?.flow ?? null;
-  const needsCounterparty = flow === "supplier_prepayment" || flow === "supplier_invoices";
+  const articleById = useMemo(() => {
+    const map = new Map<string, NewPaymentArticle>();
+    articles.forEach((item) => map.set(item.id, item));
+    return map;
+  }, [articles]);
+  const flowOf = (row: PaymentRow): NewPaymentFlow | null =>
+    articleById.get(row.articleId)?.flow ?? null;
 
+  const needsCounterparties = rows.some((row) => flowOf(row) === "supplier_prepayment");
   const registryQuery = useQuery({
     queryKey: ["cp", "registry"],
     queryFn: () => getRegistry(),
-    enabled: open && needsCounterparty,
+    enabled: open && needsCounterparties,
   });
-  // Бартер в банк не отправляется (свой контур сведения) — в списках его нет.
   const counterparties = useMemo(
     () =>
       (registryQuery.data ?? [])
@@ -141,92 +122,88 @@ export function NewPaymentDialog({
         .sort((a, b) => a.name.localeCompare(b.name, "ru")),
     [registryQuery.data],
   );
-  const counterparty = counterparties.find((item) => item.counterparty_id === counterpartyId) ?? null;
-  const isInformal = counterparty?.relationship === "informal";
 
-  const invoicesQuery = useQuery({
-    queryKey: ["cp", "invoices", "new-payment", counterpartyId],
-    queryFn: () =>
-      getInvoices({
-        counterparty_id: counterpartyId,
-        status: "unpaid,partially_paid",
-        in_draft: false,
-        direction: "payable",
-      }),
-    enabled: open && flow === "supplier_invoices" && Boolean(counterpartyId),
-  });
-  const invoices = useMemo(() => invoicesQuery.data ?? [], [invoicesQuery.data]);
-  const selectedInvoices = invoices.filter((invoice) => invoiceIds.includes(invoice.id));
-  const invoicesTotal = selectedInvoices.reduce((sum, invoice) => sum + invoice.remaining, 0);
-
-  const tbankWallet = wallets.find((wallet) => wallet.bank_code === "tbank") ?? null;
-  const walletRestricted = flow !== null && TBANK_ONLY_FLOWS.has(flow);
-  const selectedWallet = wallets.find((wallet) => wallet.id === walletId) ?? null;
-
-  // Сброс формы на каждое открытие (пресет статьи применяется отдельным эффектом ниже).
+  // Сброс на каждое открытие: одна пустая строка (или пресет-статья).
   useEffect(() => {
-    if (open) {
-      setArticleId("");
-      setWalletId("");
-      setAmount("");
-      setPurpose("");
-      setEmployeeId("");
-      setPayoutDate(todayInput());
-      setCounterpartyId("");
-      setInvoiceIds([]);
-      setStep("form");
-      setPendingPayout(null);
-      setOperationId("");
+    if (!open) {
+      return;
     }
+    setWalletId("");
+    setModalRowKey(null);
+    rowSeq.current = 0;
+    setRows([emptyRow(nextKey())]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Пресет FAB-пункта: предвыбранная статья, пока пользователь не выбрал свою.
+  // Пресет статьи — как только справочник загрузился (первая строка ещё пуста).
   useEffect(() => {
-    if (!open || !presetArticleCode || articleId) {
+    if (!open || !presetArticleCode || articles.length === 0) {
       return;
     }
     const preset = articles.find((item) => item.code === presetArticleCode);
-    if (preset) {
-      setArticleId(preset.id);
-    }
-  }, [open, presetArticleCode, articles, articleId]);
-
-  // Счёт списания: дефолт — расчётный Т-Банка; на Т-Банк-only маршрутах Сбер недоступен.
-  useEffect(() => {
-    if (!open || wallets.length === 0) {
+    if (!preset) {
       return;
     }
-    if (!walletId && tbankWallet) {
-      setWalletId(tbankWallet.id);
-      return;
-    }
-    if (walletRestricted && selectedWallet && selectedWallet.bank_code !== "tbank" && tbankWallet) {
-      setWalletId(tbankWallet.id);
-    }
-  }, [open, wallets, walletId, tbankWallet, walletRestricted, selectedWallet]);
-
-  /** Смена статьи сбрасывает динамические поля — плашка и форма не залипают. */
-  function handleArticleChange(nextId: string) {
-    setArticleId(nextId);
-    setEmployeeId("");
-    setCounterpartyId("");
-    setInvoiceIds([]);
-    const next = articles.find((item) => item.id === nextId) ?? null;
-    if (next?.flow === "supplier_invoices") {
-      setAmount("");
-    }
-  }
-
-  function handleCounterpartyChange(nextId: string) {
-    setCounterpartyId(nextId);
-    setInvoiceIds([]);
-  }
-
-  function toggleInvoice(id: string) {
-    setInvoiceIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    setRows((prev) =>
+      prev.length === 1 && !prev[0].articleId
+        ? [{ ...prev[0], articleId: preset.id }]
+        : prev,
     );
+  }, [open, presetArticleCode, articles]);
+
+  // Счёт списания: дефолт — расчётный Т-Банка (все маршруты создают черновик в Т-Банке).
+  useEffect(() => {
+    if (open && !walletId && tbankWallet) {
+      setWalletId(tbankWallet.id);
+    }
+  }, [open, walletId, tbankWallet]);
+
+  function updateRow(key: string, patch: Partial<PaymentRow>) {
+    setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   }
+  function addRow() {
+    setRows((prev) => [...prev, emptyRow(nextKey())]);
+  }
+  function removeRow(key: string) {
+    setRows((prev) => (prev.length <= 1 ? prev : prev.filter((row) => row.key !== key)));
+  }
+  function handleArticleChange(key: string, articleId: string) {
+    // Смена статьи сбрасывает доп-данные строки (у другого маршрута они иные).
+    const article = articleById.get(articleId) ?? null;
+    // Свободный вывод с единственным привязанным контрагентом — предвыбираем его.
+    const presetCp =
+      article?.flow === "expense" && article.counterparties?.length === 1
+        ? article.counterparties[0].counterparty_id
+        : "";
+    updateRow(key, { articleId, counterpartyId: presetCp, employeeId: "", purpose: "" });
+  }
+
+  const rowAmount = (row: PaymentRow) => Number(normalizeAmount(row.amount));
+
+  /** Чего не хватает строке из доп-данных (для жёлтой подсветки и текста), иначе null. */
+  function rowMissing(row: PaymentRow): string | null {
+    const flow = flowOf(row);
+    if (flow === "supplier_prepayment") {
+      if (!row.counterpartyId) {
+        return "нужен контрагент";
+      }
+      const cp = counterparties.find((item) => item.counterparty_id === row.counterpartyId);
+      if (cp?.relationship === "informal") {
+        return "неофициальный — аванс через кассу";
+      }
+      return null;
+    }
+    if (flow === "employee_advance" || flow === "employee_loan") {
+      return row.employeeId ? null : "нужен сотрудник";
+    }
+    return null;
+  }
+  const rowComplete = (row: PaymentRow) =>
+    Boolean(row.articleId) && rowAmount(row) > 0 && rowMissing(row) === null;
+
+  const total = rows.reduce((sum, row) => sum + (rowAmount(row) > 0 ? rowAmount(row) : 0), 0);
+  const canSubmit =
+    Boolean(walletId) && rows.length > 0 && rows.every(rowComplete);
 
   async function invalidate() {
     await Promise.all([
@@ -238,117 +215,62 @@ export function NewPaymentDialog({
     ]);
   }
 
-  const numericAmount = Number(normalizeAmount(amount));
-  // NaN > 0 === false, поэтому пустая/кривая сумма гасит кнопку через effectiveAmount.
-  const effectiveAmount = flow === "supplier_invoices" ? invoicesTotal : numericAmount;
-
   const createMutation = useMutation({
     mutationFn: async () => {
-      switch (flow) {
-        case "expense":
-          await createNewPaymentExpenseDraft({
-            article_id: articleId,
-            amount: numericAmount,
-            purpose: purpose.trim(),
-          });
-          return { kind: "expense" as const };
-        case "employee_payout": {
-          const payout = await createEmployeePayout({
-            employee_id: employeeId,
-            amount: numericAmount,
-            wallet_id: walletId,
-            payout_date: payoutDate,
-            kind: "owner_salary",
-            article_id: articleId,
-            note: purpose.trim() ? purpose.trim() : null,
-          });
-          return { kind: "employee_payout" as const, payout };
-        }
-        case "employee_advance":
-        case "employee_loan":
-          await createPayrollAdvance({
-            employee_id: employeeId,
-            amount: normalizeAmount(amount),
-            kind: flow === "employee_loan" ? "loan" : "advance",
-            wallet_id: walletId,
-            comment: purpose.trim() ? purpose.trim() : null,
-          });
-          return { kind: "advance" as const };
-        case "supplier_prepayment":
-          await createBankPrepaymentDraft({
-            counterparty_id: counterpartyId,
-            amount: numericAmount,
-            article_id: articleId,
-          });
-          return { kind: "supplier_prepayment" as const };
-        case "supplier_invoices": {
-          const draft = await createDraft(invoiceIds);
-          return { kind: "supplier_invoices" as const, viaSafe: draft.pays_via_safe };
-        }
-        default:
-          throw new Error("Выберите статью ДДС");
+      const tasks: Array<Promise<unknown>> = [];
+      // Строки свободного вывода — одним траншем на Сейф.
+      const expenseLines = rows
+        .filter((row) => flowOf(row) === "expense")
+        .map((row) => ({
+          article_id: row.articleId,
+          amount: rowAmount(row),
+          purpose: row.purpose.trim(),
+          counterparty_id: row.counterpartyId || null,
+        }));
+      if (expenseLines.length > 0) {
+        tasks.push(createNewPaymentExpenseDraft({ lines: expenseLines }));
       }
+      // Остальные маршруты — каждая строка своим механизмом (разные получатели).
+      for (const row of rows) {
+        const flow = flowOf(row);
+        if (flow === "supplier_prepayment") {
+          tasks.push(
+            createBankPrepaymentDraft({
+              counterparty_id: row.counterpartyId,
+              amount: rowAmount(row),
+              article_id: row.articleId,
+            }),
+          );
+        } else if (flow === "employee_advance" || flow === "employee_loan") {
+          tasks.push(
+            createPayrollAdvance({
+              employee_id: row.employeeId,
+              amount: normalizeAmount(row.amount),
+              kind: flow === "employee_loan" ? "loan" : "advance",
+              wallet_id: walletId,
+              comment: row.purpose.trim() ? row.purpose.trim() : null,
+            }),
+          );
+        }
+      }
+      const results = await Promise.allSettled(tasks);
+      return { total: tasks.length, failed: results.filter((r) => r.status === "rejected").length };
     },
-    onSuccess: async (result) => {
+    onSuccess: async ({ total: count, failed }) => {
       await invalidate();
-      if (result.kind === "employee_payout" && result.payout) {
-        if (result.payout.status === "pending") {
-          // Черновик создан — предлагаем сразу привязать операцию из выписки.
-          setPendingPayout(result.payout);
-          setStep("link");
-          toast.success("Черновик платежа создан — привяжите операцию из выписки");
-          return;
-        }
-        if (result.payout.status === "failed") {
-          toast.error("Банк отклонил черновик платежа");
-          onOpenChange(false);
-          return;
-        }
-        toast.success("Выплата проведена");
+      if (failed === 0) {
+        toast.success(count === 1 ? "Платёж отправлен в банк" : `Отправлено платежей: ${count}`);
         onOpenChange(false);
         return;
       }
-      const message =
-        result.kind === "expense"
-          ? "Черновик отправлен в банк — после оплаты появится целёвка на Сейфе"
-          : result.kind === "advance"
-            ? "Черновик отправлен в банк — резерв выдачи появится на Сейфе после оплаты"
-            : result.kind === "supplier_prepayment"
-              ? "Платёж отправлен в банк — при оплате появится предоплата"
-              : result.viaSafe
-                ? "Черновик на карту ИП создан — после оплаты деньги лягут на Сейф целёвкой"
-                : "Накладные отправлены в банк одним платежом";
-      toast.success(message);
-      onOpenChange(false);
+      if (failed < count) {
+        toast.warning(`Отправлено ${count - failed} из ${count}; ошибок: ${failed}`);
+        onOpenChange(false);
+        return;
+      }
+      toast.error("Не удалось создать платежи");
     },
-    onError: (error) => {
-      toast.error(apiErrorMessage(error, "Не удалось создать платёж"));
-    },
-  });
-
-  // Шаг «привязать операцию» (маршрут выплаты сотруднику, как в прежнем диалоге).
-  const operationsQuery = useQuery({
-    queryKey: ["new-payment", "payout-operations"],
-    queryFn: () => getDdsBankOperations({ from: daysAgoInput(45), to: todayInput(), limit: 100 }),
-    enabled: open && step === "link",
-  });
-  const operations = useMemo(
-    () =>
-      (operationsQuery.data?.items ?? []).filter(
-        (op) => op.direction === "out" && op.cashflow_transaction_id === null,
-      ),
-    [operationsQuery.data],
-  );
-  const confirmMutation = useMutation({
-    mutationFn: () => confirmEmployeePayout(pendingPayout?.id ?? "", operationId),
-    onSuccess: async () => {
-      await invalidate();
-      toast.success("Выплата подтверждена и привязана к операции");
-      onOpenChange(false);
-    },
-    onError: (error) => {
-      toast.error(apiErrorMessage(error, "Не удалось подтвердить выплату"));
-    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось создать платёж")),
   });
 
   const articleOptions: ComboboxOption[] = articles.map((item) => ({
@@ -361,384 +283,343 @@ export function NewPaymentDialog({
     keywords: item.inn ?? undefined,
   }));
 
-  const purposeAuto = flow === "supplier_prepayment" || flow === "supplier_invoices";
-  const informalRefusal = flow === "supplier_prepayment" && isInformal;
-
-  const canSubmit =
-    Boolean(article) &&
-    Boolean(walletId) &&
-    effectiveAmount > 0 &&
-    (flow !== "expense" || Boolean(purpose.trim())) &&
-    (flow !== "employee_payout" || (Boolean(employeeId) && Boolean(payoutDate))) &&
-    (flow !== "employee_advance" || Boolean(employeeId)) &&
-    (flow !== "employee_loan" || Boolean(employeeId)) &&
-    (flow !== "supplier_prepayment" || (Boolean(counterpartyId) && !isInformal)) &&
-    (flow !== "supplier_invoices" || (Boolean(counterpartyId) && invoiceIds.length > 0)) &&
-    !createMutation.isPending;
-
-  /** Плашка «Что произойдёт» — маршрут виден до нажатия кнопки. */
-  function renderPlan(): ReactNode {
-    if (!article || !flow) {
-      return (
-        <PlanCard tone="neutral">
-          Выберите статью ДДС — форма достроит нужные поля и покажет, что произойдёт.
-        </PlanCard>
-      );
-    }
-    switch (flow) {
-      case "expense":
-        return (
-          <PlanCard tone="warning">
-            Черновик в Т-Банке на карту ИП. После подтверждения оплаты — перевод на Сейф и
-            целёвка «{article.name}»: её можно оплатить с Сейфа или передать в кассу на
-            выдачу.
-          </PlanCard>
-        );
-      case "employee_payout":
-        return (
-          <PlanCard tone="neutral">
-            Черновик на карту сотрудника. После оплаты выплата свяжется с зарплатной
-            ведомостью и уменьшит сумму к выдаче.
-            {selectedWallet && selectedWallet.bank_code !== "tbank" ? (
-              <span className="mt-1 block text-xs">
-                Счёт не в Т-Банке: черновик в банке не создаётся — подтвердите выплату
-                привязкой операции из выписки.
-              </span>
-            ) : null}
-          </PlanCard>
-        );
-      case "employee_advance":
-      case "employee_loan":
-        return (
-          <PlanCard tone="warning">
-            Черновик на карту ИП. После оплаты на Сейфе появится резерв выдачи —{" "}
-            {flow === "employee_loan" ? "займ" : "аванс"} активируется при выплате резерва.
-          </PlanCard>
-        );
-      case "supplier_prepayment":
-        if (isInformal) {
-          return (
-            <PlanCard tone="warning">
-              Неофициальный поставщик: предоплата в банк недоступна — аванс выдаётся
-              наличными через кассу.
-            </PlanCard>
-          );
-        }
-        return (
-          <PlanCard tone="neutral">
-            Черновик по реквизитам {counterparty ? `«${counterparty.name}»` : "поставщика"}.
-            После оплаты создастся предоплата (дебиторка) — погасится будущими накладными.
-          </PlanCard>
-        );
-      case "supplier_invoices":
-        if (!counterparty) {
-          return (
-            <PlanCard tone="neutral">
-              Выберите поставщика и его накладные — они уйдут в банк одним платежом.
-            </PlanCard>
-          );
-        }
-        if (isInformal) {
-          return (
-            <PlanCard tone="warning">
-              Черновик в Т-Банке на карту ИП. После подтверждения оплаты деньги лягут на
-              Сейф целёвкой «Закуп: {counterparty.name}» — дальше передача в кассу и выдача
-              наличными.
-            </PlanCard>
-          );
-        }
-        return (
-          <PlanCard tone="neutral">
-            Черновик по реквизитам «{counterparty.name}». Накладные погасятся при
-            подтверждении оплаты банком.
-          </PlanCard>
-        );
-      default:
-        return null;
-    }
-  }
+  const modalRow = rows.find((row) => row.key === modalRowKey) ?? null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        {step === "form" ? (
-          <>
-            <DialogHeader>
-              <DialogTitle>Новый платёж</DialogTitle>
-              <DialogDescription>
-                Статья ДДС определяет маршрут платежа. Все маршруты создают банковский
-                черновик — подтверждение всегда в банке.
-              </DialogDescription>
-            </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Новый платёж</DialogTitle>
+            <DialogDescription>
+              Соберите платежи построчно: статья ДДС и сумма. Всё создаёт банковский
+              черновик — подтверждение всегда в банке.
+            </DialogDescription>
+          </DialogHeader>
 
-            <div className="space-y-3">
+          <div className="space-y-3">
+            <Label className="block space-y-1">
+              <span className="text-sm">Счёт списания</span>
+              <Select onValueChange={setWalletId} value={walletId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите счёт" />
+                </SelectTrigger>
+                <SelectContent>
+                  {wallets.map((wallet) => (
+                    <SelectItem
+                      disabled={wallet.bank_code !== "tbank"}
+                      key={wallet.id}
+                      value={wallet.id}
+                    >
+                      {wallet.name}
+                      {wallet.bank_code !== "tbank" ? " — черновики создаются в Т-Банке" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Label>
+
+            <div className="space-y-2">
+              <span className="text-sm font-medium">Платежи</span>
+              {rows.map((row) => {
+                const article = articleById.get(row.articleId) ?? null;
+                const flow = article?.flow ?? null;
+                const missing = rowMissing(row);
+                const expenseHasCps =
+                  flow === "expense" && (article?.counterparties?.length ?? 0) > 0;
+                const needsDetails =
+                  flow === "supplier_prepayment" ||
+                  flow === "employee_advance" ||
+                  flow === "employee_loan" ||
+                  expenseHasCps;
+                const hasDetail = Boolean(row.counterpartyId || row.employeeId);
+                const detailText = detailSummary(row, article, counterparties, employees);
+                return (
+                  <div
+                    className={`rounded-md border p-2 ${
+                      missing ? "border-amber-300 bg-amber-50/60" : ""
+                    }`}
+                    key={row.key}
+                  >
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <Combobox
+                          emptyMessage="Статьи не найдены"
+                          id={`article-${row.key}`}
+                          onChange={(value) => handleArticleChange(row.key, value)}
+                          options={articleOptions}
+                          placeholder="Статья ДДС"
+                          searchPlaceholder="Поиск статьи…"
+                          value={row.articleId}
+                        />
+                      </div>
+                      <Input
+                        aria-label="Сумма"
+                        className="w-32"
+                        inputMode="decimal"
+                        onChange={(event) => updateRow(row.key, { amount: event.target.value })}
+                        placeholder="Сумма, ₽"
+                        value={row.amount}
+                      />
+                      <Button
+                        aria-label="Убрать строку"
+                        disabled={rows.length <= 1}
+                        onClick={() => removeRow(row.key)}
+                        size="icon"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    </div>
+                    {flow ? (
+                      <div className="mt-1 flex items-center justify-between gap-2 pl-1 text-xs">
+                        <span className={missing ? "text-amber-700" : "text-muted-foreground"}>
+                          {detailText}
+                        </span>
+                        {needsDetails ? (
+                          <Button
+                            className="h-6 px-2 text-xs"
+                            onClick={() => setModalRowKey(row.key)}
+                            size="sm"
+                            type="button"
+                            variant={missing ? "default" : "outline"}
+                          >
+                            {missing ? "Заполнить" : hasDetail ? "Изменить" : "Выбрать"}
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+              <Button onClick={addRow} size="sm" type="button" variant="outline">
+                <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
+                Добавить платёж
+              </Button>
+            </div>
+
+            {total > 0 ? (
+              <div className="flex items-center justify-between border-t pt-2 text-sm">
+                <span className="text-muted-foreground">Итого</span>
+                <span className="font-medium tabular-nums">{formatRub(total)}</span>
+              </div>
+            ) : null}
+
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+              Строки свободного вывода уйдут одним черновиком на карту ИП → Сейф (разнос по
+              статьям при выплате). Авансы поставщикам и авансы/займы сотрудникам — отдельными
+              черновиками получателям. Подтверждение всегда в банке.
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
+              Отмена
+            </Button>
+            <Button
+              disabled={!canSubmit || createMutation.isPending}
+              onClick={() => createMutation.mutate()}
+              type="button"
+            >
+              {createMutation.isPending ? (
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : null}
+              Создать платёж
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {modalRow ? (
+        <RowDetailModal
+          articleCounterparties={articleById.get(modalRow.articleId)?.counterparties ?? []}
+          articleName={articleById.get(modalRow.articleId)?.name ?? ""}
+          counterpartyOptions={counterpartyOptions}
+          employees={employees}
+          flow={flowOf(modalRow)}
+          missing={rowMissing(modalRow)}
+          onClose={() => setModalRowKey(null)}
+          onUpdate={(patch) => updateRow(modalRow.key, patch)}
+          row={modalRow}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** Краткая сводка доп-данных строки под статьёй. */
+function detailSummary(
+  row: PaymentRow,
+  article: NewPaymentArticle | null,
+  counterparties: Array<{ counterparty_id: string; name: string }>,
+  employees: Array<{ id: string; full_name: string }>,
+): string {
+  const flow = article?.flow ?? null;
+  if (flow === "supplier_prepayment") {
+    const cp = counterparties.find((item) => item.counterparty_id === row.counterpartyId);
+    return cp ? `Контрагент: ${cp.name}` : "нужен контрагент";
+  }
+  if (flow === "employee_advance" || flow === "employee_loan") {
+    const emp = employees.find((item) => item.id === row.employeeId);
+    const kind = flow === "employee_loan" ? "Займ" : "Аванс";
+    return emp ? `${kind}: ${emp.full_name}` : "нужен сотрудник";
+  }
+  // Свободный вывод: у статьи есть привязанные контрагенты → выбор «кому платим».
+  const pinned = article?.counterparties ?? [];
+  if (pinned.length > 0) {
+    const cp = pinned.find((item) => item.counterparty_id === row.counterpartyId);
+    return cp ? `Контрагент: ${cp.name}` : "контрагент (необязательно)";
+  }
+  return row.purpose.trim() ? `Назначение: ${row.purpose.trim()}` : "На Сейф целёвкой";
+}
+
+function RowDetailModal({
+  row,
+  flow,
+  missing,
+  articleName,
+  articleCounterparties,
+  counterpartyOptions,
+  employees,
+  onUpdate,
+  onClose,
+}: {
+  row: PaymentRow;
+  flow: NewPaymentFlow | null;
+  missing: string | null;
+  articleName: string;
+  articleCounterparties: NewPaymentArticleCounterparty[];
+  counterpartyOptions: ComboboxOption[];
+  employees: Array<{ id: string; full_name: string }>;
+  onUpdate: (patch: Partial<PaymentRow>) => void;
+  onClose: () => void;
+}) {
+  const isPrepayment = flow === "supplier_prepayment";
+  const isEmployee = flow === "employee_advance" || flow === "employee_loan";
+  const isExpenseCp = flow === "expense" && articleCounterparties.length > 0;
+  const title = isPrepayment
+    ? "Аванс поставщику"
+    : flow === "employee_loan"
+      ? "Займ сотруднику"
+      : isEmployee
+        ? "Аванс сотруднику"
+        : "Кому платим";
+  const expenseCpOptions: ComboboxOption[] = articleCounterparties.map((item) => ({
+    value: item.counterparty_id,
+    label: item.name,
+    keywords: item.inn ?? undefined,
+  }));
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>Заполните данные для этой строки платежа.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          {isExpenseCp ? (
+            <div className="space-y-1">
+              <Label className="text-sm" htmlFor="row-expense-cp">
+                Контрагент (необязательно)
+              </Label>
+              <Combobox
+                emptyMessage="Контрагенты не найдены"
+                id="row-expense-cp"
+                onChange={(value) => onUpdate({ counterpartyId: value })}
+                options={expenseCpOptions}
+                placeholder="Выберите контрагента"
+                searchPlaceholder="Название или ИНН…"
+                value={row.counterpartyId}
+              />
+              {row.counterpartyId ? (
+                <button
+                  className="text-xs text-muted-foreground underline"
+                  onClick={() => onUpdate({ counterpartyId: "" })}
+                  type="button"
+                >
+                  Убрать контрагента
+                </button>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                Кому платим по статье «{articleName}» — целёвка на Сейфе будет помечена этим
+                контрагентом. Деньги идут на карту ИП → Сейф.
+              </p>
+            </div>
+          ) : null}
+          {isPrepayment ? (
+            <>
+              <div className="space-y-1">
+                <Label className="text-sm" htmlFor="row-counterparty">
+                  Контрагент
+                </Label>
+                <Combobox
+                  emptyMessage="Контрагенты не найдены"
+                  id="row-counterparty"
+                  onChange={(value) => onUpdate({ counterpartyId: value })}
+                  options={counterpartyOptions}
+                  placeholder="Выберите контрагента"
+                  searchPlaceholder="Название или ИНН…"
+                  value={row.counterpartyId}
+                />
+              </div>
+              {missing && row.counterpartyId ? (
+                <p className="text-sm text-amber-600">
+                  Неофициальный поставщик: предоплата в банк недоступна — аванс выдаётся
+                  наличными через кассу. Выберите другого контрагента или уберите строку.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  После оплаты создастся предоплата (дебиторка) — погасится будущими накладными.
+                </p>
+              )}
+            </>
+          ) : null}
+
+          {isEmployee ? (
+            <>
               <Label className="block space-y-1">
-                <span className="text-sm">Счёт списания</span>
-                <Select onValueChange={setWalletId} value={walletId}>
+                <span className="text-sm">Сотрудник</span>
+                <Select
+                  onValueChange={(value) => onUpdate({ employeeId: value })}
+                  value={row.employeeId}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Выберите счёт" />
+                    <SelectValue placeholder="Выберите сотрудника" />
                   </SelectTrigger>
                   <SelectContent>
-                    {wallets.map((wallet) => (
-                      <SelectItem
-                        disabled={walletRestricted && wallet.bank_code !== "tbank"}
-                        key={wallet.id}
-                        value={wallet.id}
-                      >
-                        {wallet.name}
-                        {walletRestricted && wallet.bank_code !== "tbank"
-                          ? " — черновики создаются в Т-Банке"
-                          : ""}
+                    {employees.map((employee) => (
+                      <SelectItem key={employee.id} value={employee.id}>
+                        {employee.full_name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </Label>
-
-              <div className="space-y-1">
-                <Label className="text-sm" htmlFor="new-payment-article">
-                  Статья ДДС
-                </Label>
-                <Combobox
-                  emptyMessage="Статьи не найдены"
-                  id="new-payment-article"
-                  onChange={handleArticleChange}
-                  options={articleOptions}
-                  placeholder="Выберите статью"
-                  searchPlaceholder="Поиск статьи…"
-                  value={articleId}
-                />
-              </div>
-
-              {flow === "employee_payout" ? (
-                <>
-                  <Label className="block space-y-1">
-                    <span className="text-sm">Сотрудник</span>
-                    <Select onValueChange={setEmployeeId} value={employeeId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Выберите сотрудника" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {employees.map((employee) => (
-                          <SelectItem
-                            disabled={!employee.on_demand}
-                            key={employee.id}
-                            value={employee.id}
-                          >
-                            {employee.full_name}
-                            {!employee.on_demand ? " — доступны аванс или займ" : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <span className="text-xs text-muted-foreground">
-                      Выплата доступна сотрудникам с окладом «по востребованию».
-                    </span>
-                  </Label>
-                  <Label className="block space-y-1">
-                    <span className="text-sm">Дата выплаты</span>
-                    <Input
-                      onChange={(event) => setPayoutDate(event.target.value)}
-                      type="date"
-                      value={payoutDate}
-                    />
-                  </Label>
-                </>
-              ) : null}
-
-              {flow === "employee_advance" || flow === "employee_loan" ? (
-                <Label className="block space-y-1">
-                  <span className="text-sm">Сотрудник</span>
-                  <Select onValueChange={setEmployeeId} value={employeeId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Выберите сотрудника" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {employees.map((employee) => (
-                        <SelectItem key={employee.id} value={employee.id}>
-                          {employee.full_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Label>
-              ) : null}
-
-              {needsCounterparty ? (
-                <div className="space-y-1">
-                  <Label className="text-sm" htmlFor="new-payment-counterparty">
-                    {flow === "supplier_invoices" ? "Поставщик" : "Контрагент"}
-                  </Label>
-                  <Combobox
-                    emptyMessage="Контрагенты не найдены"
-                    id="new-payment-counterparty"
-                    onChange={handleCounterpartyChange}
-                    options={counterpartyOptions}
-                    placeholder="Выберите контрагента"
-                    searchPlaceholder="Название или ИНН…"
-                    value={counterpartyId}
-                  />
-                </div>
-              ) : null}
-
-              {flow === "supplier_invoices" && counterpartyId ? (
-                <div className="space-y-1">
-                  <span className="text-sm">Неоплаченные накладные</span>
-                  <div className="max-h-[180px] space-y-1 overflow-y-auto rounded-md border p-2">
-                    {invoicesQuery.isLoading ? (
-                      <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
-                        <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-                        Загрузка накладных…
-                      </div>
-                    ) : invoices.length === 0 ? (
-                      <div className="py-2 text-sm text-muted-foreground">
-                        Нет неоплаченных накладных (или все уже отправлены в банк).
-                      </div>
-                    ) : (
-                      invoices.map((invoice) => (
-                        <label
-                          className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-muted/50"
-                          key={invoice.id}
-                        >
-                          <input
-                            checked={invoiceIds.includes(invoice.id)}
-                            onChange={() => toggleInvoice(invoice.id)}
-                            type="checkbox"
-                          />
-                          <span className="flex-1 truncate">
-                            {invoice.number ? `№${invoice.number}` : "Без номера"}
-                            {invoice.invoice_date ? ` · ${invoice.invoice_date}` : ""}
-                          </span>
-                          <span className="tabular-nums text-muted-foreground">
-                            {formatRub(invoice.remaining)}
-                          </span>
-                        </label>
-                      ))
-                    )}
-                  </div>
-                  {invoiceIds.length > 0 ? (
-                    <span className="block text-xs text-muted-foreground">
-                      Выбрано {invoiceIds.length} — итого {formatRub(invoicesTotal)}
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
-
               <Label className="block space-y-1">
-                <span className="text-sm">Сумма, ₽</span>
-                {flow === "supplier_invoices" ? (
-                  <Input
-                    readOnly
-                    value={invoiceIds.length > 0 ? invoicesTotal.toFixed(2) : ""}
-                    placeholder="Сумма выбранных накладных"
-                  />
-                ) : (
-                  <Input
-                    inputMode="decimal"
-                    onChange={(event) => setAmount(event.target.value)}
-                    placeholder="0"
-                    value={amount}
-                  />
-                )}
-              </Label>
-
-              <Label className="block space-y-1">
-                <span className="text-sm">
-                  Назначение
-                  {flow && flow !== "expense" && !purposeAuto ? " (комментарий)" : ""}
-                </span>
+                <span className="text-sm">Комментарий</span>
                 <Input
-                  disabled={purposeAuto}
                   maxLength={210}
-                  onChange={(event) => setPurpose(event.target.value)}
-                  placeholder={
-                    purposeAuto
-                      ? "Сформируется автоматически"
-                      : "За что платим — уйдёт в банк и в целёвку"
-                  }
-                  value={purposeAuto ? "" : purpose}
+                  onChange={(event) => onUpdate({ purpose: event.target.value })}
+                  placeholder="Необязательно"
+                  value={row.purpose}
                 />
               </Label>
+              <p className="text-xs text-muted-foreground">
+                После оплаты на Сейфе появится резерв выдачи —{" "}
+                {flow === "employee_loan" ? "займ" : "аванс"} активируется при выплате резерва.
+              </p>
+            </>
+          ) : null}
+        </div>
 
-              {renderPlan()}
-            </div>
-
-            <DialogFooter>
-              <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
-                Отмена
-              </Button>
-              <Button
-                disabled={!canSubmit || informalRefusal}
-                onClick={() => createMutation.mutate()}
-                type="button"
-              >
-                {createMutation.isPending ? (
-                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-                ) : null}
-                Создать платёж
-              </Button>
-            </DialogFooter>
-          </>
-        ) : (
-          <>
-            <DialogHeader>
-              <DialogTitle>Привязать операцию</DialogTitle>
-              <DialogDescription>
-                Черновик отправлен в банк. Выберите исходящую операцию из выписки, чтобы
-                подтвердить выплату (заведёт перевод на Сейф с резервом).
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="max-h-[320px] space-y-2 overflow-y-auto">
-              {operationsQuery.isLoading ? (
-                <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-                  Загрузка операций…
-                </div>
-              ) : operations.length === 0 ? (
-                <div className="py-6 text-sm text-muted-foreground">
-                  Нет несопоставленных исходящих операций за последние 45 дней. Операция
-                  появится после импорта выписки — привяжите позже.
-                </div>
-              ) : (
-                operations.map((op) => (
-                  <button
-                    className={`w-full rounded-md border p-2 text-left text-sm transition hover:bg-muted/50 ${
-                      operationId === op.id ? "border-primary bg-muted/50" : "border-border"
-                    }`}
-                    key={op.id}
-                    onClick={() => setOperationId(op.id)}
-                    type="button"
-                  >
-                    <div className="flex justify-between gap-2">
-                      <span className="font-medium tabular-nums">{op.amount} ₽</span>
-                      <span className="text-muted-foreground">{op.operation_date}</span>
-                    </div>
-                    <div className="truncate text-xs text-muted-foreground">
-                      {op.counterparty_name_raw || op.payment_purpose || "—"}
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-
-            <DialogFooter>
-              <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
-                Позже
-              </Button>
-              <Button
-                disabled={!operationId || confirmMutation.isPending}
-                onClick={() => confirmMutation.mutate()}
-                type="button"
-              >
-                {confirmMutation.isPending ? (
-                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-                ) : null}
-                Подтвердить выплату
-              </Button>
-            </DialogFooter>
-          </>
-        )}
+        <DialogFooter>
+          <Button onClick={onClose} type="button">
+            Готово
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

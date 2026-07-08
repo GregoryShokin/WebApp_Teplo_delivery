@@ -372,13 +372,21 @@ class SafeAllocation(Base):
         CheckConstraint("location in ('safe', 'kassa')", name="ck_safe_allocations_location"),
         Index("ix_safe_allocations_wallet_id", "wallet_id"),
         Index("ix_safe_allocations_status", "status"),
-        # Один черновик выплаты — один авто-резерв (страховка идемпотентности
-        # paid-перехода поверх row-lock черновика).
+        # Одиночный via-safe резерв (неофициальный поставщик) — один на черновик
+        # (страховка идемпотентности paid-перехода). Строчные целёвки транша (несколько
+        # на один черновик) под этот уникум не подпадают — они уникальны по строке.
         Index(
             "uq_safe_allocations_source_draft",
             "source_draft_id",
             unique=True,
-            postgresql_where=text("source_draft_id IS NOT NULL"),
+            postgresql_where=text("source_draft_id IS NOT NULL AND source_draft_line_id IS NULL"),
+        ),
+        # Строка транша «Нового платежа» — ровно одна целёвка (идемпотентность по строке).
+        Index(
+            "uq_safe_allocations_source_draft_line",
+            "source_draft_line_id",
+            unique=True,
+            postgresql_where=text("source_draft_line_id IS NOT NULL"),
         ),
     )
 
@@ -401,6 +409,11 @@ class SafeAllocation(Base):
     # по оплате которого резерв создан. NULL — резерв заведён вручную.
     source_draft_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("counterparty_payment_draft.id", ondelete="SET NULL"), nullable=True
+    )
+    # Строка транша «Нового платежа», под которую заведён резерв (мультистрочный
+    # свободный вывод на Сейф). NULL — одиночный via-safe резерв или ручной.
+    source_draft_line_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("expense_draft_line.id", ondelete="SET NULL"), nullable=True
     )
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="reserved", server_default="reserved"

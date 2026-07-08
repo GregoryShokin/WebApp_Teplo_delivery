@@ -5,7 +5,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class BankOperationRead(BaseModel):
@@ -436,6 +436,14 @@ class SafeReconcileRead(BaseModel):
     adjusted: bool  # проведена ли корректирующая проводка
 
 
+class NewPaymentArticleCounterpartyRead(BaseModel):
+    """Контрагент, закреплённый за статьёй (для атрибуции свободного вывода)."""
+
+    counterparty_id: uuid.UUID
+    name: str
+    inn: str | None = None
+
+
 class NewPaymentArticleRead(BaseModel):
     """Статья селекта окна «Новый платёж» + её маршрут (какие поля достраивать)."""
 
@@ -450,6 +458,8 @@ class NewPaymentArticleRead(BaseModel):
         "supplier_prepayment",
         "supplier_invoices",
     ]
+    # Закреплённые за статьёй контрагенты — «кому платим» для свободного вывода.
+    counterparties: list[NewPaymentArticleCounterpartyRead] = Field(default_factory=list)
 
 
 class NewPaymentWalletRead(BaseModel):
@@ -476,15 +486,55 @@ class NewPaymentContextRead(BaseModel):
     employees: list[NewPaymentEmployeeRead]
 
 
-class NewPaymentExpenseDraftCreate(BaseModel):
-    """«Просто трата» без получателя: банковский черновик на карту ИП с целевой статьёй."""
+class NewPaymentExpenseLineIn(BaseModel):
+    """Строка транша свободного вывода на Сейф: статья + сумма + назначение."""
 
     model_config = ConfigDict(extra="forbid")
 
     article_id: uuid.UUID
     amount: Decimal = Field(gt=0)
-    # Назначение уходит в банк (лимит платёжки) и в purpose будущей целёвки Сейфа.
-    purpose: str = Field(min_length=1, max_length=210)
+    # Назначение строки уходит в банк и в целёвку Сейфа; пусто → имя статьи.
+    purpose: str = Field(default="", max_length=210)
+    # Необязательная атрибуция: кому платим (для статей с привязанными контрагентами).
+    counterparty_id: uuid.UUID | None = None
+
+
+class NewPaymentExpenseDraftCreate(BaseModel):
+    """«Просто трата» без получателя: банковский черновик на карту ИП.
+
+    Одним траншем можно вывести несколько статей — ``lines`` (статья, сумма, назначение);
+    разбивка помнится и при выплате с Сейфа разносится по статьям. Одиночные
+    ``article_id``/``amount``/``purpose`` — обратная совместимость (транш из одной строки).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    lines: list[NewPaymentExpenseLineIn] | None = Field(default=None, min_length=1)
+    article_id: uuid.UUID | None = None
+    amount: Decimal | None = Field(default=None, gt=0)
+    purpose: str | None = Field(default=None, max_length=210)
+
+    @model_validator(mode="after")
+    def _require_lines_or_single(self) -> NewPaymentExpenseDraftCreate:
+        if self.lines:
+            return self
+        if self.article_id is None or self.amount is None or not (self.purpose or "").strip():
+            raise ValueError(
+                "Укажите платежи транша (lines) или одиночный article_id/amount/purpose"
+            )
+        return self
+
+    def normalized_lines(self) -> list[NewPaymentExpenseLineIn]:
+        """Строки транша (одиночные поля → транш из одной строки)."""
+        if self.lines:
+            return self.lines
+        return [
+            NewPaymentExpenseLineIn(
+                article_id=self.article_id,  # type: ignore[arg-type]
+                amount=self.amount,  # type: ignore[arg-type]
+                purpose=self.purpose or "",
+            )
+        ]
 
 
 class NewPaymentExpenseDraftRead(BaseModel):

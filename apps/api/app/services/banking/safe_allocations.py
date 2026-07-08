@@ -86,6 +86,7 @@ async def create_allocation(
     counterparty_id: UUID | None = None,
     purpose: str | None = None,
     source_draft_id: UUID | None = None,
+    source_draft_line_id: UUID | None = None,
     created_by_user_id: UUID | None = None,
 ) -> SafeAllocation:
     """Создать резерв. Запрет перерезервирования: ``amount`` ≤ свободно (``free_amount``).
@@ -107,6 +108,7 @@ async def create_allocation(
         counterparty_id=counterparty_id,
         purpose=purpose,
         source_draft_id=source_draft_id,
+        source_draft_line_id=source_draft_line_id,
         status="reserved",
         created_by_user_id=created_by_user_id,
     )

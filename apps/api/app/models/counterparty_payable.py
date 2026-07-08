@@ -260,6 +260,36 @@ class CounterpartyPaymentDraft(Base):
     )
 
 
+class ExpenseDraftLine(Base):
+    """Строка транша свободного вывода на Сейф (окно «Новый платёж»).
+
+    Один банковский черновик «просто траты» (``CounterpartyPaymentDraft`` без
+    получателя) может нести несколько статей: сумма черновика = Σ строк. При оплате
+    черновика paid-переход заводит по ОДНОЙ целёвке Сейфа на каждую строку
+    (``SafeAllocation.source_draft_line_id``), а выплата с Сейфа разносит их по статьям.
+    Одиночный платёж — это транш из одной строки.
+    """
+
+    __tablename__ = "expense_draft_line"
+    __table_args__ = (Index("ix_expense_draft_line_draft", "draft_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    draft_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("counterparty_payment_draft.id", ondelete="CASCADE"), nullable=False
+    )
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("dds_articles.id", ondelete="RESTRICT"), nullable=False
+    )
+    # Контрагент строки (атрибуция расхода): для статей свободного вывода с привязанными
+    # контрагентами. Целёвка Сейфа помечается им; деньги идут ИП→Сейф. NULL — «просто трата».
+    counterparty_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("counterparty.id", ondelete="SET NULL"), nullable=True
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
 class SupplierInvoice(Base):
     """A concrete payment obligation collected from a source channel.
 

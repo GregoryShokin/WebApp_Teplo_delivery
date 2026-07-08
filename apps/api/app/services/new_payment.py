@@ -24,7 +24,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.permissions import permission_is_granted
-from app.models import Account, DdsArticle, Employee, Wallet
+from app.models import (
+    Account,
+    Counterparty,
+    CounterpartyPayableProfile,
+    DdsArticle,
+    Employee,
+    Wallet,
+)
 from app.services.counterparty_registry import NON_PAYOUT_WALLET_CODES
 from app.services.kassa.payouts import (
     EMPLOYEE_ADVANCE_ARTICLE_CODE,
@@ -142,10 +149,44 @@ def ensure_expense_article_allowed(article: DdsArticle) -> None:
         )
 
 
+async def _counterparties_by_article(
+    session: AsyncSession, article_ids: list[Any]
+) -> dict[Any, list[dict[str, Any]]]:
+    """Контрагенты, закреплённые за статьёй (``default_dds_article_id``, галка «Закрепить
+    за контрагентом»). Для атрибуции свободного вывода: кому платим по этой статье."""
+    if not article_ids:
+        return {}
+    rows = await session.execute(
+        select(
+            CounterpartyPayableProfile.default_dds_article_id,
+            Counterparty.id,
+            Counterparty.name,
+            Counterparty.inn,
+        )
+        .join(Counterparty, Counterparty.id == CounterpartyPayableProfile.counterparty_id)
+        .where(
+            CounterpartyPayableProfile.default_dds_article_id.in_(article_ids),
+            Counterparty.status != "archived",
+        )
+        .order_by(Counterparty.name)
+    )
+    by_article: dict[Any, list[dict[str, Any]]] = {}
+    for article_id, cp_id, name, inn in rows:
+        by_article.setdefault(article_id, []).append(
+            {"counterparty_id": cp_id, "name": name, "inn": inn}
+        )
+    return by_article
+
+
 async def list_new_payment_articles(
     session: AsyncSession, *, permissions: frozenset[str]
 ) -> list[dict[str, Any]]:
-    """Статьи селекта окна: только маршруты, доступные пользователю по правам."""
+    """Статьи селекта окна: только маршруты, доступные пользователю по правам.
+
+    К каждой статье прикладываются закреплённые за ней контрагенты (``counterparties``) —
+    для свободного вывода это выбор «кому платим» (атрибуция), у остальных маршрутов свой
+    выбор получателя.
+    """
     allowed = _allowed_flows(permissions)
     articles = (
         await session.scalars(
@@ -154,11 +195,15 @@ async def list_new_payment_articles(
             .order_by(DdsArticle.name)
         )
     ).all()
-    return [
+    result = [
         {"id": article.id, "code": article.code, "name": article.name, "flow": flow}
         for article in articles
         if (flow := new_payment_article_flow(article)) is not None and flow in allowed
     ]
+    pinned = await _counterparties_by_article(session, [item["id"] for item in result])
+    for item in result:
+        item["counterparties"] = pinned.get(item["id"], [])
+    return result
 
 
 async def list_new_payment_wallets(session: AsyncSession) -> list[dict[str, Any]]:

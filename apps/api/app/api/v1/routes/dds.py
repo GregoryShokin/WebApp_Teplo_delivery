@@ -76,6 +76,7 @@ from app.schemas.dds import (
 )
 from app.schemas.kassa import KassaPendingRead
 from app.services.advance_iiko_payout import post_advance_payout_to_iiko
+from app.services.banking import BankCredentialsError, BankFetchError
 from app.services.banking.cashflow_classify import (
     EXCLUDED_QUALITY,
     apply_cashflow_exclude,
@@ -105,10 +106,10 @@ from app.services.banking.safe_allocations import (
     safe_reserved_total,
     transfer_allocation_to_kassa,
 )
-from app.services.banking import BankCredentialsError, BankFetchError
 from app.services.banking.transfer_matching import find_and_link_transfer_pairs
 from app.services.counterparty_payments import (
     CounterpartyPaymentError,
+    ExpenseLineInput,
     create_expense_payment_draft,
 )
 from app.services.kassa.payouts import (
@@ -595,12 +596,19 @@ async def post_new_payment_expense_draft(
     черновика — та же целёвка, только пополненная транзитом с р/с. Подтверждение
     всегда в банке; проводки и целёвку создаёт вебхук-контур (paid-переход).
     """
+    lines = [
+        ExpenseLineInput(
+            article_id=line.article_id,
+            amount=line.amount,
+            purpose=line.purpose,
+            counterparty_id=line.counterparty_id,
+        )
+        for line in payload.normalized_lines()
+    ]
     try:
         return await create_expense_payment_draft(
             session,
-            article_id=payload.article_id,
-            amount=payload.amount,
-            purpose=payload.purpose,
+            lines=lines,
             actor_user_id=actor.user_id,
         )
     except CounterpartyPaymentError as exc:

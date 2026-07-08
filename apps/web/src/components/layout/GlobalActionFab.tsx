@@ -11,11 +11,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { usePermissions } from "@/lib/permissions";
+import { EmployeePayoutDialog } from "@/routes/dds/EmployeePayoutDialog";
 import { NewPaymentDialog } from "@/routes/dds/NewPaymentDialog";
 
-// Пресеты окна «Новый платёж»: пункт FAB открывает окно с предвыбранной статьёй.
+// Пресет построчного конструктора: пункт FAB предвыбирает статью первой строки.
 const PRESET_SUPPLIER_PREPAYMENT = "advance_to_supplier";
-const PRESET_EMPLOYEE_PAYOUT = "zarplata_administrativnogo_personala";
 
 /**
  * Кроссстраничная плавающая кнопка «+»: всплывающее меню действий над кнопкой (стопкой).
@@ -29,6 +29,7 @@ export function GlobalActionFab() {
   const canEmployeePayout = permissions.canPerformAction("payroll.employee_payouts.create");
 
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [payoutOpen, setPayoutOpen] = useState(false);
   const [presetArticleCode, setPresetArticleCode] = useState<string | null>(null);
 
   if (!canNewPayment) {
@@ -66,7 +67,7 @@ export function GlobalActionFab() {
             </DropdownMenuItem>
           ) : null}
           {canEmployeePayout ? (
-            <DropdownMenuItem onSelect={() => openPayment(PRESET_EMPLOYEE_PAYOUT)}>
+            <DropdownMenuItem onSelect={() => setPayoutOpen(true)}>
               Создать выплату сотруднику
             </DropdownMenuItem>
           ) : null}
@@ -78,6 +79,7 @@ export function GlobalActionFab() {
         open={paymentOpen}
         presetArticleCode={presetArticleCode}
       />
+      <EmployeePayoutDialog onOpenChange={setPayoutOpen} open={payoutOpen} />
     </>
   );
 }

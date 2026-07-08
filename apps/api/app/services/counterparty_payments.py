@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
@@ -26,6 +27,7 @@ from app.models import (
     CounterpartyPayableProfile,
     CounterpartyPaymentDraft,
     DdsArticle,
+    ExpenseDraftLine,
     InvoicePaymentAllocation,
     SupplierInvoice,
     Wallet,
@@ -381,43 +383,76 @@ async def create_standalone_payment_draft(
     return draft
 
 
+@dataclass(frozen=True)
+class ExpenseLineInput:
+    """Строка транша свободного вывода на Сейф: статья + сумма + назначение.
+
+    ``counterparty_id`` — необязательная атрибуция: кому платим (для статей, к которым
+    привязаны контрагенты). Помечает целёвку Сейфа; деньги идут ИП→Сейф.
+    """
+
+    article_id: uuid.UUID
+    amount: Decimal
+    purpose: str = ""
+    counterparty_id: uuid.UUID | None = None
+
+
 async def create_expense_payment_draft(
     session: AsyncSession,
     *,
-    article_id: uuid.UUID,
-    amount: Decimal,
-    purpose: str,
+    lines: Sequence[ExpenseLineInput] | None = None,
+    article_id: uuid.UUID | None = None,
+    amount: Decimal | None = None,
+    purpose: str | None = None,
     actor_user_id: uuid.UUID | None = None,
     bank_client: BankClient | None = None,
 ) -> CounterpartyPaymentDraft:
-    """Черновик «просто траты» без получателя — свободный вывод на Сейф по статье.
+    """Черновик «просто траты» без получателя — свободный вывод на Сейф по статьям.
 
-    Окно «Новый платёж», статья без собственного контура (аренда, хозрасходы…):
-    платёж уходит на карту ИП (реквизиты зарплатных выплат), контрагента и накладных
-    у черновика нет. При статусе «исполнен» ``apply_payment_status`` заводит транзит
-    р/с→Сейф и целёвку ЦЕЛЕВОЙ статьи с назначением из формы
-    (``target_article_id``/``target_purpose``) — её можно оплатить с Сейфа или
-    передать в кассу на выдачу. При отказе банка целёвки нет.
+    Окно «Новый платёж»: одним банковским черновиком (транш на карту ИП) можно вывести
+    несколько статей — каждая строка ``ExpenseLineInput`` (статья, сумма, назначение)
+    помнится в ``expense_draft_line``, а сумма черновика = Σ строк. При статусе
+    «исполнен» ``apply_payment_status`` заводит транзит р/с→Сейф и ПО ОДНОЙ целёвке
+    Сейфа на каждую строку — их можно оплатить с Сейфа или передать в кассу, и расход
+    разнесётся по статьям. Одиночный платёж — транш из одной строки (``article_id`` /
+    ``amount`` / ``purpose``, обратная совместимость). При отказе банка целёвок нет.
     """
-    total = _money(amount)
+    # Обратная совместимость: одиночный платёж = транш из одной строки.
+    if lines is None:
+        if article_id is None or amount is None:
+            raise CounterpartyPaymentError("Не заданы платежи транша")
+        lines = [ExpenseLineInput(article_id=article_id, amount=amount, purpose=purpose or "")]
+    if not lines:
+        raise CounterpartyPaymentError("Добавьте хотя бы один платёж")
+
+    # Валидируем каждую строку (статья годна для свободного вывода, сумма > 0) и собираем
+    # нормализованные (статья, сумма, назначение); пустое назначение → имя статьи.
+    prepared: list[tuple[DdsArticle, Decimal, str, uuid.UUID | None]] = []
+    total = Decimal("0")
+    for line in lines:
+        line_amount = _money(line.amount)
+        if line_amount <= 0:
+            raise CounterpartyPaymentError("Сумма платежа должна быть больше нуля")
+        article = await session.get(DdsArticle, line.article_id)
+        if article is None:
+            raise CounterpartyPaymentError("Статья ДДС не найдена")
+        try:
+            ensure_expense_article_allowed(article)
+        except ValueError as exc:
+            raise CounterpartyPaymentError(str(exc)) from exc
+        # Назначение необязательно: пустое → имя статьи (в банк и в целёвку Сейфа).
+        line_purpose = " ".join((line.purpose or "").split()) or article.name
+        prepared.append((article, line_amount, line_purpose, line.counterparty_id))
+        total += line_amount
+
     if total <= 0:
         raise CounterpartyPaymentError("Сумма платежа должна быть больше нуля")
-    purpose_clean = " ".join((purpose or "").split())
-    if not purpose_clean:
-        raise CounterpartyPaymentError("Укажите назначение платежа")
-
-    article = await session.get(DdsArticle, article_id)
-    if article is None:
-        raise CounterpartyPaymentError("Статья ДДС не найдена")
-    try:
-        ensure_expense_article_allowed(article)
-    except ValueError as exc:
-        raise CounterpartyPaymentError(str(exc)) from exc
 
     settings = get_settings()
     payer_account = _payer_account(settings)
     requisites = await _ip_card_requisites(session)
 
+    single = len(prepared) == 1
     draft = CounterpartyPaymentDraft(
         id=uuid.uuid4(),
         counterparty_id=None,
@@ -425,14 +460,20 @@ async def create_expense_payment_draft(
         amount=total,
         status="created",
         pays_via_safe=True,
-        target_article_id=article.id,
-        target_purpose=purpose_clean,
+        # Одиночный платёж дублирует статью/назначение в поля черновика (наглядность и
+        # обратная совместимость); транш из нескольких строк несёт разбивку только в строках.
+        target_article_id=prepared[0][0].id if single else None,
+        target_purpose=prepared[0][2] if single else None,
         created_by_user_id=actor_user_id,
     )
     document_id = f"teplo-cp-{draft.id}"
     draft.document_id = document_id[:64]
-    # Перевод на собственную карту ИП — без НДС-блока (как у informal-закупа).
-    bank_purpose = purpose_clean[:210]
+    # Назначение в банк (лимит платёжки): одиночный — назначение строки, транш — сводка.
+    if single:
+        bank_purpose = prepared[0][2][:210]
+    else:
+        summary = "; ".join(line_purpose for _, _, line_purpose, _ in prepared)
+        bank_purpose = f"Транш {len(prepared)} платежей: {summary}"[:210]
 
     try:
         payload = build_payment_draft_api_payload(
@@ -467,6 +508,18 @@ async def create_expense_payment_draft(
     draft.payload = payload
     draft.synced_at = datetime.now(tz=UTC)
     session.add(draft)
+    await session.flush()  # черновик должен существовать до строк (FK draft_id)
+    for position, (article, line_amount, line_purpose, line_cp_id) in enumerate(prepared):
+        session.add(
+            ExpenseDraftLine(
+                draft_id=draft.id,
+                article_id=article.id,
+                counterparty_id=line_cp_id,
+                amount=line_amount,
+                purpose=line_purpose,
+                position=position,
+            )
+        )
     await session.commit()
     await session.refresh(draft)
     return draft
