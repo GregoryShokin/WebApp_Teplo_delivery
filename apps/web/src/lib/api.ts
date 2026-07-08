@@ -2736,6 +2736,8 @@ export type NewPaymentExpenseLine = {
 export type NewPaymentExpenseDraftPayload = {
   // Транш свободного вывода на Сейф: одна или несколько строк (статья, сумма, назначение).
   lines: NewPaymentExpenseLine[];
+  // Банк-плательщик черновика: bank_draft (Т-Банк, по умолчанию) или bank_draft_sber (Сбер).
+  channel?: "bank_draft" | "bank_draft_sber";
 };
 
 export type NewPaymentExpenseDraft = {

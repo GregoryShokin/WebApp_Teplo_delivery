@@ -109,6 +109,17 @@ export function NewPaymentDialog({
   const flowOf = (row: PaymentRow): NewPaymentFlow | null =>
     articleById.get(row.articleId)?.flow ?? null;
 
+  // Сбер — банк-плательщик ТОЛЬКО свободного расхода; накладные/предоплата/авансы остаются
+  // в Т-Банке. Поэтому Сбер-счёт можно выбрать лишь когда в конструкторе нет строк не-expense
+  // маршрутов; иначе счёт списания форсим на Т-Банк.
+  const hasNonExpenseRow = rows.some((row) => {
+    const flow = flowOf(row);
+    return flow !== null && flow !== "expense";
+  });
+  const selectedWallet = wallets.find((wallet) => wallet.id === walletId) ?? null;
+  const expenseChannel: "bank_draft" | "bank_draft_sber" =
+    selectedWallet?.bank_code === "sber" ? "bank_draft_sber" : "bank_draft";
+
   const needsCounterparties = rows.some((row) => flowOf(row) === "supplier_prepayment");
   const registryQuery = useQuery({
     queryKey: ["cp", "registry"],
