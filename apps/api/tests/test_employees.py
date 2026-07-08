@@ -2970,12 +2970,18 @@ def _patch_dismiss_money_flow(monkeypatch: pytest.MonkeyPatch) -> dict[str, list
         amount: Decimal,
         operation_date: Any,
         purpose: str,
+        provider: str = "tbank",
     ) -> bool:
         calls["transfer"].append(amount)
         return True
 
     async def fake_draft(
-        _session: Any, *, document_id: str, amount: Decimal, purpose: str
+        _session: Any,
+        *,
+        document_id: str,
+        amount: Decimal,
+        purpose: str,
+        provider: str = "tbank",
     ) -> bool:
         calls["draft"].append(document_id)
         return True

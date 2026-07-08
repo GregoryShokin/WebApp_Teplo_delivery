@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Iterable
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -29,6 +29,7 @@ from app.models import (
 from app.schemas.inventory import PayoutOptionRead
 from app.schemas.payroll import (
     AdvanceRecoveryDeferralRequest,
+    CashWalletRead,
     EmployeePayoutConfirmRequest,
     EmployeePayoutCreate,
     EmployeePayoutRead,
@@ -45,7 +46,6 @@ from app.schemas.payroll import (
     PayrollPaymentsBulkMarkRequest,
     PayrollPaymentsMarkAllRequest,
     PayrollPaymentsMarkAllResponse,
-    CashWalletRead,
     PayrollPayoutAllocationRead,
     PayrollPayoutApplyDeltasResponse,
     PayrollPayoutDeltaRead,
@@ -708,14 +708,16 @@ async def post_run_bank_draft(
     run_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    bank_provider: Annotated[Literal["tbank", "sber"], Query()] = "tbank",
 ) -> PayrollBankDraftRead | None:
-    # Формирование банк-черновика требует права на канал «банк-черновик».
+    # Формирование банк-черновика требует права на канал «банк-черновик» (то же право для Сбера).
     ensure_permission(actor, "finance.payout_channel.bank_draft")
     try:
         return await create_or_update_run_draft(
             session,
             run_id,
             actor_user_id=actor.user_id,
+            provider=bank_provider,
         )
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

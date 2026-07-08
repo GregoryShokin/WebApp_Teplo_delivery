@@ -329,7 +329,7 @@ export type DepositDismissAction =
   | "schedule_payout"
   | "none";
 
-export type DepositPayoutMethod = "cash_tk" | "cash_safe" | "bank_draft";
+export type DepositPayoutMethod = "cash_tk" | "cash_safe" | "bank_draft" | "bank_draft_sber";
 
 export type DepositPayoutTarget = "account" | "payroll";
 
@@ -1873,7 +1873,7 @@ export type DepositListItem = {
 export type DepositSchedulePayoutPayload = {
   // Сумма выдачи; пропуск/null = весь накопленный баланс на момент ближайшей ведомости.
   amount?: string | null;
-  account_choice?: "safe" | "cash_tk" | "bank_draft";
+  account_choice?: "safe" | "cash_tk" | "bank_draft" | "bank_draft_sber";
 };
 
 export type DepositTransaction = {
@@ -1898,8 +1898,9 @@ export type DepositConfigPatch = {
 export type DepositPayoutPayload = {
   amount: string;
   comment?: string | null;
-  // Счёт немедленной выдачи: ТК Черникова (по умолч., +iiko) / Сейф / банк-черновик (этап 3).
-  payout_method?: "cash_tk" | "cash_safe" | "bank_draft";
+  // Счёт немедленной выдачи: ТК Черникова (по умолч., +iiko) / Сейф / банк-черновик Т-Банк
+  // (bank_draft) или Сбер (bank_draft_sber).
+  payout_method?: DepositPayoutMethod;
 };
 
 export type DepositWriteoffPayload = {
@@ -1986,8 +1987,9 @@ export type CourierDepositTransactionPayload = {
   amount_cents: number;
   transaction_date: string;
   comment?: string | null;
-  // Канал выдачи только для возврата: ТК Черникова (по умолч.) / Сейф / банк-черновик.
-  payout_method?: "cash_tk" | "cash_safe" | "bank_draft";
+  // Канал выдачи только для возврата: ТК Черникова (по умолч.) / Сейф / банк-черновик
+  // Т-Банк (bank_draft) или Сбер (bank_draft_sber).
+  payout_method?: "cash_tk" | "cash_safe" | "bank_draft" | "bank_draft_sber";
 };
 
 export type CourierEvaluationSource = "web" | "telegram" | "api";
@@ -3627,8 +3629,13 @@ export async function createPayoutDrafts(runId: string): Promise<PayrollPayoutDr
   return response.data;
 }
 
-export async function createRunBankDraft(runId: string): Promise<PayrollBankDraft | null> {
-  const response = await api.post<PayrollBankDraft | null>(`/payroll/runs/${runId}/bank-draft`);
+export async function createRunBankDraft(
+  runId: string,
+  bankProvider: "tbank" | "sber" = "tbank",
+): Promise<PayrollBankDraft | null> {
+  const response = await api.post<PayrollBankDraft | null>(
+    `/payroll/runs/${runId}/bank-draft?bank_provider=${bankProvider}`,
+  );
   return response.data;
 }
 

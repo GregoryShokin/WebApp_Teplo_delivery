@@ -827,6 +827,8 @@ PAYOUT_CHANNEL_PERMISSIONS: dict[str, str] = {
     "cash_safe": "finance.payout_channel.safe",
     "safe": "finance.payout_channel.safe",
     "bank_draft": "finance.payout_channel.bank_draft",
+    # Сбер-черновик — тот же канал-право, что и Т-Банк-черновик (по решению владельца).
+    "bank_draft_sber": "finance.payout_channel.bank_draft",
 }
 
 

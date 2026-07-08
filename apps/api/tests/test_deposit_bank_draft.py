@@ -168,7 +168,10 @@ async def test_send_bank_draft_calls_client_with_requisites(
         draft = client.drafts[0]
         assert draft["document_id"] == "teplo-deposit-abc"
         assert draft["amount"] == Decimal("5000")
-        assert draft["requisites"]["recipientName"]
+        assert draft["requisites"]["recipientName"] == "Шокина Кристина Юрьевна"
+        assert draft["requisites"]["bankAcnt"] == "40817810552095257243"
+        assert draft["requisites"]["bankBik"] == "046015602"
+        assert draft["requisites"]["corrAccount"] == "30101810600000000602"
 
 
 async def test_send_bank_draft_noop_without_requisites(

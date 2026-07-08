@@ -334,6 +334,10 @@ class PayrollBankDraft(Base):
     document_id: Mapped[str] = mapped_column(String(64), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False)
+    # Банк-плательщик черновика (tbank/sber): по нему на статусе paid книжится транзит банк→Сейф.
+    bank_provider: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="tbank", server_default="tbank"
+    )
     provider_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
@@ -1300,6 +1304,10 @@ class SalaryAdvanceBankDraft(Base):
     document_id: Mapped[str] = mapped_column(String(64), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False)
+    # Банк-плательщик черновика (tbank/sber) — как у PayrollBankDraft.
+    bank_provider: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="tbank", server_default="tbank"
+    )
     provider_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Резерв Сейфа, созданный при исполнении платежа (источник кнопки «Выплачено»).
     safe_allocation_id: Mapped[uuid.UUID | None] = mapped_column(

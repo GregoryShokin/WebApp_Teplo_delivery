@@ -84,6 +84,7 @@ from app.services import employee_assignments as employee_assignment_service
 from app.services import employee_change_events as employee_change_event_service
 from app.services import employee_effective_events as employee_effective_event_service
 from app.services.accumulation_fund_service import forfeit_active_fund_on_dismiss
+from app.services.banking.payout import channel_provider
 from app.services.deposit_bank_draft import (
     PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
     book_deposit_bank_to_safe_transfer,
@@ -1420,12 +1421,14 @@ async def dismiss_employee(
                 payout_date=now.date(),
                 source_id=payout_effect.transaction_id,
             )
-        if payout_effect.method == DepositPayoutMethod.BANK_DRAFT:
+        payout_provider = channel_provider(payout_effect.method.value)
+        if payout_provider is not None:
             await send_deposit_payout_bank_draft(
                 session,
                 document_id=f"teplo-deposit-{payout_effect.transaction_id}",
                 amount=payout_effect.amount,
                 purpose=f"Выдача депозита {employee.full_name} (через Сейф)",
+                provider=payout_provider,
             )
     if isinstance(session, AsyncSession):
         return await _get_employee_or_404(
@@ -3974,7 +3977,8 @@ async def _apply_dismiss_deposit_decision(
             transaction_date=now.date(),
             comment=comment,
         )
-        if method == DepositPayoutMethod.BANK_DRAFT:
+        transit_provider = channel_provider(method.value)
+        if transit_provider is not None:
             await book_deposit_bank_to_safe_transfer(
                 session,
                 source_kind=PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
@@ -3982,6 +3986,7 @@ async def _apply_dismiss_deposit_decision(
                 amount=decision.payout_amount,
                 operation_date=now.date(),
                 purpose=f"Выдача депозита {employee_full_name} (через Сейф)",
+                provider=transit_provider,
             )
         payout_effect = DismissDepositPayoutEffect(
             transaction_id=payout_tx.id,

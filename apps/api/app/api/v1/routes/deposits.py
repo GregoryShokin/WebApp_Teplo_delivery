@@ -22,6 +22,7 @@ from app.db.session import get_session
 from app.models import DepositAccount, DepositTransaction, Employee, PayrollPeriod
 from app.schemas.payroll import PayrollPeriodRead
 from app.services import deposit_schedule, deposit_service
+from app.services.banking.payout import channel_provider
 from app.services.deposit_bank_draft import (
     PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
     book_deposit_bank_to_safe_transfer,
@@ -103,9 +104,9 @@ class DepositConfigRead(BaseModel):
 class DepositPayoutRequest(BaseModel):
     amount: Decimal | None = Field(default=None, gt=0)
     comment: str | None = Field(default=None, max_length=1000)
-    # Счёт немедленной выдачи: ТК Черникова (по умолч., +iiko-изъятие) / Сейф (без iiko).
-    # bank_draft появится на этапе 3; отложенная выдача через ЗП — на этапе 4.
-    payout_method: Literal["cash_tk", "cash_safe", "bank_draft"] = "cash_tk"
+    # Счёт немедленной выдачи: ТК Черникова (по умолч., +iiko-изъятие) / Сейф (без iiko) /
+    # банк-черновик Т-Банк (``bank_draft``) или Сбер (``bank_draft_sber``) — оба через Сейф.
+    payout_method: Literal["cash_tk", "cash_safe", "bank_draft", "bank_draft_sber"] = "cash_tk"
 
 
 class DepositSchedulePayoutRequest(BaseModel):
@@ -113,7 +114,7 @@ class DepositSchedulePayoutRequest(BaseModel):
 
     # Сумма выдачи; None = весь накопленный баланс на момент ближайшей ведомости.
     amount: Decimal | None = Field(default=None, gt=0)
-    account_choice: Literal["safe", "cash_tk", "bank_draft"] = "safe"
+    account_choice: Literal["safe", "cash_tk", "bank_draft", "bank_draft_sber"] = "safe"
 
 
 class DepositScheduleRead(BaseModel):
@@ -286,8 +287,10 @@ async def payout_deposit(
         transaction_date=now.date(),
         comment=payload.comment,
     )
-    # Банк-черновик: транзит банк→Сейф (расход выше списан с Сейфа), сам черновик — после commit.
-    if payload.payout_method == "bank_draft":
+    # Банк-черновик (Т-Банк / Сбер): транзит банк→Сейф (расход выше списан с Сейфа), сам
+    # черновик — после commit. Провайдер берётся из выбранного канала.
+    bank_provider = channel_provider(payload.payout_method)
+    if bank_provider is not None:
         await book_deposit_bank_to_safe_transfer(
             session,
             source_kind=PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
@@ -295,6 +298,7 @@ async def payout_deposit(
             amount=amount,
             operation_date=now.date(),
             purpose=f"Выдача депозита {employee.full_name} (через Сейф)",
+            provider=bank_provider,
         )
     after = deposit_service.deposit_account_snapshot(account) | {
         "transaction": deposit_service.transaction_payload(transaction),
@@ -320,13 +324,14 @@ async def payout_deposit(
         post_production_deposit_payout_to_iiko(
             amount=amount, payout_date=now.date(), source_id=transaction.id
         )
-    # Банк-черновик на ИП Шокину (как ЗП) — после commit, ошибка банка не валит выдачу.
-    if payload.payout_method == "bank_draft":
+    # Банк-черновик на Сейф (Шокину) — после commit, ошибка банка не валит выдачу.
+    if bank_provider is not None:
         await send_deposit_payout_bank_draft(
             session,
             document_id=f"teplo-deposit-{transaction.id}",
             amount=amount,
             purpose=f"Выдача депозита {employee.full_name} (через Сейф)",
+            provider=bank_provider,
         )
     return _operation_payload(account, transaction)
 

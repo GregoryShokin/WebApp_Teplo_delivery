@@ -1220,6 +1220,8 @@ function AdminPayoutCard({
   const payoutCashTotal = Math.min(moneyValue(run.payout_cash_total ?? 0), totalPayable);
   const [cashValue, setCashValue] = useState(moneyInputValue(payoutCashTotal));
   const [walletCode, setWalletCode] = useState<string>("");
+  // Банк для безналичного черновика: Тинькофф (по умолчанию) или Сбербанк — оба через Сейф.
+  const [bankProvider, setBankProvider] = useState<"tbank" | "sber">("tbank");
 
   useEffect(() => {
     setCashValue(moneyInputValue(payoutCashTotal));
@@ -1280,7 +1282,7 @@ function AdminPayoutCard({
   });
 
   const draftMutation = useMutation({
-    mutationFn: () => createRunBankDraft(runId),
+    mutationFn: () => createRunBankDraft(runId, bankProvider),
     onSuccess: async (next) => {
       await invalidatePayoutQueries();
       setIsDialogOpen(false);
@@ -1414,6 +1416,21 @@ function AdminPayoutCard({
           )}
           Сохранить сплит
         </Button>
+
+        {hasBank && channelPerms.bank_draft ? (
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            Банк
+            <select
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
+              disabled={draftMutation.isPending}
+              onChange={(event) => setBankProvider(event.target.value as "tbank" | "sber")}
+              value={bankProvider}
+            >
+              <option value="tbank">Т-Банк (черновик)</option>
+              <option value="sber">Сбербанк → Сейф (черновик)</option>
+            </select>
+          </label>
+        ) : null}
 
         <AlertDialog
           open={isDialogOpen}

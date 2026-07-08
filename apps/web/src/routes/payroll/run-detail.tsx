@@ -1081,6 +1081,8 @@ function RunBankDraftCard({
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [cashValue, setCashValue] = useState(moneyInputValue(payoutCashTotal));
   const [walletCode, setWalletCode] = useState<string>("");
+  // Банк, в котором формируется черновик выплаты (через Сейф). По умолчанию Тинькофф.
+  const [bankProvider, setBankProvider] = useState<"tbank" | "sber">("tbank");
   const draftAmount = moneyValue(draft?.amount ?? totalAccountAmount);
   const hasDraft = Boolean(draft);
 
@@ -1168,7 +1170,7 @@ function RunBankDraftCard({
   });
 
   const mutation = useMutation({
-    mutationFn: () => createRunBankDraft(runId),
+    mutationFn: () => createRunBankDraft(runId, bankProvider),
     onSuccess: async (nextDraft) => {
       await invalidatePayoutQueries();
       setIsDialogOpen(false);
@@ -1309,6 +1311,22 @@ function RunBankDraftCard({
           )}
           Сохранить наличные
         </Button>
+
+        <select
+          aria-label="Банк черновика"
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
+          disabled={
+            isLoading || mutation.isPending || cashDirty || !channelPerms.bank_draft
+          }
+          onChange={(event) => setBankProvider(event.target.value as "tbank" | "sber")}
+          title={
+            channelPerms.bank_draft ? undefined : "Нет права на формирование банк-черновиков"
+          }
+          value={bankProvider}
+        >
+          <option value="tbank">Тинькофф</option>
+          <option value="sber">Сбербанк</option>
+        </select>
 
         <AlertDialog
           open={isDialogOpen}

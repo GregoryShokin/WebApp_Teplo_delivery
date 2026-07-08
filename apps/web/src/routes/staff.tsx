@@ -3726,6 +3726,8 @@ function StaffEditor({
       ["cash_safe", depositChannelPerms.cash_safe],
       ["cash_tk", depositChannelPerms.cash_tk],
       ["bank_draft", depositChannelPerms.bank_draft],
+      // Сбер-черновик — под тем же правом, что и Т-Банк-черновик.
+      ["bank_draft_sber", depositChannelPerms.bank_draft],
     ] as const
   )
     .filter(([, ok]) => ok)
@@ -5500,6 +5502,9 @@ function StaffEditor({
                               ) : null}
                               {allowedDepositChannels.includes("bank_draft") ? (
                                 <option value="bank_draft">Т-Банк → Сейф (черновик)</option>
+                              ) : null}
+                              {allowedDepositChannels.includes("bank_draft") ? (
+                                <option value="bank_draft_sber">Сбербанк → Сейф (черновик)</option>
                               ) : null}
                             </select>
                             <span className="text-xs text-muted-foreground">
@@ -7300,6 +7305,9 @@ function depositChannelLabel(method: DepositPayoutMethod) {
   }
   if (method === "bank_draft") {
     return "Т-Банк → Сейф";
+  }
+  if (method === "bank_draft_sber") {
+    return "Сбербанк → Сейф";
   }
   return "Сейф";
 }

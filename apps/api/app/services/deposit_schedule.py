@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import AppSetting, DepositPayoutSchedule
 
 DEPOSIT_SCHEDULED_PAYOUT_ENABLED_KEY = "payroll.deposit_scheduled_payout_enabled"
-SCHEDULE_ACCOUNT_CHOICES = frozenset({"safe", "cash_tk", "bank_draft"})
+SCHEDULE_ACCOUNT_CHOICES = frozenset({"safe", "cash_tk", "bank_draft", "bank_draft_sber"})
 
 
 def _truthy(value: Any) -> bool:

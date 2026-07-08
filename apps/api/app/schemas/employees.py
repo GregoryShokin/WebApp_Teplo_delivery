@@ -242,6 +242,7 @@ class DepositPayoutMethod(StrEnum):
     CASH_TK = "cash_tk"
     CASH_SAFE = "cash_safe"
     BANK_DRAFT = "bank_draft"  # Т-Банк-черновик через Сейф
+    BANK_DRAFT_SBER = "bank_draft_sber"  # Сбер-черновик через Сейф
 
 
 class DepositPayoutTarget(StrEnum):

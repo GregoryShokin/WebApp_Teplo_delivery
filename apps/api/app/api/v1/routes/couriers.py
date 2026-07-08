@@ -56,6 +56,7 @@ from app.schemas.couriers import (
     CourierSubstitutionRequest,
     CourierWorkStatusFilter,
 )
+from app.services.banking.payout import channel_provider
 from app.services.courier_sync import (
     MOSCOW_TZ,
     list_courier_deliveries,
@@ -751,14 +752,15 @@ async def post_courier_deposit_transaction(
         # Возврат наличными с ТК Черникова — изъятие из Главной кассы. Для Сейфа iiko не
         # трогаем (другой счёт), иначе ложное изъятие.
         post_deposit_return_to_iiko(transaction)
-    elif tt_value == "return" and transaction.payout_method == "bank_draft":
-        # Безналичный возврат «как ЗП»: черновик на ИП Шокину (раздача с Сейфа). После
+    elif tt_value == "return" and channel_provider(transaction.payout_method) is not None:
+        # Безналичный возврат «как ЗП»: черновик (Т-Банк/Сбер) на Сейф (раздача с Сейфа). После
         # commit, ошибка банка не валит возврат. iiko не трогаем (деньги не через кассу).
         await send_deposit_payout_bank_draft(
             session,
             document_id=f"teplo-courier-deposit-{transaction.id}",
             amount=(Decimal(transaction.amount_cents) / Decimal("100")).quantize(Decimal("0.01")),
             purpose=f"Возврат депозита курьеру (операция #{transaction.id}) через Сейф",
+            provider=channel_provider(transaction.payout_method),
         )
     return await _deposit_transaction_payload(session, transaction)
 

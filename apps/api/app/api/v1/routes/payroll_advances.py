@@ -201,13 +201,15 @@ class AdvanceIssueWalletRead(BaseModel):
     channel: Literal["cash", "bank"]
 
 
-async def _resolve_bank_issue_wallet(session: AsyncSession) -> Wallet | None:
-    """Кошелёк банковской выдачи = активный счёт, привязанный к настроенному счёту
-    исходящих платежей Т-Банка (расчётный). Источник истины — конфиг платежей, не хардкод."""
+async def _resolve_bank_issue_wallet(
+    session: AsyncSession, provider: str = "tbank"
+) -> Wallet | None:
+    """Кошелёк банковской выдачи для провайдера (tbank/sber) = активный счёт, привязанный к
+    настроенному счёту исходящих платежей этого банка. Источник истины — конфиг платежей."""
     from app.core.config import get_settings
-    from app.services.deposit_bank_draft import _payer_account
+    from app.services.banking.payout import payer_account_for
 
-    payer_account = _payer_account(get_settings())
+    payer_account = payer_account_for(get_settings(), provider)
     if not payer_account:
         return None
     return await session.scalar(
@@ -234,11 +236,16 @@ async def get_issue_wallets(
         AdvanceIssueWalletRead(id=w.id, code=w.code, name=w.name, channel="cash")
         for w in await list_cash_wallets(session)
     ]
-    bank = await _resolve_bank_issue_wallet(session)
-    if bank is not None:
-        wallets.append(
-            AdvanceIssueWalletRead(id=bank.id, code=bank.code, name=bank.name, channel="bank")
-        )
+    # Банковские счета выдачи: Т-Банк и Сбер (черновик в соответствующем банке). Дедуп по id
+    # на случай, если провайдеры резолвятся в один кошелёк (mock).
+    seen_bank_ids: set[uuid.UUID] = set()
+    for provider in ("tbank", "sber"):
+        bank = await _resolve_bank_issue_wallet(session, provider)
+        if bank is not None and bank.id not in seen_bank_ids:
+            seen_bank_ids.add(bank.id)
+            wallets.append(
+                AdvanceIssueWalletRead(id=bank.id, code=bank.code, name=bank.name, channel="bank")
+            )
     return wallets
 
 

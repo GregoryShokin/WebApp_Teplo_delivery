@@ -46,6 +46,7 @@ from app.models import (
 from app.services.advance_iiko_payout import post_advance_payout_to_iiko
 from app.services.bank_payment_status import classify_payment_status
 from app.services.banking import BankClient, TbankClient
+from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.classifier import (
     SAFE_WALLET_CODE,
     TRANSFER_IN_ARTICLE_CODE,
@@ -242,6 +243,26 @@ def _loan_installments(
         return max(count, 1), per
     count = max(int(installments_count), 1)
     return count, _per_installment(amount, count)
+
+
+async def _bank_wallet_provider(session: AsyncSession, wallet: Wallet) -> str:
+    """Банк-провайдер (tbank/sber) по банковскому кошельку выдачи — сравнением его расчётного
+    счёта с настроенным Сбер-счётом плательщика; иначе Т-Банк.
+
+    Сравниваем с «сырым» ``sber_api_account_number`` (не с mock-заглушкой ``payer_account_for``):
+    в mock-режиме Сбер и Т-Банк делят один заглушечный счёт, поэтому только явно настроенный
+    Сбер-счёт (прод) должен переключать провайдера на Сбер."""
+    from app.models import Account
+
+    sber_account = getattr(get_settings(), "sber_api_account_number", None)
+    if not sber_account:
+        return "tbank"
+    account_number = await session.scalar(
+        select(Account.account_number).where(Account.id == wallet.account_id)
+    )
+    if account_number and str(account_number) == str(sber_account):
+        return "sber"
+    return "tbank"
 
 
 async def issue_advance(
@@ -940,7 +961,10 @@ async def create_advance_bank_draft(
     сохраняется со статусом ``failed`` (выдачу не валим — её можно отменить/повторить).
     """
     settings = get_settings()
-    payer_account = _payer_account(settings)
+    # Банк-плательщик (tbank/sber) — по выбранному счёту выдачи (кошельку). Транзит банк→Сейф
+    # и черновик садятся на счёт этого провайдера; хранится на черновике (bank_provider).
+    provider = await _bank_wallet_provider(session, wallet)
+    payer_account = payer_account_for(settings, provider)
     requisites = await _bank_payout_requisites(session)
     document_id = _advance_document_id(advance.id)
     purpose = f"Перевод под выдачу {_kind_label(advance)} сотруднику"
@@ -956,7 +980,7 @@ async def create_advance_bank_draft(
         raise PayrollConflictError(str(exc)) from exc
 
     stored_payload = {"accountNumber": payer_account, "request": api_payload}
-    client = bank_client or TbankClient(session)
+    client = bank_client or payout_client_for(provider, session)
     try:
         result = await client.create_payment_draft(
             document_id=document_id,
@@ -971,6 +995,7 @@ async def create_advance_bank_draft(
             document_id=document_id[:64],
             amount=advance.amount,
             status="failed",
+            bank_provider=provider,
             provider_ref=None,
             payload=stored_payload,
             last_error=str(exc)[:500],
@@ -985,6 +1010,7 @@ async def create_advance_bank_draft(
         document_id=document_id[:64],
         amount=advance.amount,
         status=_safe_advance_draft_status(result.status, "created"),
+        bank_provider=provider,
         provider_ref=result.provider_ref,
         payload=stored_payload,
         last_error=None,
@@ -1073,7 +1099,8 @@ async def _book_advance_transit_and_reserve(
 
     amount = decimal(advance.amount).quantize(_CENTS)
     settings = get_settings()
-    payer_account = _payer_account(settings)
+    # Транзит садится на банк-кошелёк провайдера черновика (tbank/sber), не всегда Т-Банк.
+    payer_account = payer_account_for(settings, draft.bank_provider)
     bank_wallet = await session.scalar(
         select(Wallet)
         .join(Account, Account.id == Wallet.account_id)

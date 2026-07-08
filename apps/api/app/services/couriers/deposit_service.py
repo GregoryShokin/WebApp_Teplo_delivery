@@ -22,6 +22,7 @@ from app.models import (
     Employee,
     Wallet,
 )
+from app.services.banking.payout import channel_provider
 from app.services.couriers.common import get_courier_or_404
 from app.services.deposit_bank_draft import (
     COURIER_DEPOSIT_RETURN_DRAFT_SOURCE_KIND,
@@ -265,7 +266,8 @@ async def create_transaction(
     await session.flush()
     if is_return:
         await _book_deposit_return_cashflow(session, transaction, wallet=payout_wallet)
-        if resolved_method == "bank_draft":
+        transit_provider = channel_provider(resolved_method)
+        if transit_provider is not None:
             # Транзит банк→Сейф под безналичный возврат (расход уже списан с Сейфа выше).
             # source_id=None: id курьерской транзакции целочисленный, в UUID-поле не лезет.
             await book_deposit_bank_to_safe_transfer(
@@ -275,6 +277,7 @@ async def create_transaction(
                 amount=(Decimal(amount_cents) / Decimal("100")).quantize(Decimal("0.01")),
                 operation_date=transaction_date,
                 purpose=f"Возврат депозита курьеру (операция #{transaction.id}) через Сейф",
+                provider=transit_provider,
             )
     elif is_topup:
         await _book_deposit_topup_cashflow(session, transaction)

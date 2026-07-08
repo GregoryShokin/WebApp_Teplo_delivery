@@ -25,8 +25,9 @@ from app.models import (
     Wallet,
 )
 from app.services.bank_payment_status import classify_payment_status
-from app.services.banking import BankClient, TbankClient
+from app.services.banking import BankClient
 from app.services.banking.exceptions import BankFetchError
+from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.payroll_payout_allocation import (
     DDS_ARTICLE_ADMIN_PAYROLL,
@@ -158,9 +159,16 @@ async def _resolve_cash_wallet(session: AsyncSession, code: str) -> Wallet:
 
 
 async def book_bank_to_safe_transfer(
-    session: AsyncSession, run: PayrollRun, *, operation_date: date | None = None
+    session: AsyncSession,
+    run: PayrollRun,
+    *,
+    operation_date: date | None = None,
+    provider: str = "tbank",
 ) -> bool:
     """Шаг 2: при оплате черновика завести внутренний перевод банк→Сейф на безналичную часть.
+
+    ``provider`` (``tbank`` / ``sber``) задаёт банк-плательщика: банк-нога перевода садится на
+    кошелёк расчётного счёта этого банка (для Сбера — Сбер-счёт).
 
     Две проводки с общим source (``payroll_bank_to_safe`` + run.id):
     - банк-нога (out, статья «Выбытие — Перевод между счетами») на расчётном счёте — служит
@@ -193,7 +201,7 @@ async def book_bank_to_safe_transfer(
         return False
 
     settings = get_settings()
-    payer_account = _payer_account(settings)
+    payer_account = payer_account_for(settings, provider)
     bank_wallet = await session.scalar(
         select(Wallet)
         .join(Account, Account.id == Wallet.account_id)
@@ -271,7 +279,9 @@ async def apply_payroll_draft_status(
     if outcome == "paid" and draft.status in ("created", "updated"):
         run = await session.get(PayrollRun, draft.run_id)
         if run is not None:
-            await book_bank_to_safe_transfer(session, run, operation_date=operation_date)
+            await book_bank_to_safe_transfer(
+                session, run, operation_date=operation_date, provider=draft.bank_provider
+            )
         draft.status = "paid"
         draft.synced_at = datetime.now(UTC)
     elif outcome == "failed" and draft.status in ("created", "updated"):
@@ -418,12 +428,13 @@ async def create_or_update_run_draft(
     *,
     actor_user_id: uuid.UUID | None,
     bank_client: BankClient | None = None,
+    provider: str = "tbank",
 ) -> PayrollBankDraft | None:
     run = await _get_payout_run(session, run_id)
     period = await _get_run_period(session, run)
     requisites = await _bank_payout_requisites(session)
     settings = get_settings()
-    payer_account = _payer_account(settings)
+    payer_account = payer_account_for(settings, provider)
     total_account = await _run_account_amount(session, run)
     if total_account <= 0:
         if _uses_safe_payout(run):
@@ -446,7 +457,7 @@ async def create_or_update_run_draft(
         raise PayrollConflictError(str(exc)) from exc
 
     existing = await _get_bank_draft(session, run_id)
-    client = bank_client or TbankClient(session)
+    client = bank_client or payout_client_for(provider, session)
     try:
         result = await client.create_payment_draft(
             document_id=document_id,
@@ -466,6 +477,7 @@ async def create_or_update_run_draft(
             provider_ref=None,
             payload=payload,
             last_error=str(exc),
+            bank_provider=provider,
         )
         _add_payout_event(
             session,
@@ -487,6 +499,7 @@ async def create_or_update_run_draft(
         provider_ref=result.provider_ref,
         payload=payload,
         last_error=None,
+        bank_provider=provider,
     )
     await _upsert_payout_cashflow(session, run, total_account, datetime.now(UTC).date())
     _add_payout_event(
@@ -656,12 +669,14 @@ async def create_or_update_drafts(
     *,
     actor_user_id: uuid.UUID | None,
     bank_client: BankClient | None = None,
+    provider: str = "tbank",
 ) -> int:
     await create_or_update_run_draft(
         session,
         run_id,
         actor_user_id=actor_user_id,
         bank_client=bank_client,
+        provider=provider,
     )
     return 1
 
@@ -723,7 +738,7 @@ async def _apply_topup_delta(
     period = await _get_run_period(session, run)
     requisites = await _bank_payout_requisites(session)
     settings = get_settings()
-    payer_account = _payer_account(settings)
+    payer_account = payer_account_for(settings, draft.bank_provider)
     document_id = await next_topup_document_id(session, run.id)
     purpose = _payment_purpose(requisites, run_id=run.id, period=period)
     try:
@@ -737,7 +752,7 @@ async def _apply_topup_delta(
     except ValueError as exc:
         raise PayrollConflictError(str(exc)) from exc
 
-    client = bank_client or TbankClient(session)
+    client = bank_client or payout_client_for(draft.bank_provider, session)
     try:
         result = await client.create_payment_draft(
             document_id=document_id,
@@ -956,6 +971,7 @@ async def _upsert_bank_draft(
     provider_ref: str | None,
     payload: dict[str, Any],
     last_error: str | None,
+    bank_provider: str = "tbank",
 ) -> PayrollBankDraft:
     draft = existing or await _get_bank_draft(session, run_id)
     if draft is None:
@@ -968,6 +984,7 @@ async def _upsert_bank_draft(
     draft.provider_ref = provider_ref
     draft.payload = payload
     draft.last_error = last_error
+    draft.bank_provider = bank_provider
     draft.synced_at = datetime.now(UTC)
     await session.flush()
     return draft

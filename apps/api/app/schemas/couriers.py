@@ -79,8 +79,8 @@ class CourierDepositTransactionCreate(BaseModel):
     transaction_date: date
     comment: str | None = Field(default=None, max_length=2000)
     # Канал выдачи только для возврата (RETURN). По умолчанию ТК Черникова (как раньше).
-    # bank_draft появится на этапе 3.
-    payout_method: Literal["cash_tk", "cash_safe", "bank_draft"] | None = None
+    # bank_draft = Т-Банк-черновик, bank_draft_sber = Сбер-черновик (оба через Сейф).
+    payout_method: Literal["cash_tk", "cash_safe", "bank_draft", "bank_draft_sber"] | None = None
 
 
 class CourierEvaluationCriterionRead(BaseModel):

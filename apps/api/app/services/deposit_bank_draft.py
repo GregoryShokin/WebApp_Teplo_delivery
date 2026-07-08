@@ -38,7 +38,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models import Account, AppSetting, CashflowTransaction, DdsArticle, Wallet
-from app.services.banking import BankClient, TbankClient
+from app.services.banking import BankClient
+from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.wallets import (
     DDS_ARTICLE_TRANSFER_IN_CODE,
@@ -70,12 +71,14 @@ async def book_deposit_bank_to_safe_transfer(
     amount: Decimal,
     operation_date: date,
     purpose: str,
+    provider: str = "tbank",
 ) -> bool:
     """Завести транзит банк→Сейф под безналичную выдачу депозита.
 
-    Идемпотентно по ``(source_kind, source_id)`` (когда ``source_id`` задан). Устойчиво:
-    нет расчётного/Сейф-кошелька или статей переводов — no-op (возврат False), выдачу не
-    валим. Возвращает True, если пара проводок создана.
+    ``provider`` задаёт банк-плательщика (``tbank`` / ``sber``): банк-нога перевода садится на
+    кошелёк расчётного счёта этого банка. Идемпотентно по ``(source_kind, source_id)`` (когда
+    ``source_id`` задан). Устойчиво: нет расчётного/Сейф-кошелька или статей переводов — no-op
+    (возврат False), выдачу не валим. Возвращает True, если пара проводок создана.
     """
     amount = _money(amount)
     if amount <= 0:
@@ -91,7 +94,7 @@ async def book_deposit_bank_to_safe_transfer(
             return False
 
     settings = get_settings()
-    payer_account = _payer_account(settings)
+    payer_account = payer_account_for(settings, provider)
     if not payer_account:
         return False
     bank_wallet = await session.scalar(
@@ -147,12 +150,16 @@ async def send_deposit_payout_bank_draft(
     amount: Decimal,
     purpose: str,
     bank_client: BankClient | None = None,
+    provider: str = "tbank",
 ) -> bool:
-    """Выписать черновик платежа в Т-Банк на ИП Шокину под выдачу депозита.
+    """Выписать банк-черновик на Сейф (Шокину) под выдачу депозита.
 
-    Вызывать ПОСЛЕ commit (БД — источник истины). Устойчиво: нет реквизитов/расчётного
-    счёта или ошибка банка — логируется, исключение НЕ поднимается. Возвращает True, если
-    черновик отправлен в банк (или сэмулирован в mock-режиме).
+    ``provider`` (``tbank`` / ``sber``) выбирает банк-плательщика: Т-Банк — черновик через
+    Open API, Сбер — рублёвый РПП без подписи (черновик, подписывается в СберБизнес).
+    Получатель-Сейф общий (``payroll.bank_payout_requisites``). Вызывать ПОСЛЕ commit (БД —
+    источник истины). Устойчиво: нет реквизитов/расчётного счёта или ошибка банка —
+    логируется, исключение НЕ поднимается. Возвращает True, если черновик отправлен (или
+    сэмулирован в mock-режиме).
     """
     try:
         amount = _money(amount)
@@ -167,11 +174,12 @@ async def send_deposit_payout_bank_draft(
             )
             return False
         settings = get_settings()
-        payer_account = _payer_account(settings)
+        payer_account = payer_account_for(settings, provider)
         if not payer_account:
             logger.warning(
-                "Банк-черновик выдачи депозита %s: не настроен расчётный счёт плательщика",
+                "Банк-черновик выдачи депозита %s: не настроен расчётный счёт плательщика (%s)",
                 document_id,
+                provider,
             )
             return False
         # Валидация полей платежа (выкинет ValueError при нехватке реквизитов) — до сетевого вызова.
@@ -182,7 +190,7 @@ async def send_deposit_payout_bank_draft(
             requisites=requisites,
             payer_account=payer_account,
         )
-        client = bank_client or TbankClient(session)
+        client = bank_client or payout_client_for(provider, session)
         result = await client.create_payment_draft(
             document_id=document_id,
             amount=amount,

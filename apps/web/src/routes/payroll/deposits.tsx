@@ -464,9 +464,9 @@ function DepositOperationDialog({
 }) {
   const [amount, setAmount] = useState("");
   const [comment, setComment] = useState("");
-  const [payoutMethod, setPayoutMethod] = useState<"cash_tk" | "cash_safe" | "bank_draft">(
-    "cash_tk",
-  );
+  const [payoutMethod, setPayoutMethod] = useState<
+    "cash_tk" | "cash_safe" | "bank_draft" | "bank_draft_sber"
+  >("cash_tk");
   // Режим выдачи депозита: отложенная (в ближайшей ведомости, по умолчанию при включённом
   // флаге) или немедленная. Удержание/списание режима не имеют.
   const [payoutMode, setPayoutMode] = useState<"scheduled" | "immediate">("scheduled");
@@ -644,7 +644,11 @@ function DepositOperationDialog({
                   disabled={mutation.isPending}
                   onChange={(event) =>
                     setPayoutMethod(
-                      event.target.value as "cash_tk" | "cash_safe" | "bank_draft",
+                      event.target.value as
+                        | "cash_tk"
+                        | "cash_safe"
+                        | "bank_draft"
+                        | "bank_draft_sber",
                     )
                   }
                   value={payoutMethod}
@@ -657,6 +661,9 @@ function DepositOperationDialog({
                   ) : null}
                   {allowedChannels.includes("bank_draft") ? (
                     <option value="bank_draft">Банк-черновик (через Сейф)</option>
+                  ) : null}
+                  {allowedChannels.includes("bank_draft") ? (
+                    <option value="bank_draft_sber">Сбербанк → Сейф (черновик)</option>
                   ) : null}
                 </select>
                 <span className="text-xs text-muted-foreground">
