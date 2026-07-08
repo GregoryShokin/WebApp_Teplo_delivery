@@ -19,7 +19,8 @@ from app.api.deps import (
 )
 from app.auth.permissions import payout_channel_permission
 from app.db.session import get_session
-from app.models import DepositAccount, DepositTransaction, Employee
+from app.models import DepositAccount, DepositTransaction, Employee, PayrollPeriod
+from app.schemas.payroll import PayrollPeriodRead
 from app.services import deposit_schedule, deposit_service
 from app.services.deposit_bank_draft import (
     PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
@@ -34,6 +35,7 @@ from app.services.payroll_calculator import (
     is_deposit_currently_excluded,
     load_payroll_settings,
 )
+from app.services.payroll_runner import auto_create_next_period
 from app.services.position_registry import production_payroll_positions
 
 router = APIRouter()
@@ -340,6 +342,35 @@ async def get_scheduled_payout_settings(
 ) -> dict[str, Any]:
     enabled = await deposit_schedule.is_scheduled_payout_enabled(session)
     return {"enabled": enabled}
+
+
+@router.get(
+    "/payout-periods",
+    response_model=list[PayrollPeriodRead],
+    dependencies=DEPOSITS_PAYOUT_ACCESS,
+)
+async def list_deposit_payout_periods(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> list[PayrollPeriod]:
+    """Нефинализированные недельные ведомости для выбора при выплате депозита через ЗП.
+
+    Гарантируем наличие ближайшей будущей ведомости (auto-create), чтобы уволенного можно было
+    отправить в ещё не открытый период (напр. выплата вторника после даты увольнения).
+    """
+    if not await deposit_schedule.is_scheduled_payout_enabled(session):
+        return []
+    await auto_create_next_period(session)
+    await session.commit()
+    rows = await session.scalars(
+        select(PayrollPeriod)
+        .where(
+            PayrollPeriod.period_type == "week",
+            PayrollPeriod.status != "finalized",
+        )
+        .order_by(PayrollPeriod.payroll_date, PayrollPeriod.start_date)
+    )
+    return list(rows.all())
 
 
 @router.post(

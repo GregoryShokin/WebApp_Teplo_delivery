@@ -75,11 +75,13 @@ async def create_or_replace_schedule(
     requested_amount: Decimal | None,
     account_choice: str,
     created_by_user_id: uuid.UUID | None,
+    target_period_id: uuid.UUID | None = None,
 ) -> DepositPayoutSchedule:
-    """Запланировать выдачу депозита в ближайшей ведомости (один pending на сотрудника).
+    """Запланировать выдачу депозита в ведомости (один pending на сотрудника).
 
-    Повторный вызов обновляет существующий pending-план (сумму/счёт). target_run_id остаётся
-    пустым — конкретная ведомость определяется при ближайшем расчёте/финализации.
+    Повторный вызов обновляет существующий pending-план (сумму/счёт/период). ``target_period_id``
+    задаёт конкретную ведомость (увольнение «через ведомость»); ``None`` — плавающий план,
+    берётся в ближайший расчёт. ``target_run_id`` заполняется при финализации.
     """
     if account_choice not in SCHEDULE_ACCOUNT_CHOICES:
         account_choice = "safe"
@@ -88,6 +90,7 @@ async def create_or_replace_schedule(
     if existing is not None:
         existing.requested_amount = requested_amount
         existing.account_choice = account_choice
+        existing.target_period_id = target_period_id
         existing.created_by_user_id = created_by_user_id
         existing.created_at = now
         await session.flush()
@@ -96,6 +99,7 @@ async def create_or_replace_schedule(
         id=uuid.uuid4(),
         employee_id=employee_id,
         target_run_id=None,
+        target_period_id=target_period_id,
         requested_amount=requested_amount,
         account_choice=account_choice,
         status="pending",
@@ -105,6 +109,23 @@ async def create_or_replace_schedule(
     session.add(schedule)
     await session.flush()
     return schedule
+
+
+async def load_period_schedules(
+    session: AsyncSession,
+    period_id: uuid.UUID,
+) -> dict[uuid.UUID, DepositPayoutSchedule]:
+    """Pending-планы выдачи, привязанные к конкретной ведомости (увольнение «через ведомость»).
+
+    Возвращает по сотруднику — включая уволенных без явок: их надо добрать в расчёт периода.
+    """
+    rows = await session.scalars(
+        select(DepositPayoutSchedule).where(
+            DepositPayoutSchedule.target_period_id == period_id,
+            DepositPayoutSchedule.status == "pending",
+        )
+    )
+    return {row.employee_id: row for row in rows.all()}
 
 
 async def cancel_pending_schedule(session: AsyncSession, employee_id: uuid.UUID) -> bool:

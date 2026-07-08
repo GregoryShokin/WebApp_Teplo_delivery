@@ -14,8 +14,8 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_object_session
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentActor, get_current_actor
-from app.auth.permissions import permission_is_granted
+from app.api.deps import CurrentActor, ensure_permission, get_current_actor
+from app.auth.permissions import payout_channel_permission, permission_is_granted
 from app.core.security import hash_password
 from app.db.session import get_session
 from app.models import (
@@ -33,11 +33,14 @@ from app.models import (
     EmployeeRoleAssignment,
     FreelancerAttendanceCase,
     FreelancerTempCard,
+    PayrollPeriod,
     ScheduledShift,
     ShiftLedgerEntry,
 )
 from app.schemas.employees import (
     DepositDismissAction,
+    DepositPayoutMethod,
+    DepositPayoutTarget,
     EmployeeAllowanceEventRead,
     EmployeeChangeEventFilter,
     EmployeeChangeEventRead,
@@ -81,6 +84,12 @@ from app.services import employee_assignments as employee_assignment_service
 from app.services import employee_change_events as employee_change_event_service
 from app.services import employee_effective_events as employee_effective_event_service
 from app.services.accumulation_fund_service import forfeit_active_fund_on_dismiss
+from app.services.deposit_bank_draft import (
+    PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
+    book_deposit_bank_to_safe_transfer,
+    send_deposit_payout_bank_draft,
+)
+from app.services.deposit_iiko_payout_production import post_production_deposit_payout_to_iiko
 from app.services.employee_status import (
     COOKING_STATIONS,
     EMPLOYEE_CATEGORIES,
@@ -297,6 +306,19 @@ class DismissDepositDecision:
     payout_amount: Decimal
     writeoff_amount: Decimal
     balance: Decimal
+    payout_target: DepositPayoutTarget = DepositPayoutTarget.ACCOUNT
+    payout_method: DepositPayoutMethod | None = None
+    period_id: uuid.UUID | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DismissDepositPayoutEffect:
+    """Данные для пост-commit шагов выдачи депозита (iiko-изъятие / банк-черновик)."""
+
+    transaction_id: uuid.UUID
+    amount: Decimal
+    method: DepositPayoutMethod
+    wallet_code: str | None
 
 
 @router.get("", response_model=list[EmployeeRead], dependencies=STAFF_READ_ACCESS)
@@ -1290,6 +1312,23 @@ async def dismiss_employee(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Отложенная выдача депозита выключена в настройках",
         )
+    # Выдача депозита деньгами с конкретного счёта требует права на этот канал
+    # (Сейф / ТК Черникова / банк-черновик), помимо права на увольнение.
+    if (
+        deposit_decision.payout_amount > 0
+        and deposit_decision.payout_target == DepositPayoutTarget.ACCOUNT
+        and deposit_decision.payout_method is not None
+    ):
+        channel_perm = payout_channel_permission(deposit_decision.payout_method.value)
+        if channel_perm is not None:
+            ensure_permission(actor, channel_perm)
+    # Выдача через выбранную ведомость: проверяем период (включён механизм, недельный,
+    # ещё не финализирован).
+    if (
+        deposit_decision.payout_amount > 0
+        and deposit_decision.payout_target == DepositPayoutTarget.PAYROLL
+    ):
+        await _validate_dismiss_payout_period(session, deposit_decision.period_id)
     active_notice = await notice_service.get_active_notice(session, employee_id, fire_date)
     before = _employee_lifecycle_snapshot(employee)
     try:
@@ -1336,9 +1375,10 @@ async def dismiss_employee(
             ScheduledShift.business_date >= fire_date,
         )
     )
-    await _apply_dismiss_deposit_decision(
+    payout_effect = await _apply_dismiss_deposit_decision(
         session,
         employee_id=employee.id,
+        employee_full_name=employee.full_name,
         account=deposit_account,
         decision=deposit_decision,
         active_notice=active_notice,
@@ -1371,6 +1411,22 @@ async def dismiss_employee(
 
     await session.commit()
     await session.refresh(employee)
+    # Внешние эффекты выдачи депозита — после commit: БД источник истины, ошибка iiko/банка
+    # не откатывает увольнение (как в обычной выдаче депозита).
+    if payout_effect is not None:
+        if payout_effect.wallet_code == "tk_chernikova":
+            post_production_deposit_payout_to_iiko(
+                amount=payout_effect.amount,
+                payout_date=now.date(),
+                source_id=payout_effect.transaction_id,
+            )
+        if payout_effect.method == DepositPayoutMethod.BANK_DRAFT:
+            await send_deposit_payout_bank_draft(
+                session,
+                document_id=f"teplo-deposit-{payout_effect.transaction_id}",
+                amount=payout_effect.amount,
+                purpose=f"Выдача депозита {employee.full_name} (через Сейф)",
+            )
     if isinstance(session, AsyncSession):
         return await _get_employee_or_404(
             session,
@@ -3758,6 +3814,36 @@ def _allowance_change_summary(allowance_type: str, is_enabled: bool) -> str:
     return "Назначена надбавка" if is_enabled else "Снята надбавка"
 
 
+async def _validate_dismiss_payout_period(
+    session: AsyncSession, period_id: uuid.UUID | None
+) -> None:
+    """Проверить ведомость для выплаты депозита через ЗП: механизм включён, период существует,
+    недельный (депозиты только у Повар/Кассир) и ещё не финализирован."""
+    if not await deposit_schedule.is_scheduled_payout_enabled(session):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Выплата депозита через ведомость выключена",
+        )
+    if period_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Не выбрана ведомость для выплаты депозита",
+        )
+    period = await session.get(PayrollPeriod, period_id)
+    if period is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ведомость не найдена")
+    if period.period_type != "week":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Депозит выплачивается только через недельную ведомость",
+        )
+    if period.status == "finalized":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ведомость уже финализирована — выберите другую",
+        )
+
+
 def _resolve_dismiss_deposit_decision(
     payload: EmployeeDismissRequest,
     balance: Decimal,
@@ -3813,6 +3899,9 @@ def _resolve_dismiss_deposit_decision(
             payout_amount=balance,
             writeoff_amount=Decimal("0"),
             balance=balance,
+            payout_target=payload.deposit_payout_target,
+            payout_method=payload.deposit_payout_method,
+            period_id=payload.deposit_payout_period_id,
         )
 
     if action == DepositDismissAction.WRITE_OFF:
@@ -3834,6 +3923,9 @@ def _resolve_dismiss_deposit_decision(
         payout_amount=payout_amount,
         writeoff_amount=balance - payout_amount,
         balance=balance,
+        payout_target=payload.deposit_payout_target,
+        payout_method=payload.deposit_payout_method,
+        period_id=payload.deposit_payout_period_id,
     )
 
 
@@ -3841,6 +3933,7 @@ async def _apply_dismiss_deposit_decision(
     session: AsyncSession,
     *,
     employee_id: uuid.UUID,
+    employee_full_name: str,
     account: DepositAccount | None,
     decision: DismissDepositDecision,
     active_notice: EmployeeChangeEvent | None,
@@ -3848,25 +3941,66 @@ async def _apply_dismiss_deposit_decision(
     now: datetime,
     actor: CurrentActor,
     comment: str | None,
-) -> None:
+) -> DismissDepositPayoutEffect | None:
     # SCHEDULE_PAYOUT: депозит остаётся на балансе, выдача пойдёт через ведомость
     # (pending-план создаёт dismiss_employee) — здесь ничего не проводим.
     if decision.action in (DepositDismissAction.NONE, DepositDismissAction.SCHEDULE_PAYOUT):
-        return
+        return None
 
     before = deposit_service.deposit_account_snapshot(account)
     account = deposit_service.ensure_account(session, employee_id, account, now)
     transactions: list[DepositTransaction] = []
-    if decision.payout_amount > 0:
-        transactions.append(
-            deposit_service.add_transaction(
-                session,
-                employee_id=employee_id,
-                transaction_type="dismissal_payout",
-                amount=decision.payout_amount,
-                now=now,
-            )
+    payout_effect: DismissDepositPayoutEffect | None = None
+    via_payroll = (
+        decision.payout_amount > 0 and decision.payout_target == DepositPayoutTarget.PAYROLL
+    )
+    schedule_id: uuid.UUID | None = None
+    if decision.payout_amount > 0 and decision.payout_target == DepositPayoutTarget.ACCOUNT:
+        payout_tx = deposit_service.add_transaction(
+            session,
+            employee_id=employee_id,
+            transaction_type="dismissal_payout",
+            amount=decision.payout_amount,
+            now=now,
         )
+        transactions.append(payout_tx)
+        # Реальная выдача денег — тот же контур, что и обычная выдача депозита:
+        # расход с выбранного счёта (для банк-черновика — с Сейфа + транзит банк→Сейф).
+        method = decision.payout_method or DepositPayoutMethod.CASH_TK
+        payout_wallet = await deposit_service.book_production_deposit_payout_cashflow(
+            session,
+            transaction=payout_tx,
+            payout_method=method.value,
+            transaction_date=now.date(),
+            comment=comment,
+        )
+        if method == DepositPayoutMethod.BANK_DRAFT:
+            await book_deposit_bank_to_safe_transfer(
+                session,
+                source_kind=PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
+                source_id=payout_tx.id,
+                amount=decision.payout_amount,
+                operation_date=now.date(),
+                purpose=f"Выдача депозита {employee_full_name} (через Сейф)",
+            )
+        payout_effect = DismissDepositPayoutEffect(
+            transaction_id=payout_tx.id,
+            amount=decision.payout_amount,
+            method=method,
+            wallet_code=payout_wallet.code if payout_wallet is not None else None,
+        )
+    elif via_payroll:
+        # Выдача через зарплатную ведомость: деньги сейчас не двигаем — планируем выдачу в
+        # выбранной ведомости (выплатится при её финализации, через Сейф-контур, как остальная ЗП).
+        schedule = await deposit_schedule.create_or_replace_schedule(
+            session,
+            employee_id,
+            requested_amount=decision.payout_amount,
+            account_choice="safe",
+            created_by_user_id=actor.user_id,
+            target_period_id=decision.period_id,
+        )
+        schedule_id = schedule.id
     if decision.writeoff_amount > 0:
         transactions.append(
             deposit_service.add_transaction(
@@ -3877,12 +4011,22 @@ async def _apply_dismiss_deposit_decision(
                 now=now,
             )
         )
-    account.balance = Decimal("0")
+    # Через ведомость выплачиваемую часть оставляем на счёте до финализации ведомости —
+    # тогда она спишется вместе с выдачей. Иначе счёт обнуляем (деньги выданы/списаны сразу).
+    account.balance = decision.payout_amount if via_payroll else Decimal("0")
     account.last_updated = now
 
     after = deposit_service.deposit_account_snapshot(account) | {
         "dismissal": {
             "action": decision.action.value,
+            "payout_target": decision.payout_target.value,
+            "payout_method": (
+                decision.payout_method.value if decision.payout_method is not None else None
+            ),
+            "payout_period_id": (
+                str(decision.period_id) if decision.period_id is not None else None
+            ),
+            "schedule_id": str(schedule_id) if schedule_id is not None else None,
             "balance_before": deposit_service.decimal_string(decision.balance),
             "payout_amount": deposit_service.decimal_string(decision.payout_amount),
             "writeoff_amount": deposit_service.decimal_string(decision.writeoff_amount),
@@ -3907,6 +4051,7 @@ async def _apply_dismiss_deposit_decision(
         comment=comment,
         agent_name="employee_lifecycle_manual",
     )
+    return payout_effect
 
 
 def _notice_audit_payload(

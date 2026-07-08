@@ -236,6 +236,21 @@ class DepositDismissAction(StrEnum):
     NONE = "none"
 
 
+class DepositPayoutMethod(StrEnum):
+    """Счёт выдачи депозита при увольнении (тот же контур, что и обычная выдача)."""
+
+    CASH_TK = "cash_tk"
+    CASH_SAFE = "cash_safe"
+    BANK_DRAFT = "bank_draft"  # Т-Банк-черновик через Сейф
+
+
+class DepositPayoutTarget(StrEnum):
+    """Куда выдаётся депозит при увольнении: сразу со счёта или через зарплатную ведомость."""
+
+    ACCOUNT = "account"
+    PAYROLL = "payroll"
+
+
 class EmployeeNoticeRequest(BaseModel):
     notice_date: date = Field(default_factory=date.today)
     comment: str | None = Field(default=None, max_length=1000)
@@ -288,6 +303,9 @@ class EmployeeDismissRequest(BaseModel):
     comment: str | None = Field(default=None, max_length=1000)
     reason: str | None = Field(default=None, max_length=1000)
     deposit_action: DepositDismissAction = DepositDismissAction.NONE
+    deposit_payout_target: DepositPayoutTarget = DepositPayoutTarget.ACCOUNT
+    deposit_payout_method: DepositPayoutMethod | None = None
+    deposit_payout_period_id: uuid.UUID | None = None
     deposit_payout_amount: Decimal | None = Field(default=None, ge=0)
     deposit_comment: str | None = Field(default=None, max_length=1000)
 
@@ -309,12 +327,31 @@ class EmployeeDismissRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_deposit_action(self) -> EmployeeDismissRequest:
+        is_payout = self.deposit_action in (
+            DepositDismissAction.PAYOUT_FULL,
+            DepositDismissAction.PAYOUT_PARTIAL,
+        )
         if self.deposit_action == DepositDismissAction.PAYOUT_PARTIAL:
             if self.deposit_payout_amount is None or self.deposit_payout_amount <= 0:
                 raise ValueError("Для частичной выплаты укажите сумму больше 0")
-            return self
-        if self.deposit_payout_amount is not None:
+        elif self.deposit_payout_amount is not None:
             raise ValueError("Сумма выплаты допустима только для частичной выплаты депозита")
+        if is_payout:
+            if self.deposit_payout_target == DepositPayoutTarget.ACCOUNT:
+                if self.deposit_payout_method is None:
+                    raise ValueError("Для выплаты со счёта укажите счёт выдачи")
+                if self.deposit_payout_period_id is not None:
+                    raise ValueError("Ведомость указывается только при выплате через ведомость")
+            else:
+                if self.deposit_payout_period_id is None:
+                    raise ValueError("Для выплаты через ведомость выберите ведомость")
+                if self.deposit_payout_method is not None:
+                    raise ValueError("Счёт выдачи не нужен при выплате через ведомость")
+        else:
+            if self.deposit_payout_method is not None:
+                raise ValueError("Счёт выдачи допустим только при выплате депозита")
+            if self.deposit_payout_period_id is not None:
+                raise ValueError("Ведомость допустима только при выплате депозита")
         return self
 
 

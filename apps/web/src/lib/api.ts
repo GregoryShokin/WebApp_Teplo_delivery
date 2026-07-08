@@ -329,6 +329,10 @@ export type DepositDismissAction =
   | "schedule_payout"
   | "none";
 
+export type DepositPayoutMethod = "cash_tk" | "cash_safe" | "bank_draft";
+
+export type DepositPayoutTarget = "account" | "payroll";
+
 export type EmployeeDismissPayload = {
   fire_date?: string;
   reason_id?: string;
@@ -336,6 +340,9 @@ export type EmployeeDismissPayload = {
   comment?: string;
   reason?: string;
   deposit_action: DepositDismissAction;
+  deposit_payout_target?: DepositPayoutTarget;
+  deposit_payout_method?: DepositPayoutMethod;
+  deposit_payout_period_id?: string;
   deposit_payout_amount?: string;
   deposit_comment?: string;
 };
@@ -4746,6 +4753,11 @@ export async function postDepositInitialBalance(employeeId: string, amount: stri
 export async function getScheduledPayoutEnabled(): Promise<boolean> {
   const response = await api.get<{ enabled: boolean }>("/deposits/scheduled-payout/settings");
   return response.data.enabled;
+}
+
+export async function getDepositPayoutPeriods(): Promise<PayrollPeriod[]> {
+  const response = await api.get<PayrollPeriod[]>("/deposits/payout-periods");
+  return response.data;
 }
 
 export async function scheduleDepositPayout(

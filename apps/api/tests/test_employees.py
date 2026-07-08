@@ -5,11 +5,13 @@ import uuid
 import xml.etree.ElementTree as ET
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.api.deps import CurrentActor
 from app.api.v1.routes import employees as employee_routes
@@ -49,6 +51,8 @@ from app.models import (
 )
 from app.schemas.employees import (
     DepositDismissAction,
+    DepositPayoutMethod,
+    DepositPayoutTarget,
     EmployeeCreateRequest,
     EmployeeDismissalReasonCreate,
     EmployeeDismissalReasonUpdate,
@@ -2791,12 +2795,16 @@ async def test_dismiss_payout_full_with_notice_14_days(
     await dismiss_employee(
         employee.id,
         session,  # type: ignore[arg-type]
-        CurrentActor(roles=frozenset({"finance_manager"})),
+        CurrentActor(
+            roles=frozenset({"finance_manager"}),
+            permissions=frozenset({"finance.payout_channel.safe"}),
+        ),
         EmployeeDismissRequest(
             fire_date=SYNC_TODAY,
             reason_code="transfer",
             comment="Перенос задним числом",
             deposit_action=DepositDismissAction.PAYOUT_FULL,
+            deposit_payout_method=DepositPayoutMethod.CASH_SAFE,
         ),
     )
 
@@ -2820,13 +2828,17 @@ async def test_dismiss_payout_partial(monkeypatch: pytest.MonkeyPatch) -> None:
     await dismiss_employee(
         employee.id,
         session,  # type: ignore[arg-type]
-        CurrentActor(roles=frozenset({"finance_manager"})),
+        CurrentActor(
+            roles=frozenset({"finance_manager"}),
+            permissions=frozenset({"finance.payout_channel.safe"}),
+        ),
         EmployeeDismissRequest(
             fire_date=SYNC_TODAY,
             reason_code="transfer",
             comment="Перенос задним числом",
             deposit_action=DepositDismissAction.PAYOUT_PARTIAL,
             deposit_payout_amount=Decimal("5000"),
+            deposit_payout_method=DepositPayoutMethod.CASH_SAFE,
         ),
     )
 
@@ -2912,19 +2924,376 @@ async def test_dismiss_partial_amount_exceeds_balance_fails(
         await dismiss_employee(
             employee.id,
             session,  # type: ignore[arg-type]
-            CurrentActor(roles=frozenset({"finance_manager"})),
+            CurrentActor(
+                roles=frozenset({"finance_manager"}),
+                permissions=frozenset({"finance.payout_channel.safe"}),
+            ),
             EmployeeDismissRequest(
                 fire_date=SYNC_TODAY,
                 reason_code="transfer",
                 comment="Перенос задним числом",
                 deposit_action=DepositDismissAction.PAYOUT_PARTIAL,
                 deposit_payout_amount=Decimal("5000"),
+                deposit_payout_method=DepositPayoutMethod.CASH_SAFE,
             ),
         )
 
     assert exc_info.value.status_code == 422
     assert account.balance == Decimal("1000")
     assert session.deposit_transactions == []
+
+
+def _patch_dismiss_money_flow(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[Any]]:
+    """Подменяет денежный контур выдачи депозита, записывая вызовы (проверка маршрутизации)."""
+    calls: dict[str, list[Any]] = {"cashflow": [], "transfer": [], "iiko": [], "draft": []}
+
+    class _FakeWallet:
+        def __init__(self, code: str) -> None:
+            self.code = code
+
+    async def fake_cashflow(
+        _session: Any,
+        *,
+        transaction: Any,
+        payout_method: str,
+        transaction_date: Any,
+        comment: str | None,
+    ) -> Any:
+        calls["cashflow"].append(payout_method)
+        return _FakeWallet("tk_chernikova" if payout_method == "cash_tk" else "cash_safe")
+
+    async def fake_transfer(
+        _session: Any,
+        *,
+        source_kind: str,
+        source_id: Any,
+        amount: Decimal,
+        operation_date: Any,
+        purpose: str,
+    ) -> bool:
+        calls["transfer"].append(amount)
+        return True
+
+    async def fake_draft(
+        _session: Any, *, document_id: str, amount: Decimal, purpose: str
+    ) -> bool:
+        calls["draft"].append(document_id)
+        return True
+
+    def fake_iiko(*, amount: Decimal, payout_date: Any, source_id: Any) -> None:
+        calls["iiko"].append(amount)
+
+    monkeypatch.setattr(
+        employee_routes.deposit_service,
+        "book_production_deposit_payout_cashflow",
+        fake_cashflow,
+    )
+    monkeypatch.setattr(employee_routes, "book_deposit_bank_to_safe_transfer", fake_transfer)
+    monkeypatch.setattr(employee_routes, "send_deposit_payout_bank_draft", fake_draft)
+    monkeypatch.setattr(employee_routes, "post_production_deposit_payout_to_iiko", fake_iiko)
+    return calls
+
+
+async def test_dismiss_payout_cash_tk_books_cashflow_and_iiko(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    employee = make_employee(iiko_id="iiko-dep-tk", full_name="Deposit TK")
+    account = make_deposit_account(employee, Decimal("5000"))
+    session = FakeSession([employee], deposit_accounts=[account])
+
+    async def fake_dismiss_iiko(_session: Any, *, iiko_id: str) -> None:
+        assert iiko_id == "iiko-dep-tk"
+
+    monkeypatch.setattr(employee_routes, "dismiss_iiko_employee_in_iiko", fake_dismiss_iiko)
+    calls = _patch_dismiss_money_flow(monkeypatch)
+
+    await dismiss_employee(
+        employee.id,
+        session,  # type: ignore[arg-type]
+        CurrentActor(
+            roles=frozenset({"finance_manager"}),
+            permissions=frozenset({"finance.payout_channel.cash_tk"}),
+        ),
+        EmployeeDismissRequest(
+            fire_date=SYNC_TODAY,
+            reason_code="transfer",
+            comment="Перенос задним числом",
+            deposit_action=DepositDismissAction.PAYOUT_FULL,
+            deposit_payout_method=DepositPayoutMethod.CASH_TK,
+        ),
+    )
+
+    assert calls["cashflow"] == ["cash_tk"]
+    assert calls["iiko"] == [Decimal("5000")]
+    assert calls["transfer"] == []
+    assert calls["draft"] == []
+    assert account.balance == Decimal("0")
+
+
+async def test_dismiss_payout_cash_safe_skips_iiko(monkeypatch: pytest.MonkeyPatch) -> None:
+    employee = make_employee(iiko_id="iiko-dep-safe", full_name="Deposit Safe")
+    account = make_deposit_account(employee, Decimal("4000"))
+    session = FakeSession([employee], deposit_accounts=[account])
+
+    async def fake_dismiss_iiko(_session: Any, *, iiko_id: str) -> None:
+        assert iiko_id == "iiko-dep-safe"
+
+    monkeypatch.setattr(employee_routes, "dismiss_iiko_employee_in_iiko", fake_dismiss_iiko)
+    calls = _patch_dismiss_money_flow(monkeypatch)
+
+    await dismiss_employee(
+        employee.id,
+        session,  # type: ignore[arg-type]
+        CurrentActor(
+            roles=frozenset({"finance_manager"}),
+            permissions=frozenset({"finance.payout_channel.safe"}),
+        ),
+        EmployeeDismissRequest(
+            fire_date=SYNC_TODAY,
+            reason_code="transfer",
+            comment="Перенос задним числом",
+            deposit_action=DepositDismissAction.PAYOUT_FULL,
+            deposit_payout_method=DepositPayoutMethod.CASH_SAFE,
+        ),
+    )
+
+    assert calls["cashflow"] == ["cash_safe"]
+    assert calls["iiko"] == []
+    assert calls["transfer"] == []
+    assert calls["draft"] == []
+
+
+async def test_dismiss_payout_bank_draft_transfers_and_sends_draft(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    employee = make_employee(iiko_id="iiko-dep-draft", full_name="Deposit Draft")
+    account = make_deposit_account(employee, Decimal("6000"))
+    session = FakeSession([employee], deposit_accounts=[account])
+
+    async def fake_dismiss_iiko(_session: Any, *, iiko_id: str) -> None:
+        assert iiko_id == "iiko-dep-draft"
+
+    monkeypatch.setattr(employee_routes, "dismiss_iiko_employee_in_iiko", fake_dismiss_iiko)
+    calls = _patch_dismiss_money_flow(monkeypatch)
+
+    await dismiss_employee(
+        employee.id,
+        session,  # type: ignore[arg-type]
+        CurrentActor(
+            roles=frozenset({"finance_manager"}),
+            permissions=frozenset({"finance.payout_channel.bank_draft"}),
+        ),
+        EmployeeDismissRequest(
+            fire_date=SYNC_TODAY,
+            reason_code="transfer",
+            comment="Перенос задним числом",
+            deposit_action=DepositDismissAction.PAYOUT_FULL,
+            deposit_payout_method=DepositPayoutMethod.BANK_DRAFT,
+        ),
+    )
+
+    assert calls["cashflow"] == ["bank_draft"]
+    assert calls["transfer"] == [Decimal("6000")]
+    assert len(calls["draft"]) == 1
+    assert calls["iiko"] == []
+
+
+async def test_dismiss_payout_requires_channel_permission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    employee = make_employee(iiko_id="iiko-dep-noperm", full_name="Deposit NoPerm")
+    account = make_deposit_account(employee, Decimal("5000"))
+    session = FakeSession([employee], deposit_accounts=[account])
+
+    async def fake_dismiss_iiko(_session: Any, *, iiko_id: str) -> None:
+        raise AssertionError("iiko must not be called without channel permission")
+
+    monkeypatch.setattr(employee_routes, "dismiss_iiko_employee_in_iiko", fake_dismiss_iiko)
+    calls = _patch_dismiss_money_flow(monkeypatch)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await dismiss_employee(
+            employee.id,
+            session,  # type: ignore[arg-type]
+            CurrentActor(roles=frozenset({"finance_manager"})),
+            EmployeeDismissRequest(
+                fire_date=SYNC_TODAY,
+                reason_code="transfer",
+                comment="Перенос задним числом",
+                deposit_action=DepositDismissAction.PAYOUT_FULL,
+                deposit_payout_method=DepositPayoutMethod.CASH_SAFE,
+            ),
+        )
+
+    assert exc_info.value.status_code == 403
+    assert account.balance == Decimal("5000")
+    assert session.deposit_transactions == []
+    assert calls["cashflow"] == []
+
+
+def test_dismiss_request_payout_requires_method() -> None:
+    with pytest.raises(ValidationError):
+        EmployeeDismissRequest(
+            fire_date=SYNC_TODAY,
+            reason_code="transfer",
+            deposit_action=DepositDismissAction.PAYOUT_FULL,
+        )
+
+
+def test_dismiss_request_writeoff_rejects_method() -> None:
+    with pytest.raises(ValidationError):
+        EmployeeDismissRequest(
+            fire_date=SYNC_TODAY,
+            reason_code="transfer",
+            deposit_action=DepositDismissAction.WRITE_OFF,
+            deposit_payout_method=DepositPayoutMethod.CASH_SAFE,
+        )
+
+
+def _patch_dismiss_payroll_schedule(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """Подменяет создание плана выдачи и валидацию периода (unit-тест «через ведомость»)."""
+    schedule_calls: list[dict[str, Any]] = []
+
+    async def fake_validate(_session: Any, _period_id: Any) -> None:
+        return None
+
+    async def fake_create_schedule(
+        _session: Any,
+        employee_id: Any,
+        *,
+        requested_amount: Any,
+        account_choice: str,
+        created_by_user_id: Any,
+        target_period_id: Any,
+    ) -> Any:
+        schedule_calls.append(
+            {
+                "employee_id": employee_id,
+                "requested_amount": requested_amount,
+                "target_period_id": target_period_id,
+            }
+        )
+        return SimpleNamespace(id=uuid.uuid4())
+
+    monkeypatch.setattr(employee_routes, "_validate_dismiss_payout_period", fake_validate)
+    monkeypatch.setattr(
+        employee_routes.deposit_schedule, "create_or_replace_schedule", fake_create_schedule
+    )
+    return schedule_calls
+
+
+async def test_dismiss_payout_via_payroll_schedules_and_keeps_balance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    employee = make_employee(iiko_id="iiko-dep-payroll", full_name="Deposit Payroll")
+    account = make_deposit_account(employee, Decimal("9000"))
+    session = FakeSession([employee], deposit_accounts=[account])
+    period_id = uuid.uuid4()
+
+    async def fake_dismiss_iiko(_session: Any, *, iiko_id: str) -> None:
+        assert iiko_id == "iiko-dep-payroll"
+
+    monkeypatch.setattr(employee_routes, "dismiss_iiko_employee_in_iiko", fake_dismiss_iiko)
+    calls = _patch_dismiss_money_flow(monkeypatch)
+    schedule_calls = _patch_dismiss_payroll_schedule(monkeypatch)
+
+    await dismiss_employee(
+        employee.id,
+        session,  # type: ignore[arg-type]
+        CurrentActor(roles=frozenset({"finance_manager"})),
+        EmployeeDismissRequest(
+            fire_date=SYNC_TODAY,
+            reason_code="transfer",
+            comment="Перенос задним числом",
+            deposit_action=DepositDismissAction.PAYOUT_FULL,
+            deposit_payout_target=DepositPayoutTarget.PAYROLL,
+            deposit_payout_period_id=period_id,
+        ),
+    )
+
+    # Деньги сейчас не двигаются — только план выдачи в ведомости.
+    assert calls["cashflow"] == []
+    assert calls["iiko"] == []
+    assert len(schedule_calls) == 1
+    assert schedule_calls[0]["target_period_id"] == period_id
+    assert schedule_calls[0]["requested_amount"] == Decimal("9000")
+    # Выплачиваемая часть остаётся на счёте до финализации ведомости.
+    assert account.balance == Decimal("9000")
+    # При полной выплате через ведомость ledger-транзакции не создаются.
+    assert session.deposit_transactions == []
+
+
+async def test_dismiss_payout_via_payroll_partial_writes_off_remainder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    employee = make_employee(iiko_id="iiko-dep-payroll-part", full_name="Deposit Payroll Part")
+    account = make_deposit_account(employee, Decimal("12000"))
+    session = FakeSession([employee], deposit_accounts=[account])
+    period_id = uuid.uuid4()
+
+    async def fake_dismiss_iiko(_session: Any, *, iiko_id: str) -> None:
+        assert iiko_id == "iiko-dep-payroll-part"
+
+    monkeypatch.setattr(employee_routes, "dismiss_iiko_employee_in_iiko", fake_dismiss_iiko)
+    calls = _patch_dismiss_money_flow(monkeypatch)
+    schedule_calls = _patch_dismiss_payroll_schedule(monkeypatch)
+
+    await dismiss_employee(
+        employee.id,
+        session,  # type: ignore[arg-type]
+        CurrentActor(roles=frozenset({"finance_manager"})),
+        EmployeeDismissRequest(
+            fire_date=SYNC_TODAY,
+            reason_code="transfer",
+            comment="Перенос задним числом",
+            deposit_action=DepositDismissAction.PAYOUT_PARTIAL,
+            deposit_payout_amount=Decimal("8000"),
+            deposit_payout_target=DepositPayoutTarget.PAYROLL,
+            deposit_payout_period_id=period_id,
+        ),
+    )
+
+    assert calls["cashflow"] == []
+    assert schedule_calls[0]["requested_amount"] == Decimal("8000")
+    # Остаток списывается сразу, выплачиваемая часть остаётся до ведомости.
+    assert account.balance == Decimal("8000")
+    assert [(t.transaction_type, t.amount) for t in session.deposit_transactions] == [
+        ("dismissal_writeoff", Decimal("4000")),
+    ]
+
+
+def test_dismiss_request_payroll_requires_period() -> None:
+    with pytest.raises(ValidationError):
+        EmployeeDismissRequest(
+            fire_date=SYNC_TODAY,
+            reason_code="transfer",
+            deposit_action=DepositDismissAction.PAYOUT_FULL,
+            deposit_payout_target=DepositPayoutTarget.PAYROLL,
+        )
+
+
+def test_dismiss_request_account_rejects_period() -> None:
+    with pytest.raises(ValidationError):
+        EmployeeDismissRequest(
+            fire_date=SYNC_TODAY,
+            reason_code="transfer",
+            deposit_action=DepositDismissAction.PAYOUT_FULL,
+            deposit_payout_target=DepositPayoutTarget.ACCOUNT,
+            deposit_payout_method=DepositPayoutMethod.CASH_SAFE,
+            deposit_payout_period_id=uuid.uuid4(),
+        )
+
+
+def test_dismiss_request_payroll_rejects_method() -> None:
+    with pytest.raises(ValidationError):
+        EmployeeDismissRequest(
+            fire_date=SYNC_TODAY,
+            reason_code="transfer",
+            deposit_action=DepositDismissAction.PAYOUT_FULL,
+            deposit_payout_target=DepositPayoutTarget.PAYROLL,
+            deposit_payout_period_id=uuid.uuid4(),
+            deposit_payout_method=DepositPayoutMethod.CASH_SAFE,
+        )
 
 
 async def test_reinstate_does_not_restore_deposit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2940,12 +3309,16 @@ async def test_reinstate_does_not_restore_deposit(monkeypatch: pytest.MonkeyPatc
     await dismiss_employee(
         employee.id,
         session,  # type: ignore[arg-type]
-        CurrentActor(roles=frozenset({"finance_manager"})),
+        CurrentActor(
+            roles=frozenset({"finance_manager"}),
+            permissions=frozenset({"finance.payout_channel.safe"}),
+        ),
         EmployeeDismissRequest(
             fire_date=SYNC_TODAY,
             reason_code="transfer",
             comment="Перенос задним числом",
             deposit_action=DepositDismissAction.PAYOUT_FULL,
+            deposit_payout_method=DepositPayoutMethod.CASH_SAFE,
         ),
     )
     await reinstate_employee(

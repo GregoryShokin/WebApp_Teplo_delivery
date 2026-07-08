@@ -460,6 +460,11 @@ class DepositPayoutSchedule(Base):
     target_run_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("payroll_run.id", ondelete="SET NULL"), nullable=True
     )
+    # Привязка к выбранной ведомости при увольнении «через ведомость» (в т.ч. будущей).
+    # NULL — плавающий план (берётся в ближайший расчёт, прежнее поведение).
+    target_period_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payroll_period.id", ondelete="SET NULL"), nullable=True
+    )
     requested_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     account_choice: Mapped[str] = mapped_column(
         String(32), nullable=False, default="safe", server_default="safe"

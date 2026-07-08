@@ -38,6 +38,7 @@ from app.services.deferred_audit_charge_service import (
 from app.services.deposit_schedule import (
     is_scheduled_payout_enabled,
     load_pending_schedules,
+    load_period_schedules,
     mark_schedules_processed_for_run,
     revert_schedules_for_run,
 )
@@ -54,10 +55,13 @@ from app.services.payroll_calculator import (
     calculate_payroll_lines,
     decimal,
     deduplicate_issues,
+    load_deposit_balances_for_employees,
+    load_payroll_settings,
     money,
     needs_setup_issue,
     payroll_rate_snapshot_payload,
     summarize_lines,
+    vacation_role_for_employee_day,
 )
 from app.services.payroll_freelancer_settlement import (
     apply_freelancer_cash_settlements,
@@ -488,6 +492,13 @@ async def run_payroll(
                 session.add(line)
             await session.flush()
 
+        # Депозит-выдача уволенным, привязанная к этому периоду (без явок → без обычной
+        # строки): добираем «депозитные» строки, чтобы выплата прошла вместе с ведомостью.
+        period_deposit_lines = await build_period_deposit_payout_lines(
+            session, period, run.id, calculation.lines
+        )
+        if period_deposit_lines:
+            calculation.lines.extend(period_deposit_lines)
         advance_summary = await apply_advance_recoveries(session, period, run, calculation.lines)
         advance_issue_summary = await apply_advance_issuances(
             session, period, run, calculation.lines
@@ -735,6 +746,64 @@ def collect_attendance_warnings(
             }
         )
     return warnings
+
+
+async def build_period_deposit_payout_lines(
+    session: AsyncSession,
+    period: PayrollPeriod,
+    run_id: uuid.UUID,
+    existing_lines: list[PayrollLine],
+) -> list[PayrollLine]:
+    """«Депозитные» строки для сотрудников с выдачей депозита, привязанной к этому периоду.
+
+    Нужны для уволенных «через ведомость»: у них нет явок в периоде, значит нет обычной
+    строки — но выдачу депозита надо провести вместе с ведомостью (через Сейф-контур при
+    финализации, как остальные выдачи). Сотрудники, у которых строка уже есть (с явками),
+    здесь пропускаются — их выдача считается в основном расчёте.
+    """
+    if not await is_scheduled_payout_enabled(session):
+        return []
+    period_scheduled = await load_period_schedules(session, period.id)
+    if not period_scheduled:
+        return []
+    existing_emp_ids = {line.employee_id for line in existing_lines}
+    target_emp_ids = [emp_id for emp_id in period_scheduled if emp_id not in existing_emp_ids]
+    if not target_emp_ids:
+        return []
+    employees = {
+        employee.id: employee
+        for employee in (
+            await session.scalars(select(Employee).where(Employee.id.in_(target_emp_ids)))
+        ).all()
+    }
+    balances = await load_deposit_balances_for_employees(session, target_emp_ids)
+    settings = await load_payroll_settings(session)
+    new_lines: list[PayrollLine] = []
+    for emp_id in target_emp_ids:
+        employee = employees.get(emp_id)
+        if employee is None:
+            continue
+        schedule = period_scheduled[emp_id]
+        available = decimal(balances.get(emp_id, 0))
+        requested = schedule.requested_amount
+        requested_dec = decimal(requested) if requested is not None else available
+        payout = max(min(requested_dec, available), Decimal("0"))
+        if payout <= 0:
+            continue
+        role = vacation_role_for_employee_day(settings, employee, period.payroll_date)
+        line = PayrollLine(
+            run_id=run_id,
+            employee_id=emp_id,
+            role=role,
+            deposit_payout_scheduled=money(payout),
+            total_payable=Decimal("0"),
+            components={"days": [], "deposit_payout": money(payout)},
+        )
+        session.add(line)
+        new_lines.append(line)
+    if new_lines:
+        await session.flush()
+    return new_lines
 
 
 async def update_deposits_and_fund(

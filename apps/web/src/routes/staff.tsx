@@ -112,6 +112,8 @@ import {
   type EmployeeDismissPayload,
   type EmployeeDismissalReason,
   type DepositDismissAction,
+  type DepositPayoutMethod,
+  type DepositPayoutTarget,
   type IikoEmployeeRole,
   type EmployeePatch,
   type EmployeePositionAssignment,
@@ -122,6 +124,7 @@ import {
   type EmployeeStatus,
   type PayrollImpactWarning,
   type PayrollRole,
+  type PayrollPeriod,
   type PayrollAdjustment,
   apiErrorDetail,
   apiErrorMessage,
@@ -133,6 +136,7 @@ import {
   dismissEmployee,
   getEmployeeAccumulationFund,
   getDeposits,
+  getDepositPayoutPeriods,
   getScheduledPayoutEnabled,
   getEmployeeChanges,
   getEmployeeDismissalReasons,
@@ -3404,6 +3408,11 @@ function StaffEditor({
   const [dismissReasonKey, setDismissReasonKey] = useState("");
   const [dismissComment, setDismissComment] = useState("");
   const [dismissDepositAction, setDismissDepositAction] = useState<DepositDismissAction>("none");
+  const [dismissDepositPayoutMethod, setDismissDepositPayoutMethod] =
+    useState<DepositPayoutMethod>("cash_safe");
+  const [dismissDepositPayoutTarget, setDismissDepositPayoutTarget] =
+    useState<DepositPayoutTarget>("account");
+  const [dismissDepositPeriodId, setDismissDepositPeriodId] = useState("");
   const [dismissDepositAmount, setDismissDepositAmount] = useState("");
   const [dismissDepositComment, setDismissDepositComment] = useState("");
   const [dismissConfirmOpen, setDismissConfirmOpen] = useState(false);
@@ -3666,6 +3675,11 @@ function StaffEditor({
     queryFn: getScheduledPayoutEnabled,
     enabled: isDepositTargetPosition(employee.position),
   });
+  const payoutPeriodsQuery = useQuery({
+    queryKey: ["deposits", "payout-periods"],
+    queryFn: getDepositPayoutPeriods,
+    enabled: dismissOpen && Boolean(scheduledPayoutEnabledQuery.data),
+  });
   const recentAdjustmentsQuery = useQuery({
     queryKey: ["payroll-adjustments", employee.id, "recent"],
     queryFn: () =>
@@ -3700,11 +3714,35 @@ function StaffEditor({
     dismissDepositBalance,
     dismissDepositAmount,
   );
+  const dismissDepositIsPayout =
+    dismissDepositAction === "payout_full" || dismissDepositAction === "payout_partial";
+  const depositChannelPerms = {
+    cash_tk: permissions.hasPermission("finance.payout_channel.cash_tk"),
+    cash_safe: permissions.hasPermission("finance.payout_channel.safe"),
+    bank_draft: permissions.hasPermission("finance.payout_channel.bank_draft"),
+  };
+  const allowedDepositChannels = (
+    [
+      ["cash_safe", depositChannelPerms.cash_safe],
+      ["cash_tk", depositChannelPerms.cash_tk],
+      ["bank_draft", depositChannelPerms.bank_draft],
+    ] as const
+  )
+    .filter(([, ok]) => ok)
+    .map(([key]) => key);
+  const scheduledPayoutEnabled = Boolean(scheduledPayoutEnabledQuery.data);
+  const dismissDepositPayoutValid =
+    !dismissDepositIsPayout ||
+    (dismissDepositPayoutTarget === "account"
+      ? allowedDepositChannels.includes(dismissDepositPayoutMethod)
+      : Boolean(dismissDepositPeriodId));
   const dismissDepositValid =
     !dismissDepositHasBalance ||
     dismissDepositScheduled ||
     dismissDepositAction === "schedule_payout" ||
-    (dismissDepositDecision.isValid && dismissDepositAction !== "none");
+    (dismissDepositDecision.isValid &&
+      dismissDepositAction !== "none" &&
+      dismissDepositPayoutValid);
   const dismissalReasons = dismissalReasonOptions(dismissalReasonsQuery.data ?? []);
   const selectedDismissalReason =
     dismissalReasons.find((reason) => reason.key === dismissReasonKey) ?? null;
@@ -3729,6 +3767,18 @@ function StaffEditor({
         dismissDepositAction === "payout_partial"
       ) {
         payload.deposit_payout_amount = decimalPayload(dismissDepositAmount);
+      }
+      if (
+        dismissDepositHasBalance &&
+        !dismissDepositScheduled &&
+        (dismissDepositAction === "payout_full" || dismissDepositAction === "payout_partial")
+      ) {
+        payload.deposit_payout_target = dismissDepositPayoutTarget;
+        if (dismissDepositPayoutTarget === "account") {
+          payload.deposit_payout_method = dismissDepositPayoutMethod;
+        } else {
+          payload.deposit_payout_period_id = dismissDepositPeriodId;
+        }
       }
       if (dismissalReason.id) {
         payload.reason_id = dismissalReason.id;
@@ -4718,6 +4768,9 @@ function StaffEditor({
                 employee.active_notice?.will_trigger_full_payout ? "payout_full" : "write_off",
               );
               setDismissDepositAmount("");
+              setDismissDepositPayoutMethod(allowedDepositChannels[0] ?? "cash_safe");
+              setDismissDepositPayoutTarget("account");
+              setDismissDepositPeriodId("");
               setDismissDepositComment("");
               setDismissConfirmOpen(false);
               setDismissOpen(true);
@@ -5393,6 +5446,108 @@ function StaffEditor({
                   </label>
                 </div>
 
+                {dismissDepositIsPayout ? (
+                  <div className="grid gap-3">
+                    {scheduledPayoutEnabled ? (
+                      <div className="grid gap-2">
+                        <span className="text-sm font-medium">Куда выдать</span>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <label className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
+                            <input
+                              checked={dismissDepositPayoutTarget === "account"}
+                              name="dismiss-deposit-target"
+                              onChange={() => setDismissDepositPayoutTarget("account")}
+                              type="radio"
+                            />
+                            <span>Со счёта</span>
+                          </label>
+                          <label className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
+                            <input
+                              checked={dismissDepositPayoutTarget === "payroll"}
+                              name="dismiss-deposit-target"
+                              onChange={() => setDismissDepositPayoutTarget("payroll")}
+                              type="radio"
+                            />
+                            <span>Через ведомость</span>
+                          </label>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {dismissDepositPayoutTarget === "account" ? (
+                      <Label className="grid gap-2">
+                        <span>Счёт выдачи</span>
+                        {allowedDepositChannels.length === 0 ? (
+                          <span className="text-sm text-destructive">
+                            Нет прав ни на один счёт выдачи — обратитесь к владельцу.
+                          </span>
+                        ) : (
+                          <>
+                            <select
+                              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                              onChange={(event) =>
+                                setDismissDepositPayoutMethod(
+                                  event.target.value as DepositPayoutMethod,
+                                )
+                              }
+                              value={dismissDepositPayoutMethod}
+                            >
+                              {allowedDepositChannels.includes("cash_safe") ? (
+                                <option value="cash_safe">Сейф</option>
+                              ) : null}
+                              {allowedDepositChannels.includes("cash_tk") ? (
+                                <option value="cash_tk">Торговая касса Черникова</option>
+                              ) : null}
+                              {allowedDepositChannels.includes("bank_draft") ? (
+                                <option value="bank_draft">Т-Банк → Сейф (черновик)</option>
+                              ) : null}
+                            </select>
+                            <span className="text-xs text-muted-foreground">
+                              {dismissDepositPayoutMethod === "cash_tk"
+                                ? "Наличные из кассы Черникова + изъятие в iiko."
+                                : dismissDepositPayoutMethod === "cash_safe"
+                                  ? "Наличные с карты «Сейф». Изъятие в iiko не делается."
+                                  : "Перевод Т-Банк → Сейф и черновик платежа на ИП Шокину; раздача с Сейфа."}
+                            </span>
+                          </>
+                        )}
+                      </Label>
+                    ) : (
+                      <Label className="grid gap-2">
+                        <span>Ведомость</span>
+                        {payoutPeriodsQuery.isLoading ? (
+                          <span className="text-sm text-muted-foreground">
+                            Загрузка ведомостей…
+                          </span>
+                        ) : (payoutPeriodsQuery.data ?? []).length === 0 ? (
+                          <span className="text-sm text-destructive">
+                            Нет доступных нефинализированных ведомостей.
+                          </span>
+                        ) : (
+                          <>
+                            <select
+                              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                              onChange={(event) => setDismissDepositPeriodId(event.target.value)}
+                              value={dismissDepositPeriodId}
+                            >
+                              <option value="">Выберите ведомость</option>
+                              {(payoutPeriodsQuery.data ?? []).map((period) => (
+                                <option key={period.id} value={period.id}>
+                                  Выплата {formatDate(period.payroll_date)} (за{" "}
+                                  {formatDate(period.start_date)} – {formatDate(period.end_date)})
+                                </option>
+                              ))}
+                            </select>
+                            <span className="text-xs text-muted-foreground">
+                              Депозит выдастся вместе с этой ведомостью при её выплате.
+                            </span>
+                          </>
+                        )}
+                      </Label>
+                    )}
+                  </div>
+                ) : null}
+
                 <Label className="grid gap-2">
                   <span>Комментарий к решению</span>
                   <textarea
@@ -5439,8 +5594,13 @@ function StaffEditor({
             <AlertDialogTitle>Подтвердите увольнение</AlertDialogTitle>
             <AlertDialogDescription>
               Уволить {employee.full_name} с {formatDate(dismissFireDate)}, выплатить{" "}
-              {formatDepositMoney(dismissDepositDecision.payout)}, списать{" "}
-              {formatDepositMoney(dismissDepositDecision.writeoff)}.
+              {formatDepositMoney(dismissDepositDecision.payout)}
+              {dismissDepositDecision.payout > 0
+                ? dismissDepositPayoutTarget === "payroll"
+                  ? " (через ведомость)"
+                  : ` (${depositChannelLabel(dismissDepositPayoutMethod)})`
+                : ""}
+              , списать {formatDepositMoney(dismissDepositDecision.writeoff)}.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -7132,6 +7292,16 @@ function daysBetweenDateStrings(start: string, end: string) {
   const startDate = new Date(`${start}T00:00:00+03:00`);
   const endDate = new Date(`${end}T00:00:00+03:00`);
   return Math.floor((endDate.getTime() - startDate.getTime()) / 86_400_000);
+}
+
+function depositChannelLabel(method: DepositPayoutMethod) {
+  if (method === "cash_tk") {
+    return "касса Черникова";
+  }
+  if (method === "bank_draft") {
+    return "Т-Банк → Сейф";
+  }
+  return "Сейф";
 }
 
 function depositDismissDecision(
