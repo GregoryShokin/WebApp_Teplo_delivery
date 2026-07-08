@@ -251,6 +251,12 @@ class CounterpartyPaymentDraft(Base):
         ForeignKey("dds_articles.id", ondelete="SET NULL"), nullable=True
     )
     target_purpose: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Банк-плательщик черновика: ``tbank`` (по умолчанию) / ``sber``. Сбер задаётся только у
+    # свободного вывода на Сейф (окно «Новый платёж», expense); накладные/предоплата/informal
+    # остаются в Т-Банке. По нему paid-переход книжит транзит р/с→Сейф на счёт нужного банка.
+    bank_provider: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="tbank", server_default=text("'tbank'")
+    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )
