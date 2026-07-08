@@ -146,8 +146,18 @@ async def test_refresh_window_enables_midweek_advance(
 
         monkeypatch.setattr(payroll_runner, "load_attendance_entries", fake_load)
 
+        revenue_calls: list[tuple[date, date]] = []
+
+        async def fake_revenue(session_, date_from, date_to, *, force_refresh=False):
+            revenue_calls.append((date_from, date_to))
+            return {}
+
+        monkeypatch.setattr(payroll_runner, "ensure_daily_revenue_cached", fake_revenue)
+
         period = await refresh_current_week_advance_window(session, today=FRIDAY)
         assert (period.start_date, period.end_date) == (TUESDAY, MONDAY)
+        # Выручку кешируем по ЗАКРЫТЫМ дням: вт(07)…чт(09); пятницу (сегодня) не берём.
+        assert revenue_calls == [(TUESDAY, date(2026, 7, 9))]
 
         async def fake_calc(_session, provisional, _run_id, entries):
             line = PayrollLine(
@@ -174,6 +184,11 @@ async def test_refresh_window_idempotent_no_duplicate_period(
 
         monkeypatch.setattr(payroll_runner, "load_attendance_entries", fake_load)
 
+        async def fake_revenue(session_, date_from, date_to, *, force_refresh=False):
+            return {}
+
+        monkeypatch.setattr(payroll_runner, "ensure_daily_revenue_cached", fake_revenue)
+
         first = await refresh_current_week_advance_window(session, today=FRIDAY)
         second = await refresh_current_week_advance_window(session, today=MONDAY)
         assert first.id == second.id  # тот же период всю неделю
@@ -183,6 +198,34 @@ async def test_refresh_window_idempotent_no_duplicate_period(
             .where(PayrollPeriod.period_type == "week", PayrollPeriod.start_date == TUESDAY)
         )
         assert count == 1
+
+
+async def test_refresh_window_caches_only_closed_days_revenue(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    async with async_session_factory() as session:
+        async def fake_load(session_, period, *, iiko_records=None, force_reload=False):
+            return []
+
+        monkeypatch.setattr(payroll_runner, "load_attendance_entries", fake_load)
+
+        calls: list[tuple[date, date]] = []
+
+        async def fake_revenue(session_, date_from, date_to, *, force_refresh=False):
+            calls.append((date_from, date_to))
+            return {}
+
+        monkeypatch.setattr(payroll_runner, "ensure_daily_revenue_cached", fake_revenue)
+
+        # Пятница: закрыты вт–чт (07–09); сегодняшний день (пт) ещё идёт — не кешируем.
+        await refresh_current_week_advance_window(session, today=FRIDAY)
+        assert calls == [(TUESDAY, date(2026, 7, 9))]
+
+        # Сам вторник (первый день недели): закрытых дней ещё нет — выручку не трогаем.
+        calls.clear()
+        await refresh_current_week_advance_window(session, today=TUESDAY)
+        assert calls == []
 
 
 async def test_auto_create_reuses_precreated_week_then_appends(

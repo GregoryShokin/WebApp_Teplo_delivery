@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
@@ -80,6 +81,8 @@ class PayrollConflictError(RuntimeError):
 
 REVENUE_CACHE_DISPLAY_NAME = "Дневная выручка iiko"
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+
+logger = logging.getLogger(__name__)
 
 
 def compute_next_payroll_period_dates(today: date) -> tuple[date, date, date]:
@@ -282,6 +285,20 @@ async def refresh_current_week_advance_window(
         await session.commit()
         return period
     await load_attendance_entries(session, period, force_reload=True)
+    # Процент за смену в earned-to-date аванса: кешируем дневную выручку iiko по
+    # ЗАКРЫТЫМ (полностью прошедшим) дням недели. Сегодняшний день ещё идёт — его
+    # выручку не берём (процент за него появится завтрашним свипом). Провал выгрузки
+    # выручки НЕ должен потерять уже загруженные явки — глушим ошибку и логируем.
+    revenue_to = min(today - timedelta(days=1), end_date)
+    if start_date <= revenue_to:
+        try:
+            await ensure_daily_revenue_cached(session, start_date, revenue_to)
+        except Exception:
+            logger.exception(
+                "advance-window: не удалось закешировать выручку %s–%s; явки сохраняем",
+                start_date,
+                revenue_to,
+            )
     await session.commit()
     return period
 

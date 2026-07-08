@@ -180,6 +180,24 @@ def distribute_percent_pool(
     }
 
 
+def distribute_day_percent(
+    daily_revenue: Decimal | int | float | str,
+    work_date: date,
+    revenue_tiers: Iterable[Mapping[str, Any]] | None,
+    employee_shifts_today: Iterable[PercentShift | Mapping[str, Any]],
+) -> dict[Hashable, Decimal]:
+    """Дневной процент на каждую смену за один день: пул от выручки по тиру → доли по весам.
+
+    Самодостаточный «дневной» шаг расчёта процента — та же математика, что внутри
+    недельного калькулятора ЗП (``calculate_payroll_lines``), но пригодная для
+    переиспользования отдельно (аванс среди недели, «Учёт смен» — дневная премия).
+    Вес смены = coefficient × min(hours, 12ч) / 12ч (см. ``shift_weight``); floor на
+    сотрудника (см. ``distribute_percent_pool``).
+    """
+    pool = compute_daily_percent_pool(daily_revenue, work_date, revenue_tiers)
+    return distribute_percent_pool(pool, employee_shifts_today)
+
+
 def revenue_tier_rate(
     daily_revenue: Decimal | int | float | str,
     work_date: date,

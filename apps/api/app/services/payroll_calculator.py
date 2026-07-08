@@ -38,7 +38,7 @@ from app.services.payroll_percent import (
     PercentShift,
     category_coefficient,
     compute_daily_percent_pool,
-    distribute_percent_pool,
+    distribute_day_percent,
     load_category_coefficient_versions,
     load_revenue_tier_versions,
     revenue_tier_rate,
@@ -602,12 +602,10 @@ def calculate_payroll_lines_from_inputs(
         }
 
     daily_percent_distributions = {
-        work_date: distribute_percent_pool(
-            compute_daily_percent_pool(
-                daily_revenue(settings, work_date),
-                work_date,
-                percent_revenue_tiers(settings),
-            ),
+        work_date: distribute_day_percent(
+            daily_revenue(settings, work_date),
+            work_date,
+            percent_revenue_tiers(settings),
             shifts,
         )
         for work_date, shifts in daily_percent_shifts.items()
