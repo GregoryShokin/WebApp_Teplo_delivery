@@ -28,6 +28,7 @@ from app.core.config import get_settings
 from app.models import (
     Account,
     AppSetting,
+    BankOperation,
     CashflowTransaction,
     DdsArticle,
     Employee,
@@ -451,6 +452,93 @@ async def issue_advance(
             is_loan=advance.kind == "loan",
             source="cash",
         )
+    return advance
+
+
+async def book_operation_advance(
+    session: AsyncSession,
+    operation: BankOperation,
+    *,
+    employee_id: uuid.UUID,
+    kind: str,
+    installment_amount: Decimal | None = None,
+    installments_count: int = 1,
+    recovery_start_date: date | None = None,
+    override_ceiling: bool = False,
+    allow_loan: bool = False,
+    comment: str | None = None,
+    actor_user_id: uuid.UUID | None = None,
+) -> SalaryAdvance:
+    """Завести аванс/заём из разбора банковской операции (деньги уже ушли банком).
+
+    В отличие от ``issue_advance``, НЕ бронирует выдачу и НЕ создаёт вторую проводку — деньги
+    несёт split-проводка операции (её заводит ``apply_operation_split`` в роуте). Аванс
+    фиксируется на всю сумму операции (излишек над заработанным сам переносится на следующую
+    выплату существующим ``apply_advance_recoveries``, тип на заём не форсим). Возврат
+    маршрутизируется по роли (админ/производство). Идемпотентно по ``source_operation_id``:
+    прежний НЕпогашенный аванс операции снимаем; если по нему уже гасили — блокируем.
+    """
+    if kind not in ("advance", "loan"):
+        raise PayrollConflictError("Неизвестный тип выдачи")
+    employee = await session.get(Employee, employee_id)
+    if employee is None:
+        raise PayrollNotFoundError("Сотрудник не найден")
+
+    prior = (
+        await session.scalars(
+            select(SalaryAdvance).where(SalaryAdvance.source_operation_id == operation.id)
+        )
+    ).all()
+    for advance in prior:
+        if decimal(advance.recovered_amount) > 0 or advance.status != "issued":
+            raise PayrollConflictError(
+                "Аванс по этой операции уже гасится в ведомости — сначала откатите её"
+            )
+    for advance in prior:
+        await session.delete(advance)
+    if prior:
+        await session.flush()
+
+    # Должность на дату операции (не employee.position — ленивое column_property роняет async).
+    role = await get_position_on_date(session, employee_id, operation.operation_date) or ""
+    amount = decimal(operation.amount).quantize(_CENTS)
+    if amount <= 0:
+        raise PayrollConflictError("Сумма должна быть больше нуля")
+
+    if kind == "loan":
+        if not allow_loan:
+            raise PayrollConflictError("Выдача займа требует права на займы.")
+        if not override_ceiling:
+            ceiling = await get_loan_max(session)
+            outstanding = await _outstanding_loan_principal(session, employee_id)
+            if outstanding + amount > ceiling:
+                raise PayrollConflictError(
+                    f"Заём превышает потолок {ceiling} ₽ "
+                    f"(непогашено по займам {outstanding} ₽). Требуется подтверждение превышения."
+                )
+        installments, per_installment = _loan_installments(
+            amount, installment_amount=installment_amount, installments_count=installments_count
+        )
+        recovery_start = recovery_start_date
+    else:
+        installments, per_installment, recovery_start = 1, amount, None
+
+    advance = SalaryAdvance(
+        employee_id=employee_id,
+        role=role,
+        kind=kind,
+        amount=amount,
+        per_installment_amount=per_installment,
+        installments_count=installments,
+        issued_on=operation.operation_date,
+        recovery_start_date=recovery_start,
+        status="issued",
+        source_operation_id=operation.id,
+        comment=comment,
+        created_by_user_id=actor_user_id,
+    )
+    session.add(advance)
+    await session.flush()
     return advance
 
 

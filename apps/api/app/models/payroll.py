@@ -1185,6 +1185,11 @@ class SalaryAdvance(Base):
     wallet_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("wallet.id", ondelete="SET NULL"), nullable=True
     )
+    # Банковская операция, из разбора которой заведён аванс/заём (деньги уже ушли банком,
+    # второй проводки нет). Для идемпотентности повторного разбора. NULL — обычная выдача.
+    source_operation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("bank_operations.id", ondelete="SET NULL"), nullable=True
+    )
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Разрешение на выдачу через кассу отклонено администратором кассы (создатель
     # видит статус «отменено кассой»). NULL — отменено самим создателем / не касса.

@@ -32,6 +32,7 @@ from app.services.banking.classifier import (
     apply_operation_split,
 )
 from app.services.banking.safe_allocations import book_safe_topup_reserves, pay_allocation
+from app.services.payroll_advance_service import book_operation_advance
 from app.services.payroll_employee_payout_offset import (
     apply_employee_payout_offsets,
     apply_employee_payout_offsets_to_balances,
@@ -184,6 +185,34 @@ async def test_salary_via_safe_reserve_then_payout_creates_employee_payout(
         assert payout.amount == Decimal("100000.00")
         assert payout.safe_allocation_id == allocation.id
         assert payout.cashflow_transaction_id == leg_id
+
+
+async def test_operation_advance_creates_salary_advance(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Разбор операции как аванс → SalaryAdvance(issued, вся сумма, source_operation_id)."""
+    async with async_session_factory() as session:
+        account = await make_account(session)
+        await make_wallet(session, wallet_type="bank", account_id=account.id)
+        op = await make_bank_operation(
+            session, amount="10000.00", direction="out", account_id=account.id
+        )
+        employee = await _employee(session)
+        await session.commit()
+
+        advance = await book_operation_advance(
+            session, op, employee_id=employee.id, kind="advance"
+        )
+        await session.commit()
+
+        assert advance.kind == "advance"
+        assert advance.amount == Decimal("10000.00")
+        # Аванс на всю сумму: гасится min(amount, net) → остаток переносится (installments_count=1).
+        assert advance.per_installment_amount == Decimal("10000.00")
+        assert advance.installments_count == 1
+        assert advance.status == "issued"
+        assert advance.source_operation_id == op.id
+        assert advance.issued_on == op.operation_date
 
 
 async def test_employee_id_on_non_salary_article_rejected(

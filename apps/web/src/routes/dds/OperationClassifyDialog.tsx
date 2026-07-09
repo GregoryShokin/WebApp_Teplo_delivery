@@ -25,6 +25,7 @@ import {
   getDdsPayoutEmployees,
   getDdsUnpaidInvoices,
   getDdsWallets,
+  getPayrollAdvanceAvailability,
   type CashflowClassifyPayload,
   type JournalRow,
   type OperationClassifyPayload,
@@ -47,6 +48,13 @@ const EMPLOYEE_PAYOUT_ARTICLE_CODES = [
   "zarplata_administrativnogo_personala",
   "zarplata_proizvodstvennogo_personala",
 ];
+// Статьи аванса/займа сотрудника — открывают модалку оформления аванса (создаёт SalaryAdvance).
+const EMPLOYEE_ADVANCE_ARTICLE_CODE = "employee_advance";
+const EMPLOYEE_LOAN_ARTICLE_CODE = "vydacha_zaymov_sotrudnikam";
+const EMPLOYEE_ADVANCE_ARTICLE_CODES = [
+  EMPLOYEE_ADVANCE_ARTICLE_CODE,
+  EMPLOYEE_LOAN_ARTICLE_CODE,
+];
 
 type SplitRow = {
   key: string;
@@ -62,6 +70,7 @@ const ACTION_TOAST: Record<string, string> = {
   mark_internal_transfer: "Отмечено как внутренний перевод",
   exclude: "Исключено из ДДС",
   mark_safe_topup: "Проведено как пополнение Сейфа",
+  employee_advance: "Оформлено как аванс/заём сотруднику",
 };
 
 function round2(value: number): number {
@@ -100,6 +109,11 @@ export function OperationClassifyDialog({
   // Ключ строки, для которой открыта под-модалка деталей (сотрудник/счёт-получатель/контрагент+
   // накладная) — деталь живёт прямо в строке статьи, без отдельных inline-дропдаунов и блоков.
   const [detailRowKey, setDetailRowKey] = useState<string | null>(null);
+  // Форма аванса/займа (для статей аванса) — сотрудник берётся из detailRow.employeeId.
+  const [advanceKind, setAdvanceKind] = useState<"advance" | "loan">("advance");
+  const [advanceInstallment, setAdvanceInstallment] = useState("");
+  const [advanceRecoveryDate, setAdvanceRecoveryDate] = useState("");
+  const [advanceOverride, setAdvanceOverride] = useState(false);
 
   // Существующий контрагент по ИНН из выписки (только операция) — предзаполняем, чтобы не плодить дубль.
   const matchedByInn = row?.counterparty_inn_raw
@@ -162,6 +176,10 @@ export function OperationClassifyDialog({
   const salaryArticleIds = new Set(
     articles.filter((a) => EMPLOYEE_PAYOUT_ARTICLE_CODES.includes(a.code)).map((a) => a.id),
   );
+  const employeeAdvanceArticleIds = new Set(
+    articles.filter((a) => EMPLOYEE_ADVANCE_ARTICLE_CODES.includes(a.code)).map((a) => a.id),
+  );
+  const loanArticleId = articles.find((a) => a.code === EMPLOYEE_LOAN_ARTICLE_CODE)?.id;
   const transferArticleIds = new Set(
     articles
       .filter(
@@ -183,11 +201,34 @@ export function OperationClassifyDialog({
     enabled: isOperation && Boolean(counterpartyId) && usesSupplierPayment,
   });
   // Сотрудники для зарплатной строки — активные + увольняемые (обходит запрет /staff кассиру).
+  const usesAdvanceArticle = rows.some((item) => employeeAdvanceArticleIds.has(item.articleId));
   const payoutEmployeesQuery = useQuery({
     queryKey: ["dds", "payout-employees"],
     queryFn: getDdsPayoutEmployees,
-    enabled: usesSalaryArticle,
+    enabled: usesSalaryArticle || usesAdvanceArticle,
   });
+
+  // «Доступно к авансу» на дату операции — для формы аванса (сотрудник берётся из строки).
+  const advanceEmployeeId = detailRowKey
+    ? rows.find((item) => item.key === detailRowKey)?.employeeId ?? ""
+    : "";
+  const advanceAvailabilityQuery = useQuery({
+    queryKey: ["dds", "advance-availability", advanceEmployeeId, row?.operation_date],
+    queryFn: () => getPayrollAdvanceAvailability(advanceEmployeeId, row!.operation_date),
+    enabled: Boolean(isOperation && advanceEmployeeId && row?.operation_date),
+  });
+
+  // Сброс формы аванса при открытии строки аванса: тип по статье (заём/аванс), поля пусты.
+  useEffect(() => {
+    const item = detailRowKey ? rows.find((r) => r.key === detailRowKey) : undefined;
+    if (item && employeeAdvanceArticleIds.has(item.articleId)) {
+      setAdvanceKind(item.articleId === loanArticleId ? "loan" : "advance");
+      setAdvanceInstallment("");
+      setAdvanceRecoveryDate("");
+      setAdvanceOverride(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailRowKey]);
 
   if (!row) {
     return null;
@@ -313,8 +354,11 @@ export function OperationClassifyDialog({
   // Деталь строки (открывается по клику на строку) — зависит от статьи: сотрудник (зарплата) ·
   // счёт-получатель (перевод, проводка) · контрагент + накладная (поставщик/аванс/прочее).
   // Контрагента НЕ выносим отдельным блоком — он живёт прямо в строке нужной статьи.
-  const rowDetailKind = (item: SplitRow): "employee" | "transfer" | "counterparty" | null => {
+  const rowDetailKind = (
+    item: SplitRow,
+  ): "employee" | "advance" | "transfer" | "counterparty" | null => {
     if (item.articleId === "none") return null;
+    if (isOperation && employeeAdvanceArticleIds.has(item.articleId)) return "advance";
     if (salaryArticleIds.has(item.articleId)) return "employee";
     if (!isOperation && isTransferRow(item.articleId)) return "transfer";
     return "counterparty";
@@ -331,6 +375,13 @@ export function OperationClassifyDialog({
         return emp
           ? { text: `Сотрудник: ${emp.full_name}`, missing: false }
           : { text: "нужен сотрудник", missing: true };
+      }
+      case "advance": {
+        const emp = (payoutEmployeesQuery.data ?? []).find((e) => e.id === item.employeeId);
+        const label = item.articleId === loanArticleId ? "заём" : "аванс";
+        return emp
+          ? { text: `${label}: ${emp.full_name}`, missing: false }
+          : { text: `нужен сотрудник (${label})`, missing: true };
       }
       case "transfer": {
         const w = (walletsQuery.data ?? []).find((x) => x.id === item.transferWalletId);
@@ -384,6 +435,27 @@ export function OperationClassifyDialog({
   }
   const transferRowMissingWallet =
     !isOperation && rows.some((item) => isTransferRow(item.articleId) && !item.transferWalletId);
+
+  // Аванс/заём оформляется НЕ «Разнести», а формой аванса в строке (создаёт SalaryAdvance).
+  function submitAdvance() {
+    if (!detailRow || !detailRow.employeeId) {
+      toast.error("Выберите сотрудника");
+      return;
+    }
+    mutation.mutate({
+      action: "employee_advance",
+      splits: [
+        { article_id: detailRow.articleId, amount: detailRow.amount, employee_id: detailRow.employeeId },
+      ],
+      advance_kind: advanceKind,
+      advance_installment_amount:
+        advanceKind === "loan" && advanceInstallment ? advanceInstallment : null,
+      advance_recovery_start_date:
+        advanceKind === "loan" && advanceRecoveryDate ? advanceRecoveryDate : null,
+      advance_override_ceiling: advanceKind === "loan" ? advanceOverride : false,
+    });
+  }
+
   const isBusy = mutation.isPending;
 
   return (
@@ -492,9 +564,15 @@ export function OperationClassifyDialog({
                   !balanced ||
                   (usesAdvance && !counterpartyId && !createNewCounterparty) ||
                   salaryRowMissingEmployee ||
-                  transferRowMissingWallet
+                  transferRowMissingWallet ||
+                  usesAdvanceArticle
                 }
                 onClick={submitSplit}
+                title={
+                  usesAdvanceArticle
+                    ? "Аванс/заём оформляется в строке статьи — нажмите на неё"
+                    : undefined
+                }
               >
                 {isBusy ? (
                   <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
@@ -538,17 +616,114 @@ export function OperationClassifyDialog({
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              {rowDetailKind(detailRow) === "employee"
-                ? "Сотрудник-получатель"
-                : rowDetailKind(detailRow) === "transfer"
-                  ? "Счёт-получатель перевода"
-                  : "Контрагент"}
+              {rowDetailKind(detailRow) === "advance"
+                ? detailRow.articleId === loanArticleId
+                  ? "Заём сотруднику"
+                  : "Аванс сотруднику"
+                : rowDetailKind(detailRow) === "employee"
+                  ? "Сотрудник-получатель"
+                  : rowDetailKind(detailRow) === "transfer"
+                    ? "Счёт-получатель перевода"
+                    : "Контрагент"}
             </DialogTitle>
             <DialogDescription>
-              {articles.find((a) => a.id === detailRow.articleId)?.name ?? "Данные для строки"}
+              {rowDetailKind(detailRow) === "advance"
+                ? "Аванс — в счёт зарплаты; излишек над заработанным вернётся из следующей выплаты."
+                : articles.find((a) => a.id === detailRow.articleId)?.name ?? "Данные для строки"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            {rowDetailKind(detailRow) === "advance" ? (
+              <div className="space-y-3">
+                <div className="inline-flex w-fit overflow-hidden rounded-md border">
+                  <button
+                    type="button"
+                    className={`px-4 py-1.5 text-sm ${advanceKind === "advance" ? "bg-primary/10 font-medium text-primary" : ""}`}
+                    onClick={() => setAdvanceKind("advance")}
+                  >
+                    Аванс
+                  </button>
+                  <button
+                    type="button"
+                    className={`px-4 py-1.5 text-sm ${advanceKind === "loan" ? "bg-primary/10 font-medium text-primary" : ""}`}
+                    onClick={() => setAdvanceKind("loan")}
+                  >
+                    Заём
+                  </button>
+                </div>
+                <div className="rounded-md border bg-muted/40 p-2.5 text-sm text-muted-foreground">
+                  Сумма <b className="text-foreground">{formatDdsMoney(detailRow.amount)}</b> · дата{" "}
+                  {formatDate(row.operation_date)} — из операции (деньги уже ушли банком).
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-sm">Сотрудник</Label>
+                  <InlineOptionList
+                    options={employeeOptions}
+                    value={detailRow.employeeId}
+                    onChange={(value) => updateRow(detailRow.key, { employeeId: value })}
+                    searchPlaceholder="Поиск по имени…"
+                    emptyMessage={
+                      payoutEmployeesQuery.isLoading ? "Загрузка сотрудников…" : "Сотрудники не найдены"
+                    }
+                    listClassName="max-h-56"
+                  />
+                </div>
+                {detailRow.employeeId ? (
+                  <div className="rounded-md border bg-muted/40 p-2.5 text-sm">
+                    {advanceAvailabilityQuery.isLoading ? (
+                      "Считаем доступное…"
+                    ) : advanceAvailabilityQuery.data ? (
+                      <>
+                        Доступно к авансу на {formatDate(row.operation_date)}:{" "}
+                        <b>{formatDdsMoney(advanceAvailabilityQuery.data.available)}</b>
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </div>
+                ) : null}
+                {advanceKind === "advance" &&
+                detailRow.employeeId &&
+                advanceAvailabilityQuery.data &&
+                Number(detailRow.amount) > advanceAvailabilityQuery.data.available ? (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                    Больше заработанного (
+                    {formatDdsMoney(advanceAvailabilityQuery.data.available)}). Остаток удержится из
+                    следующей выплаты.
+                  </div>
+                ) : null}
+                {advanceKind === "loan" ? (
+                  <>
+                    <div className="space-y-1">
+                      <Label className="text-sm">Сумма удержания за период, ₽</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        value={advanceInstallment}
+                        onChange={(event) => setAdvanceInstallment(event.target.value)}
+                        placeholder="Пусто — весь заём одной ведомостью"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-sm">Удерживать с выплаты</Label>
+                      <Input
+                        type="date"
+                        value={advanceRecoveryDate}
+                        onChange={(event) => setAdvanceRecoveryDate(event.target.value)}
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={advanceOverride}
+                        onChange={(event) => setAdvanceOverride(event.target.checked)}
+                      />
+                      Превысить потолок займа (подтверждаю)
+                    </label>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
             {rowDetailKind(detailRow) === "employee" ? (
               <InlineOptionList
                 options={employeeOptions}
@@ -628,9 +803,31 @@ export function OperationClassifyDialog({
             ) : null}
           </div>
           <DialogFooter>
-            <Button onClick={() => setDetailRowKey(null)} type="button">
-              Готово
-            </Button>
+            {rowDetailKind(detailRow) === "advance" ? (
+              <>
+                <Button
+                  onClick={() => setDetailRowKey(null)}
+                  type="button"
+                  variant="outline"
+                >
+                  Отмена
+                </Button>
+                <Button
+                  disabled={isBusy || !detailRow.employeeId}
+                  onClick={submitAdvance}
+                  type="button"
+                >
+                  {isBusy ? (
+                    <LoaderCircle className="mr-2 animate-spin" size={16} aria-hidden="true" />
+                  ) : null}
+                  {advanceKind === "loan" ? "Оформить заём" : "Оформить аванс"}
+                </Button>
+              </>
+            ) : (
+              <Button onClick={() => setDetailRowKey(null)} type="button">
+                Готово
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -2413,12 +2413,17 @@ export type OperationSplitItem = {
 };
 
 export type OperationClassifyPayload = {
-  action: "split" | "mark_internal_transfer" | "exclude" | "mark_safe_topup";
+  action: "split" | "mark_internal_transfer" | "exclude" | "mark_safe_topup" | "employee_advance";
   splits?: OperationSplitItem[];
   counterparty_id?: string | null;
   new_counterparty_name?: string | null;
   new_counterparty_inn?: string | null;
   remember_as_rule?: boolean;
+  // Для action='employee_advance' (разбор операции как аванс/заём сотруднику).
+  advance_kind?: "advance" | "loan" | null;
+  advance_installment_amount?: string | null;
+  advance_recovery_start_date?: string | null;
+  advance_override_ceiling?: boolean;
 };
 
 export type CashflowSplitItem = {

@@ -126,9 +126,18 @@ from app.services.new_payment import (
     list_payout_attribution_employees,
 )
 from app.services.payroll_advance_service import (
+    book_operation_advance,
     list_kassa_pending_advances,
     sync_advance_after_allocation_change,
 )
+from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
+from app.auth.permissions import permission_is_granted
+
+# Статьи аванса/займа сотрудника: разбор операции на них заводит SalaryAdvance (деньги ушли
+# банком). Дубль kassa/payouts.py (payroll_advance_service) — во избежание тяжёлого импорта.
+EMPLOYEE_ADVANCE_ARTICLE_CODE = "employee_advance"
+EMPLOYEE_LOAN_ARTICLE_CODE = "vydacha_zaymov_sotrudnikam"
+EMPLOYEE_ADVANCE_ARTICLE_CODES = (EMPLOYEE_ADVANCE_ARTICLE_CODE, EMPLOYEE_LOAN_ARTICLE_CODE)
 
 router = APIRouter()
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
@@ -1182,6 +1191,7 @@ async def classify_operation(
     operation_id: UUID,
     payload: OperationClassifyRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, object]:
     """Classify a bank operation directly: multi-article split, internal transfer, or exclude."""
     operation = await session.get(BankOperation, operation_id)
@@ -1253,6 +1263,45 @@ async def classify_operation(
             else:
                 created_ids = await book_safe_topup(session, operation)
         except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    elif payload.action == "employee_advance":
+        # Разбор операции как аванс/заём сотруднику: split-проводка со статьёй аванса + SalaryAdvance
+        # (деньги ушли банком, второй проводки нет). Возврат маршрутизируется по роли в ведомости.
+        if len(payload.splits) != 1:
+            raise HTTPException(status_code=400, detail="Авансом оформляется одна строка")
+        item = payload.splits[0]
+        if item.employee_id is None:
+            raise HTTPException(status_code=400, detail="Выберите сотрудника")
+        article = await session.get(DdsArticle, item.article_id)
+        if article is None or article.code not in EMPLOYEE_ADVANCE_ARTICLE_CODES:
+            raise HTTPException(status_code=400, detail="Эта статья не для аванса/займа сотрудника")
+        if operation.direction != "out":
+            raise HTTPException(status_code=400, detail="Аванс — только для исходящей операции")
+        ensure_any_permission(
+            actor, ("payroll.advances.admin.issue", "payroll.advances.production.issue")
+        )
+        kind = payload.advance_kind or (
+            "loan" if article.code == EMPLOYEE_LOAN_ARTICLE_CODE else "advance"
+        )
+        allow_loan = permission_is_granted("payroll.loans.issue", actor.permissions)
+        try:
+            created_ids = await apply_operation_split(
+                session,
+                operation,
+                splits=[(item.article_id, item.amount, None, None, None)],
+            )
+            await book_operation_advance(
+                session,
+                operation,
+                employee_id=item.employee_id,
+                kind=kind,
+                installment_amount=payload.advance_installment_amount,
+                recovery_start_date=payload.advance_recovery_start_date,
+                override_ceiling=payload.advance_override_ceiling,
+                allow_loan=allow_loan,
+                actor_user_id=actor.user_id,
+            )
+        except (ValueError, PayrollConflictError, PayrollNotFoundError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
     else:
         await apply_operation_action(

@@ -319,9 +319,16 @@ class OperationClassifyRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    action: Literal["split", "mark_internal_transfer", "exclude", "mark_safe_topup"] = "split"
+    action: Literal[
+        "split", "mark_internal_transfer", "exclude", "mark_safe_topup", "employee_advance"
+    ] = "split"
     splits: list[OperationSplitItem] = Field(default_factory=list)
     counterparty_id: uuid.UUID | None = None
+    # Параметры для action='employee_advance' (разбор операции как аванс/заём сотруднику).
+    advance_kind: Literal["advance", "loan"] | None = None
+    advance_installment_amount: Decimal | None = None
+    advance_recovery_start_date: date | None = None
+    advance_override_ceiling: bool = False
     # Создать нового контрагента из распознанных данных операции (если его нет в реестре): имя
     # и ИНН берутся из выписки. Имеет приоритет над counterparty_id (при заданном имени).
     new_counterparty_name: str | None = None
