@@ -451,24 +451,17 @@ export function OperationClassifyDialog({
                     </Button>
                   </div>
                   {rowDetailKind(item) ? (
-                    <div className="flex items-center justify-between gap-2 pl-1 text-xs">
-                      <span
-                        className={
-                          rowDetailSummary(item).missing ? "text-amber-700" : "text-muted-foreground"
-                        }
-                      >
-                        {rowDetailSummary(item).text}
-                      </span>
-                      <Button
-                        className="h-6 px-2 text-xs"
-                        onClick={() => setDetailRowKey(item.key)}
-                        size="sm"
-                        type="button"
-                        variant={rowDetailSummary(item).missing ? "default" : "outline"}
-                      >
-                        {rowDetailSummary(item).missing ? "Заполнить" : "Изменить"}
-                      </Button>
-                    </div>
+                    <button
+                      className={`self-start pl-1 text-left text-xs underline-offset-2 hover:underline ${
+                        rowDetailSummary(item).missing
+                          ? "font-medium text-amber-700"
+                          : "text-muted-foreground"
+                      }`}
+                      onClick={() => setDetailRowKey(item.key)}
+                      type="button"
+                    >
+                      {rowDetailSummary(item).text}
+                    </button>
                   ) : null}
                 </div>
               ))}
