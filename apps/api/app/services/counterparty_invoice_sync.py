@@ -115,6 +115,9 @@ class CounterpartyInvoiceSyncResult:
     # Own (Касса/Склад) pushed invoices whose amount/date we pulled BACK from iiko because they
     # were edited there while still unpaid (goods-only iiko sum + our excluded staff/expense lines).
     own_pushed_updated: int = 0
+    # Накладные, удалённые у нас по сигналу iiko (документ DELETED там): только неоплаченные,
+    # не в банке и не чеки Кассы — деньги интеграция не трогает.
+    deleted_from_iiko: int = 0
 
     def as_dict(self) -> dict[str, int]:
         return asdict(self)
@@ -490,6 +493,33 @@ async def _excluded_push_line_sum(session: AsyncSession, invoice_id: uuid.UUID) 
     return Decimal(total or 0)
 
 
+async def _apply_iiko_deletion(
+    session: AsyncSession, doc: dict, *, result: CounterpartyInvoiceSyncResult
+) -> None:
+    """Документ удалён В iiko → удаляем нашу накладную (двустороннее удаление, направление
+    iiko→мы). Только пока деньги не двигались: неоплаченная и не в банке; чеки Кассы
+    (``kassa_cheque``) не трогаем — чек первичен у нас, iiko для него вторичен. Оплаченные/
+    банковские остаются — их снос не отменил бы платежей."""
+    external_id = doc.get("documentId") or doc.get("id")
+    if not external_id:
+        return
+    invoice = await session.scalar(
+        select(SupplierInvoice).where(
+            SupplierInvoice.external_id == external_id,
+            SupplierInvoice.source != KASSA_CHEQUE_SOURCE,
+        )
+    )
+    if invoice is None:
+        return
+    if invoice.payment_status != "unpaid" or invoice.draft_id is not None:
+        return
+    if invoice.barter_role is not None:
+        return  # бартерный леджер живёт своими правилами — авто-снос запрещён
+    await session.delete(invoice)
+    await session.flush()
+    result.deleted_from_iiko += 1
+
+
 async def _ingest_documents(
     session: AsyncSession,
     documents: list[dict],
@@ -504,6 +534,10 @@ async def _ingest_documents(
     name_by_id = {guid: product.name for guid, product in products.items()}
     for doc in documents:
         status = str(doc.get("status") or "").upper()
+        if status == "DELETED":
+            await _apply_iiko_deletion(session, doc, result=result)
+            result.skipped_status += 1
+            continue
         if status not in INGESTED_IIKO_STATUSES:
             result.skipped_status += 1
             continue

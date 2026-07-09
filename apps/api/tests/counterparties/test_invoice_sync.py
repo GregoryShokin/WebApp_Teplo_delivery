@@ -342,6 +342,86 @@ async def test_ingest_keeps_lines_frozen_once_paid(
         assert lines[0].sum == Decimal("232.00")  # не перетёрто iiko-версией
 
 
+async def test_deleted_in_iiko_removes_unpaid_invoice(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Документ удалён в iiko → неоплаченная накладная (не в банке) удаляется и у нас
+    (двустороннее удаление, направление iiko→мы)."""
+    async with async_session_factory() as session:
+        await ingest_iiko_payables(
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([_doc()])
+        )
+        await session.commit()
+        assert await _count(session, SupplierInvoice) == 1
+
+        result = await ingest_iiko_payables(
+            session,
+            suppliers_xml=_one_supplier(),
+            # так DELETED-док приходит из fetch: мини-док без items
+            incoming_docs=[{"documentId": "doc-1", "status": "DELETED"}],
+        )
+        await session.commit()
+
+        assert result.deleted_from_iiko == 1
+        assert await _count(session, SupplierInvoice) == 0
+
+
+async def test_deleted_in_iiko_keeps_paid_invoice(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Оплаченную накладную сигнал удаления из iiko НЕ трогает — деньги уже двигались."""
+    async with async_session_factory() as session:
+        await ingest_iiko_payables(
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([_doc()])
+        )
+        await session.commit()
+        invoice = await session.scalar(select(SupplierInvoice))
+        invoice.payment_status = "paid"
+        await session.commit()
+
+        result = await ingest_iiko_payables(
+            session,
+            suppliers_xml=_one_supplier(),
+            incoming_docs=[{"documentId": "doc-1", "status": "DELETED"}],
+        )
+        await session.commit()
+
+        assert result.deleted_from_iiko == 0
+        assert await _count(session, SupplierInvoice) == 1
+
+
+async def test_deleted_in_iiko_removes_own_pushed_unpaid(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Наша (manual) выгруженная накладная, удалённая в iiko, удаляется и у нас — но
+    чек Кассы (kassa_cheque) авто-снос не трогает (чек первичен у нас)."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Наш поставщик", inn="7708888810")
+        await make_invoice(
+            session, counterparty_id=cp.id, amount="100.00", number="M-1",
+            source="manual", external_id="doc-m", payment_status="unpaid",
+        )
+        await make_invoice(
+            session, counterparty_id=cp.id, amount="200.00", number="Ч-1",
+            source="kassa_cheque", external_id="doc-ch", payment_status="unpaid",
+        )
+        await session.commit()
+
+        result = await ingest_iiko_payables(
+            session,
+            suppliers_xml=_one_supplier(),
+            incoming_docs=[
+                {"documentId": "doc-m", "status": "DELETED"},
+                {"documentId": "doc-ch", "status": "DELETED"},
+            ],
+        )
+        await session.commit()
+
+        assert result.deleted_from_iiko == 1  # manual удалена, чек Кассы — нет
+        remaining = (await session.scalars(select(SupplierInvoice))).all()
+        assert [inv.source for inv in remaining] == ["kassa_cheque"]
+
+
 async def test_ingest_outgoing_creates_receivable_and_marks_barter(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

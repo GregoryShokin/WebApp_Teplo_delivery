@@ -435,6 +435,26 @@ async def update_warehouse_invoice(
     return invoice
 
 
+def ensure_invoice_deletable(invoice: SupplierInvoice) -> None:
+    """Гейты удаления накладной — те же, что у правки, плюс банк: оплаченную/отправленную в банк
+    не удаляем (деньги уже двигались), бартер живёт своим леджером займов/возвратов."""
+    if invoice.barter_role is not None:
+        raise WarehouseInvoiceError("Бартерную накладную удалять нельзя")
+    if invoice.payment_status != "unpaid":
+        raise WarehouseInvoiceError("Удалять можно только неоплаченную накладную")
+    if invoice.draft_id is not None:
+        raise WarehouseInvoiceError("Накладная отправлена в банк — сначала отзовите платёж")
+
+
+async def delete_warehouse_invoice(session: AsyncSession, invoice: SupplierInvoice) -> None:
+    """Удалить накладную у нас (строки/связи — каскадами БД). Гейты — ``ensure_invoice_deletable``;
+    удаление же iiko-документа — забота вызывающего (роут удаляет в iiko ПЕРЕД локальным
+    удалением, иначе реверс-синк воскресит накладную из живого PROCESSED-документа)."""
+    ensure_invoice_deletable(invoice)
+    await session.delete(invoice)
+    await session.commit()
+
+
 async def list_warehouse_invoices(
     session: AsyncSession,
     *,
@@ -488,6 +508,8 @@ def _invoice_summary(
         "remaining": float(amount - allocated_money),
         "payment_status": invoice.payment_status,
         "iiko_push_status": invoice.iiko_push_status,
+        # iiko documentId — фронту для предупреждения «удалится и в iiko».
+        "external_id": invoice.external_id,
         "barter_role": invoice.barter_role,
         "barter_return_status": invoice.barter_return_status,
     }

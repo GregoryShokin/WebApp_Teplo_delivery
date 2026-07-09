@@ -27,7 +27,7 @@ from app.api.deps import (
     require_permission,
 )
 from app.db.session import get_session
-from app.models import IikoProduct, SupplierInvoice, Wallet
+from app.models import IikoProduct, SupplierInvoice, SupplierInvoiceTombstone, Wallet
 from app.services.counterparty_bank_match import (
     TimeMatchSuggestion,
     confirm_invoice_match,
@@ -39,6 +39,7 @@ from app.services.kassa.cheque_payout_push import post_kassa_payment_to_iiko
 from app.services.kassa.invoice_paid_push import counterparty_iiko_guid
 from app.services.warehouse_invoice_push import (
     WarehousePushError,
+    delete_invoice_in_iiko,
     propagate_invoice_edit_to_iiko,
     push_invoice_to_iiko,
 )
@@ -48,6 +49,8 @@ from app.services.warehouse_invoices import (
     WarehouseInvoiceError,
     create_barter_return,
     create_warehouse_invoice,
+    delete_warehouse_invoice,
+    ensure_invoice_deletable,
     get_loan_returnable,
     get_warehouse_invoice,
     invoice_permission_kind,
@@ -693,3 +696,51 @@ async def put_invoice(
     result = await get_warehouse_invoice(session, invoice_id)
     assert result is not None
     return result
+
+
+@router.delete("/invoices/{invoice_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_invoice(
+    invoice_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    """Удалить неоплаченную накладную с обеих сторон. Если она есть в iiko (``external_id``) —
+    сначала удаляем ТАМ (unpost→cancel): иначе реверс-синк воскресил бы её из живого
+    PROCESSED-документа. Отказ iiko → 409, локально ничего не трогаем. Тумбстон закрывает
+    гонку с синком, читающим старый снапшот."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    kind = await invoice_permission_kind(session, invoice)
+    ensure_any_permission(actor, (f"invoices.{kind}.edit", "kassa.invoices.create"))
+    try:
+        ensure_invoice_deletable(invoice)
+    except WarehouseInvoiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+    if invoice.external_id:
+        from app.services.iiko_sync import _load_source_credential_env
+
+        await _load_source_credential_env(session)
+        error = await delete_invoice_in_iiko(invoice)
+        if error is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"iiko не удалил документ: {error}",
+            )
+        session.add(
+            SupplierInvoiceTombstone(
+                source=invoice.source,
+                external_id=invoice.external_id,
+                reason="удалена пользователем из приложения (двустороннее удаление)",
+            )
+        )
+
+    try:
+        await delete_warehouse_invoice(session, invoice)
+    except WarehouseInvoiceError as exc:  # pragma: no cover — гейты проверены выше
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc

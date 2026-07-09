@@ -36,15 +36,17 @@ from app.models import (
     InvoiceLineItem,
     SupplierInvoice,
 )
-from app.services.iiko_cloud_client import iiko_auth_token, iiko_opener
+from app.services.iiko_cloud_client import IIKO_ORGANIZATION_ID, iiko_auth_token, iiko_opener
 from app.services.iiko_invoice_cloud import (
     CloudInvoiceDoc,
     CloudInvoiceLine,
     build_invoice_body,
     business_error_message,
+    cancel_invoice,
     create_invoice,
     extract_document_id,
     post_invoice,
+    unpost_invoice,
     update_invoice,
 )
 from app.services.warehouse_invoices import SUPPLIER_PAYMENT_ARTICLE_NAME
@@ -216,6 +218,41 @@ def _cloud_create_and_post(
             created=created,
         )
     return _CloudPushOutcome(document_id, True, None, created=created)
+
+
+def _cloud_delete_document(direction: str, organization_id: str, document_id: str) -> str | None:
+    """Синхронно (в треде): удалить документ в iiko — ``unpost`` → ``cancel`` (``cancel`` работает
+    только на NEW; на PROCESSED отвечает 409, поэтому сперва распроводим). 409 «status mismatch»
+    на ``unpost`` терпим — документ уже NEW. Возвращает None при успехе, иначе текст ошибки."""
+    opener = iiko_opener()
+    try:
+        token = iiko_auth_token(opener)
+    except Exception as exc:  # noqa: BLE001 — нет креды/сеть/прокси
+        return f"auth: {exc}"[:400]
+
+    status, resp = unpost_invoice(direction, organization_id, document_id,
+                                  token=token, opener=opener)
+    if not (200 <= status < 300):
+        message = business_error_message(resp) or f"unpost HTTP {status}"
+        # Уже NEW (не проведён) — распроводить нечего, идём к cancel.
+        if "status mismatch" not in message:
+            return message
+    cstatus, cresp = cancel_invoice(direction, organization_id, document_id,
+                                    token=token, opener=opener)
+    if not (200 <= cstatus < 300):
+        return business_error_message(cresp) or f"cancel HTTP {cstatus}"
+    return None
+
+
+async def delete_invoice_in_iiko(invoice: SupplierInvoice) -> str | None:
+    """Удалить iiko-документ накладной (``unpost``→``cancel``). None — успех/нечего удалять."""
+    if not invoice.external_id:
+        return None
+    return await anyio.to_thread.run_sync(
+        lambda: _cloud_delete_document(
+            invoice.direction, IIKO_ORGANIZATION_ID, invoice.external_id
+        )
+    )
 
 
 def _cloud_update_and_post(

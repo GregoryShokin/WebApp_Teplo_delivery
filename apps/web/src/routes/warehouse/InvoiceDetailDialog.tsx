@@ -1,8 +1,18 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Pencil, Send } from "lucide-react";
+import { LoaderCircle, Pencil, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -11,7 +21,7 @@ import { usePermissions } from "@/lib/permissions";
 import { formatRub } from "@/routes/counterparties/shared";
 
 import { InvoiceEditDialog } from "./InvoiceEditDialog";
-import { getWarehouseInvoice, pushInvoiceToIiko } from "./api";
+import { deleteWarehouseInvoice, getWarehouseInvoice, pushInvoiceToIiko } from "./api";
 
 /** Статус отправки накладной в iiko: подпись, цвет, нужна ли кнопка «Отправить». */
 const IIKO_STATUS: Record<string, { label: string; cls: string; canSend: boolean }> = {
@@ -46,6 +56,7 @@ export function InvoiceDetailDialog({
     permissions.canPerformAction("invoices.normal.edit") ||
     permissions.canPerformAction("kassa.invoices.create");
   const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const open = Boolean(invoiceId);
 
   const detailQuery = useQuery({
@@ -67,6 +78,18 @@ export function InvoiceDetailDialog({
     onError: (e) => toast.error(apiErrorMessage(e, "Не удалось отправить в iiko")),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteWarehouseInvoice(invoiceId!),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["wh"] });
+      void queryClient.invalidateQueries({ queryKey: ["cp"] });
+      toast.success("Накладная удалена");
+      setConfirmingDelete(false);
+      onOpenChange(false);
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, "Не удалось удалить накладную")),
+  });
+
   const iiko = detail ? IIKO_STATUS[detail.iiko_push_status] ?? null : null;
   const hasStaff = (detail?.staff_amount ?? 0) > 0;
   // Отправка в iiko уместна только для документов, созданных у нас (вручную / Касса:
@@ -85,6 +108,29 @@ export function InvoiceDetailDialog({
         invoiceId={editing ? invoiceId : null}
         onOpenChange={(o) => !o && setEditing(false)}
       />
+      <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Удалить накладную {detail?.number ? `№${detail.number}` : ""}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {detail?.external_id
+                ? "Накладная будет удалена и здесь, и в iiko (документ распроведётся и попадёт в удалённые). Действие необратимо."
+                : "Накладная будет удалена из приложения. Действие необратимо."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate()}
+            >
+              {deleteMutation.isPending ? "Удаляем…" : "Удалить"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
@@ -111,9 +157,18 @@ export function InvoiceDetailDialog({
             </div>
 
             {canEdit && detail.payment_status === "unpaid" && !detail.barter_role ? (
-              <div>
+              <div className="flex flex-wrap gap-2">
                 <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
                   <Pencil size={14} aria-hidden="true" /> Редактировать позиции
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-red-200 text-red-700 hover:bg-red-50"
+                  disabled={deleteMutation.isPending}
+                  onClick={() => setConfirmingDelete(true)}
+                >
+                  <Trash2 size={14} aria-hidden="true" /> Удалить
                 </Button>
               </div>
             ) : null}

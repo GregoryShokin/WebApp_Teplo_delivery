@@ -27,6 +27,8 @@ export type WarehouseInvoiceSummary = {
   remaining: number;
   payment_status: string;
   iiko_push_status: string;
+  // iiko documentId (есть → накладная существует в iiko; удаление будет двусторонним).
+  external_id: string | null;
   barter_role: string | null;
 };
 
@@ -173,6 +175,10 @@ export async function getStaffArticles(): Promise<StaffArticle[]> {
 export async function pushInvoiceToIiko(id: string): Promise<WarehouseInvoiceDetail> {
   const response = await api.post<WarehouseInvoiceDetail>(`${BASE}/invoices/${id}/push`);
   return response.data;
+}
+
+export async function deleteWarehouseInvoice(id: string): Promise<void> {
+  await api.delete(`${BASE}/invoices/${id}`);
 }
 
 export type OpenLoan = {

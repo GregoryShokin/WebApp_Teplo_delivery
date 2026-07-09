@@ -20,6 +20,7 @@ from app.services import warehouse_invoice_push as wip
 from app.services.iiko_invoice_cloud import build_invoice_body
 from app.services.warehouse_invoice_push import (
     _CloudPushOutcome,
+    delete_invoice_in_iiko,
     prepare_push,
     propagate_invoice_edit_to_iiko,
     push_invoice_to_iiko,
@@ -347,3 +348,44 @@ async def test_propagate_records_business_error(
         result = await propagate_invoice_edit_to_iiko(session, invoice.id)
         assert result.iiko_push_status == "failed"
         assert "409" in result.iiko_push_error
+
+
+# ── delete_invoice_in_iiko: двустороннее удаление (сетевой слой замокан) ─────────────────────────
+
+
+async def test_delete_in_iiko_noop_without_external_id(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with async_session_factory() as session:
+        cp = await make_counterparty(
+            session, name="Поставщик", inn="7710000080", iiko_guid="SUP-GUID-1"
+        )
+        invoice = await _invoice_with_lines(session, cp.id, store_guid="ST-1", staff_second=False)
+        called: list[str] = []
+        monkeypatch.setattr(
+            wip, "_cloud_delete_document", lambda *a, **k: called.append("x") or None
+        )
+
+        assert await delete_invoice_in_iiko(invoice) is None
+        assert called == []  # не в iiko → сеть не дёргаем
+
+
+async def test_delete_in_iiko_returns_error_text(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with async_session_factory() as session:
+        cp = await make_counterparty(
+            session, name="Поставщик", inn="7710000081", iiko_guid="SUP-GUID-1"
+        )
+        invoice = await _invoice_with_lines(session, cp.id, store_guid="ST-1", staff_second=False)
+        invoice.external_id = "IIKO-DOC-D"
+        await session.commit()
+        monkeypatch.setattr(
+            wip, "_cloud_delete_document",
+            lambda *a, **k: "Нельзя распровести: по документу уже есть проводки оплаты",
+        )
+
+        error = await delete_invoice_in_iiko(invoice)
+        assert error is not None and "проводки оплаты" in error
