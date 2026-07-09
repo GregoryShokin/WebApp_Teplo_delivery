@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Plus, Trash2 } from "lucide-react";
+import { Landmark, LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +26,7 @@ import { apiErrorMessage } from "@/lib/api";
 
 import {
   CASH_PAYMENT_WALLET_CODES,
+  createDraft,
   getPrepayments,
   getWallets,
   settleInvoiceFromPrepayment,
@@ -221,6 +222,24 @@ export function PayWarehouseInvoiceDialog({
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось провести оплату")),
   });
 
+  // «Отправить в банк» = черновик платежа в Т-Банке на остаток накладной (подпись — в банке).
+  const bankDraftMutation = useMutation({
+    mutationFn: () => createDraft([invoiceId!]),
+    onSuccess: async (draft) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["cp"] }),
+        queryClient.invalidateQueries({ queryKey: ["wh"] }),
+      ]);
+      onOpenChange(false);
+      toast.success(
+        draft.pays_via_safe
+          ? `Черновик выплаты на карту ИП создан (неофициальный поставщик) — ${formatRub(draft.amount)}`
+          : `Черновик на ${formatRub(draft.amount)} отправлен в банк (Т-Банк)`,
+      );
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отправить в банк")),
+  });
+
   const settleMutation = useMutation({
     mutationFn: () =>
       settleInvoiceFromPrepayment(invoiceId!, { prepayment_id: oldestPrepayment!.id }),
@@ -262,6 +281,27 @@ export function PayWarehouseInvoiceDialog({
                 </span>
               ) : null}
             </div>
+
+            {!detail.draft_id ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm">
+                <span className="text-muted-foreground">
+                  Безналично — черновик платежа в Т-Банке (останется подписать в банке)
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={bankDraftMutation.isPending}
+                  onClick={() => bankDraftMutation.mutate()}
+                >
+                  {bankDraftMutation.isPending ? (
+                    <LoaderCircle className="animate-spin" size={14} aria-hidden="true" />
+                  ) : (
+                    <Landmark size={14} aria-hidden="true" />
+                  )}
+                  Отправить в банк
+                </Button>
+              </div>
+            ) : null}
 
             {prepayAvailable > 0 && remaining > 0 ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-sky-200 bg-sky-50/60 p-3 text-sm">
