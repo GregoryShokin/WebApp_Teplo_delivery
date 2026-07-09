@@ -2819,16 +2819,18 @@ async def _get_employee_or_404(
     actor: CurrentActor | None = None,
     action: StaffAction = StaffAction.READ,
 ) -> Employee:
-    if include_assignments and isinstance(session, AsyncSession):
+    if isinstance(session, AsyncSession):
+        # freelancer_card + плейсхолдер грузим eager ВСЕГДА (не только при include_assignments):
+        # ниже _redact_freelancer_pin трогает freelancer_card, а async lazy-load вне greenlet
+        # падает MissingGreenlet. role_assignments — только по запросу.
+        options = []
+        if include_assignments:
+            options.append(selectinload(Employee.role_assignments))
+        options.append(
+            selectinload(Employee.freelancer_card).selectinload(FreelancerTempCard.placeholder)
+        )
         employee = await session.scalar(
-            select(Employee)
-            .options(
-                selectinload(Employee.role_assignments),
-                # Карточка внештатника + плейсхолдер: eager-цепочка, чтобы
-                # placeholder_name сериализовался без async lazy-load.
-                selectinload(Employee.freelancer_card).selectinload(FreelancerTempCard.placeholder),
-            )
-            .where(Employee.id == employee_id)
+            select(Employee).options(*options).where(Employee.id == employee_id)
         )
     else:
         employee = await session.get(Employee, employee_id)
