@@ -95,6 +95,7 @@ async def _refund_op(
     *,
     amount: str,
     card: str = CARD,
+    operation_date: date = REFUND_DATE,
 ) -> BankOperation:
     """Настоящий возврат refundIn: свой rrn, БЕЗ authCode, тот же cardNumber, свой
     documentNumber (у боевого возврата он есть → ingest-дедуп по stable_key работает)."""
@@ -104,7 +105,7 @@ async def _refund_op(
         session,
         amount=amount,
         direction="in",
-        operation_date=REFUND_DATE,
+        operation_date=operation_date,
         category="refundIn",
         account_id=account_id,
         raw_payload={"cardNumber": card, "rrn": REFUND_RRN, "documentNumber": f"D{_refund_doc_seq}"},
@@ -325,6 +326,53 @@ async def test_refund_not_attached_to_other_card(
         assert await match_card_refund_operations(session) == 0
         await session.refresh(refund)
         assert refund.cashflow_transaction_id is None
+
+
+async def test_refund_before_purchase_not_matched(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Возврат РАНЬШЕ покупки (за прошлую покупку на той же карте) НЕ привязывается к чеку:
+    refundIn физически не может относиться к покупке, которой на его дату ещё не было.
+    Берём возврат ЗА ДЕНЬ до покупки — старый слэк «−2 дня от даты чека» его ошибочно матчил."""
+    async with async_session_factory() as session:
+        article = await make_expense_article(session, code="personal", name="Расходы на персонал")
+        account, _, op = await _purchase_op(session, amount="6000.00")  # покупка OP_DATE (04.07)
+        await session.commit()
+        await _net_cheque(session, op, article=article)  # ждёт возврат 500 по карте CARD
+        # Возврат «прилетел» ДО покупки — заведомо чужой (за прошлую покупку на этой карте).
+        refund = await _refund_op(
+            session, account.id, amount="500.00", operation_date=OP_DATE - timedelta(days=1)
+        )
+        await session.flush()
+
+        assert await match_card_refund_operations(session) == 0
+        await session.refresh(refund)
+        assert refund.cashflow_transaction_id is None
+
+
+async def test_hint_hides_refund_before_purchase(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Подсказка пикера «на карте есть возврат N ₽» скрывает возвраты РАНЬШЕ покупки
+    (за прошлую покупку), но показывает пришедшие ПОСЛЕ неё."""
+    async with async_session_factory() as session:
+        account, _, op = await _purchase_op(session, amount="6000.00")  # покупка OP_DATE (04.07)
+        # Возврат ДО покупки — чужой, в подсказку идти не должен.
+        await _refund_op(session, account.id, amount="500.00", operation_date=date(2026, 5, 23))
+        await session.commit()
+
+        cands = await list_card_transactions(session, date_from=OP_DATE, date_to=OP_DATE)
+        cand = next(c for c in cands if c.bank_operation_id == op.id)
+        assert cand.refund_amount is None
+        assert cand.refund_count == 0
+
+        # Возврат ПОСЛЕ покупки — показываем в подсказке.
+        await _refund_op(session, account.id, amount="500.00", operation_date=date(2026, 7, 6))
+        await session.commit()
+        cands = await list_card_transactions(session, date_from=OP_DATE, date_to=OP_DATE)
+        cand = next(c for c in cands if c.bank_operation_id == op.id)
+        assert cand.refund_amount == Decimal("500.00")
+        assert cand.refund_count == 1
 
 
 async def test_ambiguous_refund_escalates_and_apply_links_to_chosen_cheque(

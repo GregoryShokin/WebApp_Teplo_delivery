@@ -399,11 +399,15 @@ async def list_card_transactions(
                 refunds_by_card.setdefault(card, []).append(refund)
         for candidate in candidates:
             card = card_by_op.get(candidate.bank_operation_id)
-            # Возврат не может превышать покупку — показываем только правдоподобные по сумме.
+            # Возврат не может превышать покупку по сумме И не может быть раньше самой покупки
+            # (более ранний refundIn — за другую, прошлую покупку). Показываем только такие.
             matched = [
                 r
                 for r in refunds_by_card.get(card or "", [])
                 if _money(abs(r.amount)) <= candidate.amount
+                and _refund_not_before_purchase(
+                    r, candidate.purchased_at, candidate.operation_date
+                )
             ]
             if matched:
                 candidate.refund_amount = _money(sum(abs(r.amount) for r in matched))
@@ -988,8 +992,10 @@ async def match_pending_cheque_operations(
 # задержкой поднимает escalate_missing_cheque_refunds (даёт время создать чек).
 
 
-# Окно матчинга возврата к чеку: возврат не раньше чем за 2 дня до даты чека и не позже
-# +60 дней (постинг банка 1–3 дня, но берём с большим запасом). Защита от древних совпадений.
+# Окно матчинга возврата к чеку: возврат НЕ РАНЬШЕ самой покупки (refundIn физически
+# происходит позже покупки — более ранний возврат заведомо за ДРУГУЮ, прошлую покупку на
+# той же карте) и не позже +60 дней от неё (постинг банка 1–3 дня, берём с запасом). Якорь —
+# момент ПОКУПКИ по ``authorizationDate``, а не дата ввода чека кассиром.
 REFUND_MATCH_WINDOW_DAYS = 60
 
 
@@ -1020,14 +1026,38 @@ async def _attached_refund_total(
     return _money(total or 0)
 
 
-def _refund_after_cheque(refund: BankOperation, invoice: SupplierInvoice) -> bool:
-    """Возврат попадает во временное окно чека (не сильно раньше и не слишком позже)."""
-    base = invoice.invoice_date or (invoice.issued_at.date() if invoice.issued_at else None)
-    if base is None:
-        return True
+def _refund_not_before_purchase(
+    refund: BankOperation, purchase_dt: datetime | None, purchase_day: date | None
+) -> bool:
+    """Возврат физически не может произойти РАНЬШЕ покупки: ``refundIn`` в прошлом (напр.,
+    за другую покупку месяцем ранее, всё ещё висящий непривязанным на карте) — со 100%
+    вероятностью не относится к этой покупке. Сравниваем реальный момент операции
+    (``authorizationDate``/``posted_at`` через ``_purchase_dt``); если точного момента с
+    какой-то стороны нет — падаем на день проводки (``operation_date``)."""
+    refund_dt = _purchase_dt(refund)
+    if purchase_dt is not None and refund_dt is not None:
+        return refund_dt >= purchase_dt
+    purchase_d = purchase_dt.date() if purchase_dt is not None else purchase_day
+    refund_d = refund_dt.date() if refund_dt is not None else refund.operation_date
+    return purchase_d is None or refund_d is None or refund_d >= purchase_d
+
+
+def _refund_within_window(refund: BankOperation, purchase: BankOperation) -> bool:
+    """Возврат относится к покупке по времени: не раньше самой покупки (см.
+    ``_refund_not_before_purchase``) и не позже +``REFUND_MATCH_WINDOW_DAYS`` от неё
+    (защита от древних совпадений вперёд). Якорь — момент ПОКУПКИ, а не дата ввода чека."""
+    purchase_dt = _purchase_dt(purchase)
+    if not _refund_not_before_purchase(refund, purchase_dt, purchase.operation_date):
+        return False
+    refund_dt = _purchase_dt(refund)
+    if purchase_dt is not None and refund_dt is not None:
+        return refund_dt <= purchase_dt + timedelta(days=REFUND_MATCH_WINDOW_DAYS)
+    purchase_d = purchase_dt.date() if purchase_dt is not None else purchase.operation_date
+    refund_d = refund_dt.date() if refund_dt is not None else refund.operation_date
     return (
-        refund.operation_date >= base - timedelta(days=2)
-        and refund.operation_date <= base + timedelta(days=REFUND_MATCH_WINDOW_DAYS)
+        purchase_d is None
+        or refund_d is None
+        or refund_d <= purchase_d + timedelta(days=REFUND_MATCH_WINDOW_DAYS)
     )
 
 
@@ -1092,7 +1122,7 @@ async def _candidate_cheques_for_refund(
         )
         if outstanding <= 0:
             continue
-        if not _refund_after_cheque(refund, invoice):
+        if not _refund_within_window(refund, purchase):
             continue
         result.append((invoice, purchase, outstanding))
     return result
