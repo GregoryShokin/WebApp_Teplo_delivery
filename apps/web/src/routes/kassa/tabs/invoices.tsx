@@ -28,11 +28,20 @@ function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleDateString("ru-RU") : "—";
 }
 
+/** Цель кассовой оплаты — минимум полей, общий для строки списка и модалки деталей. */
+type KassaPayTarget = {
+  id: string;
+  counterparty_name: string;
+  number: string | null;
+  amount: number;
+  remaining: number;
+};
+
 /** Вкладка «Накладные» Кассы: неоплаченные накладные с доплатой наличными с ТК Черникова
  * (чтобы дооплатить уже созданную накладную, а не пересоздавать её ради тоггла «Оплачено»). */
 export function KassaInvoicesTab({ canPay }: { canPay: boolean }) {
   const queryClient = useQueryClient();
-  const [payTarget, setPayTarget] = useState<CounterpartyInvoice | null>(null);
+  const [payTarget, setPayTarget] = useState<KassaPayTarget | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
 
@@ -59,7 +68,7 @@ export function KassaInvoicesTab({ canPay }: { canPay: boolean }) {
     onError: (e) => toast.error(apiErrorMessage(e, "Не удалось оплатить накладную")),
   });
 
-  const openPay = (invoice: CounterpartyInvoice) => {
+  const openPay = (invoice: KassaPayTarget) => {
     setPayTarget(invoice);
     setAmount(String(invoice.remaining || invoice.amount));
   };
@@ -124,6 +133,9 @@ export function KassaInvoicesTab({ canPay }: { canPay: boolean }) {
       <InvoiceDetailDialog
         invoiceId={detailId}
         onOpenChange={(open) => !open && setDetailId(null)}
+        // Касса платит только наличными с ТК Черникова — в деталях вместо универсальной
+        // «Оплатить» кассовая кнопка, открывающая тот же диалог, что и строчная.
+        onKassaPay={canPay ? (detail) => openPay(detail) : undefined}
       />
 
       <Dialog open={!!payTarget} onOpenChange={(open) => !open && setPayTarget(null)}>

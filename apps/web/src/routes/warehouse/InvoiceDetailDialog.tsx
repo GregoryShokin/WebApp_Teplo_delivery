@@ -22,7 +22,12 @@ import { formatRub } from "@/routes/counterparties/shared";
 
 import { InvoiceEditDialog } from "./InvoiceEditDialog";
 import { PayWarehouseInvoiceDialog } from "./PayWarehouseInvoiceDialog";
-import { deleteWarehouseInvoice, getWarehouseInvoice, pushInvoiceToIiko } from "./api";
+import {
+  deleteWarehouseInvoice,
+  getWarehouseInvoice,
+  pushInvoiceToIiko,
+  type WarehouseInvoiceDetail,
+} from "./api";
 
 /** Статус отправки накладной в iiko: подпись, цвет, нужна ли кнопка «Отправить». */
 const IIKO_STATUS: Record<string, { label: string; cls: string; canSend: boolean }> = {
@@ -38,13 +43,19 @@ function formatDateTime(value: string | null): string {
 }
 
 /** Детализация накладной: позиции (номенклатура + суммы), оплата и статус отправки в iiko
- * с возможностью переотправить. Переиспользуется из Кассы и карточки контрагента. */
+ * с возможностью переотправить. Переиспользуется из Кассы и карточки контрагента.
+ *
+ * ``onKassaPay`` — кассовый контекст: администратор на Кассе платит ТОЛЬКО наличными с
+ * ТК Черникова, поэтому вместо универсальной «Оплатить» (банк/сплит) показывается
+ * «Оплатить с ТК Черникова», открывающая кассовый диалог оплаты родителя. */
 export function InvoiceDetailDialog({
   invoiceId,
   onOpenChange,
+  onKassaPay,
 }: {
   invoiceId: string | null;
   onOpenChange: (open: boolean) => void;
+  onKassaPay?: (detail: WarehouseInvoiceDetail) => void;
 }) {
   const queryClient = useQueryClient();
   const permissions = usePermissions();
@@ -170,7 +181,20 @@ export function InvoiceDetailDialog({
                     <Pencil size={14} aria-hidden="true" /> Редактировать позиции
                   </Button>
                 ) : null}
-                {canPay ? (
+                {onKassaPay ? (
+                  // Кассовый контекст: только наличная оплата с ТК Черникова (как строчная
+                  // кнопка Кассы) — банк/сплит администратору Кассы недоступны.
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      onOpenChange(false);
+                      onKassaPay(detail);
+                    }}
+                  >
+                    <Banknote size={14} aria-hidden="true" /> Оплатить с ТК Черникова
+                  </Button>
+                ) : canPay ? (
                   <Button size="sm" variant="outline" onClick={() => setPaying(true)}>
                     <Banknote size={14} aria-hidden="true" /> Оплатить
                   </Button>
