@@ -614,11 +614,23 @@ async def _ingest_documents(
         # В Cloud партнёр у обоих направлений — поле ``counteragent``.
         supplier_guid = doc.get("counteragent")
         supplier = suppliers.get(supplier_guid) if supplier_guid else None
-        if supplier is None:
-            result.skipped_unknown_supplier += 1
-            continue
-        if supplier.represents_store:
+        if supplier is not None and supplier.represents_store:
             result.skipped_store += 1
+            continue
+
+        # Уже знакомая накладная обновляется и БЕЗ справочника поставщиков: контрагент к ней
+        # привязан. Иначе выпадение поставщика из RMS-справочника (бартерные партнёры,
+        # удалённые записи) замораживало существующие накладные — без обновления сумм и без
+        # материализации позиций («накладная из старой синхронизации» навсегда).
+        existing = await session.scalar(
+            select(SupplierInvoice).where(
+                SupplierInvoice.source == IIKO_SOURCE,
+                SupplierInvoice.external_id == external_id,
+            )
+        )
+        if existing is None and supplier is None:
+            # Новую накладную без справочника не создать — нужны имя/ИНН поставщика.
+            result.skipped_unknown_supplier += 1
             continue
 
         # 0₽ documents are gifts/bonuses (iiko comment «подарок» etc.) — nothing to pay and
@@ -629,11 +641,16 @@ async def _ingest_documents(
             result.skipped_zero_amount += 1
             continue
 
-        counterparty_id = None
-        if direction == "payable":
-            counterparty_id = await _routed_counterparty_id(session, supplier.id, _doc_prefix(doc))
-        if counterparty_id is None:
-            counterparty_id = await _resolve_counterparty(session, supplier, result=result)
+        if supplier is not None:
+            counterparty_id = None
+            if direction == "payable":
+                counterparty_id = await _routed_counterparty_id(
+                    session, supplier.id, _doc_prefix(doc)
+                )
+            if counterparty_id is None:
+                counterparty_id = await _resolve_counterparty(session, supplier, result=result)
+        else:
+            counterparty_id = existing.counterparty_id  # справочник не знает — привязку не трогаем
         if direction == "receivable":
             await _mark_relationship_barter(session, counterparty_id)
 
@@ -652,12 +669,6 @@ async def _ingest_documents(
             if key != "items" and not isinstance(value, (list, dict))
         }
 
-        existing = await session.scalar(
-            select(SupplierInvoice).where(
-                SupplierInvoice.source == IIKO_SOURCE,
-                SupplierInvoice.external_id == external_id,
-            )
-        )
         if existing is None:
             if due_date is None and invoice_date is not None:
                 delay, due_day = await _profile_due_terms(session, counterparty_id)
@@ -794,17 +805,27 @@ def _fetch_cloud_documents(
 ) -> list[dict]:
     """Cloud ``list`` (сводки) → ``get`` по каждому проведённому. Непроведённые/удалённые сводки
     в ``get`` не ходят — возвращаются мини-доками ``{documentId, status}``, чтобы ingest посчитал
-    их в ``skipped_status`` (семантика легаси-экспорта сохранена)."""
-    status, resp = list_invoices(
-        direction,
-        IIKO_ORGANIZATION_ID,
-        date_from=date_from.isoformat(),
-        date_to=date_to.isoformat(),
-        token=token,
-        opener=opener,
-    )
-    if status != 200 or not isinstance(resp, list):
-        raise RuntimeError(f"iiko Cloud list {direction}: HTTP {status}: {str(resp)[:200]}")
+    их в ``skipped_status`` (семантика легаси-экспорта сохранена). ``list`` ретраится на 429
+    так же, как ``get`` — прод ловил «too many requests» прямо на списке (2 error-прогона 09.07)."""
+    delays = iter(_CLOUD_GET_RETRY_DELAYS)
+    while True:
+        status, resp = list_invoices(
+            direction,
+            IIKO_ORGANIZATION_ID,
+            date_from=date_from.isoformat(),
+            date_to=date_to.isoformat(),
+            token=token,
+            opener=opener,
+        )
+        if status == 429:
+            delay = next(delays, None)
+            if delay is None:
+                raise RuntimeError(f"iiko Cloud list {direction}: HTTP 429 (retries exhausted)")
+            time.sleep(delay)
+            continue
+        if status != 200 or not isinstance(resp, list):
+            raise RuntimeError(f"iiko Cloud list {direction}: HTTP {status}: {str(resp)[:200]}")
+        break
     documents: list[dict] = []
     for summary in resp:
         doc_id = summary.get("documentId")

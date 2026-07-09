@@ -342,6 +342,50 @@ async def test_ingest_keeps_lines_frozen_once_paid(
         assert lines[0].sum == Decimal("232.00")  # не перетёрто iiko-версией
 
 
+async def test_existing_invoice_updates_without_supplier_directory(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Знакомая iiko-накладная обновляется (и материализует позиции), даже если её поставщик
+    выпал из RMS-справочника — контрагент уже привязан. Регресс прода: бартерные партнёры
+    («панама суши») не в /suppliers → накладные замораживались без позиций."""
+    async with async_session_factory() as session:
+        # Первый прогон — поставщик в справочнике, накладная создаётся.
+        await ingest_iiko_payables(
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([_doc()])
+        )
+        await session.commit()
+
+        # Второй прогон: поставщика в справочнике БОЛЬШЕ НЕТ, сумма в iiko изменилась.
+        changed = _doc(items=[{"sum": "500.00", "vat_percent": None, "amount": 2}])
+        result = await ingest_iiko_payables(
+            session,
+            suppliers_xml=suppliers_xml([]),  # пустой справочник
+            incoming_docs=cloud_invoice_docs([changed]),
+        )
+        await session.commit()
+
+        assert result.skipped_unknown_supplier == 0
+        assert result.invoices_updated == 1
+        invoice = await session.scalar(select(SupplierInvoice))
+        assert invoice.amount == Decimal("500.00")  # обновилась без справочника
+        lines = (await session.scalars(select(InvoiceLineItem))).all()
+        assert len(lines) == 1  # позиции материализованы
+        assert lines[0].sum == Decimal("500.00")
+
+
+async def test_new_invoice_still_requires_supplier_directory(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """НОВУЮ накладную без справочника не создаём (нужны имя/ИНН поставщика) — прежний skip."""
+    async with async_session_factory() as session:
+        result = await ingest_iiko_payables(
+            session, suppliers_xml=suppliers_xml([]), incoming_docs=cloud_invoice_docs([_doc()])
+        )
+        await session.commit()
+        assert result.skipped_unknown_supplier == 1
+        assert await _count(session, SupplierInvoice) == 0
+
+
 async def test_deleted_in_iiko_removes_unpaid_invoice(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
