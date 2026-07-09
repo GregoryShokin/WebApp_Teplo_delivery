@@ -16,6 +16,7 @@ from app.models import (
     DdsArticle,
     DepositAccount,
     DepositTransaction,
+    PayrollRun,
     Wallet,
 )
 from app.services.payroll_calculator import decimal
@@ -40,6 +41,29 @@ async def get_deposit_account(
     if for_update:
         query = query.with_for_update()
     return await session.scalar(query)
+
+
+async def has_imported_deposit_accruals(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+) -> bool:
+    """Есть ли у сотрудника депозит-накопления из легаси-импорта.
+
+    Такие строки уже представляют исторический депозит по периодам, поэтому ручная установка
+    начального баланса поверх них задваивает историю (см. реконсиляцию 2026-07). Гард для
+    ``set_initial_deposit_balance``.
+    """
+    row = await session.scalar(
+        select(DepositTransaction.id)
+        .join(PayrollRun, PayrollRun.id == DepositTransaction.run_id)
+        .where(
+            DepositTransaction.employee_id == employee_id,
+            DepositTransaction.transaction_type == "accrual",
+            PayrollRun.is_imported_legacy.is_(True),
+        )
+        .limit(1)
+    )
+    return row is not None
 
 
 async def load_accounts(

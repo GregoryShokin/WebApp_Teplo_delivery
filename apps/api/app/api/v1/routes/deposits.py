@@ -500,6 +500,14 @@ async def set_initial_deposit_balance(
                 "ручную транзакцию."
             ),
         )
+    if await deposit_service.has_imported_deposit_accruals(session, employee_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "У сотрудника уже есть импортированный исторический депозит по периодам — "
+                "начальный баланс задвоит историю. Внесите поправку ручной транзакцией."
+            ),
+        )
     before = deposit_service.deposit_account_snapshot(account)
     existing_balance = decimal(account.balance) if account else Decimal("0")
     account = deposit_service.ensure_account(session, employee_id, account, now)
