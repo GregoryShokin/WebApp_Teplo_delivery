@@ -1862,6 +1862,9 @@ export type DepositListItem = {
   is_excluded: boolean;
   excluded_until: string | null;
   progress_pct: string;
+  // Излишек: собрано сверх текущей цели (после понижения индивидуальной цели) —
+  // «долг» перед сотрудником, UI подсвечивает и предлагает выдать.
+  surplus?: string | null;
   deposit_target_override?: string | null;
   deposit_withholding_override?: string | null;
   deposit_excluded_reason?: string | null;

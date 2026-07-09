@@ -17,7 +17,7 @@ from app.api.deps import (
     require_any_permission,
     require_permission,
 )
-from app.auth.permissions import payout_channel_permission
+from app.auth.permissions import payout_channel_permission, permission_is_granted
 from app.db.session import get_session
 from app.models import DepositAccount, DepositTransaction, Employee, PayrollPeriod
 from app.schemas.payroll import PayrollPeriodRead
@@ -30,6 +30,7 @@ from app.services.deposit_bank_draft import (
 )
 from app.services.deposit_iiko_payout_production import post_production_deposit_payout_to_iiko
 from app.services.payroll_calculator import (
+    category_deposit_target,
     decimal,
     employee_deposit_target,
     employee_deposit_withholding,
@@ -54,6 +55,8 @@ DEPOSITS_EDIT_ACCESS = (
 # настройка (исключения/начальный баланс) остаётся под DEPOSITS_EDIT_ACCESS.
 DEPOSITS_PAYOUT_ACCESS = (Depends(require_permission("payroll.production_deposits.payout")),)
 DEPOSITS_WRITEOFF_ACCESS = (Depends(require_permission("payroll.production_deposits.write_off")),)
+# «Пол» индивидуального депозита: цель ниже дефолта категории — только с отдельным правом.
+TARGET_BELOW_CATEGORY_PERMISSION = "payroll.production_deposits.target_below_category"
 
 
 class DepositEmployeeRead(BaseModel):
@@ -68,6 +71,9 @@ class DepositEmployeeRead(BaseModel):
     is_excluded: bool
     excluded_until: str | None = None
     progress_pct: str
+    # Излишек: собрано сверх текущей цели (например после понижения индивидуальной цели).
+    # «Долг» перед сотрудником — UI подсвечивает и предлагает выдать (ведомость/счёт).
+    surplus: str | None = None
     # Отложенная выдача депозита (этап 4): есть ли pending-план и на какую сумму.
     scheduled_payout_pending: bool = False
     scheduled_payout_amount: str | None = None
@@ -214,7 +220,29 @@ async def patch_deposit_config(
     employee = await _get_employee_or_404(session, employee_id)
     before = _deposit_config_snapshot(employee)
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    # «Пол» индивидуального депозита: цель ниже дефолта категории — только с отдельным правом.
+    # Правило действует на новые изменения конфига; существующие override не трогаем.
+    new_target = updates.get("deposit_target_override")
+    if new_target is not None:
+        settings = await load_payroll_settings(session)
+        default_target = category_deposit_target(settings, employee.category)
+        if (
+            default_target is not None
+            and default_target > 0
+            and decimal(new_target) < default_target
+            and not permission_is_granted(TARGET_BELOW_CATEGORY_PERMISSION, actor.permissions)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Индивидуальная цель {deposit_service.decimal_string(new_target)} ₽ ниже "
+                    f"дефолта категории {deposit_service.decimal_string(default_target)} ₽. "
+                    "Нужно право «Ставить индивидуальную цель депозита ниже дефолта категории»."
+                ),
+            )
+
+    for field, value in updates.items():
         setattr(employee, field, value)
     employee.updated_at = datetime.now(UTC)
 
@@ -564,6 +592,8 @@ def _deposit_employee_payload(
     progress = Decimal("0")
     if target is not None and target > 0:
         progress = min((balance / target) * Decimal("100"), Decimal("100"))
+    # Излишек над целью (после понижения индивидуальной цели) — «долг» перед сотрудником.
+    surplus = max(balance - target, Decimal("0")) if target is not None else Decimal("0")
     return {
         "id": employee.id,
         "full_name": employee.full_name,
@@ -578,6 +608,7 @@ def _deposit_employee_payload(
             getattr(employee, "deposit_excluded_until", None)
         ),
         "progress_pct": deposit_service.decimal_string(progress),
+        "surplus": deposit_service.decimal_string(surplus),
         "scheduled_payout_pending": schedule is not None,
         "scheduled_payout_amount": (
             deposit_service.decimal_string(schedule.requested_amount)

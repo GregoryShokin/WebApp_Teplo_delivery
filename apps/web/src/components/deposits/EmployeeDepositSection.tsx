@@ -28,13 +28,17 @@ import { Label } from "@/components/ui/label";
 import {
   apiErrorMessage,
   getDepositTransactions,
+  getScheduledPayoutEnabled,
   patchDepositConfig,
   postDepositPayout,
   postDepositWriteoff,
+  scheduleDepositPayout,
   type DepositConfigPatch,
   type DepositListItem,
+  type DepositPayoutMethod,
   type Employee,
 } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 import {
@@ -75,9 +79,12 @@ export function EmployeeDepositSection({
   rules,
 }: EmployeeDepositSectionProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [surplusOpen, setSurplusOpen] = useState(false);
   if (!isDepositTargetPosition(employee.position)) {
     return null;
   }
+  // Излишек над целью (например после понижения индивидуальной цели) — долг перед сотрудником.
+  const surplus = Number(deposit?.surplus ?? 0);
 
   return (
     <div className="grid gap-3 rounded-lg border bg-card p-4">
@@ -108,6 +115,23 @@ export function EmployeeDepositSection({
               </span>
             </div>
           ) : null}
+          {surplus > 0 ? (
+            <div className="grid gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <Badge className="w-fit rounded-md border-amber-200 bg-amber-100 text-amber-800 shadow-none">
+                Излишек {formatMoney(deposit.surplus)}
+              </Badge>
+              <span>Собрано больше цели — долг перед сотрудником, его нужно выдать.</span>
+              <Button
+                className="w-fit"
+                onClick={() => setSurplusOpen(true)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Выдать излишек
+              </Button>
+            </div>
+          ) : null}
           <Button
             className="w-fit"
             onClick={() => setDialogOpen(true)}
@@ -128,8 +152,16 @@ export function EmployeeDepositSection({
         deposit={deposit ?? null}
         employeeName={employee.full_name}
         onOpenChange={setDialogOpen}
+        onSurplusDetected={() => setSurplusOpen(true)}
         open={dialogOpen}
         rules={rules}
+      />
+
+      <SurplusPayoutDialog
+        deposit={deposit ?? null}
+        employeeName={employee.full_name}
+        onOpenChange={setSurplusOpen}
+        open={surplusOpen}
       />
     </div>
   );
@@ -139,12 +171,14 @@ function IndividualDepositDialog({
   deposit,
   employeeName,
   onOpenChange,
+  onSurplusDetected,
   open,
   rules,
 }: {
   deposit: DepositListItem | null;
   employeeName: string;
   onOpenChange: (open: boolean) => void;
+  onSurplusDetected: () => void;
   open: boolean;
   rules: DepositRulesByKey;
 }) {
@@ -166,7 +200,21 @@ function IndividualDepositDialog({
     validNonNegativeDecimalInput(draft.targetOverride) &&
     validNonNegativeDecimalInput(draft.withholdingOverride);
   const reasonValid = draft.excludedReason.length <= 500;
-  const canSave = Boolean(deposit) && dirty && numbersValid && reasonValid;
+  // «Пол» индивидуального депозита: цель ниже дефолта категории — только с отдельным правом.
+  const canBelowCategory = usePermissions().hasPermission(
+    "payroll.production_deposits.target_below_category",
+  );
+  const targetChanged = draft.targetOverride !== initialDraft.targetOverride;
+  const normalizedTarget = normalizeDecimalInput(draft.targetOverride);
+  const defaultTargetNumber = Number(defaultTarget ?? Number.NaN);
+  const targetBelowDefault =
+    targetChanged &&
+    normalizedTarget !== "" &&
+    Number.isFinite(defaultTargetNumber) &&
+    defaultTargetNumber > 0 &&
+    Number(normalizedTarget) < defaultTargetNumber;
+  const floorBlocked = targetBelowDefault && !canBelowCategory;
+  const canSave = Boolean(deposit) && dirty && numbersValid && reasonValid && !floorBlocked;
   const writeoffValid =
     validNonNegativeDecimalInput(writeoffAmount) &&
     Number(normalizeDecimalInput(writeoffAmount)) > 0 &&
@@ -209,9 +257,18 @@ function IndividualDepositDialog({
     mutationFn: (payload: DepositConfigPatch) => patchDepositConfig(employeeId, payload),
     onSuccess: async () => {
       toast.success("Индивидуальный депозит сохранён");
+      // Понизили цель ниже уже собранного → появился излишек (долг перед сотрудником):
+      // сразу открываем окно выдачи (ведомость/счёт).
+      const newTargetNumber =
+        normalizedTarget !== "" ? Number(normalizedTarget) : defaultTargetNumber;
+      const surplusAfterSave =
+        targetChanged && Number.isFinite(newTargetNumber) ? balance - newTargetNumber : 0;
       await queryClient.invalidateQueries({ queryKey: ["deposits"] });
       allowCloseRef.current = true;
       onOpenChange(false);
+      if (surplusAfterSave > 0) {
+        onSurplusDetected();
+      }
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error, "Не удалось сохранить депозит"));
@@ -404,6 +461,19 @@ function IndividualDepositDialog({
                   {!reasonValid ? (
                     <div className="text-sm text-destructive">
                       Причина исключения не должна превышать 500 символов.
+                    </div>
+                  ) : null}
+                  {floorBlocked ? (
+                    <div className="text-sm text-destructive">
+                      Индивидуальная цель ниже дефолта категории (
+                      {formatMoney(defaultTarget)}). Сохранение заблокировано — нужно право
+                      «Ставить индивидуальную цель депозита ниже дефолта категории».
+                    </div>
+                  ) : targetBelowDefault ? (
+                    <div className="text-sm text-amber-700">
+                      Цель ниже дефолта категории ({formatMoney(defaultTarget)}) — будет
+                      применена по вашему праву. Если собрано больше новой цели, излишек
+                      нужно будет выдать.
                     </div>
                   ) : null}
                 </section>
@@ -599,6 +669,198 @@ function DepositBalanceBreakdown({
       из них исторический: {formatMoney(historicalBalance)}; накоплено приложением:{" "}
       {formatMoney(accumulatedBalance)}
     </div>
+  );
+}
+
+// Выдача излишка депозита («долг» после понижения индивидуальной цели): в ближайшую
+// ведомость (отложенный план) или сразу через счёт по общим правилам выплат — ТК Черникова
+// (+iiko), Сейф, банк-черновик Т-Банк/Сбер (транзит на Сейф + черновик + проводка в ДДС).
+function SurplusPayoutDialog({
+  deposit,
+  employeeName,
+  onOpenChange,
+  open,
+}: {
+  deposit: DepositListItem | null;
+  employeeName: string;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const permissions = usePermissions();
+  const canPayout = permissions.hasPermission("payroll.production_deposits.payout");
+  const channelPerms = {
+    cash_tk: permissions.hasPermission("finance.payout_channel.cash_tk"),
+    cash_safe: permissions.hasPermission("finance.payout_channel.safe"),
+    bank_draft: permissions.hasPermission("finance.payout_channel.bank_draft"),
+  };
+  const scheduledQuery = useQuery({
+    queryKey: ["deposits", "scheduled-payout-enabled"],
+    queryFn: getScheduledPayoutEnabled,
+    enabled: open,
+  });
+  const scheduledEnabled = scheduledQuery.data ?? false;
+  const [mode, setMode] = useState<"scheduled" | "immediate">("scheduled");
+  const [method, setMethod] = useState<DepositPayoutMethod>("cash_tk");
+
+  const employeeId = deposit?.id ?? "";
+  const surplusAmount = normalizeDecimalInput(deposit?.surplus ?? "0");
+  const surplusNumber = Number(surplusAmount);
+  const hasSurplus = Number.isFinite(surplusNumber) && surplusNumber > 0;
+  const allowedChannels = (
+    [
+      ["cash_tk", channelPerms.cash_tk],
+      ["cash_safe", channelPerms.cash_safe],
+      ["bank_draft", channelPerms.bank_draft],
+    ] as const
+  )
+    .filter(([, ok]) => ok)
+    .map(([key]) => key);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    setMode(scheduledEnabled ? "scheduled" : "immediate");
+    setMethod(allowedChannels.includes("cash_tk") ? "cash_tk" : (allowedChannels[0] ?? "cash_tk"));
+    // Каналы зависят только от прав — на открытие диалога достаточно scheduledEnabled.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, scheduledEnabled]);
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      if (mode === "scheduled") {
+        return scheduleDepositPayout(employeeId, { amount: surplusAmount });
+      }
+      return postDepositPayout(employeeId, {
+        amount: surplusAmount,
+        comment: "Выдача излишка депозита",
+        payout_method: method,
+      });
+    },
+    onSuccess: async () => {
+      toast.success(
+        mode === "scheduled"
+          ? "Излишек включён в ближайшую ведомость"
+          : "Излишек выдан",
+      );
+      await invalidateDepositQueries(queryClient, employeeId);
+      onOpenChange(false);
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось выдать излишек"));
+    },
+  });
+
+  const immediatePossible = allowedChannels.length > 0;
+  const canSubmit =
+    Boolean(deposit) &&
+    hasSurplus &&
+    canPayout &&
+    (mode === "scheduled" ? scheduledEnabled : immediatePossible);
+
+  return (
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Излишек депозита</DialogTitle>
+          <DialogDescription>
+            У {employeeName} собрано больше текущей цели. Излишек{" "}
+            {formatMoney(deposit?.surplus)} — долг перед сотрудником, выберите, как его выдать.
+          </DialogDescription>
+        </DialogHeader>
+
+        {!canPayout ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            У вас нет права на выдачу депозитов — излишек останется подсвеченным, выдать его
+            сможет пользователь с правом «Выдавать депозиты производственного персонала».
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            <label className="flex items-start gap-3 rounded-md border px-3 py-2 text-sm">
+              <input
+                checked={mode === "scheduled"}
+                disabled={!scheduledEnabled || mutation.isPending}
+                name="surplus-mode"
+                onChange={() => setMode("scheduled")}
+                type="radio"
+              />
+              <span className="grid gap-1">
+                <span className="font-medium">Включить в ближайшую ведомость</span>
+                <span className="text-muted-foreground">
+                  Сумма попадёт в столбец «Выдача депозита» и будет выплачена вместе с ЗП.
+                  {!scheduledEnabled ? " (Отложенная выдача выключена в настройках.)" : null}
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 rounded-md border px-3 py-2 text-sm">
+              <input
+                checked={mode === "immediate"}
+                disabled={!immediatePossible || mutation.isPending}
+                name="surplus-mode"
+                onChange={() => setMode("immediate")}
+                type="radio"
+              />
+              <span className="grid w-full gap-2">
+                <span className="font-medium">Выдать сейчас через счёт</span>
+                {mode === "immediate" ? (
+                  <>
+                    <select
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
+                      disabled={mutation.isPending}
+                      onChange={(event) => setMethod(event.target.value as DepositPayoutMethod)}
+                      value={method}
+                    >
+                      {allowedChannels.includes("cash_tk") ? (
+                        <option value="cash_tk">Торговая касса Черникова</option>
+                      ) : null}
+                      {allowedChannels.includes("cash_safe") ? (
+                        <option value="cash_safe">Сейф</option>
+                      ) : null}
+                      {allowedChannels.includes("bank_draft") ? (
+                        <option value="bank_draft">Банк-черновик Т-Банк (через Сейф)</option>
+                      ) : null}
+                      {allowedChannels.includes("bank_draft") ? (
+                        <option value="bank_draft_sber">Сбербанк → Сейф (черновик)</option>
+                      ) : null}
+                    </select>
+                    <span className="text-xs text-muted-foreground">
+                      {method === "cash_tk"
+                        ? "Наличные из кассы Черникова + изъятие в iiko."
+                        : method === "cash_safe"
+                          ? "Наличные с карты «Сейф». Изъятие в iiko не делается."
+                          : "Перевод р/с → Сейф, черновик платежа и проводка в ДДС после оплаты."}
+                    </span>
+                  </>
+                ) : null}
+                {!immediatePossible ? (
+                  <span className="text-muted-foreground">Нет прав ни на один счёт выдачи.</span>
+                ) : null}
+              </span>
+            </label>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button
+            disabled={mutation.isPending}
+            onClick={() => onOpenChange(false)}
+            type="button"
+            variant="outline"
+          >
+            Позже
+          </Button>
+          {canPayout ? (
+            <Button disabled={!canSubmit || mutation.isPending} onClick={() => mutation.mutate()}>
+              {mutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : null}
+              {mode === "scheduled" ? "В ведомость" : "Выдать"}
+            </Button>
+          ) : null}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

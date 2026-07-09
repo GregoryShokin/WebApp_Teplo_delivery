@@ -356,6 +356,14 @@ export function PayrollDepositsRoute({ onNavigate }: PayrollDepositsRouteProps) 
                     <TableCell className="text-right tabular-nums">
                       <span className="font-semibold">{formatMoney(row.balance)}</span>
                       <span className="text-muted-foreground"> / {formatMoney(row.target)}</span>
+                      {Number(row.surplus ?? 0) > 0 ? (
+                        <Badge
+                          className="ml-auto mt-1 block w-fit rounded-md border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-50"
+                          variant="outline"
+                        >
+                          Излишек {formatMoney(row.surplus)}
+                        </Badge>
+                      ) : null}
                     </TableCell>
                     <TableCell>
                       <ProgressBar value={progressValue(row.progress_pct)} />

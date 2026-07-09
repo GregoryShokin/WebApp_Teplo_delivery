@@ -167,6 +167,11 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Зарплата",
         "Настраивать депозиты производственного персонала (исключения, начальный баланс)",
     ),
+    (
+        "payroll.production_deposits.target_below_category",
+        "Зарплата",
+        "Ставить индивидуальную цель депозита ниже дефолта категории",
+    ),
     ("payroll.advances.read", "Зарплата", "Смотреть авансы и займы сотрудников"),
     (
         "payroll.advances.production.issue",
@@ -764,6 +769,8 @@ OFFICE_MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "kassa.penalty.waive",
         # ПИН внештатника — только у тех, кто выдаёт смены (owner/admin/управляющий).
         "staff.freelancer_pin.read",
+        # Цель депозита ниже дефолта категории — точечное право (только owner/admin).
+        "payroll.production_deposits.target_below_category",
     }
 )
 
