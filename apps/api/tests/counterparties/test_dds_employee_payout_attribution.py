@@ -24,12 +24,14 @@ from app.models import (
     PayrollLine,
     PayrollPeriod,
     PayrollRun,
+    Wallet,
 )
 from app.services.banking.cashflow_classify import apply_cashflow_split
 from app.services.banking.classifier import (
     EMPLOYEE_PAYOUT_ARTICLE_CODES,
     apply_operation_split,
 )
+from app.services.banking.safe_allocations import book_salary_via_safe, pay_allocation
 from app.services.payroll_employee_payout_offset import (
     apply_employee_payout_offsets,
     apply_employee_payout_offsets_to_balances,
@@ -134,6 +136,53 @@ async def test_cashflow_split_salary_article_creates_employee_payout(
         # Первая доля = сама проводка (её id сохраняется); операции выписки нет.
         assert payout.cashflow_transaction_id == txn_id
         assert payout.bank_operation_id is None
+
+
+async def test_salary_via_safe_reserve_then_payout_creates_employee_payout(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Через Сейф»: топ-ап + резерв под сотрудника; EmployeePayout — только по «Выплачено»."""
+    async with async_session_factory() as session:
+        account = await make_account(session)
+        await make_wallet(session, wallet_type="bank", account_id=account.id)
+        # Сейф-кошелёк и транзитные статьи есть в справочнике (сиды 0048/0114) — берём готовые.
+        safe = await session.scalar(select(Wallet).where(Wallet.code == "cash_safe"))
+        assert safe is not None
+        salary = await make_expense_article(
+            session, code=SALARY_CODE, name="Зарплата административного персонала"
+        )
+        op = await make_bank_operation(
+            session, amount="100000.00", direction="out", account_id=account.id
+        )
+        employee = await _employee(session)
+        await session.commit()
+
+        allocation = await book_salary_via_safe(
+            session, op, article_id=salary.id, employee_id=employee.id
+        )
+        await session.commit()
+
+        assert allocation.wallet_id == safe.id
+        assert allocation.employee_id == employee.id
+        assert allocation.amount == Decimal("100000.00")
+        assert allocation.status == "reserved"
+        assert allocation.source_operation_id == op.id
+        # До оплаты резерва выплаты в ЗП НЕТ.
+        assert await session.scalar(select(func.count()).select_from(EmployeePayout)) == 0
+
+        leg_id = await pay_allocation(
+            session, allocation, amount=Decimal("100000.00"), operation_date=date(2026, 7, 3)
+        )
+        await session.commit()
+
+        payout = await session.scalar(
+            select(EmployeePayout).where(EmployeePayout.employee_id == employee.id)
+        )
+        assert payout is not None
+        assert payout.status == "paid"
+        assert payout.amount == Decimal("100000.00")
+        assert payout.safe_allocation_id == allocation.id
+        assert payout.cashflow_transaction_id == leg_id
 
 
 async def test_employee_id_on_non_salary_article_rejected(

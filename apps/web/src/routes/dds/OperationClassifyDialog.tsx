@@ -61,6 +61,7 @@ const ACTION_TOAST: Record<string, string> = {
   mark_internal_transfer: "Отмечено как внутренний перевод",
   exclude: "Исключено из ДДС",
   mark_safe_topup: "Проведено как пополнение Сейфа",
+  salary_via_safe: "Проведено через Сейф — резерв под сотрудника",
 };
 
 function round2(value: number): number {
@@ -306,6 +307,22 @@ export function OperationClassifyDialog({
     .filter((wallet) => wallet.id !== row.wallet_id && wallet.status === "active")
     .map((wallet) => ({ value: wallet.id, label: wallet.name, keywords: wallet.code }));
 
+  // «Через Сейф» доступно, когда вся исходящая операция — одна зарплатная строка с сотрудником.
+  const viaSafeEligible =
+    isOperation &&
+    row.direction === "out" &&
+    rows.length === 1 &&
+    salaryArticleIds.has(rows[0].articleId) &&
+    Boolean(rows[0].employeeId);
+
+  function submitSalaryViaSafe() {
+    const item = rows[0];
+    mutation.mutate({
+      action: "salary_via_safe",
+      splits: [{ article_id: item.articleId, amount: item.amount, employee_id: item.employeeId }],
+    });
+  }
+
   const salaryRowMissingEmployee = rows.some(
     (item) => salaryArticleIds.has(item.articleId) && !item.employeeId,
   );
@@ -515,6 +532,16 @@ export function OperationClassifyDialog({
                   title="Перевод на личную карту «Сейф» — учесть как пополнение Сейфа, а не расход"
                 >
                   Пополнение Сейфа
+                </Button>
+              ) : null}
+              {viaSafeEligible ? (
+                <Button
+                  disabled={isBusy}
+                  onClick={submitSalaryViaSafe}
+                  variant="outline"
+                  title="Транзит р/с→Сейф + целёвка-резерв под сотрудника. Выплата и учёт в ЗП — по «Выплачено» на резерве"
+                >
+                  Через Сейф (резерв)
                 </Button>
               ) : null}
               <Button disabled={isBusy} onClick={submitExclude} variant="outline">

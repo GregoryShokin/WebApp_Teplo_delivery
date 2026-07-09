@@ -2413,7 +2413,7 @@ export type OperationSplitItem = {
 };
 
 export type OperationClassifyPayload = {
-  action: "split" | "mark_internal_transfer" | "exclude" | "mark_safe_topup";
+  action: "split" | "mark_internal_transfer" | "exclude" | "mark_safe_topup" | "salary_via_safe";
   splits?: OperationSplitItem[];
   counterparty_id?: string | null;
   new_counterparty_name?: string | null;

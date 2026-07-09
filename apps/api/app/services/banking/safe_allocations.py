@@ -18,8 +18,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    BankOperation,
     CashflowTransaction,
     DdsArticle,
+    EmployeePayout,
     SafeAllocation,
     SalaryAdvanceBankDraft,
     Wallet,
@@ -28,6 +30,7 @@ from app.services.banking.classifier import (
     SAFE_WALLET_CODE,
     TRANSFER_IN_ARTICLE_CODE,
     TRANSFER_OUT_ARTICLE_CODE,
+    book_safe_topup,
 )
 
 SAFE_PAYOUT_SOURCE_KIND = "safe_payout"
@@ -84,15 +87,18 @@ async def create_allocation(
     free_amount: Decimal | None,
     article_id: UUID | None = None,
     counterparty_id: UUID | None = None,
+    employee_id: UUID | None = None,
     purpose: str | None = None,
     source_draft_id: UUID | None = None,
     source_draft_line_id: UUID | None = None,
+    source_operation_id: UUID | None = None,
     created_by_user_id: UUID | None = None,
 ) -> SafeAllocation:
     """Создать резерв. Запрет перерезервирования: ``amount`` ≤ свободно (``free_amount``).
 
     ``free_amount=None`` — без проверки: авто-резерв под оплаченный банковский черновик
     (``source_draft_id``), где перевод р/с→Сейф уже пополнил баланс ровно на эту сумму.
+    ``employee_id`` — зарплатная целёвка «через Сейф»: при оплате резерва заведётся EmployeePayout.
     """
     if amount <= 0:
         raise ValueError("Сумма резерва должна быть больше нуля")
@@ -106,15 +112,66 @@ async def create_allocation(
         amount_paid=Decimal("0"),
         article_id=article_id,
         counterparty_id=counterparty_id,
+        employee_id=employee_id,
         purpose=purpose,
         source_draft_id=source_draft_id,
         source_draft_line_id=source_draft_line_id,
+        source_operation_id=source_operation_id,
         status="reserved",
         created_by_user_id=created_by_user_id,
     )
     session.add(allocation)
     await session.flush()
     return allocation
+
+
+async def book_salary_via_safe(
+    session: AsyncSession,
+    operation: BankOperation,
+    *,
+    article_id: UUID,
+    employee_id: UUID,
+    created_by_user_id: UUID | None = None,
+) -> SafeAllocation:
+    """Разбор зарплатной операции «через Сейф»: транзит р/с→Сейф + целёвка-резерв под сотрудника.
+
+    Топ-ап (``book_safe_topup``) пополняет Сейф на всю сумму операции; на неё создаётся резерв
+    (``SafeAllocation``) со статьёй зарплаты и сотрудником. Фактическая выплата — позже, по
+    «Выплачено» (``pay_allocation``): out-проводка ``safe_payout`` + ``EmployeePayout`` под
+    сотрудника, тогда расчёт ЗП учтёт «уже выплачено». Идемпотентно: прежний НЕоплаченный резерв
+    этой операции снимаем; если по нему уже была оплата — блокируем (деньги уже выданы)."""
+    prior = (
+        await session.scalars(
+            select(SafeAllocation).where(SafeAllocation.source_operation_id == operation.id)
+        )
+    ).all()
+    for allocation in prior:
+        if Decimal(allocation.amount_paid) > 0 or allocation.status in ("paid", "partially_paid"):
+            raise ValueError(
+                "По этой операции уже была выплата с Сейфа — повторный разбор невозможен"
+            )
+    for allocation in prior:
+        await session.delete(allocation)
+    if prior:
+        await session.flush()
+
+    await book_safe_topup(session, operation)  # транзит р/с→Сейф (идемпотентно чистит свои ноги)
+    safe_wallet = await session.scalar(
+        select(Wallet).where(Wallet.code == SAFE_WALLET_CODE, Wallet.status == "active")
+    )
+    if safe_wallet is None:
+        raise ValueError("Не найден кошелёк «Сейф»")
+    return await create_allocation(
+        session,
+        wallet_id=safe_wallet.id,
+        amount=Decimal(operation.amount),
+        free_amount=None,  # транзит только что пополнил Сейф ровно на эту сумму
+        article_id=article_id,
+        employee_id=employee_id,
+        purpose=operation.payment_purpose,
+        source_operation_id=operation.id,
+        created_by_user_id=created_by_user_id,
+    )
 
 
 async def pay_allocation(
@@ -160,6 +217,30 @@ async def pay_allocation(
         "paid" if allocation.amount_paid >= Decimal(allocation.amount) else "partially_paid"
     )
     await session.flush()
+
+    # Зарплатная целёвка «через Сейф»: фактическая выплата сотруднику — здесь (не при разборе).
+    # Заводим EmployeePayout(«выплачено») на эту (в т.ч. частичную) оплату → расчёт ЗП учтёт.
+    if allocation.employee_id is not None:
+        from app.services.payroll_admin import resolve_employee_payout_kind
+
+        payout_kind = await resolve_employee_payout_kind(
+            session, allocation.employee_id, as_of=operation_date
+        )
+        session.add(
+            EmployeePayout(
+                employee_id=allocation.employee_id,
+                kind=payout_kind,
+                amount=amount,
+                payout_date=operation_date,
+                wallet_id=allocation.wallet_id,
+                article_id=allocation.article_id,
+                cashflow_transaction_id=leg.id,
+                safe_allocation_id=allocation.id,
+                status="paid",
+                created_by_user_id=created_by_user_id,
+            )
+        )
+        await session.flush()
     return leg.id
 
 

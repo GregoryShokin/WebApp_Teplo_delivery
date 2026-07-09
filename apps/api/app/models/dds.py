@@ -404,6 +404,17 @@ class SafeAllocation(Base):
     counterparty_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("counterparty.id"), nullable=True
     )
+    # Сотрудник-получатель зарплатной выплаты «через Сейф»: при оплате резерва
+    # (pay_allocation) заводится EmployeePayout под него → расчёт ЗП учитывает «уже
+    # выплачено». NULL — не зарплатный резерв.
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employee.id", ondelete="SET NULL"), nullable=True
+    )
+    # Банковская операция, из разбора которой «через Сейф» заведён резерв — для
+    # идемпотентности повторного разбора (снять прежний неоплаченный резерв этой операции).
+    source_operation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("bank_operations.id", ondelete="SET NULL"), nullable=True
+    )
     purpose: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Происхождение авто-резерва: черновик выплаты на карту ИП (неофициальный поставщик),
     # по оплате которого резерв создан. NULL — резерв заведён вручную.
