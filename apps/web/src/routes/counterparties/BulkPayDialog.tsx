@@ -22,13 +22,13 @@ import {
 import { apiErrorMessage } from "@/lib/api";
 
 import { payInvoiceSplit } from "../warehouse/api";
-import { createDraft, getWallets, type CounterpartyInvoice } from "./api";
+import {
+  CASH_PAYMENT_WALLET_CODES,
+  createDraft,
+  getWallets,
+  type CounterpartyInvoice,
+} from "./api";
 import { formatRub } from "./shared";
-
-/** Наличная оплата накладных разрешена только с этих счетов (решение владельца):
- *  Сейф и Торговая касса Черникова. Банковская отправка — всегда Т-Банк (черновик);
- *  Сбербанк для оплаты накладных не предусмотрен. */
-const CASH_WALLET_CODES = new Set(["cash_safe", "tk_chernikova"]);
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -67,7 +67,7 @@ export function BulkPayDialog({
 
   const walletsQuery = useQuery({ queryKey: ["cp", "wallets"], queryFn: getWallets, enabled: open });
   const cashWallets = (walletsQuery.data ?? []).filter((wallet) =>
-    CASH_WALLET_CODES.has(wallet.code),
+    CASH_PAYMENT_WALLET_CODES.has(wallet.code),
   );
 
   useEffect(() => {

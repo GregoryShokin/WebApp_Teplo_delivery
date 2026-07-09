@@ -189,6 +189,11 @@ export async function allocateCash(
 }
 
 export type Wallet = { id: string; code: string; name: string; type: string };
+
+/** Счета, с которых разрешена наличная оплата накладных (решение владельца):
+ *  Сейф и Торговая касса Черникова. Банковские/ДДС-кошельки (Сбер, Т-Банк и пр.)
+ *  в оплату накладных не выбираются — банк идёт только через черновик Т-Банка. */
+export const CASH_PAYMENT_WALLET_CODES = new Set(["cash_safe", "tk_chernikova"]);
 export type ExpenseArticle = { id: string; code: string; name: string };
 
 export async function getWallets(): Promise<Wallet[]> {

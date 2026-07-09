@@ -25,6 +25,7 @@ import {
 import { apiErrorMessage } from "@/lib/api";
 
 import {
+  CASH_PAYMENT_WALLET_CODES,
   getPrepayments,
   getWallets,
   settleInvoiceFromPrepayment,
@@ -84,6 +85,10 @@ export function PayWarehouseInvoiceDialog({
     enabled: open,
   });
   const walletsQuery = useQuery({ queryKey: ["cp", "wallets"], queryFn: getWallets, enabled: open });
+  // Наличная оплата — только Сейф / ТК Черникова; банковские (Сбер, Т-Банк) не выбираются.
+  const cashWallets = (walletsQuery.data ?? []).filter((wallet) =>
+    CASH_PAYMENT_WALLET_CODES.has(wallet.code),
+  );
   const matchQuery = useQuery({
     queryKey: ["wh", "match", invoiceId],
     queryFn: () => getInvoiceMatchSuggestions(invoiceId!),
@@ -317,7 +322,7 @@ export function PayWarehouseInvoiceDialog({
                     <SelectValue placeholder="Выберите счёт" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(walletsQuery.data ?? []).map((wallet) => (
+                    {cashWallets.map((wallet) => (
                       <SelectItem key={wallet.id} value={wallet.id}>
                         {wallet.name}
                       </SelectItem>
@@ -415,7 +420,7 @@ export function PayWarehouseInvoiceDialog({
                             <SelectValue placeholder="Выберите счёт" />
                           </SelectTrigger>
                           <SelectContent>
-                            {(walletsQuery.data ?? []).map((wallet) => (
+                            {cashWallets.map((wallet) => (
                               <SelectItem key={wallet.id} value={wallet.id}>
                                 {wallet.name}
                               </SelectItem>
