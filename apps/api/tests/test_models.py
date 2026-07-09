@@ -740,7 +740,8 @@ async def test_seed_creates_expected_reference_rows(migrated_db: str) -> None:
                              'category_3',
                              'category_4',
                              'intern',
-                             'freelancer'
+                             'freelancer',
+                             'admin'
                          )
                         """
                     )
