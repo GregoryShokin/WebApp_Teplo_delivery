@@ -125,21 +125,24 @@ async def create_allocation(
     return allocation
 
 
-async def book_salary_via_safe(
+async def book_safe_topup_reserves(
     session: AsyncSession,
     operation: BankOperation,
     *,
-    article_id: UUID,
-    employee_id: UUID,
+    reserves: list[tuple[UUID, Decimal, UUID | None]],
+    counterparty_id: UUID | None = None,
     created_by_user_id: UUID | None = None,
-) -> SafeAllocation:
-    """Разбор зарплатной операции «через Сейф»: транзит р/с→Сейф + целёвка-резерв под сотрудника.
+) -> list[SafeAllocation]:
+    """Разбор операции «через Сейф»: транзит р/с→Сейф + целёвки-резервы по разметке.
 
-    Топ-ап (``book_safe_topup``) пополняет Сейф на всю сумму операции; на неё создаётся резерв
-    (``SafeAllocation``) со статьёй зарплаты и сотрудником. Фактическая выплата — позже, по
-    «Выплачено» (``pay_allocation``): out-проводка ``safe_payout`` + ``EmployeePayout`` под
-    сотрудника, тогда расчёт ЗП учтёт «уже выплачено». Идемпотентно: прежний НЕоплаченный резерв
-    этой операции снимаем; если по нему уже была оплата — блокируем (деньги уже выданы)."""
+    Топ-ап (``book_safe_topup``) пополняет Сейф на всю сумму операции; на каждую размеченную
+    строку (``reserves``: article_id, amount, employee_id) создаётся резерв ``SafeAllocation``
+    со статьёй/получателем. Фактический расход — позже, по «Выплачено» (``pay_allocation``):
+    out-проводка ``safe_payout``, а у зарплатного резерва (``employee_id``) ещё и
+    ``EmployeePayout`` под сотрудника — тогда расчёт ЗП учтёт «уже выплачено».
+
+    Идемпотентно: прежние НЕоплаченные резервы этой операции снимаем; если по любому уже была
+    оплата — блокируем (деньги с Сейфа уже выданы)."""
     prior = (
         await session.scalars(
             select(SafeAllocation).where(SafeAllocation.source_operation_id == operation.id)
@@ -161,17 +164,23 @@ async def book_salary_via_safe(
     )
     if safe_wallet is None:
         raise ValueError("Не найден кошелёк «Сейф»")
-    return await create_allocation(
-        session,
-        wallet_id=safe_wallet.id,
-        amount=Decimal(operation.amount),
-        free_amount=None,  # транзит только что пополнил Сейф ровно на эту сумму
-        article_id=article_id,
-        employee_id=employee_id,
-        purpose=operation.payment_purpose,
-        source_operation_id=operation.id,
-        created_by_user_id=created_by_user_id,
-    )
+    created: list[SafeAllocation] = []
+    for article_id, amount, employee_id in reserves:
+        created.append(
+            await create_allocation(
+                session,
+                wallet_id=safe_wallet.id,
+                amount=amount,
+                free_amount=None,  # транзит только что пополнил Сейф на всю сумму операции
+                article_id=article_id,
+                counterparty_id=counterparty_id,
+                employee_id=employee_id,
+                purpose=operation.payment_purpose,
+                source_operation_id=operation.id,
+                created_by_user_id=created_by_user_id,
+            )
+        )
+    return created
 
 
 async def pay_allocation(

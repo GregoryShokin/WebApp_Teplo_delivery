@@ -319,9 +319,7 @@ class OperationClassifyRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    action: Literal[
-        "split", "mark_internal_transfer", "exclude", "mark_safe_topup", "salary_via_safe"
-    ] = "split"
+    action: Literal["split", "mark_internal_transfer", "exclude", "mark_safe_topup"] = "split"
     splits: list[OperationSplitItem] = Field(default_factory=list)
     counterparty_id: uuid.UUID | None = None
     # Создать нового контрагента из распознанных данных операции (если его нет в реестре): имя

@@ -99,7 +99,7 @@ from app.services.banking.safe_allocations import (
     allocation_advance_draft_id,
     book_safe_cash_withdrawal,
     book_safe_drift_adjustment,
-    book_salary_via_safe,
+    book_safe_topup_reserves,
     cancel_allocation,
     create_allocation,
     kassa_targets_count,
@@ -1218,33 +1218,40 @@ async def classify_operation(
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
     elif payload.action == "mark_safe_topup":
-        try:
-            created_ids = await book_safe_topup(session, operation)
-        except ValueError as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
-    elif payload.action == "salary_via_safe":
-        # Зарплатная выплата «через Сейф»: транзит р/с→Сейф + целёвка-резерв под сотрудника.
-        if len(payload.splits) != 1:
-            raise HTTPException(status_code=400, detail="«Через Сейф» — одна зарплатная строка")
-        item = payload.splits[0]
-        if item.employee_id is None:
-            raise HTTPException(status_code=400, detail="Выберите сотрудника-получателя")
-        article = await session.get(DdsArticle, item.article_id)
-        if article is None or article.code not in EMPLOYEE_PAYOUT_ARTICLE_CODES:
+        # Пополнение Сейфа. Если строки размечены статьёй/получателем — это уже целёвки-резервы
+        # (не спрашиваем отдельно); голое пополнение без разметки — просто транзит р/с→Сейф.
+        reserves: list[tuple[UUID, Decimal, UUID | None]] = []
+        for item in payload.splits:
+            article = await session.get(DdsArticle, item.article_id)
+            if article is None:
+                raise HTTPException(status_code=400, detail="Статья не найдена")
+            is_salary = article.code in EMPLOYEE_PAYOUT_ARTICLE_CODES
+            if item.employee_id is not None and not is_salary:
+                raise HTTPException(
+                    status_code=400, detail="Сотрудника можно указать только для зарплатной статьи"
+                )
+            if is_salary and item.employee_id is None:
+                raise HTTPException(
+                    status_code=400, detail="Для зарплатной строки выберите сотрудника-получателя"
+                )
+            reserves.append((item.article_id, item.amount, item.employee_id))
+        if reserves and sum((amount for _a, amount, _e in reserves), Decimal("0")) > Decimal(
+            operation.amount
+        ):
             raise HTTPException(
-                status_code=400, detail="«Через Сейф» — только для зарплатной статьи"
-            )
-        if operation.direction != "out":
-            raise HTTPException(
-                status_code=400, detail="«Через Сейф» — только для исходящей операции"
+                status_code=400, detail="Сумма резервов больше суммы пополнения Сейфа"
             )
         try:
-            await book_salary_via_safe(
-                session,
-                operation,
-                article_id=item.article_id,
-                employee_id=item.employee_id,
-            )
+            if reserves:
+                await book_safe_topup_reserves(
+                    session,
+                    operation,
+                    reserves=reserves,
+                    counterparty_id=payload.counterparty_id,
+                )
+                created_ids = []
+            else:
+                created_ids = await book_safe_topup(session, operation)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
     else:

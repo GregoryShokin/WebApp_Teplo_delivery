@@ -31,7 +31,7 @@ from app.services.banking.classifier import (
     EMPLOYEE_PAYOUT_ARTICLE_CODES,
     apply_operation_split,
 )
-from app.services.banking.safe_allocations import book_salary_via_safe, pay_allocation
+from app.services.banking.safe_allocations import book_safe_topup_reserves, pay_allocation
 from app.services.payroll_employee_payout_offset import (
     apply_employee_payout_offsets,
     apply_employee_payout_offsets_to_balances,
@@ -157,10 +157,11 @@ async def test_salary_via_safe_reserve_then_payout_creates_employee_payout(
         employee = await _employee(session)
         await session.commit()
 
-        allocation = await book_salary_via_safe(
-            session, op, article_id=salary.id, employee_id=employee.id
+        allocations = await book_safe_topup_reserves(
+            session, op, reserves=[(salary.id, Decimal("100000.00"), employee.id)]
         )
         await session.commit()
+        allocation = allocations[0]
 
         assert allocation.wallet_id == safe.id
         assert allocation.employee_id == employee.id

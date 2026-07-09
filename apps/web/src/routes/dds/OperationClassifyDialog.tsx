@@ -8,6 +8,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -61,7 +62,6 @@ const ACTION_TOAST: Record<string, string> = {
   mark_internal_transfer: "Отмечено как внутренний перевод",
   exclude: "Исключено из ДДС",
   mark_safe_topup: "Проведено как пополнение Сейфа",
-  salary_via_safe: "Проведено через Сейф — резерв под сотрудника",
 };
 
 function round2(value: number): number {
@@ -97,6 +97,10 @@ export function OperationClassifyDialog({
   const [counterpartyId, setCounterpartyId] = useState("");
   const [createNewCounterparty, setCreateNewCounterparty] = useState(false);
   const [rememberAsRule, setRememberAsRule] = useState(false);
+  // Ключ строки, для которой открыта под-модалка деталей (сотрудник/накладная/счёт-получатель),
+  // и флаг под-модалки контрагента — чтобы не плодить inline-дропдауны в главном окне.
+  const [detailRowKey, setDetailRowKey] = useState<string | null>(null);
+  const [cpModalOpen, setCpModalOpen] = useState(false);
 
   // Существующий контрагент по ИНН из выписки (только операция) — предзаполняем, чтобы не плодить дубль.
   const matchedByInn = row?.counterparty_inn_raw
@@ -307,30 +311,71 @@ export function OperationClassifyDialog({
     .filter((wallet) => wallet.id !== row.wallet_id && wallet.status === "active")
     .map((wallet) => ({ value: wallet.id, label: wallet.name, keywords: wallet.code }));
 
-  // «Через Сейф» доступно, когда вся исходящая операция — одна зарплатная строка с сотрудником.
-  const viaSafeEligible =
-    isOperation &&
-    row.direction === "out" &&
-    rows.length === 1 &&
-    salaryArticleIds.has(rows[0].articleId) &&
-    Boolean(rows[0].employeeId);
-
-  function submitSalaryViaSafe() {
-    const item = rows[0];
-    mutation.mutate({
-      action: "salary_via_safe",
-      splits: [{ article_id: item.articleId, amount: item.amount, employee_id: item.employeeId }],
-    });
-  }
+  // Деталь строки для под-модалки: накладная (поставщик, операция) · сотрудник (зарплата) ·
+  // счёт-получатель (перевод, проводка). Так в главном окне нет россыпи inline-дропдаунов.
+  const rowDetailKind = (item: SplitRow): "invoice" | "employee" | "transfer" | null => {
+    if (isOperation && item.articleId === supplierPaymentArticleId) return "invoice";
+    if (salaryArticleIds.has(item.articleId)) return "employee";
+    if (!isOperation && isTransferRow(item.articleId)) return "transfer";
+    return null;
+  };
+  const rowDetailSummary = (item: SplitRow): { text: string; missing: boolean } => {
+    switch (rowDetailKind(item)) {
+      case "employee": {
+        const emp = (payoutEmployeesQuery.data ?? []).find((e) => e.id === item.employeeId);
+        return emp ? { text: emp.full_name, missing: false } : { text: "нужен сотрудник", missing: true };
+      }
+      case "transfer": {
+        const w = (walletsQuery.data ?? []).find((x) => x.id === item.transferWalletId);
+        return w ? { text: `Счёт: ${w.name}`, missing: false } : { text: "нужен счёт-получатель", missing: true };
+      }
+      case "invoice": {
+        const inv = (invoicesQuery.data ?? []).find((x) => x.id === item.invoiceId);
+        return inv
+          ? { text: `Накладная № ${inv.number ?? "б/н"}`, missing: false }
+          : { text: "накладная (необязательно)", missing: false };
+      }
+      default:
+        return { text: "", missing: false };
+    }
+  };
+  const counterpartySummary = createNewCounterparty
+    ? `Будет создан: ${row.counterparty_name_raw ?? ""}`
+    : counterpartyId
+      ? counterparties.find((cp) => cp.id === counterpartyId)?.name ?? "выбран"
+      : "не указан";
+  const detailRow = detailRowKey ? rows.find((item) => item.key === detailRowKey) ?? null : null;
 
   const salaryRowMissingEmployee = rows.some(
     (item) => salaryArticleIds.has(item.articleId) && !item.employeeId,
   );
+
+  // «Пополнение Сейфа»: если строки размечены статьёй/получателем — это уже целёвки-резервы
+  // (спрашивать отдельно не нужно); голое пополнение без разметки — просто транзит р/с→Сейф.
+  function submitSafeTopup() {
+    const marked =
+      rows.every((item) => item.articleId !== "none") && balanced && !salaryRowMissingEmployee;
+    if (marked) {
+      mutation.mutate({
+        action: "mark_safe_topup",
+        splits: rows.map((item) => ({
+          article_id: item.articleId,
+          amount: item.amount,
+          employee_id:
+            salaryArticleIds.has(item.articleId) && item.employeeId ? item.employeeId : null,
+        })),
+        counterparty_id: counterpartyId || null,
+      });
+    } else {
+      mutation.mutate({ action: "mark_safe_topup" });
+    }
+  }
   const transferRowMissingWallet =
     !isOperation && rows.some((item) => isTransferRow(item.articleId) && !item.transferWalletId);
   const isBusy = mutation.isPending;
 
   return (
+    <>
     <Dialog open={Boolean(row)} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
@@ -393,41 +438,25 @@ export function OperationClassifyDialog({
                       <Trash2 size={16} aria-hidden="true" />
                     </Button>
                   </div>
-                  {isOperation && item.articleId === supplierPaymentArticleId ? (
-                    <Combobox
-                      options={invoiceOptions}
-                      value={item.invoiceId}
-                      onChange={(value) => updateRow(item.key, { invoiceId: value })}
-                      placeholder={
-                        counterpartyId
-                          ? "Накладная для гашения (необязательно)"
-                          : "Сначала выберите контрагента ниже"
-                      }
-                      searchPlaceholder="Поиск по номеру…"
-                    />
-                  ) : null}
-                  {salaryArticleIds.has(item.articleId) ? (
-                    <Combobox
-                      options={employeeOptions}
-                      value={item.employeeId}
-                      onChange={(value) => updateRow(item.key, { employeeId: value })}
-                      placeholder={
-                        payoutEmployeesQuery.isLoading
-                          ? "Загрузка сотрудников…"
-                          : "Сотрудник-получатель (обязательно)"
-                      }
-                      searchPlaceholder="Поиск по имени…"
-                    />
-                  ) : null}
-                  {!isOperation && isTransferRow(item.articleId) ? (
-                    <Combobox
-                      options={transferOptions}
-                      value={item.transferWalletId}
-                      onChange={(value) => updateRow(item.key, { transferWalletId: value })}
-                      placeholder="Счёт-получатель перевода…"
-                      searchPlaceholder="Поиск счёта…"
-                      emptyMessage="Счета не найдены"
-                    />
+                  {rowDetailKind(item) ? (
+                    <div className="flex items-center justify-between gap-2 pl-1 text-xs">
+                      <span
+                        className={
+                          rowDetailSummary(item).missing ? "text-amber-700" : "text-muted-foreground"
+                        }
+                      >
+                        {rowDetailSummary(item).text}
+                      </span>
+                      <Button
+                        className="h-6 px-2 text-xs"
+                        onClick={() => setDetailRowKey(item.key)}
+                        size="sm"
+                        type="button"
+                        variant={rowDetailSummary(item).missing ? "default" : "outline"}
+                      >
+                        {rowDetailSummary(item).missing ? "Заполнить" : "Изменить"}
+                      </Button>
+                    </div>
                   ) : null}
                 </div>
               ))}
@@ -455,43 +484,23 @@ export function OperationClassifyDialog({
               <Label className="text-sm">
                 Контрагент{usesAdvance ? <span className="text-red-600"> *</span> : null}
               </Label>
-              {isOperation && createNewCounterparty ? (
-                <div className="flex items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
-                  <span>
-                    Будет создан:{" "}
-                    <span className="font-medium">{row.counterparty_name_raw}</span>
-                    {row.counterparty_inn_raw ? ` · ИНН ${row.counterparty_inn_raw}` : ""}
-                  </span>
-                  <Button
-                    onClick={() => setCreateNewCounterparty(false)}
-                    size="sm"
-                    type="button"
-                    variant="ghost"
-                  >
-                    Отмена
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <Combobox
-                    options={counterpartyOptions}
-                    value={counterpartyId}
-                    onChange={setCounterpartyId}
-                    placeholder="Не указан"
-                    searchPlaceholder="Поиск по названию или ИНН…"
-                  />
-                  {isOperation && row.counterparty_name_raw && !counterpartyId && !matchedByInn ? (
-                    <button
-                      className="self-start text-left text-sm font-medium text-emerald-700 hover:underline"
-                      onClick={() => setCreateNewCounterparty(true)}
-                      type="button"
-                    >
-                      + Создать контрагента из операции: {row.counterparty_name_raw}
-                      {row.counterparty_inn_raw ? ` (ИНН ${row.counterparty_inn_raw})` : ""}
-                    </button>
-                  ) : null}
-                </>
-              )}
+              <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
+                <span
+                  className={
+                    usesAdvance && !counterpartyId && !createNewCounterparty ? "text-amber-700" : ""
+                  }
+                >
+                  {counterpartySummary}
+                </span>
+                <Button
+                  onClick={() => setCpModalOpen(true)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {counterpartyId || createNewCounterparty ? "Изменить" : "Выбрать"}
+                </Button>
+              </div>
               {usesAdvance ? (
                 <span className="text-xs text-muted-foreground">
                   Статья «Авансы поставщикам» создаст предоплату (дебиторку) на этого контрагента.
@@ -526,22 +535,12 @@ export function OperationClassifyDialog({
               ) : null}
               {isOperation && row.direction === "out" ? (
                 <Button
-                  disabled={isBusy}
-                  onClick={() => mutation.mutate({ action: "mark_safe_topup" })}
+                  disabled={isBusy || salaryRowMissingEmployee}
+                  onClick={submitSafeTopup}
                   variant="outline"
-                  title="Перевод на личную карту «Сейф» — учесть как пополнение Сейфа, а не расход"
+                  title="Перевод на карту «Сейф». Со статьёй и получателем — целёвка-резерв (выплата и учёт в ЗП по «Выплачено»); без разметки — просто пополнение."
                 >
                   Пополнение Сейфа
-                </Button>
-              ) : null}
-              {viaSafeEligible ? (
-                <Button
-                  disabled={isBusy}
-                  onClick={submitSalaryViaSafe}
-                  variant="outline"
-                  title="Транзит р/с→Сейф + целёвка-резерв под сотрудника. Выплата и учёт в ЗП — по «Выплачено» на резерве"
-                >
-                  Через Сейф (резерв)
                 </Button>
               ) : null}
               <Button disabled={isBusy} onClick={submitExclude} variant="outline">
@@ -556,5 +555,117 @@ export function OperationClassifyDialog({
         )}
       </DialogContent>
     </Dialog>
+
+    {detailRow ? (
+      <Dialog open onOpenChange={(open) => !open && setDetailRowKey(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {rowDetailKind(detailRow) === "employee"
+                ? "Сотрудник-получатель"
+                : rowDetailKind(detailRow) === "invoice"
+                  ? "Накладная для гашения"
+                  : "Счёт-получатель перевода"}
+            </DialogTitle>
+            <DialogDescription>Выберите данные для этой строки разбора.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {rowDetailKind(detailRow) === "employee" ? (
+              <Combobox
+                options={employeeOptions}
+                value={detailRow.employeeId}
+                onChange={(value) => updateRow(detailRow.key, { employeeId: value })}
+                placeholder={
+                  payoutEmployeesQuery.isLoading ? "Загрузка сотрудников…" : "Выберите сотрудника"
+                }
+                searchPlaceholder="Поиск по имени…"
+                emptyMessage="Сотрудники не найдены"
+              />
+            ) : null}
+            {rowDetailKind(detailRow) === "invoice" ? (
+              <Combobox
+                options={invoiceOptions}
+                value={detailRow.invoiceId}
+                onChange={(value) => updateRow(detailRow.key, { invoiceId: value })}
+                placeholder={
+                  counterpartyId ? "Накладная (необязательно)" : "Сначала выберите контрагента"
+                }
+                searchPlaceholder="Поиск по номеру…"
+              />
+            ) : null}
+            {rowDetailKind(detailRow) === "transfer" ? (
+              <Combobox
+                options={transferOptions}
+                value={detailRow.transferWalletId}
+                onChange={(value) => updateRow(detailRow.key, { transferWalletId: value })}
+                placeholder="Счёт-получатель перевода…"
+                searchPlaceholder="Поиск счёта…"
+                emptyMessage="Счета не найдены"
+              />
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setDetailRowKey(null)} type="button">
+              Готово
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    ) : null}
+
+    {cpModalOpen ? (
+      <Dialog open onOpenChange={(open) => !open && setCpModalOpen(false)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Контрагент</DialogTitle>
+            <DialogDescription>Кому платим по этой операции.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {isOperation && createNewCounterparty ? (
+              <div className="flex items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+                <span>
+                  Будет создан: <span className="font-medium">{row.counterparty_name_raw}</span>
+                  {row.counterparty_inn_raw ? ` · ИНН ${row.counterparty_inn_raw}` : ""}
+                </span>
+                <Button
+                  onClick={() => setCreateNewCounterparty(false)}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  Отмена
+                </Button>
+              </div>
+            ) : (
+              <>
+                <Combobox
+                  options={counterpartyOptions}
+                  value={counterpartyId}
+                  onChange={setCounterpartyId}
+                  placeholder="Не указан"
+                  searchPlaceholder="Поиск по названию или ИНН…"
+                />
+                {isOperation && row.counterparty_name_raw && !counterpartyId && !matchedByInn ? (
+                  <button
+                    className="self-start text-left text-sm font-medium text-emerald-700 hover:underline"
+                    onClick={() => setCreateNewCounterparty(true)}
+                    type="button"
+                  >
+                    + Создать контрагента из операции: {row.counterparty_name_raw}
+                    {row.counterparty_inn_raw ? ` (ИНН ${row.counterparty_inn_raw})` : ""}
+                  </button>
+                ) : null}
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setCpModalOpen(false)} type="button">
+              Готово
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    ) : null}
+    </>
   );
 }
