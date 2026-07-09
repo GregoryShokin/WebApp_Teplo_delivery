@@ -33,6 +33,10 @@ export type CounterpartyInvoice = {
   iiko_push_error: string | null;
   // iiko documentId: заполнен → накладная существует в iiko (у source=iiko — всегда).
   external_id: string | null;
+  // Статус банковского черновика: created/updated → «Отправлено в банк»;
+  // paid + pays_via_safe → «Деньги в Сейфе» (наличные ещё не выданы поставщику).
+  draft_status: string | null;
+  draft_pays_via_safe: boolean;
 };
 
 export type RegistryItem = {

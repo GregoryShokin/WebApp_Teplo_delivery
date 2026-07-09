@@ -127,6 +127,10 @@ class InvoiceItem:
     iiko_push_error: str | None = None
     # iiko documentId: заполнен → накладная существует в iiko (для source=iiko — всегда).
     external_id: str | None = None
+    # Статус привязанного банковского черновика: created/updated («Отправлено в банк»),
+    # paid + pays_via_safe → «Деньги в Сейфе» (наличные ещё не выданы поставщику).
+    draft_status: str | None = None
+    draft_pays_via_safe: bool = False
 
 
 @dataclass
@@ -266,9 +270,14 @@ async def list_invoices(
     rows = list(await session.execute(query))
     invoices = [row[0] for row in rows]
     allocations = await _allocations_by_invoice(session, [inv.id for inv in invoices])
+    drafts = await _drafts_by_id(session, [inv.draft_id for inv in invoices if inv.draft_id])
     items = [
         _build_invoice_item(
-            invoice, counterparty_name, ledger_category_id, allocations.get(invoice.id)
+            invoice,
+            counterparty_name,
+            ledger_category_id,
+            allocations.get(invoice.id),
+            drafts.get(invoice.draft_id) if invoice.draft_id else None,
         )
         for invoice, counterparty_name, ledger_category_id in rows
     ]
@@ -284,11 +293,28 @@ async def list_invoices(
     return items
 
 
+async def _drafts_by_id(
+    session: AsyncSession, draft_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, CounterpartyPaymentDraft]:
+    """Батч черновиков по id — для статуса «Отправлено в банк»/«Деньги в Сейфе» в списке."""
+    if not draft_ids:
+        return {}
+    rows = (
+        await session.scalars(
+            select(CounterpartyPaymentDraft).where(
+                CounterpartyPaymentDraft.id.in_(set(draft_ids))
+            )
+        )
+    ).all()
+    return {draft.id: draft for draft in rows}
+
+
 def _build_invoice_item(
     invoice: SupplierInvoice,
     counterparty_name: str,
     ledger_category_id: uuid.UUID | None,
     allocated: Decimal | None,
+    draft: CounterpartyPaymentDraft | None = None,
 ) -> InvoiceItem:
     amount = _money(invoice.amount)
     allocated_money = _money(allocated)
@@ -313,6 +339,8 @@ def _build_invoice_item(
         iiko_push_status=invoice.iiko_push_status,
         iiko_push_error=invoice.iiko_push_error,
         external_id=invoice.external_id,
+        draft_status=draft.status if draft else None,
+        draft_pays_via_safe=bool(draft.pays_via_safe) if draft else False,
     )
 
 
@@ -337,8 +365,13 @@ async def get_invoice_item(session: AsyncSession, invoice_id: uuid.UUID) -> Invo
         return None
     invoice, counterparty_name, ledger_category_id = row
     allocations = await _allocations_by_invoice(session, [invoice.id])
+    drafts = await _drafts_by_id(session, [invoice.draft_id] if invoice.draft_id else [])
     return _build_invoice_item(
-        invoice, counterparty_name, ledger_category_id, allocations.get(invoice.id)
+        invoice,
+        counterparty_name,
+        ledger_category_id,
+        allocations.get(invoice.id),
+        drafts.get(invoice.draft_id) if invoice.draft_id else None,
     )
 
 

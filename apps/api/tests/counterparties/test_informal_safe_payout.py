@@ -165,10 +165,12 @@ async def test_paid_books_transfer_settles_invoices_creates_reserve(
         status = await apply_payment_status(session, draft=draft, raw_status="executed")
         assert status == "paid"
 
-        # Накладные погашены статус-аллокациями (без bank_operation_id).
+        # Накладные НЕ погашены: деньги лишь дошли до Сейфа («Деньги в Сейфе»), поставщик
+        # наличных не получил — гашение произойдёт при выплате резерва (pay_allocation).
         for inv in (inv1, inv2):
             await session.refresh(inv)
-            assert inv.payment_status == "paid"
+            assert inv.payment_status == "unpaid"
+            assert inv.draft_id == draft.id  # связь с черновиком держит накладную «занятой»
         allocations = (
             await session.scalars(
                 select(InvoicePaymentAllocation).where(
@@ -176,8 +178,7 @@ async def test_paid_books_transfer_settles_invoices_creates_reserve(
                 )
             )
         ).all()
-        assert len(allocations) == 2
-        assert all(a.source_kind == "bank" and a.bank_operation_id is None for a in allocations)
+        assert allocations == []
 
         # Ровно две ноги транзита р/с→Сейф — и ноль расходных проводок.
         legs = await _transfer_legs(session, draft.id)
@@ -236,7 +237,7 @@ async def test_paid_is_idempotent(
             .select_from(InvoicePaymentAllocation)
             .where(InvoicePaymentAllocation.invoice_id == invoice.id)
         )
-        assert alloc_count == 1
+        assert alloc_count == 0  # гашение — только при выплате резерва, не при executed
 
 
 async def test_failed_unlinks_invoices_without_reserve(
@@ -286,7 +287,8 @@ async def test_paid_without_payer_wallet_still_fills_safe(
             await apply_payment_status(session, draft=draft, raw_status="executed")
 
             await session.refresh(invoice)
-            assert invoice.payment_status == "paid"
+            # Накладная не гасится при executed (деньги на Сейфе, не у поставщика).
+            assert invoice.payment_status == "unpaid"
             legs = await _transfer_legs(session, draft.id)
             assert len(legs) == 1
             assert legs[0].wallet_id == safe_wallet.id and legs[0].direction == "in"
@@ -337,3 +339,114 @@ async def test_pay_auto_reserve_books_supplier_expense(
         assert leg.article_id == article.id
         assert leg.counterparty_id == supplier.id
         assert leg.amount == Decimal("1500.00")
+
+        # Выплата резерва — момент, когда поставщик получил наличные: накладная гасится.
+        await session.refresh(invoice)
+        assert invoice.payment_status == "paid"
+        alloc = await session.scalar(
+            select(InvoicePaymentAllocation).where(
+                InvoicePaymentAllocation.invoice_id == invoice.id
+            )
+        )
+        assert alloc is not None
+        assert alloc.source_kind == "cash"
+        assert alloc.cashflow_transaction_id == leg_id
+        assert alloc.amount == Decimal("1500.00")
+
+
+async def test_partial_reserve_payout_partially_settles_invoices(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Частичная выплата резерва гасит накладные FIFO на сумму выплаты: первая накладная
+    оплачивается полностью, вторая — частично; остальное — при следующей выплате."""
+    async with async_session_factory() as session:
+        await _payer_wallet(session)
+        await _safe_wallet(session)
+        await make_expense_article(session)
+        supplier = await _informal_supplier(session, name="Ромашка Частями")
+        inv1 = await make_invoice(
+            session, counterparty_id=supplier.id, amount="1000.00", number="31",
+            invoice_date=date(2026, 7, 1),
+        )
+        inv2 = await make_invoice(
+            session, counterparty_id=supplier.id, amount="2000.00", number="32",
+            invoice_date=date(2026, 7, 2),
+        )
+        await session.commit()
+        draft = await create_payment_draft_for_invoices(
+            session, invoice_ids=[inv1.id, inv2.id], actor_user_id=None
+        )
+        await apply_payment_status(session, draft=draft, raw_status="executed")
+        reserve = await _draft_reserve(session, draft.id)
+        assert reserve is not None
+
+        # Выплатили 1500 из 3000: №31 (1000) закрыта, №32 — частично (500 из 2000).
+        await pay_allocation(
+            session, reserve, amount=Decimal("1500.00"), operation_date=date(2026, 7, 6)
+        )
+        await session.commit()
+        await session.refresh(inv1)
+        await session.refresh(inv2)
+        assert inv1.payment_status == "paid"
+        assert inv2.payment_status == "partially_paid"
+
+        # Довыплата остатка закрывает вторую накладную.
+        await pay_allocation(
+            session, reserve, amount=Decimal("1500.00"), operation_date=date(2026, 7, 7)
+        )
+        await session.commit()
+        await session.refresh(inv2)
+        assert inv2.payment_status == "paid"
+        assert reserve.status == "paid"
+
+
+async def test_invoice_in_safe_is_not_editable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Накладная с уехавшим платежом (draft_id) не редактируется — правка сумм разошлась бы
+    с переводом/резервом Сейфа."""
+    from app.services.warehouse_invoices import (
+        LineInput,
+        WarehouseInvoiceError,
+        update_warehouse_invoice,
+    )
+
+    async with async_session_factory() as session:
+        await _payer_wallet(session)
+        await _safe_wallet(session)
+        await make_expense_article(session)
+        supplier = await _informal_supplier(session, name="Ромашка Гейт")
+        invoice = await make_invoice(
+            session, counterparty_id=supplier.id, amount="700.00", number="41"
+        )
+        await session.commit()
+        await create_payment_draft_for_invoices(
+            session, invoice_ids=[invoice.id], actor_user_id=None
+        )
+        await session.refresh(invoice)
+        assert invoice.draft_id is not None
+
+        with pytest.raises(WarehouseInvoiceError, match="отзовите платёж"):
+            await update_warehouse_invoice(
+                session,
+                invoice,
+                lines=[LineInput(name="Овощи", quantity=Decimal("1"), price=Decimal("1"))],
+            )
+
+
+async def test_informal_invoice_has_no_bank_match_candidates(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Неофициалу с р/с не платим — банковские кандидаты для его накладных не предлагаются
+    (иначе в подбор лезут чужие операции похожей суммы)."""
+    from app.services.counterparty_bank_match import suggest_invoice_matches_by_time
+
+    async with async_session_factory() as session:
+        supplier = await _informal_supplier(session, name="Ромашка Без Банка")
+        invoice = await make_invoice(
+            session, counterparty_id=supplier.id, amount="500.00", number="51"
+        )
+        await session.commit()
+
+        suggestion = await suggest_invoice_matches_by_time(session, invoice_id=invoice.id)
+        assert suggestion is None

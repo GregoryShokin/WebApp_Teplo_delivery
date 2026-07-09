@@ -163,14 +163,14 @@ export function InvoiceDetailDialog({
               ) : null}
             </div>
 
-            {detail.payment_status === "unpaid" && !detail.barter_role ? (
+            {detail.payment_status === "unpaid" && !detail.barter_role && !detail.draft_id ? (
               <div className="flex flex-wrap gap-2">
                 {canEdit ? (
                   <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
                     <Pencil size={14} aria-hidden="true" /> Редактировать позиции
                   </Button>
                 ) : null}
-                {canPay && !detail.draft_id ? (
+                {canPay ? (
                   <Button size="sm" variant="outline" onClick={() => setPaying(true)}>
                     <Banknote size={14} aria-hidden="true" /> Оплатить
                   </Button>
@@ -186,6 +186,34 @@ export function InvoiceDetailDialog({
                     <Trash2 size={14} aria-hidden="true" /> Удалить
                   </Button>
                 ) : null}
+              </div>
+            ) : null}
+
+            {/* Платёж уехал: правка/оплата/удаление недоступны до отзыва платежа. Для
+                неофициала после исполнения перевода деньги ждут на Сейфе — наличные
+                нужно выдать поставщику (гашение произойдёт при выплате резерва). */}
+            {detail.payment_status !== "paid" && detail.draft_id ? (
+              <div className="rounded-md border p-3 text-sm">
+                {detail.draft_pays_via_safe && detail.draft_status === "paid" ? (
+                  <>
+                    <Badge className="border-violet-200 bg-violet-50 text-violet-700">
+                      Деньги в Сейфе
+                    </Badge>
+                    <span className="ml-2 text-muted-foreground">
+                      Перевод исполнен, деньги на Сейфе — выдайте наличные поставщику
+                      (накладная станет «Оплачено» после выплаты резерва).
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Badge className="border-sky-200 bg-sky-50 text-sky-700">
+                      Отправлено в банк
+                    </Badge>
+                    <span className="ml-2 text-muted-foreground">
+                      Черновик платежа в банке — правка и повторная оплата недоступны.
+                    </span>
+                  </>
+                )}
               </div>
             ) : null}
 

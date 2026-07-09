@@ -26,6 +26,7 @@ from app.models import (
     BarterReturnLine,
     Counterparty,
     CounterpartyPayableProfile,
+    CounterpartyPaymentDraft,
     DdsArticle,
     IikoProduct,
     InvoiceLineItem,
@@ -351,6 +352,10 @@ async def update_warehouse_invoice(
         raise WarehouseInvoiceError("Бартерную накладную редактировать нельзя")
     if invoice.payment_status != "unpaid":
         raise WarehouseInvoiceError("Редактировать можно только неоплаченную накладную")
+    if invoice.draft_id is not None:
+        # Платёж уже уехал (черновик в банке / деньги на Сейфе под этот черновик) — правка сумм
+        # разошлась бы с платежом/резервом. Сначала отзыв платежа.
+        raise WarehouseInvoiceError("Накладная отправлена в банк — сначала отзовите платёж")
 
     product_ids = [line.iiko_product_id for line in lines if line.iiko_product_id]
     products: dict[uuid.UUID, IikoProduct] = {}
@@ -542,6 +547,14 @@ async def get_warehouse_invoice(
     summary = _invoice_summary(invoice, counterparty.name if counterparty else "—", allocated)
     summary["due_date"] = invoice.due_date.isoformat() if invoice.due_date else None
     summary["iiko_push_error"] = invoice.iiko_push_error
+    # Статус привязанного черновика — фронту для «Отправлено в банк» / «Деньги в Сейфе».
+    draft = (
+        await session.get(CounterpartyPaymentDraft, invoice.draft_id)
+        if invoice.draft_id
+        else None
+    )
+    summary["draft_status"] = draft.status if draft else None
+    summary["draft_pays_via_safe"] = bool(draft.pays_via_safe) if draft else False
 
     # Единая логика «товар vs расход» по статье ДДС (а не по is_staff): чеки кладут статью
     # «питание персонала» в строку, оставляя is_staff=false — нельзя считать такие строки

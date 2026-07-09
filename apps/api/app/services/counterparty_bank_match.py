@@ -238,6 +238,15 @@ async def suggest_invoice_matches_by_time(
         or invoice.payment_status not in ("unpaid", "partially_paid")
     ):
         return None
+    # Неофициальный поставщик: с р/с ему напрямую не платим (только через карту ИП → Сейф),
+    # поэтому банковские кандидаты — заведомо чужие операции (шум и риск ложного матча).
+    profile_relationship = await session.scalar(
+        select(CounterpartyPayableProfile.relationship).where(
+            CounterpartyPayableProfile.counterparty_id == invoice.counterparty_id
+        )
+    )
+    if profile_relationship == "informal":
+        return None
     counterparty = await session.get(Counterparty, invoice.counterparty_id)
 
     window_hours = window_hours if window_hours is not None else WAREHOUSE_WINDOW_HOURS

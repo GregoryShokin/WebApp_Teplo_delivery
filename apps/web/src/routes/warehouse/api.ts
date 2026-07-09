@@ -28,6 +28,9 @@ export type WarehouseInvoiceSummary = {
   payment_status: string;
   // Черновик в банке (оплата уехала) — повторную оплату не предлагаем.
   draft_id: string | null;
+  // Статус черновика: created/updated → «Отправлено в банк»; paid+pays_via_safe → «Деньги в Сейфе».
+  draft_status: string | null;
+  draft_pays_via_safe: boolean;
   iiko_push_status: string;
   // iiko documentId (есть → накладная существует в iiko; удаление будет двусторонним).
   external_id: string | null;

@@ -27,7 +27,6 @@ from app.models import (
     Wallet,
 )
 from app.services.banking.classifier import (
-    SAFE_WALLET_CODE,
     TRANSFER_IN_ARTICLE_CODE,
     TRANSFER_OUT_ARTICLE_CODE,
     book_safe_topup,
@@ -57,8 +56,9 @@ async def _article_id(session: AsyncSession, code: str) -> UUID:
 
 async def safe_reserved_total(session: AsyncSession, wallet_id: UUID) -> Decimal:
     """Σ непогашенных остатков активных резервов кошелька (для «зарезервировано»)."""
+    outstanding = func.sum(SafeAllocation.amount - SafeAllocation.amount_paid)
     total = await session.scalar(
-        select(func.coalesce(func.sum(SafeAllocation.amount - SafeAllocation.amount_paid), 0)).where(
+        select(func.coalesce(outstanding, 0)).where(
             SafeAllocation.wallet_id == wallet_id,
             SafeAllocation.status.in_(ACTIVE_RESERVE_STATUSES),
         )
@@ -226,6 +226,7 @@ async def pay_allocation(
         "paid" if allocation.amount_paid >= Decimal(allocation.amount) else "partially_paid"
     )
     await session.flush()
+<<<<<<< HEAD
 
     # Зарплатная целёвка «через Сейф»: фактическая выплата сотруднику — здесь (не при разборе).
     # Заводим EmployeePayout(«выплачено») на эту (в т.ч. частичную) оплату → расчёт ЗП учтёт.
@@ -250,7 +251,67 @@ async def pay_allocation(
             )
         )
         await session.flush()
+=======
+    await _settle_draft_invoices(
+        session,
+        allocation=allocation,
+        amount=amount,
+        leg_id=leg.id,
+        created_by_user_id=created_by_user_id,
+    )
+>>>>>>> e4006403 (feat(накладные): статус «Деньги в Сейфе» — неофициал оплачен только после выдачи наличных)
     return leg.id
+
+
+async def _settle_draft_invoices(
+    session: AsyncSession,
+    *,
+    allocation: SafeAllocation,
+    amount: Decimal,
+    leg_id: UUID,
+    created_by_user_id: UUID | None,
+) -> None:
+    """Гашение накладных при выплате резерва «через Сейф» (неофициальный поставщик).
+
+    Накладные банковского via-safe черновика НЕ гасятся при исполнении платежа (деньги лишь
+    дошли до Сейфа — UI показывает «Деньги в Сейфе»); оплаченными они становятся здесь, когда
+    наличные фактически выданы поставщику. Сумму выплаты разносим по накладным черновика
+    (``draft_id = source_draft_id``) FIFO по остатку. У резервов без черновика-закупа
+    (целёвки, транши «Нового платежа») накладных нет — no-op.
+    """
+    if allocation.source_draft_id is None or amount <= 0:
+        return
+    # Локальные импорты — низкоуровневый Сейф-модуль не тянет контрагентский контур на загрузке.
+    from app.models import InvoicePaymentAllocation, SupplierInvoice
+    from app.services.counterparty_matching import _invoice_remaining, _recompute_status
+
+    invoices = (
+        await session.scalars(
+            select(SupplierInvoice)
+            .where(SupplierInvoice.draft_id == allocation.source_draft_id)
+            .order_by(SupplierInvoice.invoice_date.nulls_last(), SupplierInvoice.created_at)
+        )
+    ).all()
+    left = amount
+    for invoice in invoices:
+        if left <= 0:
+            break
+        remaining = await _invoice_remaining(session, invoice)
+        if remaining <= 0:
+            continue
+        part = min(left, remaining)
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=invoice.id,
+                source_kind="cash",
+                cashflow_transaction_id=leg_id,
+                amount=part,
+                created_by_user_id=created_by_user_id,
+            )
+        )
+        await session.flush()
+        await _recompute_status(session, invoice)
+        left -= part
 
 
 async def cancel_allocation(session: AsyncSession, allocation: SafeAllocation) -> None:

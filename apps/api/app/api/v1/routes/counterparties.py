@@ -138,6 +138,8 @@ class InvoiceRead(BaseModel):
     iiko_push_status: str = "not_pushed"
     iiko_push_error: str | None = None
     external_id: str | None = None
+    draft_status: str | None = None
+    draft_pays_via_safe: bool = False
 
 
 class RegistryRead(BaseModel):

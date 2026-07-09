@@ -252,20 +252,32 @@ export function InboxTab({
     {
       key: "status",
       header: "Статус",
-      cell: (invoice) =>
-        // «Отправлено в банк» — только пока накладная не оплачена. Оплаченный статус
-        // приоритетнее: после гашения по статусу платежа draft_id остаётся, но показываем
-        // «Оплачено», а не зависший «Отправлено в банк».
-        invoice.draft_id && invoice.payment_status !== "paid" ? (
-          <Badge className="border-sky-200 bg-sky-50 text-sky-700">Отправлено в банк</Badge>
-        ) : (
+      cell: (invoice) => {
+        // Пока накладная не оплачена, статус ведёт привязанный черновик. Оплаченный статус
+        // приоритетнее: после гашения draft_id остаётся, но показываем «Оплачено».
+        if (invoice.draft_id && invoice.payment_status !== "paid") {
+          // Неофициал: платёж исполнен, деньги дошли до Сейфа, но наличные поставщику ещё
+          // не выданы — менеджеру видно, что деньги нужно отвезти контрагенту.
+          if (invoice.draft_pays_via_safe && invoice.draft_status === "paid") {
+            return (
+              <Badge className="border-violet-200 bg-violet-50 text-violet-700">
+                Деньги в Сейфе
+              </Badge>
+            );
+          }
+          return (
+            <Badge className="border-sky-200 bg-sky-50 text-sky-700">Отправлено в банк</Badge>
+          );
+        }
+        return (
           <InvoiceStatusBadge
             status={invoice.payment_status}
             direction={invoice.direction}
             barterSettled={!!invoice.barter_settlement_id}
             barterRole={invoice.barter_role}
           />
-        ),
+        );
+      },
     },
     {
       key: "iiko",

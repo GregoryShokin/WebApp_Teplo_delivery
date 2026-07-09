@@ -13,7 +13,9 @@ Webhook-и «операция по счёту» в ДДС не пропуска�
 
 Черновик «через Сейф» (``pays_via_safe``, неофициальный поставщик — платёж на карту ИП):
 вместо расхода «Оплата поставщикам» paid-переход заводит транзит р/с→Сейф и целевой
-резерв Сейфа на поставщика; расход по статье случится при выплате резерва.
+резерв Сейфа на поставщика. Накладные при этом НЕ гасятся — деньги ещё внутри компании
+(«Деньги в Сейфе» в UI); и расход по статье, и гашение накладных случаются при выплате
+резерва (``safe_allocations.pay_allocation``).
 """
 
 from __future__ import annotations
@@ -494,11 +496,8 @@ async def apply_payment_status(
                 await session.flush()
                 for invoice, _ in items:
                     await _recompute_status(session, invoice)
-        else:
+        elif not draft.pays_via_safe:
             # Банк-кошелёк не резолвится — гашение статус-аллокацией без проводки ДДС.
-            # Черновик «через Сейф» идёт сюда же осознанно: расходной проводки при оплате
-            # черновика нет — расход по статье случится при выплате целевого резерва
-            # (pay_allocation), а деньги на Сейф заводит транзит ниже.
             for invoice, remaining, _ in payable:
                 session.add(
                     InvoicePaymentAllocation(
@@ -511,6 +510,10 @@ async def apply_payment_status(
                 )
                 await session.flush()
                 await _recompute_status(session, invoice)
+        # Черновик «через Сейф»: накладные при исполнении платежа НЕ гасятся — деньги пока
+        # внутри компании (на Сейфе), поставщик наличных не получил. Накладная остаётся
+        # «неоплаченной» с draft_id (UI показывает «Деньги в Сейфе»), а гашение случится при
+        # выплате целевого резерва (pay_allocation → аллокации по накладным черновика).
         if draft.pays_via_safe and not draft.creates_prepayment:
             await _settle_draft_via_safe(
                 session,
