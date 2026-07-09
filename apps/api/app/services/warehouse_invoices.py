@@ -425,8 +425,8 @@ async def update_warehouse_invoice(
         invoice.number = await _unique_invoice_number(
             session, target_number, invoice.invoice_date, exclude_id=invoice.id
         )
-    # Корректированную накладную снова можно отправить в iiko. Уже запушенную не трогаем
-    # (external_id держит связь для dedup; устаревший iiko-документ владелец правит сам).
+    # Ещё-не-выгруженную корректированную накладную снова можно отправить в iiko. Уже выгруженную
+    # (external_id) синхронизирует правкой роут put_invoice → propagate_invoice_edit_to_iiko.
     if invoice.iiko_push_status != "pushed":
         invoice.iiko_push_status = "not_pushed"
         invoice.iiko_push_error = None

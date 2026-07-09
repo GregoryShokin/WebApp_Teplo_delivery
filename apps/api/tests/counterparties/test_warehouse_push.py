@@ -1,8 +1,9 @@
-"""Push of a warehouse invoice into iiko: XML builder + prepare (no network).
+"""Пуш складской накладной в iiko через Cloud API: сборка тела (без сети) + оркестрация
+``push_invoice_to_iiko`` с замоканным сетевым слоем.
 
-The live send (POST to iiko) is not exercised here — it creates a real document.
-These tests cover the deterministic parts: XML structure per direction, exclusion of
-«персонал» lines, and the skip reasons (no iiko GUID / no store / no товарные lines).
+Живой ``create``/``post`` тут не дёргаем (создаёт реальный документ). Проверяем детерминированное:
+форму Cloud-тела по направлению, исключение «персонал»-строк, причины пропуска, машину статусов
+(pushed/failed/skipped), гейт идемпотентности и re-post созданного-но-не-проведённого документа.
 """
 
 from __future__ import annotations
@@ -10,98 +11,24 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import pytest
 from cp_helpers import make_counterparty
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import InvoiceLineItem, SupplierInvoice
+from app.services import warehouse_invoice_push as wip
+from app.services.iiko_invoice_cloud import build_invoice_body
 from app.services.warehouse_invoice_push import (
-    PushLine,
-    _parse_push_result,
-    build_invoice_xml,
+    _CloudPushOutcome,
     prepare_push,
+    propagate_invoice_edit_to_iiko,
+    push_invoice_to_iiko,
 )
 
 ISSUED = datetime(2026, 6, 15, 14, 30, tzinfo=UTC)
 
-
-def test_build_xml_incoming_payable() -> None:
-    xml = build_invoice_xml(
-        doc_id="D1",
-        direction="payable",
-        partner_guid="SUP-1",
-        number="W-1",
-        incoming_date="2026-06-15",
-        date_incoming="2026-06-15T14:30:00",
-        store_guid="ST-1",
-        lines=[
-            PushLine(
-                "P1", "2", "500", "1000", num=1, unit_guid="U1",
-                vat_percent="20", vat_sum="166.67",
-            )
-        ],
-    )
-    assert xml.startswith("<document>")  # single document, NOT the list wrapper
-    assert "<incomingInvoiceDtoes>" not in xml
-    assert "<supplier>SUP-1</supplier>" in xml
-    assert "<defaultStore>ST-1</defaultStore>" in xml
-    assert "<incomingDate>2026-06-15</incomingDate>" in xml
-    assert "<num>1</num>" in xml
-    assert "<product>P1</product>" in xml
-    assert "<amountUnit>U1</amountUnit>" in xml
-    assert "<store>ST-1</store>" in xml
-    assert "<vatPercent>20</vatPercent>" in xml
-    assert "<id>D1</id>" in xml
-
-
-def test_build_xml_outgoing_receivable() -> None:
-    xml = build_invoice_xml(
-        doc_id="D2",
-        direction="receivable",
-        partner_guid="CA-1",
-        number="W-2",
-        incoming_date="2026-06-15",
-        date_incoming="2026-06-15T14:30:00",
-        store_guid="ST-1",
-        lines=[PushLine("P1", "1", "100", "100", num=1)],
-    )
-    assert xml.startswith("<document>")
-    assert "<outgoingInvoiceDtoes>" not in xml
-    assert "<counteragentId>CA-1</counteragentId>" in xml
-    assert "<vatPercent>" not in xml  # no VAT given → tag omitted
-
-
-def test_parse_push_result_rejected_on_http_200() -> None:
-    """iiko returns HTTP 200 with <valid>false</valid> when it rejects the document
-    (e.g. re-pushing a PROCESSED number). Captured from a real iiko reply."""
-    body = (
-        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        b"<documentValidationResult><valid>false</valid><warning>false</warning>"
-        b"<documentNumber>TESTPUSH-1</documentNumber>"
-        b"<errorMessage>Changing processed or deleted document is not allowed: "
-        b"existing #TESTPUSH-1 of 15.06.2026 16:06 is in status PROCESSED</errorMessage>"
-        b"</documentValidationResult>"
-    )
-    res = _parse_push_result(body)
-    assert res.valid is False
-    assert res.error is not None and "not allowed" in res.error
-    assert res.doc_number == "TESTPUSH-1"
-
-
-def test_parse_push_result_accepted() -> None:
-    body = (
-        b"<documentValidationResult><valid>true</valid><warning>false</warning>"
-        b"<documentNumber>W-1</documentNumber></documentValidationResult>"
-    )
-    res = _parse_push_result(body)
-    assert res.valid is True
-    assert res.error is None
-    assert res.doc_number == "W-1"
-
-
-def test_parse_push_result_unparseable_is_failure() -> None:
-    res = _parse_push_result(b"<<not xml")
-    assert res.valid is False
-    assert res.error is not None
+# Поля ответа get, которые create/update отвергают — не должны попадать в тело.
+READ_ONLY_FIELDS = {"status", "productArticle", "priceWithoutVat", "sumWithoutVat", "producer"}
 
 
 async def _invoice_with_lines(
@@ -137,7 +64,10 @@ async def _invoice_with_lines(
     return invoice
 
 
-async def test_prepare_push_excludes_staff_lines(
+# ── prepare_push → Cloud-тело (без сети) ─────────────────────────────────────────────────────────
+
+
+async def test_prepare_push_builds_incoming_cloud_body(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
@@ -148,10 +78,23 @@ async def test_prepare_push_excludes_staff_lines(
 
         prepared = await prepare_push(session, invoice)
         assert prepared.skip_reason is None
-        assert prepared.xml is not None
-        assert "<supplier>SUP-GUID-1</supplier>" in prepared.xml
-        assert "PROD-A" in prepared.xml
-        assert "PROD-B" not in prepared.xml  # персонал-строка не уходит в iiko
+        assert prepared.doc is not None
+        assert prepared.doc.direction == "payable"
+        assert prepared.doc.counteragent == "SUP-GUID-1"
+        # только товарная строка; персонал-строка исключена
+        assert [line.product for line in prepared.doc.lines] == ["PROD-A"]
+        line = prepared.doc.lines[0]
+        assert line.amount == 2.0 and line.price == 500.0 and line.sum == 1000.0
+
+        body = build_invoice_body(prepared.doc)
+        assert body["counteragent"] == "SUP-GUID-1"      # Cloud-поле партнёра (не <supplier>)
+        assert body["defaultStore"] == "ST-1"
+        assert body["date"].endswith("+03:00") and "." in body["date"]   # ISO с точкой
+        assert body["incomingDate"].endswith("+03:00")
+        assert [it["product"] for it in body["items"]] == ["PROD-A"]
+        # read-only полей нет
+        assert READ_ONLY_FIELDS.isdisjoint(body.keys())
+        assert READ_ONLY_FIELDS.isdisjoint(body["items"][0].keys())
 
 
 async def test_prepare_push_skips_without_iiko_guid(
@@ -162,7 +105,7 @@ async def test_prepare_push_skips_without_iiko_guid(
         invoice = await _invoice_with_lines(session, cp.id, store_guid="ST-1", staff_second=False)
 
         prepared = await prepare_push(session, invoice)
-        assert prepared.xml is None
+        assert prepared.doc is None
         assert prepared.skip_reason is not None and "GUID" in prepared.skip_reason
 
 
@@ -176,7 +119,7 @@ async def test_prepare_push_skips_without_store(
         invoice = await _invoice_with_lines(session, cp.id, store_guid=None, staff_second=False)
 
         prepared = await prepare_push(session, invoice)
-        assert prepared.xml is None
+        assert prepared.doc is None
         assert prepared.skip_reason is not None and "склад" in prepared.skip_reason
 
 
@@ -204,5 +147,203 @@ async def test_prepare_push_skips_all_staff(
         await session.commit()
 
         prepared = await prepare_push(session, invoice)
-        assert prepared.xml is None
+        assert prepared.doc is None
         assert prepared.skip_reason is not None
+
+
+# ── push_invoice_to_iiko: оркестрация (сетевой слой замокан) ─────────────────────────────────────
+
+
+def _patch_cloud(monkeypatch, outcome: _CloudPushOutcome) -> list[dict]:
+    """Замокать сетевой ``_cloud_create_and_post``; вернуть список зафиксированных вызовов."""
+    calls: list[dict] = []
+
+    def fake(direction, organization_id, body, *, existing_document_id):
+        calls.append(
+            {"direction": direction, "org": organization_id, "body": body,
+             "existing_document_id": existing_document_id}
+        )
+        return outcome
+
+    monkeypatch.setattr(wip, "_cloud_create_and_post", fake)
+    return calls
+
+
+async def test_push_success_sets_external_id_and_pushed(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with async_session_factory() as session:
+        cp = await make_counterparty(
+            session, name="Поставщик", inn="7710000060", iiko_guid="SUP-GUID-1"
+        )
+        invoice = await _invoice_with_lines(session, cp.id, store_guid="ST-1", staff_second=False)
+        calls = _patch_cloud(
+            monkeypatch, _CloudPushOutcome("IIKO-DOC-1", posted=True, created=True)
+        )
+
+        result = await push_invoice_to_iiko(session, invoice.id)
+        assert result.iiko_push_status == "pushed"
+        assert result.external_id == "IIKO-DOC-1"
+        assert result.iiko_pushed_at is not None
+        assert result.iiko_push_error is None
+        # create-путь: без существующего documentId
+        assert len(calls) == 1 and calls[0]["existing_document_id"] is None
+
+
+async def test_push_idempotent_when_already_pushed(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with async_session_factory() as session:
+        cp = await make_counterparty(
+            session, name="Поставщик", inn="7710000061", iiko_guid="SUP-GUID-1"
+        )
+        invoice = await _invoice_with_lines(session, cp.id, store_guid="ST-1", staff_second=False)
+        invoice.external_id = "IIKO-DOC-9"
+        invoice.iiko_push_status = "pushed"
+        await session.commit()
+        calls = _patch_cloud(monkeypatch, _CloudPushOutcome("X", posted=True))
+
+        result = await push_invoice_to_iiko(session, invoice.id)
+        assert result.iiko_push_status == "pushed"
+        assert result.external_id == "IIKO-DOC-9"
+        assert calls == []  # сеть не дёргали
+
+
+async def test_push_reposts_created_but_not_posted(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Документ создан, но прошлый post упал (external_id есть, failed) → повторный пуш только
+    ПРОВОДИТ его (create не повторяем)."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(
+            session, name="Поставщик", inn="7710000062", iiko_guid="SUP-GUID-1"
+        )
+        invoice = await _invoice_with_lines(session, cp.id, store_guid="ST-1", staff_second=False)
+        invoice.external_id = "IIKO-DOC-7"
+        invoice.iiko_push_status = "failed"
+        await session.commit()
+        calls = _patch_cloud(
+            monkeypatch, _CloudPushOutcome("IIKO-DOC-7", posted=True, created=False)
+        )
+
+        result = await push_invoice_to_iiko(session, invoice.id)
+        assert result.iiko_push_status == "pushed"
+        assert len(calls) == 1
+        assert calls[0]["existing_document_id"] == "IIKO-DOC-7"  # create пропущен
+
+
+async def test_push_records_business_error_and_keeps_external_id(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with async_session_factory() as session:
+        cp = await make_counterparty(
+            session, name="Поставщик", inn="7710000063", iiko_guid="SUP-GUID-1"
+        )
+        invoice = await _invoice_with_lines(session, cp.id, store_guid="ST-1", staff_second=False)
+        _patch_cloud(
+            monkeypatch,
+            _CloudPushOutcome(
+                "IIKO-DOC-2", posted=False, created=True,
+                error="Нельзя распровести документ т.к. по документу уже есть проводки оплаты",
+            ),
+        )
+
+        result = await push_invoice_to_iiko(session, invoice.id)
+        assert result.iiko_push_status == "failed"
+        assert "проводки оплаты" in result.iiko_push_error
+        # документ создан → id сохранён, чтобы повторно не создавать (только re-post)
+        assert result.external_id == "IIKO-DOC-2"
+
+
+async def test_push_skips_without_iiko_guid(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Без GUID", inn="7710000064")
+        invoice = await _invoice_with_lines(session, cp.id, store_guid="ST-1", staff_second=False)
+        calls = _patch_cloud(monkeypatch, _CloudPushOutcome("X", posted=True))
+
+        result = await push_invoice_to_iiko(session, invoice.id)
+        assert result.iiko_push_status == "skipped"
+        assert calls == []
+
+
+# ── propagate_invoice_edit_to_iiko: проброс правки (сетевой слой замокан) ─────────────────────────
+
+
+def _patch_cloud_update(monkeypatch, outcome: _CloudPushOutcome) -> list[dict]:
+    calls: list[dict] = []
+
+    def fake(direction, organization_id, body, *, document_id):
+        calls.append(
+            {"direction": direction, "org": organization_id, "body": body,
+             "document_id": document_id}
+        )
+        return outcome
+
+    monkeypatch.setattr(wip, "_cloud_update_and_post", fake)
+    return calls
+
+
+async def test_propagate_edit_success(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with async_session_factory() as session:
+        cp = await make_counterparty(
+            session, name="Поставщик", inn="7710000070", iiko_guid="SUP-GUID-1"
+        )
+        invoice = await _invoice_with_lines(session, cp.id, store_guid="ST-1", staff_second=False)
+        invoice.external_id = "IIKO-DOC-5"
+        invoice.iiko_push_status = "pushed"
+        await session.commit()
+        calls = _patch_cloud_update(monkeypatch, _CloudPushOutcome("IIKO-DOC-5", posted=True))
+
+        result = await propagate_invoice_edit_to_iiko(session, invoice.id)
+        assert result.iiko_push_status == "pushed"
+        assert result.iiko_push_error is None
+        assert len(calls) == 1
+        assert calls[0]["document_id"] == "IIKO-DOC-5"
+        assert calls[0]["body"]["documentId"] == "IIKO-DOC-5"  # тело update несёт documentId
+
+
+async def test_propagate_noop_without_external_id(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with async_session_factory() as session:
+        cp = await make_counterparty(
+            session, name="Поставщик", inn="7710000071", iiko_guid="SUP-GUID-1"
+        )
+        invoice = await _invoice_with_lines(session, cp.id, store_guid="ST-1", staff_second=False)
+        calls = _patch_cloud_update(monkeypatch, _CloudPushOutcome("X", posted=True))
+
+        result = await propagate_invoice_edit_to_iiko(session, invoice.id)
+        assert calls == []  # ещё не в iiko → сеть не дёргаем
+        assert result.external_id is None
+
+
+async def test_propagate_records_business_error(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with async_session_factory() as session:
+        cp = await make_counterparty(
+            session, name="Поставщик", inn="7710000072", iiko_guid="SUP-GUID-1"
+        )
+        invoice = await _invoice_with_lines(session, cp.id, store_guid="ST-1", staff_second=False)
+        invoice.external_id = "IIKO-DOC-6"
+        invoice.iiko_push_status = "pushed"
+        await session.commit()
+        _patch_cloud_update(
+            monkeypatch, _CloudPushOutcome("IIKO-DOC-6", posted=False, error="post HTTP 409")
+        )
+
+        result = await propagate_invoice_edit_to_iiko(session, invoice.id)
+        assert result.iiko_push_status == "failed"
+        assert "409" in result.iiko_push_error

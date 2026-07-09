@@ -1,18 +1,26 @@
-"""Cyclic ingest of supplier invoices from iiko (incoming invoices).
+"""Циклический ingest накладных из iiko (реверс-синхронизация, документы — через Cloud API).
 
-Reads ``/suppliers`` and ``/documents/export/incomingInvoice`` (GET-only) and
-upserts :class:`SupplierInvoice` obligations idempotently by the iiko document id.
-iiko stays the source of *receipts*; payment status lives only in our system —
-there is no write-back (the iikoServer API cannot mark an invoice paid).
+Документы читаются из iiko Cloud: ``incoming_invoice/list`` + ``outgoing_invoice/list`` (сводки за
+окно) → ``get`` по каждому проведённому (список возвращает сводки БЕЗ items — проверено на живом
+API). Обязательства :class:`SupplierInvoice` апсертятся идемпотентно по iiko ``documentId``
+(= ``external_id``; id-пространство одно у Cloud и RMS). Статус оплаты живёт только у нас —
+обратной записи нет.
 
-Fetch (network) and ingest (parse + upsert) are deliberately split so the parsing
-pipeline can be exercised against captured XML without live iiko access.
+Справочник поставщиков ПОКА читается из iikoServer RMS ``/suppliers``: Cloud-эндпоинт
+``/api/inventory/v1/counteragents`` на живом API отвечает HTTP 500 «UocID is missing in
+userContext» (сломан на стороне iiko, 09.07.2026) и не отдаёт флаги deleted/representsStore.
+Имена номенклатуры для бартерных позиций резолвятся из локального кэша :class:`IikoProduct`
+(отдельный products-фид больше не нужен).
+
+Fetch (сеть) и ingest (разбор + upsert) разделены намеренно: конвейер разбора тестируется на
+захваченных JSON-документах без живого iiko.
 """
 
 from __future__ import annotations
 
 import importlib
 import sys
+import time
 import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
@@ -20,6 +28,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import anyio
 from sqlalchemy import and_, func, or_, select
@@ -34,11 +43,14 @@ from app.models import (
     CounterpartyRole,
     CounterpartyRoutingRule,
     DdsArticle,
+    IikoProduct,
     InvoiceLineItem,
     SupplierInvoice,
     SupplierInvoiceTombstone,
 )
 from app.services.counterparty_registry import compute_invoice_due_date
+from app.services.iiko_cloud_client import IIKO_ORGANIZATION_ID, iiko_auth_token, iiko_opener
+from app.services.iiko_invoice_cloud import get_invoice, list_invoices
 
 # Reuse the iiko credential loader (DB SourceCredential -> env) used by employee sync.
 from app.services.iiko_sync import _load_source_credential_env
@@ -56,15 +68,16 @@ KASSA_INVOICE_SOURCE = "kassa_invoice"
 KASSA_CHEQUE_SOURCE = "kassa_cheque"
 # Sources of invoices authored in our system that may be pushed into iiko (round-trip guard).
 OUR_PUSHED_SOURCES = (MANUAL_SOURCE, KASSA_INVOICE_SOURCE, KASSA_CHEQUE_SOURCE)
+# Справочник поставщиков — RMS (Cloud counteragents сломан на стороне iiko, см. докстринг).
 SUPPLIERS_ENDPOINT = "/suppliers"
-INVOICE_ENDPOINT = "/documents/export/incomingInvoice"
 # Outgoing invoices = goods we ship out (our AR). In this business only barter
 # partners receive outgoing invoices, so a receivable ⇒ relationship=barter.
-OUTGOING_INVOICE_ENDPOINT = "/documents/export/outgoingInvoice"
-# Product directory — resolves line-item product GUID → name (for barter номенклатура).
-PRODUCTS_ENDPOINT = "/products"
 # Only confirmed (posted) receipts are real obligations; NEW is unposted, DELETED is void.
 INGESTED_IIKO_STATUSES = frozenset({"PROCESSED"})
+# Ретраи Cloud ``get`` на HTTP 429 (rate-limit): паузы между попытками, сек.
+_CLOUD_GET_RETRY_DELAYS = (1.0, 3.0, 7.0)
+# Лёгкий троттлинг между ``get``-вызовами, чтобы не упираться в лимит.
+_CLOUD_GET_THROTTLE_SECONDS = 0.15
 
 
 @dataclass
@@ -156,30 +169,30 @@ def _parse_iiko_date(value: str | None) -> date | None:
         return None
 
 
-def _decimal(value: str | None) -> Decimal:
+def _decimal(value: Any) -> Decimal:
+    """Число/строка из JSON → Decimal (через str — float-дребезг не тащим)."""
+    if value is None:
+        return Decimal(0)
     try:
-        return Decimal((value or "0").strip())
-    except (InvalidOperation, AttributeError):
+        return Decimal(str(value).strip())
+    except (InvalidOperation, AttributeError, ValueError):
         return Decimal(0)
 
 
-def _invoice_amount(doc: ET.Element) -> Decimal:
-    # iiko incoming invoices carry no document total; item ``sum`` is gross
-    # (VAT-inclusive, equals price*amount), so the payable is the item sum.
+def _invoice_amount(doc: dict) -> Decimal:
+    # Обязательство = Σ item.sum: сумма позиции в iiko — gross (с НДС, price*amount).
     total = Decimal(0)
-    items = doc.find("items")
-    if items is not None:
-        for item in items.findall("item"):
-            total += _decimal(item.findtext("sum"))
+    for item in doc.get("items") or []:
+        total += _decimal(item.get("sum"))
     return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def _normalize_rate(value: str | None) -> str | None:
+def _normalize_rate(value: Any) -> str | None:
     if value is None:
         return None
     try:
-        rate = Decimal(value.strip())
-    except (InvalidOperation, AttributeError):
+        rate = Decimal(str(value).strip())
+    except (InvalidOperation, AttributeError, ValueError):
         return None
     if rate <= 0:
         return None
@@ -188,17 +201,18 @@ def _normalize_rate(value: str | None) -> str | None:
     return format(rate.normalize(), "f")
 
 
-def _invoice_vat(doc: ET.Element) -> tuple[Decimal, dict[str, str]]:
-    """Group item ``vatSum`` by ``vatPercent`` (e.g. 10% / 22%); 0/none is ignored."""
+def _invoice_vat(doc: dict) -> tuple[Decimal, dict[str, str]]:
+    """НДС позиции = ``sum − sumWithoutVat`` (Cloud не отдаёт ``vatSum``), группируем по
+    ``vatPercent`` (напр. 10% / 22%); нулевая ставка/нулевой НДС не попадают в раскладку."""
     breakdown: dict[str, Decimal] = {}
-    items = doc.find("items")
-    if items is not None:
-        for item in items.findall("item"):
-            rate = _normalize_rate(item.findtext("vatPercent"))
-            vat = _decimal(item.findtext("vatSum"))
-            if rate is None or vat == 0:
-                continue
-            breakdown[rate] = breakdown.get(rate, Decimal(0)) + vat
+    for item in doc.get("items") or []:
+        rate = _normalize_rate(item.get("vatPercent"))
+        if rate is None or item.get("sumWithoutVat") is None:
+            continue
+        vat = _decimal(item.get("sum")) - _decimal(item.get("sumWithoutVat"))
+        if vat <= 0:
+            continue
+        breakdown[rate] = breakdown.get(rate, Decimal(0)) + vat
     total = sum(breakdown.values(), Decimal(0))
     return (
         total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
@@ -209,16 +223,16 @@ def _invoice_vat(doc: ET.Element) -> tuple[Decimal, dict[str, str]]:
     )
 
 
-def _doc_prefix(doc: ET.Element) -> str | None:
+def _doc_prefix(doc: dict) -> str | None:
     """Legal-entity discriminator: the supplier doc-number prefix (before the dash)."""
     raw = (
-        _text(doc, "transportInvoiceNumber")
-        or _text(doc, "incomingDocumentNumber")
-        or _text(doc, "invoice")
+        doc.get("transportInvoiceNumber")
+        or doc.get("incomingDocumentNumber")
+        or doc.get("invoice")
     )
     if not raw:
         return None
-    return raw.split("-", 1)[0].strip() or None
+    return str(raw).split("-", 1)[0].strip() or None
 
 
 def _guess_counterparty_type(inn: str | None) -> str:
@@ -245,36 +259,44 @@ def _parse_suppliers(suppliers_xml: bytes | str) -> dict[str, IikoSupplier]:
     return suppliers
 
 
-def _parse_products(products_xml: bytes | str | None) -> dict[str, str]:
-    """Build a product GUID → name map from the iiko /products directory."""
-    if not products_xml:
+async def _product_names_from_cache(
+    session: AsyncSession, documents: list[dict]
+) -> dict[str, str]:
+    """GUID → имя номенклатуры из локального кэша :class:`IikoProduct` (для бартерных позиций).
+
+    Отдельный products-фид с iiko больше не тянем: кэш синкается периодическим джобом, а товар из
+    накладной по определению есть в номенклатуре."""
+    guids: set[str] = set()
+    for doc in documents:
+        for item in doc.get("items") or []:
+            pid = item.get("product") or item.get("productId")
+            if pid:
+                guids.add(str(pid))
+    if not guids:
         return {}
-    root = ET.fromstring(products_xml)
-    names: dict[str, str] = {}
-    for node in root:
-        pid = _text(node, "id")
-        name = _text(node, "name")
-        if pid and name:
-            names[pid] = name
-    return names
+    rows = (
+        await session.execute(
+            select(IikoProduct.iiko_id, IikoProduct.name).where(IikoProduct.iiko_id.in_(guids))
+        )
+    ).all()
+    return {iiko_id: name for iiko_id, name in rows}
 
 
-def _parse_line_items(doc: ET.Element, name_by_id: dict[str, str]) -> list[dict[str, str | None]]:
-    """Line items for номенклатура matching. Product GUID is ``productId`` on outgoing
-    docs and ``product`` on incoming; ``productArticle`` is the shared article code."""
-    items = doc.find("items")
-    if items is None:
-        return []
+def _parse_line_items(doc: dict, name_by_id: dict[str, str]) -> list[dict[str, str | None]]:
+    """Line items for номенклатура matching (barter). Product GUID is ``product`` in Cloud
+    (оба направления); ``productArticle`` is the shared article code."""
     parsed: list[dict[str, str | None]] = []
-    for item in items.findall("item"):
-        product_id = _text(item, "productId") or _text(item, "product")
+    for item in doc.get("items") or []:
+        product_id = item.get("product") or item.get("productId")
+        product_id = str(product_id) if product_id else None
+        quantity = item.get("amount")
         parsed.append(
             {
                 "product_id": product_id,
-                "article": _text(item, "productArticle"),
+                "article": item.get("productArticle"),
                 "name": name_by_id.get(product_id) if product_id else None,
-                "quantity": _text(item, "amount"),
-                "amount": str(_decimal(item.findtext("sum"))),
+                "quantity": str(quantity) if quantity is not None else None,
+                "amount": str(_decimal(item.get("sum"))),
             }
         )
     return parsed
@@ -410,7 +432,7 @@ async def _excluded_push_line_sum(session: AsyncSession, invoice_id: uuid.UUID) 
 
 async def _ingest_documents(
     session: AsyncSession,
-    documents: list[ET.Element],
+    documents: list[dict],
     suppliers: dict[str, IikoSupplier],
     *,
     direction: str,
@@ -418,14 +440,12 @@ async def _ingest_documents(
     name_by_id: dict[str, str] | None = None,
     tombstoned: frozenset[str] = frozenset(),
 ) -> None:
-    # incoming invoices carry the supplier GUID, outgoing the counteragent GUID.
-    counterparty_field = "supplier" if direction == "payable" else "counteragentId"
     for doc in documents:
-        status = (_text(doc, "status") or "").upper()
+        status = str(doc.get("status") or "").upper()
         if status not in INGESTED_IIKO_STATUSES:
             result.skipped_status += 1
             continue
-        external_id = _text(doc, "id")
+        external_id = doc.get("documentId") or doc.get("id")
         if not external_id:
             result.skipped_no_id += 1
             continue
@@ -453,7 +473,7 @@ async def _ingest_documents(
         #    узнаём накладную по documentNumber и BACKFILL-им external_id. ТОЛЬКО если такой
         #    кандидат РОВНО один — при общих номерах гадать нельзя (иначе backfill занятого
         #    external_id → UniqueViolation), пропускаем и оставляем как есть.
-        own_number = _text(doc, "documentNumber") or _text(doc, "transportInvoiceNumber")
+        own_number = doc.get("number") or doc.get("transportInvoiceNumber")
         if own_pushed is None and own_number:
             candidates = (
                 await session.scalars(
@@ -480,7 +500,7 @@ async def _ingest_documents(
                         session, own_pushed.id
                     )
                     iiko_date = _parse_iiko_date(
-                        _text(doc, "incomingDate") or _text(doc, "dateIncoming")
+                        doc.get("incomingDate") or doc.get("date")
                     )
                     vat_total, vat_breakdown = _invoice_vat(doc)
                     if own_pushed.amount != new_amount or (
@@ -495,7 +515,8 @@ async def _ingest_documents(
                         continue
             result.skipped_own_pushed += 1
             continue
-        supplier_guid = _text(doc, counterparty_field)
+        # В Cloud партнёр у обоих направлений — поле ``counteragent``.
+        supplier_guid = doc.get("counteragent")
         supplier = suppliers.get(supplier_guid) if supplier_guid else None
         if supplier is None:
             result.skipped_unknown_supplier += 1
@@ -525,11 +546,14 @@ async def _ingest_documents(
         line_items = _parse_line_items(doc, name_by_id or {}) if is_barter else []
 
         vat_total, vat_breakdown = _invoice_vat(doc)
-        number = _text(doc, "documentNumber") or _text(doc, "transportInvoiceNumber")
-        invoice_date = _parse_iiko_date(_text(doc, "incomingDate") or _text(doc, "dateIncoming"))
-        due_date = _parse_iiko_date(_text(doc, "dueDate"))
+        number = doc.get("number") or doc.get("transportInvoiceNumber")
+        invoice_date = _parse_iiko_date(doc.get("incomingDate") or doc.get("date"))
+        due_date = _parse_iiko_date(doc.get("dueDate"))
+        # Скалярные поля документа как есть (items — в line_items, вложенное не тащим).
         raw_payload = {
-            child.tag: (child.text or "").strip() for child in list(doc) if child.tag != "items"
+            key: value
+            for key, value in doc.items()
+            if key != "items" and not isinstance(value, (list, dict))
         }
 
         existing = await session.scalar(
@@ -591,14 +615,17 @@ async def ingest_iiko_payables(
     session: AsyncSession,
     *,
     suppliers_xml: bytes | str,
-    invoices_xml: bytes | str,
-    outgoing_invoices_xml: bytes | str | None = None,
-    products_xml: bytes | str | None = None,
+    incoming_docs: list[dict],
+    outgoing_docs: list[dict] | None = None,
 ) -> CounterpartyInvoiceSyncResult:
+    """Разобрать и апсертнуть фиды: справочник поставщиков (RMS XML) + документы (Cloud JSON)."""
     result = CounterpartyInvoiceSyncResult()
     suppliers = _parse_suppliers(suppliers_xml)
     result.suppliers_seen = len(suppliers)
-    name_by_id = _parse_products(products_xml)
+    # Имена номенклатуры (бартерные line_items) — из локального кэша, не из сети.
+    name_by_id = await _product_names_from_cache(
+        session, [*(outgoing_docs or []), *incoming_docs]
+    )
 
     # Tombstoned iiko doc ids — intentionally deleted, must not be re-imported. Load once.
     tombstoned = frozenset(
@@ -607,12 +634,11 @@ async def ingest_iiko_payables(
 
     # Receivables (outgoing) first: they mark partners as barter, so the payables that
     # follow capture line items for those partners in the same run.
-    if outgoing_invoices_xml is not None:
-        outgoing = ET.fromstring(outgoing_invoices_xml).findall(".//document")
-        result.receivables_seen = len(outgoing)
+    if outgoing_docs is not None:
+        result.receivables_seen = len(outgoing_docs)
         await _ingest_documents(
             session,
-            outgoing,
+            outgoing_docs,
             suppliers,
             direction="receivable",
             result=result,
@@ -620,11 +646,10 @@ async def ingest_iiko_payables(
             tombstoned=tombstoned,
         )
 
-    incoming = ET.fromstring(invoices_xml).findall(".//document")
-    result.invoices_seen = len(incoming)
+    result.invoices_seen = len(incoming_docs)
     await _ingest_documents(
         session,
-        incoming,
+        incoming_docs,
         suppliers,
         direction="payable",
         result=result,
@@ -638,18 +663,79 @@ async def ingest_iiko_payables(
 # --- fetch + orchestration ----------------------------------------------------
 
 
-def fetch_iiko_payables(*, days: int = 30) -> tuple[bytes, bytes, bytes, bytes]:
+def _fetch_cloud_document(direction: str, document_id: str, *, token, opener) -> dict:
+    """Полный документ через Cloud ``get`` с ретраем на 429 (rate-limit). Ошибка — исключение:
+    незаметно потерять документ хуже, чем уронить прогон (AgentRun зафиксирует error)."""
+    delays = iter(_CLOUD_GET_RETRY_DELAYS)
+    while True:
+        status, resp = get_invoice(
+            direction, IIKO_ORGANIZATION_ID, document_id, token=token, opener=opener
+        )
+        if status == 429:
+            delay = next(delays, None)
+            if delay is None:
+                raise RuntimeError(f"iiko Cloud get {direction}/{document_id}: HTTP 429 (retries)")
+            time.sleep(delay)
+            continue
+        if status != 200 or not isinstance(resp, dict):
+            raise RuntimeError(
+                f"iiko Cloud get {direction}/{document_id}: HTTP {status}: {str(resp)[:200]}"
+            )
+        return resp
+
+
+def _fetch_cloud_documents(
+    direction: str, *, date_from: date, date_to: date, token, opener
+) -> list[dict]:
+    """Cloud ``list`` (сводки) → ``get`` по каждому проведённому. Непроведённые/удалённые сводки
+    в ``get`` не ходят — возвращаются мини-доками ``{documentId, status}``, чтобы ingest посчитал
+    их в ``skipped_status`` (семантика легаси-экспорта сохранена)."""
+    status, resp = list_invoices(
+        direction,
+        IIKO_ORGANIZATION_ID,
+        date_from=date_from.isoformat(),
+        date_to=date_to.isoformat(),
+        token=token,
+        opener=opener,
+    )
+    if status != 200 or not isinstance(resp, list):
+        raise RuntimeError(f"iiko Cloud list {direction}: HTTP {status}: {str(resp)[:200]}")
+    documents: list[dict] = []
+    for summary in resp:
+        doc_id = summary.get("documentId")
+        if not doc_id:
+            documents.append({"documentId": None, "status": "PROCESSED"})  # → skipped_no_id
+            continue
+        if summary.get("deleted") is True or summary.get("processed") is not True:
+            documents.append(
+                {
+                    "documentId": doc_id,
+                    "status": "DELETED" if summary.get("deleted") else "NEW",
+                }
+            )
+            continue
+        time.sleep(_CLOUD_GET_THROTTLE_SECONDS)
+        documents.append(_fetch_cloud_document(direction, doc_id, token=token, opener=opener))
+    return documents
+
+
+def fetch_iiko_payables(*, days: int = 30) -> tuple[bytes, list[dict], list[dict]]:
+    """Справочник поставщиков (RMS XML) + полные документы обоих направлений (Cloud JSON)."""
     module = _load_orders_module()
     module.load_local_env()
     client = module.IikoClient()
     _status, suppliers_xml = client.request(SUPPLIERS_ENDPOINT)
     today = datetime.now(tz=UTC).date()
     date_from = today - timedelta(days=days)
-    params = {"from": date_from.isoformat(), "to": today.isoformat()}
-    _status2, invoices_xml = client.request(INVOICE_ENDPOINT, params=params)
-    _status3, outgoing_xml = client.request(OUTGOING_INVOICE_ENDPOINT, params=params)
-    _status4, products_xml = client.request(PRODUCTS_ENDPOINT)
-    return suppliers_xml, invoices_xml, outgoing_xml, products_xml
+    opener = iiko_opener()
+    token = iiko_auth_token(opener)  # один auth на весь прогон
+    incoming_docs = _fetch_cloud_documents(
+        "payable", date_from=date_from, date_to=today, token=token, opener=opener
+    )
+    outgoing_docs = _fetch_cloud_documents(
+        "receivable", date_from=date_from, date_to=today, token=token, opener=opener
+    )
+    return suppliers_xml, incoming_docs, outgoing_docs
 
 
 def fetch_iiko_suppliers() -> bytes:
@@ -702,15 +788,14 @@ async def sync_counterparty_invoices(
     session.add(run)
     await session.flush()
     try:
-        suppliers_xml, invoices_xml, outgoing_xml, products_xml = await anyio.to_thread.run_sync(
+        suppliers_xml, incoming_docs, outgoing_docs = await anyio.to_thread.run_sync(
             lambda: fetch_iiko_payables(days=days)
         )
         result = await ingest_iiko_payables(
             session,
             suppliers_xml=suppliers_xml,
-            invoices_xml=invoices_xml,
-            products_xml=products_xml,
-            outgoing_invoices_xml=outgoing_xml,
+            incoming_docs=incoming_docs,
+            outgoing_docs=outgoing_docs,
         )
     except Exception as exc:  # noqa: BLE001 - record failure on the run, then re-raise
         run.status = "error"

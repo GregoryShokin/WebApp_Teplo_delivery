@@ -37,7 +37,11 @@ from app.services.counterparty_matching import CounterpartyMatchError
 from app.services.iiko_product_sync import sync_iiko_products
 from app.services.kassa.cheque_payout_push import post_kassa_payment_to_iiko
 from app.services.kassa.invoice_paid_push import counterparty_iiko_guid
-from app.services.warehouse_invoice_push import WarehousePushError, push_invoice_to_iiko
+from app.services.warehouse_invoice_push import (
+    WarehousePushError,
+    propagate_invoice_edit_to_iiko,
+    push_invoice_to_iiko,
+)
 from app.services.warehouse_invoices import (
     LineInput,
     ReturnLineInput,
@@ -682,6 +686,10 @@ async def put_invoice(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+    # Уже выгруженную в iiko накладную сразу синхронизируем правкой (Cloud update→post); не-фатально
+    # (ошибка iiko не роняет правку — фиксируется в iiko_push_status/iiko_push_error).
+    if invoice.external_id:
+        await propagate_invoice_edit_to_iiko(session, invoice_id)
     result = await get_warehouse_invoice(session, invoice_id)
     assert result is not None
     return result

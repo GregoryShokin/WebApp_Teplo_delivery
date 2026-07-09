@@ -379,71 +379,63 @@ def suppliers_xml(suppliers: Sequence[dict[str, Any]]) -> str:
     return "".join(parts)
 
 
-def _item_xml(item: dict[str, Any]) -> str:
-    parts = ["<item>", f"<sum>{item['sum']}</sum>"]
+def _cloud_item(item: dict[str, Any]) -> dict[str, Any]:
+    """Позиция Cloud-документа. Принимает те же ключи, что легаси-XML-билдер
+    ({sum, vat_percent, vat_sum, product, article, amount}); ``vat_sum`` конвертируется в
+    ``sumWithoutVat = sum − vat_sum`` — Cloud не отдаёт ``vatSum``, ingest считает НДС разницей."""
+    out: dict[str, Any] = {"sum": item["sum"]}
     if item.get("vat_percent") is not None:
-        parts.append(f"<vatPercent>{item['vat_percent']}</vatPercent>")
+        out["vatPercent"] = item["vat_percent"]
     if item.get("vat_sum") is not None:
-        parts.append(f"<vatSum>{item['vat_sum']}</vatSum>")
-    parts.append("</item>")
-    return "".join(parts)
+        out["sumWithoutVat"] = round(float(item["sum"]) - float(item["vat_sum"]), 2)
+    if item.get("product") is not None:
+        out["product"] = item["product"]
+    if item.get("article") is not None:
+        out["productArticle"] = item["article"]
+    if item.get("amount") is not None:
+        out["amount"] = item["amount"]
+    return out
 
 
-def invoices_xml(documents: Sequence[dict[str, Any]]) -> str:
-    """Build an ``incomingInvoice`` export XML payload.
+def cloud_invoice_docs(documents: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Cloud JSON-документы (incoming) в форме ответа ``incoming_invoice/get``.
 
     Each dict supports: id, supplier (guid), status (default PROCESSED),
     document_number, transport_invoice_number, incoming_date, due_date,
-    items (list of {sum, vat_percent, vat_sum}).
+    items (list of {sum, vat_percent, vat_sum, product, article, amount}).
     """
-    parts = ["<incomingInvoiceDtoes>"]
+    docs: list[dict[str, Any]] = []
     for doc in documents:
-        parts.append("<document>")
-        parts.append(f"<id>{doc['id']}</id>")
-        parts.append(f"<status>{doc.get('status', 'PROCESSED')}</status>")
-        if doc.get("supplier") is not None:
-            parts.append(f"<supplier>{doc['supplier']}</supplier>")
-        if doc.get("document_number") is not None:
-            parts.append(f"<documentNumber>{doc['document_number']}</documentNumber>")
-        if doc.get("transport_invoice_number") is not None:
-            parts.append(
-                f"<transportInvoiceNumber>{doc['transport_invoice_number']}"
-                "</transportInvoiceNumber>"
-            )
-        if doc.get("incoming_date") is not None:
-            parts.append(f"<incomingDate>{doc['incoming_date']}</incomingDate>")
-        if doc.get("due_date") is not None:
-            parts.append(f"<dueDate>{doc['due_date']}</dueDate>")
-        parts.append("<items>")
-        for item in doc.get("items", []):
-            parts.append(_item_xml(item))
-        parts.append("</items>")
-        parts.append("</document>")
-    parts.append("</incomingInvoiceDtoes>")
-    return "".join(parts)
+        out: dict[str, Any] = {
+            "documentId": doc["id"],
+            "status": doc.get("status", "PROCESSED"),
+            "counteragent": doc.get("supplier"),
+            "number": doc.get("document_number"),
+            "transportInvoiceNumber": doc.get("transport_invoice_number"),
+            "incomingDate": doc.get("incoming_date"),
+            "dueDate": doc.get("due_date"),
+            "items": [_cloud_item(item) for item in doc.get("items", [])],
+        }
+        docs.append(out)
+    return docs
 
 
-def outgoing_invoices_xml(documents: Sequence[dict[str, Any]]) -> str:
-    """Build an ``outgoingInvoice`` export (our AR). Counterparty in ``counteragentId``.
+def cloud_outgoing_docs(documents: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Cloud JSON-документы (outgoing, our AR) в форме ответа ``outgoing_invoice/get``.
+    Партнёр — в ``counteragent`` (в Cloud оба направления используют это поле); дата — ``date``.
 
     Each dict supports: id, counteragent (guid), status (default PROCESSED),
-    document_number, incoming_date, items (list of {sum, vat_percent, vat_sum}).
+    document_number, incoming_date, items.
     """
-    parts = ["<outgoingInvoiceDtoes>"]
+    docs: list[dict[str, Any]] = []
     for doc in documents:
-        parts.append("<document>")
-        parts.append(f"<id>{doc['id']}</id>")
-        parts.append(f"<status>{doc.get('status', 'PROCESSED')}</status>")
-        if doc.get("counteragent") is not None:
-            parts.append(f"<counteragentId>{doc['counteragent']}</counteragentId>")
-        if doc.get("document_number") is not None:
-            parts.append(f"<documentNumber>{doc['document_number']}</documentNumber>")
-        if doc.get("incoming_date") is not None:
-            parts.append(f"<dateIncoming>{doc['incoming_date']}</dateIncoming>")
-        parts.append("<items>")
-        for item in doc.get("items", []):
-            parts.append(_item_xml(item))
-        parts.append("</items>")
-        parts.append("</document>")
-    parts.append("</outgoingInvoiceDtoes>")
-    return "".join(parts)
+        out: dict[str, Any] = {
+            "documentId": doc["id"],
+            "status": doc.get("status", "PROCESSED"),
+            "counteragent": doc.get("counteragent"),
+            "number": doc.get("document_number"),
+            "date": doc.get("incoming_date"),
+            "items": [_cloud_item(item) for item in doc.get("items", [])],
+        }
+        docs.append(out)
+    return docs

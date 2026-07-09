@@ -1,7 +1,7 @@
 """iiko → SupplierInvoice ingest: idempotency, parsing, skips, brand routing.
 
-Drives :func:`ingest_iiko_payables` against captured XML (no network), exercising
-the parse + upsert pipeline on the real ``teplo_test`` schema.
+Drives :func:`ingest_iiko_payables` against captured feeds (no network) — suppliers как RMS XML,
+документы как Cloud JSON — exercising the parse + upsert pipeline on the real test schema.
 """
 
 from __future__ import annotations
@@ -11,11 +11,11 @@ from decimal import Decimal
 
 from cp_helpers import (
     add_routing_rule,
-    invoices_xml,
+    cloud_invoice_docs,
+    cloud_outgoing_docs,
     make_counterparty,
     make_draft,
     make_invoice,
-    outgoing_invoices_xml,
     suppliers_xml,
 )
 from sqlalchemy import func, select
@@ -61,7 +61,7 @@ async def test_ingest_creates_invoice_with_gross_amount_and_grouped_vat(
 ) -> None:
     async with async_session_factory() as session:
         result = await ingest_iiko_payables(
-            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([_doc()])
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([_doc()])
         )
         await session.commit()
 
@@ -92,11 +92,15 @@ async def test_ingest_is_idempotent_by_source_external_id(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
-        suppliers, invoices = _one_supplier(), invoices_xml([_doc()])
+        suppliers, invoices = _one_supplier(), cloud_invoice_docs([_doc()])
 
-        first = await ingest_iiko_payables(session, suppliers_xml=suppliers, invoices_xml=invoices)
+        first = await ingest_iiko_payables(
+            session, suppliers_xml=suppliers, incoming_docs=invoices
+        )
         await session.commit()
-        second = await ingest_iiko_payables(session, suppliers_xml=suppliers, invoices_xml=invoices)
+        second = await ingest_iiko_payables(
+            session, suppliers_xml=suppliers, incoming_docs=invoices
+        )
         await session.commit()
 
         assert first.invoices_created == 1
@@ -114,7 +118,7 @@ async def test_ingest_skips_unposted_status(
         result = await ingest_iiko_payables(
             session,
             suppliers_xml=_one_supplier(),
-            invoices_xml=invoices_xml([_doc(status="NEW")]),
+            incoming_docs=cloud_invoice_docs([_doc(status="NEW")]),
         )
         await session.commit()
         assert result.skipped_status == 1
@@ -131,7 +135,7 @@ async def test_ingest_skips_zero_amount_gift(
         result = await ingest_iiko_payables(
             session,
             suppliers_xml=_one_supplier(),
-            invoices_xml=invoices_xml([_doc(items=[])]),
+            incoming_docs=cloud_invoice_docs([_doc(items=[])]),
         )
         await session.commit()
         assert result.skipped_zero_amount == 1
@@ -150,7 +154,7 @@ async def test_ingest_skips_store_and_unknown_and_idless(
                 {"id": "store-guid", "name": "Склад", "represents_store": True},
             ]
         )
-        documents = invoices_xml(
+        documents = cloud_invoice_docs(
             [
                 _doc(id="store-doc", supplier="store-guid"),  # represents_store → skip
                 _doc(id="orphan-doc", supplier="missing-guid"),  # unknown supplier → skip
@@ -158,7 +162,7 @@ async def test_ingest_skips_store_and_unknown_and_idless(
             ]
         )
         result = await ingest_iiko_payables(
-            session, suppliers_xml=suppliers, invoices_xml=documents
+            session, suppliers_xml=suppliers, incoming_docs=documents
         )
         await session.commit()
 
@@ -174,7 +178,7 @@ async def test_ingest_update_never_overrides_paid_status_or_amount(
 ) -> None:
     async with async_session_factory() as session:
         await ingest_iiko_payables(
-            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([_doc()])
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([_doc()])
         )
         await session.commit()
         invoice = await session.scalar(select(SupplierInvoice))
@@ -184,7 +188,7 @@ async def test_ingest_update_never_overrides_paid_status_or_amount(
         # iiko re-exports the same doc with a different total.
         changed = _doc(items=[{"sum": "999.00", "vat_percent": "22", "vat_sum": "180.16"}])
         await ingest_iiko_payables(
-            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([changed])
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([changed])
         )
         await session.commit()
 
@@ -198,13 +202,13 @@ async def test_ingest_refreshes_amount_while_unpaid(
 ) -> None:
     async with async_session_factory() as session:
         await ingest_iiko_payables(
-            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([_doc()])
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([_doc()])
         )
         await session.commit()
 
         changed = _doc(items=[{"sum": "500.00", "vat_percent": "10", "vat_sum": "45.45"}])
         await ingest_iiko_payables(
-            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([changed])
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([changed])
         )
         await session.commit()
 
@@ -231,14 +235,14 @@ async def test_ingest_routes_one_brand_to_legal_entities_by_prefix(
         )
         await session.commit()
 
-        documents = invoices_xml(
+        documents = cloud_invoice_docs(
             [
                 _doc(id="tora-doc", transport_invoice_number="ТРКА-0001"),
                 _doc(id="skachkova-doc", transport_invoice_number="0ЭКА-0002"),
             ]
         )
         result = await ingest_iiko_payables(
-            session, suppliers_xml=_one_supplier(), invoices_xml=documents
+            session, suppliers_xml=_one_supplier(), incoming_docs=documents
         )
         await session.commit()
 
@@ -281,8 +285,8 @@ async def test_ingest_outgoing_creates_receivable_and_marks_barter(
         result = await ingest_iiko_payables(
             session,
             suppliers_xml=_barter_supplier(),
-            invoices_xml=invoices_xml([]),  # no incoming this run
-            outgoing_invoices_xml=outgoing_invoices_xml([_outgoing_doc()]),
+            incoming_docs=cloud_invoice_docs([]),  # no incoming this run
+            outgoing_docs=cloud_outgoing_docs([_outgoing_doc()]),
         )
         await session.commit()
 
@@ -325,7 +329,7 @@ async def test_reverse_sync_skips_our_own_pushed_manual_invoice(
 
         # iiko re-exports the same document (id="doc-1") on the next reverse sync run.
         result = await ingest_iiko_payables(
-            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([_doc()])
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([_doc()])
         )
         await session.commit()
 
@@ -360,7 +364,7 @@ async def test_reverse_sync_skips_our_own_pushed_kassa_invoice(
         await session.commit()
 
         result = await ingest_iiko_payables(
-            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([_doc()])
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([_doc()])
         )
         await session.commit()
 
@@ -395,7 +399,7 @@ async def test_reverse_sync_shared_number_prefers_exact_external_id_match(
         await session.commit()
 
         result = await ingest_iiko_payables(
-            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([_doc()])
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([_doc()])
         )
         await session.commit()
 
@@ -429,7 +433,7 @@ async def test_reverse_sync_dedupes_pushed_manual_by_number_when_external_id_nul
         await session.commit()
 
         result = await ingest_iiko_payables(
-            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([_doc()])
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([_doc()])
         )
         await session.commit()
 
@@ -459,7 +463,7 @@ async def test_reverse_sync_pulls_amount_back_for_unpaid_own_pushed(
 
         # iiko-версия документа doc-1 = 232.00 (отредактирована там), позиций-исключений нет.
         result = await ingest_iiko_payables(
-            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([_doc()])
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([_doc()])
         )
         await session.commit()
 
@@ -489,7 +493,7 @@ async def test_reverse_sync_keeps_own_pushed_amount_once_in_bank(
         inv_id = inv.id
 
         result = await ingest_iiko_payables(
-            session, suppliers_xml=_one_supplier(), invoices_xml=invoices_xml([_doc()])
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([_doc()])
         )
         await session.commit()
 
@@ -504,21 +508,20 @@ async def test_ingest_outgoing_is_idempotent(
 ) -> None:
     async with async_session_factory() as session:
         suppliers = _barter_supplier()
-        outgoing = outgoing_invoices_xml([_outgoing_doc()])
-        empty_incoming = invoices_xml([])
+        outgoing = cloud_outgoing_docs([_outgoing_doc()])
 
         first = await ingest_iiko_payables(
             session,
             suppliers_xml=suppliers,
-            invoices_xml=empty_incoming,
-            outgoing_invoices_xml=outgoing,
+            incoming_docs=[],
+            outgoing_docs=outgoing,
         )
         await session.commit()
         second = await ingest_iiko_payables(
             session,
             suppliers_xml=suppliers,
-            invoices_xml=empty_incoming,
-            outgoing_invoices_xml=outgoing,
+            incoming_docs=[],
+            outgoing_docs=outgoing,
         )
         await session.commit()
 

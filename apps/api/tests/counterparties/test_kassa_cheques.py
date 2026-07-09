@@ -345,9 +345,10 @@ async def test_cheque_pushes_only_store_lines_to_iiko(
         assert lines[1].product_guid is None  # прочий расход — без товара
 
         prepared = await prepare_push(session, cheque)
-        assert prepared.xml is not None
-        assert "PROD-X" in prepared.xml  # складская уходит в iiko
-        assert "Губки" not in prepared.xml  # прочий расход в iiko НЕ уходит
+        assert prepared.doc is not None
+        guids = {line.product for line in prepared.doc.lines}
+        assert "PROD-X" in guids  # складская уходит в iiko
+        assert "Губки" not in guids  # прочий расход в iiko НЕ уходит (нет товара)
 
 
 async def test_cheque_expense_line_with_iiko_guid_not_pushed(
@@ -411,9 +412,10 @@ async def test_cheque_expense_line_with_iiko_guid_not_pushed(
         )
 
         prepared = await prepare_push(session, cheque)
-        assert prepared.xml is not None
-        assert "PROD-VEG" in prepared.xml  # товар (Оплата поставщикам) уходит
-        assert "PROD-BREAD" not in prepared.xml  # питание персонала в iiko НЕ уходит
+        assert prepared.doc is not None
+        guids = {line.product for line in prepared.doc.lines}
+        assert "PROD-VEG" in guids  # товар (Оплата поставщикам) уходит
+        assert "PROD-BREAD" not in guids  # питание персонала в iiko НЕ уходит
 
 
 async def test_nomenclature_total_mismatch_rejected(
