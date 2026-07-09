@@ -47,7 +47,8 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
     возможно `app/services/counterparty_invoice_sync.py` (dedup по external_id)
   - тесты: `tests/counterparties/test_warehouse_push.py` и смежные iiko-mirror
 - НЕ трогать другим: `warehouse_invoice_push.py`, контур iiko-накладных
-- статус: разведка контура (карта связок), дизайн; кода ещё нет
+- превью: compose `teplo-ic` (web 7153 / api 8163 / pg 5472), БД = копия прод, банк mock, iiko live
+- статус: реализовано (фазы 1-5, e2e на живом iiko ALL PASSED), закоммичено ec9f20ae; НА РЕВЬЮ
 
 ---
 

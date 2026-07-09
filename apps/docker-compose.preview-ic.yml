@@ -1,0 +1,72 @@
+# Превью-стек ветки agent/invoicecloud-unify (унификация накладных на iiko Cloud).
+# Свой Docker-проект, свои порты, своя БД (копия dev) — не пересекается с другими стеками.
+#
+# Запуск (из папки apps/ этого worktree):
+#   docker compose -p teplo-ic -f docker-compose.preview-ic.yml up -d --build
+#   ... затем залить дамп dev-БД и alembic upgrade head (см. сессию).
+#
+# Порты: web 7153 (просьба владельца) / api 8163 / pg 5472.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: teplo-postgres-ic
+    environment:
+      POSTGRES_DB: teplo
+      POSTGRES_USER: teplo
+      POSTGRES_PASSWORD: teplo
+    ports:
+      - "5472:5432"
+    volumes:
+      - teplo_pgdata_ic:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teplo -d teplo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    container_name: teplo-api-ic
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
+      TEPLO_TEST_DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo_test_ic_local
+      # Превью: банк в mock (не слать реальные банковские запросы); iiko остаётся live — предмет ревью.
+      TEPLO_BANK_CLIENT_MODE: mock
+      TEPLO_ADMIN_EMAIL: admin1@teplo.local
+      TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
+      JWT_SECRET_KEY: change-me-in-local-env-change-me
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 90
+      BACKEND_CORS_ORIGINS: '["http://localhost:7153","http://127.0.0.1:7153"]'
+    ports:
+      - "8163:8000"
+    volumes:
+      - ./api:/app/apps/api
+      - ../integrations:/app/integrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    container_name: teplo-web-ic
+    environment:
+      VITE_API_BASE_URL: http://localhost:8163
+    command: npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
+    ports:
+      - "7153:5173"
+    volumes:
+      - ./web:/app/apps/web
+      - /app/apps/web/node_modules
+    depends_on:
+      - api
+
+volumes:
+  teplo_pgdata_ic:
