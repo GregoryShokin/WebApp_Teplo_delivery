@@ -11,6 +11,74 @@ export type ComboboxOption = {
 };
 
 /**
+ * Встроенный (не выпадающий) поиск-список: поле поиска + высокий прокручиваемый список прямо
+ * в потоке. Для модалок выбора, где выпадающий поповер тесноват — список виден целиком.
+ */
+export function InlineOptionList({
+  options,
+  value,
+  onChange,
+  searchPlaceholder = "Поиск…",
+  emptyMessage = "Ничего не найдено",
+  listClassName = "max-h-72",
+  autoFocus = true,
+}: {
+  options: ComboboxOption[];
+  value: string;
+  onChange: (value: string) => void;
+  searchPlaceholder?: string;
+  emptyMessage?: string;
+  listClassName?: string;
+  autoFocus?: boolean;
+}) {
+  const [query, setQuery] = React.useState("");
+  const filtered = React.useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return options;
+    return options.filter((option) =>
+      `${option.label} ${option.keywords ?? ""}`.toLowerCase().includes(needle),
+    );
+  }, [options, query]);
+
+  return (
+    <div className="overflow-hidden rounded-md border">
+      <div className="border-b p-2">
+        <input
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus={autoFocus}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={searchPlaceholder}
+          className="h-9 w-full rounded-sm bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+      <div className={cn("overflow-y-auto p-1", listClassName)}>
+        {filtered.length === 0 ? (
+          <div className="px-2 py-4 text-center text-sm text-muted-foreground">{emptyMessage}</div>
+        ) : (
+          filtered.map((option) => (
+            <button
+              type="button"
+              key={option.value}
+              onClick={() => onChange(option.value)}
+              className={cn(
+                "flex w-full items-center justify-between gap-2 rounded-sm px-2 py-2 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground",
+                option.value === value ? "bg-accent text-accent-foreground" : "",
+              )}
+            >
+              <span className="line-clamp-1">{option.label}</span>
+              {option.value === value ? (
+                <Check className="h-4 w-4 shrink-0" aria-hidden="true" />
+              ) : null}
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Поиск-селект с фильтрацией по мере ввода. Самодостаточный (без cmdk/popover):
  * кнопка-триггер + выпадающая панель с полем поиска и отфильтрованным списком.
  * Закрывается по клику вне и Escape, навигация стрелками + Enter.

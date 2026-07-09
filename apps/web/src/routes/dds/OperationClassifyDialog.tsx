@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
+import { InlineOptionList, type ComboboxOption } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
@@ -535,7 +535,7 @@ export function OperationClassifyDialog({
 
     {detailRow ? (
       <Dialog open onOpenChange={(open) => !open && setDetailRowKey(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
               {rowDetailKind(detailRow) === "employee"
@@ -550,25 +550,25 @@ export function OperationClassifyDialog({
           </DialogHeader>
           <div className="space-y-3">
             {rowDetailKind(detailRow) === "employee" ? (
-              <Combobox
+              <InlineOptionList
                 options={employeeOptions}
                 value={detailRow.employeeId}
                 onChange={(value) => updateRow(detailRow.key, { employeeId: value })}
-                placeholder={
-                  payoutEmployeesQuery.isLoading ? "Загрузка сотрудников…" : "Выберите сотрудника"
-                }
                 searchPlaceholder="Поиск по имени…"
-                emptyMessage="Сотрудники не найдены"
+                emptyMessage={
+                  payoutEmployeesQuery.isLoading ? "Загрузка сотрудников…" : "Сотрудники не найдены"
+                }
+                listClassName="max-h-[22rem]"
               />
             ) : null}
             {rowDetailKind(detailRow) === "transfer" ? (
-              <Combobox
+              <InlineOptionList
                 options={transferOptions}
                 value={detailRow.transferWalletId}
                 onChange={(value) => updateRow(detailRow.key, { transferWalletId: value })}
-                placeholder="Счёт-получатель перевода…"
                 searchPlaceholder="Поиск счёта…"
                 emptyMessage="Счета не найдены"
+                listClassName="max-h-[22rem]"
               />
             ) : null}
             {rowDetailKind(detailRow) === "counterparty" ? (
@@ -590,13 +590,6 @@ export function OperationClassifyDialog({
                   </div>
                 ) : (
                   <>
-                    <Combobox
-                      options={counterpartyOptions}
-                      value={counterpartyId}
-                      onChange={setCounterpartyId}
-                      placeholder="Не указан"
-                      searchPlaceholder="Поиск по названию или ИНН…"
-                    />
                     {isOperation && row.counterparty_name_raw && !counterpartyId && !matchedByInn ? (
                       <button
                         className="self-start text-left text-sm font-medium text-emerald-700 hover:underline"
@@ -607,19 +600,27 @@ export function OperationClassifyDialog({
                         {row.counterparty_inn_raw ? ` (ИНН ${row.counterparty_inn_raw})` : ""}
                       </button>
                     ) : null}
+                    <InlineOptionList
+                      options={counterpartyOptions}
+                      value={counterpartyId}
+                      onChange={setCounterpartyId}
+                      searchPlaceholder="Поиск по названию или ИНН…"
+                      emptyMessage="Контрагенты не найдены"
+                      listClassName="max-h-[20rem]"
+                    />
                   </>
                 )}
                 {isOperation && detailRow.articleId === supplierPaymentArticleId ? (
                   <div className="space-y-1">
                     <Label className="text-sm">Накладная для гашения</Label>
-                    <Combobox
+                    <InlineOptionList
                       options={invoiceOptions}
                       value={detailRow.invoiceId}
                       onChange={(value) => updateRow(detailRow.key, { invoiceId: value })}
-                      placeholder={
-                        counterpartyId ? "Необязательно" : "Сначала выберите контрагента"
-                      }
                       searchPlaceholder="Поиск по номеру…"
+                      emptyMessage={counterpartyId ? "Накладных нет" : "Сначала выберите контрагента"}
+                      listClassName="max-h-48"
+                      autoFocus={false}
                     />
                   </div>
                 ) : null}
