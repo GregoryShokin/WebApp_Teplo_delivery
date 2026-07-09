@@ -25,7 +25,6 @@ import {
 import { apiErrorMessage } from "@/lib/api";
 
 import {
-  getExpenseArticles,
   getPrepayments,
   getWallets,
   settleInvoiceFromPrepayment,
@@ -38,8 +37,6 @@ import {
   payInvoiceSplit,
   type MatchCandidate,
 } from "./api";
-
-const DEFAULT_ARTICLE = "default";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -58,22 +55,17 @@ function tierClass(tier: number): string {
   return "border-amber-200 bg-amber-50 text-amber-700";
 }
 
+// Строка наличного источника: только счёт и сумма. Статью ДДС не выбираем — разнесение
+// уже живёт в строках накладной (товар → «Оплата поставщикам», персонал — своей статьёй
+// через разнесение); дата — всегда сегодня.
 type CashRow = {
   uid: string;
   wallet_id: string;
   amount: string;
-  operation_date: string;
-  article_id: string;
 };
 
-function emptyCashRow(): CashRow {
-  return {
-    uid: crypto.randomUUID(),
-    wallet_id: "",
-    amount: "",
-    operation_date: today(),
-    article_id: DEFAULT_ARTICLE,
-  };
+function emptyCashRow(amount = ""): CashRow {
+  return { uid: crypto.randomUUID(), wallet_id: "", amount };
 }
 
 export function PayWarehouseInvoiceDialog({
@@ -92,11 +84,6 @@ export function PayWarehouseInvoiceDialog({
     enabled: open,
   });
   const walletsQuery = useQuery({ queryKey: ["cp", "wallets"], queryFn: getWallets, enabled: open });
-  const articlesQuery = useQuery({
-    queryKey: ["cp", "expense-articles"],
-    queryFn: getExpenseArticles,
-    enabled: open,
-  });
   const matchQuery = useQuery({
     queryKey: ["wh", "match", invoiceId],
     queryFn: () => getInvoiceMatchSuggestions(invoiceId!),
@@ -143,11 +130,14 @@ export function PayWarehouseInvoiceDialog({
 
   // Накладную с «тратами на персонал» по умолчанию разносим: иначе персональная часть
   // легла бы одной статьёй «Оплата поставщикам» (баг, из-за которого 7744 ушла лумпом).
+  // Наличный источник сразу предзаполняем остатком накладной — выбрать останется только счёт.
   useEffect(() => {
     if (!detail) return;
     const hasStaff = (detail.staff_amount ?? 0) > 0;
     const fullyUnpaid = (detail.remaining ?? 0) + 0.005 >= (detail.amount ?? 0);
     setSplitStaff(hasStaff && fullyUnpaid);
+    const rest = detail.remaining ?? 0;
+    setCashRows([emptyCashRow(rest > 0 ? String(rest) : "")]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.id]);
 
@@ -165,12 +155,13 @@ export function PayWarehouseInvoiceDialog({
     (sum, id) => sum + (candidateById.get(id)?.amount ?? 0),
     0,
   );
-  const cashTotal = cashRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+  // «Активные» наличные строки — с выбранным счётом: предзаполненная строка без счёта
+  // не мешает чисто банковской оплате (её просто игнорируем).
+  const activeCashRows = cashRows.filter((row) => row.wallet_id);
+  const cashTotal = activeCashRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
   const selectedTotal = bankTotal + cashTotal;
 
-  const cashRowsValid = cashRows.every(
-    (row) => row.wallet_id && Number(row.amount) > 0 && row.operation_date,
-  );
+  const cashRowsValid = activeCashRows.every((row) => Number(row.amount) > 0);
 
   const payMutation = useMutation({
     mutationFn: async () => {
@@ -182,18 +173,18 @@ export function PayWarehouseInvoiceDialog({
             {
               wallet_id: row.wallet_id,
               amount: remaining,
-              operation_date: row.operation_date,
+              operation_date: today(),
             },
           ],
           split_staff: true,
         });
       }
       const bankOps = [...selectedBankOps];
-      const cashParts = cashRows.map((row) => ({
+      // Статью ДДС не шлём: бэк кладёт «Оплату поставщикам» и сам разносит персонал-часть.
+      const cashParts = activeCashRows.map((row) => ({
         wallet_id: row.wallet_id,
         amount: Number(row.amount),
-        operation_date: row.operation_date,
-        article_id: row.article_id === DEFAULT_ARTICLE ? null : row.article_id,
+        operation_date: today(),
       }));
       // Один банк-кандидат целиком, без налички, с обогащением → быстрый банк-мэтч
       // (он подтянет реквизиты контрагента; сплит этого не делает).
@@ -316,34 +307,23 @@ export function PayWarehouseInvoiceDialog({
             {splitStaff ? (
               <div className="grid gap-2">
                 <Label>Счёт (кошелёк ДДС)</Label>
-                <div className="grid grid-cols-2 gap-3">
-                  <Select
-                    value={cashRows[0]?.wallet_id ?? ""}
-                    onValueChange={(value) =>
-                      setCashRows([{ ...emptyCashRow(), ...cashRows[0], wallet_id: value }])
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Выберите счёт" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(walletsQuery.data ?? []).map((wallet) => (
-                        <SelectItem key={wallet.id} value={wallet.id}>
-                          {wallet.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    type="date"
-                    value={cashRows[0]?.operation_date ?? today()}
-                    onChange={(event) =>
-                      setCashRows([
-                        { ...emptyCashRow(), ...cashRows[0], operation_date: event.target.value },
-                      ])
-                    }
-                  />
-                </div>
+                <Select
+                  value={cashRows[0]?.wallet_id ?? ""}
+                  onValueChange={(value) =>
+                    setCashRows([{ ...emptyCashRow(), ...cashRows[0], wallet_id: value }])
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите счёт" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(walletsQuery.data ?? []).map((wallet) => (
+                      <SelectItem key={wallet.id} value={wallet.id}>
+                        {wallet.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             ) : (
               <>
@@ -419,7 +399,7 @@ export function PayWarehouseInvoiceDialog({
                   {cashRows.map((row, index) => (
                     <div
                       key={row.uid}
-                      className="grid grid-cols-[1fr_1fr_auto] items-end gap-2 rounded-md border p-2"
+                      className="grid grid-cols-[1fr_140px_auto] items-end gap-2 rounded-md border p-2"
                     >
                       <div className="grid gap-1">
                         <span className="text-xs text-muted-foreground">Счёт</span>
@@ -432,7 +412,7 @@ export function PayWarehouseInvoiceDialog({
                           }
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Счёт" />
+                            <SelectValue placeholder="Выберите счёт" />
                           </SelectTrigger>
                           <SelectContent>
                             {(walletsQuery.data ?? []).map((wallet) => (
@@ -443,41 +423,6 @@ export function PayWarehouseInvoiceDialog({
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="grid gap-1">
-                        <span className="text-xs text-muted-foreground">Статья ДДС</span>
-                        <Select
-                          value={row.article_id}
-                          onValueChange={(value) =>
-                            setCashRows((rows) =>
-                              rows.map((r, i) => (i === index ? { ...r, article_id: value } : r)),
-                            )
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={DEFAULT_ARTICLE}>
-                              Оплата поставщикам (по умолчанию)
-                            </SelectItem>
-                            {(articlesQuery.data ?? []).map((article) => (
-                              <SelectItem key={article.id} value={article.id}>
-                                {article.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() =>
-                          setCashRows((rows) => rows.filter((_, i) => i !== index))
-                        }
-                        aria-label="Удалить источник"
-                      >
-                        <Trash2 size={15} aria-hidden="true" />
-                      </Button>
                       <div className="grid gap-1">
                         <span className="text-xs text-muted-foreground">Сумма, ₽</span>
                         <Input
@@ -492,20 +437,16 @@ export function PayWarehouseInvoiceDialog({
                           }
                         />
                       </div>
-                      <div className="grid gap-1">
-                        <span className="text-xs text-muted-foreground">Дата</span>
-                        <Input
-                          type="date"
-                          value={row.operation_date}
-                          onChange={(event) =>
-                            setCashRows((rows) =>
-                              rows.map((r, i) =>
-                                i === index ? { ...r, operation_date: event.target.value } : r,
-                              ),
-                            )
-                          }
-                        />
-                      </div>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() =>
+                          setCashRows((rows) => rows.filter((_, i) => i !== index))
+                        }
+                        aria-label="Удалить источник"
+                      >
+                        <Trash2 size={15} aria-hidden="true" />
+                      </Button>
                     </div>
                   ))}
                 </div>
