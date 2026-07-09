@@ -31,7 +31,7 @@ from types import ModuleType
 from typing import Any
 
 import anyio
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -74,10 +74,11 @@ SUPPLIERS_ENDPOINT = "/suppliers"
 # partners receive outgoing invoices, so a receivable ⇒ relationship=barter.
 # Only confirmed (posted) receipts are real obligations; NEW is unposted, DELETED is void.
 INGESTED_IIKO_STATUSES = frozenset({"PROCESSED"})
-# Ретраи Cloud ``get`` на HTTP 429 (rate-limit): паузы между попытками, сек.
-_CLOUD_GET_RETRY_DELAYS = (1.0, 3.0, 7.0)
-# Лёгкий троттлинг между ``get``-вызовами, чтобы не упираться в лимит.
-_CLOUD_GET_THROTTLE_SECONDS = 0.15
+# Ретраи Cloud ``get`` на HTTP 429 (rate-limit): паузы между попытками, сек. Живой прогон на
+# окне 30 дней показал, что лимит iiko жёсткий — бэкофф длинный (суммарно ~77 сек).
+_CLOUD_GET_RETRY_DELAYS = (2.0, 5.0, 10.0, 20.0, 40.0)
+# Троттлинг между ``get``-вызовами; для ночного джоба задержка окна некритична.
+_CLOUD_GET_THROTTLE_SECONDS = 0.4
 
 
 @dataclass
@@ -259,10 +260,11 @@ def _parse_suppliers(suppliers_xml: bytes | str) -> dict[str, IikoSupplier]:
     return suppliers
 
 
-async def _product_names_from_cache(
+async def _products_from_cache(
     session: AsyncSession, documents: list[dict]
-) -> dict[str, str]:
-    """GUID → имя номенклатуры из локального кэша :class:`IikoProduct` (для бартерных позиций).
+) -> dict[str, IikoProduct]:
+    """GUID → номенклатура из локального кэша :class:`IikoProduct` (имена бартерных позиций +
+    привязка материализованных строк к товару).
 
     Отдельный products-фид с iiko больше не тянем: кэш синкается периодическим джобом, а товар из
     накладной по определению есть в номенклатуре."""
@@ -275,11 +277,69 @@ async def _product_names_from_cache(
     if not guids:
         return {}
     rows = (
-        await session.execute(
-            select(IikoProduct.iiko_id, IikoProduct.name).where(IikoProduct.iiko_id.in_(guids))
-        )
+        await session.scalars(select(IikoProduct).where(IikoProduct.iiko_id.in_(guids)))
     ).all()
-    return {iiko_id: name for iiko_id, name in rows}
+    return {product.iiko_id: product for product in rows}
+
+
+async def _materialize_iiko_lines(
+    session: AsyncSession,
+    invoice: SupplierInvoice,
+    doc: dict,
+    products: dict[str, IikoProduct],
+    *,
+    replace: bool,
+) -> None:
+    """Материализовать позиции iiko-накладной в :class:`InvoiceLineItem` из Cloud-``items``.
+
+    Раньше строки iiko-накладных не сохранялись («накладная из старой синхронизации» в UI), из-за
+    чего они были нередактируемыми. Cloud ``get`` отдаёт полные позиции — сохраняем их с привязкой
+    к номенклатуре (GUID → кэш ``IikoProduct``), и накладная правится как своя (правка уходит в
+    iiko через propagate — ``external_id`` есть). ``replace=False`` — только досоздать, если строк
+    ещё нет (оплаченные не пересобираем: их состав заморожен вместе с суммой)."""
+    items = doc.get("items") or []
+    if not items:
+        return
+    existing = await session.scalar(
+        select(func.count())
+        .select_from(InvoiceLineItem)
+        .where(InvoiceLineItem.invoice_id == invoice.id)
+    )
+    if existing and not replace:
+        return
+    if existing:
+        await session.execute(
+            delete(InvoiceLineItem).where(InvoiceLineItem.invoice_id == invoice.id)
+        )
+    for index, item in enumerate(sorted(items, key=lambda it: it.get("num") or 0)):
+        guid = item.get("product") or item.get("productId")
+        guid = str(guid) if guid else None
+        product = products.get(guid) if guid else None
+        vat_sum = None
+        if item.get("sumWithoutVat") is not None:
+            diff = _decimal(item.get("sum")) - _decimal(item.get("sumWithoutVat"))
+            vat_sum = diff if diff > 0 else None
+        session.add(
+            InvoiceLineItem(
+                invoice_id=invoice.id,
+                iiko_product_id=product.id if product else None,
+                product_guid=guid,
+                name=(product.name if product else None) or item.get("productArticle") or "Позиция",
+                article=item.get("productArticle") or (product.code if product else None),
+                unit=product.unit if product else None,
+                quantity=_decimal(item.get("actualAmount") or item.get("amount")),
+                price=_decimal(item.get("price")),
+                sum=_decimal(item.get("sum")),
+                vat_percent=(
+                    _decimal(item.get("vatPercent"))
+                    if item.get("vatPercent") is not None
+                    else None
+                ),
+                vat_sum=vat_sum,
+                is_staff=False,
+                sort_order=index,
+            )
+        )
 
 
 def _parse_line_items(doc: dict, name_by_id: dict[str, str]) -> list[dict[str, str | None]]:
@@ -437,9 +497,11 @@ async def _ingest_documents(
     *,
     direction: str,
     result: CounterpartyInvoiceSyncResult,
-    name_by_id: dict[str, str] | None = None,
+    products: dict[str, IikoProduct] | None = None,
     tombstoned: frozenset[str] = frozenset(),
 ) -> None:
+    products = products or {}
+    name_by_id = {guid: product.name for guid, product in products.items()}
     for doc in documents:
         status = str(doc.get("status") or "").upper()
         if status not in INGESTED_IIKO_STATUSES:
@@ -568,23 +630,25 @@ async def _ingest_documents(
                 due_date = compute_invoice_due_date(
                     invoice_date, delay_days=delay, due_day_of_month=due_day
                 )
-            session.add(
-                SupplierInvoice(
-                    counterparty_id=counterparty_id,
-                    source=IIKO_SOURCE,
-                    direction=direction,
-                    external_id=external_id,
-                    number=number,
-                    invoice_date=invoice_date,
-                    due_date=due_date,
-                    amount=amount,
-                    vat_total=vat_total,
-                    vat_breakdown=vat_breakdown,
-                    line_items=line_items,
-                    payment_status="unpaid",
-                    raw_payload=raw_payload,
-                )
+            created = SupplierInvoice(
+                counterparty_id=counterparty_id,
+                source=IIKO_SOURCE,
+                direction=direction,
+                external_id=external_id,
+                number=number,
+                invoice_date=invoice_date,
+                due_date=due_date,
+                amount=amount,
+                vat_total=vat_total,
+                vat_breakdown=vat_breakdown,
+                line_items=line_items,
+                payment_status="unpaid",
+                raw_payload=raw_payload,
             )
+            session.add(created)
+            await session.flush()  # id — для материализации строк
+            # Позиции — в нормальные строки (редактируемость iiko-накладных).
+            await _materialize_iiko_lines(session, created, doc, products, replace=True)
             if direction == "payable":
                 result.invoices_created += 1
             else:
@@ -605,6 +669,12 @@ async def _ingest_documents(
             existing.raw_payload = raw_payload
             if is_barter:
                 existing.line_items = line_items
+            # Пока не оплачена — строки отражают iiko-версию (replace); у оплаченной состав
+            # заморожен: только досоздаём, если строк ещё нет (старая синхронизация).
+            await _materialize_iiko_lines(
+                session, existing, doc, products,
+                replace=existing.payment_status == "unpaid",
+            )
             if direction == "payable":
                 result.invoices_updated += 1
             else:
@@ -622,8 +692,9 @@ async def ingest_iiko_payables(
     result = CounterpartyInvoiceSyncResult()
     suppliers = _parse_suppliers(suppliers_xml)
     result.suppliers_seen = len(suppliers)
-    # Имена номенклатуры (бартерные line_items) — из локального кэша, не из сети.
-    name_by_id = await _product_names_from_cache(
+    # Номенклатура (имена бартерных line_items + привязка материализованных строк) — из
+    # локального кэша, не из сети.
+    products = await _products_from_cache(
         session, [*(outgoing_docs or []), *incoming_docs]
     )
 
@@ -642,7 +713,7 @@ async def ingest_iiko_payables(
             suppliers,
             direction="receivable",
             result=result,
-            name_by_id=name_by_id,
+            products=products,
             tombstoned=tombstoned,
         )
 
@@ -653,7 +724,7 @@ async def ingest_iiko_payables(
         suppliers,
         direction="payable",
         result=result,
-        name_by_id=name_by_id,
+        products=products,
         tombstoned=tombstoned,
     )
 

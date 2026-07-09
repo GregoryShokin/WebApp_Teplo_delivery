@@ -25,6 +25,8 @@ from app.models import (
     Counterparty,
     CounterpartyAlias,
     CounterpartyPayableProfile,
+    IikoProduct,
+    InvoiceLineItem,
     SupplierInvoice,
 )
 from app.services.counterparty_invoice_sync import ingest_iiko_payables
@@ -276,6 +278,68 @@ def _outgoing_doc(**overrides) -> dict:
     }
     doc.update(overrides)
     return doc
+
+
+async def test_ingest_materializes_lines_with_nomenclature(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Позиции iiko-накладной сохраняются в InvoiceLineItem с привязкой к кэшу номенклатуры —
+    поэтому накладная из iiko редактируема (раньше — «накладная из старой синхронизации»)."""
+    async with async_session_factory() as session:
+        product = IikoProduct(iiko_id="PROD-GARLIC", name="Чеснок сушёный", type="GOODS",
+                              unit="кг", main_unit_guid="U-KG")
+        session.add(product)
+        await session.commit()
+
+        doc = _doc(items=[
+            {"sum": "2125.00", "vat_percent": None, "product": "PROD-GARLIC",
+             "article": "01191", "amount": 2.5},
+            {"sum": "250.00", "vat_percent": None, "product": "PROD-UNKNOWN", "amount": 0.5},
+        ])
+        await ingest_iiko_payables(
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([doc])
+        )
+        await session.commit()
+
+        lines = (
+            await session.scalars(select(InvoiceLineItem).order_by(InvoiceLineItem.sort_order))
+        ).all()
+        assert len(lines) == 2
+        first, second = lines
+        assert first.product_guid == "PROD-GARLIC"
+        assert first.iiko_product_id == product.id  # привязан к номенклатуре из кэша
+        assert first.name == "Чеснок сушёный"
+        assert first.quantity == Decimal("2.5")
+        assert first.sum == Decimal("2125.00")
+        # Товар вне кэша: строка сохраняется, но без привязки (редактор попросит выбрать товар).
+        assert second.product_guid == "PROD-UNKNOWN"
+        assert second.iiko_product_id is None
+
+
+async def test_ingest_keeps_lines_frozen_once_paid(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """У оплаченной накладной состав строк заморожен (как и сумма): повторный ingest с
+    изменёнными позициями их не пересобирает."""
+    async with async_session_factory() as session:
+        doc = _doc(items=[{"sum": "232.00", "vat_percent": None, "amount": 1}])
+        await ingest_iiko_payables(
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([doc])
+        )
+        await session.commit()
+        invoice = await session.scalar(select(SupplierInvoice))
+        invoice.payment_status = "paid"
+        await session.commit()
+
+        changed = _doc(items=[{"sum": "999.00", "vat_percent": None, "amount": 9}])
+        await ingest_iiko_payables(
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([changed])
+        )
+        await session.commit()
+
+        lines = (await session.scalars(select(InvoiceLineItem))).all()
+        assert len(lines) == 1
+        assert lines[0].sum == Decimal("232.00")  # не перетёрто iiko-версией
 
 
 async def test_ingest_outgoing_creates_receivable_and_marks_barter(
