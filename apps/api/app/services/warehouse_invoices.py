@@ -507,6 +507,8 @@ def _invoice_summary(
         "allocated": float(allocated_money),
         "remaining": float(amount - allocated_money),
         "payment_status": invoice.payment_status,
+        # Черновик в банке: оплата уже уехала — повторную оплату в UI не предлагать.
+        "draft_id": str(invoice.draft_id) if invoice.draft_id else None,
         "iiko_push_status": invoice.iiko_push_status,
         # iiko documentId — фронту для предупреждения «удалится и в iiko».
         "external_id": invoice.external_id,

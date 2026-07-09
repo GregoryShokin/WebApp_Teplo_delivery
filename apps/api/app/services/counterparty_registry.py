@@ -123,6 +123,10 @@ class InvoiceItem:
     # non-barter. Lets the badge say «мы заняли»/«нам вернули» rather than guess by direction.
     barter_role: str | None = None
     iiko_push_status: str = "not_pushed"
+    # Текст последней ошибки пуша в iiko — для детализации красного статуса в списке.
+    iiko_push_error: str | None = None
+    # iiko documentId: заполнен → накладная существует в iiko (для source=iiko — всегда).
+    external_id: str | None = None
 
 
 @dataclass
@@ -307,6 +311,8 @@ def _build_invoice_item(
         draft_id=invoice.draft_id,
         barter_settlement_id=invoice.barter_settlement_id,
         iiko_push_status=invoice.iiko_push_status,
+        iiko_push_error=invoice.iiko_push_error,
+        external_id=invoice.external_id,
     )
 
 

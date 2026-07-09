@@ -29,6 +29,10 @@ export type CounterpartyInvoice = {
   // Роль сведённой бартер-накладной по хронологии: "loan" | "return" | null (пока открыта).
   barter_role: string | null;
   iiko_push_status: string;
+  // Текст последней ошибки пуша в iiko (для детализации красного статуса в списке).
+  iiko_push_error: string | null;
+  // iiko documentId: заполнен → накладная существует в iiko (у source=iiko — всегда).
+  external_id: string | null;
 };
 
 export type RegistryItem = {

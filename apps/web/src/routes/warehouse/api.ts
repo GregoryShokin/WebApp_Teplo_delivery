@@ -26,6 +26,8 @@ export type WarehouseInvoiceSummary = {
   allocated: number;
   remaining: number;
   payment_status: string;
+  // Черновик в банке (оплата уехала) — повторную оплату не предлагаем.
+  draft_id: string | null;
   iiko_push_status: string;
   // iiko documentId (есть → накладная существует в iiko; удаление будет двусторонним).
   external_id: string | null;

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Pencil, Send, Trash2 } from "lucide-react";
+import { Banknote, LoaderCircle, Pencil, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -21,6 +21,7 @@ import { usePermissions } from "@/lib/permissions";
 import { formatRub } from "@/routes/counterparties/shared";
 
 import { InvoiceEditDialog } from "./InvoiceEditDialog";
+import { PayWarehouseInvoiceDialog } from "./PayWarehouseInvoiceDialog";
 import { deleteWarehouseInvoice, getWarehouseInvoice, pushInvoiceToIiko } from "./api";
 
 /** Статус отправки накладной в iiko: подпись, цвет, нужна ли кнопка «Отправить». */
@@ -55,7 +56,9 @@ export function InvoiceDetailDialog({
   const canEdit =
     permissions.canPerformAction("invoices.normal.edit") ||
     permissions.canPerformAction("kassa.invoices.create");
+  const canPay = permissions.canPerformAction("invoices.normal.pay");
   const [editing, setEditing] = useState(false);
+  const [paying, setPaying] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const open = Boolean(invoiceId);
 
@@ -108,6 +111,10 @@ export function InvoiceDetailDialog({
         invoiceId={editing ? invoiceId : null}
         onOpenChange={(o) => !o && setEditing(false)}
       />
+      <PayWarehouseInvoiceDialog
+        invoiceId={paying ? invoiceId : null}
+        onOpenChange={(o) => !o && setPaying(false)}
+      />
       <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -156,20 +163,29 @@ export function InvoiceDetailDialog({
               ) : null}
             </div>
 
-            {canEdit && detail.payment_status === "unpaid" && !detail.barter_role ? (
+            {detail.payment_status === "unpaid" && !detail.barter_role ? (
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-                  <Pencil size={14} aria-hidden="true" /> Редактировать позиции
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-red-200 text-red-700 hover:bg-red-50"
-                  disabled={deleteMutation.isPending}
-                  onClick={() => setConfirmingDelete(true)}
-                >
-                  <Trash2 size={14} aria-hidden="true" /> Удалить
-                </Button>
+                {canEdit ? (
+                  <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+                    <Pencil size={14} aria-hidden="true" /> Редактировать позиции
+                  </Button>
+                ) : null}
+                {canPay && !detail.draft_id ? (
+                  <Button size="sm" variant="outline" onClick={() => setPaying(true)}>
+                    <Banknote size={14} aria-hidden="true" /> Оплатить
+                  </Button>
+                ) : null}
+                {canEdit ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-red-200 text-red-700 hover:bg-red-50"
+                    disabled={deleteMutation.isPending}
+                    onClick={() => setConfirmingDelete(true)}
+                  >
+                    <Trash2 size={14} aria-hidden="true" /> Удалить
+                  </Button>
+                ) : null}
               </div>
             ) : null}
 

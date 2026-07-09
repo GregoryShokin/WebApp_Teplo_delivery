@@ -1,8 +1,26 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Banknote, Check, LoaderCircle, Plus, Send, Store } from "lucide-react";
-import { toast } from "sonner";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Banknote,
+  Check,
+  CheckCircle2,
+  Circle,
+  CircleMinus,
+  CircleX,
+  MoreVertical,
+  Plus,
+  Store,
+} from "lucide-react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -17,10 +35,8 @@ import {
 import { DateRangePopover } from "@/components/ui/date-range-popover";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
-import { apiErrorMessage } from "@/lib/api";
 
 import {
-  createDraft,
   getInvoices,
   getLedgerCategories,
   getRegistry,
@@ -35,18 +51,11 @@ import {
   isOverdue,
 } from "../shared";
 import { PayInvoiceDialog } from "../PayInvoiceDialog";
+import { BulkPayDialog } from "../BulkPayDialog";
 import { CreateInvoiceDialog } from "../../warehouse/CreateInvoiceDialog";
 import { InvoiceDetailDialog } from "../../warehouse/InvoiceDetailDialog";
-import { PayWarehouseInvoiceDialog } from "../../warehouse/PayWarehouseInvoiceDialog";
 
 const ALL = "all";
-
-const PUSH_BADGE: Record<string, { label: string; cls: string }> = {
-  pushed: { label: "в iiko", cls: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-  failed: { label: "ошибка iiko", cls: "border-red-200 bg-red-50 text-red-700" },
-  skipped: { label: "без iiko", cls: "border-amber-200 bg-amber-50 text-amber-700" },
-  not_pushed: { label: "не в iiko", cls: "border-slate-200 bg-slate-50 text-slate-600" },
-};
 
 const REL_SEGMENTS: Array<{ value: string; label: string }> = [
   { value: "all", label: "Все" },
@@ -91,6 +100,9 @@ export function InboxTab({
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [payTarget, setPayTarget] = useState<CounterpartyInvoice | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [bulkPayOpen, setBulkPayOpen] = useState(false);
+  // Накладная, чью ошибку пуша в iiko показываем (клик по красному статусу в колонке).
+  const [pushErrorTarget, setPushErrorTarget] = useState<CounterpartyInvoice | null>(null);
   // Быстрые фильтры: период по дате накладной, мультивыбор поставщиков, «только не в iiko».
   const [dateFrom, setDateFrom] = useState<string | null>(null);
   const [dateTo, setDateTo] = useState<string | null>(null);
@@ -147,28 +159,11 @@ export function InboxTab({
   }
 
   const selectedInvoices = invoices.filter((item) => selected.has(item.id));
-  const distinctCounterparties = new Set(selectedInvoices.map((item) => item.counterparty_id));
-  const selectableForBank = selectedInvoices.filter((item) => !item.draft_id);
-  const canSendToBank =
-    canPay &&
-    selectableForBank.length > 0 &&
-    selectableForBank.length === selectedInvoices.length &&
-    distinctCounterparties.size === 1;
-
-  const draftMutation = useMutation({
-    mutationFn: () => createDraft(selectedInvoices.map((item) => item.id)),
-    onSuccess: async (draft) => {
-      await queryClient.invalidateQueries({ queryKey: ["cp"] });
-      setSelected(new Set());
-      // Неофициальный поставщик: получатель — карта ИП (Сейф), не реквизиты поставщика.
-      toast.success(
-        draft.pays_via_safe
-          ? `Черновик выплаты на карту ИП создан (неофициальный поставщик) — ${formatRub(draft.amount)}`
-          : `Черновик на ${formatRub(draft.amount)} отправлен в банк`,
-      );
-    },
-    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отправить в банк")),
-  });
+  // К оплате пригодны выбранные без банковского черновика и не оплаченные; способ
+  // (банк-черновик Т-Банк / наличные Сейф·ТК) выбирается в модалке «Оплатить».
+  const selectedPayable = selectedInvoices.filter(
+    (item) => !item.draft_id && item.payment_status !== "paid",
+  );
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -268,35 +263,81 @@ export function InboxTab({
         ),
     },
     {
+      key: "iiko",
+      header: "Отправлено в iiko",
+      className: "text-center",
+      headerClassName: "text-center",
+      cell: (invoice) => {
+        // Накладная «в iiko»: пришла оттуда (source=iiko) или выгружена (pushed/external_id).
+        const inIiko =
+          invoice.source === "iiko" ||
+          invoice.iiko_push_status === "pushed" ||
+          Boolean(invoice.external_id);
+        if (inIiko) {
+          return (
+            <CheckCircle2
+              size={18}
+              className="inline-block text-emerald-600"
+              aria-label="Отправлено в iiko"
+            />
+          );
+        }
+        if (invoice.iiko_push_status === "failed") {
+          // Красный крестик: пуш упал — клик показывает детализацию ошибки.
+          return (
+            <button
+              type="button"
+              className="inline-flex"
+              onClick={() => setPushErrorTarget(invoice)}
+              title="Ошибка отправки в iiko — нажмите для деталей"
+            >
+              <CircleX size={18} className="text-red-600" aria-label="Ошибка отправки в iiko" />
+            </button>
+          );
+        }
+        if (invoice.iiko_push_status === "skipped") {
+          return (
+            <CircleMinus
+              size={18}
+              className="inline-block text-slate-400"
+              aria-label="Не отправляется в iiko (нет товарных строк)"
+            />
+          );
+        }
+        return (
+          <Circle
+            size={18}
+            className="inline-block text-slate-300"
+            aria-label="Не отправлена в iiko"
+          />
+        );
+      },
+    },
+    {
       key: "actions",
       header: "",
       className: "text-right",
-      cell: (invoice) => {
-        // Статус отправки в iiko показываем только для созданных у нас накладных
-        // (вручную / Касса). Накладные source=iiko пришли из iiko — статус неприменим.
-        // Сама отправка/переотправка живёт в диалоге «Детали».
-        const isOurs = invoice.source === "manual" || invoice.source === "kassa_invoice";
-        const pushBadge =
-          isOurs && canOperate ? PUSH_BADGE[invoice.iiko_push_status] : undefined;
-        return (
-          <div className="flex items-center justify-end gap-2">
-            {pushBadge ? (
-              <Badge variant="outline" className={pushBadge.cls}>
-                {pushBadge.label}
-              </Badge>
-            ) : null}
-            <Button size="sm" variant="ghost" onClick={() => setDetailId(invoice.id)}>
-              Детали
+      cell: (invoice) => (
+        <div className="flex items-center justify-end gap-1">
+          {/* Оплата отдельной накладной живёт в «Деталях»; строчная кнопка осталась только
+              в инбоксах без сплит-оплаты (бартер). */}
+          {!splitPay && canPay && !invoice.draft_id && invoice.payment_status !== "paid" ? (
+            <Button size="sm" variant="outline" onClick={() => setPayTarget(invoice)}>
+              <Banknote size={15} aria-hidden="true" />
+              Оплатить
             </Button>
-            {canPay && !invoice.draft_id && invoice.payment_status !== "paid" ? (
-              <Button size="sm" variant="outline" onClick={() => setPayTarget(invoice)}>
-                <Banknote size={15} aria-hidden="true" />
-                Оплатить
-              </Button>
-            ) : null}
-          </div>
-        );
-      },
+          ) : null}
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => setDetailId(invoice.id)}
+            aria-label="Детали накладной"
+            title="Детали"
+          >
+            <MoreVertical size={16} aria-hidden="true" />
+          </Button>
+        </div>
+      ),
     },
   ];
 
@@ -405,34 +446,24 @@ export function InboxTab({
               Добавить вручную
             </Button>
           ) : null}
-          {canPay ? (
+          {canPay && !isBarter ? (
             <Button
-              disabled={!canSendToBank || draftMutation.isPending}
-              onClick={() => draftMutation.mutate()}
+              disabled={selectedPayable.length === 0}
+              onClick={() => setBulkPayOpen(true)}
               title={
                 selectedInvoices.length === 0
                   ? "Выберите накладные"
-                  : distinctCounterparties.size > 1
-                    ? "Можно отправить только накладные одного контрагента"
+                  : selectedPayable.length === 0
+                    ? "Выбранные уже оплачены или отправлены в банк"
                     : undefined
               }
             >
-              {draftMutation.isPending ? (
-                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-              ) : (
-                <Send size={16} aria-hidden="true" />
-              )}
-              Отправить в банк{selectedInvoices.length ? ` (${selectedInvoices.length})` : ""}
+              <Banknote size={16} aria-hidden="true" />
+              Оплатить{selectedPayable.length ? ` (${selectedPayable.length})` : ""}
             </Button>
           ) : null}
         </div>
       </div>
-
-      {selected.size > 0 && distinctCounterparties.size > 1 ? (
-        <p className="text-sm text-amber-600">
-          В один черновик можно собрать только накладные одного контрагента.
-        </p>
-      ) : null}
 
       <DataTable
         columns={columns}
@@ -458,17 +489,37 @@ export function InboxTab({
         invoiceId={detailId}
         onOpenChange={(open) => !open && setDetailId(null)}
       />
-      {splitPay ? (
-        <PayWarehouseInvoiceDialog
-          invoiceId={payTarget?.id ?? null}
-          onOpenChange={(open) => !open && setPayTarget(null)}
-        />
-      ) : (
+      {!splitPay ? (
         <PayInvoiceDialog
           invoice={payTarget}
           onOpenChange={(open) => !open && setPayTarget(null)}
         />
-      )}
+      ) : null}
+      <BulkPayDialog
+        invoices={selectedInvoices}
+        open={bulkPayOpen}
+        onOpenChange={setBulkPayOpen}
+        onDone={() => setSelected(new Set())}
+      />
+      <AlertDialog
+        open={Boolean(pushErrorTarget)}
+        onOpenChange={(open) => !open && setPushErrorTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Ошибка отправки в iiko — №{pushErrorTarget?.number ?? "—"}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="whitespace-pre-wrap">
+              {pushErrorTarget?.iiko_push_error ??
+                "iiko не принял документ. Откройте детали накладной и переотправьте."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setPushErrorTarget(null)}>Понятно</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
