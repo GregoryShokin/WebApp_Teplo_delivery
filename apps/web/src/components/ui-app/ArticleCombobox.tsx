@@ -92,7 +92,7 @@ export function ArticleCombobox({
               value={search}
             />
           </div>
-          <div className="max-h-64 overflow-y-auto p-1">
+          <div className="max-h-80 overflow-y-auto p-1">
             {filtered.length === 0 ? (
               <div className="px-2 py-2 text-sm text-muted-foreground">Статьи не найдены</div>
             ) : (

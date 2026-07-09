@@ -389,7 +389,7 @@ export function OperationClassifyDialog({
   return (
     <>
     <Dialog open={Boolean(row)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="overflow-visible sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-3">
             <span>{isOperation ? "Разбор операции" : "Разбор проводки"}</span>
