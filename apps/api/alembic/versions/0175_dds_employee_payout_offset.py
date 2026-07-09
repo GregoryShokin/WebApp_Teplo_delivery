@@ -13,8 +13,8 @@
   ``salary_advance_recovery``): удаляются на ре-расчёте, двигают баланс на финализации.
 - индекс периодного запроса ``employee_payout(kind, status, payout_date)``.
 
-Revision ID: 0173_dds_employee_payout_offset
-Revises: 0172_expense_draft_bank_provider
+Revision ID: 0175_dds_employee_payout_offset
+Revises: 0174_deposit_target_floor
 Create Date: 2026-07-09
 """
 
@@ -24,8 +24,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0173_dds_employee_payout_offset"
-down_revision = "0172_expense_draft_bank_provider"
+revision = "0175_dds_employee_payout_offset"
+down_revision = "0174_deposit_target_floor"
 branch_labels = None
 depends_on = None
 

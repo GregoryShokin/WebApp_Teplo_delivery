@@ -4,8 +4,8 @@
 уже ушли банком, второй проводки нет). Колонка ``source_operation_id`` связывает аванс с
 операцией — для идемпотентности повторного разбора (снять прежний непогашенный аванс операции).
 
-Revision ID: 0175_advance_source_operation
-Revises: 0174_safe_allocation_employee
+Revision ID: 0177_advance_source_operation
+Revises: 0176_safe_allocation_employee
 Create Date: 2026-07-09
 """
 
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0175_advance_source_operation"
-down_revision = "0174_safe_allocation_employee"
+revision = "0177_advance_source_operation"
+down_revision = "0176_safe_allocation_employee"
 branch_labels = None
 depends_on = None
 

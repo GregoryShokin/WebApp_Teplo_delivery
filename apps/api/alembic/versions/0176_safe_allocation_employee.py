@@ -5,8 +5,8 @@
 учитывает «уже выплачено». Колонка ``employee_id`` — этот получатель (NULL у не-зарплатных
 резервов: неофициальные поставщики, ручные целёвки).
 
-Revision ID: 0174_safe_allocation_employee
-Revises: 0173_dds_employee_payout_offset
+Revision ID: 0176_safe_allocation_employee
+Revises: 0175_dds_employee_payout_offset
 Create Date: 2026-07-09
 """
 
@@ -16,8 +16,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0174_safe_allocation_employee"
-down_revision = "0173_dds_employee_payout_offset"
+revision = "0176_safe_allocation_employee"
+down_revision = "0175_dds_employee_payout_offset"
 branch_labels = None
 depends_on = None
 
