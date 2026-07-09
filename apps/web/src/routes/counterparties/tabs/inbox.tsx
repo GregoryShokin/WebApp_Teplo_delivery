@@ -7,7 +7,6 @@ import {
   Circle,
   CircleMinus,
   CircleX,
-  MoreVertical,
   Plus,
   Store,
 } from "lucide-react";
@@ -183,11 +182,14 @@ export function InboxTab({
       header: "",
       className: "w-10",
       cell: (invoice) => (
-        <Checkbox
-          checked={selected.has(invoice.id)}
-          onChange={() => toggle(invoice.id)}
-          aria-label="Выбрать"
-        />
+        // Стоп всплытия: клик по чекбоксу выбирает накладную, а не открывает детали.
+        <div onClick={(event) => event.stopPropagation()}>
+          <Checkbox
+            checked={selected.has(invoice.id)}
+            onChange={() => toggle(invoice.id)}
+            aria-label="Выбрать"
+          />
+        </div>
       ),
     },
     {
@@ -197,7 +199,10 @@ export function InboxTab({
       cell: (invoice) => (
         <button
           className="text-left font-medium hover:underline"
-          onClick={() => onOpenCounterparty(invoice.counterparty_id)}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenCounterparty(invoice.counterparty_id);
+          }}
           type="button"
         >
           {invoice.counterparty_name}
@@ -288,7 +293,10 @@ export function InboxTab({
             <button
               type="button"
               className="inline-flex"
-              onClick={() => setPushErrorTarget(invoice)}
+              onClick={(event) => {
+                event.stopPropagation();
+                setPushErrorTarget(invoice);
+              }}
               title="Ошибка отправки в iiko — нажмите для деталей"
             >
               <CircleX size={18} className="text-red-600" aria-label="Ошибка отправки в iiko" />
@@ -313,33 +321,29 @@ export function InboxTab({
         );
       },
     },
-    {
+  ];
+  if (!splitPay) {
+    // Бартер-инбокс: оплата не сплитовая, живёт строчной кнопкой (клик не всплывает на строку).
+    columns.push({
       key: "actions",
       header: "",
       className: "text-right",
-      cell: (invoice) => (
-        <div className="flex items-center justify-end gap-1">
-          {/* Оплата отдельной накладной живёт в «Деталях»; строчная кнопка осталась только
-              в инбоксах без сплит-оплаты (бартер). */}
-          {!splitPay && canPay && !invoice.draft_id && invoice.payment_status !== "paid" ? (
-            <Button size="sm" variant="outline" onClick={() => setPayTarget(invoice)}>
-              <Banknote size={15} aria-hidden="true" />
-              Оплатить
-            </Button>
-          ) : null}
+      cell: (invoice) =>
+        canPay && !invoice.draft_id && invoice.payment_status !== "paid" ? (
           <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => setDetailId(invoice.id)}
-            aria-label="Детали накладной"
-            title="Детали"
+            size="sm"
+            variant="outline"
+            onClick={(event) => {
+              event.stopPropagation();
+              setPayTarget(invoice);
+            }}
           >
-            <MoreVertical size={16} aria-hidden="true" />
+            <Banknote size={15} aria-hidden="true" />
+            Оплатить
           </Button>
-        </div>
-      ),
-    },
-  ];
+        ) : null,
+    });
+  }
 
   return (
     <div className="space-y-4">
@@ -470,6 +474,7 @@ export function InboxTab({
         rows={invoices}
         isLoading={invoicesQuery.isLoading}
         getRowKey={(invoice) => invoice.id}
+        onRowClick={(invoice) => setDetailId(invoice.id)}
         emptyMessage={
           statusFilter === "paid"
             ? "Нет оплаченных накладных"
