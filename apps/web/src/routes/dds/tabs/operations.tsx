@@ -14,11 +14,12 @@ import {
 } from "@/components/ui/select";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { usePermissions } from "@/lib/permissions";
-import { OperationReviewDialog } from "@/routes/dds/OperationReviewDialog";
+import { OperationClassifyDialog } from "@/routes/dds/OperationClassifyDialog";
 import {
   getDdsBankOperations,
   type BankOperationRead,
   type BankOperationsQuery,
+  type JournalRow,
 } from "@/lib/api";
 import {
   BankSyncButton,
@@ -210,13 +211,34 @@ export function OperationsTab() {
         onOffsetChange={setOffset}
       />
 
-      <OperationReviewDialog
-        operation={selectedOperation}
+      <OperationClassifyDialog
+        row={selectedOperation ? operationToJournalRow(selectedOperation) : null}
         canClassify={canClassify}
         onClose={() => setSelectedOperation(null)}
       />
     </div>
   );
+}
+
+// Единая модалка разбора принимает JournalRow — операцию выписки подаём в её форме.
+function operationToJournalRow(operation: BankOperationRead): JournalRow {
+  return {
+    kind: "operation",
+    id: operation.id,
+    bank_operation_id: operation.id,
+    status: operation.classification_status,
+    operation_date: operation.operation_date,
+    occurred_at: operation.posted_at ?? operation.operation_date,
+    direction: operation.direction,
+    amount: operation.amount,
+    article_id: null,
+    counterparty_id: null,
+    wallet_id: null,
+    provider: operation.provider,
+    payment_purpose: operation.payment_purpose,
+    counterparty_name_raw: operation.counterparty_name_raw,
+    counterparty_inn_raw: operation.counterparty_inn_raw,
+  };
 }
 
 function readOperationFilters() {

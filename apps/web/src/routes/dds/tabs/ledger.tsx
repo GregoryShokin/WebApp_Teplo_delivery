@@ -20,12 +20,10 @@ import {
   getDdsCounterparties,
   getDdsJournal,
   getDdsWallets,
-  type BankOperationRead,
   type JournalQuery,
   type JournalRow,
 } from "@/lib/api";
-import { OperationReviewDialog } from "@/routes/dds/OperationReviewDialog";
-import { CashflowClassifyDialog } from "@/routes/dds/CashflowClassifyDialog";
+import { OperationClassifyDialog } from "@/routes/dds/OperationClassifyDialog";
 import {
   DdsStatusBadge,
   DirectionBadge,
@@ -51,7 +49,6 @@ export function LedgerTab() {
   const [counterpartyId, setCounterpartyId] = useState("all");
   const [offset, setOffset] = useState(0);
   const [selectedRow, setSelectedRow] = useState<JournalRow | null>(null);
-  const [selectedCashflowRow, setSelectedCashflowRow] = useState<JournalRow | null>(null);
 
   const permissions = usePermissions();
   const canClassify = permissions.canPerformAction("finance.cashflow.classify");
@@ -196,34 +193,6 @@ export function LedgerTab() {
     },
   ];
 
-  // The review modal works on a bank operation — build a partial one from the row.
-  const operationForReview: BankOperationRead | null = selectedRow?.bank_operation_id
-    ? {
-        id: selectedRow.bank_operation_id,
-        provider: selectedRow.provider ?? "tbank",
-        provider_operation_id: "",
-        account_id: null,
-        operation_date: selectedRow.operation_date,
-        posted_at: null,
-        direction: selectedRow.direction,
-        amount: selectedRow.amount,
-        currency: "RUB",
-        counterparty_name_raw: selectedRow.counterparty_name_raw,
-        counterparty_inn_raw: selectedRow.counterparty_inn_raw,
-        counterparty_account_raw: null,
-        payment_purpose: selectedRow.payment_purpose,
-        document_number: null,
-        classification_status:
-          selectedRow.status === "classified"
-            ? "classified"
-            : selectedRow.status === "internal_transfer"
-              ? "internal_transfer"
-              : "needs_review",
-        cashflow_transaction_id: null,
-        transfer_group_id: null,
-        raw_payload: null,
-      }
-    : null;
 
   return (
     <div className="space-y-5">
@@ -369,14 +338,7 @@ export function LedgerTab() {
         rows={journalQuery.data?.items ?? []}
         isLoading={journalQuery.isLoading}
         getRowKey={(row) => `${row.kind}:${row.id}`}
-        onRowClick={(row) => {
-          if (row.bank_operation_id) {
-            setSelectedRow(row);
-          } else if (row.kind === "cashflow") {
-            // Ручная проводка без bank-операции — размечаем статью/контрагента напрямую.
-            setSelectedCashflowRow(row);
-          }
-        }}
+        onRowClick={(row) => setSelectedRow(row)}
         emptyMessage="Записей не найдено"
       />
 
@@ -387,16 +349,10 @@ export function LedgerTab() {
         onOffsetChange={setOffset}
       />
 
-      <OperationReviewDialog
-        operation={operationForReview}
+      <OperationClassifyDialog
+        row={selectedRow}
         canClassify={canClassify}
         onClose={() => setSelectedRow(null)}
-      />
-
-      <CashflowClassifyDialog
-        row={selectedCashflowRow}
-        canClassify={canClassify}
-        onClose={() => setSelectedCashflowRow(null)}
       />
     </div>
   );

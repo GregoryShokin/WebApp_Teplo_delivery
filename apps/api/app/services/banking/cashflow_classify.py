@@ -22,11 +22,12 @@ from __future__ import annotations
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import CashflowTransaction, DdsArticle, TransferGroup, Wallet
+from app.models import CashflowTransaction, DdsArticle, EmployeePayout, TransferGroup, Wallet
 from app.services.banking.classifier import (
+    EMPLOYEE_PAYOUT_ARTICLE_CODES,
     TRANSFER_IN_ARTICLE_CODE,
     TRANSFER_OUT_ARTICLE_CODE,
 )
@@ -122,24 +123,40 @@ async def apply_cashflow_split(
     session: AsyncSession,
     txn: CashflowTransaction,
     *,
-    splits: list[tuple[UUID, Decimal, str | None, UUID | None]],
+    splits: list[tuple[UUID, Decimal, str | None, UUID | None, UUID | None]],
     counterparty_id: UUID | None = None,
 ) -> list[UUID]:
     """Разнести ручную проводку по нескольким статьям ДДС, сохранив баланс.
 
-    Каждая доля — ``(article_id, amount, comment, transfer_wallet_id)``. Кликнутую строку
-    мутируем в первую долю (её ``id``/``source_id``/``source_kind`` сохраняются — провенанс и
-    идемпотентность импортёра), остальные доли добавляем новыми строками того же
+    Каждая доля — ``(article_id, amount, comment, transfer_wallet_id, employee_id)``. Кликнутую
+    строку мутируем в первую долю (её ``id``/``source_id``/``source_kind`` сохраняются — провенанс
+    и идемпотентность импортёра), остальные доли добавляем новыми строками того же
     кошелька/направления/даты. Σ долей = сумма проводки, поэтому баланс не меняется.
 
     Доля со статьёй «перевод между счетами» и указанным ``transfer_wallet_id`` дополнительно
     заводит встречную ногу на счёт-получатель (наличный) + ``TransferGroup`` — тогда деньги не
     «теряются». Счёт-получатель допустим ТОЛЬКО у строки с транзитной статьёй.
+
+    Доля с зарплатной статьёй (``EMPLOYEE_PAYOUT_ARTICLE_CODES``) и ``employee_id`` заводит
+    ``EmployeePayout`` («выплачено») на эту долю — расчёт ЗП вычтет её из «к выдаче» (как и при
+    разборе операции выписки). ``employee_id`` на не-зарплатной статье — ошибка.
     """
     if not splits:
         raise ValueError("Нужна хотя бы одна статья")
+    # Совместимость: доля — (article, amount, comment, transfer_wallet_id[, employee_id]).
+    splits = [tuple(item) + (None,) * (5 - len(item)) for item in splits]
+    salary_article_ids = set(
+        (
+            await session.scalars(
+                select(DdsArticle.id).where(DdsArticle.code.in_(EMPLOYEE_PAYOUT_ARTICLE_CODES))
+            )
+        ).all()
+    )
+    for article_id, _amount, _comment, _wallet, employee_id in splits:
+        if employee_id is not None and article_id not in salary_article_ids:
+            raise ValueError("Сотрудника можно указать только для зарплатной статьи")
     original_amount = Decimal(txn.amount)
-    total = sum((amount for _a, amount, _c, _w in splits), Decimal("0"))
+    total = sum((amount for _a, amount, *_rest in splits), Decimal("0"))
     if total != original_amount:
         raise ValueError(
             f"Сумма по статьям ({total}) не равна сумме проводки ({original_amount})"
@@ -148,7 +165,7 @@ async def apply_cashflow_split(
     out_article, in_article = await _transfer_article_ids(session)
     transfer_article_ids = {a for a in (out_article, in_article) if a is not None}
     destinations: dict[UUID, Wallet] = {}
-    for article_id, _amount, _comment, transfer_wallet_id in splits:
+    for article_id, _amount, _comment, transfer_wallet_id, _employee in splits:
         if await session.get(DdsArticle, article_id) is None:
             raise ValueError("Статья не найдена")
         if transfer_wallet_id is None:
@@ -167,8 +184,35 @@ async def apply_cashflow_split(
     # Переразбор: снять прежнюю встречную ногу этой проводки (была переводом → стала расходом).
     await _clear_transfer_counter_leg(session, txn)
 
+    # Переразбор: снять EmployeePayout, заведённые прежним разбором ЭТОЙ проводки (сама строка +
+    # её доли manual_split). Уже зачтённую в проведённой ведомости выплату не трогаем — блокируем.
+    prior_split_ids = select(CashflowTransaction.id).where(
+        CashflowTransaction.source_kind == SPLIT_SOURCE_KIND,
+        CashflowTransaction.source_id == txn.id,
+    )
+    prior_payouts = (
+        await session.scalars(
+            select(EmployeePayout).where(
+                or_(
+                    EmployeePayout.cashflow_transaction_id == txn.id,
+                    EmployeePayout.cashflow_transaction_id.in_(prior_split_ids),
+                )
+            )
+        )
+    ).all()
+    for payout in prior_payouts:
+        if Decimal(payout.offset_amount) > 0:
+            raise ValueError(
+                "Проводка уже зачтена в проведённой ведомости сотрудника — "
+                "сначала откатите ведомость (дефинализация)"
+            )
+    for payout in prior_payouts:
+        await session.delete(payout)
+    if prior_payouts:
+        await session.flush()
+
     created: list[UUID] = []
-    for index, (article_id, amount, comment, transfer_wallet_id) in enumerate(splits):
+    for index, (article_id, amount, comment, transfer_wallet_id, employee_id) in enumerate(splits):
         if index == 0:
             txn.article_id = article_id
             txn.amount = amount
@@ -201,6 +245,27 @@ async def apply_cashflow_split(
                 out_article=out_article,
                 in_article=in_article,
             )
+        # Зарплатная статья + сотрудник → леджер «выплачено» (EmployeePayout) на эту долю.
+        # Денежный факт несёт сама проводка (баланс = Σ проводок), поэтому второй проводки нет.
+        if employee_id is not None and article_id in salary_article_ids:
+            from app.services.payroll_admin import resolve_employee_payout_kind
+
+            payout_kind = await resolve_employee_payout_kind(
+                session, employee_id, as_of=txn.operation_date
+            )
+            session.add(
+                EmployeePayout(
+                    employee_id=employee_id,
+                    kind=payout_kind,
+                    amount=amount,
+                    payout_date=txn.operation_date,
+                    wallet_id=leg.wallet_id,
+                    article_id=article_id,
+                    cashflow_transaction_id=leg.id,
+                    status="paid",
+                )
+            )
+            await session.flush()
     return created
 
 

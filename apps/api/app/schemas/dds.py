@@ -347,6 +347,9 @@ class CashflowSplitItem(BaseModel):
     # Для статьи «перевод между счетами»: счёт-получатель — заводит встречную ногу перевода
     # (наличному получателю) + TransferGroup. Допустим только у строки с транзитной статьёй.
     transfer_wallet_id: uuid.UUID | None = None
+    # Для зарплатной статьи: сотрудник-получатель (заводит EmployeePayout «выплачено» → учёт
+    # в ведомости). На не-зарплатной статье запрещён (валидируется в apply_cashflow_split).
+    employee_id: uuid.UUID | None = None
 
 
 class CashflowClassifyRequest(BaseModel):

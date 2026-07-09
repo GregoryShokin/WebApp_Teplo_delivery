@@ -1326,7 +1326,13 @@ async def classify_transaction_full(
                 session,
                 txn,
                 splits=[
-                    (item.article_id, item.amount, item.comment, item.transfer_wallet_id)
+                    (
+                        item.article_id,
+                        item.amount,
+                        item.comment,
+                        item.transfer_wallet_id,
+                        item.employee_id,
+                    )
                     for item in payload.splits
                 ],
                 counterparty_id=payload.counterparty_id,

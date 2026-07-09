@@ -25,6 +25,7 @@ from app.models import (
     PayrollPeriod,
     PayrollRun,
 )
+from app.services.banking.cashflow_classify import apply_cashflow_split
 from app.services.banking.classifier import (
     EMPLOYEE_PAYOUT_ARTICLE_CODES,
     apply_operation_split,
@@ -93,6 +94,46 @@ async def test_split_salary_article_creates_employee_payout(
             .where(CashflowTransaction.source_id == op.id)
         )
         assert cf_count == 1
+
+
+async def test_cashflow_split_salary_article_creates_employee_payout(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Единая логика: разбор РУЧНОЙ проводки на зарплатную статью + сотрудник → EmployeePayout."""
+    async with async_session_factory() as session:
+        wallet = await make_wallet(session, wallet_type="cash")
+        salary = await make_expense_article(
+            session, code=SALARY_CODE, name="Зарплата административного персонала"
+        )
+        employee = await _employee(session)
+        txn = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("50000.00"),
+            operation_date=date(2026, 7, 3),
+            source_kind="manual",
+            quality_status="manual_override",
+        )
+        session.add(txn)
+        await session.flush()
+        await session.commit()
+        txn_id = txn.id
+
+        await apply_cashflow_split(
+            session, txn, splits=[(salary.id, Decimal("50000.00"), None, None, employee.id)]
+        )
+        await session.commit()
+
+        payout = await session.scalar(
+            select(EmployeePayout).where(EmployeePayout.employee_id == employee.id)
+        )
+        assert payout is not None
+        assert payout.kind == "salary"
+        assert payout.status == "paid"
+        assert payout.amount == Decimal("50000.00")
+        # Первая доля = сама проводка (её id сохраняется); операции выписки нет.
+        assert payout.cashflow_transaction_id == txn_id
+        assert payout.bank_operation_id is None
 
 
 async def test_employee_id_on_non_salary_article_rejected(
