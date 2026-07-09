@@ -30,15 +30,16 @@ def test_context_endpoint_owner_sees_all_flows(client: TestClient) -> None:
     assert body["wallets"] is not None
 
 
-def test_context_endpoint_manager_has_no_loan_or_payout(client: TestClient) -> None:
-    # Менеджер (без права займов и без права выплат): этих маршрутов нет.
+def test_context_endpoint_manager_has_payout_but_no_loan(client: TestClient) -> None:
+    # Менеджер ведёт ЗП (payroll.employee_payouts.create выдано миграцией 0153) → маршрут
+    # employee_payout виден; права займов у него нет → employee_loan скрыт.
     response = client.get(
         "/api/v1/dds/new-payment/context", headers={"X-User-Role": "manager"}
     )
     assert response.status_code == 200
     manager_flows = {item["flow"] for item in response.json()["articles"]}
     assert "employee_loan" not in manager_flows
-    assert "employee_payout" not in manager_flows
+    assert "employee_payout" in manager_flows
 
 
 def test_expense_draft_endpoint_requires_safe_allocate(client: TestClient) -> None:

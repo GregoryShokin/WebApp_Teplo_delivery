@@ -52,6 +52,7 @@ def test_production_settings_accept_realistic_values() -> None:
         jwt_secret_key="a" * 64,
         auth_cookie_secure=True,
         teplo_bank_client_mode="live",
+        tbank_webhook_token="a" * 32,
     )
 
     assert settings.environment == "production"

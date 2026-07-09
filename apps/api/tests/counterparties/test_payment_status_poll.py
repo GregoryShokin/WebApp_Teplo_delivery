@@ -38,7 +38,14 @@ async def test_poll_settles_executed_draft(
 
         client = _FakeClient("executed")
         result = await run_payment_status_poll(session, client=client)
-        assert result == {"checked": 1, "paid": 1, "failed": 0, "errors": 0, "reconciled": 0}
+        assert result == {
+            "checked": 1,
+            "paid": 1,
+            "failed": 0,
+            "errors": 0,
+            "reconciled": 0,
+            "absorbed": 0,
+        }
         assert client.calls == ["pay-1"]
         await session.refresh(inv)
         assert inv.payment_status == "paid"

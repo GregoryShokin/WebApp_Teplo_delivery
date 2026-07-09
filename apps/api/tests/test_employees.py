@@ -3302,7 +3302,7 @@ def test_dismiss_request_payroll_rejects_method() -> None:
         )
 
 
-async def test_reinstate_does_not_restore_deposit(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_cancel_dismissal_does_not_restore_deposit(monkeypatch: pytest.MonkeyPatch) -> None:
     employee = make_employee(iiko_id="iiko-deposit-reinstate", full_name="Deposit Reinstate")
     account = make_deposit_account(employee, Decimal("5000"))
     session = FakeSession([employee], deposit_accounts=[account])
@@ -3327,7 +3327,9 @@ async def test_reinstate_does_not_restore_deposit(monkeypatch: pytest.MonkeyPatc
             deposit_payout_method=DepositPayoutMethod.CASH_SAFE,
         ),
     )
-    await reinstate_employee(
+    # dismiss теперь ставит статус `dismissing`; откат — через cancel_dismissal (reinstate
+    # для уже `dismissed`). Депозит cancel_dismissal НЕ восстанавливает (см. его docstring).
+    await cancel_dismissal(
         employee.id,
         session,  # type: ignore[arg-type]
         CurrentActor(roles=frozenset({"owner"})),

@@ -1053,7 +1053,10 @@ async def list_owner_review_cases(
 @router.post(
     "/owner-review/{case_id}/classify",
     response_model=OwnerReviewActionRead,
-    dependencies=DDS_CLASSIFY_ACCESS,
+    # Owner-review действие → право owner_review.prepare (как у соседних dismiss/apply-refund/
+    # list). Общий finance.cashflow.classify (есть у управляющего) сюда пускать нельзя — он для
+    # обычной разметки транзакций, а не для кейсов «на утверждении собственника».
+    dependencies=DDS_OWNER_REVIEW_PREPARE_ACCESS,
 )
 async def classify_owner_review_case(
     case_id: UUID,
