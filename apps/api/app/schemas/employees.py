@@ -204,7 +204,9 @@ class EmployeeRead(BaseModel):
     freelancer_card: FreelancerCardRead | None = None
     status: EmployeeStatus
 
-    @field_validator("is_freelancer_placeholder", "is_freelancer_temp", mode="before")
+    @field_validator(
+        "is_courier_placeholder", "is_freelancer_placeholder", "is_freelancer_temp", mode="before"
+    )
     @classmethod
     def _default_bool_false(cls, value: object) -> object:
         # Transient/незалитые карточки (fake-session в тестах) отдают None вместо

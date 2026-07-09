@@ -242,20 +242,25 @@ async def check() -> int:
     status = await _check_status()
     print(f"iiko_env={status.iiko_state}")
     print(f"tbank_bearer_token=env:{status.tbank_env_state} db:{status.tbank_db_state}")
-    async with AsyncSessionLocal() as session:
-        active = await _active_credential_values(session)
-    for spec in SBER_CREDENTIALS:
-        env_state = "set" if _env(spec.env_name) else "missing"
-        db_state = "set" if active.get((spec.provider, spec.kind)) else "missing"
-        print(f"sber_{spec.kind}=env:{env_state} db:{db_state}")
+    # SBER выводим, только когда настроен ПОЛНОСТЬЮ (все 3 кредала): частичная настройка
+    # бесполезна (mTLS нужен весь), а канал раскатывается «тихо» до готовности.
+    if _sber_is_configured():
+        async with AsyncSessionLocal() as session:
+            active = await _active_credential_values(session)
+        for spec in SBER_CREDENTIALS:
+            env_state = "set" if _env(spec.env_name) else "missing"
+            db_state = "set" if active.get((spec.provider, spec.kind)) else "missing"
+            print(f"sber_{spec.kind}=env:{env_state} db:{db_state}")
     return status.exit_code
 
 
 async def sync() -> int:
     print(f"iiko_env={'set' if _iiko_is_configured() else 'missing'}")
     print(f"tbank_bearer_token={await _sync_tbank_bearer_token()}")
-    for kind, kind_status in (await _sync_sber_credentials()).items():
-        print(f"sber_{kind}={kind_status}")
+    # SBER синкаем/печатаем только при полной настройке (см. check()).
+    if _sber_is_configured():
+        for kind, kind_status in (await _sync_sber_credentials()).items():
+            print(f"sber_{kind}={kind_status}")
     return (await _check_status()).exit_code
 
 
