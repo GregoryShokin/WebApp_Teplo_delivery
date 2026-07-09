@@ -27,6 +27,7 @@ from app.models import (
     Wallet,
 )
 from app.services.banking.classifier import (
+    SAFE_WALLET_CODE,
     TRANSFER_IN_ARTICLE_CODE,
     TRANSFER_OUT_ARTICLE_CODE,
     book_safe_topup,
@@ -226,7 +227,6 @@ async def pay_allocation(
         "paid" if allocation.amount_paid >= Decimal(allocation.amount) else "partially_paid"
     )
     await session.flush()
-<<<<<<< HEAD
 
     # Зарплатная целёвка «через Сейф»: фактическая выплата сотруднику — здесь (не при разборе).
     # Заводим EmployeePayout(«выплачено») на эту (в т.ч. частичную) оплату → расчёт ЗП учтёт.
@@ -251,7 +251,8 @@ async def pay_allocation(
             )
         )
         await session.flush()
-=======
+    # Резерв под банковский закуп у неофициала (source_draft_id): выплата наличных поставщику —
+    # момент гашения его накладных («Деньги в Сейфе» → «Оплачено»).
     await _settle_draft_invoices(
         session,
         allocation=allocation,
@@ -259,7 +260,6 @@ async def pay_allocation(
         leg_id=leg.id,
         created_by_user_id=created_by_user_id,
     )
->>>>>>> e4006403 (feat(накладные): статус «Деньги в Сейфе» — неофициал оплачен только после выдачи наличных)
     return leg.id
 
 
