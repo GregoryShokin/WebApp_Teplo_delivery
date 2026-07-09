@@ -50,6 +50,10 @@ from app.services.payroll_advance_recovery import (
     apply_advance_recoveries_to_balances,
     run_has_unaccounted_advances,
 )
+from app.services.payroll_employee_payout_offset import (
+    apply_employee_payout_offsets,
+    apply_employee_payout_offsets_to_balances,
+)
 from app.services.payroll_calculator import (
     DAILY_REVENUE_CONFIG_KEY,
     PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY,
@@ -368,6 +372,12 @@ async def run_payroll(
             text("DELETE FROM salary_advance_recovery WHERE run_id = :run_id"),
             {"run_id": existing_run.id},
         )
+        # Превью-зачёты «уже выплачено банком» прошлой попытки — как и возвраты авансов,
+        # баланс EmployeePayout.offset_amount они не трогали (двигается на финализации).
+        await session.execute(
+            text("DELETE FROM employee_payout_offset WHERE run_id = :run_id"),
+            {"run_id": existing_run.id},
+        )
         existing_run.started_at = datetime.now(UTC)
         existing_run.finished_at = None
         existing_run.status = "running"
@@ -523,6 +533,11 @@ async def run_payroll(
         # Внештат: смены, уже выданные наличными из кассы (paid_cash), исключаем из
         # «к выплате» (в ФОТ остаются). Мутирует net строк по образцу возврата авансов.
         freelancer_cash_summary = await apply_freelancer_cash_settlements(
+            session, period, run, calculation.lines
+        )
+        # «Уже выплачено банком»: выплаты сотруднику из журнала ДДС, привязанные к зарплатной
+        # статье, вычитаем из «к выдаче» (остаток переносится на следующую ведомость).
+        payout_offset_summary = await apply_employee_payout_offsets(
             session, period, run, calculation.lines
         )
         subledger_summary = await update_deposits_and_fund(session, period, run, calculation.lines)
@@ -1188,6 +1203,7 @@ async def finalize_payroll_run(
 
     deposit_payload = await apply_deposit_transactions_to_balances(session, run, now, reverse=False)
     await apply_advance_recoveries_to_balances(session, run, now, reverse=False)
+    await apply_employee_payout_offsets_to_balances(session, run, now, reverse=False)
     # Внештат (вариант Б): отдельного перехода смен нет — при финализации период уходит из
     # «открытых», его неоплаченные смены исчезают из кассы, их сумма уже в gross ведомости
     # (которая их и платит), а оплаченные налом вычтены из net на расчёте.
@@ -1262,6 +1278,7 @@ async def unfinalize_payroll_run(
 
     deposit_payload = await apply_deposit_transactions_to_balances(session, run, now, reverse=True)
     await apply_advance_recoveries_to_balances(session, run, now, reverse=True)
+    await apply_employee_payout_offsets_to_balances(session, run, now, reverse=True)
     # Откат внештата: дефинализация возвращает период в «открытые» → его неоплаченные смены
     # снова видны в кассе. Оплаченные налом (paid_cash) не трогаем — они уже выданы.
     # Откат: исполненные планы выдачи депозита возвращаются в pending (как и реверс баланса).

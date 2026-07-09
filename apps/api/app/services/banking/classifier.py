@@ -18,6 +18,7 @@ from app.models import (
     Counterparty,
     CounterpartyPayableProfile,
     DdsArticle,
+    EmployeePayout,
     OwnAccountsRegistry,
     ReconciliationCase,
     SupplierPrepayment,
@@ -31,6 +32,14 @@ PREPAYMENT_ARTICLE_CODE = "advance_to_supplier"
 # Статья «Оплата поставщикам»: строка разбора с указанной накладной гасит её (банковская
 # аллокация на операцию), а не просто заводит расход. Несколько строк → несколько накладных.
 SUPPLIER_PAYMENT_ARTICLE_CODE = "payment_to_supplier"
+# Зарплатные статьи-получатели: строка разбора с указанным сотрудником заводит EmployeePayout
+# («выплачено»), который расчёт ЗП вычитает из «к выдаче». Дубль new_payment.EMPLOYEE_PAYOUT_
+# ARTICLE_CODES (равенство закреплено tests/counterparties/test_dds_employee_payout_attribution.py),
+# чтобы не тянуть payroll на импорт классификатора банка.
+EMPLOYEE_PAYOUT_ARTICLE_CODES = (
+    "zarplata_administrativnogo_personala",
+    "zarplata_proizvodstvennogo_personala",
+)
 
 # A manually booked DDS entry (e.g. a supplier paid straight from a bank wallet via
 # ``pay_invoice_from_wallet``) records the cash fact before the bank feed does. When the
@@ -677,12 +686,14 @@ async def apply_operation_split(
     session: AsyncSession,
     operation: BankOperation,
     *,
-    splits: list[tuple[UUID, Decimal, str | None, UUID | None]],
+    splits: list[tuple[UUID, Decimal, str | None, UUID | None, UUID | None]],
     counterparty_id: UUID | None = None,
     quality_status: str = "owner_review",
     actor_user_id: UUID | None = None,
 ) -> list[UUID]:
     """Spread one bank operation across one or more DDS articles.
+
+    Splits are ``(article_id, amount, comment, invoice_id, employee_id)``.
 
     Balance is taken from the statement (see ``_wallet_movement_deltas``), so this
     only fills DDS analytics — the split amounts must add up to the operation amount
@@ -692,6 +703,10 @@ async def apply_operation_split(
     Строка со статьёй «Оплата поставщикам» с указанным ``invoice_id`` дополнительно гасит эту
     накладную на сумму строки (банковская аллокация на операцию). Поддержаны несколько накладных
     на одну операцию (мультисплит) и частичная оплата (сумма строки ≤ остатка накладной).
+
+    Строка с зарплатной статьёй (``EMPLOYEE_PAYOUT_ARTICLE_CODES``) и указанным ``employee_id``
+    заводит ``EmployeePayout`` («выплачено»), привязанный к порождённой проводке — расчёт ЗП
+    вычтет сумму из «к выдаче». ``employee_id`` на не-зарплатной статье — ошибка.
     """
     # Гашение накладной живёт в counterparty-сервисах; верхнеуровневый импорт замкнул бы цикл.
     from app.models import InvoicePaymentAllocation, SupplierInvoice
@@ -704,7 +719,10 @@ async def apply_operation_split(
 
     if not splits:
         raise ValueError("Нужна хотя бы одна статья")
-    total = sum((amount for _article, amount, _comment, _invoice in splits), Decimal("0"))
+    # Совместимость: строка разбора — (article, amount, comment, invoice_id[, employee_id]).
+    # Старые вызовы без сотрудника (4-кортеж) дополняем employee_id=None.
+    splits = [tuple(item) + (None,) * (5 - len(item)) for item in splits]
+    total = sum((amount for _article, amount, *_rest in splits), Decimal("0"))
     if total != Decimal(operation.amount):
         raise ValueError(
             f"Сумма по статьям ({total}) не равна сумме операции ({operation.amount})"
@@ -719,17 +737,30 @@ async def apply_operation_split(
         select(DdsArticle.id).where(DdsArticle.code == PREPAYMENT_ARTICLE_CODE)
     )
     uses_advance = advance_article_id is not None and any(
-        article_id == advance_article_id for article_id, _amount, _comment, _invoice in splits
+        article_id == advance_article_id for article_id, *_rest in splits
     )
     if uses_advance and counterparty_id is None:
         raise ValueError("Для статьи «Авансы поставщикам» укажите контрагента")
+
+    # Зарплатные статьи: строка с сотрудником заведёт EmployeePayout. employee_id вне зарплатной
+    # статьи запрещаем ДО записей (страховка бэка поверх фронтового гейтинга по статье).
+    salary_article_ids = set(
+        (
+            await session.scalars(
+                select(DdsArticle.id).where(DdsArticle.code.in_(EMPLOYEE_PAYOUT_ARTICLE_CODES))
+            )
+        ).all()
+    )
+    for article_id, _amount, _comment, _invoice, employee_id in splits:
+        if employee_id is not None and article_id not in salary_article_ids:
+            raise ValueError("Сотрудника можно указать только для зарплатной статьи")
 
     # Привязки накладных: валидируем статью и пригодность ДО любых записей.
     supplier_payment_article_id = await session.scalar(
         select(DdsArticle.id).where(DdsArticle.code == SUPPLIER_PAYMENT_ARTICLE_CODE)
     )
     invoice_by_id: dict[UUID, SupplierInvoice] = {}
-    for article_id, _amount, _comment, invoice_id in splits:
+    for article_id, _amount, _comment, invoice_id, _employee in splits:
         if invoice_id is None:
             continue
         if supplier_payment_article_id is None or article_id != supplier_payment_article_id:
@@ -762,16 +793,41 @@ async def apply_operation_split(
     # увидел бы её занятой собственной прежней аллокацией).
     for invoice_id, invoice in invoice_by_id.items():
         remaining = await _invoice_remaining(session, invoice)
-        amount = next(amt for _a, amt, _c, inv in splits if inv == invoice_id)
+        amount = next(amt for _a, amt, _c, inv, _e in splits if inv == invoice_id)
         if amount > remaining:
             raise ValueError(
                 f"Сумма ({amount}) больше остатка накладной "
                 f"{invoice.number or invoice.id} ({remaining})"
             )
 
+    # Re-split: снять EmployeePayout, заведённые прежним разбором ЭТОЙ операции (их проводки
+    # сейчас удалит _clear_operation_cashflow, иначе повторный разбор задвоит «выплачено»).
+    # Уже зачтённую в проведённой ведомости выплату (offset_amount>0) не трогаем — блокируем.
+    prior_op_cashflow = select(CashflowTransaction.id).where(
+        CashflowTransaction.source_kind == "bank_operation",
+        CashflowTransaction.source_id == operation.id,
+    )
+    prior_payouts = (
+        await session.scalars(
+            select(EmployeePayout).where(
+                EmployeePayout.cashflow_transaction_id.in_(prior_op_cashflow)
+            )
+        )
+    ).all()
+    for payout in prior_payouts:
+        if Decimal(payout.offset_amount) > 0:
+            raise ValueError(
+                "Операция уже зачтена в проведённой ведомости сотрудника — "
+                "сначала откатите ведомость (дефинализация)"
+            )
+    for payout in prior_payouts:
+        await session.delete(payout)
+    if prior_payouts:
+        await session.flush()
+
     await _clear_operation_cashflow(session, operation)
     created: list[UUID] = []
-    for article_id, amount, comment, invoice_id in splits:
+    for article_id, amount, comment, invoice_id, employee_id in splits:
         transaction = CashflowTransaction(
             wallet_id=wallet.id,
             direction=operation.direction,
@@ -812,6 +868,31 @@ async def apply_operation_split(
                 amount=amount,
                 actor_user_id=actor_user_id,
             )
+        # Зарплатная статья + сотрудник → леджер «выплачено» (EmployeePayout), привязанный к этой
+        # проводке. Второй проводки НЕ создаём: денежный факт несёт строка выписки (баланс из
+        # выписки). Режим оклада определяет kind: on_demand собственник → 'owner_salary' (гасится
+        # compute_on_demand_debt), обычный сотрудник → 'salary' (гасится apply_employee_payout_offsets).
+        if employee_id is not None and article_id in salary_article_ids:
+            from app.services.payroll_admin import resolve_employee_payout_kind
+
+            payout_kind = await resolve_employee_payout_kind(
+                session, employee_id, as_of=operation.operation_date
+            )
+            session.add(
+                EmployeePayout(
+                    employee_id=employee_id,
+                    kind=payout_kind,
+                    amount=amount,
+                    payout_date=operation.operation_date,
+                    wallet_id=wallet.id,
+                    article_id=article_id,
+                    cashflow_transaction_id=transaction.id,
+                    bank_operation_id=operation.id,
+                    status="paid",
+                    created_by_user_id=actor_user_id,
+                )
+            )
+            await session.flush()
 
     # Пересчёт статуса всех затронутых накладных (новые гашения + откатанные прежние).
     for invoice_id in {*invoice_by_id, *reaffected_invoice_ids}:

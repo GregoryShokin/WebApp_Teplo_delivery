@@ -59,6 +59,7 @@ from app.schemas.dds import (
     DdsWalletRead,
     JournalListRead,
     NewPaymentContextRead,
+    PayoutAttributionEmployeeRead,
     NewPaymentExpenseDraftCreate,
     NewPaymentExpenseDraftRead,
     OperationClassifyRead,
@@ -120,6 +121,7 @@ from app.services.kassa.payouts import (
 from app.services.new_payment import (
     NEW_PAYMENT_PERMISSION_CODES,
     build_new_payment_context,
+    list_payout_attribution_employees,
 )
 from app.services.payroll_advance_service import (
     list_kassa_pending_advances,
@@ -577,6 +579,22 @@ async def get_new_payment_context(
     """
     ensure_any_permission(actor, NEW_PAYMENT_PERMISSION_CODES)
     return await build_new_payment_context(session, permissions=actor.permissions)
+
+
+@router.get(
+    "/payout-employees",
+    response_model=list[PayoutAttributionEmployeeRead],
+    dependencies=DDS_CLASSIFY_ACCESS,
+)
+async def list_payout_attribution_employees_endpoint(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[dict[str, object]]:
+    """Сотрудники для привязки выплаты при разборе операции журнала (активные + увольняемые).
+
+    Обходит запрет ``/staff`` кассиру: тот же гейт, что и классификация операций
+    (``finance.cashflow.classify``) — кто разбирает журнал, тот и выбирает получателя.
+    """
+    return await list_payout_attribution_employees(session)
 
 
 @router.post(
@@ -1190,7 +1208,7 @@ async def classify_operation(
                 session,
                 operation,
                 splits=[
-                    (item.article_id, item.amount, item.comment, item.invoice_id)
+                    (item.article_id, item.amount, item.comment, item.invoice_id, item.employee_id)
                     for item in payload.splits
                 ],
                 counterparty_id=counterparty_id,

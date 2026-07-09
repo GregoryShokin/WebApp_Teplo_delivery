@@ -377,6 +377,12 @@ class PayrollLine(Base):
     advance_recovered: Mapped[Decimal] = mapped_column(
         Numeric(14, 2), nullable=False, default=0, server_default="0"
     )
+    # «Уже выплачено банком» — сумма привязанных к сотруднику выплат из журнала ДДС,
+    # зачтённая в этой ведомости (зеркало advance_recovered). Детализация — в
+    # components['employee_payout_offsets']. Уменьшает total_payable, показывается строкой.
+    employee_payout_offset: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
     deposit_excluded_for_run: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -1234,6 +1240,36 @@ class SalaryAdvanceRecovery(Base):
     advance: Mapped[SalaryAdvance] = relationship(back_populates="recoveries")
 
 
+class EmployeePayoutOffset(Base):
+    """Факт зачёта привязанной к сотруднику выплаты из журнала ДДС в конкретной ведомости.
+
+    Зеркало ``SalaryAdvanceRecovery``: при расчёте гасит ``min(остаток выплаты, доступный net)``,
+    чтобы «к выдаче» не ушло в минус; недобор переносится на следующую ведомость (остаток
+    ``EmployeePayout.offset_amount`` < ``amount``). Превью-строки с ``run_id`` удаляются на
+    ре-расчёте; баланс ``EmployeePayout.offset_amount`` двигается только на финализации.
+    """
+
+    __tablename__ = "employee_payout_offset"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_employee_payout_offset_amount_positive"),
+        Index("ix_employee_payout_offset_payout", "employee_payout_id"),
+        Index("ix_employee_payout_offset_run", "run_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_payout_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee_payout.id", ondelete="CASCADE"), nullable=False
+    )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payroll_run.id", ondelete="SET NULL"), nullable=True
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class SalaryAdvanceRecoveryOverride(Base):
     """Ручное переопределение суммы удержания аванса/займа в конкретном периоде.
 
@@ -1372,6 +1408,13 @@ class EmployeePayout(Base):
     )
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="paid", server_default="paid"
+    )
+    # Сколько из этой выпл(kind='salary'/'other') уже зачтено в ведомостях как «уже выплачено».
+    # Баланс потребления — зеркало SalaryAdvance.recovered_amount: outstanding = amount − offset_amount.
+    # Двигается только на финализации прогона (apply_employee_payout_offsets_to_balances);
+    # для kind='owner_salary' не используется (тот контур гасится compute_on_demand_debt).
+    offset_amount: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
     )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     # --- Банковский контур (Track B2/B3): состояние черновика Т-Банк + Сейф-резерв + привязка ---

@@ -39,6 +39,7 @@ from app.services.payroll_advance_recovery import (
     apply_advance_issuances,
     apply_advance_recoveries,
 )
+from app.services.payroll_employee_payout_offset import apply_employee_payout_offsets
 from app.services.payroll_calculator import adjustment_component, decimal, money, money_string
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
 from app.services.position_registry import (
@@ -211,6 +212,10 @@ async def run_admin_payroll(
             text("DELETE FROM salary_advance_recovery WHERE run_id = :run_id"),
             {"run_id": existing_run.id},
         )
+        await session.execute(
+            text("DELETE FROM employee_payout_offset WHERE run_id = :run_id"),
+            {"run_id": existing_run.id},
+        )
         existing_run.started_at = datetime.now(UTC)
         existing_run.finished_at = None
         existing_run.status = "running"
@@ -243,6 +248,8 @@ async def run_admin_payroll(
 
         advance_summary = await apply_advance_recoveries(session, period, run, lines)
         advance_issue_summary = await apply_advance_issuances(session, period, run, lines)
+        # «Уже выплачено банком» — привязанные к сотруднику выплаты из журнала ДДС.
+        await apply_employee_payout_offsets(session, period, run, lines)
         for line in lines:
             session.add(line)
         # Итог к выплате — ПОСЛЕ удержаний и выдач авансов/займов (накопленный выше — начисления).
@@ -763,6 +770,25 @@ def _prorated_amount(
 def _okladnik_payout_mode(modes: dict[str, str], position: str) -> str:
     mode = modes.get(position)
     return mode if mode in PAYOUT_MODES else PAYOUT_MODE_SPLIT
+
+
+async def resolve_employee_payout_kind(
+    session: AsyncSession, employee_id: uuid.UUID, *, as_of: date
+) -> str:
+    """``kind`` для EmployeePayout, заведённого привязкой операции ДДС к сотруднику.
+
+    ``owner_salary`` — окладник в режиме «по востребованию» (долг гасит compute_on_demand_debt);
+    иначе ``salary`` — обычный сотрудник (гасит offset-шаг apply_employee_payout_offsets).
+    Должность резолвится на дату операции (совпадает с логикой ведомости).
+    """
+    # Должность на дату операции — тот же источник, что и ведомость. Нет назначения → обычный
+    # сотрудник ('salary', гасит offset-шаг): режим on_demand невозможен без окладной должности.
+    position = await get_position_on_date(session, employee_id, as_of)
+    if position is None:
+        return "salary"
+    modes = await _load_okladnik_payout_modes(session)
+    mode = _okladnik_payout_mode(modes, position)
+    return EMPLOYEE_PAYOUT_KIND_OWNER_SALARY if mode == PAYOUT_MODE_ON_DEMAND else "salary"
 
 
 def _okladnik_base_pay(

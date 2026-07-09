@@ -265,6 +265,40 @@ async def list_new_payment_employees(
     ]
 
 
+# Статусы сотрудников, доступных для привязки уже совершённой выплаты в журнале ДДС:
+# активные и увольняемые (финальный расчёт нередко платится в статусе dismissing).
+# Терминальный статус уволенного — inactive (там же системные аккаунты), поэтому его не берём.
+PAYOUT_ATTRIBUTION_STATUSES = ("active", "dismissing")
+
+
+async def list_payout_attribution_employees(session: AsyncSession) -> list[dict[str, Any]]:
+    """Сотрудники для привязки выплаты при разборе операции ДДС: активные + увольняемые
+    (dismissing). Плейсхолдеры пула исключены. С признаком on_demand (kind='owner_salary' vs
+    'salary') и статусом — для пометки «увольняется» в UI."""
+    modes = await _load_okladnik_payout_modes(session)
+    on_demand_positions = {
+        position for position, mode in modes.items() if mode == PAYOUT_MODE_ON_DEMAND
+    }
+    rows = await session.scalars(
+        select(Employee)
+        .where(
+            Employee.status.in_(PAYOUT_ATTRIBUTION_STATUSES),
+            Employee.is_freelancer_placeholder.is_(False),
+        )
+        .order_by(Employee.full_name)
+    )
+    return [
+        {
+            "id": employee.id,
+            "full_name": employee.full_name,
+            "position": employee.position,
+            "on_demand": employee.position in on_demand_positions,
+            "status": str(employee.status),
+        }
+        for employee in rows.all()
+    ]
+
+
 async def build_new_payment_context(
     session: AsyncSession, *, permissions: frozenset[str]
 ) -> dict[str, Any]:
@@ -292,6 +326,7 @@ __all__ = [
     "ensure_expense_article_allowed",
     "list_new_payment_articles",
     "list_new_payment_employees",
+    "list_payout_attribution_employees",
     "list_new_payment_wallets",
     "new_payment_article_flow",
 ]

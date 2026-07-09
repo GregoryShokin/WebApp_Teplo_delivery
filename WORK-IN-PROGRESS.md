@@ -25,6 +25,19 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### agent-dds-payroll — ветка `agent/dds-payroll-link`
+- worktree: `../Teplo-agent-dds-payroll`
+- compose: agent-dds (API 8030 / web 5203 / pg 5462, БД `teplo`, тест `teplo_test_dds`) — изолированный стек
+- трогает: связка «журнал ДДС → расчёт ЗП» (привязка операции к сотруднику = «уже выплачено»):
+  - back: миграция `0173_dds_employee_payout_offset` (HEAD), `models/payroll.py` (EmployeePayoutOffset
+    + offset_amount + payroll_line.employee_payout_offset), `models/__init__.py`,
+    `services/payroll_employee_payout_offset.py` (new), `services/payroll_runner.py` +
+    `services/payroll_admin.py` (offset-шаг), `services/banking/classifier.py` (атрибуция),
+    `services/new_payment.py` (список сотрудников), `api/v1/routes/dds.py`, `schemas/dds.py`
+  - front: `routes/dds/OperationReviewDialog.tsx`, `routes/payroll/admin-run-detail.tsx`, `lib/api.ts` (хвост)
+- НЕ трогать другим: миграция `0173` (HEAD), offset-секции в `payroll_runner`/`payroll_admin`
+- статус: реализовано + протестировано в стеке teplo-dds (159+19+5 тестов, e2e), не влито
+
 ### agent-c — ветка `agent/c-couriers`
 - worktree: `../Teplo-agent-c`
 - compose: agent-c (API 8020 / web 5193 / pg 5452, БД `teplo`, тест `teplo_test_c`)

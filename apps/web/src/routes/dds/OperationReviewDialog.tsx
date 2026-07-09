@@ -20,6 +20,7 @@ import {
   classifyOperation,
   getDdsArticles,
   getDdsCounterparties,
+  getDdsPayoutEmployees,
   getDdsUnpaidInvoices,
   type BankOperationRead,
   type OperationClassifyPayload,
@@ -27,6 +28,12 @@ import {
 
 const PREPAYMENT_ARTICLE_CODE = "advance_to_supplier";
 const SUPPLIER_PAYMENT_ARTICLE_CODE = "payment_to_supplier";
+// Зарплатные статьи: строка с такой статьёй требует выбрать сотрудника-получателя.
+// Дубль new_payment.EMPLOYEE_PAYOUT_ARTICLE_CODES (бэк).
+const EMPLOYEE_PAYOUT_ARTICLE_CODES = [
+  "zarplata_administrativnogo_personala",
+  "zarplata_proizvodstvennogo_personala",
+];
 import {
   DdsStatusBadge,
   DirectionBadge,
@@ -35,7 +42,13 @@ import {
   formatDdsMoney,
 } from "@/routes/dds/shared";
 
-type SplitRow = { key: string; articleId: string; amount: string; invoiceId: string };
+type SplitRow = {
+  key: string;
+  articleId: string;
+  amount: string;
+  invoiceId: string;
+  employeeId: string;
+};
 
 const ACTION_TOAST: Record<OperationClassifyPayload["action"], string> = {
   split: "Операция разнесена по статьям",
@@ -79,7 +92,13 @@ export function OperationReviewDialog({
   useEffect(() => {
     if (operation) {
       setRows([
-        { key: crypto.randomUUID(), articleId: "none", amount: operation.amount, invoiceId: "" },
+        {
+          key: crypto.randomUUID(),
+          articleId: "none",
+          amount: operation.amount,
+          invoiceId: "",
+          employeeId: "",
+        },
       ]);
       setCounterpartyId(matchedByInn?.id ?? "");
       setCreateNewCounterparty(false);
@@ -126,6 +145,20 @@ export function OperationReviewDialog({
     enabled: Boolean(counterpartyId) && usesSupplierPayment,
   });
 
+  // Зарплатные статьи → строка требует сотрудника-получателя. Список грузим только когда он нужен
+  // (свой эндпоинт /dds/payout-employees обходит запрет /staff кассиру).
+  const salaryArticleIds = new Set(
+    (articlesQuery.data ?? [])
+      .filter((a) => EMPLOYEE_PAYOUT_ARTICLE_CODES.includes(a.code))
+      .map((a) => a.id),
+  );
+  const usesSalaryArticle = rows.some((row) => salaryArticleIds.has(row.articleId));
+  const payoutEmployeesQuery = useQuery({
+    queryKey: ["dds", "payout-employees"],
+    queryFn: getDdsPayoutEmployees,
+    enabled: usesSalaryArticle,
+  });
+
   if (!operation) {
     return null;
   }
@@ -142,6 +175,7 @@ export function OperationReviewDialog({
         articleId: "none",
         amount: remainder > 0 ? String(remainder) : "",
         invoiceId: "",
+        employeeId: "",
       },
     ]);
   }
@@ -164,6 +198,10 @@ export function OperationReviewDialog({
       toast.error("Для статьи «Авансы поставщикам» выберите контрагента");
       return;
     }
+    if (rows.some((row) => salaryArticleIds.has(row.articleId) && !row.employeeId)) {
+      toast.error("Для зарплатной статьи выберите сотрудника-получателя");
+      return;
+    }
     mutation.mutate({
       action: "split",
       splits: rows.map((row) => ({
@@ -171,6 +209,8 @@ export function OperationReviewDialog({
         amount: row.amount,
         invoice_id:
           row.articleId === supplierPaymentArticleId && row.invoiceId ? row.invoiceId : null,
+        employee_id:
+          salaryArticleIds.has(row.articleId) && row.employeeId ? row.employeeId : null,
       })),
       counterparty_id: createNewCounterparty ? null : counterpartyId || null,
       new_counterparty_name: createNewCounterparty ? operation.counterparty_name_raw : null,
@@ -197,6 +237,18 @@ export function OperationReviewDialog({
       value: inv.id,
       label: `№ ${inv.number ?? "б/н"} · остаток ${formatDdsMoney(inv.remaining)}`,
       keywords: inv.number ?? undefined,
+    })),
+  ];
+  // Получатели для зарплатной строки: активные + увольняемые/уволенные (пометка в подписи).
+  const employeeOptions: ComboboxOption[] = [
+    { value: "", label: "Не выбран" },
+    ...(payoutEmployeesQuery.data ?? []).map((emp) => ({
+      value: emp.id,
+      label:
+        emp.status === "active"
+          ? emp.full_name
+          : `${emp.full_name} · ${emp.status === "dismissing" ? "увольняется" : "уволен"}`,
+      keywords: emp.position ?? undefined,
     })),
   ];
   // Статья «Авансы поставщикам»: если выбрана в любой строке — контрагент обязателен,
@@ -281,6 +333,19 @@ export function OperationReviewDialog({
                       searchPlaceholder="Поиск по номеру…"
                     />
                   ) : null}
+                  {salaryArticleIds.has(row.articleId) ? (
+                    <Combobox
+                      options={employeeOptions}
+                      value={row.employeeId}
+                      onChange={(value) => updateRow(row.key, { employeeId: value })}
+                      placeholder={
+                        payoutEmployeesQuery.isLoading
+                          ? "Загрузка сотрудников…"
+                          : "Сотрудник-получатель (обязательно)"
+                      }
+                      searchPlaceholder="Поиск по имени…"
+                    />
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -356,7 +421,10 @@ export function OperationReviewDialog({
             <div className="flex flex-wrap gap-2 border-t pt-4">
               <Button
                 disabled={
-                  isBusy || !balanced || (usesAdvance && !counterpartyId && !createNewCounterparty)
+                  isBusy ||
+                  !balanced ||
+                  (usesAdvance && !counterpartyId && !createNewCounterparty) ||
+                  rows.some((row) => salaryArticleIds.has(row.articleId) && !row.employeeId)
                 }
                 onClick={submitSplit}
               >

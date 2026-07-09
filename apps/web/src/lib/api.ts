@@ -2408,6 +2408,8 @@ export type OperationSplitItem = {
   comment?: string | null;
   // Для статьи «Оплата поставщикам»: накладная, которую гасит эта сумма (привязка операции).
   invoice_id?: string | null;
+  // Для зарплатной статьи: сотрудник-получатель (заводит EmployeePayout → учёт в ведомости).
+  employee_id?: string | null;
 };
 
 export type OperationClassifyPayload = {
@@ -2831,6 +2833,21 @@ export async function getDdsUnpaidInvoices(counterpartyId: string): Promise<DdsU
       direction: "payable",
     },
   });
+  return response.data;
+}
+
+// Сотрудники для привязки выплаты при разборе операции журнала (зарплатная статья):
+// активные + увольняемые + уволенные. on_demand — режим оклада «по востребованию».
+export type DdsPayoutEmployee = {
+  id: string;
+  full_name: string;
+  position: string | null;
+  on_demand: boolean;
+  status: string;
+};
+
+export async function getDdsPayoutEmployees(): Promise<DdsPayoutEmployee[]> {
+  const response = await api.get<DdsPayoutEmployee[]>("/dds/payout-employees");
   return response.data;
 }
 

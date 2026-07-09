@@ -303,6 +303,10 @@ class OperationSplitItem(BaseModel):
     # Для статьи «Оплата поставщикам»: конкретная неоплаченная накладная, которую гасит эта
     # сумма (привязка операции → InvoicePaymentAllocation). Несколько строк → несколько накладных.
     invoice_id: uuid.UUID | None = None
+    # Для зарплатных статей (EMPLOYEE_PAYOUT_ARTICLE_CODES): сотрудник-получатель этой выплаты.
+    # Заводит EmployeePayout(«выплачено») → расчёт ЗП вычтет сумму из «к выдаче». На не-зарплатной
+    # статье запрещён (валидируется в apply_operation_split).
+    employee_id: uuid.UUID | None = None
 
 
 class OperationClassifyRequest(BaseModel):
@@ -478,6 +482,19 @@ class NewPaymentEmployeeRead(BaseModel):
     full_name: str
     position: str | None = None
     on_demand: bool
+
+
+class PayoutAttributionEmployeeRead(BaseModel):
+    """Сотрудник для привязки выплаты при разборе операции журнала ДДС.
+
+    ``on_demand`` — окладник «по востребованию» (выплата гасит долг собственника, а не
+    ведомость). ``status`` — active/dismissing/dismissed (для пометки «уволен» в UI)."""
+
+    id: uuid.UUID
+    full_name: str
+    position: str | None = None
+    on_demand: bool
+    status: str
 
 
 class NewPaymentContextRead(BaseModel):

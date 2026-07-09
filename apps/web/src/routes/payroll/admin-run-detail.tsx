@@ -747,14 +747,29 @@ function AdminLinesTable({
     {
       key: "total",
       header: "К выплате",
-      cell: (row) =>
-        row.line.on_demand ? (
-          <span className="text-muted-foreground" title="Оклад «по востребованию» — не выплачивается автоматически">
-            —
-          </span>
-        ) : (
-          formatMoney(row.line.total_payable)
-        ),
+      cell: (row) => {
+        const bankPaid = extractEmployeePayoutOffset(row.line);
+        if (row.line.on_demand) {
+          return (
+            <span className="text-muted-foreground" title="Оклад «по востребованию» — не выплачивается автоматически">
+              —
+            </span>
+          );
+        }
+        return (
+          <div className="flex flex-col items-end">
+            <span>{formatMoney(row.line.total_payable)}</span>
+            {bankPaid > 0 ? (
+              <span
+                className="text-xs font-normal text-muted-foreground"
+                title="Уже выплачено банком — привязка операции журнала ДДС к сотруднику"
+              >
+                уже выпл. банком {formatMoney(bankPaid)}
+              </span>
+            ) : null}
+          </div>
+        );
+      },
       className: "text-right font-semibold tabular-nums",
       headerClassName: "text-right",
     },
@@ -963,6 +978,25 @@ function PaymentCell({
       ) : null}
     </div>
   );
+}
+
+// «Уже выплачено банком»: сумма привязанных к сотруднику выплат из журнала ДДС,
+// зачтённая в этой ведомости (уменьшает «К выплате»). Детализация — в components.
+function extractEmployeePayoutOffset(line: PayrollLine): number {
+  const components = line.components;
+  if (!components || typeof components !== "object") {
+    return 0;
+  }
+  const raw = (components as Record<string, unknown>).employee_payout_offsets;
+  if (!Array.isArray(raw)) {
+    return 0;
+  }
+  return raw.reduce((sum: number, item) => {
+    if (item && typeof item === "object") {
+      return sum + Number((item as Record<string, unknown>).amount ?? 0);
+    }
+    return sum;
+  }, 0);
 }
 
 type Recovery = { advanceId: string; kind: string; amount: number };
