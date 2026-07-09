@@ -35,6 +35,7 @@ from app.models import (
     SupplierPrepayment,
     Wallet,
 )
+from app.services.banking.requisites import payee_account_error
 
 COLLECTION_SOURCE_KINDS = frozenset({"iiko", "email", "telegram", "manual"})
 RELATIONSHIP_KINDS = frozenset({"official", "informal", "barter"})
@@ -640,8 +641,15 @@ async def set_requisites(
     counterparty = await session.get(Counterparty, counterparty_id)
     if counterparty is None:
         raise CounterpartyRegistryError("Контрагент не найден")
+    new_requisites = dict(requisites or {})
+    # Подтверждение реквизитов — не голая отметка: битый контрольный разряд счёта банк
+    # всё равно отклонит (422), поэтому не даём пометить такие реквизиты «подтверждёнными».
+    if verified:
+        account_error = payee_account_error(new_requisites)
+        if account_error:
+            raise CounterpartyRegistryError(account_error)
     profile = await _get_or_create_profile(session, counterparty_id)
-    profile.requisites = dict(requisites or {})
+    profile.requisites = new_requisites
     profile.requisites_verified = verified
     if verified:
         profile.requisites_verified_at = datetime.now(tz=UTC)

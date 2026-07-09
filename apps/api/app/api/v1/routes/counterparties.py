@@ -34,6 +34,7 @@ from app.services import counterparty_matching as matching
 from app.services import counterparty_payments as payments
 from app.services import counterparty_registry as registry
 from app.services import supplier_prepayments as prepayments
+from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 from app.services.counterparty_invoice_sync import (
     list_unlinked_iiko_suppliers,
     sync_counterparty_invoices,
@@ -59,6 +60,29 @@ _DOMAIN_ERRORS = (
 
 def _conflict(exc: Exception) -> HTTPException:
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+
+def _bank_rejected(exc: BankFetchError) -> HTTPException:
+    """Отказ банка при создании черновика → осмысленный HTTP вместо голой 500.
+
+    Отказ по данным (4xx кроме авторизации, напр. неверный контрольный разряд счёта) →
+    422 с причиной от банка, которую фронт покажет тостом. Проблема доступа/недоступность
+    банка → 502 (это на нашей стороне/у банка, а не ошибка пользователя).
+    """
+    if isinstance(exc, BankCredentialsError):
+        return HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Ошибка авторизации в банке — обратитесь к администратору",
+        )
+    if exc.status_code is not None and 400 <= exc.status_code < 500:
+        message = "Банк отклонил платёж по реквизитам получателя"
+        if exc.detail:
+            message = f"{message}: {exc.detail}"
+        return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=message)
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="Банк временно недоступен — попробуйте позже",
+    )
 
 
 # --- schemas ------------------------------------------------------------------
@@ -640,6 +664,8 @@ async def post_prepayment_bank_draft(
         )
     except payments.CounterpartyPaymentError as exc:
         raise _conflict(exc) from exc
+    except BankFetchError as exc:
+        raise _bank_rejected(exc) from exc
     return DraftRead.model_validate(draft)
 
 
@@ -1088,6 +1114,8 @@ async def post_draft(
         )
     except payments.CounterpartyPaymentError as exc:
         raise _conflict(exc) from exc
+    except BankFetchError as exc:
+        raise _bank_rejected(exc) from exc
     return DraftRead.model_validate(draft)
 
 

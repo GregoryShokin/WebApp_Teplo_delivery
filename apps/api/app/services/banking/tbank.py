@@ -46,6 +46,31 @@ DEFAULT_TAX_FIELDS = {
 }
 
 
+def _bank_error_detail(response: httpx.Response) -> str | None:
+    """Читабельная причина отказа из тела ответа T-Банка (для показа пользователю).
+
+    Формат ошибки бизнес-OpenAPI: ``{"errorMessage": "...", "errorDetails": {поле: причина}}``.
+    Пример: 422 «Данные не соответствуют формату платежного поручения» +
+    ``{"Счет получателя": "Неверный контрольный разряд счета", ...}``. Возвращаем None,
+    если тело не разобрать.
+    """
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    message = body.get("errorMessage")
+    details = body.get("errorDetails")
+    parts: list[str] = []
+    if isinstance(details, dict):
+        parts = [f"{field} — {reason}" for field, reason in details.items() if reason]
+    joined = "; ".join(parts)
+    if isinstance(message, str) and message.strip():
+        return f"{message}: {joined}" if joined else message.strip()
+    return joined or None
+
+
 class TbankClient:
     provider = "tbank"
 
@@ -130,7 +155,12 @@ class TbankClient:
                 response.status_code,
                 response.text[:1000],
             )
-            raise BankFetchError(self.provider, f"T-Bank API returned {response.status_code}")
+            raise BankFetchError(
+                self.provider,
+                f"T-Bank API returned {response.status_code}",
+                status_code=response.status_code,
+                detail=_bank_error_detail(response),
+            )
 
         try:
             response_payload = response.json()
