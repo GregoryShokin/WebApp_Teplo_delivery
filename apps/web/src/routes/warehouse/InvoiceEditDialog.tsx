@@ -111,10 +111,13 @@ export function InvoiceEditDialog({
     return { store, staff, total: store + staff };
   }, [lines, staffLines]);
 
+  // Правка идёт через позиции — без сохранённых строк (старая iiko-синхронизация) исправлять нечего.
+  const hasSavedLines = (detail?.lines?.length ?? 0) > 0;
   const editable = paid
     ? (detail?.payment_status === "paid" || detail?.payment_status === "partially_paid") &&
       !detail?.barter_role &&
-      !detail?.draft_id
+      !detail?.draft_id &&
+      hasSavedLines
     : detail?.payment_status === "unpaid" && !detail?.barter_role;
 
   const buildPayload = () => ({
@@ -194,7 +197,9 @@ export function InvoiceEditDialog({
         ) : !editable ? (
           <p className="py-4 text-sm text-amber-600">
             {paid
-              ? "Исправить так можно только оплаченную обычную накладную, не отправленную в банк."
+              ? hasSavedLines
+                ? "Исправить так можно только оплаченную обычную накладную, не отправленную в банк."
+                : "У этой накладной нет сохранённых позиций (старая синхронизация из iiko) — исправить этим способом нельзя."
               : "Редактировать можно только неоплаченную обычную накладную — снимите оплату или используйте «Исправить оплаченную»."}
           </p>
         ) : (

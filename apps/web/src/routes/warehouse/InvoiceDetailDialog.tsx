@@ -139,6 +139,9 @@ export function InvoiceDetailDialog({
   // Есть ли что отправлять в iiko: только товарные строки (не расходные статьи). Если
   // товара нет (всё «персонал»/расходы), iiko-приход не создаётся — кнопку не показываем.
   const hasGoods = (detail?.lines ?? []).some((line) => !line.is_expense);
+  // Исправлять оплаченную можно только если есть сохранённые позиции — правка идёт через них.
+  // Старые iiko-накладные без строк («Позиции не сохранены») так править нельзя: нечего менять.
+  const hasLines = (detail?.lines ?? []).length > 0;
 
   return (
     <>
@@ -248,6 +251,7 @@ export function InvoiceDetailDialog({
             {(detail.payment_status === "paid" || detail.payment_status === "partially_paid") &&
             !detail.barter_role &&
             !detail.draft_id &&
+            hasLines &&
             canEditPaid ? (
               <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50/40 p-3">
                 <span className="text-xs text-amber-800">
