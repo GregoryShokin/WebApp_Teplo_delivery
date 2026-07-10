@@ -1247,6 +1247,9 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
               onChange={(from, to) => {
                 if (from && to) {
                   handlePeriodRangeApply({ from, to });
+                } else {
+                  // «Очистить»/«×»: период у графика обязателен — сбрасываем к текущему месяцу.
+                  handlePeriodRangeApply(rangeForPreset("month", new Date())!);
                 }
               }}
             />

@@ -55,12 +55,19 @@ export function DateRangePopover({
   id?: string;
 }) {
   const [open, setOpen] = React.useState(false);
+  // Начало диапазона держим ВНУТРИ компонента между первым и вторым кликом: наружу отдаём
+  // только завершённый диапазон (или очистку/пресет). Иначе контролируемый родитель, хранящий
+  // лишь полный период (график), теряет промежуточное состояние и диапазон не завершается.
+  const [draftFrom, setDraftFrom] = React.useState<string | null>(null);
   const anchor = from ? parseISO(from) : new Date();
   const [view, setView] = React.useState({ y: anchor.getFullYear(), m: anchor.getMonth() });
   const rootRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setDraftFrom(null);
+      return;
+    }
     const base = from ? parseISO(from) : new Date();
     setView({ y: base.getFullYear(), m: base.getMonth() });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,13 +90,16 @@ export function DateRangePopover({
   }, [open]);
 
   function pick(iso: string) {
-    if (!from || (from && to)) {
-      onChange(iso, null);
-    } else if (iso < from) {
-      onChange(iso, from);
-    } else {
-      onChange(from, iso);
+    if (draftFrom === null) {
+      // первый клик — запоминаем начало внутри компонента, наружу пока не отдаём
+      setDraftFrom(iso);
+      return;
     }
+    // второй клик — завершаем диапазон и коммитим полный период
+    const [lo, hi] = iso < draftFrom ? [iso, draftFrom] : [draftFrom, iso];
+    setDraftFrom(null);
+    onChange(lo, hi);
+    setOpen(false);
   }
 
   function shift(delta: number) {
@@ -102,8 +112,10 @@ export function DateRangePopover({
   }
 
   function preset(kind: "7d" | "month" | "clear") {
+    setDraftFrom(null);
     if (kind === "clear") {
       onChange(null, null);
+      setOpen(false);
       return;
     }
     const now = new Date();
@@ -118,6 +130,7 @@ export function DateRangePopover({
       onChange(toISO(start), toISO(end));
       setView({ y: start.getFullYear(), m: start.getMonth() });
     }
+    setOpen(false);
   }
 
   const label = from
@@ -132,6 +145,9 @@ export function DateRangePopover({
   for (let i = 0; i < offset; i += 1) cells.push(null);
   for (let d = 1; d <= daysInMonth; d += 1) cells.push(toISO(new Date(view.y, view.m, d)));
   const todayIso = toISO(new Date());
+  // Во время выбора подсвечиваем незавершённый диапазон: начало — из драфта, конца ещё нет.
+  const activeFrom = draftFrom ?? from;
+  const activeTo = draftFrom ? null : to;
 
   return (
     <div ref={rootRef} className="relative">
@@ -153,6 +169,7 @@ export function DateRangePopover({
             aria-hidden="true"
             onClick={(event) => {
               event.stopPropagation();
+              setDraftFrom(null);
               onChange(null, null);
             }}
           />
@@ -189,8 +206,8 @@ export function DateRangePopover({
             ))}
             {cells.map((iso, index) => {
               if (iso === null) return <div key={`e${index}`} />;
-              const isEnd = iso === from || iso === to;
-              const inRange = !!from && !!to && iso >= from && iso <= to;
+              const isEnd = iso === activeFrom || iso === activeTo;
+              const inRange = !!activeFrom && !!activeTo && iso >= activeFrom && iso <= activeTo;
               return (
                 <button
                   type="button"
