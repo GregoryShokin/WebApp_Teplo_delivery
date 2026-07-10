@@ -22,8 +22,6 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  Send,
-  Trash2,
   Users,
 } from "lucide-react";
 import {
@@ -104,11 +102,13 @@ import {
   getRun,
   getScheduleLedger,
   getSchedule,
+  getLivingSchedule,
   getVacationRoster,
   listRuns,
   listSchedules,
   overrideForecast,
   publishSchedule,
+  reopenSchedule,
   recomputeForecast,
   removeForecastOverride,
   resolveCashierAllowance,
@@ -221,12 +221,6 @@ const MOSCOW_OFFSET = "+03:00";
 const stationOptions = ["Пицца", "Роллы", "Горячий цех", "Касса"];
 const stationOrder = [...stationOptions, "(без станции)"];
 const weekdayLabels = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
-
-const statusLabels: Record<ScheduleRead["status"], string> = {
-  draft: "Черновик",
-  published: "Опубликован",
-  superseded: "Замещён",
-};
 
 export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: ScheduleRouteProps) {
   const queryClient = useQueryClient();
@@ -369,6 +363,12 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     queryFn: () => getSchedule(selectedScheduleId ?? ""),
     enabled: Boolean(selectedScheduleId && canViewSchedule),
   });
+  // Единый «живой» график: один график с состоянием draft/published, без версий и выбора.
+  const livingScheduleQuery = useQuery({
+    queryKey: ["schedule-living"],
+    queryFn: getLivingSchedule,
+    enabled: canViewSchedule,
+  });
   const ledgerQuery = useQuery({
     queryKey: ["schedule-ledger", forecastRange.from, forecastRange.to],
     queryFn: () =>
@@ -485,25 +485,12 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     Boolean(shiftDialogAllowanceQuery?.isLoading) || cashierOverridesQuery.isLoading;
 
   useEffect(() => {
-    if (!schedulesQuery.data) {
-      return;
+    // Единый «живой» график: всегда работаем с ним (авто-выбор версии по периоду убран).
+    const livingId = livingScheduleQuery.data?.id ?? null;
+    if (livingId && selectedScheduleId !== livingId) {
+      setSelectedScheduleId(livingId);
     }
-    const selectedSchedule = selectedScheduleId
-      ? schedules.find((schedule) => schedule.id === selectedScheduleId)
-      : null;
-    if (
-      selectedSchedule &&
-      rangesOverlap(
-        selectedSchedule.date_start,
-        selectedSchedule.date_end,
-        visibleDays[0],
-        visibleDays[visibleDays.length - 1],
-      )
-    ) {
-      return;
-    }
-    setSelectedScheduleId(pickDefaultSchedule(schedules, visibleDays)?.id ?? null);
-  }, [schedules, schedulesQuery.data, selectedScheduleId, visibleDays]);
+  }, [livingScheduleQuery.data, selectedScheduleId]);
 
   const createMutation = useMutation({
     mutationFn: createSchedule,
@@ -619,13 +606,27 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   const publishMutation = useMutation({
     mutationFn: () => publishSchedule(currentSchedule?.id ?? ""),
     onSuccess: async (schedule) => {
-      toast.success("График опубликован");
+      toast.success("График зафиксирован");
       setPublishOpen(false);
       setSelectedScheduleId(schedule.id);
+      await queryClient.invalidateQueries({ queryKey: ["schedule-living"] });
       await queryClient.invalidateQueries({ queryKey: ["schedules"] });
       await queryClient.invalidateQueries({ queryKey: ["schedule"] });
     },
-    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось опубликовать график")),
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось зафиксировать график")),
+  });
+
+  const reopenMutation = useMutation({
+    mutationFn: () => reopenSchedule(currentSchedule?.id ?? ""),
+    onSuccess: async (schedule) => {
+      toast.success("График открыт для редактирования");
+      setSelectedScheduleId(schedule.id);
+      await queryClient.invalidateQueries({ queryKey: ["schedule-living"] });
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      await queryClient.invalidateQueries({ queryKey: ["schedule"] });
+    },
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, "Не удалось открыть график для редактирования")),
   });
 
   const newVersionMutation = useMutation({
@@ -753,12 +754,14 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
       return;
     }
     warmedScheduleIds.current.add(currentSchedule.id);
+    // Единый график покрывает широкое окно дат — прогноз греем на ВИДИМЫЙ период
+    // (иначе упрёмся в лимит 62 дня у прогноза выручки).
     warmForecastMutation.mutate({
-      date_from: currentSchedule.date_start,
-      date_to: currentSchedule.date_end,
+      date_from: forecastRange.from,
+      date_to: forecastRange.to,
       force_refresh_iiko: false,
     });
-  }, [canEditRevenue, currentSchedule, warmForecastMutation]);
+  }, [canEditRevenue, currentSchedule, forecastRange.from, forecastRange.to, warmForecastMutation]);
 
   useEffect(() => {
     setSelectedCostRunId(null);
@@ -1158,51 +1161,36 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
         action={
           // Черновик/версия/публикация относятся только к расписанию смен (вкладка
           // «График»). На остальных вкладках (Учёт смен, Отпуска, График мойщиц) их нет.
-          activeTab === "schedule" && canEditSchedule ? (
-            <>
-              <Button onClick={() => openCreateDialog()} variant="outline">
-                <Plus size={16} aria-hidden="true" />
-                Создать график
-              </Button>
-              <InlineTooltip content="Создать редактируемую копию опубликованного графика. Текущий остаётся опубликованным до публикации копии.">
-                <Button
-                  disabled={!currentSchedule || currentSchedule.status !== "published"}
-                  onClick={() => setNewVersionOpen(true)}
-                  variant="outline"
-                >
-                  <Copy size={16} aria-hidden="true" />
-                  Новая версия
+          // Единый график: «Зафиксировать» (редактируемый → действующий план) и
+          // «Редактировать график» (зафиксированный → снова редактируемый). Версий/создания нет.
+          activeTab === "schedule" && canEditSchedule && currentSchedule ? (
+            isDraft ? (
+              <InlineTooltip content="Зафиксировать график: он становится действующим планом (виден в Учёте смен, план-факте, расчётах) и блокируется от правок. Чтобы снова изменить — нажмите «Редактировать график».">
+                <Button disabled={publishMutation.isPending} onClick={() => setPublishOpen(true)}>
+                  {publishMutation.isPending ? (
+                    <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                  ) : (
+                    <Lock size={16} aria-hidden="true" />
+                  )}
+                  Зафиксировать
                 </Button>
               </InlineTooltip>
-              {isDraft ? (
-                <>
-                  <InlineTooltip content="Удалить черновик безвозвратно. Опубликованные графики удалить нельзя — создайте новую версию.">
-                    <Button
-                      disabled={deleteScheduleMutation.isPending}
-                      onClick={() => setDeleteScheduleOpen(true)}
-                      variant="outline"
-                    >
-                      {deleteScheduleMutation.isPending ? (
-                        <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-                      ) : (
-                        <Trash2 size={16} aria-hidden="true" />
-                      )}
-                      Удалить черновик
-                    </Button>
-                  </InlineTooltip>
-                  <InlineTooltip content="Перевести черновик в действующий план. После публикации график виден в расчётах стоимости, план-факт сверке, payroll. Редактирование возможно только через «Новую версию». Если в этот период уже есть опубликованный график, он будет помечен как замещённый.">
-                    <Button disabled={publishMutation.isPending} onClick={() => setPublishOpen(true)}>
-                      {publishMutation.isPending ? (
-                        <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-                      ) : (
-                        <Send size={16} aria-hidden="true" />
-                      )}
-                      Опубликовать
-                    </Button>
-                  </InlineTooltip>
-                </>
-              ) : null}
-            </>
+            ) : (
+              <InlineTooltip content="Открыть зафиксированный график для редактирования. После правок снова нажмите «Зафиксировать».">
+                <Button
+                  disabled={reopenMutation.isPending}
+                  onClick={() => reopenMutation.mutate()}
+                  variant="outline"
+                >
+                  {reopenMutation.isPending ? (
+                    <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                  ) : (
+                    <Pencil size={16} aria-hidden="true" />
+                  )}
+                  Редактировать график
+                </Button>
+              </InlineTooltip>
+            )
           ) : null
         }
       />
@@ -1221,44 +1209,21 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
         <TabsContent className="mt-0 space-y-5" value="schedule">
           <section className="flex flex-col gap-4 rounded-lg border bg-card p-4">
             <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_auto] xl:items-end">
-              <div className="grid gap-2 sm:max-w-[520px]">
-                <Label>График</Label>
-                <Select
-                  disabled={schedules.length === 0}
-                  onValueChange={(value) => setSelectedScheduleId(value)}
-                  value={selectedScheduleId ?? undefined}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Выберите график" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {schedules.map((schedule) => (
-                      <SelectItem key={schedule.id} value={schedule.id}>
-                        {formatDate(schedule.date_start)} — {formatDate(schedule.date_end)} ·{" "}
-                        {statusLabels[schedule.status]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
               <div className="flex flex-wrap items-center gap-2">
+                <Label className="mr-1">График</Label>
                 {currentSchedule ? (
                   <>
-                    <Badge variant={isDraft ? "outline" : "default"}>
-                      {statusLabels[currentSchedule.status]}
+                    <Badge className="gap-1" variant={isDraft ? "outline" : "default"}>
+                      {isDraft ? null : <Lock size={13} aria-hidden="true" />}
+                      {isDraft ? "Редактируемый" : "Зафиксирован"}
                     </Badge>
-                    {isLocked ? (
-                      <Badge className="gap-1" variant="outline">
-                        <Lock size={13} aria-hidden="true" />
-                        Только просмотр
-                      </Badge>
-                    ) : null}
                     <span className="text-sm text-muted-foreground">
                       {currentSchedule.shifts.length} смен
                     </span>
                   </>
                 ) : null}
               </div>
+              <div />
             </div>
 
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -5418,20 +5383,6 @@ function defaultScheduleDraft(range = rangeForPreset("month", new Date())!): Sch
     date_end: range.to,
     notes: "",
   };
-}
-
-function pickDefaultSchedule(schedules: ScheduleRead[], visibleDays: string[]) {
-  const firstDay = visibleDays[0];
-  const lastDay = visibleDays[visibleDays.length - 1];
-  const overlappingSchedules = schedules.filter((schedule) =>
-    rangesOverlap(schedule.date_start, schedule.date_end, firstDay, lastDay),
-  );
-  return (
-    overlappingSchedules.find((schedule) => schedule.status === "published") ??
-    overlappingSchedules.find((schedule) => schedule.status === "draft") ??
-    overlappingSchedules[0] ??
-    null
-  );
 }
 
 function compareSchedulesForSelect(left: ScheduleRead, right: ScheduleRead) {

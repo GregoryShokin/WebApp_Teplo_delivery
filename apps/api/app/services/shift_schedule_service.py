@@ -212,15 +212,28 @@ async def get_or_create_living_schedule(
             )
         )
         living = schedules[0]
-        changed = False
+        now = datetime.now(UTC)
+        dirty = False
+        # Прочие (legacy) графики уводим в superseded — модель единого графика: живой один.
+        for other in schedules[1:]:
+            if other.status != "superseded":
+                other.status = "superseded"
+                other.superseded_by_id = living.id
+                other.updated_at = now
+                dirty = True
+        if living.status == "superseded":
+            # Если по какой-то причине живой оказался superseded — возвращаем в draft.
+            living.status = "draft"
+            living.superseded_by_id = None
+            dirty = True
         if living.date_start > LIVING_SCHEDULE_START:
             living.date_start = LIVING_SCHEDULE_START
-            changed = True
+            dirty = True
         if living.date_end < LIVING_SCHEDULE_END:
             living.date_end = LIVING_SCHEDULE_END
-            changed = True
-        if changed:
-            living.updated_at = datetime.now(UTC)
+            dirty = True
+        if dirty:
+            living.updated_at = now
             await _commit_refresh(session, living)
         return living
 

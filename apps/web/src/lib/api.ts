@@ -4132,6 +4132,13 @@ export async function getSchedule(id: string): Promise<ScheduleRead> {
   return response.data;
 }
 
+// Единый «живой» график: один график с состоянием draft (редактируемый) /
+// published (зафиксирован). Создаётся/расширяется на бэке при необходимости.
+export async function getLivingSchedule(): Promise<ScheduleRead> {
+  const response = await api.get<ScheduleRead>("/schedule/living");
+  return response.data;
+}
+
 export async function getScheduleLedger(params: {
   date_from: string;
   date_to: string;
@@ -4185,6 +4192,12 @@ export async function updateSchedule(
 
 export async function publishSchedule(id: string): Promise<ScheduleRead> {
   const response = await api.post<ScheduleRead>(`/schedule/${id}/publish`);
+  return response.data;
+}
+
+// «Редактировать график»: зафиксированный (published) снова делаем редактируемым (draft).
+export async function reopenSchedule(id: string): Promise<ScheduleRead> {
+  const response = await api.post<ScheduleRead>(`/schedule/${id}/reopen`);
   return response.data;
 }
 
