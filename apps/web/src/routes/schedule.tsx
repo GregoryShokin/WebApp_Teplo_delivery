@@ -3480,7 +3480,7 @@ function EmployeeScheduleGrid({
                           key={day}
                           style={{ width: DAY_CELL_WIDTH, minWidth: DAY_CELL_WIDTH }}
                         >
-                          <div className="space-y-0.5">
+                          <div className="flex h-full flex-col gap-1">
                             {ledgerEntries.map((entry) => (
                               <LedgerFactPill entry={entry} key={entry.id} />
                             ))}
@@ -3516,12 +3516,14 @@ function EmployeeScheduleGrid({
                       >
                         {visibleShift ? (
                           <>
-                            <ShiftPill
-                              allowanceAssignment={cashierAllowanceByDay.get(day)}
-                              employee={employee}
-                              estimate={costByShiftId.get(visibleShift.id)}
-                              shift={visibleShift}
-                            />
+                            <div className="flex h-full flex-col gap-1">
+                              <ShiftPill
+                                allowanceAssignment={cashierAllowanceByDay.get(day)}
+                                employee={employee}
+                                estimate={costByShiftId.get(visibleShift.id)}
+                                shift={visibleShift}
+                              />
+                            </div>
                             {canEditPlan ? (
                               <EditShiftButton
                                 businessDate={day}
@@ -3814,7 +3816,7 @@ function LedgerFactPill({ entry }: { entry: ScheduleLedgerEntryRead }) {
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-1 rounded border px-1.5 py-0.5 text-[11px] leading-tight",
+        "flex h-full min-h-[1.75rem] flex-1 items-center justify-between gap-1 rounded border px-1.5 py-0.5 text-[11px] leading-tight",
         colors.container,
       )}
       title={ledgerFactTitle(entry)}
@@ -3847,7 +3849,10 @@ function ShiftPill({
 
   return (
     <div
-      className={cn("rounded border px-1.5 py-0.5 text-[11px] leading-tight", colors.container)}
+      className={cn(
+        "flex h-full min-h-[1.75rem] flex-1 flex-col justify-center rounded border px-1.5 py-0.5 text-[11px] leading-tight",
+        colors.container,
+      )}
       title={shiftTitle(shift, estimate, employee, allowanceAssignment)}
     >
       {isFullDayShift(shift) ? null : (
