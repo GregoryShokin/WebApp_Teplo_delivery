@@ -644,8 +644,20 @@ async def post_invoice(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+    # Наша накладная (Касса ИЛИ Склад) уходит в iiko СРАЗУ при создании — ручное «Отправить в
+    # iiko» больше не нужно ни на одном контуре: правка и удаление теперь пробрасываются в iiko
+    # (Cloud update/delete), «доводить документ до официального» вручную незачем. Бартер (loan)
+    # в iiko-документ не идёт. Пушим товарную часть; prepare_push сам пропустит накладную без
+    # товара (→ skipped). Сбой push не валит создание — статус фиксируется в iiko_push_status,
+    # кнопка «Переотправить в iiko» в деталях остаётся для ретрая.
+    if payload.mode != "loan":
+        with contextlib.suppress(WarehousePushError):
+            await push_invoice_to_iiko(session, invoice.id)
     if payload.mark_paid and payload.mode != "loan":
-        await _settle_paid_from_kassa(session, invoice, payload.paid_amount, actor.user_id)
+        # Документ уже отправлен выше → оплату проводим без повторного push (do_push=False).
+        await _settle_paid_from_kassa(
+            session, invoice, payload.paid_amount, actor.user_id, do_push=False
+        )
     result = await get_warehouse_invoice(session, invoice.id)
     assert result is not None
     return result

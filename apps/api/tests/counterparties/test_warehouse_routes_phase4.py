@@ -10,6 +10,7 @@ import asyncio
 import uuid
 from datetime import UTC, date, datetime
 
+import pytest
 from cp_helpers import (
     admin_headers,
     headers_for,
@@ -204,6 +205,102 @@ def test_kassa_invoice_idempotent_on_duplicate_number(
     second = client.post(f"{BASE}/invoices", json=payload, headers=headers)
     assert second.status_code == 409, second.text
     assert "уже создана" in second.json()["detail"]
+
+
+def test_kassa_invoice_auto_pushes_to_iiko_on_create(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Накладная Кассы (via_kassa) уходит в iiko СРАЗУ при создании — без ручного «Отправить
+    в iiko». Товарная строка + сматченный контрагент + склад → Cloud create→post (замокан)."""
+    from app.services import warehouse_invoice_push as wip
+    from app.services.warehouse_invoice_push import _CloudPushOutcome
+
+    calls: list[dict] = []
+
+    def _fake(direction, org, body, *, existing_document_id):
+        calls.append({"direction": direction, "existing": existing_document_id})
+        return _CloudPushOutcome("IIKO-KASSA-1", posted=True, created=True)
+
+    monkeypatch.setattr(wip, "_cloud_create_and_post", _fake)
+
+    async def _cp() -> tuple[uuid.UUID, uuid.UUID]:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="Касса-поставщик", iiko_guid="CP-GUID-1")
+            product = await make_iiko_product(session)
+            await session.commit()
+            return cp.id, product.id
+
+    cp_id, product_id = _run(_cp())
+    resp = client.post(
+        f"{BASE}/invoices",
+        json={
+            "counterparty_id": str(cp_id),
+            "issued_at": ISSUED.isoformat(),
+            "number": "К-АВТО-1",
+            "via_kassa": True,
+            "store_guid": "STORE-GUID-1",
+            "lines": [
+                {"name": "Молоко", "quantity": 2, "price": 50, "iiko_product_id": str(product_id)}
+            ],
+        },
+        headers=_admin(async_session_factory),
+    )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["iiko_push_status"] == "pushed"
+    assert data["external_id"] == "IIKO-KASSA-1"
+    # Ровно один create→post, без дубля; existing=None → именно create, не re-post.
+    assert len(calls) == 1
+    assert calls[0]["existing"] is None
+
+
+def test_manual_invoice_also_auto_pushes_to_iiko(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Складская (manual, via_kassa=False) накладная ТОЖЕ уходит в iiko сразу при создании —
+    авто-пуш унифицирован для всех наших контуров (Касса + Склад), кроме бартера."""
+    from app.services import warehouse_invoice_push as wip
+    from app.services.warehouse_invoice_push import _CloudPushOutcome
+
+    calls: list[dict] = []
+
+    def _fake(direction, org, body, *, existing_document_id):
+        calls.append({"existing": existing_document_id})
+        return _CloudPushOutcome("IIKO-MANUAL-1", posted=True, created=True)
+
+    monkeypatch.setattr(wip, "_cloud_create_and_post", _fake)
+
+    async def _cp() -> tuple[uuid.UUID, uuid.UUID]:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="Склад-поставщик", iiko_guid="CP-GUID-2")
+            product = await make_iiko_product(session)
+            await session.commit()
+            return cp.id, product.id
+
+    cp_id, product_id = _run(_cp())
+    resp = client.post(
+        f"{BASE}/invoices",
+        json={
+            "counterparty_id": str(cp_id),
+            "issued_at": ISSUED.isoformat(),
+            "number": "СКЛ-1",
+            "store_guid": "STORE-GUID-2",
+            "lines": [
+                {"name": "Молоко", "quantity": 1, "price": 100, "iiko_product_id": str(product_id)}
+            ],
+        },
+        headers=_admin(async_session_factory),
+    )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["iiko_push_status"] == "pushed"
+    assert data["external_id"] == "IIKO-MANUAL-1"
+    assert len(calls) == 1
+    assert calls[0]["existing"] is None
 
 
 def test_edit_invoice_lines_recomputes_totals(
