@@ -25,7 +25,9 @@ from app.models import (
     PayrollAdjustment,
     PayrollAdjustmentCategory,
     PayrollPeriod,
+    ScheduledShift,
     ShiftLedgerEntry,
+    ShiftSchedule,
 )
 from app.schemas.inventory import (
     InventoryAuditItemAdjustmentPatch,
@@ -614,19 +616,23 @@ async def test_load_prepaid_revision_charges_uses_manual_revision_category(
 
 
 @pytest.mark.asyncio
-async def test_load_period_employees_by_table_presence_not_status(
+async def test_load_period_employees_gated_by_status_and_worked_shift(
     async_session_factory: Any,
 ) -> None:
-    """Раздача ревизии гейтится присутствием по табелю, а не статусом.
+    """В ревизию попадает тот, кто ФАКТИЧЕСКИ отработал смену в периоде и не уволен.
 
-    Уволенный повар, отработавший смену в периоде, остаётся получателем доли
-    (увольнение не закрывает должностное назначение, поэтому позиция резолвится).
-    Активный повар без смен в периоде — не попадает.
+    - active + табель в периоде → внутри (обычный участник).
+    - dismissing («в увольнении») + табель в периоде → внутри (расчёт ещё открыт).
+    - inactive (уволен, рассчитан) + табель в периоде → снаружи (иначе ложная
+      дебиторка перед уволенным).
+    - active, но только плановый график без табеля → снаружи («смена стоит» ≠
+      «работал»).
+    - active без смен в периоде → снаружи.
     """
     period_start = date(2026, 6, 9)
     period_end = date(2026, 6, 15)
 
-    def _cook(full_name: str, *, status: str, fire_date: date | None) -> Employee:
+    def _cook(full_name: str, *, status: str, fire_date: date | None = None) -> Employee:
         return Employee(
             id=uuid.uuid4(),
             full_name=full_name,
@@ -642,11 +648,34 @@ async def test_load_period_employees_by_table_presence_not_status(
             updated_at=datetime(2026, 5, 1, tzinfo=UTC),
         )
 
+    def _worked_shift(employee_id: uuid.UUID, work_date: date) -> ShiftLedgerEntry:
+        return ShiftLedgerEntry(
+            id=uuid.uuid4(),
+            employee_id=employee_id,
+            work_date=work_date,
+            source="fallback_primary",
+            opened_at=datetime(work_date.year, work_date.month, work_date.day, 8, 0, tzinfo=UTC),
+            closed_at=datetime(work_date.year, work_date.month, work_date.day, 17, 0, tzinfo=UTC),
+        )
+
     async with async_session_factory() as session:
-        fired_worked = _cook("Fired Worked Cook", status="inactive", fire_date=period_end)
-        active_no_shift = _cook("Active No Shift Cook", status="active", fire_date=None)
-        session.add_all([fired_worked, active_no_shift])
-        for cook in (fired_worked, active_no_shift):
+        active_worked = _cook("Active Worked Cook", status="active")
+        dismissing_worked = _cook(
+            "Dismissing Worked Cook", status="dismissing", fire_date=period_end
+        )
+        inactive_worked = _cook("Inactive Worked Cook", status="inactive", fire_date=period_end)
+        active_scheduled_only = _cook("Active Scheduled Only Cook", status="active")
+        active_no_shift = _cook("Active No Shift Cook", status="active")
+
+        cooks = [
+            active_worked,
+            dismissing_worked,
+            inactive_worked,
+            active_scheduled_only,
+            active_no_shift,
+        ]
+        session.add_all(cooks)
+        for cook in cooks:
             session.add(
                 EmployeePositionAssignment(
                     id=uuid.uuid4(),
@@ -657,26 +686,34 @@ async def test_load_period_employees_by_table_presence_not_status(
                     comment="test",
                 )
             )
-        # Смена уволенного попадает в период; у активного смена — вне периода.
+        # Табель (факт): три повара отработали смену внутри периода; у active_no_shift
+        # факт вне периода.
         session.add_all(
             [
-                ShiftLedgerEntry(
-                    id=uuid.uuid4(),
-                    employee_id=fired_worked.id,
-                    work_date=date(2026, 6, 10),
-                    source="fallback_primary",
-                    opened_at=datetime(2026, 6, 10, 8, 0, tzinfo=UTC),
-                    closed_at=datetime(2026, 6, 10, 17, 0, tzinfo=UTC),
-                ),
-                ShiftLedgerEntry(
-                    id=uuid.uuid4(),
-                    employee_id=active_no_shift.id,
-                    work_date=date(2026, 6, 1),
-                    source="fallback_primary",
-                    opened_at=datetime(2026, 6, 1, 8, 0, tzinfo=UTC),
-                    closed_at=datetime(2026, 6, 1, 17, 0, tzinfo=UTC),
-                ),
+                _worked_shift(active_worked.id, date(2026, 6, 10)),
+                _worked_shift(dismissing_worked.id, date(2026, 6, 10)),
+                _worked_shift(inactive_worked.id, date(2026, 6, 10)),
+                _worked_shift(active_no_shift.id, date(2026, 6, 1)),
             ]
+        )
+        # У active_scheduled_only — только плановый график в периоде, табеля нет.
+        schedule = ShiftSchedule(
+            id=uuid.uuid4(),
+            date_start=period_start,
+            date_end=period_end,
+            status="published",
+        )
+        session.add(schedule)
+        session.add(
+            ScheduledShift(
+                id=uuid.uuid4(),
+                shift_schedule_id=schedule.id,
+                employee_id=active_scheduled_only.id,
+                business_date=date(2026, 6, 12),
+                payroll_role="Повар",
+                planned_start_at=datetime(2026, 6, 12, 8, 0, tzinfo=UTC),
+                planned_end_at=datetime(2026, 6, 12, 17, 0, tzinfo=UTC),
+            )
         )
         await session.flush()
 
@@ -688,7 +725,10 @@ async def test_load_period_employees_by_table_presence_not_status(
         )
         recipient_ids = {employee.id for employee in recipients}
 
-    assert fired_worked.id in recipient_ids
+    assert active_worked.id in recipient_ids
+    assert dismissing_worked.id in recipient_ids
+    assert inactive_worked.id not in recipient_ids
+    assert active_scheduled_only.id not in recipient_ids
     assert active_no_shift.id not in recipient_ids
 
 

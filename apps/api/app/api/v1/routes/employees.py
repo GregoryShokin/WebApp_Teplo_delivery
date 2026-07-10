@@ -10,7 +10,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import ValidationError
-from sqlalchemy import delete, or_, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_object_session
 from sqlalchemy.orm import selectinload
 
@@ -351,9 +351,12 @@ async def list_employees(
     query = query.where(Employee.is_freelancer_placeholder.is_(False))
     if actor is not None:
         query = query.where(employee_access_filter(actor, StaffAction.READ))
-    # Когда задано окно присутствия (present_from/present_to) — не фильтруем по
-    # статусу: возвращаем активных ИЛИ присутствующих в периоде любого статуса
-    # (отработал по табелю / был в графике). Иначе — обычный фильтр по статусу.
+    # Когда задано окно присутствия (present_from/present_to): показываем активных
+    # (база для ручных премий/штрафов — их можно начислить любому активному) ПЛЮС
+    # тех, кто «в увольнении» (dismissing) и ФАКТИЧЕСКИ отработал смену в окне
+    # (табель ShiftLedgerEntry). Полностью уволенные (inactive) не показываются —
+    # им уже всё рассчитано; плановый график (ScheduledShift) без табеля не в счёт.
+    # Иначе — обычный фильтр по статусу.
     if present_from is not None and present_to is not None:
         ledger_exists = (
             select(ShiftLedgerEntry.id)
@@ -364,16 +367,12 @@ async def list_employees(
             )
             .exists()
         )
-        scheduled_exists = (
-            select(ScheduledShift.id)
-            .where(
-                ScheduledShift.employee_id == Employee.id,
-                ScheduledShift.business_date >= present_from,
-                ScheduledShift.business_date <= present_to,
+        query = query.where(
+            or_(
+                Employee.status == "active",
+                and_(Employee.status == "dismissing", ledger_exists),
             )
-            .exists()
         )
-        query = query.where(or_(Employee.status == "active", ledger_exists, scheduled_exists))
     elif status_filter:
         if status_filter not in EMPLOYEE_STATUSES:
             raise HTTPException(status_code=400, detail="Некорректный статус сотрудника")

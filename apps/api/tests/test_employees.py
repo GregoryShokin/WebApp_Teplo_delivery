@@ -47,7 +47,9 @@ from app.models import (
     EmployeePendingIikoAction,
     EmployeePositionAssignment,
     EmployeeRoleAssignment,
+    ScheduledShift,
     ShiftLedgerEntry,
+    ShiftSchedule,
 )
 from app.schemas.employees import (
     DepositDismissAction,
@@ -3581,18 +3583,21 @@ async def test_list_employees_manager_filters_administration() -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_employees_present_window_includes_inactive_with_shift(
+async def test_list_employees_present_window_status_and_worked_shift(
     async_session_factory: Any,
 ) -> None:
-    """present_from/present_to возвращает активных + присутствующих любого статуса.
+    """present_from/present_to: активные всегда + «в увольнении» с ФАКТ. табелем.
 
-    Уволенный со сменой в окне — попадает; уволенный без смен — нет;
-    активный без смен — попадает всегда.
+    - active без смен → попадает всегда (база для ручных премий/штрафов).
+    - dismissing («в увольнении») + табель в окне → попадает (расчёт открыт).
+    - dismissing + только плановый график без табеля → не попадает.
+    - dismissing без смен → не попадает.
+    - inactive (уволен, рассчитан) даже с табелем в окне → не попадает.
     """
     present_from = date(2026, 6, 9)
     present_to = date(2026, 6, 15)
 
-    def _emp(full_name: str, *, status: str, fire_date: date | None) -> Employee:
+    def _emp(full_name: str, *, status: str, fire_date: date | None = None) -> Employee:
         return Employee(
             id=uuid.uuid4(),
             full_name=full_name,
@@ -3608,19 +3613,54 @@ async def test_list_employees_present_window_includes_inactive_with_shift(
             updated_at=datetime(2026, 5, 1, tzinfo=UTC),
         )
 
+    def _worked_shift(employee_id: uuid.UUID, work_date: date) -> ShiftLedgerEntry:
+        return ShiftLedgerEntry(
+            id=uuid.uuid4(),
+            employee_id=employee_id,
+            work_date=work_date,
+            source="fallback_primary",
+            opened_at=datetime(work_date.year, work_date.month, work_date.day, 8, 0, tzinfo=UTC),
+            closed_at=datetime(work_date.year, work_date.month, work_date.day, 17, 0, tzinfo=UTC),
+        )
+
     async with async_session_factory() as session:
+        active_absent = _emp("Active Absent", status="active")
+        dismissing_present = _emp("Dismissing Present", status="dismissing", fire_date=present_to)
+        dismissing_scheduled_only = _emp("Dismissing Scheduled Only", status="dismissing")
+        dismissing_absent = _emp("Dismissing Absent", status="dismissing")
         inactive_present = _emp("Inactive Present", status="inactive", fire_date=present_to)
-        inactive_absent = _emp("Inactive Absent", status="inactive", fire_date=date(2026, 5, 1))
-        active_absent = _emp("Active Absent", status="active", fire_date=None)
-        session.add_all([inactive_present, inactive_absent, active_absent])
+        session.add_all(
+            [
+                active_absent,
+                dismissing_present,
+                dismissing_scheduled_only,
+                dismissing_absent,
+                inactive_present,
+            ]
+        )
+        session.add_all(
+            [
+                _worked_shift(dismissing_present.id, date(2026, 6, 10)),
+                _worked_shift(inactive_present.id, date(2026, 6, 10)),
+            ]
+        )
+        # dismissing_scheduled_only — только плановый график в окне, табеля нет.
+        schedule = ShiftSchedule(
+            id=uuid.uuid4(),
+            date_start=present_from,
+            date_end=present_to,
+            status="published",
+        )
+        session.add(schedule)
         session.add(
-            ShiftLedgerEntry(
+            ScheduledShift(
                 id=uuid.uuid4(),
-                employee_id=inactive_present.id,
-                work_date=date(2026, 6, 10),
-                source="fallback_primary",
-                opened_at=datetime(2026, 6, 10, 8, 0, tzinfo=UTC),
-                closed_at=datetime(2026, 6, 10, 17, 0, tzinfo=UTC),
+                shift_schedule_id=schedule.id,
+                employee_id=dismissing_scheduled_only.id,
+                business_date=date(2026, 6, 12),
+                payroll_role="Повар",
+                planned_start_at=datetime(2026, 6, 12, 8, 0, tzinfo=UTC),
+                planned_end_at=datetime(2026, 6, 12, 17, 0, tzinfo=UTC),
             )
         )
         await session.flush()
@@ -3633,9 +3673,11 @@ async def test_list_employees_present_window_includes_inactive_with_shift(
         )
         returned_ids = {employee.id for employee in rows}
 
-    assert inactive_present.id in returned_ids
     assert active_absent.id in returned_ids
-    assert inactive_absent.id not in returned_ids
+    assert dismissing_present.id in returned_ids
+    assert dismissing_scheduled_only.id not in returned_ids
+    assert dismissing_absent.id not in returned_ids
+    assert inactive_present.id not in returned_ids
 
 
 async def test_get_employee_manager_for_administration_returns_403() -> None:

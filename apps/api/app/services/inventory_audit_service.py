@@ -24,7 +24,6 @@ from app.models import (
     InventoryAuditPosition,
     PayrollAdjustment,
     PayrollAdjustmentCategory,
-    ScheduledShift,
     ShiftLedgerEntry,
 )
 from app.services import iiko_inventory
@@ -35,6 +34,12 @@ from app.services.payroll_adjustment_service import (
 )
 
 ALLOCATION_GROUPS = {"chefs", "common", "admins"}
+# Кого штраф ревизии вообще может касаться по статусу: активные и те, кто ещё
+# «в увольнении» (dismissing) — у них не закрыт расчёт, штраф идёт в финальную
+# ведомость. Полностью уволенные (inactive) уже рассчитаны — новый штраф создал
+# бы им ложную дебиторку, поэтому они исключаются. То же множество, что и в
+# атрибуции выплат (см. new_payment.PAYOUT_ATTRIBUTION_STATUSES).
+REVISION_PARTICIPANT_STATUSES = ("active", "dismissing")
 INVENTORY_ADJUSTMENT_CATEGORY_CODE = "inventory_shortage"
 MANUAL_INVENTORY_ADJUSTMENT_CATEGORY_CODE = "audit_penalty"
 INVENTORY_ADJUSTMENT_COMMENT_PREFIX = "Недостача по ревизии"
@@ -1962,6 +1967,10 @@ async def _load_period_employees(
     period_start: date,
     period_end: date,
 ) -> list[Employee]:
+    # Участие в ревизии — по ФАКТУ отработанной смены (табель ShiftLedgerEntry),
+    # а не по плановому графику (ScheduledShift): «смена стоит в графике» ≠
+    # «работал». Иначе новичок, у которого в периоде лишь плановая смена без
+    # табеля, ложно попадал бы в раздачу штрафа.
     ledger_exists = (
         select(ShiftLedgerEntry.id)
         .where(
@@ -1971,21 +1980,15 @@ async def _load_period_employees(
         )
         .exists()
     )
-    scheduled_exists = (
-        select(ScheduledShift.id)
-        .where(
-            ScheduledShift.employee_id == Employee.id,
-            ScheduledShift.business_date >= period_start,
-            ScheduledShift.business_date <= period_end,
-        )
-        .exists()
-    )
     return (
         await session.scalars(
             select(Employee)
             .where(
                 Employee.position == position,
-                or_(ledger_exists, scheduled_exists),
+                # Уволенные (inactive) исключаются, «в увольнении» — остаются
+                # (у них расчёт ещё открыт). См. REVISION_PARTICIPANT_STATUSES.
+                Employee.status.in_(REVISION_PARTICIPANT_STATUSES),
+                ledger_exists,
                 # Плейсхолдеры пула «Внештат №N» в ревизии не участвуют (их явка
                 # перекладывается на реального внештатника, который и попадёт сюда).
                 Employee.is_freelancer_placeholder.is_(False),
