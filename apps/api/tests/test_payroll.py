@@ -5349,6 +5349,86 @@ def test_personal_report_marks_substitute_ledger() -> None:
     assert by_role["administrator"]["is_substitute"] is False
 
 
+async def test_personal_report_merges_production_roles_into_one_payslip() -> None:
+    # Повар, отработавший за неделю и пиццеристом, и сушистом: одна расчётка на сотрудника,
+    # роли — разбивкой внутри (roles) и подсветкой по дням (daily[].role). Замещающего
+    # оклад-контура тут нет, поэтому обе роли сливаются в один period.
+    employee = make_employee()
+    employee.position = "Повар"
+    period = make_period(
+        start=date(2026, 5, 19),
+        end=date(2026, 5, 25),
+        payroll_date=date(2026, 5, 26),
+    )
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 5, 26, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    pizza_line = make_payroll_line(
+        run.id,
+        employee.id,
+        role="pizza",
+        base_pay=Decimal("6000"),
+        percent_pay=Decimal("400"),
+        fund_accrual=Decimal("0"),
+        deduction=Decimal("0"),
+        total_payable=Decimal("6400"),
+        components={
+            "days": [
+                {"date": "2026-05-20", "role": "pizza", "base_pay": "6000", "percent_pay": "400"}
+            ]
+        },
+    )
+    sushi_line = make_payroll_line(
+        run.id,
+        employee.id,
+        role="sushi",
+        base_pay=Decimal("4000"),
+        percent_pay=Decimal("300"),
+        fund_accrual=Decimal("0"),
+        deduction=Decimal("0"),
+        total_payable=Decimal("4300"),
+        components={
+            "days": [
+                {"date": "2026-05-22", "role": "sushi", "base_pay": "4000", "percent_pay": "300"}
+            ]
+        },
+    )
+    session = PersonalReportFakeSession(
+        employees=[employee],
+        line_rows=[(pizza_line, run, period), (sushi_line, run, period)],
+        adjustments=[],
+        deposit_transactions=[],
+    )
+
+    report = await build_personal_report(
+        session,  # type: ignore[arg-type]
+        employee.id,
+        date(2026, 5, 19),
+        date(2026, 5, 25),
+    )
+
+    # Одна расчётка, а не две.
+    assert len(report["periods"]) == 1
+    merged = report["periods"][0]
+    assert merged["is_substitute"] is False
+    # Суммы сведены на сотрудника.
+    assert merged["base_pay"] == 10000
+    assert merged["percent_pay"] == 700
+    assert merged["total_payable"] == 10700
+    # Роли — разбивкой внутри расчётки.
+    assert {role["role"] for role in merged["roles"]} == {"pizza", "sushi"}
+    assert merged["role"] == "pizza, sushi"
+    # Подсветка роли по дням.
+    daily_by_date = {row["date"]: row for row in report["daily"]}
+    assert daily_by_date[date(2026, 5, 20)]["role"] == "pizza"
+    assert daily_by_date[date(2026, 5, 22)]["role"] == "sushi"
+
+
 def test_personal_report_fund_from_ledger() -> None:
     # Фонд в отчёте берётся из ЛЕДЖЕРА (accumulation_fund_*), а не из payroll_line.fund_accrual:
     # у строки фонд 0 (как на проде у импортированных строк), но в леджере — реальные суммы.

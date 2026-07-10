@@ -146,7 +146,6 @@ async def build_personal_report(
     )
     ledger_entries = ledger_result.all()
 
-    periods = []
     totals = {
         "base_pay": 0.0,
         "premium": 0.0,
@@ -166,11 +165,17 @@ async def build_personal_report(
     daily_rows: dict[date, dict[str, Any]] = {}
     ledger_by_date = group_ledger_by_date(ledger_entries)
 
+    # Одна расчётка на сотрудника в рамках контура: строки-роли одного прогона сливаются в
+    # одну запись `periods`. Замещающий оклад-контур (кассир → Помощник менеджера) остаётся
+    # ОТДЕЛЬНОЙ расчёткой — по флагу is_substitute — чтобы процент и оклад не смешивались.
+    period_groups: dict[tuple[uuid.UUID, bool], dict[str, Any]] = {}
     for line, run, period in line_rows:
         bonus_total, penalty_total = component_adjustment_totals(line.components)
         deposit_withholding = money_float(component_value(line.components, "deposit_withholding"))
         # «Выдача депозита» (запланированная) хранится в компонентах строки и НЕ входит в
         # total_payable (ФОТ-нетто) — отдаём отдельным полем, чтобы отчёт показывал «на руки».
+        # Начисляется один раз на сотрудника (на первой строке), поэтому суммирование по ролям
+        # даёт верную сумму (на остальных строках 0).
         deposit_payout = money_float(component_value(line.components, "deposit_payout"))
         # «Исполняющий» окладную должность (кассир → Помощник менеджера): контур оклада
         # (components.kind == "admin_oklad") по должности, ОТЛИЧНОЙ от основной должности
@@ -187,13 +192,7 @@ async def build_personal_report(
             fund_runs_seen.add(run.id)
         else:
             period_fund = money_float(line.fund_accrual)
-        item = {
-            "period_id": period.id,
-            "run_id": run.id,
-            "run_status": run.status,
-            "role": line.role,
-            "period_start": period.start_date,
-            "period_end": period.end_date,
+        amounts = {
             "base_pay": money_float(line.base_pay),
             "premium": money_float(line.premium),
             "percent_pay": money_float(line.percent_pay),
@@ -206,14 +205,43 @@ async def build_personal_report(
             "bonus_total": bonus_total,
             "penalty_total": penalty_total,
             "total_payable": money_float(line.total_payable),
-            "is_substitute": is_substitute,
         }
-        periods.append(item)
+        # totals считаются ПОСТРОЧНО (как раньше) — объединение ролей влияет только на
+        # представление «расчёток», не на итоги.
         for key in totals:
             if key in {"bonus_total", "penalty_total", "audit_penalty_total"}:
                 continue
-            totals[key] += item[key]
+            totals[key] += amounts[key]
         apply_line_days_to_daily_rows(daily_rows, line, period, date_from, date_to, ledger_by_date)
+
+        group_key = (run.id, is_substitute)
+        group = period_groups.get(group_key)
+        if group is None:
+            group = {
+                "period_id": period.id,
+                "run_id": run.id,
+                "run_status": run.status,
+                "role": line.role,
+                "period_start": period.start_date,
+                "period_end": period.end_date,
+                "is_substitute": is_substitute,
+                # Разбивка объединённой расчётки по ролям (для секций внутри расчётки).
+                "roles": [],
+                **amounts,
+            }
+            period_groups[group_key] = group
+        else:
+            for key in amounts:
+                group[key] += amounts[key]
+        group["roles"].append({"role": line.role, **amounts})
+
+    # Ярлык объединённой расчётки — перечисление её ролей («Пиццерист, Сушист»).
+    for group in period_groups.values():
+        distinct_roles = list(dict.fromkeys(role_item["role"] for role_item in group["roles"]))
+        joined = ", ".join(role for role in distinct_roles if role)
+        if joined:
+            group["role"] = joined
+    periods = list(period_groups.values())
 
     serialized_adjustments = []
     for adjustment in adjustments:
@@ -321,11 +349,16 @@ def apply_line_days_to_daily_rows(
             if work_date is None or work_date < date_from or work_date > date_to:
                 continue
             daily_row = daily_report_row(daily_rows, work_date)
-            daily_row["base_pay"] += money_decimal(day.get("base_pay"))
-            daily_row["percent_pay"] += money_decimal(day.get("percent_pay"))
+            day_base = money_decimal(day.get("base_pay"))
+            day_percent = money_decimal(day.get("percent_pay"))
+            daily_row["base_pay"] += day_base
+            daily_row["percent_pay"] += day_percent
             daily_row["vacation_pay"] += money_decimal(day.get("vacation_pay"))
             daily_row["ndfl_withheld"] += money_decimal(day.get("ndfl_withheld"))
             daily_row["fund_accrual"] += money_decimal(day.get("fund_accrual"))
+            day_role = normalized_text(day.get("role"))
+            if day_role:
+                daily_row["role_pay"][day_role] += day_base + day_percent
         return
 
     apply_ledger_fallback_to_daily_rows(
@@ -369,11 +402,16 @@ def apply_ledger_fallback_to_daily_rows(
             else equal_weight
         )
         daily_row = daily_report_row(daily_rows, work_date)
-        daily_row["base_pay"] += money_decimal(line.base_pay) * weight
-        daily_row["percent_pay"] += money_decimal(line.percent_pay) * weight
+        day_base = money_decimal(line.base_pay) * weight
+        day_percent = money_decimal(line.percent_pay) * weight
+        daily_row["base_pay"] += day_base
+        daily_row["percent_pay"] += day_percent
         daily_row["vacation_pay"] += money_decimal(line.vacation_pay) * weight
         daily_row["ndfl_withheld"] += money_decimal(getattr(line, "ndfl_withheld", 0)) * weight
         daily_row["fund_accrual"] += money_decimal(line.fund_accrual) * weight
+        line_role = normalized_text(line.role)
+        if line_role:
+            daily_row["role_pay"][line_role] += day_base + day_percent
 
 
 def group_ledger_by_date(entries: list[ShiftLedgerEntry]) -> dict[date, list[ShiftLedgerEntry]]:
@@ -405,12 +443,18 @@ def daily_report_row(rows: dict[date, dict[str, Any]], work_date: date) -> dict[
             "penalty": Decimal("0"),
             "audit_penalty": Decimal("0"),
             "comments": [],
+            # Роль(и), в которых сотрудник работал в этот день (для подсветки по дням).
+            # Ключ — payroll_role, значение — оплата дня по этой роли (для выбора основной).
+            "role_pay": defaultdict(Decimal),
         },
     )
 
 
 def serialize_daily_row(row: dict[str, Any]) -> dict[str, Any]:
     comments = [comment for comment in row["comments"] if comment]
+    # Роли дня по убыванию оплаты — основная роль первой (для подсветки в подневной таблице).
+    role_pay: dict[str, Decimal] = row.get("role_pay") or {}
+    roles = sorted(role_pay, key=lambda role: role_pay[role], reverse=True)
     return {
         "date": row["date"],
         "base_pay": money_float(row["base_pay"]),
@@ -424,6 +468,8 @@ def serialize_daily_row(row: dict[str, Any]) -> dict[str, Any]:
         "penalty": money_float(row["penalty"]),
         "audit_penalty": money_float(row["audit_penalty"]),
         "comment": "; ".join(comments) if comments else None,
+        "role": roles[0] if roles else None,
+        "roles": roles,
     }
 
 
