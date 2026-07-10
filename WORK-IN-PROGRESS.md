@@ -51,17 +51,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - НЕ трогать другим: миграция `0104` (head), пункт сайдбара «Смена», секция прав `couriers.shift`
 - статус: реализовано, проверено в стеке teplo-c; не закоммичено
 
-### agent-safestatus — ветка `agent/safestatus-safe-pending-status`
-- worktree: `../Teplo-agent-safestatus`
-- compose: teplo-ic (web 7153 / api 8163 / pg 5472), БД = копия прод, банк mock
-- трогает: статус «Деньги в Сейфе» для накладных неофициалов — гашение при выплате резерва, не при executed:
-  `bank_payment_status.py`, `banking/safe_allocations.py` (pay_allocation → гашение накладных),
-  `warehouse_invoices.py` (гейт правки draft_id + draft-поля деталей), `counterparty_bank_match.py`
-  (без банк-кандидатов для informal), `counterparty_registry.py` + роут (draft_status в списке),
-  фронт: inbox/детали (бейдж), тесты informal_safe_payout
-- НЕ трогать другим: `banking/safe_allocations.py`, `bank_payment_status.py`
-- статус: реализовано, тесты зелёные, превью поднято; НА РЕВЬЮ
-
 ---
 
 ## Shared-ресурсы — кто сейчас держит
