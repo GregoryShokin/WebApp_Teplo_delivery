@@ -115,6 +115,9 @@ type PayrollLineRowModel = {
   employeeName: string;
   hours: number;
   roles: string[];
+  // id всех физических роль-строк группы (deposit_excluded — поле per-role, исключение
+  // депозита из дровера нужно применять КО ВСЕМ строкам сотрудника, не только к первой).
+  sourceLineIds: string[];
 };
 
 const LEGACY_RECALC_MESSAGE = "Это импортированный период — пересчёт затрёт исторические данные";
@@ -736,6 +739,7 @@ function PayrollByEmployeeTab({
         employeeName: employee?.full_name ?? "Сотрудник требует настройки",
         hours: lineHours(line),
         roles,
+        sourceLineIds: groupLines.map((item) => item.id),
       };
     });
 
@@ -1843,7 +1847,11 @@ function PayrollLineDrawer({ row, runStatus }: { row: PayrollLineRowModel; runSt
         <ComponentValue label="К выплате" value={formatMoney(lineOnHand(row.line))} strong />
       </section>
 
-      <DepositOverrideControl line={row.line} runStatus={runStatus} />
+      <DepositOverrideControl
+        line={row.line}
+        lineIds={row.sourceLineIds}
+        runStatus={runStatus}
+      />
 
       {weekdayPremiumTotal > 0 ? (
         <section className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
@@ -1909,7 +1917,15 @@ function PayrollLineDrawer({ row, runStatus }: { row: PayrollLineRowModel; runSt
   );
 }
 
-function DepositOverrideControl({ line, runStatus }: { line: PayrollLine; runStatus: string }) {
+function DepositOverrideControl({
+  line,
+  lineIds,
+  runStatus,
+}: {
+  line: PayrollLine;
+  lineIds: string[];
+  runStatus: string;
+}) {
   const queryClient = useQueryClient();
   const permissions = usePermissions();
   const canEditDeposit = permissions.hasPermission("payroll.production_deposits.edit");
@@ -1922,10 +1938,17 @@ function DepositOverrideControl({ line, runStatus }: { line: PayrollLine; runSta
   }, [line.deposit_exclusion_reason, line.id]);
 
   const mutation = useMutation({
-    mutationFn: (payload: {
+    // Удержание депозита у двуролевого повара сидит на КАЖДОЙ роль-строке (running-баланс
+    // переносится между ролями), а override хранится per-(employee, role). Поэтому исключение
+    // из объединённой строки применяем ко ВСЕМ её физическим строкам, иначе гасится только
+    // первая роль и повар недополучает.
+    mutationFn: async (payload: {
       deposit_excluded_for_run: boolean;
       deposit_exclusion_reason?: string | null;
-    }) => patchPayrollLineDepositOverride(line.id, payload),
+    }) => {
+      const targetIds = lineIds.length > 0 ? lineIds : [line.id];
+      await Promise.all(targetIds.map((id) => patchPayrollLineDepositOverride(id, payload)));
+    },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["payroll-run", line.run_id] }),
