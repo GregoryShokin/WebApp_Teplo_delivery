@@ -2761,6 +2761,10 @@ export type NewPaymentWallet = {
   code: string;
   name: string;
   bank_code: string | null;
+  // kind=bank → банковский черновик; kind=cash → наличными, сразу резерв.
+  kind: "bank" | "cash";
+  // Для наличных: safe (Сейф) / kassa (Торговая касса). null у банковских.
+  location: "safe" | "kassa" | null;
 };
 
 export type NewPaymentEmployee = {
@@ -2810,6 +2814,28 @@ export async function createNewPaymentExpenseDraft(
 ): Promise<NewPaymentExpenseDraft> {
   const response = await api.post<NewPaymentExpenseDraft>(
     "/dds/new-payment/expense-draft",
+    payload,
+  );
+  return response.data;
+}
+
+export type ExpenseCashReservePayload = {
+  wallet_id: string;
+  lines: NewPaymentExpenseLine[];
+};
+
+export type ExpenseCashReserveResult = {
+  created: number;
+  total: number;
+  location: "safe" | "kassa";
+};
+
+// Свободный вывод НАЛИЧНЫМИ: создаёт резерв(ы) на Сейфе/в Кассе (без банковского черновика).
+export async function createExpenseCashReserves(
+  payload: ExpenseCashReservePayload,
+): Promise<ExpenseCashReserveResult> {
+  const response = await api.post<ExpenseCashReserveResult>(
+    "/dds/new-payment/expense-cash",
     payload,
   );
   return response.data;

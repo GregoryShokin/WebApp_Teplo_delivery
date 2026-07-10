@@ -9,6 +9,7 @@ from app.api.v1.routes.couriers import router as couriers_router
 from app.api.v1.routes.dds import router as dds_router
 from app.api.v1.routes.deposits import router as deposits_router
 from app.api.v1.routes.employees import router as employees_router
+from app.api.v1.routes.finance_payments import router as finance_payments_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.integrations import router as integrations_router
 from app.api.v1.routes.inventory import router as inventory_router
@@ -56,3 +57,4 @@ api_router.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"]
 api_router.include_router(warehouse_router, prefix="/warehouse", tags=["warehouse"])
 api_router.include_router(kassa_router, prefix="/kassa", tags=["kassa"])
 api_router.include_router(payment_page_router, prefix="/payment-page", tags=["payment-page"])
+api_router.include_router(finance_payments_router, prefix="/finance/payments", tags=["finance-payments"])

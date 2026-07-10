@@ -38,6 +38,8 @@ SAFE_CASH_WITHDRAWAL_SOURCE_KIND = "safe_cash_withdrawal"
 SAFE_RECONCILE_ADJUST_SOURCE_KIND = "safe_reconcile_adjust"
 # Двухногое перемещение при передаче целёвки Сейф → касса (source_id = резерв).
 ALLOCATION_TO_KASSA_SOURCE_KIND = "safe_allocation_to_kassa"
+# Обратное перемещение целёвки касса → Сейф (source_id = резерв).
+ALLOCATION_TO_SAFE_SOURCE_KIND = "kassa_allocation_to_safe"
 # Выдача целёвки наличными из кассы, вкладка «К выдаче» (source_id = резерв).
 KASSA_TARGET_PAYOUT_SOURCE_KIND = "kassa_target_payout"
 ACTIVE_RESERVE_STATUSES = ("reserved", "partially_paid")
@@ -435,6 +437,78 @@ async def transfer_allocation_to_kassa(
     session.add(in_leg)
     allocation.wallet_id = dest_wallet.id
     allocation.location = "kassa"
+    await session.flush()
+    return [out_leg.id, in_leg.id]
+
+
+async def move_allocation_location(
+    session: AsyncSession,
+    allocation: SafeAllocation,
+    *,
+    to_location: str,
+    operation_date: date,
+) -> list[UUID]:
+    """Переместить целёвку между Сейфом и Кассой (обе стороны), ВЕСЬ остаток.
+
+    Двухногий перевод непогашенного остатка между счетами + смена ``wallet_id``/
+    ``location``. Инвариант «свободно не меняется» держится: in-нога пополняет
+    счёт-получатель ровно на остаток резерва, поэтому свободный остаток каждого счёта
+    не меняется. Идемпотентность — по несовпадению ``location`` + row-lock резерва
+    (вызывающий держит ``with_for_update``): повторное перемещение в ту же сторону
+    отсекается проверкой локации, поэтому туда-обратно работает без «вечного» гейта.
+    Частичное перемещение запрещено (как и передача в кассу).
+    """
+    if to_location not in ("safe", "kassa"):
+        raise ValueError("Неизвестное направление перемещения")
+    if allocation.status not in ACTIVE_RESERVE_STATUSES:
+        raise ValueError("Перемещать можно только активный резерв")
+    if allocation.location == to_location:
+        raise ValueError("Резерв уже на этом счёте")
+    outstanding = Decimal(allocation.amount) - Decimal(allocation.amount_paid)
+    if outstanding <= 0:
+        raise ValueError("У резерва нет непогашенного остатка")
+    dest_code = SAFE_WALLET_CODE if to_location == "safe" else CASH_WITHDRAWAL_WALLET_CODE
+    dest_wallet = await session.scalar(
+        select(Wallet).where(Wallet.code == dest_code, Wallet.status == "active")
+    )
+    if dest_wallet is None:
+        raise ValueError("Не найден счёт-получатель")
+    source_kind = (
+        ALLOCATION_TO_KASSA_SOURCE_KIND
+        if to_location == "kassa"
+        else ALLOCATION_TO_SAFE_SOURCE_KIND
+    )
+    out_article = await _article_id(session, TRANSFER_OUT_ARTICLE_CODE)
+    in_article = await _article_id(session, TRANSFER_IN_ARTICLE_CODE)
+    label = allocation.purpose or "целевой резерв"
+    dest_name = "Сейф" if to_location == "safe" else "касса"
+    purpose = f"Перемещение целёвки: {label} → {dest_name}"
+    out_leg = CashflowTransaction(
+        wallet_id=allocation.wallet_id,
+        direction="out",
+        amount=outstanding,
+        operation_date=operation_date,
+        article_id=out_article,
+        source_kind=source_kind,
+        source_id=allocation.id,
+        payment_purpose=purpose,
+        quality_status="final",
+    )
+    in_leg = CashflowTransaction(
+        wallet_id=dest_wallet.id,
+        direction="in",
+        amount=outstanding,
+        operation_date=operation_date,
+        article_id=in_article,
+        source_kind=source_kind,
+        source_id=allocation.id,
+        payment_purpose=purpose,
+        quality_status="final",
+    )
+    session.add(out_leg)
+    session.add(in_leg)
+    allocation.wallet_id = dest_wallet.id
+    allocation.location = to_location
     await session.flush()
     return [out_leg.id, in_leg.id]
 

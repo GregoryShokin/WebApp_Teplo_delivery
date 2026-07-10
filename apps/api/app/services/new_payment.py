@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.permissions import permission_is_granted
@@ -207,10 +207,11 @@ async def list_new_payment_articles(
 
 
 async def list_new_payment_wallets(session: AsyncSession) -> list[dict[str, Any]]:
-    """Счета списания: активные банковские кошельки без накопительных фондов.
+    """Счета списания: банковские кошельки (черновик) + наличные Сейф/Касса (резерв).
 
-    ``bank_code`` — чтобы фронт знал, где создаются черновики (только Т-Банк);
-    для выплат сотрудникам допустим и Сбер (черновика нет, подтверждение привязкой).
+    ``bank_code`` — где создаётся черновик (только Т-Банк; Сбер — свободный расход).
+    ``kind``: ``bank`` — уходит банковским черновиком; ``cash`` — оплата наличными без
+    черновика (сразу резерв). ``location`` наличных: ``safe`` (Сейф) / ``kassa`` (Касса).
     """
     rows = (
         await session.execute(
@@ -218,16 +219,36 @@ async def list_new_payment_wallets(session: AsyncSession) -> list[dict[str, Any]
             .outerjoin(Account, Account.id == Wallet.account_id)
             .where(
                 Wallet.status == "active",
-                Wallet.type.in_(("bank", "bank_account")),
-                Wallet.code.notin_(NON_PAYOUT_WALLET_CODES),
+                or_(
+                    and_(
+                        Wallet.type.in_(("bank", "bank_account")),
+                        Wallet.code.notin_(NON_PAYOUT_WALLET_CODES),
+                    ),
+                    Wallet.type.in_(("cash_safe", "store_cash")),
+                ),
             )
-            .order_by(Wallet.code)
+            .order_by(Wallet.type.in_(("cash_safe", "store_cash")), Wallet.code)
         )
     ).all()
-    return [
-        {"id": wallet.id, "code": wallet.code, "name": wallet.name, "bank_code": bank_code}
-        for wallet, bank_code in rows
-    ]
+    result: list[dict[str, Any]] = []
+    for wallet, bank_code in rows:
+        if wallet.type == "cash_safe":
+            kind, location = "cash", "safe"
+        elif wallet.type == "store_cash":
+            kind, location = "cash", "kassa"
+        else:
+            kind, location = "bank", None
+        result.append(
+            {
+                "id": wallet.id,
+                "code": wallet.code,
+                "name": wallet.name,
+                "bank_code": bank_code,
+                "kind": kind,
+                "location": location,
+            }
+        )
+    return result
 
 
 async def list_new_payment_employees(

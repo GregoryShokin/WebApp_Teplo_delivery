@@ -39,6 +39,7 @@ from app.models import (
 )
 from app.scheduler import run_bank_sync_job
 from app.schemas.dds import (
+    AllocationMoveRequest,
     BankOperationListRead,
     BankSyncQueuedRead,
     BankSyncRequest,
@@ -61,6 +62,8 @@ from app.schemas.dds import (
     DdsWalletRead,
     JournalListRead,
     NewPaymentContextRead,
+    NewPaymentExpenseCashCreate,
+    NewPaymentExpenseCashRead,
     NewPaymentExpenseDraftCreate,
     NewPaymentExpenseDraftRead,
     OperationClassifyRead,
@@ -106,6 +109,7 @@ from app.services.banking.safe_allocations import (
     create_allocation,
     kassa_targets_count,
     kassa_targets_total,
+    move_allocation_location,
     pay_allocation,
     safe_active_allocations_count,
     safe_reserved_total,
@@ -126,6 +130,7 @@ from app.services.kassa.payouts import (
 from app.services.new_payment import (
     NEW_PAYMENT_PERMISSION_CODES,
     build_new_payment_context,
+    ensure_expense_article_allowed,
     list_payout_attribution_employees,
 )
 from app.services.payroll_advance_service import (
@@ -657,6 +662,78 @@ async def post_new_payment_expense_draft(
     except BankFetchError as exc:
         # Черновик уже сохранён со status='failed' — отдаём причину, а не голый 500.
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.post(
+    "/new-payment/expense-cash",
+    response_model=NewPaymentExpenseCashRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=DDS_SAFE_ALLOCATE_ACCESS,
+)
+async def post_new_payment_expense_cash(
+    payload: NewPaymentExpenseCashCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, object]:
+    """Свободный вывод НАЛИЧНЫМИ: сразу резерв(ы) на Сейфе/в Кассе без банковского
+    черновика. Деньги уже на счёте — по одному резерву на строку (статья+сумма+
+    назначение), как у оплаченного транша. Дальше «Выплатить»/«Списать» из окна платежей.
+
+    Право — как у ручного резерва Сейфа (``finance.safe.allocate``). Для Сейфа проверяем
+    свободный остаток; касса толерантна к перерезерву (как её выдача), поэтому без гейта.
+    """
+    wallet = await session.get(Wallet, payload.wallet_id)
+    is_cash_wallet = wallet is not None and wallet.type in ("cash_safe", "store_cash")
+    if wallet is None or wallet.status != "active" or not is_cash_wallet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Наличный счёт (Сейф/Касса) не найден"
+        )
+    location = "safe" if wallet.type == "cash_safe" else "kassa"
+
+    prepared: list[tuple[DdsArticle, Decimal, str, UUID | None]] = []
+    total = Decimal("0")
+    for line in payload.lines:
+        article = await session.get(DdsArticle, line.article_id)
+        if article is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Статья ДДС не найдена"
+            )
+        try:
+            ensure_expense_article_allowed(article)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        amount = Decimal(line.amount)
+        line_purpose = " ".join((line.purpose or "").split()) or article.name
+        prepared.append((article, amount, line_purpose, line.counterparty_id))
+        total += amount
+
+    # Сейф: суммарный резерв не должен превышать свободный остаток.
+    if location == "safe":
+        free = await _safe_free_amount(session, wallet)
+        if total > free:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Недостаточно свободных средств на Сейфе: "
+                    f"свободно {free}, запрошено {total}"
+                ),
+            )
+
+    for article, amount, line_purpose, cp_id in prepared:
+        allocation = await create_allocation(
+            session,
+            wallet_id=wallet.id,
+            amount=amount,
+            free_amount=None,  # суммарный лимит уже проверен выше
+            article_id=article.id,
+            counterparty_id=cp_id,
+            purpose=line_purpose,
+            created_by_user_id=actor.user_id,
+        )
+        if location == "kassa":
+            allocation.location = "kassa"
+    await session.commit()
+    return {"created": len(prepared), "total": float(total), "location": location}
 
 
 @router.post(
@@ -1679,6 +1756,48 @@ async def transfer_safe_allocation_to_kassa(
         await transfer_allocation_to_kassa(
             session,
             allocation,
+            operation_date=datetime.now(MOSCOW_TZ).date(),
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    await session.commit()
+    await session.refresh(allocation)
+    return _safe_allocation_payload(
+        allocation, await _allocation_counterparty_name(session, allocation)
+    )
+
+
+@router.post(
+    "/allocations/{allocation_id}/move",
+    response_model=SafeAllocationRead,
+    dependencies=DDS_SAFE_CONFIRM_PAID_ACCESS,
+)
+async def move_safe_allocation(
+    allocation_id: UUID,
+    payload: AllocationMoveRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    """Переместить резерв между Сейфом и Кассой в любую сторону (весь остаток).
+
+    Двухногий перевод остатка между счетами + смена локации: Сейф→Касса резерв уходит
+    в «К выдаче», Касса→Сейф — обратно в резервы Сейфа. Свободный остаток счетов не
+    меняется. Частичное перемещение запрещено; повторное в ту же сторону — 409 (row-lock
+    сериализует двойной клик, туда-обратно работает).
+    """
+    allocation = await session.get(SafeAllocation, allocation_id, with_for_update=True)
+    if allocation is None:
+        raise HTTPException(status_code=404, detail="Резерв не найден")
+    # Резерв банк-выдачи аванса/займа перемещать нельзя: его путь — оплата с Сейфа.
+    if await allocation_advance_draft_id(session, allocation.id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Этот резерв привязан к банковской выдаче аванса/займа — перемещение недоступно",
+        )
+    try:
+        await move_allocation_location(
+            session,
+            allocation,
+            to_location=payload.to_location,
             operation_date=datetime.now(MOSCOW_TZ).date(),
         )
     except ValueError as error:

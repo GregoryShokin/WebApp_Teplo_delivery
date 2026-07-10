@@ -11,6 +11,7 @@ import { PayrollRoute } from "@/routes/payroll";
 import { DdsRoute } from "@/routes/dds";
 import { KassaRoute } from "@/routes/kassa";
 import { PaymentPageRoute } from "@/routes/payment-page";
+import { FinancePaymentsRoute } from "@/routes/finance/payments";
 import { WarehouseInvoicesRoute } from "@/routes/warehouse";
 import { LoginRoute } from "@/routes/login";
 import { AccessControlRoute } from "@/routes/access-control";
@@ -84,6 +85,10 @@ const routes: AppRoute[] = [
   {
     path: "/payment-page",
     render: ({ navigate }) => <PaymentPageRoute onNavigate={navigate} />,
+  },
+  {
+    path: "/finance/payments",
+    render: ({ navigate }) => <FinancePaymentsRoute onNavigate={navigate} />,
   },
   {
     path: "/warehouse",

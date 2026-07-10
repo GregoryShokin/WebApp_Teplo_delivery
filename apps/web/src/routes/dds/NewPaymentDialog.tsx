@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import {
   apiErrorMessage,
+  createExpenseCashReserves,
   createNewPaymentExpenseDraft,
   createPayrollAdvance,
   getNewPaymentContext,
@@ -137,6 +138,10 @@ export function NewPaymentDialog({
   const selectedWallet = wallets.find((wallet) => wallet.id === walletId) ?? null;
   const expenseChannel: "bank_draft" | "bank_draft_sber" =
     !hasNonExpenseRow && selectedWallet?.bank_code === "sber" ? "bank_draft_sber" : "bank_draft";
+  // Наличный источник (Сейф/Касса): платёж не создаёт банковский черновик, а сразу
+  // резервируется на счёте. Доступен для свободного вывода и авансов/займов; предоплата
+  // поставщику наличными пока не поддержана (её наличный путь платит сразу, не резервирует).
+  const isCashSource = selectedWallet?.kind === "cash";
 
   const needsCounterparties = rows.some((row) => flowOf(row) === "supplier_prepayment");
   const registryQuery = useQuery({
@@ -267,7 +272,12 @@ export function NewPaymentDialog({
           counterparty_id: row.counterpartyId || null,
         }));
       if (expenseLines.length > 0) {
-        tasks.push(createNewPaymentExpenseDraft({ lines: expenseLines, channel: expenseChannel }));
+        // Наличный источник → сразу резерв на Сейфе/в Кассе; банк → черновик на карту ИП.
+        tasks.push(
+          isCashSource
+            ? createExpenseCashReserves({ wallet_id: walletId, lines: expenseLines })
+            : createNewPaymentExpenseDraft({ lines: expenseLines, channel: expenseChannel }),
+        );
       }
       // Остальные маршруты — каждая строка своим механизмом (разные получатели).
       for (const row of rows) {
@@ -305,13 +315,20 @@ export function NewPaymentDialog({
     },
     onSuccess: async ({ total: count, failed }) => {
       await invalidate();
+      const done = isCashSource ? "Создано" : "Отправлено";
       if (failed === 0) {
-        toast.success(count === 1 ? "Платёж отправлен в банк" : `Отправлено платежей: ${count}`);
+        toast.success(
+          count === 1
+            ? isCashSource
+              ? "Резерв создан"
+              : "Платёж отправлен в банк"
+            : `${done} платежей: ${count}`,
+        );
         onOpenChange(false);
         return;
       }
       if (failed < count) {
-        toast.warning(`Отправлено ${count - failed} из ${count}; ошибок: ${failed}`);
+        toast.warning(`${done} ${count - failed} из ${count}; ошибок: ${failed}`);
         onOpenChange(false);
         return;
       }
@@ -335,8 +352,10 @@ export function NewPaymentDialog({
           <DialogHeader>
             <DialogTitle>Новый платёж</DialogTitle>
             <DialogDescription>
-              Соберите платежи построчно: статья ДДС и сумма. Всё создаёт банковский
-              черновик — подтверждение всегда в банке.
+              Соберите платежи построчно: статья ДДС и сумма.{" "}
+              {isCashSource
+                ? "Наличный счёт — сразу резерв на Сейфе/в Кассе, без банка."
+                : "Банковский счёт — создаётся черновик, подтверждение в банке."}
             </DialogDescription>
           </DialogHeader>
 
@@ -348,28 +367,38 @@ export function NewPaymentDialog({
                   <SelectValue placeholder="Выберите счёт" />
                 </SelectTrigger>
                 <SelectContent>
-                  {wallets.map((wallet) => (
-                    <SelectItem
-                      disabled={
-                        wallet.bank_code === "tbank"
-                          ? false
-                          : wallet.bank_code === "sber"
-                            ? hasNonExpenseRow
-                            : true
-                      }
-                      key={wallet.id}
-                      value={wallet.id}
-                    >
-                      {wallet.name}
-                      {wallet.bank_code === "tbank"
-                        ? ""
+                  {wallets.map((wallet) => {
+                    const isCash = wallet.kind === "cash";
+                    // Наличные (Сейф/Касса) недоступны, если в конструкторе есть предоплата
+                    // поставщику (её наличный путь пока не поддержан). Сбер — только всё-expense.
+                    const disabled = isCash
+                      ? needsCounterparties
+                      : wallet.bank_code === "tbank"
+                        ? false
                         : wallet.bank_code === "sber"
                           ? hasNonExpenseRow
-                            ? " — только для свободного расхода"
-                            : " — черновик через Сбер (расход на Сейф)"
-                          : " — черновики создаются в Т-Банке"}
-                    </SelectItem>
-                  ))}
+                          : true;
+                    let hint = "";
+                    if (isCash) {
+                      hint = needsCounterparties
+                        ? " — недоступно с предоплатой поставщику"
+                        : wallet.location === "kassa"
+                          ? " — наличными, резерв в Кассе"
+                          : " — наличными, резерв на Сейфе";
+                    } else if (wallet.bank_code === "sber") {
+                      hint = hasNonExpenseRow
+                        ? " — только для свободного расхода"
+                        : " — черновик через Сбер (расход на Сейф)";
+                    } else if (wallet.bank_code !== "tbank") {
+                      hint = " — черновики создаются в Т-Банке";
+                    }
+                    return (
+                      <SelectItem disabled={disabled} key={wallet.id} value={wallet.id}>
+                        {wallet.name}
+                        {hint}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </Label>

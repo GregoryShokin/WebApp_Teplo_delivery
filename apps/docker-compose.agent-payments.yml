@@ -1,0 +1,70 @@
+# Изолированный стек агента payments-finance-payments (слот payments): свой проект/порты/БД.
+# Не пересекается с default (5432/8000/5173), agent-b (5442/8010/5183),
+# agent-c (5452/8020/5193), agent-dds (5462/8030/5203).
+# Web-превью зафиксирован на 7153 (запрос владельца).
+#
+# Запуск (из apps/ в этом worktree):
+#   docker compose -p teplo-payments -f docker-compose.agent-payments.yml up -d postgres
+#   docker compose -p teplo-payments -f docker-compose.agent-payments.yml up -d        # + api/web
+#   docker exec -w /app/apps/api teplo-api-payments alembic upgrade head
+services:
+  postgres:
+    image: postgres:16
+    container_name: teplo-postgres-payments
+    environment:
+      POSTGRES_DB: teplo
+      POSTGRES_USER: teplo
+      POSTGRES_PASSWORD: teplo
+    ports:
+      - "5472:5432"
+    volumes:
+      - teplo_pgdata_payments:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teplo -d teplo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    container_name: teplo-api-payments
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
+      TEPLO_TEST_DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo_test_payments
+      TEPLO_ADMIN_EMAIL: admin1@teplo.local
+      TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
+      TEPLO_BANK_CLIENT_MODE: mock
+      JWT_SECRET_KEY: change-me-in-local-env-change-me
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 90
+      BACKEND_CORS_ORIGINS: '["http://localhost:7153","http://127.0.0.1:7153"]'
+    ports:
+      - "8040:8000"
+    volumes:
+      - ./api:/app/apps/api
+      - ../integrations:/app/integrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    container_name: teplo-web-payments
+    environment:
+      VITE_API_BASE_URL: http://localhost:8040
+    ports:
+      - "7153:5173"
+    volumes:
+      - ./web:/app/apps/web
+      - /app/apps/web/node_modules
+    depends_on:
+      - api
+
+volumes:
+  teplo_pgdata_payments:

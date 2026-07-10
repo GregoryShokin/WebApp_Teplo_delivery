@@ -38,10 +38,21 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - НЕ трогать другим: миграция `0104` (head), пункт сайдбара «Смена», секция прав `couriers.shift`
 - статус: реализовано, проверено в стеке teplo-c; не закоммичено
 
+### agent-payments — ветка `agent/payments-finance-payments`
+- worktree: `../Teplo-agent-payments`
+- compose: agent-payments (pg 5472 / api 8040 / web **7153**, БД `teplo`, тест `teplo_test_payments`, проект `teplo-payments`)
+- трогает: контур «Платежи» (FEAT-003) — агрегатор исходящих платежей + перенос «Страницы на оплату» в «Финансы» + плавающая FAB-модалка активных платежей:
+  - back: новый сервис/роут агрегатора платежей, расширение `DraftRead` (`counterparties.py`),
+    возможные ридонли-эндпоинты поверх `CounterpartyPaymentDraft` / `SafeAllocation` / intake
+  - front: `routes/payment-page/*` (переезд/переименование в «Финансы → Платежи»),
+    новая FAB-модалка активных платежей, `router.tsx`, `AppLayout.tsx` (меню «Финансы»), `lib/permissions.ts`
+- НЕ трогать другим: пункт меню «Платежи», секция прав платежей, compose `agent-payments` и порт 7153
+- статус: в работе (разведка завершена, уточняю ТЗ)
+
 ---
 
 ## Shared-ресурсы — кто сейчас держит
 
 - **Миграции alembic** (`alembic upgrade head`): сериализованно, один за раз. Держатель: agent-c (head `0104`)
 - **Тестовая БД `teplo_test`**: default-стек. Второй агент → `teplo_test_b` (compose agent-b).
-- **Порты**: API 8000 / web 5173 (default); API 8010 / web 5183 (agent-b); API 8020 / web 5193 (agent-c).
+- **Порты**: API 8000 / web 5173 (default); API 8010 / web 5183 (agent-b); API 8020 / web 5193 (agent-c); API 8040 / web **7153** (agent-payments).

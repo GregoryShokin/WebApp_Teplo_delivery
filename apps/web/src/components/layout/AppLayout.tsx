@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ClipboardCheck,
   ClipboardList,
+  CreditCard,
   Flame,
   Home,
   Inbox,
@@ -42,7 +43,7 @@ import { RoleBadge } from "@/components/ui-app/RoleBadge";
 import { clearSession, getAuthSnapshot, subscribeAuth, type AuthUser } from "@/lib/auth";
 import { logout } from "@/lib/api";
 import { usePermissions, type AppSection } from "@/lib/permissions";
-import { GlobalActionFab } from "@/components/layout/GlobalActionFab";
+import { PaymentsFab } from "@/components/layout/PaymentsFab";
 import { cn } from "@/lib/utils";
 
 type Navigate = (path: string) => void;
@@ -98,6 +99,7 @@ const navGroups: NavGroup[] = [
   {
     title: "Финансы",
     items: [
+      { label: "Платежи", href: "/finance/payments", icon: CreditCard, section: "counterparties" },
       { label: "ДДС", href: "/dds", icon: Banknote, section: "finance.dds" },
       {
         label: "Платёжный календарь",
@@ -195,7 +197,7 @@ export function AppLayout({ children, currentPath, onNavigate }: AppLayoutProps)
         </main>
       </div>
 
-      <GlobalActionFab />
+      <PaymentsFab />
     </div>
   );
 }

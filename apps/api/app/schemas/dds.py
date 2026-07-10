@@ -414,6 +414,14 @@ class SafeAllocationPayRequest(BaseModel):
     amount: Decimal = Field(gt=0)
 
 
+class AllocationMoveRequest(BaseModel):
+    """Перемещение резерва между Сейфом и Кассой (весь непогашенный остаток)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    to_location: Literal["safe", "kassa"]
+
+
 class SafeAllocationRead(BaseModel):
     id: uuid.UUID
     wallet_id: uuid.UUID
@@ -484,12 +492,18 @@ class NewPaymentArticleRead(BaseModel):
 
 
 class NewPaymentWalletRead(BaseModel):
-    """Счёт списания (активный банковский кошелёк); ``bank_code`` — банк счёта."""
+    """Счёт списания; ``bank_code`` — банк счёта (у наличных нет).
+
+    ``kind``: ``bank`` — платёж уходит банковским черновиком; ``cash`` — оплата
+    наличными без черновика (резерв). ``location`` для наличных: ``safe`` (Сейф) /
+    ``kassa`` (Торговая касса)."""
 
     id: uuid.UUID
     code: str
     name: str
     bank_code: str | None = None
+    kind: str = "bank"
+    location: str | None = None
 
 
 class NewPaymentEmployeeRead(BaseModel):
@@ -583,6 +597,24 @@ class NewPaymentExpenseDraftRead(BaseModel):
     provider_ref: str | None = None
     last_error: str | None = None
     created_at: datetime
+
+
+class NewPaymentExpenseCashCreate(BaseModel):
+    """Свободный вывод НАЛИЧНЫМИ: сразу резерв(ы) на Сейфе/в Кассе, без банковского
+    черновика (деньги уже на счёте). По одному резерву на строку — как у оплаченного
+    транша, только без транзита с р/с."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Счёт-источник: кошелёк Сейфа (cash_safe) или Торговой кассы (store_cash).
+    wallet_id: uuid.UUID
+    lines: list[NewPaymentExpenseLineIn] = Field(min_length=1)
+
+
+class NewPaymentExpenseCashRead(BaseModel):
+    created: int
+    total: float
+    location: str
 
 
 class JournalRow(BaseModel):
