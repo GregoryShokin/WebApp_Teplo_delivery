@@ -5266,6 +5266,14 @@ def test_personal_report_returns_periods_and_adjustments() -> None:
     assert payload["periods"][1]["deposit_payout"] == 15000
     assert payload["totals"]["deposit_payout"] == 15000
     assert payload["deposit_transactions"][0]["transaction_type"] == "accrual"
+    # Разбивка по ролям сериализуется в ответ (регресс: схема роняла roles[] → в чипах
+    # объединённой расчётки показывалась сырая склейка «pizza, sushi» вместо локализованных ролей).
+    period_roles = payload["periods"][1]["roles"]
+    assert period_roles, "период должен отдавать разбивку по ролям"
+    assert period_roles[0]["role"]
+    assert "total_payable" in period_roles[0]
+    # Подневная строка несёт роль(и) для подсветки по сменам.
+    assert all("role" in day and "roles" in day for day in payload["daily"])
 
 
 def test_personal_report_marks_substitute_ledger() -> None:

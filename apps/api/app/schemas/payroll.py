@@ -357,10 +357,30 @@ class DeferredChargeRead(BaseModel):
     recipients: list[DeferredChargeRecipientRead]
 
 
+class PayrollPersonalReportRoleRead(BaseModel):
+    """Строка одной роли внутри объединённой расчётки (повар пиццерист+сушист)."""
+
+    role: str
+    base_pay: float
+    premium: float
+    percent_pay: float
+    vacation_pay: float
+    ndfl_withheld: float
+    fund_accrual: float
+    deduction: float
+    deposit_withholding: float
+    deposit_payout: float = 0
+    bonus_total: float
+    penalty_total: float
+    total_payable: float
+
+
 class PayrollPersonalReportPeriodRead(BaseModel):
     period_id: uuid.UUID
     run_id: uuid.UUID
     run_status: str
+    # Ярлык объединённой расчётки — перечисление ролей («pizza, sushi»). Для подсветки
+    # чипами по ролям используйте `roles`, а не этот текст.
     role: str
     period_start: date
     period_end: date
@@ -379,6 +399,9 @@ class PayrollPersonalReportPeriodRead(BaseModel):
     # Строка «исполняющего» окладную должность (кассир → Помощник менеджера): оклад по
     # должности, отличной от основной. Персональный отчёт делит ведомости на два леджера.
     is_substitute: bool = False
+    # Разбивка объединённой расчётки по ролям (для чипов/секций внутри расчётки). Сервис
+    # всегда строит этот список; по одной роли — один элемент.
+    roles: list[PayrollPersonalReportRoleRead] = []
 
 
 class PayrollPersonalReportDailyRead(BaseModel):
@@ -394,6 +417,9 @@ class PayrollPersonalReportDailyRead(BaseModel):
     penalty: float
     audit_penalty: float
     comment: str | None = None
+    # Роль(и) дня для подсветки по сменам: `role` — основная (по оплате), `roles` — все.
+    role: str | None = None
+    roles: list[str] = []
 
 
 class PayrollPersonalReportAdjustmentRead(BaseModel):
