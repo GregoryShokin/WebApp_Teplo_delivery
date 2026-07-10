@@ -177,10 +177,12 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   // намеренно не приплюсован (это поле переиспользуется для гашения авансов и базы черновика),
   // поэтому сворачиваем его в итог только для отображения и наличного/банковского сплита —
   // ровно как backend считает grand_total (payroll_payouts._run_payout_grand_total).
-  const depositPayoutTotal = lines.reduce(
-    (sum, line) => sum + moneyValue(line.deposit_payout),
-    0,
-  );
+  // deposit_payout — поле per-employee (сериализатор дублирует его на каждой роль-строке
+  // сотрудника), поэтому берём по одному разу на сотрудника, иначе у двуролевого повара
+  // выдача депозита задвоится (бэкенд _run_deposit_payout_total считает её один раз).
+  const depositPayoutTotal = Array.from(
+    new Map(lines.map((line) => [line.employee_id, moneyValue(line.deposit_payout)])).values(),
+  ).reduce((sum, value) => sum + value, 0);
   const grandTotal = normalizeMoney(totalPayable + depositPayoutTotal);
   const totalRevenue = runRevenue(lines);
   const payrollRatio = totalRevenue > 0 ? totalPayable / totalRevenue : null;
