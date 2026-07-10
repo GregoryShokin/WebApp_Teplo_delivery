@@ -3480,7 +3480,7 @@ function EmployeeScheduleGrid({
                     <div className="font-medium leading-tight">{employee.full_name}</div>
                     <EmployeeRoleSubtitle
                       employee={employee}
-                      payrollRole={firstVisibleShiftRole(employee, days, shiftByEmployeeDay)}
+                      payrollRole={primaryRoleLabelSource(employee)}
                     />
                   </td>
                   {days.map((day) => {
@@ -5605,20 +5605,6 @@ function primaryRoleLabelSource(employee: EmployeeRosterRow) {
     .slice(0, 2)
     .map((role) => role.payroll_role)
     .join(", ");
-}
-
-function firstVisibleShiftRole(
-  employee: EmployeeRosterRow,
-  days: string[],
-  shifts: Map<string, ScheduledShiftRead>,
-) {
-  for (const day of days) {
-    const shift = shifts.get(`${employee.id}:${day}`);
-    if (shift?.payroll_role) {
-      return shift.payroll_role;
-    }
-  }
-  return primaryRoleLabelSource(employee);
 }
 
 function shouldShowFact(day: string, ledgerEntries: ScheduleLedgerEntryRead[], today: string) {
