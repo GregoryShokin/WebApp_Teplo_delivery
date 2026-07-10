@@ -390,6 +390,21 @@ class SupplierInvoice(Base):
     )
     iiko_pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     iiko_push_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # --- iiko-возврат при коррекции ОПЛАЧЕННОЙ накладной (Фаза 2) ---
+    # Оплаченный iiko-документ править нельзя (unpost/add_payment необратимы), поэтому коррекцию
+    # отражаем ОТДЕЛЬНЫМ документом returned_invoice: возврат лишних/не тех товаров (дельта старой и
+    # новой накладной) со ссылкой на incomingInvoiceId → в iiko минус товары со склада + долг
+    # поставщика (дебиторка). Статусы как у iiko_push: none/pending/booked/failed/skipped.
+    iiko_return_external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    iiko_return_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="none", server_default="none"
+    )
+    iiko_return_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Позиции возврата (дельта), ждущие проводки/ретрая; очищается при успехе. Список
+    # {product, quantity, price, name}. Склад/дату оркестратор добавляет при пуше.
+    iiko_return_lines: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
     # --- explicit barter (NULL = ordinary / iiko-synced, role derived chronologically) ---
     barter_role: Mapped[str | None] = mapped_column(
         supplier_invoice_barter_role_enum, nullable=True

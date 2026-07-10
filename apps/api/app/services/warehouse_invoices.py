@@ -545,6 +545,67 @@ async def _spill_overpayment_to_prepayment(
     return real_money_excess
 
 
+async def _snapshot_invoice_goods(
+    session: AsyncSession, invoice_id: uuid.UUID
+) -> dict[str, dict[str, Any]]:
+    """Товарные позиции накладной (то, что реально ушло в iiko) по ``product_guid``: суммарное
+    кол-во + цена + имя. Снимаем ДО правки — для возврата в iiko дельты «старая − новая»."""
+    rows = (
+        await session.scalars(
+            select(InvoiceLineItem).where(
+                InvoiceLineItem.invoice_id == invoice_id,
+                InvoiceLineItem.is_staff.is_(False),
+                InvoiceLineItem.is_return.is_(False),
+                InvoiceLineItem.product_guid.isnot(None),
+            )
+        )
+    ).all()
+    goods: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        entry = goods.setdefault(
+            row.product_guid,
+            {"quantity": Decimal("0"), "price": _money(row.price), "name": row.name},
+        )
+        entry["quantity"] = _qty(entry["quantity"] + _qty(row.quantity))
+    return goods
+
+
+def _goods_from_lines(
+    lines: Sequence[LineInput], products: dict[uuid.UUID, IikoProduct]
+) -> dict[str, Decimal]:
+    """Товарные позиции правки по ``product_guid``: суммарное кол-во (персонал/без товара — мимо)."""
+    goods: dict[str, Decimal] = {}
+    for line in lines:
+        if line.is_staff:
+            continue
+        product = products.get(line.iiko_product_id) if line.iiko_product_id else None
+        if product is None:
+            continue
+        goods[product.iiko_id] = _qty(goods.get(product.iiko_id, Decimal("0")) + _qty(line.quantity))
+    return goods
+
+
+def _return_delta(
+    old_goods: dict[str, dict[str, Any]], new_goods: dict[str, Decimal]
+) -> list[dict[str, Any]]:
+    """Позиции возврата в iiko = что было и убыло: по каждому ``product_guid`` old_qty − new_qty
+    (если > 0), по ИСХОДНОЙ цене. Добавленные (только в новой) не отражаем — оплаченный документ
+    iiko товар не добавляет (это отдельный будущий приход)."""
+    delta: list[dict[str, Any]] = []
+    for guid, info in old_goods.items():
+        removed = _qty(info["quantity"] - new_goods.get(guid, Decimal("0")))
+        if removed > 0:
+            delta.append(
+                {
+                    "product": guid,
+                    "quantity": float(removed),
+                    "price": float(info["price"]),
+                    "name": info["name"],
+                }
+            )
+    return delta
+
+
 async def adjust_paid_invoice(
     session: AsyncSession,
     invoice: SupplierInvoice,
@@ -587,6 +648,8 @@ async def adjust_paid_invoice(
     _assert_goods_have_product(lines, products)
 
     allocated = await _allocated_amount(session, invoice.id)
+    # Снимок товаров ДО правки — для отражения коррекции в iiko возвратом дельты (Фаза 2).
+    old_goods = await _snapshot_invoice_goods(session, invoice.id)
 
     await _rebuild_invoice_lines(session, invoice, lines, products)
     new_amount = _money(invoice.amount)
@@ -608,6 +671,14 @@ async def adjust_paid_invoice(
         await _spill_overpayment_to_prepayment(
             session, invoice, excess=excess, actor_user_id=actor_user_id
         )
+
+    # Отражение коррекции в iiko (Фаза 2) — возврат дельты товаров. Копим позиции; проводку в iiko
+    # делает роут (book_correction_return_in_iiko), как и обычный пуш. Только если накладная в iiko.
+    if invoice.external_id:
+        return_delta = _return_delta(old_goods, _goods_from_lines(lines, products))
+        if return_delta:
+            invoice.iiko_return_lines = return_delta
+            invoice.iiko_return_status = "pending"
 
     await _recompute_status(session, invoice)
     await session.commit()
@@ -702,6 +773,10 @@ async def get_warehouse_invoice(
     summary = _invoice_summary(invoice, counterparty.name if counterparty else "—", allocated)
     summary["due_date"] = invoice.due_date.isoformat() if invoice.due_date else None
     summary["iiko_push_error"] = invoice.iiko_push_error
+    # Статус возврата коррекции в iiko (Фаза 2) — фронту для бейджа/кнопки «Повторить возврат».
+    summary["iiko_return_status"] = invoice.iiko_return_status
+    summary["iiko_return_external_id"] = invoice.iiko_return_external_id
+    summary["iiko_return_error"] = invoice.iiko_return_error
     # Статус привязанного черновика — фронту для «Отправлено в банк» / «Деньги в Сейфе».
     draft = (
         await session.get(CounterpartyPaymentDraft, invoice.draft_id)

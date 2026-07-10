@@ -39,6 +39,7 @@ from app.services.kassa.cheque_payout_push import post_kassa_payment_to_iiko
 from app.services.kassa.invoice_paid_push import counterparty_iiko_guid
 from app.services.warehouse_invoice_push import (
     WarehousePushError,
+    book_correction_return_in_iiko,
     delete_invoice_in_iiko,
     propagate_invoice_edit_to_iiko,
     push_invoice_to_iiko,
@@ -762,12 +763,33 @@ async def post_adjust_paid_invoice(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+    # Отразить коррекцию в iiko — возвратная накладная на дельту товаров (Фаза 2). Не-фатально:
+    # ошибка iiko не роняет коррекцию, статус садится в накладную, позиции ждут ретрая.
+    if invoice.external_id and invoice.iiko_return_status == "pending":
+        await book_correction_return_in_iiko(session, invoice_id)
     result = await get_warehouse_invoice(session, invoice_id)
     assert result is not None
     # Сколько излишка оплаты ушло в дебиторку — фронту для тоста «… ₽ в дебиторку».
     result["moved_to_receivable"] = float(
         max(Decimal("0"), allocated_before - Decimal(str(result["amount"])))
     )
+    return result
+
+
+@router.post("/invoices/{invoice_id}/retry-iiko-return")
+async def post_retry_iiko_return(
+    invoice_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    """Повторить проводку возврата коррекции в iiko после сбоя (позиции хранятся в накладной)."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    ensure_permission(actor, "invoices.normal.edit_paid")
+    await book_correction_return_in_iiko(session, invoice_id)
+    result = await get_warehouse_invoice(session, invoice_id)
+    assert result is not None
     return result
 
 

@@ -26,6 +26,7 @@ import {
   deleteWarehouseInvoice,
   getWarehouseInvoice,
   pushInvoiceToIiko,
+  retryIikoReturn,
   type WarehouseInvoiceDetail,
 } from "./api";
 
@@ -35,6 +36,14 @@ const IIKO_STATUS: Record<string, { label: string; cls: string; canSend: boolean
   failed: { label: "Ошибка отправки в iiko", cls: "border-red-200 bg-red-50 text-red-700", canSend: true },
   skipped: { label: "Не отправляется в iiko", cls: "border-slate-200 bg-slate-50 text-slate-600", canSend: false },
   not_pushed: { label: "Не отправлена в iiko", cls: "border-amber-200 bg-amber-50 text-amber-700", canSend: true },
+};
+
+/** Статус возврата коррекции оплаченной накладной в iiko (Фаза 2). */
+const RETURN_STATUS: Record<string, { label: string; cls: string }> = {
+  booked: { label: "Возврат отражён в iiko", cls: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  pending: { label: "Возврат в iiko ожидает", cls: "border-amber-200 bg-amber-50 text-amber-700" },
+  failed: { label: "Ошибка возврата в iiko", cls: "border-red-200 bg-red-50 text-red-700" },
+  skipped: { label: "Возврат в iiko не требуется", cls: "border-slate-200 bg-slate-50 text-slate-600" },
 };
 
 function formatDateTime(value: string | null): string {
@@ -93,6 +102,18 @@ export function InvoiceDetailDialog({
       else toast.error(updated.iiko_push_error ?? "iiko не принял документ");
     },
     onError: (e) => toast.error(apiErrorMessage(e, "Не удалось отправить в iiko")),
+  });
+
+  const returnRetryMutation = useMutation({
+    mutationFn: () => retryIikoReturn(invoiceId!),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["wh", "invoice", invoiceId], updated);
+      void queryClient.invalidateQueries({ queryKey: ["wh"] });
+      void queryClient.invalidateQueries({ queryKey: ["cp"] });
+      if (updated.iiko_return_status === "booked") toast.success("Возврат отражён в iiko");
+      else toast.error(updated.iiko_return_error ?? "iiko не принял возврат");
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, "Не удалось отправить возврат в iiko")),
   });
 
   const deleteMutation = useMutation({
@@ -241,6 +262,39 @@ export function InvoiceDetailDialog({
                 >
                   <Pencil size={14} aria-hidden="true" /> Исправить оплаченную
                 </Button>
+              </div>
+            ) : null}
+
+            {/* Статус отражения коррекции в iiko возвратной накладной (Фаза 2) + ретрай при сбое. */}
+            {detail.iiko_return_status && detail.iiko_return_status !== "none" ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border p-3">
+                <Badge
+                  variant="outline"
+                  className={RETURN_STATUS[detail.iiko_return_status]?.cls}
+                >
+                  {RETURN_STATUS[detail.iiko_return_status]?.label ?? detail.iiko_return_status}
+                </Badge>
+                {detail.iiko_return_error ? (
+                  <span className="text-xs text-muted-foreground">{detail.iiko_return_error}</span>
+                ) : null}
+                {canEditPaid &&
+                (detail.iiko_return_status === "failed" ||
+                  detail.iiko_return_status === "pending") ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="ml-auto"
+                    disabled={returnRetryMutation.isPending}
+                    onClick={() => returnRetryMutation.mutate()}
+                  >
+                    {returnRetryMutation.isPending ? (
+                      <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Send size={14} aria-hidden="true" />
+                    )}
+                    Повторить возврат в iiko
+                  </Button>
+                ) : null}
               </div>
             ) : null}
 

@@ -21,8 +21,10 @@ from cp_helpers import (
 )
 from sqlalchemy import select
 
-from app.models import InvoicePaymentAllocation, SupplierPrepayment
+import app.services.warehouse_invoice_push as wip
+from app.models import InvoiceLineItem, InvoicePaymentAllocation, SupplierPrepayment
 from app.services.supplier_prepayments import counterparty_prepayment_balance
+from app.services.warehouse_invoice_push import _CloudPushOutcome, book_correction_return_in_iiko
 from app.services.warehouse_invoices import (
     LineInput,
     WarehouseInvoiceError,
@@ -195,3 +197,131 @@ async def test_adjust_paid_endpoint_permission_and_receivable(client, async_sess
 
     async with async_session_factory() as session:
         assert await counterparty_prepayment_balance(session, cp_id) == Decimal("40.00")
+
+
+# --- Фаза 2: отражение коррекции в iiko возвратной накладной -----------------------------------
+
+
+def _old_line(invoice_id, product, qty, price):
+    return InvoiceLineItem(
+        invoice_id=invoice_id,
+        iiko_product_id=product.id,
+        product_guid=product.iiko_id,
+        name=product.name,
+        quantity=Decimal(qty),
+        price=Decimal(price),
+        sum=Decimal(str(float(qty) * float(price))),
+        sort_order=0,
+    )
+
+
+async def test_correction_computes_iiko_return_delta(async_session_factory):
+    """Накладная в iiko: правка вниз копит дельту товаров в iiko_return_lines (status pending)."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Поставщик R", iiko_guid="SUP-R")
+        product = await make_iiko_product(session, name="Мешок")
+        invoice = await make_invoice(
+            session, counterparty_id=cp.id, amount="100.00", payment_status="paid",
+            number="700", external_id="IIKO-DOC-R",
+        )
+        session.add(_old_line(invoice.id, product, "2", "50"))
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=invoice.id, source_kind="cash", amount=Decimal("100.00")
+            )
+        )
+        await session.commit()
+
+        await adjust_paid_invoice(session, invoice, lines=[_line(product.id, "50", qty="1")])
+        await session.refresh(invoice)
+
+        assert invoice.amount == Decimal("50.00")
+        assert invoice.iiko_return_status == "pending"
+        assert invoice.iiko_return_lines == [
+            {"product": product.iiko_id, "quantity": 1.0, "price": 50.0, "name": "Мешок"}
+        ]
+        assert await counterparty_prepayment_balance(session, cp.id) == Decimal("50.00")
+
+
+async def test_correction_no_return_when_not_in_iiko(async_session_factory):
+    """Накладная НЕ в iiko (нет external_id) — дельту не копим."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Поставщик NR")
+        product = await make_iiko_product(session, name="Мешок")
+        invoice = await make_invoice(
+            session, counterparty_id=cp.id, amount="100.00", payment_status="paid", number="701"
+        )
+        session.add(_old_line(invoice.id, product, "2", "50"))
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=invoice.id, source_kind="cash", amount=Decimal("100.00")
+            )
+        )
+        await session.commit()
+
+        await adjust_paid_invoice(session, invoice, lines=[_line(product.id, "50", qty="1")])
+        await session.refresh(invoice)
+        assert invoice.iiko_return_status == "none"
+        assert invoice.iiko_return_lines == []
+
+
+async def test_book_correction_return_success(async_session_factory, monkeypatch):
+    """Оркестратор: успех create→post → booked, external_id сохранён, позиции очищены."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Поставщик B", iiko_guid="SUP-B")
+        product = await make_iiko_product(session, name="Мешок")
+        invoice = await make_invoice(
+            session, counterparty_id=cp.id, amount="50.00", payment_status="paid",
+            number="702", external_id="IIKO-DOC-B",
+        )
+        invoice.store_guid = "ST-1"
+        invoice.iiko_return_lines = [
+            {"product": product.iiko_id, "quantity": 1.0, "price": 50.0, "name": "Мешок"}
+        ]
+        invoice.iiko_return_status = "pending"
+        await session.commit()
+
+        captured: dict = {}
+
+        def fake(org, body):
+            captured["org"] = org
+            captured["body"] = body
+            return _CloudPushOutcome("RET-DOC-1", posted=True)
+
+        monkeypatch.setattr(wip, "_cloud_create_and_post_return", fake)
+
+        await book_correction_return_in_iiko(session, invoice.id)
+        await session.refresh(invoice)
+        assert invoice.iiko_return_status == "booked"
+        assert invoice.iiko_return_external_id == "RET-DOC-1"
+        assert invoice.iiko_return_lines == []
+        assert captured["body"]["incomingInvoiceId"] == "IIKO-DOC-B"
+        assert captured["body"]["items"][0]["product"] == product.iiko_id
+        assert captured["body"]["items"][0]["amount"] == 1.0
+
+
+async def test_book_correction_return_failure_keeps_lines(async_session_factory, monkeypatch):
+    """Оркестратор: сбой iiko → failed, позиции остаются для ретрая."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Поставщик F", iiko_guid="SUP-F")
+        product = await make_iiko_product(session, name="Мешок")
+        invoice = await make_invoice(
+            session, counterparty_id=cp.id, amount="50.00", payment_status="paid",
+            number="703", external_id="IIKO-DOC-F",
+        )
+        invoice.store_guid = "ST-1"
+        lines = [{"product": product.iiko_id, "quantity": 1.0, "price": 50.0, "name": "Мешок"}]
+        invoice.iiko_return_lines = list(lines)
+        invoice.iiko_return_status = "pending"
+        await session.commit()
+
+        monkeypatch.setattr(
+            wip,
+            "_cloud_create_and_post_return",
+            lambda org, body: _CloudPushOutcome(None, posted=False, error="create HTTP 500"),
+        )
+        await book_correction_return_in_iiko(session, invoice.id)
+        await session.refresh(invoice)
+        assert invoice.iiko_return_status == "failed"
+        assert "500" in (invoice.iiko_return_error or "")
+        assert invoice.iiko_return_lines == lines

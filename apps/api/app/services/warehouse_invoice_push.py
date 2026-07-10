@@ -49,6 +49,11 @@ from app.services.iiko_invoice_cloud import (
     unpost_invoice,
     update_invoice,
 )
+from app.services.iiko_returned_cloud import (
+    build_returned_invoice_body,
+    create_returned_invoice,
+    post_returned_invoice,
+)
 from app.services.warehouse_invoices import SUPPLIER_PAYMENT_ARTICLE_NAME
 
 STORE_SETTING_KEY = "iiko.default_store_guid"
@@ -425,5 +430,125 @@ async def propagate_invoice_edit_to_iiko(
     else:
         invoice.iiko_push_status = "failed"
         invoice.iiko_push_error = (outcome.error or "iiko: правка не проведена")[:500]
+    await session.commit()
+    return invoice
+
+
+def _cloud_create_and_post_return(organization_id: str, body: dict) -> _CloudPushOutcome:
+    """Синхронно (в треде): один auth → create возвратной → post. Не бросает — ошибки транспорта/
+    бизнеса возвращаются в ``error`` (iiko отдаёт отказ кодом 500/409 с ``message``)."""
+    opener = iiko_opener()
+    try:
+        token = iiko_auth_token(opener)
+    except Exception as exc:  # noqa: BLE001 — нет креды/сеть/прокси
+        return _CloudPushOutcome(None, False, f"auth: {exc}"[:400])
+    status, resp = create_returned_invoice(body, token=token, opener=opener)
+    if not (200 <= status < 300):
+        return _CloudPushOutcome(None, False, business_error_message(resp) or f"create HTTP {status}")
+    document_id = extract_document_id(resp)
+    if not document_id:
+        return _CloudPushOutcome(None, False, "create: iiko не вернул documentId")
+    pstatus, presp = post_returned_invoice(organization_id, document_id, token=token, opener=opener)
+    if not (200 <= pstatus < 300):
+        return _CloudPushOutcome(
+            document_id, False, business_error_message(presp) or f"post HTTP {pstatus}"
+        )
+    return _CloudPushOutcome(document_id, True, None)
+
+
+async def book_correction_return_in_iiko(
+    session: AsyncSession, invoice_id: uuid.UUID
+) -> SupplierInvoice:
+    """Отразить коррекцию ОПЛАЧЕННОЙ накладной в iiko возвратной накладной (``returned_invoice``).
+
+    Читает ``invoice.iiko_return_lines`` (дельта «старая − новая» по товарам, посчитана в
+    ``adjust_paid_invoice``) и книжит ``create`` → ``post`` со ссылкой на ``incomingInvoiceId`` =
+    ``external_id`` оригинала. В iiko это списывает лишние товары со склада и создаёт долг
+    поставщика (дебиторку). Оплаченный оригинал не трогаем. Не-фатально: коррекция у нас уже
+    сохранена; при неуспехе позиции остаются в ``iiko_return_lines`` для ретрая."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise WarehousePushError("Накладная не найдена")
+
+    return_lines = list(invoice.iiko_return_lines or [])
+    if not return_lines:
+        # Нечего возвращать (коррекция без уменьшения товаров) — снимаем «ожидание».
+        if invoice.iiko_return_status == "pending":
+            invoice.iiko_return_status = "none"
+            await session.commit()
+        return invoice
+    if not invoice.external_id:
+        invoice.iiko_return_status = "skipped"
+        invoice.iiko_return_error = "Накладная не выгружена в iiko — возврат отражать негде"
+        invoice.iiko_return_lines = []
+        await session.commit()
+        return invoice
+
+    partner_guid = await session.scalar(
+        select(CounterpartyAlias.alias).where(
+            CounterpartyAlias.counterparty_id == invoice.counterparty_id,
+            CounterpartyAlias.source == IIKO_SOURCE,
+        )
+    )
+    store_guid = await _store_guid(session, invoice)
+    if not partner_guid or not store_guid:
+        invoice.iiko_return_status = "failed"
+        invoice.iiko_return_error = "Нет iiko-GUID контрагента или склада для возврата"
+        await session.commit()  # позиции оставляем для ретрая
+        return invoice
+
+    dt = invoice.issued_at or (
+        datetime.combine(invoice.invoice_date, time())
+        if invoice.invoice_date
+        else datetime.now(UTC)
+    )
+    date_naive = dt.replace(tzinfo=None)
+    items: list[dict] = []
+    for idx, line in enumerate(return_lines, start=1):
+        qty = float(line["quantity"])
+        price = float(line.get("price") or 0)
+        items.append(
+            {
+                "num": idx,
+                "product": line["product"],
+                "store": store_guid,
+                "amount": qty,
+                "price": price,
+                "sum": round(qty * price, 2),
+            }
+        )
+
+    from app.services.iiko_sync import _load_source_credential_env
+
+    await _load_source_credential_env(session)
+    body = build_returned_invoice_body(
+        counteragent=partner_guid,
+        date=date_naive,
+        items=items,
+        incoming_invoice_id=invoice.external_id,
+        default_store=store_guid,
+        comment=(
+            f"Коррекция оплаченной накладной №{invoice.number or '—'} — возврат лишних товаров"
+        ),
+    )
+    try:
+        outcome = await anyio.to_thread.run_sync(
+            lambda: _cloud_create_and_post_return(IIKO_ORGANIZATION_ID, body)
+        )
+    except Exception as exc:  # noqa: BLE001 — держим коррекцию, пишем ошибку
+        invoice.iiko_return_status = "failed"
+        invoice.iiko_return_error = str(exc)[:500]
+        await session.commit()
+        return invoice
+
+    if outcome.posted and outcome.document_id:
+        invoice.iiko_return_external_id = outcome.document_id
+        invoice.iiko_return_status = "booked"
+        invoice.iiko_return_error = None
+        invoice.iiko_return_lines = []
+    else:
+        invoice.iiko_return_status = "failed"
+        invoice.iiko_return_error = (outcome.error or "iiko: возврат не проведён")[:500]
+        # позиции оставляем для ретрая
     await session.commit()
     return invoice
