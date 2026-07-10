@@ -79,6 +79,7 @@ export type AppAction =
   | "counterparties.admin"
   | "invoices.normal.create"
   | "invoices.normal.edit"
+  | "invoices.normal.edit_paid"
   | "invoices.normal.pay"
   | "invoices.barter.create"
   | "invoices.barter.edit"
@@ -356,6 +357,7 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "counterparties.admin": ["counterparties.admin"],
   "invoices.normal.create": ["invoices.normal.create"],
   "invoices.normal.edit": ["invoices.normal.edit"],
+  "invoices.normal.edit_paid": ["invoices.normal.edit_paid"],
   "invoices.normal.pay": ["invoices.normal.pay"],
   "invoices.barter.create": ["invoices.barter.create"],
   "invoices.barter.edit": ["invoices.barter.edit"],

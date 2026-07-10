@@ -43,10 +43,12 @@ from app.services.warehouse_invoice_push import (
     propagate_invoice_edit_to_iiko,
     push_invoice_to_iiko,
 )
+from app.services.counterparty_matching import _allocated_amount
 from app.services.warehouse_invoices import (
     LineInput,
     ReturnLineInput,
     WarehouseInvoiceError,
+    adjust_paid_invoice,
     create_barter_return,
     create_warehouse_invoice,
     delete_warehouse_invoice,
@@ -711,6 +713,61 @@ async def put_invoice(
         await propagate_invoice_edit_to_iiko(session, invoice_id)
     result = await get_warehouse_invoice(session, invoice_id)
     assert result is not None
+    return result
+
+
+@router.post("/invoices/{invoice_id}/adjust-paid")
+async def post_adjust_paid_invoice(
+    invoice_id: uuid.UUID,
+    payload: InvoiceUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    """Исправить УЖЕ ОПЛАЧЕННУЮ накладную (поставщик прислал не ту, а её успели провести и
+    оплатить): заменить позиции/сумму; излишек оплаты уходит в дебиторку поставщику. Отдельное
+    точечное право ``invoices.normal.edit_paid`` (owner/admin). iiko-документ здесь НЕ трогаем —
+    оплаченный iiko не даёт распровести/править; коррекция в iiko отдельным шагом (возвратная
+    накладная), см. project_edit_paid_invoice_feasibility."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    if (await invoice_permission_kind(session, invoice)) == "barter":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Бартерную накладную так исправлять нельзя",
+        )
+    ensure_permission(actor, "invoices.normal.edit_paid")
+    allocated_before = await _allocated_amount(session, invoice_id)
+    try:
+        await adjust_paid_invoice(
+            session,
+            invoice,
+            lines=[
+                LineInput(
+                    name=line.name,
+                    quantity=line.quantity,
+                    price=line.price,
+                    iiko_product_id=line.iiko_product_id,
+                    vat_percent=line.vat_percent,
+                    is_staff=line.is_staff,
+                    dds_article_id=line.dds_article_id,
+                )
+                for line in payload.lines
+            ],
+            issued_at=payload.issued_at,
+            number=payload.number,
+            actor_user_id=actor.user_id,
+        )
+    except WarehouseInvoiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    result = await get_warehouse_invoice(session, invoice_id)
+    assert result is not None
+    # Сколько излишка оплаты ушло в дебиторку — фронту для тоста «… ₽ в дебиторку».
+    result["moved_to_receivable"] = float(
+        max(Decimal("0"), allocated_before - Decimal(str(result["amount"])))
+    )
     return result
 
 

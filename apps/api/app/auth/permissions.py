@@ -354,6 +354,11 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Оплачивать обычные накладные (в т. ч. отправлять в банк)",
     ),
     (
+        "invoices.normal.edit_paid",
+        "Накладные",
+        "Исправлять уже ОПЛАЧЕННУЮ накладную (позиции/сумму); излишек оплаты уходит в дебиторку",
+    ),
+    (
         "invoices.barter.create",
         "Накладные",
         "Создавать бартерные накладные (займы и возвраты)",
@@ -763,6 +768,8 @@ OFFICE_MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "settings.roles.edit",
         "settings.access_audit.read",
         "counterparties.admin",
+        # Правка ОПЛАЧЕННОЙ накладной с отзывом оплаты — точечное право (только owner/admin).
+        "invoices.normal.edit_paid",
         # Корректировки кассы — точечное право, не входит в дефолт Менеджера.
         "kassa.adjustments.create",
         # Отмена авто-штрафов за недостачу — точечное право (только owner/admin).

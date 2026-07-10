@@ -25,16 +25,26 @@ import {
   type DraftLine,
   type StaffLine,
 } from "./CreateInvoiceDialog";
-import { getProducts, getStaffArticles, getWarehouseInvoice, updateWarehouseInvoice } from "./api";
+import {
+  adjustPaidInvoice,
+  getProducts,
+  getStaffArticles,
+  getWarehouseInvoice,
+  updateWarehouseInvoice,
+} from "./api";
 
-/** Правка позиций НЕОПЛАЧЕННОЙ (не бартерной) накладной: «переделать и отправить в iiko».
- * Контрагент/режим неизменны — меняем только товар/персонал. Переиспользует строки создания. */
+/** Правка позиций накладной. По умолчанию — НЕОПЛАЧЕННОЙ (не бартерной): «переделать и отправить
+ * в iiko». В режиме `paid` — исправление УЖЕ ОПЛАЧЕННОЙ (право invoices.normal.edit_paid): излишек
+ * оплаты уходит в дебиторку поставщику, iiko-документ не трогаем. Форма одна, отличается гейтом,
+ * эндпоинтом и предупреждением. Переиспользует строки создания. */
 export function InvoiceEditDialog({
   invoiceId,
   onOpenChange,
+  paid = false,
 }: {
   invoiceId: string | null;
   onOpenChange: (open: boolean) => void;
+  paid?: boolean;
 }) {
   const queryClient = useQueryClient();
   const open = Boolean(invoiceId);
@@ -101,45 +111,58 @@ export function InvoiceEditDialog({
     return { store, staff, total: store + staff };
   }, [lines, staffLines]);
 
-  const editable = detail?.payment_status === "unpaid" && !detail?.barter_role;
+  const editable = paid
+    ? (detail?.payment_status === "paid" || detail?.payment_status === "partially_paid") &&
+      !detail?.barter_role &&
+      !detail?.draft_id
+    : detail?.payment_status === "unpaid" && !detail?.barter_role;
+
+  const buildPayload = () => ({
+    number: number.trim() || undefined,
+    lines: [
+      ...lines
+        .filter((l) => l.name && num(l.quantity) > 0)
+        .map((l) => ({
+          name: l.name,
+          quantity: num(l.quantity),
+          price: num(l.price),
+          iiko_product_id: l.product_id,
+          vat_percent: num(l.vat) > 0 ? num(l.vat) : null,
+          is_staff: false,
+        })),
+      ...staffLines
+        .filter((l) => l.articleId && num(l.amount) > 0)
+        .map((l) => ({
+          name:
+            l.note.trim() || staffArticles.find((a) => a.id === l.articleId)?.name || "Персонал",
+          quantity: 1,
+          price: num(l.amount),
+          iiko_product_id: null,
+          vat_percent: null,
+          is_staff: true,
+          dds_article_id: l.articleId,
+        })),
+    ],
+  });
 
   const saveMutation = useMutation({
     mutationFn: () =>
-      updateWarehouseInvoice(invoiceId!, {
-        number: number.trim() || undefined,
-        lines: [
-          ...lines
-            .filter((l) => l.name && num(l.quantity) > 0)
-            .map((l) => ({
-              name: l.name,
-              quantity: num(l.quantity),
-              price: num(l.price),
-              iiko_product_id: l.product_id,
-              vat_percent: num(l.vat) > 0 ? num(l.vat) : null,
-              is_staff: false,
-            })),
-          ...staffLines
-            .filter((l) => l.articleId && num(l.amount) > 0)
-            .map((l) => ({
-              name:
-                l.note.trim() ||
-                staffArticles.find((a) => a.id === l.articleId)?.name ||
-                "Персонал",
-              quantity: 1,
-              price: num(l.amount),
-              iiko_product_id: null,
-              vat_percent: null,
-              is_staff: true,
-              dds_article_id: l.articleId,
-            })),
-        ],
-      }),
+      paid ? adjustPaidInvoice(invoiceId!, buildPayload()) : updateWarehouseInvoice(invoiceId!, buildPayload()),
     onSuccess: (updated) => {
       queryClient.setQueryData(["wh", "invoice", invoiceId], updated);
       void queryClient.invalidateQueries({ queryKey: ["wh"] });
       void queryClient.invalidateQueries({ queryKey: ["cp"] });
       void queryClient.invalidateQueries({ queryKey: ["kassa"] });
-      toast.success("Накладная обновлена");
+      if (paid) {
+        const moved = (updated as { moved_to_receivable?: number }).moved_to_receivable ?? 0;
+        toast.success(
+          moved > 0
+            ? `Накладная исправлена · ${formatRub(moved)} перенесено в дебиторку`
+            : "Накладная исправлена",
+        );
+      } else {
+        toast.success("Накладная обновлена");
+      }
       onOpenChange(false);
     },
     onError: (e) => toast.error(apiErrorMessage(e, "Не удалось сохранить накладную")),
@@ -159,7 +182,8 @@ export function InvoiceEditDialog({
       <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            Редактировать накладную {detail?.number ? `№${detail.number}` : ""}
+            {paid ? "Исправить оплаченную накладную" : "Редактировать накладную"}{" "}
+            {detail?.number ? `№${detail.number}` : ""}
           </DialogTitle>
         </DialogHeader>
 
@@ -169,12 +193,19 @@ export function InvoiceEditDialog({
           </div>
         ) : !editable ? (
           <p className="py-4 text-sm text-amber-600">
-            Редактировать можно только неоплаченную обычную накладную. Эта{" "}
-            {detail.barter_role ? "бартерная" : "уже оплачена"} — снимите оплату или измените в
-            iiko.
+            {paid
+              ? "Исправить так можно только оплаченную обычную накладную, не отправленную в банк."
+              : "Редактировать можно только неоплаченную обычную накладную — снимите оплату или используйте «Исправить оплаченную»."}
           </p>
         ) : (
           <div className="grid gap-4">
+            {paid ? (
+              <p className="rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800">
+                Исправление ОПЛАЧЕННОЙ накладной. Если новая сумма меньше уже оплаченной — излишек
+                уйдёт в дебиторку поставщику («поставщик нам должен», гасится будущими поставками).
+                iiko-документ не меняется — корректируйте его отдельно (возвратная накладная).
+              </p>
+            ) : null}
             <div className="grid max-w-[220px] gap-1.5">
               <Label htmlFor="invoice-number">Номер</Label>
               <Input

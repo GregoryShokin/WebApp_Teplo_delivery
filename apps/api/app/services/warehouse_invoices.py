@@ -32,7 +32,9 @@ from app.models import (
     InvoiceLineItem,
     InvoicePaymentAllocation,
     SupplierInvoice,
+    SupplierPrepayment,
 )
+from app.services.counterparty_matching import _allocated_amount, _recompute_status
 
 # Статьи ДДС для блока «Траты на персонал» накладной (выбор из двух — питание / прочие).
 # По ИМЕНИ (code/uuid различны dev/prod), как whitelist чека.
@@ -47,6 +49,10 @@ STAFF_ARTICLE_NAMES = ("Расходы на питание персонала", 
 # пуша, бейджа и разбивки. По ИМЕНИ (code/uuid различны dev/prod), как whitelist чека и
 # cheque_payout_push. См. project_card_purchase_invoice_gap.
 SUPPLIER_PAYMENT_ARTICLE_NAME = "Оплата поставщикам"
+
+# Статья ДДС «Аванс поставщику» — на неё вешаем дебиторку из излишка оплаты при коррекции
+# оплаченной накладной (как create_supplier_prepayment). См. supplier_prepayments.PREPAYMENT_ARTICLE_CODE.
+PREPAYMENT_ARTICLE_CODE = "advance_to_supplier"
 
 
 async def supplier_payment_article_ids(session: AsyncSession) -> set[uuid.UUID]:
@@ -332,44 +338,18 @@ async def create_warehouse_invoice(
     return invoice
 
 
-async def update_warehouse_invoice(
+async def _rebuild_invoice_lines(
     session: AsyncSession,
     invoice: SupplierInvoice,
-    *,
     lines: Sequence[LineInput],
-    issued_at: datetime | None = None,
-    number: str | None = None,
-) -> SupplierInvoice:
-    """Replace an invoice's lines and recompute totals. Only for UNPAID, non-barter invoices
-    (paid allocations are tied to the amount; barter has its own loan/return ledger). The lines
-    are rebuilt exactly like ``create_warehouse_invoice``. iiko push state is reset to
-    ``not_pushed`` (so a corrected invoice can be pushed) UNLESS it was already pushed — then
-    ``external_id`` is kept so the round-trip dedup still recognises it (the stale iiko document
-    is the owner's to delete + re-push)."""
-    if not lines:
-        raise WarehouseInvoiceError("Добавьте хотя бы одну строку накладной")
-    if invoice.barter_role is not None:
-        raise WarehouseInvoiceError("Бартерную накладную редактировать нельзя")
-    if invoice.payment_status != "unpaid":
-        raise WarehouseInvoiceError("Редактировать можно только неоплаченную накладную")
-    if invoice.draft_id is not None:
-        # Платёж уже уехал (черновик в банке / деньги на Сейфе под этот черновик) — правка сумм
-        # разошлась бы с платежом/резервом. Сначала отзыв платежа.
-        raise WarehouseInvoiceError("Накладная отправлена в банк — сначала отзовите платёж")
-
-    product_ids = [line.iiko_product_id for line in lines if line.iiko_product_id]
-    products: dict[uuid.UUID, IikoProduct] = {}
-    if product_ids:
-        rows = (
-            await session.scalars(select(IikoProduct).where(IikoProduct.id.in_(product_ids)))
-        ).all()
-        products = {product.id: product for product in rows}
-    _assert_goods_have_product(lines, products)
-
+    products: dict[uuid.UUID, IikoProduct],
+) -> None:
+    """Заменить строки накладной на ``lines`` и пересчитать amount/staff_amount/vat_total и
+    JSONB-зеркало ``line_items``. Тот же расчёт, что в ``create_warehouse_invoice``, но со
+    сносом старых строк. Общий для ``update_warehouse_invoice`` и ``adjust_paid_invoice``."""
     await session.execute(
         delete(InvoiceLineItem).where(InvoiceLineItem.invoice_id == invoice.id)
     )
-
     total = Decimal("0.00")
     staff_total = Decimal("0.00")
     vat_total = Decimal("0.00")
@@ -415,11 +395,47 @@ async def update_warehouse_invoice(
                 "amount": str(line_sum),
             }
         )
-
     invoice.amount = _money(total)
     invoice.staff_amount = _money(staff_total)
     invoice.vat_total = _money(vat_total)
     invoice.line_items = mirror
+
+
+async def update_warehouse_invoice(
+    session: AsyncSession,
+    invoice: SupplierInvoice,
+    *,
+    lines: Sequence[LineInput],
+    issued_at: datetime | None = None,
+    number: str | None = None,
+) -> SupplierInvoice:
+    """Replace an invoice's lines and recompute totals. Only for UNPAID, non-barter invoices
+    (paid allocations are tied to the amount; barter has its own loan/return ledger). The lines
+    are rebuilt exactly like ``create_warehouse_invoice``. iiko push state is reset to
+    ``not_pushed`` (so a corrected invoice can be pushed) UNLESS it was already pushed — then
+    ``external_id`` is kept so the round-trip dedup still recognises it (the stale iiko document
+    is the owner's to delete + re-push)."""
+    if not lines:
+        raise WarehouseInvoiceError("Добавьте хотя бы одну строку накладной")
+    if invoice.barter_role is not None:
+        raise WarehouseInvoiceError("Бартерную накладную редактировать нельзя")
+    if invoice.payment_status != "unpaid":
+        raise WarehouseInvoiceError("Редактировать можно только неоплаченную накладную")
+    if invoice.draft_id is not None:
+        # Платёж уже уехал (черновик в банке / деньги на Сейфе под этот черновик) — правка сумм
+        # разошлась бы с платежом/резервом. Сначала отзыв платежа.
+        raise WarehouseInvoiceError("Накладная отправлена в банк — сначала отзовите платёж")
+
+    product_ids = [line.iiko_product_id for line in lines if line.iiko_product_id]
+    products: dict[uuid.UUID, IikoProduct] = {}
+    if product_ids:
+        rows = (
+            await session.scalars(select(IikoProduct).where(IikoProduct.id.in_(product_ids)))
+        ).all()
+        products = {product.id: product for product in rows}
+    _assert_goods_have_product(lines, products)
+
+    await _rebuild_invoice_lines(session, invoice, lines, products)
     if issued_at is not None:
         invoice.issued_at = issued_at
         invoice.invoice_date = issued_at.date()
@@ -458,6 +474,145 @@ async def delete_warehouse_invoice(session: AsyncSession, invoice: SupplierInvoi
     ensure_invoice_deletable(invoice)
     await session.delete(invoice)
     await session.commit()
+
+
+async def _spill_overpayment_to_prepayment(
+    session: AsyncSession,
+    invoice: SupplierInvoice,
+    *,
+    excess: Decimal,
+    actor_user_id: uuid.UUID | None,
+) -> Decimal:
+    """Уменьшить аллокации накладной на ``excess`` и перенести излишек оплаты в дебиторку.
+
+    Деньги при этом НЕ двигаются и НЕ сторнируются (они уже ушли при оплате) — переклассифицируем
+    уже потраченное: излишек из РЕАЛЬНЫХ денег (bank/cash) становится новой предоплатой
+    ``SupplierPrepayment`` («поставщик нам должен», гасится будущими поставками) БЕЗ второй
+    проводки; излишек, гасившийся из уже существующей предоплаты, возвращаем в неё (уменьшаем
+    ``amount_settled``), не плодя новую. Возвращает сумму, ушедшую в НОВУЮ дебиторку."""
+    allocations = (
+        await session.scalars(
+            select(InvoicePaymentAllocation)
+            .where(InvoicePaymentAllocation.invoice_id == invoice.id)
+            .order_by(InvoicePaymentAllocation.created_at)
+        )
+    ).all()
+    remaining = _money(excess)
+    real_money_excess = Decimal("0.00")
+    for alloc in allocations:
+        if remaining <= 0:
+            break
+        take = min(_money(alloc.amount), remaining)
+        if alloc.source_kind == "prepayment" and alloc.prepayment_id is not None:
+            prepayment = await session.get(SupplierPrepayment, alloc.prepayment_id)
+            if prepayment is not None:
+                settled = max(Decimal("0.00"), _money(prepayment.amount_settled) - take)
+                prepayment.amount_settled = settled
+                prepayment.status = (
+                    "settled"
+                    if settled >= _money(prepayment.amount)
+                    else ("partially_settled" if settled > 0 else "open")
+                )
+        else:
+            real_money_excess += take
+        rest = _money(alloc.amount) - take
+        if rest <= 0:
+            await session.delete(alloc)
+        else:
+            alloc.amount = rest
+        remaining -= take
+
+    real_money_excess = _money(real_money_excess)
+    if real_money_excess > 0:
+        article_id = await session.scalar(
+            select(DdsArticle.id).where(DdsArticle.code == PREPAYMENT_ARTICLE_CODE)
+        )
+        session.add(
+            SupplierPrepayment(
+                counterparty_id=invoice.counterparty_id,
+                kind="goods",
+                wallet_id=None,
+                amount=real_money_excess,
+                amount_settled=Decimal("0.00"),
+                status="open",
+                # Денежный факт остаётся на оплате накладной — новую проводку не создаём.
+                cashflow_transaction_id=None,
+                article_id=article_id,
+                note=f"Излишек оплаты по накладной №{invoice.number or '—'} — перенесён в дебиторку",
+                created_by_user_id=actor_user_id,
+            )
+        )
+    return real_money_excess
+
+
+async def adjust_paid_invoice(
+    session: AsyncSession,
+    invoice: SupplierInvoice,
+    *,
+    lines: Sequence[LineInput],
+    issued_at: datetime | None = None,
+    number: str | None = None,
+    actor_user_id: uuid.UUID | None = None,
+) -> SupplierInvoice:
+    """Исправить УЖЕ ОПЛАЧЕННУЮ (или частично оплаченную) обычную накладную: заменить позиции и
+    пересчитать сумму. Если новая сумма МЕНЬШЕ уже применённой оплаты — излишек не «повисает» и
+    не задваивает расход, а уходит в дебиторку поставщику (``_spill_overpayment_to_prepayment``):
+    реально потраченные деньги остаются на месте, лишняя часть переносится в аванс «поставщик нам
+    должен». Гейт — право ``invoices.normal.edit_paid`` (проверяется в роуте).
+
+    iiko-документ этой правкой НЕ трогаем: оплаченную накладную iiko не даёт распровести, а
+    ``add_payment`` необратим (проверено на живом API). Отражение коррекции в iiko —
+    отдельным шагом (возвратная накладная ``returned_invoice``); см.
+    project_edit_paid_invoice_feasibility."""
+    if not lines:
+        raise WarehouseInvoiceError("Добавьте хотя бы одну строку накладной")
+    if invoice.barter_role is not None:
+        raise WarehouseInvoiceError("Бартерную накладную редактировать нельзя")
+    if invoice.payment_status not in ("paid", "partially_paid"):
+        raise WarehouseInvoiceError(
+            "Это правка ОПЛАЧЕННОЙ накладной — для неоплаченной используйте обычную правку"
+        )
+    if invoice.draft_id is not None:
+        # Черновик ещё в банке/на Сейфе (деньги не финализированы) — сначала отзыв платежа,
+        # иначе дебиторка разошлась бы с висящим резервом/черновиком.
+        raise WarehouseInvoiceError("Накладная отправлена в банк — сначала отзовите платёж")
+
+    product_ids = [line.iiko_product_id for line in lines if line.iiko_product_id]
+    products: dict[uuid.UUID, IikoProduct] = {}
+    if product_ids:
+        rows = (
+            await session.scalars(select(IikoProduct).where(IikoProduct.id.in_(product_ids)))
+        ).all()
+        products = {product.id: product for product in rows}
+    _assert_goods_have_product(lines, products)
+
+    allocated = await _allocated_amount(session, invoice.id)
+
+    await _rebuild_invoice_lines(session, invoice, lines, products)
+    new_amount = _money(invoice.amount)
+    if new_amount <= 0:
+        raise WarehouseInvoiceError("Сумма накладной должна быть больше нуля")
+
+    if issued_at is not None:
+        invoice.issued_at = issued_at
+        invoice.invoice_date = issued_at.date()
+    target_number = number if number is not None else invoice.number
+    if target_number is not None and (number is not None or issued_at is not None):
+        invoice.number = await _unique_invoice_number(
+            session, target_number, invoice.invoice_date, exclude_id=invoice.id
+        )
+
+    # Излишек оплаты (было применено больше, чем стоит исправленная накладная) → дебиторка.
+    excess = _money(allocated - new_amount)
+    if excess > 0:
+        await _spill_overpayment_to_prepayment(
+            session, invoice, excess=excess, actor_user_id=actor_user_id
+        )
+
+    await _recompute_status(session, invoice)
+    await session.commit()
+    await session.refresh(invoice)
+    return invoice
 
 
 async def list_warehouse_invoices(

@@ -68,7 +68,10 @@ export function InvoiceDetailDialog({
     permissions.canPerformAction("invoices.normal.edit") ||
     permissions.canPerformAction("kassa.invoices.create");
   const canPay = permissions.canPerformAction("invoices.normal.pay");
+  // Точечное право «правка ОПЛАЧЕННОЙ» (owner/admin): исправить не ту накладную, излишек → дебиторка.
+  const canEditPaid = permissions.canPerformAction("invoices.normal.edit_paid");
   const [editing, setEditing] = useState(false);
+  const [adjustingPaid, setAdjustingPaid] = useState(false);
   const [paying, setPaying] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const open = Boolean(invoiceId);
@@ -121,6 +124,11 @@ export function InvoiceDetailDialog({
       <InvoiceEditDialog
         invoiceId={editing ? invoiceId : null}
         onOpenChange={(o) => !o && setEditing(false)}
+      />
+      <InvoiceEditDialog
+        invoiceId={adjustingPaid ? invoiceId : null}
+        onOpenChange={(o) => !o && setAdjustingPaid(false)}
+        paid
       />
       <PayWarehouseInvoiceDialog
         invoiceId={paying ? invoiceId : null}
@@ -210,6 +218,29 @@ export function InvoiceDetailDialog({
                     <Trash2 size={14} aria-hidden="true" /> Удалить
                   </Button>
                 ) : null}
+              </div>
+            ) : null}
+
+            {/* Правка УЖЕ ОПЛАЧЕННОЙ (поставщик прислал не ту накладную) — точечное право
+                edit_paid (owner/admin). Излишек оплаты уходит в дебиторку. Не для бартера и
+                не пока платёж в банке (draft_id). */}
+            {(detail.payment_status === "paid" || detail.payment_status === "partially_paid") &&
+            !detail.barter_role &&
+            !detail.draft_id &&
+            canEditPaid ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50/40 p-3">
+                <span className="text-xs text-amber-800">
+                  Поставщик прислал не ту накладную? Исправьте позиции/сумму — излишек оплаты уйдёт
+                  в дебиторку поставщику.
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-auto border-amber-300 text-amber-800 hover:bg-amber-100"
+                  onClick={() => setAdjustingPaid(true)}
+                >
+                  <Pencil size={14} aria-hidden="true" /> Исправить оплаченную
+                </Button>
               </div>
             ) : null}
 

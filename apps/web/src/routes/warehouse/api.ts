@@ -155,6 +155,21 @@ export async function updateWarehouseInvoice(
   return response.data;
 }
 
+// Правка УЖЕ ОПЛАЧЕННОЙ накладной (право invoices.normal.edit_paid): излишек оплаты уходит в
+// дебиторку поставщику. `moved_to_receivable` — сколько именно ушло (для тоста).
+export type AdjustPaidInvoiceResult = WarehouseInvoiceDetail & { moved_to_receivable?: number };
+
+export async function adjustPaidInvoice(
+  id: string,
+  payload: UpdateInvoicePayload,
+): Promise<AdjustPaidInvoiceResult> {
+  const response = await api.post<AdjustPaidInvoiceResult>(
+    `${BASE}/invoices/${id}/adjust-paid`,
+    payload,
+  );
+  return response.data;
+}
+
 export async function payInvoiceFromKassa(
   id: string,
   amount?: number | null,
