@@ -40,6 +40,8 @@ SAFE_RECONCILE_ADJUST_SOURCE_KIND = "safe_reconcile_adjust"
 ALLOCATION_TO_KASSA_SOURCE_KIND = "safe_allocation_to_kassa"
 # Обратное перемещение целёвки касса → Сейф (source_id = резерв).
 ALLOCATION_TO_SAFE_SOURCE_KIND = "kassa_allocation_to_safe"
+# Внутренний перевод между наличными счетами (Сейф↔Касса); source_id связывает пару ног.
+INTERNAL_TRANSFER_SOURCE_KIND = "internal_transfer_manual"
 # Выдача целёвки наличными из кассы, вкладка «К выдаче» (source_id = резерв).
 KASSA_TARGET_PAYOUT_SOURCE_KIND = "kassa_target_payout"
 ACTIVE_RESERVE_STATUSES = ("reserved", "partially_paid")
@@ -511,6 +513,57 @@ async def move_allocation_location(
     allocation.location = to_location
     await session.flush()
     return [out_leg.id, in_leg.id]
+
+
+async def book_internal_transfer(
+    session: AsyncSession,
+    *,
+    source_wallet: Wallet,
+    dest_wallet: Wallet,
+    amount: Decimal,
+    purpose: str | None,
+    operation_date: date,
+) -> UUID:
+    """Внутренний перевод денег между наличными счетами (Сейф↔Касса): двухногая проводка.
+
+    out на счёте-источнике + in на счёте-получателе (статьи «перевод между счетами», в
+    P&L не попадают). Обе ноги связаны общим ``source_id`` (id перевода). Не резервирует
+    и не трогает выписку банка — только наличный контур. Возвращает id перевода.
+    """
+    if source_wallet.id == dest_wallet.id:
+        raise ValueError("Счёт-источник и счёт-получатель совпадают")
+    if amount <= 0:
+        raise ValueError("Сумма перевода должна быть больше нуля")
+    transfer_id = uuid4()
+    out_article = await _article_id(session, TRANSFER_OUT_ARTICLE_CODE)
+    in_article = await _article_id(session, TRANSFER_IN_ARTICLE_CODE)
+    text = purpose or f"Перевод {source_wallet.name} → {dest_wallet.name}"
+    out_leg = CashflowTransaction(
+        wallet_id=source_wallet.id,
+        direction="out",
+        amount=amount,
+        operation_date=operation_date,
+        article_id=out_article,
+        source_kind=INTERNAL_TRANSFER_SOURCE_KIND,
+        source_id=transfer_id,
+        payment_purpose=text,
+        quality_status="final",
+    )
+    in_leg = CashflowTransaction(
+        wallet_id=dest_wallet.id,
+        direction="in",
+        amount=amount,
+        operation_date=operation_date,
+        article_id=in_article,
+        source_kind=INTERNAL_TRANSFER_SOURCE_KIND,
+        source_id=transfer_id,
+        payment_purpose=text,
+        quality_status="final",
+    )
+    session.add(out_leg)
+    session.add(in_leg)
+    await session.flush()
+    return transfer_id
 
 
 async def book_safe_cash_withdrawal(

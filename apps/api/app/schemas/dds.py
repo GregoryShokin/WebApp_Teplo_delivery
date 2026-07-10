@@ -422,6 +422,38 @@ class AllocationMoveRequest(BaseModel):
     to_location: Literal["safe", "kassa"]
 
 
+class InternalTransferCreate(BaseModel):
+    """Внутренний перевод денег между наличными счетами (Сейф↔Касса).
+
+    ``mode='plain'`` — просто перемещение ``amount``. ``mode='targeted'`` — перемещение
+    Σ строк + целевой резерв на счёте-получателе по каждой строке (появляются в «Платежах»).
+    Счёт-получатель — только наличный (Сейф/Касса); на банковские переводить нельзя.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_wallet_id: uuid.UUID
+    dest_wallet_id: uuid.UUID
+    mode: Literal["plain", "targeted"] = "plain"
+    amount: Decimal | None = Field(default=None, gt=0)
+    purpose: str | None = Field(default=None, max_length=210)
+    lines: list[NewPaymentExpenseLineIn] | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _require_amount_or_lines(self) -> InternalTransferCreate:
+        if self.mode == "plain" and self.amount is None:
+            raise ValueError("Для обычного перевода укажите сумму")
+        if self.mode == "targeted" and not self.lines:
+            raise ValueError("Для целевого перевода добавьте хотя бы одну цель")
+        return self
+
+
+class InternalTransferRead(BaseModel):
+    transfer_id: uuid.UUID
+    amount: float
+    reserves: int
+
+
 class SafeAllocationRead(BaseModel):
     id: uuid.UUID
     wallet_id: uuid.UUID

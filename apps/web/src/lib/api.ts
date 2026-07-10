@@ -2841,6 +2841,25 @@ export async function createExpenseCashReserves(
   return response.data;
 }
 
+export type InternalTransferPayload = {
+  source_wallet_id: string;
+  dest_wallet_id: string;
+  mode: "plain" | "targeted";
+  amount?: number;
+  purpose?: string | null;
+  lines?: NewPaymentExpenseLine[];
+};
+
+export type InternalTransferResult = { transfer_id: string; amount: number; reserves: number };
+
+// Внутренний перевод между наличными счетами (Сейф↔Касса): обычный или целевой (с резервом).
+export async function createInternalTransfer(
+  payload: InternalTransferPayload,
+): Promise<InternalTransferResult> {
+  const response = await api.post<InternalTransferResult>("/dds/internal-transfer", payload);
+  return response.data;
+}
+
 export async function createDdsArticle(payload: DdsArticleCreate): Promise<DdsArticleRead> {
   const response = await api.post<DdsArticleRead>("/dds/articles", payload);
   return response.data;

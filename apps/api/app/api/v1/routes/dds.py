@@ -60,6 +60,8 @@ from app.schemas.dds import (
     DdsCounterpartyPatch,
     DdsCounterpartyRead,
     DdsWalletRead,
+    InternalTransferCreate,
+    InternalTransferRead,
     JournalListRead,
     NewPaymentContextRead,
     NewPaymentExpenseCashCreate,
@@ -102,6 +104,7 @@ from app.services.banking.credentials import set_credential
 from app.services.banking.safe_allocations import (
     CASH_WITHDRAWAL_WALLET_CODE,
     allocation_advance_draft_id,
+    book_internal_transfer,
     book_safe_cash_withdrawal,
     book_safe_drift_adjustment,
     book_safe_topup_reserves,
@@ -734,6 +737,104 @@ async def post_new_payment_expense_cash(
             allocation.location = "kassa"
     await session.commit()
     return {"created": len(prepared), "total": float(total), "location": location}
+
+
+@router.post(
+    "/internal-transfer",
+    response_model=InternalTransferRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=DDS_SAFE_CONFIRM_PAID_ACCESS,
+)
+async def post_internal_transfer(
+    payload: InternalTransferCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, object]:
+    """Внутренний перевод между наличными счетами (Сейф↔Касса).
+
+    Обычный (``plain``) — просто перемещение суммы. Целевой (``targeted``) — перемещение
+    Σ строк + целевой резерв на счёте-получателе по каждой строке (появляется в «Платежах»,
+    корзины «На Сейфе»/«В кассе»). Получатель — только наличный счёт; на банковские нельзя.
+    Сейф-источник ограничен свободным остатком; касса-источник — без гейта (как её выдача).
+    """
+    source = await session.get(Wallet, payload.source_wallet_id)
+    dest = await session.get(Wallet, payload.dest_wallet_id)
+    for wallet, label in ((source, "источник"), (dest, "получатель")):
+        if wallet is None or wallet.status != "active" or wallet.type not in (
+            "cash_safe",
+            "store_cash",
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Наличный счёт ({label}) не найден — перевод только между Сейфом и Кассой",
+            )
+    if source.id == dest.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Счёт-источник и получатель совпадают"
+        )
+    dest_location = "safe" if dest.type == "cash_safe" else "kassa"
+
+    prepared: list[tuple[DdsArticle, Decimal, str, UUID | None]] = []
+    if payload.mode == "targeted":
+        total = Decimal("0")
+        for line in payload.lines or []:
+            article = await session.get(DdsArticle, line.article_id)
+            if article is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail="Статья ДДС не найдена"
+                )
+            try:
+                ensure_expense_article_allowed(article)
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+            amount = Decimal(line.amount)
+            line_purpose = " ".join((line.purpose or "").split()) or article.name
+            prepared.append((article, amount, line_purpose, line.counterparty_id))
+            total += amount
+    else:
+        total = Decimal(payload.amount)  # валидатор гарантирует непустую сумму в plain
+
+    # Сейф-источник: перевести можно только в пределах свободного остатка.
+    if source.type == "cash_safe":
+        free = await _safe_free_amount(session, source)
+        if total > free:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Недостаточно свободных средств на Сейфе: "
+                    f"свободно {free}, запрошено {total}"
+                ),
+            )
+
+    try:
+        transfer_id = await book_internal_transfer(
+            session,
+            source_wallet=source,
+            dest_wallet=dest,
+            amount=total,
+            purpose=payload.purpose,
+            operation_date=datetime.now(MOSCOW_TZ).date(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    reserves = 0
+    for article, amount, line_purpose, cp_id in prepared:
+        allocation = await create_allocation(
+            session,
+            wallet_id=dest.id,
+            amount=amount,
+            free_amount=None,  # деньги только что переведены на счёт-получатель
+            article_id=article.id,
+            counterparty_id=cp_id,
+            purpose=line_purpose,
+            created_by_user_id=actor.user_id,
+        )
+        if dest_location == "kassa":
+            allocation.location = "kassa"
+        reserves += 1
+    await session.commit()
+    return {"transfer_id": transfer_id, "amount": float(total), "reserves": reserves}
 
 
 @router.post(
