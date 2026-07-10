@@ -43,6 +43,7 @@ from app.services.kassa.iiko_cashshift_sync import sync_iiko_cashshifts
 from app.services.payroll_advance_service import apply_advance_draft_status
 from app.services.payroll_payouts import apply_payroll_draft_status
 from app.services.payroll_runner import refresh_current_week_advance_window
+from app.services.shift_schedule_service import auto_commit_living_schedule
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
@@ -114,6 +115,27 @@ async def reconcile_dismissing_employees_job() -> None:
         flipped = await reconcile_all_dismissing(session)
         if flipped:
             logger.info("dismissal-reconcile: завершено увольнений: %d", len(flipped))
+
+
+@scheduler.scheduled_job(
+    "cron",
+    hour=0,
+    minute=0,
+    id="auto_commit_shift_schedule",
+    max_instances=1,
+    coalesce=True,
+)
+async def auto_commit_shift_schedule_job() -> None:
+    """В 00:00 МСК авто-фиксируем график, если управляющий забыл нажать «Зафиксировать».
+
+    Живой график в статусе «редактируемый» (``draft``) не участвует в учёте смен/план-факте/
+    надбавках — их читает только зафиксированный (``published``). Этот ночной прогон —
+    страховка: держит график зафиксированным к началу нового дня. Идемпотентен (уже
+    зафиксированный не трогает), системная фиксация (``published_by_user_id = None``)."""
+    async with AsyncSessionLocal() as session:
+        committed = await auto_commit_living_schedule(session)
+    if committed is not None:
+        logger.info("auto-commit графика: зафиксирован живой график %s", committed.id)
 
 
 @scheduler.scheduled_job(

@@ -195,7 +195,7 @@ LIVING_SCHEDULE_END = date(2035, 12, 31)
 async def get_or_create_living_schedule(
     session: AsyncSession,
     *,
-    actor: CurrentActor,
+    actor: CurrentActor | None = None,
 ) -> ShiftSchedule:
     """Вернуть единственный «живой» график, создав/расширив при необходимости.
 
@@ -275,6 +275,30 @@ async def reopen_schedule(
     schedule.updated_at = datetime.now(UTC)
     await _commit_refresh(session, schedule)
     return schedule
+
+
+async def auto_commit_living_schedule(session: AsyncSession) -> ShiftSchedule | None:
+    """Ночная авто-фиксация живого графика: если он ещё «редактируемый» (``draft``),
+    фиксируем его (``published``). Страховка на случай, если управляющий забыл нажать
+    «Зафиксировать» — учёт смен/план-факт/надбавки/оценка стоимости читают только
+    зафиксированный график.
+
+    Системная фиксация: ``published_by_user_id = None``. Ничего не создаёт (если графиков
+    нет — пропуск) и идемпотентна (уже зафиксированный график не трогаем).
+    """
+    exists = await session.scalar(select(ShiftSchedule.id).limit(1))
+    if exists is None:
+        return None
+    living = await get_or_create_living_schedule(session)
+    if living.status != "draft":
+        return None
+    now = datetime.now(UTC)
+    living.status = "published"
+    living.published_at = now
+    living.published_by_user_id = None
+    living.updated_at = now
+    await _commit_refresh(session, living)
+    return living
 
 
 async def create_new_version(
