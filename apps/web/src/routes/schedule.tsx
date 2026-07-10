@@ -21,6 +21,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Users,
 } from "lucide-react";
 import {
   useEffect,
@@ -220,12 +221,22 @@ const stationOptions = ["Пицца", "Роллы", "Горячий цех", "К
 const stationOrder = [...stationOptions, "(без станции)"];
 const weekdayLabels = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
-// Ярлыки фильтра по должности: должность «Кассир» показываем как «Администраторы»
-// (кассиры исполняют роль администратора), «Повар» → «Повара».
-const POSITION_FILTER_LABELS: Record<string, string> = {
-  Повар: "Повара",
-  Кассир: "Администраторы",
-};
+// Категория сотрудника В ГРАФИКЕ определяется по РОЛЯМ, а не по формальной должности:
+// управляющий-подменный повар попадает в «Повара», а кассир (роль администратора) —
+// в «Администраторы». Так фильтр отражает то, кем человек РАБОТАЕТ в графике.
+const SCHEDULE_PRODUCTION_ROLES = new Set(["sushi", "pizza", "shawarma", "prep"]);
+const SCHEDULE_CATEGORY_ORDER = ["Администраторы", "Повара"];
+function scheduleCategoriesForRoster(row: EmployeeRosterRow): Set<string> {
+  const categories = new Set<string>();
+  for (const role of row.available_roles) {
+    if (SCHEDULE_PRODUCTION_ROLES.has(role.payroll_role)) {
+      categories.add("Повара");
+    } else if (role.payroll_role === "administrator") {
+      categories.add("Администраторы");
+    }
+  }
+  return categories;
+}
 
 export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: ScheduleRouteProps) {
   const queryClient = useQueryClient();
@@ -268,9 +279,9 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     isPeriodRange,
     { hydrateFromStorage: false },
   );
-  // Вид всегда «по сотрудникам» (переключатель видов убран из панели графика).
-  const [viewMode] = useState<ViewMode>("employees");
-  // Фильтр ростера по должности: "all" | значение должности (Повар / Кассир).
+  // Вид графика: «По сотрудникам» / «По цехам» (переключатель — над таблицей).
+  const [viewMode, setViewMode] = useState<ViewMode>("employees");
+  // Фильтр ростера по категории роли: "all" | "Повара" | "Администраторы".
   const [positionFilter, setPositionFilter] = useState<string>("all");
   const [isGridFullscreen, setIsGridFullscreen] = useState(false);
   const [planFactTableMode, setPlanFactTableMode] = useState<PlanFactTableMode>("days");
@@ -430,19 +441,21 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     [rosterQuery.data],
   );
   const employeeViewRoster = useMemo(() => sortEmployeesByRoleAndName(roster), [roster]);
-  // Должности, присутствующие в ростере графика (для фильтра «Все / Повара / Администраторы»).
-  const rosterPositions = useMemo(() => {
-    const positions = new Set<string>();
+  // Категории, реально присутствующие в ростере графика (по ролям): «Администраторы» / «Повара».
+  const rosterCategories = useMemo(() => {
+    const present = new Set<string>();
     for (const row of employeeViewRoster) {
-      if (row.position) positions.add(row.position);
+      for (const category of scheduleCategoriesForRoster(row)) present.add(category);
     }
-    return [...positions].sort();
+    return SCHEDULE_CATEGORY_ORDER.filter((category) => present.has(category));
   }, [employeeViewRoster]);
   const visibleRoster = useMemo(
     () =>
       positionFilter === "all"
         ? employeeViewRoster
-        : employeeViewRoster.filter((row) => row.position === positionFilter),
+        : employeeViewRoster.filter((row) =>
+            scheduleCategoriesForRoster(row).has(positionFilter),
+          ),
     [employeeViewRoster, positionFilter],
   );
   const currentSchedule = selectedScheduleId ? (scheduleQuery.data ?? null) : null;
@@ -1237,23 +1250,6 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
                 }
               }}
             />
-            {rosterPositions.length > 1 ? (
-              <div className="flex flex-wrap items-center gap-1.5">
-                <SegmentedButton
-                  active={positionFilter === "all"}
-                  label="Все"
-                  onClick={() => setPositionFilter("all")}
-                />
-                {rosterPositions.map((position) => (
-                  <SegmentedButton
-                    active={positionFilter === position}
-                    key={position}
-                    label={POSITION_FILTER_LABELS[position] ?? position}
-                    onClick={() => setPositionFilter(position)}
-                  />
-                ))}
-              </div>
-            ) : null}
           </div>
 
           {currentSchedule && canViewForecastBudget ? (
@@ -1288,13 +1284,45 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
           ) : null}
 
           {currentSchedule && !isGridFullscreen ? (
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <SegmentedButton
+                  active={viewMode === "employees"}
+                  icon={<Users size={16} aria-hidden="true" />}
+                  label="По сотрудникам"
+                  onClick={() => setViewMode("employees")}
+                />
+                <SegmentedButton
+                  active={viewMode === "stations"}
+                  icon={<CalendarDays size={16} aria-hidden="true" />}
+                  label="По цехам"
+                  onClick={() => setViewMode("stations")}
+                />
+                {viewMode === "employees" && rosterCategories.length > 0 ? (
+                  <>
+                    <span className="mx-1 h-6 w-px bg-border" aria-hidden="true" />
+                    <SegmentedButton
+                      active={positionFilter === "all"}
+                      label="Все"
+                      onClick={() => setPositionFilter("all")}
+                    />
+                    {rosterCategories.map((category) => (
+                      <SegmentedButton
+                        active={positionFilter === category}
+                        key={category}
+                        label={category}
+                        onClick={() => setPositionFilter(category)}
+                      />
+                    ))}
+                  </>
+                ) : null}
+              </div>
               <button
                 type="button"
                 onClick={() => setIsGridFullscreen(true)}
                 title="Развернуть график"
                 aria-label="Развернуть график"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <Maximize2 size={16} aria-hidden="true" />
               </button>
