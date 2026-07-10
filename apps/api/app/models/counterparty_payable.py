@@ -250,6 +250,11 @@ class CounterpartyPaymentDraft(Base):
     pays_via_safe: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Черновик-пополнение Сейфа без резерва (внутренний перевод банк→Сейф из «Нового
+    # платежа»): при оплате книжится только транзит р/с→Сейф, целёвка НЕ создаётся.
+    topup_only: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     # Свободный вывод на Сейф по статье (окно «Новый платёж», статья без получателя):
     # целевая статья и назначение авто-целёвки, которую заводит paid-переход вместо
     # жёстких «Оплата поставщикам» + purpose из накладных. Заполнены только у

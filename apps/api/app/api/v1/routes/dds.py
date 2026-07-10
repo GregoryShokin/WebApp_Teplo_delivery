@@ -68,6 +68,8 @@ from app.schemas.dds import (
     NewPaymentExpenseCashRead,
     NewPaymentExpenseDraftCreate,
     NewPaymentExpenseDraftRead,
+    NewPaymentTransferCreate,
+    NewPaymentTransferRead,
     OperationClassifyRead,
     OperationClassifyRequest,
     OwnerReviewActionRead,
@@ -123,6 +125,7 @@ from app.services.counterparty_bank_match import _is_card_noise
 from app.services.counterparty_payments import (
     CounterpartyPaymentError,
     ExpenseLineInput,
+    create_bank_safe_topup_draft,
     create_expense_payment_draft,
 )
 from app.services.kassa.payouts import (
@@ -835,6 +838,90 @@ async def post_internal_transfer(
         reserves += 1
     await session.commit()
     return {"transfer_id": transfer_id, "amount": float(total), "reserves": reserves}
+
+
+@router.post(
+    "/new-payment/internal-transfer",
+    response_model=NewPaymentTransferRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=DDS_SAFE_ALLOCATE_ACCESS,
+)
+async def post_new_payment_internal_transfer(
+    payload: NewPaymentTransferCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, object]:
+    """Обычный внутренний перевод из «Нового платежа» (маршрут статьи «Внутренний перевод»).
+
+    Источник — «Счёт списания»; получатель — только наличный (Сейф/Касса).
+    Наличный источник → мгновенный двухногий перевод. Банковский источник → черновик-
+    пополнение Сейфа (при оплате транзит р/с→Сейф без резерва); банк→Касса запрещён.
+    """
+    source = await session.get(Wallet, payload.source_wallet_id)
+    dest = await session.get(Wallet, payload.dest_wallet_id)
+    if source is None or source.status != "active":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Счёт списания не найден")
+    if dest is None or dest.status != "active" or dest.type not in ("cash_safe", "store_cash"):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Счёт-получатель должен быть наличным (Сейф/Касса)",
+        )
+    dest_location = "safe" if dest.type == "cash_safe" else "kassa"
+
+    # Наличный источник (Сейф/Касса) — мгновенный перевод.
+    if source.type in ("cash_safe", "store_cash"):
+        if source.id == dest.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Счёт-источник и получатель совпадают"
+            )
+        if source.type == "cash_safe":
+            free = await _safe_free_amount(session, source)
+            if Decimal(payload.amount) > free:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Недостаточно свободных средств на Сейфе: "
+                        f"свободно {free}, запрошено {payload.amount}"
+                    ),
+                )
+        try:
+            await book_internal_transfer(
+                session,
+                source_wallet=source,
+                dest_wallet=dest,
+                amount=Decimal(payload.amount),
+                purpose=payload.purpose,
+                operation_date=datetime.now(MOSCOW_TZ).date(),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        await session.commit()
+        return {"kind": "transfer", "amount": float(payload.amount), "draft_id": None}
+
+    # Банковский источник — только на Сейф, через черновик-пополнение (topup_only).
+    if dest_location != "safe":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="С банковского счёта перевод возможен только на Сейф (в кассу — нельзя)",
+        )
+    account = await session.get(Account, source.account_id) if source.account_id else None
+    is_sber = account is not None and account.bank_code == "sber"
+    channel = "bank_draft_sber" if is_sber else "bank_draft"
+    try:
+        draft = await create_bank_safe_topup_draft(
+            session,
+            amount=Decimal(payload.amount),
+            purpose=payload.purpose,
+            channel=channel,
+            actor_user_id=actor.user_id,
+        )
+    except CounterpartyPaymentError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except BankCredentialsError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    except BankFetchError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return {"kind": "draft", "amount": float(payload.amount), "draft_id": draft.id}
 
 
 @router.post(

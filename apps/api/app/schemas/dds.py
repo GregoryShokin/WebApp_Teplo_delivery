@@ -454,6 +454,29 @@ class InternalTransferRead(BaseModel):
     reserves: int
 
 
+class NewPaymentTransferCreate(BaseModel):
+    """Внутренний перевод из «Нового платежа» (обычный, без резерва).
+
+    Источник — «Счёт списания» окна; получатель — только наличный (Сейф/Касса).
+    Наличный источник → мгновенный перевод; банковский → черновик-пополнение Сейфа
+    (банк→Касса напрямую нельзя — только банк→Сейф).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_wallet_id: uuid.UUID
+    dest_wallet_id: uuid.UUID
+    amount: Decimal = Field(gt=0)
+    purpose: str | None = Field(default=None, max_length=210)
+
+
+class NewPaymentTransferRead(BaseModel):
+    # kind='transfer' — наличный перевод проведён; kind='draft' — создан банк-черновик.
+    kind: str
+    amount: float
+    draft_id: uuid.UUID | None = None
+
+
 class SafeAllocationRead(BaseModel):
     id: uuid.UUID
     wallet_id: uuid.UUID
@@ -518,6 +541,7 @@ class NewPaymentArticleRead(BaseModel):
         "employee_loan",
         "supplier_prepayment",
         "supplier_invoices",
+        "internal_transfer",
     ]
     # Закреплённые за статьёй контрагенты — «кому платим» для свободного вывода.
     counterparties: list[NewPaymentArticleCounterpartyRead] = Field(default_factory=list)

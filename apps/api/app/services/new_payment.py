@@ -54,11 +54,16 @@ EMPLOYEE_PAYOUT_ARTICLE_CODES = (
 )
 SUPPLIER_INVOICES_ARTICLE_CODE = "payment_to_supplier"
 
+INTERNAL_TRANSFER_ARTICLE_CODE = "internal_transfer"
+
 FLOW_BY_ARTICLE_CODE: dict[str, str] = {
     EMPLOYEE_ADVANCE_ARTICLE_CODE: "employee_advance",
     EMPLOYEE_LOAN_ARTICLE_CODE: "employee_loan",
     SUPPLIER_PREPAYMENT_ARTICLE_CODE: "supplier_prepayment",
     SUPPLIER_INVOICES_ARTICLE_CODE: "supplier_invoices",
+    # Внутренний перевод — маршрут «Нового платежа»: наличный источник → двухногий
+    # перевод; банк-источник → черновик-пополнение Сейфа (topup_only). Требует счёт-получатель.
+    INTERNAL_TRANSFER_ARTICLE_CODE: "internal_transfer",
     **{code: "employee_payout" for code in EMPLOYEE_PAYOUT_ARTICLE_CODES},
 }
 
@@ -85,6 +90,8 @@ FLOW_PERMISSIONS: dict[str, tuple[str, ...]] = {
     ),
     "supplier_prepayment": ("invoices.normal.pay",),
     "supplier_invoices": ("invoices.normal.pay",),
+    # Внутренний перевод — как ручной резерв/движение Сейфа.
+    "internal_transfer": ("finance.safe.allocate",),
 }
 
 # Займ = аванс сверх заработанного: без этого права статья займа в селект не попадает.
@@ -119,11 +126,15 @@ def new_payment_article_flow(article: DdsArticle) -> str | None:
     расходные статьи — свободный вывод (``expense``), кроме движковых/защищённых и
     статей с флагом «доступна в кассе»: это окно про банк, у тех — свои контуры.
     """
-    if not article.is_active or article.movement_type != "outflow":
+    if not article.is_active:
         return None
+    # Статьи-маршруты (в т.ч. «Внутренний перевод» с movement_type=internal) — по коду,
+    # до гейта по направлению: у перевода своё направление на ногах, не «outflow».
     flow = FLOW_BY_ARTICLE_CODE.get(article.code)
     if flow is not None:
         return flow
+    if article.movement_type != "outflow":
+        return None
     if (
         article.kassa_enabled
         or article.code in PROTECTED_ARTICLE_CODES
@@ -191,7 +202,14 @@ async def list_new_payment_articles(
     articles = (
         await session.scalars(
             select(DdsArticle)
-            .where(DdsArticle.is_active.is_(True), DdsArticle.movement_type == "outflow")
+            .where(
+                DdsArticle.is_active.is_(True),
+                # Расходные статьи + статья-маршрут «Внутренний перевод» (movement_type=internal).
+                or_(
+                    DdsArticle.movement_type == "outflow",
+                    DdsArticle.code == INTERNAL_TRANSFER_ARTICLE_CODE,
+                ),
+            )
             .order_by(DdsArticle.name)
         )
     ).all()

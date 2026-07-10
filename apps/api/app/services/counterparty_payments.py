@@ -546,6 +546,86 @@ async def create_expense_payment_draft(
     return draft
 
 
+async def create_bank_safe_topup_draft(
+    session: AsyncSession,
+    *,
+    amount: Decimal,
+    purpose: str | None,
+    channel: str | None = None,
+    actor_user_id: uuid.UUID | None = None,
+    bank_client: BankClient | None = None,
+) -> CounterpartyPaymentDraft:
+    """Черновик-пополнение Сейфа с банка (внутренний перевод банк→Сейф из «Нового платежа»).
+
+    Как свободный вывод — банковский черновик на карту ИП, но с флагом ``topup_only``:
+    при оплате paid-переход книжит ТОЛЬКО транзит р/с→Сейф, целёвку не создаёт (Сейф
+    просто пополняется). ``channel`` выбирает банк-плательщика (Т-Банк по умолчанию / Сбер).
+    """
+    provider = channel_provider(channel) or "tbank"
+    amt = _money(amount)
+    if amt <= 0:
+        raise CounterpartyPaymentError("Сумма перевода должна быть больше нуля")
+
+    settings = get_settings()
+    payer_account = payer_account_for(settings, provider)
+    if not payer_account:
+        raise CounterpartyPaymentError(f"Не настроен расчётный счёт плательщика ({provider})")
+    requisites = await _ip_card_requisites(session)
+    text = " ".join((purpose or "").split()) or "Пополнение Сейфа"
+
+    draft = CounterpartyPaymentDraft(
+        id=uuid.uuid4(),
+        counterparty_id=None,
+        document_id="",
+        amount=amt,
+        status="created",
+        pays_via_safe=True,
+        topup_only=True,
+        bank_provider=provider,
+        target_purpose=text,
+        created_by_user_id=actor_user_id,
+    )
+    document_id = f"teplo-cp-{draft.id}"
+    draft.document_id = document_id[:64]
+    bank_purpose = text[:210]
+    try:
+        payload = build_payment_draft_api_payload(
+            document_id=document_id,
+            amount=amt,
+            purpose=bank_purpose,
+            requisites=requisites,
+            payer_account=payer_account,
+        )
+    except ValueError as exc:
+        raise CounterpartyPaymentError(f"Реквизиты неполны: {exc}") from exc
+
+    client = bank_client or payout_client_for(provider, session)
+    try:
+        result = await client.create_payment_draft(
+            document_id=document_id,
+            amount=amt,
+            purpose=bank_purpose,
+            requisites=requisites,
+            payer_account=payer_account,
+        )
+    except BankFetchError as exc:
+        draft.status = "failed"
+        draft.payload = payload
+        draft.last_error = str(exc)
+        session.add(draft)
+        await session.commit()
+        raise
+
+    draft.status = _safe_status(result.status)
+    draft.provider_ref = result.provider_ref
+    draft.payload = payload
+    draft.synced_at = datetime.now(tz=UTC)
+    session.add(draft)
+    await session.commit()
+    await session.refresh(draft)
+    return draft
+
+
 async def cancel_payment_draft(session: AsyncSession, *, draft_id: uuid.UUID) -> None:
     """Unlink invoices and remove a draft that has not been paid/matched yet."""
     draft = await session.get(CounterpartyPaymentDraft, draft_id)
