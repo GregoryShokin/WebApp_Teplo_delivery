@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
+import { InlineOptionList, type ComboboxOption } from "@/components/ui/combobox";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
 import {
   Select,
   SelectContent,
@@ -27,6 +28,7 @@ import {
   createNewPaymentExpenseDraft,
   createPayrollAdvance,
   getNewPaymentContext,
+  getPayrollAdvanceAvailability,
   type NewPaymentArticle,
   type NewPaymentArticleCounterparty,
   type NewPaymentFlow,
@@ -50,6 +52,11 @@ type PaymentRow = {
   counterpartyId: string; // маршрут supplier_prepayment
   employeeId: string; // маршруты employee_advance / employee_loan
   purpose: string; // expense — назначение (опц.); аванс/займ — комментарий (опц.)
+  // Форма аванса/займа (маршруты employee_advance / employee_loan) — как в разборе ДДС.
+  advanceKind: "advance" | "loan";
+  installmentAmount: string; // заём: сумма удержания за период
+  recoveryStartDate: string; // заём: с какой выплаты удерживать
+  overrideCeiling: boolean; // заём: превысить потолок
 };
 
 function normalizeAmount(value: string): string {
@@ -57,7 +64,18 @@ function normalizeAmount(value: string): string {
 }
 
 function emptyRow(key: string, articleId = ""): PaymentRow {
-  return { key, articleId, amount: "", counterpartyId: "", employeeId: "", purpose: "" };
+  return {
+    key,
+    articleId,
+    amount: "",
+    counterpartyId: "",
+    employeeId: "",
+    purpose: "",
+    advanceKind: "advance",
+    installmentAmount: "",
+    recoveryStartDate: "",
+    overrideCeiling: false,
+  };
 }
 
 /**
@@ -186,7 +204,17 @@ export function NewPaymentDialog({
       article?.flow === "expense" && article.counterparties?.length === 1
         ? article.counterparties[0].counterparty_id
         : "";
-    updateRow(key, { articleId, counterpartyId: presetCp, employeeId: "", purpose: "" });
+    updateRow(key, {
+      articleId,
+      counterpartyId: presetCp,
+      employeeId: "",
+      purpose: "",
+      // Тип по маршруту статьи (переключаемо в под-модалке), поля займа сброшены.
+      advanceKind: article?.flow === "employee_loan" ? "loan" : "advance",
+      installmentAmount: "",
+      recoveryStartDate: "",
+      overrideCeiling: false,
+    });
   }
 
   const rowAmount = (row: PaymentRow) => Number(normalizeAmount(row.amount));
@@ -253,12 +281,20 @@ export function NewPaymentDialog({
             }),
           );
         } else if (flow === "employee_advance" || flow === "employee_loan") {
+          const isLoan = row.advanceKind === "loan";
           tasks.push(
             createPayrollAdvance({
               employee_id: row.employeeId,
               amount: normalizeAmount(row.amount),
-              kind: flow === "employee_loan" ? "loan" : "advance",
+              kind: row.advanceKind,
               wallet_id: walletId,
+              installment_amount:
+                isLoan && row.installmentAmount.trim()
+                  ? normalizeAmount(row.installmentAmount)
+                  : undefined,
+              recovery_start_date:
+                isLoan && row.recoveryStartDate ? row.recoveryStartDate : undefined,
+              override_ceiling: isLoan ? row.overrideCeiling : false,
               comment: row.purpose.trim() ? row.purpose.trim() : null,
             }),
           );
@@ -284,10 +320,6 @@ export function NewPaymentDialog({
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось создать платёж")),
   });
 
-  const articleOptions: ComboboxOption[] = articles.map((item) => ({
-    value: item.id,
-    label: item.name,
-  }));
   const counterpartyOptions: ComboboxOption[] = counterparties.map((item) => ({
     value: item.counterparty_id,
     label: item.name,
@@ -299,7 +331,7 @@ export function NewPaymentDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="overflow-visible sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Новый платёж</DialogTitle>
             <DialogDescription>
@@ -355,30 +387,18 @@ export function NewPaymentDialog({
                   flow === "employee_advance" ||
                   flow === "employee_loan" ||
                   expenseHasCps;
-                const hasDetail = Boolean(row.counterpartyId || row.employeeId);
                 const detailText = detailSummary(row, article, counterparties, employees);
                 return (
-                  <div
-                    className={`rounded-md border p-2 ${
-                      missing ? "border-amber-300 bg-amber-50/60" : ""
-                    }`}
-                    key={row.key}
-                  >
-                    <div className="flex items-start gap-2">
-                      <div className="min-w-0 flex-1">
-                        <Combobox
-                          emptyMessage="Статьи не найдены"
-                          id={`article-${row.key}`}
-                          onChange={(value) => handleArticleChange(row.key, value)}
-                          options={articleOptions}
-                          placeholder="Статья ДДС"
-                          searchPlaceholder="Поиск статьи…"
-                          value={row.articleId}
-                        />
-                      </div>
+                  <div className="grid gap-1.5" key={row.key}>
+                    <div className="grid grid-cols-[minmax(0,1fr)_140px_auto] items-center gap-2">
+                      <ArticleCombobox
+                        articles={articles}
+                        onChange={(value) => handleArticleChange(row.key, value)}
+                        value={row.articleId}
+                      />
                       <Input
                         aria-label="Сумма"
-                        className="w-32"
+                        className="text-right tabular-nums"
                         inputMode="decimal"
                         onChange={(event) => updateRow(row.key, { amount: event.target.value })}
                         placeholder="Сумма, ₽"
@@ -389,6 +409,7 @@ export function NewPaymentDialog({
                         disabled={rows.length <= 1}
                         onClick={() => removeRow(row.key)}
                         size="icon"
+                        title="Убрать строку"
                         type="button"
                         variant="ghost"
                       >
@@ -396,22 +417,21 @@ export function NewPaymentDialog({
                       </Button>
                     </div>
                     {flow ? (
-                      <div className="mt-1 flex items-center justify-between gap-2 pl-1 text-xs">
-                        <span className={missing ? "text-amber-700" : "text-muted-foreground"}>
+                      needsDetails ? (
+                        <button
+                          className={`self-start pl-1 text-left text-xs underline-offset-2 hover:underline ${
+                            missing ? "font-medium text-amber-700" : "text-muted-foreground"
+                          }`}
+                          onClick={() => setModalRowKey(row.key)}
+                          type="button"
+                        >
+                          {detailText}
+                        </button>
+                      ) : (
+                        <span className="self-start pl-1 text-xs text-muted-foreground">
                           {detailText}
                         </span>
-                        {needsDetails ? (
-                          <Button
-                            className="h-6 px-2 text-xs"
-                            onClick={() => setModalRowKey(row.key)}
-                            size="sm"
-                            type="button"
-                            variant={missing ? "default" : "outline"}
-                          >
-                            {missing ? "Заполнить" : hasDetail ? "Изменить" : "Выбрать"}
-                          </Button>
-                        ) : null}
-                      </div>
+                      )
                     ) : null}
                   </div>
                 );
@@ -485,7 +505,7 @@ function detailSummary(
   }
   if (flow === "employee_advance" || flow === "employee_loan") {
     const emp = employees.find((item) => item.id === row.employeeId);
-    const kind = flow === "employee_loan" ? "Займ" : "Аванс";
+    const kind = row.advanceKind === "loan" ? "Займ" : "Аванс";
     return emp ? `${kind}: ${emp.full_name}` : "нужен сотрудник";
   }
   // Свободный вывод: у статьи есть привязанные контрагенты → выбор «кому платим».
@@ -523,20 +543,35 @@ function RowDetailModal({
   const isExpenseCp = flow === "expense" && articleCounterparties.length > 0;
   const title = isPrepayment
     ? "Аванс поставщику"
-    : flow === "employee_loan"
-      ? "Займ сотруднику"
-      : isEmployee
-        ? "Аванс сотруднику"
-        : "Кому платим";
-  const expenseCpOptions: ComboboxOption[] = articleCounterparties.map((item) => ({
-    value: item.counterparty_id,
-    label: item.name,
-    keywords: item.inn ?? undefined,
+    : isEmployee
+      ? row.advanceKind === "loan"
+        ? "Заём сотруднику"
+        : "Аванс сотруднику"
+      : "Кому платим";
+  const expenseCpOptions: ComboboxOption[] = [
+    { value: "", label: "Не указан" },
+    ...articleCounterparties.map((item) => ({
+      value: item.counterparty_id,
+      label: item.name,
+      keywords: item.inn ?? undefined,
+    })),
+  ];
+  const employeeOptions: ComboboxOption[] = employees.map((employee) => ({
+    value: employee.id,
+    label: employee.full_name,
   }));
+  // «Доступно к авансу» на сегодня (платёж создаётся сейчас) — как в разборе ДДС.
+  const availabilityQuery = useQuery({
+    queryKey: ["payroll-advance-availability", row.employeeId],
+    queryFn: () => getPayrollAdvanceAvailability(row.employeeId),
+    enabled: isEmployee && Boolean(row.employeeId),
+  });
+  const available = availabilityQuery.data?.available ?? 0;
+  const amountNumber = Number(normalizeAmount(row.amount));
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>Заполните данные для этой строки платежа.</DialogDescription>
@@ -545,27 +580,15 @@ function RowDetailModal({
         <div className="space-y-3">
           {isExpenseCp ? (
             <div className="space-y-1">
-              <Label className="text-sm" htmlFor="row-expense-cp">
-                Контрагент (необязательно)
-              </Label>
-              <Combobox
+              <Label className="text-sm">Контрагент (необязательно)</Label>
+              <InlineOptionList
                 emptyMessage="Контрагенты не найдены"
-                id="row-expense-cp"
+                listClassName="max-h-72"
                 onChange={(value) => onUpdate({ counterpartyId: value })}
                 options={expenseCpOptions}
-                placeholder="Выберите контрагента"
                 searchPlaceholder="Название или ИНН…"
                 value={row.counterpartyId}
               />
-              {row.counterpartyId ? (
-                <button
-                  className="text-xs text-muted-foreground underline"
-                  onClick={() => onUpdate({ counterpartyId: "" })}
-                  type="button"
-                >
-                  Убрать контрагента
-                </button>
-              ) : null}
               <p className="text-xs text-muted-foreground">
                 Кому платим по статье «{articleName}» — целёвка на Сейфе будет помечена этим
                 контрагентом. Деньги идут на карту ИП → Сейф.
@@ -575,15 +598,12 @@ function RowDetailModal({
           {isPrepayment ? (
             <>
               <div className="space-y-1">
-                <Label className="text-sm" htmlFor="row-counterparty">
-                  Контрагент
-                </Label>
-                <Combobox
+                <Label className="text-sm">Контрагент</Label>
+                <InlineOptionList
                   emptyMessage="Контрагенты не найдены"
-                  id="row-counterparty"
+                  listClassName="max-h-72"
                   onChange={(value) => onUpdate({ counterpartyId: value })}
                   options={counterpartyOptions}
-                  placeholder="Выберите контрагента"
                   searchPlaceholder="Название или ИНН…"
                   value={row.counterpartyId}
                 />
@@ -603,24 +623,89 @@ function RowDetailModal({
 
           {isEmployee ? (
             <>
-              <Label className="block space-y-1">
-                <span className="text-sm">Сотрудник</span>
-                <Select
-                  onValueChange={(value) => onUpdate({ employeeId: value })}
-                  value={row.employeeId}
+              <div className="inline-flex w-fit overflow-hidden rounded-md border">
+                <button
+                  className={`px-4 py-1.5 text-sm ${
+                    row.advanceKind === "advance" ? "bg-primary/10 font-medium text-primary" : ""
+                  }`}
+                  onClick={() => onUpdate({ advanceKind: "advance" })}
+                  type="button"
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Выберите сотрудника" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {employees.map((employee) => (
-                      <SelectItem key={employee.id} value={employee.id}>
-                        {employee.full_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Label>
+                  Аванс
+                </button>
+                <button
+                  className={`px-4 py-1.5 text-sm ${
+                    row.advanceKind === "loan" ? "bg-primary/10 font-medium text-primary" : ""
+                  }`}
+                  onClick={() => onUpdate({ advanceKind: "loan" })}
+                  type="button"
+                >
+                  Заём
+                </button>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-sm">Сотрудник</Label>
+                <InlineOptionList
+                  emptyMessage="Сотрудники не найдены"
+                  listClassName="max-h-56"
+                  onChange={(value) => onUpdate({ employeeId: value })}
+                  options={employeeOptions}
+                  searchPlaceholder="Поиск по имени…"
+                  value={row.employeeId}
+                />
+              </div>
+              {row.employeeId ? (
+                <div className="rounded-md border bg-muted/40 p-2.5 text-sm">
+                  {availabilityQuery.isLoading ? (
+                    "Считаем доступное…"
+                  ) : availabilityQuery.data ? (
+                    <>
+                      Доступно к авансу сегодня: <b>{formatRub(available)}</b>
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </div>
+              ) : null}
+              {row.advanceKind === "advance" &&
+              row.employeeId &&
+              availabilityQuery.data &&
+              amountNumber > available ? (
+                <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                  Больше заработанного ({formatRub(available)}). Остаток удержится из следующей
+                  выплаты.
+                </div>
+              ) : null}
+              {row.advanceKind === "loan" ? (
+                <>
+                  <div className="space-y-1">
+                    <Label className="text-sm">Сумма удержания за период, ₽</Label>
+                    <Input
+                      inputMode="decimal"
+                      onChange={(event) => onUpdate({ installmentAmount: event.target.value })}
+                      placeholder="Пусто — весь заём одной ведомостью"
+                      type="number"
+                      value={row.installmentAmount}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-sm">Удерживать с выплаты</Label>
+                    <Input
+                      onChange={(event) => onUpdate({ recoveryStartDate: event.target.value })}
+                      type="date"
+                      value={row.recoveryStartDate}
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <input
+                      checked={row.overrideCeiling}
+                      onChange={(event) => onUpdate({ overrideCeiling: event.target.checked })}
+                      type="checkbox"
+                    />
+                    Превысить потолок займа (подтверждаю)
+                  </label>
+                </>
+              ) : null}
               <Label className="block space-y-1">
                 <span className="text-sm">Комментарий</span>
                 <Input
@@ -632,7 +717,7 @@ function RowDetailModal({
               </Label>
               <p className="text-xs text-muted-foreground">
                 После оплаты на Сейфе появится резерв выдачи —{" "}
-                {flow === "employee_loan" ? "займ" : "аванс"} активируется при выплате резерва.
+                {row.advanceKind === "loan" ? "займ" : "аванс"} активируется при выплате резерва.
               </p>
             </>
           ) : null}

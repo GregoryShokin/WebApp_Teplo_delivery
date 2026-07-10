@@ -2,7 +2,6 @@ import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
-import type { DdsArticleRead } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,7 +17,7 @@ export function ArticleCombobox({
   disabled,
   className,
 }: {
-  articles: DdsArticleRead[];
+  articles: ReadonlyArray<{ id: string; name: string }>;
   value: string;
   onChange: (id: string) => void;
   placeholder?: string;
