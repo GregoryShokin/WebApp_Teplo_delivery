@@ -2739,7 +2739,8 @@ export type NewPaymentFlow =
   | "employee_advance"
   | "employee_loan"
   | "supplier_prepayment"
-  | "supplier_invoices";
+  | "supplier_invoices"
+  | "internal_transfer";
 
 export type NewPaymentArticleCounterparty = {
   counterparty_id: string;
@@ -2857,6 +2858,31 @@ export async function createInternalTransfer(
   payload: InternalTransferPayload,
 ): Promise<InternalTransferResult> {
   const response = await api.post<InternalTransferResult>("/dds/internal-transfer", payload);
+  return response.data;
+}
+
+export type NewPaymentTransferPayload = {
+  source_wallet_id: string;
+  dest_wallet_id: string;
+  amount: number;
+  purpose?: string | null;
+};
+
+export type NewPaymentTransferResult = {
+  kind: "transfer" | "draft";
+  amount: number;
+  draft_id: string | null;
+};
+
+// Обычный внутренний перевод из «Нового платежа»: наличный источник → перевод,
+// банковский → черновик-пополнение Сейфа.
+export async function createNewPaymentInternalTransfer(
+  payload: NewPaymentTransferPayload,
+): Promise<NewPaymentTransferResult> {
+  const response = await api.post<NewPaymentTransferResult>(
+    "/dds/new-payment/internal-transfer",
+    payload,
+  );
   return response.data;
 }
 

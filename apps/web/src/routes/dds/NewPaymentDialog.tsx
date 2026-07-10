@@ -27,6 +27,7 @@ import {
   apiErrorMessage,
   createExpenseCashReserves,
   createNewPaymentExpenseDraft,
+  createNewPaymentInternalTransfer,
   createPayrollAdvance,
   getNewPaymentContext,
   getPayrollAdvanceAvailability,
@@ -44,6 +45,7 @@ const ROW_FLOWS: ReadonlySet<NewPaymentFlow> = new Set([
   "supplier_prepayment",
   "employee_advance",
   "employee_loan",
+  "internal_transfer",
 ]);
 
 type PaymentRow = {
@@ -52,6 +54,7 @@ type PaymentRow = {
   amount: string;
   counterpartyId: string; // маршрут supplier_prepayment
   employeeId: string; // маршруты employee_advance / employee_loan
+  destWalletId: string; // маршрут internal_transfer — счёт-получатель (Сейф/Касса)
   purpose: string; // expense — назначение (опц.); аванс/займ — комментарий (опц.)
   // Форма аванса/займа (маршруты employee_advance / employee_loan) — как в разборе ДДС.
   advanceKind: "advance" | "loan";
@@ -71,6 +74,7 @@ function emptyRow(key: string, articleId = ""): PaymentRow {
     amount: "",
     counterpartyId: "",
     employeeId: "",
+    destWalletId: "",
     purpose: "",
     advanceKind: "advance",
     installmentAmount: "",
@@ -213,6 +217,7 @@ export function NewPaymentDialog({
       articleId,
       counterpartyId: presetCp,
       employeeId: "",
+      destWalletId: "",
       purpose: "",
       // Тип по маршруту статьи (переключаемо в под-модалке), поля займа сброшены.
       advanceKind: article?.flow === "employee_loan" ? "loan" : "advance",
@@ -239,6 +244,17 @@ export function NewPaymentDialog({
     }
     if (flow === "employee_advance" || flow === "employee_loan") {
       return row.employeeId ? null : "нужен сотрудник";
+    }
+    if (flow === "internal_transfer") {
+      if (!row.destWalletId) {
+        return "нужен счёт-получатель";
+      }
+      const dest = wallets.find((w) => w.id === row.destWalletId);
+      // С банковского источника перевод возможен только на Сейф (в кассу — нельзя).
+      if (!isCashSource && dest?.location !== "safe") {
+        return "с банка — только на Сейф";
+      }
+      return null;
     }
     return null;
   }
@@ -306,6 +322,16 @@ export function NewPaymentDialog({
                 isLoan && row.recoveryStartDate ? row.recoveryStartDate : undefined,
               override_ceiling: isLoan ? row.overrideCeiling : false,
               comment: row.purpose.trim() ? row.purpose.trim() : null,
+            }),
+          );
+        } else if (flow === "internal_transfer") {
+          // Наличный источник → мгновенный перевод; банк → черновик-пополнение Сейфа.
+          tasks.push(
+            createNewPaymentInternalTransfer({
+              source_wallet_id: walletId,
+              dest_wallet_id: row.destWalletId,
+              amount: rowAmount(row),
+              purpose: row.purpose.trim() || null,
             }),
           );
         }
@@ -445,7 +471,38 @@ export function NewPaymentDialog({
                         <Trash2 className="h-4 w-4" aria-hidden="true" />
                       </Button>
                     </div>
-                    {flow ? (
+                    {flow === "internal_transfer" ? (
+                      <div className="flex items-center gap-2 pl-1">
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          На счёт
+                        </span>
+                        <Select
+                          onValueChange={(value) => updateRow(row.key, { destWalletId: value })}
+                          value={row.destWalletId}
+                        >
+                          <SelectTrigger className="h-8 w-56">
+                            <SelectValue placeholder="Счёт-получатель" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {wallets
+                              .filter(
+                                (w) =>
+                                  w.kind === "cash" &&
+                                  w.id !== walletId &&
+                                  (isCashSource || w.location === "safe"),
+                              )
+                              .map((w) => (
+                                <SelectItem key={w.id} value={w.id}>
+                                  {w.name}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                        {missing ? (
+                          <span className="text-xs font-medium text-amber-700">{missing}</span>
+                        ) : null}
+                      </div>
+                    ) : flow ? (
                       needsDetails ? (
                         <button
                           className={`self-start pl-1 text-left text-xs underline-offset-2 hover:underline ${
