@@ -11,7 +11,6 @@ import {
   ChevronRight,
   ChevronUp,
   CircleSlash,
-  Copy,
   ExternalLink,
   History,
   LoaderCircle,
@@ -22,7 +21,6 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  Users,
 } from "lucide-react";
 import {
   useEffect,
@@ -47,6 +45,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DateRangePopover } from "@/components/ui/date-range-popover";
 import {
   Dialog,
   DialogContent,
@@ -138,7 +137,6 @@ import {
 } from "@/lib/api";
 import {
   rangeForPreset,
-  shiftRange,
   type PeriodPreset,
   type PeriodRange,
 } from "@/lib/date-presets";
@@ -251,7 +249,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     (activeTab === "dishwashers" && canViewDishwashers);
   const [isResolvingStoredTab, setIsResolvingStoredTab] = useState(useStoredTab);
   const storedPeriodPreset = useMemo(readStoredSchedulePreset, []);
-  const [periodPreset, setPeriodPreset] = useLocalStorageState<PeriodPreset>(
+  const [periodPreset] = useLocalStorageState<PeriodPreset>(
     "schedule.preset",
     () => storedPeriodPreset ?? "month",
     isPeriodPreset,
@@ -263,7 +261,8 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     isPeriodRange,
     { hydrateFromStorage: false },
   );
-  const [viewMode, setViewMode] = useState<ViewMode>("employees");
+  // Вид всегда «по сотрудникам» (переключатель видов убран из панели графика).
+  const [viewMode] = useState<ViewMode>("employees");
   const [isGridFullscreen, setIsGridFullscreen] = useState(false);
   const [planFactTableMode, setPlanFactTableMode] = useState<PlanFactTableMode>("days");
 
@@ -826,22 +825,8 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     setCreateOpen(true);
   }
 
-  function handlePeriodPresetChange(nextPreset: PeriodPreset) {
-    setPeriodPreset(nextPreset);
-    if (nextPreset !== "custom") {
-      setPeriodRange(rangeForPreset(nextPreset, new Date())!);
-    }
-  }
-
   function handlePeriodRangeApply(nextRange: PeriodRange) {
     setPeriodRange(nextRange);
-  }
-
-  function handlePeriodNavigate(direction: -1 | 1) {
-    if (periodPreset === "custom") {
-      return;
-    }
-    setPeriodRange((current) => shiftRange(periodPreset, current, direction));
   }
 
   function handleCreatePeriodPresetChange(nextPreset: PeriodPreset) {
@@ -1205,81 +1190,30 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
 
         {canViewSchedule ? (
         <TabsContent className="mt-0 space-y-5" value="schedule">
-          <section className="flex flex-col gap-4 rounded-lg border bg-card p-4">
-            <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_auto] xl:items-end">
-              <div className="flex flex-wrap items-center gap-2">
-                <Label className="mr-1">График</Label>
-                {currentSchedule ? (
-                  <>
-                    <Badge className="gap-1" variant={isDraft ? "outline" : "default"}>
-                      {isDraft ? null : <Lock size={13} aria-hidden="true" />}
-                      {isDraft ? "Редактируемый" : "Зафиксирован"}
-                    </Badge>
-                    <span className="text-sm text-muted-foreground">
-                      {currentSchedule.shifts.length} смен
-                    </span>
-                  </>
-                ) : null}
-              </div>
-              <div />
-            </div>
-
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                <SegmentedButton
-                  active={viewMode === "employees"}
-                  icon={<Users size={16} aria-hidden="true" />}
-                  label="По сотрудникам"
-                  onClick={() => setViewMode("employees")}
-                />
-                <SegmentedButton
-                  active={viewMode === "stations"}
-                  icon={<CalendarDays size={16} aria-hidden="true" />}
-                  label="По станциям"
-                  onClick={() => setViewMode("stations")}
-                />
-                <SegmentedButton
-                  active={viewMode === "planFact"}
-                  icon={<BarChart3 size={16} aria-hidden="true" />}
-                  label="План-факт"
-                  onClick={() => setViewMode("planFact")}
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {currentSchedule && (viewMode === "employees" || viewMode === "stations") ? (
-                  <Button onClick={() => setIsGridFullscreen(true)} variant="outline">
-                    <Maximize2 size={16} aria-hidden="true" />
-                    На весь экран
-                  </Button>
-                ) : null}
-                {canEditSchedule ? (
-                  <Button
-                    disabled={!isDraft || copyWeekMutation.isPending}
-                    onClick={() =>
-                      setCopyDialog({
-                        open: true,
-                        targetMode: "next",
-                        customDate: toIsoDate(addDays(parseIsoDate(selectedWeekStart), 7)),
-                      })
-                    }
-                    variant="outline"
-                  >
-                    <Copy size={16} aria-hidden="true" />
-                    Копировать неделю
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          </section>
-
-          <PeriodToolbar
-            onCustomRangeApply={handlePeriodRangeApply}
-            onNavigate={handlePeriodNavigate}
-            onPresetChange={handlePeriodPresetChange}
-            preset={periodPreset}
-            range={periodRange}
-            title="Период просмотра"
-          />
+          {/* Минимальная панель: статус графика + иконка-календарь для выбора периода
+              (диапазон кликами по датам + быстрые фильтры «7 дней»/«Этот месяц»). */}
+          <div className="flex flex-wrap items-center gap-3">
+            {currentSchedule ? (
+              <>
+                <Badge className="gap-1" variant={isDraft ? "outline" : "default"}>
+                  {isDraft ? null : <Lock size={13} aria-hidden="true" />}
+                  {isDraft ? "Редактируемый" : "Зафиксирован"}
+                </Badge>
+                <span className="text-sm text-muted-foreground">
+                  {currentSchedule.shifts.length} смен
+                </span>
+              </>
+            ) : null}
+            <DateRangePopover
+              from={periodRange.from}
+              to={periodRange.to}
+              onChange={(from, to) => {
+                if (from && to) {
+                  handlePeriodRangeApply({ from, to });
+                }
+              }}
+            />
+          </div>
 
           {currentSchedule && canViewForecastBudget ? (
             <ScheduleForecastGroup
@@ -1310,6 +1244,20 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
               onForecastRecompute={requestForecastRecompute}
               todayIso={todayIso}
             />
+          ) : null}
+
+          {currentSchedule && !isGridFullscreen ? (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsGridFullscreen(true)}
+                title="Развернуть график"
+                aria-label="Развернуть график"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <Maximize2 size={16} aria-hidden="true" />
+              </button>
+            </div>
           ) : null}
 
           <div
@@ -3440,7 +3388,9 @@ function EmployeeScheduleGrid({
                     className="sticky left-0 z-10 border-b border-r bg-card px-3 py-1.5 align-top text-xs"
                     style={{ width: EMPLOYEE_COLUMN_WIDTH, minWidth: EMPLOYEE_COLUMN_WIDTH }}
                   >
-                    <div className="font-medium leading-tight">{employee.full_name}</div>
+                    <div className="text-sm font-bold leading-tight text-foreground">
+                      {employee.full_name}
+                    </div>
                     <EmployeeRoleSubtitle
                       employee={employee}
                       payrollRole={primaryRoleLabelSource(employee)}
