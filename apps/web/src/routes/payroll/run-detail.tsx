@@ -78,6 +78,8 @@ import {
   type RunPayoutDelta,
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
+import { PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
+import { roleColorClasses } from "@/lib/role-colors";
 import { cn } from "@/lib/utils";
 import {
   formatDate,
@@ -106,10 +108,13 @@ type SortKey =
 type SortDirection = "asc" | "desc";
 
 type PayrollLineRowModel = {
+  // Для двуролевого повара `line` — синтетическая объединённая строка (суммы сложены,
+  // per-employee поля взяты один раз). `roles` — производственные роли для чипов.
   line: PayrollLine;
   employee?: Employee;
   employeeName: string;
   hours: number;
+  roles: string[];
 };
 
 const LEGACY_RECALC_MESSAGE = "Это импортированный период — пересчёт затрёт исторические данные";
@@ -699,13 +704,36 @@ function PayrollByEmployeeTab({
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    const prepared = lines.map((line) => {
+    // Группируем строки по сотруднику: производственные роли (пиццерист+сушист) сливаем в
+    // ОДНУ строку, замещающую окладную (кассир→помощник менеджера) держим отдельной.
+    // Порядок групп — по первому появлению строки (стабильно к сортировке ниже).
+    const groups = new Map<string, PayrollLine[]>();
+    const order: string[] = [];
+    for (const line of lines) {
       const employee = employeesById.get(line.employee_id);
+      const groupKey = lineIsSubstituteOklad(line, employee)
+        ? `sub:${line.id}`
+        : `prod:${line.employee_id}`;
+      const bucket = groups.get(groupKey);
+      if (bucket) {
+        bucket.push(line);
+      } else {
+        groups.set(groupKey, [line]);
+        order.push(groupKey);
+      }
+    }
+
+    const prepared = order.map((groupKey) => {
+      const groupLines = groups.get(groupKey) ?? [];
+      const line = mergeEmployeeLines(groupLines);
+      const employee = employeesById.get(line.employee_id);
+      const roles = Array.from(new Set(groupLines.map((item) => item.role).filter(Boolean)));
       return {
         line,
         employee,
         employeeName: employee?.full_name ?? "Сотрудник требует настройки",
         hours: lineHours(line),
+        roles,
       };
     });
 
@@ -714,7 +742,8 @@ function PayrollByEmployeeTab({
         if (!needle) {
           return true;
         }
-        return row.employeeName.toLowerCase().includes(needle);
+        const roleText = row.roles.map((role) => payrollRoleLabel(role)).join(" ").toLowerCase();
+        return row.employeeName.toLowerCase().includes(needle) || roleText.includes(needle);
       })
       .sort((left, right) => compareRows(left, right, sortKey, sortDirection));
   }, [employeesById, lines, search, sortDirection, sortKey]);
@@ -777,6 +806,7 @@ function PayrollByEmployeeTab({
           <div className="text-xs text-muted-foreground">
             {row.employee?.position || "Роль из явок"}
           </div>
+          <RoleChips roles={row.roles} />
           {row.employee?.requires_position_review ? (
             <button
               className="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-800 hover:bg-amber-100"
@@ -1788,7 +1818,10 @@ function PayrollLineDrawer({ row, runStatus }: { row: PayrollLineRowModel; runSt
       <SheetHeader>
         <SheetTitle className="pr-8">{row.employeeName}</SheetTitle>
         <SheetDescription>
-          {row.line.role || "Роль не задана"} · {formatHours(row.hours)}
+          {row.roles.length > 0
+            ? row.roles.map((role) => payrollRoleLabel(role)).join(", ")
+            : row.line.role || "Роль не задана"}{" "}
+          · {formatHours(row.hours)}
         </SheetDescription>
       </SheetHeader>
 
@@ -1835,7 +1868,7 @@ function PayrollLineDrawer({ row, runStatus }: { row: PayrollLineRowModel; runSt
                   <div>
                     <div className="font-medium">{formatDate(day.date)}</div>
                     <div className="text-sm text-muted-foreground">
-                      {day.role} · {formatHours(day.hours)}
+                      {payrollRoleLabel(day.role)} · {formatHours(day.hours)}
                     </div>
                   </div>
                   {day.category ? (
@@ -2097,6 +2130,103 @@ function runMeta(run: {
     parts.push(`финализирован ${formatDateTime(run.period.finalized_at)}`);
   }
   return parts.join(" · ");
+}
+
+function payrollRoleLabel(role: string | null | undefined): string {
+  if (!role) {
+    return "—";
+  }
+  return PAYROLL_ROLE_LABELS[role as keyof typeof PAYROLL_ROLE_LABELS] ?? role;
+}
+
+// Чипы ролей объединённой расчётки: каждая роль — своим цветом (единая палитра ролей).
+function RoleChips({ roles }: { roles: string[] }) {
+  if (roles.length === 0) {
+    return null;
+  }
+  return (
+    <span className="mt-1 flex flex-wrap gap-1">
+      {roles.map((role) => {
+        const colors = roleColorClasses(role);
+        return (
+          <span
+            className={cn(
+              "inline-flex h-5 items-center rounded-sm border px-1.5 text-[11px] leading-none",
+              colors.container,
+              colors.primaryText,
+            )}
+            key={role}
+          >
+            {payrollRoleLabel(role)}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+// Замещающая окладная строка (кассир, исполняющий помощника менеджера) НЕ сливается с
+// производственной: оклад по чужой должности идёт отдельной строкой (как в персональном
+// отчёте). Признак — components.kind == "admin_oklad" и роль ≠ основной должности.
+function lineIsSubstituteOklad(line: PayrollLine, employee?: Employee): boolean {
+  const kind = isRecord(line.components) ? line.components.kind : undefined;
+  return kind === "admin_oklad" && (line.role ?? "") !== (employee?.position ?? "");
+}
+
+function mergeComponentArray(
+  lines: PayrollLine[],
+  picker: (components: Record<string, unknown>) => unknown,
+): unknown[] {
+  return lines.flatMap((line) => {
+    const value = isRecord(line.components) ? picker(line.components) : undefined;
+    return Array.isArray(value) ? value : [];
+  });
+}
+
+// Объединяем производственные строки одного сотрудника (пиццерист+сушист) в ОДНУ.
+// per-role суммы складываем; per-employee поля (deposit_payout, amount_cash/account,
+// payment_status, on_demand*, paid_*, deposit_excluded_*) берём ОДИН раз из первой строки —
+// они идентичны у всех строк сотрудника (см. serialize_payroll_line на бэке). Смены и
+// корректировки конкатенируем: аванс/штрафы/премии висят только на первой строке, задвоения
+// нет; роль каждого дня хранится в самом дне (для дровера и подсветки).
+function mergeEmployeeLines(lines: PayrollLine[]): PayrollLine {
+  const [first, ...rest] = lines;
+  if (rest.length === 0) {
+    return first;
+  }
+  const sum = (pick: (line: PayrollLine) => number) =>
+    lines.reduce((acc, line) => acc + moneyValue(pick(line)), 0);
+  const firstAdjustments =
+    isRecord(first.components) && isRecord(first.components.adjustments)
+      ? first.components.adjustments
+      : {};
+  return {
+    ...first,
+    base_pay: sum((line) => line.base_pay),
+    premium: sum((line) => line.premium),
+    percent_pay: sum((line) => line.percent_pay),
+    vacation_pay: sum((line) => line.vacation_pay),
+    deduction: sum((line) => line.deduction),
+    fund_accrual: sum((line) => line.fund_accrual),
+    ndfl_withheld: sum((line) => line.ndfl_withheld),
+    ndfl_deduction: sum((line) => line.ndfl_deduction),
+    total_payable: sum((line) => line.total_payable),
+    deposit_withholding: sum((line) => line.deposit_withholding),
+    advance_issued: sum((line) => line.advance_issued),
+    components: {
+      ...(isRecord(first.components) ? first.components : {}),
+      days: mergeComponentArray(lines, (components) => components.days),
+      adjustments: {
+        ...firstAdjustments,
+        bonuses: mergeComponentArray(lines, (components) =>
+          isRecord(components.adjustments) ? components.adjustments.bonuses : undefined,
+        ),
+        penalties: mergeComponentArray(lines, (components) =>
+          isRecord(components.adjustments) ? components.adjustments.penalties : undefined,
+        ),
+      },
+    },
+  };
 }
 
 function compareRows(
