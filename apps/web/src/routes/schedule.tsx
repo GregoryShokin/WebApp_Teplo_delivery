@@ -558,7 +558,6 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
         business_date: variables.businessDate,
       }),
     onSuccess: (shift, variables) => {
-      toast.success("Смена добавлена");
       queryClient.setQueryData<ScheduleRead | undefined>(
         ["schedule", variables.scheduleId],
         (old) => {
@@ -583,7 +582,6 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   const deleteShiftMutation = useMutation({
     mutationFn: (shift: ScheduledShiftRead) => deleteShift(currentSchedule?.id ?? "", shift.id),
     onSuccess: (_void, shift) => {
-      toast.success("Смена удалена");
       setDeleteTarget(null);
       setShiftDialog(null);
       const scheduleId = currentSchedule?.id;
