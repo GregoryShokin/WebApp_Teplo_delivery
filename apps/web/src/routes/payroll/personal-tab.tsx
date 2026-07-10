@@ -26,8 +26,45 @@ import {
   getEmployees,
   type PayrollPersonalReport,
 } from "@/lib/api";
+import { PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
+import { roleColorClasses } from "@/lib/role-colors";
 import { cn } from "@/lib/utils";
 import { formatDate, formatMoney } from "./runs";
+
+function payrollRoleLabel(role: string | null | undefined): string {
+  if (!role) {
+    return "—";
+  }
+  return PAYROLL_ROLE_LABELS[role as keyof typeof PAYROLL_ROLE_LABELS] ?? role;
+}
+
+// Чипы ролей расчётки: каждая роль — своим цветом (единая палитра ролей). Для объединённой
+// расчётки повара (пиццерист+сушист) показываем оба чипа; пустой список — фолбэк на текст.
+function RoleChips({ roles, fallback }: { roles?: string[]; fallback?: string | null }) {
+  const list = roles && roles.length > 0 ? roles : fallback ? [fallback] : [];
+  if (list.length === 0) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  return (
+    <span className="flex flex-wrap gap-1">
+      {list.map((role) => {
+        const colors = roleColorClasses(role);
+        return (
+          <span
+            className={cn(
+              "inline-flex h-5 items-center rounded-sm border px-1.5 text-[11px] leading-none",
+              colors.container,
+              colors.primaryText,
+            )}
+            key={role}
+          >
+            {payrollRoleLabel(role)}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
 
 type PayrollPersonalReportPeriod = PayrollPersonalReport["periods"][number];
 type ReportTableView = "weekly" | "daily";
@@ -53,6 +90,8 @@ type OperationRow = {
   amount: string;
   comment: string | null;
   periodStart?: string;
+  // Роль смены (для подсветки в подневной таблице) — у оклада/процента.
+  role?: string | null;
 };
 
 const KIND_META: Record<
@@ -270,7 +309,7 @@ export function PayrollPersonalReportPageTab() {
     {
       key: "role",
       header: "Роль",
-      cell: (row) => row.role,
+      cell: (row) => <RoleChips fallback={row.role} roles={row.roles?.map((item) => item.role)} />,
     },
     {
       key: "base_pay",
@@ -585,6 +624,7 @@ function buildOperations(report: PayrollPersonalReport): OperationRow[] {
         kind: "base_pay",
         amount: String(day.base_pay),
         comment: null,
+        role: day.role,
       });
     }
     if (day.percent_pay > 0) {
@@ -594,6 +634,7 @@ function buildOperations(report: PayrollPersonalReport): OperationRow[] {
         kind: "percent_pay",
         amount: String(day.percent_pay),
         comment: null,
+        role: day.role,
       });
     }
     if (day.vacation_pay > 0) {
@@ -696,15 +737,18 @@ function OperationsTable({ rows }: { rows: OperationRow[] }) {
                   {row.date ? formatDate(row.date) : "—"}
                 </td>
                 <td className="px-3 py-2 align-top">
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "border-transparent font-normal shadow-none",
-                      meta.badgeClass,
-                    )}
-                  >
-                    {meta.label}
-                  </Badge>
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "border-transparent font-normal shadow-none",
+                        meta.badgeClass,
+                      )}
+                    >
+                      {meta.label}
+                    </Badge>
+                    {row.role ? <RoleChips roles={[row.role]} /> : null}
+                  </span>
                 </td>
                 <td className="min-w-56 px-3 py-2 align-top text-muted-foreground">
                   {row.comment ?? "—"}

@@ -687,6 +687,8 @@ export type PayrollPersonalReport = {
     period_id: string;
     run_id: string;
     run_status: string;
+    // Ярлык объединённой расчётки: перечисление ролей («pizza, sushi»). Для подсветки
+    // используйте `roles` (по роли — свой цвет), а не этот текст.
     role: string;
     period_start: string;
     period_end: string;
@@ -703,6 +705,22 @@ export type PayrollPersonalReport = {
     penalty_total: number;
     total_payable: number;
     is_substitute: boolean;
+    // Разбивка объединённой расчётки по ролям (для секций/чипов внутри расчётки).
+    roles: Array<{
+      role: string;
+      base_pay: number;
+      premium: number;
+      percent_pay: number;
+      vacation_pay: number;
+      ndfl_withheld: number;
+      fund_accrual: number;
+      deduction: number;
+      deposit_withholding: number;
+      deposit_payout: number;
+      bonus_total: number;
+      penalty_total: number;
+      total_payable: number;
+    }>;
   }>;
   daily: Array<{
     date: string;
@@ -717,6 +735,9 @@ export type PayrollPersonalReport = {
     penalty: number;
     audit_penalty: number;
     comment: string | null;
+    // Роль(и) дня для подсветки по сменам: `role` — основная (по оплате), `roles` — все.
+    role: string | null;
+    roles: string[];
   }>;
   opening_balance: string;
   closing_balance: string;
