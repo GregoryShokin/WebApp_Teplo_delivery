@@ -7,8 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, or_, select, text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -18,7 +17,9 @@ from app.models import (
     EmployeeRoleAssignment,
     PayrollPeriod,
     PayrollRun,
+    ScheduledShift,
     ShiftLedgerEntry,
+    ShiftSchedule,
 )
 from app.services.attendance_loader import (
     MOSCOW_TZ,
@@ -58,14 +59,6 @@ class ShiftLedgerValidationError(ValueError):
     pass
 
 
-SCHEDULE_TABLE_CANDIDATES = (
-    "scheduled_shift",
-    "shift_schedule_entry",
-    "employee_schedule_shift",
-)
-SCHEDULE_DATE_COLUMNS = ("work_date", "shift_date", "date")
-SCHEDULE_ROLE_COLUMNS = ("payroll_role", "primary_role", "role", "station")
-SCHEDULE_CATEGORY_COLUMNS = ("category", "payroll_category")
 logger = logging.getLogger(__name__)
 
 
@@ -322,8 +315,7 @@ async def load_iiko_attendance_snapshots(
     # временного внештатника, чья карточка покрывает дату явки. Грузим индекс
     # лишь при наличии плейсхолдеров — иначе лишний запрос ни к чему.
     has_placeholder = any(
-        getattr(emp, "is_freelancer_placeholder", False)
-        for emp in employees_by_iiko_id.values()
+        getattr(emp, "is_freelancer_placeholder", False) for emp in employees_by_iiko_id.values()
     )
     binding_index = (
         await freelancer_attendance.load_binding_index(session)
@@ -540,96 +532,31 @@ async def load_schedule_assignments(
     work_date: date,
     employee_ids: set[uuid.UUID],
 ) -> dict[uuid.UUID, LedgerAssignment]:
+    # Роль из ОПУБЛИКОВАННОГО графика на этот день. Опубликованный график — audit
+    # baseline плана; черновики и замещённые (superseded) версии в учёт смен не
+    # берём. Если действующих версий вдруг несколько, побеждает самая свежая по
+    # published_at (в норме публикация помечает предыдущую как superseded, так что
+    # published-версия на дату одна). Категорию из графика не тянем — резолвер
+    # (resolve_default_assignment) восстановит её из ролей сотрудника «роль-в-роль».
     if not employee_ids:
         return {}
-    schedule_shape = await find_schedule_shape(session)
-    if schedule_shape is None:
-        return {}
-
-    table_name, date_column, role_column, category_column, uses_primary_role_id = schedule_shape
-    try:
-        if uses_primary_role_id:
-            query = text(
-                f"""
-                select s.employee_id, a.payroll_role, a.category
-                  from {_quote_identifier(table_name)} s
-                  left join employee_role_assignment a on a.id = s.primary_role_id
-                 where s.{_quote_identifier(date_column)} = :work_date
-                """
-            )
-        else:
-            category_expr = (
-                f"{_quote_identifier(category_column)} as category"
-                if category_column is not None
-                else "null as category"
-            )
-            query = text(
-                f"""
-                select employee_id,
-                       {_quote_identifier(role_column)} as payroll_role,
-                       {category_expr}
-                  from {_quote_identifier(table_name)}
-                 where {_quote_identifier(date_column)} = :work_date
-                """
-            )
-        rows = (await session.execute(query, {"work_date": work_date})).mappings().all()
-    except SQLAlchemyError:
-        return {}
-
-    requested_ids = {str(employee_id) for employee_id in employee_ids}
+    result = await session.execute(
+        select(ScheduledShift.employee_id, ScheduledShift.payroll_role)
+        .join(ShiftSchedule, ShiftSchedule.id == ScheduledShift.shift_schedule_id)
+        .where(
+            ShiftSchedule.status == "published",
+            ScheduledShift.business_date == work_date,
+            ScheduledShift.employee_id.in_(employee_ids),
+        )
+        .order_by(ShiftSchedule.published_at.asc().nulls_first())
+    )
     assignments: dict[uuid.UUID, LedgerAssignment] = {}
-    for row in rows:
-        employee_id = uuid_or_none(row.get("employee_id"))
-        if employee_id is None or str(employee_id) not in requested_ids:
-            continue
+    for employee_id, payroll_role in result.all():
         assignments[employee_id] = LedgerAssignment(
-            payroll_role=clean_text(row.get("payroll_role")),
-            category=clean_text(row.get("category")),
+            payroll_role=clean_text(payroll_role),
+            category=None,
         )
     return assignments
-
-
-async def find_schedule_shape(
-    session: AsyncSession,
-) -> tuple[str, str, str | None, str | None, bool] | None:
-    for table_name in SCHEDULE_TABLE_CANDIDATES:
-        columns = await table_columns(session, table_name)
-        if "employee_id" not in columns:
-            continue
-        date_column = next((column for column in SCHEDULE_DATE_COLUMNS if column in columns), None)
-        if date_column is None:
-            continue
-        if "primary_role_id" in columns:
-            return (table_name, date_column, None, None, True)
-        role_column = next((column for column in SCHEDULE_ROLE_COLUMNS if column in columns), None)
-        if role_column is None:
-            continue
-        category_column = next(
-            (column for column in SCHEDULE_CATEGORY_COLUMNS if column in columns),
-            None,
-        )
-        return (table_name, date_column, role_column, category_column, False)
-    return None
-
-
-async def table_columns(session: AsyncSession, table_name: str) -> set[str]:
-    try:
-        rows = (
-            await session.execute(
-                text(
-                    """
-                    select column_name
-                      from information_schema.columns
-                     where table_schema = current_schema()
-                       and table_name = :table_name
-                    """
-                ),
-                {"table_name": table_name},
-            )
-        ).all()
-    except SQLAlchemyError:
-        return set()
-    return {str(row[0]) for row in rows}
 
 
 def resolve_default_assignment(
@@ -839,17 +766,6 @@ def ledger_entry_snapshot(entry: ShiftLedgerEntry) -> dict[str, Any]:
     }
 
 
-def uuid_or_none(value: Any) -> uuid.UUID | None:
-    if isinstance(value, uuid.UUID):
-        return value
-    if value is None:
-        return None
-    try:
-        return uuid.UUID(str(value))
-    except ValueError:
-        return None
-
-
 def clean_text(value: Any) -> str | None:
     if value is None:
         return None
@@ -857,7 +773,3 @@ def clean_text(value: Any) -> str | None:
     if not text_value or text_value.casefold() in {"none", "null", "nan"}:
         return None
     return text_value
-
-
-def _quote_identifier(value: str) -> str:
-    return '"' + value.replace('"', '""') + '"'
