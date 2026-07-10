@@ -42,6 +42,9 @@ ALLOCATION_TO_KASSA_SOURCE_KIND = "safe_allocation_to_kassa"
 ALLOCATION_TO_SAFE_SOURCE_KIND = "kassa_allocation_to_safe"
 # Внутренний перевод между наличными счетами (Сейф↔Касса); source_id связывает пару ног.
 INTERNAL_TRANSFER_SOURCE_KIND = "internal_transfer_manual"
+# Единая статья ДДС «Внутренний перевод» (movement_type=internal): направление ноги
+# (in/out) само различает поступление/списание — двух отдельных статей не нужно.
+INTERNAL_TRANSFER_ARTICLE_CODE = "internal_transfer"
 # Выдача целёвки наличными из кассы, вкладка «К выдаче» (source_id = резерв).
 KASSA_TARGET_PAYOUT_SOURCE_KIND = "kassa_target_payout"
 ACTIVE_RESERVE_STATUSES = ("reserved", "partially_paid")
@@ -480,17 +483,17 @@ async def move_allocation_location(
         if to_location == "kassa"
         else ALLOCATION_TO_SAFE_SOURCE_KIND
     )
-    out_article = await _article_id(session, TRANSFER_OUT_ARTICLE_CODE)
-    in_article = await _article_id(session, TRANSFER_IN_ARTICLE_CODE)
+    # Единая статья «Внутренний перевод»: направление ноги различает списание/поступление.
+    article = await _article_id(session, INTERNAL_TRANSFER_ARTICLE_CODE)
     label = allocation.purpose or "целевой резерв"
     dest_name = "Сейф" if to_location == "safe" else "касса"
-    purpose = f"Перемещение целёвки: {label} → {dest_name}"
+    purpose = f"Внутренний перевод (резерв): {label} → {dest_name}"
     out_leg = CashflowTransaction(
         wallet_id=allocation.wallet_id,
         direction="out",
         amount=outstanding,
         operation_date=operation_date,
-        article_id=out_article,
+        article_id=article,
         source_kind=source_kind,
         source_id=allocation.id,
         payment_purpose=purpose,
@@ -501,7 +504,7 @@ async def move_allocation_location(
         direction="in",
         amount=outstanding,
         operation_date=operation_date,
-        article_id=in_article,
+        article_id=article,
         source_kind=source_kind,
         source_id=allocation.id,
         payment_purpose=purpose,
@@ -535,18 +538,18 @@ async def book_internal_transfer(
     if amount <= 0:
         raise ValueError("Сумма перевода должна быть больше нуля")
     transfer_id = uuid4()
-    out_article = await _article_id(session, TRANSFER_OUT_ARTICLE_CODE)
-    in_article = await _article_id(session, TRANSFER_IN_ARTICLE_CODE)
-    text = purpose or f"Перевод {source_wallet.name} → {dest_wallet.name}"
+    # Единая статья «Внутренний перевод»: направление ноги различает списание/поступление.
+    article = await _article_id(session, INTERNAL_TRANSFER_ARTICLE_CODE)
+    note = f" · {purpose.strip()}" if purpose and purpose.strip() else ""
     out_leg = CashflowTransaction(
         wallet_id=source_wallet.id,
         direction="out",
         amount=amount,
         operation_date=operation_date,
-        article_id=out_article,
+        article_id=article,
         source_kind=INTERNAL_TRANSFER_SOURCE_KIND,
         source_id=transfer_id,
-        payment_purpose=text,
+        payment_purpose=f"Внутренний перевод → {dest_wallet.name}{note}",
         quality_status="final",
     )
     in_leg = CashflowTransaction(
@@ -554,10 +557,10 @@ async def book_internal_transfer(
         direction="in",
         amount=amount,
         operation_date=operation_date,
-        article_id=in_article,
+        article_id=article,
         source_kind=INTERNAL_TRANSFER_SOURCE_KIND,
         source_id=transfer_id,
-        payment_purpose=text,
+        payment_purpose=f"Внутренний перевод ← {source_wallet.name}{note}",
         quality_status="final",
     )
     session.add(out_leg)

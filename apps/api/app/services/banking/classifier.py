@@ -75,8 +75,11 @@ PREBOOKABLE_SOURCE_KINDS = (
 # выписки, она его не двигает), Сейф-нога in двигает баланс Сейфа.
 SAFE_TOPUP_SOURCE_KIND = "manual_bank_to_safe"
 SAFE_WALLET_CODE = "cash_safe"
-TRANSFER_OUT_ARTICLE_CODE = "vybytie_perevod_mezhdu_schetami"
-TRANSFER_IN_ARTICLE_CODE = "postuplenie_perevod_mezhdu_schetami"
+# Единая статья «Внутренний перевод» (movement_type=internal) на обе ноги любого перевода:
+# направление проводки (in/out) само различает поступление/списание, две технические статьи
+# («Выбытие/Поступление — Перевод между счетами») больше не нужны (архивированы миграцией).
+TRANSFER_OUT_ARTICLE_CODE = "internal_transfer"
+TRANSFER_IN_ARTICLE_CODE = "internal_transfer"
 
 # Чек Кассы, заведённый ВРУЧНУЮ до прихода выписки (банк ещё не передал card-операцию —
 # выходные / задержка webhook): полная сумма «висит» одной проводкой со статусом
