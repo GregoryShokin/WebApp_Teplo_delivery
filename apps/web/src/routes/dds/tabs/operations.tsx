@@ -238,6 +238,7 @@ function operationToJournalRow(operation: BankOperationRead): JournalRow {
     payment_purpose: operation.payment_purpose,
     counterparty_name_raw: operation.counterparty_name_raw,
     counterparty_inn_raw: operation.counterparty_inn_raw,
+    is_card: operation.is_card,
   };
 }
 

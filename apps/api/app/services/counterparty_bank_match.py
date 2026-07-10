@@ -386,17 +386,23 @@ async def _apply_bank_allocation(
     await session.flush()
 
 
-def assert_bank_matchable(invoice: SupplierInvoice, operation: BankOperation) -> None:
+def assert_bank_matchable(
+    invoice: SupplierInvoice, operation: BankOperation, *, allow_card: bool = False
+) -> None:
     """Guard shared by confirm + split: only a plain payable matches an OUTGOING supplier
     payment. Mirrors the suggestion-layer filters so a crafted POST (bypassing the picker)
-    can't allocate a receivable/barter invoice or a card/internal-transfer/incoming operation."""
+    can't allocate a receivable/barter invoice or a card/internal-transfer/incoming operation.
+
+    ``allow_card=True`` — осознанное РУЧНОЕ действие оператора: пропустить карт-шум
+    (``_is_card_noise``), когда местный закуп оплачен картой и оплату привязывают к накладной
+    вручную. Остальные проверки (исходящая, не внутренний перевод, накладная payable/не-бартер)
+    при этом сохраняются — allow_card их НЕ снимает. Авто-подбор (``suggest_invoice_matches*``)
+    карт-шум по-прежнему исключает, поэтому автопривязки карт нет ни при каком флаге."""
     if invoice.direction != "payable" or invoice.barter_role is not None:
         raise CounterpartyMatchError("Накладная не поддерживает банковский мэтч")
-    if (
-        operation.direction != "out"
-        or _is_card_noise(operation)
-        or operation.transfer_group_id is not None
-    ):
+    if operation.direction != "out" or operation.transfer_group_id is not None:
+        raise CounterpartyMatchError("Операция не является исходящим платежом поставщику")
+    if _is_card_noise(operation) and not allow_card:
         raise CounterpartyMatchError("Операция не является исходящим платежом поставщику")
 
 
@@ -407,6 +413,7 @@ async def confirm_invoice_match(
     bank_operation_id: uuid.UUID,
     enrich: bool,
     actor_user_id: uuid.UUID | None,
+    allow_card: bool = False,
 ) -> dict[str, Any]:
     invoice = await session.get(SupplierInvoice, invoice_id)
     if invoice is None:
@@ -414,7 +421,10 @@ async def confirm_invoice_match(
     operation = await session.get(BankOperation, bank_operation_id)
     if operation is None:
         raise CounterpartyMatchError("Банковская операция не найдена")
-    assert_bank_matchable(invoice, operation)
+    # allow_card: оператор явно подтвердил ручную привязку карт-оплаты (получатель в банке —
+    # эквайер, не поставщик). Даже так контрагента реквизитами эквайера не обогащаем — это
+    # берёт на себя _enrich_counterparty (guard на карт-шум внутри).
+    assert_bank_matchable(invoice, operation, allow_card=allow_card)
     if await _op_already_allocated(session, operation.id):
         raise CounterpartyMatchError("Эта операция уже использована в сверке")
 
@@ -450,6 +460,10 @@ async def _enrich_counterparty(
     operation: BankOperation,
     actor_user_id: uuid.UUID | None,
 ) -> bool:
+    # Карт-операция: банковский «получатель» — эквайер (реквизиты процессинга), не поставщик.
+    # Никогда не обогащаем контрагента такими данными, независимо от флага enrich у вызывающего.
+    if _is_card_noise(operation):
+        return False
     requisites = _payee_requisites(operation)
     payee_inn = requisites.get("inn")
     counterparty = await session.get(Counterparty, counterparty_id)

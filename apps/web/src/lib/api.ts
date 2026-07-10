@@ -2250,6 +2250,9 @@ export type BankOperationRead = {
   cashflow_transaction_id: string | null;
   transfer_group_id: string | null;
   raw_payload: Record<string, unknown> | null;
+  // Карт-операция (получатель — эквайер): при ручной привязке к накладной диалог показывает
+  // мягкое предупреждение вместо жёсткой ошибки.
+  is_card: boolean;
 };
 
 export type BankOperationsQuery = {
@@ -2425,6 +2428,9 @@ export type OperationClassifyPayload = {
   new_counterparty_name?: string | null;
   new_counterparty_inn?: string | null;
   remember_as_rule?: boolean;
+  // Карт-операция: оператор явно подтвердил ручную привязку оплаты к накладной (получатель в
+  // банке — эквайер, не поставщик). Требует права оплаты накладной; правило не запоминается.
+  allow_card?: boolean;
   // Для action='employee_advance' (разбор операции как аванс/заём сотруднику).
   advance_kind?: "advance" | "loan" | null;
   advance_installment_amount?: string | null;
@@ -2664,6 +2670,9 @@ export type JournalRow = {
   payment_purpose: string | null;
   counterparty_name_raw: string | null;
   counterparty_inn_raw: string | null;
+  // Карт-операция (получатель в банке — эквайер): при ручной привязке к накладной диалог
+  // показывает мягкое предупреждение вместо жёсткой ошибки. Для проводок всегда false.
+  is_card: boolean;
 };
 
 export type JournalQuery = {

@@ -18,6 +18,7 @@ from app.api.deps import (
     get_current_actor,
     require_permission,
 )
+from app.auth.permissions import permission_is_granted
 from app.db.session import get_session
 from app.models import (
     Account,
@@ -32,6 +33,7 @@ from app.models import (
     ReconciliationCase,
     SafeAllocation,
     SourceCredential,
+    SupplierInvoice,
     Wallet,
     WalletBalanceSnapshot,
 )
@@ -59,7 +61,6 @@ from app.schemas.dds import (
     DdsWalletRead,
     JournalListRead,
     NewPaymentContextRead,
-    PayoutAttributionEmployeeRead,
     NewPaymentExpenseDraftCreate,
     NewPaymentExpenseDraftRead,
     OperationClassifyRead,
@@ -67,6 +68,7 @@ from app.schemas.dds import (
     OwnerReviewActionRead,
     OwnerReviewClassifyRequest,
     OwnerReviewListRead,
+    PayoutAttributionEmployeeRead,
     SafeAllocationCreate,
     SafeAllocationPayRequest,
     SafeAllocationRead,
@@ -110,6 +112,7 @@ from app.services.banking.safe_allocations import (
     transfer_allocation_to_kassa,
 )
 from app.services.banking.transfer_matching import find_and_link_transfer_pairs
+from app.services.counterparty_bank_match import _is_card_noise
 from app.services.counterparty_payments import (
     CounterpartyPaymentError,
     ExpenseLineInput,
@@ -131,7 +134,7 @@ from app.services.payroll_advance_service import (
     sync_advance_after_allocation_change,
 )
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
-from app.auth.permissions import permission_is_granted
+from app.services.warehouse_invoices import invoice_permission_kind
 
 # Статьи аванса/займа сотрудника: разбор операции на них заводит SalaryAdvance (деньги ушли
 # банком). Дубль kassa/payouts.py (payroll_advance_service) — во избежание тяжёлого импорта.
@@ -409,6 +412,9 @@ async def list_journal(
                     "payment_purpose": op.payment_purpose,
                     "counterparty_name_raw": op.counterparty_name_raw,
                     "counterparty_inn_raw": op.counterparty_inn_raw,
+                    # Карт-операция (получатель в банке — эквайер): фронт показывает мягкое
+                    # предупреждение при ручной привязке к накладной вместо жёсткой ошибки.
+                    "is_card": _is_card_noise(op),
                 }
             )
 
@@ -434,6 +440,9 @@ async def list_journal(
                     "payment_purpose": op.payment_purpose,
                     "counterparty_name_raw": op.counterparty_name_raw,
                     "counterparty_inn_raw": op.counterparty_inn_raw,
+                    # Карт-операция (получатель в банке — эквайер): фронт показывает мягкое
+                    # предупреждение при ручной привязке к накладной вместо жёсткой ошибки.
+                    "is_card": _is_card_noise(op),
                 }
             )
 
@@ -1215,6 +1224,19 @@ async def classify_operation(
                 )
             except ValueError as error:
                 raise HTTPException(status_code=400, detail=str(error)) from error
+        # Ручная привязка карт-оплаты к накладной (получатель в банке — эквайер, не поставщик) —
+        # привилегированное действие: требуем право оплаты накладной (как в /match/confirm), чтобы
+        # разбор ДДС не обходил RBAC. Проверяем ДО мутаций (единственный commit — в конце роута).
+        if payload.allow_card:
+            for item in payload.splits:
+                if item.invoice_id is None:
+                    continue
+                invoice = await session.get(SupplierInvoice, item.invoice_id)
+                if invoice is None:
+                    raise HTTPException(status_code=404, detail="Накладная не найдена")
+                ensure_permission(
+                    actor, f"invoices.{await invoice_permission_kind(session, invoice)}.pay"
+                )
         try:
             created_ids = await apply_operation_split(
                 session,
@@ -1224,6 +1246,8 @@ async def classify_operation(
                     for item in payload.splits
                 ],
                 counterparty_id=counterparty_id,
+                actor_user_id=actor.user_id,
+                allow_card=payload.allow_card,
             )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
@@ -1315,7 +1339,14 @@ async def classify_operation(
             await find_and_link_transfer_pairs(session)
 
     rule_id = None
-    if payload.remember_as_rule and payload.action == "split" and len(payload.splits) == 1:
+    # Карт-привязку к накладной (allow_card) правилом НЕ запоминаем: правило не должно
+    # авто-матчить будущие карт-операции к накладным — это разовое ручное действие.
+    if (
+        payload.remember_as_rule
+        and payload.action == "split"
+        and len(payload.splits) == 1
+        and not payload.allow_card
+    ):
         rule = _rule_from_operation_split(
             operation, payload.splits[0].article_id, payload.counterparty_id
         )
@@ -1954,6 +1985,9 @@ def _bank_operation_payload(operation: BankOperation) -> dict[str, object]:
         "cashflow_transaction_id": operation.cashflow_transaction_id,
         "transfer_group_id": operation.transfer_group_id,
         "raw_payload": operation.raw_payload,
+        # Карт-операция (получатель — эквайер): фронт показывает мягкое предупреждение при
+        # ручной привязке к накладной вместо жёсткой ошибки guard.
+        "is_card": _is_card_noise(operation),
     }
 
 

@@ -106,6 +106,8 @@ export function OperationClassifyDialog({
   const [counterpartyId, setCounterpartyId] = useState("");
   const [createNewCounterparty, setCreateNewCounterparty] = useState(false);
   const [rememberAsRule, setRememberAsRule] = useState(false);
+  // Явное подтверждение ручной привязки карт-оплаты к накладной (см. bindsInvoiceOnCard ниже).
+  const [cardBindAck, setCardBindAck] = useState(false);
   // Ключ строки, для которой открыта под-модалка деталей (сотрудник/счёт-получатель/контрагент+
   // накладная) — деталь живёт прямо в строке статьи, без отдельных inline-дропдаунов и блоков.
   const [detailRowKey, setDetailRowKey] = useState<string | null>(null);
@@ -136,6 +138,7 @@ export function OperationClassifyDialog({
       setCounterpartyId(row.counterparty_id ?? matchedByInn?.id ?? "");
       setCreateNewCounterparty(false);
       setRememberAsRule(false);
+      setCardBindAck(false);
     }
   }, [row?.id, matchedByInn?.id]);
 
@@ -194,6 +197,16 @@ export function OperationClassifyDialog({
     Boolean(advanceArticleId) && rows.some((item) => item.articleId === advanceArticleId);
   const usesSalaryArticle = rows.some((item) => salaryArticleIds.has(item.articleId));
 
+  // Карт-операция (получатель в банке — эквайер, не поставщик): её оплату не привязывают к
+  // накладной автоматически. Ручная привязка допустима, но требует явного подтверждения оператора
+  // (allow_card) — иначе backend-guard режет карт-шум. bindsInvoiceOnCard = выбрана накладная в
+  // строке «Оплата поставщикам» именно у карт-операции.
+  const isCardOperation = isOperation && Boolean(row?.is_card);
+  const bindsInvoiceOnCard =
+    isCardOperation &&
+    Boolean(supplierPaymentArticleId) &&
+    rows.some((item) => item.articleId === supplierPaymentArticleId && Boolean(item.invoiceId));
+
   // Неоплаченные накладные контрагента (привязка оплаты) — только для операции выписки.
   const invoicesQuery = useQuery({
     queryKey: ["dds", "cp-unpaid-invoices", counterpartyId],
@@ -229,6 +242,12 @@ export function OperationClassifyDialog({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailRowKey]);
+
+  // Снять подтверждение карт-привязки, если накладная у карт-операции больше не выбрана —
+  // иначе allow_card «залип» бы на следующий выбор без нового согласия оператора.
+  useEffect(() => {
+    if (!bindsInvoiceOnCard) setCardBindAck(false);
+  }, [bindsInvoiceOnCard]);
 
   if (!row) {
     return null;
@@ -279,6 +298,10 @@ export function OperationClassifyDialog({
       toast.error("Выберите счёт-получатель для строки перевода между счетами");
       return;
     }
+    if (bindsInvoiceOnCard && !cardBindAck) {
+      toast.error("Подтвердите ручную привязку карт-оплаты к накладной");
+      return;
+    }
     if (isOperation) {
       mutation.mutate({
         action: "split",
@@ -293,7 +316,10 @@ export function OperationClassifyDialog({
         counterparty_id: createNewCounterparty ? null : counterpartyId || null,
         new_counterparty_name: createNewCounterparty ? row.counterparty_name_raw : null,
         new_counterparty_inn: createNewCounterparty ? row.counterparty_inn_raw : null,
-        remember_as_rule: rememberAsRule && rows.length === 1,
+        // Правило не запоминаем при карт-привязке (backend его тоже отклонит) — чекбокс скрыт.
+        remember_as_rule: rememberAsRule && rows.length === 1 && !bindsInvoiceOnCard,
+        // Карт-операция + привязанная накладная: разрешаем guard пропустить карт-шум.
+        allow_card: bindsInvoiceOnCard ? true : undefined,
       });
     } else {
       mutation.mutate({
@@ -544,7 +570,7 @@ export function OperationClassifyDialog({
                 <Plus size={16} aria-hidden="true" />
                 Добавить статью
               </Button>
-              {isOperation && rows.length === 1 ? (
+              {isOperation && rows.length === 1 && !bindsInvoiceOnCard ? (
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     checked={rememberAsRule}
@@ -557,6 +583,24 @@ export function OperationClassifyDialog({
               ) : null}
             </div>
 
+            {bindsInvoiceOnCard ? (
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                <p>
+                  Это карт-операция: в банке получатель — эквайер, не поставщик. Обычно такую оплату
+                  не привязывают к накладной автоматически. Привязать оплату к накладной вручную?
+                </p>
+                <label className="mt-2 flex items-center gap-2 font-medium">
+                  <input
+                    checked={cardBindAck}
+                    className="h-4 w-4"
+                    onChange={(event) => setCardBindAck(event.target.checked)}
+                    type="checkbox"
+                  />
+                  Привязать оплату к накладной вручную (подтверждаю)
+                </label>
+              </div>
+            ) : null}
+
             <div className="flex flex-wrap gap-2 border-t pt-4">
               <Button
                 disabled={
@@ -565,7 +609,8 @@ export function OperationClassifyDialog({
                   (usesAdvance && !counterpartyId && !createNewCounterparty) ||
                   salaryRowMissingEmployee ||
                   transferRowMissingWallet ||
-                  usesAdvanceArticle
+                  usesAdvanceArticle ||
+                  (bindsInvoiceOnCard && !cardBindAck)
                 }
                 onClick={submitSplit}
                 title={

@@ -690,6 +690,7 @@ async def apply_operation_split(
     counterparty_id: UUID | None = None,
     quality_status: str = "owner_review",
     actor_user_id: UUID | None = None,
+    allow_card: bool = False,
 ) -> list[UUID]:
     """Spread one bank operation across one or more DDS articles.
 
@@ -707,6 +708,11 @@ async def apply_operation_split(
     Строка с зарплатной статьёй (``EMPLOYEE_PAYOUT_ARTICLE_CODES``) и указанным ``employee_id``
     заводит ``EmployeePayout`` («выплачено»), привязанный к порождённой проводке — расчёт ЗП
     вычтет сумму из «к выдаче». ``employee_id`` на не-зарплатной статье — ошибка.
+
+    ``allow_card=True`` — оператор явно подтвердил ручную привязку карт-оплаты к накладной
+    (местный закуп оплачен картой): guard ``assert_bank_matchable`` пропустит карт-шум. Проверка
+    делается ДО любых записей вместе с остальными валидациями, поэтому при отказе разбор не
+    применяется даже частично (validate-first: единственный commit — в вызывающем роуте).
     """
     # Гашение накладной живёт в counterparty-сервисах; верхнеуровневый импорт замкнул бы цикл.
     from app.models import InvoicePaymentAllocation, SupplierInvoice
@@ -769,7 +775,7 @@ async def apply_operation_split(
         if invoice is None:
             raise ValueError("Накладная не найдена")
         try:
-            assert_bank_matchable(invoice, operation)
+            assert_bank_matchable(invoice, operation, allow_card=allow_card)
         except CounterpartyMatchError as error:
             raise ValueError(str(error)) from error
         invoice_by_id[invoice_id] = invoice

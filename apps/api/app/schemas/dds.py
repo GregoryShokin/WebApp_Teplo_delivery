@@ -27,6 +27,9 @@ class BankOperationRead(BaseModel):
     cashflow_transaction_id: uuid.UUID | None = None
     transfer_group_id: uuid.UUID | None = None
     raw_payload: dict[str, Any] | None = None
+    # Карт-операция (получатель — эквайер): фронт показывает мягкое предупреждение при ручной
+    # привязке к накладной. Совпадает с флагом is_card строки журнала.
+    is_card: bool = False
 
 
 class BankOperationListRead(BaseModel):
@@ -334,6 +337,10 @@ class OperationClassifyRequest(BaseModel):
     new_counterparty_name: str | None = None
     new_counterparty_inn: str | None = None
     remember_as_rule: bool = False
+    # Оператор явно подтвердил ручную привязку карт-оплаты к накладной (получатель в банке —
+    # эквайер, не поставщик). Пропускает карт-шум в guard привязки. Требует права оплаты
+    # накладной (invoices.{normal|barter}.pay) и запрещает «запомнить как правило».
+    allow_card: bool = False
 
 
 class TransactionClassifyRequest(BaseModel):
@@ -597,6 +604,9 @@ class JournalRow(BaseModel):
     payment_purpose: str | None = None
     counterparty_name_raw: str | None = None
     counterparty_inn_raw: str | None = None
+    # Карт-операция (получатель в банке — эквайер): фронт показывает мягкое предупреждение при
+    # ручной привязке к накладной. Для проводок (kind="cashflow") всегда False.
+    is_card: bool = False
 
 
 class JournalListRead(BaseModel):

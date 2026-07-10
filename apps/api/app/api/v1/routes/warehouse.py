@@ -141,6 +141,9 @@ class MatchConfirmRequest(BaseModel):
     invoice_id: uuid.UUID
     bank_operation_id: uuid.UUID
     enrich: bool = True
+    # Оператор явно подтвердил ручную привязку карт-оплаты к накладной (получатель — эквайер).
+    # Пропускает карт-шум в guard; контрагент реквизитами эквайера всё равно не обогащается.
+    allow_card: bool = False
 
 
 class BankPartReq(BaseModel):
@@ -408,6 +411,7 @@ async def post_match_confirm(
             bank_operation_id=payload.bank_operation_id,
             enrich=payload.enrich,
             actor_user_id=actor.user_id,
+            allow_card=payload.allow_card,
         )
     except CounterpartyMatchError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
