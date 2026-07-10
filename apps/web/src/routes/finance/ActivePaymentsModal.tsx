@@ -32,7 +32,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
+import { EmployeePayoutDialog } from "@/routes/dds/EmployeePayoutDialog";
 import { NewPaymentDialog } from "@/routes/dds/NewPaymentDialog";
 import { navigateTo } from "@/router";
 
@@ -107,8 +109,11 @@ export function ActivePaymentsModal({
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
+  const permissions = usePermissions();
+  const canEmployeePayout = permissions.canPerformAction("payroll.employee_payouts.create");
   const [createOpen, setCreateOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [payoutOpen, setPayoutOpen] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [payRow, setPayRow] = useState<PaymentRow | null>(null);
   const [search, setSearch] = useState("");
@@ -248,8 +253,13 @@ export function ActivePaymentsModal({
                     Создать платёж
                   </DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => setTransferOpen(true)}>
-                    Создать внутренний перевод
+                    Целевой перевод (Сейф↔Касса)
                   </DropdownMenuItem>
+                  {canEmployeePayout ? (
+                    <DropdownMenuItem onSelect={() => setPayoutOpen(true)}>
+                      Выплата сотруднику
+                    </DropdownMenuItem>
+                  ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -390,6 +400,14 @@ export function ActivePaymentsModal({
         open={transferOpen}
         onOpenChange={(next) => {
           setTransferOpen(next);
+          if (!next) refetch();
+        }}
+      />
+
+      <EmployeePayoutDialog
+        open={payoutOpen}
+        onOpenChange={(next) => {
+          setPayoutOpen(next);
           if (!next) refetch();
         }}
       />
