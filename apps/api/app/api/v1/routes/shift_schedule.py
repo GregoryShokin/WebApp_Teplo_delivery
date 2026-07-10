@@ -259,6 +259,23 @@ async def post_schedule(
     return _schedule_to_read(schedule)
 
 
+@router.get("/living", response_model=ScheduleRead, dependencies=SCHEDULE_READ_ACCESS)
+async def get_living_schedule(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> ScheduleRead:
+    # Единый «живой» график (создаётся/расширяется при необходимости) вместе со сменами.
+    schedule = await shift_schedule_service.get_or_create_living_schedule(session, actor=actor)
+    _schedule, shift_rows = await shift_schedule_service.get_schedule_with_shifts(
+        session,
+        schedule.id,
+    )
+    return _schedule_to_read(
+        schedule,
+        shifts=[_shift_to_read(shift, employee) for shift, employee in shift_rows],
+    )
+
+
 @router.get(
     "/{schedule_id}",
     response_model=ScheduleRead,
@@ -533,6 +550,21 @@ async def post_publish_schedule(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> ScheduleRead:
     schedule = await shift_schedule_service.publish_schedule(session, schedule_id, actor=actor)
+    return _schedule_to_read(schedule)
+
+
+@router.post(
+    "/{schedule_id}/reopen",
+    response_model=ScheduleRead,
+    dependencies=SCHEDULE_EDIT_ACCESS,
+)
+async def post_reopen_schedule(
+    schedule_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> ScheduleRead:
+    # «Редактировать график»: зафиксированный снова становится редактируемым (тот же график).
+    schedule = await shift_schedule_service.reopen_schedule(session, schedule_id, actor=actor)
     return _schedule_to_read(schedule)
 
 

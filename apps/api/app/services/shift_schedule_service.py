@@ -185,6 +185,85 @@ async def publish_schedule(
     return schedule
 
 
+# Единый «живой» график: одно состояние на весь график (draft = редактируемый,
+# published = зафиксирован). Версий/замещений/выбора графиков больше нет. Широкое окно
+# дат — чтобы редактировать можно было любой месяц/день без «периода графика».
+LIVING_SCHEDULE_START = date(2020, 1, 1)
+LIVING_SCHEDULE_END = date(2035, 12, 31)
+
+
+async def get_or_create_living_schedule(
+    session: AsyncSession,
+    *,
+    actor: CurrentActor,
+) -> ShiftSchedule:
+    """Вернуть единственный «живой» график, создав/расширив при необходимости.
+
+    Если графиков несколько (legacy), берём канонический: сначала зафиксированный
+    (``published``), затем самый свежий по ``updated_at``. Его окно дат расширяем до
+    LIVING_SCHEDULE_START..END, чтобы весь график был одним редактируемым полотном.
+    """
+    schedules = list((await session.scalars(select(ShiftSchedule))).all())
+    if schedules:
+        schedules.sort(
+            key=lambda item: (
+                item.status != "published",
+                -(item.updated_at.timestamp() if item.updated_at is not None else 0.0),
+            )
+        )
+        living = schedules[0]
+        changed = False
+        if living.date_start > LIVING_SCHEDULE_START:
+            living.date_start = LIVING_SCHEDULE_START
+            changed = True
+        if living.date_end < LIVING_SCHEDULE_END:
+            living.date_end = LIVING_SCHEDULE_END
+            changed = True
+        if changed:
+            living.updated_at = datetime.now(UTC)
+            await _commit_refresh(session, living)
+        return living
+
+    schedule = ShiftSchedule(
+        id=uuid.uuid4(),
+        date_start=LIVING_SCHEDULE_START,
+        date_end=LIVING_SCHEDULE_END,
+        status="draft",
+        notes=None,
+        created_by_user_id=_actor_user_id(actor),
+    )
+    session.add(schedule)
+    await _commit_refresh(session, schedule)
+    return schedule
+
+
+async def reopen_schedule(
+    session: AsyncSession,
+    schedule_id: uuid.UUID,
+    *,
+    actor: CurrentActor,
+) -> ShiftSchedule:
+    """«Редактировать график»: зафиксированный (``published``) снова делаем редактируемым.
+
+    Правим ТОТ ЖЕ график на месте — без клонов/версий (в отличие от create_new_version).
+    """
+    del actor
+    schedule = await session.get(ShiftSchedule, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="График не найден")
+    if schedule.status == "draft":
+        return schedule
+    if schedule.status != "published":
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Открыть для правки можно только зафиксированный график",
+        )
+    schedule.status = "draft"
+    schedule.updated_at = datetime.now(UTC)
+    await _commit_refresh(session, schedule)
+    return schedule
+
+
 async def create_new_version(
     session: AsyncSession,
     source_id: uuid.UUID,

@@ -2,10 +2,22 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "api",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd apps/api && DATABASE_URL='postgresql+asyncpg://teplo:teplo@localhost:5432/teplo' PYTHONPATH=/Users/grigorii/Developer/Projects/Teplo-agent-schedrole/apps/api TEPLO_ADMIN_EMAIL='admin1@teplo.local' TEPLO_ADMIN_PASSWORD='admin-password-for-smoke' JWT_SECRET_KEY='dev-secret-change-me' TEPLO_BANK_CLIENT_MODE='mock' BACKEND_CORS_ORIGINS='[\"http://localhost:5203\"]' IIKO_SERVER_BASE_URL='http://127.0.0.1:9' IIKO_SERVER_LOGIN='preview' IIKO_SERVER_PASSWORD='preview' /Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8030"
+      ],
+      "port": 8030
+    },
+    {
       "name": "web",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "apps/web", "run", "dev"],
-      "port": 5173
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd apps/web && PORT=5203 VITE_API_BASE_URL='http://localhost:8030' npm run dev -- --strictPort"
+      ],
+      "port": 5203
     }
   ]
 }
