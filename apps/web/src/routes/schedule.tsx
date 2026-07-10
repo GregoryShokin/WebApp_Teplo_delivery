@@ -220,6 +220,13 @@ const stationOptions = ["Пицца", "Роллы", "Горячий цех", "К
 const stationOrder = [...stationOptions, "(без станции)"];
 const weekdayLabels = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
+// Ярлыки фильтра по должности: должность «Кассир» показываем как «Администраторы»
+// (кассиры исполняют роль администратора), «Повар» → «Повара».
+const POSITION_FILTER_LABELS: Record<string, string> = {
+  Повар: "Повара",
+  Кассир: "Администраторы",
+};
+
 export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: ScheduleRouteProps) {
   const queryClient = useQueryClient();
   const permissions = usePermissions();
@@ -263,6 +270,8 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   );
   // Вид всегда «по сотрудникам» (переключатель видов убран из панели графика).
   const [viewMode] = useState<ViewMode>("employees");
+  // Фильтр ростера по должности: "all" | значение должности (Повар / Кассир).
+  const [positionFilter, setPositionFilter] = useState<string>("all");
   const [isGridFullscreen, setIsGridFullscreen] = useState(false);
   const [planFactTableMode, setPlanFactTableMode] = useState<PlanFactTableMode>("days");
 
@@ -421,6 +430,21 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     [rosterQuery.data],
   );
   const employeeViewRoster = useMemo(() => sortEmployeesByRoleAndName(roster), [roster]);
+  // Должности, присутствующие в ростере графика (для фильтра «Все / Повара / Администраторы»).
+  const rosterPositions = useMemo(() => {
+    const positions = new Set<string>();
+    for (const row of employeeViewRoster) {
+      if (row.position) positions.add(row.position);
+    }
+    return [...positions].sort();
+  }, [employeeViewRoster]);
+  const visibleRoster = useMemo(
+    () =>
+      positionFilter === "all"
+        ? employeeViewRoster
+        : employeeViewRoster.filter((row) => row.position === positionFilter),
+    [employeeViewRoster, positionFilter],
+  );
   const currentSchedule = selectedScheduleId ? (scheduleQuery.data ?? null) : null;
   const currentScheduleRange: PeriodRange = currentSchedule
     ? {
@@ -1213,6 +1237,23 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
                 }
               }}
             />
+            {rosterPositions.length > 1 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <SegmentedButton
+                  active={positionFilter === "all"}
+                  label="Все"
+                  onClick={() => setPositionFilter("all")}
+                />
+                {rosterPositions.map((position) => (
+                  <SegmentedButton
+                    active={positionFilter === position}
+                    key={position}
+                    label={POSITION_FILTER_LABELS[position] ?? position}
+                    onClick={() => setPositionFilter(position)}
+                  />
+                ))}
+              </div>
+            ) : null}
           </div>
 
           {currentSchedule && canViewForecastBudget ? (
@@ -1289,7 +1330,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
               onCreate={() => openCreateDialog(periodRange, periodPreset)}
               canCreate={canEditSchedule}
               range={periodRange}
-              roster={viewMode === "employees" ? employeeViewRoster : roster}
+              roster={viewMode === "employees" ? visibleRoster : roster}
               viewMode={viewMode}
             />
           ) : viewMode === "planFact" ? (
@@ -1316,7 +1357,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
               onFilledCellClick={handleFilledShiftClick}
               costByShiftId={costEstimatesByShiftId}
               cashierAllowanceByDay={cashierAllowanceByDay}
-              roster={employeeViewRoster}
+              roster={visibleRoster}
               scheduleRange={currentScheduleRange}
               shiftByEmployeeDay={shiftByEmployeeDay}
               today={todayIso}
