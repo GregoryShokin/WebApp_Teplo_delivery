@@ -58,6 +58,32 @@ def edit_client(client: TestClient) -> TestClient:
     return client
 
 
+async def test_eligible_for_personal_report_by_archetype() -> None:
+    # Признак «попадает в персональный отчёт ЗП»: получает зарплату, кроме обычных курьеров
+    # и явно исключённых из ведомости. Реестр сброшен на канон фикстурой _reset_registry.
+    elig = position_registry.eligible_for_personal_report
+    # Производственный контур — всегда (флаг admin_payroll_excluded про админ-ведомость).
+    assert elig("Повар") is True
+    assert elig("Кассир") is True
+    # Окладной/административный — да, но не при исключении из ведомости (техаккаунт/несалярный).
+    assert elig("Управляющий") is True
+    assert elig("Менеджер") is True
+    assert elig("Помощник менеджера") is True
+    assert elig("Системный администратор") is True
+    assert elig("Системный администратор", admin_payroll_excluded=True) is False
+    assert elig("Управляющий", admin_payroll_excluded=True) is False
+    # Вспомогательный персонал (пул/оклад) — да.
+    assert elig("Посудомойка") is True
+    assert elig("Уборщица") is True
+    # Курьеры: обычный — нет; старший курьер (админ-оклад) — да.
+    assert elig("Курьер") is False
+    assert elig("Старший курьер") is True
+    assert elig("Старший курьер", admin_payroll_excluded=True) is False
+    # Неизвестная/пустая должность — нет.
+    assert elig(None) is False
+    assert elig("Нет такой должности") is False
+
+
 @pytest.fixture()
 def fake_iiko(monkeypatch: pytest.MonkeyPatch) -> dict[str, list]:
     calls: dict[str, list] = {"upsert": [], "delete": []}

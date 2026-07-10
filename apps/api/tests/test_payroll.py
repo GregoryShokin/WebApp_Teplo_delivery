@@ -1953,6 +1953,8 @@ class PersonalReportFakeSession:
         adjustments: list[PayrollAdjustment] | None = None,
         deposit_transactions: list[DepositTransaction] | None = None,
         ledger_entries: list[ShiftLedgerEntry] | None = None,
+        fund_accounts: list[AccumulationFundAccount] | None = None,
+        fund_transactions: list[AccumulationFundTransaction] | None = None,
     ) -> None:
         self.employees = {employee.id: employee for employee in employees or []}
         self.line_rows = line_rows or []
@@ -1960,6 +1962,8 @@ class PersonalReportFakeSession:
         self.adjustments = adjustments or []
         self.deposit_transactions = deposit_transactions or []
         self.ledger_entries = ledger_entries or []
+        self.fund_accounts = fund_accounts or []
+        self.fund_transactions = fund_transactions or []
         self.execute_calls = 0
 
     async def get(self, model: Any, object_id: uuid.UUID) -> Any | None:
@@ -1983,6 +1987,10 @@ class PersonalReportFakeSession:
             return PersonalReportScalarResult(self.deposit_transactions)
         if entity is ShiftLedgerEntry:
             return PersonalReportScalarResult(self.ledger_entries)
+        if entity is AccumulationFundAccount:
+            return PersonalReportScalarResult(self.fund_accounts)
+        if entity is AccumulationFundTransaction:
+            return PersonalReportScalarResult(self.fund_transactions)
         return PersonalReportScalarResult([])
 
 
@@ -5258,6 +5266,167 @@ def test_personal_report_returns_periods_and_adjustments() -> None:
     assert payload["periods"][1]["deposit_payout"] == 15000
     assert payload["totals"]["deposit_payout"] == 15000
     assert payload["deposit_transactions"][0]["transaction_type"] == "accrual"
+
+
+def test_personal_report_marks_substitute_ledger() -> None:
+    # Кассир, ИСПОЛНЯЮЩИЙ окладную должность «Помощник менеджера»: отчёт помечает окладную
+    # ведомость (components.kind == admin_oklad, роль ≠ основной должности) как замещающую,
+    # а производственную — как основную. По флагу фронт делит детализацию на два леджера.
+    app = create_app()
+    employee = make_employee()
+    employee.full_name = "Пётр Кассиров"
+    employee.position = "Кассир"
+    acting_period = make_period(
+        start=date(2026, 5, 16),
+        end=date(2026, 5, 31),
+        payroll_date=date(2026, 6, 1),
+    )
+    main_period = make_period(
+        start=date(2026, 5, 19),
+        end=date(2026, 5, 25),
+        payroll_date=date(2026, 5, 26),
+    )
+    acting_run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=acting_period.id,
+        started_at=datetime(2026, 6, 1, tzinfo=UTC),
+        status="finalized",
+        blocking_issues=[],
+        summary={},
+    )
+    main_run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=main_period.id,
+        started_at=datetime(2026, 5, 26, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    acting_line = make_payroll_line(
+        acting_run.id,
+        employee.id,
+        role="Помощник менеджера",
+        components={"kind": "admin_oklad", "days": []},
+    )
+    main_line = make_payroll_line(
+        main_run.id,
+        employee.id,
+        role="administrator",
+        components={"days": []},
+    )
+    session = PersonalReportFakeSession(
+        employees=[employee],
+        line_rows=[
+            (acting_line, acting_run, acting_period),
+            (main_line, main_run, main_period),
+        ],
+        adjustments=[],
+        deposit_transactions=[],
+    )
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/payroll/employee-report",
+                headers={"X-User-Role": "finance_manager"},
+                params={
+                    "employee_id": str(employee.id),
+                    "date_from": "2026-05-16",
+                    "date_to": "2026-05-31",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    periods = response.json()["periods"]
+    by_role = {item["role"]: item for item in periods}
+    assert by_role["Помощник менеджера"]["is_substitute"] is True
+    assert by_role["administrator"]["is_substitute"] is False
+
+
+def test_personal_report_fund_from_ledger() -> None:
+    # Фонд в отчёте берётся из ЛЕДЖЕРА (accumulation_fund_*), а не из payroll_line.fund_accrual:
+    # у строки фонд 0 (как на проде у импортированных строк), но в леджере — реальные суммы.
+    app = create_app()
+    employee = make_employee()
+    employee.position = "Повар"
+    period = make_period(
+        start=date(2026, 6, 16),
+        end=date(2026, 6, 22),
+        payroll_date=date(2026, 6, 23),
+    )
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 6, 23, tzinfo=UTC),
+        status="finalized",
+        blocking_issues=[],
+        summary={},
+    )
+    line = make_payroll_line(
+        run.id,
+        employee.id,
+        role="sushi",
+        fund_accrual=Decimal("0"),
+        components={"days": []},
+    )
+    account = AccumulationFundAccount(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        year=2026,
+        accumulated_amount=Decimal("30000"),
+        paid_out_amount=Decimal("0"),
+        forfeited_amount=Decimal("0"),
+        status="active",
+    )
+    txn = AccumulationFundTransaction(
+        id=uuid.uuid4(),
+        account_id=account.id,
+        employee_id=employee.id,
+        year=2026,
+        run_id=run.id,
+        transaction_type="accrual",
+        amount=Decimal("640"),
+        created_at=datetime(2026, 6, 23, tzinfo=UTC),
+    )
+    session = PersonalReportFakeSession(
+        employees=[employee],
+        line_rows=[(line, run, period)],
+        fund_accounts=[account],
+        fund_transactions=[txn],
+    )
+
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/payroll/employee-report",
+                headers={"X-User-Role": "finance_manager"},
+                params={
+                    "employee_id": str(employee.id),
+                    "date_from": "2026-06-01",
+                    "date_to": "2026-06-30",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    # Накоплено/остаток — из леджера (30000), НЕ из line.fund_accrual (0).
+    assert payload["fund_accumulated"] == 30000
+    assert payload["fund_outstanding"] == 30000
+    # Фонд ведомости — из леджера по run_id (640), не из строки (0).
+    assert payload["periods"][0]["fund_accrual"] == 640
+    assert payload["totals"]["fund_accrual"] == 640
 
 
 async def test_personal_report_daily_aggregates_correctly() -> None:

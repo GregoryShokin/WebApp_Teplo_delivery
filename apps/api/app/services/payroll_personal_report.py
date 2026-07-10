@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.models import (
+    AccumulationFundAccount,
+    AccumulationFundTransaction,
     DepositTransaction,
     Employee,
     PayrollAdjustment,
@@ -54,6 +56,47 @@ async def build_personal_report(
         .order_by(PayrollPeriod.start_date.desc())
     )
     line_rows = line_rows_result.all()
+
+    # Накопительный фонд — из ЛЕДЖЕРА фонда (accumulation_fund_*), а НЕ из
+    # payroll_line.fund_accrual: на проде у исторических/импортированных строк это поле
+    # обнулено, реальные начисления живут в леджере (см. вкладку «Накопит. фонд»).
+    fund_run_ids = {run.id for _line, run, _period in line_rows}
+    fund_by_run: dict[uuid.UUID, Decimal] = {}
+    if fund_run_ids:
+        fund_txns = await session.scalars(
+            select(AccumulationFundTransaction).where(
+                AccumulationFundTransaction.employee_id == employee_id,
+                AccumulationFundTransaction.transaction_type == "accrual",
+                AccumulationFundTransaction.run_id.in_(fund_run_ids),
+            )
+        )
+        for txn in fund_txns.all():
+            if txn.run_id is None:
+                continue
+            fund_by_run[txn.run_id] = fund_by_run.get(txn.run_id, Decimal("0")) + money_decimal(
+                txn.amount
+            )
+    fund_accounts = (
+        await session.scalars(
+            select(AccumulationFundAccount).where(
+                AccumulationFundAccount.employee_id == employee_id,
+                AccumulationFundAccount.year.in_(list(range(date_from.year, date_to.year + 1))),
+            )
+        )
+    ).all()
+    fund_accumulated = sum(
+        (money_decimal(account.accumulated_amount) for account in fund_accounts), Decimal("0")
+    )
+    fund_outstanding = sum(
+        (
+            money_decimal(account.accumulated_amount)
+            - money_decimal(account.paid_out_amount)
+            - money_decimal(getattr(account, "forfeited_amount", 0))
+            for account in fund_accounts
+        ),
+        Decimal("0"),
+    )
+    fund_runs_seen: set[uuid.UUID] = set()
 
     opening_rows_result = await session.execute(
         select(PayrollLine, PayrollRun, PayrollPeriod)
@@ -129,6 +172,21 @@ async def build_personal_report(
         # «Выдача депозита» (запланированная) хранится в компонентах строки и НЕ входит в
         # total_payable (ФОТ-нетто) — отдаём отдельным полем, чтобы отчёт показывал «на руки».
         deposit_payout = money_float(component_value(line.components, "deposit_payout"))
+        # «Исполняющий» окладную должность (кассир → Помощник менеджера): контур оклада
+        # (components.kind == "admin_oklad") по должности, ОТЛИЧНОЙ от основной должности
+        # сотрудника. По этому флагу персональный отчёт делит ведомости на два леджера
+        # (замещающая должность / основная должность).
+        line_kind = component_value(line.components, "kind")
+        is_substitute = bool(
+            line_kind == "admin_oklad" and (line.role or "") != (employee.position or "")
+        )
+        # Фонд ведомости — из леджера по run_id (фолбэк на line.fund_accrual, если леджера нет).
+        # Сумму прогона относим на первую его строку, чтобы при нескольких ролях не задвоить.
+        if run.id in fund_by_run:
+            period_fund = money_float(fund_by_run[run.id]) if run.id not in fund_runs_seen else 0.0
+            fund_runs_seen.add(run.id)
+        else:
+            period_fund = money_float(line.fund_accrual)
         item = {
             "period_id": period.id,
             "run_id": run.id,
@@ -141,13 +199,14 @@ async def build_personal_report(
             "percent_pay": money_float(line.percent_pay),
             "vacation_pay": money_float(line.vacation_pay),
             "ndfl_withheld": money_float(getattr(line, "ndfl_withheld", 0)),
-            "fund_accrual": money_float(line.fund_accrual),
+            "fund_accrual": period_fund,
             "deduction": money_float(line.deduction),
             "deposit_withholding": deposit_withholding,
             "deposit_payout": deposit_payout,
             "bonus_total": bonus_total,
             "penalty_total": penalty_total,
             "total_payable": money_float(line.total_payable),
+            "is_substitute": is_substitute,
         }
         periods.append(item)
         for key in totals:
@@ -225,6 +284,10 @@ async def build_personal_report(
         "daily": daily,
         "opening_balance": money_string(opening_balance),
         "closing_balance": money_string(closing_balance),
+        # Накопительный фонд из леджера: накоплено/остаток по годам периода отчёта —
+        # синхронно с вкладкой «Накопит. фонд».
+        "fund_accumulated": money_float(fund_accumulated),
+        "fund_outstanding": money_float(fund_outstanding),
         "shifts_count": shifts_count,
         "adjustments": serialized_adjustments,
         "deposit_transactions": [

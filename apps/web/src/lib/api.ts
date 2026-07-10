@@ -237,6 +237,8 @@ export type Employee = {
   requires_position_review?: boolean;
   role_review_payload: Record<string, unknown> | null;
   admin_payroll_excluded?: boolean;
+  // Попадает в персональный отчёт ЗП (получает зарплату, кроме обычных курьеров) — с бэка.
+  in_personal_report: boolean;
   pin_assumed_from_iiko: boolean;
   pin_set_at: string | null;
   iiko_sync_at: string | null;
@@ -700,6 +702,7 @@ export type PayrollPersonalReport = {
     bonus_total: number;
     penalty_total: number;
     total_payable: number;
+    is_substitute: boolean;
   }>;
   daily: Array<{
     date: string;
@@ -717,6 +720,9 @@ export type PayrollPersonalReport = {
   }>;
   opening_balance: string;
   closing_balance: string;
+  // Накопительный фонд из леджера (синхронно с вкладкой «Накопит. фонд»).
+  fund_accumulated: number;
+  fund_outstanding: number;
   shifts_count: number;
   adjustments: Array<{
     id: string;

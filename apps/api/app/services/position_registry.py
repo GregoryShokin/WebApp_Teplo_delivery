@@ -218,6 +218,25 @@ def position_info(position: str | None) -> PositionInfo | None:
     return _snapshot.get(position)
 
 
+def eligible_for_personal_report(
+    position: str | None, admin_payroll_excluded: bool = False
+) -> bool:
+    """Сотрудник попадает в персональный отчёт ЗП: получает зарплату (производственный
+    контур, окладной, посменный пул или курьер-окладник «Старший курьер»), КРОМЕ обычных
+    курьеров и явно исключённых из ведомости (``admin_payroll_excluded`` — техаккаунты/
+    несалярные). Производственный контур не трогаем флагом (он про админ-ведомость)."""
+    info = _snapshot.get(position)
+    if info is None:
+        return False
+    if info.archetype == ARCHETYPE_PRODUCTION_PERCENT:
+        return True
+    if info.archetype == ARCHETYPE_COURIER:
+        return info.gets_admin_oklad and not admin_payroll_excluded
+    if info.archetype in (ARCHETYPE_OKLADNIK, ARCHETYPE_SHIFT_POOL):
+        return not admin_payroll_excluded
+    return False
+
+
 def canonical_position_name(position: str | None) -> str | None:
     return _snapshot.canonical_name(position)
 

@@ -6,7 +6,14 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 EmployeeStatus = str
 EmployeeChangeSource = Literal["app", "iiko_sync", "system_migration"]
@@ -228,6 +235,16 @@ class EmployeeRead(BaseModel):
     updated_at: datetime
     assignments: list[EmployeeRoleAssignmentRead] = Field(default_factory=list)
     active_notice: EmployeeNoticeInfo | None = None
+
+    @computed_field
+    @property
+    def in_personal_report(self) -> bool:
+        # Попадает в персональный отчёт ЗП: получает зарплату (производственный/окладной/
+        # пул/старший курьер-окладник), кроме обычных курьеров и явно исключённых из
+        # ведомости (admin_payroll_excluded — техаккаунты/несалярные).
+        from app.services.position_registry import eligible_for_personal_report
+
+        return eligible_for_personal_report(self.position, self.admin_payroll_excluded)
 
 
 class DepositDismissAction(StrEnum):

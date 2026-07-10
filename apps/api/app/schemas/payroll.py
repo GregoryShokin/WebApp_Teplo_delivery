@@ -376,6 +376,9 @@ class PayrollPersonalReportPeriodRead(BaseModel):
     bonus_total: float
     penalty_total: float
     total_payable: float
+    # Строка «исполняющего» окладную должность (кассир → Помощник менеджера): оклад по
+    # должности, отличной от основной. Персональный отчёт делит ведомости на два леджера.
+    is_substitute: bool = False
 
 
 class PayrollPersonalReportDailyRead(BaseModel):
@@ -438,6 +441,9 @@ class PayrollPersonalReportRead(BaseModel):
     daily: list[PayrollPersonalReportDailyRead]
     opening_balance: str
     closing_balance: str
+    # Накопительный фонд из леджера (синхронно с вкладкой «Накопит. фонд»).
+    fund_accumulated: float = 0
+    fund_outstanding: float = 0
     shifts_count: int
     adjustments: list[PayrollPersonalReportAdjustmentRead]
     deposit_transactions: list[PayrollPersonalReportDepositTransactionRead]

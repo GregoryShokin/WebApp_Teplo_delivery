@@ -24,7 +24,6 @@ import {
   apiErrorMessage,
   getEmployeePayrollReport,
   getEmployees,
-  type Employee,
   type PayrollPersonalReport,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -137,15 +136,6 @@ const KIND_ORDER: Record<OperationKind, number> = {
   ndfl: 12,
 };
 
-const PERSONAL_REPORT_POSITIONS = new Set(["Повар", "Кассир"]);
-const PERSONAL_REPORT_PAYROLL_ROLES = new Set([
-  "administrator",
-  "sushi",
-  "pizza",
-  "shawarma",
-  "prep",
-]);
-
 export function PayrollPersonalReportPageTab() {
   const defaultRange = useMemo(() => defaultPersonalReportRange(), []);
   const [employeeId, setEmployeeId] = useState("");
@@ -164,11 +154,12 @@ export function PayrollPersonalReportPageTab() {
     queryKey: ["employees", "payroll-personal-report"],
     queryFn: () => getEmployees({ status: "all" }),
   });
-  // Персональный отчёт ведётся по поварам/кассирам и сотрудникам, которые выходят в этих ролях.
+  // Персональный отчёт: сотрудники, получающие зарплату (кроме обычных курьеров). Признак
+  // in_personal_report вычисляется на бэке из должности + admin_payroll_excluded.
   const eligibleEmployees = useMemo(
     () =>
       (employeesQuery.data ?? [])
-        .filter(hasPersonalReportRole)
+        .filter((employee) => employee.in_personal_report)
         .sort((left, right) => left.full_name.localeCompare(right.full_name, "ru")),
     [employeesQuery.data],
   );
@@ -437,8 +428,8 @@ export function PayrollPersonalReportPageTab() {
                 />
                 <PersonalMetric
                   title="Фонд"
-                  value={formatMoney(report.totals.fund_accrual)}
-                  description="Накопительный фонд"
+                  value={formatMoney(report.fund_accumulated)}
+                  description="Накоплено (леджер фонда)"
                 />
                 <PersonalMetric
                   title="Долг на конец"
@@ -465,13 +456,11 @@ export function PayrollPersonalReportPageTab() {
                     </TabsList>
                   </div>
                   <TabsContent value="weekly">
-                    <DataTable
+                    <PeriodLedgers
                       columns={periodColumns}
-                      rows={report.periods}
-                      getRowKey={(row) => `${row.period_id}-${row.run_id}-${row.role}`}
+                      employeePosition={report.employee_position}
                       onRowClick={setOpenWeek}
-                      rowClassName="hover:bg-muted/50"
-                      emptyMessage="Нет начислений за выбранный период"
+                      periods={report.periods}
                     />
                   </TabsContent>
                   <TabsContent value="daily">
@@ -483,11 +472,10 @@ export function PayrollPersonalReportPageTab() {
               {tableView === "daily" ? (
                 <section className="space-y-2">
                   <div className="text-sm font-semibold">История периодов</div>
-                  <DataTable
+                  <PeriodLedgers
                     columns={periodColumns}
-                    rows={report.periods}
-                    getRowKey={(row) => `${row.period_id}-${row.run_id}-${row.role}`}
-                    emptyMessage="Нет начислений за выбранный период"
+                    employeePosition={report.employee_position}
+                    periods={report.periods}
                   />
                 </section>
               ) : null}
@@ -498,7 +486,7 @@ export function PayrollPersonalReportPageTab() {
                 period={openWeek}
                 employeeName={report.employee_name}
                 operations={openWeekOperations}
-                fundReportTotal={report.totals.fund_accrual}
+                fundReportTotal={report.fund_accumulated}
               />
             </>
           )}
@@ -508,12 +496,74 @@ export function PayrollPersonalReportPageTab() {
   );
 }
 
-function hasPersonalReportRole(employee: Employee) {
-  if (PERSONAL_REPORT_POSITIONS.has(employee.position ?? "")) {
-    return true;
+// Детализация периодов: обычно одна таблица. Для «субститута» (сотрудник с окладом по
+// замещаемой должности — например повар/кассир, исполняющий Помощника менеджера) сверху
+// добавляется переключатель Основная / Замещающая должность; по умолчанию — основная.
+function PeriodLedgers({
+  periods,
+  columns,
+  employeePosition,
+  onRowClick,
+}: {
+  periods: PayrollPersonalReportPeriod[];
+  columns: Array<DataTableColumn<PayrollPersonalReportPeriod>>;
+  employeePosition: string | null;
+  onRowClick?: (row: PayrollPersonalReportPeriod) => void;
+}) {
+  const [ledgerView, setLedgerView] = useState<"main" | "substitute">("main");
+  const rowKey = (row: PayrollPersonalReportPeriod) =>
+    `${row.period_id}-${row.run_id}-${row.role}`;
+  const hoverClass = onRowClick ? "hover:bg-muted/50" : undefined;
+  const substitute = periods.filter((period) => period.is_substitute);
+
+  const table = (rows: PayrollPersonalReportPeriod[]) => (
+    <DataTable
+      columns={columns}
+      rows={rows}
+      getRowKey={rowKey}
+      onRowClick={onRowClick}
+      rowClassName={hoverClass}
+      emptyMessage="Нет начислений за выбранный период"
+    />
+  );
+
+  if (substitute.length === 0) {
+    return table(periods);
   }
-  return employee.assignments.some((assignment) =>
-    PERSONAL_REPORT_PAYROLL_ROLES.has(assignment.payroll_role),
+
+  const main = periods.filter((period) => !period.is_substitute);
+  const substituteLabel = substitute[0]?.role ?? "Замещающая должность";
+  const rows = ledgerView === "substitute" ? substitute : main;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="inline-flex w-fit overflow-hidden rounded-md border">
+          <button
+            className={`px-4 py-1.5 text-sm ${
+              ledgerView === "main" ? "bg-primary/10 font-medium text-primary" : ""
+            }`}
+            onClick={() => setLedgerView("main")}
+            type="button"
+          >
+            Основная должность
+          </button>
+          <button
+            className={`px-4 py-1.5 text-sm ${
+              ledgerView === "substitute" ? "bg-primary/10 font-medium text-primary" : ""
+            }`}
+            onClick={() => setLedgerView("substitute")}
+            type="button"
+          >
+            Замещающая должность
+          </button>
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {ledgerView === "substitute" ? substituteLabel : employeePosition ?? "—"}
+        </span>
+      </div>
+      {table(rows)}
+    </div>
   );
 }
 
@@ -775,7 +825,7 @@ function PayslipDialog({
                   <span className="text-xs text-violet-600">за ведомость</span>
                 </div>
                 <div className="text-xs text-violet-600">
-                  за отчёт: {formatMoney(fundReportTotal)}
+                  накоплено: {formatMoney(fundReportTotal)}
                 </div>
               </div>
             </div>
