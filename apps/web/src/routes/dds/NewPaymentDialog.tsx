@@ -9,7 +9,6 @@ import {
   Plus,
   Receipt,
   Search,
-  Target,
   Trash2,
   User,
 } from "lucide-react";
@@ -41,7 +40,6 @@ import {
   confirmEmployeePayout,
   createEmployeePayout,
   createExpenseCashReserves,
-  createInternalTransfer,
   createNewPaymentExpenseDraft,
   createNewPaymentInternalTransfer,
   createPayrollAdvance,
@@ -55,20 +53,21 @@ import {
   type NewPaymentExpenseLine,
   type NewPaymentWallet,
 } from "@/lib/api";
-import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { createBankPrepaymentDraft, getRegistry } from "@/routes/counterparties/api";
 import { formatRub } from "@/routes/counterparties/shared";
 
 /**
  * Окно «Новый платёж» — единая точка создания всех исходящих денег («статья решает всё»):
- * слева палитра операций с поиском (расходные статьи + операции сотрудникам + переводы),
- * справа форма выбранной операции. Заменяет прежнее меню «Создать» из трёх пунктов:
- * целевой перевод и выплата долга по ЗП («по востребованию») теперь операции палитры.
+ * слева палитра операций с поиском (расходные статьи + операции сотрудникам + перевод),
+ * справа форма выбранной операции. Группа «Расходы» схлопнута до первых статей —
+ * раскрывается кнопкой «Ещё…» или поиском, чтобы все группы были видны без скролла.
  *
  * Маршрутизация как раньше — по flow статьи из контекста (services/new_payment.py):
  * expense / supplier_prepayment / employee_advance / employee_loan / internal_transfer /
- * employee_payout; целевой перевод — отдельная операция на праве finance.safe.confirm_paid.
+ * employee_payout. Внутренний перевод имеет фиксированное направление по источнику:
+ * банк → Сейф (черновиком), Сейф → Касса, Касса → Сейф. Резервы под цели — это расход
+ * с наличного счёта (отдельного «целевого перевода» больше нет).
  */
 
 type OperationKind =
@@ -77,8 +76,30 @@ type OperationKind =
   | "employee_advance"
   | "employee_loan"
   | "employee_payout"
-  | "transfer_plain"
-  | "transfer_targeted";
+  | "transfer_plain";
+
+/** Ключи учёта «в форме есть неотправленный ввод» (см. handleDone). */
+type DirtyKind = "expense" | "prepayment" | "advance" | "payout" | "transfer";
+
+const DIRTY_LABELS: Record<DirtyKind, string> = {
+  expense: "строки расхода",
+  prepayment: "предоплата поставщику",
+  advance: "аванс/заём",
+  payout: "выплата долга по ЗП",
+  transfer: "перевод",
+};
+
+const DIRTY_TO_MODE: Record<DirtyKind, OperationKind> = {
+  expense: "expense",
+  prepayment: "supplier_prepayment",
+  advance: "employee_advance",
+  payout: "employee_payout",
+  transfer: "transfer_plain",
+};
+
+/** Сколько расходных статей видно в схлопнутой палитре — подобрано так, чтобы все
+ *  три группы влезали в окно без скролла. */
+const EXPENSE_COLLAPSED_COUNT = 6;
 
 type ExpenseRow = {
   key: string;
@@ -92,8 +113,14 @@ function normalizeAmount(value: string): string {
   return value.trim().replace(",", ".");
 }
 
+/** Строка суммы для payload: trim, запятая→точка, все пробелы (включая NBSP) вырезаны.
+ *  Валидация и payload обязаны использовать одну и ту же нормализацию. */
+function amountStr(value: string): string {
+  return normalizeAmount(value).replace(/\s/g, "");
+}
+
 function amountOf(value: string): number {
-  return Number(normalizeAmount(value).replace(/\s/g, ""));
+  return Number(amountStr(value));
 }
 
 function todayInput(): string {
@@ -122,13 +149,21 @@ export function NewPaymentDialog({
   presetArticleCode?: string | null;
 }) {
   const queryClient = useQueryClient();
-  const permissions = usePermissions();
-  const canTargeted = permissions.hasPermission("finance.safe.confirm_paid");
 
   const [mode, setMode] = useState<OperationKind | null>(null);
   const [search, setSearch] = useState("");
   // Ключ сессии окна: на каждое открытие формы пересоздаются с чистым состоянием.
   const [sessionKey, setSessionKey] = useState(0);
+  // Группа «Расходы» схлопнута — раскрывается кнопкой «Ещё…» или поиском.
+  const [expenseExpanded, setExpenseExpanded] = useState(false);
+  // Активный шаг привязки банковской операции («Долг по ЗП»): палитра скрыта, чтобы
+  // черновик не потерялся от случайного переключения — выйти можно только явно.
+  const [linkPending, setLinkPending] = useState(false);
+  // Эпоха формы: бамп пересоздаёт отправленную форму, когда окно остаётся открытым.
+  const [formEpoch, setFormEpoch] = useState<Partial<Record<DirtyKind, number>>>({});
+  // Реестр «в форме есть неотправленный ввод» — гард от молчаливой потери при закрытии
+  // окна после успешной отправки другой операции.
+  const dirtyRef = useRef<Partial<Record<DirtyKind, boolean>>>({});
 
   const contextQuery = useQuery({
     queryKey: ["new-payment", "context"],
@@ -173,15 +208,23 @@ export function NewPaymentDialog({
   }
   function changeExpenseArticle(key: string, articleId: string) {
     const article = expenseArticles.find((item) => item.id === articleId) ?? null;
-    updateExpenseRow(key, { articleId, counterpartyId: presetCounterparty(article) });
+    // Смена статьи сбрасывает доп-данные строки — они относились к прежней статье.
+    updateExpenseRow(key, {
+      articleId,
+      counterpartyId: presetCounterparty(article),
+      purpose: "",
+    });
   }
 
-  /** Клик по статье в палитре: расходная — заполняет пустую строку или добавляет новую;
-   *  статья-маршрут — переключает операцию. */
+  /** Клик по статье в палитре: расходная — заполняет пустую строку или добавляет новую
+   *  (уже выбранная статья не дублируется); статья-маршрут — переключает операцию. */
   function selectArticle(article: NewPaymentArticle) {
     if (article.flow === "expense") {
       setMode("expense");
       setExpenseRows((prev) => {
+        if (prev.some((row) => row.articleId === article.id)) {
+          return prev;
+        }
         const emptyIndex = prev.findIndex((row) => !row.articleId);
         if (emptyIndex >= 0) {
           return prev.map((row, index) =>
@@ -189,9 +232,6 @@ export function NewPaymentDialog({
               ? { ...row, articleId: article.id, counterpartyId: presetCounterparty(article) }
               : row,
           );
-        }
-        if (prev.some((row) => row.articleId === article.id)) {
-          return prev;
         }
         return [...prev, emptyExpenseRow(article.id, presetCounterparty(article))];
       });
@@ -210,18 +250,23 @@ export function NewPaymentDialog({
     }
   }
 
-  // Сброс на каждое открытие.
-  useEffect(() => {
-    if (!open) {
-      return;
+  // Сброс на каждое открытие — синхронно в рендере (React перерендерит до коммита):
+  // без вспышки состояния прошлой сессии и без двойного mount форм.
+  const [prevOpen, setPrevOpen] = useState(false);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) {
+      setMode(null);
+      setSearch("");
+      rowSeq.current = 0;
+      setExpenseRows([emptyExpenseRow()]);
+      setSessionKey((key) => key + 1);
+      setExpenseExpanded(false);
+      setLinkPending(false);
+      setFormEpoch({});
+      dirtyRef.current = {};
     }
-    setMode(null);
-    setSearch("");
-    rowSeq.current = 0;
-    setExpenseRows([emptyExpenseRow()]);
-    setSessionKey((key) => key + 1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }
 
   // Пресет статьи — пока пользователь ничего не выбрал сам.
   useEffect(() => {
@@ -246,32 +291,67 @@ export function NewPaymentDialog({
       queryClient.invalidateQueries({ queryKey: ["finance-payments"] }),
     ]);
   }
-  async function handleDone() {
+
+  const setDirty = (kind: DirtyKind, value: boolean) => {
+    dirtyRef.current[kind] = value;
+  };
+  const expenseDirty = () =>
+    expenseRows.some((row) => row.articleId && amountOf(row.amount) > 0);
+
+  /** После успешной отправки: закрыть окно, если в других формах нет неотправленного
+   *  ввода; иначе — остаться, пересоздать отправленную форму и показать, что осталось. */
+  async function handleDone(kind: DirtyKind) {
+    dirtyRef.current[kind] = false;
     await invalidateAll();
-    onOpenChange(false);
+    const others = (Object.keys(DIRTY_LABELS) as DirtyKind[]).filter((key) =>
+      key === kind ? false : key === "expense" ? expenseDirty() : Boolean(dirtyRef.current[key]),
+    );
+    if (others.length === 0) {
+      onOpenChange(false);
+      return;
+    }
+    if (kind === "expense") {
+      rowSeq.current = 0;
+      setExpenseRows([emptyExpenseRow()]);
+    } else {
+      setFormEpoch((prev) => ({ ...prev, [kind]: (prev[kind] ?? 0) + 1 }));
+    }
+    setMode(DIRTY_TO_MODE[others[0]]);
+    toast.info(
+      `Создано. В окне остался неотправленный ввод: ${others
+        .map((key) => DIRTY_LABELS[key])
+        .join(", ")} — отправьте или закройте окно.`,
+    );
   }
   const close = () => onOpenChange(false);
 
-  // --- Палитра: группы и поиск ---
+  // --- Палитра: группы, схлопывание «Расходов», поиск ---
   const q = search.trim().toLowerCase();
   const matches = (label: string) => !q || label.toLowerCase().includes(q);
 
-  const visibleExpense = expenseArticles.filter((item) => matches(item.name));
+  const matchedExpense = expenseArticles.filter((item) => matches(item.name));
+  const usedArticleIds = new Set(expenseRows.map((row) => row.articleId).filter(Boolean));
+  // Без поиска и раскрытия — первые N статей + статьи, уже выбранные в строках.
+  const visibleExpense =
+    q || expenseExpanded
+      ? matchedExpense
+      : matchedExpense.filter(
+          (item, index) => index < EXPENSE_COLLAPSED_COUNT || usedArticleIds.has(item.id),
+        );
+  const hiddenExpenseCount = matchedExpense.length - visibleExpense.length;
+
   const showPrepayment = prepaymentArticle !== null && matches(prepaymentArticle.name);
   const advanceLabel = "Аванс сотруднику";
   const loanLabel = "Заём сотруднику";
   const payoutLabel = "Долг по ЗП (по требованию)";
   const transferLabel = transferArticle?.name ?? "Внутренний перевод";
-  const targetedLabel = "Целевой перевод (Сейф↔Касса)";
   const showAdvance = advanceArticle !== null && matches(advanceLabel);
   const showLoan = loanArticle !== null && matches(loanLabel);
   const showPayout = payoutArticles.length > 0 && matches(payoutLabel);
   const showTransfer = transferArticle !== null && matches(transferLabel);
-  const showTargeted = canTargeted && matches(targetedLabel);
   const expenseGroupVisible = visibleExpense.length > 0 || showPrepayment;
   const employeeGroupVisible = showAdvance || showLoan || showPayout;
-  const transferGroupVisible = showTransfer || showTargeted;
-  const nothingFound = !expenseGroupVisible && !employeeGroupVisible && !transferGroupVisible;
+  const nothingFound = !expenseGroupVisible && !employeeGroupVisible && !showTransfer;
 
   const context = contextQuery.data ?? null;
 
@@ -281,113 +361,126 @@ export function NewPaymentDialog({
         <DialogHeader className="shrink-0 space-y-0 border-b py-4 pl-6 pr-14">
           <DialogTitle>Новый платёж</DialogTitle>
           <DialogDescription className="mt-0.5">
-            Выберите операцию — форма подстроится.
+            {linkPending
+              ? "Завершите привязку операции — или «Позже», чтобы привязать при разборе выписки."
+              : "Выберите операцию — форма подстроится."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1">
-          {/* Палитра операций */}
-          <aside className="flex w-52 shrink-0 flex-col border-r sm:w-60">
-            <div className="shrink-0 p-2.5 pb-1.5">
-              <div className="relative">
-                <Search
-                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
-                  size={14}
-                />
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Статья или операция…"
-                  className="h-8 pl-8 text-sm"
-                />
-              </div>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-3">
-              {contextQuery.isLoading ? (
-                <div className="flex items-center gap-2 px-2 py-4 text-sm text-muted-foreground">
-                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-                  Загрузка…
+          {/* Палитра операций; на шаге привязки скрыта — черновик нельзя потерять случайно */}
+          {linkPending ? null : (
+            <aside className="flex w-52 shrink-0 flex-col border-r sm:w-60">
+              <div className="shrink-0 p-2.5 pb-1.5">
+                <div className="relative">
+                  <Search
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+                    size={14}
+                  />
+                  <Input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Статья или операция…"
+                    className="h-8 pl-8 text-sm"
+                  />
                 </div>
-              ) : nothingFound ? (
-                <div className="px-2 py-4 text-sm text-muted-foreground">Ничего не найдено</div>
-              ) : (
-                <>
-                  {expenseGroupVisible ? (
-                    <PaletteGroup title="Расходы">
-                      {visibleExpense.map((article) => (
-                        <PaletteItem
-                          key={article.id}
-                          icon={Receipt}
-                          label={article.name}
-                          active={
-                            mode === "expense" &&
-                            expenseRows.some((row) => row.articleId === article.id)
-                          }
-                          onClick={() => selectArticle(article)}
-                        />
-                      ))}
-                      {showPrepayment && prepaymentArticle ? (
-                        <PaletteItem
-                          icon={Building2}
-                          label={prepaymentArticle.name}
-                          active={mode === "supplier_prepayment"}
-                          onClick={() => selectArticle(prepaymentArticle)}
-                        />
-                      ) : null}
-                    </PaletteGroup>
-                  ) : null}
-                  {employeeGroupVisible ? (
-                    <PaletteGroup title="Сотрудникам">
-                      {showAdvance && advanceArticle ? (
-                        <PaletteItem
-                          icon={HandCoins}
-                          label={advanceLabel}
-                          active={mode === "employee_advance"}
-                          onClick={() => selectArticle(advanceArticle)}
-                        />
-                      ) : null}
-                      {showLoan && loanArticle ? (
-                        <PaletteItem
-                          icon={HandCoins}
-                          label={loanLabel}
-                          active={mode === "employee_loan"}
-                          onClick={() => selectArticle(loanArticle)}
-                        />
-                      ) : null}
-                      {showPayout ? (
-                        <PaletteItem
-                          icon={User}
-                          label={payoutLabel}
-                          active={mode === "employee_payout"}
-                          onClick={() => setMode("employee_payout")}
-                        />
-                      ) : null}
-                    </PaletteGroup>
-                  ) : null}
-                  {transferGroupVisible ? (
-                    <PaletteGroup title="Переводы">
-                      {showTransfer && transferArticle ? (
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-3">
+                {contextQuery.isLoading ? (
+                  <div className="flex items-center gap-2 px-2 py-4 text-sm text-muted-foreground">
+                    <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    Загрузка…
+                  </div>
+                ) : contextQuery.isError ? (
+                  <div className="space-y-2 px-2 py-4">
+                    <div className="text-sm text-muted-foreground">
+                      Не удалось загрузить операции.
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => contextQuery.refetch()}>
+                      Повторить
+                    </Button>
+                  </div>
+                ) : nothingFound ? (
+                  <div className="px-2 py-4 text-sm text-muted-foreground">Ничего не найдено</div>
+                ) : (
+                  <>
+                    {expenseGroupVisible ? (
+                      <PaletteGroup title="Расходы">
+                        {visibleExpense.map((article) => (
+                          <PaletteItem
+                            key={article.id}
+                            icon={Receipt}
+                            label={article.name}
+                            active={
+                              mode === "expense" &&
+                              expenseRows.some((row) => row.articleId === article.id)
+                            }
+                            onClick={() => selectArticle(article)}
+                          />
+                        ))}
+                        {hiddenExpenseCount > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setExpenseExpanded(true)}
+                            className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted"
+                          >
+                            <Plus size={15} className="shrink-0" aria-hidden="true" />
+                            Ещё {hiddenExpenseCount} статей…
+                          </button>
+                        ) : null}
+                        {showPrepayment && prepaymentArticle ? (
+                          <PaletteItem
+                            icon={Building2}
+                            label={prepaymentArticle.name}
+                            active={mode === "supplier_prepayment"}
+                            onClick={() => selectArticle(prepaymentArticle)}
+                          />
+                        ) : null}
+                      </PaletteGroup>
+                    ) : null}
+                    {employeeGroupVisible ? (
+                      <PaletteGroup title="Сотрудникам">
+                        {showAdvance && advanceArticle ? (
+                          <PaletteItem
+                            icon={HandCoins}
+                            label={advanceLabel}
+                            active={mode === "employee_advance"}
+                            onClick={() => selectArticle(advanceArticle)}
+                          />
+                        ) : null}
+                        {showLoan && loanArticle ? (
+                          <PaletteItem
+                            icon={HandCoins}
+                            label={loanLabel}
+                            active={mode === "employee_loan"}
+                            onClick={() => selectArticle(loanArticle)}
+                          />
+                        ) : null}
+                        {showPayout ? (
+                          <PaletteItem
+                            icon={User}
+                            label={payoutLabel}
+                            active={mode === "employee_payout"}
+                            onClick={() => setMode("employee_payout")}
+                          />
+                        ) : null}
+                      </PaletteGroup>
+                    ) : null}
+                    {showTransfer && transferArticle ? (
+                      <PaletteGroup title="Переводы">
                         <PaletteItem
                           icon={ArrowLeftRight}
                           label={transferLabel}
                           active={mode === "transfer_plain"}
                           onClick={() => selectArticle(transferArticle)}
                         />
-                      ) : null}
-                      {showTargeted ? (
-                        <PaletteItem
-                          icon={Target}
-                          label={targetedLabel}
-                          active={mode === "transfer_targeted"}
-                          onClick={() => setMode("transfer_targeted")}
-                        />
-                      ) : null}
-                    </PaletteGroup>
-                  ) : null}
-                </>
-              )}
-            </div>
-          </aside>
+                      </PaletteGroup>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            </aside>
+          )}
 
           {/* Форма выбранной операции. Формы смонтированы постоянно (скрыты классом) —
               состояние переживает переключение операций внутри одной сессии окна. */}
@@ -406,7 +499,6 @@ export function NewPaymentDialog({
               <>
                 <div className={cn(mode === "expense" ? "" : "hidden")}>
                   <ExpenseForm
-                    active={mode === "expense"}
                     key={`expense-${sessionKey}`}
                     articles={expenseArticles}
                     wallets={wallets}
@@ -419,7 +511,7 @@ export function NewPaymentDialog({
                         prev.length <= 1 ? prev : prev.filter((row) => row.key !== key),
                       )
                     }
-                    onDone={handleDone}
+                    onDone={() => handleDone("expense")}
                     onCancel={close}
                   />
                 </div>
@@ -427,9 +519,10 @@ export function NewPaymentDialog({
                   <div className={cn(mode === "supplier_prepayment" ? "" : "hidden")}>
                     <PrepaymentForm
                       active={mode === "supplier_prepayment"}
-                      key={`prepayment-${sessionKey}`}
+                      key={`prepayment-${sessionKey}-${formEpoch.prepayment ?? 0}`}
                       article={prepaymentArticle}
-                      onDone={handleDone}
+                      onDirty={(value) => setDirty("prepayment", value)}
+                      onDone={() => handleDone("prepayment")}
                       onCancel={close}
                     />
                   </div>
@@ -442,7 +535,7 @@ export function NewPaymentDialog({
                   >
                     <AdvanceForm
                       active={mode === "employee_advance" || mode === "employee_loan"}
-                      key={`advance-${sessionKey}`}
+                      key={`advance-${sessionKey}-${formEpoch.advance ?? 0}`}
                       kind={mode === "employee_loan" ? "loan" : "advance"}
                       canLoan={loanArticle !== null}
                       onKindChange={(kind) =>
@@ -450,7 +543,8 @@ export function NewPaymentDialog({
                       }
                       wallets={wallets}
                       employees={employees}
-                      onDone={handleDone}
+                      onDirty={(value) => setDirty("advance", value)}
+                      onDone={() => handleDone("advance")}
                       onCancel={close}
                     />
                   </div>
@@ -459,11 +553,13 @@ export function NewPaymentDialog({
                   <div className={cn(mode === "employee_payout" ? "" : "hidden")}>
                     <PayoutDebtForm
                       active={mode === "employee_payout"}
-                      key={`payout-${sessionKey}`}
+                      key={`payout-${sessionKey}-${formEpoch.payout ?? 0}`}
                       articles={payoutArticles}
                       wallets={wallets}
                       employees={employees}
                       invalidate={invalidateAll}
+                      onDirty={(value) => setDirty("payout", value)}
+                      onLinkPending={setLinkPending}
                       onClose={close}
                     />
                   </div>
@@ -471,22 +567,10 @@ export function NewPaymentDialog({
                 {transferArticle ? (
                   <div className={cn(mode === "transfer_plain" ? "" : "hidden")}>
                     <TransferPlainForm
-                      active={mode === "transfer_plain"}
-                      key={`transfer-${sessionKey}`}
+                      key={`transfer-${sessionKey}-${formEpoch.transfer ?? 0}`}
                       wallets={wallets}
-                      onDone={handleDone}
-                      onCancel={close}
-                    />
-                  </div>
-                ) : null}
-                {canTargeted ? (
-                  <div className={cn(mode === "transfer_targeted" ? "" : "hidden")}>
-                    <TransferTargetedForm
-                      active={mode === "transfer_targeted"}
-                      key={`targeted-${sessionKey}`}
-                      wallets={wallets}
-                      articles={expenseArticles}
-                      onDone={handleDone}
+                      onDirty={(value) => setDirty("transfer", value)}
+                      onDone={() => handleDone("transfer")}
                       onCancel={close}
                     />
                   </div>
@@ -555,12 +639,14 @@ function FormHeader({ title, description }: { title: string; description: string
 
 function FormFooter({
   cancel,
+  cancelLabel = "Отмена",
   submit,
   submitLabel,
   disabled,
   pending,
 }: {
   cancel: () => void;
+  cancelLabel?: string;
   submit: () => void;
   submitLabel: string;
   disabled: boolean;
@@ -569,7 +655,7 @@ function FormFooter({
   return (
     <div className="mt-4 flex justify-end gap-2 border-t pt-3.5">
       <Button onClick={cancel} type="button" variant="outline">
-        Отмена
+        {cancelLabel}
       </Button>
       <Button disabled={disabled || pending} onClick={submit} type="button">
         {pending ? (
@@ -582,10 +668,10 @@ function FormFooter({
 }
 
 // --------------------------------------------------------------------------- //
-// Расход: построчный конструктор (банк → один черновик-транш, наличные → резервы)
+// Расход: построчный конструктор (банк → один черновик-транш, наличные → резервы,
+// т.е. «целевой» резерв на счёте = расход с наличного счёта)
 
 function ExpenseForm({
-  active,
   articles,
   wallets,
   rows,
@@ -596,7 +682,6 @@ function ExpenseForm({
   onDone,
   onCancel,
 }: {
-  active: boolean;
   articles: NewPaymentArticle[];
   wallets: NewPaymentWallet[];
   rows: ExpenseRow[];
@@ -626,7 +711,10 @@ function ExpenseForm({
     return map;
   }, [articles]);
 
-  const total = rows.reduce((sum, row) => sum + (amountOf(row.amount) > 0 ? amountOf(row.amount) : 0), 0);
+  const total = rows.reduce(
+    (sum, row) => sum + (amountOf(row.amount) > 0 ? amountOf(row.amount) : 0),
+    0,
+  );
   const canSubmit =
     Boolean(walletId) &&
     rows.length > 0 &&
@@ -657,15 +745,11 @@ function ExpenseForm({
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось создать платёж")),
   });
 
-  if (!active && rows.length === 0) {
-    return null;
-  }
-
   return (
     <div>
       <FormHeader
         title="Свободный расход"
-        description="Банковский счёт — черновик на карту ИП → Сейф; наличные — сразу резерв."
+        description="Банковский счёт — черновик на карту ИП → Сейф; наличные — сразу резерв на счёте."
       />
       <div className="space-y-3">
         <Label className="block space-y-1">
@@ -677,7 +761,8 @@ function ExpenseForm({
             <SelectContent>
               {wallets.map((wallet) => {
                 const isCash = wallet.kind === "cash";
-                const disabled = !isCash && wallet.bank_code !== "tbank" && wallet.bank_code !== "sber";
+                const disabled =
+                  !isCash && wallet.bank_code !== "tbank" && wallet.bank_code !== "sber";
                 let hint = "";
                 if (isCash) {
                   hint =
@@ -800,16 +885,24 @@ function ExpenseForm({
 function PrepaymentForm({
   active,
   article,
+  onDirty,
   onDone,
   onCancel,
 }: {
   active: boolean;
   article: NewPaymentArticle;
+  onDirty: (value: boolean) => void;
   onDone: () => Promise<void>;
   onCancel: () => void;
 }) {
   const [counterpartyId, setCounterpartyId] = useState("");
   const [amount, setAmount] = useState("");
+
+  const dirty = amountOf(amount) > 0 || Boolean(counterpartyId);
+  useEffect(() => {
+    onDirty(dirty);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty]);
 
   const registryQuery = useQuery({
     queryKey: ["cp", "registry"],
@@ -902,6 +995,7 @@ function AdvanceForm({
   onKindChange,
   wallets,
   employees,
+  onDirty,
   onDone,
   onCancel,
 }: {
@@ -911,6 +1005,7 @@ function AdvanceForm({
   onKindChange: (kind: "advance" | "loan") => void;
   wallets: NewPaymentWallet[];
   employees: NewPaymentEmployee[];
+  onDirty: (value: boolean) => void;
   onDone: () => Promise<void>;
   onCancel: () => void;
 }) {
@@ -921,6 +1016,12 @@ function AdvanceForm({
   const [recoveryStartDate, setRecoveryStartDate] = useState("");
   const [overrideCeiling, setOverrideCeiling] = useState(false);
   const [comment, setComment] = useState("");
+
+  const dirty = amountOf(amount) > 0 || Boolean(employeeId);
+  useEffect(() => {
+    onDirty(dirty);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty]);
 
   const tbankWallet = wallets.find((wallet) => wallet.bank_code === "tbank") ?? null;
   useEffect(() => {
@@ -942,7 +1043,10 @@ function AdvanceForm({
   const available = availabilityQuery.data?.available ?? 0;
   const numericAmount = amountOf(amount);
   const overAvailable =
-    kind === "advance" && Boolean(employeeId) && availabilityQuery.data != null && numericAmount > available;
+    kind === "advance" &&
+    Boolean(employeeId) &&
+    availabilityQuery.data != null &&
+    numericAmount > available;
 
   const isLoan = kind === "loan";
   const canSubmit = Boolean(employeeId) && Boolean(walletId) && numericAmount > 0 && !overAvailable;
@@ -951,11 +1055,12 @@ function AdvanceForm({
     mutationFn: () =>
       createPayrollAdvance({
         employee_id: employeeId,
-        amount: normalizeAmount(amount),
+        // Та же нормализация, что в валидации: «5 000,50» → «5000.50».
+        amount: amountStr(amount),
         kind,
         wallet_id: walletId,
         installment_amount:
-          isLoan && installmentAmount.trim() ? normalizeAmount(installmentAmount) : undefined,
+          isLoan && installmentAmount.trim() ? amountStr(installmentAmount) : undefined,
         recovery_start_date: isLoan && recoveryStartDate ? recoveryStartDate : undefined,
         override_ceiling: isLoan ? overrideCeiling : false,
         comment: comment.trim() ? comment.trim() : null,
@@ -965,7 +1070,9 @@ function AdvanceForm({
       await onDone();
     },
     onError: (error) =>
-      toast.error(apiErrorMessage(error, isLoan ? "Не удалось оформить заём" : "Не удалось оформить аванс")),
+      toast.error(
+        apiErrorMessage(error, isLoan ? "Не удалось оформить заём" : "Не удалось оформить аванс"),
+      ),
   });
 
   return (
@@ -982,14 +1089,20 @@ function AdvanceForm({
         {canLoan ? (
           <div className="inline-flex w-fit overflow-hidden rounded-md border">
             <button
-              className={cn("px-4 py-1.5 text-sm", !isLoan && "bg-primary/10 font-medium text-primary")}
+              className={cn(
+                "px-4 py-1.5 text-sm",
+                !isLoan && "bg-primary/10 font-medium text-primary",
+              )}
               onClick={() => onKindChange("advance")}
               type="button"
             >
               Аванс
             </button>
             <button
-              className={cn("px-4 py-1.5 text-sm", isLoan && "bg-primary/10 font-medium text-primary")}
+              className={cn(
+                "px-4 py-1.5 text-sm",
+                isLoan && "bg-primary/10 font-medium text-primary",
+              )}
               onClick={() => onKindChange("loan")}
               type="button"
             >
@@ -1043,7 +1156,8 @@ function AdvanceForm({
                   const disabled = !isCash && wallet.bank_code !== "tbank";
                   let hint = "";
                   if (isCash) {
-                    hint = wallet.location === "kassa" ? " — выдача через кассу" : " — наличными с Сейфа";
+                    hint =
+                      wallet.location === "kassa" ? " — выдача через кассу" : " — наличными с Сейфа";
                   } else if (wallet.bank_code !== "tbank") {
                     hint = " — выдача только из Т-Банка или наличными";
                   }
@@ -1131,6 +1245,8 @@ function PayoutDebtForm({
   wallets,
   employees,
   invalidate,
+  onDirty,
+  onLinkPending,
   onClose,
 }: {
   active: boolean;
@@ -1138,6 +1254,8 @@ function PayoutDebtForm({
   wallets: NewPaymentWallet[];
   employees: NewPaymentEmployee[];
   invalidate: () => Promise<void>;
+  onDirty: (value: boolean) => void;
+  onLinkPending: (value: boolean) => void;
   onClose: () => void;
 }) {
   const [articleId, setArticleId] = useState("");
@@ -1149,6 +1267,12 @@ function PayoutDebtForm({
   const [step, setStep] = useState<"form" | "link">("form");
   const [pendingPayout, setPendingPayout] = useState<EmployeePayout | null>(null);
   const [operationId, setOperationId] = useState("");
+
+  const dirty = step === "form" && (amountOf(amount) > 0 || Boolean(employeeId));
+  useEffect(() => {
+    onDirty(dirty);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty]);
 
   const tbankWallet = wallets.find((wallet) => wallet.bank_code === "tbank") ?? null;
   const selectedWallet = wallets.find((wallet) => wallet.id === walletId) ?? null;
@@ -1196,6 +1320,7 @@ function PayoutDebtForm({
       if (payout.status === "pending") {
         setPendingPayout(payout);
         setStep("link");
+        onLinkPending(true);
         toast.success("Черновик платежа создан — привяжите операцию из выписки");
         return;
       }
@@ -1226,6 +1351,7 @@ function PayoutDebtForm({
     mutationFn: () => confirmEmployeePayout(pendingPayout?.id ?? "", operationId),
     onSuccess: async () => {
       await invalidate();
+      onLinkPending(false);
       toast.success("Выплата подтверждена и привязана к операции");
       onClose();
     },
@@ -1244,6 +1370,11 @@ function PayoutDebtForm({
             <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
               <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
               Загрузка операций…
+            </div>
+          ) : operationsQuery.isError ? (
+            <div className="py-6 text-sm text-muted-foreground">
+              Не удалось загрузить операции из выписки (возможно, нет права просмотра ДДС).
+              Черновик сохранён — привязать можно позже при разборе выписки.
             </div>
           ) : operations.length === 0 ? (
             <div className="py-6 text-sm text-muted-foreground">
@@ -1274,6 +1405,7 @@ function PayoutDebtForm({
         </div>
         <FormFooter
           cancel={onClose}
+          cancelLabel="Позже"
           submit={() => confirmMutation.mutate()}
           submitLabel="Подтвердить выплату"
           disabled={!operationId}
@@ -1431,23 +1563,29 @@ function PayoutDebtForm({
 }
 
 // --------------------------------------------------------------------------- //
-// Внутренний перевод (обычный): наличные — мгновенно, банк → черновик пополнения Сейфа
+// Внутренний перевод: направление фиксировано источником — банк → Сейф (черновик
+// пополнения), Сейф → Касса, Касса → Сейф. Резервы под цели — расход с наличного счёта.
 
 function TransferPlainForm({
-  active: _active,
   wallets,
+  onDirty,
   onDone,
   onCancel,
 }: {
-  active: boolean;
   wallets: NewPaymentWallet[];
+  onDirty: (value: boolean) => void;
   onDone: () => Promise<void>;
   onCancel: () => void;
 }) {
   const [sourceId, setSourceId] = useState("");
-  const [destId, setDestId] = useState("");
   const [amount, setAmount] = useState("");
   const [purpose, setPurpose] = useState("");
+
+  const dirty = amountOf(amount) > 0;
+  useEffect(() => {
+    onDirty(dirty);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty]);
 
   const tbankWallet = wallets.find((wallet) => wallet.bank_code === "tbank") ?? null;
   useEffect(() => {
@@ -1456,32 +1594,32 @@ function TransferPlainForm({
     }
   }, [sourceId, tbankWallet]);
 
+  const safeWallet = wallets.find((w) => w.kind === "cash" && w.location === "safe") ?? null;
+  const kassaWallet = wallets.find((w) => w.kind === "cash" && w.location === "kassa") ?? null;
   const sourceWallet = wallets.find((wallet) => wallet.id === sourceId) ?? null;
   const isBankSource = sourceWallet?.kind === "bank";
-  const destOptions = wallets.filter(
-    (wallet) =>
-      wallet.kind === "cash" &&
-      wallet.id !== sourceId &&
-      (!isBankSource || wallet.location === "safe"),
-  );
-  // Смена источника может сделать получателя недопустимым (банк → только Сейф).
-  useEffect(() => {
-    if (destId && !destOptions.some((wallet) => wallet.id === destId)) {
-      setDestId("");
-    }
-    if (!destId && destOptions.length === 1) {
-      setDestId(destOptions[0].id);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceId, destId, wallets.length]);
+  // У каждого счёта одно направление: банк → Сейф, Сейф → Касса, Касса → Сейф.
+  const destWallet =
+    sourceWallet == null
+      ? null
+      : sourceWallet.kind === "bank"
+        ? safeWallet
+        : sourceWallet.location === "safe"
+          ? kassaWallet
+          : safeWallet;
 
-  const canSubmit = Boolean(sourceId) && Boolean(destId) && amountOf(amount) > 0;
+  const canSubmit = Boolean(sourceId) && destWallet !== null && amountOf(amount) > 0;
+  const submitLabel = isBankSource
+    ? "Создать черновик"
+    : sourceWallet?.location === "safe"
+      ? "Перевести в кассу"
+      : "Перевести на Сейф";
 
   const mutation = useMutation({
     mutationFn: () =>
       createNewPaymentInternalTransfer({
         source_wallet_id: sourceId,
-        dest_wallet_id: destId,
+        dest_wallet_id: destWallet?.id ?? "",
         amount: amountOf(amount),
         purpose: purpose.trim() || null,
       }),
@@ -1500,7 +1638,7 @@ function TransferPlainForm({
     <div>
       <FormHeader
         title="Внутренний перевод"
-        description="Между своими счетами: наличные — мгновенно, с банка — черновиком пополнения Сейфа."
+        description="Направление фиксировано: с банка — на Сейф (черновиком), Сейф → Касса, Касса → Сейф."
       />
       <div className="space-y-3">
         <div className="flex items-end gap-2">
@@ -1513,7 +1651,8 @@ function TransferPlainForm({
               <SelectContent>
                 {wallets.map((wallet) => {
                   const isCash = wallet.kind === "cash";
-                  const disabled = !isCash && wallet.bank_code !== "tbank" && wallet.bank_code !== "sber";
+                  const disabled =
+                    !isCash && wallet.bank_code !== "tbank" && wallet.bank_code !== "sber";
                   let hint = "";
                   if (!isCash) {
                     hint =
@@ -1534,21 +1673,12 @@ function TransferPlainForm({
             </Select>
           </Label>
           <ArrowRight className="mb-2.5 shrink-0 text-muted-foreground" size={18} />
-          <Label className="flex-1 space-y-1">
-            <span className="text-sm">Куда</span>
-            <Select value={destId} onValueChange={setDestId} disabled={!sourceId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Счёт-получатель" />
-              </SelectTrigger>
-              <SelectContent>
-                {destOptions.map((wallet) => (
-                  <SelectItem key={wallet.id} value={wallet.id}>
-                    {wallet.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Label>
+          <div className="flex-1 space-y-1">
+            <span className="text-sm font-medium">Куда</span>
+            <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm">
+              {destWallet?.name ?? "—"}
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -1575,182 +1705,14 @@ function TransferPlainForm({
 
         <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
           {isBankSource
-            ? "С банковского счёта — только на Сейф (в Кассу — наличными из Сейфа). Деньги придут после оплаты черновика."
-            : "Наличный перевод проводится сразу, без резервов. Резерв под цели — операция «Целевой перевод»."}
+            ? "Деньги придут на Сейф после оплаты черновика в банке. В Кассу — наличными из Сейфа."
+            : "Наличный перевод проводится сразу, без резервов. Резерв под цели — расход с наличного счёта («Счёт списания: Сейф/Касса»)."}
         </div>
       </div>
       <FormFooter
         cancel={onCancel}
         submit={() => mutation.mutate()}
-        submitLabel={isBankSource ? "Создать черновик" : "Перевести"}
-        disabled={!canSubmit}
-        pending={mutation.isPending}
-      />
-    </div>
-  );
-}
-
-// --------------------------------------------------------------------------- //
-// Целевой перевод (Сейф↔Касса): перемещение наличных с резервированием под цели
-
-type TargetRow = { key: string; articleId: string; amount: string; purpose: string };
-
-function TransferTargetedForm({
-  active: _active,
-  wallets,
-  articles,
-  onDone,
-  onCancel,
-}: {
-  active: boolean;
-  wallets: NewPaymentWallet[];
-  articles: NewPaymentArticle[];
-  onDone: () => Promise<void>;
-  onCancel: () => void;
-}) {
-  const rowSeq = useRef(0);
-  const newRow = (): TargetRow => {
-    rowSeq.current += 1;
-    return { key: `t${rowSeq.current}`, articleId: "", amount: "", purpose: "" };
-  };
-  const [sourceId, setSourceId] = useState("");
-  const [destId, setDestId] = useState("");
-  const [rows, setRows] = useState<TargetRow[]>(() => [newRow()]);
-
-  const cashWallets = wallets.filter((wallet) => wallet.kind === "cash");
-  const destOptions = cashWallets.filter((wallet) => wallet.id !== sourceId);
-  useEffect(() => {
-    if (destId && destId === sourceId) {
-      setDestId("");
-    }
-  }, [sourceId, destId]);
-
-  function updateRow(key: string, patch: Partial<TargetRow>) {
-    setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
-  }
-
-  const total = rows.reduce((acc, row) => acc + (amountOf(row.amount) || 0), 0);
-  const canSubmit = Boolean(
-    sourceId &&
-      destId &&
-      rows.length > 0 &&
-      rows.every((row) => row.articleId && amountOf(row.amount) > 0),
-  );
-
-  const mutation = useMutation({
-    mutationFn: () => {
-      const lines: NewPaymentExpenseLine[] = rows.map((row) => ({
-        article_id: row.articleId,
-        amount: amountOf(row.amount),
-        purpose: row.purpose.trim(),
-      }));
-      return createInternalTransfer({
-        source_wallet_id: sourceId,
-        dest_wallet_id: destId,
-        mode: "targeted",
-        lines,
-      });
-    },
-    onSuccess: async (result) => {
-      toast.success(`Переведено ${formatRub(result.amount)}, резервов: ${result.reserves}`);
-      await onDone();
-    },
-    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось выполнить перевод")),
-  });
-
-  return (
-    <div>
-      <FormHeader
-        title="Целевой перевод (Сейф↔Касса)"
-        description="Перемещение наличных с резервированием под конкретные цели на счёте-получателе."
-      />
-      <div className="space-y-3">
-        <div className="flex items-end gap-2">
-          <Label className="flex-1 space-y-1">
-            <span className="text-sm">Откуда</span>
-            <Select value={sourceId} onValueChange={setSourceId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Счёт-источник" />
-              </SelectTrigger>
-              <SelectContent>
-                {cashWallets.map((wallet) => (
-                  <SelectItem key={wallet.id} value={wallet.id}>
-                    {wallet.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Label>
-          <ArrowRight className="mb-2.5 shrink-0 text-muted-foreground" size={18} />
-          <Label className="flex-1 space-y-1">
-            <span className="text-sm">Куда</span>
-            <Select value={destId} onValueChange={setDestId} disabled={!sourceId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Счёт-получатель" />
-              </SelectTrigger>
-              <SelectContent>
-                {destOptions.map((wallet) => (
-                  <SelectItem key={wallet.id} value={wallet.id}>
-                    {wallet.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Label>
-        </div>
-
-        <div className="space-y-2">
-          <div className="text-sm text-muted-foreground">
-            Каждая цель станет резервом на счёте-получателе (появится в «Платежах»).
-          </div>
-          {rows.map((row) => (
-            <div key={row.key} className="flex items-start gap-2">
-              <div className="flex-1 space-y-1.5">
-                <ArticleCombobox
-                  articles={articles}
-                  onChange={(value) => updateRow(row.key, { articleId: value })}
-                  placeholder="Статья"
-                  value={row.articleId}
-                />
-                <Input
-                  value={row.purpose}
-                  onChange={(event) => updateRow(row.key, { purpose: event.target.value })}
-                  placeholder="Назначение (необязательно)"
-                  className="h-9"
-                />
-              </div>
-              <Input
-                inputMode="decimal"
-                value={row.amount}
-                onChange={(event) => updateRow(row.key, { amount: event.target.value })}
-                placeholder="0"
-                className="h-9 w-28 tabular-nums"
-              />
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-9 w-9 shrink-0"
-                disabled={rows.length === 1}
-                onClick={() => setRows((prev) => prev.filter((r) => r.key !== row.key))}
-              >
-                <Trash2 size={15} />
-              </Button>
-            </div>
-          ))}
-          <div className="flex items-center justify-between">
-            <Button size="sm" variant="outline" onClick={() => setRows((prev) => [...prev, newRow()])}>
-              <Plus size={15} className="mr-1" /> Добавить цель
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              Итого: <span className="font-semibold text-foreground">{formatRub(total)}</span>
-            </span>
-          </div>
-        </div>
-      </div>
-      <FormFooter
-        cancel={onCancel}
-        submit={() => mutation.mutate()}
-        submitLabel="Перевести"
+        submitLabel={submitLabel}
         disabled={!canSubmit}
         pending={mutation.isPending}
       />
