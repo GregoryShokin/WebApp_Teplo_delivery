@@ -21,7 +21,7 @@ payable → ``incoming_invoice`` (``counteragent`` = поставщик), receiv
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time
 
 import anyio
@@ -35,6 +35,7 @@ from app.models import (
     IikoProduct,
     InvoiceLineItem,
     SupplierInvoice,
+    SupplierInvoiceTombstone,
 )
 from app.services.iiko_cloud_client import IIKO_ORGANIZATION_ID, iiko_auth_token, iiko_opener
 from app.services.iiko_invoice_cloud import (
@@ -456,31 +457,71 @@ def _cloud_create_and_post_return(organization_id: str, body: dict) -> _CloudPus
     return _CloudPushOutcome(document_id, True, None)
 
 
-async def book_correction_return_in_iiko(
+def _correction_number(base: str | None) -> str | None:
+    """Номер для НОВОЙ (правильной) приходной Y: помечаем «(испр.)», чтобы в бэк-офисе iiko её
+    было видно отдельно от тумбстоненного оригинала. None (нет номера) → iiko занумерует сам."""
+    if not base:
+        return None
+    return f"{base} (испр.)"[:128]
+
+
+async def _tombstone_exists(session: AsyncSession, source: str, external_id: str) -> bool:
+    return (
+        await session.scalar(
+            select(SupplierInvoiceTombstone.id).where(
+                SupplierInvoiceTombstone.source == source,
+                SupplierInvoiceTombstone.external_id == external_id,
+            )
+        )
+    ) is not None
+
+
+async def book_correction_in_iiko(
     session: AsyncSession, invoice_id: uuid.UUID
 ) -> SupplierInvoice:
-    """Отразить коррекцию ОПЛАЧЕННОЙ накладной в iiko возвратной накладной (``returned_invoice``).
+    """Отразить коррекцию ОПЛАЧЕННОЙ накладной в iiko полным разворотом (два документа):
 
-    Читает ``invoice.iiko_return_lines`` (дельта «старая − новая» по товарам, посчитана в
-    ``adjust_paid_invoice``) и книжит ``create`` → ``post`` со ссылкой на ``incomingInvoiceId`` =
-    ``external_id`` оригинала. В iiko это списывает лишние товары со склада и создаёт долг
-    поставщика (дебиторку). Оплаченный оригинал не трогаем. Не-фатально: коррекция у нас уже
-    сохранена; при неуспехе позиции остаются в ``iiko_return_lines`` для ретрая."""
+    1. **Возврат** ВСЕХ старых товаров (``returned_invoice`` со ссылкой на ``incomingInvoiceId``
+       оригинала X) → снимает старый приход со склада и создаёт долг поставщика (дебиторку).
+    2. **Новая приходная** Y на правильные товары (``incoming_invoice`` create→post) БЕЗ оплаты;
+       ``external_id`` накладной перецепляется X→Y, старый X закрывается тумбстоном (иначе реверс-синк
+       воскресил бы оплаченный+возвращённый оригинал как новую накладную).
+
+    Итог: чистый баланс поставщика = верная дебиторка (старая сумма − новая); переплата покрыта у
+    нас (``SupplierPrepayment``). Y остаётся «не оплачена» НАМЕРЕННО: оплатить её зачётом
+    (``add_payment``) нельзя — settle-дебет уезжает в баланс поставщика и завышает его (проверено на
+    живом API 11.07: зачёт давал +полная-сумма вместо +разница). Сага резюмируемая по чек-пойнтам
+    (``iiko_return_external_id`` — шаг 1, ``iiko_correction_new_external_id`` + перецеп
+    ``external_id`` — шаг 2): не-фатально, при сбое статус/ошибка садятся в накладную, ретрай
+    (``retry-iiko-return``) продолжит с последнего успешного шага. См.
+    project_edit_paid_invoice_feasibility."""
     invoice = await session.get(SupplierInvoice, invoice_id)
     if invoice is None:
         raise WarehousePushError("Накладная не найдена")
+    if invoice.iiko_return_status not in ("pending", "failed"):
+        return invoice  # нечего разворачивать / уже проведено
 
+    # Инварианты — в локали: после commit ORM-атрибуты истекают, а лениво их читать в async нельзя
+    # (MissingGreenlet). Мутабельные чек-пойнты (return_doc/new_doc) тоже ведём локально.
+    inv_source = invoice.source
+    inv_number = invoice.number
+    inv_direction = invoice.direction
+    original_external_id = invoice.external_id
     return_lines = list(invoice.iiko_return_lines or [])
-    if not return_lines:
-        # Нечего возвращать (коррекция без уменьшения товаров) — снимаем «ожидание».
-        if invoice.iiko_return_status == "pending":
-            invoice.iiko_return_status = "none"
-            await session.commit()
-        return invoice
-    if not invoice.external_id:
+    return_doc = invoice.iiko_return_external_id
+    new_doc = invoice.iiko_correction_new_external_id
+
+    if not original_external_id and not new_doc:
         invoice.iiko_return_status = "skipped"
-        invoice.iiko_return_error = "Накладная не выгружена в iiko — возврат отражать негде"
+        invoice.iiko_return_error = "Накладная не выгружена в iiko — коррекцию отражать негде"
         invoice.iiko_return_lines = []
+        await session.commit()
+        return invoice
+    if return_doc is None and not return_lines:
+        # Без снимка старых товаров возврат невозможен, а заносить новую приходную без возврата
+        # нельзя (задвоился бы приход в iiko). Контур не запускаем.
+        invoice.iiko_return_status = "skipped"
+        invoice.iiko_return_error = "Нет позиций для возврата старого прихода"
         await session.commit()
         return invoice
 
@@ -493,8 +534,8 @@ async def book_correction_return_in_iiko(
     store_guid = await _store_guid(session, invoice)
     if not partner_guid or not store_guid:
         invoice.iiko_return_status = "failed"
-        invoice.iiko_return_error = "Нет iiko-GUID контрагента или склада для возврата"
-        await session.commit()  # позиции оставляем для ретрая
+        invoice.iiko_return_error = "Нет iiko-GUID контрагента или склада для коррекции"
+        await session.commit()
         return invoice
 
     dt = invoice.issued_at or (
@@ -503,52 +544,120 @@ async def book_correction_return_in_iiko(
         else datetime.now(UTC)
     )
     date_naive = dt.replace(tzinfo=None)
-    items: list[dict] = []
-    for idx, line in enumerate(return_lines, start=1):
-        qty = float(line["quantity"])
-        price = float(line.get("price") or 0)
-        items.append(
-            {
-                "num": idx,
-                "product": line["product"],
-                "store": store_guid,
-                "amount": qty,
-                "price": price,
-                "sum": round(qty * price, 2),
-            }
-        )
 
     from app.services.iiko_sync import _load_source_credential_env
 
     await _load_source_credential_env(session)
-    body = build_returned_invoice_body(
-        counteragent=partner_guid,
-        date=date_naive,
-        items=items,
-        incoming_invoice_id=invoice.external_id,
-        default_store=store_guid,
-        comment=(
-            f"Коррекция оплаченной накладной №{invoice.number or '—'} — возврат лишних товаров"
-        ),
-    )
-    try:
-        outcome = await anyio.to_thread.run_sync(
-            lambda: _cloud_create_and_post_return(IIKO_ORGANIZATION_ID, body)
+
+    # --- ШАГ 1: возврат ВСЕХ старых товаров (ссылка на оригинал X) → дебиторка поставщику ---
+    if return_doc is None:
+        items = [
+            {
+                "num": idx,
+                "product": line["product"],
+                "store": store_guid,
+                "amount": float(line["quantity"]),
+                "price": float(line.get("price") or 0),
+                "sum": round(float(line["quantity"]) * float(line.get("price") or 0), 2),
+            }
+            for idx, line in enumerate(return_lines, start=1)
+        ]
+        return_body = build_returned_invoice_body(
+            counteragent=partner_guid,
+            date=date_naive,
+            items=items,
+            incoming_invoice_id=original_external_id,
+            default_store=store_guid,
+            comment=f"Коррекция оплаченной накладной №{inv_number or '—'} — возврат старого прихода",
         )
-    except Exception as exc:  # noqa: BLE001 — держим коррекцию, пишем ошибку
-        invoice.iiko_return_status = "failed"
-        invoice.iiko_return_error = str(exc)[:500]
+        try:
+            outcome = await anyio.to_thread.run_sync(
+                lambda: _cloud_create_and_post_return(IIKO_ORGANIZATION_ID, return_body)
+            )
+        except Exception as exc:  # noqa: BLE001 — держим коррекцию, пишем ошибку
+            invoice.iiko_return_status = "failed"
+            invoice.iiko_return_error = str(exc)[:500]
+            await session.commit()
+            return invoice
+        if not (outcome.posted and outcome.document_id):
+            invoice.iiko_return_status = "failed"
+            invoice.iiko_return_error = (outcome.error or "iiko: возврат не проведён")[:500]
+            await session.commit()
+            return invoice
+        invoice.iiko_return_external_id = outcome.document_id
+        invoice.iiko_return_error = None
+        await session.commit()  # чек-пойнт шага 1
+        await session.refresh(invoice)
+        return_doc = outcome.document_id
+
+    # --- ШАГ 2: новая (правильная) приходная Y + перецеп external_id X→Y + тумбстон X ---
+    if new_doc is None:
+        prepared = await prepare_push(session, invoice)
+        if prepared.doc is None:
+            invoice.iiko_return_status = "failed"
+            invoice.iiko_return_error = (
+                prepared.skip_reason or "Нет товарных строк для новой приходной"
+            )[:500]
+            await session.commit()
+            return invoice
+        # Форсим CREATE (document_id оригинала обнуляем) + «(испр.)» в номере для трассировки.
+        new_body = build_invoice_body(
+            replace(prepared.doc, document_id=None, number=_correction_number(inv_number))
+        )
+        try:
+            outcome = await anyio.to_thread.run_sync(
+                lambda: _cloud_create_and_post(
+                    inv_direction,
+                    prepared.doc.organization_id,
+                    new_body,
+                    existing_document_id=None,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            invoice.iiko_return_status = "failed"
+            invoice.iiko_return_error = str(exc)[:500]
+            await session.commit()
+            return invoice
+        if not outcome.document_id:
+            invoice.iiko_return_status = "failed"
+            invoice.iiko_return_error = (outcome.error or "iiko: новая приходная не создана")[:500]
+            await session.commit()
+            return invoice
+        # Документ Y создан (id есть, даже если post упал). Фиксируем Y, перецепляем external_id
+        # X→Y и закрываем X тумбстоном — иначе реверс-синк воскресил бы оплаченный+возвращённый
+        # оригинал как новую накладную (наша строка на него больше не ссылается).
+        invoice.iiko_correction_new_external_id = outcome.document_id
+        if original_external_id and not await _tombstone_exists(
+            session, inv_source, original_external_id
+        ):
+            session.add(
+                SupplierInvoiceTombstone(
+                    source=inv_source,
+                    external_id=original_external_id,
+                    reason="коррекция оплаченной накладной — заменена новой приходной в iiko",
+                )
+            )
+        invoice.external_id = outcome.document_id  # перецеп X→Y
+        if not outcome.posted:
+            invoice.iiko_return_status = "failed"
+            invoice.iiko_return_error = (
+                outcome.error or "iiko: новая приходная не проведена"
+            )[:500]
+            await session.commit()
+            return invoice
+        # Шаг 2 успешен → контур завершён. Y остаётся НЕОПЛАЧЕННОЙ намеренно: возврат создал долг
+        # поставщика на всю старую сумму, новая приходная — на правильную; чистый баланс = дебиторка
+        # (старая − новая). Оплачивать Y зачётом НЕЛЬЗЯ — settle-дебет завышает баланс поставщика
+        # (проверено на живом API). Переплата покрыта у нас (SupplierPrepayment).
+        invoice.iiko_return_status = "booked"
+        invoice.iiko_return_lines = []
+        invoice.iiko_return_error = None
         await session.commit()
         return invoice
 
-    if outcome.posted and outcome.document_id:
-        invoice.iiko_return_external_id = outcome.document_id
-        invoice.iiko_return_status = "booked"
-        invoice.iiko_return_error = None
-        invoice.iiko_return_lines = []
-    else:
-        invoice.iiko_return_status = "failed"
-        invoice.iiko_return_error = (outcome.error or "iiko: возврат не проведён")[:500]
-        # позиции оставляем для ретрая
+    # Ретрай, где шаг 2 уже сделан ранее (new_doc есть): остаётся зафиксировать завершение контура.
+    invoice.iiko_return_status = "booked"
+    invoice.iiko_return_lines = []
+    invoice.iiko_return_error = None
     await session.commit()
     return invoice

@@ -38,12 +38,12 @@ const IIKO_STATUS: Record<string, { label: string; cls: string; canSend: boolean
   not_pushed: { label: "Не отправлена в iiko", cls: "border-amber-200 bg-amber-50 text-amber-700", canSend: true },
 };
 
-/** Статус возврата коррекции оплаченной накладной в iiko (Фаза 2). */
+/** Статус отражения коррекции оплаченной накладной в iiko (возврат старого прихода + новая приходная). */
 const RETURN_STATUS: Record<string, { label: string; cls: string }> = {
-  booked: { label: "Возврат отражён в iiko", cls: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-  pending: { label: "Возврат в iiko ожидает", cls: "border-amber-200 bg-amber-50 text-amber-700" },
-  failed: { label: "Ошибка возврата в iiko", cls: "border-red-200 bg-red-50 text-red-700" },
-  skipped: { label: "Возврат в iiko не требуется", cls: "border-slate-200 bg-slate-50 text-slate-600" },
+  booked: { label: "Коррекция отражена в iiko", cls: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  pending: { label: "Коррекция в iiko ожидает", cls: "border-amber-200 bg-amber-50 text-amber-700" },
+  failed: { label: "Ошибка коррекции в iiko", cls: "border-red-200 bg-red-50 text-red-700" },
+  skipped: { label: "Коррекция в iiko не требуется", cls: "border-slate-200 bg-slate-50 text-slate-600" },
 };
 
 function formatDateTime(value: string | null): string {
@@ -110,10 +110,10 @@ export function InvoiceDetailDialog({
       queryClient.setQueryData(["wh", "invoice", invoiceId], updated);
       void queryClient.invalidateQueries({ queryKey: ["wh"] });
       void queryClient.invalidateQueries({ queryKey: ["cp"] });
-      if (updated.iiko_return_status === "booked") toast.success("Возврат отражён в iiko");
-      else toast.error(updated.iiko_return_error ?? "iiko не принял возврат");
+      if (updated.iiko_return_status === "booked") toast.success("Коррекция отражена в iiko");
+      else toast.error(updated.iiko_return_error ?? "iiko не принял коррекцию");
     },
-    onError: (e) => toast.error(apiErrorMessage(e, "Не удалось отправить возврат в iiko")),
+    onError: (e) => toast.error(apiErrorMessage(e, "Не удалось отразить коррекцию в iiko")),
   });
 
   const deleteMutation = useMutation({
@@ -269,7 +269,7 @@ export function InvoiceDetailDialog({
               </div>
             ) : null}
 
-            {/* Статус отражения коррекции в iiko возвратной накладной (Фаза 2) + ретрай при сбое. */}
+            {/* Статус отражения коррекции в iiko (возврат старого прихода + новая приходная) + ретрай при сбое. */}
             {detail.iiko_return_status && detail.iiko_return_status !== "none" ? (
               <div className="flex flex-wrap items-center gap-2 rounded-md border p-3">
                 <Badge
@@ -296,7 +296,7 @@ export function InvoiceDetailDialog({
                     ) : (
                       <Send size={14} aria-hidden="true" />
                     )}
-                    Повторить возврат в iiko
+                    Повторить коррекцию в iiko
                   </Button>
                 ) : null}
               </div>

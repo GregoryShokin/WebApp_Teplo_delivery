@@ -73,7 +73,8 @@ export type WarehouseInvoiceDetail = WarehouseInvoiceSummary & {
   allocations: InvoiceAllocation[];
   // Сумма возвращённых позиций чека (gross = amount + returned_total).
   returned_total?: number;
-  // Возврат коррекции оплаченной накладной в iiko (Фаза 2): none/pending/booked/failed/skipped.
+  // Отражение коррекции оплаченной накладной в iiko (возврат старого прихода + новая приходная):
+  // none/pending/booked/failed/skipped.
   iiko_return_status?: string;
   iiko_return_external_id?: string | null;
   iiko_return_error?: string | null;
@@ -174,7 +175,8 @@ export async function adjustPaidInvoice(
   return response.data;
 }
 
-// Повторить проводку возвратной накладной в iiko после сбоя (позиции хранятся на накладной).
+// Повторить отражение коррекции в iiko после сбоя (сага возврат→новая приходная продолжится
+// с последнего успешного шага; чек-пойнты хранятся на накладной).
 export async function retryIikoReturn(id: string): Promise<WarehouseInvoiceDetail> {
   const response = await api.post<WarehouseInvoiceDetail>(
     `${BASE}/invoices/${id}/retry-iiko-return`,

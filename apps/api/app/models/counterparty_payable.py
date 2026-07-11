@@ -390,18 +390,28 @@ class SupplierInvoice(Base):
     )
     iiko_pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     iiko_push_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # --- iiko-возврат при коррекции ОПЛАЧЕННОЙ накладной (Фаза 2) ---
+    # --- iiko: контур коррекции ОПЛАЧЕННОЙ накладной (Фаза 2) ---
     # Оплаченный iiko-документ править нельзя (unpost/add_payment необратимы), поэтому коррекцию
-    # отражаем ОТДЕЛЬНЫМ документом returned_invoice: возврат лишних/не тех товаров (дельта старой и
-    # новой накладной) со ссылкой на incomingInvoiceId → в iiko минус товары со склада + долг
-    # поставщика (дебиторка). Статусы как у iiko_push: none/pending/booked/failed/skipped.
+    # книжим полным разворотом двумя документами: (1) возврат ВСЕХ старых товаров со ссылкой на
+    # incomingInvoiceId оригинала → минус товары + долг поставщика (дебиторка); (2) НОВАЯ приходная
+    # на правильные товары БЕЗ оплаты. Итог: чистый баланс поставщика = дебиторка (старая − новая).
+    # Оплачивать новую зачётом НЕЛЬЗЯ — settle-дебет уезжает в баланс и завышает его (проверено на
+    # живом API). Чек-пойнты саги (для ретрая):
+    #   iiko_return_external_id         — возвратная накладная (шаг 1);
+    #   iiko_correction_new_external_id — новая приходная Y (шаг 2), external_id перецепляется на неё.
+    # Статусы iiko_return_status как у iiko_push: none/pending/booked/failed/skipped.
     iiko_return_external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     iiko_return_status: Mapped[str] = mapped_column(
         String(24), nullable=False, default="none", server_default="none"
     )
     iiko_return_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Позиции возврата (дельта), ждущие проводки/ретрая; очищается при успехе. Список
-    # {product, quantity, price, name}. Склад/дату оркестратор добавляет при пуше.
+    # id новой (правильной) приходной Y в iiko — чек-пойнт шага 2, чтобы ретрай не пересоздал её.
+    # После успеха шага 2 external_id накладной перецепляется X→Y, старый X закрывается тумбстоном.
+    iiko_correction_new_external_id: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    # Снимок ВСЕХ старых товаров (для возврата), ждущий проводки/ретрая; очищается при успехе.
+    # Список {product, quantity, price, name}. Склад/дату оркестратор добавляет при пуше.
     iiko_return_lines: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )

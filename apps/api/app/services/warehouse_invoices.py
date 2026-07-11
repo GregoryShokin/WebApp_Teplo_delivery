@@ -585,25 +585,25 @@ def _goods_from_lines(
     return goods
 
 
-def _return_delta(
-    old_goods: dict[str, dict[str, Any]], new_goods: dict[str, Decimal]
-) -> list[dict[str, Any]]:
-    """Позиции возврата в iiko = что было и убыло: по каждому ``product_guid`` old_qty − new_qty
-    (если > 0), по ИСХОДНОЙ цене. Добавленные (только в новой) не отражаем — оплаченный документ
-    iiko товар не добавляет (это отдельный будущий приход)."""
-    delta: list[dict[str, Any]] = []
+def _serialize_goods_for_return(old_goods: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """ВСЕ старые товары в формате позиций возврата (полный разворот, а не дельта): по каждому
+    ``product_guid`` исходное кол-во по исходной цене. Возврат целиком снимает старый приход со
+    склада и создаёт долг поставщика; правильные товары заносит уже НОВАЯ приходная (см.
+    ``book_correction_in_iiko``)."""
+    out: list[dict[str, Any]] = []
     for guid, info in old_goods.items():
-        removed = _qty(info["quantity"] - new_goods.get(guid, Decimal("0")))
-        if removed > 0:
-            delta.append(
-                {
-                    "product": guid,
-                    "quantity": float(removed),
-                    "price": float(info["price"]),
-                    "name": info["name"],
-                }
-            )
-    return delta
+        qty = _qty(info["quantity"])
+        if qty <= 0:
+            continue
+        out.append(
+            {
+                "product": guid,
+                "quantity": float(qty),
+                "price": float(info["price"]),
+                "name": info["name"],
+            }
+        )
+    return out
 
 
 async def adjust_paid_invoice(
@@ -622,8 +622,9 @@ async def adjust_paid_invoice(
     должен». Гейт — право ``invoices.normal.edit_paid`` (проверяется в роуте).
 
     iiko-документ этой правкой НЕ трогаем: оплаченную накладную iiko не даёт распровести, а
-    ``add_payment`` необратим (проверено на живом API). Отражение коррекции в iiko —
-    отдельным шагом (возвратная накладная ``returned_invoice``); см.
+    ``add_payment`` необратим (проверено на живом API). Отражение коррекции в iiko — отдельным
+    шагом (полный разворот: возврат всех старых товаров + новая приходная + зачёт со счёта
+    «Задолженность перед поставщиками»); см. ``book_correction_in_iiko`` и
     project_edit_paid_invoice_feasibility."""
     if not lines:
         raise WarehouseInvoiceError("Добавьте хотя бы одну строку накладной")
@@ -648,8 +649,9 @@ async def adjust_paid_invoice(
     _assert_goods_have_product(lines, products)
 
     allocated = await _allocated_amount(session, invoice.id)
-    # Снимок товаров ДО правки — для отражения коррекции в iiko возвратом дельты (Фаза 2).
+    # Снимок товаров и суммы ДО правки — для отражения коррекции в iiko (Фаза 2, полный разворот).
     old_goods = await _snapshot_invoice_goods(session, invoice.id)
+    amount_before = _money(invoice.amount)
 
     await _rebuild_invoice_lines(session, invoice, lines, products)
     new_amount = _money(invoice.amount)
@@ -672,12 +674,16 @@ async def adjust_paid_invoice(
             session, invoice, excess=excess, actor_user_id=actor_user_id
         )
 
-    # Отражение коррекции в iiko (Фаза 2) — возврат дельты товаров. Копим позиции; проводку в iiko
-    # делает роут (book_correction_return_in_iiko), как и обычный пуш. Только если накладная в iiko.
+    # Отражение коррекции в iiko (Фаза 2) — ПОЛНЫЙ разворот: возврат всех старых товаров + новая
+    # приходная + зачёт (проводку делает роут через book_correction_in_iiko). Копим снимок старых
+    # товаров для возврата. Запускаем контур только если реально что-то изменилось (товары ИЛИ
+    # сумма/цена) и накладная есть в iiko — иначе no-op (повторное «исправить» без правок не плодит
+    # документы).
     if invoice.external_id:
-        return_delta = _return_delta(old_goods, _goods_from_lines(lines, products))
-        if return_delta:
-            invoice.iiko_return_lines = return_delta
+        old_goods_qty = {guid: _qty(info["quantity"]) for guid, info in old_goods.items()}
+        goods_changed = old_goods_qty != _goods_from_lines(lines, products)
+        if goods_changed or amount_before != new_amount:
+            invoice.iiko_return_lines = _serialize_goods_for_return(old_goods)
             invoice.iiko_return_status = "pending"
 
     await _recompute_status(session, invoice)
