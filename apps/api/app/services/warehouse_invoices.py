@@ -635,9 +635,14 @@ async def adjust_paid_invoice(
             "Это правка ОПЛАЧЕННОЙ накладной — для неоплаченной используйте обычную правку"
         )
     if invoice.draft_id is not None:
-        # Черновик ещё в банке/на Сейфе (деньги не финализированы) — сначала отзыв платежа,
-        # иначе дебиторка разошлась бы с висящим резервом/черновиком.
-        raise WarehouseInvoiceError("Накладная отправлена в банк — сначала отзовите платёж")
+        # Правку разрешаем, только если банк-платёж УЖЕ финализирован: черновик оплачен
+        # (status='paid') и НЕ через Сейф. Тогда деньги ушли, излишек можно перенести в
+        # дебиторку. Пока черновик висит в банке (created/updated/failed) или деньги
+        # зарезервированы на Сейфе (pays_via_safe) — блокируем: иначе дебиторка разошлась бы
+        # с висящим платежом/резервом (сначала отзыв платежа).
+        draft = await session.get(CounterpartyPaymentDraft, invoice.draft_id)
+        if draft is None or draft.status != "paid" or draft.pays_via_safe:
+            raise WarehouseInvoiceError("Накладная отправлена в банк — сначала отзовите платёж")
 
     product_ids = [line.iiko_product_id for line in lines if line.iiko_product_id]
     products: dict[uuid.UUID, IikoProduct] = {}

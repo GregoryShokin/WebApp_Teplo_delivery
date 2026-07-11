@@ -457,6 +457,10 @@ async def mirror_paid_iiko_invoices(
                 SupplierInvoice.payment_status == "paid",
                 CounterpartyPaymentDraft.status == "paid",
                 SupplierInvoice.id.not_in(blocked_invoice_ids),
+                # Скорректированную оплаченную накладную НЕ зеркалим: её external_id уже указывает
+                # на НОВУЮ приходную (Y), которую платить нельзя — зачёт завышает баланс поставщика
+                # (Y покрыта возвратом старого прихода). См. book_correction_in_iiko / edit_paid.
+                SupplierInvoice.iiko_correction_new_external_id.is_(None),
             )
             .order_by(SupplierInvoice.created_at)
             .limit(limit)

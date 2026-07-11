@@ -17,6 +17,7 @@ from cp_helpers import (
     allocated_total,
     headers_for,
     make_counterparty,
+    make_draft,
     make_iiko_product,
     make_invoice,
 )
@@ -168,6 +169,59 @@ async def test_gates_reject_unpaid_and_barter(async_session_factory):
         await session.commit()
         with pytest.raises(WarehouseInvoiceError, match="Бартер"):
             await adjust_paid_invoice(session, barter, lines=[_line(product.id, "60")])
+
+
+async def test_gate_bank_finalized_draft_allowed(async_session_factory):
+    """Оплаченная ЧЕРЕЗ БАНК (черновик paid, не через Сейф) — править МОЖНО: главный кейс фичи
+    (счёт ЭДО ушёл в банк и оплачен). Излишек так же уходит в дебиторку."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Поставщик BF")
+        product = await make_iiko_product(session, name="Мешок")
+        draft = await make_draft(session, counterparty_id=cp.id, amount="100.00", status="paid")
+        invoice = await make_invoice(
+            session, counterparty_id=cp.id, amount="100.00", payment_status="paid",
+            number="800", draft_id=draft.id,
+        )
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=invoice.id, source_kind="bank", amount=Decimal("100.00")
+            )
+        )
+        await session.commit()
+
+        await adjust_paid_invoice(session, invoice, lines=[_line(product.id, "60")])
+        await session.refresh(invoice)
+        assert invoice.amount == Decimal("60.00")
+        assert invoice.payment_status == "paid"
+        assert await counterparty_prepayment_balance(session, cp.id) == Decimal("40.00")
+
+
+async def test_gate_pending_or_safe_draft_blocked(async_session_factory):
+    """Черновик ещё в банке (created) ИЛИ деньги зарезервированы на Сейфе (pays_via_safe) —
+    править НЕЛЬЗЯ: платёж не финализирован, сначала отзыв."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Поставщик PB")
+        product = await make_iiko_product(session, name="Мешок")
+        # 1) черновик created — висит в банке, деньги не ушли
+        d1 = await make_draft(session, counterparty_id=cp.id, amount="100.00", status="created")
+        inv1 = await make_invoice(
+            session, counterparty_id=cp.id, amount="100.00", payment_status="paid",
+            number="801", draft_id=d1.id,
+        )
+        await session.commit()
+        with pytest.raises(WarehouseInvoiceError, match="банк"):
+            await adjust_paid_invoice(session, inv1, lines=[_line(product.id, "60")])
+
+        # 2) черновик paid, но через Сейф — резерв ещё не выплачен
+        d2 = await make_draft(session, counterparty_id=cp.id, amount="100.00", status="paid")
+        d2.pays_via_safe = True
+        inv2 = await make_invoice(
+            session, counterparty_id=cp.id, amount="100.00", payment_status="paid",
+            number="802", draft_id=d2.id,
+        )
+        await session.commit()
+        with pytest.raises(WarehouseInvoiceError, match="банк"):
+            await adjust_paid_invoice(session, inv2, lines=[_line(product.id, "60")])
 
 
 async def test_adjust_paid_endpoint_permission_and_receivable(client, async_session_factory):

@@ -246,11 +246,13 @@ export function InvoiceDetailDialog({
             ) : null}
 
             {/* Правка УЖЕ ОПЛАЧЕННОЙ (поставщик прислал не ту накладную) — точечное право
-                edit_paid (owner/admin). Излишек оплаты уходит в дебиторку. Не для бартера и
-                не пока платёж в банке (draft_id). */}
+                edit_paid (owner/admin). Излишек оплаты уходит в дебиторку. Не для бартера.
+                Черновик блокирует, только пока платёж НЕ финализирован (висит в банке / резерв
+                на Сейфе); банк-оплаченную (draft.status='paid', не через Сейф) править можно. */}
             {(detail.payment_status === "paid" || detail.payment_status === "partially_paid") &&
             !detail.barter_role &&
-            !detail.draft_id &&
+            (!detail.draft_id ||
+              (detail.draft_status === "paid" && !detail.draft_pays_via_safe)) &&
             hasLines &&
             canEditPaid ? (
               <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50/40 p-3">
