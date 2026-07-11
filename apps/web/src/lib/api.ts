@@ -3898,6 +3898,10 @@ export type OnDemandEmployee = {
   id: string;
   full_name: string;
   position: string | null;
+  // Долг «по востребованию»: начислено / выплачено / остаток (может быть < 0 при переплате).
+  accrued: number;
+  paid: number;
+  debt: number;
 };
 
 export async function getOnDemandEmployees(): Promise<OnDemandEmployee[]> {

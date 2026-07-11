@@ -284,6 +284,11 @@ class OnDemandEmployeeRead(BaseModel):
     id: uuid.UUID
     full_name: str
     position: str | None = None
+    # Долг «по востребованию» на момент запроса (compute_on_demand_debt):
+    # начислено / выплачено / остаток; нули — начислений и выплат ещё не было.
+    accrued: float = 0.0
+    paid: float = 0.0
+    debt: float = 0.0
 
 
 class EmployeePayoutRead(BaseModel):

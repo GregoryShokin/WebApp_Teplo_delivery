@@ -24,21 +24,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
-import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
-import { EmployeePayoutDialog } from "@/routes/dds/EmployeePayoutDialog";
 import { NewPaymentDialog } from "@/routes/dds/NewPaymentDialog";
 import { navigateTo } from "@/router";
 
-import { InternalTransferDialog } from "./InternalTransferDialog";
 import { BUCKET_ORDER, getPayments, type PaymentRow } from "./payments-api";
 
 const money = new Intl.NumberFormat("ru-RU", {
@@ -109,11 +100,7 @@ export function ActivePaymentsModal({
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
-  const permissions = usePermissions();
-  const canEmployeePayout = permissions.canPerformAction("payroll.employee_payouts.create");
   const [createOpen, setCreateOpen] = useState(false);
-  const [transferOpen, setTransferOpen] = useState(false);
-  const [payoutOpen, setPayoutOpen] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [payRow, setPayRow] = useState<PaymentRow | null>(null);
   const [search, setSearch] = useState("");
@@ -242,26 +229,9 @@ export function ActivePaymentsModal({
               >
                 <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" className="h-9 shrink-0">
-                    <Plus size={16} className="mr-1" /> Создать
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => setCreateOpen(true)}>
-                    Создать платёж
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setTransferOpen(true)}>
-                    Целевой перевод (Сейф↔Касса)
-                  </DropdownMenuItem>
-                  {canEmployeePayout ? (
-                    <DropdownMenuItem onSelect={() => setPayoutOpen(true)}>
-                      Выплата сотруднику
-                    </DropdownMenuItem>
-                  ) : null}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Button size="sm" className="h-9 shrink-0" onClick={() => setCreateOpen(true)}>
+                <Plus size={16} className="mr-1" /> Создать
+              </Button>
             </div>
 
             <div className="flex gap-1.5 overflow-x-auto pb-0.5">
@@ -394,22 +364,6 @@ export function ActivePaymentsModal({
           if (!next) setPayRow(null);
         }}
         onPaid={refetchAll}
-      />
-
-      <InternalTransferDialog
-        open={transferOpen}
-        onOpenChange={(next) => {
-          setTransferOpen(next);
-          if (!next) refetch();
-        }}
-      />
-
-      <EmployeePayoutDialog
-        open={payoutOpen}
-        onOpenChange={(next) => {
-          setPayoutOpen(next);
-          if (!next) refetch();
-        }}
       />
     </>
   );

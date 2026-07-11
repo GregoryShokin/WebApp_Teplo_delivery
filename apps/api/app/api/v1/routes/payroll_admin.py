@@ -253,9 +253,24 @@ async def get_on_demand_employees(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> list[OnDemandEmployeeRead]:
-    """Сотрудники в режиме оклада «по востребованию» — для диалога «Создать выплату»."""
+    """Сотрудники в режиме оклада «по востребованию» с остатком долга — для формы
+    «Долг по ЗП» окна «Новый платёж»."""
     employees = await list_on_demand_employees(session)
-    return [OnDemandEmployeeRead.model_validate(employee) for employee in employees]
+    debts = await compute_on_demand_debt(session, [employee.id for employee in employees])
+    result: list[OnDemandEmployeeRead] = []
+    for employee in employees:
+        debt = debts.get(employee.id)
+        result.append(
+            OnDemandEmployeeRead(
+                id=employee.id,
+                full_name=employee.full_name,
+                position=employee.position,
+                accrued=float(debt["accrued"]) if debt else 0.0,
+                paid=float(debt["paid"]) if debt else 0.0,
+                debt=float(debt["debt"]) if debt else 0.0,
+            )
+        )
+    return result
 
 
 @router.post(
