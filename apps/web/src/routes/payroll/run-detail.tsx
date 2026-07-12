@@ -155,6 +155,8 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const [isRecalculateDialogOpen, setIsRecalculateDialogOpen] = useState(false);
   const [isUnfinalizeDialogOpen, setIsUnfinalizeDialogOpen] = useState(false);
   const [unfinalizeReason, setUnfinalizeReason] = useState("");
+  // Мастер выплаты (Вариант B): шаг 1 — черновик в банк, шаг 2 — выплата сотрудникам.
+  const [payoutStep, setPayoutStep] = useState<1 | 2>(1);
 
   const runQuery = useQuery({
     queryKey: ["payroll-run", runId],
@@ -632,53 +634,128 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         </section>
       ) : null}
 
-      <PayrollByEmployeeTab
-        canManagePayments={canManagePayments}
-        canEditDeposits={canEditDeposits}
-        cancelDepositPayoutPending={
-          cancelDepositPayoutMutation.isPending || recalculateMutation.isPending
-        }
-        employeesById={employeesById}
-        isLoading={linesQuery.isLoading || runQuery.isLoading}
-        lines={lines}
-        onCancelDepositPayout={(employeeId) => cancelDepositPayoutMutation.mutate(employeeId)}
-        runId={runId}
-        runStatus={run?.status ?? ""}
-      />
+      {isFinal && canManageBankDraft ? (
+        <>
+          <nav aria-label="Шаги выплаты" className="flex items-center gap-3">
+            <button
+              className="flex items-center gap-2"
+              onClick={() => setPayoutStep(1)}
+              type="button"
+            >
+              <span
+                className={cn(
+                  "flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
+                  payoutStep === 1
+                    ? "bg-emerald-600 text-white"
+                    : bankDraftQuery.data
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-muted text-muted-foreground",
+                )}
+              >
+                {bankDraftQuery.data && payoutStep !== 1 ? (
+                  <CheckCircle2 size={14} aria-hidden="true" />
+                ) : (
+                  1
+                )}
+              </span>
+              <span
+                className={cn(
+                  "text-sm",
+                  payoutStep === 1 ? "font-medium" : "text-muted-foreground",
+                )}
+              >
+                Черновик в банк
+              </span>
+            </button>
+            <div className="h-px flex-1 bg-border" />
+            <button
+              className="flex items-center gap-2"
+              onClick={() => setPayoutStep(2)}
+              type="button"
+            >
+              <span
+                className={cn(
+                  "flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
+                  payoutStep === 2 ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground",
+                )}
+              >
+                2
+              </span>
+              <span
+                className={cn(
+                  "text-sm",
+                  payoutStep === 2 ? "font-medium" : "text-muted-foreground",
+                )}
+              >
+                Выплата сотрудникам
+              </span>
+            </button>
+          </nav>
 
-      {canManageBankDraft ? (
-        <details className="group rounded-lg border bg-card">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-4 [&::-webkit-details-marker]:hidden">
-            <span className="flex items-center gap-2 text-base font-medium">
-              <Landmark className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-              Черновик выплаты в банк
-            </span>
-            <span className="flex items-center gap-2 text-xs text-muted-foreground">
-              безнал {formatMoney(totalAccountAmount)} ·{" "}
-              {bankDraftQuery.data ? "черновик создан" : "не создан"}
-              <ChevronDown
-                className="h-4 w-4 transition-transform group-open:rotate-180"
-                aria-hidden="true"
+          {payoutStep === 1 ? (
+            <div className="space-y-3">
+              <RunBankDraftCard
+                channelPerms={payoutChannelPerms}
+                draft={bankDraftQuery.data ?? null}
+                isLoading={bankDraftQuery.isLoading}
+                payoutCashTotal={payoutCashTotal}
+                runId={runId}
+                savedWalletId={run?.payout_cash_wallet_id ?? null}
+                totalAccountAmount={totalAccountAmount}
+                totalPayable={totalPayable}
+                grandTotal={grandTotal}
+                depositPayoutTotal={depositPayoutTotal}
               />
-            </span>
-          </summary>
-          <div className="border-t p-4">
-            <RunBankDraftCard
-              embedded
-              channelPerms={payoutChannelPerms}
-              draft={bankDraftQuery.data ?? null}
-              isLoading={bankDraftQuery.isLoading}
-              payoutCashTotal={payoutCashTotal}
-              runId={runId}
-              savedWalletId={run?.payout_cash_wallet_id ?? null}
-              totalAccountAmount={totalAccountAmount}
-              totalPayable={totalPayable}
-              grandTotal={grandTotal}
-              depositPayoutTotal={depositPayoutTotal}
-            />
-          </div>
-        </details>
-      ) : null}
+              <div className="flex justify-end">
+                <Button onClick={() => setPayoutStep(2)} type="button">
+                  Далее: выплата сотрудникам
+                  <ChevronRight size={16} aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <Button
+                className="self-start"
+                onClick={() => setPayoutStep(1)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <ArrowLeft size={16} aria-hidden="true" />
+                Назад: черновик в банк
+              </Button>
+              <PayrollByEmployeeTab
+                canManagePayments={canManagePayments}
+                canEditDeposits={canEditDeposits}
+                cancelDepositPayoutPending={
+                  cancelDepositPayoutMutation.isPending || recalculateMutation.isPending
+                }
+                employeesById={employeesById}
+                isLoading={linesQuery.isLoading || runQuery.isLoading}
+                lines={lines}
+                onCancelDepositPayout={(employeeId) => cancelDepositPayoutMutation.mutate(employeeId)}
+                runId={runId}
+                runStatus={run?.status ?? ""}
+              />
+            </div>
+          )}
+        </>
+      ) : (
+        <PayrollByEmployeeTab
+          canManagePayments={canManagePayments}
+          canEditDeposits={canEditDeposits}
+          cancelDepositPayoutPending={
+            cancelDepositPayoutMutation.isPending || recalculateMutation.isPending
+          }
+          employeesById={employeesById}
+          isLoading={linesQuery.isLoading || runQuery.isLoading}
+          lines={lines}
+          onCancelDepositPayout={(employeeId) => cancelDepositPayoutMutation.mutate(employeeId)}
+          runId={runId}
+          runStatus={run?.status ?? ""}
+        />
+      )}
 
       <PayoutDeltasPanel
         canManageBankDraft={canManageBankDraft}
