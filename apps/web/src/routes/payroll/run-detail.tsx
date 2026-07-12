@@ -202,6 +202,27 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const totalHours = lines.reduce((sum, line) => sum + lineHours(line), 0);
   const payoutCashTotal = Math.min(moneyValue(run?.payout_cash_total ?? 0), grandTotal);
   const totalAccountAmount = normalizeMoney(Math.max(0, grandTotal - payoutCashTotal));
+  // Прогресс выплаты: paid_amount берём по одному разу на сотрудника (сериализатор дублирует
+  // его на каждой роль-строке двуролевого). Остаток — по ФОТ; недополучившие = partially_paid.
+  const paidByEmployee = new Map<string, number>();
+  const partialEmployeeIds = new Set<string>();
+  for (const line of lines) {
+    if (
+      (line.payment_status === "paid" || line.payment_status === "partially_paid") &&
+      line.paid_amount != null
+    ) {
+      paidByEmployee.set(line.employee_id, line.paid_amount);
+    }
+    if (line.payment_status === "partially_paid") {
+      partialEmployeeIds.add(line.employee_id);
+    }
+  }
+  const paidTotal = normalizeMoney(
+    Array.from(paidByEmployee.values()).reduce((sum, value) => sum + value, 0),
+  );
+  const payoutRemaining = normalizeMoney(Math.max(0, totalPayable - paidTotal));
+  const underpaidCount = partialEmployeeIds.size;
+  const payoutPct = totalPayable > 0 ? Math.min(100, Math.round((paidTotal / totalPayable) * 100)) : 0;
   const blockers = run?.blocking_issues ?? [];
   const attendanceWarnings = run?.summary.attendance_warnings ?? [];
   const isLegacyRun = Boolean(run?.is_imported_legacy);
@@ -584,27 +605,32 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         </div>
       ) : null}
 
-      {canManageBankDraft ? (
-        <RunBankDraftCard
-          channelPerms={payoutChannelPerms}
-          draft={bankDraftQuery.data ?? null}
-          isLoading={bankDraftQuery.isLoading}
-          payoutCashTotal={payoutCashTotal}
-          runId={runId}
-          savedWalletId={run?.payout_cash_wallet_id ?? null}
-          totalAccountAmount={totalAccountAmount}
-          totalPayable={totalPayable}
-          grandTotal={grandTotal}
-          depositPayoutTotal={depositPayoutTotal}
-        />
+      {isFinal ? (
+        <section className="rounded-lg border bg-card p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm">
+              Выплачено{" "}
+              <span className="font-semibold tabular-nums">{formatMoney(paidTotal)}</span>{" "}
+              <span className="text-muted-foreground">из {formatMoney(totalPayable)}</span>
+            </div>
+            {payoutRemaining > 0 ? (
+              <span className="text-sm font-medium text-amber-700">
+                остаток {formatMoney(payoutRemaining)}
+                {underpaidCount > 0 ? ` · ${underpaidCount} из ${employeeCount} недополучили` : ""}
+              </span>
+            ) : (
+              <span className="text-sm font-medium text-emerald-700">выплачено полностью</span>
+            )}
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+            <div
+              aria-hidden="true"
+              className={cn("h-full", payoutRemaining > 0 ? "bg-amber-400" : "bg-emerald-500")}
+              style={{ width: `${payoutPct}%` }}
+            />
+          </div>
+        </section>
       ) : null}
-
-      <PayoutDeltasPanel
-        canManageBankDraft={canManageBankDraft}
-        delta={runPayoutDeltaQuery.data ?? null}
-        isLoading={runPayoutDeltaQuery.isLoading}
-        runId={runId}
-      />
 
       <PayrollByEmployeeTab
         canManagePayments={canManagePayments}
@@ -618,6 +644,47 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         onCancelDepositPayout={(employeeId) => cancelDepositPayoutMutation.mutate(employeeId)}
         runId={runId}
         runStatus={run?.status ?? ""}
+      />
+
+      {canManageBankDraft ? (
+        <details className="group rounded-lg border bg-card">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-4 [&::-webkit-details-marker]:hidden">
+            <span className="flex items-center gap-2 text-base font-medium">
+              <Landmark className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+              Черновик выплаты в банк
+            </span>
+            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+              безнал {formatMoney(totalAccountAmount)} ·{" "}
+              {bankDraftQuery.data ? "черновик создан" : "не создан"}
+              <ChevronDown
+                className="h-4 w-4 transition-transform group-open:rotate-180"
+                aria-hidden="true"
+              />
+            </span>
+          </summary>
+          <div className="border-t p-4">
+            <RunBankDraftCard
+              embedded
+              channelPerms={payoutChannelPerms}
+              draft={bankDraftQuery.data ?? null}
+              isLoading={bankDraftQuery.isLoading}
+              payoutCashTotal={payoutCashTotal}
+              runId={runId}
+              savedWalletId={run?.payout_cash_wallet_id ?? null}
+              totalAccountAmount={totalAccountAmount}
+              totalPayable={totalPayable}
+              grandTotal={grandTotal}
+              depositPayoutTotal={depositPayoutTotal}
+            />
+          </div>
+        </details>
+      ) : null}
+
+      <PayoutDeltasPanel
+        canManageBankDraft={canManageBankDraft}
+        delta={runPayoutDeltaQuery.data ?? null}
+        isLoading={runPayoutDeltaQuery.isLoading}
+        runId={runId}
       />
     </div>
   );
@@ -1110,6 +1177,7 @@ function RunBankDraftCard({
   totalPayable,
   grandTotal,
   depositPayoutTotal,
+  embedded = false,
 }: {
   channelPerms: { safe: boolean; cash_tk: boolean; bank_draft: boolean };
   draft: PayrollBankDraft | null;
@@ -1121,6 +1189,7 @@ function RunBankDraftCard({
   totalPayable: number;
   grandTotal: number;
   depositPayoutTotal: number;
+  embedded?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -1231,19 +1300,23 @@ function RunBankDraftCard({
   const actionVerb = hasDraft ? "Обновит" : "Создаст";
 
   return (
-    <section className="rounded-lg border bg-card p-4 shadow-sm">
-      <div className="flex items-center gap-2">
-        <Landmark className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-        <h2 className="text-base font-semibold tracking-normal">Черновик выплаты в банк</h2>
-      </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Укажите наличную сумму и счёт, с которого выдаются наличные. Безналичный остаток уходит
-        одним черновиком на счёт ИП — после оплаты в банке деньги автоматически переводятся в Сейф.
-        В ДДС зарплата проводится по статьям по факту «Выплатить»: безналичная часть списывается с
-        Сейфа, наличная — с выбранного счёта.
-      </p>
+    <section className={embedded ? undefined : "rounded-lg border bg-card p-4 shadow-sm"}>
+      {embedded ? null : (
+        <>
+          <div className="flex items-center gap-2">
+            <Landmark className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+            <h2 className="text-base font-semibold tracking-normal">Черновик выплаты в банк</h2>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Укажите наличную сумму и счёт, с которого выдаются наличные. Безналичный остаток уходит
+            одним черновиком на счёт ИП — после оплаты в банке деньги автоматически переводятся в
+            Сейф. В ДДС зарплата проводится по статьям по факту «Выплатить»: безналичная часть
+            списывается с Сейфа, наличная — с выбранного счёта.
+          </p>
+        </>
+      )}
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={cn("grid gap-3 sm:grid-cols-2 lg:grid-cols-4", !embedded && "mt-4")}>
         <div className="rounded-md border bg-background p-3">
           <div className="text-xs text-muted-foreground">К выплате</div>
           <div className="mt-1 font-semibold tabular-nums">{formatMoney(grandTotal)}</div>
