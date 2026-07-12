@@ -50,6 +50,11 @@ from app.services.warehouse_invoice_push import (
     propagate_invoice_edit_to_iiko,
     push_invoice_to_iiko,
 )
+from app.services.counterparty_iiko_payment import (
+    IikoPaymentError,
+    mark_iiko_payment_settled_manually,
+    mirror_single_paid_iiko_invoice,
+)
 from app.services.counterparty_matching import _allocated_amount
 from app.services.warehouse_invoices import (
     LineInput,
@@ -838,6 +843,55 @@ async def post_retry_iiko_return(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
     ensure_permission(actor, "invoices.normal.edit_paid")
     await book_correction_in_iiko(session, invoice_id)
+    result = await get_warehouse_invoice(session, invoice_id)
+    assert result is not None
+    return result
+
+
+@router.post("/invoices/{invoice_id}/send-iiko-payment")
+async def post_send_iiko_payment(
+    invoice_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    """«Отправить оплату в iiko сейчас»: провести ``add_payment`` для оплаченной iiko-накладной, не
+    дожидаясь 5-минутного сверочного джоба. Нужно перед правкой оплаченной, если оплата оригинала
+    ещё не отражена в iiko. Идемпотентно: если платёж уже в iiko (в т.ч. проведён вручную в
+    бэк-офисе) — iiko вернёт «already paid», зафиксируем. Право ``invoices.normal.edit_paid``."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    ensure_permission(actor, "invoices.normal.edit_paid")
+    try:
+        res = await mirror_single_paid_iiko_invoice(
+            session, invoice_id, actor_user_id=actor.user_id
+        )
+    except IikoPaymentError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    result = await get_warehouse_invoice(session, invoice_id)
+    assert result is not None
+    # Не удалось (iiko отклонил / сеть) — фронту текст, чтобы предложить ручное подтверждение.
+    if not res.ok:
+        result["iiko_payment_push_error"] = res.error or "Оплата в iiko не прошла — повторите позже"
+    return result
+
+
+@router.post("/invoices/{invoice_id}/confirm-iiko-payment")
+async def post_confirm_iiko_payment(
+    invoice_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    """«Оплата подтверждена вручную»: человек утверждает, что платёж уже проведён в бэк-офисе iiko.
+    Пишем ok-маркер зеркала — гард правки проходит, а сверочный джоб больше не шлёт ``add_payment``
+    (без риска задвоить уже проведённый вручную платёж). Право ``invoices.normal.edit_paid``."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    ensure_permission(actor, "invoices.normal.edit_paid")
+    await mark_iiko_payment_settled_manually(session, invoice, actor_user_id=actor.user_id)
     result = await get_warehouse_invoice(session, invoice_id)
     assert result is not None
     return result

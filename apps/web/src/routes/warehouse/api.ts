@@ -113,6 +113,12 @@ export type WarehouseInvoiceDetail = WarehouseInvoiceSummary & {
   price_anomalies?: PriceAnomaly[];
   price_confirmed_at?: string | null;
   price_confirmed_by?: string | null;
+  // Гард правки оплаченной: отражена ли оплата оригинала в iiko (иначе правку не пускаем —
+  // возврат уйдёт не на ту сумму) и можно ли отправить оплату автоматически (одиночный банк).
+  iiko_payment_settled?: boolean;
+  iiko_payment_auto_sendable?: boolean;
+  // Заполняется ответом send-iiko-payment, если автоотправка не прошла (iiko отклонил / сеть).
+  iiko_payment_push_error?: string | null;
 };
 
 export type LinePayload = {
@@ -221,6 +227,25 @@ export async function adjustPaidInvoice(
 export async function retryIikoReturn(id: string): Promise<WarehouseInvoiceDetail> {
   const response = await api.post<WarehouseInvoiceDetail>(
     `${BASE}/invoices/${id}/retry-iiko-return`,
+  );
+  return response.data;
+}
+
+// Гард правки оплаченной: «Отправить оплату в iiko сейчас» — провести add_payment немедленно
+// (не дожидаясь сверочного джоба). Идемпотентно; «already paid» = успех. Ответ содержит
+// iiko_payment_push_error, если автоотправка не прошла (тогда остаётся ручное подтверждение).
+export async function sendIikoPayment(id: string): Promise<AdjustPaidInvoiceResult> {
+  const response = await api.post<AdjustPaidInvoiceResult>(
+    `${BASE}/invoices/${id}/send-iiko-payment`,
+  );
+  return response.data;
+}
+
+// Гард правки оплаченной: «Оплата подтверждена вручную» — человек утверждает, что платёж уже
+// проведён в бэк-офисе iiko; пишем ok-маркер (джоб больше не шлёт add_payment) и снимаем гард.
+export async function confirmIikoPaymentManual(id: string): Promise<WarehouseInvoiceDetail> {
+  const response = await api.post<WarehouseInvoiceDetail>(
+    `${BASE}/invoices/${id}/confirm-iiko-payment`,
   );
   return response.data;
 }

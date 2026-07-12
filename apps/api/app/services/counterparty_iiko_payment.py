@@ -701,6 +701,152 @@ async def mirror_paid_iiko_invoices(
     return result
 
 
+async def original_payment_settled_in_iiko(
+    session: AsyncSession, invoice: SupplierInvoice
+) -> bool:
+    """Отражена ли оплата ЭТОЙ накладной в iiko (для гарда правки оплаченной).
+
+    Признак «оплата дошла до iiko» = строка зеркала ``IikoInvoicePaymentPush`` по ключу
+    ``invoice:<id>`` со ``status='ok'``. ``ok`` покрывает три реальных факта в iiko: успешный
+    ``add_payment`` (201), идемпотентный ответ «already paid», summary-строку дробления, а также
+    ручное подтверждение (``mark_iiko_payment_settled_manually``). ``pending``/``error``/отсутствие
+    = НЕ дошла (пытались, но факта в iiko нет).
+
+    Гард применяется только к iiko-накладным с ``external_id`` — для прочих источников банковского
+    зеркала ``add_payment`` нет вовсе (наличные/бартер/без external_id), требовать ok там нельзя
+    (иначе вечная блокировка) → возвращаем True (правку не держим)."""
+    if invoice.source != "iiko" or not invoice.external_id:
+        return True
+    row = await session.scalar(
+        select(IikoInvoicePaymentPush.id)
+        .where(
+            IikoInvoicePaymentPush.idempotency_key == f"invoice:{invoice.id}",
+            IikoInvoicePaymentPush.status == "ok",
+        )
+        .limit(1)
+    )
+    return row is not None
+
+
+async def iiko_invoice_payment_auto_sendable(
+    session: AsyncSession, invoice: SupplierInvoice
+) -> bool:
+    """Можно ли отправить оплату в iiko автоматически кнопкой «Отправить оплату в iiko сейчас».
+
+    Зеркало умеет только ОДНОНАКЛАДНЫЙ банк-черновик (у него ``draft.amount`` = честная сумма add_
+    payment). Мультиплатёж/зачёт аванса/наличные/Сейф долю по одной накладной не выводят — там
+    только ручное подтверждение. Уже скорректированную накладную (external_id = новая приходная Y)
+    слать нельзя."""
+    if (
+        invoice.source != "iiko"
+        or not invoice.external_id
+        or invoice.draft_id is None
+        or invoice.iiko_correction_new_external_id is not None
+    ):
+        return False
+    draft = await session.get(CounterpartyPaymentDraft, invoice.draft_id)
+    if draft is None or draft.status != "paid" or draft.pays_via_safe:
+        return False
+    siblings = await session.scalar(
+        select(func.count(SupplierInvoice.id)).where(
+            SupplierInvoice.draft_id == invoice.draft_id
+        )
+    )
+    return siblings == 1
+
+
+async def mirror_single_paid_iiko_invoice(
+    session: AsyncSession,
+    invoice_id: uuid.UUID,
+    *,
+    actor_user_id: uuid.UUID | None = None,
+) -> IikoPushResult:
+    """Отправить оплату ОДНОЙ оплаченной iiko-накладной в iiko сейчас (ручное действие владельца:
+    кнопка «Отправить оплату в iiko сейчас» в гарде правки / панели owner-review). Тот же путь, что
+    у сверочного джоба ``mirror_paid_iiko_invoices``, но по одной накладной и синхронно.
+
+    Бросает :class:`IikoPaymentError` с человекочитаемым текстом, когда авто-отправка невозможна
+    (не iiko / без external_id / не финализирован банк / мультиплатёж / уже скорректирована) — тогда
+    остаётся только «Оплата подтверждена вручную». Идемпотентно (ключ ``invoice:<id>``): «already
+    paid» вернётся как ok, повторный вызов после ok — skipped."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise IikoPaymentError("Накладная не найдена")
+    if invoice.source != "iiko" or not invoice.external_id:
+        raise IikoPaymentError("Накладная не выгружена в iiko — отправлять оплату нечего")
+    if invoice.payment_status not in ("paid", "partially_paid"):
+        raise IikoPaymentError("Накладная ещё не оплачена")
+    if invoice.iiko_correction_new_external_id is not None:
+        raise IikoPaymentError(
+            "Накладная уже скорректирована — оплату новой приходной в iiko слать нельзя"
+        )
+    if invoice.draft_id is None:
+        raise IikoPaymentError(
+            "Оплата прошла не через банк (аванс/наличные) — автоматически отправить в iiko нельзя, "
+            "подтвердите оплату вручную"
+        )
+    draft = await session.get(CounterpartyPaymentDraft, invoice.draft_id)
+    if draft is None or draft.status != "paid" or draft.pays_via_safe:
+        raise IikoPaymentError(
+            "Банковский платёж ещё не финализирован — автоматически отправить в iiko нельзя"
+        )
+    siblings = await session.scalar(
+        select(func.count(SupplierInvoice.id)).where(
+            SupplierInvoice.draft_id == invoice.draft_id
+        )
+    )
+    if siblings != 1:
+        raise IikoPaymentError(
+            "Платёж закрывает несколько накладных — долю по одной автоматически отправить нельзя, "
+            "подтвердите оплату вручную"
+        )
+    return await push_invoice_payment_to_iiko(
+        session,
+        external_id=invoice.external_id,
+        amount=draft.amount,
+        account_id=IIKO_ACQUIRING_ACCOUNT,
+        idempotency_key=f"invoice:{invoice_id}",
+        invoice_id=invoice_id,
+        actor_user_id=actor_user_id,
+    )
+
+
+async def mark_iiko_payment_settled_manually(
+    session: AsyncSession,
+    invoice: SupplierInvoice,
+    *,
+    actor_user_id: uuid.UUID | None = None,
+) -> None:
+    """Пометить оплату накладной «подтверждена вручную в iiko»: человек утверждает, что платёж уже
+    проведён в бэк-офисе iiko (гибридный контур — бухгалтер иногда платит там руками).
+
+    Пишем ok-строку зеркала по ключу ``invoice:<id>`` → гард правки оплаченной проходит, а сверочный
+    джоб больше НЕ пытается ``add_payment`` (иначе задвоил бы платёж, который уже провели вручную).
+    Фиксируем, кто и когда подтвердил, для аудита."""
+    key = f"invoice:{invoice.id}"
+    record = await session.scalar(
+        select(IikoInvoicePaymentPush).where(IikoInvoicePaymentPush.idempotency_key == key)
+    )
+    if record is None:
+        record = IikoInvoicePaymentPush(idempotency_key=key)
+        session.add(record)
+    record.invoice_id = invoice.id
+    record.external_id = invoice.external_id or "-"
+    record.amount = Decimal(str(invoice.amount or 0))
+    record.account_to = "manual"
+    record.status = "ok"
+    record.attempts = 0
+    record.iiko_document_id = None
+    record.error = "Оплата подтверждена вручную в iiko"
+    record.request_payload = {"manual_confirmation": True}
+    record.response_payload = {
+        "manual_confirmation": True,
+        "by": str(actor_user_id) if actor_user_id else None,
+    }
+    record.created_by_user_id = actor_user_id
+    await session.commit()
+
+
 # Счёт-источник денег iiko по источнику оплаты доли (зеркало Кассы): карта/банк/pending →
 # эквайринг, наличные → Главная касса. Оба счёта подтверждены реальными 1₽-проводками (201).
 KASSA_MIRROR_ACCOUNT = {

@@ -675,6 +675,20 @@ async def adjust_paid_invoice(
         if draft is None or draft.status != "paid" or draft.pays_via_safe:
             raise WarehouseInvoiceError("Накладная отправлена в банк — сначала отзовите платёж")
 
+    # Гард: не запускать коррекцию, пока оплата ОРИГИНАЛА не отражена в iiko. Иначе book_correction
+    # перецепит external_id X→Y и затумбстонит X НАВСЕГДА — оплата X в iiko не появится, а возврат
+    # уйдёт не на ту сумму (корень перекоса АЛЬЯНС ЮГ / DX001323A). Разблокировать можно кнопками
+    # «Отправить в iiko сейчас» / «Подтверждено вручную» (в UI). Для не-iiko/без external_id гард
+    # прозрачен (там банковского зеркала нет). См. project_iiko_supplier_balance_audit.
+    from app.services.counterparty_iiko_payment import original_payment_settled_in_iiko
+
+    if not await original_payment_settled_in_iiko(session, invoice):
+        raise WarehouseInvoiceError(
+            "Оплата этой накладной ещё не отражена в iiko. Пока оплата оригинала не проведена в "
+            "iiko, исправлять нельзя — возврат уйдёт не на ту сумму. Отправьте оплату в iiko "
+            "или подтвердите её вручную."
+        )
+
     product_ids = [line.iiko_product_id for line in lines if line.iiko_product_id]
     products: dict[uuid.UUID, IikoProduct] = {}
     if product_ids:
@@ -843,6 +857,18 @@ async def get_warehouse_invoice(
         summary["price_confirmed_by"] = None
     # Аномалии по (product_guid, unit) → аннотация конкретных строк (подсветка цены в UI).
     anomaly_by_key = {(a.get("product_guid"), a.get("unit")): a for a in anomalies}
+
+    # Гард правки оплаченной: отражена ли оплата оригинала в iiko (иначе правку не пускаем — возврат
+    # уйдёт не на ту сумму) и можно ли отправить оплату в iiko автоматически (однонакладный банк).
+    from app.services.counterparty_iiko_payment import (
+        iiko_invoice_payment_auto_sendable,
+        original_payment_settled_in_iiko,
+    )
+
+    summary["iiko_payment_settled"] = await original_payment_settled_in_iiko(session, invoice)
+    summary["iiko_payment_auto_sendable"] = await iiko_invoice_payment_auto_sendable(
+        session, invoice
+    )
 
     # Единая логика «товар vs расход» по статье ДДС (а не по is_staff): чеки кладут статью
     # «питание персонала» в строку, оставляя is_staff=false — нельзя считать такие строки

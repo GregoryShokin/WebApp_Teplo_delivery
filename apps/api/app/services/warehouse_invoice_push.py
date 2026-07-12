@@ -511,6 +511,21 @@ async def book_correction_in_iiko(
     return_doc = invoice.iiko_return_external_id
     new_doc = invoice.iiko_correction_new_external_id
 
+    # Защита второго входа (retry-iiko-return): пока external_id ещё = X (шаг 2 не сделан) и оплата
+    # оригинала НЕ отражена в iiko — разворот не запускаем (возврат уйдёт не на ту сумму). Основной
+    # гард стоит в adjust_paid_invoice; здесь дублируем на случай прямого ретрая. См. edit_paid.
+    if new_doc is None:
+        from app.services.counterparty_iiko_payment import original_payment_settled_in_iiko
+
+        if not await original_payment_settled_in_iiko(session, invoice):
+            invoice.iiko_return_status = "failed"
+            invoice.iiko_return_error = (
+                "Оплата оригинала ещё не отражена в iiko — сначала отправьте оплату в iiko или "
+                "подтвердите вручную, затем повторите коррекцию"
+            )
+            await session.commit()
+            return invoice
+
     if not original_external_id and not new_doc:
         invoice.iiko_return_status = "skipped"
         invoice.iiko_return_error = "Накладная не выгружена в iiko — коррекцию отражать негде"

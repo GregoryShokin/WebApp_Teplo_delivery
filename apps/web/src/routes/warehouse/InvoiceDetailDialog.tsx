@@ -31,11 +31,13 @@ import { formatRub } from "@/routes/counterparties/shared";
 import { InvoiceEditDialog } from "./InvoiceEditDialog";
 import { PayWarehouseInvoiceDialog } from "./PayWarehouseInvoiceDialog";
 import {
+  confirmIikoPaymentManual,
   confirmInvoicePrices,
   deleteWarehouseInvoice,
   getWarehouseInvoice,
   pushInvoiceToIiko,
   retryIikoReturn,
+  sendIikoPayment,
   type WarehouseInvoiceDetail,
 } from "./api";
 
@@ -92,6 +94,7 @@ export function InvoiceDetailDialog({
   const canConfirmPrice = permissions.hasPermission("invoices.confirm_price");
   const [editing, setEditing] = useState(false);
   const [adjustingPaid, setAdjustingPaid] = useState(false);
+  const [iikoGateOpen, setIikoGateOpen] = useState(false);
   const [paying, setPaying] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const open = Boolean(invoiceId);
@@ -136,6 +139,41 @@ export function InvoiceDetailDialog({
       toast.success("Цены подтверждены — оплата разблокирована");
     },
     onError: (e) => toast.error(apiErrorMessage(e, "Не удалось подтвердить цены")),
+  });
+
+  // Гард правки оплаченной: провести оплату оригинала в iiko сейчас (add_payment). Успех
+  // (в т.ч. «already paid») → снять гейт и открыть форму правки; иначе — предложить ручное.
+  const sendIikoPaymentMutation = useMutation({
+    mutationFn: () => sendIikoPayment(invoiceId!),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["wh", "invoice", invoiceId], updated);
+      void queryClient.invalidateQueries({ queryKey: ["wh"] });
+      void queryClient.invalidateQueries({ queryKey: ["cp"] });
+      if (updated.iiko_payment_settled) {
+        toast.success("Оплата отправлена в iiko");
+        setIikoGateOpen(false);
+        setAdjustingPaid(true);
+      } else {
+        toast.error(
+          updated.iiko_payment_push_error ?? "iiko не принял оплату — подтвердите вручную",
+        );
+      }
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, "Не удалось отправить оплату в iiko")),
+  });
+
+  // Гард правки оплаченной: пометить, что оплата уже проведена в iiko вручную (снять гейт).
+  const confirmIikoManualMutation = useMutation({
+    mutationFn: () => confirmIikoPaymentManual(invoiceId!),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["wh", "invoice", invoiceId], updated);
+      void queryClient.invalidateQueries({ queryKey: ["wh"] });
+      void queryClient.invalidateQueries({ queryKey: ["cp"] });
+      toast.success("Отмечено: оплата подтверждена в iiko");
+      setIikoGateOpen(false);
+      setAdjustingPaid(true);
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, "Не удалось отметить оплату")),
   });
 
   const deleteMutation = useMutation({
@@ -205,6 +243,48 @@ export function InvoiceDetailDialog({
             >
               {deleteMutation.isPending ? "Удаляем…" : "Удалить"}
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {/* Гард правки оплаченной: пока оплата оригинала не отражена в iiko — правку не запускаем,
+          предлагаем провести оплату сейчас или подтвердить её вручную. */}
+      <AlertDialog open={iikoGateOpen} onOpenChange={setIikoGateOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Сначала проведите оплату в iiko</AlertDialogTitle>
+            <AlertDialogDescription>
+              Оплата этой накладной ещё не отражена в iiko. Если исправить её сейчас, возврат в
+              iiko уйдёт не на ту сумму и баланс поставщика перекосится. Отправьте оплату в iiko —
+              или подтвердите, что она уже проведена вручную в бэк-офисе iiko.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-row">
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            {detail?.iiko_payment_auto_sendable ? (
+              <Button
+                variant="outline"
+                disabled={
+                  sendIikoPaymentMutation.isPending || confirmIikoManualMutation.isPending
+                }
+                onClick={() => sendIikoPaymentMutation.mutate()}
+              >
+                {sendIikoPaymentMutation.isPending ? (
+                  <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
+                ) : (
+                  <Send size={14} aria-hidden="true" />
+                )}
+                Отправить оплату в iiko сейчас
+              </Button>
+            ) : null}
+            <Button
+              disabled={sendIikoPaymentMutation.isPending || confirmIikoManualMutation.isPending}
+              onClick={() => confirmIikoManualMutation.mutate()}
+            >
+              {confirmIikoManualMutation.isPending ? (
+                <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
+              ) : null}
+              Оплата подтверждена вручную
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -357,7 +437,19 @@ export function InvoiceDetailDialog({
                   size="sm"
                   variant="outline"
                   className="ml-auto border-amber-300 text-amber-800 hover:bg-amber-100"
-                  onClick={() => setAdjustingPaid(true)}
+                  onClick={() => {
+                    // Гард: iiko-накладную нельзя корректировать, пока её оплата не отражена в
+                    // iiko (иначе возврат уйдёт не на ту сумму) — сначала блокирующий диалог.
+                    if (
+                      detail.source === "iiko" &&
+                      detail.external_id &&
+                      !detail.iiko_payment_settled
+                    ) {
+                      setIikoGateOpen(true);
+                    } else {
+                      setAdjustingPaid(true);
+                    }
+                  }}
                 >
                   <Pencil size={14} aria-hidden="true" /> Исправить оплаченную
                 </Button>
