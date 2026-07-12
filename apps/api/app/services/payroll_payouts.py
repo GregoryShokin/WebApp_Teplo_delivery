@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -19,6 +20,7 @@ from app.models import (
     DdsArticle,
     PayrollBankDraft,
     PayrollLine,
+    PayrollPayment,
     PayrollPeriod,
     PayrollRun,
     PayrollRunEvent,
@@ -294,10 +296,39 @@ async def apply_payroll_draft_status(
     return draft.status
 
 
+def _distribute_amount(amount: Decimal, lines: list[PayrollLine]) -> list[tuple[str, Decimal]]:
+    """Разнести сумму по строкам сотрудника пропорционально ``total_payable``.
+
+    Остаток от округления отдаётся последней строке. Для однострочного (обычного) сотрудника —
+    вся сумма на его единственную роль. Нужно для частичной выплаты двуролевого сотрудника.
+    """
+    if not lines:
+        return []
+    if len(lines) == 1:
+        return [(lines[0].role, amount)]
+    total = sum((_money(line.total_payable) for line in lines), Decimal("0"))
+    if total <= 0:
+        return [(lines[0].role, amount)]
+    result: list[tuple[str, Decimal]] = []
+    allocated = Decimal("0")
+    last = len(lines) - 1
+    for idx, line in enumerate(lines):
+        if idx == last:
+            share = amount - allocated
+        else:
+            share = (_money(line.total_payable) / total * amount).quantize(Decimal("0.01"))
+            allocated += share
+        if share > 0:
+            result.append((line.role, share))
+    return result
+
+
 async def book_payout_expense_for_employees(
     session: AsyncSession,
     run: PayrollRun,
     employee_ids: list[uuid.UUID],
+    *,
+    amount_by_employee: dict[uuid.UUID, Decimal] | None = None,
 ) -> PayoutExpenseResult:
     """Шаг 3: расход ЗП + выдача депозита по статьям для выплаченных сотрудников («Выплатить»).
 
@@ -314,6 +345,12 @@ async def book_payout_expense_for_employees(
     Возвращает ``PayoutExpenseResult`` с наличной частью выдачи депозита с ТК Черникова —
     для iiko-изъятия «Выдача депозита» (после commit). Когда выдач депозита нет, корзина
     не создаётся и поведение совпадает с прежним (только ЗП).
+
+    ``amount_by_employee`` — целевая ВЫПЛАЧЕННАЯ сумма по сотруднику (бегущий итог для
+    частичной выплаты). Книжится только дельта ``target − booked_amount`` (инкрементально, без
+    задвоения при partial→bulk). Когда не задан — полная выплата по ``total_payable`` (прежнее
+    поведение). В режиме частичной выплаты корзина «Выдача депозита» не заводится — депозит
+    идёт полным путём «Выплатить».
     """
     empty = PayoutExpenseResult(booked=False, deposit_iiko_amount=Decimal("0"))
     if not _uses_safe_payout(run) or not employee_ids:
@@ -326,19 +363,48 @@ async def book_payout_expense_for_employees(
             )
         )
     ).all()
+    lines_by_employee: dict[uuid.UUID, list[PayrollLine]] = defaultdict(list)
+    for line in lines:
+        lines_by_employee[line.employee_id].append(line)
+    payments = {
+        payment.employee_id: payment
+        for payment in (
+            await session.scalars(
+                select(PayrollPayment).where(
+                    PayrollPayment.run_id == run.id,
+                    PayrollPayment.employee_id.in_(employee_ids),
+                )
+            )
+        ).all()
+    }
     default_article = (
         DDS_ARTICLE_ADMIN_PAYROLL if _is_admin_run(run) else DDS_ARTICLE_PRODUCTION_PAYROLL
     )
-    buckets = build_payout_buckets(
-        [(line.role, _money(line.total_payable)) for line in lines],
-        default_article_code=default_article,
-    )
+    # Книжим только НЕ забронированную часть по каждому сотруднику (delta = target − booked).
+    row_amounts: list[tuple[str, Decimal]] = []
+    booked_targets: dict[uuid.UUID, Decimal] = {}
+    for employee_id, employee_lines in lines_by_employee.items():
+        accrued = sum((_money(line.total_payable) for line in employee_lines), Decimal("0"))
+        if amount_by_employee is not None and employee_id in amount_by_employee:
+            target = min(_money(amount_by_employee[employee_id]), accrued)
+        else:
+            target = accrued
+        payment = payments.get(employee_id)
+        already_booked = _money(payment.booked_amount) if payment is not None else Decimal("0")
+        delta = target - already_booked
+        if delta <= 0:
+            continue
+        row_amounts.extend(_distribute_amount(delta, employee_lines))
+        booked_targets[employee_id] = target
+    buckets = build_payout_buckets(row_amounts, default_article_code=default_article)
     # Выдача депозита — отдельной корзиной В КОНЦЕ (наличные гасят сначала ЗП, потом выдачу).
-    deposit_total = sum(
-        (_money(getattr(line, "deposit_payout_scheduled", 0)) for line in lines), Decimal("0")
-    )
-    if deposit_total > 0:
-        buckets = [*buckets, PayoutBucket(DDS_ARTICLE_DEPOSIT_PAYOUT, deposit_total)]
+    # Только при полной выплате: в режиме частичной выплаты депозит не трогаем.
+    if amount_by_employee is None:
+        deposit_total = sum(
+            (_money(getattr(line, "deposit_payout_scheduled", 0)) for line in lines), Decimal("0")
+        )
+        if deposit_total > 0:
+            buckets = [*buckets, PayoutBucket(DDS_ARTICLE_DEPOSIT_PAYOUT, deposit_total)]
     if not buckets:
         return empty
     safe_wallet = await session.scalar(
@@ -417,6 +483,11 @@ async def book_payout_expense_for_employees(
             ):
                 deposit_iiko_amount += alloc.cash
     await session.flush()
+    # Отмечаем забронированную сумму по каждому проведённому сотруднику (защита от задвоения).
+    for employee_id, target in booked_targets.items():
+        payment = payments.get(employee_id)
+        if payment is not None:
+            payment.booked_amount = target
     return PayoutExpenseResult(
         booked=True, deposit_iiko_amount=_money(deposit_iiko_amount)
     )

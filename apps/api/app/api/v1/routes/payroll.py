@@ -30,19 +30,19 @@ from app.schemas.inventory import PayoutOptionRead
 from app.schemas.payroll import (
     AdvanceRecoveryDeferralRequest,
     CashWalletRead,
+    DeferredChargeCreate,
+    DeferredChargeRead,
     EmployeePayoutConfirmRequest,
     EmployeePayoutCreate,
     EmployeePayoutRead,
     EmployeeRecoveryDetailRead,
-    RecoveryOverridesRequest,
-    DeferredChargeCreate,
-    DeferredChargeRead,
     PayrollAggregateRead,
     PayrollAuditEventRead,
     PayrollBankDraftRead,
     PayrollLineDepositOverridePatch,
     PayrollLineRead,
     PayrollPaymentMarkRequest,
+    PayrollPaymentPartialRequest,
     PayrollPaymentsBulkMarkRequest,
     PayrollPaymentsMarkAllRequest,
     PayrollPaymentsMarkAllResponse,
@@ -56,6 +56,7 @@ from app.schemas.payroll import (
     PayrollRunPayoutCashPatch,
     PayrollRunRead,
     PayrollRunUnfinalize,
+    RecoveryOverridesRequest,
 )
 from app.schemas.payroll_config import PayrollRoleCategoryOptionRead
 from app.services.banking import BankCredentialsError, BankFetchError
@@ -67,13 +68,13 @@ from app.services.deferred_audit_charge_service import (
     create_deferred_charge,
     list_deferred_charges,
 )
-from app.services.inventory_audit_service import list_open_production_payouts
 from app.services.employee_payouts import (
     BANK_PAYOUT_WALLET_TYPES,
     confirm_employee_payout_by_operation,
     create_bank_employee_payout,
     create_cash_employee_payout,
 )
+from app.services.inventory_audit_service import list_open_production_payouts
 from app.services.payroll_admin import compute_on_demand_debt, run_admin_payroll
 from app.services.payroll_advance_service import (
     get_employee_recovery_detail,
@@ -84,6 +85,7 @@ from app.services.payroll_aggregate_service import build_aggregate
 from app.services.payroll_config import list_enabled_role_categories
 from app.services.payroll_payments import (
     mark_all_payments,
+    mark_partial_payment,
     mark_payment,
     mark_payments_selected,
     unmark_payment,
@@ -1002,6 +1004,34 @@ async def post_bulk_mark_payments(
     return PayrollPaymentsMarkAllResponse(marked_count=marked_count)
 
 
+@router.post(
+    "/runs/{run_id}/payments/partial",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=PAYROLL_RUNS_MARK_PAID_ACCESS,
+)
+async def post_mark_partial_payment(
+    run_id: uuid.UUID,
+    payload: PayrollPaymentPartialRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    try:
+        await mark_partial_payment(
+            session,
+            run_id,
+            payload.employee_id,
+            amount=payload.amount,
+            paid_at=payload.paid_at,
+            method=payload.method,
+            comment=payload.comment,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
 async def get_deposit_payouts_by_employee(
     session: AsyncSession,
     run_id: uuid.UUID,
@@ -1062,6 +1092,8 @@ def serialize_payroll_line(
         line.ndfl_withheld = Decimal("0")
     payment = (payments_by_employee or {}).get(line.employee_id)
     is_paid = payment is not None and payment.status == "paid"
+    is_partial = payment is not None and payment.status == "partially_paid"
+    has_payment = is_paid or is_partial
     is_on_demand = line_is_on_demand(line)
     debt = (on_demand_debt_by_employee or {}).get(line.employee_id) if is_on_demand else None
     return PayrollLineRead.model_validate(line).model_copy(
@@ -1070,15 +1102,18 @@ def serialize_payroll_line(
             "deposit_payout": payouts_by_employee.get(line.employee_id, 0),
             "advance_issued": money_float(components.get("advance_issued", 0)),
             "ndfl_deduction": money_float(getattr(line, "ndfl_withheld", 0)),
-            "payment_status": "paid" if is_paid else "pending",
+            "payment_status": (
+                "paid" if is_paid else ("partially_paid" if is_partial else "pending")
+            ),
             "amount_cash": money_float(payment.amount_cash) if payment is not None else 0,
             "amount_account": money_float(payment.amount_account) if payment is not None else 0,
             "payout_status": payment.status if payment is not None else "pending",
             "draft_status": payment.draft_status if payment is not None else None,
             "overpaid_amount": money_float(payment.overpaid_amount) if payment is not None else 0,
-            "paid_amount": money_float(payment.amount) if is_paid else None,
-            "paid_at": payment.paid_at if is_paid else None,
-            "paid_method": payment.method if is_paid else None,
+            "paid_amount": money_float(payment.amount) if has_payment else None,
+            "paid_at": payment.paid_at if has_payment else None,
+            "paid_method": payment.method if has_payment else None,
+            "payment_comment": payment.comment if is_partial else None,
             "on_demand": is_on_demand,
             "on_demand_accrued": money_float(debt["accrued"]) if debt is not None else 0,
             "on_demand_paid": money_float(debt["paid"]) if debt is not None else 0,

@@ -1,0 +1,69 @@
+# Изолированный стек агента partial-payroll (слот partial): свой проект/порты/БД.
+# Не пересекается с default (5432/8000/5173), agent-payments (5472/8040/7153).
+# Web-превью на 7163, api 8050, pg 5482.
+#
+# Запуск (из apps/ в этом worktree):
+#   docker compose -p teplo-partial -f docker-compose.agent-partial.yml up -d postgres
+#   docker compose -p teplo-partial -f docker-compose.agent-partial.yml up -d        # + api/web
+#   docker exec -w /app/apps/api teplo-api-partial alembic upgrade head
+services:
+  postgres:
+    image: postgres:16
+    container_name: teplo-postgres-partial
+    environment:
+      POSTGRES_DB: teplo
+      POSTGRES_USER: teplo
+      POSTGRES_PASSWORD: teplo
+    ports:
+      - "5482:5432"
+    volumes:
+      - teplo_pgdata_partial:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teplo -d teplo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    container_name: teplo-api-partial
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
+      TEPLO_TEST_DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo_test_partial
+      TEPLO_ADMIN_EMAIL: admin1@teplo.local
+      TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
+      TEPLO_BANK_CLIENT_MODE: mock
+      JWT_SECRET_KEY: change-me-in-local-env-change-me
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 90
+      BACKEND_CORS_ORIGINS: '["http://localhost:7163","http://127.0.0.1:7163"]'
+    ports:
+      - "8050:8000"
+    volumes:
+      - ./api:/app/apps/api
+      - ../integrations:/app/integrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    container_name: teplo-web-partial
+    environment:
+      VITE_API_BASE_URL: http://localhost:8050
+    ports:
+      - "7163:5173"
+    volumes:
+      - ./web:/app/apps/web
+      - /app/apps/web/node_modules
+    depends_on:
+      - api
+
+volumes:
+  teplo_pgdata_partial:

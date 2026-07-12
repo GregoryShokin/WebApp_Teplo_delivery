@@ -273,7 +273,11 @@ class PayrollPayment(Base):
             name="ck_payroll_payment_overpaid_amount_non_negative",
         ),
         CheckConstraint(
-            "status in ('planned', 'draft_created', 'paid')",
+            "booked_amount >= 0",
+            name="ck_payroll_payment_booked_amount_non_negative",
+        ),
+        CheckConstraint(
+            "status in ('planned', 'draft_created', 'paid', 'partially_paid')",
             name="ck_payroll_payment_status",
         ),
         CheckConstraint(
@@ -307,6 +311,13 @@ class PayrollPayment(Base):
     overpaid_amount: Mapped[Decimal] = mapped_column(
         Numeric(14, 2), nullable=False, default=0, server_default="0"
     )
+    # Сколько по этому сотруднику уже списано в ДДС (Сейф-модель). Доплата/bulk книжат
+    # только дельту amount − booked_amount → нет задвоения при partial→bulk и наоборот.
+    booked_amount: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
+    # Необязательная причина недоплаты (нехватка налички / спор / удержание).
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     paid_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     paid_by_user_id: Mapped[uuid.UUID | None] = mapped_column(

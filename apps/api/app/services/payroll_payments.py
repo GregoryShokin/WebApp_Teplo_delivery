@@ -84,7 +84,7 @@ async def unmark_payment(
             PayrollPayment.employee_id == employee_id,
         )
     )
-    if payment is None or payment.status != "paid":
+    if payment is None or payment.status not in ("paid", "partially_paid"):
         raise PayrollNotFoundError("Payroll payment not found")
 
     await session.execute(delete(PayrollPayment).where(PayrollPayment.id == payment.id))
@@ -235,6 +235,96 @@ async def mark_payments_selected(
     await session.commit()
     _post_deposit_payout_iiko(payout_result, run, paid_at)
     return len(rows)
+
+
+async def mark_partial_payment(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    employee_id: uuid.UUID,
+    *,
+    amount: Decimal | None,
+    paid_at: date,
+    method: str | None = None,
+    comment: str | None = None,
+    actor_user_id: uuid.UUID | None,
+) -> PayrollPayment:
+    """Выплатить сотруднику ЧАСТЬ начисленного (или доплатить остаток) — снятие атомарности.
+
+    ``amount`` — сумма транша (None = весь остаток). ``PayrollPayment.amount`` — бегущий итог
+    выплаченного, статус ``paid`` (закрыт) / ``partially_paid`` (остаток > 0). Транш книжится в
+    ДДС инкрементально (Сейф-модель, ``book_payout_expense_for_employees`` по дельте).
+    """
+    run = await _get_payment_run(session, run_id)
+    if method is not None:
+        _validate_method(method)
+    accrued = await _employee_payable_amount(session, run_id, employee_id)
+    payment = await session.scalar(
+        select(PayrollPayment).where(
+            PayrollPayment.run_id == run_id,
+            PayrollPayment.employee_id == employee_id,
+        )
+    )
+    already = Decimal(payment.amount) if payment is not None else Decimal("0")
+    remaining = accrued - already
+    if remaining <= 0:
+        raise PayrollConflictError("Сотруднику уже выплачена вся сумма")
+    tranche = (remaining if amount is None else Decimal(amount)).quantize(Decimal("0.01"))
+    if tranche <= 0:
+        raise PayrollConflictError("Сумма выплаты должна быть больше нуля")
+    if tranche > remaining:
+        raise PayrollConflictError("Сумма превышает остаток к выплате")
+    new_total = already + tranche
+    status = "paid" if new_total >= accrued else "partially_paid"
+    if payment is None:
+        payment = PayrollPayment(
+            id=uuid.uuid4(),
+            run_id=run_id,
+            employee_id=employee_id,
+            amount=new_total,
+            booked_amount=Decimal("0"),
+            paid_at=paid_at,
+            method=method,
+            comment=comment,
+            paid_by_user_id=actor_user_id,
+            status=status,
+            **_initial_split_for_method(new_total, method),
+        )
+        session.add(payment)
+    else:
+        payment.amount = new_total
+        _reconcile_split_for_paid(payment, new_total, method)
+        payment.paid_at = paid_at
+        payment.method = method
+        if comment is not None:
+            payment.comment = comment
+        payment.paid_by_user_id = actor_user_id
+        payment.status = status
+    await session.flush()
+
+    from app.services.payroll_payouts import book_payout_expense_for_employees
+
+    payout_result = await book_payout_expense_for_employees(
+        session, run, [employee_id], amount_by_employee={employee_id: new_total}
+    )
+    _add_payment_event(
+        session,
+        run=run,
+        action="payment_marked",
+        actor_user_id=actor_user_id,
+        payload={
+            "employee_id": str(employee_id),
+            "amount": money_text(tranche),
+            "amount_total": money_text(new_total),
+            "accrued": money_text(accrued),
+            "partial": status == "partially_paid",
+            "method": method,
+            "paid_at": paid_at.isoformat(),
+        },
+    )
+    await session.commit()
+    await session.refresh(payment)
+    _post_deposit_payout_iiko(payout_result, run, paid_at)
+    return payment
 
 
 def _post_deposit_payout_iiko(payout_result: Any, run: PayrollRun, paid_at: date) -> None:

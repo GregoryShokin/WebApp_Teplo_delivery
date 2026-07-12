@@ -90,6 +90,21 @@ class PayrollPaymentMarkRequest(BaseModel):
     method: str
 
 
+class PayrollPaymentPartialRequest(BaseModel):
+    """Частичная выплата (или доплата остатка) одному сотруднику.
+
+    ``amount`` — сумма транша; ``None`` = выплатить весь остаток. ``comment`` — причина недоплаты.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    employee_id: uuid.UUID
+    amount: Decimal | None = Field(default=None, gt=0)
+    paid_at: date
+    method: str | None = None
+    comment: str | None = None
+
+
 class PayrollPaymentsMarkAllRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -234,6 +249,8 @@ class PayrollLineRead(BaseModel):
     paid_amount: float | None = None
     paid_at: date | None = None
     paid_method: str | None = None
+    # Причина недоплаты (для строк со статусом partially_paid).
+    payment_comment: str | None = None
     # Режим оклада «по востребованию» (ЗП собственника): начисляется в долг, не выплачивается
     # автоматически. debt = accrued − paid (накопительно по всем периодам).
     on_demand: bool = False

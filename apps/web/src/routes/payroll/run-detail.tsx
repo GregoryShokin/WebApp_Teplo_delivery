@@ -30,6 +30,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { navigateTo } from "@/router";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -65,6 +73,7 @@ import {
   getRunPayoutAllocation,
   getRunPayoutDelta,
   getSettings,
+  markPartialPayrollPayment,
   patchPayrollLineDepositOverride,
   setRunPayoutCash,
   unmarkPayrollPayment,
@@ -1718,15 +1727,26 @@ function PaymentCell({
 }) {
   const queryClient = useQueryClient();
   const isPaid = line.payment_status === "paid";
+  const isPartial = line.payment_status === "partially_paid";
+  const accrued = line.total_payable;
+  const paid = line.paid_amount ?? 0;
+  const remaining = Math.max(0, Math.round((accrued - paid) * 100) / 100);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [amountInput, setAmountInput] = useState("");
+  const [comment, setComment] = useState("");
+
+  const invalidate = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["payroll-run", line.run_id] }),
+      queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", line.run_id] }),
+      queryClient.invalidateQueries({ queryKey: ["run-bank-draft", line.run_id] }),
+      queryClient.invalidateQueries({ queryKey: ["run-payout-delta", line.run_id] }),
+    ]);
+
   const unmarkMutation = useMutation({
     mutationFn: () => unmarkPayrollPayment(line.run_id, line.employee_id),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["payroll-run", line.run_id] }),
-        queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", line.run_id] }),
-        queryClient.invalidateQueries({ queryKey: ["run-bank-draft", line.run_id] }),
-        queryClient.invalidateQueries({ queryKey: ["run-payout-delta", line.run_id] }),
-      ]);
+      await invalidate();
       toast.success("Отметка выплаты отменена");
     },
     onError: (error) => {
@@ -1734,24 +1754,94 @@ function PaymentCell({
     },
   });
 
+  const partialMutation = useMutation({
+    mutationFn: (payload: { amount: number | null; comment: string | null }) =>
+      markPartialPayrollPayment(line.run_id, {
+        employee_id: line.employee_id,
+        amount: payload.amount,
+        paid_at: todayDateInputValue(),
+        comment: payload.comment,
+      }),
+    onSuccess: async () => {
+      await invalidate();
+      setDialogOpen(false);
+      setAmountInput("");
+      setComment("");
+      toast.success("Выплата отмечена");
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось отметить выплату"));
+    },
+  });
+
+  function openDialog() {
+    setAmountInput(remaining > 0 ? String(remaining) : "");
+    setComment("");
+    setDialogOpen(true);
+  }
+
+  function submitPartial() {
+    const raw = amountInput.trim().replace(",", ".");
+    const parsed = raw === "" ? null : Number(raw);
+    if (parsed !== null && (!Number.isFinite(parsed) || parsed <= 0)) {
+      toast.error("Введите сумму больше нуля");
+      return;
+    }
+    if (parsed !== null && parsed > remaining + 0.001) {
+      toast.error(`Сумма превышает остаток ${formatMoney(remaining)}`);
+      return;
+    }
+    partialMutation.mutate({
+      amount: parsed,
+      comment: comment.trim() ? comment.trim() : null,
+    });
+  }
+
   return (
     <div className="flex min-w-[190px] flex-col items-start gap-2">
       {isPaid ? (
         <Badge className="rounded-md border-emerald-200 bg-emerald-50 text-emerald-800 shadow-none">
           Выплачено {line.paid_at ? formatDate(line.paid_at) : ""}
         </Badge>
+      ) : isPartial ? (
+        <Badge className="rounded-md border-amber-200 bg-amber-50 text-amber-800 shadow-none">
+          Выплачено частично
+        </Badge>
       ) : (
         <Badge className="rounded-md border-border bg-muted text-muted-foreground shadow-none">
           Ожидает
         </Badge>
       )}
+      {isPartial ? (
+        <span className="text-xs text-amber-700">
+          {formatMoney(paid)} из {formatMoney(accrued)} · остаток {formatMoney(remaining)}
+        </span>
+      ) : null}
       {isPaid && line.paid_method ? (
         <span className="text-xs text-muted-foreground">
           {paymentMethodLabel(line.paid_method)}
           {line.paid_amount !== null ? ` · ${formatMoney(line.paid_amount)}` : ""}
         </span>
       ) : null}
-      {canManagePayments && isPaid ? (
+      {isPartial && line.payment_comment ? (
+        <span className="text-xs text-muted-foreground">{line.payment_comment}</span>
+      ) : null}
+      {canManagePayments && !isPaid ? (
+        <Button
+          className={isPartial ? "bg-amber-500 text-white hover:bg-amber-600" : undefined}
+          onClick={(event) => {
+            event.stopPropagation();
+            openDialog();
+          }}
+          size="sm"
+          type="button"
+          variant={isPartial ? "default" : "outline"}
+        >
+          <Banknote size={15} aria-hidden="true" />
+          {isPartial ? "Доплатить" : "Выплатить частично"}
+        </Button>
+      ) : null}
+      {canManagePayments && (isPaid || isPartial) ? (
         <Button
           disabled={unmarkMutation.isPending}
           onClick={(event) => {
@@ -1770,6 +1860,55 @@ function PaymentCell({
           Отменить отметку
         </Button>
       ) : null}
+
+      <Dialog onOpenChange={setDialogOpen} open={dialogOpen}>
+        <DialogContent onClick={(event) => event.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle>{isPartial ? "Доплатить остаток" : "Частичная выплата"}</DialogTitle>
+            <DialogDescription>
+              Начислено {formatMoney(accrued)} · выплачено {formatMoney(paid)} · остаток{" "}
+              {formatMoney(remaining)}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="partial-amount">Сумма к выплате</Label>
+              <Input
+                autoFocus
+                id="partial-amount"
+                inputMode="decimal"
+                onChange={(event) => setAmountInput(event.target.value)}
+                placeholder={String(remaining)}
+                value={amountInput}
+              />
+              <p className="text-xs text-muted-foreground">
+                Пусто = выплатить весь остаток {formatMoney(remaining)}.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="partial-comment">Причина недоплаты (необязательно)</Label>
+              <Textarea
+                id="partial-comment"
+                onChange={(event) => setComment(event.target.value)}
+                placeholder="Нехватка налички, спор, удержание…"
+                rows={2}
+                value={comment}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setDialogOpen(false)} type="button" variant="outline">
+              Отмена
+            </Button>
+            <Button disabled={partialMutation.isPending} onClick={submitPartial} type="button">
+              {partialMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+              ) : null}
+              {isPartial ? "Доплатить" : "Выплатить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

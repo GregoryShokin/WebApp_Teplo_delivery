@@ -529,11 +529,18 @@ export type PayrollAttendanceWarning = {
   notes: string | null;
 };
 
+export type PayrollPaymentState = "unpaid" | "in_progress" | "partial" | "paid";
+
 export type PayrollRunSummary = Record<string, unknown> & {
   attendance_warnings?: PayrollAttendanceWarning[];
   attendance_warning_count?: number;
   revenue_total?: number;
   employee_count?: number;
+  // Агрегаты выплаты (для подсветки недоплаченной ведомости в списке).
+  payment_state?: PayrollPaymentState;
+  paid_total?: number;
+  remaining_shortfall?: number;
+  underpaid_count?: number;
 };
 
 export type PayrollPaymentMethod = "business_card" | "cash" | "transfer" | "other";
@@ -610,10 +617,11 @@ export type PayrollLine = {
   total_payable: number;
   deposit_excluded_for_run: boolean;
   deposit_exclusion_reason: string | null;
-  payment_status: "paid" | "pending";
+  payment_status: "paid" | "pending" | "partially_paid";
   paid_amount: number | null;
   paid_at: string | null;
   paid_method: PayrollPaymentMethod | null;
+  payment_comment: string | null;
   amount_cash: number;
   amount_account: number;
   payout_status: PayrollPayoutStatus;
@@ -3763,6 +3771,22 @@ export async function markPayrollPayment(
 
 export async function unmarkPayrollPayment(runId: string, employeeId: string): Promise<void> {
   await api.delete(`/payroll/runs/${runId}/payments/${employeeId}`);
+}
+
+export type PartialPayrollPaymentPayload = {
+  employee_id: string;
+  // Сумма транша; null/опущено = выплатить весь остаток.
+  amount?: number | null;
+  paid_at: string;
+  method?: PayrollPaymentMethod | null;
+  comment?: string | null;
+};
+
+export async function markPartialPayrollPayment(
+  runId: string,
+  payload: PartialPayrollPaymentPayload,
+): Promise<void> {
+  await api.post(`/payroll/runs/${runId}/payments/partial`, payload);
 }
 
 export async function markAllPayrollPayments(

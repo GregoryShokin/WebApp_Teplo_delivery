@@ -6,6 +6,7 @@ import {
   CalendarClock,
   Eye,
   LoaderCircle,
+  Pin,
   Play,
   RefreshCw,
 } from "lucide-react";
@@ -63,6 +64,7 @@ import {
   postAccumulationFundPayout,
   type AppSetting,
   type PayrollLine,
+  type PayrollPaymentState,
   type PayrollPeriod,
   type PayrollRun,
 } from "@/lib/api";
@@ -96,6 +98,7 @@ export function PayrollRunsRoute({
   const permissions = usePermissions();
   const canStartRuns = permissions.canPerformAction("payroll.runs.start");
   const canRecalculateRuns = permissions.canPerformAction("payroll.runs.recalculate");
+  const canMarkPaid = permissions.canPerformAction("payroll.runs.mark_paid");
   const canEditFund = permissions.canPerformAction("payroll.fund.edit");
   const visibleTabs = [
     permissions.canOpenSection("payroll.runs") ? { value: "runs", label: "Расчёты" } : null,
@@ -126,7 +129,15 @@ export function PayrollRunsRoute({
   });
   const [recalculatingRunIds, setRecalculatingRunIds] = useState<string[]>([]);
 
-  const runs = [...(runsQuery.data ?? [])].sort(compareRunsDesc);
+  // Недоплаченные ведомости закреплены наверху (не уходят вниз по дате), затем — по периоду убыв.
+  const runs = [...(runsQuery.data ?? [])].sort((a, b) => {
+    const rankA = isPartiallyPaid(a) ? 0 : 1;
+    const rankB = isPartiallyPaid(b) ? 0 : 1;
+    if (rankA !== rankB) {
+      return rankA - rankB;
+    }
+    return compareRunsDesc(a, b);
+  });
 
   const targetRatio = getTargetFotRatio(settingsQuery.data);
   const currentWindow = getPayrollWindow();
@@ -200,12 +211,24 @@ export function PayrollRunsRoute({
     {
       key: "period",
       header: "Период",
-      cell: (run) => (
-        <div className="min-w-[180px]">
-          <div className="font-medium">{formatPeriodRange(run.period)}</div>
-          <div className="text-xs text-muted-foreground">{periodWeekLabel(run.period)}</div>
-        </div>
-      ),
+      cell: (run) => {
+        const partial = isPartiallyPaid(run);
+        return (
+          <div className="min-w-[180px]">
+            <div className="flex items-center gap-1.5 font-medium">
+              {partial ? (
+                <Pin className="shrink-0 rotate-45 text-amber-600" size={14} aria-hidden="true" />
+              ) : null}
+              {formatPeriodRange(run.period)}
+            </div>
+            <div className={cn("text-xs", partial ? "text-amber-700" : "text-muted-foreground")}>
+              {partial
+                ? `${runUnderpaidCount(run)} из ${runEmployeeCount(run)} недополучили`
+                : periodWeekLabel(run.period)}
+            </div>
+          </div>
+        );
+      },
     },
     {
       key: "payroll_date",
@@ -221,7 +244,27 @@ export function PayrollRunsRoute({
     {
       key: "total",
       header: "ФОТ итого",
-      cell: (run) => formatMoney(runTotal(run)),
+      cell: (run) => {
+        if (!isPartiallyPaid(run)) {
+          return formatMoney(runTotal(run));
+        }
+        const accrued = runTotal(run);
+        const paid = runPaidTotal(run);
+        const pct = accrued > 0 ? Math.min(100, Math.round((paid / accrued) * 100)) : 0;
+        return (
+          <div className="min-w-[150px] space-y-1">
+            <div className="font-medium tabular-nums">
+              {formatMoney(paid)} / {formatMoney(accrued)}
+            </div>
+            <div className="text-xs font-medium text-amber-700">
+              остаток {formatMoney(runRemainingShortfall(run))}
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-amber-100">
+              <div className="h-full bg-amber-400" style={{ width: `${pct}%` }} aria-hidden="true" />
+            </div>
+          </div>
+        );
+      },
       className: "font-medium tabular-nums",
     },
     {
@@ -233,7 +276,14 @@ export function PayrollRunsRoute({
     {
       key: "status",
       header: "Статус",
-      cell: (run) => <StatusBadge status={run.status} />,
+      cell: (run) =>
+        isPartiallyPaid(run) ? (
+          <Badge className="rounded-md border border-amber-200 bg-amber-50 font-medium text-amber-700 shadow-none">
+            Выплачено частично
+          </Badge>
+        ) : (
+          <StatusBadge status={run.status} />
+        ),
     },
     {
       key: "actions",
@@ -243,6 +293,20 @@ export function PayrollRunsRoute({
         const isRecalculating = recalculatingRunIds.includes(run.id);
         return (
           <div className="flex flex-wrap justify-end gap-2">
+            {isPartiallyPaid(run) && canMarkPaid ? (
+              <Button
+                className="bg-amber-500 text-white hover:bg-amber-600"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onNavigate(`/payroll/runs/${run.id}`);
+                }}
+                size="sm"
+                title="Доплатить остаток по недоплаченным сотрудникам"
+              >
+                <Banknote size={16} aria-hidden="true" />
+                Доплатить
+              </Button>
+            ) : null}
             {canRecalculateRuns ? (
               <Button
                 disabled={isRecalculating}
@@ -443,6 +507,11 @@ export function PayrollRunsRoute({
                   isLoading={runsQuery.isLoading}
                   getRowKey={(run) => run.id}
                   onRowClick={(run) => onNavigate(`/payroll/runs/${run.id}`)}
+                  rowClassName={(run) =>
+                    isPartiallyPaid(run)
+                      ? "border-l-4 border-l-amber-400 bg-amber-50 hover:bg-amber-50"
+                      : undefined
+                  }
                   emptyMessage="Расчётов пока нет"
                 />
               )}
@@ -899,6 +968,29 @@ function isSamePeriod(period: PayrollPeriod | null, window: PayrollWindow) {
 
 function runTotal(run: PayrollRun) {
   return Number(run.summary.total_payable ?? 0);
+}
+
+function runPaymentState(run: PayrollRun): PayrollPaymentState {
+  const state = run.summary.payment_state;
+  return state === "partial" || state === "paid" || state === "in_progress" || state === "unpaid"
+    ? state
+    : "unpaid";
+}
+
+function isPartiallyPaid(run: PayrollRun) {
+  return runPaymentState(run) === "partial";
+}
+
+function runPaidTotal(run: PayrollRun) {
+  return Number(run.summary.paid_total ?? 0);
+}
+
+function runRemainingShortfall(run: PayrollRun) {
+  return Number(run.summary.remaining_shortfall ?? 0);
+}
+
+function runUnderpaidCount(run: PayrollRun) {
+  return Number(run.summary.underpaid_count ?? 0);
 }
 
 function runEmployeeCount(run: PayrollRun) {

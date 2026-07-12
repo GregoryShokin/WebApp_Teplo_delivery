@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import desc, exists, or_, select, text
+from sqlalchemy import desc, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -22,6 +22,7 @@ from app.models import (
     DepositTransaction,
     Employee,
     PayrollLine,
+    PayrollPayment,
     PayrollPeriod,
     PayrollRun,
     PayrollRunEvent,
@@ -50,10 +51,6 @@ from app.services.payroll_advance_recovery import (
     apply_advance_recoveries_to_balances,
     run_has_unaccounted_advances,
 )
-from app.services.payroll_employee_payout_offset import (
-    apply_employee_payout_offsets,
-    apply_employee_payout_offsets_to_balances,
-)
 from app.services.payroll_calculator import (
     DAILY_REVENUE_CONFIG_KEY,
     PAYROLL_RATE_SNAPSHOT_SUMMARY_KEY,
@@ -67,6 +64,10 @@ from app.services.payroll_calculator import (
     payroll_rate_snapshot_payload,
     summarize_lines,
     vacation_role_for_employee_day,
+)
+from app.services.payroll_employee_payout_offset import (
+    apply_employee_payout_offsets,
+    apply_employee_payout_offsets_to_balances,
 )
 from app.services.payroll_freelancer_settlement import (
     apply_freelancer_cash_settlements,
@@ -1407,8 +1408,18 @@ async def list_runs(session: AsyncSession) -> list[dict[str, Any]]:
         .order_by(desc(PayrollRun.started_at))
     )
     rows = result.all()
-    metrics = await _run_line_metrics(session, [run.id for run, _ in rows])
-    return [serialize_run(run, period, metrics=metrics.get(run.id)) for run, period in rows]
+    run_ids = [run.id for run, _ in rows]
+    metrics = await _run_line_metrics(session, run_ids)
+    payment_metrics = await _run_payment_metrics(session, run_ids)
+    return [
+        serialize_run(
+            run,
+            period,
+            metrics=metrics.get(run.id),
+            payment_metrics=payment_metrics.get(run.id),
+        )
+        for run, period in rows
+    ]
 
 
 def _coerce_revenue(value: Any) -> float:
@@ -1462,6 +1473,75 @@ async def _run_line_metrics(
     }
 
 
+async def _run_payment_metrics(
+    session: AsyncSession, run_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, dict[str, Any]]:
+    """Per-run агрегаты выплаты для списка ведомостей: выплачено, недоплата и её признак.
+
+    ``payment_state``: ``partial`` — есть недоплаченные сотрудники (ведомость закрепляется и
+    подсвечивается); ``paid`` — все выплачены полностью; ``in_progress`` — часть выдана без
+    недоплат; ``unpaid`` — выплат ещё нет. ``remaining_shortfall`` — сумма недоплат ТОЛЬКО по
+    сотрудникам со статусом ``partially_paid`` (не включает ещё не тронутых).
+    """
+    if not run_ids:
+        return {}
+    accrued_rows = await session.execute(
+        select(
+            PayrollLine.run_id,
+            PayrollLine.employee_id,
+            func.sum(PayrollLine.total_payable),
+        )
+        .where(PayrollLine.run_id.in_(run_ids))
+        .group_by(PayrollLine.run_id, PayrollLine.employee_id)
+    )
+    accrued_by_employee: dict[uuid.UUID, dict[uuid.UUID, Decimal]] = defaultdict(dict)
+    employee_count: dict[uuid.UUID, int] = defaultdict(int)
+    for run_id, employee_id, amount in accrued_rows:
+        accrued_by_employee[run_id][employee_id] = Decimal(amount or 0)
+        employee_count[run_id] += 1
+    payment_rows = await session.execute(
+        select(
+            PayrollPayment.run_id,
+            PayrollPayment.employee_id,
+            PayrollPayment.amount,
+            PayrollPayment.status,
+        ).where(PayrollPayment.run_id.in_(run_ids))
+    )
+    paid_total: dict[uuid.UUID, Decimal] = defaultdict(lambda: Decimal("0"))
+    shortfall: dict[uuid.UUID, Decimal] = defaultdict(lambda: Decimal("0"))
+    underpaid_count: dict[uuid.UUID, int] = defaultdict(int)
+    fully_paid_count: dict[uuid.UUID, int] = defaultdict(int)
+    for run_id, employee_id, amount, status in payment_rows:
+        paid = Decimal(amount or 0)
+        paid_total[run_id] += paid
+        if status == "partially_paid":
+            underpaid_count[run_id] += 1
+            accrued = accrued_by_employee[run_id].get(employee_id, paid)
+            shortfall[run_id] += max(Decimal("0"), accrued - paid)
+        elif status == "paid":
+            fully_paid_count[run_id] += 1
+    metrics: dict[uuid.UUID, dict[str, Any]] = {}
+    for run_id in run_ids:
+        total_employees = employee_count.get(run_id, 0)
+        underpaid = underpaid_count.get(run_id, 0)
+        fully = fully_paid_count.get(run_id, 0)
+        if underpaid > 0:
+            state = "partial"
+        elif total_employees > 0 and fully >= total_employees:
+            state = "paid"
+        elif fully > 0:
+            state = "in_progress"
+        else:
+            state = "unpaid"
+        metrics[run_id] = {
+            "payment_state": state,
+            "paid_total": round(float(paid_total.get(run_id, Decimal("0"))), 2),
+            "remaining_shortfall": round(float(shortfall.get(run_id, Decimal("0"))), 2),
+            "underpaid_count": underpaid,
+        }
+    return metrics
+
+
 async def get_run(session: AsyncSession, run_id: uuid.UUID) -> dict[str, Any]:
     row = (
         await session.execute(
@@ -1509,12 +1589,18 @@ def serialize_run(
     period: PayrollPeriod | None = None,
     *,
     metrics: dict[str, Any] | None = None,
+    payment_metrics: dict[str, Any] | None = None,
     needs_recalc: bool = False,
 ) -> dict[str, Any]:
     summary = dict(run.summary or {})
     if metrics is not None:
         summary["revenue_total"] = metrics.get("revenue_total", 0.0)
         summary["employee_count"] = metrics.get("employee_count", 0)
+    if payment_metrics is not None:
+        summary["payment_state"] = payment_metrics.get("payment_state", "unpaid")
+        summary["paid_total"] = payment_metrics.get("paid_total", 0.0)
+        summary["remaining_shortfall"] = payment_metrics.get("remaining_shortfall", 0.0)
+        summary["underpaid_count"] = payment_metrics.get("underpaid_count", 0)
     data = {
         "id": run.id,
         "period_id": run.period_id,
