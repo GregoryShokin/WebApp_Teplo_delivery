@@ -109,8 +109,8 @@ def _seed_transfer(
 ) -> dict[str, str]:
     """Исходный наличный кошелёк −500 и счёт-получатель (наличный/банковский).
 
-    Статьи перевода между счетами (``vybytie/postuplenie_perevod_mezhdu_schetami``) уже есть в
-    каталоге ДДС (миграция 0114), поэтому их не создаём — бэкенд резолвит по коду.
+    Единая транзитная статья ``internal_transfer`` уже есть в каталоге ДДС (миграция 0114,
+    подтверждена активной в 0182), поэтому её не создаём — бэкенд резолвит по коду.
     """
 
     async def go() -> dict[str, str]:
@@ -202,9 +202,7 @@ def _transfer_out_article_id(factory: async_sessionmaker[AsyncSession]) -> str:
         async with factory() as session:
             return str(
                 await session.scalar(
-                    select(DdsArticle.id).where(
-                        DdsArticle.code == "vybytie_perevod_mezhdu_schetami"
-                    )
+                    select(DdsArticle.id).where(DdsArticle.code == "internal_transfer")
                 )
             )
 
