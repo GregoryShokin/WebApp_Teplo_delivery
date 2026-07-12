@@ -359,6 +359,11 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Исправлять уже ОПЛАЧЕННУЮ накладную (позиции/сумму); излишек оплаты уходит в дебиторку",
     ),
     (
+        "invoices.confirm_price",
+        "Накладные",
+        "Подтверждать накладные с подозрительными ценами (разблокировать оплату/отправку в банк)",
+    ),
+    (
         "invoices.barter.create",
         "Накладные",
         "Создавать бартерные накладные (займы и возвраты)",
@@ -726,6 +731,7 @@ MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "invoices.normal.create",
         "invoices.normal.edit",
         "invoices.normal.pay",
+        "invoices.confirm_price",
         "invoices.barter.create",
         "invoices.barter.edit",
         "invoices.barter.pay",
@@ -770,6 +776,9 @@ OFFICE_MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "counterparties.admin",
         # Правка ОПЛАЧЕННОЙ накладной с отзывом оплаты — точечное право (только owner/admin).
         "invoices.normal.edit_paid",
+        # Подтверждение подозрительных цен — точечное право (owner/admin/менеджер); управляющему
+        # Собственник выдаёт в «Доступах», чтобы «кто платит» и «кто одобряет аномалию» разделялись.
+        "invoices.confirm_price",
         # Корректировки кассы — точечное право, не входит в дефолт Менеджера.
         "kassa.adjustments.create",
         # Отмена авто-штрафов за недостачу — точечное право (только owner/admin).

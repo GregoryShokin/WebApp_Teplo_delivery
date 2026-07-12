@@ -35,6 +35,12 @@ from app.services.counterparty_bank_match import (
 )
 from app.services.counterparty_matching import CounterpartyMatchError
 from app.services.iiko_product_sync import sync_iiko_products
+from app.services.invoice_price_control import (
+    PriceControlError,
+    assert_price_cleared,
+    confirm_prices,
+    price_stats_for_product,
+)
 from app.services.kassa.cheque_payout_push import post_kassa_payment_to_iiko
 from app.services.kassa.invoice_paid_push import counterparty_iiko_guid
 from app.services.warehouse_invoice_push import (
@@ -243,6 +249,15 @@ async def list_products(
     ]
 
 
+@router.get("/products/{product_id}/price-stats", dependencies=INVOICE_REFS)
+async def get_product_price_stats(
+    product_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
+    """Скользящее среднее цены товара + пороги — для живой подсветки отклонения при вводе строки."""
+    return await price_stats_for_product(session, product_id=product_id)
+
+
 @router.post("/products/sync", dependencies=OPERATE)
 async def post_products_sync(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -433,6 +448,11 @@ async def post_pay_split(
     if invoice is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
     ensure_permission(actor, f"invoices.{await invoice_permission_kind(session, invoice)}.pay")
+    # Контроль цен: подозрительную (неподтверждённую) накладную оплачивать нельзя.
+    try:
+        assert_price_cleared(invoice)
+    except PriceControlError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     bank_parts = [
         BankPart(bank_operation_id=b.bank_operation_id, amount=b.amount) for b in payload.bank_parts
     ]
@@ -564,6 +584,11 @@ async def post_pay_kassa(
     ensure_any_permission(actor, ("kassa.invoices.create", "invoices.normal.pay"))
     if invoice.payment_status == "paid":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Накладная уже оплачена")
+    # Контроль цен: подозрительную (неподтверждённую) накладную оплачивать нельзя.
+    try:
+        assert_price_cleared(invoice)
+    except PriceControlError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     if not await counterparty_iiko_guid(session, invoice.counterparty_id):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -773,6 +798,30 @@ async def post_adjust_paid_invoice(
     result["moved_to_receivable"] = float(
         max(Decimal("0"), allocated_before - Decimal(str(result["amount"])))
     )
+    return result
+
+
+@router.post("/invoices/{invoice_id}/confirm-prices")
+async def post_confirm_prices(
+    invoice_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    """«ОК, всё верно» — подтвердить подозрительные цены накладной и разблокировать оплату.
+
+    Отдельное точечное право ``invoices.confirm_price`` (owner/admin/менеджер): разделяет «кто
+    платит» и «кто одобряет ценовую аномалию». Пока не подтверждено — оплата и отправка в банк
+    заблокированы. Правка позиций сбрасывает подтверждение (цены нужно сверить заново)."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    ensure_permission(actor, "invoices.confirm_price")
+    try:
+        await confirm_prices(session, invoice, actor_user_id=actor.user_id)
+    except PriceControlError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    result = await get_warehouse_invoice(session, invoice_id)
+    assert result is not None
     return result
 
 

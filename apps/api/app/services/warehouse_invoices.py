@@ -33,8 +33,10 @@ from app.models import (
     InvoicePaymentAllocation,
     SupplierInvoice,
     SupplierPrepayment,
+    User,
 )
 from app.services.counterparty_matching import _allocated_amount, _recompute_status
+from app.services.invoice_price_control import PriceCheckLine, apply_price_control
 
 # Статьи ДДС для блока «Траты на персонал» накладной (выбор из двух — питание / прочие).
 # По ИМЕНИ (code/uuid различны dev/prod), как whitelist чека.
@@ -288,6 +290,7 @@ async def create_warehouse_invoice(
     staff_total = Decimal("0.00")
     vat_total = Decimal("0.00")
     mirror: list[dict[str, Any]] = []
+    price_lines: list[PriceCheckLine] = []
     for index, line in enumerate(lines):
         product = products.get(line.iiko_product_id) if line.iiko_product_id else None
         quantity = _qty(line.quantity)
@@ -322,6 +325,15 @@ async def create_warehouse_invoice(
         total += line_sum
         if line.is_staff:
             staff_total += line_sum
+        price_lines.append(
+            PriceCheckLine(
+                name=item_name,
+                product_guid=product.iiko_id if product else None,
+                unit=product.unit if product else None,
+                price=price,
+                is_staff=line.is_staff,
+            )
+        )
         # Mirror keeps product_id/article so counterparty_barter_match._products() works.
         mirror.append(
             {
@@ -337,6 +349,9 @@ async def create_warehouse_invoice(
     invoice.staff_amount = _money(staff_total)
     invoice.vat_total = _money(vat_total)
     invoice.line_items = mirror
+    # Контроль ошибочных цен: помечаем накладную «подозрительной», если цена позиции сильно
+    # отклонилась от скользящего среднего по товару → оплата/банк заблокированы до подтверждения.
+    await apply_price_control(session, invoice, price_lines)
     await session.commit()
     await session.refresh(invoice)
     return invoice
@@ -358,6 +373,7 @@ async def _rebuild_invoice_lines(
     staff_total = Decimal("0.00")
     vat_total = Decimal("0.00")
     mirror: list[dict[str, Any]] = []
+    price_lines: list[PriceCheckLine] = []
     for index, line in enumerate(lines):
         product = products.get(line.iiko_product_id) if line.iiko_product_id else None
         quantity = _qty(line.quantity)
@@ -390,6 +406,15 @@ async def _rebuild_invoice_lines(
         total += line_sum
         if line.is_staff:
             staff_total += line_sum
+        price_lines.append(
+            PriceCheckLine(
+                name=item_name,
+                product_guid=product.iiko_id if product else None,
+                unit=product.unit if product else None,
+                price=price,
+                is_staff=line.is_staff,
+            )
+        )
         mirror.append(
             {
                 "product_id": product.iiko_id if product else None,
@@ -403,6 +428,8 @@ async def _rebuild_invoice_lines(
     invoice.staff_amount = _money(staff_total)
     invoice.vat_total = _money(vat_total)
     invoice.line_items = mirror
+    # Правка позиций пересчитывает контроль цен и сбрасывает прежнее подтверждение.
+    await apply_price_control(session, invoice, price_lines)
 
 
 async def update_warehouse_invoice(
@@ -760,6 +787,8 @@ def _invoice_summary(
         "external_id": invoice.external_id,
         "barter_role": invoice.barter_role,
         "barter_return_status": invoice.barter_return_status,
+        # Контроль цен: clean/flagged/confirmed — списку для бейджа «⚠ проверить цены».
+        "price_control_status": invoice.price_control_status,
     }
 
 
@@ -800,6 +829,20 @@ async def get_warehouse_invoice(
     )
     summary["draft_status"] = draft.status if draft else None
     summary["draft_pays_via_safe"] = bool(draft.pays_via_safe) if draft else False
+    # Контроль ошибочных цен: статус + снимок аномалий (для баннера и блокировки оплаты).
+    anomalies = list(invoice.price_anomalies or [])
+    summary["price_control_status"] = invoice.price_control_status
+    summary["price_anomalies"] = anomalies
+    summary["price_confirmed_at"] = (
+        invoice.price_confirmed_at.isoformat() if invoice.price_confirmed_at else None
+    )
+    if invoice.price_confirmed_by_user_id:
+        confirmer = await session.get(User, invoice.price_confirmed_by_user_id)
+        summary["price_confirmed_by"] = confirmer.full_name if confirmer else None
+    else:
+        summary["price_confirmed_by"] = None
+    # Аномалии по (product_guid, unit) → аннотация конкретных строк (подсветка цены в UI).
+    anomaly_by_key = {(a.get("product_guid"), a.get("unit")): a for a in anomalies}
 
     # Единая логика «товар vs расход» по статье ДДС (а не по is_staff): чеки кладут статью
     # «питание персонала» в строку, оставляя is_staff=false — нельзя считать такие строки
@@ -847,6 +890,17 @@ async def get_warehouse_invoice(
             # Для редактирования: сохранить связь с номенклатурой iiko и статьёй персонала.
             "iiko_product_id": str(line.iiko_product_id) if line.iiko_product_id else None,
             "dds_article_id": str(line.dds_article_id) if line.dds_article_id else None,
+            # Контроль цен: если цена строки аномальна — среднее/отклонение/направление
+            # (high=дорого, low=дёшево) для подсветки конкретной ячейки цены. Иначе None.
+            "price_flag": (
+                anomaly_by_key.get((line.product_guid, line.unit), {}).get("direction")
+            ),
+            "price_avg": (
+                anomaly_by_key.get((line.product_guid, line.unit), {}).get("avg_price")
+            ),
+            "price_deviation_pct": (
+                anomaly_by_key.get((line.product_guid, line.unit), {}).get("deviation_pct")
+            ),
         }
         for line in lines
     ]

@@ -188,6 +188,15 @@ async def create_payment_draft_for_invoices(
         raise CounterpartyPaymentError("Доходные накладные нельзя отправить в банк")
     if any(inv.draft_id is not None for inv in invoices):
         raise CounterpartyPaymentError("Некоторые накладные уже отправлены в банк")
+    # Контроль ошибочных цен: подозрительную (неподтверждённую) накладную в банк не пускаем —
+    # сначала человек сверяет цены и подтверждает («ОК, всё верно»).
+    flagged = [inv for inv in invoices if inv.price_control_status == "flagged"]
+    if flagged:
+        numbers = ", ".join(f"№{inv.number}" for inv in flagged if inv.number) or "выбранные"
+        raise CounterpartyPaymentError(
+            f"Накладные с подозрительными ценами ({numbers}) нельзя отправить в банк, пока цены "
+            "не подтверждены («ОК, всё верно» в карточке накладной)."
+        )
 
     counterparty = await session.get(Counterparty, counterparty_id)
     if counterparty is None:

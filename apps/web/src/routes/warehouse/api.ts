@@ -35,6 +35,32 @@ export type WarehouseInvoiceSummary = {
   // iiko documentId (есть → накладная существует в iiko; удаление будет двусторонним).
   external_id: string | null;
   barter_role: string | null;
+  // Контроль цен: clean — норма; flagged — есть подозрительные цены (оплата/банк заблокированы);
+  // confirmed — цены подтверждены человеком. undefined у старых ответов.
+  price_control_status?: "clean" | "flagged" | "confirmed";
+};
+
+// Аномальная позиция: снимок среднего/отклонения на момент расчёта.
+export type PriceAnomaly = {
+  name: string;
+  product_guid: string | null;
+  unit: string | null;
+  price: number;
+  avg_price: number;
+  sample_count: number;
+  deviation_pct: number;
+  direction: "high" | "low";
+};
+
+// Статистика цены товара для живой подсветки при вводе строки.
+export type ProductPriceStats = {
+  avg_price: number | null;
+  sample_count: number;
+  unit: string | null;
+  upper_pct: number;
+  lower_pct: number;
+  lookback_days: number;
+  min_samples: number;
 };
 
 export type WarehouseInvoiceLine = {
@@ -56,6 +82,11 @@ export type WarehouseInvoiceLine = {
   dds_article_name: string | null;
   iiko_product_id: string | null;
   dds_article_id: string | null;
+  // Контроль цен: если цена аномальна — направление (high=дорого/low=дёшево), среднее и
+  // отклонение для подсветки ячейки цены. null у нормальных строк.
+  price_flag?: "high" | "low" | null;
+  price_avg?: number | null;
+  price_deviation_pct?: number | null;
 };
 
 export type InvoiceAllocation = {
@@ -78,6 +109,10 @@ export type WarehouseInvoiceDetail = WarehouseInvoiceSummary & {
   iiko_return_status?: string;
   iiko_return_external_id?: string | null;
   iiko_return_error?: string | null;
+  // Контроль цен: снимок аномалий + кто/когда подтвердил.
+  price_anomalies?: PriceAnomaly[];
+  price_confirmed_at?: string | null;
+  price_confirmed_by?: string | null;
 };
 
 export type LinePayload = {
@@ -112,6 +147,12 @@ export async function getProducts(params?: {
   limit?: number;
 }): Promise<WarehouseProduct[]> {
   const response = await api.get<WarehouseProduct[]>(`${BASE}/products`, { params });
+  return response.data;
+}
+
+// Скользящее среднее цены товара + пороги — для живой подсветки отклонения при вводе строки.
+export async function getProductPriceStats(productId: string): Promise<ProductPriceStats> {
+  const response = await api.get<ProductPriceStats>(`${BASE}/products/${productId}/price-stats`);
   return response.data;
 }
 
@@ -191,6 +232,13 @@ export async function payInvoiceFromKassa(
   const response = await api.post<WarehouseInvoiceDetail>(`${BASE}/invoices/${id}/pay-kassa`, {
     amount: amount ?? null,
   });
+  return response.data;
+}
+
+// «ОК, всё верно» — подтвердить подозрительные цены и разблокировать оплату/отправку в банк
+// (право invoices.confirm_price).
+export async function confirmInvoicePrices(id: string): Promise<WarehouseInvoiceDetail> {
+  const response = await api.post<WarehouseInvoiceDetail>(`${BASE}/invoices/${id}/confirm-prices`);
   return response.data;
 }
 

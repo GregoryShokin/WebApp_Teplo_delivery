@@ -33,6 +33,7 @@ import {
   getLoanReturnable,
   getNextInvoiceNumber,
   getOpenLoans,
+  getProductPriceStats,
   getProducts,
   getStaffArticles,
   type StaffArticle,
@@ -752,6 +753,27 @@ export function LineRow({
   // Товарная строка обязана быть выбрана из номенклатуры iiko (есть product_id). Иначе при
   // выгрузке в iiko строка молча теряется (нет product_guid) — накладная уходит неполной.
   const needsProduct = !!line.name.trim() && !line.product_id;
+  // Живой контроль цены: подтягиваем скользящее среднее по товару и предупреждаем прямо при
+  // вводе, если цена улетела за порог (+сверху/−снизу). Не блокирует — только подсветка.
+  const priceStatsQuery = useQuery({
+    queryKey: ["wh", "price-stats", line.product_id],
+    queryFn: () => getProductPriceStats(line.product_id!),
+    enabled: !!line.product_id,
+    staleTime: 60_000,
+  });
+  const stats = priceStatsQuery.data;
+  const priceNum = num(line.price);
+  let priceWarn: { dir: "high" | "low"; dev: number; avg: number } | null = null;
+  if (
+    stats &&
+    stats.avg_price != null &&
+    stats.sample_count >= stats.min_samples &&
+    priceNum > 0
+  ) {
+    const dev = ((priceNum - stats.avg_price) / stats.avg_price) * 100;
+    if (dev > stats.upper_pct) priceWarn = { dir: "high", dev, avg: stats.avg_price };
+    else if (dev < -stats.lower_pct) priceWarn = { dir: "low", dev, avg: stats.avg_price };
+  }
   return (
     <>
     <div
@@ -783,8 +805,15 @@ export function LineRow({
       />
       <Input
         inputMode="decimal"
-        className="text-right"
+        className={cn("text-right", priceWarn && "ring-1 ring-amber-400")}
         value={line.price}
+        title={
+          priceWarn
+            ? `Среднее ${formatRub(priceWarn.avg)} · отклонение ${
+                priceWarn.dev > 0 ? "+" : ""
+              }${priceWarn.dev.toFixed(1)}%`
+            : undefined
+        }
         onChange={(e) =>
           onChange({
             price: e.target.value,
@@ -826,6 +855,13 @@ export function LineRow({
     {needsProduct ? (
       <p className="px-1 text-xs text-red-600">
         Выберите конкретный товар из номенклатуры iiko
+      </p>
+    ) : null}
+    {priceWarn ? (
+      <p className="px-1 text-xs text-amber-600">
+        Цена {priceWarn.dir === "high" ? "выше" : "ниже"} среднего ({formatRub(priceWarn.avg)}) на{" "}
+        {priceWarn.dev > 0 ? "+" : ""}
+        {priceWarn.dev.toFixed(1)}% — накладная попадёт на проверку цен.
       </p>
     ) : null}
     </>

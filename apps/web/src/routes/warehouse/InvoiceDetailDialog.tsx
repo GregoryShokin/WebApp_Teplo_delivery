@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Banknote, LoaderCircle, Pencil, Send, Trash2 } from "lucide-react";
+import {
+  Banknote,
+  CheckCircle2,
+  LoaderCircle,
+  Pencil,
+  Send,
+  ShieldAlert,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -23,6 +31,7 @@ import { formatRub } from "@/routes/counterparties/shared";
 import { InvoiceEditDialog } from "./InvoiceEditDialog";
 import { PayWarehouseInvoiceDialog } from "./PayWarehouseInvoiceDialog";
 import {
+  confirmInvoicePrices,
   deleteWarehouseInvoice,
   getWarehouseInvoice,
   pushInvoiceToIiko,
@@ -79,6 +88,8 @@ export function InvoiceDetailDialog({
   const canPay = permissions.canPerformAction("invoices.normal.pay");
   // Точечное право «правка ОПЛАЧЕННОЙ» (owner/admin): исправить не ту накладную, излишек → дебиторка.
   const canEditPaid = permissions.canPerformAction("invoices.normal.edit_paid");
+  // Точечное право «подтвердить подозрительные цены» (owner/admin/менеджер).
+  const canConfirmPrice = permissions.hasPermission("invoices.confirm_price");
   const [editing, setEditing] = useState(false);
   const [adjustingPaid, setAdjustingPaid] = useState(false);
   const [paying, setPaying] = useState(false);
@@ -116,6 +127,17 @@ export function InvoiceDetailDialog({
     onError: (e) => toast.error(apiErrorMessage(e, "Не удалось отразить коррекцию в iiko")),
   });
 
+  const confirmPricesMutation = useMutation({
+    mutationFn: () => confirmInvoicePrices(invoiceId!),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["wh", "invoice", invoiceId], updated);
+      void queryClient.invalidateQueries({ queryKey: ["wh"] });
+      void queryClient.invalidateQueries({ queryKey: ["cp"] });
+      toast.success("Цены подтверждены — оплата разблокирована");
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, "Не удалось подтвердить цены")),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: () => deleteWarehouseInvoice(invoiceId!),
     onSuccess: () => {
@@ -142,6 +164,11 @@ export function InvoiceDetailDialog({
   // Исправлять оплаченную можно только если есть сохранённые позиции — правка идёт через них.
   // Старые iiko-накладные без строк («Позиции не сохранены») так править нельзя: нечего менять.
   const hasLines = (detail?.lines ?? []).length > 0;
+  // Контроль цен: flagged — подозрительно (оплата/банк заблокированы до подтверждения);
+  // confirmed — цены сверены человеком. Показываем баннер и блокируем «Оплатить».
+  const priceFlagged = detail?.price_control_status === "flagged";
+  const priceConfirmed = detail?.price_control_status === "confirmed";
+  const priceAnomalies = detail?.price_anomalies ?? [];
 
   return (
     <>
@@ -206,6 +233,64 @@ export function InvoiceDetailDialog({
               ) : null}
             </div>
 
+            {/* Контроль ошибочных цен: подозрительную накладную нельзя оплатить/отправить в банк,
+                пока цены не подтверждены. Баннер показывает аномальные позиции (цена vs среднее). */}
+            {priceFlagged ? (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-red-800">
+                  <ShieldAlert size={16} aria-hidden="true" />
+                  Подозрительные цены — оплата и отправка в банк заблокированы
+                </div>
+                <ul className="mt-2 space-y-1 text-xs text-red-700">
+                  {priceAnomalies.map((a, i) => (
+                    <li key={`${a.product_guid ?? a.name}-${i}`} className="tabular-nums">
+                      <span className="font-medium">{a.name}</span>: {formatRub(a.price)} —{" "}
+                      {a.direction === "high" ? "дороже" : "дешевле"} среднего{" "}
+                      {formatRub(a.avg_price)} на{" "}
+                      <span className="font-medium">
+                        {a.deviation_pct > 0 ? "+" : ""}
+                        {a.deviation_pct}%
+                      </span>{" "}
+                      <span className="text-red-500">(по {a.sample_count} закупкам)</span>
+                    </li>
+                  ))}
+                </ul>
+                {canConfirmPrice ? (
+                  <div className="mt-3 flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      className="bg-red-600 text-white hover:bg-red-700"
+                      disabled={confirmPricesMutation.isPending}
+                      onClick={() => confirmPricesMutation.mutate()}
+                    >
+                      {confirmPricesMutation.isPending ? (
+                        <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
+                      ) : (
+                        <CheckCircle2 size={14} aria-hidden="true" />
+                      )}
+                      Цены верны — подтвердить
+                    </Button>
+                    <span className="text-xs text-red-600">
+                      После проверки нажмите, чтобы разблокировать оплату.
+                    </span>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-red-600">
+                    Подтвердить цены может владелец, администратор или менеджер.
+                  </p>
+                )}
+              </div>
+            ) : priceConfirmed ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+                <CheckCircle2 size={14} aria-hidden="true" />
+                Цены подтверждены
+                {detail.price_confirmed_by ? ` — ${detail.price_confirmed_by}` : ""}
+                {detail.price_confirmed_at
+                  ? ` · ${formatDateTime(detail.price_confirmed_at)}`
+                  : ""}
+              </div>
+            ) : null}
+
             {detail.payment_status === "unpaid" && !detail.barter_role && !detail.draft_id ? (
               <div className="flex flex-wrap gap-2">
                 {canEdit ? (
@@ -219,6 +304,8 @@ export function InvoiceDetailDialog({
                   <Button
                     size="sm"
                     variant="outline"
+                    disabled={priceFlagged}
+                    title={priceFlagged ? "Сначала подтвердите цены" : undefined}
                     onClick={() => {
                       onOpenChange(false);
                       onKassaPay(detail);
@@ -227,7 +314,13 @@ export function InvoiceDetailDialog({
                     <Banknote size={14} aria-hidden="true" /> Оплатить с ТК Черникова
                   </Button>
                 ) : canPay ? (
-                  <Button size="sm" variant="outline" onClick={() => setPaying(true)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={priceFlagged}
+                    title={priceFlagged ? "Сначала подтвердите цены" : undefined}
+                    onClick={() => setPaying(true)}
+                  >
                     <Banknote size={14} aria-hidden="true" /> Оплатить
                   </Button>
                 ) : null}
@@ -418,7 +511,29 @@ export function InvoiceDetailDialog({
                         ) : null}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">{line.quantity}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{formatRub(line.price)}</td>
+                      <td
+                        className={
+                          line.price_flag
+                            ? "px-3 py-2 text-right font-medium tabular-nums text-red-700"
+                            : "px-3 py-2 text-right tabular-nums"
+                        }
+                        title={
+                          line.price_flag && line.price_avg != null
+                            ? `Среднее ${formatRub(line.price_avg)} · отклонение ${
+                                (line.price_deviation_pct ?? 0) > 0 ? "+" : ""
+                              }${line.price_deviation_pct}%`
+                            : undefined
+                        }
+                      >
+                        {formatRub(line.price)}
+                        {line.price_flag ? (
+                          <ShieldAlert
+                            size={12}
+                            className="ml-1 inline align-[-1px] text-red-500"
+                            aria-label="Цена отклоняется от среднего"
+                          />
+                        ) : null}
+                      </td>
                       <td
                         className={
                           line.is_return

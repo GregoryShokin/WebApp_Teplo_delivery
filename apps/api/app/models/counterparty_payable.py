@@ -437,6 +437,26 @@ class SupplierInvoice(Base):
     )
     # On a loan invoice: cached settlement state — open / partially_returned / returned.
     barter_return_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # --- контроль ошибочных цен (скользящее среднее по товару) ---
+    # Позиция накладной, у которой цена сильно отклонилась от скользящего среднего закупок этого
+    # товара (порог +N%/−M%), помечает всю накладную «подозрительной». Пока статус ``flagged`` —
+    # оплата и отправка в банк заблокированы (assert_price_cleared); человек сверяет и подтверждает
+    # («ОК, всё верно») → ``confirmed`` разблокирует. Любая правка позиций пересчитывает контроль и
+    # сбрасывает подтверждение. ``clean`` — аномалий нет / контроль неприменим (бартер, нет истории).
+    price_control_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="clean", server_default="clean"
+    )
+    # Снимок аномальных строк на момент расчёта: список
+    # {name, product_guid, unit, price, avg_price, sample_count, deviation_pct, direction}.
+    price_anomalies: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    price_confirmed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    price_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
