@@ -106,7 +106,11 @@ async def invoice_permission_kind(session: AsyncSession, invoice: SupplierInvoic
 
 
 async def _ensure_barter_relationship(session: AsyncSession, counterparty_id: uuid.UUID) -> None:
-    """A counterparty we issue/receive a barter loan with is a barter partner."""
+    """A counterparty we issue/receive a barter loan with is a barter partner.
+
+    Ручной замок типа отношений (``relationship_manual``) не перебиваем: если владелец явно
+    закрепил тип в карточке, менять его молча нельзя. Барт-роль накладной живёт в ``barter_role``
+    независимо и на матчинг/права влияет сама по себе."""
     profile = await session.scalar(
         select(CounterpartyPayableProfile).where(
             CounterpartyPayableProfile.counterparty_id == counterparty_id
@@ -117,7 +121,7 @@ async def _ensure_barter_relationship(session: AsyncSession, counterparty_id: uu
             CounterpartyPayableProfile(counterparty_id=counterparty_id, relationship="barter")
         )
         await session.flush()
-    elif profile.relationship != "barter":
+    elif not profile.relationship_manual and profile.relationship != "barter":
         profile.relationship = "barter"
 
 

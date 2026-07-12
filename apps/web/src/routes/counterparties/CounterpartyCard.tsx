@@ -213,6 +213,11 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">{RELATIONSHIP_HINTS[relationship]}</p>
+          {profile?.relationship_manual ? (
+            <p className="text-xs text-muted-foreground">
+              Закреплено вручную — синхронизация из iiko не изменит тип.
+            </p>
+          ) : null}
         </Field>
         <Field label="Внутреннее имя (рудимент)">
           <Input

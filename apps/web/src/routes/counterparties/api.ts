@@ -69,6 +69,7 @@ export type CollectionSource = {
 export type CounterpartyProfile = {
   ledger_category_id: string | null;
   relationship: string;
+  relationship_manual: boolean;
   brand_group: string | null;
   internal_name: string | null;
   payment_delay_days: number | null;

@@ -583,6 +583,7 @@ def _profile_dict(profile: CounterpartyPayableProfile | None) -> dict[str, Any] 
     return {
         "ledger_category_id": profile.ledger_category_id,
         "relationship": profile.relationship,
+        "relationship_manual": profile.relationship_manual,
         "brand_group": profile.brand_group,
         "internal_name": profile.internal_name,
         "payment_delay_days": profile.payment_delay_days,
@@ -638,6 +639,11 @@ async def update_profile(
     profile = await _get_or_create_profile(session, counterparty_id)
     profile.ledger_category_id = ledger_category_id
     if relationship is not None:
+        # Явная смена типа в карточке закрепляет выбор: iiko-синхронизация больше не перебьёт
+        # его обратно в barter (см. _mark_relationship_barter). Сохранение без изменения типа
+        # (правили другие поля) замок не ставит — чтобы случайно не «залочить» авто-barter.
+        if relationship != profile.relationship:
+            profile.relationship_manual = True
         profile.relationship = relationship
     profile.brand_group = brand_group
     profile.internal_name = internal_name

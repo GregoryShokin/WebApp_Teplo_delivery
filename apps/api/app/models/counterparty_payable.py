@@ -99,12 +99,19 @@ class CounterpartyPayableProfile(Base):
     manager_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     manager_phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Payment relationship: official (bank transfer) / informal (card-cash only) /
-    # barter (two-way, settled by net balance). Auto-set to barter on receivable ingest.
+    # barter (two-way, settled by net balance). Auto-set to barter on receivable ingest,
+    # unless pinned manually (``relationship_manual``).
     relationship: Mapped[str] = mapped_column(
         counterparty_relationship_enum,
         nullable=False,
         default="official",
         server_default="official",
+    )
+    # Ручной замок: True, когда владелец явно сменил тип отношений в карточке. Пока стоит,
+    # авто-классификация из iiko-синхронизации (расходная накладная → barter) НЕ перебивает
+    # выбор. Снимать не нужно — повторная смена типа просто держит его закреплённым.
+    relationship_manual: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
     )
     # Доступен для выбора при создании накладной в контуре «Касса».
     # На Склад и ДДС-классификацию не влияет; курируется вручную, по умолчанию выкл.

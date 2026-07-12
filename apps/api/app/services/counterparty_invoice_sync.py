@@ -446,7 +446,12 @@ async def _profile_due_terms(
 
 
 async def _mark_relationship_barter(session: AsyncSession, counterparty_id: uuid.UUID) -> None:
-    """A counterparty with an outgoing (receivable) invoice is a barter partner."""
+    """A counterparty with an outgoing (receivable) invoice is a barter partner.
+
+    Не трогаем контрагентов с ручным замком типа отношений (``relationship_manual``): владелец
+    явно выбрал тип в карточке, и авто-классификация не должна перебивать его на каждом тике
+    синхронизации (иначе разовая/тестовая расходная накладная в 7-дневном окне бесконечно
+    возвращала «Бартер»)."""
     profile = await session.scalar(
         select(CounterpartyPayableProfile).where(
             CounterpartyPayableProfile.counterparty_id == counterparty_id
@@ -457,7 +462,7 @@ async def _mark_relationship_barter(session: AsyncSession, counterparty_id: uuid
             CounterpartyPayableProfile(counterparty_id=counterparty_id, relationship="barter")
         )
         await session.flush()
-    elif profile.relationship != "barter":
+    elif not profile.relationship_manual and profile.relationship != "barter":
         profile.relationship = "barter"
 
 
