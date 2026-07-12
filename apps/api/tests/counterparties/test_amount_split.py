@@ -99,6 +99,36 @@ async def test_mirror_splits_unrepresentable_amount(
     assert by_key[f"invoice:{inv_id}#1"].invoice_id is None
 
 
+def _fake_already_paid(calls: list):
+    def _f(payload: dict):
+        calls.append(payload)
+        return 400, {"message": "already paid"}
+
+    return _f
+
+
+async def test_already_paid_treated_as_ok(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """iiko «already paid» → идемпотентный успех (накладная уже оплачена иным путём), а не ошибка —
+    иначе зеркало пыталось бы оплатить её бесконечно."""
+    inv_id = await _seed(async_session_factory, amount="100.00")  # представимая → один платёж
+    calls: list = []
+    monkeypatch.setattr(mod, "_call_add_payment", _fake_already_paid(calls))
+
+    async with async_session_factory() as session:
+        result = await mod.mirror_paid_iiko_invoices(session)
+
+    assert result["ok"] == 1  # already paid засчитан как ok
+    async with async_session_factory() as session:
+        row = await session.scalar(
+            select(IikoInvoicePaymentPush).where(
+                IikoInvoicePaymentPush.idempotency_key == f"invoice:{inv_id}"
+            )
+        )
+    assert row is not None and row.status == "ok"
+
+
 async def test_mirror_split_idempotent_second_run(
     async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
 ) -> None:

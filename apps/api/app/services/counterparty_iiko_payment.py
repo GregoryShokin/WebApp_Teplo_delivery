@@ -123,6 +123,14 @@ def _is_incoming_invoice_not_found(response: dict | None, error: str | None) -> 
     return "not found" in blob and "invoic" in blob
 
 
+def _is_already_paid(response: dict | None) -> bool:
+    """iiko отклонил add_payment, потому что накладная УЖЕ оплачена. Для зеркала это идемпотентный
+    успех (платёж в iiko есть), а не ошибка — иначе оно бесконечно пыталось бы оплатить оплаченную."""
+    if not isinstance(response, dict):
+        return False
+    return "already paid" in json.dumps(response, ensure_ascii=False).lower()
+
+
 def _within_iiko_sync_grace(invoice: SupplierInvoice) -> bool:
     """Документ создан в iiko недавно (grace-окно) → ждём его появления в Cloud, ретраим."""
     anchor = invoice.iiko_pushed_at or invoice.created_at
@@ -516,6 +524,11 @@ async def push_invoice_payment_to_iiko(
     # 2) Необратимый вызов iiko (``_call_add_payment`` не бросает — ошибки приходят кодом 0).
     status_code, response = await anyio.to_thread.run_sync(lambda: _call_add_payment(payload))
     ok = status_code in (200, 201)
+    # «already paid» — накладная в iiko УЖЕ оплачена (иным путём/ранее): для зеркала это
+    # идемпотентный УСПЕХ (платёж есть), а не ошибка — иначе оно долбило бы её вечно (при дроблении
+    # части с invoice_id=None не капаются). Помечаем ok, чтобы записать done и остановиться.
+    if not ok and _is_already_paid(response):
+        ok = True
     iiko_doc = None
     if isinstance(response, dict):
         iiko_doc = (
