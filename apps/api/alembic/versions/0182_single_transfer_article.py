@@ -7,8 +7,8 @@
 между счетами» архивируются (is_active=False): из каталога/пикеров уходят, историческая
 привязка проводок по id сохраняется.
 
-Revision ID: 0178_single_transfer_article
-Revises: 0177_advance_source_operation
+Revision ID: 0182_single_transfer_article
+Revises: 0181_relationship_manual
 Create Date: 2026-07-10
 """
 
@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from alembic import op
 
-revision = "0178_single_transfer_article"
-down_revision = "0177_advance_source_operation"
+revision = "0182_single_transfer_article"
+down_revision = "0181_relationship_manual"
 branch_labels = None
 depends_on = None
 

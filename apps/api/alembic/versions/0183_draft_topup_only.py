@@ -5,8 +5,8 @@
 вывода, где на оплате заводится целёвка). Отличается флагом ``topup_only``: paid-переход
 книжит только транзит р/с→Сейф и на этом останавливается.
 
-Revision ID: 0179_draft_topup_only
-Revises: 0178_single_transfer_article
+Revision ID: 0183_draft_topup_only
+Revises: 0182_single_transfer_article
 Create Date: 2026-07-10
 """
 
@@ -16,8 +16,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0179_draft_topup_only"
-down_revision = "0178_single_transfer_article"
+revision = "0183_draft_topup_only"
+down_revision = "0182_single_transfer_article"
 branch_labels = None
 depends_on = None
 
