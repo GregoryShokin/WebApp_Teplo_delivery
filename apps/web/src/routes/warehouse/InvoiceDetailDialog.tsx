@@ -254,18 +254,20 @@ export function InvoiceDetailDialog({
             <AlertDialogTitle>Сначала проведите оплату в iiko</AlertDialogTitle>
             <AlertDialogDescription>
               Оплата этой накладной ещё не отражена в iiko. Если исправить её сейчас, возврат в
-              iiko уйдёт не на ту сумму и баланс поставщика перекосится. Отправьте оплату в iiko —
-              или подтвердите, что она уже проведена вручную в бэк-офисе iiko.
+              iiko уйдёт не на ту сумму и баланс поставщика перекосится.{" "}
+              {detail?.iiko_payment_auto_sendable
+                ? "Отправьте оплату в iiko, затем исправляйте."
+                : "Дождитесь автосинхронизации (несколько минут) или подтвердите, если оплата уже проведена вручную в бэк-офисе iiko."}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/* Одна безопасная кнопка: если оплату можно отправить автоматически — «Отправить сейчас»
+              (реальный add_payment, «already paid» = успех). Иначе (мультиплатёж/аванс/наличные/
+              Касса) — только ручное подтверждение. Вслепую глушить авто-зеркало НЕ даём. */}
           <AlertDialogFooter className="flex-col gap-2 sm:flex-row">
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             {detail?.iiko_payment_auto_sendable ? (
               <Button
-                variant="outline"
-                disabled={
-                  sendIikoPaymentMutation.isPending || confirmIikoManualMutation.isPending
-                }
+                disabled={sendIikoPaymentMutation.isPending}
                 onClick={() => sendIikoPaymentMutation.mutate()}
               >
                 {sendIikoPaymentMutation.isPending ? (
@@ -275,16 +277,17 @@ export function InvoiceDetailDialog({
                 )}
                 Отправить оплату в iiko сейчас
               </Button>
-            ) : null}
-            <Button
-              disabled={sendIikoPaymentMutation.isPending || confirmIikoManualMutation.isPending}
-              onClick={() => confirmIikoManualMutation.mutate()}
-            >
-              {confirmIikoManualMutation.isPending ? (
-                <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
-              ) : null}
-              Оплата подтверждена вручную
-            </Button>
+            ) : (
+              <Button
+                disabled={confirmIikoManualMutation.isPending}
+                onClick={() => confirmIikoManualMutation.mutate()}
+              >
+                {confirmIikoManualMutation.isPending ? (
+                  <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
+                ) : null}
+                Оплата подтверждена вручную
+              </Button>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -438,13 +441,10 @@ export function InvoiceDetailDialog({
                   variant="outline"
                   className="ml-auto border-amber-300 text-amber-800 hover:bg-amber-100"
                   onClick={() => {
-                    // Гард: iiko-накладную нельзя корректировать, пока её оплата не отражена в
-                    // iiko (иначе возврат уйдёт не на ту сумму) — сначала блокирующий диалог.
-                    if (
-                      detail.source === "iiko" &&
-                      detail.external_id &&
-                      !detail.iiko_payment_settled
-                    ) {
+                    // Гард: накладную нельзя корректировать, пока её оплата не отражена в iiko
+                    // (иначе возврат уйдёт не на ту сумму). Бэкенд считает iiko_payment_settled по
+                    // контуру источника (iiko/Касса); для незащищённых источников оно = true.
+                    if (detail.external_id && detail.iiko_payment_settled === false) {
                       setIikoGateOpen(true);
                     } else {
                       setAdjustingPaid(true);

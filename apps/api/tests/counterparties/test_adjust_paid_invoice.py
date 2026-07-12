@@ -613,6 +613,42 @@ async def _setup_iiko_pending_contour(session, *, number, external_id=None):
     return invoice.id
 
 
+async def _iiko_cash_paid_invoice(session, *, number, external_id, amount="100.00"):
+    """iiko-накладная, оплаченная наличными (без банк-черновика) → auto_sendable=False (банк-
+    зеркала нет). Гард держит её до ручного подтверждения."""
+    cp = await make_counterparty(session, name=f"Поставщик {number}", iiko_guid=f"SUP-{number}")
+    product = await make_iiko_product(session, name="Мешок")
+    invoice = await make_invoice(
+        session, counterparty_id=cp.id, amount=amount, payment_status="paid",
+        number=number, source="iiko", external_id=external_id,
+    )
+    session.add(
+        InvoicePaymentAllocation(
+            invoice_id=invoice.id, source_kind="cash", amount=Decimal(amount)
+        )
+    )
+    await session.commit()
+    return cp, product, invoice
+
+
+async def _kassa_paid_invoice(session, *, number, external_id, amount="100.00"):
+    """Оплаченная накладная Кассы (source='kassa_invoice') с external_id — у неё своё товарное
+    зеркало (namespace kassa_goods:*), гард смотрит именно его."""
+    cp = await make_counterparty(session, name=f"Поставщик {number}", iiko_guid=f"SUP-{number}")
+    product = await make_iiko_product(session, name="Мешок")
+    invoice = await make_invoice(
+        session, counterparty_id=cp.id, amount=amount, payment_status="paid",
+        number=number, source="kassa_invoice", external_id=external_id,
+    )
+    session.add(
+        InvoicePaymentAllocation(
+            invoice_id=invoice.id, source_kind="cash", amount=Decimal(amount)
+        )
+    )
+    await session.commit()
+    return cp, product, invoice
+
+
 async def test_guard_blocks_edit_when_payment_not_in_iiko(async_session_factory):
     """Репро АЛЬЯНС ЮГ: iiko-накладная оплачена через банк, но оплата НЕ зеркалирована в iiko →
     правку оплаченной НЕ пускаем; накладная остаётся нетронутой."""
@@ -684,14 +720,14 @@ async def test_send_now_already_paid_counts_as_ok(async_session_factory, monkeyp
         assert await cip.original_payment_settled_in_iiko(session, invoice) is True
 
 
-async def test_confirm_manual_marks_settled_and_stops_mirror(async_session_factory, monkeypatch):
-    """«Оплата подтверждена вручную»: пишем ok-маркер (аудит), гард снят, джоб больше не шлёт."""
-    calls: list = []
-    monkeypatch.setattr(cip, "_call_add_payment", _fake_ok(calls))
+async def test_confirm_manual_marks_settled(async_session_factory):
+    """«Оплата подтверждена вручную» для НЕ-авто (наличная iiko): ok-маркер, гард снят."""
     async with async_session_factory() as session:
-        _, product, _, invoice = await _iiko_bank_paid_invoice(
+        _, product, invoice = await _iiko_cash_paid_invoice(
             session, number="905", external_id="IIKO-905"
         )
+        assert await cip.iiko_invoice_payment_auto_sendable(session, invoice) is False
+        assert await cip.original_payment_settled_in_iiko(session, invoice) is False  # гард держит
         await cip.mark_iiko_payment_settled_manually(session, invoice, actor_user_id=None)
         row = await session.scalar(
             select(IikoInvoicePaymentPush).where(
@@ -701,14 +737,122 @@ async def test_confirm_manual_marks_settled_and_stops_mirror(async_session_facto
         assert row.status == "ok"
         assert row.response_payload.get("manual_confirmation") is True
         assert await cip.original_payment_settled_in_iiko(session, invoice) is True
-        # сверочный джоб НЕ трогает (ok-строка → blocked_invoice_ids)
-        res = await cip.mirror_paid_iiko_invoices(session)
-        assert res["ok"] == 0
-        assert not any(c.get("documentId") == "IIKO-905" for c in calls)
-        # правка теперь проходит
         await adjust_paid_invoice(session, invoice, lines=[_line(product.id, "60")])
         await session.refresh(invoice)
         assert invoice.amount == Decimal("60.00")
+
+
+async def test_confirm_manual_refuses_when_auto_sendable(async_session_factory):
+    """Авто-отправляемую (одиночный банк-черновик) вслепую подтверждать НЕЛЬЗЯ — это заглушило бы
+    реальное зеркало add_payment (воспроизвело бы перекос АЛЬЯНС ЮГ). Требуем «Отправить сейчас»."""
+    async with async_session_factory() as session:
+        _, _, _, invoice = await _iiko_bank_paid_invoice(
+            session, number="905b", external_id="IIKO-905B"
+        )
+        with pytest.raises(cip.IikoPaymentError, match="автоматически"):
+            await cip.mark_iiko_payment_settled_manually(session, invoice, actor_user_id=None)
+        # ok-строка НЕ создана — накладная осталась под гардом
+        row = await session.scalar(
+            select(IikoInvoicePaymentPush).where(
+                IikoInvoicePaymentPush.idempotency_key == f"invoice:{invoice.id}"
+            )
+        )
+        assert row is None
+
+
+async def test_confirm_manual_keeps_real_push_row(async_session_factory):
+    """mark не затирает реальную ok-строку зеркала (сохраняет accountingTransactionId и сумму)."""
+    async with async_session_factory() as session:
+        # мульти → auto_sendable=False, поэтому mark не откажет; сеем «реальный» ok от зеркала
+        _, _, _, invoice = await _iiko_bank_paid_invoice(
+            session, number="905c", external_id="IIKO-905C", siblings=2
+        )
+        real = _ok_push(invoice.id, "IIKO-905C")
+        real.iiko_document_id = "TX-real"
+        session.add(real)
+        await session.commit()
+        await cip.mark_iiko_payment_settled_manually(session, invoice, actor_user_id=None)
+        row = await session.scalar(
+            select(IikoInvoicePaymentPush).where(
+                IikoInvoicePaymentPush.idempotency_key == f"invoice:{invoice.id}"
+            )
+        )
+        assert row.iiko_document_id == "TX-real"  # не затёрто
+        assert row.account_to != "manual"
+
+
+async def test_guard_blocks_kassa_edit_when_goods_not_mirrored(async_session_factory):
+    """Kassa-накладная: пока оплата (kassa_goods:*) не зеркалирована — правку не пускаем."""
+    async with async_session_factory() as session:
+        _, product, invoice = await _kassa_paid_invoice(
+            session, number="920", external_id="K-920"
+        )
+        assert await cip.original_payment_settled_in_iiko(session, invoice) is False
+        with pytest.raises(WarehouseInvoiceError, match="не отражена в iiko"):
+            await adjust_paid_invoice(session, invoice, lines=[_line(product.id, "60")])
+
+
+async def test_guard_allows_kassa_edit_when_goods_share_mirrored(async_session_factory):
+    """Успешная доля kassa_goods:<id>:* (товар в iiko) → правка Кассы проходит."""
+    async with async_session_factory() as session:
+        _, product, invoice = await _kassa_paid_invoice(
+            session, number="921", external_id="K-921"
+        )
+        session.add(
+            IikoInvoicePaymentPush(
+                idempotency_key=f"kassa_goods:{invoice.id}:card", invoice_id=invoice.id,
+                external_id="K-921", amount=Decimal("100.00"),
+                account_to=cip.IIKO_ACQUIRING_ACCOUNT, status="ok",
+            )
+        )
+        await session.commit()
+        assert await cip.original_payment_settled_in_iiko(session, invoice) is True
+        await adjust_paid_invoice(session, invoice, lines=[_line(product.id, "60")])
+        await session.refresh(invoice)
+        assert invoice.amount == Decimal("60.00")
+
+
+async def test_guard_blocks_kassa_when_only_plain_done_marker(async_session_factory):
+    """Просто kassa_goods_done без manual-флага и без ok-доли (терминальный сбой зеркала) — НЕ
+    считаем settled: коррекцию держим (иначе возврат поверх неоплаченного в iiko прихода)."""
+    async with async_session_factory() as session:
+        _, product, invoice = await _kassa_paid_invoice(
+            session, number="923", external_id="K-923"
+        )
+        session.add(
+            IikoInvoicePaymentPush(
+                idempotency_key=f"kassa_goods_done:{invoice.id}", invoice_id=invoice.id,
+                external_id="K-923", amount=Decimal("0"), account_to="-", status="ok",
+                error="ручной разбор",
+            )
+        )
+        await session.commit()
+        assert await cip.original_payment_settled_in_iiko(session, invoice) is False
+
+
+async def test_confirm_manual_kassa_writes_done_marker(async_session_factory):
+    """Ручное подтверждение Кассы пишет kassa_goods_done:<id> с manual-флагом → гард снят, джоб
+    пропустит (маркер done)."""
+    async with async_session_factory() as session:
+        _, product, invoice = await _kassa_paid_invoice(
+            session, number="922", external_id="K-922"
+        )
+        await cip.mark_iiko_payment_settled_manually(session, invoice, actor_user_id=None)
+        row = await session.scalar(
+            select(IikoInvoicePaymentPush).where(
+                IikoInvoicePaymentPush.idempotency_key == f"kassa_goods_done:{invoice.id}"
+            )
+        )
+        assert row is not None and row.status == "ok"
+        assert row.response_payload.get("manual_confirmation") is True
+        # ключ invoice:<id> НЕ создан (у Кассы другой namespace)
+        wrong = await session.scalar(
+            select(IikoInvoicePaymentPush).where(
+                IikoInvoicePaymentPush.idempotency_key == f"invoice:{invoice.id}"
+            )
+        )
+        assert wrong is None
+        assert await cip.original_payment_settled_in_iiko(session, invoice) is True
 
 
 async def test_book_correction_blocked_when_payment_not_in_iiko(
@@ -795,13 +939,20 @@ async def test_send_iiko_payment_endpoint(client, async_session_factory, monkeyp
 
 
 async def test_confirm_iiko_payment_endpoint(client, async_session_factory):
-    """API confirm-iiko-payment: owner помечает вручную → оплата считается отражённой."""
+    """API confirm-iiko-payment: не-авто (наличная iiko) → 200 и оплата отражена; авто (одиночный
+    банк) → 422 (вслепую подтверждать нельзя, надо «Отправить оплату в iiko сейчас»)."""
     async with async_session_factory() as session:
-        _, _, _, invoice = await _iiko_bank_paid_invoice(
+        _, _, cash_inv = await _iiko_cash_paid_invoice(
             session, number="911", external_id="IIKO-911"
         )
-        inv_id = str(invoice.id)
+        cash_id = str(cash_inv.id)
+        _, _, _, auto_inv = await _iiko_bank_paid_invoice(
+            session, number="911b", external_id="IIKO-911B"
+        )
+        auto_id = str(auto_inv.id)
     admin_h = await admin_headers(async_session_factory)
-    r = client.post(f"/api/v1/warehouse/invoices/{inv_id}/confirm-iiko-payment", headers=admin_h)
+    r = client.post(f"/api/v1/warehouse/invoices/{cash_id}/confirm-iiko-payment", headers=admin_h)
     assert r.status_code == 200, r.text
     assert r.json()["iiko_payment_settled"] is True
+    r2 = client.post(f"/api/v1/warehouse/invoices/{auto_id}/confirm-iiko-payment", headers=admin_h)
+    assert r2.status_code == 422  # авто → предлагаем «Отправить сейчас»

@@ -24,6 +24,7 @@ from app.models import (
     InvoiceLineItem,
     InvoicePaymentAllocation,
     ReconciliationCase,
+    SupplierInvoice,
 )
 
 ACQUIRING = "3f261590-f208-2970-1300-95d2493a3c28"
@@ -264,6 +265,28 @@ async def test_mirror_idempotent_second_run_excluded(
         second = await mod.mirror_paid_kassa_invoices(session)
     assert second["eligible"] == 0
     assert len(calls) == 2  # вторых вызовов нет
+
+
+@pytest.mark.asyncio
+async def test_mirror_excludes_corrected_kassa_invoice(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Скорректированную kassa-накладную (iiko_correction_new_external_id задан → external_id уже =
+    новая приходная Y) джоб НЕ зеркалит: зачёт add_payment на Y завышает баланс поставщика. Иначе
+    правка оплаченной kassa-накладной привела бы к тому же перекосу, что АЛЬЯНС ЮГ."""
+    inv_id = await _seed_kassa(async_session_factory)
+    async with async_session_factory() as session:
+        inv = await session.get(SupplierInvoice, inv_id)
+        inv.iiko_correction_new_external_id = "NEW-Y"
+        await session.commit()
+    calls: list[dict] = []
+    monkeypatch.setattr(mod, "_call_add_payment", _fake_ok(calls))
+    async with async_session_factory() as session:
+        result = await mod.mirror_paid_kassa_invoices(session)
+    assert calls == []  # исключена фильтром — ни одной оплаты на Y
+    assert result["eligible"] == 0
+    rows = await _push_rows(async_session_factory, inv_id)
+    assert not any(r.idempotency_key == f"kassa_goods_done:{inv_id}" for r in rows)
 
 
 def test_amount_iiko_representable_matches_iiko_validator() -> None:

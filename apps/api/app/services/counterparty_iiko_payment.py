@@ -706,26 +706,56 @@ async def original_payment_settled_in_iiko(
 ) -> bool:
     """Отражена ли оплата ЭТОЙ накладной в iiko (для гарда правки оплаченной).
 
-    Признак «оплата дошла до iiko» = строка зеркала ``IikoInvoicePaymentPush`` по ключу
-    ``invoice:<id>`` со ``status='ok'``. ``ok`` покрывает три реальных факта в iiko: успешный
-    ``add_payment`` (201), идемпотентный ответ «already paid», summary-строку дробления, а также
-    ручное подтверждение (``mark_iiko_payment_settled_manually``). ``pending``/``error``/отсутствие
-    = НЕ дошла (пытались, но факта в iiko нет).
+    Признак зависит от источника — у контуров iiko и Кассы РАЗНЫЕ зеркала add_payment:
+    - ``source='iiko'`` (банк-зеркало ``mirror_paid_iiko_invoices``): ok-строка по ключу
+      ``invoice:<id>``. ``ok`` = успешный ``add_payment`` (201) / идемпотентный «already paid» /
+      summary-строка дробления / ручное подтверждение. ``pending``/``error``/нет = НЕ дошла.
+    - ``source in (kassa_cheque, kassa_invoice)`` (товарное зеркало ``mirror_paid_kassa_invoices``,
+      namespace ``kassa_goods:*``): успешный пуш доли ``kassa_goods:<id>:*`` со ``status='ok'`` ИЛИ
+      ручное подтверждение (маркер ``kassa_goods_done:<id>`` с ``manual_confirmation``). Просто
+      done-маркер БЕЗ ручного флага и без ok-доли (терминальный сбой / no-goods / backlog) settled
+      НЕ считаем — консервативно держим коррекцию (лучше переблок, чем перекос баланса).
 
-    Гард применяется только к iiko-накладным с ``external_id`` — для прочих источников банковского
-    зеркала ``add_payment`` нет вовсе (наличные/бартер/без external_id), требовать ok там нельзя
-    (иначе вечная блокировка) → возвращаем True (правку не держим)."""
-    if invoice.source != "iiko" or not invoice.external_id:
+    Гард держит ЛЮБУЮ накладную этих источников с ``external_id`` без подтверждённой оплаты (в т.ч.
+    оплаченную наличными/зачётом аванса iiko-накладную — у неё банк-зеркала нет, эскейп = ручное
+    подтверждение). Прозрачен (True) только для источников без add_payment-зеркала (``manual``,
+    бартер) и для накладных без ``external_id`` — там ждать в iiko нечего."""
+    if not invoice.external_id:
         return True
-    row = await session.scalar(
-        select(IikoInvoicePaymentPush.id)
-        .where(
-            IikoInvoicePaymentPush.idempotency_key == f"invoice:{invoice.id}",
-            IikoInvoicePaymentPush.status == "ok",
+    if invoice.source == "iiko":
+        row = await session.scalar(
+            select(IikoInvoicePaymentPush.id)
+            .where(
+                IikoInvoicePaymentPush.idempotency_key == f"invoice:{invoice.id}",
+                IikoInvoicePaymentPush.status == "ok",
+            )
+            .limit(1)
         )
-        .limit(1)
-    )
-    return row is not None
+        return row is not None
+    if invoice.source in ("kassa_cheque", "kassa_invoice"):
+        share_ok = await session.scalar(
+            select(IikoInvoicePaymentPush.id)
+            .where(
+                IikoInvoicePaymentPush.idempotency_key.like(
+                    f"kassa\\_goods:{invoice.id}:%", escape="\\"
+                ),
+                IikoInvoicePaymentPush.status == "ok",
+            )
+            .limit(1)
+        )
+        if share_ok is not None:
+            return True
+        manual = await session.scalar(
+            select(IikoInvoicePaymentPush.id)
+            .where(
+                IikoInvoicePaymentPush.idempotency_key == f"kassa_goods_done:{invoice.id}",
+                IikoInvoicePaymentPush.response_payload["manual_confirmation"].astext == "true",
+            )
+            .limit(1)
+        )
+        return manual is not None
+    # Прочие источники (manual/бартер) add_payment-зеркала в iiko не имеют — гард прозрачен.
+    return True
 
 
 async def iiko_invoice_payment_auto_sendable(
@@ -820,13 +850,30 @@ async def mark_iiko_payment_settled_manually(
     """Пометить оплату накладной «подтверждена вручную в iiko»: человек утверждает, что платёж уже
     проведён в бэк-офисе iiko (гибридный контур — бухгалтер иногда платит там руками).
 
-    Пишем ok-строку зеркала по ключу ``invoice:<id>`` → гард правки оплаченной проходит, а сверочный
-    джоб больше НЕ пытается ``add_payment`` (иначе задвоил бы платёж, который уже провели вручную).
-    Фиксируем, кто и когда подтвердил, для аудита."""
-    key = f"invoice:{invoice.id}"
+    Пишем ok-маркер зеркала → гард правки оплаченной проходит, а сверочный джоб больше НЕ пытается
+    ``add_payment``. Ключ — по контуру источника: iiko → ``invoice:<id>``, Касса →
+    ``kassa_goods_done:<id>`` (с ``manual_confirmation``). Фиксируем, кто/когда, для аудита.
+
+    Отказ, если оплату можно отправить АВТОМАТИЧЕСКИ (одиночный банк-черновик): вслепую подтверждать
+    её нельзя — это заглушило бы реальное зеркало и оплата в iiko не появилась бы (тот самый перекос
+    АЛЬЯНС ЮГ). Для таких — «Отправить оплату в iiko сейчас» (``mirror_single_paid_iiko_invoice``).
+    """
+    if await iiko_invoice_payment_auto_sendable(session, invoice):
+        raise IikoPaymentError(
+            "Оплату можно отправить автоматически — используйте «Отправить оплату в iiko сейчас»"
+        )
+    key = (
+        f"kassa_goods_done:{invoice.id}"
+        if invoice.source in ("kassa_cheque", "kassa_invoice")
+        else f"invoice:{invoice.id}"
+    )
     record = await session.scalar(
         select(IikoInvoicePaymentPush).where(IikoInvoicePaymentPush.idempotency_key == key)
     )
+    # Не затираем реальный успешный пуш (с iiko_document_id) — иначе теряем аудиторскую ссылку на
+    # проводку iiko; оплата и так отражена, подтверждать нечего.
+    if record is not None and record.status == "ok" and record.iiko_document_id:
+        return
     if record is None:
         record = IikoInvoicePaymentPush(idempotency_key=key)
         session.add(record)
@@ -922,6 +969,10 @@ async def mirror_paid_kassa_invoices(
                 SupplierInvoice.external_id.is_not(None),
                 SupplierInvoice.payment_status == "paid",
                 SupplierInvoice.id.not_in(done_ids),
+                # Скорректированную накладную НЕ зеркалим: её external_id уже указывает на новую
+                # приходную Y, платить которую зачётом нельзя (завышает баланс поставщика).
+                # Симметрично банковскому mirror; иначе коррекция Кассы задваивала бы приход на Y.
+                SupplierInvoice.iiko_correction_new_external_id.is_(None),
             )
             .order_by(SupplierInvoice.created_at)
             .limit(limit)

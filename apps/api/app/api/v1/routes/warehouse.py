@@ -891,7 +891,12 @@ async def post_confirm_iiko_payment(
     if invoice is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
     ensure_permission(actor, "invoices.normal.edit_paid")
-    await mark_iiko_payment_settled_manually(session, invoice, actor_user_id=actor.user_id)
+    try:
+        await mark_iiko_payment_settled_manually(session, invoice, actor_user_id=actor.user_id)
+    except IikoPaymentError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
     result = await get_warehouse_invoice(session, invoice_id)
     assert result is not None
     return result
