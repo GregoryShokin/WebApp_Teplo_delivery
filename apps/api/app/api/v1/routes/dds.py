@@ -997,55 +997,14 @@ async def post_new_payment_internal_transfer(
     dest = await session.get(Wallet, payload.dest_wallet_id)
     if source is None or source.status != "active":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Счёт списания не найден")
-    dest_is_bank = dest is not None and dest.type in ("bank", "bank_account")
-    if dest is None or dest.status != "active" or (
-        dest.type not in ("cash_safe", "store_cash") and not dest_is_bank
-    ):
+    # Получатель — только наличный. Внесение Сейф→банк из окна НЕ книжим: входящая
+    # операция придёт выпиской неразобранной, разметка перевода создаст свою ногу
+    # Сейфа — ручная нога из окна дала бы задвоение (решение владельца 12.07).
+    if dest is None or dest.status != "active" or dest.type not in ("cash_safe", "store_cash"):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Счёт-получатель должен быть наличным (Сейф/Касса) или банковским",
+            detail="Счёт-получатель должен быть наличным (Сейф/Касса)",
         )
-
-    # Внесение с Сейфа на банковский счёт: книжим ТОЛЬКО ногу Сейфа (out) — банковскую
-    # ногу принесёт выписка (баланс банка ведётся строго от неё), там операция
-    # размечается переводом. С Кассы на банк не вносим — наличные едут через Сейф.
-    if dest_is_bank:
-        if source.type != "cash_safe":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="На банковский счёт вносят только с Сейфа",
-            )
-        free = await _safe_free_amount(session, source)
-        if Decimal(payload.amount) > free:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Недостаточно свободных средств на Сейфе: "
-                    f"свободно {free}, запрошено {payload.amount}"
-                ),
-            )
-        transfer_article_id = await session.scalar(
-            select(DdsArticle.id).where(DdsArticle.code == "internal_transfer")
-        )
-        purpose = " ".join((payload.purpose or "").split())
-        session.add(
-            CashflowTransaction(
-                wallet_id=source.id,
-                direction="out",
-                amount=Decimal(payload.amount),
-                operation_date=datetime.now(MOSCOW_TZ).date(),
-                article_id=transfer_article_id,
-                source_kind="safe_to_bank_transfer",
-                payment_purpose=(
-                    f"Внесение на счёт → {dest.name}" + (f" · {purpose}" if purpose else "")
-                ),
-                quality_status="final",
-                created_by_user_id=actor.user_id,
-            )
-        )
-        await session.commit()
-        return {"kind": "safe_to_bank", "amount": float(payload.amount), "draft_id": None}
-
     dest_location = "safe" if dest.type == "cash_safe" else "kassa"
 
     # Наличный источник (Сейф/Касса) — мгновенный перевод.

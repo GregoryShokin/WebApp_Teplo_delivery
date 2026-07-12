@@ -471,8 +471,7 @@ class NewPaymentTransferCreate(BaseModel):
 
 
 class NewPaymentTransferRead(BaseModel):
-    # kind='transfer' — наличный перевод проведён; kind='draft' — банк-черновик;
-    # kind='safe_to_bank' — списано с Сейфа, банковская нога придёт выпиской.
+    # kind='transfer' — наличный перевод проведён; kind='draft' — создан банк-черновик.
     kind: str
     amount: float
     draft_id: uuid.UUID | None = None

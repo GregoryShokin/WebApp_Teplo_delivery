@@ -2117,38 +2117,24 @@ function TransferPlainForm({
   const sourceWallet = wallets.find((wallet) => wallet.id === sourceId) ?? null;
   const isBankSource = sourceWallet?.kind === "bank";
   const isSafeSource = sourceWallet?.kind === "cash" && sourceWallet.location === "safe";
-
-  // Направления: банк → Сейф; Касса → Сейф; Сейф — выбор: Касса ИЛИ внесение на банк.
-  const [safeDestId, setSafeDestId] = useState("");
-  const safeDestOptions = [
-    ...(kassaWallet ? [kassaWallet] : []),
-    ...wallets.filter(
-      (w) => w.kind === "bank" && (w.bank_code === "tbank" || w.bank_code === "sber"),
-    ),
-  ];
-  useEffect(() => {
-    if (isSafeSource && !safeDestId && kassaWallet) {
-      setSafeDestId(kassaWallet.id);
-    }
-  }, [isSafeSource, safeDestId, kassaWallet]);
+  // Направление фиксировано: банк → Сейф, Сейф → Касса, Касса → Сейф. Внесение
+  // Сейф→банк из окна не проводим — банковская нога приходит выпиской, разметка
+  // перевода создала бы вторую ногу Сейфа (задвоение).
   const destWallet =
     sourceWallet == null
       ? null
       : sourceWallet.kind === "bank"
         ? safeWallet
         : isSafeSource
-          ? (safeDestOptions.find((w) => w.id === safeDestId) ?? null)
+          ? kassaWallet
           : safeWallet;
-  const isBankDest = destWallet?.kind === "bank";
 
   const canSubmit = Boolean(sourceId) && destWallet !== null && amountOf(amount) > 0;
   const submitLabel = isBankSource
     ? "Создать черновик"
-    : isBankDest
-      ? "Внести на счёт"
-      : isSafeSource
-        ? "Перевести в кассу"
-        : "Перевести на Сейф";
+    : isSafeSource
+      ? "Перевести в кассу"
+      : "Перевести на Сейф";
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -2162,9 +2148,7 @@ function TransferPlainForm({
       toast.success(
         result.kind === "draft"
           ? "Черновик пополнения Сейфа отправлен в банк"
-          : result.kind === "safe_to_bank"
-            ? "Списано с Сейфа — приход на счёт придёт выпиской"
-            : "Перевод проведён",
+          : "Перевод проведён",
       );
       await onDone();
     },
@@ -2175,7 +2159,7 @@ function TransferPlainForm({
     <div>
       <FormHeader
         title="Внутренний перевод"
-        description="Банк → Сейф (черновиком), Касса → Сейф; с Сейфа — в Кассу или внесение на банковский счёт."
+        description="Направление фиксировано: банк → Сейф (черновиком), Сейф → Касса, Касса → Сейф."
       />
       <div className="space-y-3">
         <div className="flex items-end gap-2">
@@ -2210,31 +2194,12 @@ function TransferPlainForm({
             </Select>
           </Label>
           <ArrowRight className="mb-2.5 shrink-0 text-muted-foreground" size={18} />
-          {isSafeSource ? (
-            <Label className="flex-1 space-y-1">
-              <span className="text-sm">Куда</span>
-              <Select value={safeDestId} onValueChange={setSafeDestId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Счёт-получатель" />
-                </SelectTrigger>
-                <SelectContent>
-                  {safeDestOptions.map((wallet) => (
-                    <SelectItem key={wallet.id} value={wallet.id}>
-                      {wallet.name}
-                      {wallet.kind === "bank" ? " — внесение, приход из выписки" : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Label>
-          ) : (
-            <div className="flex-1 space-y-1">
-              <span className="text-sm font-medium">Куда</span>
-              <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm">
-                {destWallet?.name ?? "—"}
-              </div>
+          <div className="flex-1 space-y-1">
+            <span className="text-sm font-medium">Куда</span>
+            <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm">
+              {destWallet?.name ?? "—"}
             </div>
-          )}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -2262,9 +2227,7 @@ function TransferPlainForm({
         <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
           {isBankSource
             ? "Деньги придут на Сейф после оплаты черновика в банке. В Кассу — наличными из Сейфа."
-            : isBankDest
-              ? "Спишем с Сейфа сразу; банковскую ногу принесёт выписка — операция разметится переводом."
-              : "Наличный перевод проводится сразу, без резервов. Резерв под цели — расход с наличного счёта («Счёт списания: Сейф/Касса»)."}
+            : "Наличный перевод проводится сразу, без резервов. Внесение наличных на банковский счёт проводите разметкой операции из выписки (журнал ДДС)."}
         </div>
       </div>
       <FormFooter
