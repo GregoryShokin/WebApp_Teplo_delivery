@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Banknote,
@@ -8,6 +8,7 @@ import {
   CircleMinus,
   CircleX,
   Plus,
+  ShieldAlert,
   Store,
 } from "lucide-react";
 
@@ -255,28 +256,43 @@ export function InboxTab({
       cell: (invoice) => {
         // Пока накладная не оплачена, статус ведёт привязанный черновик. Оплаченный статус
         // приоритетнее: после гашения draft_id остаётся, но показываем «Оплачено».
+        let base: ReactNode;
         if (invoice.draft_id && invoice.payment_status !== "paid") {
           // Неофициал: платёж исполнен, деньги дошли до Сейфа, но наличные поставщику ещё
           // не выданы — менеджеру видно, что деньги нужно отвезти контрагенту.
           if (invoice.draft_pays_via_safe && invoice.draft_status === "paid") {
-            return (
+            base = (
               <Badge className="border-violet-200 bg-violet-50 text-violet-700">
                 Деньги в Сейфе
               </Badge>
             );
+          } else {
+            base = (
+              <Badge className="border-sky-200 bg-sky-50 text-sky-700">Отправлено в банк</Badge>
+            );
           }
-          return (
-            <Badge className="border-sky-200 bg-sky-50 text-sky-700">Отправлено в банк</Badge>
+        } else {
+          base = (
+            <InvoiceStatusBadge
+              status={invoice.payment_status}
+              direction={invoice.direction}
+              barterSettled={!!invoice.barter_settlement_id}
+              barterRole={invoice.barter_role}
+            />
           );
         }
-        return (
-          <InvoiceStatusBadge
-            status={invoice.payment_status}
-            direction={invoice.direction}
-            barterSettled={!!invoice.barter_settlement_id}
-            barterRole={invoice.barter_role}
-          />
-        );
+        // Контроль цен: подозрительную накладную помечаем — оплата/банк заблокированы.
+        if (invoice.price_control_status === "flagged") {
+          return (
+            <div className="flex flex-col items-start gap-1">
+              {base}
+              <Badge className="gap-1 border-amber-300 bg-amber-100 text-[10px] text-amber-800">
+                <ShieldAlert size={11} aria-hidden="true" /> Проверить цены
+              </Badge>
+            </div>
+          );
+        }
+        return base;
       },
     },
     {
@@ -487,6 +503,13 @@ export function InboxTab({
         isLoading={invoicesQuery.isLoading}
         getRowKey={(invoice) => invoice.id}
         onRowClick={(invoice) => setDetailId(invoice.id)}
+        // Контроль цен: подозрительную накладную (flagged) подсвечиваем жёлто-оранжевым прямо
+        // в списке — видно без захода внутрь, что цены надо проверить и подтвердить.
+        rowClassName={(invoice) =>
+          invoice.price_control_status === "flagged"
+            ? "bg-amber-100 hover:bg-amber-200"
+            : undefined
+        }
         emptyMessage={
           statusFilter === "paid"
             ? "Нет оплаченных накладных"

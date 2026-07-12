@@ -141,6 +141,8 @@ class InvoiceRead(BaseModel):
     external_id: str | None = None
     draft_status: str | None = None
     draft_pays_via_safe: bool = False
+    # Контроль цен: flagged → строку подсвечиваем в списке (подозрительные цены).
+    price_control_status: str = "clean"
 
 
 class RegistryRead(BaseModel):

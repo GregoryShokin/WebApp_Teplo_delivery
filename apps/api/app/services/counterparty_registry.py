@@ -131,6 +131,9 @@ class InvoiceItem:
     # paid + pays_via_safe → «Деньги в Сейфе» (наличные ещё не выданы поставщику).
     draft_status: str | None = None
     draft_pays_via_safe: bool = False
+    # Контроль ошибочных цен: clean/flagged/confirmed — для подсветки строки в списке
+    # («flagged» = подозрительные цены, оплата/банк заблокированы до подтверждения).
+    price_control_status: str = "clean"
 
 
 @dataclass
@@ -341,6 +344,7 @@ def _build_invoice_item(
         external_id=invoice.external_id,
         draft_status=draft.status if draft else None,
         draft_pays_via_safe=bool(draft.pays_via_safe) if draft else False,
+        price_control_status=invoice.price_control_status,
     )
 
 

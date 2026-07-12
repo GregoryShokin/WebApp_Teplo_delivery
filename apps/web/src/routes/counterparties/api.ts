@@ -37,6 +37,9 @@ export type CounterpartyInvoice = {
   // paid + pays_via_safe → «Деньги в Сейфе» (наличные ещё не выданы поставщику).
   draft_status: string | null;
   draft_pays_via_safe: boolean;
+  // Контроль цен: clean — норма; flagged — подозрительные цены (строку подсвечиваем,
+  // оплата/банк заблокированы); confirmed — подтверждено человеком.
+  price_control_status?: "clean" | "flagged" | "confirmed";
 };
 
 export type RegistryItem = {
