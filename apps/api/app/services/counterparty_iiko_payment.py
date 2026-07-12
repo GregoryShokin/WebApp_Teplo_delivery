@@ -24,7 +24,7 @@ import urllib.request
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from zoneinfo import ZoneInfo
 
 import anyio
@@ -71,6 +71,35 @@ def _amount_iiko_representable(amount: Decimal) -> bool:
     чтобы не слать обречённое (метод НЕ идемпотентен) и сразу звать ручной разбор. Целые суммы и
     «удачные» дроби (напр. ``959.88`` → ``95988.0``) → True."""
     return (float(amount) * 100).is_integer()
+
+
+def representable_split(amount: Decimal) -> list[Decimal]:
+    """Разбить сумму на 1–3 «представимых» для iiko части (точная сумма), чтобы провести её
+    несколькими ``add_payment``. Целые рубли всегда представимы; копейки — обычно тоже, а «неудачные»
+    (напр. 0.29 → 28.9999…) бьём на две представимые (0.20 + 0.09). Примеры: 33982.80 →
+    [33982.00, 0.80]; 4213.44 → [4213.00, 0.44]; 0.29 → [0.20, 0.09]. Представимая сумма → [сама]."""
+    amount = Decimal(str(amount)).quantize(Decimal("0.01"))
+    if _amount_iiko_representable(amount):
+        return [amount]
+    whole = amount.to_integral_value(rounding=ROUND_DOWN)  # целые рубли — всегда представимы
+    cents = amount - whole  # 0.xx
+    parts: list[Decimal] = []
+    if whole > 0:
+        parts.append(whole)
+    if _amount_iiko_representable(cents):
+        parts.append(cents)
+    else:
+        step = Decimal("0.01")
+        a = step
+        while a < cents:
+            b = cents - a
+            if _amount_iiko_representable(a) and _amount_iiko_representable(b):
+                parts.extend([a, b])
+                break
+            a += step
+        else:  # для 2-значных копеек недостижимо; фолбэк — вернуть как есть (уйдёт в ошибку/кейс)
+            parts.append(cents)
+    return parts
 
 
 # Окно ожидания появления документа в iiko Cloud. add_payment (Cloud) видит документ не сразу после
@@ -268,6 +297,42 @@ def _call_add_payment(payload: dict) -> tuple[int, dict]:
         return 0, {"error": f"{type(exc).__name__}: {exc}"[:400]}
 
 
+async def _mark_split_done(
+    session: AsyncSession,
+    *,
+    idempotency_key: str,
+    invoice_id: uuid.UUID | None,
+    external_id: str,
+    amount: Decimal,
+    account_id: str,
+    n_parts: int,
+    actor_user_id: uuid.UUID | None = None,
+) -> None:
+    """Пометить дроблёную оплату «проведена» summary-строкой по БАЗОВОМУ ключу. ``invoice_id`` задан
+    → ``blocked_invoice_ids`` исключит накладную из авто-выборки джоба (все части уже прошли).
+    Обновляет существующую строку по ключу (напр. прежний ``error`` непредставимой суммы) в ``ok``."""
+    record = await session.scalar(
+        select(IikoInvoicePaymentPush).where(
+            IikoInvoicePaymentPush.idempotency_key == idempotency_key
+        )
+    )
+    if record is None:
+        record = IikoInvoicePaymentPush(idempotency_key=idempotency_key)
+        session.add(record)
+    record.invoice_id = invoice_id
+    record.external_id = external_id
+    record.amount = amount
+    record.account_to = account_id
+    record.status = "ok"
+    record.attempts = 0
+    record.iiko_document_id = None
+    record.error = None
+    record.request_payload = {"split_total": str(amount), "parts": n_parts}
+    record.response_payload = {"split_done": n_parts}
+    record.created_by_user_id = actor_user_id
+    await session.commit()
+
+
 async def push_invoice_payment_to_iiko(
     session: AsyncSession,
     *,
@@ -301,6 +366,57 @@ async def push_invoice_payment_to_iiko(
     from app.services.iiko_sync import _load_source_credential_env
 
     await _load_source_credential_env(session)
+
+    # iiko отвергает суммы, чей float(amount)*100 не целое («invalid amount in JSON»). Такие суммы НЕ
+    # шлём одним платежом, а ДРОБИМ на представимые части (целые рубли + копейки, при нужде в две) и
+    # проводим несколькими add_payment — сумма точная, каждая часть проходит. Части идут суб-ключами
+    # с invoice_id=None; итог помечает summary-строка по БАЗОВОМУ ключу (invoice_id задан → джоб
+    # видит накладную «оплаченной»), недооплаченная НЕ блокируется в blocked_invoice_ids.
+    parts = representable_split(amount)
+    if len(parts) > 1:
+        summary = await session.scalar(
+            select(IikoInvoicePaymentPush).where(
+                IikoInvoicePaymentPush.idempotency_key == idempotency_key
+            )
+        )
+        if summary is not None and summary.status == "ok":
+            return IikoPushResult(
+                ok=True, skipped=True, status_code=None,
+                payload=summary.request_payload, response=summary.response_payload,
+            )
+        if dry_run:
+            return IikoPushResult(
+                ok=True, skipped=False, status_code=None,
+                payload={"split": [str(p) for p in parts]},
+                response={"dry_run": True, "parts": len(parts)},
+            )
+        for i, part in enumerate(parts):
+            res = await push_invoice_payment_to_iiko(
+                session,
+                external_id=external_id,
+                amount=part,
+                account_id=account_id,
+                idempotency_key=f"{idempotency_key}#{i}",
+                payment_dt=payment_dt,
+                invoice_id=None,  # части не блокируют накладную; итог — summary-строка
+                actor_user_id=actor_user_id,
+            )
+            if not res.ok:
+                return IikoPushResult(
+                    ok=False, skipped=False, status_code=res.status_code,
+                    payload=res.payload, response=res.response,
+                    error=f"дробление части {i + 1}/{len(parts)} ({part}₽): {res.error}",
+                )
+        await _mark_split_done(
+            session, idempotency_key=idempotency_key, invoice_id=invoice_id,
+            external_id=external_id, amount=amount, account_id=account_id,
+            n_parts=len(parts), actor_user_id=actor_user_id,
+        )
+        return IikoPushResult(
+            ok=True, skipped=False, status_code=201,
+            payload={"split_total": str(amount), "parts": [str(p) for p in parts]},
+            response={"split_done": len(parts)},
+        )
 
     existing = await session.scalar(
         select(IikoInvoicePaymentPush).where(

@@ -234,20 +234,24 @@ async def test_mirror_continues_when_push_raises(
     assert result["error"] == 1  # обработано, не упало наружу
 
 
-async def test_mirror_bank_unrepresentable_amount_opens_case(
+async def test_mirror_splits_bank_unrepresentable_amount(
     async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Банковское зеркало: «несчастливая» сумма (draft.amount=4213.44) НЕ уходит в iiko (пре-чек),
-    и заводится видимый кейс owner-review — раньше такой провал тихо терялся через blocked-кап."""
-    invoice_id = await _seed(async_session_factory, amount="4213.44", draft_amount="4213.44")
+    """Банковское зеркало: «несчастливая» сумма (draft.amount=4213.44) теперь ДРОБИТСЯ на
+    представимые части (4213.00 + 0.44) и проводится несколькими add_payment — БЕЗ ручного кейса
+    (раньше такой платёж в iiko не уходил и заводился owner-review)."""
+    await _seed(async_session_factory, amount="4213.44", draft_amount="4213.44")
     calls: list = []
     monkeypatch.setattr(mod, "_call_add_payment", _fake_ok(calls))
 
     async with async_session_factory() as session:
         result = await mod.mirror_paid_iiko_invoices(session)
 
-    assert calls == []  # обречённую сумму в iiko НЕ шлём
-    assert result["error"] == 1
+    assert result["ok"] == 1
+    amounts = sorted(c["amount"] for c in calls)
+    assert amounts == [0.44, 4213.0]
+    assert all((a * 100).is_integer() for a in amounts)  # обе части представимы
+    # никакого owner-review кейса — сумма проведена дроблением
     async with async_session_factory() as session:
         cases = (
             await session.scalars(
@@ -256,20 +260,7 @@ async def test_mirror_bank_unrepresentable_amount_opens_case(
                 )
             )
         ).all()
-    assert len(cases) == 1 and cases[0].payload["invoice_id"] == str(invoice_id)
-
-    # Второй проход: накладная исключена (attempts=кап), кейс НЕ дублируется.
-    async with async_session_factory() as session:
-        await mod.mirror_paid_iiko_invoices(session)
-    async with async_session_factory() as session:
-        again = (
-            await session.scalars(
-                select(ReconciliationCase).where(
-                    ReconciliationCase.kind == "iiko_payment_unsettled"
-                )
-            )
-        ).all()
-    assert len(again) == 1
+    assert cases == []
 
 
 def test_format_payment_date_uses_decimal_comma() -> None:
