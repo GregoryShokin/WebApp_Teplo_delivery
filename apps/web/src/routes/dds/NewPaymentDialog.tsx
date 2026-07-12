@@ -378,9 +378,10 @@ export function NewPaymentDialog({
     if (kind === "expense") {
       rowSeq.current = 0;
       setExpenseRows([emptyExpenseRow()]);
-    } else {
-      setFormEpoch((prev) => ({ ...prev, [kind]: (prev[kind] ?? 0) + 1 }));
     }
+    // Пересоздаём отправленную форму (включая расход: его счёт и действие тоже
+    // должны вернуться к безопасным дефолтам, а не залипать на «Оплатить сразу»).
+    setFormEpoch((prev) => ({ ...prev, [kind]: (prev[kind] ?? 0) + 1 }));
     setMode(DIRTY_TO_MODE[others[0]]);
     toast.info(
       `Создано. В окне остался неотправленный ввод: ${others
@@ -611,7 +612,7 @@ export function NewPaymentDialog({
               <>
                 <div className={cn(mode === "expense" ? "" : "hidden")}>
                   <ExpenseForm
-                    key={`expense-${sessionKey}`}
+                    key={`expense-${sessionKey}-${formEpoch.expense ?? 0}`}
                     articles={expenseArticles}
                     wallets={wallets}
                     kassaWallet={kassaWallet}
@@ -852,15 +853,15 @@ function SourcePicker({
             <SelectValue placeholder="Выберите счёт" />
           </SelectTrigger>
           <SelectContent>
-            {wallets.map((wallet) => (
-              <SelectItem
-                disabled={Boolean(disabledReason?.(wallet))}
-                key={wallet.id}
-                value={wallet.id}
-              >
-                {wallet.name}
-              </SelectItem>
-            ))}
+            {wallets.map((wallet) => {
+              const reason = disabledReason?.(wallet) ?? null;
+              return (
+                <SelectItem disabled={reason !== null} key={wallet.id} value={wallet.id}>
+                  {wallet.name}
+                  {reason ? ` — ${reason}` : ""}
+                </SelectItem>
+              );
+            })}
           </SelectContent>
         </Select>
       </Label>
@@ -876,6 +877,7 @@ function SourcePicker({
         key={wallet.id}
         type="button"
         disabled={reason !== null}
+        aria-pressed={active}
         title={reason ?? wallet.name}
         onClick={() => onChange(wallet.id)}
         className={cn(
@@ -936,6 +938,7 @@ function ActionSegment({
           <button
             key={option.key}
             type="button"
+            aria-pressed={value === option.key}
             onClick={() => onChange(option.key)}
             className={cn(
               "rounded px-3 py-1 text-sm transition-colors",
@@ -1125,7 +1128,10 @@ function ExpenseForm({
   // Панель «Что произойдёт» — единственное объяснение режима.
   let tone: SummaryTone;
   let summary: string;
-  if (!isCashSource) {
+  if (!selectedWallet) {
+    tone = "warning";
+    summary = "Выберите счёт списания.";
+  } else if (!isCashSource) {
     tone = "draft";
     const route =
       selectedWallet?.bank_code === "sber"
@@ -1316,9 +1322,7 @@ function PrepaymentForm({
   const actOptions = [
     ...(canReserveCash ? [{ key: "reserve", label: "Резерв" }] : []),
     { key: "pay", label: "Выплатить сразу" },
-    ...(canReserveCash && canConfirmPaid && transferDest
-      ? [{ key: "move", label: moveLabel }]
-      : []),
+    ...(canConfirmPaid && transferDest ? [{ key: "move", label: moveLabel }] : []),
   ];
   useEffect(() => {
     if (!actOptions.some((option) => option.key === act)) {
@@ -1423,7 +1427,10 @@ function PrepaymentForm({
   // Панель «Что произойдёт».
   let tone: SummaryTone;
   let summary: string;
-  if (informalBlocked) {
+  if (!selectedWallet) {
+    tone = "warning";
+    summary = "Выберите счёт списания.";
+  } else if (informalBlocked) {
     tone = "warning";
     summary = `«${cpName}» — неофициальный поставщик: банк недоступен. Выберите Сейф или Кассу.`;
   } else if (!isCashSource) {
@@ -1620,7 +1627,10 @@ function IncomeForm({
   const cpName = counterpartyId ? shortName(registryById.get(counterpartyId) ?? "") : null;
   let tone: SummaryTone = "instant";
   let summary: string;
-  if (counterpartyRequired && !counterpartyId) {
+  if (!selectedWallet) {
+    tone = "warning";
+    summary = "Выберите счёт зачисления.";
+  } else if (counterpartyRequired && !counterpartyId) {
     tone = "warning";
     summary = "Выберите поставщика — возврат гасит его открытые предоплаты (излишек останется обычным приходом).";
   } else if (counterpartyRequired && cpName) {
@@ -1794,22 +1804,31 @@ function AdvanceForm({
       ),
   });
 
-  // Панель «Что произойдёт»: маршрут выдачи по счёту; предупреждение — та же панель.
+  // Панель «Что произойдёт»: маршрут выдачи по счёту (фразы сверены с механикой
+  // контура авансов); предупреждение — та же панель.
   const noun = isLoan ? "заём" : "аванс";
   let tone: SummaryTone;
   let summary: string;
-  if (overAvailable) {
+  if (!selectedWallet) {
     tone = "warning";
-    summary = `Больше заработанного (${formatRub(available)}) — аванс не пройдёт.${canLoan ? " Переключите на «Заём»." : ""}`;
-  } else if (selectedWallet?.kind !== "cash") {
+    summary = "Выберите счёт списания.";
+  } else if (overAvailable) {
+    tone = "warning";
+    summary = `Больше заработанного (${formatRub(available)}) — аванс не пройдёт.${
+      canLoan ? " Переключите на «Заём»." : " Такую сумму выдаёт только заём (нужно право займов)."
+    }`;
+  } else if (selectedWallet.kind !== "cash") {
+    // Черновик идёт на реквизиты ИП → Сейф-резерв; сотруднику выдают наличными.
     tone = "draft";
-    summary = `Черновик в Т-Банк — ${employeeName ? shortName(employeeName) : "сотрудник"} получит на карту после оплаты.`;
+    summary = `Черновик в Т-Банк на счёт ИП → Сейф; ${noun} выдадите наличными по «Выплачено».`;
   } else if (selectedWallet.location === "kassa") {
-    tone = "move";
-    summary = `Уйдёт в Кассу — наличные выдаст кассир, ${noun} активируется при выдаче.`;
-  } else {
+    // Денег не двигает: создаётся разрешение кассиру (kassa_pending).
     tone = "reserve";
-    summary = `Резерв на Сейфе — выдадите наличными, ${noun} активируется при выплате.`;
+    summary = `Кассир получит разрешение и выдаст наличные — ${noun} активируется при выдаче.`;
+  } else {
+    // Сейф: немедленная out-проводка, аванс активен сразу (issue_advance → issued).
+    tone = "instant";
+    summary = `Спишется с Сейфа сразу — выдадите наличными, ${noun} активен с момента оформления.`;
   }
 
   const submitLabel =
@@ -1817,7 +1836,9 @@ function AdvanceForm({
       ? "Отправить в банк"
       : selectedWallet.location === "kassa"
         ? "Передать в кассу"
-        : "Создать резерв";
+        : isLoan
+          ? "Оформить заём"
+          : "Оформить аванс";
 
   return (
     <div>
@@ -2040,7 +2061,11 @@ function PayoutDebtForm({
         setPendingPayout(payout);
         setStep("link");
         onLinkPending(true);
-        toast.success("Черновик платежа создан — привяжите операцию из выписки");
+        toast.success(
+          selectedWallet?.bank_code === "tbank"
+            ? "Черновик платежа создан — привяжите операцию из выписки"
+            : "Выплата сохранена — привяжите операцию из выписки",
+        );
         return;
       }
       if (payout.status === "failed") {
@@ -2082,7 +2107,7 @@ function PayoutDebtForm({
       <div>
         <FormHeader
           title="Привязать операцию"
-          description="Черновик отправлен в банк. Выберите исходящую операцию из выписки, чтобы подтвердить выплату (заведёт перевод на Сейф с резервом)."
+          description="Выберите исходящую операцию из выписки, чтобы подтвердить выплату (заведёт перевод на Сейф с резервом)."
         />
         <div className="max-h-[340px] space-y-2 overflow-y-auto">
           {operationsQuery.isLoading ? (
@@ -2137,15 +2162,19 @@ function PayoutDebtForm({
   // Панель «Что произойдёт»: маршрут по счёту; переплата — предупреждением в той же панели.
   let tone: SummaryTone;
   let summary: string;
-  if (employeeId && debtInfo && numericAmount > debtInfo.debt) {
+  if (!selectedWallet) {
+    tone = "warning";
+    summary = "Выберите счёт списания.";
+  } else if (employeeId && debtInfo && numericAmount > debtInfo.debt) {
     tone = "warning";
     summary = `Больше остатка долга (${formatRub(debtInfo.debt)}) — долг уйдёт в минус (переплата).`;
-  } else if (selectedWallet?.kind === "cash") {
+  } else if (selectedWallet.kind === "cash") {
     tone = "instant";
     summary = `Спишется с ${selectedWallet.location === "kassa" ? "Кассы" : "Сейфа"} сразу — долг уменьшится.`;
-  } else if (selectedWallet?.bank_code === "tbank") {
+  } else if (selectedWallet.bank_code === "tbank") {
+    // Черновик идёт на реквизиты ИП; деньги встанут резервом на Сейфе.
     tone = "draft";
-    summary = "Черновик в Т-Банк на карту сотрудника. После оплаты подтвердите по выписке.";
+    summary = "Черновик в Т-Банк на счёт ИП → Сейф. После оплаты подтвердите по выписке.";
   } else {
     tone = "draft";
     summary = "Этот банк не создаёт черновики — подтвердите привязкой операции из выписки.";
@@ -2170,6 +2199,9 @@ function PayoutDebtForm({
               ))}
             </SelectContent>
           </Select>
+          <span className="text-xs text-muted-foreground">
+            Оклад «по требованию» включается в «Исходных данных».
+          </span>
         </Label>
 
         {employeeId && debtInfo ? (
@@ -2349,10 +2381,12 @@ function TransferPlainForm({
 
   // Панель «Что произойдёт»: маршрут — жирным первым токеном, вместо поля «Куда».
   const route = `${sourceWallet ? shortWalletName(sourceWallet) : "—"} → ${destWallet ? shortWalletName(destWallet) : "—"}`;
-  const tone: SummaryTone = isBankSource ? "draft" : "move";
+  const tone: SummaryTone = sourceWallet == null ? "warning" : isBankSource ? "draft" : "move";
   const rest = isBankSource
     ? "черновиком; деньги придут на Сейф после оплаты в банке."
-    : "проведётся сразу.";
+    : isSafeSource
+      ? "проведётся сразу. Внесение на банковский счёт — разметкой операции из выписки."
+      : "проведётся сразу.";
 
   return (
     <div>
@@ -2393,7 +2427,13 @@ function TransferPlainForm({
         </div>
 
         <SummaryPanel tone={tone} total={amountOf(amount) > 0 ? amountOf(amount) : 0}>
-          <b>{route}</b> · {rest}
+          {sourceWallet == null ? (
+            "Выберите счёт-источник."
+          ) : (
+            <>
+              <b>{route}</b> · {rest}
+            </>
+          )}
         </SummaryPanel>
       </div>
       <FormFooter
