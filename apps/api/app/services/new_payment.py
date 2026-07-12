@@ -104,8 +104,9 @@ FLOW_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "supplier_invoices": ("invoices.normal.pay",),
     # Внутренний перевод — как ручной резерв/движение Сейфа.
     "internal_transfer": ("finance.safe.allocate",),
-    # Наличное поступление (Сейф/Касса) — как остальные наличные операции окна.
-    "income": ("finance.safe.allocate",),
+    # Наличное поступление — реальное движение денег сразу (не намерение):
+    # уровень права подтверждения оплат, как у выдачи резерва и pay_now.
+    "income": ("finance.safe.confirm_paid",),
 }
 
 # Займ = аванс сверх заработанного: без этого права статья займа в селект не попадает.
@@ -184,6 +185,22 @@ def ensure_expense_article_allowed(article: DdsArticle) -> None:
         raise ValueError(
             "У этой статьи собственный контур выдачи — свободный вывод на Сейф недоступен"
         )
+
+
+def ensure_reservable_article_allowed(article: DdsArticle, *, has_counterparty: bool) -> None:
+    """Статья годится для наличного резерва / целевой передачи из окна.
+
+    Расходные статьи свободного вывода — всегда; «Авансы поставщикам»
+    (маршрут ``supplier_prepayment``) — только с контрагентом: при выплате такого
+    резерва создаётся предоплата-дебиторка (см. ``pay_allocation``).
+    """
+    if new_payment_article_flow(article) == "supplier_prepayment":
+        if not article.is_active:
+            raise ValueError("Статья ДДС неактивна")
+        if not has_counterparty:
+            raise ValueError("Резерв предоплаты поставщику требует контрагента")
+        return
+    ensure_expense_article_allowed(article)
 
 
 def ensure_income_article_allowed(article: DdsArticle) -> None:
@@ -415,6 +432,7 @@ __all__ = [
     "build_new_payment_context",
     "ensure_expense_article_allowed",
     "ensure_income_article_allowed",
+    "ensure_reservable_article_allowed",
     "list_new_payment_articles",
     "list_new_payment_employees",
     "list_payout_attribution_employees",

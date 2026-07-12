@@ -235,6 +235,30 @@ async def pay_allocation(
     )
     await session.flush()
 
+    # Резерв предоплаты поставщику (статья «Авансы поставщикам» + контрагент):
+    # выплата резерва — момент возникновения дебиторки, заводим SupplierPrepayment.
+    # Код статьи продублирован из supplier_prepayments (циклический импорт через kassa).
+    if allocation.article_id is not None and allocation.counterparty_id is not None:
+        article = await session.get(DdsArticle, allocation.article_id)
+        if article is not None and article.code == "advance_to_supplier":
+            from app.models import SupplierPrepayment
+
+            session.add(
+                SupplierPrepayment(
+                    counterparty_id=allocation.counterparty_id,
+                    kind="goods",
+                    wallet_id=allocation.wallet_id,
+                    amount=amount,
+                    amount_settled=Decimal("0.00"),
+                    status="open",
+                    cashflow_transaction_id=leg.id,
+                    article_id=allocation.article_id,
+                    note=allocation.purpose,
+                    created_by_user_id=created_by_user_id,
+                )
+            )
+            await session.flush()
+
     # Зарплатная целёвка «через Сейф»: фактическая выплата сотруднику — здесь (не при разборе).
     # Заводим EmployeePayout(«выплачено») на эту (в т.ч. частичную) оплату → расчёт ЗП учтёт.
     if allocation.employee_id is not None:

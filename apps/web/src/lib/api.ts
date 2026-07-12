@@ -2893,7 +2893,9 @@ export type NewPaymentTransferPayload = {
 };
 
 export type NewPaymentTransferResult = {
-  kind: "transfer" | "draft";
+  // transfer — наличный перевод проведён; draft — банк-черновик;
+  // safe_to_bank — списано с Сейфа, банковская нога придёт выпиской.
+  kind: "transfer" | "draft" | "safe_to_bank";
   amount: number;
   draft_id: string | null;
 };

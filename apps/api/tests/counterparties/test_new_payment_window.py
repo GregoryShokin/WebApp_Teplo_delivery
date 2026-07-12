@@ -49,7 +49,10 @@ from app.services.kassa.payouts import PROTECTED_ARTICLE_CODES
 from app.services.new_payment import (
     EMPLOYEE_PAYOUT_ARTICLE_CODES,
     FLOW_BY_ARTICLE_CODE,
+    INCOME_ENGINE_ARTICLE_CODES,
     SUPPLIER_INVOICES_ARTICLE_CODE,
+    ensure_income_article_allowed,
+    ensure_reservable_article_allowed,
     list_new_payment_articles,
     list_new_payment_employees,
     new_payment_article_flow,
@@ -60,7 +63,12 @@ from app.services.payroll_payout_allocation import (
     DDS_ARTICLE_ADMIN_PAYROLL,
     DDS_ARTICLE_PRODUCTION_PAYROLL,
 )
-from app.services.supplier_prepayments import PREPAYMENT_ARTICLE_CODE
+from app.services.supplier_prepayments import (
+    PREPAYMENT_ARTICLE_CODE,
+    SUPPLIER_REFUND_ARTICLE_CODE,
+    create_supplier_prepayment,
+    refund_counterparty_prepayments,
+)
 
 
 def test_route_codes_match_source_services() -> None:
@@ -422,15 +430,30 @@ async def test_context_articles_follow_permissions(
         assert PREPAYMENT_ARTICLE_CODE in codes
         assert DEFAULT_SUPPLIER_ARTICLE_CODE in codes
 
-        # Только свободный вывод: ни одной статьи-маршрута, только expense.
+        # Свободный вывод: expense-статьи + статья-маршрут «Внутренний перевод»
+        # (то же право). Приходные (income) требуют confirm_paid — их тут нет.
         expense_only = await list_new_payment_articles(
             session, permissions=frozenset({"finance.safe.allocate"})
         )
         assert expense_only, "свободные статьи должны быть в сидах"
-        assert {item["flow"] for item in expense_only} == {"expense"}
+        assert {item["flow"] for item in expense_only} == {"expense", "internal_transfer"}
         expense_codes = {item["code"] for item in expense_only}
-        assert not expense_codes & set(FLOW_BY_ARTICLE_CODE)
+        assert expense_codes & set(FLOW_BY_ARTICLE_CODE) == {"internal_transfer"}
         assert not expense_codes & PROTECTED_ARTICLE_CODES
+
+        # Поступления — реальное движение денег: только с правом подтверждения оплат.
+        income_only = await list_new_payment_articles(
+            session, permissions=frozenset({"finance.safe.confirm_paid"})
+        )
+        assert income_only, "приходные статьи должны быть в сидах"
+        assert {item["flow"] for item in income_only} == {"income"}
+        income_codes = {item["code"] for item in income_only}
+        assert "prochie_postupleniya" in income_codes
+        assert SUPPLIER_REFUND_ARTICLE_CODE in income_codes
+        # Движковые приходные (выручка/смена/резервы) в окно не попадают.
+        assert not income_codes & INCOME_ENGINE_ARTICLE_CODES
+        # У каждой статьи окна есть вид деятельности (леджер-фильтр палитры).
+        assert all(item["activity"] for item in income_only + expense_only)
 
         # Займ-статья видна только с правом займов ПОВЕРХ issue-права авансов:
         # POST /payroll/advances требует issue-право по должности до allow_loan,
@@ -578,3 +601,102 @@ async def test_invoices_draft_amount_is_sum_of_remainders(
             session, invoice_ids=[inv1.id, inv2.id], actor_user_id=None
         )
         assert draft.amount == Decimal("2600.00")
+
+
+async def test_income_flow_routing_and_guards(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Маршрут «Поступления»: движковые приходные исключены, гварды симметричны."""
+    async with async_session_factory() as session:
+        refund = await session.scalar(
+            select(DdsArticle).where(DdsArticle.code == SUPPLIER_REFUND_ARTICLE_CODE)
+        )
+        assert refund is not None
+        assert new_payment_article_flow(refund) == "income"
+        ensure_income_article_allowed(refund)  # не бросает
+
+        engine_code = next(iter(INCOME_ENGINE_ARTICLE_CODES))
+        engine = await session.scalar(
+            select(DdsArticle).where(DdsArticle.code == engine_code)
+        )
+        if engine is not None:
+            assert new_payment_article_flow(engine) is None
+            with pytest.raises(ValueError):
+                ensure_income_article_allowed(engine)
+
+        # Расходную статью поступлением не провести, и наоборот.
+        expense = await _free_expense_article(session)
+        with pytest.raises(ValueError, match="приходной"):
+            ensure_income_article_allowed(expense)
+
+
+async def test_reservable_prepayment_requires_counterparty(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Резерв предоплаты: статья «Авансы поставщикам» — только с контрагентом."""
+    async with async_session_factory() as session:
+        prepayment_article = await session.scalar(
+            select(DdsArticle).where(DdsArticle.code == PREPAYMENT_ARTICLE_CODE)
+        )
+        assert prepayment_article is not None
+        with pytest.raises(ValueError, match="контрагента"):
+            ensure_reservable_article_allowed(prepayment_article, has_counterparty=False)
+        ensure_reservable_article_allowed(prepayment_article, has_counterparty=True)
+        # Обычная расходная статья резервируется без контрагента.
+        ensure_reservable_article_allowed(
+            await _free_expense_article(session), has_counterparty=False
+        )
+        # Приходная — не резервируется вовсе.
+        refund = await session.scalar(
+            select(DdsArticle).where(DdsArticle.code == SUPPLIER_REFUND_ARTICLE_CODE)
+        )
+        with pytest.raises(ValueError):
+            ensure_reservable_article_allowed(refund, has_counterparty=True)
+
+
+async def test_refund_settles_prepayments_fifo(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Возврат от поставщика гасит открытые предоплаты FIFO; излишек не гасит ничего."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Возвратный поставщик")
+        wallet = await _safe_wallet(session)
+        first = await create_supplier_prepayment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount=Decimal("100"),
+            operation_date=date(2026, 7, 1),
+        )
+        second = await create_supplier_prepayment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount=Decimal("200"),
+            operation_date=date(2026, 7, 2),
+        )
+
+        settled = await refund_counterparty_prepayments(
+            session, counterparty_id=cp.id, amount=Decimal("150")
+        )
+        assert settled == Decimal("150.00")
+        await session.refresh(first)
+        await session.refresh(second)
+        # FIFO: первая закрыта возвратом целиком, вторая — частично.
+        assert first.status == "refunded"
+        assert first.amount_settled == Decimal("100.00")
+        assert second.status in ("open", "partially_settled")
+        assert second.amount_settled == Decimal("50.00")
+
+        # Возврат больше остатка дебиторки: зачтено только доступное, излишек — приход.
+        settled_more = await refund_counterparty_prepayments(
+            session, counterparty_id=cp.id, amount=Decimal("500")
+        )
+        assert settled_more == Decimal("150.00")
+        await session.refresh(second)
+        assert second.status == "refunded"
+
+        # Возвращённые записи больше не гасятся.
+        assert await refund_counterparty_prepayments(
+            session, counterparty_id=cp.id, amount=Decimal("10")
+        ) == Decimal("0.00")

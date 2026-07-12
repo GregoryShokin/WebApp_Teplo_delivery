@@ -245,7 +245,8 @@ export type PrepaymentCreatePayload = {
   counterparty_id: string;
   wallet_id: string;
   amount: number;
-  operation_date: string;
+  // Пусто — сервер поставит сегодня по МСК (клиентской дате не доверяем).
+  operation_date?: string;
   article_id?: string | null;
   kind?: string;
   note?: string | null;

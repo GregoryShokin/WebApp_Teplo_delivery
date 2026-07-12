@@ -12,6 +12,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -267,7 +268,8 @@ class PrepaymentCreate(BaseModel):
     counterparty_id: uuid.UUID
     wallet_id: uuid.UUID
     amount: Decimal = Field(gt=0)
-    operation_date: date
+    # Пусто — сегодня по МСК на сервере (клиентской дате не доверяем: часовой пояс/часы).
+    operation_date: date | None = None
     article_id: uuid.UUID | None = None
     kind: str = "goods"
     note: str | None = None
@@ -658,13 +660,20 @@ async def post_create_prepayment(
                     f"свободно {free}, запрошено {payload.amount}"
                 ),
             )
+    operation_date = payload.operation_date or datetime.now(ZoneInfo("Europe/Moscow")).date()
+    # Дата не позже опорного остатка кошелька выпала бы из баланса (double-count-защита).
+    if wallet.opening_balance_date is not None and operation_date <= wallet.opening_balance_date:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Дата предоплаты не позже опорного остатка кошелька",
+        )
     try:
         prepayment = await prepayments.create_supplier_prepayment(
             session,
             counterparty_id=payload.counterparty_id,
             wallet_id=payload.wallet_id,
             amount=payload.amount,
-            operation_date=payload.operation_date,
+            operation_date=operation_date,
             article_id=payload.article_id,
             kind=payload.kind,
             note=payload.note,

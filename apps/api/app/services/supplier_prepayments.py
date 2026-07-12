@@ -28,6 +28,8 @@ from app.services.counterparty_matching import _invoice_remaining, _recompute_st
 from app.services.counterparty_payments import CounterpartyPaymentError
 
 PREPAYMENT_ARTICLE_CODE = "advance_to_supplier"
+# Приходная статья «Возврат переплаты от поставщиков» — возврат гасит открытые предоплаты.
+SUPPLIER_REFUND_ARTICLE_CODE = "vozvrat_pereplaty_ot_postavschikov"
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
 
 
@@ -105,6 +107,49 @@ async def create_supplier_prepayment(
     await session.commit()
     await session.refresh(prepayment)
     return prepayment
+
+
+async def refund_counterparty_prepayments(
+    session: AsyncSession,
+    *,
+    counterparty_id: uuid.UUID,
+    amount: Decimal,
+) -> Decimal:
+    """Возврат денег от поставщика: погасить его открытые предоплаты (FIFO).
+
+    Возвращает зачтённую сумму; она может быть МЕНЬШЕ ``amount`` — излишек остаётся
+    обычным приходом (возврат бывает и не по предоплате). Полностью возвращённая
+    запись получает статус ``refunded`` (гард гашения накладными её уже исключает);
+    частично возвращённая — увеличенный ``amount_settled`` (остаток дебиторки падает).
+    Без commit — вызывающая ручка коммитит всю операцию целиком.
+    """
+    remaining = _money(amount)
+    settled_total = Decimal("0.00")
+    if remaining <= 0:
+        return settled_total
+    rows = await session.scalars(
+        select(SupplierPrepayment)
+        .where(
+            SupplierPrepayment.counterparty_id == counterparty_id,
+            SupplierPrepayment.status.in_(OPEN_PREPAYMENT_STATUSES),
+        )
+        .order_by(SupplierPrepayment.created_at)
+    )
+    for prepayment in rows.all():
+        if remaining <= 0:
+            break
+        rest = _money(prepayment.amount) - _money(prepayment.amount_settled)
+        if rest <= 0:
+            continue
+        take = min(rest, remaining)
+        prepayment.amount_settled = _money(prepayment.amount_settled) + take
+        if prepayment.amount_settled >= _money(prepayment.amount):
+            prepayment.status = "refunded"
+        remaining -= take
+        settled_total += take
+    if settled_total > 0:
+        await session.flush()
+    return settled_total
 
 
 async def prepayment_remaining(prepayment: SupplierPrepayment) -> Decimal:

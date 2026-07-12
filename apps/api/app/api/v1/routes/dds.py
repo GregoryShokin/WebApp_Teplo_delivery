@@ -138,8 +138,8 @@ from app.services.kassa.payouts import (
 from app.services.new_payment import (
     NEW_PAYMENT_PERMISSION_CODES,
     build_new_payment_context,
-    ensure_expense_article_allowed,
     ensure_income_article_allowed,
+    ensure_reservable_article_allowed,
     list_payout_attribution_employees,
 )
 from app.services.payroll_advance_service import (
@@ -148,6 +148,10 @@ from app.services.payroll_advance_service import (
     sync_advance_after_allocation_change,
 )
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
+from app.services.supplier_prepayments import (
+    SUPPLIER_REFUND_ARTICLE_CODE,
+    refund_counterparty_prepayments,
+)
 from app.services.warehouse_invoices import invoice_permission_kind
 
 # Статьи аванса/займа сотрудника: разбор операции на них заводит SalaryAdvance (деньги ушли
@@ -714,9 +718,19 @@ async def post_new_payment_expense_cash(
                 status_code=status.HTTP_409_CONFLICT, detail="Статья ДДС не найдена"
             )
         try:
-            ensure_expense_article_allowed(article)
+            # Расходные статьи + «Авансы поставщикам» с контрагентом (резерв предоплаты:
+            # дебиторка возникнет при выплате резерва — pay_allocation).
+            ensure_reservable_article_allowed(
+                article, has_counterparty=line.counterparty_id is not None
+            )
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        if line.counterparty_id is not None:
+            cp = await session.get(Counterparty, line.counterparty_id)
+            if cp is None or cp.status == "archived":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail="Контрагент не найден"
+                )
         amount = Decimal(line.amount)
         line_purpose = " ".join((line.purpose or "").split()) or article.name
         prepared.append((article, amount, line_purpose, line.counterparty_id))
@@ -779,7 +793,8 @@ async def post_new_payment_expense_cash(
     "/new-payment/income-cash",
     response_model=NewPaymentIncomeRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=DDS_SAFE_ALLOCATE_ACCESS,
+    # Приход — реальное движение денег сразу: право подтверждения оплат (как pay_now).
+    dependencies=DDS_SAFE_CONFIRM_PAID_ACCESS,
 )
 async def post_new_payment_income_cash(
     payload: NewPaymentIncomeCreate,
@@ -820,8 +835,27 @@ async def post_new_payment_income_cash(
             ensure_income_article_allowed(article)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        if line.counterparty_id is not None:
+            cp = await session.get(Counterparty, line.counterparty_id)
+            if cp is None or cp.status == "archived":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail="Контрагент не найден"
+                )
         amount = Decimal(line.amount)
         line_purpose = " ".join((line.purpose or "").split()) or article.name
+        # «Возврат переплаты от поставщиков» гасит открытые предоплаты контрагента
+        # (FIFO): иначе дебиторка задваивается — деньги вернулись, а долг «висит».
+        if article.code == SUPPLIER_REFUND_ARTICLE_CODE:
+            if line.counterparty_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Возврат от поставщика требует контрагента",
+                )
+            settled = await refund_counterparty_prepayments(
+                session, counterparty_id=line.counterparty_id, amount=amount
+            )
+            if settled > 0:
+                line_purpose = f"{line_purpose} (зачтено в предоплаты: {settled})"
         session.add(
             CashflowTransaction(
                 wallet_id=wallet.id,
@@ -887,7 +921,9 @@ async def post_internal_transfer(
                     status_code=status.HTTP_409_CONFLICT, detail="Статья ДДС не найдена"
                 )
             try:
-                ensure_expense_article_allowed(article)
+                ensure_reservable_article_allowed(
+                    article, has_counterparty=line.counterparty_id is not None
+                )
             except ValueError as exc:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
             amount = Decimal(line.amount)
@@ -961,11 +997,55 @@ async def post_new_payment_internal_transfer(
     dest = await session.get(Wallet, payload.dest_wallet_id)
     if source is None or source.status != "active":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Счёт списания не найден")
-    if dest is None or dest.status != "active" or dest.type not in ("cash_safe", "store_cash"):
+    dest_is_bank = dest is not None and dest.type in ("bank", "bank_account")
+    if dest is None or dest.status != "active" or (
+        dest.type not in ("cash_safe", "store_cash") and not dest_is_bank
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Счёт-получатель должен быть наличным (Сейф/Касса)",
+            detail="Счёт-получатель должен быть наличным (Сейф/Касса) или банковским",
         )
+
+    # Внесение с Сейфа на банковский счёт: книжим ТОЛЬКО ногу Сейфа (out) — банковскую
+    # ногу принесёт выписка (баланс банка ведётся строго от неё), там операция
+    # размечается переводом. С Кассы на банк не вносим — наличные едут через Сейф.
+    if dest_is_bank:
+        if source.type != "cash_safe":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="На банковский счёт вносят только с Сейфа",
+            )
+        free = await _safe_free_amount(session, source)
+        if Decimal(payload.amount) > free:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Недостаточно свободных средств на Сейфе: "
+                    f"свободно {free}, запрошено {payload.amount}"
+                ),
+            )
+        transfer_article_id = await session.scalar(
+            select(DdsArticle.id).where(DdsArticle.code == "internal_transfer")
+        )
+        purpose = " ".join((payload.purpose or "").split())
+        session.add(
+            CashflowTransaction(
+                wallet_id=source.id,
+                direction="out",
+                amount=Decimal(payload.amount),
+                operation_date=datetime.now(MOSCOW_TZ).date(),
+                article_id=transfer_article_id,
+                source_kind="safe_to_bank_transfer",
+                payment_purpose=(
+                    f"Внесение на счёт → {dest.name}" + (f" · {purpose}" if purpose else "")
+                ),
+                quality_status="final",
+                created_by_user_id=actor.user_id,
+            )
+        )
+        await session.commit()
+        return {"kind": "safe_to_bank", "amount": float(payload.amount), "draft_id": None}
+
     dest_location = "safe" if dest.type == "cash_safe" else "kassa"
 
     # Наличный источник (Сейф/Касса) — мгновенный перевод.
