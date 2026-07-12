@@ -2735,6 +2735,7 @@ export async function getDdsArticles(): Promise<DdsArticleRead[]> {
 
 export type NewPaymentFlow =
   | "expense"
+  | "income"
   | "employee_payout"
   | "employee_advance"
   | "employee_loan"
@@ -2753,6 +2754,8 @@ export type NewPaymentArticle = {
   code: string;
   name: string;
   flow: NewPaymentFlow;
+  // Вид деятельности — леджер-фильтр палитры (operating/financing/investing).
+  activity?: string | null;
   // Закреплённые за статьёй контрагенты — «кому платим» для свободного вывода.
   counterparties?: NewPaymentArticleCounterparty[];
 };
@@ -2823,12 +2826,15 @@ export async function createNewPaymentExpenseDraft(
 export type ExpenseCashReservePayload = {
   wallet_id: string;
   lines: NewPaymentExpenseLine[];
+  // «Создать платёж»: сразу оплатить каждый резерв (деньги ушли). Требует finance.safe.confirm_paid.
+  pay_now?: boolean;
 };
 
 export type ExpenseCashReserveResult = {
   created: number;
   total: number;
   location: "safe" | "kassa";
+  paid?: boolean;
 };
 
 // Свободный вывод НАЛИЧНЫМИ: создаёт резерв(ы) на Сейфе/в Кассе (без банковского черновика).
@@ -2837,6 +2843,24 @@ export async function createExpenseCashReserves(
 ): Promise<ExpenseCashReserveResult> {
   const response = await api.post<ExpenseCashReserveResult>(
     "/dds/new-payment/expense-cash",
+    payload,
+  );
+  return response.data;
+}
+
+export type NewPaymentIncomeResult = {
+  created: number;
+  total: number;
+  location: "safe" | "kassa";
+};
+
+// Наличное поступление: in-проводка(и) на Сейф/в Кассу сразу (приход — факт, не намерение).
+export async function createNewPaymentIncome(payload: {
+  wallet_id: string;
+  lines: NewPaymentExpenseLine[];
+}): Promise<NewPaymentIncomeResult> {
+  const response = await api.post<NewPaymentIncomeResult>(
+    "/dds/new-payment/income-cash",
     payload,
   );
   return response.data;

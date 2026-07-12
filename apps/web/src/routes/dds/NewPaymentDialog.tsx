@@ -5,6 +5,7 @@ import {
   Building2,
   HandCoins,
   LoaderCircle,
+  Banknote,
   MousePointerClick,
   Plus,
   Receipt,
@@ -40,7 +41,9 @@ import {
   confirmEmployeePayout,
   createEmployeePayout,
   createExpenseCashReserves,
+  createInternalTransfer,
   createNewPaymentExpenseDraft,
+  createNewPaymentIncome,
   createNewPaymentInternalTransfer,
   createPayrollAdvance,
   getDdsBankOperations,
@@ -53,8 +56,13 @@ import {
   type NewPaymentExpenseLine,
   type NewPaymentWallet,
 } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
-import { createBankPrepaymentDraft, getRegistry } from "@/routes/counterparties/api";
+import {
+  createBankPrepaymentDraft,
+  createPrepayment,
+  getRegistry,
+} from "@/routes/counterparties/api";
 import { formatRub } from "@/routes/counterparties/shared";
 
 /**
@@ -72,6 +80,7 @@ import { formatRub } from "@/routes/counterparties/shared";
 
 type OperationKind =
   | "expense"
+  | "income"
   | "supplier_prepayment"
   | "employee_advance"
   | "employee_loan"
@@ -79,10 +88,11 @@ type OperationKind =
   | "transfer_plain";
 
 /** Ключи учёта «в форме есть неотправленный ввод» (см. handleDone). */
-type DirtyKind = "expense" | "prepayment" | "advance" | "payout" | "transfer";
+type DirtyKind = "expense" | "income" | "prepayment" | "advance" | "payout" | "transfer";
 
 const DIRTY_LABELS: Record<DirtyKind, string> = {
   expense: "строки расхода",
+  income: "поступление",
   prepayment: "предоплата поставщику",
   advance: "аванс/заём",
   payout: "выплата долга по ЗП",
@@ -91,15 +101,25 @@ const DIRTY_LABELS: Record<DirtyKind, string> = {
 
 const DIRTY_TO_MODE: Record<DirtyKind, OperationKind> = {
   expense: "expense",
+  income: "income",
   prepayment: "supplier_prepayment",
   advance: "employee_advance",
   payout: "employee_payout",
   transfer: "transfer_plain",
 };
 
+/** Леджеры палитры: вид деятельности статьи (activity_type каталога ДДС). */
+type LedgerKey = "operating" | "financing" | "investing";
+
+const LEDGERS: Array<{ key: LedgerKey; label: string; title: string }> = [
+  { key: "operating", label: "Опер.", title: "Операционная деятельность" },
+  { key: "financing", label: "Фин.", title: "Финансовая деятельность" },
+  { key: "investing", label: "Инвест.", title: "Инвестиционная деятельность" },
+];
+
 /** Сколько расходных статей видно в схлопнутой палитре — подобрано так, чтобы все
- *  три группы влезали в окно без скролла. */
-const EXPENSE_COLLAPSED_COUNT = 6;
+ *  группы влезали в окно без скролла. */
+const EXPENSE_COLLAPSED_COUNT = 5;
 
 type ExpenseRow = {
   key: string;
@@ -149,9 +169,14 @@ export function NewPaymentDialog({
   presetArticleCode?: string | null;
 }) {
   const queryClient = useQueryClient();
+  const permissions = usePermissions();
+  // «Создать платёж» (сразу) и «Передать в кассу» двигают живые деньги — уровень
+  // права подтверждения оплат, как у выдачи резерва Сейфа.
+  const canConfirmPaid = permissions.hasPermission("finance.safe.confirm_paid");
 
   const [mode, setMode] = useState<OperationKind | null>(null);
   const [search, setSearch] = useState("");
+  const [ledger, setLedger] = useState<LedgerKey>("operating");
   // Ключ сессии окна: на каждое открытие формы пересоздаются с чистым состоянием.
   const [sessionKey, setSessionKey] = useState(0);
   // Группа «Расходы» схлопнута — раскрывается кнопкой «Ещё…» или поиском.
@@ -178,6 +203,10 @@ export function NewPaymentDialog({
     () => articles.filter((item) => item.flow === "expense"),
     [articles],
   );
+  const incomeArticles = useMemo(
+    () => articles.filter((item) => item.flow === "income"),
+    [articles],
+  );
   const prepaymentArticle = articles.find((item) => item.flow === "supplier_prepayment") ?? null;
   const advanceArticle = articles.find((item) => item.flow === "employee_advance") ?? null;
   const loanArticle = articles.find((item) => item.flow === "employee_loan") ?? null;
@@ -186,6 +215,11 @@ export function NewPaymentDialog({
     [articles],
   );
   const transferArticle = articles.find((item) => item.flow === "internal_transfer") ?? null;
+  const kassaWallet =
+    wallets.find((wallet) => wallet.kind === "cash" && wallet.location === "kassa") ?? null;
+
+  // Статья поступления живёт в родителе — палитра выбирает её напрямую.
+  const [incomeArticleId, setIncomeArticleId] = useState("");
 
   // --- Строки расхода живут в родителе: палитра добавляет статьи прямо в форму ---
   const rowSeq = useRef(0);
@@ -237,6 +271,11 @@ export function NewPaymentDialog({
       });
       return;
     }
+    if (article.flow === "income") {
+      setMode("income");
+      setIncomeArticleId(article.id);
+      return;
+    }
     const modeByFlow: Partial<Record<NewPaymentArticle["flow"], OperationKind>> = {
       supplier_prepayment: "supplier_prepayment",
       employee_advance: "employee_advance",
@@ -258,6 +297,8 @@ export function NewPaymentDialog({
     if (open) {
       setMode(null);
       setSearch("");
+      setLedger("operating");
+      setIncomeArticleId("");
       rowSeq.current = 0;
       setExpenseRows([emptyExpenseRow()]);
       setSessionKey((key) => key + 1);
@@ -325,11 +366,15 @@ export function NewPaymentDialog({
   }
   const close = () => onOpenChange(false);
 
-  // --- Палитра: группы, схлопывание «Расходов», поиск ---
+  // --- Палитра: группы, леджер-фильтр, схлопывание «Расходов», поиск ---
   const q = search.trim().toLowerCase();
   const matches = (label: string) => !q || label.toLowerCase().includes(q);
+  // Поиск ищет по всем леджерам; без поиска статьи фильтруются активным леджером.
+  const inLedger = (item: NewPaymentArticle) =>
+    Boolean(q) || (item.activity ?? "operating") === ledger;
 
-  const matchedExpense = expenseArticles.filter((item) => matches(item.name));
+  const matchedExpense = expenseArticles.filter((item) => matches(item.name) && inLedger(item));
+  const matchedIncome = incomeArticles.filter((item) => matches(item.name) && inLedger(item));
   const usedArticleIds = new Set(expenseRows.map((row) => row.articleId).filter(Boolean));
   // Без поиска и раскрытия — первые N статей + статьи, уже выбранные в строках.
   const visibleExpense =
@@ -340,7 +385,8 @@ export function NewPaymentDialog({
         );
   const hiddenExpenseCount = matchedExpense.length - visibleExpense.length;
 
-  const showPrepayment = prepaymentArticle !== null && matches(prepaymentArticle.name);
+  const showPrepayment =
+    prepaymentArticle !== null && matches(prepaymentArticle.name) && inLedger(prepaymentArticle);
   const advanceLabel = "Аванс сотруднику";
   const loanLabel = "Заём сотруднику";
   const payoutLabel = "Долг по ЗП (по требованию)";
@@ -350,8 +396,10 @@ export function NewPaymentDialog({
   const showPayout = payoutArticles.length > 0 && matches(payoutLabel);
   const showTransfer = transferArticle !== null && matches(transferLabel);
   const expenseGroupVisible = visibleExpense.length > 0 || showPrepayment;
+  const incomeGroupVisible = matchedIncome.length > 0;
   const employeeGroupVisible = showAdvance || showLoan || showPayout;
-  const nothingFound = !expenseGroupVisible && !employeeGroupVisible && !showTransfer;
+  const nothingFound =
+    !expenseGroupVisible && !incomeGroupVisible && !employeeGroupVisible && !showTransfer;
 
   const context = contextQuery.data ?? null;
 
@@ -371,7 +419,7 @@ export function NewPaymentDialog({
           {/* Палитра операций; на шаге привязки скрыта — черновик нельзя потерять случайно */}
           {linkPending ? null : (
             <aside className="flex w-52 shrink-0 flex-col border-r sm:w-60">
-              <div className="shrink-0 p-2.5 pb-1.5">
+              <div className="shrink-0 p-2.5 pb-1">
                 <div className="relative">
                   <Search
                     className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -383,6 +431,25 @@ export function NewPaymentDialog({
                     placeholder="Статья или операция…"
                     className="h-8 pl-8 text-sm"
                   />
+                </div>
+                <div className="mt-1.5 flex gap-1">
+                  {LEDGERS.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      title={item.title}
+                      onClick={() => setLedger(item.key)}
+                      className={cn(
+                        "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+                        ledger === item.key && !q
+                          ? "border-primary/40 bg-primary/10 font-medium text-primary"
+                          : "border-input text-muted-foreground hover:bg-muted",
+                        q && "opacity-50",
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
                 </div>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-3">
@@ -436,6 +503,19 @@ export function NewPaymentDialog({
                             onClick={() => selectArticle(prepaymentArticle)}
                           />
                         ) : null}
+                      </PaletteGroup>
+                    ) : null}
+                    {incomeGroupVisible ? (
+                      <PaletteGroup title="Поступления">
+                        {matchedIncome.map((article) => (
+                          <PaletteItem
+                            key={article.id}
+                            icon={Banknote}
+                            label={article.name}
+                            active={mode === "income" && incomeArticleId === article.id}
+                            onClick={() => selectArticle(article)}
+                          />
+                        ))}
                       </PaletteGroup>
                     ) : null}
                     {employeeGroupVisible ? (
@@ -502,6 +582,8 @@ export function NewPaymentDialog({
                     key={`expense-${sessionKey}`}
                     articles={expenseArticles}
                     wallets={wallets}
+                    kassaWallet={kassaWallet}
+                    canConfirmPaid={canConfirmPaid}
                     rows={expenseRows}
                     onChangeArticle={changeExpenseArticle}
                     onUpdateRow={updateExpenseRow}
@@ -515,12 +597,28 @@ export function NewPaymentDialog({
                     onCancel={close}
                   />
                 </div>
+                {incomeArticles.length > 0 ? (
+                  <div className={cn(mode === "income" ? "" : "hidden")}>
+                    <IncomeForm
+                      active={mode === "income"}
+                      key={`income-${sessionKey}-${formEpoch.income ?? 0}`}
+                      articles={incomeArticles}
+                      wallets={wallets}
+                      articleId={incomeArticleId}
+                      onArticleChange={setIncomeArticleId}
+                      onDirty={(value) => setDirty("income", value)}
+                      onDone={() => handleDone("income")}
+                      onCancel={close}
+                    />
+                  </div>
+                ) : null}
                 {prepaymentArticle ? (
                   <div className={cn(mode === "supplier_prepayment" ? "" : "hidden")}>
                     <PrepaymentForm
                       active={mode === "supplier_prepayment"}
                       key={`prepayment-${sessionKey}-${formEpoch.prepayment ?? 0}`}
                       article={prepaymentArticle}
+                      wallets={wallets}
                       onDirty={(value) => setDirty("prepayment", value)}
                       onDone={() => handleDone("prepayment")}
                       onCancel={close}
@@ -674,6 +772,8 @@ function FormFooter({
 function ExpenseForm({
   articles,
   wallets,
+  kassaWallet,
+  canConfirmPaid,
   rows,
   onChangeArticle,
   onUpdateRow,
@@ -684,6 +784,8 @@ function ExpenseForm({
 }: {
   articles: NewPaymentArticle[];
   wallets: NewPaymentWallet[];
+  kassaWallet: NewPaymentWallet | null;
+  canConfirmPaid: boolean;
   rows: ExpenseRow[];
   onChangeArticle: (key: string, articleId: string) => void;
   onUpdateRow: (key: string, patch: Partial<ExpenseRow>) => void;
@@ -720,30 +822,55 @@ function ExpenseForm({
     rows.length > 0 &&
     rows.every((row) => row.articleId && amountOf(row.amount) > 0);
 
+  const buildLines = (): NewPaymentExpenseLine[] =>
+    rows.map((row) => ({
+      article_id: row.articleId,
+      amount: amountOf(row.amount),
+      purpose: row.purpose.trim(),
+      counterparty_id: row.counterpartyId || null,
+    }));
+
   const mutation = useMutation({
-    mutationFn: async () => {
-      const lines: NewPaymentExpenseLine[] = rows.map((row) => ({
-        article_id: row.articleId,
-        amount: amountOf(row.amount),
-        purpose: row.purpose.trim(),
-        counterparty_id: row.counterpartyId || null,
-      }));
+    mutationFn: async ({ payNow }: { payNow: boolean }) => {
+      const lines = buildLines();
       return isCashSource
-        ? createExpenseCashReserves({ wallet_id: walletId, lines })
+        ? createExpenseCashReserves({ wallet_id: walletId, lines, pay_now: payNow })
         : createNewPaymentExpenseDraft({ lines, channel });
     },
-    onSuccess: async () => {
+    onSuccess: async (_result, { payNow }) => {
       toast.success(
-        isCashSource
-          ? rows.length > 1
-            ? "Резервы созданы"
-            : "Резерв создан"
-          : "Черновик отправлен в банк",
+        !isCashSource
+          ? "Черновик отправлен в банк"
+          : payNow
+            ? "Платёж проведён — деньги списаны со счёта"
+            : rows.length > 1
+              ? "Резервы созданы"
+              : "Резерв создан",
       );
       await onDone();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось создать платёж")),
   });
+
+  // «Передать в кассу»: наличные уезжают с Сейфа в Кассу и резервируются там под
+  // каждую строку (выдача — из журнала Кассы, вкладка «К выдаче»).
+  const transferMutation = useMutation({
+    mutationFn: () =>
+      createInternalTransfer({
+        source_wallet_id: walletId,
+        dest_wallet_id: kassaWallet?.id ?? "",
+        mode: "targeted",
+        lines: buildLines(),
+      }),
+    onSuccess: async (result) => {
+      toast.success(`Передано в кассу: ${formatRub(result.amount)}, резервов: ${result.reserves}`);
+      await onDone();
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось передать в кассу")),
+  });
+
+  const isSafeSource = selectedWallet?.kind === "cash" && selectedWallet.location === "safe";
+  const busy = mutation.isPending || transferMutation.isPending;
 
   return (
     <div>
@@ -864,17 +991,59 @@ function ExpenseForm({
 
         <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
           {isCashSource
-            ? "Наличный счёт: суммы сразу резервируются на Сейфе/в Кассе — банк не участвует."
+            ? "«Создать резерв» — плановый платёж (выплата позже). «Создать платёж» — деньги списываются сразу. «Передать в кассу» — наличные уедут с Сейфа в Кассу резервом под выдачу."
             : "Строки уйдут одним черновиком на карту ИП → Сейф (разнос по статьям при оплате). Подтверждение в банке."}
         </div>
       </div>
-      <FormFooter
-        cancel={onCancel}
-        submit={() => mutation.mutate()}
-        submitLabel={isCashSource ? "Создать резерв" : "Создать черновик"}
-        disabled={!canSubmit}
-        pending={mutation.isPending}
-      />
+      <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t pt-3.5">
+        <Button onClick={onCancel} type="button" variant="outline">
+          Отмена
+        </Button>
+        {isCashSource ? (
+          <>
+            <Button
+              disabled={!canSubmit || busy}
+              onClick={() => mutation.mutate({ payNow: false })}
+              type="button"
+              variant={canConfirmPaid ? "outline" : "default"}
+            >
+              Создать резерв
+            </Button>
+            {isSafeSource && kassaWallet && canConfirmPaid ? (
+              <Button
+                disabled={!canSubmit || busy}
+                onClick={() => transferMutation.mutate()}
+                type="button"
+                variant="outline"
+              >
+                {transferMutation.isPending ? (
+                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : null}
+                Передать в кассу
+              </Button>
+            ) : null}
+            {canConfirmPaid ? (
+              <Button
+                disabled={!canSubmit || busy}
+                onClick={() => mutation.mutate({ payNow: true })}
+                type="button"
+              >
+                {mutation.isPending ? (
+                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : null}
+                Создать платёж
+              </Button>
+            ) : null}
+          </>
+        ) : (
+          <Button disabled={!canSubmit || busy} onClick={() => mutation.mutate({ payNow: false })} type="button">
+            {mutation.isPending ? (
+              <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : null}
+            Создать черновик
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -885,18 +1054,30 @@ function ExpenseForm({
 function PrepaymentForm({
   active,
   article,
+  wallets,
   onDirty,
   onDone,
   onCancel,
 }: {
   active: boolean;
   article: NewPaymentArticle;
+  wallets: NewPaymentWallet[];
   onDirty: (value: boolean) => void;
   onDone: () => Promise<void>;
   onCancel: () => void;
 }) {
   const [counterpartyId, setCounterpartyId] = useState("");
   const [amount, setAmount] = useState("");
+  const [walletId, setWalletId] = useState("");
+
+  const tbankWallet = wallets.find((wallet) => wallet.bank_code === "tbank") ?? null;
+  useEffect(() => {
+    if (!walletId && tbankWallet) {
+      setWalletId(tbankWallet.id);
+    }
+  }, [walletId, tbankWallet]);
+  const selectedWallet = wallets.find((wallet) => wallet.id === walletId) ?? null;
+  const isCashSource = selectedWallet?.kind === "cash";
 
   const dirty = amountOf(amount) > 0 || Boolean(counterpartyId);
   useEffect(() => {
@@ -923,17 +1104,35 @@ function PrepaymentForm({
   }));
   const selected = counterparties.find((item) => item.counterparty_id === counterpartyId) ?? null;
   const isInformal = selected?.relationship === "informal";
-  const canSubmit = Boolean(counterpartyId) && !isInformal && amountOf(amount) > 0;
+  // Неофициальный поставщик: банк-черновик запрещён, наличными — можно.
+  const informalBlocked = isInformal && !isCashSource;
+  const canSubmit =
+    Boolean(counterpartyId) && Boolean(walletId) && !informalBlocked && amountOf(amount) > 0;
 
   const mutation = useMutation({
-    mutationFn: () =>
-      createBankPrepaymentDraft({
+    mutationFn: async () => {
+      if (isCashSource) {
+        await createPrepayment({
+          counterparty_id: counterpartyId,
+          wallet_id: walletId,
+          amount: amountOf(amount),
+          operation_date: todayInput(),
+          article_id: article.id,
+        });
+        return;
+      }
+      await createBankPrepaymentDraft({
         counterparty_id: counterpartyId,
         amount: amountOf(amount),
         article_id: article.id,
-      }),
+      });
+    },
     onSuccess: async () => {
-      toast.success("Черновик предоплаты отправлен в банк");
+      toast.success(
+        isCashSource
+          ? "Предоплата выплачена — дебиторка создана"
+          : "Черновик предоплаты отправлен в банк",
+      );
       await onDone();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось создать предоплату")),
@@ -943,9 +1142,37 @@ function PrepaymentForm({
     <div>
       <FormHeader
         title={article.name}
-        description="Черновик в Т-Банке на счёт поставщика. После оплаты создастся предоплата (дебиторка) — погасится будущими накладными."
+        description="Банк — черновик на счёт поставщика; наличные — выплата сразу. Предоплата (дебиторка) погасится будущими накладными."
       />
       <div className="space-y-3">
+        <Label className="block space-y-1">
+          <span className="text-sm">Счёт списания</span>
+          <Select onValueChange={setWalletId} value={walletId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Выберите счёт" />
+            </SelectTrigger>
+            <SelectContent>
+              {wallets.map((wallet) => {
+                const isCash = wallet.kind === "cash";
+                const disabled = !isCash && wallet.bank_code !== "tbank";
+                let hint = "";
+                if (isCash) {
+                  hint = " — наличными, выплата сразу";
+                } else if (wallet.bank_code === "tbank") {
+                  hint = " — черновик в банке";
+                } else {
+                  hint = " — банковская предоплата только из Т-Банка";
+                }
+                return (
+                  <SelectItem disabled={disabled} key={wallet.id} value={wallet.id}>
+                    {wallet.name}
+                    {hint}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </Label>
         <div className="space-y-1">
           <Label className="text-sm">Контрагент</Label>
           <InlineOptionList
@@ -957,10 +1184,10 @@ function PrepaymentForm({
             value={counterpartyId}
           />
         </div>
-        {isInformal ? (
+        {informalBlocked ? (
           <p className="text-sm text-amber-600">
-            Неофициальный поставщик: предоплата в банк недоступна — аванс выдаётся наличными
-            через кассу. Выберите другого контрагента.
+            Неофициальный поставщик: предоплата в банк недоступна — выберите наличный счёт
+            (Сейф/Касса) или другого контрагента.
           </p>
         ) : null}
         <Label className="block space-y-1">
@@ -977,7 +1204,170 @@ function PrepaymentForm({
       <FormFooter
         cancel={onCancel}
         submit={() => mutation.mutate()}
-        submitLabel="Отправить в банк"
+        submitLabel={isCashSource ? "Выплатить" : "Отправить в банк"}
+        disabled={!canSubmit}
+        pending={mutation.isPending}
+      />
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// Поступление: наличный приход на Сейф/в Кассу (проводка сразу; банк — из выписки)
+
+function IncomeForm({
+  active,
+  articles,
+  wallets,
+  articleId,
+  onArticleChange,
+  onDirty,
+  onDone,
+  onCancel,
+}: {
+  active: boolean;
+  articles: NewPaymentArticle[];
+  wallets: NewPaymentWallet[];
+  articleId: string;
+  onArticleChange: (id: string) => void;
+  onDirty: (value: boolean) => void;
+  onDone: () => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [walletId, setWalletId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [counterpartyId, setCounterpartyId] = useState("");
+
+  const dirty = amountOf(amount) > 0;
+  useEffect(() => {
+    onDirty(dirty);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty]);
+
+  const cashWallets = wallets.filter((wallet) => wallet.kind === "cash");
+  const safeWallet = cashWallets.find((wallet) => wallet.location === "safe") ?? null;
+  useEffect(() => {
+    if (!walletId && safeWallet) {
+      setWalletId(safeWallet.id);
+    }
+  }, [walletId, safeWallet]);
+
+  // Контрагент (необязательно) — полезен для «Возврата переплаты от поставщиков».
+  const registryQuery = useQuery({
+    queryKey: ["cp", "registry"],
+    queryFn: () => getRegistry(),
+    enabled: active,
+  });
+  const counterpartyOptions: ComboboxOption[] = useMemo(
+    () => [
+      { value: "", label: "Не указан" },
+      ...(registryQuery.data ?? [])
+        .filter((item) => item.relationship !== "barter")
+        .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+        .map((item) => ({
+          value: item.counterparty_id,
+          label: item.name,
+          keywords: item.inn ?? undefined,
+        })),
+    ],
+    [registryQuery.data],
+  );
+
+  const canSubmit = Boolean(articleId) && Boolean(walletId) && amountOf(amount) > 0;
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      createNewPaymentIncome({
+        wallet_id: walletId,
+        lines: [
+          {
+            article_id: articleId,
+            amount: amountOf(amount),
+            purpose: purpose.trim(),
+            counterparty_id: counterpartyId || null,
+          },
+        ],
+      }),
+    onSuccess: async () => {
+      toast.success("Поступление проведено");
+      await onDone();
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось провести поступление")),
+  });
+
+  return (
+    <div>
+      <FormHeader
+        title="Поступление"
+        description="Наличный приход на Сейф или в Кассу — проводится сразу. Банковские поступления приходят из выписки автоматически."
+      />
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <Label className="block space-y-1">
+            <span className="text-sm">Статья</span>
+            <ArticleCombobox
+              articles={articles}
+              onChange={onArticleChange}
+              placeholder="Статья поступления"
+              value={articleId}
+            />
+          </Label>
+          <Label className="block space-y-1">
+            <span className="text-sm">Счёт зачисления</span>
+            <Select onValueChange={setWalletId} value={walletId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Выберите счёт" />
+              </SelectTrigger>
+              <SelectContent>
+                {cashWallets.map((wallet) => (
+                  <SelectItem key={wallet.id} value={wallet.id}>
+                    {wallet.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Label>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Label className="block space-y-1">
+            <span className="text-sm">Сумма, ₽</span>
+            <Input
+              className="tabular-nums"
+              inputMode="decimal"
+              onChange={(event) => setAmount(event.target.value)}
+              placeholder="0"
+              value={amount}
+            />
+          </Label>
+          <Label className="block space-y-1">
+            <span className="text-sm">Назначение</span>
+            <Input
+              maxLength={210}
+              onChange={(event) => setPurpose(event.target.value)}
+              placeholder="Необязательно"
+              value={purpose}
+            />
+          </Label>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-sm">Контрагент (необязательно)</Label>
+          <InlineOptionList
+            emptyMessage="Контрагенты не найдены"
+            listClassName="max-h-40"
+            onChange={setCounterpartyId}
+            options={counterpartyOptions}
+            searchPlaceholder="Название или ИНН…"
+            value={counterpartyId}
+          />
+        </div>
+      </div>
+      <FormFooter
+        cancel={onCancel}
+        submit={() => mutation.mutate()}
+        submitLabel="Провести поступление"
         disabled={!canSubmit}
         pending={mutation.isPending}
       />

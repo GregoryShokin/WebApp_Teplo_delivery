@@ -27,7 +27,7 @@ from app.api.deps import (
 )
 from app.core.config import get_settings
 from app.db.session import get_session
-from app.models import CounterpartyPaymentDraft, SupplierInvoice, SupplierPrepayment
+from app.models import CounterpartyPaymentDraft, SupplierInvoice, SupplierPrepayment, Wallet
 from app.services import counterparty_bank_match as bank_match
 from app.services import counterparty_barter_match as barter
 from app.services import counterparty_matching as matching
@@ -626,8 +626,38 @@ async def post_create_prepayment(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> PrepaymentRead:
-    """Завести предоплату поставщику (дебиторка): реальный расход с кошелька + запись долга."""
+    """Завести предоплату поставщику (дебиторка): реальный расход с кошелька + запись долга.
+
+    Кошелёк — только наличный (Сейф/Касса): проводка создаётся сразу, а прямые ручные
+    проводки по банку запрещены (баланс банка ведётся от выписки) — банковская
+    предоплата идёт черновиком через ``/prepayments/bank-draft``. Для Сейфа сумма
+    ограничена свободным остатком (не съедаем чужие резервы).
+    """
     ensure_permission(actor, "invoices.normal.pay")
+    wallet = await session.get(Wallet, payload.wallet_id)
+    if wallet is None or wallet.status != "active" or wallet.type not in (
+        "cash_safe",
+        "store_cash",
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Предоплата проводится только с наличного счёта (Сейф/Касса); "
+                "банковская — черновиком «в банк»"
+            ),
+        )
+    if wallet.type == "cash_safe":
+        from app.api.v1.routes.dds import _safe_free_amount
+
+        free = await _safe_free_amount(session, wallet)
+        if payload.amount > free:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Недостаточно свободных средств на Сейфе: "
+                    f"свободно {free}, запрошено {payload.amount}"
+                ),
+            )
     try:
         prepayment = await prepayments.create_supplier_prepayment(
             session,

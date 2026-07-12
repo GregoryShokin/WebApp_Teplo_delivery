@@ -68,6 +68,8 @@ from app.schemas.dds import (
     NewPaymentExpenseCashRead,
     NewPaymentExpenseDraftCreate,
     NewPaymentExpenseDraftRead,
+    NewPaymentIncomeCreate,
+    NewPaymentIncomeRead,
     NewPaymentTransferCreate,
     NewPaymentTransferRead,
     OperationClassifyRead,
@@ -137,6 +139,7 @@ from app.services.new_payment import (
     NEW_PAYMENT_PERMISSION_CODES,
     build_new_payment_context,
     ensure_expense_article_allowed,
+    ensure_income_article_allowed,
     list_payout_attribution_employees,
 )
 from app.services.payroll_advance_service import (
@@ -687,7 +690,13 @@ async def post_new_payment_expense_cash(
 
     Право — как у ручного резерва Сейфа (``finance.safe.allocate``). Для Сейфа проверяем
     свободный остаток; касса толерантна к перерезерву (как её выдача), поэтому без гейта.
+
+    ``pay_now=true`` («Создать платёж») — каждый резерв тут же оплачивается целиком
+    (out-проводка, деньги реально ушли со счёта); требует дополнительно права
+    ``finance.safe.confirm_paid`` — ровно как ``pay_full`` ручного резерва Сейфа.
     """
+    if payload.pay_now:
+        ensure_permission(actor, "finance.safe.confirm_paid")
     wallet = await session.get(Wallet, payload.wallet_id)
     is_cash_wallet = wallet is not None and wallet.type in ("cash_safe", "store_cash")
     if wallet is None or wallet.status != "active" or not is_cash_wallet:
@@ -725,6 +734,7 @@ async def post_new_payment_expense_cash(
                 ),
             )
 
+    today_msk = datetime.now(MOSCOW_TZ).date()
     for article, amount, line_purpose, cp_id in prepared:
         allocation = await create_allocation(
             session,
@@ -738,8 +748,98 @@ async def post_new_payment_expense_cash(
         )
         if location == "kassa":
             allocation.location = "kassa"
+        if payload.pay_now:
+            # Немедленная оплата резерва целиком; source_kind — как у штатной выдачи
+            # соответствующего счёта (журнал Кассы различает свои проводки по нему).
+            try:
+                await pay_allocation(
+                    session,
+                    allocation,
+                    amount=amount,
+                    operation_date=today_msk,
+                    source_kind=(
+                        "kassa_target_payout" if location == "kassa" else "safe_payout"
+                    ),
+                    created_by_user_id=actor.user_id,
+                )
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+                ) from exc
     await session.commit()
-    return {"created": len(prepared), "total": float(total), "location": location}
+    return {
+        "created": len(prepared),
+        "total": float(total),
+        "location": location,
+        "paid": payload.pay_now,
+    }
+
+
+@router.post(
+    "/new-payment/income-cash",
+    response_model=NewPaymentIncomeRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=DDS_SAFE_ALLOCATE_ACCESS,
+)
+async def post_new_payment_income_cash(
+    payload: NewPaymentIncomeCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, object]:
+    """Наличное ПОСТУПЛЕНИЕ из окна «Новый платёж»: одна in-проводка на строку
+    (статья+сумма+назначение) на Сейф или в Кассу. Приход — факт, не намерение:
+    без резервов и черновиков. Банковские приходы вручную запрещены by design —
+    баланс банка ведётся от выписки, их приносит вебхук/поллинг.
+    """
+    wallet = await session.get(Wallet, payload.wallet_id)
+    is_cash_wallet = wallet is not None and wallet.type in ("cash_safe", "store_cash")
+    if wallet is None or wallet.status != "active" or not is_cash_wallet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Наличный счёт (Сейф/Касса) не найден"
+        )
+    location = "safe" if wallet.type == "cash_safe" else "kassa"
+
+    operation_date = datetime.now(MOSCOW_TZ).date()
+    # Проводка датой не позже опорного остатка кошелька в баланс не попадёт
+    # (double-count-защита) — не даём провести приход «в никуда».
+    if wallet.opening_balance_date is not None and operation_date <= wallet.opening_balance_date:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Дата поступления не позже опорного остатка кошелька",
+        )
+
+    total = Decimal("0")
+    created = 0
+    for line in payload.lines:
+        article = await session.get(DdsArticle, line.article_id)
+        if article is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Статья ДДС не найдена"
+            )
+        try:
+            ensure_income_article_allowed(article)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        amount = Decimal(line.amount)
+        line_purpose = " ".join((line.purpose or "").split()) or article.name
+        session.add(
+            CashflowTransaction(
+                wallet_id=wallet.id,
+                direction="in",
+                amount=amount,
+                operation_date=operation_date,
+                article_id=article.id,
+                counterparty_id=line.counterparty_id,
+                source_kind="new_payment_income",
+                payment_purpose=line_purpose,
+                quality_status="final",
+                created_by_user_id=actor.user_id,
+            )
+        )
+        total += amount
+        created += 1
+    await session.commit()
+    return {"created": created, "total": float(total), "location": location}
 
 
 @router.post(

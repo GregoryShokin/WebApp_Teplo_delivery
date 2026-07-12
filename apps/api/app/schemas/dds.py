@@ -536,6 +536,7 @@ class NewPaymentArticleRead(BaseModel):
     name: str
     flow: Literal[
         "expense",
+        "income",
         "employee_payout",
         "employee_advance",
         "employee_loan",
@@ -543,6 +544,8 @@ class NewPaymentArticleRead(BaseModel):
         "supplier_invoices",
         "internal_transfer",
     ]
+    # Вид деятельности статьи — для леджер-фильтра палитры (operating/financing/investing).
+    activity: str | None = None
     # Закреплённые за статьёй контрагенты — «кому платим» для свободного вывода.
     counterparties: list[NewPaymentArticleCounterpartyRead] = Field(default_factory=list)
 
@@ -665,9 +668,31 @@ class NewPaymentExpenseCashCreate(BaseModel):
     # Счёт-источник: кошелёк Сейфа (cash_safe) или Торговой кассы (store_cash).
     wallet_id: uuid.UUID
     lines: list[NewPaymentExpenseLineIn] = Field(min_length=1)
+    # «Создать платёж»: сразу оплатить каждый резерв целиком (out-проводка, деньги ушли).
+    # Требует дополнительно права finance.safe.confirm_paid — как pay_full ручного резерва.
+    pay_now: bool = False
 
 
 class NewPaymentExpenseCashRead(BaseModel):
+    created: int
+    total: float
+    location: str
+    paid: bool = False
+
+
+class NewPaymentIncomeCreate(BaseModel):
+    """Наличное поступление из окна «Новый платёж»: одна in-проводка на строку
+    (статья+сумма+назначение) на Сейф или в Кассу. Банковские приходы вручную
+    запрещены — их приносит выписка."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Счёт зачисления: кошелёк Сейфа (cash_safe) или Торговой кассы (store_cash).
+    wallet_id: uuid.UUID
+    lines: list[NewPaymentExpenseLineIn] = Field(min_length=1)
+
+
+class NewPaymentIncomeRead(BaseModel):
     created: int
     total: float
     location: str

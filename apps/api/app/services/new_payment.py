@@ -72,6 +72,18 @@ FLOW_BY_ARTICLE_CODE: dict[str, str] = {
 # PROTECTED_ARTICLE_CODES.
 ENGINE_ARTICLE_CODES = frozenset({"revenue_acquiring_tbank", "internal_transfer", "unknown"})
 
+# Приходные статьи с собственными авто-контурами (выручка, контур кассовой смены,
+# резервы) — ручной приход по ним из окна задвоил бы движковые проводки.
+INCOME_ENGINE_ARTICLE_CODES = frozenset(
+    {
+        "revenue_cash",
+        "revenue_acquiring_sber",
+        "korretirovki_kassy",
+        "postuplenie_deneg_s_torg_tochek",
+        "rezervy_postuplenie",
+    }
+)
+
 # Право каждого маршрута — существующие операционные права, новых не вводим.
 FLOW_PERMISSIONS: dict[str, tuple[str, ...]] = {
     # Свободный вывод на Сейф = целёвка произвольной статьи (как ручной резерв Сейфа).
@@ -92,6 +104,8 @@ FLOW_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "supplier_invoices": ("invoices.normal.pay",),
     # Внутренний перевод — как ручной резерв/движение Сейфа.
     "internal_transfer": ("finance.safe.allocate",),
+    # Наличное поступление (Сейф/Касса) — как остальные наличные операции окна.
+    "income": ("finance.safe.allocate",),
 }
 
 # Займ = аванс сверх заработанного: без этого права статья займа в селект не попадает.
@@ -133,6 +147,18 @@ def new_payment_article_flow(article: DdsArticle) -> str | None:
     flow = FLOW_BY_ARTICLE_CODE.get(article.code)
     if flow is not None:
         return flow
+    # Приходные статьи → маршрут «поступление» (наличный приход на Сейф/в Кассу).
+    # Технические/движковые и статьи с авто-контурами исключены — их книжат движки.
+    if article.movement_type == "inflow":
+        if (
+            article.activity_type in ("technical", "internal")
+            or article.kassa_enabled
+            or article.code in PROTECTED_ARTICLE_CODES
+            or article.code in ENGINE_ARTICLE_CODES
+            or article.code in INCOME_ENGINE_ARTICLE_CODES
+        ):
+            return None
+        return "income"
     if article.movement_type != "outflow":
         return None
     if (
@@ -157,6 +183,22 @@ def ensure_expense_article_allowed(article: DdsArticle) -> None:
     if new_payment_article_flow(article) != "expense":
         raise ValueError(
             "У этой статьи собственный контур выдачи — свободный вывод на Сейф недоступен"
+        )
+
+
+def ensure_income_article_allowed(article: DdsArticle) -> None:
+    """Статья годится для ручного наличного поступления (маршрут ``income``)?
+
+    Симметрично фильтру селекта: только активные приходные без собственных
+    авто-контуров (выручка/смена/резервы) и не технические переводы.
+    """
+    if not article.is_active:
+        raise ValueError("Статья ДДС неактивна")
+    if article.movement_type != "inflow":
+        raise ValueError("Поступление можно провести только по приходной статье")
+    if new_payment_article_flow(article) != "income":
+        raise ValueError(
+            "У этой статьи собственный контур поступлений — ручной приход недоступен"
         )
 
 
@@ -204,9 +246,10 @@ async def list_new_payment_articles(
             select(DdsArticle)
             .where(
                 DdsArticle.is_active.is_(True),
-                # Расходные статьи + статья-маршрут «Внутренний перевод» (movement_type=internal).
+                # Расходные и приходные статьи + статья-маршрут «Внутренний перевод»
+                # (movement_type=internal).
                 or_(
-                    DdsArticle.movement_type == "outflow",
+                    DdsArticle.movement_type.in_(("outflow", "inflow")),
                     DdsArticle.code == INTERNAL_TRANSFER_ARTICLE_CODE,
                 ),
             )
@@ -214,7 +257,14 @@ async def list_new_payment_articles(
         )
     ).all()
     result = [
-        {"id": article.id, "code": article.code, "name": article.name, "flow": flow}
+        {
+            "id": article.id,
+            "code": article.code,
+            "name": article.name,
+            "flow": flow,
+            # Вид деятельности — для леджер-фильтра палитры (операционная/финансовая/…).
+            "activity": article.activity_type,
+        }
         for article in articles
         if (flow := new_payment_article_flow(article)) is not None and flow in allowed
     ]
@@ -359,10 +409,12 @@ __all__ = [
     "EMPLOYEE_PAYOUT_ARTICLE_CODES",
     "FLOW_BY_ARTICLE_CODE",
     "FLOW_PERMISSIONS",
+    "INCOME_ENGINE_ARTICLE_CODES",
     "NEW_PAYMENT_PERMISSION_CODES",
     "SUPPLIER_INVOICES_ARTICLE_CODE",
     "build_new_payment_context",
     "ensure_expense_article_allowed",
+    "ensure_income_article_allowed",
     "list_new_payment_articles",
     "list_new_payment_employees",
     "list_payout_attribution_employees",
