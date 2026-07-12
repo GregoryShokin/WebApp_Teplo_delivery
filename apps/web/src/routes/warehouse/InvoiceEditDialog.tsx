@@ -116,7 +116,10 @@ export function InvoiceEditDialog({
   const editable = paid
     ? (detail?.payment_status === "paid" || detail?.payment_status === "partially_paid") &&
       !detail?.barter_role &&
-      !detail?.draft_id &&
+      // Черновик блокирует, только пока платёж НЕ финализирован (висит в банке / резерв на Сейфе);
+      // банк-оплаченную (draft.status='paid', не через Сейф) править можно — как в гейте бэкенда.
+      (!detail?.draft_id ||
+        (detail?.draft_status === "paid" && !detail?.draft_pays_via_safe)) &&
       hasSavedLines
     : detail?.payment_status === "unpaid" && !detail?.barter_role;
 
