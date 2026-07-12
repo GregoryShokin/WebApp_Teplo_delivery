@@ -155,8 +155,6 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const [isRecalculateDialogOpen, setIsRecalculateDialogOpen] = useState(false);
   const [isUnfinalizeDialogOpen, setIsUnfinalizeDialogOpen] = useState(false);
   const [unfinalizeReason, setUnfinalizeReason] = useState("");
-  // Мастер выплаты (Вариант B): шаг 1 — черновик в банк, шаг 2 — выплата сотрудникам.
-  const [payoutStep, setPayoutStep] = useState<1 | 2>(1);
 
   const runQuery = useQuery({
     queryKey: ["payroll-run", runId],
@@ -634,128 +632,47 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         </section>
       ) : null}
 
-      {isFinal && canManageBankDraft ? (
-        <>
-          <nav aria-label="Шаги выплаты" className="flex items-center gap-3">
-            <button
-              className="flex items-center gap-2"
-              onClick={() => setPayoutStep(1)}
-              type="button"
-            >
-              <span
-                className={cn(
-                  "flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
-                  payoutStep === 1
-                    ? "bg-emerald-600 text-white"
-                    : bankDraftQuery.data
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-muted text-muted-foreground",
-                )}
-              >
-                {bankDraftQuery.data && payoutStep !== 1 ? (
-                  <CheckCircle2 size={14} aria-hidden="true" />
-                ) : (
-                  1
-                )}
-              </span>
-              <span
-                className={cn(
-                  "text-sm",
-                  payoutStep === 1 ? "font-medium" : "text-muted-foreground",
-                )}
-              >
-                Черновик в банк
-              </span>
-            </button>
-            <div className="h-px flex-1 bg-border" />
-            <button
-              className="flex items-center gap-2"
-              onClick={() => setPayoutStep(2)}
-              type="button"
-            >
-              <span
-                className={cn(
-                  "flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
-                  payoutStep === 2 ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground",
-                )}
-              >
-                2
-              </span>
-              <span
-                className={cn(
-                  "text-sm",
-                  payoutStep === 2 ? "font-medium" : "text-muted-foreground",
-                )}
-              >
-                Выплата сотрудникам
-              </span>
-            </button>
-          </nav>
+      <PayrollRegisterTab
+        canManagePayments={canManagePayments}
+        employeesById={employeesById}
+        lines={lines}
+        runId={runId}
+        runStatus={run?.status ?? ""}
+      />
 
-          {payoutStep === 1 ? (
-            <div className="space-y-3">
-              <RunBankDraftCard
-                channelPerms={payoutChannelPerms}
-                draft={bankDraftQuery.data ?? null}
-                isLoading={bankDraftQuery.isLoading}
-                payoutCashTotal={payoutCashTotal}
-                runId={runId}
-                savedWalletId={run?.payout_cash_wallet_id ?? null}
-                totalAccountAmount={totalAccountAmount}
-                totalPayable={totalPayable}
-                grandTotal={grandTotal}
-                depositPayoutTotal={depositPayoutTotal}
+      {canManageBankDraft ? (
+        <details className="group rounded-lg border bg-card">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-4 [&::-webkit-details-marker]:hidden">
+            <span className="flex items-center gap-2 text-base font-medium">
+              <Landmark className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+              Разбивка нал/безнал и черновик в банк
+            </span>
+            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+              безнал {formatMoney(totalAccountAmount)} ·{" "}
+              {bankDraftQuery.data ? "черновик создан" : "не создан"}
+              <ChevronDown
+                className="h-4 w-4 transition-transform group-open:rotate-180"
+                aria-hidden="true"
               />
-              <div className="flex justify-end">
-                <Button onClick={() => setPayoutStep(2)} type="button">
-                  Далее: выплата сотрудникам
-                  <ChevronRight size={16} aria-hidden="true" />
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <Button
-                className="self-start"
-                onClick={() => setPayoutStep(1)}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                <ArrowLeft size={16} aria-hidden="true" />
-                Назад: черновик в банк
-              </Button>
-              <PayrollByEmployeeTab
-                canManagePayments={canManagePayments}
-                canEditDeposits={canEditDeposits}
-                cancelDepositPayoutPending={
-                  cancelDepositPayoutMutation.isPending || recalculateMutation.isPending
-                }
-                employeesById={employeesById}
-                isLoading={linesQuery.isLoading || runQuery.isLoading}
-                lines={lines}
-                onCancelDepositPayout={(employeeId) => cancelDepositPayoutMutation.mutate(employeeId)}
-                runId={runId}
-                runStatus={run?.status ?? ""}
-              />
-            </div>
-          )}
-        </>
-      ) : (
-        <PayrollByEmployeeTab
-          canManagePayments={canManagePayments}
-          canEditDeposits={canEditDeposits}
-          cancelDepositPayoutPending={
-            cancelDepositPayoutMutation.isPending || recalculateMutation.isPending
-          }
-          employeesById={employeesById}
-          isLoading={linesQuery.isLoading || runQuery.isLoading}
-          lines={lines}
-          onCancelDepositPayout={(employeeId) => cancelDepositPayoutMutation.mutate(employeeId)}
-          runId={runId}
-          runStatus={run?.status ?? ""}
-        />
-      )}
+            </span>
+          </summary>
+          <div className="border-t p-4">
+            <RunBankDraftCard
+              embedded
+              channelPerms={payoutChannelPerms}
+              draft={bankDraftQuery.data ?? null}
+              isLoading={bankDraftQuery.isLoading}
+              payoutCashTotal={payoutCashTotal}
+              runId={runId}
+              savedWalletId={run?.payout_cash_wallet_id ?? null}
+              totalAccountAmount={totalAccountAmount}
+              totalPayable={totalPayable}
+              grandTotal={grandTotal}
+              depositPayoutTotal={depositPayoutTotal}
+            />
+          </div>
+        </details>
+      ) : null}
 
       <PayoutDeltasPanel
         canManageBankDraft={canManageBankDraft}
@@ -764,6 +681,292 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         runId={runId}
       />
     </div>
+  );
+}
+
+function PayrollRegisterTab({
+  canManagePayments,
+  employeesById,
+  lines,
+  runId,
+  runStatus,
+}: {
+  canManagePayments: boolean;
+  employeesById: Map<string, Employee>;
+  lines: PayrollLine[];
+  runId: string;
+  runStatus: string;
+}) {
+  const queryClient = useQueryClient();
+  const runIsFinal = isFinalStatus(runStatus);
+  const [filter, setFilter] = useState<"all" | "pending" | "partial" | "paid">("all");
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const rows = useMemo(() => {
+    const byEmployee = new Map<
+      string,
+      { employeeId: string; role: string; accrued: number; paid: number; status: string }
+    >();
+    for (const line of lines) {
+      const current = byEmployee.get(line.employee_id) ?? {
+        employeeId: line.employee_id,
+        role: line.role,
+        accrued: 0,
+        paid: 0,
+        status: "pending",
+      };
+      current.accrued += line.total_payable;
+      if (line.payment_status === "paid" || line.payment_status === "partially_paid") {
+        current.paid = line.paid_amount ?? 0;
+        current.status = line.payment_status;
+      }
+      byEmployee.set(line.employee_id, current);
+    }
+    return Array.from(byEmployee.values()).map((row) => ({
+      ...row,
+      name: employeesById.get(row.employeeId)?.full_name ?? "Сотрудник",
+      remaining: Math.max(0, Math.round((row.accrued - row.paid) * 100) / 100),
+    }));
+  }, [lines, employeesById]);
+
+  const filtered = rows.filter((row) => {
+    if (filter === "all") return true;
+    if (filter === "paid") return row.status === "paid";
+    if (filter === "partial") return row.status === "partially_paid";
+    return row.status === "pending";
+  });
+  const totals = rows.reduce(
+    (acc, row) => ({
+      accrued: acc.accrued + row.accrued,
+      paid: acc.paid + row.paid,
+      remaining: acc.remaining + row.remaining,
+    }),
+    { accrued: 0, paid: 0, remaining: 0 },
+  );
+
+  const invalidate = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["payroll-run", runId] }),
+      queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", runId] }),
+      queryClient.invalidateQueries({ queryKey: ["run-bank-draft", runId] }),
+      queryClient.invalidateQueries({ queryKey: ["run-payout-delta", runId] }),
+    ]);
+
+  const payMutation = useMutation({
+    mutationFn: (payload: { employeeId: string; amount: number | null }) =>
+      markPartialPayrollPayment(runId, {
+        employee_id: payload.employeeId,
+        amount: payload.amount,
+        paid_at: todayDateInputValue(),
+      }),
+    onSuccess: async (_data, variables) => {
+      await invalidate();
+      setAmounts((current) => {
+        const next = { ...current };
+        delete next[variables.employeeId];
+        return next;
+      });
+      toast.success("Выплата отмечена");
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отметить выплату")),
+  });
+
+  const bulkMutation = useMutation({
+    mutationFn: (ids: string[]) => bulkMarkPayrollPayments(runId, ids, todayDateInputValue()),
+    onSuccess: async (response) => {
+      await invalidate();
+      setSelected(new Set());
+      toast.success(`Выплачено полностью: ${response.marked_count}`);
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось выплатить")),
+  });
+
+  function payRow(row: { employeeId: string; remaining: number }) {
+    const raw = (amounts[row.employeeId] ?? "").trim().replace(",", ".");
+    const parsed = raw === "" ? row.remaining : Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      toast.error("Введите сумму больше нуля");
+      return;
+    }
+    if (parsed > row.remaining + 0.001) {
+      toast.error(`Сумма превышает остаток ${formatMoney(row.remaining)}`);
+      return;
+    }
+    payMutation.mutate({
+      employeeId: row.employeeId,
+      amount: parsed >= row.remaining ? null : parsed,
+    });
+  }
+
+  const chips = [
+    { key: "all" as const, label: "Все" },
+    { key: "pending" as const, label: "Ожидают" },
+    { key: "partial" as const, label: "Частично" },
+    { key: "paid" as const, label: "Выплачено" },
+  ];
+  const countFor = (key: string) =>
+    key === "all"
+      ? rows.length
+      : rows.filter((row) =>
+          key === "paid"
+            ? row.status === "paid"
+            : key === "partial"
+              ? row.status === "partially_paid"
+              : row.status === "pending",
+        ).length;
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        {chips.map((chip) => (
+          <button
+            className={cn(
+              "rounded-full border px-3 py-1 text-xs",
+              filter === chip.key
+                ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                : "border-border text-muted-foreground hover:bg-muted",
+            )}
+            key={chip.key}
+            onClick={() => setFilter(chip.key)}
+            type="button"
+          >
+            {chip.label} · {countFor(chip.key)}
+          </button>
+        ))}
+      </div>
+
+      {canManagePayments && selected.size > 0 ? (
+        <div className="flex items-center justify-between gap-3 rounded-lg border bg-card p-3">
+          <span className="text-sm">Выбрано {selected.size}</span>
+          <Button
+            disabled={bulkMutation.isPending}
+            onClick={() => bulkMutation.mutate(Array.from(selected))}
+            size="sm"
+            type="button"
+          >
+            <CheckCircle2 size={15} aria-hidden="true" />
+            Выплатить полностью
+          </Button>
+        </div>
+      ) : null}
+
+      <div className="overflow-x-auto rounded-lg border">
+        <table className="w-full min-w-[560px] text-sm">
+          <thead>
+            <tr className="bg-muted/50 text-xs text-muted-foreground">
+              <th className="w-8 px-3 py-2" />
+              <th className="px-3 py-2 text-left font-medium">Сотрудник</th>
+              <th className="px-3 py-2 text-right font-medium">Начислено</th>
+              <th className="px-3 py-2 text-right font-medium">К выплате</th>
+              <th className="px-3 py-2 text-right font-medium">Остаток</th>
+              <th className="px-3 py-2 text-left font-medium">Статус</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((row) => {
+              const paid = row.status === "paid";
+              const partial = row.status === "partially_paid";
+              return (
+                <tr className={cn("border-t", paid && "opacity-70")} key={row.employeeId}>
+                  <td className="px-3 py-2">
+                    {!paid && canManagePayments ? (
+                      <Checkbox
+                        aria-label={`Выбрать ${row.name}`}
+                        checked={selected.has(row.employeeId)}
+                        onChange={(event) =>
+                          setSelected((current) => {
+                            const next = new Set(current);
+                            if (event.target.checked) next.add(row.employeeId);
+                            else next.delete(row.employeeId);
+                            return next;
+                          })
+                        }
+                      />
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{row.name}</div>
+                    <div className="text-xs text-muted-foreground">{row.role}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatMoney(row.accrued)}</td>
+                  <td className="px-3 py-2 text-right">
+                    {paid ? (
+                      <span className="tabular-nums text-muted-foreground">
+                        {formatMoney(row.paid)}
+                      </span>
+                    ) : canManagePayments && runIsFinal ? (
+                      <div className="flex items-center justify-end gap-1">
+                        <Input
+                          className="h-8 w-24 text-right"
+                          inputMode="decimal"
+                          onChange={(event) =>
+                            setAmounts((current) => ({
+                              ...current,
+                              [row.employeeId]: event.target.value,
+                            }))
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") payRow(row);
+                          }}
+                          placeholder={String(row.remaining)}
+                          value={amounts[row.employeeId] ?? ""}
+                        />
+                        <Button
+                          aria-label="Выплатить"
+                          disabled={payMutation.isPending}
+                          onClick={() => payRow(row)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <CheckCircle2 size={15} aria-hidden="true" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="tabular-nums text-muted-foreground">
+                        {formatMoney(row.remaining)}
+                      </span>
+                    )}
+                  </td>
+                  <td
+                    className={cn(
+                      "px-3 py-2 text-right tabular-nums",
+                      partial && "bg-amber-50 font-medium text-amber-700",
+                    )}
+                  >
+                    {formatMoney(row.remaining)}
+                  </td>
+                  <td className="px-3 py-2">
+                    {paid ? (
+                      <span className="text-xs text-emerald-700">Выплачено</span>
+                    ) : partial ? (
+                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
+                        Частично · {formatMoney(row.paid)} из {formatMoney(row.accrued)}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Ожидает</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t bg-muted/50 tabular-nums">
+              <td className="px-3 py-2" />
+              <td className="px-3 py-2 text-xs text-muted-foreground">ИТОГО · {rows.length} чел</td>
+              <td className="px-3 py-2 text-right font-medium">{formatMoney(totals.accrued)}</td>
+              <td className="px-3 py-2 text-right font-medium">{formatMoney(totals.paid)}</td>
+              <td className="px-3 py-2 text-right font-medium text-amber-700">
+                {formatMoney(totals.remaining)}
+              </td>
+              <td className="px-3 py-2" />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
   );
 }
 
