@@ -42,6 +42,7 @@ import { EmptyState } from "@/components/ui-app/EmptyState";
 import { centsFromRubInput, formatCents, isPositiveRubInput } from "@/components/deposits/courier-deposit-utils";
 import {
   apiErrorMessage,
+  apiErrorStatus,
   confirmCourierShiftDay,
   createCourierEvaluation,
   deleteCourierSubstitution,
@@ -746,12 +747,15 @@ function DepositDialog({
   const [amount, setAmount] = useState("");
   const [comment, setComment] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  // Текст предупреждения при 409 (за эту дату пополнение уже есть) — показываем запрос
+  // подтверждения повтора вместо тост-ошибки. null = обычный режим.
+  const [duplicatePrompt, setDuplicatePrompt] = useState<string | null>(null);
 
   const amountValid = isPositiveRubInput(amount);
   const commentValid = type !== "forfeit" || comment.trim().length > 0;
 
   const mutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (allowDuplicate: boolean) => {
       const cents = centsFromRubInput(amount);
       if (!courier || cents === null || cents <= 0) {
         throw new Error("Проверьте сумму");
@@ -761,6 +765,7 @@ function DepositDialog({
         comment: comment.trim() || null,
         transaction_date: dateKey,
         transaction_type: type,
+        allow_duplicate: allowDuplicate,
       });
     },
     onSuccess: () => {
@@ -768,7 +773,15 @@ function DepositDialog({
       onSaved();
       handleClose();
     },
-    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось создать операцию")),
+    onError: (error) => {
+      // Бэкенд отклоняет второе пополнение за ту же дату (защита от задвоения). Не ошибка —
+      // просим кассира подтвердить, что повтор действительно нужен.
+      if (type === "top_up" && apiErrorStatus(error) === 409) {
+        setDuplicatePrompt(apiErrorMessage(error, "За эту дату пополнение уже есть."));
+        return;
+      }
+      toast.error(apiErrorMessage(error, "Не удалось создать операцию"));
+    },
   });
 
   function handleClose() {
@@ -776,15 +789,17 @@ function DepositDialog({
     setAmount("");
     setComment("");
     setSubmitted(false);
+    setDuplicatePrompt(null);
     onClose();
   }
 
   function submit() {
     setSubmitted(true);
+    setDuplicatePrompt(null);
     if (!amountValid || !commentValid) {
       return;
     }
-    mutation.mutate();
+    mutation.mutate(false);
   }
 
   return (
@@ -798,7 +813,13 @@ function DepositDialog({
         <div className="grid gap-4">
           <Label className="grid gap-2">
             <span>Тип операции</span>
-            <Select onValueChange={(value) => setType(value as CourierDepositTransactionType)} value={type}>
+            <Select
+              onValueChange={(value) => {
+                setType(value as CourierDepositTransactionType);
+                setDuplicatePrompt(null);
+              }}
+              value={type}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -814,7 +835,10 @@ function DepositDialog({
             <span>Сумма ₽</span>
             <Input
               min={0}
-              onChange={(event) => setAmount(event.target.value)}
+              onChange={(event) => {
+                setAmount(event.target.value);
+                setDuplicatePrompt(null);
+              }}
               type="number"
               value={amount}
             />
@@ -836,18 +860,38 @@ function DepositDialog({
           </Label>
         </div>
 
+        {duplicatePrompt ? (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            {duplicatePrompt}
+          </div>
+        ) : null}
+
         <DialogFooter>
           <Button onClick={handleClose} type="button" variant="outline">
             Отмена
           </Button>
-          <Button disabled={mutation.isPending} onClick={submit} type="button">
-            {mutation.isPending ? (
-              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-            ) : (
-              <Check size={16} aria-hidden="true" />
-            )}
-            {DEPOSIT_TYPE_LABELS[type]}
-          </Button>
+          {duplicatePrompt ? (
+            <Button
+              disabled={mutation.isPending}
+              onClick={() => mutation.mutate(true)}
+              type="button"
+              variant="destructive"
+            >
+              {mutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : null}
+              Всё равно добавить
+            </Button>
+          ) : (
+            <Button disabled={mutation.isPending} onClick={submit} type="button">
+              {mutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+              ) : (
+                <Check size={16} aria-hidden="true" />
+              )}
+              {DEPOSIT_TYPE_LABELS[type]}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

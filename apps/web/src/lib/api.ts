@@ -2020,6 +2020,9 @@ export type CourierDepositTransactionPayload = {
   // Канал выдачи только для возврата: ТК Черникова (по умолч.) / Сейф / банк-черновик
   // Т-Банк (bank_draft) или Сбер (bank_draft_sber).
   payout_method?: "cash_tk" | "cash_safe" | "bank_draft" | "bank_draft_sber";
+  // Явное подтверждение повторного пополнения за ту же дату (обходит защиту от задвоения,
+  // бэкенд иначе вернёт 409). Ставится только после подтверждения кассира.
+  allow_duplicate?: boolean;
 };
 
 export type CourierEvaluationSource = "web" | "telegram" | "api";

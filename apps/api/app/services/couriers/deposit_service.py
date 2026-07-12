@@ -234,6 +234,7 @@ async def create_transaction(
     comment: str | None,
     created_by_user_id: uuid.UUID,
     payout_method: str | None = None,
+    allow_duplicate: bool = False,
 ) -> CourierDepositTransaction:
     if amount_cents <= 0:
         raise HTTPException(
@@ -243,6 +244,28 @@ async def create_transaction(
     account = await ensure_account(session, employee_id)
     is_return = _transaction_type_value(transaction_type) == CourierDepositTransactionType.RETURN.value
     is_topup = _transaction_type_value(transaction_type) == CourierDepositTransactionType.TOP_UP.value
+    # Защита от задвоения пополнения: одно пополнение депозита на курьера в день. Второй POST
+    # с той же датой (двойной клик, ретрай axios, 401-реплей, пересбор на следующей смене —
+    # у вторых курьеров кнопка «Депозит» остаётся активной, пока баланс < цели) отклоняем.
+    # Легитимный повтор возможен только через явное подтверждение кассира (allow_duplicate).
+    if is_topup and not allow_duplicate:
+        existing_topup_id = await session.scalar(
+            select(CourierDepositTransaction.id)
+            .where(
+                CourierDepositTransaction.account_employee_id == account.employee_id,
+                CourierDepositTransaction.transaction_type == CourierDepositTransactionType.TOP_UP,
+                CourierDepositTransaction.transaction_date == transaction_date,
+            )
+            .limit(1)
+        )
+        if existing_topup_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "За эту дату у курьера уже есть пополнение депозита — возможно, депозит "
+                    "уже собран. Проверьте историю. Чтобы всё же добавить ещё одно, подтвердите."
+                ),
+            )
     # Канал выдачи только у возврата; по умолчанию ТК Черникова (legacy).
     resolved_method = (payout_method or "cash_tk") if is_return else None
     payout_wallet: Wallet | None = None

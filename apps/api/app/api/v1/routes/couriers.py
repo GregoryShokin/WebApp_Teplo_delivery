@@ -745,6 +745,7 @@ async def post_courier_deposit_transaction(
         comment=payload.comment,
         created_by_user_id=actor_user_id,
         payout_method=payload.payout_method,
+        allow_duplicate=payload.allow_duplicate,
     )
     await session.commit()
     await session.refresh(transaction)

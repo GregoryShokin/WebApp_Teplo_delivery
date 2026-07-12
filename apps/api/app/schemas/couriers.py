@@ -81,6 +81,10 @@ class CourierDepositTransactionCreate(BaseModel):
     # Канал выдачи только для возврата (RETURN). По умолчанию ТК Черникова (как раньше).
     # bank_draft = Т-Банк-черновик, bank_draft_sber = Сбер-черновик (оба через Сейф).
     payout_method: Literal["cash_tk", "cash_safe", "bank_draft", "bank_draft_sber"] | None = None
+    # Разрешить второе пополнение (TOP_UP) за ту же дату для того же курьера. По умолчанию
+    # запрещено (защита от задвоения при повторном POST — двойной клик, ретрай, пересбор на
+    # следующей смене). UI выставляет True только после явного подтверждения кассира.
+    allow_duplicate: bool = False
 
 
 class CourierEvaluationCriterionRead(BaseModel):

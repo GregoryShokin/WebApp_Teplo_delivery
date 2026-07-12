@@ -74,6 +74,7 @@ import { EmptyState } from "@/components/ui-app/EmptyState";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import {
   apiErrorMessage,
+  apiErrorStatus,
   getCourierDeposits,
   postCourierDepositTransaction,
   type CourierDepositCategoryFilter,
@@ -414,6 +415,8 @@ function CourierOperationDialog({
   const [submitted, setSubmitted] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // Текст 409 «за эту дату пополнение уже есть» — запрос подтверждения повтора вместо ошибки.
+  const [duplicatePrompt, setDuplicatePrompt] = useState<string | null>(null);
   const type = operation?.type ?? "top_up";
   const allowedChannels = (
     [
@@ -440,10 +443,11 @@ function CourierOperationDialog({
     setSubmitted(false);
     setConfirmOpen(false);
     setFormError(null);
+    setDuplicatePrompt(null);
   }, [operation]);
 
   const mutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (allowDuplicate: boolean) => {
       const cents = centsFromRubInput(amount);
       if (!operation || cents === null || cents <= 0) {
         throw new Error("Проверьте данные операции");
@@ -454,6 +458,7 @@ function CourierOperationDialog({
         transaction_date: date,
         transaction_type: operation.type,
         payout_method: operation.type === "return" ? payoutMethod : undefined,
+        allow_duplicate: allowDuplicate,
       });
     },
     onSuccess: async () => {
@@ -466,6 +471,12 @@ function CourierOperationDialog({
       ]);
     },
     onError: (error) => {
+      // 409 = пополнение за эту дату уже есть (защита от задвоения). Просим подтвердить повтор.
+      if (type === "top_up" && apiErrorStatus(error) === 409) {
+        setConfirmOpen(false);
+        setDuplicatePrompt(apiErrorMessage(error, "За эту дату пополнение уже есть."));
+        return;
+      }
       const message = apiErrorMessage(error, "Не удалось создать операцию");
       setFormError(message);
       toast.error(message);
@@ -475,6 +486,7 @@ function CourierOperationDialog({
   function submit() {
     setSubmitted(true);
     setFormError(null);
+    setDuplicatePrompt(null);
     if (!amountValid || !commentValid) {
       return;
     }
@@ -482,7 +494,7 @@ function CourierOperationDialog({
       setConfirmOpen(true);
       return;
     }
-    mutation.mutate();
+    mutation.mutate(false);
   }
 
   return (
@@ -508,7 +520,10 @@ function CourierOperationDialog({
               <span>Дата</span>
               <Input
                 disabled={mutation.isPending}
-                onChange={(event) => setDate(event.target.value)}
+                onChange={(event) => {
+                  setDate(event.target.value);
+                  setDuplicatePrompt(null);
+                }}
                 type="date"
                 value={date}
               />
@@ -519,7 +534,10 @@ function CourierOperationDialog({
               <Input
                 disabled={mutation.isPending}
                 min={0}
-                onChange={(event) => setAmount(event.target.value)}
+                onChange={(event) => {
+                  setAmount(event.target.value);
+                  setDuplicatePrompt(null);
+                }}
                 type="number"
                 value={amount}
               />
@@ -586,20 +604,40 @@ function CourierOperationDialog({
                 {formError}
               </div>
             ) : null}
+
+            {duplicatePrompt ? (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                {duplicatePrompt}
+              </div>
+            ) : null}
           </div>
 
           <DialogFooter>
             <Button disabled={mutation.isPending} onClick={onClose} type="button" variant="outline">
               Отмена
             </Button>
-            <Button disabled={mutation.isPending} onClick={submit} type="button">
-              {mutation.isPending ? (
-                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-              ) : (
-                <Plus size={16} aria-hidden="true" />
-              )}
-              Создать операцию
-            </Button>
+            {duplicatePrompt ? (
+              <Button
+                disabled={mutation.isPending}
+                onClick={() => mutation.mutate(true)}
+                type="button"
+                variant="destructive"
+              >
+                {mutation.isPending ? (
+                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                ) : null}
+                Всё равно добавить
+              </Button>
+            ) : (
+              <Button disabled={mutation.isPending} onClick={submit} type="button">
+                {mutation.isPending ? (
+                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                ) : (
+                  <Plus size={16} aria-hidden="true" />
+                )}
+                Создать операцию
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -622,7 +660,7 @@ function CourierOperationDialog({
               disabled={mutation.isPending}
               onClick={(event) => {
                 event.preventDefault();
-                mutation.mutate();
+                mutation.mutate(false);
               }}
             >
               {mutation.isPending ? (
