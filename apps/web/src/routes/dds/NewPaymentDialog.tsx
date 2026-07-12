@@ -1,17 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   ArrowLeftRight,
-  ArrowRight,
-  Building2,
-  HandCoins,
-  LoaderCircle,
   Banknote,
+  Building2,
+  Clock,
+  FileText,
+  HandCoins,
+  Landmark,
+  LoaderCircle,
   MousePointerClick,
   Plus,
   Receipt,
   Search,
   Trash2,
   User,
+  Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -67,15 +71,17 @@ import { formatRub } from "@/routes/counterparties/shared";
 
 /**
  * Окно «Новый платёж» — единая точка создания всех исходящих денег («статья решает всё»):
- * слева палитра операций с поиском (расходные статьи + операции сотрудникам + перевод),
- * справа форма выбранной операции. Группа «Расходы» схлопнута до первых статей —
- * раскрывается кнопкой «Ещё…» или поиском, чтобы все группы были видны без скролла.
+ * слева палитра операций с поиском (статьи + операции сотрудникам + перевод), справа
+ * форма выбранной операции.
  *
- * Маршрутизация как раньше — по flow статьи из контекста (services/new_payment.py):
- * expense / supplier_prepayment / employee_advance / employee_loan / internal_transfer /
- * employee_payout. Внутренний перевод имеет фиксированное направление по источнику:
- * банк → Сейф (черновиком), Сейф → Касса, Касса → Сейф. Резервы под цели — это расход
- * с наличного счёта (отдельного «целевого перевода» больше нет).
+ * UX-паттерн форм — «живое резюме»: счёт выбирается чипами (SourcePicker, кластеры
+ * банк/наличные, собираются из контекста — новые кошельки подхватываются сами),
+ * действие наличных — сегмент-контролом, а единственное место объяснения режима —
+ * цветная панель «Что произойдёт» (SummaryPanel) с итогом, которая собирается живьём.
+ * Статические описания, хвосты опций и хинт-боксы удалены сознательно — не возвращать.
+ *
+ * Маршрутизация — по flow статьи из контекста (services/new_payment.py). Внутренний
+ * перевод фиксирован: банк → Сейф (черновиком), Сейф → Касса, Касса → Сейф.
  */
 
 type OperationKind =
@@ -143,6 +149,22 @@ function amountOf(value: string): number {
   return Number(amountStr(value));
 }
 
+/** Русская плюрализация: plural(2, ["строка", "строки", "строк"]) → «строки». */
+function plural(n: number, forms: [string, string, string]): string {
+  const abs = Math.abs(Math.trunc(n)) % 100;
+  const d = abs % 10;
+  if (abs > 10 && abs < 20) return forms[2];
+  if (d === 1) return forms[0];
+  if (d >= 2 && d <= 4) return forms[1];
+  return forms[2];
+}
+
+/** Обрезка длинных имён (контрагентов/сотрудников) для фраз панели. */
+function shortName(value: string, max = 24): string {
+  const trimmed = value.trim();
+  return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed;
+}
+
 function todayInput(): string {
   const now = new Date();
   const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -170,9 +192,11 @@ export function NewPaymentDialog({
 }) {
   const queryClient = useQueryClient();
   const permissions = usePermissions();
-  // «Создать платёж» (сразу) и «Передать в кассу» двигают живые деньги — уровень
-  // права подтверждения оплат, как у выдачи резерва Сейфа.
+  // «Создать платёж» (сразу) и «Передать …» двигают живые деньги — уровень права
+  // подтверждения оплат, как у выдачи резерва Сейфа.
   const canConfirmPaid = permissions.hasPermission("finance.safe.confirm_paid");
+  // Резервы (плановые платежи) — право ручного резерва Сейфа.
+  const canReserveCash = permissions.hasPermission("finance.safe.allocate");
 
   const [mode, setMode] = useState<OperationKind | null>(null);
   const [search, setSearch] = useState("");
@@ -394,7 +418,7 @@ export function NewPaymentDialog({
     prepaymentArticle !== null && matches(prepaymentArticle.name) && inLedger(prepaymentArticle);
   const advanceLabel = "Аванс сотруднику";
   const loanLabel = "Заём сотруднику";
-  const payoutLabel = "Долг по ЗП (по требованию)";
+  const payoutLabel = "Долг по ЗП";
   const transferLabel = transferArticle?.name ?? "Внутренний перевод";
   const showAdvance = advanceArticle !== null && matches(advanceLabel);
   const showLoan = loanArticle !== null && matches(loanLabel);
@@ -413,7 +437,9 @@ export function NewPaymentDialog({
       <DialogContent className="flex h-[640px] max-h-[88vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
         <DialogHeader className="shrink-0 space-y-0 border-b py-4 pl-6 pr-14">
           <DialogTitle>Новый платёж</DialogTitle>
-          <DialogDescription className="mt-0.5">
+          {/* Обычная подпись «Выберите операцию…» дублирует пустое состояние справа —
+              визуально скрыта (a11y-описание остаётся), кроме шага привязки. */}
+          <DialogDescription className={cn("mt-0.5", !linkPending && "sr-only")}>
             {linkPending
               ? "Завершите привязку операции — или «Позже», чтобы привязать при разборе выписки."
               : "Выберите операцию — форма подстроится."}
@@ -545,6 +571,7 @@ export function NewPaymentDialog({
                           <PaletteItem
                             icon={User}
                             label={payoutLabel}
+                            title="Выплата долга по ЗП (оклад «по требованию»)"
                             active={mode === "employee_payout"}
                             onClick={() => setMode("employee_payout")}
                           />
@@ -625,6 +652,7 @@ export function NewPaymentDialog({
                       article={prepaymentArticle}
                       wallets={wallets}
                       canConfirmPaid={canConfirmPaid}
+                      canReserveCash={canReserveCash}
                       onDirty={(value) => setDirty("prepayment", value)}
                       onDone={() => handleDone("prepayment")}
                       onCancel={close}
@@ -705,11 +733,13 @@ function PaletteGroup({ title, children }: { title: string; children: React.Reac
 function PaletteItem({
   icon: Icon,
   label,
+  title,
   active,
   onClick,
 }: {
   icon: LucideIcon;
   label: string;
+  title?: string;
   active: boolean;
   onClick: () => void;
 }) {
@@ -717,6 +747,7 @@ function PaletteItem({
     <button
       type="button"
       onClick={onClick}
+      title={title ?? label}
       className={cn(
         "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
         active ? "bg-primary/10 font-medium text-primary" : "hover:bg-muted",
@@ -732,11 +763,16 @@ function PaletteItem({
   );
 }
 
-function FormHeader({ title, description }: { title: string; description: string }) {
+// --------------------------------------------------------------------------- //
+// Общие блоки форм («живое резюме»)
+
+function FormHeader({ title, description }: { title: string; description?: string }) {
   return (
     <div className="mb-4">
       <h3 className="text-base font-semibold">{title}</h3>
-      <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+      {description ? (
+        <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+      ) : null}
     </div>
   );
 }
@@ -771,9 +807,198 @@ function FormFooter({
   );
 }
 
+/** Короткое имя счёта для чипов и фраз панели; полное имя — в title. */
+function shortWalletName(wallet: NewPaymentWallet): string {
+  if (wallet.kind === "cash") {
+    return wallet.location === "kassa" ? "Касса ТК" : "Сейф";
+  }
+  if (wallet.bank_code === "tbank") return "Т-Банк";
+  if (wallet.bank_code === "sber") return "Сбер";
+  return shortName(wallet.name, 14);
+}
+
+/**
+ * Выбор счёта чипами: кластеры «банк» и «наличные» собираются из контекста окна —
+ * новые кошельки подхватываются автоматически. Недоступные — disabled с причиной
+ * в title. При разрастании списка (>5) чипы складываются в обычный селект.
+ */
+function SourcePicker({
+  label,
+  wallets,
+  value,
+  onChange,
+  disabledReason,
+}: {
+  label: string;
+  wallets: NewPaymentWallet[];
+  value: string;
+  onChange: (id: string) => void;
+  disabledReason?: (wallet: NewPaymentWallet) => string | null;
+}) {
+  // Т-Банк первым (он дефолт черновиков), затем Сбер, затем прочие банки.
+  const bankOrder = (wallet: NewPaymentWallet) =>
+    wallet.bank_code === "tbank" ? 0 : wallet.bank_code === "sber" ? 1 : 2;
+  const banks = wallets
+    .filter((wallet) => wallet.kind === "bank")
+    .sort((a, b) => bankOrder(a) - bankOrder(b));
+  const cash = wallets.filter((wallet) => wallet.kind === "cash");
+
+  if (wallets.length > 5) {
+    return (
+      <Label className="block space-y-1">
+        <span className="text-sm">{label}</span>
+        <Select onValueChange={onChange} value={value}>
+          <SelectTrigger>
+            <SelectValue placeholder="Выберите счёт" />
+          </SelectTrigger>
+          <SelectContent>
+            {wallets.map((wallet) => (
+              <SelectItem
+                disabled={Boolean(disabledReason?.(wallet))}
+                key={wallet.id}
+                value={wallet.id}
+              >
+                {wallet.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Label>
+    );
+  }
+
+  const chip = (wallet: NewPaymentWallet) => {
+    const reason = disabledReason?.(wallet) ?? null;
+    const active = wallet.id === value;
+    const Icon = wallet.kind === "bank" ? Landmark : Banknote;
+    return (
+      <button
+        key={wallet.id}
+        type="button"
+        disabled={reason !== null}
+        title={reason ?? wallet.name}
+        onClick={() => onChange(wallet.id)}
+        className={cn(
+          "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors",
+          active
+            ? "border-primary/40 bg-primary/10 font-medium text-primary"
+            : "border-input hover:bg-muted",
+          reason !== null && "cursor-not-allowed opacity-50 hover:bg-transparent",
+        )}
+      >
+        <Icon size={13} aria-hidden="true" />
+        {shortWalletName(wallet)}
+      </button>
+    );
+  };
+
+  return (
+    <div>
+      <span className="text-sm font-medium">{label}</span>
+      <div className="mt-1.5 flex items-end gap-3">
+        {banks.length > 0 ? (
+          <div>
+            <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Банк</p>
+            <div className="flex flex-wrap gap-1.5">{banks.map(chip)}</div>
+          </div>
+        ) : null}
+        {banks.length > 0 && cash.length > 0 ? (
+          <div className="mb-1 h-7 w-px shrink-0 bg-border" aria-hidden="true" />
+        ) : null}
+        {cash.length > 0 ? (
+          <div>
+            <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+              Наличные
+            </p>
+            <div className="flex flex-wrap gap-1.5">{cash.map(chip)}</div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** Сегмент выбора действия (для наличных источников с >1 доступным действием). */
+function ActionSegment({
+  options,
+  value,
+  onChange,
+}: {
+  options: Array<{ key: string; label: string }>;
+  value: string;
+  onChange: (key: string) => void;
+}) {
+  return (
+    <div>
+      <span className="text-sm font-medium">Действие</span>
+      <div className="mt-1.5 inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5">
+        {options.map((option) => (
+          <button
+            key={option.key}
+            type="button"
+            onClick={() => onChange(option.key)}
+            className={cn(
+              "rounded px-3 py-1 text-sm transition-colors",
+              value === option.key
+                ? "border bg-background font-medium shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+type SummaryTone = "draft" | "reserve" | "instant" | "move" | "warning";
+
+const SUMMARY_TONES: Record<SummaryTone, { box: string; icon: LucideIcon }> = {
+  draft: { box: "border-sky-200 bg-sky-50 text-sky-800", icon: FileText },
+  reserve: { box: "border-amber-200 bg-amber-50 text-amber-800", icon: Clock },
+  instant: { box: "border-emerald-200 bg-emerald-50 text-emerald-800", icon: Zap },
+  move: { box: "border-violet-200 bg-violet-50 text-violet-800", icon: ArrowLeftRight },
+  warning: { box: "border-amber-300 bg-amber-50 text-amber-800", icon: AlertTriangle },
+};
+
+/**
+ * «Что произойдёт» — единственное место объяснения режима операции: фраза собирается
+ * из выбранного счёта/действия, цвет и иконка кодируют режим, справа живой итог.
+ * Warning-состояния занимают эту же панель — отдельных жёлтых боксов в формах нет.
+ */
+function SummaryPanel({
+  tone,
+  total,
+  children,
+}: {
+  tone: SummaryTone;
+  total?: number | null;
+  children: React.ReactNode;
+}) {
+  const style = SUMMARY_TONES[tone];
+  const Icon = style.icon;
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-sm",
+        style.box,
+      )}
+    >
+      <Icon size={16} className="shrink-0" aria-hidden="true" />
+      <span className="min-w-0 flex-1">{children}</span>
+      {total != null ? (
+        <span className={cn("shrink-0 font-semibold tabular-nums", total === 0 && "opacity-60")}>
+          Итого {formatRub(total)}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 // --------------------------------------------------------------------------- //
-// Расход: построчный конструктор (банк → один черновик-транш, наличные → резервы,
-// т.е. «целевой» резерв на счёте = расход с наличного счёта)
+// Расход: построчный конструктор (банк → один черновик-транш; наличные → резерв /
+// платёж сразу / передача на другой наличный счёт)
 
 function ExpenseForm({
   articles,
@@ -801,6 +1026,7 @@ function ExpenseForm({
   onCancel: () => void;
 }) {
   const [walletId, setWalletId] = useState("");
+  const [act, setAct] = useState<"reserve" | "now" | "move">("reserve");
   const tbankWallet = wallets.find((wallet) => wallet.bank_code === "tbank") ?? null;
   useEffect(() => {
     if (!walletId && tbankWallet) {
@@ -810,8 +1036,26 @@ function ExpenseForm({
 
   const selectedWallet = wallets.find((wallet) => wallet.id === walletId) ?? null;
   const isCashSource = selectedWallet?.kind === "cash";
+  const isSafeSource = isCashSource && selectedWallet?.location === "safe";
+  const srcShort = selectedWallet ? shortWalletName(selectedWallet) : "";
   const channel: "bank_draft" | "bank_draft_sber" =
     selectedWallet?.bank_code === "sber" ? "bank_draft_sber" : "bank_draft";
+
+  const safeWallet = wallets.find((w) => w.kind === "cash" && w.location === "safe") ?? null;
+  const transferDest = isSafeSource ? kassaWallet : safeWallet;
+  const moveLabel = isSafeSource ? "Передать в кассу" : "Передать на Сейф";
+  const actOptions = [
+    { key: "reserve", label: "Резерв" },
+    ...(canConfirmPaid ? [{ key: "now", label: "Оплатить сразу" }] : []),
+    ...(canConfirmPaid && transferDest ? [{ key: "move", label: moveLabel }] : []),
+  ];
+  // Смена счёта/прав может сделать выбранное действие недоступным — откат на резерв.
+  useEffect(() => {
+    if (!actOptions.some((option) => option.key === act)) {
+      setAct("reserve");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletId, canConfirmPaid]);
 
   const articleById = useMemo(() => {
     const map = new Map<string, NewPaymentArticle>();
@@ -848,7 +1092,7 @@ function ExpenseForm({
         !isCashSource
           ? "Черновик отправлен в банк"
           : payNow
-            ? "Платёж проведён — деньги списаны со счёта"
+            ? `Платёж проведён — списано с ${isSafeSource ? "Сейфа" : "Кассы"}`
             : rows.length > 1
               ? "Резервы созданы"
               : "Резерв создан",
@@ -858,12 +1102,6 @@ function ExpenseForm({
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось создать платёж")),
   });
 
-  // «Передать …»: наличные уезжают на другой наличный счёт (Сейф↔Касса) и
-  // резервируются там под каждую строку (выдача — из счёта-получателя).
-  const isSafeSource = selectedWallet?.kind === "cash" && selectedWallet.location === "safe";
-  const safeWallet = wallets.find((w) => w.kind === "cash" && w.location === "safe") ?? null;
-  const transferDest = isSafeSource ? kassaWallet : safeWallet;
-  const transferLabel = isSafeSource ? "Передать в кассу" : "Передать на Сейф";
   const transferMutation = useMutation({
     mutationFn: () =>
       createInternalTransfer({
@@ -882,48 +1120,71 @@ function ExpenseForm({
   });
 
   const busy = mutation.isPending || transferMutation.isPending;
-  const reservePending = mutation.isPending && mutation.variables?.payNow === false;
-  const payNowPending = mutation.isPending && mutation.variables?.payNow === true;
+  const n = rows.length;
+
+  // Панель «Что произойдёт» — единственное объяснение режима.
+  let tone: SummaryTone;
+  let summary: string;
+  if (!isCashSource) {
+    tone = "draft";
+    const route =
+      selectedWallet?.bank_code === "sber"
+        ? "Черновик через Сбер → Сейф."
+        : n > 1
+          ? `${n} ${plural(n, ["строка", "строки", "строк"])} — одним черновиком в Т-Банк → карта ИП → Сейф.`
+          : "Черновик в Т-Банк → карта ИП → Сейф.";
+    summary = `${route} ${n > 1 && selectedWallet?.bank_code !== "sber" ? "Разнос по статьям при оплате." : "Спишется после оплаты в банке."}`;
+  } else if (act === "now") {
+    tone = "instant";
+    summary = `Спишется с ${isSafeSource ? "Сейфа" : "Кассы"} сразу.`;
+  } else if (act === "move") {
+    tone = "move";
+    summary = isSafeSource
+      ? "Наличные уедут из Сейфа в Кассу и встанут резервом под выдачу."
+      : "Наличные уедут из Кассы на Сейф и встанут резервом под выдачу.";
+  } else {
+    tone = "reserve";
+    summary =
+      n > 1
+        ? `${n} ${plural(n, ["резерв", "резерва", "резервов"])} на ${isSafeSource ? "Сейфе" : "Кассе"} — по одному на строку, выдача позже.`
+        : `Резерв на ${isSafeSource ? "Сейфе" : "Кассе"} — деньги остаются на счёте до выдачи.`;
+  }
+
+  const submitLabel = !isCashSource
+    ? "Отправить в банк"
+    : act === "now"
+      ? "Создать платёж"
+      : act === "move"
+        ? moveLabel
+        : "Создать резерв";
+
+  function submit() {
+    if (isCashSource && act === "move") {
+      transferMutation.mutate();
+      return;
+    }
+    mutation.mutate({ payNow: isCashSource && act === "now" });
+  }
 
   return (
     <div>
-      <FormHeader
-        title="Свободный расход"
-        description="Банковский счёт — черновик на карту ИП → Сейф; наличные — сразу резерв на счёте."
-      />
+      <FormHeader title="Свободный расход" />
       <div className="space-y-3">
-        <Label className="block space-y-1">
-          <span className="text-sm">Счёт списания</span>
-          <Select onValueChange={setWalletId} value={walletId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Выберите счёт" />
-            </SelectTrigger>
-            <SelectContent>
-              {wallets.map((wallet) => {
-                const isCash = wallet.kind === "cash";
-                const disabled =
-                  !isCash && wallet.bank_code !== "tbank" && wallet.bank_code !== "sber";
-                let hint = "";
-                if (isCash) {
-                  hint =
-                    wallet.location === "kassa"
-                      ? " — наличными, резерв в Кассе"
-                      : " — наличными, резерв на Сейфе";
-                } else if (wallet.bank_code === "sber") {
-                  hint = " — черновик через Сбер (расход на Сейф)";
-                } else if (wallet.bank_code !== "tbank") {
-                  hint = " — черновики создаются в Т-Банке";
-                }
-                return (
-                  <SelectItem disabled={disabled} key={wallet.id} value={wallet.id}>
-                    {wallet.name}
-                    {hint}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        </Label>
+        <SourcePicker
+          label="Счёт списания"
+          wallets={wallets}
+          value={walletId}
+          onChange={setWalletId}
+          disabledReason={(wallet) =>
+            wallet.kind === "bank" && wallet.bank_code !== "tbank" && wallet.bank_code !== "sber"
+              ? "Черновики — только из Т-Банка и Сбера"
+              : null
+          }
+        />
+
+        {isCashSource && actOptions.length > 1 ? (
+          <ActionSegment options={actOptions} value={act} onChange={(key) => setAct(key as typeof act)} />
+        ) : null}
 
         <div className="space-y-2">
           {rows.map((row) => {
@@ -995,91 +1256,31 @@ function ExpenseForm({
           </Button>
         </div>
 
-        {total > 0 ? (
-          <div className="flex items-center justify-between border-t pt-2 text-sm">
-            <span className="text-muted-foreground">Итого</span>
-            <span className="font-medium tabular-nums">{formatRub(total)}</span>
-          </div>
-        ) : null}
-
-        <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
-          {isCashSource
-            ? [
-                "«Создать резерв» — плановый платёж (выплата позже).",
-                canConfirmPaid ? "«Создать платёж» — деньги списываются сразу." : null,
-                canConfirmPaid && transferDest
-                  ? `«${transferLabel}» — наличные уедут резервом под выдачу.`
-                  : null,
-              ]
-                .filter(Boolean)
-                .join(" ")
-            : "Строки уйдут одним черновиком на карту ИП → Сейф (разнос по статьям при оплате). Подтверждение в банке."}
-        </div>
+        <SummaryPanel tone={tone} total={total}>
+          {summary}
+        </SummaryPanel>
       </div>
-      <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t pt-3.5">
-        <Button onClick={onCancel} type="button" variant="outline">
-          Отмена
-        </Button>
-        {isCashSource ? (
-          <>
-            <Button
-              disabled={!canSubmit || busy}
-              onClick={() => mutation.mutate({ payNow: false })}
-              type="button"
-              variant={canConfirmPaid ? "outline" : "default"}
-            >
-              {reservePending ? (
-                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : null}
-              Создать резерв
-            </Button>
-            {transferDest && canConfirmPaid ? (
-              <Button
-                disabled={!canSubmit || busy}
-                onClick={() => transferMutation.mutate()}
-                type="button"
-                variant="outline"
-              >
-                {transferMutation.isPending ? (
-                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-                ) : null}
-                {transferLabel}
-              </Button>
-            ) : null}
-            {canConfirmPaid ? (
-              <Button
-                disabled={!canSubmit || busy}
-                onClick={() => mutation.mutate({ payNow: true })}
-                type="button"
-              >
-                {payNowPending ? (
-                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-                ) : null}
-                Создать платёж
-              </Button>
-            ) : null}
-          </>
-        ) : (
-          <Button disabled={!canSubmit || busy} onClick={() => mutation.mutate({ payNow: false })} type="button">
-            {mutation.isPending ? (
-              <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-            ) : null}
-            Создать черновик
-          </Button>
-        )}
-      </div>
+      <FormFooter
+        cancel={onCancel}
+        submit={submit}
+        submitLabel={submitLabel}
+        disabled={!canSubmit}
+        pending={busy}
+      />
     </div>
   );
 }
 
 // --------------------------------------------------------------------------- //
-// Предоплата поставщику (только банк: черновик в Т-Банке на счёт поставщика)
+// Предоплата поставщику: банк — черновик; наличные — выплатить сразу / резерв /
+// передать (дебиторка возникает при выплате)
 
 function PrepaymentForm({
   active,
   article,
   wallets,
   canConfirmPaid,
+  canReserveCash,
   onDirty,
   onDone,
   onCancel,
@@ -1088,6 +1289,7 @@ function PrepaymentForm({
   article: NewPaymentArticle;
   wallets: NewPaymentWallet[];
   canConfirmPaid: boolean;
+  canReserveCash: boolean;
   onDirty: (value: boolean) => void;
   onDone: () => Promise<void>;
   onCancel: () => void;
@@ -1095,6 +1297,7 @@ function PrepaymentForm({
   const [counterpartyId, setCounterpartyId] = useState("");
   const [amount, setAmount] = useState("");
   const [walletId, setWalletId] = useState("");
+  const [act, setAct] = useState<"pay" | "reserve" | "move">("reserve");
 
   const tbankWallet = wallets.find((wallet) => wallet.bank_code === "tbank") ?? null;
   useEffect(() => {
@@ -1104,6 +1307,25 @@ function PrepaymentForm({
   }, [walletId, tbankWallet]);
   const selectedWallet = wallets.find((wallet) => wallet.id === walletId) ?? null;
   const isCashSource = selectedWallet?.kind === "cash";
+  const isSafeSource = isCashSource && selectedWallet?.location === "safe";
+
+  const transferDest = isSafeSource
+    ? (wallets.find((w) => w.kind === "cash" && w.location === "kassa") ?? null)
+    : (wallets.find((w) => w.kind === "cash" && w.location === "safe") ?? null);
+  const moveLabel = isSafeSource ? "Передать в кассу" : "Передать на Сейф";
+  const actOptions = [
+    ...(canReserveCash ? [{ key: "reserve", label: "Резерв" }] : []),
+    { key: "pay", label: "Выплатить сразу" },
+    ...(canReserveCash && canConfirmPaid && transferDest
+      ? [{ key: "move", label: moveLabel }]
+      : []),
+  ];
+  useEffect(() => {
+    if (!actOptions.some((option) => option.key === act)) {
+      setAct(canReserveCash ? "reserve" : "pay");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletId, canReserveCash, canConfirmPaid]);
 
   const dirty = amountOf(amount) > 0 || Boolean(counterpartyId);
   useEffect(() => {
@@ -1129,13 +1351,14 @@ function PrepaymentForm({
     keywords: item.inn ?? undefined,
   }));
   const selected = counterparties.find((item) => item.counterparty_id === counterpartyId) ?? null;
+  const cpName = selected ? shortName(selected.name) : null;
   const isInformal = selected?.relationship === "informal";
   // Неофициальный поставщик: банк-черновик запрещён, наличными — можно.
   const informalBlocked = isInformal && !isCashSource;
   const canSubmit =
     Boolean(counterpartyId) && Boolean(walletId) && !informalBlocked && amountOf(amount) > 0;
 
-  const mutation = useMutation({
+  const payMutation = useMutation({
     mutationFn: async () => {
       if (isCashSource) {
         await createPrepayment({
@@ -1163,7 +1386,6 @@ function PrepaymentForm({
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось создать предоплату")),
   });
 
-  // Резерв предоплаты: плановый платёж; дебиторка возникнет при выплате резерва.
   const prepaymentLine = () => [
     {
       article_id: article.id,
@@ -1180,11 +1402,6 @@ function PrepaymentForm({
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось создать резерв")),
   });
-  const isSafeSource = selectedWallet?.kind === "cash" && selectedWallet.location === "safe";
-  const transferDest = isSafeSource
-    ? (wallets.find((w) => w.kind === "cash" && w.location === "kassa") ?? null)
-    : (wallets.find((w) => w.kind === "cash" && w.location === "safe") ?? null);
-  const transferLabel = isSafeSource ? "Передать в кассу" : "Передать на Сейф";
   const transferMutation = useMutation({
     mutationFn: () =>
       createInternalTransfer({
@@ -1201,43 +1418,68 @@ function PrepaymentForm({
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось передать резерв")),
   });
-  const busy = mutation.isPending || reserveMutation.isPending || transferMutation.isPending;
+  const busy = payMutation.isPending || reserveMutation.isPending || transferMutation.isPending;
+
+  // Панель «Что произойдёт».
+  let tone: SummaryTone;
+  let summary: string;
+  if (informalBlocked) {
+    tone = "warning";
+    summary = `«${cpName}» — неофициальный поставщик: банк недоступен. Выберите Сейф или Кассу.`;
+  } else if (!isCashSource) {
+    tone = "draft";
+    summary = `Черновик в Т-Банк на счёт ${cpName ? `«${cpName}»` : "поставщика"}. Дебиторка — после оплаты.`;
+  } else if (act === "pay") {
+    tone = "instant";
+    summary = `Спишется с ${isSafeSource ? "Сейфа" : "Кассы"} сразу. Дебиторка ${cpName ? `«${cpName}» ` : ""}появится сегодня.`;
+  } else if (act === "move") {
+    tone = "move";
+    summary = `Наличные уедут ${isSafeSource ? "из Сейфа в Кассу" : "из Кассы на Сейф"} резервом. Дебиторка — при выдаче.`;
+  } else {
+    tone = "reserve";
+    summary = `Резерв на ${isSafeSource ? "Сейфе" : "Кассе"}. Дебиторка возникнет при выплате.`;
+  }
+
+  const submitLabel = !isCashSource
+    ? "Отправить в банк"
+    : act === "pay"
+      ? "Выплатить"
+      : act === "move"
+        ? moveLabel
+        : "Создать резерв";
+
+  function submit() {
+    if (!isCashSource || act === "pay") {
+      payMutation.mutate();
+      return;
+    }
+    if (act === "move") {
+      transferMutation.mutate();
+      return;
+    }
+    reserveMutation.mutate();
+  }
 
   return (
     <div>
-      <FormHeader
-        title={article.name}
-        description="Банк — черновик на счёт поставщика; наличные — выплата сразу. Предоплата (дебиторка) погасится будущими накладными."
-      />
+      <FormHeader title={article.name} />
       <div className="space-y-3">
-        <Label className="block space-y-1">
-          <span className="text-sm">Счёт списания</span>
-          <Select onValueChange={setWalletId} value={walletId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Выберите счёт" />
-            </SelectTrigger>
-            <SelectContent>
-              {wallets.map((wallet) => {
-                const isCash = wallet.kind === "cash";
-                const disabled = !isCash && wallet.bank_code !== "tbank";
-                let hint = "";
-                if (isCash) {
-                  hint = " — наличными, выплата сразу";
-                } else if (wallet.bank_code === "tbank") {
-                  hint = " — черновик в банке";
-                } else {
-                  hint = " — банковская предоплата только из Т-Банка";
-                }
-                return (
-                  <SelectItem disabled={disabled} key={wallet.id} value={wallet.id}>
-                    {wallet.name}
-                    {hint}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        </Label>
+        <SourcePicker
+          label="Счёт списания"
+          wallets={wallets}
+          value={walletId}
+          onChange={setWalletId}
+          disabledReason={(wallet) =>
+            wallet.kind === "bank" && wallet.bank_code !== "tbank"
+              ? "Банковская предоплата — только из Т-Банка"
+              : null
+          }
+        />
+
+        {isCashSource && actOptions.length > 1 ? (
+          <ActionSegment options={actOptions} value={act} onChange={(key) => setAct(key as typeof act)} />
+        ) : null}
+
         <div className="space-y-1">
           <Label className="text-sm">Контрагент</Label>
           <InlineOptionList
@@ -1249,12 +1491,7 @@ function PrepaymentForm({
             value={counterpartyId}
           />
         </div>
-        {informalBlocked ? (
-          <p className="text-sm text-amber-600">
-            Неофициальный поставщик: предоплата в банк недоступна — выберите наличный счёт
-            (Сейф/Касса) или другого контрагента.
-          </p>
-        ) : null}
+
         <Label className="block space-y-1">
           <span className="text-sm">Сумма, ₽</span>
           <Input
@@ -1265,52 +1502,18 @@ function PrepaymentForm({
             value={amount}
           />
         </Label>
+
+        <SummaryPanel tone={tone} total={amountOf(amount) > 0 ? amountOf(amount) : 0}>
+          {summary}
+        </SummaryPanel>
       </div>
-      {isCashSource ? (
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t pt-3.5">
-          <Button onClick={onCancel} type="button" variant="outline">
-            Отмена
-          </Button>
-          <Button
-            disabled={!canSubmit || busy}
-            onClick={() => reserveMutation.mutate()}
-            type="button"
-            variant="outline"
-          >
-            {reserveMutation.isPending ? (
-              <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-            ) : null}
-            Создать резерв
-          </Button>
-          {transferDest && canConfirmPaid ? (
-            <Button
-              disabled={!canSubmit || busy}
-              onClick={() => transferMutation.mutate()}
-              type="button"
-              variant="outline"
-            >
-              {transferMutation.isPending ? (
-                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : null}
-              {transferLabel}
-            </Button>
-          ) : null}
-          <Button disabled={!canSubmit || busy} onClick={() => mutation.mutate()} type="button">
-            {mutation.isPending ? (
-              <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-            ) : null}
-            Выплатить
-          </Button>
-        </div>
-      ) : (
-        <FormFooter
-          cancel={onCancel}
-          submit={() => mutation.mutate()}
-          submitLabel="Отправить в банк"
-          disabled={!canSubmit}
-          pending={mutation.isPending}
-        />
-      )}
+      <FormFooter
+        cancel={onCancel}
+        submit={submit}
+        submitLabel={submitLabel}
+        disabled={!canSubmit}
+        pending={busy}
+      />
     </div>
   );
 }
@@ -1354,18 +1557,24 @@ function IncomeForm({
 
   const cashWallets = wallets.filter((wallet) => wallet.kind === "cash");
   const safeWallet = cashWallets.find((wallet) => wallet.location === "safe") ?? null;
+  const selectedWallet = cashWallets.find((wallet) => wallet.id === walletId) ?? null;
+  const destName = selectedWallet?.location === "kassa" ? "в Кассу" : "на Сейф";
   useEffect(() => {
     if (!walletId && safeWallet) {
       setWalletId(safeWallet.id);
     }
   }, [walletId, safeWallet]);
 
-  // Контрагент (необязательно) — полезен для «Возврата переплаты от поставщиков».
   const registryQuery = useQuery({
     queryKey: ["cp", "registry"],
     queryFn: () => getRegistry(),
     enabled: active,
   });
+  const registryById = useMemo(() => {
+    const map = new Map<string, string>();
+    (registryQuery.data ?? []).forEach((item) => map.set(item.counterparty_id, item.name));
+    return map;
+  }, [registryQuery.data]);
   const counterpartyOptions: ComboboxOption[] = useMemo(
     () => [
       { value: "", label: "Не указан" },
@@ -1407,13 +1616,30 @@ function IncomeForm({
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось провести поступление")),
   });
 
+  // Панель «Что произойдёт».
+  const cpName = counterpartyId ? shortName(registryById.get(counterpartyId) ?? "") : null;
+  let tone: SummaryTone = "instant";
+  let summary: string;
+  if (counterpartyRequired && !counterpartyId) {
+    tone = "warning";
+    summary = "Выберите поставщика — возврат гасит его открытые предоплаты (излишек останется обычным приходом).";
+  } else if (counterpartyRequired && cpName) {
+    summary = `Придёт ${destName} и зачтётся в предоплаты «${cpName}»; излишек — обычный приход.`;
+  } else {
+    summary = `Придёт ${destName} сразу. Банковские поступления приходят из выписки сами.`;
+  }
+
   return (
     <div>
-      <FormHeader
-        title="Поступление"
-        description="Наличный приход на Сейф или в Кассу — проводится сразу. Банковские поступления приходят из выписки автоматически."
-      />
+      <FormHeader title="Поступление" />
       <div className="space-y-3">
+        <SourcePicker
+          label="Счёт зачисления"
+          wallets={cashWallets}
+          value={walletId}
+          onChange={setWalletId}
+        />
+
         <div className="grid grid-cols-2 gap-3">
           <Label className="block space-y-1">
             <span className="text-sm">Статья</span>
@@ -1425,24 +1651,6 @@ function IncomeForm({
             />
           </Label>
           <Label className="block space-y-1">
-            <span className="text-sm">Счёт зачисления</span>
-            <Select onValueChange={setWalletId} value={walletId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Выберите счёт" />
-              </SelectTrigger>
-              <SelectContent>
-                {cashWallets.map((wallet) => (
-                  <SelectItem key={wallet.id} value={wallet.id}>
-                    {wallet.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Label>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Label className="block space-y-1">
             <span className="text-sm">Сумма, ₽</span>
             <Input
               className="tabular-nums"
@@ -1452,16 +1660,17 @@ function IncomeForm({
               value={amount}
             />
           </Label>
-          <Label className="block space-y-1">
-            <span className="text-sm">Назначение</span>
-            <Input
-              maxLength={210}
-              onChange={(event) => setPurpose(event.target.value)}
-              placeholder="Необязательно"
-              value={purpose}
-            />
-          </Label>
         </div>
+
+        <Label className="block space-y-1">
+          <span className="text-sm">Назначение</span>
+          <Input
+            maxLength={210}
+            onChange={(event) => setPurpose(event.target.value)}
+            placeholder="Необязательно"
+            value={purpose}
+          />
+        </Label>
 
         <div className="space-y-1">
           <Label className="text-sm">
@@ -1475,13 +1684,11 @@ function IncomeForm({
             searchPlaceholder="Название или ИНН…"
             value={counterpartyId}
           />
-          {counterpartyRequired ? (
-            <p className="text-xs text-muted-foreground">
-              Возврат зачтётся в открытые предоплаты этого поставщика (дебиторка уменьшится);
-              излишек останется обычным приходом.
-            </p>
-          ) : null}
         </div>
+
+        <SummaryPanel tone={tone} total={amountOf(amount) > 0 ? amountOf(amount) : 0}>
+          {summary}
+        </SummaryPanel>
       </div>
       <FormFooter
         cancel={onCancel}
@@ -1495,7 +1702,7 @@ function IncomeForm({
 }
 
 // --------------------------------------------------------------------------- //
-// Аванс / заём сотруднику
+// Аванс / заём сотруднику: одно действие на счёт (механика — контур авансов)
 
 function AdvanceForm({
   active,
@@ -1543,6 +1750,8 @@ function AdvanceForm({
     value: employee.id,
     label: employee.full_name,
   }));
+  const employeeName =
+    employees.find((employee) => employee.id === employeeId)?.full_name ?? null;
 
   const availabilityQuery = useQuery({
     queryKey: ["payroll-advance-availability", employeeId],
@@ -1559,15 +1768,7 @@ function AdvanceForm({
 
   const isLoan = kind === "loan";
   const canSubmit = Boolean(employeeId) && Boolean(walletId) && numericAmount > 0 && !overAvailable;
-  const advanceWallet = wallets.find((wallet) => wallet.id === walletId) ?? null;
-  // Единые подписи действий окна: Сейф создаёт резерв выдачи, ТК передаёт кассе,
-  // банк — черновик (сама механика выдачи — контур авансов, выбирается счётом).
-  const advanceSubmitLabel =
-    advanceWallet?.kind !== "cash"
-      ? "Создать черновик"
-      : advanceWallet.location === "kassa"
-        ? "Передать в кассу"
-        : "Создать резерв";
+  const selectedWallet = wallets.find((wallet) => wallet.id === walletId) ?? null;
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -1593,16 +1794,34 @@ function AdvanceForm({
       ),
   });
 
+  // Панель «Что произойдёт»: маршрут выдачи по счёту; предупреждение — та же панель.
+  const noun = isLoan ? "заём" : "аванс";
+  let tone: SummaryTone;
+  let summary: string;
+  if (overAvailable) {
+    tone = "warning";
+    summary = `Больше заработанного (${formatRub(available)}) — аванс не пройдёт.${canLoan ? " Переключите на «Заём»." : ""}`;
+  } else if (selectedWallet?.kind !== "cash") {
+    tone = "draft";
+    summary = `Черновик в Т-Банк — ${employeeName ? shortName(employeeName) : "сотрудник"} получит на карту после оплаты.`;
+  } else if (selectedWallet.location === "kassa") {
+    tone = "move";
+    summary = `Уйдёт в Кассу — наличные выдаст кассир, ${noun} активируется при выдаче.`;
+  } else {
+    tone = "reserve";
+    summary = `Резерв на Сейфе — выдадите наличными, ${noun} активируется при выплате.`;
+  }
+
+  const submitLabel =
+    selectedWallet?.kind !== "cash"
+      ? "Отправить в банк"
+      : selectedWallet.location === "kassa"
+        ? "Передать в кассу"
+        : "Создать резерв";
+
   return (
     <div>
-      <FormHeader
-        title={isLoan ? "Заём сотруднику" : "Аванс сотруднику"}
-        description={
-          isLoan
-            ? "Деньги в долг сверх заработанного — гасится удержаниями из ведомостей."
-            : "В пределах заработанного на сегодня — удержится из ближайшей ведомости."
-        }
-      />
+      <FormHeader title={isLoan ? "Заём сотруднику" : "Аванс сотруднику"} />
       <div className="space-y-3">
         {canLoan ? (
           <div className="inline-flex w-fit overflow-hidden rounded-md border">
@@ -1654,41 +1873,20 @@ function AdvanceForm({
             )}
           </div>
         ) : null}
-        {overAvailable ? (
-          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-            Больше заработанного ({formatRub(available)}) — аванс не пройдёт.
-            {canLoan ? " Переключите тип на «Заём»." : " Такую сумму выдаёт только заём."}
-          </div>
-        ) : null}
+
+        <SourcePicker
+          label="Счёт списания"
+          wallets={wallets}
+          value={walletId}
+          onChange={setWalletId}
+          disabledReason={(wallet) =>
+            wallet.kind === "bank" && wallet.bank_code !== "tbank"
+              ? "Выдача — только из Т-Банка или наличными"
+              : null
+          }
+        />
 
         <div className="grid grid-cols-2 gap-3">
-          <Label className="block space-y-1">
-            <span className="text-sm">Счёт списания</span>
-            <Select onValueChange={setWalletId} value={walletId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Выберите счёт" />
-              </SelectTrigger>
-              <SelectContent>
-                {wallets.map((wallet) => {
-                  const isCash = wallet.kind === "cash";
-                  const disabled = !isCash && wallet.bank_code !== "tbank";
-                  let hint = "";
-                  if (isCash) {
-                    hint =
-                      wallet.location === "kassa" ? " — выдача через кассу" : " — наличными с Сейфа";
-                  } else if (wallet.bank_code !== "tbank") {
-                    hint = " — выдача только из Т-Банка или наличными";
-                  }
-                  return (
-                    <SelectItem disabled={disabled} key={wallet.id} value={wallet.id}>
-                      {wallet.name}
-                      {hint}
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </Label>
           <Label className="block space-y-1">
             <span className="text-sm">Сумма, ₽</span>
             <Input
@@ -1697,6 +1895,15 @@ function AdvanceForm({
               onChange={(event) => setAmount(event.target.value)}
               placeholder="0"
               value={amount}
+            />
+          </Label>
+          <Label className="block space-y-1">
+            <span className="text-sm">Комментарий</span>
+            <Input
+              maxLength={210}
+              onChange={(event) => setComment(event.target.value)}
+              placeholder="Необязательно"
+              value={comment}
             />
           </Label>
         </div>
@@ -1733,20 +1940,14 @@ function AdvanceForm({
           </>
         ) : null}
 
-        <Label className="block space-y-1">
-          <span className="text-sm">Комментарий</span>
-          <Input
-            maxLength={210}
-            onChange={(event) => setComment(event.target.value)}
-            placeholder="Необязательно"
-            value={comment}
-          />
-        </Label>
+        <SummaryPanel tone={tone} total={numericAmount > 0 ? numericAmount : 0}>
+          {summary}
+        </SummaryPanel>
       </div>
       <FormFooter
         cancel={onCancel}
         submit={() => mutation.mutate()}
-        submitLabel={advanceSubmitLabel}
+        submitLabel={submitLabel}
         disabled={!canSubmit}
         pending={mutation.isPending}
       />
@@ -1933,12 +2134,26 @@ function PayoutDebtForm({
     );
   }
 
+  // Панель «Что произойдёт»: маршрут по счёту; переплата — предупреждением в той же панели.
+  let tone: SummaryTone;
+  let summary: string;
+  if (employeeId && debtInfo && numericAmount > debtInfo.debt) {
+    tone = "warning";
+    summary = `Больше остатка долга (${formatRub(debtInfo.debt)}) — долг уйдёт в минус (переплата).`;
+  } else if (selectedWallet?.kind === "cash") {
+    tone = "instant";
+    summary = `Спишется с ${selectedWallet.location === "kassa" ? "Кассы" : "Сейфа"} сразу — долг уменьшится.`;
+  } else if (selectedWallet?.bank_code === "tbank") {
+    tone = "draft";
+    summary = "Черновик в Т-Банк на карту сотрудника. После оплаты подтвердите по выписке.";
+  } else {
+    tone = "draft";
+    summary = "Этот банк не создаёт черновики — подтвердите привязкой операции из выписки.";
+  }
+
   return (
     <div>
-      <FormHeader
-        title="Долг по ЗП (по требованию)"
-        description="Выплата зарплаты, начисленной в долг («по востребованию»). Банковский счёт — черновик с подтверждением по выписке."
-      />
+      <FormHeader title="Долг по ЗП (по требованию)" />
       <div className="space-y-3">
         <Label className="block space-y-1">
           <span className="text-sm">Сотрудник</span>
@@ -1955,9 +2170,6 @@ function PayoutDebtForm({
               ))}
             </SelectContent>
           </Select>
-          <span className="text-xs text-muted-foreground">
-            Доступно сотрудникам с окладом «по требованию (долг)» — задаётся в «Исходных данных».
-          </span>
         </Label>
 
         {employeeId && debtInfo ? (
@@ -1989,28 +2201,15 @@ function PayoutDebtForm({
             </div>
           </div>
         ) : null}
-        {employeeId && debtInfo && numericAmount > debtInfo.debt ? (
-          <p className="text-xs text-amber-700">
-            Больше остатка долга ({formatRub(debtInfo.debt)}) — долг уйдёт в минус (переплата).
-          </p>
-        ) : null}
+
+        <SourcePicker
+          label="Счёт списания"
+          wallets={wallets}
+          value={walletId}
+          onChange={setWalletId}
+        />
 
         <div className="grid grid-cols-2 gap-3">
-          <Label className="block space-y-1">
-            <span className="text-sm">Счёт списания</span>
-            <Select onValueChange={setWalletId} value={walletId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Выберите счёт" />
-              </SelectTrigger>
-              <SelectContent>
-                {wallets.map((wallet) => (
-                  <SelectItem key={wallet.id} value={wallet.id}>
-                    {wallet.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Label>
           <Label className="block space-y-1">
             <span className="text-sm">Статья ДДС</span>
             <Select onValueChange={setArticleId} value={articleId}>
@@ -2026,6 +2225,14 @@ function PayoutDebtForm({
               </SelectContent>
             </Select>
           </Label>
+          <Label className="block space-y-1">
+            <span className="text-sm">Дата выплаты</span>
+            <Input
+              onChange={(event) => setPayoutDate(event.target.value)}
+              type="date"
+              value={payoutDate}
+            />
+          </Label>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -2040,34 +2247,19 @@ function PayoutDebtForm({
             />
           </Label>
           <Label className="block space-y-1">
-            <span className="text-sm">Дата выплаты</span>
+            <span className="text-sm">Комментарий</span>
             <Input
-              onChange={(event) => setPayoutDate(event.target.value)}
-              type="date"
-              value={payoutDate}
+              maxLength={210}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="Необязательно"
+              value={note}
             />
           </Label>
         </div>
 
-        <Label className="block space-y-1">
-          <span className="text-sm">Комментарий</span>
-          <Input
-            maxLength={210}
-            onChange={(event) => setNote(event.target.value)}
-            placeholder="Необязательно"
-            value={note}
-          />
-        </Label>
-
-        <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
-          Наличный счёт — проводка сразу. Банковский — черновик на карту сотрудника.
-          {selectedWallet && selectedWallet.kind === "bank" && selectedWallet.bank_code !== "tbank" ? (
-            <span className="mt-1 block text-xs">
-              Счёт не в Т-Банке: черновик в банке не создаётся — подтвердите выплату привязкой
-              операции из выписки.
-            </span>
-          ) : null}
-        </div>
+        <SummaryPanel tone={tone} total={numericAmount > 0 ? numericAmount : 0}>
+          {summary}
+        </SummaryPanel>
       </div>
       <FormFooter
         cancel={onClose}
@@ -2082,7 +2274,7 @@ function PayoutDebtForm({
 
 // --------------------------------------------------------------------------- //
 // Внутренний перевод: направление фиксировано источником — банк → Сейф (черновик
-// пополнения), Сейф → Касса, Касса → Сейф. Резервы под цели — расход с наличного счёта.
+// пополнения), Сейф → Касса, Касса → Сейф. Направление показывает панель.
 
 function TransferPlainForm({
   wallets,
@@ -2131,7 +2323,7 @@ function TransferPlainForm({
 
   const canSubmit = Boolean(sourceId) && destWallet !== null && amountOf(amount) > 0;
   const submitLabel = isBankSource
-    ? "Создать черновик"
+    ? "Отправить в банк"
     : isSafeSource
       ? "Перевести в кассу"
       : "Перевести на Сейф";
@@ -2155,52 +2347,28 @@ function TransferPlainForm({
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось выполнить перевод")),
   });
 
+  // Панель «Что произойдёт»: маршрут — жирным первым токеном, вместо поля «Куда».
+  const route = `${sourceWallet ? shortWalletName(sourceWallet) : "—"} → ${destWallet ? shortWalletName(destWallet) : "—"}`;
+  const tone: SummaryTone = isBankSource ? "draft" : "move";
+  const rest = isBankSource
+    ? "черновиком; деньги придут на Сейф после оплаты в банке."
+    : "проведётся сразу.";
+
   return (
     <div>
-      <FormHeader
-        title="Внутренний перевод"
-        description="Направление фиксировано: банк → Сейф (черновиком), Сейф → Касса, Касса → Сейф."
-      />
+      <FormHeader title="Внутренний перевод" />
       <div className="space-y-3">
-        <div className="flex items-end gap-2">
-          <Label className="flex-1 space-y-1">
-            <span className="text-sm">Откуда</span>
-            <Select value={sourceId} onValueChange={setSourceId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Счёт-источник" />
-              </SelectTrigger>
-              <SelectContent>
-                {wallets.map((wallet) => {
-                  const isCash = wallet.kind === "cash";
-                  const disabled =
-                    !isCash && wallet.bank_code !== "tbank" && wallet.bank_code !== "sber";
-                  let hint = "";
-                  if (!isCash) {
-                    hint =
-                      wallet.bank_code === "sber"
-                        ? " — черновик через Сбер"
-                        : wallet.bank_code === "tbank"
-                          ? " — черновик пополнения Сейфа"
-                          : " — черновики создаются в Т-Банке";
-                  }
-                  return (
-                    <SelectItem disabled={disabled} key={wallet.id} value={wallet.id}>
-                      {wallet.name}
-                      {hint}
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </Label>
-          <ArrowRight className="mb-2.5 shrink-0 text-muted-foreground" size={18} />
-          <div className="flex-1 space-y-1">
-            <span className="text-sm font-medium">Куда</span>
-            <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm">
-              {destWallet?.name ?? "—"}
-            </div>
-          </div>
-        </div>
+        <SourcePicker
+          label="Откуда"
+          wallets={wallets}
+          value={sourceId}
+          onChange={setSourceId}
+          disabledReason={(wallet) =>
+            wallet.kind === "bank" && wallet.bank_code !== "tbank" && wallet.bank_code !== "sber"
+              ? "Черновики — только из Т-Банка и Сбера"
+              : null
+          }
+        />
 
         <div className="grid grid-cols-2 gap-3">
           <Label className="block space-y-1">
@@ -2224,11 +2392,9 @@ function TransferPlainForm({
           </Label>
         </div>
 
-        <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
-          {isBankSource
-            ? "Деньги придут на Сейф после оплаты черновика в банке. В Кассу — наличными из Сейфа."
-            : "Наличный перевод проводится сразу, без резервов. Внесение наличных на банковский счёт проводите разметкой операции из выписки (журнал ДДС)."}
-        </div>
+        <SummaryPanel tone={tone} total={amountOf(amount) > 0 ? amountOf(amount) : 0}>
+          <b>{route}</b> · {rest}
+        </SummaryPanel>
       </div>
       <FormFooter
         cancel={onCancel}
