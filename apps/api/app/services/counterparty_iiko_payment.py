@@ -391,16 +391,29 @@ async def push_invoice_payment_to_iiko(
                 response={"dry_run": True, "parts": len(parts)},
             )
         for i, part in enumerate(parts):
-            res = await push_invoice_payment_to_iiko(
-                session,
-                external_id=external_id,
-                amount=part,
-                account_id=account_id,
-                idempotency_key=f"{idempotency_key}#{i}",
-                payment_dt=payment_dt,
-                invoice_id=None,  # части не блокируют накладную; итог — summary-строка
-                actor_user_id=actor_user_id,
-            )
+            # Части летят подряд, iiko троттлит серию (429). На ТРАНЗИЕНТНОМ отказе (429/5xx/сеть)
+            # ретраим часть с бэкоффом, чтобы дробление завершилось за один проход. Бэкофф только на
+            # ретрае (attempt>0) — happy-path без задержек. Перманентный 4xx не ретраим. Даже если
+            # часть так и не пройдёт — уже проведённые части останутся ok (суб-ключи), а сверочный
+            # джоб дожмёт остаток следующим проходом (summary не записан → накладная не заблокирована).
+            res: IikoPushResult | None = None
+            for attempt in range(4):
+                if attempt > 0:
+                    await anyio.sleep(3.0 * attempt)
+                res = await push_invoice_payment_to_iiko(
+                    session,
+                    external_id=external_id,
+                    amount=part,
+                    account_id=account_id,
+                    idempotency_key=f"{idempotency_key}#{i}",
+                    payment_dt=payment_dt,
+                    invoice_id=None,  # части не блокируют накладную; итог — summary-строка
+                    actor_user_id=actor_user_id,
+                )
+                sc = res.status_code or 0
+                if res.ok or not (sc in (0, 429) or sc >= 500):
+                    break  # успех или перманентный отказ — ретраить нечего
+            assert res is not None
             if not res.ok:
                 return IikoPushResult(
                     ok=False, skipped=False, status_code=res.status_code,
