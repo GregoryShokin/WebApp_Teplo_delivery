@@ -12,14 +12,15 @@ from test_payroll_payments import create_actor_user, create_payroll_run
 
 from app.api.deps import CurrentActor
 from app.api.v1.routes import payroll as payroll_routes
-from app.models import CashflowTransaction, PayrollPayment
+from app.models import CashflowTransaction, PayrollLine, PayrollPayment
 from app.services.payroll_payments import (
     PayrollConflictError,
     mark_partial_payment,
     mark_payments_selected,
+    unmark_payment,
 )
 from app.services.payroll_payouts import PAYROLL_PAYOUT_SOURCE_KIND
-from app.services.payroll_runner import list_runs
+from app.services.payroll_runner import PayrollNotFoundError, list_runs
 
 pytestmark = pytest.mark.asyncio
 
@@ -209,3 +210,41 @@ async def test_runs_list_summary_reports_partial_state(
         assert summary["underpaid_count"] == 1
         assert summary["remaining_shortfall"] == 300.0
         assert summary["paid_total"] == 700.0
+
+
+async def test_partial_blocked_for_scheduled_deposit_employee(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Сотрудник с запланированной выдачей депозита — только полный «Выплатить» (иначе депозит
+    потеряется из ДДС/iiko при закрытии доплатой)."""
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        _period, run, employees = await create_payroll_run(
+            session, employee_line_totals=[[Decimal("1000")]]
+        )
+        line = await session.scalar(select(PayrollLine).where(PayrollLine.run_id == run.id))
+        assert line is not None
+        line.deposit_payout_scheduled = Decimal("500")
+        await session.commit()
+        with pytest.raises(PayrollConflictError):
+            await mark_partial_payment(
+                session, run.id, employees[0].id, amount=Decimal("400"), paid_at=PAID_AT,
+                actor_user_id=actor.id,
+            )
+
+
+async def test_unmark_partial_not_allowed(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Частичную выплату нельзя откатить unmark'ом (ДДС не реверсится) — только доплата вперёд."""
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        _period, run, employees = await create_payroll_run(
+            session, employee_line_totals=[[Decimal("1000")]]
+        )
+        await mark_partial_payment(
+            session, run.id, employees[0].id, amount=Decimal("600"), paid_at=PAID_AT,
+            actor_user_id=actor.id,
+        )
+        with pytest.raises(PayrollNotFoundError):
+            await unmark_payment(session, run.id, employees[0].id, actor_user_id=actor.id)

@@ -84,7 +84,11 @@ async def unmark_payment(
             PayrollPayment.employee_id == employee_id,
         )
     )
-    if payment is None or payment.status not in ("paid", "partially_paid"):
+    # Только полностью выплаченную (как было до частичной выплаты): unmark удаляет строку и
+    # НЕ реверсит уже проведённый ДДС — для partially_paid это дало бы сироту ДДС и задвоение
+    # при повторной выплате (booked_amount теряется). Частичную не откатываем (только доплата
+    # вперёд); ошибочную — через дефинализацию ведомости.
+    if payment is None or payment.status != "paid":
         raise PayrollNotFoundError("Payroll payment not found")
 
     await session.execute(delete(PayrollPayment).where(PayrollPayment.id == payment.id))
@@ -258,6 +262,19 @@ async def mark_partial_payment(
     if method is not None:
         _validate_method(method)
     accrued = await _employee_payable_amount(session, run_id, employee_id)
+    # Депозит книжится (ДДС «Выдача депозита» + iiko-изъятие) только на ПОЛНОМ пути «Выплатить».
+    # Частичная выплата закрывает сотрудника по ФОТ (accrued=Σtotal_payable, без депозита) и
+    # исключает его из bulk — тогда выдача депозита потерялась бы. Гейтим такого сотрудника.
+    scheduled_deposit = await session.scalar(
+        select(func.coalesce(func.sum(PayrollLine.deposit_payout_scheduled), 0)).where(
+            PayrollLine.run_id == run_id,
+            PayrollLine.employee_id == employee_id,
+        )
+    )
+    if scheduled_deposit and Decimal(scheduled_deposit) > 0:
+        raise PayrollConflictError(
+            "У сотрудника запланирована выдача депозита — выплатите полностью через «Выплатить»"
+        )
     payment = await session.scalar(
         select(PayrollPayment).where(
             PayrollPayment.run_id == run_id,

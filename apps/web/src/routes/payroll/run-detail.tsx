@@ -1841,7 +1841,7 @@ function PaymentCell({
           {isPartial ? "Доплатить" : "Выплатить частично"}
         </Button>
       ) : null}
-      {canManagePayments && (isPaid || isPartial) ? (
+      {canManagePayments && isPaid ? (
         <Button
           disabled={unmarkMutation.isPending}
           onClick={(event) => {

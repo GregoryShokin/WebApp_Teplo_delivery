@@ -257,7 +257,7 @@ export function PayrollRunsRoute({
               {formatMoney(paid)} / {formatMoney(accrued)}
             </div>
             <div className="text-xs font-medium text-amber-700">
-              остаток {formatMoney(runRemainingShortfall(run))}
+              остаток {formatMoney(Math.max(0, accrued - paid))}
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-amber-100">
               <div className="h-full bg-amber-400" style={{ width: `${pct}%` }} aria-hidden="true" />
@@ -983,10 +983,6 @@ function isPartiallyPaid(run: PayrollRun) {
 
 function runPaidTotal(run: PayrollRun) {
   return Number(run.summary.paid_total ?? 0);
-}
-
-function runRemainingShortfall(run: PayrollRun) {
-  return Number(run.summary.remaining_shortfall ?? 0);
 }
 
 function runUnderpaidCount(run: PayrollRun) {
