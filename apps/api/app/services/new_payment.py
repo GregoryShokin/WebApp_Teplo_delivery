@@ -214,9 +214,7 @@ def ensure_income_article_allowed(article: DdsArticle) -> None:
     if article.movement_type != "inflow":
         raise ValueError("Поступление можно провести только по приходной статье")
     if new_payment_article_flow(article) != "income":
-        raise ValueError(
-            "У этой статьи собственный контур поступлений — ручной приход недоступен"
-        )
+        raise ValueError("У этой статьи собственный контур поступлений — ручной приход недоступен")
 
 
 async def _counterparties_by_article(
@@ -232,6 +230,9 @@ async def _counterparties_by_article(
             Counterparty.id,
             Counterparty.name,
             Counterparty.inn,
+            CounterpartyPayableProfile.relationship,
+            CounterpartyPayableProfile.requisites,
+            CounterpartyPayableProfile.requisites_verified,
         )
         .join(Counterparty, Counterparty.id == CounterpartyPayableProfile.counterparty_id)
         .where(
@@ -241,9 +242,16 @@ async def _counterparties_by_article(
         .order_by(Counterparty.name)
     )
     by_article: dict[Any, list[dict[str, Any]]] = {}
-    for article_id, cp_id, name, inn in rows:
+    for article_id, cp_id, name, inn, relationship, requisites, requisites_verified in rows:
         by_article.setdefault(article_id, []).append(
-            {"counterparty_id": cp_id, "name": name, "inn": inn}
+            {
+                "counterparty_id": cp_id,
+                "name": name,
+                "inn": inn,
+                "relationship": relationship,
+                "has_requisites": bool(requisites),
+                "requisites_verified": bool(requisites_verified),
+            }
         )
     return by_article
 

@@ -399,10 +399,11 @@ async def create_standalone_payment_draft(
 
 @dataclass(frozen=True)
 class ExpenseLineInput:
-    """Строка транша свободного вывода на Сейф: статья + сумма + назначение.
+    """Строка расхода из окна «Новый платёж»: статья + сумма + назначение.
 
-    ``counterparty_id`` — необязательная атрибуция: кому платим (для статей, к которым
-    привязаны контрагенты). Помечает целёвку Сейфа; деньги идут ИП→Сейф.
+    ``counterparty_id`` определяет не только атрибуцию, но и маршрут: официальный
+    контрагент оплачивается напрямую по подтверждённым реквизитам; неофициальный или
+    строка без получателя — через Сейф.
     """
 
     article_id: uuid.UUID
@@ -419,18 +420,18 @@ async def create_expense_payment_draft(
     amount: Decimal | None = None,
     purpose: str | None = None,
     channel: str | None = None,
+    allow_official_via_safe: bool = False,
     actor_user_id: uuid.UUID | None = None,
     bank_client: BankClient | None = None,
 ) -> CounterpartyPaymentDraft:
-    """Черновик «просто траты» без получателя — свободный вывод на Сейф по статьям.
+    """Банковский черновик расхода из окна «Новый платёж».
 
-    Окно «Новый платёж»: одним банковским черновиком (транш на карту ИП) можно вывести
-    несколько статей — каждая строка ``ExpenseLineInput`` (статья, сумма, назначение)
-    помнится в ``expense_draft_line``, а сумма черновика = Σ строк. При статусе
-    «исполнен» ``apply_payment_status`` заводит транзит р/с→Сейф и ПО ОДНОЙ целёвке
-    Сейфа на каждую строку — их можно оплатить с Сейфа или передать в кассу, и расход
-    разнесётся по статьям. Одиночный платёж — транш из одной строки (``article_id`` /
-    ``amount`` / ``purpose``, обратная совместимость). При отказе банка целёвок нет.
+    Строка с официальным/бартерным контрагентом и указанными реквизитами всегда создаёт
+    прямой платёж по подтверждённым реквизитам. Если реквизиты отсутствуют, маршрут на
+    карту ИП → Сейф разрешается только после явного ``allow_official_via_safe``. Флаг не
+    позволяет обойти проверку уже указанных реквизитов. Банковский документ с прямым
+    получателем имеет одну строку. Неофициальные контрагенты и строки без получателя
+    сохраняют прежний маршрут: один транш на карту ИП → Сейф с целёвками по строкам.
 
     ``channel`` выбирает банк-плательщика: ``bank_draft`` (по умолчанию, Т-Банк) или
     ``bank_draft_sber`` (Сбер). Черновик выписывается тем же интерфейсом (``BankClient``),
@@ -451,6 +452,7 @@ async def create_expense_payment_draft(
     # Валидируем каждую строку (статья годна для свободного вывода, сумма > 0) и собираем
     # нормализованные (статья, сумма, назначение); пустое назначение → имя статьи.
     prepared: list[tuple[DdsArticle, Decimal, str, uuid.UUID | None]] = []
+    direct_recipient: tuple[Counterparty, CounterpartyPayableProfile] | None = None
     total = Decimal("0")
     for line in lines:
         line_amount = _money(line.amount)
@@ -465,28 +467,65 @@ async def create_expense_payment_draft(
             raise CounterpartyPaymentError(str(exc)) from exc
         # Назначение необязательно: пустое → имя статьи (в банк и в целёвку Сейфа).
         line_purpose = " ".join((line.purpose or "").split()) or article.name
+        if line.counterparty_id is not None:
+            counterparty = await session.get(Counterparty, line.counterparty_id)
+            if counterparty is None or counterparty.status == "archived":
+                raise CounterpartyPaymentError("Контрагент не найден")
+            profile = await session.scalar(
+                select(CounterpartyPayableProfile).where(
+                    CounterpartyPayableProfile.counterparty_id == counterparty.id
+                )
+            )
+            if profile is None:
+                raise CounterpartyPaymentError("Платёжный профиль контрагента не найден")
+            if profile.relationship != "informal":
+                if profile.requisites:
+                    if not profile.requisites_verified:
+                        raise RequisitesNotVerifiedError(
+                            "Реквизиты контрагента не подтверждены — отправка в банк недоступна"
+                        )
+                    if direct_recipient is not None and direct_recipient[0].id != counterparty.id:
+                        raise CounterpartyPaymentError(
+                            "Платежи по реквизитам разных контрагентов оформите отдельно"
+                        )
+                    direct_recipient = (counterparty, profile)
+                elif not allow_official_via_safe:
+                    raise CounterpartyPaymentError(
+                        "У официального контрагента не указаны реквизиты — "
+                        "подтвердите вывод на карту ИП"
+                    )
         prepared.append((article, line_amount, line_purpose, line.counterparty_id))
         total += line_amount
 
     if total <= 0:
         raise CounterpartyPaymentError("Сумма платежа должна быть больше нуля")
+    if direct_recipient is not None and len(prepared) != 1:
+        raise CounterpartyPaymentError(
+            "Платёж по реквизитам оформляется одной строкой на одного контрагента"
+        )
 
     settings = get_settings()
     payer_account = payer_account_for(settings, provider)
     if not payer_account:
-        raise CounterpartyPaymentError(
-            f"Не настроен расчётный счёт плательщика ({provider})"
-        )
-    requisites = await _ip_card_requisites(session)
+        raise CounterpartyPaymentError(f"Не настроен расчётный счёт плательщика ({provider})")
+    is_direct = direct_recipient is not None
+    if is_direct:
+        counterparty, profile = direct_recipient
+        requisites = dict(profile.requisites or {})
+        requisites.setdefault("recipientName", counterparty.name)
+        if counterparty.inn:
+            requisites.setdefault("inn", counterparty.inn)
+    else:
+        requisites = await _ip_card_requisites(session)
 
     single = len(prepared) == 1
     draft = CounterpartyPaymentDraft(
         id=uuid.uuid4(),
-        counterparty_id=None,
+        counterparty_id=direct_recipient[0].id if direct_recipient else None,
         document_id="",
         amount=total,
         status="created",
-        pays_via_safe=True,
+        pays_via_safe=not is_direct,
         bank_provider=provider,
         # Одиночный платёж дублирует статью/назначение в поля черновика (наглядность и
         # обратная совместимость); транш из нескольких строк несёт разбивку только в строках.

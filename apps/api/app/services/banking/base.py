@@ -71,6 +71,8 @@ class BankClient(Protocol):
         payer_account: str,
     ) -> PaymentDraftResult: ...
 
+    async def get_payment_status(self, payment_id: str) -> str | None: ...
+
 
 def settings() -> Settings:
     return get_settings()

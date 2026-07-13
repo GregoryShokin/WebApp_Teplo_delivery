@@ -218,9 +218,7 @@ async def _settle_draft_via_safe(
     if lines:
         for line in lines:
             existing_line_alloc = await session.scalar(
-                select(SafeAllocation.id).where(
-                    SafeAllocation.source_draft_line_id == line.id
-                )
+                select(SafeAllocation.id).where(SafeAllocation.source_draft_line_id == line.id)
             )
             if existing_line_alloc is not None:
                 continue
@@ -380,7 +378,10 @@ async def apply_payment_status(
         draft_invoices = await _draft_invoices(session, draft.id)
         op_date = operation_date or datetime.now(UTC).date()
         if bank_wallet is None and (
-            draft_invoices or draft.creates_prepayment or draft.pays_via_safe
+            draft_invoices
+            or draft.creates_prepayment
+            or draft.pays_via_safe
+            or draft.target_article_id is not None
         ):
             # Не нашли банк-кошелёк плательщика (счёт из тела черновика/настроек не привязан к
             # активному bank-Wallet). Платёж всё равно фиксируем — деньги УЖЕ ушли из банка,
@@ -452,22 +453,48 @@ async def apply_payment_status(
             await session.flush()
             if prepay_txn is not None:
                 prepay_txn.source_id = prepayment.id
+        # Свободный расход официальному контрагенту из окна «Новый платёж»: деньги уходят
+        # сразу получателю по реквизитам, поэтому paid-переход фиксирует расход на выбранную
+        # статью напрямую, без транзита и резерва Сейфа.
+        if (
+            not draft.pays_via_safe
+            and not draft.creates_prepayment
+            and not draft_invoices
+            and draft.counterparty_id is not None
+            and draft.target_article_id is not None
+            and bank_wallet is not None
+        ):
+            session.add(
+                CashflowTransaction(
+                    wallet_id=bank_wallet.id,
+                    direction="out",
+                    amount=draft.amount,
+                    operation_date=op_date,
+                    article_id=draft.target_article_id,
+                    counterparty_id=draft.counterparty_id,
+                    source_kind="counterparty_payment",
+                    source_id=draft.id,
+                    payment_purpose=(
+                        (draft.target_purpose or "").strip()
+                        or "Оплата контрагенту по статусу платежа банка"
+                    ),
+                    quality_status="final",
+                )
+            )
         # Накладные к гашению + статья каждой (счета услуг «Страницы на оплату» несут свою
         # dds_article_id, складские — дефолтную «Оплата поставщикам»).
         payable: list[tuple[SupplierInvoice, Decimal, uuid.UUID | None]] = []
         for invoice in draft_invoices:
             remaining = await _invoice_remaining(session, invoice)
             if remaining > 0:
-                payable.append(
-                    (invoice, remaining, invoice.dds_article_id or supplier_article_id)
-                )
+                payable.append((invoice, remaining, invoice.dds_article_id or supplier_article_id))
 
         if bank_wallet is not None and not draft.pays_via_safe:
             # ОДНА проводка на платёж (на статью), а не по-накладно: операция выписки = Σ накладных
             # сматчится с ней через prebooked-claim. Дробление по накладным оставляло бы Σ-операцию
             # без пары (части ≠ сумме). Группируем по статье — обычно одна группа = одна проводка.
-            by_article: dict[uuid.UUID | None, list[tuple[SupplierInvoice, Decimal]]] = (
-                defaultdict(list)
+            by_article: dict[uuid.UUID | None, list[tuple[SupplierInvoice, Decimal]]] = defaultdict(
+                list
             )
             for invoice, remaining, article_id in payable:
                 by_article[article_id].append((invoice, remaining))

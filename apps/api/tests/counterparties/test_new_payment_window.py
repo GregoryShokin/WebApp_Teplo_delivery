@@ -26,6 +26,7 @@ from app.api.v1.routes.counterparties import DraftRead
 from app.models import (
     AppSetting,
     CashflowTransaction,
+    CounterpartyPayableProfile,
     DdsArticle,
     Employee,
     EmployeePositionAssignment,
@@ -57,6 +58,7 @@ from app.services.new_payment import (
     list_new_payment_employees,
     new_payment_article_flow,
 )
+from app.services.payments_aggregator import _draft_items
 from app.services.payroll_admin import OKLADNIK_PAYOUT_MODES_KEY
 from app.services.payroll_advance_service import ADVANCE_ARTICLE_CODE, LOAN_ARTICLE_CODE
 from app.services.payroll_payout_allocation import (
@@ -339,7 +341,12 @@ async def test_expense_line_counterparty_tags_reserve(
         await _payer_wallet(session)
         await _safe_wallet(session)
         article = await _free_expense_article(session)
-        supplier = await make_counterparty(session, name="ООО Сервис", inn="7711111119")
+        supplier = await make_counterparty(
+            session,
+            name="ООО Сервис",
+            inn="7711111119",
+            relationship="informal",
+        )
 
         draft = await create_expense_payment_draft(
             session,
@@ -359,6 +366,158 @@ async def test_expense_line_counterparty_tags_reserve(
         assert reserve.counterparty_id == supplier.id
         assert reserve.article_id == article.id
         assert reserve.amount == Decimal("500.00")
+
+
+async def test_official_expense_draft_pays_verified_requisites_directly(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Официальный контрагент из строки — прямой платёж, без карты ИП и Сейфа."""
+    async with async_session_factory() as session:
+        _account, payer_wallet = await _payer_wallet(session)
+        await _safe_wallet(session)
+        article = await _free_expense_article(session)
+        supplier = await make_counterparty(
+            session,
+            name="ИП Вишневецкий Сергей",
+            inn="616100000001",
+            relationship="official",
+            requisites={
+                "bankAcnt": "40802810000000000001",
+                "bankBik": "044525225",
+                "recipientCorrAccountNumber": "30101810400000000225",
+            },
+            requisites_verified=True,
+        )
+
+        draft = await create_expense_payment_draft(
+            session,
+            lines=[
+                ExpenseLineInput(
+                    article_id=article.id,
+                    amount=Decimal("6000.00"),
+                    purpose="Комиссия агрегатору",
+                    counterparty_id=supplier.id,
+                )
+            ],
+        )
+
+        assert draft.counterparty_id == supplier.id
+        assert draft.pays_via_safe is False
+        assert draft.target_article_id == article.id
+        assert draft.payload["recipientName"] == supplier.name
+        assert draft.payload["bankAcnt"] == "40802810000000000001"
+        active_item = next(item for item in await _draft_items(session) if item.ref_id == draft.id)
+        assert active_item.state == "in_bank"
+        assert active_item.counterparty_name == supplier.name
+        assert active_item.article_id == article.id
+
+        assert await apply_payment_status(session, draft=draft, raw_status="executed") == "paid"
+        transactions = (
+            await session.scalars(
+                select(CashflowTransaction).where(
+                    CashflowTransaction.source_kind == "counterparty_payment",
+                    CashflowTransaction.source_id == draft.id,
+                )
+            )
+        ).all()
+        assert len(transactions) == 1
+        assert transactions[0].wallet_id == payer_wallet.id
+        assert transactions[0].article_id == article.id
+        assert transactions[0].counterparty_id == supplier.id
+        assert transactions[0].amount == Decimal("6000.00")
+        assert await _transfer_legs(session, draft.id) == []
+        assert await _draft_reserve(session, draft.id) is None
+
+
+async def test_official_expense_requires_verified_requisites_and_single_line(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        a1, a2 = await _two_free_expense_articles(session)
+        supplier = await make_counterparty(
+            session,
+            name="ООО Официальный",
+            relationship="official",
+            requisites={"bankAcnt": "40802810000000000002"},
+            requisites_verified=False,
+        )
+        line = ExpenseLineInput(
+            article_id=a1.id,
+            amount=Decimal("100.00"),
+            counterparty_id=supplier.id,
+        )
+        with pytest.raises(CounterpartyPaymentError, match="не подтверждены"):
+            await create_expense_payment_draft(
+                session,
+                lines=[line],
+                allow_official_via_safe=True,
+            )
+
+        profile = await session.scalar(
+            select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == supplier.id
+            )
+        )
+        assert profile is not None
+        profile.requisites_verified = True
+        profile.requisites.update(
+            {
+                "bankBik": "044525225",
+                "recipientCorrAccountNumber": "30101810400000000225",
+            }
+        )
+        await session.flush()
+
+        with pytest.raises(CounterpartyPaymentError, match="одной строкой"):
+            await create_expense_payment_draft(
+                session,
+                lines=[
+                    line,
+                    ExpenseLineInput(article_id=a2.id, amount=Decimal("200.00")),
+                ],
+            )
+
+
+async def test_official_without_requisites_requires_explicit_ip_card_confirmation(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Пустые реквизиты допускают fallback на карту ИП, но только явным флагом формы."""
+    async with async_session_factory() as session:
+        article = await _free_expense_article(session)
+        supplier = await make_counterparty(
+            session,
+            name="ООО Без реквизитов",
+            relationship="official",
+            requisites={},
+            requisites_verified=False,
+        )
+        line = ExpenseLineInput(
+            article_id=article.id,
+            amount=Decimal("6000.00"),
+            purpose="Комиссия агрегатору",
+            counterparty_id=supplier.id,
+        )
+
+        with pytest.raises(CounterpartyPaymentError, match="подтвердите вывод на карту ИП"):
+            await create_expense_payment_draft(session, lines=[line])
+
+        draft = await create_expense_payment_draft(
+            session,
+            lines=[line],
+            allow_official_via_safe=True,
+        )
+
+        payout_setting = await session.scalar(
+            select(AppSetting).where(AppSetting.key == "payroll.bank_payout_requisites")
+        )
+        assert draft.pays_via_safe is True
+        assert draft.counterparty_id is None
+        assert draft.payload["recipientName"] == payout_setting.value["recipientName"]
+        saved_line = await session.scalar(
+            select(ExpenseDraftLine).where(ExpenseDraftLine.draft_id == draft.id)
+        )
+        assert saved_line is not None
+        assert saved_line.counterparty_id == supplier.id
 
 
 async def test_expense_rejects_articles_with_own_circuits(
@@ -468,9 +627,7 @@ async def test_context_articles_follow_permissions(
         assert loans_only == []
         advance_plus_loans = await list_new_payment_articles(
             session,
-            permissions=frozenset(
-                {"payroll.advances.production.issue", "payroll.loans.issue"}
-            ),
+            permissions=frozenset({"payroll.advances.production.issue", "payroll.loans.issue"}),
         )
         assert {item["flow"] for item in advance_plus_loans} == {
             "employee_advance",
@@ -493,9 +650,40 @@ async def test_context_hides_kassa_enabled_free_articles(
         assert article.code not in {item["code"] for item in items}
 
 
-async def _make_employee(
-    session: AsyncSession, *, full_name: str, position: str
-) -> Employee:
+async def test_context_marks_official_counterparty_for_requisites_route(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        article = await _free_expense_article(session)
+        supplier = await make_counterparty(
+            session,
+            name="ИП Вишневецкий",
+            relationship="official",
+            requisites={"bankAcnt": "40802810000000000001"},
+            requisites_verified=True,
+        )
+        profile = await session.scalar(
+            select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == supplier.id
+            )
+        )
+        assert profile is not None
+        profile.default_dds_article_id = article.id
+        await session.flush()
+
+        items = await list_new_payment_articles(
+            session, permissions=frozenset({"finance.safe.allocate"})
+        )
+        item = next(row for row in items if row["id"] == article.id)
+        pinned = next(
+            row for row in item["counterparties"] if row["counterparty_id"] == supplier.id
+        )
+        assert pinned["relationship"] == "official"
+        assert pinned["has_requisites"] is True
+        assert pinned["requisites_verified"] is True
+
+
+async def _make_employee(session: AsyncSession, *, full_name: str, position: str) -> Employee:
     employee = Employee(
         id=uuid.uuid4(),
         full_name=full_name,
@@ -616,9 +804,7 @@ async def test_income_flow_routing_and_guards(
         ensure_income_article_allowed(refund)  # не бросает
 
         engine_code = next(iter(INCOME_ENGINE_ARTICLE_CODES))
-        engine = await session.scalar(
-            select(DdsArticle).where(DdsArticle.code == engine_code)
-        )
+        engine = await session.scalar(select(DdsArticle).where(DdsArticle.code == engine_code))
         if engine is not None:
             assert new_payment_article_flow(engine) is None
             with pytest.raises(ValueError):

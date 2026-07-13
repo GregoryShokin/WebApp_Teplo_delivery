@@ -5,10 +5,10 @@
 
 1. **Счета на оплату** — почтовые счета «Страницы на оплату» (``EmailInvoiceIntake``
    + материализованный ``SupplierInvoice``). Оплата — банковским черновиком.
-2. **«Новый платёж» (FAB)** — банковские черновики ``CounterpartyPaymentDraft``
-   свободного вывода на Сейф (``pays_via_safe``, транш ``ExpenseDraftLine``),
-   предоплаты поставщику (``creates_prepayment``) и выплаты неофициальному
-   поставщику через Сейф. Обычные черновики оплаты накладных сюда НЕ входят.
+2. **«Новый платёж» (FAB)** — банковские черновики ``CounterpartyPaymentDraft``:
+   свободный вывод на Сейф (``pays_via_safe``, транш ``ExpenseDraftLine``), прямые
+   расходы официальным контрагентам по реквизитам, предоплаты поставщику
+   (``creates_prepayment``) и выплаты неофициальному поставщику через Сейф.
 3. **Резервы Сейфа/Кассы** — ``SafeAllocation``: платёжные целёвки-получатели
    (``employee_id IS NULL``, ``source_run_id IS NULL``) и **пул-резервы выплаты ЗП**,
    привязанные к ведомости (``source_run_id`` задан, ``kind='payroll_reserve'`` —
@@ -65,6 +65,7 @@ def _fmt_money(value: Decimal) -> str:
     """Целые рубли, разряды пробелом — единообразно с суммой в списке (без копеек)."""
     whole = value.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     return f"{whole:,.0f} ₽".replace(",", " ")
+
 
 # --- нормализованные состояния и корзины -------------------------------------
 
@@ -262,7 +263,8 @@ async def _invoice_items(session: AsyncSession) -> list[PaymentItem]:
 
 
 async def _draft_items(session: AsyncSession) -> list[PaymentItem]:
-    # Только платёжный контур FAB: свободный вывод на Сейф и предоплата/informal.
+    # Только платёжный контур FAB: свободный расход (через Сейф или напрямую официальному
+    # контрагенту по реквизитам) и предоплата/informal.
     # Обычные черновики оплаты накладных (не via-safe, не prepayment) исключены —
     # они относятся к контуру «Накладных», а не «Платежей».
     stmt = (
@@ -270,6 +272,7 @@ async def _draft_items(session: AsyncSession) -> list[PaymentItem]:
         .where(
             (CounterpartyPaymentDraft.pays_via_safe.is_(True))
             | (CounterpartyPaymentDraft.creates_prepayment.is_(True))
+            | (CounterpartyPaymentDraft.target_article_id.is_not(None))
         )
         .order_by(CounterpartyPaymentDraft.created_at.desc())
     )
@@ -287,7 +290,9 @@ async def _draft_items(session: AsyncSession) -> list[PaymentItem]:
             kind = "prepayment"
             article_id = d.prepayment_article_id
         elif d.counterparty_id is not None:
-            kind = "informal"  # выплата неофициальному поставщику через Сейф
+            # pays_via_safe=True — выплата неофициальному поставщику; False — прямой
+            # банковский расход официальному контрагенту по реквизитам.
+            kind = "informal" if d.pays_via_safe else "expense"
             article_id = d.target_article_id
         else:
             kind = "expense"  # свободный вывод на Сейф «просто трата»
@@ -303,9 +308,12 @@ async def _draft_items(session: AsyncSession) -> list[PaymentItem]:
         state = status_map.get(d.status, d.status)
 
         cp_name = cp_names.get(d.counterparty_id) if d.counterparty_id else None
-        title = cp_name or d.target_purpose or (
-            art_names.get(article_id) if article_id else None
-        ) or "Свободный вывод на Сейф"
+        title = (
+            cp_name
+            or d.target_purpose
+            or (art_names.get(article_id) if article_id else None)
+            or "Свободный вывод на Сейф"
+        )
         items.append(
             PaymentItem(
                 id=f"draft:{d.id}",

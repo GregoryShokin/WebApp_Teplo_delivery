@@ -523,11 +523,14 @@ class SafeReconcileRead(BaseModel):
 
 
 class NewPaymentArticleCounterpartyRead(BaseModel):
-    """Контрагент, закреплённый за статьёй (для атрибуции свободного вывода)."""
+    """Контрагент, закреплённый за статьёй, и обязательный маршрут его оплаты."""
 
     counterparty_id: uuid.UUID
     name: str
     inn: str | None = None
+    relationship: Literal["official", "informal", "barter"]
+    has_requisites: bool
+    requisites_verified: bool
 
 
 class NewPaymentArticleRead(BaseModel):
@@ -596,7 +599,7 @@ class NewPaymentContextRead(BaseModel):
 
 
 class NewPaymentExpenseLineIn(BaseModel):
-    """Строка транша свободного вывода на Сейф: статья + сумма + назначение."""
+    """Строка свободного расхода: статья, сумма, назначение и получатель."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -609,7 +612,7 @@ class NewPaymentExpenseLineIn(BaseModel):
 
 
 class NewPaymentExpenseDraftCreate(BaseModel):
-    """«Просто трата» без получателя: банковский черновик на карту ИП.
+    """Свободный расход: прямой платёж или банковский черновик на карту ИП.
 
     Одним траншем можно вывести несколько статей — ``lines`` (статья, сумма, назначение);
     разбивка помнится и при выплате с Сейфа разносится по статьям. Одиночные
@@ -625,6 +628,9 @@ class NewPaymentExpenseDraftCreate(BaseModel):
     # Банк-плательщик черновика: bank_draft (Т-Банк, по умолчанию) или bank_draft_sber (Сбер).
     # Сбер доступен только для свободного расхода — прочие маршруты остаются в Т-Банке.
     channel: Literal["bank_draft", "bank_draft_sber"] = "bank_draft"
+    # Явное подтверждение fallback-маршрута: официальный контрагент без реквизитов
+    # оплачивается через карту ИП → Сейф. Если реквизиты есть, флаг их не обходит.
+    allow_official_via_safe: bool = False
 
     @model_validator(mode="after")
     def _require_lines_or_single(self) -> NewPaymentExpenseDraftCreate:

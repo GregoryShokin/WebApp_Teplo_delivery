@@ -121,6 +121,11 @@ export function ActivePaymentsModal({
     queryKey: ["finance-payments", "active"],
     queryFn: () => getPayments("active"),
     enabled: open,
+    // Банк обновляет статус фоновым polling; открытая модалка должна подхватывать
+    // изменения без закрытия окна или ручного нажатия «Обновить».
+    refetchInterval: open ? 10_000 : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 
   const items = data?.items ?? [];
@@ -574,12 +579,7 @@ function PayReserveDialog({
                 свободными {where} — платёж не проводится.
               </p>
               <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={writeOff}
-                  disabled={writingOff}
-                >
+                <Button size="sm" variant="destructive" onClick={writeOff} disabled={writingOff}>
                   {writingOff ? <Loader2 className="mr-1.5 animate-spin" size={14} /> : null}
                   Списать {money.format(remaining)}
                 </Button>
@@ -614,9 +614,7 @@ function PayReserveDialog({
             Отмена
           </Button>
           <Button onClick={submit} disabled={!valid || busy}>
-            {submitting ? (
-              <Loader2 className="mr-1.5 animate-spin" size={15} />
-            ) : null}
+            {submitting ? <Loader2 className="mr-1.5 animate-spin" size={15} /> : null}
             {isKassa ? "Выдать" : "Выплатить"} {valid ? money.format(value) : ""}
           </Button>
         </DialogFooter>

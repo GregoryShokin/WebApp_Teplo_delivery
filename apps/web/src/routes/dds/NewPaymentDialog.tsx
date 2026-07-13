@@ -360,8 +360,7 @@ export function NewPaymentDialog({
   const setDirty = (kind: DirtyKind, value: boolean) => {
     dirtyRef.current[kind] = value;
   };
-  const expenseDirty = () =>
-    expenseRows.some((row) => row.articleId && amountOf(row.amount) > 0);
+  const expenseDirty = () => expenseRows.some((row) => row.articleId && amountOf(row.amount) > 0);
 
   /** После успешной отправки: закрыть окно, если в других формах нет неотправленного
    *  ввода; иначе — остаться, пересоздать отправленную форму и показать, что осталось. */
@@ -771,9 +770,7 @@ function FormHeader({ title, description }: { title: string; description?: strin
   return (
     <div className="mb-4">
       <h3 className="text-base font-semibold">{title}</h3>
-      {description ? (
-        <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
-      ) : null}
+      {description ? <p className="mt-0.5 text-sm text-muted-foreground">{description}</p> : null}
     </div>
   );
 }
@@ -799,9 +796,7 @@ function FormFooter({
         {cancelLabel}
       </Button>
       <Button disabled={disabled || pending} onClick={submit} type="button">
-        {pending ? (
-          <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-        ) : null}
+        {pending ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
         {submitLabel}
       </Button>
     </div>
@@ -983,10 +978,7 @@ function SummaryPanel({
   const Icon = style.icon;
   return (
     <div
-      className={cn(
-        "flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-sm",
-        style.box,
-      )}
+      className={cn("flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-sm", style.box)}
     >
       <Icon size={16} className="shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1">{children}</span>
@@ -1030,6 +1022,12 @@ function ExpenseForm({
 }) {
   const [walletId, setWalletId] = useState("");
   const [act, setAct] = useState<"reserve" | "now" | "move">("reserve");
+  const [officialViaSafeConsent, setOfficialViaSafeConsent] = useState<string | null>(null);
+  const recipientSignature = rows
+    .map((row) => `${row.key}:${row.articleId}:${row.counterpartyId}`)
+    .join("|");
+  // Подтверждение fallback относится только к текущему набору получателей.
+  const allowOfficialViaSafe = officialViaSafeConsent === recipientSignature;
   const tbankWallet = wallets.find((wallet) => wallet.bank_code === "tbank") ?? null;
   useEffect(() => {
     if (!walletId && tbankWallet) {
@@ -1070,10 +1068,32 @@ function ExpenseForm({
     (sum, row) => sum + (amountOf(row.amount) > 0 ? amountOf(row.amount) : 0),
     0,
   );
+  const selectedCounterparties = rows.flatMap((row) => {
+    const article = articleById.get(row.articleId);
+    const counterparty = article?.counterparties?.find(
+      (item) => item.counterparty_id === row.counterpartyId,
+    );
+    return counterparty ? [counterparty] : [];
+  });
+  const officialRecipient = selectedCounterparties.find((item) => item.relationship !== "informal");
+  const requisitesRecipient = selectedCounterparties.find(
+    (item) => item.relationship !== "informal" && item.has_requisites,
+  );
+  const missingRequisitesRecipient = selectedCounterparties.find(
+    (item) => item.relationship !== "informal" && !item.has_requisites,
+  );
+  const requiresRequisites = Boolean(requisitesRecipient);
+  const directRouteBlocked =
+    requiresRequisites &&
+    (rows.length !== 1 || isCashSource || !requisitesRecipient?.requisites_verified);
+  const fallbackRouteBlocked =
+    Boolean(missingRequisitesRecipient) && (!allowOfficialViaSafe || isCashSource);
   const canSubmit =
     Boolean(walletId) &&
     rows.length > 0 &&
-    rows.every((row) => row.articleId && amountOf(row.amount) > 0);
+    rows.every((row) => row.articleId && amountOf(row.amount) > 0) &&
+    !directRouteBlocked &&
+    !fallbackRouteBlocked;
 
   const buildLines = (): NewPaymentExpenseLine[] =>
     rows.map((row) => ({
@@ -1088,7 +1108,11 @@ function ExpenseForm({
       const lines = buildLines();
       return isCashSource
         ? createExpenseCashReserves({ wallet_id: walletId, lines, pay_now: payNow })
-        : createNewPaymentExpenseDraft({ lines, channel });
+        : createNewPaymentExpenseDraft({
+            lines,
+            channel,
+            allow_official_via_safe: allowOfficialViaSafe,
+          });
     },
     onSuccess: async (_result, { payNow }) => {
       toast.success(
@@ -1131,15 +1155,36 @@ function ExpenseForm({
   if (!selectedWallet) {
     tone = "warning";
     summary = "Выберите счёт списания.";
+  } else if (requiresRequisites && rows.length !== 1) {
+    tone = "warning";
+    summary = "Платёж по реквизитам оформляется отдельной строкой на одного контрагента.";
+  } else if (requiresRequisites && !requisitesRecipient?.requisites_verified) {
+    tone = "warning";
+    summary = `Реквизиты ${shortName(requisitesRecipient?.name ?? "контрагента")} не подтверждены — отправка недоступна.`;
+  } else if (officialRecipient && isCashSource) {
+    tone = "warning";
+    summary = requiresRequisites
+      ? `Для ${shortName(requisitesRecipient?.name ?? "контрагента")} выберите банковский счёт: оплата обязательна по реквизитам.`
+      : `Для ${shortName(missingRequisitesRecipient?.name ?? "контрагента")} выберите банковский счёт. После этого можно вывести деньги на карту ИП.`;
+  } else if (missingRequisitesRecipient && !allowOfficialViaSafe) {
+    tone = "warning";
+    summary = `У ${shortName(missingRequisitesRecipient.name)} не указаны реквизиты. Можно вывести деньги на карту ИП → Сейф.`;
   } else if (!isCashSource) {
     tone = "draft";
-    const route =
-      selectedWallet?.bank_code === "sber"
-        ? "Черновик через Сбер → Сейф."
-        : n > 1
-          ? `${n} ${plural(n, ["строка", "строки", "строк"])} — одним черновиком в Т-Банк → карта ИП → Сейф.`
-          : "Черновик в Т-Банк → карта ИП → Сейф.";
-    summary = `${route} ${n > 1 && selectedWallet?.bank_code !== "sber" ? "Разнос по статьям при оплате." : "Спишется после оплаты в банке."}`;
+    if (requiresRequisites) {
+      const bankName = selectedWallet?.bank_code === "sber" ? "Сбер" : "Т-Банк";
+      summary = `Черновик в ${bankName} → ${shortName(requisitesRecipient?.name ?? "контрагент")} по реквизитам. Спишется после оплаты в банке.`;
+    } else if (missingRequisitesRecipient) {
+      summary = `Подтверждён вывод для ${shortName(missingRequisitesRecipient.name)}: карта ИП → Сейф. Спишется после оплаты в банке.`;
+    } else {
+      const route =
+        selectedWallet?.bank_code === "sber"
+          ? "Черновик через Сбер → Сейф."
+          : n > 1
+            ? `${n} ${plural(n, ["строка", "строки", "строк"])} — одним черновиком в Т-Банк → карта ИП → Сейф.`
+            : "Черновик в Т-Банк → карта ИП → Сейф.";
+      summary = `${route} ${n > 1 && selectedWallet?.bank_code !== "sber" ? "Разнос по статьям при оплате." : "Спишется после оплаты в банке."}`;
+    }
   } else if (act === "now") {
     tone = "instant";
     summary = `Спишется с ${isSafeSource ? "Сейфа" : "Кассы"} сразу.`;
@@ -1182,14 +1227,22 @@ function ExpenseForm({
           value={walletId}
           onChange={setWalletId}
           disabledReason={(wallet) =>
-            wallet.kind === "bank" && wallet.bank_code !== "tbank" && wallet.bank_code !== "sber"
-              ? "Черновики — только из Т-Банка и Сбера"
-              : null
+            officialRecipient && wallet.kind !== "bank"
+              ? "Для официального контрагента выберите банковский счёт"
+              : wallet.kind === "bank" &&
+                  wallet.bank_code !== "tbank" &&
+                  wallet.bank_code !== "sber"
+                ? "Черновики — только из Т-Банка и Сбера"
+                : null
           }
         />
 
         {isCashSource && actOptions.length > 1 ? (
-          <ActionSegment options={actOptions} value={act} onChange={(key) => setAct(key as typeof act)} />
+          <ActionSegment
+            options={actOptions}
+            value={act}
+            onChange={(key) => setAct(key as typeof act)}
+          />
         ) : null}
 
         <div className="space-y-2">
@@ -1256,7 +1309,16 @@ function ExpenseForm({
               </div>
             );
           })}
-          <Button onClick={onAddRow} size="sm" type="button" variant="outline">
+          <Button
+            disabled={requiresRequisites}
+            onClick={onAddRow}
+            size="sm"
+            title={
+              requiresRequisites ? "Платёж по реквизитам создаётся отдельным документом" : undefined
+            }
+            type="button"
+            variant="outline"
+          >
             <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
             Добавить строку
           </Button>
@@ -1265,6 +1327,18 @@ function ExpenseForm({
         <SummaryPanel tone={tone} total={total}>
           {summary}
         </SummaryPanel>
+        {missingRequisitesRecipient && !requiresRequisites ? (
+          <Button
+            onClick={() =>
+              setOfficialViaSafeConsent(allowOfficialViaSafe ? null : recipientSignature)
+            }
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {allowOfficialViaSafe ? "Отменить вывод на карту ИП" : "Вывести на карту ИП"}
+          </Button>
+        ) : null}
       </div>
       <FormFooter
         cancel={onCancel}
@@ -1484,7 +1558,11 @@ function PrepaymentForm({
         />
 
         {isCashSource && actOptions.length > 1 ? (
-          <ActionSegment options={actOptions} value={act} onChange={(key) => setAct(key as typeof act)} />
+          <ActionSegment
+            options={actOptions}
+            value={act}
+            onChange={(key) => setAct(key as typeof act)}
+          />
         ) : null}
 
         <div className="space-y-1">
@@ -1632,7 +1710,8 @@ function IncomeForm({
     summary = "Выберите счёт зачисления.";
   } else if (counterpartyRequired && !counterpartyId) {
     tone = "warning";
-    summary = "Выберите поставщика — возврат гасит его открытые предоплаты (излишек останется обычным приходом).";
+    summary =
+      "Выберите поставщика — возврат гасит его открытые предоплаты (излишек останется обычным приходом).";
   } else if (counterpartyRequired && cpName) {
     summary = `Придёт ${destName} и зачтётся в предоплаты «${cpName}»; излишек — обычный приход.`;
   } else {
@@ -1760,8 +1839,7 @@ function AdvanceForm({
     value: employee.id,
     label: employee.full_name,
   }));
-  const employeeName =
-    employees.find((employee) => employee.id === employeeId)?.full_name ?? null;
+  const employeeName = employees.find((employee) => employee.id === employeeId)?.full_name ?? null;
 
   const availabilityQuery = useQuery({
     queryKey: ["payroll-advance-availability", employeeId],
@@ -2117,13 +2195,13 @@ function PayoutDebtForm({
             </div>
           ) : operationsQuery.isError ? (
             <div className="py-6 text-sm text-muted-foreground">
-              Не удалось загрузить операции из выписки (возможно, нет права просмотра ДДС).
-              Черновик сохранён — привязать можно позже при разборе выписки.
+              Не удалось загрузить операции из выписки (возможно, нет права просмотра ДДС). Черновик
+              сохранён — привязать можно позже при разборе выписки.
             </div>
           ) : operations.length === 0 ? (
             <div className="py-6 text-sm text-muted-foreground">
-              Нет несопоставленных исходящих операций за последние 45 дней. Операция появится
-              после импорта выписки — привяжите позже.
+              Нет несопоставленных исходящих операций за последние 45 дней. Операция появится после
+              импорта выписки — привяжите позже.
             </div>
           ) : (
             operations.map((op) => (
@@ -2370,9 +2448,7 @@ function TransferPlainForm({
       }),
     onSuccess: async (result) => {
       toast.success(
-        result.kind === "draft"
-          ? "Черновик пополнения Сейфа отправлен в банк"
-          : "Перевод проведён",
+        result.kind === "draft" ? "Черновик пополнения Сейфа отправлен в банк" : "Перевод проведён",
       );
       await onDone();
     },

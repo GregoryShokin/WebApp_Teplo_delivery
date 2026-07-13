@@ -7,7 +7,26 @@ from cp_helpers import make_counterparty, make_draft, make_invoice
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.scheduler import run_payment_status_poll
-from app.services.banking.tbank import TbankClient
+from app.services.banking.tbank import TbankClient, _payment_status_from_payload
+
+
+def test_tbank_status_payload_maps_deleted_and_regular_statuses() -> None:
+    assert (
+        _payment_status_from_payload(
+            {"result": [{"documentId": "doc-1", "status": "EXECUTED"}]}, "doc-1"
+        )
+        == "EXECUTED"
+    )
+    assert (
+        _payment_status_from_payload(
+            {
+                "result": [],
+                "resultError": [{"documentId": "doc-1", "errorCode": "PAYMENT_NOT_FOUND"}],
+            },
+            "doc-1",
+        )
+        == "deleted"
+    )
 
 
 class _FakeClient:
@@ -42,6 +61,7 @@ async def test_poll_settles_executed_draft(
             "checked": 1,
             "paid": 1,
             "failed": 0,
+            "deleted": 0,
             "errors": 0,
             "reconciled": 0,
             "absorbed": 0,
@@ -63,6 +83,54 @@ async def test_poll_leaves_pending_draft(
         assert result["checked"] == 1 and result["paid"] == 0
         await session.refresh(draft)
         assert draft.status == "created"
+
+
+async def test_poll_removes_deleted_draft_from_active_state(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Удалённый черновик")
+        draft, inv = await _sent_draft(session, cp.id)
+        await session.commit()
+
+        result = await run_payment_status_poll(session, client=_FakeClient("deleted"))
+
+        assert result["checked"] == 1 and result["deleted"] == 1
+        await session.refresh(draft)
+        await session.refresh(inv)
+        assert draft.status == "deleted"
+        assert draft.last_error == "Черновик удалён в банке"
+        assert inv.draft_id is None
+
+
+async def test_poll_uses_bank_provider_from_each_draft(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch
+) -> None:
+    async with async_session_factory() as session:
+        tbank_cp = await make_counterparty(session, name="Т-Банк платёж")
+        sber_cp = await make_counterparty(session, name="Сбер платёж")
+        tbank_draft, _ = await _sent_draft(session, tbank_cp.id, provider_ref="t-doc")
+        sber_draft, sber_invoice = await _sent_draft(session, sber_cp.id, provider_ref="s-doc")
+        tbank_draft.bank_provider = "tbank"
+        sber_draft.bank_provider = "sber"
+        await session.commit()
+
+        clients = {
+            "tbank": _FakeClient("processing"),
+            "sber": _FakeClient("deleted"),
+        }
+        monkeypatch.setattr(
+            "app.scheduler.payout_client_for",
+            lambda provider, _session: clients[provider],
+        )
+
+        result = await run_payment_status_poll(session)
+
+        assert result["checked"] == 2 and result["deleted"] == 1
+        assert clients["tbank"].calls == ["t-doc"]
+        assert clients["sber"].calls == ["s-doc"]
+        await session.refresh(sber_invoice)
+        assert sber_invoice.draft_id is None
 
 
 async def test_poll_ignores_draft_without_provider_ref(

@@ -27,6 +27,7 @@ from app.models import (
     ClassificationRule,
     Counterparty,
     CounterpartyAlias,
+    CounterpartyPayableProfile,
     CounterpartyPaymentDraft,
     DdsArticle,
     DdsArticleAlias,
@@ -325,9 +326,7 @@ async def list_journal(
         or 0
     )
     unmarked_total = int(
-        await session.scalar(
-            select(func.count()).select_from(BankOperation).where(*op_conditions)
-        )
+        await session.scalar(select(func.count()).select_from(BankOperation).where(*op_conditions))
         or 0
     )
     transfer_total = int(
@@ -482,9 +481,7 @@ async def list_wallets(
     result = await session.scalars(select(Wallet).order_by(Wallet.code))
     wallets = result.all()
     deltas = await _wallet_movement_deltas(session)
-    bank_by_account = dict(
-        (await session.execute(select(Account.id, Account.bank_code))).all()
-    )
+    bank_by_account = dict((await session.execute(select(Account.id, Account.bank_code))).all())
     payloads: list[dict[str, object]] = []
     for wallet in wallets:
         is_safe = wallet.code == SAFE_WALLET_CODE
@@ -500,9 +497,7 @@ async def list_wallets(
             # ожидающие разрешения на авансы/займы (для подписи на «Деньгах сегодня»).
             reserved = await kassa_targets_total(session, wallet.id)
             active_count = await kassa_targets_count(session, wallet.id)
-            pending_payout_count = active_count + len(
-                await list_kassa_pending_advances(session)
-            )
+            pending_payout_count = active_count + len(await list_kassa_pending_advances(session))
         payloads.append(
             _wallet_payload(
                 wallet,
@@ -646,11 +641,11 @@ async def post_new_payment_expense_draft(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> CounterpartyPaymentDraft:
-    """«Просто трата» без получателя: черновик на карту ИП с целевой статьёй/назначением.
+    """Свободный расход: черновик по реквизитам либо на карту ИП с целевой статьёй.
 
-    Право — как у ручного резерва Сейфа (``finance.safe.allocate``): итог оплаты
-    черновика — та же целёвка, только пополненная транзитом с р/с. Подтверждение
-    всегда в банке; проводки и целёвку создаёт вебхук-контур (paid-переход).
+    Официальный получатель с подтверждёнными реквизитами оплачивается напрямую. При
+    отсутствии реквизитов маршрут через карту ИП требует явного подтверждения формы.
+    Подтверждение всегда в банке; проводки создаёт вебхук-контур (paid-переход).
     """
     lines = [
         ExpenseLineInput(
@@ -666,6 +661,7 @@ async def post_new_payment_expense_draft(
             session,
             lines=lines,
             channel=payload.channel,
+            allow_official_via_safe=payload.allow_official_via_safe,
             actor_user_id=actor.user_id,
         )
     except CounterpartyPaymentError as exc:
@@ -731,6 +727,24 @@ async def post_new_payment_expense_cash(
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT, detail="Контрагент не найден"
                 )
+            profile = await session.scalar(
+                select(CounterpartyPayableProfile).where(
+                    CounterpartyPayableProfile.counterparty_id == cp.id
+                )
+            )
+            if profile is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Платёжный профиль контрагента не найден",
+                )
+            if profile.relationship != "informal":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Официальный контрагент оплачивается через банковский счёт; "
+                        "если реквизитов нет, подтвердите вывод на карту ИП"
+                    ),
+                )
         amount = Decimal(line.amount)
         line_purpose = " ".join((line.purpose or "").split()) or article.name
         prepared.append((article, amount, line_purpose, line.counterparty_id))
@@ -743,8 +757,7 @@ async def post_new_payment_expense_cash(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    f"Недостаточно свободных средств на Сейфе: "
-                    f"свободно {free}, запрошено {total}"
+                    f"Недостаточно свободных средств на Сейфе: свободно {free}, запрошено {total}"
                 ),
             )
 
@@ -771,15 +784,11 @@ async def post_new_payment_expense_cash(
                     allocation,
                     amount=amount,
                     operation_date=today_msk,
-                    source_kind=(
-                        "kassa_target_payout" if location == "kassa" else "safe_payout"
-                    ),
+                    source_kind=("kassa_target_payout" if location == "kassa" else "safe_payout"),
                     created_by_user_id=actor.user_id,
                 )
             except ValueError as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-                ) from exc
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await session.commit()
     return {
         "created": len(prepared),
@@ -897,9 +906,14 @@ async def post_internal_transfer(
     source = await session.get(Wallet, payload.source_wallet_id)
     dest = await session.get(Wallet, payload.dest_wallet_id)
     for wallet, label in ((source, "источник"), (dest, "получатель")):
-        if wallet is None or wallet.status != "active" or wallet.type not in (
-            "cash_safe",
-            "store_cash",
+        if (
+            wallet is None
+            or wallet.status != "active"
+            or wallet.type
+            not in (
+                "cash_safe",
+                "store_cash",
+            )
         ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -940,8 +954,7 @@ async def post_internal_transfer(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    f"Недостаточно свободных средств на Сейфе: "
-                    f"свободно {free}, запрошено {total}"
+                    f"Недостаточно свободных средств на Сейфе: свободно {free}, запрошено {total}"
                 ),
             )
 
@@ -1675,7 +1688,9 @@ async def confirm_iiko_manual_owner_review_case(
     # mark резолвит кейс через _resolve_iiko_payment_case; подстрахуем закрытие, если ещё pending.
     if case.status == "pending":
         await close_reconciliation_case(
-            session, case, status="resolved",
+            session,
+            case,
+            status="resolved",
             resolution_payload={"reason": "settled_manually_in_iiko"},
         )
     await session.commit()
@@ -2230,9 +2245,7 @@ async def move_safe_allocation(
     )
 
 
-@router.get(
-    "/kassa-targets", response_model=KassaPendingRead, dependencies=DDS_WALLETS_READ_ACCESS
-)
+@router.get("/kassa-targets", response_model=KassaPendingRead, dependencies=DDS_WALLETS_READ_ACCESS)
 async def list_dds_kassa_targets(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, object]:

@@ -109,18 +109,9 @@ export type SubstitutePairsResponse = {
 };
 
 export type PositionArchetype =
-  | "okladnik"
-  | "production_percent"
-  | "shift_pool"
-  | "courier"
-  | "none";
+  "okladnik" | "production_percent" | "shift_pool" | "courier" | "none";
 export type PositionPermissionGroup =
-  | "administration"
-  | "cooks"
-  | "cashiers"
-  | "auxiliary"
-  | "couriers"
-  | "none";
+  "administration" | "cooks" | "cashiers" | "auxiliary" | "couriers" | "none";
 export type PositionScheduleType = "SESSION" | "FIXED" | "HOURS";
 export type PositionStatus = "active" | "excluded";
 
@@ -157,12 +148,7 @@ export type PositionsSyncResult = {
 
 export type EmployeeStatus = "active" | "inactive" | "requires_setup" | "dismissing";
 export type EmployeeCategory =
-  | "category_1"
-  | "category_2"
-  | "category_3"
-  | "category_4"
-  | "intern"
-  | "freelancer";
+  "category_1" | "category_2" | "category_3" | "category_4" | "intern" | "freelancer";
 export type CookingStation = "sushi" | "pizza" | "shawarma";
 export type PayrollRole = CookingStation | "prep" | "administrator";
 
@@ -325,11 +311,7 @@ export type EmployeePositionAssignmentDeletePayload = {
 };
 
 export type DepositDismissAction =
-  | "payout_full"
-  | "payout_partial"
-  | "write_off"
-  | "schedule_payout"
-  | "none";
+  "payout_full" | "payout_partial" | "write_off" | "schedule_payout" | "none";
 
 export type DepositPayoutMethod = "cash_tk" | "cash_safe" | "bank_draft" | "bank_draft_sber";
 
@@ -1494,11 +1476,7 @@ export type PayrollForecastRunRead = {
 };
 
 export type PlanFactDeviationStatus =
-  | "no_data"
-  | "within_threshold"
-  | "over_threshold"
-  | "plan_no_fact"
-  | "fact_no_plan";
+  "no_data" | "within_threshold" | "over_threshold" | "plan_no_fact" | "fact_no_plan";
 
 export type PlanFactDayRowRead = {
   business_date: string;
@@ -2237,11 +2215,7 @@ export type CourierScheduleUpsertPayload = {
 export type DdsProvider = "sber" | "tbank";
 export type DdsDirection = "in" | "out";
 export type DdsClassificationStatus =
-  | "pending"
-  | "classified"
-  | "internal_transfer"
-  | "needs_review"
-  | "excluded";
+  "pending" | "classified" | "internal_transfer" | "needs_review" | "excluded";
 
 export type WalletRead = {
   id: string;
@@ -2492,11 +2466,7 @@ export type CredentialRead = {
   id: string;
   provider: DdsProvider;
   credential_kind:
-    | "access_token"
-    | "client_secret"
-    | "bearer_token"
-    | "mtls_cert_path"
-    | "mtls_key_path";
+    "access_token" | "client_secret" | "bearer_token" | "mtls_cert_path" | "mtls_key_path";
   is_active: boolean;
   expires_at: string | null;
   metadata: Record<string, unknown> | null;
@@ -2621,10 +2591,7 @@ export async function getAccessRoles(): Promise<AccessRole[]> {
   return response.data;
 }
 
-export async function updateRolePermissions(
-  roleId: string,
-  codes: string[],
-): Promise<AccessRole> {
+export async function updateRolePermissions(roleId: string, codes: string[]): Promise<AccessRole> {
   const response = await api.put<AccessRole>(`/access-control/roles/${roleId}/permissions`, {
     permission_codes: codes,
   });
@@ -2756,6 +2723,9 @@ export type NewPaymentArticleCounterparty = {
   counterparty_id: string;
   name: string;
   inn: string | null;
+  relationship: "official" | "informal" | "barter";
+  has_requisites: boolean;
+  requisites_verified: boolean;
 };
 
 export type NewPaymentArticle = {
@@ -2806,6 +2776,8 @@ export type NewPaymentExpenseDraftPayload = {
   lines: NewPaymentExpenseLine[];
   // Банк-плательщик черновика: bank_draft (Т-Банк, по умолчанию) или bank_draft_sber (Сбер).
   channel?: "bank_draft" | "bank_draft_sber";
+  // Явное подтверждение вывода на карту ИП для официального контрагента без реквизитов.
+  allow_official_via_safe?: boolean;
 };
 
 export type NewPaymentExpenseDraft = {
@@ -2868,10 +2840,7 @@ export async function createNewPaymentIncome(payload: {
   wallet_id: string;
   lines: NewPaymentExpenseLine[];
 }): Promise<NewPaymentIncomeResult> {
-  const response = await api.post<NewPaymentIncomeResult>(
-    "/dds/new-payment/income-cash",
-    payload,
-  );
+  const response = await api.post<NewPaymentIncomeResult>("/dds/new-payment/income-cash", payload);
   return response.data;
 }
 
@@ -4007,9 +3976,7 @@ export type EmployeePayout = {
   created_at: string;
 };
 
-export async function createEmployeePayout(
-  payload: EmployeePayoutCreate,
-): Promise<EmployeePayout> {
+export async function createEmployeePayout(payload: EmployeePayoutCreate): Promise<EmployeePayout> {
   const response = await api.post<EmployeePayout>("/payroll/employee-payouts", payload);
   return response.data;
 }
@@ -4018,10 +3985,9 @@ export async function confirmEmployeePayout(
   payoutId: string,
   bankOperationId: string,
 ): Promise<EmployeePayout> {
-  const response = await api.post<EmployeePayout>(
-    `/payroll/employee-payouts/${payoutId}/confirm`,
-    { bank_operation_id: bankOperationId },
-  );
+  const response = await api.post<EmployeePayout>(`/payroll/employee-payouts/${payoutId}/confirm`, {
+    bank_operation_id: bankOperationId,
+  });
   return response.data;
 }
 
@@ -4052,15 +4018,11 @@ export async function includeOnDemandPayout(
 }
 
 export async function getPayoutDeltas(runId: string): Promise<PayrollPayoutDelta[]> {
-  const response = await api.get<PayrollPayoutDelta[]>(
-    `/payroll/runs/${runId}/payouts/deltas`,
-  );
+  const response = await api.get<PayrollPayoutDelta[]>(`/payroll/runs/${runId}/payouts/deltas`);
   return response.data;
 }
 
-export async function applyPayoutDeltas(
-  runId: string,
-): Promise<PayrollPayoutApplyDeltasResponse> {
+export async function applyPayoutDeltas(runId: string): Promise<PayrollPayoutApplyDeltasResponse> {
   const response = await api.post<PayrollPayoutApplyDeltasResponse>(
     `/payroll/runs/${runId}/payouts/apply-deltas`,
   );
@@ -5238,10 +5200,12 @@ export async function getCourierIikoDeliveries(params: {
   return response.data;
 }
 
-export async function syncCourierIikoDeliveries(params: {
-  from?: string;
-  to?: string;
-} = {}): Promise<{ created: number; updated: number; deleted: number }> {
+export async function syncCourierIikoDeliveries(
+  params: {
+    from?: string;
+    to?: string;
+  } = {},
+): Promise<{ created: number; updated: number; deleted: number }> {
   const response = await api.post<{ created: number; updated: number; deleted: number }>(
     "/couriers/iiko/sync-deliveries",
     null,
@@ -5335,9 +5299,7 @@ export async function confirmCourierShiftDay(workDate: string): Promise<CourierS
   return response.data;
 }
 
-export async function unconfirmCourierShiftDay(
-  workDate: string,
-): Promise<CourierShiftDayResponse> {
+export async function unconfirmCourierShiftDay(workDate: string): Promise<CourierShiftDayResponse> {
   const response = await api.post<CourierShiftDayResponse>(
     `/couriers/shift-day/${workDate}/unconfirm`,
     null,

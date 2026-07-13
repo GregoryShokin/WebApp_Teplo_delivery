@@ -44,6 +44,7 @@ DEFAULT_TAX_FIELDS = {
     "taxDocNumber": "0",
     "taxDocDate": "0",
 }
+_PAYMENT_NOT_FOUND_CODES = frozenset({"payment_not_found", "document_not_found", "not_found"})
 
 
 def _bank_error_detail(response: httpx.Response) -> str | None:
@@ -69,6 +70,33 @@ def _bank_error_detail(response: httpx.Response) -> str | None:
     if isinstance(message, str) and message.strip():
         return f"{message}: {joined}" if joined else message.strip()
     return joined or None
+
+
+def _payment_status_from_payload(payload: Any, payment_id: str) -> str | None:
+    """Извлечь статус одного черновика из batch-ответа ``/payment/status``.
+
+    Удалённый в интернет-банке черновик может отсутствовать в ``result`` и прийти в
+    ``resultError`` как ``PAYMENT_NOT_FOUND``. Поскольку ``payment_id`` сохранён из
+    успешного ответа создания черновика, для локально активного документа это означает,
+    что он удалён/отозван, а не «ещё не создан».
+    """
+    if not isinstance(payload, dict):
+        return None
+    for item in payload.get("result", []):
+        if isinstance(item, dict) and str(item.get("documentId")) == payment_id:
+            value = item.get("status")
+            return str(value) if value not in (None, "") else None
+    for item in payload.get("resultError", []):
+        if not isinstance(item, dict) or str(item.get("documentId")) != payment_id:
+            continue
+        raw_code = item.get("errorCode") or item.get("code") or item.get("error")
+        if isinstance(raw_code, dict):
+            raw_code = raw_code.get("code") or raw_code.get("value")
+        code = str(raw_code or "").strip().lower()
+        message = str(item.get("errorMessage") or item.get("message") or "").strip().lower()
+        if code in _PAYMENT_NOT_FOUND_CODES or "payment_not_found" in message:
+            return "deleted"
+    return None
 
 
 class TbankClient:
@@ -226,14 +254,7 @@ class TbankClient:
             payload = response.json()
         except ValueError:
             return None
-        if not isinstance(payload, dict):
-            return None
-        # Берём статус строго по нашему documentId (в ответе может быть несколько документов).
-        for item in payload.get("result", []):
-            if isinstance(item, dict) and str(item.get("documentId")) == payment_id:
-                value = item.get("status")
-                return str(value) if value not in (None, "") else None
-        return None
+        return _payment_status_from_payload(payload, payment_id)
 
     async def _fetch_mock_statement(
         self, *, date_from: date, date_to: date
@@ -380,9 +401,9 @@ def normalize_tbank_statement_row(
         counterparty_name = nested_scalar(
             row, "counterparty", ("name", "fullName", "shortName")
         ) or scalar(row, ("counterpartyName", "counteragentName"))
-        counterparty_inn = nested_scalar(
-            row, "counterparty", ("inn", "taxId", "tin")
-        ) or scalar(row, ("counterpartyInn", "inn"))
+        counterparty_inn = nested_scalar(row, "counterparty", ("inn", "taxId", "tin")) or scalar(
+            row, ("counterpartyInn", "inn")
+        )
         counterparty_account = nested_scalar(
             row, "counterparty", ("acct", "account", "accountNumber", "bankAccount")
         ) or scalar(row, ("counterpartyAccount",))

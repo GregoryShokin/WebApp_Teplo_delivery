@@ -24,7 +24,7 @@ from app.models import (
     Wallet,
 )
 from app.services.bank_payment_status import apply_payment_status
-from app.services.banking.base import AccountMeta, NormalizedBankOperation, clean_digits
+from app.services.banking.base import AccountMeta, BankClient, NormalizedBankOperation, clean_digits
 from app.services.banking.classifier import (
     absorb_auto_classified_counterparty_payment,
     create_or_update_reconciliation_case,
@@ -33,6 +33,7 @@ from app.services.banking.classifier import (
 )
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 from app.services.banking.own_accounts import sync_own_accounts
+from app.services.banking.payout import payout_client_for
 from app.services.banking.sber import SberClient
 from app.services.banking.tbank import TbankClient, _document_number
 from app.services.couriers.iiko_attendance_sync import sync_attendance
@@ -95,9 +96,7 @@ async def escalate_pending_cheques() -> None:
     if created:
         logger.info("Эскалация пендинг-чеков: %s новых кейсов «банк не передал»", created)
     if created_refunds:
-        logger.info(
-            "Эскалация возвратов: %s новых кейсов «возврат не пришёл»", created_refunds
-        )
+        logger.info("Эскалация возвратов: %s новых кейсов «возврат не пришёл»", created_refunds)
 
 
 @scheduler.scheduled_job(
@@ -166,7 +165,7 @@ async def refresh_production_advance_window_job() -> None:
 
 @scheduler.scheduled_job(
     "interval",
-    minutes=15,
+    minutes=1,
     id="poll_payment_statuses",
     max_instances=1,
     coalesce=True,
@@ -178,7 +177,7 @@ async def poll_payment_statuses() -> None:
     ``provider_ref``. Но webhook хрупок: любое пересоздание контейнера api (деплой) роняет
     входящий webhook в 502, а банк после серии отказов перестаёт слать (инцидент 30.06→07.07:
     оплата черновиков замолчала на неделю, деньги ушли из банка без отражения в ДДС).
-    Поэтому polling возвращён как надёжная сверка: каждые 15 мин опрашивает все «отправленные
+    Поэтому polling возвращён как надёжная сверка: каждую минуту опрашивает все «отправленные
     в банк» черновики (``created/updated``), применяет ``EXECUTED→paid`` / ``failed`` / ``DELETED``
     и сводит осиротевшие needs_review-операции с prebooked-проводками. Идемпотентен."""
     async with AsyncSessionLocal() as session:
@@ -186,11 +185,22 @@ async def poll_payment_statuses() -> None:
 
 
 async def run_payment_status_poll(
-    session: AsyncSession, *, client: TbankClient | None = None
+    session: AsyncSession, *, client: BankClient | None = None
 ) -> dict[str, int]:
     """Опросить статус по всем «отправленным в банк» черновикам и применить его. Вынесено из
     джоба для тестируемости (можно передать фейковый клиент)."""
-    client = client or TbankClient(session)
+    status_clients: dict[str, BankClient] = {}
+
+    def status_client_for(provider: str | None) -> BankClient:
+        if client is not None:
+            return client
+        bank_provider = provider or "tbank"
+        status_client = status_clients.get(bank_provider)
+        if status_client is None:
+            status_client = payout_client_for(bank_provider, session)
+            status_clients[bank_provider] = status_client
+        return status_client
+
     drafts = (
         await session.scalars(
             select(CounterpartyPaymentDraft).where(
@@ -199,10 +209,20 @@ async def run_payment_status_poll(
             )
         )
     ).all()
-    result = {"checked": 0, "paid": 0, "failed": 0, "errors": 0, "reconciled": 0, "absorbed": 0}
+    result = {
+        "checked": 0,
+        "paid": 0,
+        "failed": 0,
+        "deleted": 0,
+        "errors": 0,
+        "reconciled": 0,
+        "absorbed": 0,
+    }
     for draft in drafts:
         try:
-            raw = await client.get_payment_status(draft.provider_ref or "")
+            raw = await status_client_for(draft.bank_provider).get_payment_status(
+                draft.provider_ref or ""
+            )
         except BankCredentialsError:
             # Токен один на все платежи — дальше опрашивать бессмысленно; уже применённое
             # коммитим (как делает run_bank_sync_job), джоб не падает наружу.
@@ -221,6 +241,8 @@ async def run_payment_status_poll(
             result["paid"] += 1
         elif status == "failed":
             result["failed"] += 1
+        elif status == "deleted":
+            result["deleted"] += 1
 
     # Те же статусы для payroll-черновиков: при «исполнен» заводим внутренний перевод банк→Сейф.
     payroll_drafts = (
@@ -233,7 +255,9 @@ async def run_payment_status_poll(
     ).all()
     for payroll_draft in payroll_drafts:
         try:
-            raw = await client.get_payment_status(payroll_draft.provider_ref or "")
+            raw = await status_client_for(payroll_draft.bank_provider).get_payment_status(
+                payroll_draft.provider_ref or ""
+            )
         except BankCredentialsError:
             logger.warning("payment-status poll: credentials error, прерываю опрос", exc_info=True)
             result["errors"] += 1
@@ -269,7 +293,9 @@ async def run_payment_status_poll(
     ).all()
     for advance_draft in advance_drafts:
         try:
-            raw = await client.get_payment_status(advance_draft.provider_ref or "")
+            raw = await status_client_for(advance_draft.bank_provider).get_payment_status(
+                advance_draft.provider_ref or ""
+            )
         except BankCredentialsError:
             logger.warning("payment-status poll: credentials error, прерываю опрос", exc_info=True)
             result["errors"] += 1
@@ -532,9 +558,7 @@ async def run_iiko_courier_delivery_sync_once() -> dict[str, object]:
     date_from = now.date() - timedelta(days=1)
     date_to = now.date()
     async with AsyncSessionLocal() as session:
-        result = await sync_courier_olap_deliveries(
-            session, date_from=date_from, date_to=date_to
-        )
+        result = await sync_courier_olap_deliveries(session, date_from=date_from, date_to=date_to)
         await session.commit()
     payload = result.as_dict()
     logger.info("iiko courier delivery sync completed: %s", payload)
@@ -728,8 +752,13 @@ async def ingest_operations(
         account = await _account_for_operation(session, provider, operation)
         account_id = account.id if account else None
         stable_key = (
-            (account_id, operation.document_number, operation.direction,
-             operation.amount, operation.operation_date)
+            (
+                account_id,
+                operation.document_number,
+                operation.direction,
+                operation.amount,
+                operation.operation_date,
+            )
             if operation.document_number
             else None
         )
