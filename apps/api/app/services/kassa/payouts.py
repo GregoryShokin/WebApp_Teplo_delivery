@@ -566,6 +566,9 @@ async def kassa_pending_payload(session: AsyncSession) -> dict[str, Any]:
                 SafeAllocation.wallet_id == wallet.id,
                 SafeAllocation.location == "kassa",
                 SafeAllocation.status.in_(ACTIVE_RESERVE_STATUSES),
+                # Пул-резервы выплаты ЗП сюда не попадают — они выдаются через окно ведомости,
+                # а не из «К выдаче» (в earmark kassa_targets_total они при этом учитываются).
+                SafeAllocation.source_run_id.is_(None),
             )
             .order_by(SafeAllocation.created_at.desc())
         )
@@ -620,6 +623,10 @@ async def pay_kassa_target(
     allocation = await session.get(SafeAllocation, allocation_id, with_for_update=True)
     if allocation is None:
         raise KassaPayoutError("Целёвка не найдена")
+    if allocation.source_run_id is not None:
+        # Пул-резерв выплаты ЗП: выдача только через окно ведомости (иначе pay_allocation
+        # книжит лишний cashflow мимо PayrollPayment).
+        raise KassaPayoutError("Резерв выплаты ЗП — выдача через окно ведомости, не из «К выдаче»")
     if allocation.location != "kassa" or allocation.wallet_id != wallet.id:
         raise KassaPayoutError("Целёвка не передана в кассу — оплата идёт с Сейфа")
     try:

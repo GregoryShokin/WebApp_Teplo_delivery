@@ -1990,6 +1990,13 @@ async def pay_safe_allocation(
     allocation = await session.get(SafeAllocation, allocation_id, with_for_update=True)
     if allocation is None:
         raise HTTPException(status_code=404, detail="Резерв не найден")
+    if allocation.source_run_id is not None:
+        # Пул-резерв выплаты ЗП: pay_allocation здесь книжил бы лишний cashflow мимо
+        # PayrollPayment. Выдача только через окно ведомости (POST /payroll/reserves/{id}/payout).
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Резерв выплаты ЗП — выдача через окно ведомости, не отсюда",
+        )
     if allocation.location != "safe":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

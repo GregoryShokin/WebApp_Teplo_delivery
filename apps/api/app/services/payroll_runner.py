@@ -1284,6 +1284,12 @@ async def unfinalize_payroll_run(
     # снова видны в кассе. Оплаченные налом (paid_cash) не трогаем — они уже выданы.
     # Откат: исполненные планы выдачи депозита возвращаются в pending (как и реверс баланса).
     await revert_schedules_for_run(session, run.id)
+    # Снимаем пул-резервы ЗП (Сейф/касса): неоплаченный earmark освобождается, оплаченные ноги
+    # остаются. Иначе резервы висят активными на нефинализированной ведомости. Ленивый импорт —
+    # payroll_reserves импортирует payroll_runner (разрыв цикла).
+    from app.services.payroll_reserves import cancel_run_reserves
+
+    await cancel_run_reserves(session, run.id)
 
     run.status = "completed"
     period.status = "open"

@@ -100,6 +100,8 @@ async def create_allocation(
     source_draft_id: UUID | None = None,
     source_draft_line_id: UUID | None = None,
     source_operation_id: UUID | None = None,
+    source_run_id: UUID | None = None,
+    location: str = "safe",
     created_by_user_id: UUID | None = None,
 ) -> SafeAllocation:
     """Создать резерв. Запрет перерезервирования: ``amount`` ≤ свободно (``free_amount``).
@@ -107,6 +109,10 @@ async def create_allocation(
     ``free_amount=None`` — без проверки: авто-резерв под оплаченный банковский черновик
     (``source_draft_id``), где перевод р/с→Сейф уже пополнил баланс ровно на эту сумму.
     ``employee_id`` — зарплатная целёвка «через Сейф»: при оплате резерва заведётся EmployeePayout.
+    ``source_run_id`` — резерв-контейнер выплаты ЗП, привязанный к ведомости (при
+    ``employee_id=None`` это ПУЛ, cashflow сам не книжит — см. ``payroll_reserves``).
+    ``location`` — на каком счёте резерв заводится сразу (``safe``/``kassa``): наличный пул ЗП
+    заводится сразу на кассе, без перемещения.
     """
     if amount <= 0:
         raise ValueError("Сумма резерва должна быть больше нуля")
@@ -125,7 +131,9 @@ async def create_allocation(
         source_draft_id=source_draft_id,
         source_draft_line_id=source_draft_line_id,
         source_operation_id=source_operation_id,
+        source_run_id=source_run_id,
         status="reserved",
+        location=location,
         created_by_user_id=created_by_user_id,
     )
     session.add(allocation)

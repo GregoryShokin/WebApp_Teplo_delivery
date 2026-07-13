@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { NewPaymentDialog } from "@/routes/dds/NewPaymentDialog";
 import { navigateTo } from "@/router";
 
+import { PayPayrollReserveDialog } from "./PayPayrollReserveDialog";
 import { BUCKET_ORDER, getPayments, type PaymentRow } from "./payments-api";
 
 const money = new Intl.NumberFormat("ru-RU", {
@@ -107,6 +108,7 @@ export function ActivePaymentsModal({
   const [createOpen, setCreateOpen] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [payRow, setPayRow] = useState<PaymentRow | null>(null);
+  const [payrollRow, setPayrollRow] = useState<PaymentRow | null>(null);
   const [search, setSearch] = useState("");
   const [bucketFilter, setBucketFilter] = useState<string>("all");
 
@@ -182,6 +184,14 @@ export function ActivePaymentsModal({
       return (
         <Button size="sm" variant="outline" className="h-8" onClick={goReview}>
           Разобрать
+        </Button>
+      );
+    }
+    // Резерв-контейнер выплаты ЗП: открывает список сотрудников ведомости (раскладка пула).
+    if (row.kind === "payroll_reserve" && row.can_pay) {
+      return (
+        <Button size="sm" variant="outline" className="h-8" onClick={() => setPayrollRow(row)}>
+          Выплатить ЗП
         </Button>
       );
     }
@@ -368,6 +378,14 @@ export function ActivePaymentsModal({
         row={payRow}
         onOpenChange={(next) => {
           if (!next) setPayRow(null);
+        }}
+        onPaid={refetchAll}
+      />
+
+      <PayPayrollReserveDialog
+        row={payrollRow}
+        onOpenChange={(next) => {
+          if (!next) setPayrollRow(null);
         }}
         onPaid={refetchAll}
       />

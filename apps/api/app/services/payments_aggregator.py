@@ -1,7 +1,7 @@
 """Единый агрегатор исходящих платежей «платёжного контура» (FEAT-003).
 
-Собирает в один нормализованный список платежи из трёх источников платёжного
-контура (без авансов/выплат сотрудникам и депозитов — те живут на своих страницах):
+Собирает в один нормализованный список платежи из источников платёжного контура
+(без авансов/выплат сотрудникам и депозитов — те живут на своих страницах):
 
 1. **Счета на оплату** — почтовые счета «Страницы на оплату» (``EmailInvoiceIntake``
    + материализованный ``SupplierInvoice``). Оплата — банковским черновиком.
@@ -9,9 +9,12 @@
    свободного вывода на Сейф (``pays_via_safe``, транш ``ExpenseDraftLine``),
    предоплаты поставщику (``creates_prepayment``) и выплаты неофициальному
    поставщику через Сейф. Обычные черновики оплаты накладных сюда НЕ входят.
-3. **Резервы Сейфа/Кассы** — ``SafeAllocation`` платёжного происхождения
-   (``employee_id IS NULL`` — зарплатные целёвки исключены): ``location='safe'``
-   (на карте Сейф) и ``location='kassa'`` (передан в кассу, «К выдаче»).
+3. **Резервы Сейфа/Кассы** — ``SafeAllocation``: платёжные целёвки-получатели
+   (``employee_id IS NULL``, ``source_run_id IS NULL``) и **пул-резервы выплаты ЗП**,
+   привязанные к ведомости (``source_run_id`` задан, ``kind='payroll_reserve'`` —
+   клик открывает окно ведомости). ``location='safe'``/``'kassa'``.
+4. **Банк-черновики выплаты ЗП** — ``PayrollBankDraft`` в статусе «Отправлен в банк»
+   (некликабелен; после оплаты → транзит на Сейф-резерв, черновик уходит в историю).
 
 Нормализованное состояние и раскладка по 4 корзинам активной модалки FAB:
 
@@ -34,7 +37,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,9 +48,21 @@ from app.models import (
     CounterpartyPaymentDraft,
     DdsArticle,
     EmailInvoiceIntake,
+    PayrollBankDraft,
+    PayrollRun,
     SafeAllocation,
     SupplierInvoice,
 )
+from app.services.payroll_reserves import (
+    PAYROLL_RESERVE_LABEL_ADMIN,
+    PAYROLL_RESERVE_LABEL_PRODUCTION,
+)
+
+
+def _fmt_money(value: Decimal) -> str:
+    """Целые рубли, разряды пробелом — единообразно с суммой в списке (без копеек)."""
+    whole = value.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return f"{whole:,.0f} ₽".replace(",", " ")
 
 # --- нормализованные состояния и корзины -------------------------------------
 
@@ -103,8 +118,10 @@ class PaymentItem:
     """Нормализованная строка платежа для витрины (модалка + страница истории)."""
 
     id: str  # композитный: f"{source}:{uuid}"
-    source: str  # 'invoice' | 'draft' | 'reserve'
-    kind: str  # 'invoice' | 'expense' | 'prepayment' | 'informal' | 'safe_reserve' | 'kassa_reserve'
+    source: str  # 'invoice' | 'draft' | 'reserve' | 'payroll_draft'
+    # 'invoice'|'expense'|'prepayment'|'informal'|'safe_reserve'|'kassa_reserve'
+    # |'payroll_reserve'|'payroll_bank_draft'
+    kind: str
     ref_id: uuid.UUID
     title: str
     counterparty_id: uuid.UUID | None
@@ -352,12 +369,24 @@ async def _reserve_items(session: AsyncSession) -> list[PaymentItem]:
 
         cp_name = cp_names.get(r.counterparty_id) if r.counterparty_id else None
         article_name = art_names.get(r.article_id) if r.article_id else None
-        title = cp_name or r.purpose or article_name or "Резерв Сейфа"
+        # Резерв-контейнер выплаты ЗП (привязан к ведомости): «Выплата зарплаты… · сумма»,
+        # клик открывает список сотрудников ведомости (kind='payroll_reserve').
+        is_payroll = r.source_run_id is not None
+        if is_payroll:
+            title = f"{r.purpose or 'Выплата зарплаты'} · {_fmt_money(Decimal(r.amount))}"
+            kind = "payroll_reserve"
+        else:
+            title = cp_name or r.purpose or article_name or "Резерв Сейфа"
+            kind = "kassa_reserve" if r.location == "kassa" else "safe_reserve"
+        extra: dict = {"location": r.location, "wallet_id": str(r.wallet_id)}
+        if is_payroll:
+            extra["run_id"] = str(r.source_run_id)
+            extra["payroll"] = True
         items.append(
             PaymentItem(
                 id=f"reserve:{r.id}",
                 source="reserve",
-                kind="kassa_reserve" if r.location == "kassa" else "safe_reserve",
+                kind=kind,
                 ref_id=r.id,
                 title=title,
                 counterparty_id=r.counterparty_id,
@@ -374,11 +403,65 @@ async def _reserve_items(session: AsyncSession) -> list[PaymentItem]:
                 can_edit=False,
                 can_send_to_bank=False,
                 can_pay=state in ("reserved_safe", "reserved_kassa"),
-                can_cancel=state in ("reserved_safe", "reserved_kassa"),
-                extra={
-                    "location": r.location,
-                    "wallet_id": str(r.wallet_id),
-                },
+                # ЗП-резервы отменяются через дефинализацию ведомости, не из «Платежей».
+                can_cancel=(not is_payroll) and state in ("reserved_safe", "reserved_kassa"),
+                extra=extra,
+            )
+        )
+    return items
+
+
+async def _payroll_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
+    """Банк-черновики выплаты ЗП — «Отправлен в банк» (некликабелен, ждёт оплаты).
+
+    После оплаты (``paid``) деньги транзитом уходят на Сейф и представлены Сейф-резервом —
+    оплаченный черновик показываем только в истории. Материализуется как «Выплата зарплаты…».
+    """
+    rows = (
+        await session.execute(
+            select(PayrollBankDraft, PayrollRun.summary, PayrollRun.status).join(
+                PayrollRun, PayrollRun.id == PayrollBankDraft.run_id
+            )
+        )
+    ).all()
+    items: list[PaymentItem] = []
+    for draft, summary, run_status in rows:
+        status_map = {
+            "created": "in_bank",
+            "updated": "in_bank",
+            "paid": "paid",
+            "failed": "failed",
+        }
+        state = status_map.get(draft.status, draft.status)
+        # Дефинализированная ведомость: created/updated-черновик больше не «в банке» (деньги не
+        # ушли) — снимаем из активных (в истории останется). Оплаченный черновик — историчен всегда.
+        if run_status != "finalized" and state == "in_bank":
+            state = "cancelled"
+        is_admin = isinstance(summary, dict) and summary.get("kind") == "admin"
+        label = PAYROLL_RESERVE_LABEL_ADMIN if is_admin else PAYROLL_RESERVE_LABEL_PRODUCTION
+        items.append(
+            PaymentItem(
+                id=f"payroll_draft:{draft.id}",
+                source="payroll_draft",
+                kind="payroll_bank_draft",
+                ref_id=draft.id,
+                title=f"{label} · {_fmt_money(Decimal(draft.amount))}",
+                counterparty_id=None,
+                counterparty_name=None,
+                amount=Decimal(draft.amount),
+                amount_paid=None,
+                article_id=None,
+                article_name=None,
+                method="bank",
+                bank_channel=draft.bank_provider,
+                state=state,
+                bucket=BUCKET_BY_STATE.get(state),
+                created_at=draft.created_at,
+                can_edit=False,
+                can_send_to_bank=False,
+                can_pay=False,  # ждёт оплаты в банке владельцем
+                can_cancel=False,
+                extra={"run_id": str(draft.run_id), "payroll": True},
             )
         )
     return items
@@ -396,7 +479,8 @@ async def list_payments(session: AsyncSession, *, scope: str = "active") -> list
     invoices = await _invoice_items(session)
     drafts = await _draft_items(session)
     reserves = await _reserve_items(session)
-    items = invoices + drafts + reserves
+    payroll_drafts = await _payroll_bank_draft_items(session)
+    items = invoices + drafts + reserves + payroll_drafts
 
     if scope == "active":
         items = [i for i in items if i.state in _ACTIVE_STATES]

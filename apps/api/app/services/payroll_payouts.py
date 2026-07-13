@@ -73,10 +73,14 @@ DEPOSIT_PAYOUT_TK_WALLET_CODE = "tk_chernikova"
 @dataclass(frozen=True, slots=True)
 class PayoutExpenseResult:
     """Итог проводок «Выплатить»: создан ли расход и наличная выдача депозита с ТК Черникова
-    (для iiko-изъятия «Выдача депозита» после commit)."""
+    (для iiko-изъятия «Выдача депозита» после commit).
+
+    ``booked_total`` — сумма фактически проведённых дельт по ЗП/депозиту (для контура выплаты
+    из пула-резерва: на неё наращивается ``amount_paid`` резерва)."""
 
     booked: bool
     deposit_iiko_amount: Decimal
+    booked_total: Decimal = Decimal("0")
 
 
 async def set_run_payout_cash(
@@ -111,6 +115,14 @@ async def set_run_payout_cash(
 
     run.payout_cash_total = cash
     run.payout_cash_wallet_id = wallet.id if wallet is not None else None
+    # Наличный пул-резерв ЗП: заводим на Кассе Черникова (кликабелен сразу). Наличную из Сейфа
+    # (редкий выбор) не earmark'им отдельным касса-резервом — она в контуре Сейфа.
+    from app.services.payroll_reserves import KASSA_WALLET_CODE, ensure_run_kassa_reserve
+
+    kassa_cash = cash if (wallet is not None and wallet.code == KASSA_WALLET_CODE) else Decimal("0")
+    await ensure_run_kassa_reserve(
+        session, run, cash_amount=kassa_cash, created_by_user_id=actor_user_id
+    )
     _add_payout_event(
         session,
         run=run,
@@ -254,6 +266,11 @@ async def book_bank_to_safe_transfer(
         )
     )
     await session.flush()
+    # Момент транзита: безналичный пул-резерв ЗП материализуется на Сейфе (кликабелен в
+    # «Активных платежах»). Деньги только что пришли — резерв earmark'ит ровно эту сумму.
+    from app.services.payroll_reserves import ensure_run_safe_reserve
+
+    await ensure_run_safe_reserve(session, run, account_amount=amount)
     return True
 
 
@@ -329,6 +346,7 @@ async def book_payout_expense_for_employees(
     employee_ids: list[uuid.UUID],
     *,
     amount_by_employee: dict[uuid.UUID, Decimal] | None = None,
+    pay_wallet_id: uuid.UUID | None = None,
 ) -> PayoutExpenseResult:
     """Шаг 3: расход ЗП + выдача депозита по статьям для выплаченных сотрудников («Выплатить»).
 
@@ -351,6 +369,12 @@ async def book_payout_expense_for_employees(
     задвоения при partial→bulk). Когда не задан — полная выплата по ``total_payable`` (прежнее
     поведение). В режиме частичной выплаты корзина «Выдача депозита» не заводится — депозит
     идёт полным путём «Выплатить».
+
+    ``pay_wallet_id`` — контур выплаты ЗП из пула-резерва: вся дельта книжится ОДНИМ кошельком
+    (Сейф ЛИБО касса), без run-level каскада нал/безнал. Так «оплата из Сейфа» садится на Сейф,
+    «оплата из кассы» — на кассу (переток пулов реализует вызывающий, книжа остаток другим
+    кошельком). Статьи ДДС по-прежнему разносятся по должностям. ``deposit_iiko_amount`` в этом
+    режиме не считается (депозит идёт полным путём «Выплатить»).
     """
     empty = PayoutExpenseResult(booked=False, deposit_iiko_amount=Decimal("0"))
     if not _uses_safe_payout(run) or not employee_ids:
@@ -413,27 +437,7 @@ async def book_payout_expense_for_employees(
     if safe_wallet is None:
         return empty
 
-    # Наличный бюджет прогона за вычетом уже списанного наличными (cash-проводки = не на Сейфе).
-    cash_wallet: Wallet | None = None
-    if run.payout_cash_wallet_id is not None:
-        cash_wallet = await session.get(Wallet, run.payout_cash_wallet_id)
-    already_cash = Decimal("0")
-    if cash_wallet is not None and cash_wallet.id != safe_wallet.id:
-        already_cash = _money(
-            await session.scalar(
-                select(func.coalesce(func.sum(CashflowTransaction.amount), 0)).where(
-                    CashflowTransaction.source_kind == PAYROLL_PAYOUT_SOURCE_KIND,
-                    CashflowTransaction.source_id == run.id,
-                    CashflowTransaction.direction == "out",
-                    CashflowTransaction.wallet_id == cash_wallet.id,
-                )
-            )
-        )
     rows_total = sum((bucket.total for bucket in buckets), Decimal("0"))
-    cash_budget = max(Decimal("0"), _money(run.payout_cash_total) - already_cash)
-    cash_for_rows = min(cash_budget, rows_total)
-    allocations = allocate_cash_cascade(buckets, cash_for_rows)
-
     codes = {bucket.article_code for bucket in buckets}
     article_rows = (
         await session.execute(
@@ -442,46 +446,89 @@ async def book_payout_expense_for_employees(
     ).all()
     article_ids = {code: article_id for code, article_id in article_rows}
     operation_date = datetime.now(UTC).date()
-    # Если наличный кошелёк не задан, наличную часть тоже списываем с Сейфа (фолбэк).
-    cash_target = cash_wallet.id if cash_wallet is not None else safe_wallet.id
     deposit_iiko_amount = Decimal("0")
-    for alloc in allocations:
-        article_id = article_ids.get(alloc.article_code)
-        is_deposit = alloc.article_code == DDS_ARTICLE_DEPOSIT_PAYOUT
-        purpose = "Выдача депозита (из Сейфа)" if is_deposit else "Выплата ЗП (из Сейфа)"
-        if alloc.bank > 0:
+
+    if pay_wallet_id is not None:
+        # Контур пула-резерва: вся дельта одним кошельком, без каскада нал/безнал.
+        pay_wallet = await session.get(Wallet, pay_wallet_id)
+        if pay_wallet is None:
+            return empty
+        from_label = "кассы" if pay_wallet.id != safe_wallet.id else "Сейфа"
+        for bucket in buckets:
+            if bucket.total <= 0:
+                continue
             session.add(
                 CashflowTransaction(
-                    wallet_id=safe_wallet.id,
+                    wallet_id=pay_wallet.id,
                     direction="out",
-                    amount=alloc.bank,
+                    amount=bucket.total,
                     operation_date=operation_date,
-                    article_id=article_id,
+                    article_id=article_ids.get(bucket.article_code),
                     source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
                     source_id=run.id,
-                    payment_purpose=purpose,
+                    payment_purpose=f"Выплата ЗП (из {from_label})",
                     quality_status="final",
                 )
             )
-        if alloc.cash > 0:
-            session.add(
-                CashflowTransaction(
-                    wallet_id=cash_target,
-                    direction="out",
-                    amount=alloc.cash,
-                    operation_date=operation_date,
-                    article_id=article_id,
-                    source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
-                    source_id=run.id,
-                    payment_purpose=purpose,
-                    quality_status="final",
+    else:
+        # Наличный бюджет прогона за вычетом уже списанного наличными (cash-проводки не на Сейфе).
+        cash_wallet: Wallet | None = None
+        if run.payout_cash_wallet_id is not None:
+            cash_wallet = await session.get(Wallet, run.payout_cash_wallet_id)
+        already_cash = Decimal("0")
+        if cash_wallet is not None and cash_wallet.id != safe_wallet.id:
+            already_cash = _money(
+                await session.scalar(
+                    select(func.coalesce(func.sum(CashflowTransaction.amount), 0)).where(
+                        CashflowTransaction.source_kind == PAYROLL_PAYOUT_SOURCE_KIND,
+                        CashflowTransaction.source_id == run.id,
+                        CashflowTransaction.direction == "out",
+                        CashflowTransaction.wallet_id == cash_wallet.id,
+                    )
                 )
             )
-            # iiko-изъятие «Выдача депозита» — только наличная часть выдачи с ТК Черникова.
-            if is_deposit and cash_wallet is not None and (
-                cash_wallet.code == DEPOSIT_PAYOUT_TK_WALLET_CODE
-            ):
-                deposit_iiko_amount += alloc.cash
+        cash_budget = max(Decimal("0"), _money(run.payout_cash_total) - already_cash)
+        cash_for_rows = min(cash_budget, rows_total)
+        allocations = allocate_cash_cascade(buckets, cash_for_rows)
+        # Если наличный кошелёк не задан, наличную часть тоже списываем с Сейфа (фолбэк).
+        cash_target = cash_wallet.id if cash_wallet is not None else safe_wallet.id
+        for alloc in allocations:
+            article_id = article_ids.get(alloc.article_code)
+            is_deposit = alloc.article_code == DDS_ARTICLE_DEPOSIT_PAYOUT
+            purpose = "Выдача депозита (из Сейфа)" if is_deposit else "Выплата ЗП (из Сейфа)"
+            if alloc.bank > 0:
+                session.add(
+                    CashflowTransaction(
+                        wallet_id=safe_wallet.id,
+                        direction="out",
+                        amount=alloc.bank,
+                        operation_date=operation_date,
+                        article_id=article_id,
+                        source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
+                        source_id=run.id,
+                        payment_purpose=purpose,
+                        quality_status="final",
+                    )
+                )
+            if alloc.cash > 0:
+                session.add(
+                    CashflowTransaction(
+                        wallet_id=cash_target,
+                        direction="out",
+                        amount=alloc.cash,
+                        operation_date=operation_date,
+                        article_id=article_id,
+                        source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
+                        source_id=run.id,
+                        payment_purpose=purpose,
+                        quality_status="final",
+                    )
+                )
+                # iiko-изъятие «Выдача депозита» — только наличная часть выдачи с ТК Черникова.
+                if is_deposit and cash_wallet is not None and (
+                    cash_wallet.code == DEPOSIT_PAYOUT_TK_WALLET_CODE
+                ):
+                    deposit_iiko_amount += alloc.cash
     await session.flush()
     # Отмечаем забронированную сумму по каждому проведённому сотруднику (защита от задвоения).
     for employee_id, target in booked_targets.items():
@@ -489,7 +536,9 @@ async def book_payout_expense_for_employees(
         if payment is not None:
             payment.booked_amount = target
     return PayoutExpenseResult(
-        booked=True, deposit_iiko_amount=_money(deposit_iiko_amount)
+        booked=True,
+        deposit_iiko_amount=_money(deposit_iiko_amount),
+        booked_total=_money(rows_total),
     )
 
 

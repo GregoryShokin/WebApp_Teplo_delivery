@@ -388,6 +388,20 @@ class SafeAllocation(Base):
             unique=True,
             postgresql_where=text("source_draft_line_id IS NOT NULL"),
         ),
+        # Резерв-контейнер выплаты ЗП, привязанный к ведомости: не более одного АКТИВНОГО
+        # резерва на (ведомость, локация) — один безналичный (location='safe') и один
+        # наличный (location='kassa') пул. Только активные (reserved/partially_paid) — паритет
+        # с _active_run_reserve: paid/cancelled уходят в историю и не занимают слот (иначе
+        # пересборка сплита после полной оплаты ловила бы IntegrityError).
+        Index(
+            "uq_safe_allocations_source_run_location",
+            "source_run_id",
+            "location",
+            unique=True,
+            postgresql_where=text(
+                "source_run_id IS NOT NULL AND status IN ('reserved', 'partially_paid')"
+            ),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -425,6 +439,14 @@ class SafeAllocation(Base):
     # свободный вывод на Сейф). NULL — одиночный via-safe резерв или ручной.
     source_draft_line_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("expense_draft_line.id", ondelete="SET NULL"), nullable=True
+    )
+    # Ведомость (payroll_run), под выплату которой заведён резерв-контейнер ЗП. NULL —
+    # обычный резерв (контрагентский/целёвка). При employee_id IS NULL это ПУЛ на всю
+    # ведомость: сам резерв cashflow НЕ книжит, только amount_paid растёт как счётчик
+    # потребления пула — реальные проводки и учёт «выплачено» идут через PayrollPayment
+    # (mark_partial_payment → book_payout_expense_for_employees).
+    source_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payroll_run.id", ondelete="SET NULL"), nullable=True
     )
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="reserved", server_default="reserved"

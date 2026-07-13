@@ -150,6 +150,7 @@ async def mark_all_payments(
     payout_result = await book_payout_expense_for_employees(
         session, run, [employee_id for employee_id, _amount, _payment in rows]
     )
+    await _reconcile_pool_reserves(session, run_id)
     _add_payment_event(
         session,
         run=run,
@@ -221,6 +222,7 @@ async def mark_payments_selected(
     payout_result = await book_payout_expense_for_employees(
         session, run, [employee_id for employee_id, _amount, _payment in rows]
     )
+    await _reconcile_pool_reserves(session, run_id)
     _add_payment_event(
         session,
         run=run,
@@ -323,6 +325,7 @@ async def mark_partial_payment(
     payout_result = await book_payout_expense_for_employees(
         session, run, [employee_id], amount_by_employee={employee_id: new_total}
     )
+    await _reconcile_pool_reserves(session, run_id)
     _add_payment_event(
         session,
         run=run,
@@ -342,6 +345,98 @@ async def mark_partial_payment(
     await session.refresh(payment)
     _post_deposit_payout_iiko(payout_result, run, paid_at)
     return payment
+
+
+async def apply_pool_tranche(
+    session: AsyncSession,
+    run: PayrollRun,
+    employee_id: uuid.UUID,
+    *,
+    tranche: Decimal,
+    pay_wallet_id: uuid.UUID,
+    is_cash: bool,
+    paid_at: date,
+    actor_user_id: uuid.UUID | None,
+) -> Decimal:
+    """Провести ОДИН транш выплаты ЗП сотруднику из пула-резерва — БЕЗ commit.
+
+    Отличия от ``mark_partial_payment``: (1) кошелёк выплаты явный (``pay_wallet_id`` —
+    Сейф ЛИБО касса, без run-level каскада нал/безнал); (2) не коммитит — пул проводится
+    атомарно оркестратором ``payroll_reserves.pay_run_from_pool``; (3) не пишет событие
+    (оркестратор пишет одно сводное); (4) возвращает забронированную дельту — на неё
+    оркестратор наращивает ``amount_paid`` резерва.
+
+    Депозит-гейт и учёт ``booked_amount`` (защита от задвоения ДДС) — те же, что в частичной
+    выплате. ``tranche`` приходит из ``allocate_pool`` (уже ≤ остатка); дополнительно клампится
+    остатком на случай гонки. Возвращает 0, если проводить нечего.
+    """
+    scheduled_deposit = await session.scalar(
+        select(func.coalesce(func.sum(PayrollLine.deposit_payout_scheduled), 0)).where(
+            PayrollLine.run_id == run.id,
+            PayrollLine.employee_id == employee_id,
+        )
+    )
+    if scheduled_deposit and Decimal(scheduled_deposit) > 0:
+        raise PayrollConflictError(
+            "У сотрудника запланирована выдача депозита — выплатите полностью через «Выплатить»"
+        )
+    accrued = await _employee_payable_amount(session, run.id, employee_id)
+    payment = await session.scalar(
+        select(PayrollPayment).where(
+            PayrollPayment.run_id == run.id,
+            PayrollPayment.employee_id == employee_id,
+        )
+    )
+    already = Decimal(payment.amount) if payment is not None else Decimal("0")
+    remaining = accrued - already
+    tranche = min(Decimal(tranche), remaining).quantize(Decimal("0.01"))
+    if tranche <= 0:
+        return Decimal("0")
+    method = "cash" if is_cash else None
+    new_total = already + tranche
+    status = "paid" if new_total >= accrued else "partially_paid"
+    if payment is None:
+        payment = PayrollPayment(
+            id=uuid.uuid4(),
+            run_id=run.id,
+            employee_id=employee_id,
+            amount=new_total,
+            booked_amount=Decimal("0"),
+            paid_at=paid_at,
+            method=method,
+            paid_by_user_id=actor_user_id,
+            status=status,
+            **_initial_split_for_method(new_total, method),
+        )
+        session.add(payment)
+    else:
+        payment.amount = new_total
+        _reconcile_split_for_paid(payment, new_total, method)
+        payment.paid_at = paid_at
+        payment.method = method
+        payment.paid_by_user_id = actor_user_id
+        payment.status = status
+    await session.flush()
+
+    from app.services.payroll_payouts import book_payout_expense_for_employees
+
+    result = await book_payout_expense_for_employees(
+        session,
+        run,
+        [employee_id],
+        amount_by_employee={employee_id: new_total},
+        pay_wallet_id=pay_wallet_id,
+    )
+    return result.booked_total
+
+
+async def _reconcile_pool_reserves(session: AsyncSession, run_id: uuid.UUID) -> None:
+    """Сверить пул-резервы ЗП после ручной/bulk выплаты — их amount_paid должен учесть расход
+    на том же Сейфе/кассе (иначе резерв застрянет в partially_paid с фантомным earmark'ом).
+    Ленивый импорт — разрыв цикла payments↔reserves."""
+    from app.services.payroll_reserves import reconcile_run_reserves
+
+    await reconcile_run_reserves(session, run_id)
 
 
 def _post_deposit_payout_iiko(payout_result: Any, run: PayrollRun, paid_at: date) -> None:

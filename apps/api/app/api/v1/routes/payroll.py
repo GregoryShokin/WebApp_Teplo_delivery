@@ -52,10 +52,15 @@ from app.schemas.payroll import (
     PayrollPayoutDraftsResponse,
     PayrollPeriodRead,
     PayrollPersonalReportRead,
+    PayrollPoolPayoutRequest,
+    PayrollPoolPayoutResponse,
+    PayrollReserveEmployeePayRequest,
+    PayrollReserveEmployeePayResponse,
     PayrollRunCreate,
     PayrollRunPayoutCashPatch,
     PayrollRunRead,
     PayrollRunUnfinalize,
+    PayrollSolvencyRead,
     RecoveryOverridesRequest,
 )
 from app.schemas.payroll_config import PayrollRoleCategoryOptionRead
@@ -103,6 +108,12 @@ from app.services.payroll_payouts import (
     set_run_payout_cash,
 )
 from app.services.payroll_personal_report import build_personal_report
+from app.services.payroll_reserves import (
+    PoolPayoutResult,
+    pay_employee_from_reserve,
+    pay_run_from_pool,
+    run_solvency,
+)
 from app.services.payroll_runner import (
     PayrollConflictError,
     PayrollNotFoundError,
@@ -1030,6 +1041,109 @@ async def post_mark_partial_payment(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PayrollConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+def _pool_payout_response(result: PoolPayoutResult) -> PayrollPoolPayoutResponse:
+    return PayrollPoolPayoutResponse(
+        reserve_id=result.reserve_id,
+        primary_booked=result.primary_booked,
+        overflow_reserve_id=result.overflow_reserve_id,
+        overflow_booked=result.overflow_booked,
+        employees_paid=result.employees_paid,
+    )
+
+
+@router.post(
+    "/reserves/{reserve_id}/payout",
+    response_model=PayrollPoolPayoutResponse,
+    dependencies=PAYROLL_RUNS_MARK_PAID_ACCESS,
+)
+async def post_pay_run_from_pool(
+    reserve_id: uuid.UUID,
+    payload: PayrollPoolPayoutRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollPoolPayoutResponse:
+    """Выплатить сотрудникам ведомости из пула-резерва (Сейф/касса) с перетоком на второй пул."""
+    try:
+        result = await pay_run_from_pool(
+            session,
+            reserve_id=reserve_id,
+            selected_ids=set(payload.selected_ids) if payload.selected_ids is not None else None,
+            boundary_override=payload.boundary_id,
+            allow_overflow=payload.allow_overflow,
+            paid_at=payload.paid_at,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return _pool_payout_response(result)
+
+
+@router.post(
+    "/reserves/{reserve_id}/pay-employee",
+    response_model=PayrollReserveEmployeePayResponse,
+    dependencies=PAYROLL_RUNS_MARK_PAID_ACCESS,
+)
+async def post_pay_employee_from_reserve(
+    reserve_id: uuid.UUID,
+    payload: PayrollReserveEmployeePayRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollReserveEmployeePayResponse:
+    """Выплатить одному сотруднику ручную сумму из резерва (карандаш → сумма → ✓); остаток
+    резерва остаётся earmark'ом для следующей выплаты."""
+    try:
+        result = await pay_employee_from_reserve(
+            session,
+            reserve_id=reserve_id,
+            employee_id=payload.employee_id,
+            amount=payload.amount,
+            paid_at=payload.paid_at,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return PayrollReserveEmployeePayResponse(
+        booked=result.booked,
+        employee_total_paid=result.employee_total_paid,
+        employee_remaining=result.employee_remaining,
+        reserve_status=result.reserve_status,
+        reserve_outstanding=result.reserve_outstanding,
+    )
+
+
+@router.get(
+    "/runs/{run_id}/solvency",
+    response_model=PayrollSolvencyRead,
+    dependencies=PAYROLL_RUNS_READ_ACCESS,
+)
+async def get_run_solvency(
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollSolvencyRead:
+    """Хватит ли денег на выплату ведомости (advisory — банк/овердрафт по последней выписке)."""
+    run = await session.get(PayrollRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ведомость не найдена")
+    breakdown = await run_solvency(session, run)
+    return PayrollSolvencyRead(
+        available=breakdown.available,
+        required_total=breakdown.required_total,
+        remaining=breakdown.remaining,
+        shortfall=breakdown.shortfall,
+        overdraft_limit=breakdown.overdraft_limit,
+        safe_balance=breakdown.safe_balance,
+        kassa_balance=breakdown.kassa_balance,
+        bank_total=breakdown.bank_total,
+        reserved_other=breakdown.reserved_other,
+        solvent=breakdown.solvent,
+    )
 
 
 async def get_deposit_payouts_by_employee(

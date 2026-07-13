@@ -612,6 +612,7 @@ export type PayrollLine = {
   deduction: number;
   deposit_withholding: number;
   deposit_payout: number;
+  deposit_payout_scheduled: number;
   advance_issued: number;
   ndfl_deduction: number;
   total_payable: number;
@@ -3787,6 +3788,72 @@ export async function markPartialPayrollPayment(
   payload: PartialPayrollPaymentPayload,
 ): Promise<void> {
   await api.post(`/payroll/runs/${runId}/payments/partial`, payload);
+}
+
+export type PoolPayoutPayload = {
+  selected_ids?: string[] | null;
+  boundary_id?: string | null;
+  allow_overflow?: boolean;
+  paid_at: string;
+};
+
+export type PoolPayoutResponse = {
+  reserve_id: string;
+  primary_booked: number;
+  overflow_reserve_id: string | null;
+  overflow_booked: number;
+  employees_paid: number;
+};
+
+// Выплата сотрудникам ведомости из пула-резерва (Сейф/касса) с перетоком на второй пул.
+export async function payRunFromPool(
+  reserveId: string,
+  payload: PoolPayoutPayload,
+): Promise<PoolPayoutResponse> {
+  const response = await api.post<PoolPayoutResponse>(
+    `/payroll/reserves/${reserveId}/payout`,
+    payload,
+  );
+  return response.data;
+}
+
+export type ReserveEmployeePayResponse = {
+  booked: number;
+  employee_total_paid: number;
+  employee_remaining: number;
+  reserve_status: string;
+  reserve_outstanding: number;
+};
+
+// Ручная выплата одному сотруднику из резерва (карандаш → сумма → ✓); остаток лежит резервом.
+export async function payEmployeeFromReserve(
+  reserveId: string,
+  payload: { employee_id: string; amount: number; paid_at: string },
+): Promise<ReserveEmployeePayResponse> {
+  const response = await api.post<ReserveEmployeePayResponse>(
+    `/payroll/reserves/${reserveId}/pay-employee`,
+    payload,
+  );
+  return response.data;
+}
+
+export type RunSolvency = {
+  available: number;
+  required_total: number;
+  remaining: number;
+  shortfall: number;
+  overdraft_limit: number;
+  safe_balance: number;
+  kassa_balance: number;
+  bank_total: number;
+  reserved_other: number;
+  solvent: boolean;
+};
+
+// Платёжеспособность под выплату ведомости (advisory — банк/овердрафт по последней выписке).
+export async function getRunSolvency(runId: string): Promise<RunSolvency> {
+  const response = await api.get<RunSolvency>(`/payroll/runs/${runId}/solvency`);
+  return response.data;
 }
 
 export async function markAllPayrollPayments(

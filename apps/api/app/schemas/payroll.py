@@ -132,6 +132,63 @@ class PayrollRunPayoutCashPatch(BaseModel):
     cash_wallet_code: str | None = None
 
 
+class PayrollPoolPayoutRequest(BaseModel):
+    """Выплата сотрудникам из пула-резерва ведомости (раскладка пула).
+
+    ``selected_ids`` — выбранные сотрудники; ``None`` = все с долгом («отметил всех»).
+    ``boundary_id`` — сотрудник, назначенный граничным (получает сплит). ``allow_overflow`` —
+    доводить непокрытое со второго пула (симметрия Сейф↔касса).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    selected_ids: list[uuid.UUID] | None = None
+    boundary_id: uuid.UUID | None = None
+    allow_overflow: bool = True
+    paid_at: date
+
+
+class PayrollPoolPayoutResponse(BaseModel):
+    reserve_id: uuid.UUID
+    primary_booked: Decimal
+    overflow_reserve_id: uuid.UUID | None = None
+    overflow_booked: Decimal
+    employees_paid: int
+
+
+class PayrollReserveEmployeePayRequest(BaseModel):
+    """Ручная выплата одному сотруднику из резерва (карандаш → сумма → ✓)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    employee_id: uuid.UUID
+    amount: Decimal = Field(gt=0)
+    paid_at: date
+
+
+class PayrollReserveEmployeePayResponse(BaseModel):
+    booked: Decimal
+    employee_total_paid: Decimal
+    employee_remaining: Decimal
+    reserve_status: str
+    reserve_outstanding: Decimal
+
+
+class PayrollSolvencyRead(BaseModel):
+    """Платёжеспособность под выплату ведомости (advisory — банк/овердрафт по последней выписке)."""
+
+    available: Decimal
+    required_total: Decimal
+    remaining: Decimal
+    shortfall: Decimal
+    overdraft_limit: Decimal
+    safe_balance: Decimal
+    kassa_balance: Decimal
+    bank_total: Decimal
+    reserved_other: Decimal
+    solvent: bool
+
+
 class PayrollPayoutDraftsResponse(BaseModel):
     drafts_count: int
 
@@ -235,6 +292,9 @@ class PayrollLineRead(BaseModel):
     deduction: float
     deposit_withholding: float = 0
     deposit_payout: float = 0
+    # Запланированная выдача депозита: такой сотрудник идёт только полным путём «Выплатить»
+    # (исключён из раскладки пула-резерва). Нужно фронту, чтобы превью совпало с фактом.
+    deposit_payout_scheduled: float = 0
     advance_issued: float = 0
     ndfl_deduction: float = 0
     total_payable: float
