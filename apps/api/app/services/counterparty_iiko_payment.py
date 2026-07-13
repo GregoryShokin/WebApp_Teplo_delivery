@@ -28,7 +28,7 @@ from decimal import ROUND_DOWN, Decimal
 from zoneinfo import ZoneInfo
 
 import anyio
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -110,6 +110,12 @@ def representable_split(amount: Decimal) -> list[Decimal]:
 # не появился, и заводим ручной кейс (реальный сбой синхронизации на стороне iiko).
 IIKO_SYNC_GRACE = timedelta(days=5)
 
+# Окно, после которого pending-пуш считаем ЗАСТРЯВШИМ (осиротевшим): pending пишется до HTTP
+# add_payment и финализируется за секунды; строка старше окна = процесс упал между ними. Свип
+# заводит по ней видимый кейс (ветка mirror для этого мертва — pending исключает накладную из
+# выборки). С запасом, чтобы не трогать свежий in-flight pending конкурентного запроса.
+IIKO_STALE_PENDING_WINDOW = timedelta(minutes=15)
+
 
 def _is_incoming_invoice_not_found(response: dict | None, error: str | None) -> bool:
     """iiko Cloud add_payment вернул «incoming invoice not found»: документ есть в iikoServer,
@@ -172,9 +178,11 @@ IIKO_UNSETTLED_REASON_CODES = frozenset(
 )
 # Причины, где авто-повтор add_payment имеет смысл (кнопка «Повторить отправку»). Остальные —
 # только ручное подтверждение (мультиплатёж/аванс/коррекция: реального add_payment нет/нельзя).
+# orphaned_pending СЮДА НЕ входит: осиротевший pending мог УЖЕ пройти в iiko (pending пишется до
+# HTTP add_payment), авто-повтор неидемпотентного add_payment задвоил бы платёж. Разрешение —
+# только ручное подтверждение после сверки в iiko (auto_sendable для pending возвращает False).
 IIKO_UNSETTLED_RETRIABLE = frozenset(
-    {"orphaned_pending", "not_in_cloud_grace", "not_in_cloud_terminal", "iiko_rejected",
-     "retry_cap_exhausted"}
+    {"not_in_cloud_grace", "not_in_cloud_terminal", "iiko_rejected", "retry_cap_exhausted"}
 )
 
 
@@ -845,6 +853,30 @@ async def original_payment_settled_in_iiko(
     return True
 
 
+async def _iiko_payment_fully_settled(
+    session: AsyncSession, invoice: SupplierInvoice
+) -> bool:
+    """СТРОЖЕ, чем ``original_payment_settled_in_iiko`` — для АВТО-ЗАКРЫТИЯ кейса свипом. Отличие
+    только для Кассы: у смешанного чека (карта+наличные) две доли ``kassa_goods:<id>:card/cash``;
+    ``original_payment_settled_in_iiko`` считает settled по ЛЮБОЙ ok-доле, но если ВТОРАЯ доля
+    провалилась — оплата отражена не полностью, кейс закрывать НЕЛЬЗЯ. Здесь: есть хоть одна
+    доля со ``status!='ok'`` (провал/висит) → НЕ settled. Иначе — как обычный предикат."""
+    if invoice.source in ("kassa_cheque", "kassa_invoice"):
+        bad_share = await session.scalar(
+            select(IikoInvoicePaymentPush.id)
+            .where(
+                IikoInvoicePaymentPush.idempotency_key.like(
+                    f"kassa\\_goods:{invoice.id}:%", escape="\\"
+                ),
+                IikoInvoicePaymentPush.status != "ok",
+            )
+            .limit(1)
+        )
+        if bad_share is not None:
+            return False
+    return await original_payment_settled_in_iiko(session, invoice)
+
+
 async def iiko_invoice_payment_auto_sendable(
     session: AsyncSession, invoice: SupplierInvoice
 ) -> bool:
@@ -863,6 +895,19 @@ async def iiko_invoice_payment_auto_sendable(
         return False
     draft = await session.get(CounterpartyPaymentDraft, invoice.draft_id)
     if draft is None or draft.status != "paid" or draft.pays_via_safe:
+        return False
+    # Застрявший pending-пуш (осиротевший): авто-отправка его пропустит (push видит pending и
+    # возвращает skipped) — реально не сработает, поэтому НЕ авто (остаётся ручное подтверждение
+    # после сверки в iiko; иначе кейс orphaned_pending был бы неразрешим ни одной кнопкой).
+    pending = await session.scalar(
+        select(IikoInvoicePaymentPush.id)
+        .where(
+            IikoInvoicePaymentPush.idempotency_key == f"invoice:{invoice.id}",
+            IikoInvoicePaymentPush.status == "pending",
+        )
+        .limit(1)
+    )
+    if pending is not None:
         return False
     siblings = await session.scalar(
         select(func.count(SupplierInvoice.id)).where(
@@ -1229,16 +1274,21 @@ async def sweep_unsettled_iiko_payments(
       а оплата ОРИГИНАЛА так и не была зеркалирована в iiko (гард Этапа 1 закрывает это вперёд,
       здесь ловим наследие);
     - ``retry_cap_exhausted`` — транзиент исчерпал кап (``attempts>=MAX``) и накладная выпала из
-      выборки джоба БЕЗ кейса (ветка временного сбоя кейс не заводит).
+      выборки джоба БЕЗ кейса (ветка временного сбоя кейс не заводит);
+    - ``orphaned_pending`` — pending-пуш застрял (краш между commit pending и финализацией add_
+      payment); ветка mirror для этого мертва (pending исключает накладную из выборки).
 
-    Плюс закрывает pending-кейсы, чья накладная снова ``settled`` (страховка к авто-закрытию в самих
-    джобах — на случай ручного add_payment в бэк-офисе iiko, доехавшего документа и т.п.).
-    Гоняется тем же scheduler-джобом после ``mirror_*``. Возвращает счётчики."""
+    Закрытие кейсов — по СТРОГОМУ предикату ``_iiko_payment_fully_settled`` (для смешанного чека
+    Кассы «любая ok-доля» недостаточно — вторая доля могла провалиться). Гоняется тем же scheduler-
+    джобом после ``mirror_*``. NB: частичная (partially_paid) банковская оплата С черновиком —
+    вне контура (в процессе, дозакроется и отзеркалится); ловим только БЕЗ черновика (застрявший
+    ручной мэтч). Возвращает счётчики."""
     result = {
         "resolved": 0,
         "paid_outside_draft": 0,
         "correction_unsettled": 0,
         "retry_cap_exhausted": 0,
+        "orphaned_pending": 0,
     }
 
     # --- 1. Закрыть восстановившиеся кейсы (накладная снова отражена в iiko) ---
@@ -1261,7 +1311,9 @@ async def sweep_unsettled_iiko_payments(
             inv = await session.get(SupplierInvoice, uuid.UUID(str(inv_id_raw)))
         except (ValueError, TypeError):
             continue
-        if inv is not None and await original_payment_settled_in_iiko(session, inv):
+        # СТРОГИЙ предикат: для Кассы «полностью settled» (все доли), иначе частично-провалившийся
+        # смешанный чек (одна ok-доля) ложно закрыл бы кейс, а вторая доля осталась бы не в iiko.
+        if inv is not None and await _iiko_payment_fully_settled(session, inv):
             case.status = "resolved"
             case.resolved_at = datetime.now(UTC)
             case.resolution_payload = {"reason": "settled"}
@@ -1282,11 +1334,20 @@ async def sweep_unsettled_iiko_payments(
                 SupplierInvoice.source == "iiko",
                 SupplierInvoice.external_id.is_not(None),
                 SupplierInvoice.direction == "payable",
-                SupplierInvoice.payment_status == "paid",
+                # paid — полностью оплачена; partially_paid БЕЗ черновика — застрявший ручной банк-
+                # мэтч (деньги ушли частично, но контур не завершится сам). Частичную оплату С
+                # черновиком НЕ трогаем — она в процессе (дозакроется → mirror отзеркалит).
+                or_(
+                    SupplierInvoice.payment_status == "paid",
+                    and_(
+                        SupplierInvoice.payment_status == "partially_paid",
+                        SupplierInvoice.draft_id.is_(None),
+                    ),
+                ),
                 SupplierInvoice.iiko_correction_new_external_id.is_(None),
                 # НЕ покрыта банк-зеркалом: нет черновика ЛИБО он не финализирован банком (created/
-                # updated/failed) ЛИБО деньги на Сейфе. Мультиплатёж (siblings>1) сюда
-                # НЕ попадает — его ловит сам джоб (reason_code=multi_invoice).
+                # updated/failed) ЛИБО деньги на Сейфе. Мультиплатёж (siblings>1) сюда НЕ попадает —
+                # его ловит сам джоб (reason_code=multi_invoice).
                 or_(
                     SupplierInvoice.draft_id.is_(None),
                     CounterpartyPaymentDraft.status != "paid",
@@ -1303,8 +1364,8 @@ async def sweep_unsettled_iiko_payments(
             session, invoice_id=inv.id, external_id=inv.external_id or "",
             amount=Decimal(str(inv.amount or 0)),
             reason=(
-                "оплата прошла не через банк-черновик (аванс/наличные) — автоматически в iiko не "
-                "уходит; проведите оплату в iiko вручную или подтвердите её"
+                "оплата не отражена в iiko автоматически (не одиночный банк-черновик: аванс / "
+                "наличные / частичный мультиплатёж) — проведите оплату вручную или подтвердите"
             ),
             reason_code="paid_outside_draft",
         ):
@@ -1315,7 +1376,9 @@ async def sweep_unsettled_iiko_payments(
         await session.scalars(
             select(SupplierInvoice)
             .where(
-                SupplierInvoice.source == "iiko",
+                # Кассу тоже: mirror_paid_kassa исключает скорректированные, а корректировать можно
+                # накладную любого источника — оплата оригинала Кассы могла не доехать (наследие).
+                SupplierInvoice.source.in_(("iiko", "kassa_cheque", "kassa_invoice")),
                 SupplierInvoice.iiko_correction_new_external_id.is_not(None),
             )
             .limit(limit)
@@ -1367,6 +1430,36 @@ async def sweep_unsettled_iiko_payments(
             reason_code="retry_cap_exhausted",
         ):
             result["retry_cap_exhausted"] += 1
+
+    # --- 5. orphaned_pending: застрявший pending-пуш (краш между commit pending и финализацией —
+    #        платёж МОГ и не уйти). Ветка mirror для этого мертва (pending исключает из выборки).
+    stale_before = datetime.now(UTC) - IIKO_STALE_PENDING_WINDOW
+    stale_ids = (
+        await session.scalars(
+            select(IikoInvoicePaymentPush.invoice_id)
+            .where(
+                IikoInvoicePaymentPush.invoice_id.is_not(None),
+                IikoInvoicePaymentPush.status == "pending",
+                IikoInvoicePaymentPush.updated_at < stale_before,
+            )
+            .distinct()
+            .limit(limit)
+        )
+    ).all()
+    for inv_id in stale_ids:
+        inv = await session.get(SupplierInvoice, inv_id)
+        if inv is None or await original_payment_settled_in_iiko(session, inv):
+            continue
+        if await _open_iiko_payment_case(
+            session, invoice_id=inv.id, external_id=inv.external_id or "",
+            amount=Decimal(str(inv.amount or 0)),
+            reason=(
+                "отправка оплаты в iiko зависла (процесс прервался) — проверьте в бэк-офисе iiko, "
+                "прошёл ли платёж, и подтвердите вручную"
+            ),
+            reason_code="orphaned_pending",
+        ):
+            result["orphaned_pending"] += 1
 
     return result
 

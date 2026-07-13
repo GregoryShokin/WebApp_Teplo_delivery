@@ -554,9 +554,13 @@ function OwnerReviewCard({
                 </Button>
               </>
             ) : null}
-            <Button disabled={isBusy} onClick={() => dismissMutation.mutate()} variant="ghost">
-              Отложить
-            </Button>
+            {/* Для iiko-кейсов «Отложить» бесполезна: свип пере-создаст кейс на реально недошедшую
+                оплату. Валидные действия — «Повторить отправку» / «Оплата проведена вручную». */}
+            {isIikoUnsettled ? null : (
+              <Button disabled={isBusy} onClick={() => dismissMutation.mutate()} variant="ghost">
+                Отложить
+              </Button>
+            )}
           </div>
         ) : (
           <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">

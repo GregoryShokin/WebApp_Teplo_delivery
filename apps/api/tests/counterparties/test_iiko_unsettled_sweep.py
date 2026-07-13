@@ -34,8 +34,10 @@ async def _paid_iiko(
     draft_status=None,
     pays_via_safe=False,
     corrected=False,
+    source="iiko",
+    payment_status="paid",
 ):
-    """Оплаченная iiko-накладная в разных состояниях: с/без банк-черновика, скорректированная."""
+    """Оплаченная накладная: с/без банк-черновика, скорректированная, разный источник."""
     cp = await make_counterparty(session, name=f"Пост {number}", iiko_guid=f"G-{number}")
     draft_id = None
     if draft_status is not None:
@@ -43,8 +45,8 @@ async def _paid_iiko(
         draft.pays_via_safe = pays_via_safe
         draft_id = draft.id
     inv = await make_invoice(
-        session, counterparty_id=cp.id, amount=amount, payment_status="paid",
-        number=number, source="iiko", external_id=external_id, draft_id=draft_id,
+        session, counterparty_id=cp.id, amount=amount, payment_status=payment_status,
+        number=number, source=source, external_id=external_id, draft_id=draft_id,
     )
     if corrected:
         inv.iiko_correction_new_external_id = f"NEW-{external_id}"
@@ -273,3 +275,147 @@ async def test_sweep_flags_issued_at_enrichment(async_session_factory):
     cases = await _cases(async_session_factory)
     assert len(cases) == 1 and cases[0].payload["issued_at"] is not None
     assert cases[0].payload["issued_at"].startswith("2026-07-11")
+
+
+# ============================================================================
+# Фиксы адверсариал-ревью Этапа 2
+# ============================================================================
+
+
+def _kassa_share(inv_id, external_id, src, amount, status, attempts=0):
+    return IikoInvoicePaymentPush(
+        idempotency_key=f"kassa_goods:{inv_id}:{src}", invoice_id=inv_id, external_id=external_id,
+        amount=Decimal(amount), account_to="x", status=status, attempts=attempts,
+    )
+
+
+async def test_sweep_does_not_resolve_kassa_partial_share_fail(async_session_factory):
+    """HIGH-фикс: смешанный чек Кассы, карт-доля ok, наличная провалилась → кейс НЕ закрывается
+    свипом (строгий предикат _iiko_payment_fully_settled: нужны ВСЕ доли, а не любая)."""
+    async with async_session_factory() as session:
+        _, inv = await _paid_iiko(session, number="K1", external_id="K1", source="kassa_invoice")
+        session.add(_kassa_share(inv.id, "K1", "card", "600", "ok"))
+        session.add(
+            _kassa_share(inv.id, "K1", "cash", "400", "error", attempts=cip.MAX_PUSH_ATTEMPTS)
+        )
+        await cip._open_iiko_payment_case(
+            session, invoice_id=inv.id, external_id="K1", amount=Decimal("1000"),
+            reason="наличная доля не прошла", reason_code="iiko_rejected",
+        )
+        await session.commit()
+        # строгий предикат: не settled (есть провалившаяся доля); мягкий — «settled» по ok-доле
+        assert await cip._iiko_payment_fully_settled(session, inv) is False
+        assert await cip.original_payment_settled_in_iiko(session, inv) is True  # мягкий = True
+        res = await cip.sweep_unsettled_iiko_payments(session)
+    assert res["resolved"] == 0  # кейс НЕ закрыт
+    cases = await _cases(async_session_factory)
+    assert len(cases) == 1 and cases[0].status == "pending"
+
+
+async def test_sweep_resolves_kassa_when_all_shares_ok(async_session_factory):
+    """Контроль: когда ОБЕ доли ok — кейс закрывается (полностью отражено)."""
+    async with async_session_factory() as session:
+        _, inv = await _paid_iiko(session, number="K2", external_id="K2", source="kassa_invoice")
+        session.add(_kassa_share(inv.id, "K2", "card", "600", "ok"))
+        session.add(_kassa_share(inv.id, "K2", "cash", "400", "ok"))
+        await cip._open_iiko_payment_case(
+            session, invoice_id=inv.id, external_id="K2", amount=Decimal("1000"),
+            reason="было", reason_code="iiko_rejected",
+        )
+        await session.commit()
+        assert await cip._iiko_payment_fully_settled(session, inv) is True
+        res = await cip.sweep_unsettled_iiko_payments(session)
+    assert res["resolved"] == 1
+    cases = await _cases(async_session_factory)
+    assert cases[0].status == "resolved"
+
+
+async def test_sweep_flags_stale_pending(async_session_factory):
+    """orphaned_pending: застрявший pending (старше окна) → кейс; свежий pending НЕ флагуется."""
+    from datetime import UTC, datetime, timedelta
+
+    old = datetime.now(UTC) - cip.IIKO_STALE_PENDING_WINDOW - timedelta(minutes=5)
+    fresh = datetime.now(UTC)
+    async with async_session_factory() as session:
+        _, stale_inv = await _paid_iiko(session, number="P1", external_id="P1", draft_status="paid")
+        _, fresh_inv = await _paid_iiko(session, number="P2", external_id="P2", draft_status="paid")
+        session.add(
+            IikoInvoicePaymentPush(
+                idempotency_key=f"invoice:{stale_inv.id}", invoice_id=stale_inv.id,
+                external_id="P1",
+                amount=Decimal("100.00"), account_to="x", status="pending", updated_at=old,
+            )
+        )
+        session.add(
+            IikoInvoicePaymentPush(
+                idempotency_key=f"invoice:{fresh_inv.id}", invoice_id=fresh_inv.id,
+                external_id="P2",
+                amount=Decimal("100.00"), account_to="x", status="pending", updated_at=fresh,
+            )
+        )
+        await session.commit()
+        res = await cip.sweep_unsettled_iiko_payments(session)
+    assert res["orphaned_pending"] == 1  # только застрявший
+    cases = await _cases(async_session_factory)
+    assert len(cases) == 1
+    assert cases[0].payload["reason_code"] == "orphaned_pending"
+    assert cases[0].payload["retriable"] is False  # осиротевший pending — не авто-повтор
+
+
+async def test_confirm_manual_works_for_pending_invoice(async_session_factory):
+    """orphaned-фикс: у накладной с застрявшим pending auto_sendable=False → ручное подтверждение
+    работает (раньше 422 «используйте Отправить сейчас», а send-now тоже пропускал pending)."""
+    async with async_session_factory() as session:
+        _, inv = await _paid_iiko(session, number="P3", external_id="P3", draft_status="paid")
+        session.add(
+            IikoInvoicePaymentPush(
+                idempotency_key=f"invoice:{inv.id}", invoice_id=inv.id, external_id="P3",
+                amount=Decimal("100.00"), account_to="x", status="pending",
+            )
+        )
+        await session.commit()
+        assert await cip.iiko_invoice_payment_auto_sendable(session, inv) is False  # pending
+        # раньше кидало IikoPaymentError; теперь проходит
+        await cip.mark_iiko_payment_settled_manually(session, inv, actor_user_id=None)
+        row = await session.scalar(
+            select(IikoInvoicePaymentPush).where(
+                IikoInvoicePaymentPush.idempotency_key == f"invoice:{inv.id}"
+            )
+        )
+        assert row.status == "ok" and row.response_payload.get("manual_confirmation") is True
+
+
+async def test_sweep_flags_correction_kassa(async_session_factory):
+    """LOW-фикс: скорректированная накладная Кассы без оплаты оригинала тоже попадает в список."""
+    async with async_session_factory() as session:
+        await _paid_iiko(
+            session, number="CK1", external_id="YK1", corrected=True, source="kassa_cheque"
+        )
+        await session.commit()
+        res = await cip.sweep_unsettled_iiko_payments(session)
+    assert res["correction_unsettled"] == 1
+    cases = await _cases(async_session_factory)
+    assert cases[0].payload["reason_code"] == "correction_unsettled"
+
+
+async def test_sweep_flags_partial_no_draft_not_partial_with_draft(async_session_factory):
+    """#2-фикс: partially_paid БЕЗ черновика (застрявший ручной мэтч) → флаг; partially_paid С
+    черновиком (в процессе) — НЕ флагуем (без шума)."""
+    async with async_session_factory() as session:
+        _, stuck = await _paid_iiko(
+            session, number="PP1", external_id="PP1", payment_status="partially_paid"
+        )  # без черновика
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=stuck.id, source_kind="bank", amount=Decimal("40.00")
+            )
+        )
+        await _paid_iiko(
+            session, number="PP2", external_id="PP2", payment_status="partially_paid",
+            draft_status="created",
+        )  # частичный С черновиком (в процессе)
+        await session.commit()
+        res = await cip.sweep_unsettled_iiko_payments(session)
+    assert res["paid_outside_draft"] == 1  # только застрявший без черновика
+    cases = await _cases(async_session_factory)
+    assert len(cases) == 1 and cases[0].payload["invoice_id"] == str(stuck.id)
