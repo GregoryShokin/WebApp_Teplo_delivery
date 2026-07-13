@@ -216,6 +216,20 @@ async def test_mirror_skips_multi_invoice_draft(
         result = await mod.mirror_paid_iiko_invoices(session)
     assert result["skipped_multi"] == 2 and result["ok"] == 0
     assert not calls
+    # Этап 2: мультиплатёж больше не пропадает молча — на каждую накладную заводится видимый кейс
+    # (reason_code=multi_invoice) с обогащённым payload (поставщик/номер).
+    async with async_session_factory() as session:
+        cases = (
+            await session.scalars(
+                select(ReconciliationCase).where(
+                    ReconciliationCase.kind == "iiko_payment_unsettled"
+                )
+            )
+        ).all()
+    assert len(cases) == 2
+    assert all(c.payload.get("reason_code") == "multi_invoice" for c in cases)
+    assert all(c.payload.get("supplier_name") == "Поставщик" for c in cases)
+    assert all(c.payload.get("retriable") is False for c in cases)
 
 
 async def test_mirror_continues_when_push_raises(

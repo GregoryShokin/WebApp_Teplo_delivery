@@ -20,11 +20,13 @@ import {
   apiErrorMessage,
   applyCardRefundCase,
   classifyOwnerReviewCase,
+  confirmIikoManualCase,
   createDdsCounterparty,
   dismissOwnerReviewCase,
   getDdsArticles,
   getDdsCounterparties,
   getDdsOwnerReview,
+  retryIikoPaymentCase,
   type ClassifyPayload,
   type CounterpartyRead,
   type DdsArticleRead,
@@ -196,6 +198,33 @@ function OwnerReviewCard({
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось учесть возврат")),
   });
 
+  // «Повторить отправку» по iiko-кейсу: снять кап и переотправить. resolved → успех; иначе кейс
+  // остаётся (поставлено в очередь сверочному джобу / iiko отклонил — текст в тосте).
+  const retryIikoMutation = useMutation({
+    mutationFn: () => retryIikoPaymentCase(item.id),
+    onSuccess: async (result) => {
+      await invalidate();
+      if (result.status === "resolved") {
+        toast.success("Оплата отправлена в iiko");
+      } else if (result.iiko_payment_push_error) {
+        toast.error(`iiko не принял оплату: ${result.iiko_payment_push_error}`);
+      } else {
+        toast.success("Повтор запланирован — зеркало попробует в ближайшие минуты");
+      }
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось повторить отправку")),
+  });
+
+  // «Оплата проведена вручную»: ok-маркер (джоб больше не шлёт) + закрытие кейса.
+  const confirmIikoManualMutation = useMutation({
+    mutationFn: () => confirmIikoManualCase(item.id),
+    onSuccess: async () => {
+      await invalidate();
+      toast.success("Отмечено: оплата проведена в iiko");
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отметить оплату")),
+  });
+
   const createCounterpartyMutation = useMutation({
     mutationFn: () =>
       createDdsCounterparty({
@@ -230,11 +259,16 @@ function OwnerReviewCard({
     classifyMutation.isPending ||
     dismissMutation.isPending ||
     createCounterpartyMutation.isPending ||
-    applyRefundMutation.isPending;
+    applyRefundMutation.isPending ||
+    retryIikoMutation.isPending ||
+    confirmIikoManualMutation.isPending;
 
   // Кейсы возвратов карт-покупок: своя механика вместо стандартной классификации.
   const isCardRefund = item.kind === "card_refund_after_cheque";
   const isRefundMissing = item.kind === "cheque_refund_missing";
+  // Кейс «оплата в iiko не проведена»: своя карточка (поставщик/сумма/дата/причина) и действия.
+  const isIikoUnsettled = item.kind === "iiko_payment_unsettled";
+  const iikoRetriable = isIikoUnsettled && item.payload?.retriable === true;
   const payloadText = (key: string) => {
     const value = item.payload?.[key];
     return value == null ? "—" : String(value);
@@ -247,11 +281,18 @@ function OwnerReviewCard({
           <div className="flex flex-wrap items-center gap-2">
             <ProviderBadge provider={item.provider} />
             <Badge variant="outline">{caseKindLabel(item.kind)}</Badge>
+            {isIikoUnsettled && item.payload?.reason_code ? (
+              <Badge variant="secondary">{iikoReasonLabel(String(item.payload.reason_code))}</Badge>
+            ) : null}
             {operation ? <DirectionBadge direction={operation.direction} /> : null}
           </div>
           <div className="text-left lg:text-right">
             <div className="text-2xl font-semibold tabular-nums">
-              {operation ? formatDdsMoney(operation.amount) : "—"}
+              {operation
+                ? formatDdsMoney(operation.amount)
+                : item.payload?.amount != null
+                  ? formatDdsMoney(Number(item.payload.amount))
+                  : "—"}
             </div>
             <div className="text-sm text-muted-foreground">
               {operation ? formatDate(operation.operation_date) : formatDate(item.created_at)}
@@ -260,19 +301,43 @@ function OwnerReviewCard({
         </div>
       </CardHeader>
       <CardContent className="grid gap-4">
-        <div className="grid gap-3 md:grid-cols-3">
-          <ReviewField label="Контрагент" value={compactText(operation?.counterparty_name_raw)} />
-          <ReviewField label="ИНН" value={compactText(operation?.counterparty_inn_raw)} />
-          <ReviewField label="Документ" value={compactText(operation?.document_number)} />
-        </div>
-        <div className="grid gap-2">
-          <Label>Назначение платежа</Label>
-          <Textarea
-            className="min-h-[96px]"
-            readOnly
-            value={operation?.payment_purpose ?? JSON.stringify(item.payload, null, 2)}
-          />
-        </div>
+        {isIikoUnsettled ? (
+          <>
+            <div className="grid gap-3 md:grid-cols-3">
+              <ReviewField label="Поставщик" value={payloadText("supplier_name")} />
+              <ReviewField label="Накладная" value={payloadText("invoice_number")} />
+              <ReviewField
+                label="Дата"
+                value={item.payload?.issued_at ? formatDate(String(item.payload.issued_at)) : "—"}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Причина</Label>
+              <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm">
+                {payloadText("reason")}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="grid gap-3 md:grid-cols-3">
+              <ReviewField
+                label="Контрагент"
+                value={compactText(operation?.counterparty_name_raw)}
+              />
+              <ReviewField label="ИНН" value={compactText(operation?.counterparty_inn_raw)} />
+              <ReviewField label="Документ" value={compactText(operation?.document_number)} />
+            </div>
+            <div className="grid gap-2">
+              <Label>Назначение платежа</Label>
+              <Textarea
+                className="min-h-[96px]"
+                readOnly
+                value={operation?.payment_purpose ?? JSON.stringify(item.payload, null, 2)}
+              />
+            </div>
+          </>
+        )}
       </CardContent>
       <CardFooter className="grid gap-4 border-t pt-4">
         {isCardRefund ? (
@@ -420,9 +485,10 @@ function OwnerReviewCard({
           </>
         ) : item.kind === "iiko_payment_unsettled" ? (
           <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
-            Оплата накладной не проведена в iiko автоматически (add_payment отклонён — причина в
-            поле «Назначение платежа»). У нас накладная числится оплаченной; проведите оплату в iiko
-            вручную и отложите кейс.
+            У нас накладная оплачена, а в iiko оплата не отражена.{" "}
+            {iikoRetriable
+              ? "Повторите отправку — или, если оплата уже проведена в бэк-офисе iiko вручную, отметьте это."
+              : "Проведите оплату в iiko вручную (аванс/наличные/мультиплатёж авто не уходят) и отметьте, что она проведена."}
           </div>
         ) : (
           <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
@@ -464,6 +530,27 @@ function OwnerReviewCard({
                 </Button>
                 <Button disabled={isBusy} onClick={() => classify("exclude")} variant="outline">
                   Исключить
+                </Button>
+              </>
+            ) : isIikoUnsettled ? (
+              <>
+                {iikoRetriable ? (
+                  <Button disabled={isBusy} onClick={() => retryIikoMutation.mutate()}>
+                    {retryIikoMutation.isPending ? (
+                      <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                    ) : null}
+                    Повторить отправку
+                  </Button>
+                ) : null}
+                <Button
+                  disabled={isBusy}
+                  variant="outline"
+                  onClick={() => confirmIikoManualMutation.mutate()}
+                >
+                  {confirmIikoManualMutation.isPending ? (
+                    <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                  ) : null}
+                  Оплата проведена вручную
                 </Button>
               </>
             ) : null}
@@ -516,4 +603,28 @@ function caseKindLabel(kind: string) {
     return "Возврат не пришёл от банка";
   }
   return kind;
+}
+
+// Короткий ярлык машиночитаемой причины «оплата не дошла до iiko» (payload.reason_code) для бейджа.
+function iikoReasonLabel(code: string) {
+  switch (code) {
+    case "multi_invoice":
+      return "Мультиплатёж";
+    case "paid_outside_draft":
+      return "Мимо банк-черновика";
+    case "correction_unsettled":
+      return "Коррекция без оплаты";
+    case "retry_cap_exhausted":
+      return "Исчерпан лимит повторов";
+    case "not_in_cloud_grace":
+      return "Ещё не в iiko Cloud";
+    case "not_in_cloud_terminal":
+      return "Не появилась в iiko Cloud";
+    case "iiko_rejected":
+      return "iiko отклонил";
+    case "orphaned_pending":
+      return "Осиротевший пуш";
+    default:
+      return code;
+  }
 }

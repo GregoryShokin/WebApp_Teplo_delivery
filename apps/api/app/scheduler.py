@@ -394,6 +394,7 @@ async def push_iiko_invoice_payments() -> None:
     from app.services.counterparty_iiko_payment import (
         mirror_paid_iiko_invoices,
         mirror_paid_kassa_invoices,
+        sweep_unsettled_iiko_payments,
     )
 
     async with AsyncSessionLocal() as session:
@@ -405,6 +406,12 @@ async def push_iiko_invoice_payments() -> None:
         kassa = await mirror_paid_kassa_invoices(session)
     if kassa.get("ok") or kassa.get("error"):
         logger.info("push_iiko_kassa_payments: %s", kassa)
+    # Дозор: свести в единый видимый список owner-review причины «оплачено у нас — в iiko нет»,
+    # которые джобы выше не видят (мимо-черновика/коррекция/кап), и закрыть восстановленные кейсы.
+    async with AsyncSessionLocal() as session:
+        swept = await sweep_unsettled_iiko_payments(session)
+    if any(swept.values()):
+        logger.info("sweep_unsettled_iiko_payments: %s", swept)
 
 
 @scheduler.scheduled_job(

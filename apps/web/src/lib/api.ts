@@ -3104,6 +3104,22 @@ export async function applyCardRefundCase(caseId: string, invoiceId?: string): P
   });
 }
 
+// «Повторить отправку» по кейсу «оплата в iiko не проведена»: снять кап и переотправить в iiko
+// (синхронно для одиночного банка; иначе сверочный джоб добьёт). status='resolved' → успех.
+export async function retryIikoPaymentCase(
+  caseId: string,
+): Promise<{ status: string; iiko_payment_push_error?: string | null }> {
+  const response = await api.post<{ status: string; iiko_payment_push_error?: string | null }>(
+    `/dds/owner-review/${caseId}/retry-iiko-payment`,
+  );
+  return response.data;
+}
+
+// «Оплата проведена вручную» по кейсу: ok-маркер (джоб больше не шлёт) + закрытие кейса.
+export async function confirmIikoManualCase(caseId: string): Promise<void> {
+  await api.post(`/dds/owner-review/${caseId}/confirm-iiko-manual`);
+}
+
 export type SafeAllocationRead = {
   id: string;
   wallet_id: string;

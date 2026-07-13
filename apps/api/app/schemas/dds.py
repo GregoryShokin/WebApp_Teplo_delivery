@@ -295,6 +295,8 @@ class OwnerReviewActionRead(BaseModel):
     bank_operation_id: uuid.UUID | None = None
     classification_status: str | None = None
     rule_id: uuid.UUID | None = None
+    # «Повторить отправку»: текст ошибки iiko, если синхронный add_payment не прошёл (кейс остался).
+    iiko_payment_push_error: str | None = None
 
 
 class OperationSplitItem(BaseModel):

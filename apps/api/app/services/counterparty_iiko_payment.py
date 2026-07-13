@@ -33,6 +33,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    Counterparty,
     CounterpartyPaymentDraft,
     IikoInvoicePaymentPush,
     ReconciliationCase,
@@ -154,6 +155,29 @@ async def _cap_push_attempts(session: AsyncSession, *, idempotency_key: str) -> 
         await session.commit()
 
 
+# Машиночитаемые коды причин «оплата не дошла до iiko» (payload['reason_code']). Определяют, можно
+# ли авто-повторить отправку (retriable) или остаётся только ручное подтверждение. Человекочитаемый
+# текст — в payload['reason']. Единый видимый список owner-review (kind='iiko_payment_unsettled').
+IIKO_UNSETTLED_REASON_CODES = frozenset(
+    {
+        "orphaned_pending",  # процесс упал между pending и финализацией — ретраить можно
+        "not_in_cloud_grace",  # документ ещё не доехал в Cloud (рассинхрон) — дойдёт сам
+        "not_in_cloud_terminal",  # не появился за grace-окно — ретраить/ручной
+        "iiko_rejected",  # перманентный отказ iiko (invalid amount и т.п.)
+        "retry_cap_exhausted",  # исчерпан кап авто-ретраев транзиента — тихо выпадал из выборки
+        "multi_invoice",  # мультиплатёж — долю по одной зеркало не выводит; только ручное
+        "paid_outside_draft",  # оплата мимо банк-черновика (аванс/наличные) — авто нельзя
+        "correction_unsettled",  # накладная скорректирована, а оплата оригинала так и не дошла
+    }
+)
+# Причины, где авто-повтор add_payment имеет смысл (кнопка «Повторить отправку»). Остальные —
+# только ручное подтверждение (мультиплатёж/аванс/коррекция: реального add_payment нет/нельзя).
+IIKO_UNSETTLED_RETRIABLE = frozenset(
+    {"orphaned_pending", "not_in_cloud_grace", "not_in_cloud_terminal", "iiko_rejected",
+     "retry_cap_exhausted"}
+)
+
+
 async def _open_iiko_payment_case(
     session: AsyncSession,
     *,
@@ -161,12 +185,16 @@ async def _open_iiko_payment_case(
     external_id: str,
     amount: Decimal,
     reason: str,
-) -> None:
+    reason_code: str,
+) -> bool:
     """Завести видимый кейс owner-review «оплата в iiko не проведена» (idempotent по накладной).
+    Возвращает True, если кейс СОЗДАН (False — уже был pending-кейс по этой накладной).
 
-    Зовём, когда ``add_payment`` провалился НЕОБРАТИМО (непредставимая сумма / исчерпан кап /
-    перманентный отказ iiko): зеркало надо провести в iiko вручную. Без кейса сбой тонул бы в
-    маркере ``kassa_goods_done`` («зеркалировано»), а у нас накладная числилась бы оплаченной."""
+    Единая точка единого видимого списка: сюда сводятся ВСЕ причины «у нас оплачено — в iiko нет»
+    (непредставимая сумма / кап / перманентный отказ / документ не в Cloud / мультиплатёж / оплата
+    мимо черновика / скорректированная с недоехавшей оплатой). ``reason_code`` — машиночитаемый код
+    (см. IIKO_UNSETTLED_REASON_CODES) для группировки/действий; ``reason`` — человекочитаемый текст.
+    Обогащаем payload поставщиком/номером/датой — карточка показывает суть без доп. запросов."""
     existing = await session.scalar(
         select(ReconciliationCase.id)
         .where(
@@ -177,7 +205,21 @@ async def _open_iiko_payment_case(
         .limit(1)
     )
     if existing is not None:
-        return
+        return False
+    # Обогащение (только при создании — фоновый запрос, не в горячем пути): поставщик/номер/
+    # дата для карточки. session.get — свежий запрос по id (не lazy-load отцепленного инстанса).
+    supplier_name: str | None = None
+    invoice_number: str | None = None
+    issued_at: str | None = None
+    inv = await session.get(SupplierInvoice, invoice_id)
+    if inv is not None:
+        invoice_number = inv.number
+        when = inv.issued_at or (
+            datetime.combine(inv.invoice_date, time()) if inv.invoice_date else None
+        )
+        issued_at = when.isoformat() if when is not None else None
+        cp = await session.get(Counterparty, inv.counterparty_id)
+        supplier_name = cp.name if cp is not None else None
     session.add(
         ReconciliationCase(
             kind="iiko_payment_unsettled",
@@ -188,6 +230,11 @@ async def _open_iiko_payment_case(
                 "external_id": external_id or "",
                 "amount": str(amount),
                 "reason": reason,
+                "reason_code": reason_code,
+                "supplier_name": supplier_name,
+                "invoice_number": invoice_number,
+                "issued_at": issued_at,
+                "retriable": reason_code in IIKO_UNSETTLED_RETRIABLE,
             },
         )
     )
@@ -195,10 +242,34 @@ async def _open_iiko_payment_case(
     # от того, коммитит ли вызывающий после нас (банковский mirror — не коммитит).
     await session.commit()
     logger.warning(
-        "iiko mirror: оплата накладной %s НЕ проведена в iiko (%s) — заведён кейс owner-review",
+        "iiko mirror: оплата накладной %s НЕ проведена в iiko (%s/%s) — кейс owner-review",
         invoice_id,
+        reason_code,
         reason,
     )
+    return True
+
+
+async def _resolve_iiko_payment_case(session: AsyncSession, invoice_id: uuid.UUID) -> int:
+    """Закрыть (resolved) висящие pending-кейсы «оплата не дошла до iiko» по накладной — оплата
+    восстановилась (успешный пуш зеркала / подтверждено вручную). Возвращает число закрытых.
+    Без этого кейс висел бы вечно даже после того, как оплата в iiko появилась."""
+    cases = (
+        await session.scalars(
+            select(ReconciliationCase).where(
+                ReconciliationCase.kind == "iiko_payment_unsettled",
+                ReconciliationCase.status == "pending",
+                ReconciliationCase.payload["invoice_id"].astext == str(invoice_id),
+            )
+        )
+    ).all()
+    for case in cases:
+        case.status = "resolved"
+        case.resolved_at = datetime.now(UTC)
+        case.resolution_payload = {"reason": "mirrored_ok"}
+    if cases:
+        await session.commit()
+    return len(cases)
 
 
 class IikoPaymentError(RuntimeError):
@@ -616,11 +687,22 @@ async def mirror_paid_iiko_invoices(
         inv_id = invoice.id
         external_id = invoice.external_id or ""
         if siblings != 1:
+            # Мультинакладный черновик: честная пер-накладная доля из draft.amount не выводится
+            # (до Этапа 3). Не молчим — заводим видимый кейс (ручное подтверждение), иначе неоплата
+            # в iiko терялась бы (так завис «Мяснов»). Idempotent по накладной.
             logger.info(
                 "iiko mirror: накладная %s в мультинакладном черновике — пропуск (ручная сверка)",
                 inv_id,
             )
             result["skipped_multi"] += 1
+            await _open_iiko_payment_case(
+                session, invoice_id=inv_id, external_id=external_id, amount=draft_amount,
+                reason=(
+                    "платёж закрывает несколько накладных — долю по одной зеркало не проводит "
+                    "автоматически, проведите оплату в iiko вручную"
+                ),
+                reason_code="multi_invoice",
+            )
             continue
         try:
             res = await push_invoice_payment_to_iiko(
@@ -646,9 +728,11 @@ async def mirror_paid_iiko_invoices(
                 await _open_iiko_payment_case(
                     session, invoice_id=inv_id, external_id=external_id, amount=draft_amount,
                     reason="осиротевший pending-пуш add_payment — нужен ручной разбор",
+                    reason_code="orphaned_pending",
                 )
         elif res.ok:
             result["ok"] += 1
+            await _resolve_iiko_payment_case(session, inv_id)  # оплата дошла — снять висящий кейс
             logger.info(
                 "iiko mirror: оплата накладной %s (%s) отправлена в iiko", inv_id, external_id
             )
@@ -669,6 +753,7 @@ async def mirror_paid_iiko_invoices(
                         "документ ещё не виден в iiko Cloud (рассинхрон iikoServer↔Cloud) — "
                         "оплата дойдёт автоматически после синхронизации"
                     ),
+                    reason_code="not_in_cloud_grace",
                 )
                 logger.warning(
                     "iiko mirror: накладная %s ещё не в iiko Cloud — ждём синхронизации", inv_id
@@ -680,6 +765,7 @@ async def mirror_paid_iiko_invoices(
                 await _open_iiko_payment_case(
                     session, invoice_id=inv_id, external_id=external_id, amount=draft_amount,
                     reason="документ не появился в iiko Cloud за отведённое окно — ручной разбор",
+                    reason_code="not_in_cloud_terminal",
                 )
                 logger.warning(
                     "iiko mirror: накладная %s не появилась в iiko Cloud — терминал", inv_id
@@ -693,6 +779,7 @@ async def mirror_paid_iiko_invoices(
                 await _open_iiko_payment_case(
                     session, invoice_id=inv_id, external_id=external_id, amount=draft_amount,
                     reason=res.error or f"HTTP {res.status_code}",
+                    reason_code="iiko_rejected",
                 )
         else:
             # временный сбой (429 / 5xx / сеть) — кап доберётся на следующих проходах
@@ -830,7 +917,7 @@ async def mirror_single_paid_iiko_invoice(
             "Платёж закрывает несколько накладных — долю по одной автоматически отправить нельзя, "
             "подтвердите оплату вручную"
         )
-    return await push_invoice_payment_to_iiko(
+    res = await push_invoice_payment_to_iiko(
         session,
         external_id=invoice.external_id,
         amount=draft.amount,
@@ -839,6 +926,9 @@ async def mirror_single_paid_iiko_invoice(
         invoice_id=invoice_id,
         actor_user_id=actor_user_id,
     )
+    if res.ok:
+        await _resolve_iiko_payment_case(session, invoice_id)  # оплата дошла — снять кейс
+    return res
 
 
 async def mark_iiko_payment_settled_manually(
@@ -871,8 +961,9 @@ async def mark_iiko_payment_settled_manually(
         select(IikoInvoicePaymentPush).where(IikoInvoicePaymentPush.idempotency_key == key)
     )
     # Не затираем реальный успешный пуш (с iiko_document_id) — иначе теряем аудиторскую ссылку на
-    # проводку iiko; оплата и так отражена, подтверждать нечего.
+    # проводку iiko; оплата и так отражена, подтверждать нечего (но кейс, если висит, закрываем).
     if record is not None and record.status == "ok" and record.iiko_document_id:
+        await _resolve_iiko_payment_case(session, invoice.id)
         return
     if record is None:
         record = IikoInvoicePaymentPush(idempotency_key=key)
@@ -892,6 +983,7 @@ async def mark_iiko_payment_settled_manually(
     }
     record.created_by_user_id = actor_user_id
     await session.commit()
+    await _resolve_iiko_payment_case(session, invoice.id)  # подтверждено вручную — снять кейс
 
 
 # Счёт-источник денег iiko по источнику оплаты доли (зеркало Кассы): карта/банк/pending →
@@ -1078,6 +1170,7 @@ async def mirror_paid_kassa_invoices(
                             "документ ещё не виден в iiko Cloud (рассинхрон iikoServer↔Cloud) — "
                             "оплата дойдёт автоматически после синхронизации"
                         ),
+                        reason_code="not_in_cloud_grace",
                     )
                     logger.warning("kassa mirror: %s ещё не в iiko Cloud — ждём синхронизации", key)
                 else:
@@ -1103,6 +1196,7 @@ async def mirror_paid_kassa_invoices(
                 external_id=external_id,
                 amount=goods_total,
                 reason=reason,
+                reason_code="iiko_rejected",
             )
         if transient:
             continue  # есть transient-доля → накладную НЕ закрываем, доберём следующим проходом
@@ -1118,4 +1212,202 @@ async def mirror_paid_kassa_invoices(
             await _mark_kassa_goods_done(
                 session, invoice_id=inv_id, external_id=external_id, note="зеркалировано"
             )
+            await _resolve_iiko_payment_case(session, inv_id)  # товар зеркалирован — снять кейс
     return result
+
+
+async def sweep_unsettled_iiko_payments(
+    session: AsyncSession, *, limit: int = 500
+) -> dict[str, int]:
+    """Дозор единого видимого списка «у нас оплачено — в iiko нет»: ловит причины, которые сверочные
+    джобы ``mirror_*`` НЕ видят (молча пропущены их выборкой), и закрывает восстановившиеся кейсы.
+
+    Категории (каждую — в owner-review через ``_open_iiko_payment_case``, idempotent по накладной):
+    - ``paid_outside_draft`` — iiko-накладная оплачена НЕ через банк-черновик (аванс/наличные/прямое
+      сопоставление): банк-зеркало её вовсе не берёт (нет черновика в статусе ``paid``);
+    - ``correction_unsettled`` — накладная скорректирована (``external_id`` уже = приходная Y),
+      а оплата ОРИГИНАЛА так и не была зеркалирована в iiko (гард Этапа 1 закрывает это вперёд,
+      здесь ловим наследие);
+    - ``retry_cap_exhausted`` — транзиент исчерпал кап (``attempts>=MAX``) и накладная выпала из
+      выборки джоба БЕЗ кейса (ветка временного сбоя кейс не заводит).
+
+    Плюс закрывает pending-кейсы, чья накладная снова ``settled`` (страховка к авто-закрытию в самих
+    джобах — на случай ручного add_payment в бэк-офисе iiko, доехавшего документа и т.п.).
+    Гоняется тем же scheduler-джобом после ``mirror_*``. Возвращает счётчики."""
+    result = {
+        "resolved": 0,
+        "paid_outside_draft": 0,
+        "correction_unsettled": 0,
+        "retry_cap_exhausted": 0,
+    }
+
+    # --- 1. Закрыть восстановившиеся кейсы (накладная снова отражена в iiko) ---
+    pending = (
+        await session.scalars(
+            select(ReconciliationCase)
+            .where(
+                ReconciliationCase.kind == "iiko_payment_unsettled",
+                ReconciliationCase.status == "pending",
+            )
+            .limit(limit)
+        )
+    ).all()
+    resolved_any = False
+    for case in pending:
+        inv_id_raw = (case.payload or {}).get("invoice_id")
+        if not inv_id_raw:
+            continue
+        try:
+            inv = await session.get(SupplierInvoice, uuid.UUID(str(inv_id_raw)))
+        except (ValueError, TypeError):
+            continue
+        if inv is not None and await original_payment_settled_in_iiko(session, inv):
+            case.status = "resolved"
+            case.resolved_at = datetime.now(UTC)
+            case.resolution_payload = {"reason": "settled"}
+            result["resolved"] += 1
+            resolved_any = True
+    if resolved_any:
+        await session.commit()
+
+    # --- 2. paid_outside_draft: paid iiko без покрытия банк-зеркалом (нет paid-черновика) ---
+    outside = (
+        await session.scalars(
+            select(SupplierInvoice)
+            .outerjoin(
+                CounterpartyPaymentDraft,
+                CounterpartyPaymentDraft.id == SupplierInvoice.draft_id,
+            )
+            .where(
+                SupplierInvoice.source == "iiko",
+                SupplierInvoice.external_id.is_not(None),
+                SupplierInvoice.direction == "payable",
+                SupplierInvoice.payment_status == "paid",
+                SupplierInvoice.iiko_correction_new_external_id.is_(None),
+                # НЕ покрыта банк-зеркалом: нет черновика ЛИБО он не финализирован банком (created/
+                # updated/failed) ЛИБО деньги на Сейфе. Мультиплатёж (siblings>1) сюда
+                # НЕ попадает — его ловит сам джоб (reason_code=multi_invoice).
+                or_(
+                    SupplierInvoice.draft_id.is_(None),
+                    CounterpartyPaymentDraft.status != "paid",
+                    CounterpartyPaymentDraft.pays_via_safe.is_(True),
+                ),
+            )
+            .limit(limit)
+        )
+    ).all()
+    for inv in outside:
+        if await original_payment_settled_in_iiko(session, inv):
+            continue
+        if await _open_iiko_payment_case(
+            session, invoice_id=inv.id, external_id=inv.external_id or "",
+            amount=Decimal(str(inv.amount or 0)),
+            reason=(
+                "оплата прошла не через банк-черновик (аванс/наличные) — автоматически в iiko не "
+                "уходит; проведите оплату в iiko вручную или подтвердите её"
+            ),
+            reason_code="paid_outside_draft",
+        ):
+            result["paid_outside_draft"] += 1
+
+    # --- 3. correction_unsettled: накладная скорректирована, а оплата оригинала не дошла ---
+    corrected = (
+        await session.scalars(
+            select(SupplierInvoice)
+            .where(
+                SupplierInvoice.source == "iiko",
+                SupplierInvoice.iiko_correction_new_external_id.is_not(None),
+            )
+            .limit(limit)
+        )
+    ).all()
+    for inv in corrected:
+        if await original_payment_settled_in_iiko(session, inv):
+            continue
+        if await _open_iiko_payment_case(
+            session, invoice_id=inv.id, external_id=inv.external_id or "",
+            amount=Decimal(str(inv.amount or 0)),
+            reason=(
+                "накладная скорректирована, но оплата оригинала так и не отражена в iiko — "
+                "сверьте баланс поставщика в бэк-офисе iiko вручную"
+            ),
+            reason_code="correction_unsettled",
+        ):
+            result["correction_unsettled"] += 1
+
+    # --- 4. retry_cap_exhausted: транзиент добрался до капа БЕЗ кейса (тихо выпал из выборки) ---
+    capped_ids = (
+        await session.scalars(
+            select(IikoInvoicePaymentPush.invoice_id)
+            .where(
+                IikoInvoicePaymentPush.invoice_id.is_not(None),
+                IikoInvoicePaymentPush.status == "error",
+                IikoInvoicePaymentPush.attempts >= MAX_PUSH_ATTEMPTS,
+            )
+            .distinct()
+            .limit(limit)
+        )
+    ).all()
+    for inv_id in capped_ids:
+        inv = await session.get(SupplierInvoice, inv_id)
+        # скорректированные ловит категория выше; уже settled — пропускаем.
+        if inv is None or inv.iiko_correction_new_external_id is not None:
+            continue
+        if await original_payment_settled_in_iiko(session, inv):
+            continue
+        # _open idempotent: если кейс уже заведён джобом (перманентный отказ) — no-op; создаётся
+        # только для «тихого» транзиент-капа, где ветка временного сбоя кейс не заводила.
+        if await _open_iiko_payment_case(
+            session, invoice_id=inv.id, external_id=inv.external_id or "",
+            amount=Decimal(str(inv.amount or 0)),
+            reason=(
+                "исчерпан лимит авто-повторов отправки в iiko — повторите отправку или проведите "
+                "оплату вручную"
+            ),
+            reason_code="retry_cap_exhausted",
+        ):
+            result["retry_cap_exhausted"] += 1
+
+    return result
+
+
+async def retry_iiko_payment(
+    session: AsyncSession,
+    invoice_id: uuid.UUID,
+    *,
+    actor_user_id: uuid.UUID | None = None,
+) -> IikoPushResult | None:
+    """«Повторить отправку» по кейсу owner-review: снять кап/блокировку и переотправить в iiko.
+
+    Снимаем ``attempts``-кап и ошибку у пушей (kassa done-маркер удаляем — джоб переобрабо-
+    тает). Для авто-отправляемой (iiko одиночный банк-черновик) сразу проводим ``add_payment``
+    синхронно (успех закрывает кейс). Для остального (Касса и т.п.) снятие капа
+    даёт сверочному джобу переотправить, а восстановление закроет кейс (свип/джоб).
+    Возвращает :class:`IikoPushResult` синхронного пуша или ``None`` (поставлено в очередь)."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise IikoPaymentError("Накладная не найдена")
+    records = (
+        await session.scalars(
+            select(IikoInvoicePaymentPush).where(
+                IikoInvoicePaymentPush.invoice_id == invoice_id
+            )
+        )
+    ).all()
+    changed = False
+    for record in records:
+        if record.idempotency_key == f"kassa_goods_done:{invoice_id}":
+            # done-маркер исключает документ Кассы из выборки джоба — удаляем, чтобы переобработал.
+            await session.delete(record)
+            changed = True
+        elif record.status == "error" or record.attempts >= MAX_PUSH_ATTEMPTS:
+            record.attempts = 0
+            record.error = None
+            changed = True
+    if changed:
+        await session.commit()
+    if await iiko_invoice_payment_auto_sendable(session, invoice):
+        return await mirror_single_paid_iiko_invoice(
+            session, invoice_id, actor_user_id=actor_user_id
+        )
+    return None

@@ -1596,6 +1596,93 @@ async def apply_card_refund_owner_review_case(
 
 
 @router.post(
+    "/owner-review/{case_id}/retry-iiko-payment",
+    response_model=OwnerReviewActionRead,
+    dependencies=DDS_OWNER_REVIEW_PREPARE_ACCESS,
+)
+async def retry_iiko_payment_owner_review_case(
+    case_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, object]:
+    """«Повторить отправку» по кейсу «оплата в iiko не проведена»: снять кап авто-ретраев и
+    переотправить (синхронно для одиночного банк-черновика; иначе сверочный джоб добьёт в ближайшие
+    минуты). Успех закрывает кейс. Только для авто-повторяемых причин (не мультиплатёж/аванс)."""
+    case = await _pending_case_or_404(session, case_id)
+    if case.kind != "iiko_payment_unsettled":
+        raise HTTPException(status_code=400, detail="Действие только для кейсов оплаты в iiko")
+    from app.services.counterparty_iiko_payment import (
+        IIKO_UNSETTLED_RETRIABLE,
+        IikoPaymentError,
+        retry_iiko_payment,
+    )
+
+    payload = case.payload or {}
+    reason_code = payload.get("reason_code")
+    if reason_code is not None and reason_code not in IIKO_UNSETTLED_RETRIABLE:
+        raise HTTPException(
+            status_code=422,
+            detail="Эту причину нельзя авто-повторить — подтвердите оплату вручную",
+        )
+    invoice_id = payload.get("invoice_id")
+    if not invoice_id:
+        raise HTTPException(status_code=400, detail="В кейсе не указана накладная")
+    try:
+        res = await retry_iiko_payment(session, UUID(str(invoice_id)), actor_user_id=actor.user_id)
+    except IikoPaymentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await session.commit()
+    push_error = res.error if (res is not None and not res.ok) else None
+    return {
+        "case_id": case.id,
+        "status": case.status,
+        "bank_operation_id": case.bank_operation_id,
+        "iiko_payment_push_error": push_error,
+    }
+
+
+@router.post(
+    "/owner-review/{case_id}/confirm-iiko-manual",
+    response_model=OwnerReviewActionRead,
+    dependencies=DDS_OWNER_REVIEW_PREPARE_ACCESS,
+)
+async def confirm_iiko_manual_owner_review_case(
+    case_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, object]:
+    """«Оплата проведена вручную» по кейсу: человек утверждает, что платёж уже в бэк-офисе iiko —
+    пишем ok-маркер (сверочный джоб больше не шлёт) и закрываем кейс. Отказ для авто-отправляемой
+    (одиночный банк) — для неё «Повторить отправку» (вслепую глушить зеркало нельзя)."""
+    case = await _pending_case_or_404(session, case_id)
+    if case.kind != "iiko_payment_unsettled":
+        raise HTTPException(status_code=400, detail="Действие только для кейсов оплаты в iiko")
+    from app.services.counterparty_iiko_payment import (
+        IikoPaymentError,
+        mark_iiko_payment_settled_manually,
+    )
+
+    invoice_id = (case.payload or {}).get("invoice_id")
+    if not invoice_id:
+        raise HTTPException(status_code=400, detail="В кейсе не указана накладная")
+    invoice = await session.get(SupplierInvoice, UUID(str(invoice_id)))
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="Накладная не найдена")
+    try:
+        await mark_iiko_payment_settled_manually(session, invoice, actor_user_id=actor.user_id)
+    except IikoPaymentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    # mark резолвит кейс через _resolve_iiko_payment_case; подстрахуем закрытие, если ещё pending.
+    if case.status == "pending":
+        await close_reconciliation_case(
+            session, case, status="resolved",
+            resolution_payload={"reason": "settled_manually_in_iiko"},
+        )
+    await session.commit()
+    return {"case_id": case.id, "status": case.status, "bank_operation_id": case.bank_operation_id}
+
+
+@router.post(
     "/operations/{operation_id}/classify",
     response_model=OperationClassifyRead,
     dependencies=DDS_CLASSIFY_ACCESS,
