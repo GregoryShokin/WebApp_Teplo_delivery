@@ -414,6 +414,48 @@ async def test_kassa_target_payout_rejects_run_pool_reserve(
             )
 
 
+async def test_paid_run_bank_draft_not_active(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Черновик выплаты полностью оплаченной ведомости не висит «Отправлен в банк» (баг с
+    застрявшим created/updated при оплате иным путём)."""
+    import uuid as _uuid
+
+    from app.models import PayrollBankDraft, PayrollPayment
+    from app.services.payments_aggregator import _payroll_bank_draft_items
+
+    async def _draft_state(run_id: uuid.UUID) -> str:
+        async with async_session_factory() as s:
+            items = await _payroll_bank_draft_items(s)
+            return next(i.state for i in items if i.extra.get("run_id") == str(run_id))
+
+    async with async_session_factory() as session:
+        run_id, emps, _actor = await _setup_run_with_reserves(
+            session, totals=THREE, cash=Decimal("0")
+        )
+        session.add(
+            PayrollBankDraft(
+                id=_uuid.uuid4(), run_id=run_id, document_id=f"doc-{run_id}",
+                amount=Decimal("6000"), status="created", bank_provider="tbank",
+            )
+        )
+        await session.commit()
+    # Ещё не выплачено → «в банке».
+    assert await _draft_state(run_id) == "in_bank"
+
+    async with async_session_factory() as session:
+        for emp, amt in zip(emps, [Decimal("1000"), Decimal("2000"), Decimal("3000")], strict=True):
+            session.add(
+                PayrollPayment(
+                    id=_uuid.uuid4(), run_id=run_id, employee_id=emp, amount=amt,
+                    booked_amount=amt, status="paid",
+                )
+            )
+        await session.commit()
+    # Полностью выплачено → черновик историчен (paid), из активных уходит.
+    assert await _draft_state(run_id) == "paid"
+
+
 async def test_run_solvency_breakdown_is_consistent(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

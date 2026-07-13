@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -49,6 +49,8 @@ from app.models import (
     DdsArticle,
     EmailInvoiceIntake,
     PayrollBankDraft,
+    PayrollLine,
+    PayrollPayment,
     PayrollRun,
     SafeAllocation,
     SupplierInvoice,
@@ -424,6 +426,43 @@ async def _payroll_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
             )
         )
     ).all()
+
+    # Полностью ли выплачена ведомость (Σ выплат ≥ ФОТ): у таких черновик мог застрять в
+    # created/updated (оплата прошла иным путём, вебхук не перевёл в paid) — он историчен.
+    run_ids = {draft.run_id for draft, _s, _rs in rows}
+    payable_by_run: dict = {}
+    paid_by_run: dict = {}
+    if run_ids:
+        payable_by_run = dict(
+            (
+                await session.execute(
+                    select(
+                        PayrollLine.run_id,
+                        func.coalesce(func.sum(PayrollLine.total_payable), 0),
+                    )
+                    .where(PayrollLine.run_id.in_(run_ids))
+                    .group_by(PayrollLine.run_id)
+                )
+            ).all()
+        )
+        paid_by_run = dict(
+            (
+                await session.execute(
+                    select(
+                        PayrollPayment.run_id,
+                        func.coalesce(func.sum(PayrollPayment.amount), 0),
+                    )
+                    .where(PayrollPayment.run_id.in_(run_ids))
+                    .group_by(PayrollPayment.run_id)
+                )
+            ).all()
+        )
+
+    def _run_fully_paid(run_id: uuid.UUID) -> bool:
+        payable = Decimal(str(payable_by_run.get(run_id, 0) or 0))
+        paid = Decimal(str(paid_by_run.get(run_id, 0) or 0))
+        return payable > 0 and paid >= payable - Decimal("0.01")
+
     items: list[PaymentItem] = []
     for draft, summary, run_status in rows:
         status_map = {
@@ -437,6 +476,9 @@ async def _payroll_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
         # ушли) — снимаем из активных (в истории останется). Оплаченный черновик — историчен всегда.
         if run_status != "finalized" and state == "in_bank":
             state = "cancelled"
+        # Ведомость уже полностью выплачена (иным путём), а статус черновика застрял — историчен.
+        if state == "in_bank" and _run_fully_paid(draft.run_id):
+            state = "paid"
         is_admin = isinstance(summary, dict) and summary.get("kind") == "admin"
         label = PAYROLL_RESERVE_LABEL_ADMIN if is_admin else PAYROLL_RESERVE_LABEL_PRODUCTION
         items.append(
