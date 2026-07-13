@@ -210,7 +210,7 @@ async def _open_iiko_payment_case(
     (см. IIKO_UNSETTLED_REASON_CODES) для группировки/действий; ``reason`` — человекочитаемый текст.
     Обогащаем payload поставщиком/номером/датой — карточка показывает суть без доп. запросов."""
     existing = await session.scalar(
-        select(ReconciliationCase.id)
+        select(ReconciliationCase)
         .where(
             ReconciliationCase.kind == "iiko_payment_unsettled",
             ReconciliationCase.status == "pending",
@@ -219,6 +219,21 @@ async def _open_iiko_payment_case(
         .limit(1)
     )
     if existing is not None:
+        # В проде могли остаться старые ``multi_invoice``-кейсы, созданные до появления явного
+        # barter-гейта. Взаимозачёт — более сильная и полезная владельцу причина: обновляем
+        # существующую карточку на месте (без дубля), чтобы UI не продолжал советовать искать
+        # банковскую долю там, где автоматическая оплата принципиально запрещена.
+        existing_reason_code = existing.payload.get("reason_code")
+        if reason_code == "barter_counterparty" and existing_reason_code == "multi_invoice":
+            existing.payload = {
+                **existing.payload,
+                "external_id": external_id or "",
+                "amount": str(amount),
+                "reason": reason,
+                "reason_code": reason_code,
+                "retriable": False,
+            }
+            await session.commit()
         return False
     # Обогащение (только при создании — фоновый запрос, не в горячем пути): поставщик/номер/
     # дата для карточки. session.get — свежий запрос по id (не lazy-load отцепленного инстанса).

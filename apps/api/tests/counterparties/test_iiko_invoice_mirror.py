@@ -322,7 +322,9 @@ async def test_mirror_leaves_barter_multi_invoice_for_manual_review(
     Его выставляет синхронизация встречных receivable-накладных и может закрепить владелец; даже
     при точных банковских долях автоматический add_payment опасен для смешанного баланса iiko.
     """
-    await _seed_multi_invoice_draft(async_session_factory, relationship="barter")
+    await _seed_multi_invoice_draft(
+        async_session_factory, relationship="barter", with_existing_cases=True
+    )
     calls: list = []
     monkeypatch.setattr(mod, "_call_add_payment", _fake_ok(calls))
 
@@ -334,7 +336,7 @@ async def test_mirror_leaves_barter_multi_invoice_for_manual_review(
     cases = await _cases(async_session_factory, status="pending")
     assert len(cases) == 2
     assert all(case.payload.get("reason_code") == "barter_counterparty" for case in cases)
-    assert all(case.payload.get("supplier_name") == "Поставщик" for case in cases)
+    assert all("взаимозач" in case.payload.get("reason", "") for case in cases)
     assert all(case.payload.get("retriable") is False for case in cases)
 
 
