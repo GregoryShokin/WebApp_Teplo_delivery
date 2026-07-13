@@ -31,6 +31,7 @@ import anyio
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models import (
     CashflowTransaction,
@@ -701,8 +702,9 @@ async def mirror_paid_iiko_invoices(
     не gross накладной). Для мультинакладного берём по каждой накладной сумму её аллокаций,
     привязанных к банковской ДДС-проводке этого черновика: это честная доля, без пропорций и
     догадок. Нулевую долю не шлём; расхождение суммы долей с ``draft.amount`` оставляем видимым
-    owner-review кейсом. Контрагентов с ``relationship='barter'`` автоматически не зеркалим:
-    встречные продажи/возвраты смешаны с долгом поставщика и требуют ручной сверки баланса.
+    owner-review кейсом. Контрагентов с ``relationship='barter'`` или прямой бартерной активностью
+    (receivable/явная barter-role накладная) автоматически не зеркалим: встречные продажи/возвраты
+    смешаны с долгом поставщика и требуют ручной сверки баланса.
 
     Шлём ``add_payment`` на эквайринг-счёт (idempotent по ``invoice:<id>``). Ошибка по одной не
     валит остальные. Путь гашения НЕ трогаем.
@@ -722,6 +724,19 @@ async def mirror_paid_iiko_invoices(
         .correlate(CounterpartyPaymentDraft)
         .scalar_subquery()
     )
+    barter_invoice = aliased(SupplierInvoice)
+    has_barter_activity = (
+        select(barter_invoice.id)
+        .where(
+            barter_invoice.counterparty_id == SupplierInvoice.counterparty_id,
+            or_(
+                barter_invoice.direction == "receivable",
+                barter_invoice.barter_role.is_not(None),
+            ),
+        )
+        .correlate(SupplierInvoice)
+        .exists()
+    )
     rows = (
         await session.execute(
             select(
@@ -730,6 +745,7 @@ async def mirror_paid_iiko_invoices(
                 CounterpartyPaymentDraft.amount,
                 sibling_count,
                 CounterpartyPayableProfile.relationship,
+                has_barter_activity,
             )
             .join(CounterpartyPaymentDraft, CounterpartyPaymentDraft.id == SupplierInvoice.draft_id)
             .outerjoin(
@@ -754,18 +770,17 @@ async def mirror_paid_iiko_invoices(
     ).all()
 
     result = {"eligible": len(rows), "ok": 0, "skipped": 0, "error": 0, "skipped_multi": 0}
-    multi_draft_ids = {draft_id for _, draft_id, _, siblings, _ in rows if siblings > 1}
+    multi_draft_ids = {draft_id for _, draft_id, _, siblings, _, _ in rows if siblings > 1}
     multi_shares, multi_totals = await _multi_draft_bank_shares(session, multi_draft_ids)
-    multi_draft_meta: dict[
-        uuid.UUID, tuple[Decimal, str | None, tuple[uuid.UUID, str] | None]
-    ] = {}
+    multi_draft_meta: dict[uuid.UUID, tuple[Decimal, bool, tuple[uuid.UUID, str] | None]] = {}
     multi_success_anchors: dict[uuid.UUID, tuple[uuid.UUID, str]] = {}
 
-    for invoice, draft_id, draft_amount, siblings, relationship in rows:
+    for invoice, draft_id, draft_amount, siblings, relationship, barter_activity in rows:
         # Захватываем поля в локали ДО пуша: после возможного session.rollback() обращение к
         # ORM-инстансу подняло бы MissingGreenlet (lazy-IO в async) и оборвало бы весь батч.
         inv_id = invoice.id
         external_id = invoice.external_id or ""
+        requires_barter_review = relationship == "barter" or barter_activity
         payment_amount = Decimal(str(draft_amount)).quantize(Decimal("0.01"))
         if siblings > 1:
             payment_amount = multi_shares.get((draft_id, inv_id), Decimal("0.00"))
@@ -773,10 +788,10 @@ async def mirror_paid_iiko_invoices(
             anchor = meta[2] if meta is not None else None
             multi_draft_meta[draft_id] = (
                 Decimal(str(draft_amount)).quantize(Decimal("0.01")),
-                relationship,
+                requires_barter_review,
                 anchor or (inv_id, external_id),
             )
-        if siblings > 1 and relationship == "barter":
+        if siblings > 1 and requires_barter_review:
             logger.info(
                 "iiko mirror: накладная %s у взаимозачётного контрагента — ручная сверка",
                 inv_id,
@@ -898,8 +913,12 @@ async def mirror_paid_iiko_invoices(
     # пушей старые multi-кейсы уже закрыты, поэтому заводим ОДИН отдельный кейс на расхождение.
     # Свип не должен автозакрывать его только по ok-пушу накладной: само расхождение ещё не
     # разобрано.
-    for draft_id, (draft_amount, relationship, fallback_anchor) in multi_draft_meta.items():
-        if relationship == "barter":
+    for draft_id, (
+        draft_amount,
+        requires_barter_review,
+        fallback_anchor,
+    ) in multi_draft_meta.items():
+        if requires_barter_review:
             continue  # по каждой накладной уже открыт более сильный barter-кейс
         attributed = multi_totals.get(draft_id, Decimal("0.00")).quantize(Decimal("0.01"))
         discrepancy = (draft_amount - attributed).quantize(Decimal("0.01"))

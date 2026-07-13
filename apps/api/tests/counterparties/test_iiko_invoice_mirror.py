@@ -67,6 +67,7 @@ async def _seed_multi_invoice_draft(
     shares: tuple[str, str] = ("1000.00", "2000.00"),
     invoice_amounts: tuple[str, str] = ("1500.00", "2500.00"),
     allocation_source_kinds: tuple[str, str] = ("cash", "bank"),
+    barter_activity: bool = False,
     with_existing_cases: bool = False,
 ) -> list[uuid.UUID]:
     """Один банк-черновик на две накладные с честными долями из реальных аллокаций.
@@ -96,6 +97,15 @@ async def _seed_multi_invoice_draft(
         )
         session.add(txn)
         await session.flush()
+        if barter_activity:
+            await make_invoice(
+                session,
+                counterparty_id=cp.id,
+                amount="1.00",
+                source="iiko",
+                direction="receivable",
+                external_id=f"receivable-{uuid.uuid4()}",
+            )
         invoice_ids: list[uuid.UUID] = []
         for invoice_amount, share, source_kind in zip(
             invoice_amounts, shares, allocation_source_kinds, strict=True
@@ -326,6 +336,24 @@ async def test_mirror_leaves_barter_multi_invoice_for_manual_review(
     assert all(case.payload.get("reason_code") == "barter_counterparty" for case in cases)
     assert all(case.payload.get("supplier_name") == "Поставщик" for case in cases)
     assert all(case.payload.get("retriable") is False for case in cases)
+
+
+async def test_mirror_detects_barter_activity_even_when_profile_is_official(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Прямая receivable-накладная страхует устаревший профиль relationship='official'."""
+    await _seed_multi_invoice_draft(async_session_factory, barter_activity=True)
+    calls: list = []
+    monkeypatch.setattr(mod, "_call_add_payment", _fake_ok(calls))
+
+    async with async_session_factory() as session:
+        result = await mod.mirror_paid_iiko_invoices(session)
+
+    assert result["skipped_multi"] == 2 and result["ok"] == 0
+    assert calls == []
+    cases = await _cases(async_session_factory, status="pending")
+    assert len(cases) == 2
+    assert all(case.payload.get("reason_code") == "barter_counterparty" for case in cases)
 
 
 async def test_mirror_sends_honest_multi_shares_and_keeps_residual_visible(
