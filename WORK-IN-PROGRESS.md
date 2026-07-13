@@ -25,14 +25,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
-### agent-s3multi — ветка `agent/s3multi-iiko-mirror`
-- worktree: `../Teplo-agent-s3multi`
-- compose: без стека; тестовая БД `teplo_test_s3`
-- трогает: `counterparty_iiko_payment.py`, тесты зеркала iiko; при необходимости ярлыки
-  существующей owner-review панели
-- НЕ трогать другим: мультинакладное банковское зеркало add_payment и его тесты
-- статус: в работе
-
 ### agent-c — ветка `agent/c-couriers`
 - worktree: `../Teplo-agent-c`
 - compose: agent-c (API 8020 / web 5193 / pg 5452, БД `teplo`, тест `teplo_test_c`)

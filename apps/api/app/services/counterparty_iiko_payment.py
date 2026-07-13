@@ -33,9 +33,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    CashflowTransaction,
     Counterparty,
+    CounterpartyPayableProfile,
     CounterpartyPaymentDraft,
     IikoInvoicePaymentPush,
+    InvoicePaymentAllocation,
     ReconciliationCase,
     SupplierInvoice,
 )
@@ -171,7 +174,9 @@ IIKO_UNSETTLED_REASON_CODES = frozenset(
         "not_in_cloud_terminal",  # не появился за grace-окно — ретраить/ручной
         "iiko_rejected",  # перманентный отказ iiko (invalid amount и т.п.)
         "retry_cap_exhausted",  # исчерпан кап авто-ретраев транзиента — тихо выпадал из выборки
-        "multi_invoice",  # мультиплатёж — долю по одной зеркало не выводит; только ручное
+        "multi_invoice",  # мультиплатёж без честной банковской доли — только ручное
+        "multi_invoice_residual",  # сумма честных долей не совпала с суммой банк-платежа
+        "barter_counterparty",  # взаимозачёт: баланс iiko требует ручной сверки
         "paid_outside_draft",  # оплата мимо банк-черновика (аванс/наличные) — авто нельзя
         "correction_unsettled",  # накладная скорректирована, а оплата оригинала так и не дошла
     }
@@ -278,6 +283,51 @@ async def _resolve_iiko_payment_case(session: AsyncSession, invoice_id: uuid.UUI
     if cases:
         await session.commit()
     return len(cases)
+
+
+async def _multi_draft_bank_shares(
+    session: AsyncSession, draft_ids: set[uuid.UUID]
+) -> tuple[dict[tuple[uuid.UUID, uuid.UUID], Decimal], dict[uuid.UUID, Decimal]]:
+    """Вернуть честные банковские доли по накладным мультичерновиков и их суммы по черновику.
+
+    Источник истины — не ``draft.amount`` и не пропорция gross-сумм, а аллокация, привязанная к
+    ДДС-проводке именно этого черновика (``counterparty_payment/source_id=draft.id``). В текущем
+    пути банковская проводка создаёт ``source_kind='cash'`` (потому что источник — cashflow), а в
+    старых/ручных данных встречается ``bank``; связь с ДДС-проводкой однозначно подтверждает, что
+    это банковская доля. Аллокацию чужой накладной к проводке черновика не принимаем.
+    """
+    if not draft_ids:
+        return {}, {}
+    rows = (
+        await session.execute(
+            select(
+                CashflowTransaction.source_id,
+                InvoicePaymentAllocation.invoice_id,
+                func.sum(InvoicePaymentAllocation.amount),
+            )
+            .join(
+                CashflowTransaction,
+                CashflowTransaction.id == InvoicePaymentAllocation.cashflow_transaction_id,
+            )
+            .join(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
+            .where(
+                InvoicePaymentAllocation.source_kind.in_(("bank", "cash")),
+                CashflowTransaction.source_kind == "counterparty_payment",
+                CashflowTransaction.source_id.in_(draft_ids),
+                SupplierInvoice.draft_id == CashflowTransaction.source_id,
+            )
+            .group_by(CashflowTransaction.source_id, InvoicePaymentAllocation.invoice_id)
+        )
+    ).all()
+    shares: dict[tuple[uuid.UUID, uuid.UUID], Decimal] = {}
+    totals = {draft_id: Decimal("0.00") for draft_id in draft_ids}
+    for draft_id, invoice_id, amount in rows:
+        if draft_id is None:
+            continue
+        share = Decimal(str(amount or 0)).quantize(Decimal("0.01"))
+        shares[(draft_id, invoice_id)] = share
+        totals[draft_id] += share
+    return shares, totals
 
 
 class IikoPaymentError(RuntimeError):
@@ -647,11 +697,15 @@ async def mirror_paid_iiko_invoices(
     (``draft.status='paid'`` ⇒ платёж прошёл через банк, а не наличными/бартером), по которым ещё
     НЕТ пуша ok/pending и не исчерпан кап попыток.
 
-    Сумма = ``draft.amount`` (оплаченный банком остаток, не gross накладной — это исключает
-    переплату при частично предоплаченной/наличной накладной). Зеркалим только ОДНОНАКЛАДНЫЕ
-    черновики: для мультинакладного честная пер-накладная доля из draft.amount не выводится →
-    оставляем на ручную сверку. Шлём ``add_payment`` на эквайринг-счёт (idempotent по
-    ``invoice:<id>``). Ошибка по одной не валит остальные. Путь гашения НЕ трогаем.
+    Для однонакладного черновика сумма по-прежнему = ``draft.amount`` (оплаченный банком остаток,
+    не gross накладной). Для мультинакладного берём по каждой накладной сумму её аллокаций,
+    привязанных к банковской ДДС-проводке этого черновика: это честная доля, без пропорций и
+    догадок. Нулевую долю не шлём; расхождение суммы долей с ``draft.amount`` оставляем видимым
+    owner-review кейсом. Контрагентов с ``relationship='barter'`` автоматически не зеркалим:
+    встречные продажи/возвраты смешаны с долгом поставщика и требуют ручной сверки баланса.
+
+    Шлём ``add_payment`` на эквайринг-счёт (idempotent по ``invoice:<id>``). Ошибка по одной не
+    валит остальные. Путь гашения НЕ трогаем.
     """
     blocked_invoice_ids = select(IikoInvoicePaymentPush.invoice_id).where(
         IikoInvoicePaymentPush.invoice_id.is_not(None),
@@ -660,7 +714,8 @@ async def mirror_paid_iiko_invoices(
             IikoInvoicePaymentPush.attempts >= MAX_PUSH_ATTEMPTS,
         ),
     )
-    # Число накладных у черновика — чтобы зеркалить только однонакладные (draft.amount = банк-доля).
+    # Число накладных у черновика: для одной draft.amount и есть банковская доля, для нескольких
+    # доли ниже читаются из InvoicePaymentAllocation, привязанных к ДДС-проводке черновика.
     sibling_count = (
         select(func.count(SupplierInvoice.id))
         .where(SupplierInvoice.draft_id == CounterpartyPaymentDraft.id)
@@ -669,8 +724,18 @@ async def mirror_paid_iiko_invoices(
     )
     rows = (
         await session.execute(
-            select(SupplierInvoice, CounterpartyPaymentDraft.amount, sibling_count)
+            select(
+                SupplierInvoice,
+                CounterpartyPaymentDraft.id,
+                CounterpartyPaymentDraft.amount,
+                sibling_count,
+                CounterpartyPayableProfile.relationship,
+            )
             .join(CounterpartyPaymentDraft, CounterpartyPaymentDraft.id == SupplierInvoice.draft_id)
+            .outerjoin(
+                CounterpartyPayableProfile,
+                CounterpartyPayableProfile.counterparty_id == SupplierInvoice.counterparty_id,
+            )
             .where(
                 SupplierInvoice.source == "iiko",
                 SupplierInvoice.external_id.is_not(None),
@@ -689,25 +754,54 @@ async def mirror_paid_iiko_invoices(
     ).all()
 
     result = {"eligible": len(rows), "ok": 0, "skipped": 0, "error": 0, "skipped_multi": 0}
-    for invoice, draft_amount, siblings in rows:
+    multi_draft_ids = {draft_id for _, draft_id, _, siblings, _ in rows if siblings > 1}
+    multi_shares, multi_totals = await _multi_draft_bank_shares(session, multi_draft_ids)
+    multi_draft_meta: dict[
+        uuid.UUID, tuple[Decimal, str | None, tuple[uuid.UUID, str] | None]
+    ] = {}
+    multi_success_anchors: dict[uuid.UUID, tuple[uuid.UUID, str]] = {}
+
+    for invoice, draft_id, draft_amount, siblings, relationship in rows:
         # Захватываем поля в локали ДО пуша: после возможного session.rollback() обращение к
         # ORM-инстансу подняло бы MissingGreenlet (lazy-IO в async) и оборвало бы весь батч.
         inv_id = invoice.id
         external_id = invoice.external_id or ""
-        if siblings != 1:
-            # Мультинакладный черновик: честная пер-накладная доля из draft.amount не выводится
-            # (до Этапа 3). Не молчим — заводим видимый кейс (ручное подтверждение), иначе неоплата
-            # в iiko терялась бы (так завис «Мяснов»). Idempotent по накладной.
+        payment_amount = Decimal(str(draft_amount)).quantize(Decimal("0.01"))
+        if siblings > 1:
+            payment_amount = multi_shares.get((draft_id, inv_id), Decimal("0.00"))
+            meta = multi_draft_meta.get(draft_id)
+            anchor = meta[2] if meta is not None else None
+            multi_draft_meta[draft_id] = (
+                Decimal(str(draft_amount)).quantize(Decimal("0.01")),
+                relationship,
+                anchor or (inv_id, external_id),
+            )
+        if siblings > 1 and relationship == "barter":
             logger.info(
-                "iiko mirror: накладная %s в мультинакладном черновике — пропуск (ручная сверка)",
+                "iiko mirror: накладная %s у взаимозачётного контрагента — ручная сверка",
                 inv_id,
             )
             result["skipped_multi"] += 1
             await _open_iiko_payment_case(
-                session, invoice_id=inv_id, external_id=external_id, amount=draft_amount,
+                session, invoice_id=inv_id, external_id=external_id, amount=payment_amount,
                 reason=(
-                    "платёж закрывает несколько накладных — долю по одной зеркало не проводит "
-                    "автоматически, проведите оплату в iiko вручную"
+                    "контрагент работает по взаимозачёту: к его долгу в iiko примешаны встречные "
+                    "продажи и возвраты — автоматическая оплата отключена, сверьте итоговый баланс"
+                ),
+                reason_code="barter_counterparty",
+            )
+            continue
+        if siblings > 1 and payment_amount <= 0:
+            logger.info(
+                "iiko mirror: у накладной %s нет подтверждённой банковской доли — ручная сверка",
+                inv_id,
+            )
+            result["skipped_multi"] += 1
+            await _open_iiko_payment_case(
+                session, invoice_id=inv_id, external_id=external_id, amount=payment_amount,
+                reason=(
+                    "для этой накладной в банковском платеже нет подтверждённой доли — "
+                    "автоматическая оплата не отправлена, проверьте способ её погашения"
                 ),
                 reason_code="multi_invoice",
             )
@@ -716,7 +810,7 @@ async def mirror_paid_iiko_invoices(
             res = await push_invoice_payment_to_iiko(
                 session,
                 external_id=external_id,
-                amount=draft_amount,
+                amount=payment_amount,
                 account_id=IIKO_ACQUIRING_ACCOUNT,
                 idempotency_key=f"invoice:{inv_id}",
                 invoice_id=inv_id,
@@ -729,18 +823,23 @@ async def mirror_paid_iiko_invoices(
         if res.skipped:
             if res.ok:
                 result["skipped"] += 1
+                await _resolve_iiko_payment_case(session, inv_id)
+                if siblings > 1:
+                    multi_success_anchors.setdefault(draft_id, (inv_id, external_id))
             else:
                 # осиротевший pending (процесс упал между commit pending и финализацией) — сам
                 # не переотправится, нужен ручной разбор, иначе неоплата в iiko потерялась бы тихо.
                 result["error"] += 1
                 await _open_iiko_payment_case(
-                    session, invoice_id=inv_id, external_id=external_id, amount=draft_amount,
+                    session, invoice_id=inv_id, external_id=external_id, amount=payment_amount,
                     reason="осиротевший pending-пуш add_payment — нужен ручной разбор",
                     reason_code="orphaned_pending",
                 )
         elif res.ok:
             result["ok"] += 1
             await _resolve_iiko_payment_case(session, inv_id)  # оплата дошла — снять висящий кейс
+            if siblings > 1:
+                multi_success_anchors.setdefault(draft_id, (inv_id, external_id))
             logger.info(
                 "iiko mirror: оплата накладной %s (%s) отправлена в iiko", inv_id, external_id
             )
@@ -756,7 +855,7 @@ async def mirror_paid_iiko_invoices(
                 # add_payment пройдёт, когда документ доедет в Cloud. Кейс — для видимости; ретрай
                 # следующим проходом (attempts для not-found не капится).
                 await _open_iiko_payment_case(
-                    session, invoice_id=inv_id, external_id=external_id, amount=draft_amount,
+                    session, invoice_id=inv_id, external_id=external_id, amount=payment_amount,
                     reason=(
                         "документ ещё не виден в iiko Cloud (рассинхрон iikoServer↔Cloud) — "
                         "оплата дойдёт автоматически после синхронизации"
@@ -771,7 +870,7 @@ async def mirror_paid_iiko_invoices(
                 # компенсируется и сам до капа не дойдёт — блокируем ретраи явно.
                 await _cap_push_attempts(session, idempotency_key=f"invoice:{inv_id}")
                 await _open_iiko_payment_case(
-                    session, invoice_id=inv_id, external_id=external_id, amount=draft_amount,
+                    session, invoice_id=inv_id, external_id=external_id, amount=payment_amount,
                     reason="документ не появился в iiko Cloud за отведённое окно — ручной разбор",
                     reason_code="not_in_cloud_terminal",
                 )
@@ -785,7 +884,7 @@ async def mirror_paid_iiko_invoices(
                     "iiko mirror: iiko перманентно отклонил накладную %s: %s", inv_id, res.error
                 )
                 await _open_iiko_payment_case(
-                    session, invoice_id=inv_id, external_id=external_id, amount=draft_amount,
+                    session, invoice_id=inv_id, external_id=external_id, amount=payment_amount,
                     reason=res.error or f"HTTP {res.status_code}",
                     reason_code="iiko_rejected",
                 )
@@ -793,6 +892,35 @@ async def mirror_paid_iiko_invoices(
             # временный сбой (429 / 5xx / сеть) — кап доберётся на следующих проходах
             result["error"] += 1
             logger.warning("iiko mirror: временный сбой накладной %s: %s", inv_id, res.error)
+
+    # «Не угадывай»: даже если честные доли удалось отправить, их сумма может не совпасть с
+    # draft.amount (остаток закрыт авансом/наличными/зачётом либо данные неполны). После успешных
+    # пушей старые multi-кейсы уже закрыты, поэтому заводим ОДИН отдельный кейс на расхождение.
+    # Свип не должен автозакрывать его только по ok-пушу накладной: само расхождение ещё не
+    # разобрано.
+    for draft_id, (draft_amount, relationship, fallback_anchor) in multi_draft_meta.items():
+        if relationship == "barter":
+            continue  # по каждой накладной уже открыт более сильный barter-кейс
+        attributed = multi_totals.get(draft_id, Decimal("0.00")).quantize(Decimal("0.01"))
+        discrepancy = (draft_amount - attributed).quantize(Decimal("0.01"))
+        if discrepancy == 0:
+            continue
+        anchor = multi_success_anchors.get(draft_id) or fallback_anchor
+        if anchor is None:
+            continue
+        anchor_id, anchor_external_id = anchor
+        await _open_iiko_payment_case(
+            session,
+            invoice_id=anchor_id,
+            external_id=anchor_external_id,
+            amount=abs(discrepancy),
+            reason=(
+                f"сумма подтверждённых банковских долей по накладным ({attributed} ₽) "
+                f"не совпадает с суммой платежа ({draft_amount} ₽); расхождение "
+                f"{abs(discrepancy)} ₽ не распределено автоматически — сверьте его вручную"
+            ),
+            reason_code="multi_invoice_residual",
+        )
     return result
 
 
@@ -1304,6 +1432,10 @@ async def sweep_unsettled_iiko_payments(
     ).all()
     resolved_any = False
     for case in pending:
+        # Ок-пуши честных долей не доказывают, что разобрано расхождение всего банк-платежа.
+        # Такой кейс закрывает только человек после сверки; иначе свип молча спрятал бы остаток.
+        if (case.payload or {}).get("reason_code") == "multi_invoice_residual":
+            continue
         inv_id_raw = (case.payload or {}).get("invoice_id")
         if not inv_id_raw:
             continue

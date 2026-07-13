@@ -269,6 +269,8 @@ function OwnerReviewCard({
   // Кейс «оплата в iiko не проведена»: своя карточка (поставщик/сумма/дата/причина) и действия.
   const isIikoUnsettled = item.kind === "iiko_payment_unsettled";
   const iikoRetriable = isIikoUnsettled && item.payload?.retriable === true;
+  const isMultiInvoiceResidual =
+    isIikoUnsettled && item.payload?.reason_code === "multi_invoice_residual";
   const payloadText = (key: string) => {
     const value = item.payload?.[key];
     return value == null ? "—" : String(value);
@@ -485,10 +487,13 @@ function OwnerReviewCard({
           </>
         ) : item.kind === "iiko_payment_unsettled" ? (
           <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
-            У нас накладная оплачена, а в iiko оплата не отражена.{" "}
-            {iikoRetriable
-              ? "Повторите отправку — или, если оплата уже проведена в бэк-офисе iiko вручную, отметьте это."
-              : "Проведите оплату в iiko вручную (аванс/наличные/мультиплатёж авто не уходят) и отметьте, что она проведена."}
+            {isMultiInvoiceResidual
+              ? "Подтверждённые банковские доли уже отправлены в iiko. Не распределяйте расхождение вслепую: сверьте банк, авансы, наличные и взаимозачёт, затем отметьте кейс разобранным."
+              : `У нас накладная оплачена, а в iiko оплата не отражена. ${
+                  iikoRetriable
+                    ? "Повторите отправку — или, если оплата уже проведена в бэк-офисе iiko вручную, отметьте это."
+                    : "Проведите оплату в iiko вручную после сверки и отметьте, что она проведена."
+                }`}
           </div>
         ) : (
           <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
@@ -550,12 +555,12 @@ function OwnerReviewCard({
                   {confirmIikoManualMutation.isPending ? (
                     <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
                   ) : null}
-                  Оплата проведена вручную
+                  {isMultiInvoiceResidual ? "Расхождение разобрано" : "Оплата проведена вручную"}
                 </Button>
               </>
             ) : null}
-            {/* Для iiko-кейсов «Отложить» бесполезна: свип пере-создаст кейс на реально недошедшую
-                оплату. Валидные действия — «Повторить отправку» / «Оплата проведена вручную». */}
+            {/* Для iiko-кейсов «Отложить» бесполезна: свип пере-создаст реально недошедшую оплату,
+                а неразобранное расхождение нельзя скрывать. Валидны действия выше по причине. */}
             {isIikoUnsettled ? null : (
               <Button disabled={isBusy} onClick={() => dismissMutation.mutate()} variant="ghost">
                 Отложить
@@ -614,6 +619,10 @@ function iikoReasonLabel(code: string) {
   switch (code) {
     case "multi_invoice":
       return "Мультиплатёж";
+    case "multi_invoice_residual":
+      return "Расхождение мультиплатежа";
+    case "barter_counterparty":
+      return "Взаимозачёт";
     case "paid_outside_draft":
       return "Мимо банк-черновика";
     case "correction_unsettled":
