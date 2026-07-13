@@ -7,8 +7,8 @@
 ``comment`` — необязательная причина недоплаты. Существующие оплаченные строки помечаем
 как полностью забронированные (booked_amount = amount).
 
-Revision ID: 0184_payroll_partial_payment
-Revises: 0183_draft_topup_only
+Revision ID: 0185_payroll_partial_payment
+Revises: 0184_invoice_price_control
 Create Date: 2026-07-12
 """
 
@@ -18,8 +18,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0184_payroll_partial_payment"
-down_revision = "0183_draft_topup_only"
+revision = "0185_payroll_partial_payment"
+down_revision = "0184_invoice_price_control"
 branch_labels = None
 depends_on = None
 

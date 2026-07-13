@@ -12,8 +12,8 @@
 резерва на (ведомость, локация) — один безналичный + один наличный пул, с возможностью
 пересборки после дефинализации (отменённые исключены из уникума).
 
-Revision ID: 0185_payroll_reserve_run_link
-Revises: 0184_payroll_partial_payment
+Revision ID: 0186_payroll_reserve_run_link
+Revises: 0185_payroll_partial_payment
 Create Date: 2026-07-12
 """
 
@@ -23,8 +23,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0185_payroll_reserve_run_link"
-down_revision = "0184_payroll_partial_payment"
+revision = "0186_payroll_reserve_run_link"
+down_revision = "0185_payroll_partial_payment"
 branch_labels = None
 depends_on = None
 
