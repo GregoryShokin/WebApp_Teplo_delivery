@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -23,6 +23,7 @@ from app.models import (
     PayrollPeriod,
     PayrollRun,
     PayrollRunEvent,
+    SafeAllocation,
     Wallet,
 )
 from app.services.bank_payment_status import classify_payment_status
@@ -86,12 +87,33 @@ class PayoutExpenseResult:
     booked_total: Decimal = Decimal("0")
 
 
+@dataclass(frozen=True, slots=True)
+class PayrollFundingSource:
+    id: uuid.UUID | None
+    code: str
+    name: str
+    kind: str
+    provider: str | None
+    balance: Decimal
+    reserved_other: Decimal
+    available: Decimal
+    is_configured: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class PayrollRunFunding:
+    run_id: uuid.UUID
+    cash_sources: tuple[PayrollFundingSource, ...]
+    bank_sources: tuple[PayrollFundingSource, ...]
+
+
 async def set_run_payout_cash(
     session: AsyncSession,
     run_id: uuid.UUID,
     *,
     amount_cash: Decimal,
     cash_wallet_code: str | None = None,
+    bank_provider: str | None = None,
     actor_user_id: uuid.UUID | None,
 ) -> PayrollRun:
     """Set the run-level cash portion of the payroll and the cash wallet it is paid from.
@@ -112,9 +134,12 @@ async def set_run_payout_cash(
     elif cash > 0 and _uses_safe_payout(run):
         # Сейф-модель разносит наличную часть в ДДС (списание с наличного кошелька при
         # «Выплатить»), поэтому наличный счёт обязателен (Сейф / Торговая касса Черникова).
-        raise PayrollConflictError(
-            "Укажите наличный счёт (Сейф или Торговая касса Черникова)"
-        )
+        raise PayrollConflictError("Укажите наличный счёт (Сейф или Торговая касса Черникова)")
+
+    if wallet is not None:
+        await _ensure_cash_source_funds(session, run, wallet, cash)
+    if bank_provider is not None:
+        await _ensure_bank_source_funds(session, bank_provider, _money(total - cash))
 
     run.payout_cash_total = cash
     run.payout_cash_wallet_id = wallet.id if wallet is not None else None
@@ -535,8 +560,10 @@ async def book_payout_expense_for_employees(
                     )
                 )
                 # iiko-изъятие «Выдача депозита» — только наличная часть выдачи с ТК Черникова.
-                if is_deposit and cash_wallet is not None and (
-                    cash_wallet.code == DEPOSIT_PAYOUT_TK_WALLET_CODE
+                if (
+                    is_deposit
+                    and cash_wallet is not None
+                    and (cash_wallet.code == DEPOSIT_PAYOUT_TK_WALLET_CODE)
                 ):
                     deposit_iiko_amount += alloc.cash
     await session.flush()
@@ -572,6 +599,8 @@ async def create_or_update_run_draft(
             # создаются по «Выплатить» (расход с наличного кошелька), не на черновике.
             return await _get_bank_draft(session, run_id)
         raise PayrollConflictError("РС-часть ведомости равна нулю")
+
+    await _ensure_bank_source_funds(session, provider, total_account)
 
     existing = await _get_bank_draft(session, run_id)
     is_deleted_retry = existing is not None and existing.status == "deleted"
@@ -692,9 +721,7 @@ async def get_run_payout_allocation(session: AsyncSession, run_id: uuid.UUID) ->
     deposit_total = await _run_deposit_payout_total(session, run_id)
     grand_total = _money(payable + deposit_total)
     cash = min(_money(run.payout_cash_total), grand_total)
-    lines = (
-        await session.scalars(select(PayrollLine).where(PayrollLine.run_id == run_id))
-    ).all()
+    lines = (await session.scalars(select(PayrollLine).where(PayrollLine.run_id == run_id))).all()
     default_article = (
         DDS_ARTICLE_ADMIN_PAYROLL if _is_admin_run(run) else DDS_ARTICLE_PRODUCTION_PAYROLL
     )
@@ -749,6 +776,185 @@ async def list_cash_wallets(session: AsyncSession) -> list[Wallet]:
             )
         ).all()
     )
+
+
+async def get_run_funding_sources(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+) -> PayrollRunFunding:
+    """Остатки источников сплита с учётом чужих активных резервов."""
+    run = await _get_payout_run(session, run_id)
+    cash_wallets = await list_cash_wallets(session)
+    cash_sources = tuple(
+        [await _cash_funding_source(session, run, wallet) for wallet in cash_wallets]
+    )
+    bank_sources = tuple(
+        [await _bank_funding_source(session, provider) for provider in ("tbank", "sber")]
+    )
+    return PayrollRunFunding(
+        run_id=run.id,
+        cash_sources=cash_sources,
+        bank_sources=bank_sources,
+    )
+
+
+async def _wallet_ledger_balance(session: AsyncSession, wallet: Wallet) -> Decimal:
+    """Баланс ровно по тем правилам, которыми ДДС строит плитки счетов."""
+    if wallet.type not in ("bank", "bank_account"):
+        from app.services.kassa.payouts import kassa_balance
+
+        return _money(await kassa_balance(session, wallet))
+
+    rows = await session.execute(
+        select(
+            BankOperation.direction,
+            func.coalesce(func.sum(BankOperation.amount), 0),
+        )
+        .where(
+            BankOperation.account_id == wallet.account_id,
+            BankOperation.classification_status != "excluded",
+            or_(
+                wallet.opening_balance_date is None,
+                BankOperation.operation_date > wallet.opening_balance_date,
+            ),
+        )
+        .group_by(BankOperation.direction)
+    )
+    balance = Decimal(str(wallet.opening_balance or 0))
+    for direction, total in rows:
+        amount = Decimal(total)
+        balance += amount if direction == "in" else -amount
+    return _money(balance)
+
+
+async def _reserved_by_other_payments(
+    session: AsyncSession,
+    *,
+    wallet_id: uuid.UUID,
+    run_id: uuid.UUID,
+) -> Decimal:
+    from app.services.banking.safe_allocations import ACTIVE_RESERVE_STATUSES
+
+    outstanding = func.sum(SafeAllocation.amount - SafeAllocation.amount_paid)
+    total = await session.scalar(
+        select(func.coalesce(outstanding, 0)).where(
+            SafeAllocation.wallet_id == wallet_id,
+            SafeAllocation.status.in_(ACTIVE_RESERVE_STATUSES),
+            or_(
+                SafeAllocation.source_run_id.is_(None),
+                SafeAllocation.source_run_id != run_id,
+            ),
+        )
+    )
+    return _money(total or 0)
+
+
+async def _cash_funding_source(
+    session: AsyncSession,
+    run: PayrollRun,
+    wallet: Wallet,
+) -> PayrollFundingSource:
+    balance = await _wallet_ledger_balance(session, wallet)
+    reserved_other = await _reserved_by_other_payments(session, wallet_id=wallet.id, run_id=run.id)
+    return PayrollFundingSource(
+        id=wallet.id,
+        code=wallet.code,
+        name=wallet.name,
+        kind="cash",
+        provider=None,
+        balance=balance,
+        reserved_other=reserved_other,
+        available=max(Decimal("0"), _money(balance - reserved_other)),
+    )
+
+
+async def _payer_wallet_for_provider(
+    session: AsyncSession,
+    provider: str,
+) -> Wallet | None:
+    if provider not in ("tbank", "sber"):
+        raise PayrollConflictError("Неизвестный банк для выплаты")
+    settings = get_settings()
+    payer_account = payer_account_for(settings, provider)
+    wallet: Wallet | None = None
+    if payer_account:
+        wallet = await session.scalar(
+            select(Wallet)
+            .join(Account, Account.id == Wallet.account_id)
+            .where(
+                Account.account_number == payer_account,
+                Account.bank_code == provider,
+                Wallet.status == "active",
+            )
+        )
+    if wallet is None and settings.teplo_bank_client_mode == "mock":
+        default_code = "sber_main" if provider == "sber" else "tbank_main"
+        wallet = await session.scalar(
+            select(Wallet).where(Wallet.code == default_code, Wallet.status == "active")
+        )
+    return wallet
+
+
+async def _bank_funding_source(
+    session: AsyncSession,
+    provider: str,
+) -> PayrollFundingSource:
+    wallet = await _payer_wallet_for_provider(session, provider)
+    provider_name = "Сбербанк" if provider == "sber" else "Тинькофф"
+    if wallet is None:
+        return PayrollFundingSource(
+            id=None,
+            code=provider,
+            name=provider_name,
+            kind="bank",
+            provider=provider,
+            balance=Decimal("0"),
+            reserved_other=Decimal("0"),
+            available=Decimal("0"),
+            is_configured=False,
+        )
+    balance = await _wallet_ledger_balance(session, wallet)
+    return PayrollFundingSource(
+        id=wallet.id,
+        code=wallet.code,
+        name=wallet.name,
+        kind="bank",
+        provider=provider,
+        balance=balance,
+        reserved_other=Decimal("0"),
+        available=max(Decimal("0"), balance),
+    )
+
+
+async def _ensure_cash_source_funds(
+    session: AsyncSession,
+    run: PayrollRun,
+    wallet: Wallet,
+    amount: Decimal,
+) -> None:
+    source = await _cash_funding_source(session, run, wallet)
+    if amount > source.available:
+        raise PayrollConflictError(
+            f"На счёте «{source.name}» доступно {money_text(source.available)} ₽, "
+            f"а наличными указано {money_text(amount)} ₽"
+        )
+
+
+async def _ensure_bank_source_funds(
+    session: AsyncSession,
+    provider: str,
+    amount: Decimal,
+) -> None:
+    if amount <= 0:
+        return
+    source = await _bank_funding_source(session, provider)
+    if not source.is_configured:
+        raise PayrollConflictError(f"Не настроен счёт «{source.name}» для выплаты зарплаты")
+    if amount > source.available:
+        raise PayrollConflictError(
+            f"На счёте «{source.name}» доступно {money_text(source.available)} ₽, "
+            f"а в банковскую часть указано {money_text(amount)} ₽"
+        )
 
 
 async def apply_run_payout_delta(

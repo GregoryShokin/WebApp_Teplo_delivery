@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -130,6 +130,45 @@ class PayrollRunPayoutCashPatch(BaseModel):
     # Код наличного кошелька (Сейф / Торговая касса Черникова). Обязателен, если
     # наличная сумма больше нуля; игнорируется при нулевой наличной части.
     cash_wallet_code: str | None = None
+    # Нужен для атомарной проверки обеих частей сплита: наличной и остатка,
+    # который уйдёт черновиком с выбранного банковского счёта.
+    bank_provider: Literal["tbank", "sber"] = "tbank"
+
+
+class PayrollPayoutCashflowRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    wallet_id: uuid.UUID
+    wallet_code: str
+    wallet_name: str
+    amount: Decimal
+    operation_date: date
+    quality_status: str
+    article_code: str | None = None
+    article_name: str | None = None
+    purpose: str | None = None
+
+
+class PayrollPayoutWalletCorrectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    transaction_ids: list[uuid.UUID] = Field(min_length=1)
+    target_wallet_code: str
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class PayrollPayoutWalletCorrectionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    run_id: uuid.UUID
+    transaction_ids: tuple[uuid.UUID, ...]
+    source_wallet_id: uuid.UUID
+    source_wallet_name: str
+    target_wallet_id: uuid.UUID
+    target_wallet_code: str
+    target_wallet_name: str
+    total_amount: Decimal
 
 
 class PayrollPoolPayoutRequest(BaseModel):
@@ -154,6 +193,36 @@ class PayrollPoolPayoutResponse(BaseModel):
     overflow_reserve_id: uuid.UUID | None = None
     overflow_booked: Decimal
     employees_paid: int
+
+
+class PayrollReserveTransferRequest(BaseModel):
+    """Перенос выбранной части пула между Сейфом и кассой."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    selected_ids: list[uuid.UUID] = Field(min_length=1)
+    boundary_id: uuid.UUID | None = None
+    operation_date: date
+
+
+class PayrollReserveTransferAllocationRead(BaseModel):
+    employee_id: uuid.UUID
+    amount: Decimal
+
+
+class PayrollReserveTransferResponse(BaseModel):
+    source_reserve_id: uuid.UUID
+    destination_reserve_id: uuid.UUID
+    transfer_id: uuid.UUID
+    amount: Decimal
+    destination_location: str
+    allocations: list[PayrollReserveTransferAllocationRead]
+
+
+class PayrollReserveCancelResponse(BaseModel):
+    reserve_id: uuid.UUID
+    released: Decimal
+    status: str
 
 
 class PayrollReserveEmployeePayRequest(BaseModel):
@@ -233,6 +302,24 @@ class CashWalletRead(BaseModel):
     id: uuid.UUID
     code: str
     name: str
+
+
+class PayrollFundingSourceRead(BaseModel):
+    id: uuid.UUID | None = None
+    code: str
+    name: str
+    kind: Literal["cash", "bank"]
+    provider: Literal["tbank", "sber"] | None = None
+    balance: Decimal
+    reserved_other: Decimal
+    available: Decimal
+    is_configured: bool = True
+
+
+class PayrollRunFundingRead(BaseModel):
+    run_id: uuid.UUID
+    cash_sources: list[PayrollFundingSourceRead]
+    bank_sources: list[PayrollFundingSourceRead]
 
 
 class PayrollBankDraftRead(BaseModel):

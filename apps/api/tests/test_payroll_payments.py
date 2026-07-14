@@ -218,6 +218,42 @@ async def test_unmark_payment_deletes_row_and_line_returns_pending(
         assert {line.paid_amount for line in lines} == {None}
 
 
+async def test_unmark_booked_payment_is_rejected(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Нельзя удалить PayrollPayment, если по нему уже проведён расход ДДС."""
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        _period, run, employees = await create_payroll_run(
+            session,
+            status="finalized",
+            period_status="finalized",
+        )
+        payment = await mark_payment(
+            session,
+            run.id,
+            employees[0].id,
+            paid_at=date(2026, 5, 27),
+            method="transfer",
+            actor_user_id=actor.id,
+        )
+        payment.booked_amount = payment.amount
+        await session.commit()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await payroll_routes.delete_mark_payment(
+                run.id,
+                employees[0].id,
+                session,
+                CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
+            )
+
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.detail == "Проведённую выплату нельзя снять без финансового отката"
+        saved = await session.get(PayrollPayment, payment.id)
+        assert saved is not None and saved.booked_amount == payment.amount
+
+
 async def test_mark_all_payments_marks_only_unpaid_employees(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -403,9 +439,7 @@ async def test_bulk_mark_selected_marks_only_chosen_without_method(
         payments = {
             payment.employee_id: payment
             for payment in (
-                await session.scalars(
-                    select(PayrollPayment).where(PayrollPayment.run_id == run.id)
-                )
+                await session.scalars(select(PayrollPayment).where(PayrollPayment.run_id == run.id))
             ).all()
         }
         assert set(payments) == {employees[0].id, employees[2].id}

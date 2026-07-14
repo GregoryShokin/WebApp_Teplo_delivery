@@ -48,15 +48,23 @@ from app.schemas.payroll import (
     PayrollPaymentsMarkAllResponse,
     PayrollPayoutAllocationRead,
     PayrollPayoutApplyDeltasResponse,
+    PayrollPayoutCashflowRead,
     PayrollPayoutDeltaRead,
     PayrollPayoutDraftsResponse,
+    PayrollPayoutWalletCorrectionRead,
+    PayrollPayoutWalletCorrectionRequest,
     PayrollPeriodRead,
     PayrollPersonalReportRead,
     PayrollPoolPayoutRequest,
     PayrollPoolPayoutResponse,
+    PayrollReserveCancelResponse,
     PayrollReserveEmployeePayRequest,
     PayrollReserveEmployeePayResponse,
+    PayrollReserveTransferAllocationRead,
+    PayrollReserveTransferRequest,
+    PayrollReserveTransferResponse,
     PayrollRunCreate,
+    PayrollRunFundingRead,
     PayrollRunPayoutCashPatch,
     PayrollRunRead,
     PayrollRunUnfinalize,
@@ -95,6 +103,10 @@ from app.services.payroll_payments import (
     mark_payments_selected,
     unmark_payment,
 )
+from app.services.payroll_payout_corrections import (
+    correct_payroll_payout_wallet,
+    list_payroll_payout_cashflows,
+)
 from app.services.payroll_payouts import (
     apply_payout_deltas,
     apply_run_payout_delta,
@@ -102,6 +114,7 @@ from app.services.payroll_payouts import (
     create_or_update_run_draft,
     get_payout_deltas,
     get_run_bank_draft,
+    get_run_funding_sources,
     get_run_payout_allocation,
     get_run_payout_delta,
     list_cash_wallets,
@@ -110,9 +123,11 @@ from app.services.payroll_payouts import (
 from app.services.payroll_personal_report import build_personal_report
 from app.services.payroll_reserves import (
     PoolPayoutResult,
+    cancel_run_reserve,
     pay_employee_from_reserve,
     pay_run_from_pool,
     run_solvency,
+    transfer_run_reserve,
 )
 from app.services.payroll_runner import (
     PayrollConflictError,
@@ -615,6 +630,7 @@ async def patch_run_payout_cash(
             run_id,
             amount_cash=payload.amount_cash,
             cash_wallet_code=payload.cash_wallet_code,
+            bank_provider=payload.bank_provider,
             actor_user_id=actor.user_id,
         )
         return await get_run(session, run_id)
@@ -622,6 +638,52 @@ async def patch_run_payout_cash(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PayrollConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.get(
+    "/runs/{run_id}/payout-cashflows",
+    response_model=list[PayrollPayoutCashflowRead],
+    dependencies=PAYROLL_RUNS_MARK_PAID_ACCESS,
+)
+async def get_run_payout_cashflows(
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[PayrollPayoutCashflowRead]:
+    try:
+        rows = await list_payroll_payout_cashflows(session, run_id)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return [PayrollPayoutCashflowRead.model_validate(row) for row in rows]
+
+
+@router.post(
+    "/runs/{run_id}/payout-cashflows/correct-wallet",
+    response_model=PayrollPayoutWalletCorrectionRead,
+    dependencies=PAYROLL_RUNS_MARK_PAID_ACCESS,
+)
+async def post_correct_run_payout_wallet(
+    run_id: uuid.UUID,
+    payload: PayrollPayoutWalletCorrectionRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollPayoutWalletCorrectionRead:
+    channel_perm = payout_channel_permission(payload.target_wallet_code)
+    if channel_perm is not None:
+        ensure_permission(actor, channel_perm)
+    try:
+        result = await correct_payroll_payout_wallet(
+            session,
+            run_id,
+            transaction_ids=payload.transaction_ids,
+            target_wallet_code=payload.target_wallet_code,
+            reason=payload.reason,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return PayrollPayoutWalletCorrectionRead.model_validate(result)
 
 
 @router.post(
@@ -672,9 +734,7 @@ async def get_employee_recoveries(
 ) -> dict:
     """Детализация удержаний сотрудника в ведомости (окно «Удержания сотрудника»)."""
     try:
-        return await get_employee_recovery_detail(
-            session, run_id=run_id, employee_id=employee_id
-        )
+        return await get_employee_recovery_detail(session, run_id=run_id, employee_id=employee_id)
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -771,6 +831,23 @@ async def get_cash_wallets_endpoint(
 ) -> list[CashWalletRead]:
     """Наличные кошельки для выбора при сплите (Сейф, Торговая касса Черникова)."""
     return await list_cash_wallets(session)
+
+
+@router.get(
+    "/runs/{run_id}/funding-sources",
+    response_model=PayrollRunFundingRead,
+    dependencies=PAYROLL_RUNS_BANK_DRAFT_ACCESS,
+)
+async def get_run_funding_sources_endpoint(
+    run_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> PayrollRunFundingRead:
+    try:
+        return await get_run_funding_sources(session, run_id)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.get(
@@ -1080,6 +1157,75 @@ async def post_pay_run_from_pool(
     except PayrollConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return _pool_payout_response(result)
+
+
+@router.post(
+    "/reserves/{reserve_id}/transfer",
+    response_model=PayrollReserveTransferResponse,
+    dependencies=PAYROLL_RUNS_MARK_PAID_ACCESS,
+)
+async def post_transfer_run_reserve(
+    reserve_id: uuid.UUID,
+    payload: PayrollReserveTransferRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollReserveTransferResponse:
+    """Перенести выбранную часть зарплатного резерва Сейф↔касса вместе с деньгами."""
+    try:
+        result = await transfer_run_reserve(
+            session,
+            reserve_id=reserve_id,
+            selected_ids=set(payload.selected_ids),
+            boundary_override=payload.boundary_id,
+            operation_date=payload.operation_date,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return PayrollReserveTransferResponse(
+        source_reserve_id=result.source_reserve_id,
+        destination_reserve_id=result.destination_reserve_id,
+        transfer_id=result.transfer_id,
+        amount=result.amount,
+        destination_location=result.destination_location,
+        allocations=[
+            PayrollReserveTransferAllocationRead(
+                employee_id=item.employee_id,
+                amount=item.amount,
+            )
+            for item in result.allocations
+        ],
+    )
+
+
+@router.post(
+    "/reserves/{reserve_id}/cancel",
+    response_model=PayrollReserveCancelResponse,
+    dependencies=PAYROLL_RUNS_MARK_PAID_ACCESS,
+)
+async def post_cancel_run_reserve(
+    reserve_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PayrollReserveCancelResponse:
+    """Снять непогашенный остаток одного зарплатного резерва."""
+    try:
+        result = await cancel_run_reserve(
+            session,
+            reserve_id=reserve_id,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return PayrollReserveCancelResponse(
+        reserve_id=result.reserve_id,
+        released=result.released,
+        status=result.status,
+    )
 
 
 @router.post(

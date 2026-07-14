@@ -281,6 +281,8 @@ class KassaTargetRead(BaseModel):
     outstanding: float
     # Авто-целёвка оплаченного банковского черновика закупа («из банковской выплаты»).
     from_bank_payout: bool
+    # Пул зарплатной ведомости: виден в модалке ДДС, выдаётся через «Активные платежи».
+    is_payroll: bool
     created_at: datetime
 
 

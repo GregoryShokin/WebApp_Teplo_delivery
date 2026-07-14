@@ -109,9 +109,18 @@ export type SubstitutePairsResponse = {
 };
 
 export type PositionArchetype =
-  "okladnik" | "production_percent" | "shift_pool" | "courier" | "none";
+  | "okladnik"
+  | "production_percent"
+  | "shift_pool"
+  | "courier"
+  | "none";
 export type PositionPermissionGroup =
-  "administration" | "cooks" | "cashiers" | "auxiliary" | "couriers" | "none";
+  | "administration"
+  | "cooks"
+  | "cashiers"
+  | "auxiliary"
+  | "couriers"
+  | "none";
 export type PositionScheduleType = "SESSION" | "FIXED" | "HOURS";
 export type PositionStatus = "active" | "excluded";
 
@@ -148,7 +157,12 @@ export type PositionsSyncResult = {
 
 export type EmployeeStatus = "active" | "inactive" | "requires_setup" | "dismissing";
 export type EmployeeCategory =
-  "category_1" | "category_2" | "category_3" | "category_4" | "intern" | "freelancer";
+  | "category_1"
+  | "category_2"
+  | "category_3"
+  | "category_4"
+  | "intern"
+  | "freelancer";
 export type CookingStation = "sushi" | "pizza" | "shawarma";
 export type PayrollRole = CookingStation | "prep" | "administrator";
 
@@ -311,7 +325,11 @@ export type EmployeePositionAssignmentDeletePayload = {
 };
 
 export type DepositDismissAction =
-  "payout_full" | "payout_partial" | "write_off" | "schedule_payout" | "none";
+  | "payout_full"
+  | "payout_partial"
+  | "write_off"
+  | "schedule_payout"
+  | "none";
 
 export type DepositPayoutMethod = "cash_tk" | "cash_safe" | "bank_draft" | "bank_draft_sber";
 
@@ -1476,7 +1494,11 @@ export type PayrollForecastRunRead = {
 };
 
 export type PlanFactDeviationStatus =
-  "no_data" | "within_threshold" | "over_threshold" | "plan_no_fact" | "fact_no_plan";
+  | "no_data"
+  | "within_threshold"
+  | "over_threshold"
+  | "plan_no_fact"
+  | "fact_no_plan";
 
 export type PlanFactDayRowRead = {
   business_date: string;
@@ -2215,7 +2237,11 @@ export type CourierScheduleUpsertPayload = {
 export type DdsProvider = "sber" | "tbank";
 export type DdsDirection = "in" | "out";
 export type DdsClassificationStatus =
-  "pending" | "classified" | "internal_transfer" | "needs_review" | "excluded";
+  | "pending"
+  | "classified"
+  | "internal_transfer"
+  | "needs_review"
+  | "excluded";
 
 export type WalletRead = {
   id: string;
@@ -2466,7 +2492,11 @@ export type CredentialRead = {
   id: string;
   provider: DdsProvider;
   credential_kind:
-    "access_token" | "client_secret" | "bearer_token" | "mtls_cert_path" | "mtls_key_path";
+    | "access_token"
+    | "client_secret"
+    | "bearer_token"
+    | "mtls_cert_path"
+    | "mtls_key_path";
   is_active: boolean;
   expires_at: string | null;
   metadata: Record<string, unknown> | null;
@@ -3173,6 +3203,8 @@ export type DdsKassaTarget = {
   amount_paid: number;
   outstanding: number;
   from_bank_payout: boolean;
+  // Пул ведомости выдаётся через «Активные платежи», не как обычная целёвка кассы.
+  is_payroll: boolean;
   created_at: string;
 };
 
@@ -3802,6 +3834,43 @@ export async function payRunFromPool(
   return response.data;
 }
 
+export type PayrollReserveTransferResponse = {
+  source_reserve_id: string;
+  destination_reserve_id: string;
+  transfer_id: string;
+  amount: number;
+  destination_location: "safe" | "kassa";
+  allocations: Array<{ employee_id: string; amount: number }>;
+};
+
+// Перенос выбранной части зарплатного резерва между Сейфом и кассой вместе с деньгами.
+export async function transferPayrollReserve(
+  reserveId: string,
+  payload: { selected_ids: string[]; boundary_id?: string | null; operation_date: string },
+): Promise<PayrollReserveTransferResponse> {
+  const response = await api.post<PayrollReserveTransferResponse>(
+    `/payroll/reserves/${reserveId}/transfer`,
+    payload,
+  );
+  return response.data;
+}
+
+export type PayrollReserveCancelResponse = {
+  reserve_id: string;
+  released: number;
+  status: string;
+};
+
+// Снять непогашенный остаток одного зарплатного резерва без движения денег.
+export async function cancelPayrollReserve(
+  reserveId: string,
+): Promise<PayrollReserveCancelResponse> {
+  const response = await api.post<PayrollReserveCancelResponse>(
+    `/payroll/reserves/${reserveId}/cancel`,
+  );
+  return response.data;
+}
+
 export type ReserveEmployeePayResponse = {
   booked: number;
   employee_total_paid: number;
@@ -3868,11 +3937,55 @@ export async function setRunPayoutCash(
   runId: string,
   amountCash: number,
   cashWalletCode?: string | null,
+  bankProvider: "tbank" | "sber" = "tbank",
 ): Promise<PayrollRun> {
   const response = await api.patch<PayrollRun>(`/payroll/runs/${runId}/payout-cash`, {
     amount_cash: amountCash,
     cash_wallet_code: cashWalletCode ?? null,
+    bank_provider: bankProvider,
   });
+  return response.data;
+}
+
+export type PayrollPayoutCashflow = {
+  id: string;
+  wallet_id: string;
+  wallet_code: string;
+  wallet_name: string;
+  amount: number | string;
+  operation_date: string;
+  quality_status: string;
+  article_code: string | null;
+  article_name: string | null;
+  purpose: string | null;
+};
+
+export type PayrollPayoutWalletCorrection = {
+  run_id: string;
+  transaction_ids: string[];
+  source_wallet_id: string;
+  source_wallet_name: string;
+  target_wallet_id: string;
+  target_wallet_code: string;
+  target_wallet_name: string;
+  total_amount: number | string;
+};
+
+export async function getPayrollPayoutCashflows(runId: string): Promise<PayrollPayoutCashflow[]> {
+  const response = await api.get<PayrollPayoutCashflow[]>(
+    `/payroll/runs/${runId}/payout-cashflows`,
+  );
+  return response.data;
+}
+
+export async function correctPayrollPayoutWallet(
+  runId: string,
+  payload: { transaction_ids: string[]; target_wallet_code: string; reason: string },
+): Promise<PayrollPayoutWalletCorrection> {
+  const response = await api.post<PayrollPayoutWalletCorrection>(
+    `/payroll/runs/${runId}/payout-cashflows/correct-wallet`,
+    payload,
+  );
   return response.data;
 }
 
@@ -3935,6 +4048,21 @@ export type CashWallet = {
   name: string;
 };
 
+export type PayrollFundingSource = CashWallet & {
+  kind: "cash" | "bank";
+  provider: "tbank" | "sber" | null;
+  balance: number;
+  reserved_other: number;
+  available: number;
+  is_configured: boolean;
+};
+
+export type PayrollRunFunding = {
+  run_id: string;
+  cash_sources: PayrollFundingSource[];
+  bank_sources: PayrollFundingSource[];
+};
+
 export async function getRunPayoutAllocation(runId: string): Promise<PayrollPayoutAllocation> {
   const response = await api.get<PayrollPayoutAllocation>(
     `/payroll/runs/${runId}/payout-allocation`,
@@ -3944,6 +4072,11 @@ export async function getRunPayoutAllocation(runId: string): Promise<PayrollPayo
 
 export async function getCashWallets(): Promise<CashWallet[]> {
   const response = await api.get<CashWallet[]>(`/payroll/cash-wallets`);
+  return response.data;
+}
+
+export async function getRunFundingSources(runId: string): Promise<PayrollRunFunding> {
+  const response = await api.get<PayrollRunFunding>(`/payroll/runs/${runId}/funding-sources`);
   return response.data;
 }
 
