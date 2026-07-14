@@ -2207,13 +2207,15 @@ function PayrollLineDialogContent({
         <div className="text-sm font-semibold">Смены и начисления</div>
         {days.length > 0 ? (
           <div className="overflow-x-auto rounded-lg border">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[940px] text-sm">
               <thead>
                 <tr className="bg-muted/50 text-xs text-muted-foreground">
                   <th className="px-3 py-2 text-left font-medium">Дата / роль</th>
                   <th className="px-3 py-2 text-right font-medium">Часы</th>
                   <th className="px-3 py-2 text-right font-medium">Оклад</th>
                   <th className="px-3 py-2 text-right font-medium">Процент</th>
+                  <th className="px-3 py-2 text-right font-medium">Премии</th>
+                  <th className="px-3 py-2 text-right font-medium">Удержания</th>
                   <th className="px-3 py-2 text-right font-medium">Отпуск</th>
                   <th className="px-3 py-2 text-right font-medium">Фонд</th>
                   <th className="px-3 py-2 text-right font-medium">Итого</th>
@@ -2246,6 +2248,22 @@ function PayrollLineDialogContent({
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {formatMoney(day.percentPay)}
+                    </td>
+                    <td
+                      className={cn(
+                        "px-3 py-2 text-right font-medium tabular-nums",
+                        day.premium > 0 ? "text-emerald-700" : undefined,
+                      )}
+                    >
+                      {formatSignedMoney(day.premium)}
+                    </td>
+                    <td
+                      className={cn(
+                        "px-3 py-2 text-right font-medium tabular-nums",
+                        day.deduction > 0 ? "text-rose-700" : undefined,
+                      )}
+                    >
+                      {formatSignedMoney(-day.deduction)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {formatMoney(day.vacationPay)}

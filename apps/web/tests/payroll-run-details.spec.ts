@@ -57,8 +57,12 @@ test("shows one payroll statement and opens the employee breakdown modal", async
   await expect(dialog.getByText("Премия за смену")).toBeVisible();
   await expect(dialog.getByText("Стажировка новичка")).toBeVisible();
   await expect(dialog.getByText("Смены и начисления")).toBeVisible();
+  await expect(dialog.getByRole("columnheader", { name: "Премии" })).toBeVisible();
+  await expect(dialog.getByRole("columnheader", { name: "Удержания" })).toBeVisible();
   await expect(dialog.getByRole("columnheader", { name: "Итого" })).toBeVisible();
   await expect(dialog.getByRole("columnheader", { name: "Выручка" })).toHaveCount(0);
+  await expect(dialog.getByRole("cell", { name: "+1 200 ₽" })).toBeVisible();
+  await expect(dialog.getByRole("cell", { name: "−500 ₽" })).toBeVisible();
   await expect(dialog.getByRole("cell", { name: "+6 550 ₽" })).toBeVisible();
   await expect(dialog.getByText("2-я категория")).toBeVisible();
   await expect(dialog.getByText("category_2")).toHaveCount(0);
