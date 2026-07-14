@@ -1,0 +1,49 @@
+{
+  "period_start": "2026-06-01",
+  "period_end": "2026-06-30",
+  "metric": "closed delivery order.sum (after discounts)",
+  "channel_summary": [
+    {
+      "channel": "other_or_unknown",
+      "orders": 291,
+      "revenue": 503097.05
+    },
+    {
+      "channel": "starter_app",
+      "orders": 1373,
+      "revenue": 2553985.59
+    },
+    {
+      "channel": "website",
+      "orders": 179,
+      "revenue": 355346.4
+    }
+  ],
+  "marketing_source_detail": [
+    {
+      "marketing_source": "Андройд",
+      "channel": "starter_app",
+      "orders": 748,
+      "revenue": 1494636.64
+    },
+    {
+      "marketing_source": "IOS",
+      "channel": "starter_app",
+      "orders": 625,
+      "revenue": 1059348.95
+    },
+    {
+      "marketing_source": "(пусто)",
+      "channel": "other_or_unknown",
+      "orders": 291,
+      "revenue": 503097.05
+    },
+    {
+      "marketing_source": "Сайт",
+      "channel": "website",
+      "orders": 179,
+      "revenue": 355346.4
+    }
+  ],
+  "unique_closed_orders": 1843
+}
