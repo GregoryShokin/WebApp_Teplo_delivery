@@ -29,7 +29,9 @@ EXPECTED = {
     "corrAccount": "30101810145250000974",
     "recipientCorrAccountNumber": "30101810145250000974",
     "executionOrder": 5,
-    "paymentPurpose": "Перевод на Сейф под выплату за период {start}–{end}. НДС не облагается",
+    "paymentPurpose": (
+        "Перевод собственных средств на Сейф. Период выплаты: {start}–{end}. НДС не облагается"
+    ),
 }
 
 
@@ -49,6 +51,7 @@ async def test_all_runtime_loaders_ignore_database_drift(
             select(AppSetting).where(AppSetting.key == PAYOUT_REQUISITES_KEY)
         )
         assert setting is not None
+        assert setting.value == EXPECTED
         setting.value = {
             "recipientName": "Подменённый получатель",
             "inn": "7707083893",

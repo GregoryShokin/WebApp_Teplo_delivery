@@ -50,7 +50,9 @@ from app.services.wallets import (  # реэкспорт для обратной
     resolve_cash_wallet,
 )
 
-DEFAULT_PAYMENT_PURPOSE_TEMPLATE = "Выплата заработной платы за период {start}–{end}"
+DEFAULT_PAYMENT_PURPOSE_TEMPLATE = (
+    "Перевод собственных средств на Сейф. Период выплаты: {start}–{end}. НДС не облагается"
+)
 MOCK_PAYER_ACCOUNT = "00000000000000000000"
 PAYROLL_BANK_DRAFT_STATUSES = frozenset({"created", "updated", "paid", "failed"})
 # Pre-booking the payroll draft as a DDS expense lets the imported bank operation that

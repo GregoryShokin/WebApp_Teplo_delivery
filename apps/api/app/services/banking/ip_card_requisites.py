@@ -29,6 +29,8 @@ PAYOUT_REQUISITES_KEY: Final = "payroll.bank_payout_requisites"
 #
 # КПП intentionally does not belong to the canonical requisites. Bank payload
 # builders add the protocol-required value "0" for an IP/individual themselves.
+# The payment purpose intentionally describes a transfer of the owner's own funds.
+# Do not replace it with payroll/salary wording without an explicit owner request.
 OWNER_APPROVED_IP_CARD_REQUISITES: Final[Mapping[str, Any]] = MappingProxyType(
     {
         "recipientName": "Шокина Кристина Юрьевна",
@@ -40,7 +42,7 @@ OWNER_APPROVED_IP_CARD_REQUISITES: Final[Mapping[str, Any]] = MappingProxyType(
         "recipientCorrAccountNumber": "30101810145250000974",
         "executionOrder": 5,
         "paymentPurpose": (
-            "Перевод на Сейф под выплату за период {start}–{end}. НДС не облагается"
+            "Перевод собственных средств на Сейф. Период выплаты: {start}–{end}. НДС не облагается"
         ),
     }
 )
