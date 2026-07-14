@@ -3,9 +3,14 @@
 
 from __future__ import annotations
 
+import uuid
+from decimal import Decimal
+
 from cp_helpers import make_counterparty, make_draft, make_invoice
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from test_payroll_payouts import create_payroll_run
 
+from app.models import PayrollBankDraft
 from app.scheduler import run_payment_status_poll
 from app.services.banking.tbank import TbankClient, _payment_status_from_payload
 
@@ -101,6 +106,33 @@ async def test_poll_removes_deleted_draft_from_active_state(
         assert draft.status == "deleted"
         assert draft.last_error == "Черновик удалён в банке"
         assert inv.draft_id is None
+
+
+async def test_poll_marks_deleted_payroll_draft_ready_for_retry(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        _period, run, _employees = await create_payroll_run(session)
+        draft = PayrollBankDraft(
+            id=uuid.uuid4(),
+            run_id=run.id,
+            document_id=f"teplo-payroll-{run.id}",
+            amount=Decimal("1000.00"),
+            status="created",
+            bank_provider="tbank",
+            provider_ref="payroll-doc-1",
+        )
+        session.add(draft)
+        await session.commit()
+
+        client = _FakeClient("DELETED")
+        result = await run_payment_status_poll(session, client=client)
+
+        assert result["checked"] == 1 and result["deleted"] == 1
+        assert client.calls == ["payroll-doc-1"]
+        await session.refresh(draft)
+        assert draft.status == "deleted"
+        assert draft.last_error == "Черновик удалён в банке"
 
 
 async def test_poll_uses_bank_provider_from_each_draft(

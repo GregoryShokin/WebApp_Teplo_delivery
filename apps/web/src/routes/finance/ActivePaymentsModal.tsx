@@ -146,13 +146,26 @@ export function ActivePaymentsModal({
   async function sendToBank(row: PaymentRow) {
     setSendingId(row.id);
     try {
-      await api.post(`/payment-page/intakes/${row.ref_id}/send-to-bank`, {});
-      toast.success("Счёт отправлен в банк");
+      if (row.source === "payroll_draft") {
+        const runId = typeof row.extra.run_id === "string" ? row.extra.run_id : null;
+        if (!runId) {
+          throw new Error("У зарплатного черновика не указан расчёт");
+        }
+        const bankProvider = row.bank_channel === "sber" ? "sber" : "tbank";
+        await api.post(`/payroll/runs/${runId}/bank-draft`, null, {
+          params: { bank_provider: bankProvider },
+        });
+        toast.success("Черновик выплаты повторно отправлен в банк");
+      } else {
+        await api.post(`/payment-page/intakes/${row.ref_id}/send-to-bank`, {});
+        toast.success("Счёт отправлен в банк");
+      }
       await refetch();
       await queryClient.invalidateQueries({ queryKey: ["finance-payments"] });
     } catch (error) {
       const detail =
         (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        (error instanceof Error ? error.message : null) ??
         "Не удалось отправить в банк";
       toast.error(detail);
     } finally {

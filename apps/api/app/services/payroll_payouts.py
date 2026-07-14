@@ -54,7 +54,7 @@ DEFAULT_PAYMENT_PURPOSE_TEMPLATE = (
     "Перевод собственных средств на Сейф. Период выплаты: {start}–{end}. НДС не облагается"
 )
 MOCK_PAYER_ACCOUNT = "00000000000000000000"
-PAYROLL_BANK_DRAFT_STATUSES = frozenset({"created", "updated", "paid", "failed"})
+PAYROLL_BANK_DRAFT_STATUSES = frozenset({"created", "updated", "paid", "failed", "deleted"})
 # Pre-booking the payroll draft as a DDS expense lets the imported bank operation that
 # settles it inherit this article automatically (production payroll → IP/owner card).
 PAYROLL_PAYOUT_SOURCE_KIND = "payroll_payout"
@@ -306,9 +306,16 @@ async def apply_payroll_draft_status(
             )
         draft.status = "paid"
         draft.synced_at = datetime.now(UTC)
-    elif outcome == "failed" and draft.status in ("created", "updated"):
-        draft.status = "failed"
-        draft.last_error = f"Платёж отклонён банком: {raw_status}"[:500]
+    elif outcome in ("failed", "deleted") and draft.status in ("created", "updated"):
+        # Удалённый в банке зарплатный черновик не должен навсегда оставаться «Отправлен
+        # в банк». Сохраняем отдельный deleted: агрегатор вернёт невыплаченную ведомость в
+        # «Готовы к отправке», а повторная отправка создаст новый банковский document id.
+        draft.status = outcome
+        draft.last_error = (
+            "Черновик удалён в банке"
+            if outcome == "deleted"
+            else f"Платёж отклонён банком: {raw_status}"
+        )[:500]
         draft.synced_at = datetime.now(UTC)
 
     if commit:
@@ -566,7 +573,13 @@ async def create_or_update_run_draft(
             return await _get_bank_draft(session, run_id)
         raise PayrollConflictError("РС-часть ведомости равна нулю")
 
-    document_id = run_payout_document_id(run_id)
+    existing = await _get_bank_draft(session, run_id)
+    is_deleted_retry = existing is not None and existing.status == "deleted"
+    document_id = (
+        await next_retry_document_id(session, run_id)
+        if is_deleted_retry
+        else run_payout_document_id(run_id)
+    )
     purpose = _payment_purpose(requisites, run_id=run_id, period=period)
     try:
         payload = build_payment_draft_api_payload(
@@ -579,7 +592,6 @@ async def create_or_update_run_draft(
     except ValueError as exc:
         raise PayrollConflictError(str(exc)) from exc
 
-    existing = await _get_bank_draft(session, run_id)
     client = bank_client or payout_client_for(provider, session)
     try:
         result = await client.create_payment_draft(
@@ -596,7 +608,9 @@ async def create_or_update_run_draft(
             run_id=run_id,
             document_id=document_id,
             amount=total_account,
-            status="failed",
+            # Если банк уже подтвердил удаление прежнего черновика, ошибка повторной
+            # отправки не должна убирать строку из «Готовы к отправке».
+            status="deleted" if is_deleted_retry else "failed",
             provider_ref=None,
             payload=payload,
             last_error=str(exc),
@@ -625,10 +639,16 @@ async def create_or_update_run_draft(
         bank_provider=provider,
     )
     await _upsert_payout_cashflow(session, run, total_account, datetime.now(UTC).date())
+    if is_deleted_retry:
+        event_action = "bank_draft_retried"
+    elif existing is not None:
+        event_action = "bank_draft_updated"
+    else:
+        event_action = "bank_draft_created"
     _add_payout_event(
         session,
         run=run,
-        action="bank_draft_updated" if existing is not None else "bank_draft_created",
+        action=event_action,
         actor_user_id=actor_user_id,
         payload=_draft_event_payload(draft),
     )
@@ -829,6 +849,23 @@ def run_payout_document_id(run_id: uuid.UUID) -> str:
 
 def payout_document_id(run_id: uuid.UUID, employee_id: uuid.UUID | None = None) -> str:
     return run_payout_document_id(run_id)
+
+
+async def next_retry_document_id(session: AsyncSession, run_id: uuid.UUID) -> str:
+    """Новый id после подтверждённого удаления черновика в банке.
+
+    Повторять исходный id нельзя: у Сбера из него строится уникальный ``externalId``, а у
+    Т-Банка — номер документа. Счётчик событий делает повторные удаления/отправки устойчивыми.
+    """
+    retry_count = await session.scalar(
+        select(func.count())
+        .select_from(PayrollRunEvent)
+        .where(
+            PayrollRunEvent.run_id == run_id,
+            PayrollRunEvent.action == "bank_draft_retried",
+        )
+    )
+    return f"{run_payout_document_id(run_id)}-retry-{int(retry_count or 0) + 1}"
 
 
 async def next_topup_document_id(

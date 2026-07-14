@@ -38,9 +38,9 @@ MOCK_PAYER_ACCOUNT = "00000000000000000000"
 
 # bankStatus из `GET /v1/payments/{externalId}/state`.
 _SBER_STATUS_PAID = frozenset({"IMPLEMENTED"})
+_SBER_STATUS_DELETED = frozenset({"DELETED"})
 _SBER_STATUS_FAILED = frozenset(
     {
-        "DELETED",
         "INVALIDEDS",
         "RECALL",
         "REFUSEDBYBANK",
@@ -147,9 +147,9 @@ class SberClient:
     async def get_payment_status(self, payment_id: str) -> str | None:
         """Статус Сбер-РПП по ``externalId`` — `GET /v1/payments/{externalId}/state`.
 
-        Нормализует ``bankStatus`` в ``paid`` (IMPLEMENTED) / ``failed`` (отказ/удалён) /
-        ``pending`` (в процессе). У Сбера НЕТ вебхука, поэтому доводка статуса идёт поллингом.
-        В mock статуса нет (None)."""
+        Нормализует ``bankStatus`` в ``paid`` (IMPLEMENTED) / ``deleted`` (DELETED) /
+        ``failed`` (отказ) / ``pending`` (в процессе). У Сбера НЕТ вебхука, поэтому доводка
+        статуса идёт поллингом. В mock статуса нет (None)."""
         if not payment_id or self.settings.teplo_bank_client_mode == "mock":
             return None
         async with await self._authorized_client() as client:
@@ -170,6 +170,8 @@ class SberClient:
         bank_status = str(data.get("bankStatus") or "").upper() if isinstance(data, dict) else ""
         if bank_status in _SBER_STATUS_PAID:
             return "paid"
+        if bank_status in _SBER_STATUS_DELETED:
+            return "deleted"
         if bank_status in _SBER_STATUS_FAILED:
             return "failed"
         return "pending"

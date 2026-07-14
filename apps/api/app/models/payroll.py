@@ -329,10 +329,16 @@ class PayrollPayment(Base):
 
 
 class PayrollBankDraft(Base):
+    """Сводный банковский черновик ведомости.
+
+    ``deleted`` означает подтверждённое банком удаление без движения денег; такую
+    невыплаченную финализированную ведомость можно отправить повторно с новым document id.
+    """
+
     __tablename__ = "payroll_bank_draft"
     __table_args__ = (
         CheckConstraint(
-            "status in ('created', 'updated', 'paid', 'failed')",
+            "status in ('created', 'updated', 'paid', 'failed', 'deleted')",
             name="ck_payroll_bank_draft_status",
         ),
         UniqueConstraint("run_id", name="uq_payroll_bank_draft_run_id"),
