@@ -163,12 +163,15 @@ async def list_deposits(
         select(Employee)
         # Плейсхолдеры пула «Внештат №N» — не сотрудники, депозитов у них нет.
         .where(
+            Employee.status != "inactive",
             Employee.position.in_(production_payroll_positions()),
             Employee.is_freelancer_placeholder.is_(False),
         )
         .order_by(Employee.full_name)
     )
-    employees = result.all()
+    # Повторяем фильтр после выборки: это защищает API и тестовые/замещающие сессии,
+    # которые могут вернуть уже загруженные ORM-объекты без применения SQL-критерия.
+    employees = [employee for employee in result.all() if employee.status != "inactive"]
     accounts = await deposit_service.load_accounts(session, [employee.id for employee in employees])
     settings = await load_payroll_settings(session)
     schedules = await deposit_schedule.load_pending_schedules(

@@ -41,7 +41,7 @@ test("shows one payroll statement and opens the employee breakdown modal", async
   await expect(page.getByRole("columnheader", { name: "Выдача депозита" })).toHaveCount(0);
 
   const employeeRow = page.getByRole("row", { name: /София Колесникова/ });
-  await expect(employeeRow).toContainText("6 550 ₽");
+  await expect(employeeRow).toContainText("6 050 ₽");
   await expect(employeeRow).toContainText("Пиццерист");
 
   await employeeRow.click();
@@ -57,7 +57,13 @@ test("shows one payroll statement and opens the employee breakdown modal", async
   await expect(dialog.getByText("Премия за смену")).toBeVisible();
   await expect(dialog.getByText("Стажировка новичка")).toBeVisible();
   await expect(dialog.getByText("Смены и начисления")).toBeVisible();
-  await expect(dialog.getByRole("cell", { name: "50 000 ₽" })).toBeVisible();
+  await expect(dialog.getByRole("columnheader", { name: "Премии" })).toBeVisible();
+  await expect(dialog.getByRole("columnheader", { name: "Удержания" })).toBeVisible();
+  await expect(dialog.getByRole("columnheader", { name: "Итого" })).toBeVisible();
+  await expect(dialog.getByRole("columnheader", { name: "Выручка" })).toHaveCount(0);
+  await expect(dialog.getByRole("cell", { name: "+1 200 ₽" })).toBeVisible();
+  await expect(dialog.getByRole("cell", { name: "−500 ₽" })).toBeVisible();
+  await expect(dialog.getByRole("cell", { name: "+6 550 ₽" })).toBeVisible();
   await expect(dialog.getByText("2-я категория")).toBeVisible();
   await expect(dialog.getByText("category_2")).toHaveCount(0);
   await expect(dialog.getByText("Удержание депозита", { exact: true })).toBeVisible();
@@ -69,6 +75,10 @@ test("shows one payroll statement and opens the employee breakdown modal", async
   await expect(penalties).toContainText("Недостача по ревизии");
   await expect(penalties).toContainText("хоккайдо цезарь");
   await expect(dialog.getByText("Итог выплаты")).toBeVisible();
+  await expect(dialog).toContainText("зарплата 6 550 ₽");
+  await expect(dialog).toContainText("удержание депозита 500 ₽");
+  await expect(dialog).toContainText("6 050 ₽");
+  await expect(dialog.getByText("Выдача депозита", { exact: true })).toHaveCount(0);
 });
 
 test("includes a deposit-only amount in the payments register", async ({ page }) => {
@@ -95,6 +105,33 @@ test("includes a deposit-only amount in the payments register", async ({ page })
         deposit_payout: 2000,
         deposit_payout_scheduled: 2000,
         total_payable: 0,
+        components: {
+          days: [
+            {
+              date: "2026-07-07",
+              role: "sushi",
+              category: "category_3",
+              hours: 6.7,
+              base_pay: 1225.28,
+              percent_pay: 206,
+              vacation_pay: 0,
+              fund_accrual: 0,
+              ndfl_withheld: 0,
+            },
+          ],
+          adjustments: {
+            bonuses: [],
+            penalties: [
+              {
+                id: "penalty-deposit-only",
+                work_date: "2026-07-07",
+                category: "Удержание",
+                amount: 711.37,
+                comment: "Корректировка выплаты",
+              },
+            ],
+          },
+        },
       },
     ]),
   );
@@ -117,9 +154,53 @@ test("includes a deposit-only amount in the payments register", async ({ page })
 
   await employeeRow.click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog).toContainText("зарплата 0 ₽");
-  await expect(dialog).toContainText("депозит 2 000 ₽");
+  await expect(dialog).toContainText("зарплата 720 ₽");
+  await expect(dialog).toContainText("удержание депозита 720 ₽");
+  await expect(dialog).toContainText("выдача депозита 2 000 ₽");
   await expect(dialog.getByRole("button", { name: "Отменить выдачу" })).toBeEnabled();
+});
+
+test("shows advances, loans and recoveries as separate payout terms", async ({ page }) => {
+  await page.unroute(`**/api/v1/payroll/runs/${runId}/lines`);
+  await page.route(`**/api/v1/payroll/runs/${runId}/lines`, (route) =>
+    fulfillJson(route, [
+      {
+        ...payrollLine(),
+        deduction: 500,
+        deposit_withholding: 0,
+        advance_issued: 1000,
+        total_payable: 7000,
+        amount_account: 7000,
+        components: {
+          ...payrollLine().components,
+          advance_issuances: [{ advance_id: "loan-1", kind: "loan", amount: 1000 }],
+          advance_recoveries: [{ advance_id: "advance-1", kind: "advance", amount: 300 }],
+          employee_payout_offsets: [
+            { employee_payout_id: "payout-1", payout_date: "2026-07-10", amount: 250 },
+          ],
+        },
+      },
+    ]),
+  );
+  await page.unroute(`**/api/v1/payroll/runs/${runId}`);
+  await page.route(`**/api/v1/payroll/runs/${runId}`, (route) =>
+    fulfillJson(route, {
+      ...payrollRun(),
+      summary: { ...payrollRun().summary, total_payable: 7000 },
+    }),
+  );
+
+  await page.goto(`/payroll/runs/${runId}`);
+  await page.getByRole("row", { name: /София Колесникова/ }).click();
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Удержание депозита", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByText("Выдача депозита", { exact: true })).toHaveCount(0);
+  await expect(dialog).toContainText("зарплата 6 550 ₽");
+  await expect(dialog).toContainText("заём 1 000 ₽");
+  await expect(dialog).toContainText("возврат аванса 300 ₽");
+  await expect(dialog).toContainText("выплачено ранее 250 ₽");
+  await expect(dialog).toContainText("7 000 ₽");
 });
 
 test("offers a full payment from the employee modal after finalization", async ({ page }) => {
@@ -143,7 +224,7 @@ test("offers a full payment from the employee modal after finalization", async (
   await page.getByRole("row", { name: /София Колесникова/ }).click();
 
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByRole("button", { name: "Выплатить 6 550 ₽" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Выплатить 6 050 ₽" })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Выплатить частично" })).toBeVisible();
 });
 
@@ -169,7 +250,7 @@ function payrollRun() {
     summary: {
       line_count: 1,
       employee_count: 1,
-      total_payable: 6550,
+      total_payable: 6050,
     },
     is_imported_legacy: false,
     payout_cash_total: 0,
@@ -230,13 +311,13 @@ function payrollLine() {
     vacation_pay: 0,
     ndfl_withheld: 0,
     fund_accrual: 300,
-    deduction: 500,
+    deduction: 1000,
     deposit_withholding: 500,
     deposit_payout: 0,
     deposit_payout_scheduled: 0,
     advance_issued: 0,
     ndfl_deduction: 0,
-    total_payable: 6550,
+    total_payable: 6050,
     deposit_excluded_for_run: false,
     deposit_exclusion_reason: null,
     payment_status: "pending",
@@ -245,7 +326,7 @@ function payrollLine() {
     paid_method: null,
     payment_comment: null,
     amount_cash: 0,
-    amount_account: 6550,
+    amount_account: 6050,
     payout_status: "pending",
     draft_status: null,
     overpaid_amount: 0,

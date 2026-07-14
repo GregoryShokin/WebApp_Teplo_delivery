@@ -28,6 +28,7 @@ from app.services import vacation_service
 from app.services.employee_assignments import (
     PAYROLL_ROLE_LABELS,
     assignment_role_for_payroll_context,
+    assignment_role_from_employee,
     get_assignments,
 )
 from app.services.employee_effective_events import get_allowances_on_date, get_position_on_date
@@ -782,6 +783,20 @@ def calculate_payroll_lines_from_inputs(
             }
         )
 
+    roles_by_employee: dict[uuid.UUID, list[str]] = defaultdict(list)
+    for employee_id, role in line_totals:
+        roles_by_employee[employee_id].append(role)
+    deposit_role_by_employee = {
+        employee_id: primary_line_role(
+            settings,
+            employee_id,
+            roles,
+            period,
+            fallback_role=assignment_role_from_employee(employees[employee_id]),
+        )
+        for employee_id, roles in roles_by_employee.items()
+    }
+
     lines = []
     running_deposit_balances = {
         employee_id: decimal(balance) for employee_id, balance in (deposit_balances or {}).items()
@@ -842,7 +857,8 @@ def calculate_payroll_lines_from_inputs(
         deposit_exclusion_reason = optional_text(line_override.get("deposit_exclusion_reason"))
         is_substitute_line = any(bool(day.get("is_substitute")) for day in totals.get("days", []))
         if (
-            deposit_excluded_for_run
+            role != deposit_role_by_employee[employee_id]
+            or deposit_excluded_for_run
             or is_substitute_line
             or employee_id in deposit_fully_collected_at_payout
         ):
@@ -1288,7 +1304,7 @@ def apply_adjustments_to_line_totals(
 
         # Manual adjustments are employee-level. If a person has several payroll
         # lines in the week, attach them to the primary assignment role.
-        target_role = adjustment_target_role(settings, employee_id, roles, period)
+        target_role = primary_line_role(settings, employee_id, roles, period)
         for role in roles:
             line_totals[(employee_id, role)]["adjustments"]["primary_role_chosen"] = target_role
 
@@ -1334,11 +1350,13 @@ def adjustments_for_employee_period(
     )
 
 
-def adjustment_target_role(
+def primary_line_role(
     settings: Mapping[str, Any],
     employee_id: uuid.UUID,
     roles: list[str],
     period: PayrollPeriod,
+    *,
+    fallback_role: Any = None,
 ) -> str:
     sorted_roles = sorted(roles)
     current = period.start_date
@@ -1353,6 +1371,9 @@ def adjustment_target_role(
             if matched_role is not None:
                 return matched_role
         current = date.fromordinal(current.toordinal() + 1)
+    matched_fallback = matching_line_role(fallback_role, sorted_roles)
+    if matched_fallback is not None:
+        return matched_fallback
     return sorted_roles[0]
 
 
@@ -1494,8 +1515,41 @@ def payroll_role_for_entry(
     if settings is not None:
         ledger_entry = ledger_entry_for_employee_date(settings, employee.id, entry.work_date)
         if ledger_entry is not None:
-            return clean_string(getattr(ledger_entry, "payroll_role", None))
-    return (entry.role or "").strip()
+            ledger_role = clean_string(getattr(ledger_entry, "payroll_role", None))
+            if ledger_role:
+                return ledger_role
+
+    entry_role = clean_string(entry.role)
+    if entry_role:
+        return entry_role
+
+    if settings is None:
+        return ""
+
+    assignments = assignments_for_employee_date(settings, employee.id, entry.work_date)
+    station_role = assignment_role_for_payroll_context(None, entry.station)
+    if station_role:
+        station_assignment = next(
+            (
+                assignment
+                for assignment in assignments
+                if clean_string(getattr(assignment, "payroll_role", None)) == station_role
+            ),
+            None,
+        )
+        if station_assignment is not None:
+            return station_role
+
+    primary = next(
+        (
+            assignment
+            for assignment in assignments
+            if getattr(assignment, "is_primary", False)
+            and getattr(assignment, "payroll_role", None)
+        ),
+        None,
+    )
+    return clean_string(getattr(primary, "payroll_role", None))
 
 
 def vacation_role_for_employee_day(

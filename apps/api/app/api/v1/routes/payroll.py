@@ -1350,6 +1350,8 @@ def serialize_payroll_line(
     components = line.components if isinstance(line.components, dict) else {}
     if getattr(line, "ndfl_withheld", None) is None:
         line.ndfl_withheld = Decimal("0")
+    if getattr(line, "deposit_payout_scheduled", None) is None:
+        line.deposit_payout_scheduled = Decimal("0")
     payment = (payments_by_employee or {}).get(line.employee_id)
     is_paid = payment is not None and payment.status == "paid"
     is_partial = payment is not None and payment.status == "partially_paid"

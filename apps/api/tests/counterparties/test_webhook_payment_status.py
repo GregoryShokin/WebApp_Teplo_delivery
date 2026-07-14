@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from decimal import Decimal
 
 from cp_helpers import make_counterparty, make_draft, make_invoice
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from test_payroll_payouts import create_payroll_run
 
 from app.core.config import Settings, get_settings
-from app.models import CounterpartyPaymentDraft, SupplierInvoice
+from app.models import CounterpartyPaymentDraft, PayrollBankDraft, SupplierInvoice
 
 BASE = "/api/v1/webhooks/tbank/payment-status"
 
@@ -99,6 +101,42 @@ def test_webhook_deleted_status_reverts_invoice_to_unpaid(
     inv_status, inv_draft_id = _run(_check())
     assert inv_status != "paid"
     assert inv_draft_id is None  # накладная снова доступна к оплате
+
+
+async def _seed_payroll_draft(factory) -> uuid.UUID:
+    async with factory() as session:
+        _period, run, _employees = await create_payroll_run(session)
+        draft = PayrollBankDraft(
+            id=uuid.uuid4(),
+            run_id=run.id,
+            document_id=f"teplo-payroll-{run.id}",
+            amount=Decimal("1000.00"),
+            status="created",
+            bank_provider="tbank",
+            provider_ref="payroll-pay-1",
+        )
+        session.add(draft)
+        await session.commit()
+        return draft.id
+
+
+def test_webhook_deleted_payroll_draft_becomes_retriable(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    draft_id = _run(_seed_payroll_draft(async_session_factory))
+
+    resp = client.post(BASE, json={"paymentId": "payroll-pay-1", "status": "DELETED"})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["matched"] is True
+    assert resp.json()["draft_status"] == "deleted"
+
+    async def _check() -> tuple[str, str | None]:
+        async with async_session_factory() as session:
+            draft = await session.get(PayrollBankDraft, draft_id)
+            return draft.status, draft.last_error
+
+    assert _run(_check()) == ("deleted", "Черновик удалён в банке")
 
 
 _PAYER_ACCOUNT = "40802810000000012345"

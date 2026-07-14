@@ -118,12 +118,65 @@ async def test_run_draft_is_idempotent_by_document_id(
         assert second.status == "updated"
 
 
+async def test_deleted_run_draft_retries_with_new_document_id(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """После удаления банк должен получить новый id, а не идемпотентно вернуть старый DELETED."""
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        _period, run, _employees = await create_payroll_run(session)
+        await set_run_payout_cash(session, run.id, amount_cash=Decimal("0"), actor_user_id=actor.id)
+
+        first_client = RecordingBankClient()
+        first = await create_or_update_run_draft(
+            session,
+            run.id,
+            actor_user_id=actor.id,
+            provider="sber",
+            bank_client=first_client,
+        )
+        first_id = first.id
+        first.status = "deleted"
+        first.last_error = "Черновик удалён в банке"
+        await session.commit()
+
+        retry_client = RecordingBankClient()
+        retry = await create_or_update_run_draft(
+            session,
+            run.id,
+            actor_user_id=actor.id,
+            provider="sber",
+            bank_client=retry_client,
+        )
+
+        assert retry.id == first_id
+        assert retry.status == "updated"
+        assert retry.document_id == f"teplo-payroll-{run.id}-retry-1"
+        assert retry.provider_ref == f"mock-teplo-payroll-{run.id}-retry-1"
+        assert retry.bank_provider == "sber"
+        assert retry_client.drafts[0]["document_id"] == retry.document_id
+        event = await _event(session, run.id, "bank_draft_retried")
+        assert event.payload["document_id"] == retry.document_id
+
+        retry.status = "deleted"
+        await session.commit()
+        second_retry_client = RecordingBankClient()
+        second_retry = await create_or_update_run_draft(
+            session,
+            run.id,
+            actor_user_id=actor.id,
+            provider="sber",
+            bank_client=second_retry_client,
+        )
+        assert second_retry.document_id == f"teplo-payroll-{run.id}-retry-2"
+
+
 async def test_run_draft_ignores_requisites_setting_drift(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
-        _period, run, _employees = await create_payroll_run(session)
+        period, run, _employees = await create_payroll_run(session)
         await set_run_payout_cash(session, run.id, amount_cash=Decimal("0"), actor_user_id=actor.id)
         setting = await session.scalar(
             select(AppSetting).where(AppSetting.key == PAYOUT_REQUISITES_KEY)
@@ -153,11 +206,43 @@ async def test_run_draft_ignores_requisites_setting_drift(
         assert draft.payload["inn"] == "890307589201"
         assert draft.payload["kpp"] == "0"
         assert draft.payload["bankAcnt"] == "40817810800023540968"
-        assert draft.payload["paymentPurpose"].startswith("Перевод на Сейф под выплату")
+        assert draft.payload["paymentPurpose"] == (
+            "Перевод собственных средств на Сейф. "
+            f"Период выплаты: {period.start_date.isoformat()}–{period.end_date.isoformat()}. "
+            "НДС не облагается"
+        )
+        assert bank_client.drafts[0]["purpose"] == draft.payload["paymentPurpose"]
         sent_requisites = bank_client.drafts[0]["requisites"]
         assert sent_requisites["recipientName"] == "Шокина Кристина Юрьевна"
         assert sent_requisites["inn"] == "890307589201"
         assert "kpp" not in sent_requisites
+
+
+async def test_sber_run_draft_uses_own_funds_purpose(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        period, run, _employees = await create_payroll_run(session)
+        await set_run_payout_cash(session, run.id, amount_cash=Decimal("0"), actor_user_id=actor.id)
+        bank_client = RecordingBankClient()
+
+        draft = await create_or_update_run_draft(
+            session,
+            run.id,
+            actor_user_id=actor.id,
+            provider="sber",
+            bank_client=bank_client,
+        )
+
+        expected = (
+            "Перевод собственных средств на Сейф. "
+            f"Период выплаты: {period.start_date.isoformat()}–{period.end_date.isoformat()}. "
+            "НДС не облагается"
+        )
+        assert draft.bank_provider == "sber"
+        assert draft.payload["paymentPurpose"] == expected
+        assert bank_client.drafts[0]["purpose"] == expected
 
 
 async def test_run_delta_topup_creates_separate_draft_and_down_records_overpaid(

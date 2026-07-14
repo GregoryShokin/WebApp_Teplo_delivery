@@ -26,11 +26,12 @@ class FakeScalarResult:
 class DepositFakeSession:
     def __init__(
         self,
-        employee: Employee,
+        employee: Employee | list[Employee],
         account: DepositAccount | None = None,
         transactions: list[DepositTransaction] | None = None,
     ) -> None:
-        self.employee = employee
+        self.employees = employee if isinstance(employee, list) else [employee]
+        self.employee = self.employees[0]
         self.accounts: dict[uuid.UUID, DepositAccount] = {}
         if account is not None:
             self.accounts[account.employee_id] = account
@@ -39,8 +40,8 @@ class DepositFakeSession:
         self.committed = False
 
     async def get(self, model: Any, object_id: uuid.UUID) -> Any | None:
-        if model is Employee and object_id == self.employee.id:
-            return self.employee
+        if model is Employee:
+            return next((employee for employee in self.employees if employee.id == object_id), None)
         return None
 
     async def scalar(self, query: Any) -> Any | None:
@@ -53,7 +54,7 @@ class DepositFakeSession:
     async def scalars(self, query: Any) -> FakeScalarResult:
         entity = query_entity(query)
         if entity is Employee:
-            return FakeScalarResult([self.employee])
+            return FakeScalarResult(self.employees)
         if entity is DepositAccount:
             return FakeScalarResult(list(self.accounts.values()))
         if entity is DepositTransaction:
@@ -77,14 +78,14 @@ class DepositFakeSession:
         return None
 
 
-def make_employee() -> Employee:
+def make_employee(*, full_name: str = "Deposit Employee", status: str = "active") -> Employee:
     return Employee(
         id=uuid.uuid4(),
-        full_name="Deposit Employee",
+        full_name=full_name,
         iiko_id=f"iiko-{uuid.uuid4()}",
         position="Повар",
         category="category_2",
-        status="active",
+        status=status,
         deposit_excluded=False,
         created_at=SYNC_NOW,
         updated_at=SYNC_NOW,
@@ -281,3 +282,22 @@ def test_list_deposits_includes_initial_balance() -> None:
     rows = response.json()
     assert rows[0]["balance"] == "9000.00"
     assert rows[0]["initial_balance"] == "7000.00"
+
+
+def test_list_deposits_excludes_inactive_employee_cards() -> None:
+    active = make_employee(full_name="Действующий сотрудник")
+    dismissing = make_employee(full_name="Сотрудник в увольнении", status="dismissing")
+    inactive = make_employee(full_name="Старая карточка сотрудника", status="inactive")
+    session = DepositFakeSession([active, dismissing, inactive])
+
+    with TestClient(app_with_session(session)) as client:
+        response = client.get(
+            "/api/v1/deposits",
+            headers={"X-User-Role": "finance_manager"},
+        )
+
+    assert response.status_code == 200
+    assert {row["full_name"] for row in response.json()} == {
+        "Действующий сотрудник",
+        "Сотрудник в увольнении",
+    }

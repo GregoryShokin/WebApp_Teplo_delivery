@@ -734,10 +734,10 @@ async def test_paid_run_bank_draft_not_active(
     from app.models import PayrollBankDraft, PayrollPayment
     from app.services.payments_aggregator import _payroll_bank_draft_items
 
-    async def _draft_state(run_id: uuid.UUID) -> str:
+    async def _draft_item(run_id: uuid.UUID):
         async with async_session_factory() as s:
             items = await _payroll_bank_draft_items(s)
-            return next(i.state for i in items if i.extra.get("run_id") == str(run_id))
+            return next(i for i in items if i.extra.get("run_id") == str(run_id))
 
     async with async_session_factory() as session:
         run_id, emps, _actor = await _setup_run_with_reserves(
@@ -755,7 +755,22 @@ async def test_paid_run_bank_draft_not_active(
         )
         await session.commit()
     # Ещё не выплачено → «в банке».
-    assert await _draft_state(run_id) == "in_bank"
+    assert (await _draft_item(run_id)).state == "in_bank"
+
+    async with async_session_factory() as session:
+        draft = await session.scalar(
+            select(PayrollBankDraft).where(PayrollBankDraft.run_id == run_id)
+        )
+        assert draft is not None
+        draft.status = "deleted"
+        draft.last_error = "Черновик удалён в банке"
+        await session.commit()
+    # Банк подтвердил удаление, деньги ещё не выдавались → можно отправить ведомость повторно.
+    ready = await _draft_item(run_id)
+    assert ready.state == "ready_to_send"
+    assert ready.bucket == "bank_ready"
+    assert ready.can_send_to_bank is True
+    assert ready.extra["last_error"] == "Черновик удалён в банке"
 
     async with async_session_factory() as session:
         for emp, amt in zip(emps, [Decimal("1000"), Decimal("2000"), Decimal("3000")], strict=True):
@@ -771,7 +786,7 @@ async def test_paid_run_bank_draft_not_active(
             )
         await session.commit()
     # Полностью выплачено → черновик историчен (paid), из активных уходит.
-    assert await _draft_state(run_id) == "paid"
+    assert (await _draft_item(run_id)).state == "paid"
 
 
 async def test_run_solvency_breakdown_is_consistent(

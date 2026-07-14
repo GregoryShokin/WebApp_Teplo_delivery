@@ -3035,6 +3035,35 @@ def test_employee_position_does_not_backfill_missing_payroll_role() -> None:
     assert result.blocking_issues[0]["type"] == "missing_payroll_role"
 
 
+def test_primary_assignment_backfills_missing_attendance_role() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(
+        position="Повар",
+        category="category_2",
+        default_cooking_station="pizza",
+    )
+    work_date = period.start_date
+    entry = make_entry(period, employee, work_date, role=None, station=None)
+    settings = payroll_settings()
+    settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = {
+        (employee.id, work_date): [
+            make_role_assignment(employee.id, "pizza", "category_2", is_primary=True)
+        ]
+    }
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].role == "pizza"
+
+
 def test_fixed_salary_for_full_week_is_calculated() -> None:
     period = make_period()
     run_id = uuid.uuid4()
@@ -4818,6 +4847,61 @@ def test_payroll_calculation_uses_current_deposit_balance_for_target_cap() -> No
     assert result.blocking_issues == []
     assert result.lines[0].deduction == 100
     assert result.lines[0].deposit_excluded_for_run is False
+
+
+def test_deposit_withholding_uses_only_primary_role() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(category="category_2")
+    entries = [
+        make_entry(period, employee, period.start_date, role="Пиццерист"),
+        make_entry(period, employee, period.start_date.replace(day=20), role="Сушист"),
+    ]
+    settings = deposit_settings(withholding=2000)
+    settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = {
+        (employee.id, period.start_date): [
+            make_role_assignment(employee.id, "pizza", "category_2"),
+            make_role_assignment(employee.id, "sushi", "category_2", is_primary=True),
+        ]
+    }
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    assert len(result.lines) == 2
+    lines_by_role = {line.role: line for line in result.lines}
+    assert lines_by_role["Сушист"].components["deposit_withholding"] == 2000
+    assert lines_by_role["Сушист"].deduction == Decimal("2000")
+    assert lines_by_role["Пиццерист"].components["deposit_withholding"] == 0
+    assert lines_by_role["Пиццерист"].deduction == Decimal("0")
+
+
+def test_deposit_primary_role_falls_back_to_employee_station() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(category="category_2", default_cooking_station="sushi")
+    entries = [
+        make_entry(period, employee, period.start_date, role="Пиццерист"),
+        make_entry(period, employee, period.start_date.replace(day=20), role="Сушист"),
+    ]
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {employee.id: employee},
+        deposit_settings(withholding=2000),
+    )
+
+    lines_by_role = {line.role: line for line in result.lines}
+    assert lines_by_role["Сушист"].components["deposit_withholding"] == 2000
+    assert lines_by_role["Пиццерист"].components["deposit_withholding"] == 0
 
 
 def test_scheduled_deposit_payout_pays_balance_and_resets_withholding() -> None:

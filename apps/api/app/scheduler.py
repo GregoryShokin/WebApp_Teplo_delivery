@@ -280,6 +280,8 @@ async def run_payment_status_poll(
             result["paid"] += 1
         elif payroll_status == "failed":
             result["failed"] += 1
+        elif payroll_status == "deleted":
+            result["deleted"] += 1
 
     # Те же статусы для банк-выдачи авансов/займов: при «исполнен» — транзит банк→Сейф +
     # резерв Сейфа под выдачу (фактическая выдача сотруднику подтверждается «Выплачено»).

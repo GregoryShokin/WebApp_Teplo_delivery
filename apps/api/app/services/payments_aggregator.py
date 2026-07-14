@@ -13,8 +13,9 @@
    (``employee_id IS NULL``, ``source_run_id IS NULL``) и **пул-резервы выплаты ЗП**,
    привязанные к ведомости (``source_run_id`` задан, ``kind='payroll_reserve'`` —
    клик открывает окно ведомости). ``location='safe'``/``'kassa'``.
-4. **Банк-черновики выплаты ЗП** — ``PayrollBankDraft`` в статусе «Отправлен в банк»
-   (некликабелен; после оплаты → транзит на Сейф-резерв, черновик уходит в историю).
+4. **Банк-черновики выплаты ЗП** — ``PayrollBankDraft`` в статусе «Отправлен в банк»;
+   удалённый в банке черновик возвращается в «Готовы к отправке». После оплаты выполняется
+   транзит на Сейф-резерв, а черновик уходит в историю.
 
 Нормализованное состояние и раскладка по 4 корзинам активной модалки FAB:
 
@@ -26,8 +27,9 @@
 * ``reserved_safe`` — «На Сейфе»: резерв на карте Сейф, ждёт выплаты.
 * ``reserved_kassa``— «В кассе»: передан в кассу, ждёт выдачи наличными.
 
-Терминальные состояния (``paid``/``failed``/``cancelled``/``deleted``) корзины не
-имеют — они видны только в истории (``scope='all'``) на странице «Финансы → Платежи».
+Терминальные состояния (``paid``/``failed``/``cancelled``) корзины не имеют — они видны
+только в истории (``scope='all'``) на странице «Финансы → Платежи». Для зарплатного
+черновика ``deleted`` возвращается в ``bank_ready``, пока ведомость не выплачена.
 
 Модуль ТОЛЬКО читает — никаких мутаций и движений денег.
 """
@@ -422,10 +424,11 @@ async def _reserve_items(session: AsyncSession) -> list[PaymentItem]:
 
 
 async def _payroll_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
-    """Банк-черновики выплаты ЗП — «Отправлен в банк» (некликабелен, ждёт оплаты).
+    """Банк-черновики выплаты ЗП — «Отправлен в банк» или «Готов к отправке».
 
     После оплаты (``paid``) деньги транзитом уходят на Сейф и представлены Сейф-резервом —
-    оплаченный черновик показываем только в истории. Материализуется как «Выплата зарплаты…».
+    оплаченный черновик показываем только в истории. Удалённый черновик можно отправить
+    повторно, если ведомость финализирована и ещё не выплачена.
     """
     rows = (
         await session.execute(
@@ -478,14 +481,16 @@ async def _payroll_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
             "updated": "in_bank",
             "paid": "paid",
             "failed": "failed",
+            # Удалённый черновик денег не перемещал: пока ведомость не выплачена, возвращаем
+            # её в очередь повторной отправки вместо терминальной истории.
+            "deleted": "ready_to_send",
         }
         state = status_map.get(draft.status, draft.status)
-        # Дефинализированная ведомость: created/updated-черновик больше не «в банке» (деньги не
-        # ушли) — снимаем из активных (в истории останется). Оплаченный черновик — историчен всегда.
-        if run_status != "finalized" and state == "in_bank":
+        # Дефинализированную ведомость нельзя ни считать отправленной, ни повторно отправлять.
+        if run_status != "finalized" and state in ("in_bank", "ready_to_send"):
             state = "cancelled"
-        # Ведомость уже полностью выплачена (иным путём), а статус черновика застрял — историчен.
-        if state == "in_bank" and _run_fully_paid(draft.run_id):
+        # Уже полностью выплаченную ведомость нельзя реанимировать старым удалённым черновиком.
+        if state in ("in_bank", "ready_to_send") and _run_fully_paid(draft.run_id):
             state = "paid"
         is_admin = isinstance(summary, dict) and summary.get("kind") == "admin"
         label = PAYROLL_RESERVE_LABEL_ADMIN if is_admin else PAYROLL_RESERVE_LABEL_PRODUCTION
@@ -508,10 +513,14 @@ async def _payroll_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
                 bucket=BUCKET_BY_STATE.get(state),
                 created_at=draft.created_at,
                 can_edit=False,
-                can_send_to_bank=False,
+                can_send_to_bank=state == "ready_to_send",
                 can_pay=False,  # ждёт оплаты в банке владельцем
                 can_cancel=False,
-                extra={"run_id": str(draft.run_id), "payroll": True},
+                extra={
+                    "run_id": str(draft.run_id),
+                    "payroll": True,
+                    "last_error": draft.last_error,
+                },
             )
         )
     return items

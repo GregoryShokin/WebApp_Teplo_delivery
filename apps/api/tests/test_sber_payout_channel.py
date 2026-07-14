@@ -10,6 +10,8 @@ import asyncio
 import uuid
 from decimal import Decimal
 
+import httpx
+
 from app.core.config import get_settings
 from app.services.banking.payout import channel_provider, payer_account_for, payout_client_for
 from app.services.banking.sber import SberClient, _sber_external_id, build_sber_payment_payload
@@ -41,6 +43,29 @@ def test_sber_create_draft_mock_returns_unsigned_draft() -> None:
     uuid.UUID(result.provider_ref)  # валидный UUID
     # У Сбера нет вебхука → в mock статус не читается.
     assert _run(client.get_payment_status(result.provider_ref)) is None
+
+
+def test_sber_deleted_status_is_distinct_from_bank_failure() -> None:
+    class StatusClient(SberClient):
+        def __init__(self, bank_status: str) -> None:
+            super().__init__(
+                None,
+                settings=get_settings().model_copy(update={"teplo_bank_client_mode": "live"}),
+            )
+            self.bank_status = bank_status
+
+        async def _authorized_client(self) -> httpx.AsyncClient:
+            async def handler(_request: httpx.Request) -> httpx.Response:
+                return httpx.Response(200, json={"bankStatus": self.bank_status})
+
+            return httpx.AsyncClient(
+                transport=httpx.MockTransport(handler),
+                base_url="https://sber.example",
+            )
+
+    assert _run(StatusClient("DELETED").get_payment_status("draft-id")) == "deleted"
+    assert _run(StatusClient("REFUSEDBYBANK").get_payment_status("draft-id")) == "failed"
+    assert _run(StatusClient("IMPLEMENTED").get_payment_status("draft-id")) == "paid"
 
 
 def test_build_sber_payment_payload_required_fields() -> None:
