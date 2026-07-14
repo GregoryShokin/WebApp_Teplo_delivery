@@ -16,6 +16,13 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
+### codex-ip-card-requisites — ветка `fix/ip-card-requisites`
+- worktree: `../Teplo-agent-ip-card-requisites`
+- compose: без отдельного стека; точечные API-тесты
+- трогает: эталон реквизитов карты ИП, загрузчики банковских черновиков, миграция 0187 и тесты
+- НЕ трогать другим: `payroll.bank_payout_requisites` и новая миграция 0187
+- статус: в работе
+
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`
