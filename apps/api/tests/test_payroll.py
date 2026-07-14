@@ -4820,6 +4820,31 @@ def test_payroll_calculation_uses_current_deposit_balance_for_target_cap() -> No
     assert result.lines[0].deposit_excluded_for_run is False
 
 
+def test_deposit_withholding_is_weekly_per_employee_across_multiple_roles() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(category="category_2")
+    entries = [
+        make_entry(period, employee, period.start_date, minutes=60, role="Пиццерист"),
+        make_entry(period, employee, period.start_date.replace(day=20), role="Сушист"),
+    ]
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {employee.id: employee},
+        deposit_settings(withholding=2000),
+    )
+
+    assert result.blocking_issues == []
+    assert len(result.lines) == 2
+    withholdings = [Decimal(str(line.components["deposit_withholding"])) for line in result.lines]
+    assert all(amount > 0 for amount in withholdings)
+    assert sum(withholdings) == Decimal("2000")
+    assert sum(line.deduction for line in result.lines) == Decimal("2000")
+
+
 def test_scheduled_deposit_payout_pays_balance_and_resets_withholding() -> None:
     # Отложенная выдача: накоплено 14000, выдаём всё → running-баланс сброшен на 0, удержание
     # копит заново (2000 вместо capped 1000 без сброса). Выдача в столбце, НЕ в «К выплате».

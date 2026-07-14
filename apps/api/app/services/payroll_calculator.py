@@ -790,6 +790,10 @@ def calculate_payroll_lines_from_inputs(
     payout_schedules = deposit_payout_schedules or {}
     # Запланированная выдача применяется один раз на сотрудника (на первой его строке).
     scheduled_payouts_done: dict[uuid.UUID, Decimal] = {}
+    # Индивидуальное/категорийное удержание — недельный лимит на сотрудника, а не на
+    # каждую его роль-строку. Если на первой строке не хватает начислений, остаток
+    # лимита может быть удержан на следующей строке того же сотрудника.
+    deposit_withholding_remaining: dict[uuid.UUID, Decimal] = {}
     # Сотрудники, у кого депозит на момент выдачи был собран ПОЛНОСТЬЮ (баланс ≥ цель):
     # это финальный вывод (увольнение/полный забор) — удержание в этой ведомости НЕ
     # запускаем заново ни на одной их строке. При частичной собранности добор продолжается.
@@ -848,11 +852,20 @@ def calculate_payroll_lines_from_inputs(
         ):
             deduction = Decimal("0")
         else:
+            remaining_weekly_withholding = deposit_withholding_remaining.setdefault(
+                employee_id,
+                decimal(employee_deposit_withholding(settings, employees[employee_id]) or 0),
+            )
             deduction = deposit_withholding(
                 settings,
                 employees[employee_id],
                 deposit_base,
                 current_balance=current_deposit_balance,
+            )
+            deduction = min(deduction, remaining_weekly_withholding)
+            deposit_withholding_remaining[employee_id] = max(
+                remaining_weekly_withholding - deduction,
+                Decimal("0"),
             )
         running_deposit_balances[employee_id] = current_deposit_balance + deduction
         totals["deposit_withholding"] = deduction
