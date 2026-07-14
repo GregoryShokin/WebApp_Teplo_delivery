@@ -25,6 +25,15 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### codex-payroll-draft-retry — ветка `fix/payroll-draft-retry`
+- worktree: `../Teplo-agent-payroll-draft-retry`
+- compose: изолированная тестовая БД/без постоянного стека
+- трогает: обработку `DELETED` для зарплатных банк-черновиков, повторную отправку и возврат
+  строки в «Готов к отправке» (`payroll_payouts.py`, `scheduler.py`, `payments_aggregator.py`,
+  `ActivePaymentsModal.tsx`, модель/миграция и профильные тесты)
+- НЕ трогать другим: контракт повторной отправки удалённого `PayrollBankDraft`
+- статус: в работе
+
 ### agent-c — ветка `agent/c-couriers`
 - worktree: `../Teplo-agent-c`
 - compose: agent-c (API 8020 / web 5193 / pg 5452, БД `teplo`, тест `teplo_test_c`)
