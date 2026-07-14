@@ -1515,8 +1515,41 @@ def payroll_role_for_entry(
     if settings is not None:
         ledger_entry = ledger_entry_for_employee_date(settings, employee.id, entry.work_date)
         if ledger_entry is not None:
-            return clean_string(getattr(ledger_entry, "payroll_role", None))
-    return (entry.role or "").strip()
+            ledger_role = clean_string(getattr(ledger_entry, "payroll_role", None))
+            if ledger_role:
+                return ledger_role
+
+    entry_role = clean_string(entry.role)
+    if entry_role:
+        return entry_role
+
+    if settings is None:
+        return ""
+
+    assignments = assignments_for_employee_date(settings, employee.id, entry.work_date)
+    station_role = assignment_role_for_payroll_context(None, entry.station)
+    if station_role:
+        station_assignment = next(
+            (
+                assignment
+                for assignment in assignments
+                if clean_string(getattr(assignment, "payroll_role", None)) == station_role
+            ),
+            None,
+        )
+        if station_assignment is not None:
+            return station_role
+
+    primary = next(
+        (
+            assignment
+            for assignment in assignments
+            if getattr(assignment, "is_primary", False)
+            and getattr(assignment, "payroll_role", None)
+        ),
+        None,
+    )
+    return clean_string(getattr(primary, "payroll_role", None))
 
 
 def vacation_role_for_employee_day(

@@ -3035,6 +3035,35 @@ def test_employee_position_does_not_backfill_missing_payroll_role() -> None:
     assert result.blocking_issues[0]["type"] == "missing_payroll_role"
 
 
+def test_primary_assignment_backfills_missing_attendance_role() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(
+        position="Повар",
+        category="category_2",
+        default_cooking_station="pizza",
+    )
+    work_date = period.start_date
+    entry = make_entry(period, employee, work_date, role=None, station=None)
+    settings = payroll_settings()
+    settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = {
+        (employee.id, work_date): [
+            make_role_assignment(employee.id, "pizza", "category_2", is_primary=True)
+        ]
+    }
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        [entry],
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    assert result.lines[0].role == "pizza"
+
+
 def test_fixed_salary_for_full_week_is_calculated() -> None:
     period = make_period()
     run_id = uuid.uuid4()
