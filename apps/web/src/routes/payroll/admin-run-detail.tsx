@@ -45,25 +45,27 @@ import {
   finalizePayrollRun,
   getAdminPayrollRun,
   getAdminPayrollRunLines,
-  getCashWallets,
   getEmployees,
   getPayrollAdvances,
   getRunBankDraft,
+  getRunFundingSources,
   getRunPayoutAllocation,
   setRunPayoutCash,
   unfinalizePayrollRun,
   unmarkPayrollPayment,
-  type CashWallet,
   type Employee,
   type PayrollAdvance,
   type PayrollBankDraft,
+  type PayrollFundingSource,
   type PayrollLine,
   type PayrollPaymentMethod,
   type PayrollRun,
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
+import { cn } from "@/lib/utils";
 
 import { EmployeePayoutDialog } from "./employee-payout-dialog";
+import { PayrollPayoutWalletCorrectionButton } from "./payout-wallet-correction-dialog";
 import { RecoveryDialog } from "./recovery-dialog";
 import { formatDate, formatMoney, formatPeriodRange } from "./runs";
 
@@ -251,7 +253,9 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
       return;
     }
     if (
-      !window.confirm("Финализировать ведомость? После закрытия повторный расчёт будет заблокирован.")
+      !window.confirm(
+        "Финализировать ведомость? После закрытия повторный расчёт будет заблокирован.",
+      )
     ) {
       return;
     }
@@ -299,7 +303,8 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
                       Пересчитать ведомость за {run ? formatPeriodRange(run.period) : "период"}?
                     </AlertDialogTitle>
                     <AlertDialogDescription>
-                      Строки ведомости будут пересозданы с актуальными окладами, премиями и штрафами.
+                      Строки ведомости будут пересозданы с актуальными окладами, премиями и
+                      штрафами.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -439,9 +444,9 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
             <div className="min-w-0 flex-1">
               <div className="font-semibold">Ведомость устарела — пересчитайте</div>
               <div className="mt-1 text-sm">
-                После расчёта появились авансы или займы (например, проведённые задним числом),
-                ещё не учтённые в удержаниях. Нажмите «Пересчитать», чтобы обновить итоги —
-                финализация заблокирована до пересчёта.
+                После расчёта появились авансы или займы (например, проведённые задним числом), ещё
+                не учтённые в удержаниях. Нажмите «Пересчитать», чтобы обновить итоги — финализация
+                заблокирована до пересчёта.
               </div>
             </div>
           </div>
@@ -457,8 +462,8 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
             ))}
           </ul>
           <div className="text-xs text-muted-foreground">
-            Задайте оклад в «Оклады администрации» и пересчитайте, либо отметьте «Не платить»,
-            если сотрудник не должен получать оклад.
+            Задайте оклад в «Оклады администрации» и пересчитайте, либо отметьте «Не платить», если
+            сотрудник не должен получать оклад.
           </div>
         </section>
       ) : null}
@@ -666,7 +671,9 @@ function AdminLinesTable({
       cell: (row) => (
         <div>
           <div className="font-medium">{row.employeeName}</div>
-          <div className="text-xs text-muted-foreground">{row.position || "Должность не указана"}</div>
+          <div className="text-xs text-muted-foreground">
+            {row.position || "Должность не указана"}
+          </div>
           {row.employee?.requires_position_review ? (
             <button
               className="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-800 hover:bg-amber-100"
@@ -751,7 +758,10 @@ function AdminLinesTable({
         const bankPaid = extractEmployeePayoutOffset(row.line);
         if (row.line.on_demand) {
           return (
-            <span className="text-muted-foreground" title="Оклад «по востребованию» — не выплачивается автоматически">
+            <span
+              className="text-muted-foreground"
+              title="Оклад «по востребованию» — не выплачивается автоматически"
+            >
               —
             </span>
           );
@@ -1229,16 +1239,16 @@ function AdminPayoutCard({
     queryKey: ["admin-run-payout-allocation", runId],
     queryFn: () => getRunPayoutAllocation(runId),
   });
-  const cashWalletsQuery = useQuery({
-    queryKey: ["payroll-cash-wallets"],
-    queryFn: () => getCashWallets(),
+  const fundingQuery = useQuery({
+    queryKey: ["run-funding-sources", runId],
+    queryFn: () => getRunFundingSources(runId),
   });
 
   const draft = draftQuery.data ?? null;
-  const cashWallets = useMemo<CashWallet[]>(
+  const cashWallets = useMemo<PayrollFundingSource[]>(
     // Только счета, выдача с которых разрешена правами на канал.
     () =>
-      (cashWalletsQuery.data ?? []).filter((wallet) => {
+      (fundingQuery.data?.cash_sources ?? []).filter((wallet) => {
         if (wallet.code === "cash_safe") {
           return channelPerms.safe;
         }
@@ -1247,7 +1257,7 @@ function AdminPayoutCard({
         }
         return true;
       }),
-    [cashWalletsQuery.data, channelPerms.safe, channelPerms.cash_tk],
+    [fundingQuery.data?.cash_sources, channelPerms.safe, channelPerms.cash_tk],
   );
   const allocation = allocationQuery.data;
 
@@ -1276,9 +1286,27 @@ function AdminPayoutCard({
   const needsWallet = cashValid && cashAmount !== null && cashAmount > 0;
   const walletValid = !needsWallet || walletCode !== "";
   const previewBank =
-    cashValid && cashAmount !== null ? normalizeMoney(Math.max(0, totalPayable - cashAmount)) : null;
+    cashValid && cashAmount !== null
+      ? normalizeMoney(Math.max(0, totalPayable - cashAmount))
+      : null;
 
-  const currentWalletId = cashWallets.find((wallet) => wallet.code === walletCode)?.id ?? null;
+  const selectedCashSource = cashWallets.find((wallet) => wallet.code === walletCode);
+  const selectedBankSource = fundingQuery.data?.bank_sources.find(
+    (source) => source.provider === bankProvider,
+  );
+  const cashFundsValid =
+    !needsWallet ||
+    !fundingQuery.isSuccess ||
+    (selectedCashSource !== undefined &&
+      cashAmount !== null &&
+      cashAmount <= moneyValue(selectedCashSource.available));
+  const bankFundsValid =
+    previewBank === null ||
+    previewBank <= 0 ||
+    !fundingQuery.isSuccess ||
+    (selectedBankSource?.is_configured === true &&
+      previewBank <= moneyValue(selectedBankSource.available));
+  const currentWalletId = selectedCashSource?.id ?? null;
   const savedWalletId = run.payout_cash_wallet_id ?? null;
   const cashDirty =
     cashAmount === null ||
@@ -1303,11 +1331,17 @@ function AdminPayoutCard({
       queryClient.invalidateQueries({ queryKey: ["payroll-admin-run-lines", runId] }),
       queryClient.invalidateQueries({ queryKey: ["admin-run-bank-draft", runId] }),
       queryClient.invalidateQueries({ queryKey: ["admin-run-payout-allocation", runId] }),
+      queryClient.invalidateQueries({ queryKey: ["run-funding-sources", runId] }),
     ]);
 
   const cashMutation = useMutation({
     mutationFn: () =>
-      setRunPayoutCash(runId, normalizeMoney(cashAmount ?? 0), needsWallet ? walletCode : null),
+      setRunPayoutCash(
+        runId,
+        normalizeMoney(cashAmount ?? 0),
+        needsWallet ? walletCode : null,
+        bankProvider,
+      ),
     onSuccess: async () => {
       await invalidatePayoutQueries();
       toast.success("Сплит сохранён");
@@ -1340,8 +1374,8 @@ function AdminPayoutCard({
       </div>
       <p className="mt-1 text-sm text-muted-foreground">
         Укажите наличную сумму и счёт. Безналичный остаток уходит одним черновиком на счёт ИП —
-        после оплаты в банке деньги автоматически переводятся в Сейф. В ДДС зарплата проводится
-        по статьям (уборщицы и посудомойки — «Содержание торговых точек», остальные — «Зарплата
+        после оплаты в банке деньги автоматически переводятся в Сейф. В ДДС зарплата проводится по
+        статьям (уборщицы и посудомойки — «Содержание торговых точек», остальные — «Зарплата
         административного персонала») по факту «Выплатить» — только по выплаченным сотрудникам.
       </p>
 
@@ -1355,7 +1389,10 @@ function AdminPayoutCard({
             Наличными итого
           </Label>
           <Input
-            className="mt-1"
+            className={cn(
+              "mt-1",
+              !cashFundsValid && "border-destructive focus-visible:ring-destructive",
+            )}
             disabled={cashMutation.isPending}
             id="admin-payout-cash"
             inputMode="decimal"
@@ -1381,7 +1418,7 @@ function AdminPayoutCard({
             <option value="">— выберите счёт —</option>
             {cashWallets.map((wallet) => (
               <option key={wallet.id} value={wallet.code}>
-                {wallet.name}
+                {wallet.name} · доступно {formatMoney(moneyValue(wallet.available))}
               </option>
             ))}
           </select>
@@ -1402,6 +1439,24 @@ function AdminPayoutCard({
       {cashValid && needsWallet && !walletValid ? (
         <div className="mt-2 text-xs text-destructive">
           Выберите наличный счёт (Сейф или Торговая касса Черникова).
+        </div>
+      ) : null}
+      {cashValid && walletValid && !cashFundsValid && selectedCashSource ? (
+        <div className="mt-2 text-xs text-destructive">
+          На счёте доступно {formatMoney(moneyValue(selectedCashSource.available))}. Уменьшите
+          наличную часть.
+        </div>
+      ) : null}
+      {previewBank !== null && previewBank > 0 && selectedBankSource ? (
+        <div
+          className={cn(
+            "mt-2 text-xs text-muted-foreground",
+            !bankFundsValid && "text-destructive",
+          )}
+        >
+          В {selectedBankSource.name} доступно{" "}
+          {formatMoney(moneyValue(selectedBankSource.available))}
+          {!selectedBankSource.is_configured ? " · счёт не настроен" : ""}.
         </div>
       ) : null}
 
@@ -1431,7 +1486,15 @@ function AdminPayoutCard({
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button
-          disabled={!cashValid || !walletValid || !cashDirty || cashMutation.isPending}
+          disabled={
+            !cashValid ||
+            !walletValid ||
+            !cashFundsValid ||
+            !bankFundsValid ||
+            !fundingQuery.isSuccess ||
+            !cashDirty ||
+            cashMutation.isPending
+          }
           onClick={async () => {
             try {
               await cashMutation.mutateAsync();
@@ -1450,6 +1513,12 @@ function AdminPayoutCard({
           )}
           Сохранить сплит
         </Button>
+
+        <PayrollPayoutWalletCorrectionButton
+          onCorrected={invalidatePayoutQueries}
+          runId={runId}
+          wallets={cashWallets}
+        />
 
         {hasBank && channelPerms.bank_draft ? (
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -1476,7 +1545,14 @@ function AdminPayoutCard({
         >
           <AlertDialogTrigger asChild>
             <Button
-              disabled={draftMutation.isPending || cashDirty || !channelPerms.bank_draft}
+              disabled={
+                draftMutation.isPending ||
+                cashDirty ||
+                !cashFundsValid ||
+                !bankFundsValid ||
+                !fundingQuery.isSuccess ||
+                !channelPerms.bank_draft
+              }
               title={
                 channelPerms.bank_draft ? undefined : "Нет права на формирование банк-черновиков"
               }

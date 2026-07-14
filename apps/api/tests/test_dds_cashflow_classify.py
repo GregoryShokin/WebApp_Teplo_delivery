@@ -27,9 +27,7 @@ def _run(coro):
 
 
 def _make_article(code: str, name: str, movement_type: str = "outflow") -> DdsArticle:
-    return DdsArticle(
-        code=code, name=name, movement_type=movement_type, activity_type="operating"
-    )
+    return DdsArticle(code=code, name=name, movement_type=movement_type, activity_type="operating")
 
 
 def _wallet_balance(client: TestClient, wallet_id: str) -> Decimal:
@@ -104,9 +102,7 @@ def _seed_single(
     return _run(go())
 
 
-def _seed_transfer(
-    factory: async_sessionmaker[AsyncSession], *, dest_type: str
-) -> dict[str, str]:
+def _seed_transfer(factory: async_sessionmaker[AsyncSession], *, dest_type: str) -> dict[str, str]:
     """Исходный наличный кошелёк −500 и счёт-получатель (наличный/банковский).
 
     Единая транзитная статья ``internal_transfer`` уже есть в каталоге ДДС (миграция 0114,
@@ -316,6 +312,51 @@ def test_exclude_removes_from_balance_reversibly(
     assert back.status_code == 200, back.text
     assert _wallet_balance(client, ids["wallet_id"]) == Decimal("-500.00")
     assert _journal_status(client, ids["txn_id"]) == "classified"
+
+
+def test_payroll_cashflow_cannot_be_excluded_from_generic_dds(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Системную зарплатную проводку исправляют через ведомость, не общим ДДС-разбором."""
+
+    async def seed() -> dict[str, str]:
+        async with async_session_factory() as session:
+            wallet = Wallet(
+                code="cf_payroll_protected",
+                name="Сейф зарплаты",
+                type="cash",
+                opening_balance=Decimal("0.00"),
+            )
+            session.add(wallet)
+            await session.flush()
+            txn = CashflowTransaction(
+                wallet_id=wallet.id,
+                direction="out",
+                amount=Decimal("500.00"),
+                operation_date=date(2026, 6, 15),
+                source_kind="payroll_payout",
+                source_id=uuid.uuid4(),
+                payment_purpose="Выплата ЗП",
+                quality_status="final",
+            )
+            session.add(txn)
+            await session.commit()
+            return {"wallet_id": str(wallet.id), "txn_id": str(txn.id)}
+
+    ids = _run(seed())
+    assert _wallet_balance(client, ids["wallet_id"]) == Decimal("-500.00")
+
+    response = client.post(
+        f"/api/v1/dds/transactions/{ids['txn_id']}/classify",
+        json={"action": "exclude"},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 409, response.text
+    assert "через разбор ДДС" in response.json()["detail"]
+    assert _wallet_balance(client, ids["wallet_id"]) == Decimal("-500.00")
+    rows = _rows_for(async_session_factory, ids["wallet_id"])
+    assert len(rows) == 1 and rows[0].quality_status == "final"
 
 
 def test_bank_operation_sourced_rejected(

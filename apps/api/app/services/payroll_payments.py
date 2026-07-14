@@ -84,12 +84,13 @@ async def unmark_payment(
             PayrollPayment.employee_id == employee_id,
         )
     )
-    # Только полностью выплаченную (как было до частичной выплаты): unmark удаляет строку и
-    # НЕ реверсит уже проведённый ДДС — для partially_paid это дало бы сироту ДДС и задвоение
-    # при повторной выплате (booked_amount теряется). Частичную не откатываем (только доплата
-    # вперёд); ошибочную — через дефинализацию ведомости.
+    # Только полностью выплаченную без проведённого ДДС. Если booked_amount > 0, удаление
+    # строки оставит сиротский расход и при повторной выплате задвоит ДДС. Такой откат должен
+    # идти будущим доменным сценарием с компенсирующей проводкой и пересчётом резерва.
     if payment is None or payment.status != "paid":
         raise PayrollNotFoundError("Payroll payment not found")
+    if Decimal(payment.booked_amount or 0) > 0:
+        raise PayrollConflictError("Проведённую выплату нельзя снять без финансового отката")
 
     await session.execute(delete(PayrollPayment).where(PayrollPayment.id == payment.id))
     _add_payment_event(
@@ -451,9 +452,7 @@ def _post_deposit_payout_iiko(payout_result: Any, run: PayrollRun, paid_at: date
             post_production_deposit_payout_to_iiko,
         )
 
-        post_production_deposit_payout_to_iiko(
-            amount=amount, payout_date=paid_at, source_id=run.id
-        )
+        post_production_deposit_payout_to_iiko(amount=amount, payout_date=paid_at, source_id=run.id)
 
 
 async def _get_payment_run(session: AsyncSession, run_id: uuid.UUID) -> PayrollRun:

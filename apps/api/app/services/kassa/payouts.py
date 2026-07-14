@@ -550,26 +550,32 @@ async def _kassa_pending_freelancers(session: AsyncSession) -> list[dict[str, An
     return await list_unpaid_freelancers(session)
 
 
-async def kassa_pending_payload(session: AsyncSession) -> dict[str, Any]:
+async def kassa_pending_payload(
+    session: AsyncSession,
+    *,
+    include_payroll_targets: bool = False,
+) -> dict[str, Any]:
     """Состав вкладки «К выдаче»: целёвки в кассе + ожидающие разрешения + итоги.
 
     Этот же payload отдаёт read-only диалог «Целевые в Торговой кассе» на «Деньгах
-    сегодня» (там без кнопок выдачи — выдаёт только администратор в Кассе).
+    сегодня». Для диалога ``include_payroll_targets=True`` добавляет пул-резервы
+    ведомостей: они входят в целевые деньги кассы, но выдаются только через
+    «Активные платежи», а не обычной кнопкой «Выдано» модуля «Касса».
     """
     wallet = await get_kassa_wallet(session)
+    target_filters = [
+        SafeAllocation.wallet_id == wallet.id,
+        SafeAllocation.location == "kassa",
+        SafeAllocation.status.in_(ACTIVE_RESERVE_STATUSES),
+    ]
+    if not include_payroll_targets:
+        target_filters.append(SafeAllocation.source_run_id.is_(None))
     rows = (
         await session.execute(
             select(SafeAllocation, DdsArticle.name, Counterparty.name)
             .outerjoin(DdsArticle, DdsArticle.id == SafeAllocation.article_id)
             .outerjoin(Counterparty, Counterparty.id == SafeAllocation.counterparty_id)
-            .where(
-                SafeAllocation.wallet_id == wallet.id,
-                SafeAllocation.location == "kassa",
-                SafeAllocation.status.in_(ACTIVE_RESERVE_STATUSES),
-                # Пул-резервы выплаты ЗП сюда не попадают — они выдаются через окно ведомости,
-                # а не из «К выдаче» (в earmark kassa_targets_total они при этом учитываются).
-                SafeAllocation.source_run_id.is_(None),
-            )
+            .where(*target_filters)
             .order_by(SafeAllocation.created_at.desc())
         )
     ).all()
@@ -588,6 +594,9 @@ async def kassa_pending_payload(session: AsyncSession) -> dict[str, Any]:
             ),
             # Происхождение: авто-целёвка закупа из оплаченного банковского черновика.
             "from_bank_payout": allocation.source_draft_id is not None,
+            # Пул ведомости показываем в read-only модалке ДДС, но не отдаём в обычную
+            # очередь кассира без явного include_payroll_targets.
+            "is_payroll": allocation.source_run_id is not None,
             "created_at": allocation.created_at,
         }
         for allocation, article_name, counterparty_name in rows

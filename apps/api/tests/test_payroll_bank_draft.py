@@ -9,6 +9,7 @@ from test_payroll_payouts import (
     RecordingBankClient,
     create_actor_user,
     create_payroll_run,
+    fund_wallet,
 )
 
 from app.api.deps import CurrentActor
@@ -66,6 +67,7 @@ async def test_create_run_draft_uses_run_account_part_for_one_bank_draft(
 ) -> None:
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
+        await fund_wallet(session, "tk_chernikova")
         _period, run, _employees = await create_payroll_run(
             session,
             employee_line_totals=[

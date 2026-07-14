@@ -14,6 +14,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from test_admin_payout_split import _payer_wallet, _safe_wallet
+from test_payroll_payouts import fund_wallet
 
 from app.models import (
     CashflowTransaction,
@@ -28,7 +29,6 @@ from app.services.payroll_payout_allocation import DDS_ARTICLE_PRODUCTION_PAYROL
 from app.services.payroll_payouts import (
     DDS_ARTICLE_DEPOSIT_PAYOUT,
     PAYROLL_PAYOUT_SOURCE_KIND,
-    SAFE_WALLET_CODE,
     book_payout_expense_for_employees,
     set_run_payout_cash,
 )
@@ -184,6 +184,7 @@ async def test_deposit_payout_cash_from_tk_returns_iiko_amount(
                 select(Wallet).where(Wallet.code == "tk_chernikova")
             )
             assert tk_wallet is not None, "ТК Черникова засеяна миграцией 0115"
+            await fund_wallet(session, "tk_chernikova")
             run, employee_id = await _make_production_run_with_deposit(
                 session, total_payable=Decimal("10000"), deposit_payout=Decimal("5000")
             )

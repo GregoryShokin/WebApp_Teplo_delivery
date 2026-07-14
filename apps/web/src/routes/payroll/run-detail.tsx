@@ -54,11 +54,11 @@ import {
   createPayrollRun,
   createRunBankDraft,
   finalizePayrollRun,
-  getCashWallets,
   getEmployees,
   getPayrollRun,
   getPayrollRunLines,
   getRunBankDraft,
+  getRunFundingSources,
   getRunPayoutAllocation,
   getRunPayoutDelta,
   getSettings,
@@ -68,9 +68,9 @@ import {
   unmarkPayrollPayment,
   unfinalizePayrollRun,
   type AppSetting,
-  type CashWallet,
   type Employee,
   type PayrollBankDraft,
+  type PayrollFundingSource,
   type PayrollLine,
   type PayrollPaymentMethod,
   type RunPayoutDelta,
@@ -86,6 +86,7 @@ import {
   formatRatio,
   runRevenue,
 } from "./runs";
+import { PayrollPayoutWalletCorrectionButton } from "./payout-wallet-correction-dialog";
 
 type PayrollRunDetailRouteProps = {
   runId: string;
@@ -691,20 +692,20 @@ function PayoutSplitDialog({
   const [bankProvider, setBankProvider] = useState<"tbank" | "sber">("tbank");
   const hasDraft = Boolean(draft);
 
-  const cashWalletsQuery = useQuery({
-    queryKey: ["payroll-cash-wallets"],
-    queryFn: () => getCashWallets(),
+  const fundingQuery = useQuery({
+    queryKey: ["run-funding-sources", runId],
+    queryFn: () => getRunFundingSources(runId),
   });
-  const cashWallets = useMemo<CashWallet[]>(
+  const cashWallets = useMemo<PayrollFundingSource[]>(
     () =>
-      (cashWalletsQuery.data ?? []).filter((wallet) =>
+      (fundingQuery.data?.cash_sources ?? []).filter((wallet) =>
         wallet.code === "cash_safe"
           ? channelPerms.safe
           : wallet.code === "tk_chernikova"
             ? channelPerms.cash_tk
             : true,
       ),
-    [cashWalletsQuery.data, channelPerms.safe, channelPerms.cash_tk],
+    [fundingQuery.data?.cash_sources, channelPerms.safe, channelPerms.cash_tk],
   );
 
   useEffect(() => {
@@ -724,7 +725,25 @@ function PayoutSplitDialog({
   const walletValid = !needsWallet || walletCode !== "";
   const previewAccount =
     cashValid && cashAmount !== null ? normalizeMoney(Math.max(0, grandTotal - cashAmount)) : null;
-  const currentWalletId = cashWallets.find((wallet) => wallet.code === walletCode)?.id ?? null;
+  const selectedCashSource = fundingQuery.data?.cash_sources.find(
+    (wallet) => wallet.code === walletCode,
+  );
+  const selectedBankSource = fundingQuery.data?.bank_sources.find(
+    (source) => source.provider === bankProvider,
+  );
+  const cashFundsValid =
+    !needsWallet ||
+    !fundingQuery.isSuccess ||
+    (selectedCashSource !== undefined &&
+      cashAmount !== null &&
+      cashAmount <= moneyValue(selectedCashSource.available));
+  const bankFundsValid =
+    previewAccount === null ||
+    previewAccount <= 0 ||
+    !fundingQuery.isSuccess ||
+    (selectedBankSource?.is_configured === true &&
+      previewAccount <= moneyValue(selectedBankSource.available));
+  const currentWalletId = selectedCashSource?.id ?? null;
   const cashDirty =
     cashAmount === null ||
     normalizeMoney(cashAmount) !== normalizeMoney(payoutCashTotal) ||
@@ -733,7 +752,12 @@ function PayoutSplitDialog({
   const submitMutation = useMutation({
     mutationFn: async () => {
       if (cashDirty && cashAmount !== null) {
-        await setRunPayoutCash(runId, normalizeMoney(cashAmount), needsWallet ? walletCode : null);
+        await setRunPayoutCash(
+          runId,
+          normalizeMoney(cashAmount),
+          needsWallet ? walletCode : null,
+          bankProvider,
+        );
       }
       return createRunBankDraft(runId, bankProvider);
     },
@@ -744,6 +768,7 @@ function PayoutSplitDialog({
         queryClient.invalidateQueries({ queryKey: ["run-bank-draft", runId] }),
         queryClient.invalidateQueries({ queryKey: ["run-payout-delta", runId] }),
         queryClient.invalidateQueries({ queryKey: ["run-payout-allocation", runId] }),
+        queryClient.invalidateQueries({ queryKey: ["run-funding-sources", runId] }),
       ]);
       onOpenChange(false);
       toast.success(
@@ -754,7 +779,13 @@ function PayoutSplitDialog({
       toast.error(apiErrorMessage(error, "Не удалось сформировать черновик выплаты")),
   });
 
-  const canSubmit = cashValid && walletValid && channelPerms.bank_draft;
+  const canSubmit =
+    cashValid &&
+    walletValid &&
+    cashFundsValid &&
+    bankFundsValid &&
+    fundingQuery.isSuccess &&
+    channelPerms.bank_draft;
   const chipCls = (active: boolean) =>
     cn(
       "rounded-full border px-3 py-1 text-xs",
@@ -778,6 +809,7 @@ function PayoutSplitDialog({
           <div className="space-y-2">
             <Label htmlFor="split-cash">Наличными</Label>
             <Input
+              className={cn(!cashFundsValid && "border-destructive focus-visible:ring-destructive")}
               id="split-cash"
               inputMode="decimal"
               onChange={(event) => setCashValue(event.target.value)}
@@ -794,7 +826,7 @@ function PayoutSplitDialog({
                     onClick={() => setWalletCode(wallet.code)}
                     type="button"
                   >
-                    {wallet.name}
+                    {wallet.name} · доступно {formatMoney(moneyValue(wallet.available))}
                   </button>
                 ))}
               </div>
@@ -805,10 +837,20 @@ function PayoutSplitDialog({
               </p>
             ) : needsWallet && !walletValid ? (
               <p className="text-xs text-destructive">Выберите наличный счёт.</p>
+            ) : !cashFundsValid && selectedCashSource ? (
+              <p className="text-xs text-destructive">
+                На счёте доступно {formatMoney(moneyValue(selectedCashSource.available))}. Уменьшите
+                наличную часть.
+              </p>
             ) : null}
           </div>
 
-          <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-sm">
+          <div
+            className={cn(
+              "flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-sm",
+              !bankFundsValid && "border-destructive bg-destructive/5",
+            )}
+          >
             <span className="text-muted-foreground">Безналичный остаток → черновик на счёт ИП</span>
             <span className="font-medium tabular-nums">
               {previewAccount === null ? "—" : formatMoney(previewAccount)}
@@ -833,6 +875,17 @@ function PayoutSplitDialog({
                 Сбербанк
               </button>
             </div>
+            {selectedBankSource ? (
+              <p
+                className={cn(
+                  "text-xs text-muted-foreground",
+                  !bankFundsValid && "text-destructive",
+                )}
+              >
+                Доступно на счёте: {formatMoney(moneyValue(selectedBankSource.available))}
+                {!selectedBankSource.is_configured ? " · счёт не настроен" : ""}
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -1247,14 +1300,14 @@ function RunBankDraftCard({
   const draftAmount = moneyValue(draft?.amount ?? totalAccountAmount);
   const hasDraft = Boolean(draft);
 
-  const cashWalletsQuery = useQuery({
-    queryKey: ["payroll-cash-wallets"],
-    queryFn: () => getCashWallets(),
+  const fundingQuery = useQuery({
+    queryKey: ["run-funding-sources", runId],
+    queryFn: () => getRunFundingSources(runId),
   });
-  const cashWallets = useMemo<CashWallet[]>(
+  const cashWallets = useMemo<PayrollFundingSource[]>(
     () =>
       // Показываем только счета, выдача с которых разрешена правами на канал.
-      (cashWalletsQuery.data ?? []).filter((wallet) => {
+      (fundingQuery.data?.cash_sources ?? []).filter((wallet) => {
         if (wallet.code === "cash_safe") {
           return channelPerms.safe;
         }
@@ -1263,7 +1316,7 @@ function RunBankDraftCard({
         }
         return true;
       }),
-    [cashWalletsQuery.data, channelPerms.safe, channelPerms.cash_tk],
+    [fundingQuery.data?.cash_sources, channelPerms.safe, channelPerms.cash_tk],
   );
   const allocationQuery = useQuery({
     queryKey: ["run-payout-allocation", runId],
@@ -1290,7 +1343,23 @@ function RunBankDraftCard({
   const walletValid = !needsWallet || walletCode !== "";
   const previewAccount =
     cashValid && cashAmount !== null ? normalizeMoney(Math.max(0, grandTotal - cashAmount)) : null;
-  const currentWalletId = cashWallets.find((wallet) => wallet.code === walletCode)?.id ?? null;
+  const selectedCashSource = cashWallets.find((wallet) => wallet.code === walletCode);
+  const selectedBankSource = fundingQuery.data?.bank_sources.find(
+    (source) => source.provider === bankProvider,
+  );
+  const cashFundsValid =
+    !needsWallet ||
+    !fundingQuery.isSuccess ||
+    (selectedCashSource !== undefined &&
+      cashAmount !== null &&
+      cashAmount <= moneyValue(selectedCashSource.available));
+  const bankFundsValid =
+    previewAccount === null ||
+    previewAccount <= 0 ||
+    !fundingQuery.isSuccess ||
+    (selectedBankSource?.is_configured === true &&
+      previewAccount <= moneyValue(selectedBankSource.available));
+  const currentWalletId = selectedCashSource?.id ?? null;
   const cashDirty =
     cashAmount === null ||
     normalizeMoney(cashAmount) !== normalizeMoney(payoutCashTotal) ||
@@ -1314,11 +1383,12 @@ function RunBankDraftCard({
       queryClient.invalidateQueries({ queryKey: ["run-bank-draft", runId] }),
       queryClient.invalidateQueries({ queryKey: ["run-payout-delta", runId] }),
       queryClient.invalidateQueries({ queryKey: ["run-payout-allocation", runId] }),
+      queryClient.invalidateQueries({ queryKey: ["run-funding-sources", runId] }),
     ]);
 
   const cashMutation = useMutation({
     mutationFn: (amountCash: number) =>
-      setRunPayoutCash(runId, amountCash, needsWallet ? walletCode : null),
+      setRunPayoutCash(runId, amountCash, needsWallet ? walletCode : null, bankProvider),
     onSuccess: async () => {
       await invalidatePayoutQueries();
       toast.success("Наличная сумма сохранена");
@@ -1376,7 +1446,10 @@ function RunBankDraftCard({
             Наличными итого
           </Label>
           <Input
-            className="mt-1"
+            className={cn(
+              "mt-1",
+              !cashFundsValid && "border-destructive focus-visible:ring-destructive",
+            )}
             disabled={cashMutation.isPending}
             id="run-payout-cash"
             inputMode="decimal"
@@ -1402,7 +1475,7 @@ function RunBankDraftCard({
             <option value="">— выберите счёт —</option>
             {cashWallets.map((wallet) => (
               <option key={wallet.id} value={wallet.code}>
-                {wallet.name}
+                {wallet.name} · доступно {formatMoney(moneyValue(wallet.available))}
               </option>
             ))}
           </select>
@@ -1423,6 +1496,24 @@ function RunBankDraftCard({
       {cashValid && needsWallet && !walletValid ? (
         <div className="mt-2 text-xs text-destructive">
           Выберите наличный счёт (Сейф или Торговая касса Черникова).
+        </div>
+      ) : null}
+      {cashValid && walletValid && !cashFundsValid && selectedCashSource ? (
+        <div className="mt-2 text-xs text-destructive">
+          На счёте доступно {formatMoney(moneyValue(selectedCashSource.available))}. Уменьшите
+          наличную часть.
+        </div>
+      ) : null}
+      {previewAccount !== null && previewAccount > 0 && selectedBankSource ? (
+        <div
+          className={cn(
+            "mt-2 text-xs text-muted-foreground",
+            !bankFundsValid && "text-destructive",
+          )}
+        >
+          В {selectedBankSource.name} доступно{" "}
+          {formatMoney(moneyValue(selectedBankSource.available))}
+          {!selectedBankSource.is_configured ? " · счёт не настроен" : ""}.
         </div>
       ) : null}
 
@@ -1452,7 +1543,15 @@ function RunBankDraftCard({
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button
-          disabled={!cashValid || !walletValid || !cashDirty || cashMutation.isPending}
+          disabled={
+            !cashValid ||
+            !walletValid ||
+            !cashFundsValid ||
+            !bankFundsValid ||
+            !fundingQuery.isSuccess ||
+            !cashDirty ||
+            cashMutation.isPending
+          }
           onClick={async () => {
             if (cashAmount === null) {
               return;
@@ -1474,6 +1573,12 @@ function RunBankDraftCard({
           )}
           Сохранить наличные
         </Button>
+
+        <PayrollPayoutWalletCorrectionButton
+          onCorrected={invalidatePayoutQueries}
+          runId={runId}
+          wallets={cashWallets}
+        />
 
         <select
           aria-label="Банк черновика"
@@ -1503,6 +1608,9 @@ function RunBankDraftCard({
                 cashDirty ||
                 !cashValid ||
                 !walletValid ||
+                !cashFundsValid ||
+                !bankFundsValid ||
+                !fundingQuery.isSuccess ||
                 !channelPerms.bank_draft
               }
               title={

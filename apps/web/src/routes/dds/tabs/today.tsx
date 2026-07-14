@@ -5,12 +5,7 @@ import { AlertCircle, ArrowRight, Banknote, Coins, Lock } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/lib/permissions";
-import {
-  getDdsBankOperations,
-  getDdsOwnerReview,
-  getDdsWallets,
-  type WalletRead,
-} from "@/lib/api";
+import { getDdsBankOperations, getDdsOwnerReview, getDdsWallets, type WalletRead } from "@/lib/api";
 import { KassaTargetsDialog } from "@/routes/dds/KassaTargetsDialog";
 import { SafeAccountDialog } from "@/routes/dds/SafeAccountDialog";
 import { BankSyncButton, formatDdsMoney } from "@/routes/dds/shared";
@@ -162,8 +157,8 @@ export function TodayTab({ onNavigate }: { onNavigate: (path: string) => void })
               {formatDdsMoney(grandTotal)}
             </div>
             <div className="mt-2 text-xs text-emerald-900/70">
-              По {wallets.length} {pluralize(wallets.length, "кошельку", "кошелькам", "кошелькам")} —
-              {" "}все счета и кассы вместе.
+              По {wallets.length} {pluralize(wallets.length, "кошельку", "кошелькам", "кошелькам")}{" "}
+              — все счета и кассы вместе.
             </div>
           </div>
           {pendingReview > 0 ? (
@@ -216,11 +211,7 @@ export function TodayTab({ onNavigate }: { onNavigate: (path: string) => void })
         onClose={() => setSafeWallet(null)}
       />
 
-      <KassaTargetsDialog
-        open={kassaTargetsOpen}
-        onClose={() => setKassaTargetsOpen(false)}
-        onNavigate={onNavigate}
-      />
+      <KassaTargetsDialog open={kassaTargetsOpen} onClose={() => setKassaTargetsOpen(false)} />
     </div>
   );
 }
@@ -299,7 +290,9 @@ function WalletRow({
     >
       <div className="min-w-0">
         <div className="truncate font-medium">{wallet.name}</div>
-        <div className="text-xs text-muted-foreground">{TYPE_LABELS[wallet.type] ?? wallet.type}</div>
+        <div className="text-xs text-muted-foreground">
+          {TYPE_LABELS[wallet.type] ?? wallet.type}
+        </div>
       </div>
       <div className="text-right">
         <div className="tabular-nums font-medium">{formatDdsMoney(wallet.balance)}</div>

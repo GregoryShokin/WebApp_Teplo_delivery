@@ -141,10 +141,7 @@ export async function getCardTransactions(params: {
   return response.data;
 }
 
-export async function getCheques(params?: {
-  limit?: number;
-  offset?: number;
-}): Promise<Cheque[]> {
+export async function getCheques(params?: { limit?: number; offset?: number }): Promise<Cheque[]> {
   const response = await api.get<Cheque[]>(`${BASE}/cheques`, { params });
   return response.data;
 }
@@ -364,10 +361,7 @@ export async function updateKassaPayout(
   transactionId: string,
   payload: KassaPayoutPayload,
 ): Promise<KassaPayoutResult> {
-  const response = await api.patch<KassaPayoutResult>(
-    `${BASE}/payouts/${transactionId}`,
-    payload,
-  );
+  const response = await api.patch<KassaPayoutResult>(`${BASE}/payouts/${transactionId}`, payload);
   return response.data;
 }
 
@@ -390,6 +384,8 @@ export type KassaTarget = {
   outstanding: number;
   // Авто-целёвка оплаченного банковского черновика закупа.
   from_bank_payout: boolean;
+  // В обычной очереди кассы всегда false; зарплатные пулы выдаются отдельным контуром.
+  is_payroll: boolean;
   created_at: string;
 };
 
@@ -467,10 +463,7 @@ export async function payKassaFreelancerShifts(
 }
 
 /** «Выдано»: расход целёвки наличными из кассы (частично можно, сверх остатка — 409). */
-export async function payKassaTarget(
-  allocationId: string,
-  amount: number,
-): Promise<KassaPending> {
+export async function payKassaTarget(allocationId: string, amount: number): Promise<KassaPending> {
   const response = await api.post<KassaPending>(`${BASE}/targets/${allocationId}/payout`, {
     amount,
   });
@@ -487,9 +480,7 @@ export async function disburseKassaAdvancePermission(advanceId: string): Promise
 
 /** Отменить разрешение со стороны кассы — создатель увидит «отменено кассой». */
 export async function cancelKassaAdvancePermission(advanceId: string): Promise<KassaPending> {
-  const response = await api.post<KassaPending>(
-    `${BASE}/advance-permissions/${advanceId}/cancel`,
-  );
+  const response = await api.post<KassaPending>(`${BASE}/advance-permissions/${advanceId}/cancel`);
   return response.data;
 }
 
@@ -579,9 +570,7 @@ export async function getKassaPayinPresetArticles(): Promise<KassaPayinPresetArt
   return response.data;
 }
 
-export async function getKassaPayinPresetCounterparties(): Promise<
-  KassaPayinPresetCounterparty[]
-> {
+export async function getKassaPayinPresetCounterparties(): Promise<KassaPayinPresetCounterparty[]> {
   const response = await api.get<KassaPayinPresetCounterparty[]>(
     `${BASE}/payin-preset-counterparties`,
   );

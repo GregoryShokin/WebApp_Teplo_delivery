@@ -22,8 +22,10 @@ from app.models import (
     PayrollPeriod,
     PayrollRun,
     PayrollRunEvent,
+    SafeAllocation,
     SourceCredential,
     User,
+    Wallet,
 )
 from app.schemas.payroll import PayrollRunPayoutCashPatch
 from app.services import payroll_runner
@@ -35,9 +37,11 @@ from app.services.payroll_payouts import (
     create_or_update_drafts,
     create_or_update_run_draft,
     get_payout_deltas,
+    get_run_funding_sources,
     set_run_payout_cash,
 )
 from app.services.payroll_runner import (
+    PayrollConflictError,
     finalize_payroll_run,
     run_payroll,
     serialize_run,
@@ -45,11 +49,137 @@ from app.services.payroll_runner import (
 )
 
 
+async def fund_wallet(
+    session: AsyncSession,
+    code: str,
+    amount: Decimal = Decimal("1000000"),
+) -> Wallet:
+    """Явный остаток источника выплаты: старые тесты до валидации денег его не задавали."""
+    wallet = await session.scalar(select(Wallet).where(Wallet.code == code))
+    assert wallet is not None
+    wallet.opening_balance = amount
+    wallet.opening_balance_date = date(2099, 1, 1)
+    await session.flush()
+    return wallet
+
+
+async def test_split_blocks_cash_above_available_wallet_balance_and_ignores_own_reserve(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        wallet = await session.scalar(select(Wallet).where(Wallet.code == "tk_chernikova"))
+        assert wallet is not None
+        wallet.opening_balance = Decimal("49000")
+        wallet.opening_balance_date = date(2099, 1, 1)
+        _period, run, _employees = await create_payroll_run(
+            session,
+            employee_line_totals=[[Decimal("60000")]],
+        )
+        await session.commit()
+
+        with pytest.raises(PayrollConflictError, match="доступно 49000.00"):
+            await set_run_payout_cash(
+                session,
+                run.id,
+                amount_cash=Decimal("60000"),
+                cash_wallet_code="tk_chernikova",
+                actor_user_id=actor.id,
+            )
+
+        await set_run_payout_cash(
+            session,
+            run.id,
+            amount_cash=Decimal("49000"),
+            cash_wallet_code="tk_chernikova",
+            actor_user_id=actor.id,
+        )
+        funding = await get_run_funding_sources(session, run.id)
+        kassa = next(source for source in funding.cash_sources if source.code == "tk_chernikova")
+        assert kassa.balance == Decimal("49000.00")
+        assert kassa.reserved_other == Decimal("0.00")
+        assert kassa.available == Decimal("49000.00")
+
+        session.add(
+            SafeAllocation(
+                wallet_id=wallet.id,
+                amount=Decimal("1000"),
+                amount_paid=Decimal("0"),
+                purpose="Чужой активный резерв",
+                status="reserved",
+                location="kassa",
+            )
+        )
+        await session.commit()
+        funding = await get_run_funding_sources(session, run.id)
+        kassa = next(source for source in funding.cash_sources if source.code == "tk_chernikova")
+        assert kassa.reserved_other == Decimal("1000.00")
+        assert kassa.available == Decimal("48000.00")
+
+        with pytest.raises(PayrollConflictError, match="доступно 48000.00"):
+            await set_run_payout_cash(
+                session,
+                run.id,
+                amount_cash=Decimal("49000"),
+                cash_wallet_code="tk_chernikova",
+                actor_user_id=actor.id,
+            )
+
+
+async def test_split_and_draft_block_bank_part_above_selected_bank_balance(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        tbank = await session.scalar(select(Wallet).where(Wallet.code == "tbank_main"))
+        sber = await session.scalar(select(Wallet).where(Wallet.code == "sber_main"))
+        assert tbank is not None and sber is not None
+        tbank.opening_balance = Decimal("49000")
+        tbank.opening_balance_date = date(2099, 1, 1)
+        sber.opening_balance = Decimal("70000")
+        sber.opening_balance_date = date(2099, 1, 1)
+        _period, run, _employees = await create_payroll_run(
+            session,
+            employee_line_totals=[[Decimal("60000")]],
+        )
+        await session.commit()
+
+        with pytest.raises(HTTPException) as insufficient:
+            await payroll_routes.patch_run_payout_cash(
+                run.id,
+                PayrollRunPayoutCashPatch(
+                    amount_cash=Decimal("0"),
+                    bank_provider="tbank",
+                ),
+                session,
+                CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
+            )
+        assert insufficient.value.status_code == 409
+        assert "доступно 49000.00" in str(insufficient.value.detail)
+
+        saved = await payroll_routes.patch_run_payout_cash(
+            run.id,
+            PayrollRunPayoutCashPatch(amount_cash=Decimal("0"), bank_provider="sber"),
+            session,
+            CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
+        )
+        assert saved["payout_cash_total"] == 0
+
+        with pytest.raises(PayrollConflictError, match="доступно 49000.00"):
+            await create_or_update_run_draft(
+                session,
+                run.id,
+                actor_user_id=actor.id,
+                provider="tbank",
+            )
+
+
 async def test_run_payout_cash_validates_bounds_status_and_legacy(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
+        await fund_wallet(session, "tk_chernikova")
         _period, run, _employees = await create_payroll_run(
             session,
             employee_line_totals=[[Decimal("1000"), Decimal("250")]],
@@ -113,6 +243,7 @@ async def test_run_payout_cash_account_uses_total_payable_after_ndfl(
 ) -> None:
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
+        await fund_wallet(session, "tk_chernikova")
         _period, run, _employees = await create_payroll_run(
             session,
             employee_line_totals=[[Decimal("870")]],
@@ -143,6 +274,7 @@ async def test_create_or_update_drafts_uses_run_account_part_and_writes_events(
 ) -> None:
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
+        await fund_wallet(session, "tk_chernikova")
         _period, run, _employees = await create_payroll_run(
             session,
             employee_line_totals=[

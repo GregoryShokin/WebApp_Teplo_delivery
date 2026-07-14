@@ -39,8 +39,10 @@ from app.models import (
     SafeAllocation,
     Wallet,
 )
+from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 from app.services.banking.safe_allocations import (
     ACTIVE_RESERVE_STATUSES,
+    book_internal_transfer,
     create_allocation,
 )
 from app.services.payroll_payout_allocation import (
@@ -75,6 +77,16 @@ class PoolAllocation:
 
     employee_id: uuid.UUID
     amount: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class RunPaymentSettlement:
+    """Сводка закрытия обязательства по ФОТ ведомости."""
+
+    required: Decimal
+    paid: Decimal
+    booked: Decimal
+    settled: bool
 
 
 def allocate_pool(
@@ -156,6 +168,27 @@ class PoolPayoutResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ReserveTransferResult:
+    """Итог переноса части зарплатного резерва между Сейфом и кассой."""
+
+    source_reserve_id: uuid.UUID
+    destination_reserve_id: uuid.UUID
+    transfer_id: uuid.UUID
+    amount: Decimal
+    destination_location: str
+    allocations: tuple[PoolAllocation, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ReserveCancelResult:
+    """Итог снятия непогашенного остатка одного зарплатного резерва."""
+
+    reserve_id: uuid.UUID
+    released: Decimal
+    status: str
+
+
+@dataclass(frozen=True, slots=True)
 class SolvencyBreakdown:
     """Разложение платёжеспособности под ведомость (advisory — банк по последней выписке)."""
 
@@ -226,6 +259,39 @@ async def run_pool_shares(session: AsyncSession, run_id: uuid.UUID) -> list[Empl
         if remaining > 0:
             shares.append(EmployeeShare(employee_id, _q(remaining)))
     return shares
+
+
+async def run_payment_settlement(session: AsyncSession, run_id: uuid.UUID) -> RunPaymentSettlement:
+    """Проверить, что весь ФОТ и выплачен сотрудникам, и проведён в ДДС.
+
+    ``PayrollPayment.amount`` отвечает за факт выплаты сотруднику, ``booked_amount`` — за
+    проведённую сумму ДДС. Только совпадение обеих сумм с ФОТ позволяет освободить остатки
+    резервов: это защищает от ситуации «отметили выплаченным, но расход ещё не создался».
+    """
+    required = _q(
+        await session.scalar(
+            select(func.coalesce(func.sum(PayrollLine.total_payable), 0)).where(
+                PayrollLine.run_id == run_id
+            )
+        )
+        or 0
+    )
+    paid, booked = (
+        await session.execute(
+            select(
+                func.coalesce(func.sum(PayrollPayment.amount), 0),
+                func.coalesce(func.sum(PayrollPayment.booked_amount), 0),
+            ).where(PayrollPayment.run_id == run_id)
+        )
+    ).one()
+    paid_q = _q(paid or 0)
+    booked_q = _q(booked or 0)
+    return RunPaymentSettlement(
+        required=required,
+        paid=paid_q,
+        booked=booked_q,
+        settled=required > 0 and paid_q >= required and booked_q >= required,
+    )
 
 
 async def _active_run_reserve(
@@ -323,28 +389,40 @@ async def ensure_run_safe_reserve(
     )
 
 
-async def reconcile_run_reserves(session: AsyncSession, run_id: uuid.UUID) -> None:
-    """Пересчитать ``amount_paid`` активных пул-резервов из ФАКТИЧЕСКИХ out-проводок ЗП на
-    кошельке резерва.
+async def reconcile_run_reserves(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    *,
+    include_paid: bool = False,
+) -> None:
+    """Сверить пул-резервы с действующим ДДС и общим обязательством ведомости.
 
-    ``amount_paid`` = min(amount, Σ out-проводок ``payroll_payout`` на ``wallet_id`` этой
-    ведомости). Нужно, потому что ручной/bulk путь выплаты («Выплатить»/«Доплатить» в реестре)
-    книжит расход на ТОТ ЖЕ Сейф/кассу БЕЗ ``pay_wallet_id`` и не трогает резерв — без сверки
-    резерв застрял бы в ``partially_paid`` с фантомным earmark'ом (и завышал бы «зарезервировано»
-    в остатке кошелька/solvency). Вызывается в конце любой выплаты по ведомости (пул и реестр).
+    ``amount_paid`` = min(amount, Σ ДЕЙСТВУЮЩИХ out-проводок ``payroll_payout`` на
+    ``wallet_id`` этой ведомости). ``quality_status='excluded'`` не двигает баланс наличного
+    кошелька и поэтому не считается расходом именно этого кошелька. Когда весь ФОТ уже
+    выплачен И проведён в ДДС, непотреблённый остаток любого резерва снимается: зарплата могла
+    быть фактически выдана из второго пула, и держать деньги первого пула целевыми больше не
+    требуется. Ручной/bulk путь выплаты
+    («Выплатить»/«Доплатить» в реестре) книжит расход на ТОТ ЖЕ Сейф/кассу БЕЗ
+    ``pay_wallet_id`` и не трогает резерв — без сверки резерв застрял бы в
+    ``partially_paid`` с фантомным earmark'ом. Вызывается в конце любой выплаты по ведомости
+    (пул и реестр). ``include_paid=True`` используется доменной коррекцией кошелька, чтобы
+    пересчитать ранее ошибочно закрытый резерв.
     """
     from app.services.payroll_payouts import PAYROLL_PAYOUT_SOURCE_KIND
 
+    statuses = (*ACTIVE_RESERVE_STATUSES, "paid") if include_paid else ACTIVE_RESERVE_STATUSES
     reserves = (
         await session.scalars(
             select(SafeAllocation).where(
                 SafeAllocation.source_run_id == run_id,
-                SafeAllocation.status.in_(ACTIVE_RESERVE_STATUSES),
+                SafeAllocation.status.in_(statuses),
             )
         )
     ).all()
     if not reserves:
         return
+    settlement = await run_payment_settlement(session, run_id)
     for reserve in reserves:
         out = await session.scalar(
             select(func.coalesce(func.sum(CashflowTransaction.amount), 0)).where(
@@ -352,11 +430,16 @@ async def reconcile_run_reserves(session: AsyncSession, run_id: uuid.UUID) -> No
                 CashflowTransaction.source_id == run_id,
                 CashflowTransaction.direction == "out",
                 CashflowTransaction.wallet_id == reserve.wallet_id,
+                CashflowTransaction.quality_status != EXCLUDED_QUALITY,
             )
         )
         paid = min(_q(reserve.amount), _q(out or 0))
         reserve.amount_paid = paid
-        if paid <= 0:
+        if settlement.settled and paid < _q(reserve.amount):
+            # Обязательство ведомости закрыто из другого кошелька: фактически не потраченный
+            # остаток этого пула освобождается, но amount_paid остаётся честным счётчиком ДДС.
+            reserve.status = "cancelled"
+        elif paid <= 0:
             reserve.status = "reserved"
         elif paid >= _q(reserve.amount):
             reserve.status = "paid"
@@ -383,6 +466,155 @@ async def cancel_run_reserves(session: AsyncSession, run_id: uuid.UUID) -> int:
     if count:
         await session.flush()
     return count
+
+
+async def transfer_run_reserve(
+    session: AsyncSession,
+    *,
+    reserve_id: uuid.UUID,
+    selected_ids: set[uuid.UUID],
+    boundary_override: uuid.UUID | None = None,
+    operation_date: date,
+    actor_user_id: uuid.UUID | None,
+) -> ReserveTransferResult:
+    """Перенести выбранную часть зарплатного пула Сейф↔касса вместе с деньгами.
+
+    Сумма берётся из той же раскладки, которую пользователь видит перед выплатой:
+    выбранные сотрудники, меньшие остатки первыми, опциональный граничный сотрудник.
+    Источник уменьшается ровно на перенесённую сумму, резерв получателя увеличивается
+    на неё же, а двухногий внутренний перевод сохраняет свободные остатки обоих счетов.
+    Выбранная раскладка пишется в событие ведомости для аудита.
+    """
+    if not selected_ids:
+        raise PayrollConflictError("Выберите сотрудников для передачи резерва")
+
+    source = await session.get(SafeAllocation, reserve_id, with_for_update=True)
+    if source is None or source.source_run_id is None:
+        raise PayrollNotFoundError("Резерв ведомости не найден")
+    if source.employee_id is not None:
+        raise PayrollConflictError("Это не пул-резерв ведомости")
+    if source.status not in ACTIVE_RESERVE_STATUSES:
+        raise PayrollConflictError("Резерв уже оплачен или отменён")
+
+    run = await session.get(PayrollRun, source.source_run_id)
+    if run is None:
+        raise PayrollNotFoundError("Ведомость не найдена")
+    if run.status != "finalized":
+        raise PayrollConflictError("Сначала финализируйте ведомость")
+
+    destination_location = "safe" if source.location == "kassa" else "kassa"
+    source_outstanding = _q(Decimal(source.amount) - Decimal(source.amount_paid))
+    allocations = allocate_pool(
+        source_outstanding,
+        await run_pool_shares(session, run.id),
+        selected_ids=selected_ids,
+        boundary_override=boundary_override,
+    )
+    transfer_amount = allocated_total(allocations)
+    if transfer_amount <= 0:
+        raise PayrollConflictError("У выбранных сотрудников нет остатка к выплате")
+
+    destination = await _active_run_reserve(session, run.id, destination_location, for_update=True)
+    destination_wallet = await _resolve_wallet(
+        session,
+        SAFE_WALLET_CODE if destination_location == "safe" else KASSA_WALLET_CODE,
+    )
+    source_wallet = await session.get(Wallet, source.wallet_id)
+    if source_wallet is None or source_wallet.status != "active":
+        raise PayrollConflictError("Счёт-источник резерва не найден или неактивен")
+
+    try:
+        transfer_id = await book_internal_transfer(
+            session,
+            source_wallet=source_wallet,
+            dest_wallet=destination_wallet,
+            amount=transfer_amount,
+            purpose=f"Перенос резерва ЗП: {_reserve_label(run)}",
+            operation_date=operation_date,
+        )
+    except ValueError as exc:
+        raise PayrollConflictError(str(exc)) from exc
+
+    source_left = _q(source_outstanding - transfer_amount)
+    if source_left <= 0:
+        # Выплаченная часть остаётся в истории, но непогашенного резерва на источнике
+        # больше нет. cancelled здесь означает именно снятый/перенесённый остаток.
+        source.status = "cancelled"
+    else:
+        source.amount = _q(Decimal(source.amount) - transfer_amount)
+        source.status = "partially_paid" if Decimal(source.amount_paid) > 0 else "reserved"
+
+    if destination is None:
+        destination = await create_allocation(
+            session,
+            wallet_id=destination_wallet.id,
+            amount=transfer_amount,
+            free_amount=None,
+            article_id=source.article_id,
+            purpose=source.purpose or _reserve_label(run),
+            source_run_id=run.id,
+            location=destination_location,
+            created_by_user_id=actor_user_id,
+        )
+    else:
+        destination.amount = _q(Decimal(destination.amount) + transfer_amount)
+        destination.status = (
+            "partially_paid" if Decimal(destination.amount_paid) > 0 else "reserved"
+        )
+        await session.flush()
+
+    _add_reserve_transfer_event(
+        session,
+        run=run,
+        source=source,
+        destination=destination,
+        transfer_id=transfer_id,
+        amount=transfer_amount,
+        allocations=allocations,
+        actor_user_id=actor_user_id,
+    )
+    await session.commit()
+    return ReserveTransferResult(
+        source_reserve_id=source.id,
+        destination_reserve_id=destination.id,
+        transfer_id=transfer_id,
+        amount=transfer_amount,
+        destination_location=destination_location,
+        allocations=tuple(allocations),
+    )
+
+
+async def cancel_run_reserve(
+    session: AsyncSession,
+    *,
+    reserve_id: uuid.UUID,
+    actor_user_id: uuid.UUID | None,
+) -> ReserveCancelResult:
+    """Снять непогашенный остаток одного зарплатного резерва без обратной проводки."""
+    reserve = await session.get(SafeAllocation, reserve_id, with_for_update=True)
+    if reserve is None or reserve.source_run_id is None:
+        raise PayrollNotFoundError("Резерв ведомости не найден")
+    if reserve.employee_id is not None:
+        raise PayrollConflictError("Это не пул-резерв ведомости")
+    run = await session.get(PayrollRun, reserve.source_run_id)
+    if run is None:
+        raise PayrollNotFoundError("Ведомость не найдена")
+    if reserve.status == "paid":
+        raise PayrollConflictError("Полностью выплаченный резерв отменить нельзя")
+    if reserve.status == "cancelled":
+        return ReserveCancelResult(reserve.id, Decimal("0.00"), reserve.status)
+
+    released = _q(Decimal(reserve.amount) - Decimal(reserve.amount_paid))
+    reserve.status = "cancelled"
+    _add_reserve_cancel_event(
+        session,
+        run=run,
+        reserve=reserve,
+        released=released,
+        actor_user_id=actor_user_id,
+    )
+    await session.commit()
+    return ReserveCancelResult(reserve.id, released, reserve.status)
 
 
 async def pay_run_from_pool(
@@ -441,9 +673,9 @@ async def pay_run_from_pool(
                 actor_user_id=actor_user_id,
             )
             booked += delta
-            paid_by_emp[alloc.employee_id] = paid_by_emp.get(
-                alloc.employee_id, Decimal("0")
-            ) + alloc.amount
+            paid_by_emp[alloc.employee_id] = (
+                paid_by_emp.get(alloc.employee_id, Decimal("0")) + alloc.amount
+            )
         return _q(booked)
 
     primary_booked = await _drain(primary, shares)
@@ -609,6 +841,66 @@ def _add_pool_payout_event(
                 "reserve_location": reserve.location,
                 "primary_booked": str(_q(primary_booked)),
                 "overflow_booked": str(_q(overflow_booked)),
+            },
+        )
+    )
+
+
+def _add_reserve_transfer_event(
+    session: AsyncSession,
+    *,
+    run: PayrollRun,
+    source: SafeAllocation,
+    destination: SafeAllocation,
+    transfer_id: uuid.UUID,
+    amount: Decimal,
+    allocations: list[PoolAllocation],
+    actor_user_id: uuid.UUID | None,
+) -> None:
+    from app.models import PayrollRunEvent
+
+    session.add(
+        PayrollRunEvent(
+            run_id=run.id,
+            period_id=run.period_id,
+            action="reserve_transferred",
+            actor_user_id=actor_user_id,
+            payload={
+                "source_reserve_id": str(source.id),
+                "source_location": source.location,
+                "destination_reserve_id": str(destination.id),
+                "destination_location": destination.location,
+                "transfer_id": str(transfer_id),
+                "amount": str(_q(amount)),
+                "employee_allocations": [
+                    {"employee_id": str(item.employee_id), "amount": str(_q(item.amount))}
+                    for item in allocations
+                ],
+            },
+        )
+    )
+
+
+def _add_reserve_cancel_event(
+    session: AsyncSession,
+    *,
+    run: PayrollRun,
+    reserve: SafeAllocation,
+    released: Decimal,
+    actor_user_id: uuid.UUID | None,
+) -> None:
+    from app.models import PayrollRunEvent
+
+    session.add(
+        PayrollRunEvent(
+            run_id=run.id,
+            period_id=run.period_id,
+            action="reserve_cancelled",
+            actor_user_id=actor_user_id,
+            payload={
+                "reserve_id": str(reserve.id),
+                "location": reserve.location,
+                "released": str(_q(released)),
             },
         )
     )

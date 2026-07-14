@@ -43,6 +43,25 @@ TRANSFER_SOURCE_KIND = "manual_transfer"
 
 EXCLUDED_QUALITY = "excluded"
 MANUAL_QUALITY = "manual_override"
+PAYROLL_PROTECTED_SOURCE_KINDS = frozenset({"payroll_payout", "payroll_bank_to_safe"})
+
+
+class CashflowClassificationConflictError(ValueError):
+    """Проводка принадлежит доменному контуру и не может правиться общим классификатором."""
+
+
+def ensure_cashflow_reclassifiable(txn: CashflowTransaction) -> None:
+    """Не дать общему ДДС-разбору рассинхронизировать зарплату и её проводки.
+
+    Зарплатные расходы и транзит банк→Сейф создаются из ведомости. Их исключение/сплит
+    меняет баланс, но не ``PayrollPayment.booked_amount`` и не резерв ведомости, поэтому
+    исправлять такие строки можно только доменной корректировкой внутри ведомости.
+    """
+    if txn.source_kind in PAYROLL_PROTECTED_SOURCE_KINDS:
+        raise CashflowClassificationConflictError(
+            "Зарплатную проводку нельзя исправлять через разбор ДДС — "
+            "скорректируйте выплату в ведомости"
+        )
 
 
 async def _transfer_article_ids(session: AsyncSession) -> tuple[UUID | None, UUID | None]:
@@ -141,6 +160,7 @@ async def apply_cashflow_split(
     ``EmployeePayout`` («выплачено») на эту долю — расчёт ЗП вычтет её из «к выдаче» (как и при
     разборе операции выписки). ``employee_id`` на не-зарплатной статье — ошибка.
     """
+    ensure_cashflow_reclassifiable(txn)
     if not splits:
         raise ValueError("Нужна хотя бы одна статья")
     # Совместимость: доля — (article, amount, comment, transfer_wallet_id[, employee_id]).
@@ -158,9 +178,7 @@ async def apply_cashflow_split(
     original_amount = Decimal(txn.amount)
     total = sum((amount for _a, amount, *_rest in splits), Decimal("0"))
     if total != original_amount:
-        raise ValueError(
-            f"Сумма по статьям ({total}) не равна сумме проводки ({original_amount})"
-        )
+        raise ValueError(f"Сумма по статьям ({total}) не равна сумме проводки ({original_amount})")
 
     out_article, in_article = await _transfer_article_ids(session)
     transfer_article_ids = {a for a in (out_article, in_article) if a is not None}
@@ -269,15 +287,14 @@ async def apply_cashflow_split(
     return created
 
 
-async def apply_cashflow_exclude(
-    session: AsyncSession, txn: CashflowTransaction
-) -> list[UUID]:
+async def apply_cashflow_exclude(session: AsyncSession, txn: CashflowTransaction) -> list[UUID]:
     """Мягко исключить ручную проводку из ДДС и из баланса кошелька (обратимо).
 
     ``quality_status='excluded'`` убирает проводку из витрины баланса (фильтр в
     ``_wallet_movement_deltas``) — баланс кошелька изменится на её сумму. Повторный разбор
     (split) снова назначит статью и вернёт проводку в баланс.
     """
+    ensure_cashflow_reclassifiable(txn)
     await _clear_transfer_counter_leg(session, txn)
     txn.quality_status = EXCLUDED_QUALITY
     return [txn.id]

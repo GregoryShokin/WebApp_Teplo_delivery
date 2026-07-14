@@ -63,6 +63,9 @@ async def _payer_wallet(session: AsyncSession) -> tuple[Account, Wallet]:
     )
     if wallet is not None:
         account = await session.get(Account, wallet.account_id)
+        wallet.opening_balance = Decimal("1000000")
+        wallet.opening_balance_date = date(2099, 1, 1)
+        await session.flush()
         return account, wallet
     account = Account(
         id=uuid.uuid4(),
@@ -83,6 +86,8 @@ async def _payer_wallet(session: AsyncSession) -> tuple[Account, Wallet]:
         currency="RUB",
         status="active",
         account_id=account.id,
+        opening_balance=Decimal("1000000"),
+        opening_balance_date=date(2099, 1, 1),
     )
     session.add(wallet)
     await session.commit()
@@ -92,6 +97,9 @@ async def _payer_wallet(session: AsyncSession) -> tuple[Account, Wallet]:
 async def _safe_wallet(session: AsyncSession) -> Wallet:
     wallet = await session.scalar(select(Wallet).where(Wallet.code == SAFE_WALLET_CODE))
     assert wallet is not None, "Сейф (cash_safe) должен быть засеян миграцией"
+    wallet.opening_balance = Decimal("1000000")
+    wallet.opening_balance_date = date(2099, 1, 1)
+    await session.flush()
     return wallet
 
 
@@ -159,7 +167,11 @@ async def _make_admin_run(
     return run, employees
 
 
-async def _txns(session: AsyncSession, run_id: uuid.UUID, source_kind: str) -> list[CashflowTransaction]:
+async def _txns(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    source_kind: str,
+) -> list[CashflowTransaction]:
     return list(
         (
             await session.scalars(
@@ -183,6 +195,7 @@ async def test_admin_draft_books_no_cashflow(
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
         await _payer_wallet(session)
+        await _safe_wallet(session)
         run, _employees = await _make_admin_run(
             session,
             [("Менеджер", Decimal("30000")), ("Уборщица", Decimal("15000"))],
@@ -229,7 +242,8 @@ async def test_paid_books_bank_to_safe_transfer(
         assert len(transfer) == 2
         bank_leg = next(t for t in transfer if t.wallet_id == payer_wallet.id)
         safe_leg = next(t for t in transfer if t.wallet_id == safe_wallet.id)
-        # банк-нога: списание со счёта (для матчинга выписки), Сейф-нога: приток (двигает баланс Сейфа)
+        # Банк-нога: списание со счёта для матчинга выписки.
+        # Сейф-нога: приток, который двигает баланс Сейфа.
         assert bank_leg.direction == "out" and bank_leg.amount == Decimal("30000.00")
         assert safe_leg.direction == "in" and safe_leg.amount == Decimal("30000.00")
 
@@ -256,7 +270,11 @@ async def test_payout_books_expense_from_safe_incrementally(
 
         # Выплачиваем только менеджера (30000 → «Зарплата админ»).
         marked = await mark_payments_selected(
-            session, run.id, [by_role["Менеджер"]], paid_at=date(2026, 6, 16), actor_user_id=actor.id
+            session,
+            run.id,
+            [by_role["Менеджер"]],
+            paid_at=date(2026, 6, 16),
+            actor_user_id=actor.id,
         )
         assert marked == 1
         expense = await _txns(session, run.id, PAYROLL_PAYOUT_SOURCE_KIND)
@@ -266,7 +284,11 @@ async def test_payout_books_expense_from_safe_incrementally(
 
         # Выплачиваем уборщицу (15000 → «Содержание торговых точек»): добавляется расход.
         marked = await mark_payments_selected(
-            session, run.id, [by_role["Уборщица"]], paid_at=date(2026, 6, 16), actor_user_id=actor.id
+            session,
+            run.id,
+            [by_role["Уборщица"]],
+            paid_at=date(2026, 6, 16),
+            actor_user_id=actor.id,
         )
         assert marked == 1
         expense = await _txns(session, run.id, PAYROLL_PAYOUT_SOURCE_KIND)

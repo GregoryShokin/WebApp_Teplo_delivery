@@ -1,9 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, Loader2, Pencil, X } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Check, Loader2, Pencil, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -14,11 +24,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
+  cancelPayrollReserve,
   getEmployees,
   getPayrollRunLines,
   getRunSolvency,
   payEmployeeFromReserve,
   payRunFromPool,
+  transferPayrollReserve,
   type PayrollLine,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -76,10 +88,9 @@ function previewAllocate(
   return result;
 }
 
-// Окно выплаты ЗП из пула-резерва (Сейф/касса), привязанного к ведомости. Авто-раскладка «меньшие
-// первыми» с выбором сотрудников (чекбоксы) и граничным (сплит) + перетоком на второй пул («Выплатить
-// из Сейфа/кассы»); ПЛЮС карандаш в колонке «Получит» для ручной правки суммы конкретному сотруднику
-// (остаток резерва лежит earmark'ом для следующей выплаты).
+// Окно работы с пулом-резервом ЗП (Сейф/касса): выбранную раскладку можно выплатить из
+// текущего счёта, перенести вместе с деньгами на второй наличный счёт или отменить резерв.
+// Карандаш в колонке «Получит» оставляет быстрый путь ручной выплаты конкретной суммы.
 export function PayPayrollReserveDialog({
   row,
   onOpenChange,
@@ -102,6 +113,7 @@ export function PayPayrollReserveDialog({
   const [poolLeft, setPoolLeft] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 
   const linesQuery = useQuery({
     queryKey: ["payroll-run-lines", runId],
@@ -191,21 +203,19 @@ export function PayPayrollReserveDialog({
     await onPaid();
   }
 
-  // Авто-раскладка пула по выбранным (+граничный, +переток на второй пул).
+  // Авто-раскладка пула по выбранным (+граничный); второй счёт теперь выбирается явно.
   const payMutation = useMutation({
     mutationFn: () =>
       payRunFromPool(reserveId as string, {
         selected_ids: Array.from(selected),
         boundary_id: boundaryId,
-        allow_overflow: true,
+        allow_overflow: false,
         paid_at: todayIso(),
       }),
     onSuccess: async (res) => {
       await refreshAfterPay();
-      const overflow =
-        res.overflow_booked > 0 ? ` (+${money.format(res.overflow_booked)} перетоком)` : "";
       toast.success(
-        `Выплачено ${money.format(res.primary_booked)} из ${channel}${overflow} — ${res.employees_paid} чел.`,
+        `Выплачено ${money.format(res.primary_booked)} из ${channel} — ${res.employees_paid} чел.`,
       );
       onOpenChange(false);
     },
@@ -213,6 +223,45 @@ export function PayPayrollReserveDialog({
       const detail =
         (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
         "Не удалось провести выплату";
+      toast.error(detail);
+    },
+  });
+
+  const transferMutation = useMutation({
+    mutationFn: () =>
+      transferPayrollReserve(reserveId as string, {
+        selected_ids: Array.from(selected),
+        boundary_id: boundaryId,
+        operation_date: todayIso(),
+      }),
+    onSuccess: async (res) => {
+      await refreshAfterPay();
+      const destination = res.destination_location === "safe" ? "Сейф" : "кассу";
+      toast.success(
+        `Передано ${money.format(res.amount)} в ${destination} с резервом для ${res.allocations.length} чел.`,
+      );
+      onOpenChange(false);
+    },
+    onError: (error: unknown) => {
+      const detail =
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        "Не удалось передать резерв";
+      toast.error(detail);
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () => cancelPayrollReserve(reserveId as string),
+    onSuccess: async (res) => {
+      setCancelConfirmOpen(false);
+      await refreshAfterPay();
+      toast.success(`Резерв отменён · освобождено ${money.format(res.released)}`);
+      onOpenChange(false);
+    },
+    onError: (error: unknown) => {
+      const detail =
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        "Не удалось отменить резерв";
       toast.error(detail);
     },
   });
@@ -243,7 +292,11 @@ export function PayPayrollReserveDialog({
     },
   });
 
-  const busy = payMutation.isPending || payEmployeeMutation.isPending;
+  const busy =
+    payMutation.isPending ||
+    payEmployeeMutation.isPending ||
+    transferMutation.isPending ||
+    cancelMutation.isPending;
 
   function toggle(employeeId: string) {
     setSelected((cur) => {
@@ -280,179 +333,236 @@ export function PayPayrollReserveDialog({
   }
 
   return (
-    <Dialog open={Boolean(row)} onOpenChange={(next) => !next && onOpenChange(false)}>
-      <DialogContent className="flex max-h-[86vh] max-w-xl flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="shrink-0 space-y-0 border-b px-6 py-4">
-          <DialogTitle className="text-lg">Выплата ЗП из {channel}</DialogTitle>
-          <DialogDescription className="mt-0.5">
-            В резерве {money.format(poolLeft)} · авто-раскладка «меньшие первыми» или правь сумму
-            по каждому карандашом; остаток лежит резервом для следующей выплаты
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={Boolean(row)} onOpenChange={(next) => !next && onOpenChange(false)}>
+        <DialogContent className="flex max-h-[86vh] max-w-xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 space-y-0 border-b px-6 py-4">
+            <DialogTitle className="text-lg">Выплата ЗП из {channel}</DialogTitle>
+            <DialogDescription className="mt-0.5">
+              В резерве {money.format(poolLeft)} · отметь сотрудников и выбери: выплатить, передать
+              резерв на другой наличный счёт или отменить его
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4">
-          {solvency && !solvency.solvent ? (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-              <span>
-                Не хватает {money.format(solvency.shortfall)}. Пополните счёт, либо выберите, кому
-                не доплатить — сформируется долг.{" "}
-                <span className="opacity-70">Банк/овердрафт — по последней выписке.</span>
-              </span>
-            </div>
-          ) : null}
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4">
+            {solvency && !solvency.solvent ? (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                <span>
+                  Не хватает {money.format(solvency.shortfall)}. Пополните счёт, либо выберите, кому
+                  не доплатить — сформируется долг.{" "}
+                  <span className="opacity-70">Банк/овердрафт — по последней выписке.</span>
+                </span>
+              </div>
+            ) : null}
 
-          {loading ? (
-            <div className="flex items-center justify-center py-10 text-muted-foreground">
-              <Loader2 className="animate-spin" size={18} />
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-xs text-muted-foreground">
-                  <th className="w-8 py-2" />
-                  <th className="py-2 text-left font-medium">Сотрудник</th>
-                  <th className="py-2 text-right font-medium">Остаток</th>
-                  <th className="py-2 text-right font-medium">Получит</th>
-                  <th className="w-16 py-2 text-center font-medium">Гранич.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {payable.map((r) => {
-                  const take = preview.get(r.employeeId) ?? 0;
-                  const isSelected = selected.has(r.employeeId);
-                  const partial = take > 0.001 && take < r.remaining - 0.001;
-                  const editing = editingId === r.employeeId;
-                  const paying =
-                    payEmployeeMutation.isPending &&
-                    payEmployeeMutation.variables?.employeeId === r.employeeId;
-                  return (
-                    <tr key={r.employeeId} className="border-b last:border-0">
-                      <td className="py-2">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          disabled={busy || editing}
-                          onChange={() => toggle(r.employeeId)}
-                        />
-                      </td>
-                      <td className="py-2">{r.name}</td>
-                      <td className="py-2 text-right tabular-nums">{money.format(r.remaining)}</td>
-                      <td className="py-2">
-                        {editing ? (
-                          <div className="flex items-center justify-end gap-1">
-                            <Input
-                              autoFocus
-                              className="h-8 w-24 text-right"
-                              inputMode="decimal"
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") submitEdit(r);
-                                if (e.key === "Escape") setEditingId(null);
-                              }}
-                            />
-                            <Button
-                              aria-label="Выплатить"
-                              size="icon"
-                              variant="outline"
-                              className="h-8 w-8"
-                              disabled={busy}
-                              onClick={() => submitEdit(r)}
-                            >
-                              {paying ? (
-                                <Loader2 className="animate-spin" size={14} />
-                              ) : (
-                                <Check size={14} />
-                              )}
-                            </Button>
-                            <Button
-                              aria-label="Отмена"
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8"
-                              disabled={busy}
-                              onClick={() => setEditingId(null)}
-                            >
-                              <X size={14} />
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-end gap-2">
-                            <span
-                              className={cn(
-                                "tabular-nums",
-                                !isSelected && "text-muted-foreground",
-                                partial ? "text-amber-700" : isSelected ? "text-emerald-700" : "",
-                              )}
-                            >
-                              {isSelected ? money.format(take) : "—"}
-                              {partial ? " ⚠" : ""}
-                            </span>
-                            <Button
-                              aria-label="Изменить сумму"
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8 text-muted-foreground"
-                              disabled={busy || poolLeft < 0.01}
-                              onClick={() => startEdit(r)}
-                            >
-                              <Pencil size={14} />
-                            </Button>
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-2 text-center">
-                        <input
-                          type="radio"
-                          name="boundary"
-                          disabled={!isSelected || busy || editing}
-                          checked={boundaryId === r.employeeId}
-                          onChange={() => setBoundaryId(r.employeeId)}
-                        />
+            {loading ? (
+              <div className="flex items-center justify-center py-10 text-muted-foreground">
+                <Loader2 className="animate-spin" size={18} />
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-xs text-muted-foreground">
+                    <th className="w-8 py-2" />
+                    <th className="py-2 text-left font-medium">Сотрудник</th>
+                    <th className="py-2 text-right font-medium">Остаток</th>
+                    <th className="py-2 text-right font-medium">Получит</th>
+                    <th className="w-16 py-2 text-center font-medium">Гранич.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payable.map((r) => {
+                    const take = preview.get(r.employeeId) ?? 0;
+                    const isSelected = selected.has(r.employeeId);
+                    const partial = take > 0.001 && take < r.remaining - 0.001;
+                    const editing = editingId === r.employeeId;
+                    const paying =
+                      payEmployeeMutation.isPending &&
+                      payEmployeeMutation.variables?.employeeId === r.employeeId;
+                    return (
+                      <tr key={r.employeeId} className="border-b last:border-0">
+                        <td className="py-2">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            disabled={busy || editing}
+                            onChange={() => toggle(r.employeeId)}
+                          />
+                        </td>
+                        <td className="py-2">{r.name}</td>
+                        <td className="py-2 text-right tabular-nums">
+                          {money.format(r.remaining)}
+                        </td>
+                        <td className="py-2">
+                          {editing ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <Input
+                                autoFocus
+                                className="h-8 w-24 text-right"
+                                inputMode="decimal"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") submitEdit(r);
+                                  if (e.key === "Escape") setEditingId(null);
+                                }}
+                              />
+                              <Button
+                                aria-label="Выплатить"
+                                size="icon"
+                                variant="outline"
+                                className="h-8 w-8"
+                                disabled={busy}
+                                onClick={() => submitEdit(r)}
+                              >
+                                {paying ? (
+                                  <Loader2 className="animate-spin" size={14} />
+                                ) : (
+                                  <Check size={14} />
+                                )}
+                              </Button>
+                              <Button
+                                aria-label="Отмена"
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8"
+                                disabled={busy}
+                                onClick={() => setEditingId(null)}
+                              >
+                                <X size={14} />
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-2">
+                              <span
+                                className={cn(
+                                  "tabular-nums",
+                                  !isSelected && "text-muted-foreground",
+                                  partial ? "text-amber-700" : isSelected ? "text-emerald-700" : "",
+                                )}
+                              >
+                                {isSelected ? money.format(take) : "—"}
+                                {partial ? " ⚠" : ""}
+                              </span>
+                              <Button
+                                aria-label="Изменить сумму"
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 text-muted-foreground"
+                                disabled={busy || poolLeft < 0.01}
+                                onClick={() => startEdit(r)}
+                              >
+                                <Pencil size={14} />
+                              </Button>
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-2 text-center">
+                          <input
+                            type="radio"
+                            name="boundary"
+                            disabled={!isSelected || busy || editing}
+                            checked={boundaryId === r.employeeId}
+                            onChange={() => setBoundaryId(r.employeeId)}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {payable.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-6 text-center text-muted-foreground">
+                        Все сотрудники ведомости уже выплачены
                       </td>
                     </tr>
-                  );
-                })}
-                {payable.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-6 text-center text-muted-foreground">
-                      Все сотрудники ведомости уже выплачены
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          )}
-
-          {boundaryId ? (
-            <button
-              type="button"
-              className="text-xs text-muted-foreground underline"
-              onClick={() => setBoundaryId(null)}
-            >
-              Сбросить граничного (авто)
-            </button>
-          ) : null}
-        </div>
-
-        <DialogFooter className="shrink-0 flex-col items-stretch gap-2 border-t px-6 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-xs text-muted-foreground">
-            Покроет {money.format(covered)} из {money.format(selectedRemaining)}
-            {uncoveredHere > 0.001 ? ` · ${money.format(uncoveredHere)} — переток/долг` : ""}
-          </div>
-          <Button
-            disabled={busy || selected.size === 0 || poolLeft < 0.01}
-            onClick={() => payMutation.mutate()}
-          >
-            {payMutation.isPending ? (
-              <Loader2 className="animate-spin" size={16} />
-            ) : (
-              `Выплатить из ${isKassa ? "кассы" : "Сейфа"}`
+                  ) : null}
+                </tbody>
+              </table>
             )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+
+            {boundaryId ? (
+              <button
+                type="button"
+                className="text-xs text-muted-foreground underline"
+                onClick={() => setBoundaryId(null)}
+              >
+                Сбросить граничного (авто)
+              </button>
+            ) : null}
+          </div>
+
+          <DialogFooter className="shrink-0 flex-col items-stretch gap-3 border-t px-6 py-3 sm:items-stretch">
+            <div className="text-xs text-muted-foreground">
+              Покроет {money.format(covered)} из {money.format(selectedRemaining)}
+              {uncoveredHere > 0.001 ? ` · ${money.format(uncoveredHere)} останется к выплате` : ""}
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                variant="outline"
+                className="text-destructive hover:text-destructive"
+                disabled={busy || poolLeft < 0.01}
+                onClick={() => setCancelConfirmOpen(true)}
+              >
+                Отменить
+              </Button>
+              <Button
+                variant="outline"
+                disabled={busy || selected.size === 0 || covered < 0.01}
+                onClick={() => transferMutation.mutate()}
+              >
+                {transferMutation.isPending ? (
+                  <Loader2 className="animate-spin" size={16} />
+                ) : (
+                  <>
+                    <ArrowRightLeft size={16} />
+                    {isKassa ? "Передать на Сейф" : "Передать в кассу"}
+                  </>
+                )}
+              </Button>
+              <Button
+                disabled={busy || selected.size === 0 || poolLeft < 0.01}
+                onClick={() => payMutation.mutate()}
+              >
+                {payMutation.isPending ? (
+                  <Loader2 className="animate-spin" size={16} />
+                ) : (
+                  "Выплатить"
+                )}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={cancelConfirmOpen} onOpenChange={setCancelConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Отменить резерв?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {money.format(poolLeft)} станут свободными на {isKassa ? "кассе" : "Сейфе"}. Уже
+              выплаченные суммы и движения денег не изменятся.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelMutation.isPending}>Назад</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={cancelMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                cancelMutation.mutate();
+              }}
+            >
+              {cancelMutation.isPending ? (
+                <Loader2 className="animate-spin" size={16} />
+              ) : (
+                "Отменить резерв"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

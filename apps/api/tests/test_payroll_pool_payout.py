@@ -14,17 +14,30 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from test_payroll_payments import create_actor_user, create_payroll_run
+from test_payroll_payouts import fund_wallet
 
-from app.models import Account, CashflowTransaction, PayrollPayment, SafeAllocation, Wallet
+from app.models import (
+    Account,
+    CashflowTransaction,
+    PayrollPayment,
+    PayrollRunEvent,
+    SafeAllocation,
+    Wallet,
+)
+from app.services.payroll_payout_corrections import correct_payroll_payout_wallet
 from app.services.payroll_payouts import (
     MOCK_PAYER_ACCOUNT,
     PAYROLL_PAYOUT_SOURCE_KIND,
     book_bank_to_safe_transfer,
     set_run_payout_cash,
 )
+from app.services.payroll_reserve_audit import build_payroll_reserve_audit
 from app.services.payroll_reserves import (
+    cancel_run_reserve,
     pay_run_from_pool,
+    reconcile_run_reserves,
     run_solvency,
+    transfer_run_reserve,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -110,6 +123,7 @@ async def _setup_run_with_reserves(
     Возвращает (run_id, employee_ids, actor_id).
     """
     await _seed_bank_payer(session)
+    await fund_wallet(session, "tk_chernikova")
     actor = await create_actor_user(session)
     _period, run, employees = await create_payroll_run(session, employee_line_totals=totals)
     await set_run_payout_cash(
@@ -225,6 +239,120 @@ async def test_pool_selected_subset_only(
         assert (await _payment(session, run_id, emps[2])).amount == Decimal("3000.00")
 
 
+async def test_transfer_selected_payroll_reserve_safe_to_kassa(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Выбранная зарплата переезжает вместе с деньгами и усиливает резерв кассы."""
+    async with async_session_factory() as session:
+        run_id, emps, actor = await _setup_run_with_reserves(
+            session, totals=THREE, cash=Decimal("2000")
+        )
+        safe = await _reserve(session, run_id, "safe")
+        result = await transfer_run_reserve(
+            session,
+            reserve_id=safe.id,
+            selected_ids={emps[2]},
+            operation_date=PAID_AT,
+            actor_user_id=actor,
+        )
+
+    assert result.amount == Decimal("3000.00")
+    assert result.destination_location == "kassa"
+    assert [(item.employee_id, item.amount) for item in result.allocations] == [
+        (emps[2], Decimal("3000.00"))
+    ]
+
+    async with async_session_factory() as session:
+        safe = await _reserve(session, run_id, "safe")
+        kassa = await _reserve(session, run_id, "kassa")
+        assert safe.amount == Decimal("1000.00")
+        assert kassa.amount == Decimal("5000.00")
+        legs = (
+            await session.scalars(
+                select(CashflowTransaction).where(
+                    CashflowTransaction.source_id == result.transfer_id,
+                    CashflowTransaction.source_kind == "internal_transfer_manual",
+                )
+            )
+        ).all()
+        assert {(leg.direction, leg.amount) for leg in legs} == {
+            ("out", Decimal("3000.00")),
+            ("in", Decimal("3000.00")),
+        }
+        event = await session.scalar(
+            select(PayrollRunEvent).where(
+                PayrollRunEvent.run_id == run_id,
+                PayrollRunEvent.action == "reserve_transferred",
+            )
+        )
+        assert event.payload["employee_allocations"] == [
+            {"employee_id": str(emps[2]), "amount": "3000.00"}
+        ]
+
+
+async def test_transfer_entire_kassa_reserve_to_safe(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Полный перенос снимает резерв источника и не теряет общий объём целевых."""
+    async with async_session_factory() as session:
+        run_id, emps, actor = await _setup_run_with_reserves(
+            session, totals=THREE, cash=Decimal("2000")
+        )
+        kassa = await _reserve(session, run_id, "kassa")
+        source_id = kassa.id
+        result = await transfer_run_reserve(
+            session,
+            reserve_id=kassa.id,
+            selected_ids={emps[0], emps[1]},
+            operation_date=PAID_AT,
+            actor_user_id=actor,
+        )
+
+    assert result.amount == Decimal("2000.00")
+    assert result.destination_location == "safe"
+    assert [(item.employee_id, item.amount) for item in result.allocations] == [
+        (emps[0], Decimal("1000.00")),
+        (emps[1], Decimal("1000.00")),
+    ]
+
+    async with async_session_factory() as session:
+        source = await session.get(SafeAllocation, source_id)
+        safe = await _reserve(session, run_id, "safe")
+        assert source.status == "cancelled"
+        assert safe.amount == Decimal("6000.00")
+
+
+async def test_cancel_one_payroll_reserve_releases_only_that_location(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        run_id, _emps, actor = await _setup_run_with_reserves(
+            session, totals=THREE, cash=Decimal("2000")
+        )
+        kassa = await _reserve(session, run_id, "kassa")
+        kassa_id = kassa.id
+        result = await cancel_run_reserve(
+            session,
+            reserve_id=kassa.id,
+            actor_user_id=actor,
+        )
+
+    assert result.released == Decimal("2000.00")
+    assert result.status == "cancelled"
+    async with async_session_factory() as session:
+        cancelled = await session.get(SafeAllocation, kassa_id)
+        safe = await _reserve(session, run_id, "safe")
+        assert cancelled.status == "cancelled"
+        assert safe.status == "reserved"
+        event = await session.scalar(
+            select(PayrollRunEvent).where(
+                PayrollRunEvent.run_id == run_id,
+                PayrollRunEvent.action == "reserve_cancelled",
+            )
+        )
+        assert event.payload["released"] == "2000.00"
+
+
 async def test_pool_repeat_no_double_book(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -297,6 +425,151 @@ async def test_reserve_reconciles_when_paid_via_register(
         assert safe.status == "paid" and safe.amount_paid == Decimal("1000.00")
 
 
+async def test_reserve_reconcile_ignores_excluded_cashflow(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Скрытый из баланса расход не может погасить зарплатный резерв."""
+    async with async_session_factory() as session:
+        run_id, _emps, _actor = await _setup_run_with_reserves(
+            session, totals=[[Decimal("1000")]], cash=Decimal("0")
+        )
+        safe = await _reserve(session, run_id, "safe")
+        session.add_all(
+            [
+                CashflowTransaction(
+                    wallet_id=safe.wallet_id,
+                    direction="out",
+                    amount=Decimal("1000.00"),
+                    operation_date=PAID_AT,
+                    source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
+                    source_id=run_id,
+                    payment_purpose="Ошибочная выплата ЗП",
+                    quality_status="excluded",
+                ),
+                CashflowTransaction(
+                    wallet_id=safe.wallet_id,
+                    direction="out",
+                    amount=Decimal("600.00"),
+                    operation_date=PAID_AT,
+                    source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
+                    source_id=run_id,
+                    payment_purpose="Фактическая выплата ЗП",
+                    quality_status="final",
+                ),
+            ]
+        )
+        await session.flush()
+
+        audit_before = await build_payroll_reserve_audit(session, run_id)
+        safe_before = next(item for item in audit_before.reserves if item.location == "safe")
+        assert safe_before.effective_out == Decimal("600.00")
+        assert safe_before.excluded_out == Decimal("1000.00")
+        assert safe_before.expected_amount_paid == Decimal("600.00")
+        assert safe_before.has_drift is True
+
+        await reconcile_run_reserves(session, run_id)
+        await session.commit()
+
+    async with async_session_factory() as session:
+        safe = await _reserve(session, run_id, "safe")
+        assert safe.status == "partially_paid"
+        assert safe.amount_paid == Decimal("600.00")
+        assert Decimal(safe.amount) - Decimal(safe.amount_paid) == Decimal("400.00")
+        audit_after = await build_payroll_reserve_audit(session, run_id)
+        assert audit_after.has_reserve_drift is False
+
+
+async def test_correct_wallet_keeps_employee_paid_and_releases_safe_reserve(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Если зарплата выдана из ТК, исправляем только кошелёк; сотрудник остаётся paid."""
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        _period, run, employees = await create_payroll_run(
+            session,
+            employee_line_totals=[[Decimal("1000")]],
+        )
+        safe_id = await _wallet_id(session, "cash_safe")
+        kassa_id = await _wallet_id(session, "tk_chernikova")
+        run.payout_cash_total = Decimal("1000.00")
+        run.payout_cash_wallet_id = safe_id
+        payment = PayrollPayment(
+            run_id=run.id,
+            employee_id=employees[0].id,
+            amount=Decimal("1000.00"),
+            amount_account=Decimal("1000.00"),
+            booked_amount=Decimal("1000.00"),
+            status="paid",
+            paid_at=PAID_AT,
+        )
+        reserve = SafeAllocation(
+            wallet_id=safe_id,
+            amount=Decimal("1000.00"),
+            amount_paid=Decimal("1000.00"),
+            purpose="Выплата зарплаты",
+            source_run_id=run.id,
+            status="paid",
+            location="safe",
+        )
+        txn = CashflowTransaction(
+            wallet_id=safe_id,
+            direction="out",
+            amount=Decimal("1000.00"),
+            operation_date=PAID_AT,
+            source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
+            source_id=run.id,
+            payment_purpose="Выплата ЗП",
+            quality_status="excluded",
+        )
+        session.add_all([payment, reserve, txn])
+        await session.commit()
+
+        result = await correct_payroll_payout_wallet(
+            session,
+            run.id,
+            transaction_ids=[txn.id],
+            target_wallet_code="tk_chernikova",
+            reason="Фактически выдано из торговой кассы",
+            actor_user_id=actor.id,
+        )
+
+        assert result.total_amount == Decimal("1000.00")
+        assert result.target_wallet_id == kassa_id
+
+    async with async_session_factory() as session:
+        corrected = await session.get(CashflowTransaction, txn.id)
+        assert corrected is not None
+        assert corrected.wallet_id == kassa_id
+        assert corrected.quality_status == "final"
+
+        saved_payment = await session.get(PayrollPayment, payment.id)
+        assert saved_payment is not None
+        assert saved_payment.amount == Decimal("1000.00")
+        assert saved_payment.booked_amount == Decimal("1000.00")
+        assert saved_payment.status == "paid"
+
+        saved_reserve = await session.get(SafeAllocation, reserve.id)
+        assert saved_reserve is not None
+        assert saved_reserve.amount_paid == Decimal("0.00")
+        assert saved_reserve.status == "cancelled"
+
+        saved_run = await session.get(type(run), run.id)
+        assert saved_run is not None and saved_run.payout_cash_wallet_id == kassa_id
+        event = await session.scalar(
+            select(PayrollRunEvent).where(
+                PayrollRunEvent.run_id == run.id,
+                PayrollRunEvent.action == "payout_wallet_corrected",
+            )
+        )
+        assert event is not None
+        assert event.reason == "Фактически выдано из торговой кассы"
+        assert event.payload["previous_qualities"] == {str(txn.id): "excluded"}
+
+        audit = await build_payroll_reserve_audit(session, run.id)
+        assert audit.fully_settled is True
+        assert audit.has_reserve_drift is False
+
+
 async def test_reserve_reconciles_across_register_then_pool(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -356,8 +629,12 @@ async def test_pay_employee_from_reserve_custom_amount(
         kassa = await _reserve(session, run_id, "kassa")
         # Повару 1 (начислено 1000) выплачиваем вручную 500.
         res = await pay_employee_from_reserve(
-            session, reserve_id=kassa.id, employee_id=emps[0],
-            amount=Decimal("500"), paid_at=PAID_AT, actor_user_id=actor,
+            session,
+            reserve_id=kassa.id,
+            employee_id=emps[0],
+            amount=Decimal("500"),
+            paid_at=PAID_AT,
+            actor_user_id=actor,
         )
     assert res.booked == Decimal("500.00")
     assert res.employee_total_paid == Decimal("500.00")
@@ -372,8 +649,12 @@ async def test_pay_employee_from_reserve_custom_amount(
         # Доплата остатка тем же карандашом.
         kassa = await _reserve(session, run_id, "kassa")
         res2 = await pay_employee_from_reserve(
-            session, reserve_id=kassa.id, employee_id=emps[0],
-            amount=Decimal("500"), paid_at=PAID_AT, actor_user_id=actor,
+            session,
+            reserve_id=kassa.id,
+            employee_id=emps[0],
+            amount=Decimal("500"),
+            paid_at=PAID_AT,
+            actor_user_id=actor,
         )
     assert res2.employee_total_paid == Decimal("1000.00")
     assert res2.employee_remaining == Decimal("0.00")
@@ -391,8 +672,12 @@ async def test_pay_employee_from_reserve_rejects_over_reserve(
         kassa = await _reserve(session, run_id, "kassa")  # пул 10000
         with pytest.raises(PayrollConflictError, match="В резерве осталось"):
             await pay_employee_from_reserve(
-                session, reserve_id=kassa.id, employee_id=emps[0],
-                amount=Decimal("15000"), paid_at=PAID_AT, actor_user_id=actor,
+                session,
+                reserve_id=kassa.id,
+                employee_id=emps[0],
+                amount=Decimal("15000"),
+                paid_at=PAID_AT,
+                actor_user_id=actor,
             )
 
 
@@ -412,6 +697,31 @@ async def test_kassa_target_payout_rejects_run_pool_reserve(
             await pay_kassa_target(
                 session, allocation_id=kassa.id, amount=Decimal("500"), actor_user_id=actor
             )
+
+
+async def test_dds_kassa_targets_include_run_pool_but_kassa_queue_does_not(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Плитка и read-only модалка ДДС считают один зарплатный резерв, а кассир не
+    получает для него обычную кнопку «Выдано»."""
+    from app.services.kassa.payouts import kassa_pending_payload
+
+    async with async_session_factory() as session:
+        run_id, _emps, _actor = await _setup_run_with_reserves(
+            session, totals=[[Decimal("30000")]], cash=Decimal("30000")
+        )
+        reserve = await _reserve(session, run_id, "kassa")
+
+        dds_payload = await kassa_pending_payload(session, include_payroll_targets=True)
+        payroll_target = next(
+            target for target in dds_payload["targets"] if target["id"] == reserve.id
+        )
+        assert payroll_target["is_payroll"] is True
+        assert payroll_target["outstanding"] == pytest.approx(30000.0)
+        assert dds_payload["targets_total"] == pytest.approx(30000.0)
+
+        kassa_payload = await kassa_pending_payload(session)
+        assert all(target["id"] != reserve.id for target in kassa_payload["targets"])
 
 
 async def test_paid_run_bank_draft_not_active(
@@ -435,8 +745,12 @@ async def test_paid_run_bank_draft_not_active(
         )
         session.add(
             PayrollBankDraft(
-                id=_uuid.uuid4(), run_id=run_id, document_id=f"doc-{run_id}",
-                amount=Decimal("6000"), status="created", bank_provider="tbank",
+                id=_uuid.uuid4(),
+                run_id=run_id,
+                document_id=f"doc-{run_id}",
+                amount=Decimal("6000"),
+                status="created",
+                bank_provider="tbank",
             )
         )
         await session.commit()
@@ -447,8 +761,12 @@ async def test_paid_run_bank_draft_not_active(
         for emp, amt in zip(emps, [Decimal("1000"), Decimal("2000"), Decimal("3000")], strict=True):
             session.add(
                 PayrollPayment(
-                    id=_uuid.uuid4(), run_id=run_id, employee_id=emp, amount=amt,
-                    booked_amount=amt, status="paid",
+                    id=_uuid.uuid4(),
+                    run_id=run_id,
+                    employee_id=emp,
+                    amount=amt,
+                    booked_amount=amt,
+                    status="paid",
                 )
             )
         await session.commit()

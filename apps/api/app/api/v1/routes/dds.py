@@ -92,8 +92,10 @@ from app.services.advance_iiko_payout import post_advance_payout_to_iiko
 from app.services.banking import BankCredentialsError, BankFetchError
 from app.services.banking.cashflow_classify import (
     EXCLUDED_QUALITY,
+    CashflowClassificationConflictError,
     apply_cashflow_exclude,
     apply_cashflow_split,
+    ensure_cashflow_reclassifiable,
 )
 from app.services.banking.classifier import (
     AWAITING_BANK_QUALITY,
@@ -1795,7 +1797,8 @@ async def classify_operation(
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
     elif payload.action == "employee_advance":
-        # Разбор операции как аванс/заём сотруднику: split-проводка со статьёй аванса + SalaryAdvance
+        # Разбор операции как аванс/заём сотруднику: split-проводка со статьёй аванса
+        # и SalaryAdvance.
         # (деньги ушли банком, второй проводки нет). Возврат маршрутизируется по роли в ведомости.
         if len(payload.splits) != 1:
             raise HTTPException(status_code=400, detail="Авансом оформляется одна строка")
@@ -1902,6 +1905,10 @@ async def classify_transaction(
     txn = await session.get(CashflowTransaction, transaction_id)
     if txn is None:
         raise HTTPException(status_code=404, detail="Проводка не найдена")
+    try:
+        ensure_cashflow_reclassifiable(txn)
+    except CashflowClassificationConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     if payload.article_id is not None and await session.get(DdsArticle, payload.article_id) is None:
         raise HTTPException(status_code=400, detail="Статья не найдена")
     txn.article_id = payload.article_id
@@ -1959,6 +1966,8 @@ async def classify_transaction_full(
             )
         else:
             created_ids = await apply_cashflow_exclude(session, txn)
+    except CashflowClassificationConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     await session.commit()
@@ -2255,7 +2264,10 @@ async def list_dds_kassa_targets(
     только администратор в модуле «Касса». Права — менеджерские (кошельки ДДС).
     """
     try:
-        return await kassa_pending_payload(session)
+        # Плитка Торговой кассы включает в «целевые» и пул-резервы зарплатных
+        # ведомостей. Read-only модалка обязана показывать тот же состав; сами
+        # зарплатные резервы по-прежнему выдаются через «Активные платежи».
+        return await kassa_pending_payload(session, include_payroll_targets=True)
     except KassaPayoutError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
