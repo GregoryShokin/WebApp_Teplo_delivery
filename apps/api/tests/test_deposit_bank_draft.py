@@ -169,16 +169,19 @@ async def test_send_bank_draft_calls_client_with_requisites(
         assert draft["document_id"] == "teplo-deposit-abc"
         assert draft["amount"] == Decimal("5000")
         assert draft["requisites"]["recipientName"] == "Шокина Кристина Юрьевна"
-        assert draft["requisites"]["bankAcnt"] == "40817810552095257243"
-        assert draft["requisites"]["bankBik"] == "046015602"
-        assert draft["requisites"]["corrAccount"] == "30101810600000000602"
+        assert draft["requisites"]["inn"] == "890307589201"
+        assert "kpp" not in draft["requisites"]
+        assert draft["requisites"]["bankAcnt"] == "40817810800023540968"
+        assert draft["requisites"]["bankBik"] == "044525974"
+        assert draft["requisites"]["corrAccount"] == "30101810145250000974"
 
 
-async def test_send_bank_draft_noop_without_requisites(
+async def test_send_bank_draft_uses_code_constant_without_setting(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
-        # Убираем реквизиты → черновик не шлётся (выдачу не валим).
+        # Даже удаление настройки не может перенаправить/сломать финансовый получатель:
+        # runtime использует зафиксированный владельцем эталон из кода.
         await session.execute(delete(AppSetting).where(AppSetting.key == REQUISITES_KEY))
         await session.flush()
         client = RecordingBankClient()
@@ -189,8 +192,8 @@ async def test_send_bank_draft_noop_without_requisites(
             purpose="Выдача депозита (через Сейф)",
             bank_client=client,
         )
-        assert sent is False
-        assert client.drafts == []
+        assert sent is True
+        assert client.drafts[0]["requisites"]["bankAcnt"] == "40817810800023540968"
 
 
 async def test_production_payout_bank_draft_books_expense_from_safe(

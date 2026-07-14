@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -37,8 +36,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.models import Account, AppSetting, CashflowTransaction, DdsArticle, Wallet
+from app.models import Account, CashflowTransaction, DdsArticle, Wallet
 from app.services.banking import BankClient
+from app.services.banking.ip_card_requisites import (
+    load_owner_approved_ip_card_requisites,
+)
 from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.wallets import (
@@ -49,7 +51,6 @@ from app.services.wallets import (
 
 logger = logging.getLogger(__name__)
 
-PAYOUT_REQUISITES_KEY = "payroll.bank_payout_requisites"
 MOCK_PAYER_ACCOUNT = "00000000000000000000"
 
 # source_kind транзитной пары банк→Сейф для выдачи депозита.
@@ -156,23 +157,16 @@ async def send_deposit_payout_bank_draft(
 
     ``provider`` (``tbank`` / ``sber``) выбирает банк-плательщика: Т-Банк — черновик через
     Open API, Сбер — рублёвый РПП без подписи (черновик, подписывается в СберБизнес).
-    Получатель-Сейф общий (``payroll.bank_payout_requisites``). Вызывать ПОСЛЕ commit (БД —
-    источник истины). Устойчиво: нет реквизитов/расчётного счёта или ошибка банка —
-    логируется, исключение НЕ поднимается. Возвращает True, если черновик отправлен (или
-    сэмулирован в mock-режиме).
+    Получатель-Сейф общий и зафиксирован в коде; одноимённая настройка БД используется
+    только для контроля дрейфа. Вызывать ПОСЛЕ commit (БД — источник истины). Устойчиво:
+    нет расчётного счёта или ошибка банка — логируется, исключение НЕ поднимается.
+    Возвращает True, если черновик отправлен (или сэмулирован в mock-режиме).
     """
     try:
         amount = _money(amount)
         if amount <= 0:
             return False
         requisites = await _bank_payout_requisites(session)
-        if requisites is None:
-            logger.warning(
-                "Банк-черновик выдачи депозита %s: реквизиты %s не настроены",
-                document_id,
-                PAYOUT_REQUISITES_KEY,
-            )
-            return False
         settings = get_settings()
         payer_account = payer_account_for(settings, provider)
         if not payer_account:
@@ -212,13 +206,8 @@ async def send_deposit_payout_bank_draft(
         return False
 
 
-async def _bank_payout_requisites(session: AsyncSession) -> Mapping[str, Any] | None:
-    setting = await session.scalar(
-        select(AppSetting).where(AppSetting.key == PAYOUT_REQUISITES_KEY)
-    )
-    if setting is None or not isinstance(setting.value, Mapping):
-        return None
-    return setting.value
+async def _bank_payout_requisites(session: AsyncSession) -> dict[str, Any]:
+    return await load_owner_approved_ip_card_requisites(session)
 
 
 def _payer_account(settings: Any) -> str | None:

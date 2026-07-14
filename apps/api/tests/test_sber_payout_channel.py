@@ -50,11 +50,10 @@ def test_build_sber_payment_payload_required_fields() -> None:
         purpose="Выдача депозита (через Сейф). НДС не облагается",
         payee={
             "recipientName": "Шокина Кристина Юрьевна",
-            "inn": "7707083893",
-            "kpp": "616143002",
-            "bankAcnt": "40817810552095257243",
-            "bankBik": "046015602",
-            "recipientCorrAccountNumber": "30101810600000000602",
+            "inn": "890307589201",
+            "bankAcnt": "40817810800023540968",
+            "bankBik": "044525974",
+            "recipientCorrAccountNumber": "30101810145250000974",
         },
         payer={
             "payerName": "ИНДИВИДУАЛЬНЫЙ ПРЕДПРИНИМАТЕЛЬ ШОКИНА КРИСТИНА ЮРЬЕВНА",
@@ -72,8 +71,10 @@ def test_build_sber_payment_payload_required_fields() -> None:
     assert payload["payerName"].startswith("ИНДИВИДУАЛЬНЫЙ")
     assert payload["payerAccount"] == "40802810252090056194"
     assert payload["payerBankBic"] == "046015602"
-    assert payload["payeeAccount"] == "40817810552095257243"
-    assert payload["payeeBankBic"] == "046015602"
+    assert payload["payeeInn"] == "890307589201"
+    assert payload["payeeKpp"] == "0"
+    assert payload["payeeAccount"] == "40817810800023540968"
+    assert payload["payeeBankBic"] == "044525974"
     # Без блока подписи → банк создаёт документ в статусе «черновик».
     assert "digestSignatures" not in payload
 

@@ -10,7 +10,7 @@ matched (see ``counterparty_matching``).
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
@@ -21,7 +21,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.models import (
-    AppSetting,
     CashflowTransaction,
     Counterparty,
     CounterpartyPayableProfile,
@@ -34,6 +33,9 @@ from app.models import (
 )
 from app.services.banking import BankClient, TbankClient
 from app.services.banking.exceptions import BankFetchError
+from app.services.banking.ip_card_requisites import (
+    load_owner_approved_ip_card_requisites,
+)
 from app.services.banking.payout import (
     channel_provider,
     payer_account_for,
@@ -48,8 +50,6 @@ DRAFTABLE_STATUSES = frozenset({"unpaid", "partially_paid"})
 DRAFT_STATUSES = frozenset({"created", "updated", "paid", "failed"})
 # DDS article a manual supplier payment books to by default.
 DEFAULT_SUPPLIER_ARTICLE_CODE = "payment_to_supplier"
-# Реквизиты вывода на карту ИП — те же, что у зарплатного черновика (см. payroll_payouts).
-PAYOUT_REQUISITES_KEY = "payroll.bank_payout_requisites"
 
 
 class CounterpartyPaymentError(RuntimeError):
@@ -135,16 +135,9 @@ def _informal_payment_purpose(
 
 
 async def _ip_card_requisites(session: AsyncSession) -> dict[str, Any]:
-    """Реквизиты карты ИП для выплат через Сейф — источник тот же, что у зарплатного
-    черновика (``payroll.bank_payout_requisites``)."""
-    setting = await session.scalar(
-        select(AppSetting).where(AppSetting.key == PAYOUT_REQUISITES_KEY)
-    )
-    if setting is None or not isinstance(setting.value, Mapping):
-        raise CounterpartyPaymentError(
-            f"Не настроены реквизиты выплат на карту ИП ({PAYOUT_REQUISITES_KEY})"
-        )
-    return dict(setting.value)
+    """Единый, зафиксированный владельцем получатель выплат через Сейф."""
+
+    return await load_owner_approved_ip_card_requisites(session)
 
 
 def _safe_status(status: str | None) -> str:

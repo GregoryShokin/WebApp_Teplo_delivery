@@ -22,6 +22,9 @@ depends_on = None
 
 SETTING_KEY = "payroll.bank_payout_requisites"
 
+# HISTORICAL, SUPERSEDED AND INCORRECT RECIPIENT DATA.
+# Do not copy these values into runtime code or a new migration. Migration 0187
+# restores the owner-approved T-Bank account and locks it in application code.
 SBER_SAFE_REQUISITES = """
 {
     "recipientName": "Шокина Кристина Юрьевна",

@@ -14,8 +14,8 @@ from test_payroll_payouts import (
 from app.api.deps import CurrentActor
 from app.api.v1.routes import payroll as payroll_routes
 from app.models import AppSetting, PayrollBankDraft, PayrollLine, PayrollRunEvent
+from app.services.banking.ip_card_requisites import PAYOUT_REQUISITES_KEY
 from app.services.payroll_payouts import (
-    PAYOUT_REQUISITES_KEY,
     apply_run_payout_delta,
     create_or_update_run_draft,
     get_run_payout_delta,
@@ -116,7 +116,7 @@ async def test_run_draft_is_idempotent_by_document_id(
         assert second.status == "updated"
 
 
-async def test_run_draft_uses_requisites_from_setting(
+async def test_run_draft_ignores_requisites_setting_drift(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
@@ -147,9 +147,15 @@ async def test_run_draft_uses_requisites_from_setting(
             bank_client=bank_client,
         )
 
-        assert draft.payload["recipientName"] == "TEST RECIPIENT"
-        assert draft.payload["paymentPurpose"].startswith("Payroll 2026-")
-        assert bank_client.drafts[0]["requisites"]["recipientName"] == "TEST RECIPIENT"
+        assert draft.payload["recipientName"] == "Шокина Кристина Юрьевна"
+        assert draft.payload["inn"] == "890307589201"
+        assert draft.payload["kpp"] == "0"
+        assert draft.payload["bankAcnt"] == "40817810800023540968"
+        assert draft.payload["paymentPurpose"].startswith("Перевод на Сейф под выплату")
+        sent_requisites = bank_client.drafts[0]["requisites"]
+        assert sent_requisites["recipientName"] == "Шокина Кристина Юрьевна"
+        assert sent_requisites["inn"] == "890307589201"
+        assert "kpp" not in sent_requisites
 
 
 async def test_run_delta_topup_creates_separate_draft_and_down_records_overpaid(

@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings, get_settings
 from app.models import (
     Account,
-    AppSetting,
     BankOperation,
     CashflowTransaction,
     DdsArticle,
@@ -29,6 +28,9 @@ from app.models import (
 from app.services.bank_payment_status import classify_payment_status
 from app.services.banking import BankClient
 from app.services.banking.exceptions import BankFetchError
+from app.services.banking.ip_card_requisites import (
+    load_owner_approved_ip_card_requisites,
+)
 from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.payroll_payout_allocation import (
@@ -48,7 +50,6 @@ from app.services.wallets import (  # реэкспорт для обратной
     resolve_cash_wallet,
 )
 
-PAYOUT_REQUISITES_KEY = "payroll.bank_payout_requisites"
 DEFAULT_PAYMENT_PURPOSE_TEMPLATE = "Выплата заработной платы за период {start}–{end}"
 MOCK_PAYER_ACCOUNT = "00000000000000000000"
 PAYROLL_BANK_DRAFT_STATUSES = frozenset({"created", "updated", "paid", "failed"})
@@ -982,12 +983,7 @@ async def _run_account_amount(session: AsyncSession, run: PayrollRun) -> Decimal
 
 
 async def _bank_payout_requisites(session: AsyncSession) -> Mapping[str, Any]:
-    setting = await session.scalar(
-        select(AppSetting).where(AppSetting.key == PAYOUT_REQUISITES_KEY)
-    )
-    if setting is None or not isinstance(setting.value, Mapping):
-        raise PayrollConflictError("Не настроены реквизиты payroll.bank_payout_requisites")
-    return setting.value
+    return await load_owner_approved_ip_card_requisites(session)
 
 
 def _payer_account(settings: Settings) -> str:
