@@ -4820,12 +4820,45 @@ def test_payroll_calculation_uses_current_deposit_balance_for_target_cap() -> No
     assert result.lines[0].deposit_excluded_for_run is False
 
 
-def test_deposit_withholding_is_weekly_per_employee_across_multiple_roles() -> None:
+def test_deposit_withholding_uses_only_primary_role() -> None:
     period = make_period()
     run_id = uuid.uuid4()
     employee = make_employee(category="category_2")
     entries = [
-        make_entry(period, employee, period.start_date, minutes=60, role="Пиццерист"),
+        make_entry(period, employee, period.start_date, role="Пиццерист"),
+        make_entry(period, employee, period.start_date.replace(day=20), role="Сушист"),
+    ]
+    settings = deposit_settings(withholding=2000)
+    settings[EMPLOYEE_ASSIGNMENTS_CONFIG_KEY] = {
+        (employee.id, period.start_date): [
+            make_role_assignment(employee.id, "pizza", "category_2"),
+            make_role_assignment(employee.id, "sushi", "category_2", is_primary=True),
+        ]
+    }
+
+    result = calculate_payroll_lines_from_inputs(
+        period,
+        run_id,
+        entries,
+        {employee.id: employee},
+        settings,
+    )
+
+    assert result.blocking_issues == []
+    assert len(result.lines) == 2
+    lines_by_role = {line.role: line for line in result.lines}
+    assert lines_by_role["Сушист"].components["deposit_withholding"] == 2000
+    assert lines_by_role["Сушист"].deduction == Decimal("2000")
+    assert lines_by_role["Пиццерист"].components["deposit_withholding"] == 0
+    assert lines_by_role["Пиццерист"].deduction == Decimal("0")
+
+
+def test_deposit_primary_role_falls_back_to_employee_station() -> None:
+    period = make_period()
+    run_id = uuid.uuid4()
+    employee = make_employee(category="category_2", default_cooking_station="sushi")
+    entries = [
+        make_entry(period, employee, period.start_date, role="Пиццерист"),
         make_entry(period, employee, period.start_date.replace(day=20), role="Сушист"),
     ]
 
@@ -4837,12 +4870,9 @@ def test_deposit_withholding_is_weekly_per_employee_across_multiple_roles() -> N
         deposit_settings(withholding=2000),
     )
 
-    assert result.blocking_issues == []
-    assert len(result.lines) == 2
-    withholdings = [Decimal(str(line.components["deposit_withholding"])) for line in result.lines]
-    assert all(amount > 0 for amount in withholdings)
-    assert sum(withholdings) == Decimal("2000")
-    assert sum(line.deduction for line in result.lines) == Decimal("2000")
+    lines_by_role = {line.role: line for line in result.lines}
+    assert lines_by_role["Сушист"].components["deposit_withholding"] == 2000
+    assert lines_by_role["Пиццерист"].components["deposit_withholding"] == 0
 
 
 def test_scheduled_deposit_payout_pays_balance_and_resets_withholding() -> None:

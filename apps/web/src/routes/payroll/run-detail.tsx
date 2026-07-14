@@ -2380,9 +2380,9 @@ function DepositOverrideControl({
   }, [line.deposit_exclusion_reason, line.id]);
 
   const mutation = useMutation({
-    // У объединённой строки сотрудника может быть несколько физических роль-строк, а override
-    // хранится per-(employee, role). Применяем исключение ко всем строкам, чтобы при пересчёте
-    // недельное удержание не переместилось с исключённой роли на другую.
+    // Депозит удерживается только по основной роли, но override хранится per-(employee, role).
+    // Применяем его ко всем физическим строкам объединённого сотрудника, чтобы настройка
+    // сохранилась при последующей смене основной роли и пересчёте.
     mutationFn: async (payload: {
       deposit_excluded_for_run: boolean;
       deposit_exclusion_reason?: string | null;
