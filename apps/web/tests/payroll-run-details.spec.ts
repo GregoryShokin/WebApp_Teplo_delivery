@@ -27,32 +27,48 @@ test.beforeEach(async ({ page }) => {
   await page.route(`**/api/v1/payroll/runs/${runId}`, (route) => fulfillJson(route, payrollRun()));
 });
 
-test("shows payroll components per employee and opens the shift breakdown", async ({ page }) => {
+test("shows one payroll statement and opens the employee breakdown modal", async ({ page }) => {
   await page.goto(`/payroll/runs/${runId}`);
 
-  await expect(page.getByRole("columnheader", { name: "Оклад" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "Премия" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "%" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "Удержание депозита" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "Нак. фонд" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Состав начислений", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Выплаты", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("columnheader", { name: "Сотрудник" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Начислено" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "К выплате" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Остаток" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Статус" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Удержано" })).toHaveCount(0);
+  await expect(page.getByRole("columnheader", { name: "Выдача депозита" })).toHaveCount(0);
 
   const employeeRow = page.getByRole("row", { name: /София Колесникова/ });
-  await expect(employeeRow).toContainText("5 000 ₽");
-  await expect(employeeRow).toContainText("1 200 ₽");
-  await expect(employeeRow).toContainText("850 ₽");
-  await expect(employeeRow).toContainText("500 ₽");
+  await expect(employeeRow).toContainText("6 550 ₽");
+  await expect(employeeRow).toContainText("Пиццерист");
 
-  await page.getByRole("button", { name: "Выплаты", exact: true }).click();
-  await expect(page.getByRole("columnheader", { name: "Начислено" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "Оклад" })).toHaveCount(0);
-
-  await page.getByRole("button", { name: "Состав начислений", exact: true }).click();
   await employeeRow.click();
 
-  await expect(page.getByText("Смены и компоненты")).toBeVisible();
-  await expect(page.getByText("Выручка дня 50 000 ₽")).toBeVisible();
-  await expect(page.getByText("Удержания")).toBeVisible();
-  await expect(page.getByText("Депозит: 500 ₽")).toBeVisible();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "София Колесникова" })).toBeVisible();
+  await expect(dialog).toContainText("7–13 июля");
+  await expect(dialog.getByText("Оклад", { exact: true }).first()).toBeVisible();
+  await expect(dialog.getByText("5 000 ₽", { exact: true }).first()).toBeVisible();
+  await expect(dialog.getByText("Премии", { exact: true }).first()).toBeVisible();
+  await expect(dialog.getByText("1 200 ₽", { exact: true }).first()).toBeVisible();
+  await expect(dialog.getByText("Премия за смену")).toBeVisible();
+  await expect(dialog.getByText("Стажировка новичка")).toBeVisible();
+  await expect(dialog.getByText("Смены и начисления")).toBeVisible();
+  await expect(dialog.getByRole("cell", { name: "50 000 ₽" })).toBeVisible();
+  await expect(dialog.getByText("2-я категория")).toBeVisible();
+  await expect(dialog.getByText("category_2")).toHaveCount(0);
+  await expect(dialog.getByText("Удержание депозита", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("В расчёте: 500 ₽")).toBeVisible();
+  await expect(dialog.getByText("Удерживать", { exact: true })).toBeVisible();
+  const penalties = dialog.locator("details").filter({ hasText: "Штрафы и удержания" });
+  await penalties.locator("summary").click();
+  await expect(penalties).toContainText("Удержание");
+  await expect(penalties).toContainText("Недостача по ревизии");
+  await expect(penalties).toContainText("хоккайдо цезарь");
+  await expect(dialog.getByText("Итог выплаты")).toBeVisible();
 });
 
 test("includes a deposit-only amount in the payments register", async ({ page }) => {
@@ -91,20 +107,44 @@ test("includes a deposit-only amount in the payments register", async ({ page })
   );
 
   await page.goto(`/payroll/runs/${runId}`);
-  await page.getByRole("button", { name: "Выплаты", exact: true }).click();
 
   const employeeRow = page.getByRole("row", { name: /Молоканова Светлана/ });
   const cells = employeeRow.getByRole("cell");
-  await expect(cells.nth(2)).toContainText("0 ₽");
-  await expect(cells.nth(2)).toContainText("+ депозит 2 000 ₽");
+  await expect(cells.nth(1)).toContainText("0 ₽");
+  await expect(cells.nth(1)).toContainText("+ депозит 2 000 ₽");
+  await expect(cells.nth(2)).toHaveText("2 000 ₽");
   await expect(cells.nth(3)).toHaveText("2 000 ₽");
-  await expect(cells.nth(4)).toHaveText("2 000 ₽");
 
-  const totalRow = page.getByRole("row", { name: /ИТОГО · 1 чел/ });
-  const totalCells = totalRow.getByRole("cell");
-  await expect(totalCells.nth(2)).toHaveText("0 ₽");
-  await expect(totalCells.nth(3)).toHaveText("2 000 ₽");
-  await expect(totalCells.nth(4)).toHaveText("2 000 ₽");
+  await employeeRow.click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("зарплата 0 ₽");
+  await expect(dialog).toContainText("депозит 2 000 ₽");
+  await expect(dialog.getByRole("button", { name: "Отменить выдачу" })).toBeEnabled();
+});
+
+test("offers a full payment from the employee modal after finalization", async ({ page }) => {
+  await page.unroute(`**/api/v1/payroll/runs/${runId}`);
+  await page.route(`**/api/v1/payroll/runs/${runId}`, (route) =>
+    fulfillJson(route, {
+      ...payrollRun(),
+      status: "finalized",
+      period: {
+        ...payrollRun().period,
+        status: "finalized",
+        finalized_at: "2026-07-14T12:30:00+03:00",
+      },
+    }),
+  );
+  await page.route(`**/api/v1/payroll/runs/${runId}/bank-draft**`, (route) =>
+    route.fulfill({ status: 404 }),
+  );
+
+  await page.goto(`/payroll/runs/${runId}`);
+  await page.getByRole("row", { name: /София Колесникова/ }).click();
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "Выплатить 6 550 ₽" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Выплатить частично" })).toBeVisible();
 });
 
 function fulfillJson(route: Route, body: unknown) {
@@ -237,7 +277,15 @@ function payrollLine() {
             comment: "Стажировка новичка",
           },
         ],
-        penalties: [],
+        penalties: [
+          {
+            id: "penalty-details",
+            work_date: "2026-07-07",
+            category: "Недостача по ревизии",
+            amount: 500,
+            comment: "хоккайдо цезарь",
+          },
+        ],
       },
     },
   };

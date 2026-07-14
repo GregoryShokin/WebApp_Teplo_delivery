@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ArrowLeft,
-  ArrowUpDown,
   Banknote,
   ChevronDown,
   ChevronRight,
@@ -13,7 +12,6 @@ import {
   LoaderCircle,
   RefreshCw,
   Undo2,
-  Search,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -38,22 +36,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { navigateTo } from "@/router";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { EmptyState } from "@/components/ui-app/EmptyState";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { StatusBadge } from "@/components/ui-app/StatusBadge";
@@ -87,8 +76,7 @@ import {
   type RunPayoutDelta,
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
-import { PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
-import { roleColorClasses } from "@/lib/role-colors";
+import { EMPLOYEE_CATEGORY_LABELS, PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
 import { cn } from "@/lib/utils";
 import {
   formatDate,
@@ -103,18 +91,6 @@ type PayrollRunDetailRouteProps = {
   runId: string;
   onNavigate: (path: string) => void;
 };
-
-type SortKey =
-  | "name"
-  | "hours"
-  | "penalties_total"
-  | "deposit_withholding"
-  | "deposit_payout"
-  | "advance_issued"
-  | "fund_accrual"
-  | "ndfl_deduction"
-  | "total";
-type SortDirection = "asc" | "desc";
 
 type PayrollLineRowModel = {
   // Для двуролевого повара `line` — синтетическая объединённая строка (суммы сложены,
@@ -156,7 +132,6 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const [isUnfinalizeDialogOpen, setIsUnfinalizeDialogOpen] = useState(false);
   const [unfinalizeReason, setUnfinalizeReason] = useState("");
   const [splitOpen, setSplitOpen] = useState(false);
-  const [tableView, setTableView] = useState<"details" | "payments">("details");
 
   const runQuery = useQuery({
     queryKey: ["payroll-run", runId],
@@ -632,58 +607,20 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
       ) : null}
 
       <section className="space-y-3">
-        <div className="inline-flex rounded-lg border bg-muted/40 p-1">
-          <button
-            aria-pressed={tableView === "details"}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              tableView === "details"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-            onClick={() => setTableView("details")}
-            type="button"
-          >
-            Состав начислений
-          </button>
-          <button
-            aria-pressed={tableView === "payments"}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              tableView === "payments"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-            onClick={() => setTableView("payments")}
-            type="button"
-          >
-            Выплаты
-          </button>
-        </div>
-
-        {tableView === "details" ? (
-          <PayrollByEmployeeTab
-            canManagePayments={canManagePayments}
-            canEditDeposits={canEditDeposits}
-            cancelDepositPayoutPending={
-              cancelDepositPayoutMutation.isPending || recalculateMutation.isPending
-            }
-            employeesById={employeesById}
-            isLoading={linesQuery.isLoading || runQuery.isLoading}
-            lines={lines}
-            onCancelDepositPayout={(employeeId) => cancelDepositPayoutMutation.mutate(employeeId)}
-            runId={runId}
-            runStatus={run?.status ?? ""}
-          />
-        ) : (
-          <PayrollRegisterTab
-            canManagePayments={canManagePayments}
-            employeesById={employeesById}
-            lines={lines}
-            runId={runId}
-            runStatus={run?.status ?? ""}
-          />
-        )}
+        <PayrollPaymentsTable
+          canManagePayments={canManagePayments}
+          canEditDeposits={canEditDeposits}
+          cancelDepositPayoutPending={
+            cancelDepositPayoutMutation.isPending || recalculateMutation.isPending
+          }
+          employeesById={employeesById}
+          isLoading={linesQuery.isLoading || runQuery.isLoading}
+          lines={lines}
+          onCancelDepositPayout={(employeeId) => cancelDepositPayoutMutation.mutate(employeeId)}
+          periodLabel={run?.period ? formatPeriodRange(run.period) : ""}
+          runId={runId}
+          runStatus={run?.status ?? ""}
+        />
       </section>
 
       {canManageBankDraft ? (
@@ -925,325 +862,7 @@ function PayoutSplitDialog({
   );
 }
 
-function PayrollRegisterTab({
-  canManagePayments,
-  employeesById,
-  lines,
-  runId,
-  runStatus,
-}: {
-  canManagePayments: boolean;
-  employeesById: Map<string, Employee>;
-  lines: PayrollLine[];
-  runId: string;
-  runStatus: string;
-}) {
-  const queryClient = useQueryClient();
-  const runIsFinal = isFinalStatus(runStatus);
-  const [filter, setFilter] = useState<"all" | "pending" | "partial" | "paid">("all");
-  const [amounts, setAmounts] = useState<Record<string, string>>({});
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  const rows = useMemo(() => {
-    const byEmployee = new Map<
-      string,
-      {
-        employeeId: string;
-        role: string;
-        accrued: number;
-        depositPayout: number;
-        salaryPaid: number;
-        status: string;
-      }
-    >();
-    for (const line of lines) {
-      const current = byEmployee.get(line.employee_id) ?? {
-        employeeId: line.employee_id,
-        role: line.role,
-        accrued: 0,
-        depositPayout: 0,
-        salaryPaid: 0,
-        status: "pending",
-      };
-      current.accrued += moneyValue(line.total_payable);
-      // deposit_payout — per-employee поле и повторяется на роль-строках, поэтому не суммируем.
-      current.depositPayout = Math.max(current.depositPayout, moneyValue(line.deposit_payout));
-      if (line.payment_status === "paid" || line.payment_status === "partially_paid") {
-        current.salaryPaid = moneyValue(line.paid_amount ?? 0);
-        current.status = line.payment_status;
-      }
-      byEmployee.set(line.employee_id, current);
-    }
-    return Array.from(byEmployee.values()).map((row) => {
-      const payable = normalizeMoney(row.accrued + row.depositPayout);
-      const paid = normalizeMoney(row.salaryPaid + (row.status === "paid" ? row.depositPayout : 0));
-      return {
-        ...row,
-        name: employeesById.get(row.employeeId)?.full_name ?? "Сотрудник",
-        paid,
-        payable,
-        remaining: normalizeMoney(Math.max(0, payable - paid)),
-      };
-    });
-  }, [lines, employeesById]);
-
-  const filtered = rows.filter((row) => {
-    if (filter === "all") return true;
-    if (filter === "paid") return row.status === "paid";
-    if (filter === "partial") return row.status === "partially_paid";
-    return row.status === "pending";
-  });
-  const totals = rows.reduce(
-    (acc, row) => ({
-      accrued: acc.accrued + row.accrued,
-      payable: acc.payable + row.payable,
-      remaining: acc.remaining + row.remaining,
-    }),
-    { accrued: 0, payable: 0, remaining: 0 },
-  );
-
-  const invalidate = () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["payroll-run", runId] }),
-      queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", runId] }),
-      queryClient.invalidateQueries({ queryKey: ["run-bank-draft", runId] }),
-      queryClient.invalidateQueries({ queryKey: ["run-payout-delta", runId] }),
-    ]);
-
-  const payMutation = useMutation({
-    mutationFn: (payload: { employeeId: string; amount: number | null }) =>
-      markPartialPayrollPayment(runId, {
-        employee_id: payload.employeeId,
-        amount: payload.amount,
-        paid_at: todayDateInputValue(),
-      }),
-    onSuccess: async (_data, variables) => {
-      await invalidate();
-      setAmounts((current) => {
-        const next = { ...current };
-        delete next[variables.employeeId];
-        return next;
-      });
-      toast.success("Выплата отмечена");
-    },
-    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отметить выплату")),
-  });
-
-  const bulkMutation = useMutation({
-    mutationFn: (ids: string[]) => bulkMarkPayrollPayments(runId, ids, todayDateInputValue()),
-    onSuccess: async (response) => {
-      await invalidate();
-      setSelected(new Set());
-      toast.success(`Выплачено полностью: ${response.marked_count}`);
-    },
-    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось выплатить")),
-  });
-
-  function payRow(row: { employeeId: string; remaining: number; depositPayout: number }) {
-    // Выдача депозита проводится только полной выплатой: backend отдельно книжит её в ДДС/iiko.
-    if (row.depositPayout > 0) {
-      bulkMutation.mutate([row.employeeId]);
-      return;
-    }
-    const raw = (amounts[row.employeeId] ?? "").trim().replace(",", ".");
-    const parsed = raw === "" ? row.remaining : Number(raw);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      toast.error("Введите сумму больше нуля");
-      return;
-    }
-    if (parsed > row.remaining + 0.001) {
-      toast.error(`Сумма превышает остаток ${formatMoney(row.remaining)}`);
-      return;
-    }
-    payMutation.mutate({
-      employeeId: row.employeeId,
-      amount: parsed >= row.remaining ? null : parsed,
-    });
-  }
-
-  const chips = [
-    { key: "all" as const, label: "Все" },
-    { key: "pending" as const, label: "Ожидают" },
-    { key: "partial" as const, label: "Частично" },
-    { key: "paid" as const, label: "Выплачено" },
-  ];
-  const countFor = (key: string) =>
-    key === "all"
-      ? rows.length
-      : rows.filter((row) =>
-          key === "paid"
-            ? row.status === "paid"
-            : key === "partial"
-              ? row.status === "partially_paid"
-              : row.status === "pending",
-        ).length;
-
-  return (
-    <section className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        {chips.map((chip) => (
-          <button
-            className={cn(
-              "rounded-full border px-3 py-1 text-xs",
-              filter === chip.key
-                ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                : "border-border text-muted-foreground hover:bg-muted",
-            )}
-            key={chip.key}
-            onClick={() => setFilter(chip.key)}
-            type="button"
-          >
-            {chip.label} · {countFor(chip.key)}
-          </button>
-        ))}
-      </div>
-
-      {canManagePayments && selected.size > 0 ? (
-        <div className="flex items-center justify-between gap-3 rounded-lg border bg-card p-3">
-          <span className="text-sm">Выбрано {selected.size}</span>
-          <Button
-            disabled={bulkMutation.isPending}
-            onClick={() => bulkMutation.mutate(Array.from(selected))}
-            size="sm"
-            type="button"
-          >
-            <CheckCircle2 size={15} aria-hidden="true" />
-            Выплатить полностью
-          </Button>
-        </div>
-      ) : null}
-
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-[560px] text-sm">
-          <thead>
-            <tr className="bg-muted/50 text-xs text-muted-foreground">
-              <th className="w-8 px-3 py-2" />
-              <th className="px-3 py-2 text-left font-medium">Сотрудник</th>
-              <th className="px-3 py-2 text-right font-medium">Начислено</th>
-              <th className="px-3 py-2 text-right font-medium">К выплате</th>
-              <th className="px-3 py-2 text-right font-medium">Остаток</th>
-              <th className="px-3 py-2 text-left font-medium">Статус</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((row) => {
-              const paid = row.status === "paid";
-              const partial = row.status === "partially_paid";
-              return (
-                <tr className={cn("border-t", paid && "opacity-70")} key={row.employeeId}>
-                  <td className="px-3 py-2">
-                    {!paid && canManagePayments ? (
-                      <Checkbox
-                        aria-label={`Выбрать ${row.name}`}
-                        checked={selected.has(row.employeeId)}
-                        onChange={(event) =>
-                          setSelected((current) => {
-                            const next = new Set(current);
-                            if (event.target.checked) next.add(row.employeeId);
-                            else next.delete(row.employeeId);
-                            return next;
-                          })
-                        }
-                      />
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="font-medium">{row.name}</div>
-                    <div className="text-xs text-muted-foreground">{row.role}</div>
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    <div>{formatMoney(row.accrued)}</div>
-                    {row.depositPayout > 0 ? (
-                      <div className="text-xs text-emerald-700">
-                        + депозит {formatMoney(row.depositPayout)}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {paid ? (
-                      <span className="tabular-nums text-muted-foreground">
-                        {formatMoney(row.paid)}
-                      </span>
-                    ) : canManagePayments && runIsFinal ? (
-                      <div className="flex items-center justify-end gap-1">
-                        {row.depositPayout > 0 ? (
-                          <span className="mr-1 tabular-nums">{formatMoney(row.remaining)}</span>
-                        ) : (
-                          <Input
-                            className="h-8 w-24 text-right"
-                            inputMode="decimal"
-                            onChange={(event) =>
-                              setAmounts((current) => ({
-                                ...current,
-                                [row.employeeId]: event.target.value,
-                              }))
-                            }
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") payRow(row);
-                            }}
-                            placeholder={String(row.remaining)}
-                            value={amounts[row.employeeId] ?? ""}
-                          />
-                        )}
-                        <Button
-                          aria-label="Выплатить"
-                          disabled={payMutation.isPending || bulkMutation.isPending}
-                          onClick={() => payRow(row)}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <CheckCircle2 size={15} aria-hidden="true" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <span className="tabular-nums text-muted-foreground">
-                        {formatMoney(row.remaining)}
-                      </span>
-                    )}
-                  </td>
-                  <td
-                    className={cn(
-                      "px-3 py-2 text-right tabular-nums",
-                      partial && "bg-amber-50 font-medium text-amber-700",
-                    )}
-                  >
-                    {formatMoney(row.remaining)}
-                  </td>
-                  <td className="px-3 py-2">
-                    {paid ? (
-                      <span className="text-xs text-emerald-700">Выплачено</span>
-                    ) : partial ? (
-                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
-                        Частично · {formatMoney(row.paid)} из {formatMoney(row.payable)}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Ожидает</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot>
-            <tr className="border-t bg-muted/50 tabular-nums">
-              <td className="px-3 py-2" />
-              <td className="px-3 py-2 text-xs text-muted-foreground">ИТОГО · {rows.length} чел</td>
-              <td className="px-3 py-2 text-right font-medium">{formatMoney(totals.accrued)}</td>
-              <td className="px-3 py-2 text-right font-medium">{formatMoney(totals.payable)}</td>
-              <td className="px-3 py-2 text-right font-medium text-amber-700">
-                {formatMoney(totals.remaining)}
-              </td>
-              <td className="px-3 py-2" />
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function PayrollByEmployeeTab({
+function PayrollPaymentsTable({
   canManagePayments,
   canEditDeposits,
   cancelDepositPayoutPending,
@@ -1251,6 +870,7 @@ function PayrollByEmployeeTab({
   isLoading,
   lines,
   onCancelDepositPayout,
+  periodLabel,
   runId,
   runStatus,
 }: {
@@ -1261,29 +881,54 @@ function PayrollByEmployeeTab({
   isLoading: boolean;
   lines: PayrollLine[];
   onCancelDepositPayout: (employeeId: string) => void;
+  periodLabel: string;
   runId: string;
   runStatus: string;
 }) {
-  const runIsFinal = isFinalStatus(runStatus);
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "partial" | "paid">("all");
-  const [sortKey, setSortKey] = useState<SortKey>("name");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<Set<string>>(new Set());
 
+  const rows = useMemo(() => {
+    const groups = new Map<string, PayrollLine[]>();
+    const order: string[] = [];
+
+    for (const line of lines) {
+      const employee = employeesById.get(line.employee_id);
+      const groupKey = lineIsSubstituteOklad(line, employee)
+        ? `sub:${line.id}`
+        : `prod:${line.employee_id}`;
+      const bucket = groups.get(groupKey);
+      if (bucket) {
+        bucket.push(line);
+      } else {
+        groups.set(groupKey, [line]);
+        order.push(groupKey);
+      }
+    }
+
+    return order.map((groupKey) => {
+      const groupLines = groups.get(groupKey) ?? [];
+      const line = mergeEmployeeLines(groupLines);
+      const employee = employeesById.get(line.employee_id);
+      return {
+        line,
+        employee,
+        employeeName: employee?.full_name ?? "Сотрудник требует настройки",
+        hours: lineHours(line),
+        roles: Array.from(new Set(groupLines.map((item) => item.role).filter(Boolean))),
+        sourceLineIds: groupLines.map((item) => item.id),
+      };
+    });
+  }, [employeesById, lines]);
+
   const unpaidEmployeeIds = useMemo(
     () =>
-      Array.from(
-        new Set(
-          lines.filter((line) => line.payment_status !== "paid").map((line) => line.employee_id),
-        ),
-      ),
-    [lines],
+      rows.filter((row) => row.line.payment_status !== "paid").map((row) => row.line.employee_id),
+    [rows],
   );
 
-  // Drop selections that are no longer payable (e.g. after a mark / refetch).
   useEffect(() => {
     setSelectedEmployeeIds((current) => {
       const allowed = new Set(unpaidEmployeeIds);
@@ -1296,22 +941,6 @@ function PayrollByEmployeeTab({
   const allUnpaidSelected =
     unpaidEmployeeIds.length > 0 && unpaidEmployeeIds.every((id) => selectedEmployeeIds.has(id));
   const someUnpaidSelected = selectedCount > 0 && !allUnpaidSelected;
-
-  function toggleEmployee(employeeId: string, checked: boolean) {
-    setSelectedEmployeeIds((current) => {
-      const next = new Set(current);
-      if (checked) {
-        next.add(employeeId);
-      } else {
-        next.delete(employeeId);
-      }
-      return next;
-    });
-  }
-
-  function toggleAll(checked: boolean) {
-    setSelectedEmployeeIds(checked ? new Set(unpaidEmployeeIds) : new Set());
-  }
 
   const bulkMarkMutation = useMutation({
     mutationFn: (employeeIds: string[]) =>
@@ -1335,77 +964,22 @@ function PayrollByEmployeeTab({
     },
   });
 
-  const allRows = useMemo(() => {
-    // Группируем строки по сотруднику: производственные роли (пиццерист+сушист) сливаем в
-    // ОДНУ строку, замещающую окладную (кассир→помощник менеджера) держим отдельной.
-    // Порядок групп — по первому появлению строки (стабильно к сортировке ниже).
-    const groups = new Map<string, PayrollLine[]>();
-    const order: string[] = [];
-    for (const line of lines) {
-      const employee = employeesById.get(line.employee_id);
-      const groupKey = lineIsSubstituteOklad(line, employee)
-        ? `sub:${line.id}`
-        : `prod:${line.employee_id}`;
-      const bucket = groups.get(groupKey);
-      if (bucket) {
-        bucket.push(line);
-      } else {
-        groups.set(groupKey, [line]);
-        order.push(groupKey);
-      }
-    }
+  const filteredRows = rows.filter((row) => {
+    if (statusFilter === "all") return true;
+    if (statusFilter === "partial") return row.line.payment_status === "partially_paid";
+    return row.line.payment_status === statusFilter;
+  });
 
-    const prepared = order.map((groupKey) => {
-      const groupLines = groups.get(groupKey) ?? [];
-      const line = mergeEmployeeLines(groupLines);
-      const employee = employeesById.get(line.employee_id);
-      const roles = Array.from(new Set(groupLines.map((item) => item.role).filter(Boolean)));
-      return {
-        line,
-        employee,
-        employeeName: employee?.full_name ?? "Сотрудник требует настройки",
-        hours: lineHours(line),
-        roles,
-        sourceLineIds: groupLines.map((item) => item.id),
-      };
-    });
+  const totals = rows.reduce(
+    (acc, row) => ({
+      accrued: acc.accrued + moneyValue(row.line.total_payable),
+      payable: acc.payable + lineOnHand(row.line),
+      remaining: acc.remaining + lineRemainingOnHand(row.line),
+    }),
+    { accrued: 0, payable: 0, remaining: 0 },
+  );
 
-    return prepared.sort((left, right) => compareRows(left, right, sortKey, sortDirection));
-  }, [employeesById, lines, sortDirection, sortKey]);
-
-  const rows = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return allRows.filter((row) => {
-      const statusMatches =
-        statusFilter === "all" ||
-        (statusFilter === "partial"
-          ? row.line.payment_status === "partially_paid"
-          : row.line.payment_status === statusFilter);
-      if (!statusMatches) {
-        return false;
-      }
-      if (!needle) {
-        return true;
-      }
-      const roleText = row.roles
-        .map((role) => payrollRoleLabel(role))
-        .join(" ")
-        .toLowerCase();
-      return row.employeeName.toLowerCase().includes(needle) || roleText.includes(needle);
-    });
-  }, [allRows, search, statusFilter]);
-
-  const selectedLine = allRows.find((row) => row.line.id === selectedLineId) ?? null;
-
-  function setSort(nextKey: SortKey) {
-    if (nextKey === sortKey) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-      return;
-    }
-    setSortKey(nextKey);
-    setSortDirection("asc");
-  }
-
+  const selectedLine = rows.find((row) => row.line.id === selectedLineId) ?? null;
   const statusChips = [
     { key: "all" as const, label: "Все" },
     { key: "pending" as const, label: "Ожидают" },
@@ -1414,276 +988,26 @@ function PayrollByEmployeeTab({
   ];
   const statusCount = (key: (typeof statusChips)[number]["key"]) =>
     key === "all"
-      ? allRows.length
-      : allRows.filter((row) =>
+      ? rows.length
+      : rows.filter((row) =>
           key === "partial"
             ? row.line.payment_status === "partially_paid"
             : row.line.payment_status === key,
         ).length;
 
-  const tableColumns: Array<DataTableColumn<PayrollLineRowModel>> = [
-    ...(canManagePayments
-      ? [
-          {
-            key: "select",
-            header: (
-              <Checkbox
-                aria-label="Выбрать всех"
-                checked={allUnpaidSelected}
-                disabled={unpaidEmployeeIds.length === 0}
-                onChange={(event) => toggleAll(event.target.checked)}
-                ref={(el) => {
-                  if (el) {
-                    el.indeterminate = someUnpaidSelected;
-                  }
-                }}
-              />
-            ),
-            cell: (row: PayrollLineRowModel) =>
-              row.line.payment_status === "paid" ? null : (
-                <Checkbox
-                  aria-label={`Выбрать ${row.employeeName}`}
-                  checked={selectedEmployeeIds.has(row.line.employee_id)}
-                  onChange={(event) => toggleEmployee(row.line.employee_id, event.target.checked)}
-                  onClick={(event) => event.stopPropagation()}
-                />
-              ),
-            className: "w-10",
-            headerClassName: "w-10",
-            pinned: "left",
-            width: 48,
-          } satisfies DataTableColumn<PayrollLineRowModel>,
-        ]
-      : []),
-    {
-      key: "name",
-      header: (
-        <SortButton active={sortKey === "name"} onClick={() => setSort("name")}>
-          Имя
-        </SortButton>
-      ),
-      cell: (row) => (
-        <div>
-          <div className="font-medium">{row.employeeName}</div>
-          <div className="text-xs text-muted-foreground">
-            {row.employee?.position || "Роль из явок"}
-          </div>
-          <RoleChips roles={row.roles} />
-          {row.employee?.requires_position_review ? (
-            <button
-              className="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-800 hover:bg-amber-100"
-              onClick={(event) => {
-                event.stopPropagation();
-                navigateTo(`/staff?employee=${row.line.employee_id}`);
-              }}
-              title="Должность требует проверки — открыть карточку сотрудника"
-              type="button"
-            >
-              <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-              должность на проверке
-            </button>
-          ) : null}
-        </div>
-      ),
-      pinned: "left",
-      width: 240,
-    },
-    {
-      key: "hours",
-      header: (
-        <SortButton active={sortKey === "hours"} onClick={() => setSort("hours")}>
-          Часов
-        </SortButton>
-      ),
-      cell: (row) => formatHours(row.hours),
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "base_pay",
-      header: "Оклад",
-      cell: (row) => formatMoney(row.line.base_pay),
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "premium",
-      header: "Премия",
-      cell: (row) => formatMoney(row.line.premium),
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "percent_pay",
-      header: "%",
-      cell: (row) => formatMoney(row.line.percent_pay),
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "vacation_pay",
-      header: "Отпуск",
-      cell: (row) => formatMoney(row.line.vacation_pay),
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "penalties_total",
-      header: (
-        <SortButton
-          active={sortKey === "penalties_total"}
-          onClick={() => setSort("penalties_total")}
-        >
-          Штрафы
-        </SortButton>
-      ),
-      cell: (row) => {
-        const total = linePenaltyTotal(row.line);
-        if (total <= 0) {
-          return <span className="text-muted-foreground">0 ₽</span>;
-        }
-        return <span className="text-rose-700">−{formatMoney(total)}</span>;
-      },
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "deposit_withholding",
-      header: (
-        <SortButton
-          active={sortKey === "deposit_withholding"}
-          onClick={() => setSort("deposit_withholding")}
-        >
-          Удержание депозита
-        </SortButton>
-      ),
-      cell: (row) => formatMoney(row.line.deposit_withholding),
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "deposit_payout",
-      header: (
-        <SortButton active={sortKey === "deposit_payout"} onClick={() => setSort("deposit_payout")}>
-          Выдача депозита
-        </SortButton>
-      ),
-      cell: (row) => {
-        const amount = row.line.deposit_payout;
-        if (amount <= 0) {
-          return formatMoney(amount);
-        }
-        // Запланированную выдачу можно отменить, пока ведомость не финализирована.
-        return (
-          <div className="flex flex-col items-end gap-0.5">
-            <span>{formatMoney(amount)}</span>
-            {!runIsFinal && canEditDeposits ? (
-              <button
-                className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
-                disabled={cancelDepositPayoutPending}
-                onClick={() => onCancelDepositPayout(row.line.employee_id)}
-                type="button"
-              >
-                Отменить выдачу
-              </button>
-            ) : null}
-          </div>
-        );
-      },
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "advance_issued",
-      header: (
-        <SortButton active={sortKey === "advance_issued"} onClick={() => setSort("advance_issued")}>
-          Авансы/займы
-        </SortButton>
-      ),
-      cell: (row) => {
-        const amount = row.line.advance_issued;
-        if (amount <= 0) {
-          return formatMoney(amount);
-        }
-        return <span className="text-emerald-700">+{formatMoney(amount)}</span>;
-      },
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "fund_accrual",
-      header: (
-        <SortButton active={sortKey === "fund_accrual"} onClick={() => setSort("fund_accrual")}>
-          Нак. фонд
-        </SortButton>
-      ),
-      cell: (row) => formatMoney(row.line.fund_accrual),
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "ndfl_deduction",
-      header: (
-        <SortButton active={sortKey === "ndfl_deduction"} onClick={() => setSort("ndfl_deduction")}>
-          НДФЛ
-        </SortButton>
-      ),
-      cell: (row) => formatMoney(row.line.ndfl_withheld),
-      className: "text-right tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "total",
-      header: (
-        <SortButton active={sortKey === "total"} onClick={() => setSort("total")}>
-          К выплате
-        </SortButton>
-      ),
-      cell: (row) => formatMoney(lineOnHand(row.line)),
-      className: "text-right font-semibold tabular-nums",
-      headerClassName: "text-right",
-    },
-    {
-      key: "payment",
-      header: "Выплата",
-      cell: (row) => <PaymentCell canManagePayments={canManagePayments} line={row.line} />,
-      className: "min-w-[210px]",
-    },
-  ];
+  function toggleEmployee(employeeId: string, checked: boolean) {
+    setSelectedEmployeeIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(employeeId);
+      else next.delete(employeeId);
+      return next;
+    });
+  }
 
   return (
-    <div className="space-y-4">
-      <section className="grid gap-3 rounded-lg border bg-card p-3 md:grid-cols-[minmax(220px,360px)_1fr] md:items-center">
-        <div className="flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3">
-          <Search size={16} className="text-muted-foreground" aria-hidden="true" />
-          <input
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Сотрудник или роль"
-            value={search}
-          />
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-muted-foreground">
-            {rows.length} {pluralizeEmployeeLine(rows.length)} · нажмите на строку, чтобы увидеть
-            смены и состав начисления
-          </div>
-          {canManagePayments ? (
-            <Button
-              disabled={selectedCount === 0 || bulkMarkMutation.isPending}
-              onClick={() => bulkMarkMutation.mutate(Array.from(selectedEmployeeIds))}
-              type="button"
-            >
-              {bulkMarkMutation.isPending ? (
-                <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-              ) : (
-                <CheckCircle2 size={16} aria-hidden="true" />
-              )}
-              Выплатить{selectedCount > 0 ? ` (${selectedCount})` : ""}
-            </Button>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2 md:col-span-2">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           {statusChips.map((chip) => (
             <button
               aria-pressed={statusFilter === chip.key}
@@ -1701,7 +1025,22 @@ function PayrollByEmployeeTab({
             </button>
           ))}
         </div>
-      </section>
+        {canManagePayments && selectedCount > 0 ? (
+          <Button
+            disabled={bulkMarkMutation.isPending}
+            onClick={() => bulkMarkMutation.mutate(Array.from(selectedEmployeeIds))}
+            size="sm"
+            type="button"
+          >
+            {bulkMarkMutation.isPending ? (
+              <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+            ) : (
+              <CheckCircle2 size={15} aria-hidden="true" />
+            )}
+            Выплатить полностью · {selectedCount}
+          </Button>
+        ) : null}
+      </div>
 
       {lines.length === 0 && !isLoading ? (
         <EmptyState
@@ -1710,28 +1049,142 @@ function PayrollByEmployeeTab({
           description="После успешного запуска здесь появятся сотрудники и суммы к выплате."
         />
       ) : (
-        <DataTable
-          columns={tableColumns}
-          rows={rows}
-          isLoading={isLoading}
-          getRowKey={(row) => row.line.id}
-          onRowClick={(row) => setSelectedLineId(row.line.id)}
-          emptyMessage="Сотрудники по фильтру не найдены"
-        />
+        <div className="overflow-x-auto rounded-lg border bg-card">
+          <table className="w-full min-w-[760px] text-sm">
+            <thead>
+              <tr className="bg-muted/50 text-xs text-muted-foreground">
+                {canManagePayments ? (
+                  <th className="w-10 px-3 py-2">
+                    <Checkbox
+                      aria-label="Выбрать всех"
+                      checked={allUnpaidSelected}
+                      disabled={unpaidEmployeeIds.length === 0}
+                      onChange={(event) =>
+                        setSelectedEmployeeIds(
+                          event.target.checked ? new Set(unpaidEmployeeIds) : new Set(),
+                        )
+                      }
+                      ref={(element) => {
+                        if (element) element.indeterminate = someUnpaidSelected;
+                      }}
+                    />
+                  </th>
+                ) : null}
+                <th className="px-3 py-2 text-left font-medium">Сотрудник</th>
+                <th className="px-3 py-2 text-right font-medium">Начислено</th>
+                <th className="px-3 py-2 text-right font-medium">К выплате</th>
+                <th className="px-3 py-2 text-right font-medium">Остаток</th>
+                <th className="px-3 py-2 text-left font-medium">Статус</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading
+                ? Array.from({ length: 4 }).map((_, index) => (
+                    <tr className="border-t" key={index}>
+                      <td
+                        className="h-14 animate-pulse bg-muted/30"
+                        colSpan={canManagePayments ? 6 : 5}
+                      />
+                    </tr>
+                  ))
+                : filteredRows.map((row) => {
+                    const isPaid = row.line.payment_status === "paid";
+                    const roleLabel =
+                      row.roles.length > 0
+                        ? row.roles.map((role) => payrollRoleLabel(role)).join(" · ")
+                        : row.employee?.position || "Роль не указана";
+                    return (
+                      <tr
+                        className={cn(
+                          "cursor-pointer border-t transition-colors hover:bg-muted/40",
+                          isPaid && "opacity-70",
+                        )}
+                        key={row.line.id}
+                        onClick={() => setSelectedLineId(row.line.id)}
+                      >
+                        {canManagePayments ? (
+                          <td className="px-3 py-3">
+                            {!isPaid ? (
+                              <Checkbox
+                                aria-label={`Выбрать ${row.employeeName}`}
+                                checked={selectedEmployeeIds.has(row.line.employee_id)}
+                                onChange={(event) =>
+                                  toggleEmployee(row.line.employee_id, event.target.checked)
+                                }
+                                onClick={(event) => event.stopPropagation()}
+                              />
+                            ) : null}
+                          </td>
+                        ) : null}
+                        <td className="px-3 py-3">
+                          <div className="font-medium">{row.employeeName}</div>
+                          <div className="text-xs text-muted-foreground">{roleLabel}</div>
+                        </td>
+                        <td className="px-3 py-3 text-right tabular-nums">
+                          <div>{formatMoney(row.line.total_payable)}</div>
+                          {moneyValue(row.line.deposit_payout) > 0 ? (
+                            <div className="text-xs text-violet-700">
+                              + депозит {formatMoney(row.line.deposit_payout)}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-3 text-right font-medium tabular-nums">
+                          {formatMoney(lineOnHand(row.line))}
+                        </td>
+                        <td className="px-3 py-3 text-right font-medium tabular-nums">
+                          {formatMoney(lineRemainingOnHand(row.line))}
+                        </td>
+                        <td className="px-3 py-3">
+                          <PaymentStatusSummary line={row.line} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+            </tbody>
+            {!isLoading ? (
+              <tfoot>
+                <tr className="border-t bg-muted/50 tabular-nums">
+                  {canManagePayments ? <td className="px-3 py-2" /> : null}
+                  <td className="px-3 py-2 text-xs text-muted-foreground">
+                    ИТОГО · {rows.length} чел
+                  </td>
+                  <td className="px-3 py-2 text-right font-medium">
+                    {formatMoney(totals.accrued)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-medium">
+                    {formatMoney(totals.payable)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-medium text-amber-700">
+                    {formatMoney(totals.remaining)}
+                  </td>
+                  <td className="px-3 py-2" />
+                </tr>
+              </tfoot>
+            ) : null}
+          </table>
+        </div>
       )}
 
-      <Sheet
+      <Dialog
         open={Boolean(selectedLine)}
         onOpenChange={(open) => {
-          if (!open) {
-            setSelectedLineId(null);
-          }
+          if (!open) setSelectedLineId(null);
         }}
       >
-        <SheetContent className="w-full overflow-y-auto sm:max-w-2xl" side="right">
-          {selectedLine ? <PayrollLineDrawer row={selectedLine} runStatus={runStatus} /> : null}
-        </SheetContent>
-      </Sheet>
+        <DialogContent className="max-w-5xl">
+          {selectedLine ? (
+            <PayrollLineDialogContent
+              canEditDeposits={canEditDeposits}
+              canManagePayments={canManagePayments}
+              cancelDepositPayoutPending={cancelDepositPayoutPending}
+              onCancelDepositPayout={() => onCancelDepositPayout(selectedLine.line.employee_id)}
+              periodLabel={periodLabel}
+              row={selectedLine}
+              runStatus={runStatus}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -2346,30 +1799,41 @@ function PayoutDeltaBadge({
   );
 }
 
-function SortButton({
-  active,
-  children,
-  onClick,
-}: {
-  active: boolean;
-  children: ReactNode;
-  onClick: () => void;
-}) {
+function PaymentStatusSummary({ line }: { line: PayrollLine }) {
+  const accrued = lineOnHand(line);
+  const paid = linePaidOnHand(line);
+  const remaining = lineRemainingOnHand(line);
+
+  if (line.payment_status === "paid") {
+    return (
+      <div className="space-y-1">
+        <Badge className="rounded-md border-emerald-200 bg-emerald-50 text-emerald-800 shadow-none">
+          Выплачено
+        </Badge>
+        {line.paid_at ? (
+          <div className="text-xs text-muted-foreground">{formatDate(line.paid_at)}</div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (line.payment_status === "partially_paid") {
+    return (
+      <div className="space-y-1">
+        <Badge className="rounded-md border-amber-200 bg-amber-50 text-amber-800 shadow-none">
+          Частично
+        </Badge>
+        <div className="text-xs text-amber-700">
+          {formatMoney(paid)} из {formatMoney(accrued)} · остаток {formatMoney(remaining)}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <button
-      className={cn(
-        "inline-flex items-center gap-1 text-xs font-semibold uppercase",
-        active ? "text-foreground" : "text-muted-foreground",
-      )}
-      onClick={(event) => {
-        event.stopPropagation();
-        onClick();
-      }}
-      type="button"
-    >
-      {children}
-      <ArrowUpDown size={13} aria-hidden="true" />
-    </button>
+    <Badge className="rounded-md border-border bg-muted text-muted-foreground shadow-none">
+      Ожидает
+    </Badge>
   );
 }
 
@@ -2430,6 +1894,18 @@ function PaymentCell({
     },
   });
 
+  const fullMutation = useMutation({
+    mutationFn: () =>
+      bulkMarkPayrollPayments(line.run_id, [line.employee_id], todayDateInputValue()),
+    onSuccess: async () => {
+      await invalidate();
+      toast.success("Выплата проведена полностью");
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось провести выплату"));
+    },
+  });
+
   function openDialog() {
     setAmountInput(remaining > 0 ? String(remaining) : "");
     setComment("");
@@ -2482,25 +1958,39 @@ function PaymentCell({
       {isPartial && line.payment_comment ? (
         <span className="text-xs text-muted-foreground">{line.payment_comment}</span>
       ) : null}
-      {canManagePayments && !isPaid && hasDepositPayout ? (
-        <span className="max-w-[210px] text-xs text-muted-foreground">
-          Выдача депозита проводится полной выплатой — выберите сотрудника и нажмите «Выплатить» над
-          таблицей.
-        </span>
-      ) : canManagePayments && !isPaid ? (
-        <Button
-          className={isPartial ? "bg-amber-500 text-white hover:bg-amber-600" : undefined}
-          onClick={(event) => {
-            event.stopPropagation();
-            openDialog();
-          }}
-          size="sm"
-          type="button"
-          variant={isPartial ? "default" : "outline"}
-        >
-          <Banknote size={15} aria-hidden="true" />
-          {isPartial ? "Доплатить" : "Выплатить частично"}
-        </Button>
+      {canManagePayments && !isPaid ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            disabled={fullMutation.isPending || remaining <= 0}
+            onClick={(event) => {
+              event.stopPropagation();
+              fullMutation.mutate();
+            }}
+            size="sm"
+            type="button"
+          >
+            {fullMutation.isPending ? (
+              <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+            ) : (
+              <CheckCircle2 size={15} aria-hidden="true" />
+            )}
+            {isPartial ? "Доплатить" : "Выплатить"} {formatMoney(remaining)}
+          </Button>
+          {!hasDepositPayout ? (
+            <Button
+              onClick={(event) => {
+                event.stopPropagation();
+                openDialog();
+              }}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <Banknote size={15} aria-hidden="true" />
+              Выплатить частично
+            </Button>
+          ) : null}
+        </div>
       ) : null}
       {canManagePayments && isPaid ? (
         <Button
@@ -2614,40 +2104,76 @@ function BlockingIssue({
   );
 }
 
-function PayrollLineDrawer({ row, runStatus }: { row: PayrollLineRowModel; runStatus: string }) {
+function PayrollLineDialogContent({
+  canEditDeposits,
+  canManagePayments,
+  cancelDepositPayoutPending,
+  onCancelDepositPayout,
+  periodLabel,
+  row,
+  runStatus,
+}: {
+  canEditDeposits: boolean;
+  canManagePayments: boolean;
+  cancelDepositPayoutPending: boolean;
+  onCancelDepositPayout: () => void;
+  periodLabel: string;
+  row: PayrollLineRowModel;
+  runStatus: string;
+}) {
   const days = lineDays(row.line);
   const weekdayPremiumTotal = days.reduce((sum, day) => sum + day.weekdayPremium, 0);
   const adjustments = lineAdjustments(row.line);
+  const runIsFinal = isFinalStatus(runStatus);
+  const depositPayout = moneyValue(row.line.deposit_payout);
 
   return (
     <div className="space-y-5">
-      <SheetHeader>
-        <SheetTitle className="pr-8">{row.employeeName}</SheetTitle>
-        <SheetDescription>
+      <DialogHeader>
+        <DialogTitle className="pr-8">{row.employeeName}</DialogTitle>
+        <DialogDescription>
           {row.roles.length > 0
             ? row.roles.map((role) => payrollRoleLabel(role)).join(", ")
-            : row.line.role || "Роль не задана"}{" "}
-          · {formatHours(row.hours)}
-        </SheetDescription>
-      </SheetHeader>
+            : payrollRoleLabel(row.line.role) || "Роль не задана"}{" "}
+          · {periodLabel || "Период ведомости"} · {formatHours(row.hours)}
+        </DialogDescription>
+      </DialogHeader>
 
-      <section className="grid gap-3 sm:grid-cols-2">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
         <ComponentValue label="Оклад" value={formatMoney(row.line.base_pay)} />
-        <ComponentValue label="Премия" value={formatMoney(row.line.premium)} />
         <ComponentValue label="Процент" value={formatMoney(row.line.percent_pay)} />
-        <ComponentValue label="Отпускные" value={formatMoney(row.line.vacation_pay)} />
+        <ComponentValue label="Премии" value={formatMoney(row.line.premium)} />
         <ComponentValue label="Всего удержано" value={formatMoney(row.line.deduction)} />
-        <ComponentValue label="Фонд" value={formatMoney(row.line.fund_accrual)} />
-        {moneyValue(row.line.deposit_payout) > 0 ? (
-          <ComponentValue label="Выдача депозита" value={formatMoney(row.line.deposit_payout)} />
-        ) : null}
-        {moneyValue(row.line.advance_issued) > 0 ? (
-          <ComponentValue label="Авансы/займы" value={formatMoney(row.line.advance_issued)} />
-        ) : null}
+        <ComponentValue label="Выдача депозита" value={formatMoney(depositPayout)} />
         <ComponentValue label="К выплате" value={formatMoney(lineOnHand(row.line))} strong />
       </section>
 
       <DepositOverrideControl line={row.line} lineIds={row.sourceLineIds} runStatus={runStatus} />
+
+      {depositPayout > 0 ? (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-violet-200 bg-violet-50/60 p-3">
+          <div>
+            <div className="text-sm font-semibold text-violet-950">Выдача депозита</div>
+            <div className="mt-1 text-sm text-violet-800">
+              В эту ведомость добавлено {formatMoney(depositPayout)} поверх зарплатной части.
+            </div>
+          </div>
+          <Button
+            disabled={runIsFinal || !canEditDeposits || cancelDepositPayoutPending}
+            onClick={onCancelDepositPayout}
+            title={runIsFinal ? "После финализации выдачу отменить нельзя" : undefined}
+            type="button"
+            variant="outline"
+          >
+            {cancelDepositPayoutPending ? (
+              <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+            ) : (
+              <Undo2 size={15} aria-hidden="true" />
+            )}
+            Отменить выдачу
+          </Button>
+        </section>
+      ) : null}
 
       {weekdayPremiumTotal > 0 ? (
         <section className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
@@ -2656,51 +2182,70 @@ function PayrollLineDrawer({ row, runStatus }: { row: PayrollLineRowModel; runSt
         </section>
       ) : null}
 
-      {adjustments.bonuses.length > 0 ? (
-        <AdjustmentList title="Ручные премии" items={adjustments.bonuses} />
-      ) : null}
+      <AdjustmentDisclosure
+        defaultOpen={adjustments.bonuses.length > 0}
+        items={adjustments.bonuses}
+        kind="bonus"
+        title="Премии"
+      />
 
-      {adjustments.penalties.length > 0 ? (
-        <AdjustmentList title="Штрафы и удержания" items={adjustments.penalties} />
-      ) : null}
+      <AdjustmentDisclosure
+        items={adjustments.penalties}
+        kind="deduction"
+        title="Штрафы и удержания"
+      />
 
       <section className="space-y-3">
-        <div className="text-sm font-semibold">Смены и компоненты</div>
+        <div className="text-sm font-semibold">Смены и начисления</div>
         {days.length > 0 ? (
-          <div className="grid gap-2">
-            {days.map((day) => (
-              <div className="rounded-lg border bg-card p-3" key={`${day.date}-${day.role}`}>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="font-medium">{formatDate(day.date)}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {payrollRoleLabel(day.role)} · {formatHours(day.hours)}
-                    </div>
-                  </div>
-                  {day.category ? (
-                    <Badge className="rounded-md border-border bg-background text-foreground shadow-none">
-                      {day.category}
-                    </Badge>
-                  ) : null}
-                </div>
-                <div className="mt-3 grid gap-2 text-sm sm:grid-cols-4">
-                  <ComponentValue label="Оклад" value={formatMoney(day.basePay)} dense />
-                  <ComponentValue label="%" value={formatMoney(day.percentPay)} dense />
-                  <ComponentValue label="Отпуск" value={formatMoney(day.vacationPay)} dense />
-                  <ComponentValue label="Фонд" value={formatMoney(day.fundAccrual)} dense />
-                </div>
-                {day.weekdayPremium > 0 ? (
-                  <div className="mt-2 text-sm text-muted-foreground">
-                    В т.ч. надбавка пт/сб: {formatMoney(day.weekdayPremium)}
-                  </div>
-                ) : null}
-                {day.dailyRevenue > 0 ? (
-                  <div className="mt-2 text-sm text-muted-foreground">
-                    Выручка дня {formatMoney(day.dailyRevenue)}
-                  </div>
-                ) : null}
-              </div>
-            ))}
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead>
+                <tr className="bg-muted/50 text-xs text-muted-foreground">
+                  <th className="px-3 py-2 text-left font-medium">Дата / роль</th>
+                  <th className="px-3 py-2 text-right font-medium">Часы</th>
+                  <th className="px-3 py-2 text-right font-medium">Оклад</th>
+                  <th className="px-3 py-2 text-right font-medium">Процент</th>
+                  <th className="px-3 py-2 text-right font-medium">Отпуск</th>
+                  <th className="px-3 py-2 text-right font-medium">Фонд</th>
+                  <th className="px-3 py-2 text-right font-medium">Выручка</th>
+                </tr>
+              </thead>
+              <tbody>
+                {days.map((day) => (
+                  <tr className="border-t" key={`${day.date}-${day.role}`}>
+                    <td className="px-3 py-2">
+                      <div className="font-medium">{formatDate(day.date)}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {payrollRoleLabel(day.role)}
+                        {day.category ? ` · ${employeeCategoryLabel(day.category)}` : ""}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatHours(day.hours)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {formatMoney(day.basePay)}
+                      {day.weekdayPremium > 0 ? (
+                        <div className="text-xs text-emerald-700">
+                          в т.ч. пт/сб +{formatMoney(day.weekdayPremium)}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {formatMoney(day.percentPay)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {formatMoney(day.vacationPay)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {formatMoney(day.fundAccrual)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {formatMoney(day.dailyRevenue)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
           <EmptyState
@@ -2708,6 +2253,20 @@ function PayrollLineDrawer({ row, runStatus }: { row: PayrollLineRowModel; runSt
             description="В строке есть итоговые суммы, но нет дневных компонентов."
           />
         )}
+      </section>
+
+      <section className="grid gap-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
+        <div>
+          <div className="text-sm font-semibold text-emerald-950">Итог выплаты</div>
+          <div className="mt-1 flex flex-wrap items-baseline gap-2 text-sm text-emerald-900">
+            <span>зарплата {formatMoney(row.line.total_payable)}</span>
+            <span aria-hidden="true">+</span>
+            <span>депозит {formatMoney(depositPayout)}</span>
+            <span aria-hidden="true">=</span>
+            <strong className="text-lg tabular-nums">{formatMoney(lineOnHand(row.line))}</strong>
+          </div>
+        </div>
+        <PaymentCell canManagePayments={canManagePayments} line={row.line} />
       </section>
     </div>
   );
@@ -2769,30 +2328,31 @@ function DepositOverrideControl({
     <section className="space-y-3 rounded-md border bg-background p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm font-semibold">Удержания</div>
+          <div className="text-sm font-semibold">Удержание депозита</div>
           <div className="mt-1 text-sm text-muted-foreground">
-            Депозит: {formatMoney(line.deposit_withholding)}
+            В расчёте: {formatMoney(line.deposit_withholding)}
           </div>
         </div>
-        <span title={isFinal ? disabledReason : undefined}>
+        <Label
+          className="flex items-center gap-2 text-sm"
+          title={isFinal ? disabledReason : undefined}
+        >
+          <span>Удерживать</span>
           <Switch
-            checked={line.deposit_excluded_for_run}
+            checked={!line.deposit_excluded_for_run}
             disabled={!canEditDeposit || isFinal || mutation.isPending}
             onCheckedChange={(checked) => {
               mutation.mutate({
-                deposit_excluded_for_run: checked,
-                deposit_exclusion_reason: checked ? cleanOptionalText(reason) : null,
+                deposit_excluded_for_run: !checked,
+                deposit_exclusion_reason: checked ? null : cleanOptionalText(reason),
               });
             }}
           />
-        </span>
+        </Label>
       </div>
-      <Label className="flex items-center gap-2 text-sm">
-        <span>Исключить депозит из этой ведомости</span>
-      </Label>
       <div className="text-xs leading-relaxed text-muted-foreground">
-        Скипнуть удержание депозита только для этой ведомости. Изменение применится после пересчёта.
-        Настройки сотрудника не затрагиваются.
+        Выключите, чтобы не удерживать депозит только в этой ведомости. Изменение применится после
+        пересчёта и не затронет настройки сотрудника.
       </div>
       {line.deposit_excluded_for_run ? (
         <div className="space-y-2">
@@ -2843,27 +2403,84 @@ function ComponentValue({
   );
 }
 
-function AdjustmentList({ items, title }: { items: AdjustmentComponent[]; title: string }) {
+function AdjustmentDisclosure({
+  defaultOpen = false,
+  items,
+  kind,
+  title,
+}: {
+  defaultOpen?: boolean;
+  items: AdjustmentComponent[];
+  kind: "bonus" | "deduction";
+  title: string;
+}) {
+  const total = items.reduce((sum, item) => sum + moneyValue(item.amount), 0);
+
   return (
-    <section className="space-y-2">
-      <div className="text-sm font-semibold">{title}</div>
-      <div className="grid gap-2">
-        {items.map((item) => (
-          <div
-            className="grid gap-2 rounded-md border bg-card p-3 text-sm sm:grid-cols-[90px_1fr_auto] sm:items-center"
-            key={item.id}
-          >
-            <span className="text-muted-foreground">{formatDate(item.workDate)}</span>
-            <span className="min-w-0 truncate">{item.category}</span>
-            <span className="font-medium tabular-nums">{formatMoney(item.amount)}</span>
-            {item.comment ? (
-              <span className="text-muted-foreground sm:col-span-3">{item.comment}</span>
-            ) : null}
+    <details className="group rounded-md border bg-card" open={defaultOpen || undefined}>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-2 font-semibold">
+          <ChevronRight
+            className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-90"
+            aria-hidden="true"
+          />
+          {title}
+          <span className="font-normal text-muted-foreground">· {items.length}</span>
+        </span>
+        <span
+          className={cn(
+            "font-medium tabular-nums",
+            kind === "bonus" && total > 0 ? "text-emerald-700" : undefined,
+            kind === "deduction" && total > 0 ? "text-rose-700" : undefined,
+          )}
+        >
+          {kind === "bonus" && total > 0 ? "+" : kind === "deduction" && total > 0 ? "−" : ""}
+          {formatMoney(total)}
+        </span>
+      </summary>
+      <div className="border-t px-3 py-2">
+        {items.length > 0 ? (
+          <div className="divide-y">
+            {items.map((item) => (
+              <div
+                className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5 text-xs"
+                key={item.id}
+              >
+                <span className="text-muted-foreground">{formatDate(item.workDate)}</span>
+                <span className="border-l pl-2 font-medium">{adjustmentTypeLabel(item, kind)}</span>
+                <span className="border-l pl-2">{item.category}</span>
+                {item.comment ? (
+                  <span className="min-w-0 flex-1 border-l pl-2 text-muted-foreground">
+                    {item.comment}
+                  </span>
+                ) : (
+                  <span className="min-w-0 flex-1" />
+                )}
+                <span
+                  className={cn(
+                    "ml-auto border-l pl-2 font-semibold tabular-nums",
+                    kind === "bonus" ? "text-emerald-700" : "text-rose-700",
+                  )}
+                >
+                  {kind === "bonus" ? "+" : "−"}
+                  {formatMoney(item.amount)}
+                </span>
+              </div>
+            ))}
           </div>
-        ))}
+        ) : (
+          <div className="text-xs text-muted-foreground">
+            {kind === "bonus" ? "За этот период премий нет." : "Штрафов и удержаний нет."}
+          </div>
+        )}
       </div>
-    </section>
+    </details>
   );
+}
+
+function adjustmentTypeLabel(item: AdjustmentComponent, kind: "bonus" | "deduction") {
+  if (kind === "bonus") return "Премия";
+  return item.category.toLowerCase().includes("штраф") ? "Штраф" : "Удержание";
 }
 
 function cleanOptionalText(value: string) {
@@ -2957,33 +2574,13 @@ function payrollRoleLabel(role: string | null | undefined): string {
   if (!role) {
     return "—";
   }
-  return PAYROLL_ROLE_LABELS[role as keyof typeof PAYROLL_ROLE_LABELS] ?? role;
+  return PAYROLL_ROLE_LABELS[role as keyof typeof PAYROLL_ROLE_LABELS] ?? "Роль не распознана";
 }
 
-// Чипы ролей объединённой расчётки: каждая роль — своим цветом (единая палитра ролей).
-function RoleChips({ roles }: { roles: string[] }) {
-  if (roles.length === 0) {
-    return null;
-  }
-  return (
-    <span className="mt-1 flex flex-wrap gap-1">
-      {roles.map((role) => {
-        const colors = roleColorClasses(role);
-        return (
-          <span
-            className={cn(
-              "inline-flex h-5 items-center rounded-sm border px-1.5 text-[11px] leading-none",
-              colors.container,
-              colors.primaryText,
-            )}
-            key={role}
-          >
-            {payrollRoleLabel(role)}
-          </span>
-        );
-      })}
-    </span>
-  );
+function employeeCategoryLabel(category: string): string {
+  const label = EMPLOYEE_CATEGORY_LABELS[category as keyof typeof EMPLOYEE_CATEGORY_LABELS];
+  if (!label) return "Категория не распознана";
+  return category.startsWith("category_") ? `${label} категория` : label;
 }
 
 // Замещающая окладная строка (кассир, исполняющий помощника менеджера) НЕ сливается с
@@ -3050,40 +2647,6 @@ function mergeEmployeeLines(lines: PayrollLine[]): PayrollLine {
   };
 }
 
-function compareRows(
-  left: PayrollLineRowModel,
-  right: PayrollLineRowModel,
-  sortKey: SortKey,
-  direction: SortDirection,
-) {
-  const modifier = direction === "asc" ? 1 : -1;
-  if (sortKey === "hours") {
-    return (left.hours - right.hours) * modifier;
-  }
-  if (sortKey === "penalties_total") {
-    return (linePenaltyTotal(left.line) - linePenaltyTotal(right.line)) * modifier;
-  }
-  if (sortKey === "deposit_withholding") {
-    return (left.line.deposit_withholding - right.line.deposit_withholding) * modifier;
-  }
-  if (sortKey === "deposit_payout") {
-    return (left.line.deposit_payout - right.line.deposit_payout) * modifier;
-  }
-  if (sortKey === "advance_issued") {
-    return (left.line.advance_issued - right.line.advance_issued) * modifier;
-  }
-  if (sortKey === "fund_accrual") {
-    return (left.line.fund_accrual - right.line.fund_accrual) * modifier;
-  }
-  if (sortKey === "ndfl_deduction") {
-    return (left.line.ndfl_withheld - right.line.ndfl_withheld) * modifier;
-  }
-  if (sortKey === "total") {
-    return (lineOnHand(left.line) - lineOnHand(right.line)) * modifier;
-  }
-  return left.employeeName.localeCompare(right.employeeName, "ru") * modifier;
-}
-
 // «На руки» по строке = сумма ведомости (total_payable, включая аванс/заём через ведомость)
 // + выдача депозита (хранится отдельно и в total_payable не входит).
 function lineOnHand(line: PayrollLine) {
@@ -3095,6 +2658,10 @@ function lineOnHand(line: PayrollLine) {
 function linePaidOnHand(line: PayrollLine) {
   const salaryPaid = moneyValue(line.paid_amount ?? 0);
   return salaryPaid + (line.payment_status === "paid" ? moneyValue(line.deposit_payout) : 0);
+}
+
+function lineRemainingOnHand(line: PayrollLine) {
+  return normalizeMoney(Math.max(0, lineOnHand(line) - linePaidOnHand(line)));
 }
 
 function lineHours(line: PayrollLine) {
@@ -3148,10 +2715,6 @@ function lineAdjustments(line: PayrollLine) {
     bonuses: adjustmentItems(adjustments.bonuses),
     penalties: adjustmentItems(adjustments.penalties),
   };
-}
-
-function linePenaltyTotal(line: PayrollLine) {
-  return lineAdjustments(line).penalties.reduce((sum, item) => sum + Math.max(item.amount, 0), 0);
 }
 
 function adjustmentItems(value: unknown): AdjustmentComponent[] {
@@ -3223,18 +2786,6 @@ function pluralizeIssue(count: number) {
     return "блокера";
   }
   return "блокеров";
-}
-
-function pluralizeEmployeeLine(count: number) {
-  const last = count % 10;
-  const lastTwo = count % 100;
-  if (last === 1 && lastTwo !== 11) {
-    return "строка";
-  }
-  if (last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14)) {
-    return "строки";
-  }
-  return "строк";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
