@@ -1,3 +1,13 @@
+---
+id: BIZ-payroll-runbook
+type: business
+title: Runbook менеджера — недельная ЗП
+status: actual
+created: 2026-06-08
+updated: 2026-06-08
+links: [BIZ-access-rights]
+---
+
 # Runbook менеджера: недельная ЗП
 
 ## 1. Сделать ЗП за неделю
