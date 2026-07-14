@@ -40,7 +40,10 @@ test("recalculates a blocked payroll run from detail header", async ({ page }) =
   });
   await page.route("**/api/v1/payroll/runs", async (route) => {
     if (route.request().method() === "POST") {
-      expect(route.request().postDataJSON()).toEqual({ period_id: periodId });
+      expect(route.request().postDataJSON()).toEqual({
+        period_id: periodId,
+        force_refresh: true,
+      });
       hasRecalculated = true;
       return fulfillJson(route, payrollRun(recalculatedStartedAt));
     }

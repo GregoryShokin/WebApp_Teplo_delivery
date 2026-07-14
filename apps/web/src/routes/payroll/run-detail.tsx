@@ -156,6 +156,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const [isUnfinalizeDialogOpen, setIsUnfinalizeDialogOpen] = useState(false);
   const [unfinalizeReason, setUnfinalizeReason] = useState("");
   const [splitOpen, setSplitOpen] = useState(false);
+  const [tableView, setTableView] = useState<"details" | "payments">("details");
 
   const runQuery = useQuery({
     queryKey: ["payroll-run", runId],
@@ -633,13 +634,60 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         </section>
       ) : null}
 
-      <PayrollRegisterTab
-        canManagePayments={canManagePayments}
-        employeesById={employeesById}
-        lines={lines}
-        runId={runId}
-        runStatus={run?.status ?? ""}
-      />
+      <section className="space-y-3">
+        <div className="inline-flex rounded-lg border bg-muted/40 p-1">
+          <button
+            aria-pressed={tableView === "details"}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+              tableView === "details"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            onClick={() => setTableView("details")}
+            type="button"
+          >
+            Состав начислений
+          </button>
+          <button
+            aria-pressed={tableView === "payments"}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+              tableView === "payments"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            onClick={() => setTableView("payments")}
+            type="button"
+          >
+            Выплаты
+          </button>
+        </div>
+
+        {tableView === "details" ? (
+          <PayrollByEmployeeTab
+            canManagePayments={canManagePayments}
+            canEditDeposits={canEditDeposits}
+            cancelDepositPayoutPending={
+              cancelDepositPayoutMutation.isPending || recalculateMutation.isPending
+            }
+            employeesById={employeesById}
+            isLoading={linesQuery.isLoading || runQuery.isLoading}
+            lines={lines}
+            onCancelDepositPayout={(employeeId) => cancelDepositPayoutMutation.mutate(employeeId)}
+            runId={runId}
+            runStatus={run?.status ?? ""}
+          />
+        ) : (
+          <PayrollRegisterTab
+            canManagePayments={canManagePayments}
+            employeesById={employeesById}
+            lines={lines}
+            runId={runId}
+            runStatus={run?.status ?? ""}
+          />
+        )}
+      </section>
 
       {canManageBankDraft ? (
         <>
@@ -1188,6 +1236,9 @@ function PayrollByEmployeeTab({
   const runIsFinal = isFinalStatus(runStatus);
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "partial" | "paid">(
+    "all",
+  );
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
@@ -1257,8 +1308,7 @@ function PayrollByEmployeeTab({
     },
   });
 
-  const rows = useMemo(() => {
-    const needle = search.trim().toLowerCase();
+  const allRows = useMemo(() => {
     // Группируем строки по сотруднику: производственные роли (пиццерист+сушист) сливаем в
     // ОДНУ строку, замещающую окладную (кассир→помощник менеджера) держим отдельной.
     // Порядок групп — по первому появлению строки (стабильно к сортировке ниже).
@@ -1293,18 +1343,29 @@ function PayrollByEmployeeTab({
       };
     });
 
-    return prepared
-      .filter((row) => {
-        if (!needle) {
-          return true;
-        }
-        const roleText = row.roles.map((role) => payrollRoleLabel(role)).join(" ").toLowerCase();
-        return row.employeeName.toLowerCase().includes(needle) || roleText.includes(needle);
-      })
-      .sort((left, right) => compareRows(left, right, sortKey, sortDirection));
-  }, [employeesById, lines, search, sortDirection, sortKey]);
+    return prepared.sort((left, right) => compareRows(left, right, sortKey, sortDirection));
+  }, [employeesById, lines, sortDirection, sortKey]);
 
-  const selectedLine = rows.find((row) => row.line.id === selectedLineId) ?? null;
+  const rows = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return allRows.filter((row) => {
+      const statusMatches =
+        statusFilter === "all" ||
+        (statusFilter === "partial"
+          ? row.line.payment_status === "partially_paid"
+          : row.line.payment_status === statusFilter);
+      if (!statusMatches) {
+        return false;
+      }
+      if (!needle) {
+        return true;
+      }
+      const roleText = row.roles.map((role) => payrollRoleLabel(role)).join(" ").toLowerCase();
+      return row.employeeName.toLowerCase().includes(needle) || roleText.includes(needle);
+    });
+  }, [allRows, search, statusFilter]);
+
+  const selectedLine = allRows.find((row) => row.line.id === selectedLineId) ?? null;
 
   function setSort(nextKey: SortKey) {
     if (nextKey === sortKey) {
@@ -1314,6 +1375,21 @@ function PayrollByEmployeeTab({
     setSortKey(nextKey);
     setSortDirection("asc");
   }
+
+  const statusChips = [
+    { key: "all" as const, label: "Все" },
+    { key: "pending" as const, label: "Ожидают" },
+    { key: "partial" as const, label: "Частично" },
+    { key: "paid" as const, label: "Выплачено" },
+  ];
+  const statusCount = (key: (typeof statusChips)[number]["key"]) =>
+    key === "all"
+      ? allRows.length
+      : allRows.filter((row) =>
+          key === "partial"
+            ? row.line.payment_status === "partially_paid"
+            : row.line.payment_status === key,
+        ).length;
 
   const tableColumns: Array<DataTableColumn<PayrollLineRowModel>> = [
     ...(canManagePayments
@@ -1564,7 +1640,8 @@ function PayrollByEmployeeTab({
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm text-muted-foreground">
-            {rows.length} {pluralizeEmployeeLine(rows.length)}
+            {rows.length} {pluralizeEmployeeLine(rows.length)} · нажмите на строку, чтобы увидеть
+            смены и состав начисления
           </div>
           {canManagePayments ? (
             <Button
@@ -1580,6 +1657,24 @@ function PayrollByEmployeeTab({
               Выплатить{selectedCount > 0 ? ` (${selectedCount})` : ""}
             </Button>
           ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 md:col-span-2">
+          {statusChips.map((chip) => (
+            <button
+              aria-pressed={statusFilter === chip.key}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs",
+                statusFilter === chip.key
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                  : "border-border text-muted-foreground hover:bg-muted",
+              )}
+              key={chip.key}
+              onClick={() => setStatusFilter(chip.key)}
+              type="button"
+            >
+              {chip.label} · {statusCount(chip.key)}
+            </button>
+          ))}
         </div>
       </section>
 
