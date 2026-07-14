@@ -204,16 +204,14 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const totalHours = lines.reduce((sum, line) => sum + lineHours(line), 0);
   const payoutCashTotal = Math.min(moneyValue(run?.payout_cash_total ?? 0), grandTotal);
   const totalAccountAmount = normalizeMoney(Math.max(0, grandTotal - payoutCashTotal));
-  // Прогресс выплаты: paid_amount берём по одному разу на сотрудника (сериализатор дублирует
-  // его на каждой роль-строке двуролевого). Остаток — по ФОТ; недополучившие = partially_paid.
+  // Прогресс выплаты: paid_amount хранит только зарплатную часть. Выдача депозита проводится
+  // отдельной корзиной, но при статусе paid тоже считается выплаченной. Значения берём по одному
+  // разу на сотрудника (сериализатор дублирует их на каждой роль-строке двуролевого).
   const paidByEmployee = new Map<string, number>();
   const partialEmployeeIds = new Set<string>();
   for (const line of lines) {
-    if (
-      (line.payment_status === "paid" || line.payment_status === "partially_paid") &&
-      line.paid_amount != null
-    ) {
-      paidByEmployee.set(line.employee_id, line.paid_amount);
+    if (line.payment_status === "paid" || line.payment_status === "partially_paid") {
+      paidByEmployee.set(line.employee_id, linePaidOnHand(line));
     }
     if (line.payment_status === "partially_paid") {
       partialEmployeeIds.add(line.employee_id);
@@ -222,9 +220,9 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const paidTotal = normalizeMoney(
     Array.from(paidByEmployee.values()).reduce((sum, value) => sum + value, 0),
   );
-  const payoutRemaining = normalizeMoney(Math.max(0, totalPayable - paidTotal));
+  const payoutRemaining = normalizeMoney(Math.max(0, grandTotal - paidTotal));
   const underpaidCount = partialEmployeeIds.size;
-  const payoutPct = totalPayable > 0 ? Math.min(100, Math.round((paidTotal / totalPayable) * 100)) : 0;
+  const payoutPct = grandTotal > 0 ? Math.min(100, Math.round((paidTotal / grandTotal) * 100)) : 0;
   const blockers = run?.blocking_issues ?? [];
   const attendanceWarnings = run?.summary.attendance_warnings ?? [];
   const isLegacyRun = Boolean(run?.is_imported_legacy);
@@ -547,9 +545,9 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
             <div className="min-w-0 flex-1">
               <div className="font-semibold">Ведомость устарела — пересчитайте</div>
               <div className="mt-1 text-sm">
-                После расчёта появились авансы или займы (например, проведённые задним числом),
-                ещё не учтённые в удержаниях. Нажмите «Пересчитать», чтобы обновить итоги —
-                финализация заблокирована до пересчёта.
+                После расчёта появились авансы или займы (например, проведённые задним числом), ещё
+                не учтённые в удержаниях. Нажмите «Пересчитать», чтобы обновить итоги — финализация
+                заблокирована до пересчёта.
               </div>
             </div>
           </div>
@@ -611,9 +609,8 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         <section className="rounded-lg border bg-card p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="text-sm">
-              Выплачено{" "}
-              <span className="font-semibold tabular-nums">{formatMoney(paidTotal)}</span>{" "}
-              <span className="text-muted-foreground">из {formatMoney(totalPayable)}</span>
+              Выплачено <span className="font-semibold tabular-nums">{formatMoney(paidTotal)}</span>{" "}
+              <span className="text-muted-foreground">из {formatMoney(grandTotal)}</span>
             </div>
             {payoutRemaining > 0 ? (
               <span className="text-sm font-medium text-amber-700">
@@ -909,7 +906,9 @@ function PayoutSplitDialog({
           <Button
             disabled={!canSubmit || submitMutation.isPending}
             onClick={() => submitMutation.mutate()}
-            title={channelPerms.bank_draft ? undefined : "Нет права на формирование банк-черновиков"}
+            title={
+              channelPerms.bank_draft ? undefined : "Нет права на формирование банк-черновиков"
+            }
             type="button"
           >
             {submitMutation.isPending ? (
@@ -948,28 +947,44 @@ function PayrollRegisterTab({
   const rows = useMemo(() => {
     const byEmployee = new Map<
       string,
-      { employeeId: string; role: string; accrued: number; paid: number; status: string }
+      {
+        employeeId: string;
+        role: string;
+        accrued: number;
+        depositPayout: number;
+        salaryPaid: number;
+        status: string;
+      }
     >();
     for (const line of lines) {
       const current = byEmployee.get(line.employee_id) ?? {
         employeeId: line.employee_id,
         role: line.role,
         accrued: 0,
-        paid: 0,
+        depositPayout: 0,
+        salaryPaid: 0,
         status: "pending",
       };
-      current.accrued += line.total_payable;
+      current.accrued += moneyValue(line.total_payable);
+      // deposit_payout — per-employee поле и повторяется на роль-строках, поэтому не суммируем.
+      current.depositPayout = Math.max(current.depositPayout, moneyValue(line.deposit_payout));
       if (line.payment_status === "paid" || line.payment_status === "partially_paid") {
-        current.paid = line.paid_amount ?? 0;
+        current.salaryPaid = moneyValue(line.paid_amount ?? 0);
         current.status = line.payment_status;
       }
       byEmployee.set(line.employee_id, current);
     }
-    return Array.from(byEmployee.values()).map((row) => ({
-      ...row,
-      name: employeesById.get(row.employeeId)?.full_name ?? "Сотрудник",
-      remaining: Math.max(0, Math.round((row.accrued - row.paid) * 100) / 100),
-    }));
+    return Array.from(byEmployee.values()).map((row) => {
+      const payable = normalizeMoney(row.accrued + row.depositPayout);
+      const paid = normalizeMoney(row.salaryPaid + (row.status === "paid" ? row.depositPayout : 0));
+      return {
+        ...row,
+        name: employeesById.get(row.employeeId)?.full_name ?? "Сотрудник",
+        paid,
+        payable,
+        remaining: normalizeMoney(Math.max(0, payable - paid)),
+      };
+    });
   }, [lines, employeesById]);
 
   const filtered = rows.filter((row) => {
@@ -981,10 +996,10 @@ function PayrollRegisterTab({
   const totals = rows.reduce(
     (acc, row) => ({
       accrued: acc.accrued + row.accrued,
-      paid: acc.paid + row.paid,
+      payable: acc.payable + row.payable,
       remaining: acc.remaining + row.remaining,
     }),
-    { accrued: 0, paid: 0, remaining: 0 },
+    { accrued: 0, payable: 0, remaining: 0 },
   );
 
   const invalidate = () =>
@@ -1024,7 +1039,12 @@ function PayrollRegisterTab({
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось выплатить")),
   });
 
-  function payRow(row: { employeeId: string; remaining: number }) {
+  function payRow(row: { employeeId: string; remaining: number; depositPayout: number }) {
+    // Выдача депозита проводится только полной выплатой: backend отдельно книжит её в ДДС/iiko.
+    if (row.depositPayout > 0) {
+      bulkMutation.mutate([row.employeeId]);
+      return;
+    }
     const raw = (amounts[row.employeeId] ?? "").trim().replace(",", ".");
     const parsed = raw === "" ? row.remaining : Number(raw);
     if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -1131,7 +1151,14 @@ function PayrollRegisterTab({
                     <div className="font-medium">{row.name}</div>
                     <div className="text-xs text-muted-foreground">{row.role}</div>
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{formatMoney(row.accrued)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    <div>{formatMoney(row.accrued)}</div>
+                    {row.depositPayout > 0 ? (
+                      <div className="text-xs text-emerald-700">
+                        + депозит {formatMoney(row.depositPayout)}
+                      </div>
+                    ) : null}
+                  </td>
                   <td className="px-3 py-2 text-right">
                     {paid ? (
                       <span className="tabular-nums text-muted-foreground">
@@ -1139,24 +1166,28 @@ function PayrollRegisterTab({
                       </span>
                     ) : canManagePayments && runIsFinal ? (
                       <div className="flex items-center justify-end gap-1">
-                        <Input
-                          className="h-8 w-24 text-right"
-                          inputMode="decimal"
-                          onChange={(event) =>
-                            setAmounts((current) => ({
-                              ...current,
-                              [row.employeeId]: event.target.value,
-                            }))
-                          }
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") payRow(row);
-                          }}
-                          placeholder={String(row.remaining)}
-                          value={amounts[row.employeeId] ?? ""}
-                        />
+                        {row.depositPayout > 0 ? (
+                          <span className="mr-1 tabular-nums">{formatMoney(row.remaining)}</span>
+                        ) : (
+                          <Input
+                            className="h-8 w-24 text-right"
+                            inputMode="decimal"
+                            onChange={(event) =>
+                              setAmounts((current) => ({
+                                ...current,
+                                [row.employeeId]: event.target.value,
+                              }))
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") payRow(row);
+                            }}
+                            placeholder={String(row.remaining)}
+                            value={amounts[row.employeeId] ?? ""}
+                          />
+                        )}
                         <Button
                           aria-label="Выплатить"
-                          disabled={payMutation.isPending}
+                          disabled={payMutation.isPending || bulkMutation.isPending}
                           onClick={() => payRow(row)}
                           size="sm"
                           type="button"
@@ -1184,7 +1215,7 @@ function PayrollRegisterTab({
                       <span className="text-xs text-emerald-700">Выплачено</span>
                     ) : partial ? (
                       <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
-                        Частично · {formatMoney(row.paid)} из {formatMoney(row.accrued)}
+                        Частично · {formatMoney(row.paid)} из {formatMoney(row.payable)}
                       </span>
                     ) : (
                       <span className="text-xs text-muted-foreground">Ожидает</span>
@@ -1199,7 +1230,7 @@ function PayrollRegisterTab({
               <td className="px-3 py-2" />
               <td className="px-3 py-2 text-xs text-muted-foreground">ИТОГО · {rows.length} чел</td>
               <td className="px-3 py-2 text-right font-medium">{formatMoney(totals.accrued)}</td>
-              <td className="px-3 py-2 text-right font-medium">{formatMoney(totals.paid)}</td>
+              <td className="px-3 py-2 text-right font-medium">{formatMoney(totals.payable)}</td>
               <td className="px-3 py-2 text-right font-medium text-amber-700">
                 {formatMoney(totals.remaining)}
               </td>
@@ -1236,9 +1267,7 @@ function PayrollByEmployeeTab({
   const runIsFinal = isFinalStatus(runStatus);
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "partial" | "paid">(
-    "all",
-  );
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "partial" | "paid">("all");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
@@ -1248,9 +1277,7 @@ function PayrollByEmployeeTab({
     () =>
       Array.from(
         new Set(
-          lines
-            .filter((line) => line.payment_status !== "paid")
-            .map((line) => line.employee_id),
+          lines.filter((line) => line.payment_status !== "paid").map((line) => line.employee_id),
         ),
       ),
     [lines],
@@ -1360,7 +1387,10 @@ function PayrollByEmployeeTab({
       if (!needle) {
         return true;
       }
-      const roleText = row.roles.map((role) => payrollRoleLabel(role)).join(" ").toLowerCase();
+      const roleText = row.roles
+        .map((role) => payrollRoleLabel(role))
+        .join(" ")
+        .toLowerCase();
       return row.employeeName.toLowerCase().includes(needle) || roleText.includes(needle);
     });
   }, [allRows, search, statusFilter]);
@@ -1566,10 +1596,7 @@ function PayrollByEmployeeTab({
     {
       key: "advance_issued",
       header: (
-        <SortButton
-          active={sortKey === "advance_issued"}
-          onClick={() => setSort("advance_issued")}
-        >
+        <SortButton active={sortKey === "advance_issued"} onClick={() => setSort("advance_issued")}>
           Авансы/займы
         </SortButton>
       ),
@@ -1619,9 +1646,7 @@ function PayrollByEmployeeTab({
     {
       key: "payment",
       header: "Выплата",
-      cell: (row) => (
-        <PaymentCell canManagePayments={canManagePayments} line={row.line} />
-      ),
+      cell: (row) => <PaymentCell canManagePayments={canManagePayments} line={row.line} />,
       className: "min-w-[210px]",
     },
   ];
@@ -1811,9 +1836,7 @@ function RunBankDraftCard({
   const needsWallet = cashValid && cashAmount !== null && cashAmount > 0;
   const walletValid = !needsWallet || walletCode !== "";
   const previewAccount =
-    cashValid && cashAmount !== null
-      ? normalizeMoney(Math.max(0, grandTotal - cashAmount))
-      : null;
+    cashValid && cashAmount !== null ? normalizeMoney(Math.max(0, grandTotal - cashAmount)) : null;
   const currentWalletId = cashWallets.find((wallet) => wallet.code === walletCode)?.id ?? null;
   const cashDirty =
     cashAmount === null ||
@@ -2002,13 +2025,9 @@ function RunBankDraftCard({
         <select
           aria-label="Банк черновика"
           className="h-9 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
-          disabled={
-            isLoading || mutation.isPending || cashDirty || !channelPerms.bank_draft
-          }
+          disabled={isLoading || mutation.isPending || cashDirty || !channelPerms.bank_draft}
           onChange={(event) => setBankProvider(event.target.value as "tbank" | "sber")}
-          title={
-            channelPerms.bank_draft ? undefined : "Нет права на формирование банк-черновиков"
-          }
+          title={channelPerms.bank_draft ? undefined : "Нет права на формирование банк-черновиков"}
           value={bankProvider}
         >
           <option value="tbank">Тинькофф</option>
@@ -2082,9 +2101,7 @@ function RunBankDraftCard({
         </AlertDialog>
 
         {cashDirty ? (
-          <span className="text-xs text-muted-foreground">
-            Сначала сохраните наличную сумму.
-          </span>
+          <span className="text-xs text-muted-foreground">Сначала сохраните наличную сумму.</span>
         ) : null}
       </div>
 
@@ -2169,9 +2186,7 @@ function PayoutDeltasPanel({
         queryClient.invalidateQueries({ queryKey: ["run-payout-delta", runId] }),
       ]);
       setIsApplyDialogOpen(false);
-      toast.success(
-        response.applied_count > 0 ? "Дельта применена" : "Дельта не изменилась",
-      );
+      toast.success(response.applied_count > 0 ? "Дельта применена" : "Дельта не изменилась");
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error, "Не удалось применить дельту"));
@@ -2215,9 +2230,7 @@ function PayoutDeltasPanel({
           )}
           <span className="min-w-0">
             <span className="block font-semibold">Дельта выплаты</span>
-            <span className="mt-1 block text-sm text-muted-foreground">
-              {applyDescription}
-            </span>
+            <span className="mt-1 block text-sm text-muted-foreground">{applyDescription}</span>
           </span>
         </button>
         <AlertDialog
@@ -2370,9 +2383,10 @@ function PaymentCell({
   const queryClient = useQueryClient();
   const isPaid = line.payment_status === "paid";
   const isPartial = line.payment_status === "partially_paid";
-  const accrued = line.total_payable;
-  const paid = line.paid_amount ?? 0;
-  const remaining = Math.max(0, Math.round((accrued - paid) * 100) / 100);
+  const hasDepositPayout = moneyValue(line.deposit_payout) > 0;
+  const accrued = lineOnHand(line);
+  const paid = linePaidOnHand(line);
+  const remaining = normalizeMoney(Math.max(0, accrued - paid));
   const [dialogOpen, setDialogOpen] = useState(false);
   const [amountInput, setAmountInput] = useState("");
   const [comment, setComment] = useState("");
@@ -2462,13 +2476,18 @@ function PaymentCell({
       {isPaid && line.paid_method ? (
         <span className="text-xs text-muted-foreground">
           {paymentMethodLabel(line.paid_method)}
-          {line.paid_amount !== null ? ` · ${formatMoney(line.paid_amount)}` : ""}
+          {line.paid_amount !== null ? ` · ${formatMoney(paid)}` : ""}
         </span>
       ) : null}
       {isPartial && line.payment_comment ? (
         <span className="text-xs text-muted-foreground">{line.payment_comment}</span>
       ) : null}
-      {canManagePayments && !isPaid ? (
+      {canManagePayments && !isPaid && hasDepositPayout ? (
+        <span className="max-w-[210px] text-xs text-muted-foreground">
+          Выдача депозита проводится полной выплатой — выберите сотрудника и нажмите «Выплатить» над
+          таблицей.
+        </span>
+      ) : canManagePayments && !isPaid ? (
         <Button
           className={isPartial ? "bg-amber-500 text-white hover:bg-amber-600" : undefined}
           onClick={(event) => {
@@ -2628,11 +2647,7 @@ function PayrollLineDrawer({ row, runStatus }: { row: PayrollLineRowModel; runSt
         <ComponentValue label="К выплате" value={formatMoney(lineOnHand(row.line))} strong />
       </section>
 
-      <DepositOverrideControl
-        line={row.line}
-        lineIds={row.sourceLineIds}
-        runStatus={runStatus}
-      />
+      <DepositOverrideControl line={row.line} lineIds={row.sourceLineIds} runStatus={runStatus} />
 
       {weekdayPremiumTotal > 0 ? (
         <section className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
@@ -3073,6 +3088,13 @@ function compareRows(
 // + выдача депозита (хранится отдельно и в total_payable не входит).
 function lineOnHand(line: PayrollLine) {
   return moneyValue(line.total_payable) + moneyValue(line.deposit_payout);
+}
+
+// paid_amount хранит только зарплатную часть. Для полностью закрытой строки выдача депозита
+// также уже проведена отдельной корзиной и должна входить в показанное «выплачено».
+function linePaidOnHand(line: PayrollLine) {
+  const salaryPaid = moneyValue(line.paid_amount ?? 0);
+  return salaryPaid + (line.payment_status === "paid" ? moneyValue(line.deposit_payout) : 0);
 }
 
 function lineHours(line: PayrollLine) {

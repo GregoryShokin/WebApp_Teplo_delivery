@@ -19,16 +19,12 @@ test.beforeEach(async ({ page }) => {
     }),
   );
 
-  await page.route(/\/api\/v1\/employees\/?(\?.*)?$/, (route) =>
-    fulfillJson(route, [employee()]),
-  );
+  await page.route(/\/api\/v1\/employees\/?(\?.*)?$/, (route) => fulfillJson(route, [employee()]));
   await page.route("**/api/v1/settings**", (route) => fulfillJson(route, []));
   await page.route(`**/api/v1/payroll/runs/${runId}/lines`, (route) =>
     fulfillJson(route, [payrollLine()]),
   );
-  await page.route(`**/api/v1/payroll/runs/${runId}`, (route) =>
-    fulfillJson(route, payrollRun()),
-  );
+  await page.route(`**/api/v1/payroll/runs/${runId}`, (route) => fulfillJson(route, payrollRun()));
 });
 
 test("shows payroll components per employee and opens the shift breakdown", async ({ page }) => {
@@ -57,6 +53,58 @@ test("shows payroll components per employee and opens the shift breakdown", asyn
   await expect(page.getByText("Выручка дня 50 000 ₽")).toBeVisible();
   await expect(page.getByText("Удержания")).toBeVisible();
   await expect(page.getByText("Депозит: 500 ₽")).toBeVisible();
+});
+
+test("includes a deposit-only amount in the payments register", async ({ page }) => {
+  await page.unroute(/\/api\/v1\/employees\/?(\?.*)?$/);
+  await page.route(/\/api\/v1\/employees\/?(\?.*)?$/, (route) =>
+    fulfillJson(route, [
+      {
+        ...employee(),
+        full_name: "Молоканова Светлана",
+        position: "Повар",
+      },
+    ]),
+  );
+  await page.unroute(`**/api/v1/payroll/runs/${runId}/lines`);
+  await page.route(`**/api/v1/payroll/runs/${runId}/lines`, (route) =>
+    fulfillJson(route, [
+      {
+        ...payrollLine(),
+        base_pay: 1225.28,
+        premium: 0,
+        percent_pay: 206,
+        deduction: 1431.28,
+        deposit_withholding: 719.91,
+        deposit_payout: 2000,
+        deposit_payout_scheduled: 2000,
+        total_payable: 0,
+      },
+    ]),
+  );
+  await page.unroute(`**/api/v1/payroll/runs/${runId}`);
+  await page.route(`**/api/v1/payroll/runs/${runId}`, (route) =>
+    fulfillJson(route, {
+      ...payrollRun(),
+      summary: { ...payrollRun().summary, total_payable: 0 },
+    }),
+  );
+
+  await page.goto(`/payroll/runs/${runId}`);
+  await page.getByRole("button", { name: "Выплаты", exact: true }).click();
+
+  const employeeRow = page.getByRole("row", { name: /Молоканова Светлана/ });
+  const cells = employeeRow.getByRole("cell");
+  await expect(cells.nth(2)).toContainText("0 ₽");
+  await expect(cells.nth(2)).toContainText("+ депозит 2 000 ₽");
+  await expect(cells.nth(3)).toHaveText("2 000 ₽");
+  await expect(cells.nth(4)).toHaveText("2 000 ₽");
+
+  const totalRow = page.getByRole("row", { name: /ИТОГО · 1 чел/ });
+  const totalCells = totalRow.getByRole("cell");
+  await expect(totalCells.nth(2)).toHaveText("0 ₽");
+  await expect(totalCells.nth(3)).toHaveText("2 000 ₽");
+  await expect(totalCells.nth(4)).toHaveText("2 000 ₽");
 });
 
 function fulfillJson(route: Route, body: unknown) {
