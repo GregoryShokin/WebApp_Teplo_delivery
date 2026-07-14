@@ -2121,11 +2121,13 @@ function PayrollLineDialogContent({
   row: PayrollLineRowModel;
   runStatus: string;
 }) {
-  const days = lineDays(row.line);
-  const weekdayPremiumTotal = days.reduce((sum, day) => sum + day.weekdayPremium, 0);
+  const dayComponents = lineDays(row.line);
+  const days = lineDailyPayoutRows(row.line);
+  const weekdayPremiumTotal = dayComponents.reduce((sum, day) => sum + day.weekdayPremium, 0);
   const adjustments = lineAdjustments(row.line);
   const runIsFinal = isFinalStatus(runStatus);
   const depositPayout = moneyValue(row.line.deposit_payout);
+  const depositWithholding = moneyValue(row.line.deposit_withholding);
 
   return (
     <div className="space-y-5">
@@ -2139,16 +2141,22 @@ function PayrollLineDialogContent({
         </DialogDescription>
       </DialogHeader>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <ComponentValue label="Оклад" value={formatMoney(row.line.base_pay)} />
         <ComponentValue label="Процент" value={formatMoney(row.line.percent_pay)} />
         <ComponentValue label="Премии" value={formatMoney(row.line.premium)} />
-        <ComponentValue label="Всего удержано" value={formatMoney(row.line.deduction)} />
-        <ComponentValue label="Выдача депозита" value={formatMoney(depositPayout)} />
+        {moneyValue(row.line.deduction) > 0 ? (
+          <ComponentValue label="Всего удержано" value={formatMoney(row.line.deduction)} />
+        ) : null}
+        {depositPayout > 0 ? (
+          <ComponentValue label="Выдача депозита" value={formatMoney(depositPayout)} />
+        ) : null}
         <ComponentValue label="К выплате" value={formatMoney(lineOnHand(row.line))} strong />
       </section>
 
-      <DepositOverrideControl line={row.line} lineIds={row.sourceLineIds} runStatus={runStatus} />
+      {depositWithholding > 0 ? (
+        <DepositOverrideControl line={row.line} lineIds={row.sourceLineIds} runStatus={runStatus} />
+      ) : null}
 
       {depositPayout > 0 ? (
         <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-violet-200 bg-violet-50/60 p-3">
@@ -2208,17 +2216,23 @@ function PayrollLineDialogContent({
                   <th className="px-3 py-2 text-right font-medium">Процент</th>
                   <th className="px-3 py-2 text-right font-medium">Отпуск</th>
                   <th className="px-3 py-2 text-right font-medium">Фонд</th>
-                  <th className="px-3 py-2 text-right font-medium">Выручка</th>
+                  <th className="px-3 py-2 text-right font-medium">Итого</th>
                 </tr>
               </thead>
               <tbody>
                 {days.map((day) => (
-                  <tr className="border-t" key={`${day.date}-${day.role}`}>
+                  <tr className="border-t" key={day.date}>
                     <td className="px-3 py-2">
                       <div className="font-medium">{formatDate(day.date)}</div>
                       <div className="text-xs text-muted-foreground">
-                        {payrollRoleLabel(day.role)}
-                        {day.category ? ` · ${employeeCategoryLabel(day.category)}` : ""}
+                        {day.roles.length > 0
+                          ? day.roles.map((role) => payrollRoleLabel(role)).join(", ")
+                          : "Начисление без смены"}
+                        {day.categories.length > 0
+                          ? ` · ${day.categories
+                              .map((category) => employeeCategoryLabel(category))
+                              .join(", ")}`
+                          : ""}
                       </div>
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatHours(day.hours)}</td>
@@ -2239,8 +2253,22 @@ function PayrollLineDialogContent({
                     <td className="px-3 py-2 text-right tabular-nums">
                       {formatMoney(day.fundAccrual)}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {formatMoney(day.dailyRevenue)}
+                    <td
+                      className={cn(
+                        "px-3 py-2 text-right font-semibold tabular-nums",
+                        day.total > 0
+                          ? "text-emerald-700"
+                          : day.total < 0
+                            ? "text-rose-700"
+                            : undefined,
+                      )}
+                    >
+                      {formatSignedMoney(day.total)}
+                      {day.periodAdjustment !== 0 ? (
+                        <div className="text-[11px] font-normal text-muted-foreground">
+                          корректировка периода {formatSignedMoney(day.periodAdjustment)}
+                        </div>
+                      ) : null}
                     </td>
                   </tr>
                 ))}
@@ -2258,16 +2286,57 @@ function PayrollLineDialogContent({
       <section className="grid gap-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
         <div>
           <div className="text-sm font-semibold text-emerald-950">Итог выплаты</div>
-          <div className="mt-1 flex flex-wrap items-baseline gap-2 text-sm text-emerald-900">
-            <span>зарплата {formatMoney(row.line.total_payable)}</span>
-            <span aria-hidden="true">+</span>
-            <span>депозит {formatMoney(depositPayout)}</span>
-            <span aria-hidden="true">=</span>
-            <strong className="text-lg tabular-nums">{formatMoney(lineOnHand(row.line))}</strong>
-          </div>
+          <PayoutFormula line={row.line} />
         </div>
         <PaymentCell canManagePayments={canManagePayments} line={row.line} />
       </section>
+    </div>
+  );
+}
+
+type PayoutFormulaTerm = {
+  label: string;
+  amount: number;
+};
+
+function PayoutFormula({ line }: { line: PayrollLine }) {
+  const salary = lineSalaryBeforeSettlement(line);
+  const flows = lineSettlementFlows(line);
+  const terms: PayoutFormulaTerm[] = [
+    { label: "удержание депозита", amount: -moneyValue(line.deposit_withholding) },
+    { label: "выдача депозита", amount: moneyValue(line.deposit_payout) },
+    { label: "аванс", amount: flows.advanceIssued },
+    { label: "заём", amount: flows.loanIssued },
+    { label: "аванс/заём", amount: flows.unspecifiedIssued },
+    { label: "возврат аванса", amount: -flows.advanceRecovered },
+    { label: "возврат займа", amount: -flows.loanRecovered },
+    { label: "возврат аванса/займа", amount: -flows.unspecifiedRecovered },
+    { label: "выплачено ранее", amount: -flows.previouslyPaid },
+  ].filter((term) => Math.abs(term.amount) >= 0.005);
+
+  const explainedTotal = normalizeMoney(salary + terms.reduce((sum, term) => sum + term.amount, 0));
+  const finalTotal = lineOnHand(line);
+  const unexplained = normalizeMoney(finalTotal - explainedTotal);
+  if (Math.abs(unexplained) >= 0.005) {
+    terms.push({
+      label: unexplained > 0 ? "прочие выплаты" : "прочие удержания",
+      amount: unexplained,
+    });
+  }
+
+  return (
+    <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-emerald-900">
+      <span>зарплата {formatMoney(salary)}</span>
+      {terms.map((term, index) => (
+        <span className="contents" key={`${term.label}-${index}`}>
+          <span aria-hidden="true">{term.amount >= 0 ? "+" : "−"}</span>
+          <span>
+            {term.label} {formatMoney(Math.abs(term.amount))}
+          </span>
+        </span>
+      ))}
+      <span aria-hidden="true">=</span>
+      <strong className="text-lg tabular-nums">{formatMoney(finalTotal)}</strong>
     </div>
   );
 }
@@ -2643,6 +2712,12 @@ function mergeEmployeeLines(lines: PayrollLine[]): PayrollLine {
           isRecord(components.adjustments) ? components.adjustments.penalties : undefined,
         ),
       },
+      advance_issuances: mergeComponentArray(lines, (components) => components.advance_issuances),
+      advance_recoveries: mergeComponentArray(lines, (components) => components.advance_recoveries),
+      employee_payout_offsets: mergeComponentArray(
+        lines,
+        (components) => components.employee_payout_offsets,
+      ),
     },
   };
 }
@@ -2680,7 +2755,24 @@ type DayComponent = {
   percentPay: number;
   vacationPay: number;
   fundAccrual: number;
-  dailyRevenue: number;
+  ndflWithheld: number;
+};
+
+type DailyPayoutRow = {
+  date: string;
+  roles: string[];
+  categories: string[];
+  hours: number;
+  basePay: number;
+  weekdayPremium: number;
+  percentPay: number;
+  vacationPay: number;
+  fundAccrual: number;
+  premium: number;
+  deduction: number;
+  ndflWithheld: number;
+  periodAdjustment: number;
+  total: number;
 };
 
 type AdjustmentComponent = {
@@ -2705,8 +2797,145 @@ function lineDays(line: PayrollLine): DayComponent[] {
     percentPay: Number(day.percent_pay ?? 0),
     vacationPay: Number(day.vacation_pay ?? 0),
     fundAccrual: Number(day.fund_accrual ?? 0),
-    dailyRevenue: Number(day.daily_revenue ?? 0),
+    ndflWithheld: Number(day.ndfl_withheld ?? 0),
   }));
+}
+
+function lineDailyPayoutRows(line: PayrollLine): DailyPayoutRow[] {
+  const rows = new Map<string, DailyPayoutRow>();
+  const ensureRow = (date: string) => {
+    const key = date || "period";
+    const existing = rows.get(key);
+    if (existing) return existing;
+    const next: DailyPayoutRow = {
+      date,
+      roles: [],
+      categories: [],
+      hours: 0,
+      basePay: 0,
+      weekdayPremium: 0,
+      percentPay: 0,
+      vacationPay: 0,
+      fundAccrual: 0,
+      premium: 0,
+      deduction: 0,
+      ndflWithheld: 0,
+      periodAdjustment: 0,
+      total: 0,
+    };
+    rows.set(key, next);
+    return next;
+  };
+
+  for (const day of lineDays(line)) {
+    const row = ensureRow(day.date);
+    if (day.role && !row.roles.includes(day.role)) row.roles.push(day.role);
+    if (day.category && !row.categories.includes(day.category)) row.categories.push(day.category);
+    row.hours += day.hours;
+    row.basePay += day.basePay;
+    row.weekdayPremium += day.weekdayPremium;
+    row.percentPay += day.percentPay;
+    row.vacationPay += day.vacationPay;
+    row.fundAccrual += day.fundAccrual;
+    row.ndflWithheld += day.ndflWithheld;
+  }
+
+  const adjustments = lineAdjustments(line);
+  for (const bonus of adjustments.bonuses) {
+    ensureRow(bonus.workDate).premium += moneyValue(bonus.amount);
+  }
+  for (const penalty of adjustments.penalties) {
+    ensureRow(penalty.workDate).deduction += moneyValue(penalty.amount);
+  }
+
+  const result = Array.from(rows.values()).sort((left, right) =>
+    left.date.localeCompare(right.date),
+  );
+  for (const row of result) {
+    row.total = normalizeMoney(
+      row.basePay +
+        row.percentPay +
+        row.premium +
+        row.vacationPay -
+        row.deduction -
+        row.ndflWithheld,
+    );
+  }
+
+  // Современный расчёт раскладывает все зарплатные компоненты по дням. Для старой
+  // импортированной ведомости часть суммы может быть только в итоговых полях строки —
+  // сохраняем равенство «зарплата = сумма дневных итогов» и явно помечаем поправку.
+  if (result.length > 0) {
+    const rowsTotal = result.reduce((sum, row) => sum + row.total, 0);
+    const residual = normalizeMoney(lineSalaryBeforeSettlement(line) - rowsTotal);
+    if (Math.abs(residual) >= 0.005) {
+      result[0].periodAdjustment = residual;
+      result[0].total = normalizeMoney(result[0].total + residual);
+    }
+  }
+
+  return result;
+}
+
+function lineSalaryBeforeSettlement(line: PayrollLine) {
+  const salaryDeductions = Math.max(
+    0,
+    moneyValue(line.deduction) - moneyValue(line.deposit_withholding),
+  );
+  return normalizeMoney(
+    moneyValue(line.base_pay) +
+      moneyValue(line.percent_pay) +
+      moneyValue(line.premium) +
+      moneyValue(line.vacation_pay) -
+      salaryDeductions -
+      moneyValue(line.ndfl_withheld),
+  );
+}
+
+function lineSettlementFlows(line: PayrollLine) {
+  const issuances = lineComponentMoneyItems(line, "advance_issuances");
+  const recoveries = lineComponentMoneyItems(line, "advance_recoveries");
+  const payoutOffsets = lineComponentMoneyItems(line, "employee_payout_offsets");
+  const issuedByKind = flowAmountsByKind(issuances);
+  const recoveredByKind = flowAmountsByKind(recoveries);
+  const detailedIssued = issuedByKind.advance + issuedByKind.loan + issuedByKind.unspecified;
+
+  return {
+    advanceIssued: issuedByKind.advance,
+    loanIssued: issuedByKind.loan,
+    unspecifiedIssued: normalizeMoney(
+      issuedByKind.unspecified + Math.max(0, moneyValue(line.advance_issued) - detailedIssued),
+    ),
+    advanceRecovered: recoveredByKind.advance,
+    loanRecovered: recoveredByKind.loan,
+    unspecifiedRecovered: recoveredByKind.unspecified,
+    previouslyPaid: normalizeMoney(payoutOffsets.reduce((sum, item) => sum + item.amount, 0)),
+  };
+}
+
+type LineComponentMoneyItem = {
+  kind: string;
+  amount: number;
+};
+
+function lineComponentMoneyItems(line: PayrollLine, key: string): LineComponentMoneyItem[] {
+  const value = isRecord(line.components) ? line.components[key] : undefined;
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((item) => ({
+    kind: String(item.kind ?? ""),
+    amount: moneyValue(item.amount as number | string | null | undefined),
+  }));
+}
+
+function flowAmountsByKind(items: LineComponentMoneyItem[]) {
+  return items.reduce(
+    (totals, item) => {
+      const key = item.kind === "advance" || item.kind === "loan" ? item.kind : "unspecified";
+      totals[key] += item.amount;
+      return totals;
+    },
+    { advance: 0, loan: 0, unspecified: 0 },
+  );
 }
 
 function lineAdjustments(line: PayrollLine) {
