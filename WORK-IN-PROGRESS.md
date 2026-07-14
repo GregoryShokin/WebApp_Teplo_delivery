@@ -16,6 +16,13 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
+### codex-safe-purpose — ветка `fix/safe-transfer-purpose`
+- worktree: `../Teplo-agent-safe-purpose`
+- compose: без отдельного стека; точечные API-тесты
+- трогает: единый шаблон назначения переводов на Сейф, миграция 0188 и профильные тесты
+- НЕ трогать другим: `banking/ip_card_requisites.py` и новая миграция 0188
+- статус: в работе
+
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`
