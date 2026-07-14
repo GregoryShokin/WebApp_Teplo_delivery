@@ -1,0 +1,29 @@
+{
+ "window": "2026-01-01..2026-07-09 (190 дн)",
+ "department": "Foodmarket Тепло Черникова",
+ "total_receipts_orders": 13883,
+ "total_net_revenue_period": 23566915,
+ "distinct_dishes_with_sales": 296,
+ "alacarte_kitchen_dishes": 151,
+ "thresholds": {
+  "low_alacarte_units": 27,
+  "verylow_units": 14,
+  "phantom_material": 100,
+  "med_popularity": 101,
+  "med_margin": 25245
+ },
+ "counts_by_verdict": {
+  "Кандидат на удаление": 4,
+  "Оставить": 127,
+  "Оставить — несёт сеты": 7,
+  "Под наблюдением": 13
+ },
+ "counts_by_me_class": {
+  "Загадка": 8,
+  "Звезда": 68,
+  "Рабочая лошадка": 8,
+  "Собака": 67
+ },
+ "deletion_candidates": 4,
+ "protected_by_sets": 7
+}

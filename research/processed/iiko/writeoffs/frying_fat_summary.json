@@ -1,0 +1,55 @@
+{
+ "product": "Фритюрный жир",
+ "product_id": "7d1584ae-772a-4c9f-8af5-b8d3175ef6c5",
+ "department": "Foodmarket Тепло Черникова",
+ "method": "/v2/documents/writeoff (акты списания, status=PROCESSED)",
+ "validated_against": "/reports/storeOperations (WRITEOFF_DOCUMENT совпал 235.5 ед за май)",
+ "avg_per_month_units": 240.8,
+ "avg_per_month_rub": 43901,
+ "unit_price_rub": 182,
+ "note": "нет SESSION_WRITEOFF — жир не расходуется через техкарты; расход=акты списания + мелкие недостачи",
+ "months": [
+  {
+   "month": "2026-01",
+   "acts": 15,
+   "units": 264.1,
+   "rub": 48559
+  },
+  {
+   "month": "2026-02",
+   "acts": 12,
+   "units": 242.6,
+   "rub": 44606
+  },
+  {
+   "month": "2026-03",
+   "acts": 14,
+   "units": 252.2,
+   "rub": 46371
+  },
+  {
+   "month": "2026-04",
+   "acts": 16,
+   "units": 237.2,
+   "rub": 43613
+  },
+  {
+   "month": "2026-05",
+   "acts": 16,
+   "units": 235.5,
+   "rub": 41008
+  },
+  {
+   "month": "2026-06",
+   "acts": 12,
+   "units": 213.5,
+   "rub": 39248
+  },
+  {
+   "month": "2026-07 (1-9)",
+   "acts": 2,
+   "units": 41.2,
+   "rub": 7575
+  }
+ ]
+}

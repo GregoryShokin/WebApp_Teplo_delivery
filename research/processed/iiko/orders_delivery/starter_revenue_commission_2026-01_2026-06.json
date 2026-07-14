@@ -1,0 +1,221 @@
+{
+  "period_start": "2026-01-01",
+  "period_end": "2026-06-30",
+  "scope": {
+    "department": "Foodmarket Тепло, Черникова (active department)",
+    "starter_marketing_sources": [
+      "Сайт",
+      "IOS",
+      "Андройд"
+    ],
+    "revenue_metric": "DishDiscountSumInt (revenue after discounts)",
+    "excluded_marketing_sources": [
+      "(пусто)"
+    ]
+  },
+  "sources": {
+    "revenue": "iiko /reports/olap, SALES, grouped by Department and Delivery.MarketingSource",
+    "invoices": "Mailbox g.shokin@mail.ru, sender leshkina@starterapp.ru, subject Закрывающие документы STARTER"
+  },
+  "months": [
+    {
+      "month": "2026-01",
+      "website": {
+        "orders": 215,
+        "gross_before_discounts": 457000.0,
+        "revenue_after_discounts": 380921.95
+      },
+      "starter_app": {
+        "orders": 1865,
+        "gross_before_discounts": 3704345.0,
+        "revenue_after_discounts": 3050497.51
+      },
+      "starter_total": {
+        "orders": 2080,
+        "gross_before_discounts": 4161345.0,
+        "revenue_after_discounts": 3431419.46
+      },
+      "invoice": {
+        "number": "0000-000066",
+        "date": "2026-01-31",
+        "total_including_vat": 100689.0,
+        "vat_rate_percent": 5.0,
+        "vat_amount": 4794.71,
+        "amount_excluding_vat": 95894.29
+      },
+      "commission": {
+        "rate_excluding_vat_percent": 2.7946,
+        "effective_rate_including_vat_percent": 2.9343,
+        "difference_from_2_8_percent_base": -185.45
+      }
+    },
+    {
+      "month": "2026-02",
+      "website": {
+        "orders": 223,
+        "gross_before_discounts": 524691.0,
+        "revenue_after_discounts": 417988.0
+      },
+      "starter_app": {
+        "orders": 1633,
+        "gross_before_discounts": 3565914.0,
+        "revenue_after_discounts": 2841016.52
+      },
+      "starter_total": {
+        "orders": 1856,
+        "gross_before_discounts": 4090605.0,
+        "revenue_after_discounts": 3259004.52
+      },
+      "invoice": {
+        "number": "0000-000589",
+        "date": "2026-02-28",
+        "total_including_vat": 96200.0,
+        "vat_rate_percent": 5.0,
+        "vat_amount": 4580.95,
+        "amount_excluding_vat": 91619.05
+      },
+      "commission": {
+        "rate_excluding_vat_percent": 2.8113,
+        "effective_rate_including_vat_percent": 2.9518,
+        "difference_from_2_8_percent_base": 366.92
+      }
+    },
+    {
+      "month": "2026-03",
+      "website": {
+        "orders": 188,
+        "gross_before_discounts": 426789.0,
+        "revenue_after_discounts": 341745.0
+      },
+      "starter_app": {
+        "orders": 1789,
+        "gross_before_discounts": 3902936.0,
+        "revenue_after_discounts": 2996312.98
+      },
+      "starter_total": {
+        "orders": 1977,
+        "gross_before_discounts": 4329725.0,
+        "revenue_after_discounts": 3338057.98
+      },
+      "invoice": {
+        "number": "0000-001175",
+        "date": "2026-03-31",
+        "total_including_vat": 98092.0,
+        "vat_rate_percent": 5.0,
+        "vat_amount": 4671.05,
+        "amount_excluding_vat": 93420.95
+      },
+      "commission": {
+        "rate_excluding_vat_percent": 2.7987,
+        "effective_rate_including_vat_percent": 2.9386,
+        "difference_from_2_8_percent_base": -44.67
+      }
+    },
+    {
+      "month": "2026-04",
+      "website": {
+        "orders": 139,
+        "gross_before_discounts": 314445.0,
+        "revenue_after_discounts": 249845.75
+      },
+      "starter_app": {
+        "orders": 1455,
+        "gross_before_discounts": 3194268.0,
+        "revenue_after_discounts": 2474118.98
+      },
+      "starter_total": {
+        "orders": 1594,
+        "gross_before_discounts": 3508713.0,
+        "revenue_after_discounts": 2723964.73
+      },
+      "invoice": {
+        "number": "0000-001541",
+        "date": "2026-04-30",
+        "total_including_vat": 80573.0,
+        "vat_rate_percent": 5.0,
+        "vat_amount": 3836.81,
+        "amount_excluding_vat": 76736.19
+      },
+      "commission": {
+        "rate_excluding_vat_percent": 2.8171,
+        "effective_rate_including_vat_percent": 2.9579,
+        "difference_from_2_8_percent_base": 465.18
+      }
+    },
+    {
+      "month": "2026-05",
+      "website": {
+        "orders": 193,
+        "gross_before_discounts": 449043.0,
+        "revenue_after_discounts": 343778.72
+      },
+      "starter_app": {
+        "orders": 1651,
+        "gross_before_discounts": 3677559.0,
+        "revenue_after_discounts": 2806754.83
+      },
+      "starter_total": {
+        "orders": 1844,
+        "gross_before_discounts": 4126602.0,
+        "revenue_after_discounts": 3150533.55
+      },
+      "invoice": {
+        "number": "0000-002151",
+        "date": "2026-05-31",
+        "total_including_vat": 92009.0,
+        "vat_rate_percent": 5.0,
+        "vat_amount": 4381.38,
+        "amount_excluding_vat": 87627.62
+      },
+      "commission": {
+        "rate_excluding_vat_percent": 2.7814,
+        "effective_rate_including_vat_percent": 2.9204,
+        "difference_from_2_8_percent_base": -587.32
+      }
+    },
+    {
+      "month": "2026-06",
+      "website": {
+        "orders": 184,
+        "gross_before_discounts": 429036.0,
+        "revenue_after_discounts": 344674.56
+      },
+      "starter_app": {
+        "orders": 1423,
+        "gross_before_discounts": 3101010.0,
+        "revenue_after_discounts": 2394956.53
+      },
+      "starter_total": {
+        "orders": 1607,
+        "gross_before_discounts": 3530046.0,
+        "revenue_after_discounts": 2739631.09
+      },
+      "invoice": {
+        "number": "0000-002629",
+        "date": "2026-06-30",
+        "total_including_vat": 80455.0,
+        "vat_rate_percent": 5.0,
+        "vat_amount": 3831.19,
+        "amount_excluding_vat": 76623.81
+      },
+      "commission": {
+        "rate_excluding_vat_percent": 2.7969,
+        "effective_rate_including_vat_percent": 2.9367,
+        "difference_from_2_8_percent_base": -85.86
+      }
+    }
+  ],
+  "totals": {
+    "website_revenue_after_discounts": 2078953.98,
+    "starter_app_revenue_after_discounts": 16563657.35,
+    "starter_total_revenue_after_discounts": 18642611.33,
+    "invoice_total_including_vat": 548018.0,
+    "invoice_vat": 26096.09,
+    "invoice_total_excluding_vat": 521921.91,
+    "weighted_commission_rate_excluding_vat_percent": 2.7996,
+    "weighted_effective_rate_including_vat_percent": 2.9396,
+    "expected_commission_excluding_vat_at_2_8_percent": 521993.12,
+    "difference_from_expected_commission_excluding_vat": -71.21
+  },
+  "conclusion": "The invoice pattern is consistent with a 2.8% commission excluding VAT. With the supplier's 5% VAT, the effective cash rate is 2.94%."
+}

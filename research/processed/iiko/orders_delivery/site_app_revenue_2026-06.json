@@ -1,0 +1,44 @@
+{
+  "period_start": "2026-06-01",
+  "period_end": "2026-06-30",
+  "department": "Foodmarket Тепло Черникова",
+  "source": "iiko OLAP SALES /reports/olap",
+  "grouping": "Delivery.MarketingSource",
+  "metric": "DishDiscountSumInt (revenue after discounts)",
+  "channels": [
+    {
+      "channel": "website",
+      "marketing_sources": ["Сайт"],
+      "orders": 184,
+      "revenue": 344674.56
+    },
+    {
+      "channel": "starter_app",
+      "marketing_sources": ["IOS", "Андройд"],
+      "orders": 1423,
+      "revenue": 2394956.53,
+      "detail": [
+        {
+          "marketing_source": "IOS",
+          "orders": 653,
+          "revenue": 990548.95
+        },
+        {
+          "marketing_source": "Андройд",
+          "orders": 770,
+          "revenue": 1404407.58
+        }
+      ]
+    }
+  ],
+  "website_and_starter_app_total": {
+    "orders": 1607,
+    "revenue": 2739631.09
+  },
+  "excluded_unattributed": {
+    "marketing_source": "(пусто)",
+    "orders": 326,
+    "revenue": 483181.05,
+    "reason": "No marketing source; cannot be attributed to website or Starter App."
+  }
+}
