@@ -48,6 +48,7 @@ from app.services.new_payment import ensure_expense_article_allowed
 MOCK_PAYER_ACCOUNT = "00000000000000000000"
 DRAFTABLE_STATUSES = frozenset({"unpaid", "partially_paid"})
 DRAFT_STATUSES = frozenset({"created", "updated", "paid", "failed"})
+ARCHIVED_COUNTERPARTY_STATUSES = frozenset({"archived", "inactive"})
 # DDS article a manual supplier payment books to by default.
 DEFAULT_SUPPLIER_ARTICLE_CODE = "payment_to_supplier"
 
@@ -208,7 +209,7 @@ async def create_payment_draft_for_invoices(
     counterparty = await session.get(Counterparty, counterparty_id)
     if counterparty is None:
         raise CounterpartyPaymentError("Контрагент не найден")
-    if counterparty.status == "archived":
+    if counterparty.status in ARCHIVED_COUNTERPARTY_STATUSES:
         raise CounterpartyPaymentError("Контрагент в архиве — отправка в банк недоступна")
     profile = await session.scalar(
         select(CounterpartyPayableProfile).where(
@@ -321,7 +322,7 @@ async def create_standalone_payment_draft(
     counterparty = await session.get(Counterparty, counterparty_id)
     if counterparty is None:
         raise CounterpartyPaymentError("Контрагент не найден")
-    if counterparty.status == "archived":
+    if counterparty.status in ARCHIVED_COUNTERPARTY_STATUSES:
         raise CounterpartyPaymentError("Контрагент в архиве — отправка в банк недоступна")
     profile = await session.scalar(
         select(CounterpartyPayableProfile).where(

@@ -8,7 +8,6 @@ import { getDdsOwnerReview } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { AccountsTab } from "@/routes/dds/tabs/accounts";
 import { ArticlesTab } from "@/routes/dds/tabs/articles";
-import { CounterpartiesTab } from "@/routes/dds/tabs/counterparties";
 import { CredentialsTab } from "@/routes/dds/tabs/credentials";
 import { LedgerTab } from "@/routes/dds/tabs/ledger";
 import { OperationsTab } from "@/routes/dds/tabs/operations";
@@ -138,10 +137,9 @@ function renderTab(
     return <LedgerTab />;
   }
   if (activeTab === "owner-review") {
-    return <OwnerReviewTab canClassify={permissions.canPerformAction("finance.cashflow.classify")} />;
-  }
-  if (activeTab === "counterparties") {
-    return <CounterpartiesTab canEdit={permissions.canPerformAction("finance.counterparties.edit")} />;
+    return (
+      <OwnerReviewTab canClassify={permissions.canPerformAction("finance.cashflow.classify")} />
+    );
   }
   if (activeTab === "articles") {
     return <ArticlesTab canEdit={permissions.canPerformAction("finance.cashflow.classify")} />;
@@ -171,9 +169,6 @@ function canOpenDdsTab(tab: DdsActiveTab, permissions: ReturnType<typeof usePerm
       "finance.owner_review.prepare",
       "finance.cashflow.classify",
     ]);
-  }
-  if (tab === "counterparties") {
-    return permissions.hasPermission("finance.counterparties.read");
   }
   if (tab === "rules") {
     return permissions.canPerformAction("finance.rules.manage");

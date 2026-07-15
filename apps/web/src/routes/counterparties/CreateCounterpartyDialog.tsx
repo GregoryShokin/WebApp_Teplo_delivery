@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,7 +12,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -21,18 +21,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { apiErrorMessage } from "@/lib/api";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
+import { apiErrorMessage, getDdsArticles } from "@/lib/api";
 
+import { createCounterparty, getIikoSuppliers, type CounterpartyCard } from "./api";
 import {
-  createCounterparty,
-  getIikoSuppliers,
-  getLedgerCategories,
-  type CounterpartyCard,
-} from "./api";
-import { COUNTERPARTY_TYPE_LABELS, RELATIONSHIP_HINTS, RELATIONSHIP_LABELS } from "./shared";
+  COUNTERPARTY_REQUISITE_FIELDS,
+  COUNTERPARTY_TYPE_LABELS,
+  OFFICIAL_SUPPLIER_REQUIRED_REQUISITE_KEYS,
+  RELATIONSHIP_HINTS,
+  RELATIONSHIP_LABELS,
+} from "./shared";
 
-// Сентинел «не связывать с iiko» — заводим контрагента вручную, без alias.
 const NO_IIKO = "none";
+
+type CreateTab = "general" | "requisites" | "manager";
+
+function emptyRequisites(): Record<string, string> {
+  return Object.fromEntries(COUNTERPARTY_REQUISITE_FIELDS.map(({ key }) => [key, ""]));
+}
 
 export function CreateCounterpartyDialog({
   open,
@@ -42,54 +51,76 @@ export function CreateCounterpartyDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  // Предустановленный канал оплаты (в бартер-контуре открываем сразу на «Бартер»).
   defaultRelationship?: string;
-  // Колбэк после создания — родитель может сразу выбрать нового контрагента.
   onCreated?: (counterparty: CounterpartyCard) => void;
 }) {
   const queryClient = useQueryClient();
-  const categoriesQuery = useQuery({
-    queryKey: ["cp", "categories"],
-    queryFn: getLedgerCategories,
+  const articlesQuery = useQuery({
+    queryKey: ["dds", "articles"],
+    queryFn: getDdsArticles,
     enabled: open,
   });
-  // Список поставщиков iiko без привязки — живой запрос к iiko, тянем только при открытии.
   const iikoSuppliersQuery = useQuery({
     queryKey: ["cp", "iiko-suppliers"],
     queryFn: getIikoSuppliers,
     enabled: open,
     staleTime: 60_000,
   });
+
+  const [activeTab, setActiveTab] = useState<CreateTab>("general");
   const [name, setName] = useState("");
-  const [inn, setInn] = useState("");
   const [type, setType] = useState("legal_entity");
   const [relationship, setRelationship] = useState(defaultRelationship);
-  const [categoryId, setCategoryId] = useState<string>("");
+  const [ddsArticleId, setDdsArticleId] = useState("");
+  const [confirmNoDdsArticle, setConfirmNoDdsArticle] = useState(false);
+  const [requisites, setRequisites] = useState<Record<string, string>>(emptyRequisites);
+  const [requisitesVerified, setRequisitesVerified] = useState(false);
   const [managerName, setManagerName] = useState("");
   const [managerPhone, setManagerPhone] = useState("");
-  const [iikoGuid, setIikoGuid] = useState<string>(NO_IIKO);
+  const [iikoGuid, setIikoGuid] = useState(NO_IIKO);
 
-  // При каждом открытии возвращаем канал к требуемому по умолчанию и сбрасываем iiko-привязку.
   useEffect(() => {
-    if (open) {
-      setRelationship(defaultRelationship);
-      setIikoGuid(NO_IIKO);
-    }
+    if (!open) return;
+    setActiveTab("general");
+    setName("");
+    setType("legal_entity");
+    setRelationship(defaultRelationship);
+    setDdsArticleId("");
+    setConfirmNoDdsArticle(false);
+    setRequisites(emptyRequisites());
+    setRequisitesVerified(false);
+    setManagerName("");
+    setManagerPhone("");
+    setIikoGuid(NO_IIKO);
   }, [open, defaultRelationship]);
 
-  // Выбор поставщика iiko: подставляем имя/ИНН и угадываем канал (без ИНН — карта/нал → informal).
+  function changeRelationship(nextRelationship: string) {
+    setRelationship(nextRelationship);
+    if (nextRelationship !== "official") {
+      setActiveTab("general");
+      setRequisites(emptyRequisites());
+      setRequisitesVerified(false);
+    }
+  }
+
   function selectIikoSupplier(guid: string) {
     setIikoGuid(guid);
     if (guid === NO_IIKO) return;
     const supplier = iikoSuppliersQuery.data?.find((item) => item.guid === guid);
     if (!supplier) return;
     setName(supplier.name);
-    setInn(supplier.inn ?? "");
     setType(supplier.inn && supplier.inn.length === 12 ? "individual" : "legal_entity");
-    setRelationship(supplier.inn ? "official" : "informal");
+    const nextRelationship = supplier.inn ? "official" : "informal";
+    changeRelationship(nextRelationship);
+    if (nextRelationship === "official") {
+      setRequisites((current) => ({
+        ...current,
+        recipientName: supplier.name,
+        inn: supplier.inn ?? "",
+      }));
+    }
   }
 
-  // Опции пикера iiko: «не связывать» + незалинкованные поставщики (поиск по имени и ИНН).
   const iikoOptions: ComboboxOption[] = [
     { value: NO_IIKO, label: "Не связывать (ввести вручную)" },
     ...(iikoSuppliersQuery.data ?? []).map((supplier) => ({
@@ -99,25 +130,44 @@ export function CreateCounterpartyDialog({
     })),
   ];
 
+  const isOfficialSupplier =
+    relationship === "official" && type !== "bank" && type !== "tax_authority";
+  const hasRequiredRequisites = OFFICIAL_SUPPLIER_REQUIRED_REQUISITE_KEYS.every((key) =>
+    Boolean(requisites[key]?.trim()),
+  );
+  const hasArticleDecision = Boolean(ddsArticleId) || confirmNoDdsArticle;
+  const isFormComplete =
+    Boolean(name.trim()) && hasArticleDecision && (!isOfficialSupplier || hasRequiredRequisites);
+
   const createMutation = useMutation({
-    mutationFn: () =>
-      createCounterparty({
-        name,
-        inn: inn || null,
+    mutationFn: () => {
+      const isOfficial = relationship === "official";
+      const cleanRequisites = isOfficial
+        ? Object.fromEntries(
+            Object.entries({
+              ...requisites,
+              recipientName: requisites.recipientName || name,
+            })
+              .map(([key, value]) => [key, value.trim()])
+              .filter(([, value]) => Boolean(value)),
+          )
+        : {};
+      return createCounterparty({
+        name: name.trim(),
+        inn: isOfficial ? cleanRequisites.inn || null : null,
         type,
         relationship,
-        ledger_category_id: categoryId || null,
-        manager_name: managerName || null,
-        manager_phone: managerPhone || null,
+        default_dds_article_id: ddsArticleId || null,
+        confirm_no_dds_article: confirmNoDdsArticle,
+        requisites: cleanRequisites,
+        requisites_verified: isOfficial && requisitesVerified,
+        manager_name: managerName.trim() || null,
+        manager_phone: managerPhone.trim() || null,
         iiko_supplier_guid: iikoGuid === NO_IIKO ? null : iikoGuid,
-      }),
+      });
+    },
     onSuccess: async (created) => {
       await queryClient.invalidateQueries({ queryKey: ["cp"] });
-      setName("");
-      setInn("");
-      setManagerName("");
-      setManagerPhone("");
-      setIikoGuid(NO_IIKO);
       onOpenChange(false);
       toast.success("Контрагент создан");
       onCreated?.(created);
@@ -127,40 +177,44 @@ export function CreateCounterpartyDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Новый контрагент</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-4">
-          <div className="grid gap-2">
-            <Label>Поставщик из iiko (необязательно)</Label>
-            <Combobox
-              options={iikoOptions}
-              value={iikoGuid}
-              onChange={selectIikoSupplier}
-              placeholder={iikoSuppliersQuery.isLoading ? "Загрузка из iiko…" : "Не связывать"}
-              searchPlaceholder="Поиск поставщика iiko…"
-              emptyMessage={
-                iikoSuppliersQuery.isLoading ? "Загрузка из iiko…" : "Поставщики не найдены"
-              }
-            />
-            <p className="text-xs text-muted-foreground">
-              {iikoGuid === NO_IIKO
-                ? "Свяжите с поставщиком iiko, чтобы накладные подтягивались на этого контрагента (а не плодили дубль). Нужно для предоплат поставщику, который ещё не присылал накладных."
-                : "Накладные этого поставщика iiko будут привязываться к контрагенту автоматически."}
-            </p>
-          </div>
-          <div className="grid gap-2">
-            <Label>Официальное название</Label>
-            <Input value={name} onChange={(event) => setName(event.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-2">
-              <Label>ИНН</Label>
-              <Input value={inn} onChange={(event) => setInn(event.target.value)} />
-            </div>
-            <div className="grid gap-2">
-              <Label>Тип</Label>
+
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as CreateTab)}>
+          <TabsList className="grid h-auto w-full grid-cols-3">
+            <TabsTrigger value="general">Общая информация</TabsTrigger>
+            <TabsTrigger value="requisites" disabled={relationship !== "official"}>
+              Реквизиты{isOfficialSupplier ? " *" : ""}
+            </TabsTrigger>
+            <TabsTrigger value="manager">Данные менеджера</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="general" className="space-y-4 pt-2">
+            <Field label="Поставщик из iiko (необязательно)">
+              <Combobox
+                options={iikoOptions}
+                value={iikoGuid}
+                onChange={selectIikoSupplier}
+                placeholder={iikoSuppliersQuery.isLoading ? "Загрузка из iiko…" : "Не связывать"}
+                searchPlaceholder="Поиск поставщика iiko…"
+                emptyMessage={
+                  iikoSuppliersQuery.isLoading ? "Загрузка из iiko…" : "Поставщики не найдены"
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                {iikoSuppliersQuery.isError
+                  ? "iiko сейчас недоступен — контрагента можно создать вручную."
+                  : "Связь с iiko не даст синхронизации накладных создать дубль."}
+              </p>
+            </Field>
+
+            <Field label="Официальное название *">
+              <Input value={name} onChange={(event) => setName(event.target.value)} />
+            </Field>
+
+            <Field label="Тип контрагента">
               <Select value={type} onValueChange={setType}>
                 <SelectTrigger>
                   <SelectValue />
@@ -173,56 +227,125 @@ export function CreateCounterpartyDialog({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-          </div>
-          <div className="grid gap-2">
-            <Label>Тип отношений</Label>
-            <Select value={relationship} onValueChange={setRelationship}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(RELATIONSHIP_LABELS).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">{RELATIONSHIP_HINTS[relationship]}</p>
-          </div>
-          <div className="grid gap-2">
-            <Label>Категория (леджер)</Label>
-            <Select value={categoryId} onValueChange={setCategoryId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Не выбрана" />
-              </SelectTrigger>
-              <SelectContent>
-                {(categoriesQuery.data ?? []).map((category) => (
-                  <SelectItem key={category.id} value={category.id}>
-                    {category.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-2">
-              <Label>Менеджер</Label>
-              <Input value={managerName} onChange={(event) => setManagerName(event.target.value)} />
-            </div>
-            <div className="grid gap-2">
-              <Label>Телефон менеджера</Label>
-              <Input
-                value={managerPhone}
-                onChange={(event) => setManagerPhone(event.target.value)}
+            </Field>
+
+            <Field label="Тип отношений">
+              <Select value={relationship} onValueChange={changeRelationship}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(RELATIONSHIP_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{RELATIONSHIP_HINTS[relationship]}</p>
+              {relationship !== "official" ? (
+                <p className="text-xs text-muted-foreground">
+                  Банковские реквизиты не заполняются: для этого типа отношений используется
+                  отдельный способ расчёта.
+                </p>
+              ) : null}
+            </Field>
+
+            <Field label="Статья ДДС *">
+              <ArticleCombobox
+                articles={articlesQuery.data ?? []}
+                value={ddsArticleId}
+                onChange={setDdsArticleId}
+                placeholder={confirmNoDdsArticle ? "Статья не применяется" : "Выберите статью"}
+                disabled={confirmNoDdsArticle}
               />
+              <label className="flex items-center gap-2 text-sm">
+                <Switch
+                  checked={confirmNoDdsArticle}
+                  onCheckedChange={(checked) => {
+                    setConfirmNoDdsArticle(checked);
+                    if (checked) setDdsArticleId("");
+                  }}
+                />
+                У контрагента нет статьи ДДС
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Если статьи действительно нет, подтвердите это переключателем — оставить поле пустым
+                случайно нельзя.
+              </p>
+            </Field>
+          </TabsContent>
+
+          <TabsContent value="requisites" className="space-y-4 pt-2">
+            <p className="text-sm text-muted-foreground">
+              Реквизиты официального контрагента для создания платёжного поручения в банке.
+            </p>
+            {isOfficialSupplier ? (
+              <p className="text-xs text-muted-foreground">
+                Обязательны БИК банка, ИНН, расчётный и корреспондентский счета. КПП можно не
+                заполнять.
+              </p>
+            ) : null}
+            <div className="grid gap-4 sm:grid-cols-2">
+              {COUNTERPARTY_REQUISITE_FIELDS.map(({ key, label }) => (
+                <Field
+                  key={key}
+                  label={`${label}${
+                    isOfficialSupplier &&
+                    OFFICIAL_SUPPLIER_REQUIRED_REQUISITE_KEYS.includes(
+                      key as (typeof OFFICIAL_SUPPLIER_REQUIRED_REQUISITE_KEYS)[number],
+                    )
+                      ? " *"
+                      : ""
+                  }`}
+                >
+                  <Input
+                    value={requisites[key] ?? ""}
+                    placeholder={
+                      key === "recipientName" ? name || "Официальное название" : undefined
+                    }
+                    onChange={(event) =>
+                      setRequisites((current) => ({ ...current, [key]: event.target.value }))
+                    }
+                  />
+                </Field>
+              ))}
             </div>
-          </div>
-        </div>
+            <label className="flex items-center gap-2 text-sm">
+              <Switch checked={requisitesVerified} onCheckedChange={setRequisitesVerified} />
+              Реквизиты проверены
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Без подтверждения контрагента можно создать, но отправка платежа в банк будет
+              заблокирована до проверки реквизитов.
+            </p>
+          </TabsContent>
+
+          <TabsContent value="manager" className="space-y-4 pt-2">
+            <p className="text-sm text-muted-foreground">
+              Контакт сотрудника контрагента для вопросов по накладным и оплатам.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Менеджер">
+                <Input
+                  value={managerName}
+                  onChange={(event) => setManagerName(event.target.value)}
+                />
+              </Field>
+              <Field label="Телефон менеджера">
+                <Input
+                  type="tel"
+                  value={managerPhone}
+                  onChange={(event) => setManagerPhone(event.target.value)}
+                />
+              </Field>
+            </div>
+          </TabsContent>
+        </Tabs>
+
         <DialogFooter>
           <Button
-            disabled={!name.trim() || createMutation.isPending}
+            disabled={!isFormComplete || createMutation.isPending}
             onClick={() => createMutation.mutate()}
           >
             {createMutation.isPending ? (
@@ -233,5 +356,14 @@ export function CreateCounterpartyDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="grid gap-2">
+      <Label>{label}</Label>
+      {children}
+    </div>
   );
 }

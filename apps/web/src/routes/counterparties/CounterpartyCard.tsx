@@ -45,6 +45,7 @@ import {
 } from "./api";
 import {
   COLLECTION_KIND_LABELS,
+  COUNTERPARTY_REQUISITE_FIELDS,
   COUNTERPARTY_TYPE_LABELS,
   INVOICE_DIRECTION_LABELS,
   InvoiceStatusBadge,
@@ -54,15 +55,6 @@ import {
   SOURCE_LABELS,
   formatRub,
 } from "./shared";
-
-const REQUISITE_FIELDS: Array<{ key: string; label: string }> = [
-  { key: "recipientName", label: "Получатель" },
-  { key: "inn", label: "ИНН" },
-  { key: "kpp", label: "КПП" },
-  { key: "bankAcnt", label: "Расчётный счёт" },
-  { key: "bankBik", label: "БИК" },
-  { key: "recipientCorrAccountNumber", label: "Корр. счёт" },
-];
 
 export function CounterpartyCard({
   counterpartyId,
@@ -147,7 +139,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean }) {
   const queryClient = useQueryClient();
-  const categoriesQuery = useQuery({ queryKey: ["cp", "categories"], queryFn: getLedgerCategories });
+  const categoriesQuery = useQuery({
+    queryKey: ["cp", "categories"],
+    queryFn: getLedgerCategories,
+  });
   const articlesQuery = useQuery({ queryKey: ["dds", "articles"], queryFn: getDdsArticles });
   const profile = card.profile;
   const [relationship, setRelationship] = useState("official");
@@ -315,7 +310,7 @@ function RequisitesSection({ card, canAdmin }: { card: CardData; canAdmin: boole
   useEffect(() => {
     const source = (profile?.requisites ?? {}) as Record<string, unknown>;
     const next: Record<string, string> = {};
-    REQUISITE_FIELDS.forEach(({ key }) => {
+    COUNTERPARTY_REQUISITE_FIELDS.forEach(({ key }) => {
       next[key] = source[key] != null ? String(source[key]) : "";
     });
     setValues(next);
@@ -327,7 +322,7 @@ function RequisitesSection({ card, canAdmin }: { card: CardData; canAdmin: boole
     onSuccess: (suggestion) => {
       setValues((prev) => {
         const next = { ...prev };
-        REQUISITE_FIELDS.forEach(({ key }) => {
+        COUNTERPARTY_REQUISITE_FIELDS.forEach(({ key }) => {
           if (suggestion[key] != null) {
             next[key] = String(suggestion[key]);
           }
@@ -366,7 +361,7 @@ function RequisitesSection({ card, canAdmin }: { card: CardData; canAdmin: boole
         </p>
       ) : null}
       <div className="grid gap-4 sm:grid-cols-2">
-        {REQUISITE_FIELDS.map(({ key, label }) => (
+        {COUNTERPARTY_REQUISITE_FIELDS.map(({ key, label }) => (
           <Field key={key} label={label}>
             <Input
               disabled={disabled}
@@ -408,8 +403,7 @@ function CollectionSourcesSection({ card, canAdmin }: { card: CardData; canAdmin
   const [value, setValue] = useState("");
 
   const addMutation = useMutation({
-    mutationFn: () =>
-      addCollectionSource(card.counterparty_id, { kind, value: value || null }),
+    mutationFn: () => addCollectionSource(card.counterparty_id, { kind, value: value || null }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["cp"] });
       setValue("");
@@ -494,7 +488,10 @@ function CollectionSourcesSection({ card, canAdmin }: { card: CardData; canAdmin
 
 function RoutingSection({ card, canAdmin }: { card: CardData; canAdmin: boolean }) {
   const queryClient = useQueryClient();
-  const registryQuery = useQuery({ queryKey: ["cp", "registry", "all"], queryFn: () => getRegistry() });
+  const registryQuery = useQuery({
+    queryKey: ["cp", "registry", "all"],
+    queryFn: () => getRegistry(),
+  });
   const [prefix, setPrefix] = useState("");
   const [target, setTarget] = useState("");
 
@@ -527,7 +524,9 @@ function RoutingSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
       </p>
       <div className="grid gap-2">
         {card.routing_rules.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Правил нет — накладные идут на этого контрагента.</p>
+          <p className="text-sm text-muted-foreground">
+            Правил нет — накладные идут на этого контрагента.
+          </p>
         ) : null}
         {card.routing_rules.map((rule) => (
           <div
@@ -689,7 +688,9 @@ function ArchiveSection({ card }: { card: CardData }) {
   const archived = card.status === "archived";
   const mutation = useMutation({
     mutationFn: () =>
-      archived ? unarchiveCounterparty(card.counterparty_id) : archiveCounterparty(card.counterparty_id),
+      archived
+        ? unarchiveCounterparty(card.counterparty_id)
+        : archiveCounterparty(card.counterparty_id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["cp"] });
       toast.success(archived ? "Контрагент возвращён из архива" : "Контрагент в архиве");

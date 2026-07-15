@@ -154,7 +154,10 @@ class DdsCounterpartyCreate(BaseModel):
     name: str
     inn: str | None = None
     type: Literal["legal_entity", "individual", "bank", "tax_authority"] = "legal_entity"
-    status: str = "active"
+    status: Literal["active", "inactive", "archived", "requires_setup"] = "active"
+    default_dds_article_id: uuid.UUID | None = None
+    confirm_no_dds_article: bool = False
+    requisites: dict[str, Any] = Field(default_factory=dict)
 
 
 class DdsCounterpartyPatch(BaseModel):
@@ -163,7 +166,7 @@ class DdsCounterpartyPatch(BaseModel):
     name: str | None = None
     inn: str | None = None
     type: Literal["legal_entity", "individual", "bank", "tax_authority"] | None = None
-    status: str | None = None
+    status: Literal["active", "inactive", "archived", "requires_setup"] | None = None
 
 
 class ClassificationRuleRead(BaseModel):

@@ -32,7 +32,6 @@ export type DdsActiveTab =
   | "operations"
   | "ledger"
   | "owner-review"
-  | "counterparties"
   | "articles"
   | "rules"
   | "credentials";
@@ -43,7 +42,6 @@ export const DDS_TABS: Array<{ value: DdsActiveTab; label: string; path: string 
   { value: "today", label: "Деньги сегодня", path: "/dds" },
   { value: "accounts", label: "Счета", path: "/dds/accounts" },
   { value: "ledger", label: "Журнал ДДС", path: "/dds/ledger" },
-  { value: "counterparties", label: "Контрагенты", path: "/dds/counterparties" },
   { value: "articles", label: "Статьи ДДС", path: "/dds/articles" },
   { value: "credentials", label: "Доступы", path: "/dds/credentials" },
 ];

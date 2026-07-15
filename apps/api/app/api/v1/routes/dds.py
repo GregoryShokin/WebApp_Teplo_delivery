@@ -16,6 +16,7 @@ from app.api.deps import (
     ensure_any_permission,
     ensure_permission,
     get_current_actor,
+    require_any_permission,
     require_permission,
 )
 from app.auth.permissions import permission_is_granted
@@ -88,6 +89,7 @@ from app.schemas.dds import (
     TransactionClassifyRequest,
 )
 from app.schemas.kassa import KassaPendingRead
+from app.services import counterparty_registry
 from app.services.advance_iiko_payout import post_advance_payout_to_iiko
 from app.services.banking import BankCredentialsError, BankFetchError
 from app.services.banking.cashflow_classify import (
@@ -175,8 +177,12 @@ DDS_INTEGRATIONS_MANAGE_ACCESS = (
     Depends(require_permission("finance.cashflow.integrations.manage")),
 )
 DDS_WALLETS_READ_ACCESS = (Depends(require_permission("finance.wallets.read")),)
-DDS_COUNTERPARTIES_READ_ACCESS = (Depends(require_permission("finance.counterparties.read")),)
-DDS_COUNTERPARTIES_EDIT_ACCESS = (Depends(require_permission("finance.counterparties.edit")),)
+DDS_COUNTERPARTIES_READ_ACCESS = (
+    Depends(require_any_permission(("counterparties.read", "finance.counterparties.read"))),
+)
+DDS_COUNTERPARTIES_EDIT_ACCESS = (
+    Depends(require_any_permission(("counterparties.admin", "finance.counterparties.edit"))),
+)
 DDS_OWNER_REVIEW_PREPARE_ACCESS = (Depends(require_permission("finance.owner_review.prepare")),)
 
 
@@ -1209,10 +1215,26 @@ async def create_counterparty(
     payload: DdsCounterpartyCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, object]:
-    counterparty = Counterparty(**payload.model_dump())
-    session.add(counterparty)
-    await session.commit()
-    await session.refresh(counterparty)
+    role = payload.type if payload.type in {"bank", "tax_authority"} else "supplier"
+    try:
+        counterparty = await counterparty_registry.create_counterparty(
+            session,
+            name=payload.name,
+            inn=payload.inn,
+            cp_type=payload.type,
+            default_dds_article_id=payload.default_dds_article_id,
+            confirm_no_dds_article=payload.confirm_no_dds_article,
+            requisites=payload.requisites,
+            role=role,
+        )
+        if payload.status != "active":
+            counterparty = await counterparty_registry.update_counterparty_identity(
+                session,
+                counterparty.id,
+                changes={"status": payload.status},
+            )
+    except counterparty_registry.CounterpartyRegistryError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return (await _counterparty_payloads(session, [counterparty]))[0]
 
 
@@ -1226,11 +1248,14 @@ async def patch_counterparty(
     payload: DdsCounterpartyPatch,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, object]:
-    counterparty = await _counterparty_or_404(session, counterparty_id)
-    for key, value in payload.model_dump(exclude_unset=True).items():
-        setattr(counterparty, key, value)
-    await session.commit()
-    await session.refresh(counterparty)
+    try:
+        counterparty = await counterparty_registry.update_counterparty_identity(
+            session,
+            counterparty_id,
+            changes=payload.model_dump(exclude_unset=True),
+        )
+    except counterparty_registry.CounterpartyRegistryError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return (await _counterparty_payloads(session, [counterparty]))[0]
 
 
@@ -1243,9 +1268,12 @@ async def delete_counterparty(
     counterparty_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> None:
-    counterparty = await _counterparty_or_404(session, counterparty_id)
-    counterparty.status = "inactive"
-    await session.commit()
+    try:
+        await counterparty_registry.set_counterparty_archived(
+            session, counterparty_id, archived=True
+        )
+    except counterparty_registry.CounterpartyRegistryError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.post(
@@ -1259,16 +1287,15 @@ async def create_counterparty_alias(
     payload: DdsAliasCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> CounterpartyAlias:
-    await _counterparty_or_404(session, counterparty_id)
-    alias = CounterpartyAlias(
-        counterparty_id=counterparty_id,
-        alias=payload.alias,
-        source=payload.source,
-    )
-    session.add(alias)
-    await session.commit()
-    await session.refresh(alias)
-    return alias
+    try:
+        return await counterparty_registry.add_counterparty_alias(
+            session,
+            counterparty_id,
+            alias=payload.alias,
+            source=payload.source,
+        )
+    except counterparty_registry.CounterpartyRegistryError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.delete(
@@ -1280,11 +1307,10 @@ async def delete_counterparty_alias(
     alias_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> None:
-    alias = await session.get(CounterpartyAlias, alias_id)
-    if alias is None:
-        raise HTTPException(status_code=404, detail="Counterparty alias not found")
-    await session.delete(alias)
-    await session.commit()
+    try:
+        await counterparty_registry.delete_counterparty_alias(session, alias_id)
+    except counterparty_registry.CounterpartyRegistryError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @router.get(
@@ -1856,9 +1882,7 @@ async def classify_operation(
         and len(payload.splits) == 1
         and not payload.allow_card
     ):
-        rule = _rule_from_operation_split(
-            operation, payload.splits[0].article_id, payload.counterparty_id
-        )
+        rule = _rule_from_operation_split(operation, payload.splits[0].article_id, counterparty_id)
         session.add(rule)
         await session.flush()
         rule_id = rule.id

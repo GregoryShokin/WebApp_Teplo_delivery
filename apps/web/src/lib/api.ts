@@ -2359,22 +2359,6 @@ export type DdsAliasCreate = {
   source?: string | null;
 };
 
-export type CounterpartyRead = {
-  id: string;
-  name: string;
-  inn: string | null;
-  type: "legal_entity" | "individual" | "bank" | "tax_authority" | string;
-  status: string;
-  aliases: DdsAliasRead[];
-};
-
-export type CounterpartyCreate = {
-  name: string;
-  inn?: string | null;
-  type?: "legal_entity" | "individual" | "bank" | "tax_authority";
-  status?: string;
-};
-
 export type ClassificationRuleRead = {
   id: string;
   name: string;
@@ -2947,22 +2931,6 @@ export async function deleteDdsArticleAlias(aliasId: string): Promise<void> {
   await api.delete(`/dds/articles/aliases/${aliasId}`);
 }
 
-export async function getDdsCounterparties(query?: {
-  search?: string;
-}): Promise<CounterpartyRead[]> {
-  const response = await api.get<CounterpartyRead[]>("/dds/counterparties", {
-    params: cleanDdsParams(query ?? {}),
-  });
-  return response.data;
-}
-
-export async function createDdsCounterparty(
-  payload: CounterpartyCreate,
-): Promise<CounterpartyRead> {
-  const response = await api.post<CounterpartyRead>("/dds/counterparties", payload);
-  return response.data;
-}
-
 // Неоплаченные накладные контрагента — для привязки оплаты при разборе операции
 // (статья «Оплата поставщикам»). direction=payable: гасим только наши обязательства.
 export type DdsUnpaidInvoice = {
@@ -2998,33 +2966,6 @@ export type DdsPayoutEmployee = {
 export async function getDdsPayoutEmployees(): Promise<DdsPayoutEmployee[]> {
   const response = await api.get<DdsPayoutEmployee[]>("/dds/payout-employees");
   return response.data;
-}
-
-export async function patchDdsCounterparty(
-  id: string,
-  payload: Partial<CounterpartyCreate>,
-): Promise<CounterpartyRead> {
-  const response = await api.patch<CounterpartyRead>(`/dds/counterparties/${id}`, payload);
-  return response.data;
-}
-
-export async function deleteDdsCounterparty(id: string): Promise<void> {
-  await api.delete(`/dds/counterparties/${id}`);
-}
-
-export async function createDdsCounterpartyAlias(
-  counterpartyId: string,
-  payload: DdsAliasCreate,
-): Promise<DdsAliasRead> {
-  const response = await api.post<DdsAliasRead>(
-    `/dds/counterparties/${counterpartyId}/aliases`,
-    payload,
-  );
-  return response.data;
-}
-
-export async function deleteDdsCounterpartyAlias(aliasId: string): Promise<void> {
-  await api.delete(`/dds/counterparties/aliases/${aliasId}`);
 }
 
 export async function getDdsClassificationRules(): Promise<ClassificationRuleRead[]> {

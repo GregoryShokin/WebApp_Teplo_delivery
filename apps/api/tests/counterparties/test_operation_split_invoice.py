@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import (
+    CashflowTransaction,
     Counterparty,
     CounterpartyPayableProfile,
     InvoicePaymentAllocation,
@@ -168,6 +169,48 @@ async def test_split_invoice_requires_supplier_article(
                 splits=[(other.id, Decimal("5000.00"), None, invoice.id)],
                 counterparty_id=cp.id,
             )
+
+
+async def test_split_rejects_invoice_from_another_counterparty(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        article, cp, invoice, op = await _fixture(
+            session, op_amount="5000.00", inv_amount="5000.00"
+        )
+        other = await make_counterparty(session, name="Другой поставщик", inn="7801234567")
+        await session.commit()
+
+        with pytest.raises(ValueError, match="не совпадает с контрагентом накладной"):
+            await apply_operation_split(
+                session,
+                op,
+                splits=[(article.id, Decimal("5000.00"), None, invoice.id)],
+                counterparty_id=other.id,
+            )
+
+        assert await _alloc_count(session, op.id) == 0
+        assert (await session.get(SupplierInvoice, invoice.id)).payment_status == "unpaid"
+
+
+async def test_split_infers_counterparty_from_invoice(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        article, cp, invoice, op = await _fixture(
+            session, op_amount="5000.00", inv_amount="5000.00"
+        )
+        await session.commit()
+
+        created_ids = await apply_operation_split(
+            session,
+            op,
+            splits=[(article.id, Decimal("5000.00"), None, invoice.id)],
+        )
+        await session.commit()
+
+        transaction = await session.get(CashflowTransaction, created_ids[0])
+        assert transaction.counterparty_id == cp.id
 
 
 async def test_resplit_reverses_prior_invoice_allocation(

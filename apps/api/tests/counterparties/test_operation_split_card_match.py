@@ -440,6 +440,61 @@ def test_classify_card_allow_card_does_not_remember_rule(
     assert asyncio.run(_rules_count()) == before
 
 
+def test_classify_new_counterparty_rule_keeps_resolved_counterparty(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Правило, созданное вместе с карточкой из операции, хранит id новой карточки."""
+
+    async def _seed():
+        async with async_session_factory() as session:
+            account = await make_account(session)
+            await make_wallet(session, wallet_type="bank", account_id=account.id)
+            article = await make_expense_article(
+                session, code="prochie_rashody", name="Прочие расходы"
+            )
+            operation = await make_bank_operation(
+                session,
+                amount="1750.00",
+                direction="out",
+                account_id=account.id,
+                classification_status="needs_review",
+            )
+            await session.commit()
+            return article.id, operation.id
+
+    article_id, op_id = asyncio.run(_seed())
+    headers = _headers(
+        async_session_factory,
+        "new-cp-rule@teplo.local",
+        ["finance.cashflow.classify"],
+    )
+    response = client.post(
+        _classify_url(op_id),
+        json={
+            "action": "split",
+            "splits": [{"article_id": str(article_id), "amount": "1750.00"}],
+            "new_counterparty_name": "ООО Новый поставщик",
+            "new_counterparty_inn": "7700000999",
+            "remember_as_rule": True,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["rule_id"] is not None
+
+    async def _check():
+        async with async_session_factory() as session:
+            counterparty = await session.scalar(
+                select(Counterparty).where(Counterparty.inn == "7700000999")
+            )
+            rule = await session.get(ClassificationRule, uuid.UUID(response.json()["rule_id"]))
+            assert counterparty is not None
+            assert rule.counterparty_id == counterparty.id
+
+    asyncio.run(_check())
+
+
 # --- API: /warehouse/match/confirm -------------------------------------------
 
 

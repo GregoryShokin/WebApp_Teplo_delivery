@@ -3,11 +3,12 @@ import { cn } from "@/lib/utils";
 
 export type CounterpartiesTab = "inbox" | "drafts" | "registry";
 
-export const COUNTERPARTIES_TABS: Array<{ value: CounterpartiesTab; label: string; path: string }> = [
-  { value: "inbox", label: "К оплате", path: "/counterparties" },
-  { value: "drafts", label: "Черновики и мэчинг", path: "/counterparties/drafts" },
-  { value: "registry", label: "Реестр", path: "/counterparties/registry" },
-];
+export const COUNTERPARTIES_TABS: Array<{ value: CounterpartiesTab; label: string; path: string }> =
+  [
+    { value: "inbox", label: "К оплате", path: "/counterparties" },
+    { value: "drafts", label: "Черновики и мэчинг", path: "/counterparties/drafts" },
+    { value: "registry", label: "Реестр", path: "/counterparties/registry" },
+  ];
 
 export function counterpartiesTabPath(tab: CounterpartiesTab) {
   return COUNTERPARTIES_TABS.find((item) => item.value === tab)?.path ?? "/counterparties";
@@ -78,6 +79,22 @@ export const COUNTERPARTY_TYPE_LABELS: Record<string, string> = {
   bank: "Банк",
   tax_authority: "Налоговая",
 };
+
+export const COUNTERPARTY_REQUISITE_FIELDS: Array<{ key: string; label: string }> = [
+  { key: "recipientName", label: "Получатель" },
+  { key: "inn", label: "ИНН получателя" },
+  { key: "kpp", label: "КПП" },
+  { key: "bankAcnt", label: "Расчётный счёт" },
+  { key: "bankBik", label: "БИК" },
+  { key: "recipientCorrAccountNumber", label: "Корр. счёт" },
+];
+
+export const OFFICIAL_SUPPLIER_REQUIRED_REQUISITE_KEYS = [
+  "bankBik",
+  "inn",
+  "bankAcnt",
+  "recipientCorrAccountNumber",
+] as const;
 
 export function formatVat(breakdown: Record<string, string> | null | undefined) {
   const entries = Object.entries(breakdown ?? {});
@@ -156,7 +173,15 @@ export function RelationshipBadge({ relationship }: { relationship: string }) {
   );
 }
 
-export function MetricCard({ label, value, accent }: { label: string; value: string; accent?: "danger" | "info" }) {
+export function MetricCard({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: "danger" | "info";
+}) {
   return (
     <div className="rounded-md bg-muted/50 p-4">
       <div className="text-xs font-medium uppercase text-muted-foreground">{label}</div>

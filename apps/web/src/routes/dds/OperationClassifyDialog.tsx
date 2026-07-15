@@ -21,7 +21,6 @@ import {
   classifyCashflowTransaction,
   classifyOperation,
   getDdsArticles,
-  getDdsCounterparties,
   getDdsPayoutEmployees,
   getDdsUnpaidInvoices,
   getDdsWallets,
@@ -30,6 +29,7 @@ import {
   type JournalRow,
   type OperationClassifyPayload,
 } from "@/lib/api";
+import { getCounterpartyDirectory } from "@/routes/counterparties/api";
 import {
   DdsStatusBadge,
   DirectionBadge,
@@ -76,7 +76,6 @@ const ACTION_TOAST: Record<string, string> = {
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
-
 /**
  * Единая модалка разбора движения ДДС — и операции выписки, и ручной проводки (дискриминатор
  * ``row.kind``). Показывает по статье нужные подполя: накладная (поставщик, только операция) ·
@@ -98,8 +97,8 @@ export function OperationClassifyDialog({
 
   const articlesQuery = useQuery({ queryKey: ["dds", "articles"], queryFn: getDdsArticles });
   const counterpartiesQuery = useQuery({
-    queryKey: ["dds", "counterparties"],
-    queryFn: () => getDdsCounterparties(),
+    queryKey: ["cp", "directory"],
+    queryFn: getCounterpartyDirectory,
   });
   const walletsQuery = useQuery({ queryKey: ["dds", "wallets"], queryFn: getDdsWallets });
   const [rows, setRows] = useState<SplitRow[]>([]);
@@ -376,6 +375,18 @@ export function OperationClassifyDialog({
   const transferOptions: ComboboxOption[] = (walletsQuery.data ?? [])
     .filter((wallet) => wallet.id !== row.wallet_id && wallet.status === "active")
     .map((wallet) => ({ value: wallet.id, label: wallet.name, keywords: wallet.code }));
+
+  function selectCounterparty(value: string) {
+    setCounterpartyId(value);
+    setCreateNewCounterparty(false);
+    setRows((current) => current.map((item) => ({ ...item, invoiceId: "" })));
+  }
+
+  function selectNewCounterparty() {
+    setCounterpartyId("");
+    setCreateNewCounterparty(true);
+    setRows((current) => current.map((item) => ({ ...item, invoiceId: "" })));
+  }
 
   // Деталь строки (открывается по клику на строку) — зависит от статьи: сотрудник (зарплата) ·
   // счёт-получатель (перевод, проводка) · контрагент + накладная (поставщик/аванс/прочее).
@@ -813,7 +824,7 @@ export function OperationClassifyDialog({
                     {isOperation && row.counterparty_name_raw && !counterpartyId && !matchedByInn ? (
                       <button
                         className="self-start text-left text-sm font-medium text-emerald-700 hover:underline"
-                        onClick={() => setCreateNewCounterparty(true)}
+                        onClick={selectNewCounterparty}
                         type="button"
                       >
                         + Создать контрагента из операции: {row.counterparty_name_raw}
@@ -823,7 +834,7 @@ export function OperationClassifyDialog({
                     <InlineOptionList
                       options={counterpartyOptions}
                       value={counterpartyId}
-                      onChange={setCounterpartyId}
+                      onChange={selectCounterparty}
                       searchPlaceholder="Поиск по названию или ИНН…"
                       emptyMessage="Контрагенты не найдены"
                       listClassName="max-h-[20rem]"

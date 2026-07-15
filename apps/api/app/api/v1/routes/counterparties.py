@@ -44,13 +44,18 @@ from app.services.warehouse_invoices import invoice_permission_kind
 
 router = APIRouter()
 
-READ = (Depends(require_permission("counterparties.read")),)
+READ = (Depends(require_any_permission(("counterparties.read", "finance.counterparties.read"))),)
 OPERATE = (Depends(require_permission("counterparties.operate")),)
-ADMIN = (Depends(require_permission("counterparties.admin")),)
-# Справочники для формы накладной (контрагенты, статьи) — доступны и из Кассы.
-INVOICE_REFS = (
-    Depends(require_any_permission(("counterparties.read", "kassa.invoices.create"))),
+ADMIN = (Depends(require_any_permission(("counterparties.admin", "finance.counterparties.edit"))),)
+REGISTRY_READ = (
+    Depends(
+        require_any_permission(
+            ("counterparties.read", "finance.counterparties.read", "kassa.invoices.create")
+        )
+    ),
 )
+# Справочники для формы накладной (контрагенты, статьи) — доступны и из Кассы.
+INVOICE_REFS = (Depends(require_any_permission(("counterparties.read", "kassa.invoices.create"))),)
 
 _DOMAIN_ERRORS = (
     payments.CounterpartyPaymentError,
@@ -345,6 +350,10 @@ class CounterpartyCreate(BaseModel):
     payment_due_day_of_month: int | None = Field(default=None, ge=1, le=31)
     manager_name: str | None = Field(default=None, max_length=160)
     manager_phone: str | None = Field(default=None, max_length=64)
+    default_dds_article_id: uuid.UUID | None = None
+    confirm_no_dds_article: bool = False
+    requisites: dict[str, Any] = Field(default_factory=dict)
+    requisites_verified: bool = False
     # Привязка к поставщику из справочника iiko (GUID) — заводит alias source='iiko', чтобы
     # синк накладных узнавал контрагента, а не плодил дубль.
     iiko_supplier_guid: str | None = Field(default=None, max_length=64)
@@ -622,9 +631,7 @@ async def post_pay_invoice(
 # --- предоплаты поставщикам (дебиторка) ----------------------------------------
 
 
-@router.post(
-    "/prepayments", response_model=PrepaymentRead, status_code=status.HTTP_201_CREATED
-)
+@router.post("/prepayments", response_model=PrepaymentRead, status_code=status.HTTP_201_CREATED)
 async def post_create_prepayment(
     payload: PrepaymentCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -639,9 +646,14 @@ async def post_create_prepayment(
     """
     ensure_permission(actor, "invoices.normal.pay")
     wallet = await session.get(Wallet, payload.wallet_id)
-    if wallet is None or wallet.status != "active" or wallet.type not in (
-        "cash_safe",
-        "store_cash",
+    if (
+        wallet is None
+        or wallet.status != "active"
+        or wallet.type
+        not in (
+            "cash_safe",
+            "store_cash",
+        )
     ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -761,7 +773,7 @@ async def post_settle_from_prepayment(
 # --- registry & card ----------------------------------------------------------
 
 
-@router.get("/registry", response_model=list[RegistryRead], dependencies=INVOICE_REFS)
+@router.get("/registry", response_model=list[RegistryRead], dependencies=REGISTRY_READ)
 async def get_registry(
     session: Annotated[AsyncSession, Depends(get_session)],
     category_id: uuid.UUID | None = None,
@@ -793,7 +805,7 @@ async def get_iiko_suppliers(
     (живой запрос к iiko, поэтому только под admin и не в общем реестре)."""
     try:
         rows = await list_unlinked_iiko_suppliers(session)
-    except Exception as exc:  # noqa: BLE001 — сетевая/iiko-ошибка → 502, фронт покажет тост
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 — legacy iiko client exits on config errors
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Не удалось получить поставщиков iiko: {exc}",
@@ -825,6 +837,7 @@ async def get_expense_articles(
 async def post_counterparty(
     payload: CounterpartyCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> CardRead:
     try:
         counterparty = await registry.create_counterparty(
@@ -840,7 +853,13 @@ async def post_counterparty(
             payment_due_day_of_month=payload.payment_due_day_of_month,
             manager_name=payload.manager_name,
             manager_phone=payload.manager_phone,
+            default_dds_article_id=payload.default_dds_article_id,
+            confirm_no_dds_article=payload.confirm_no_dds_article,
+            requisites=payload.requisites,
+            requisites_verified=payload.requisites_verified,
+            requisites_verified_by_user_id=actor.user_id,
             iiko_supplier_guid=payload.iiko_supplier_guid,
+            role=payload.type if payload.type in {"bank", "tax_authority"} else "supplier",
         )
     except registry.CounterpartyRegistryError as exc:
         raise _conflict(exc) from exc

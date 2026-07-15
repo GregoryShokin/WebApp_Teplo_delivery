@@ -11,9 +11,9 @@ import { usePermissions } from "@/lib/permissions";
 
 import { getInvoices, syncInvoices } from "../counterparties/api";
 import { CounterpartyCard } from "../counterparties/CounterpartyCard";
+import { CounterpartyRegistryModule } from "../counterparties/CounterpartyRegistryModule";
 import { MetricCard, formatRub, isOverdue } from "../counterparties/shared";
 import { InboxTab } from "../counterparties/tabs/inbox";
-import { RegistryTab } from "../counterparties/tabs/registry";
 import { syncProducts } from "./api";
 
 export type WarehouseTab = "normal" | "barter" | "registry";
@@ -165,17 +165,16 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate, embedded = false
           onOpenCounterparty={setOpenId}
         />
       ) : null}
-      {effectiveTab === "registry" ? (
-        <RegistryTab canOperate={canOperate} canAdmin={canAdmin} onOpenCounterparty={setOpenId} />
-      ) : null}
+      {effectiveTab === "registry" ? <CounterpartyRegistryModule /> : null}
 
-      <CounterpartyCard
-        counterpartyId={openId}
-        canOperate={canOperate}
-        canAdmin={canAdmin}
-        onClose={() => setOpenId(null)}
-      />
-
+      {effectiveTab === "registry" ? null : (
+        <CounterpartyCard
+          counterpartyId={openId}
+          canOperate={canOperate}
+          canAdmin={canAdmin}
+          onClose={() => setOpenId(null)}
+        />
+      )}
     </div>
   );
 }

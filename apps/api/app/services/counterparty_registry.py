@@ -40,8 +40,15 @@ from app.services.banking.requisites import payee_account_error
 COLLECTION_SOURCE_KINDS = frozenset({"iiko", "email", "telegram", "manual"})
 RELATIONSHIP_KINDS = frozenset({"official", "informal", "barter"})
 ARCHIVED_STATUS = "archived"
+ARCHIVED_STATUSES = frozenset({ARCHIVED_STATUS, "inactive"})
 
 OPEN_STATUSES = ("unpaid", "partially_paid")
+OFFICIAL_SUPPLIER_REQUIRED_REQUISITES = {
+    "bankBik": "БИК банка",
+    "inn": "ИНН",
+    "bankAcnt": "расчётный счёт",
+    "recipientCorrAccountNumber": "корреспондентский счёт",
+}
 
 
 class CounterpartyRegistryError(RuntimeError):
@@ -304,9 +311,7 @@ async def _drafts_by_id(
         return {}
     rows = (
         await session.scalars(
-            select(CounterpartyPaymentDraft).where(
-                CounterpartyPaymentDraft.id.in_(set(draft_ids))
-            )
+            select(CounterpartyPaymentDraft).where(CounterpartyPaymentDraft.id.in_(set(draft_ids)))
         )
     ).all()
     return {draft.id: draft for draft in rows}
@@ -389,20 +394,13 @@ async def list_registry(
     include_archived: bool = False,
     kassa_only: bool = False,
 ) -> list[RegistryItem]:
-    supplier_ids = select(CounterpartyRole.counterparty_id).where(
-        CounterpartyRole.role == "supplier"
-    )
-    query = (
-        select(Counterparty, CounterpartyPayableProfile)
-        .join(
-            CounterpartyPayableProfile,
-            CounterpartyPayableProfile.counterparty_id == Counterparty.id,
-            isouter=True,
-        )
-        .where(Counterparty.id.in_(supplier_ids))
+    query = select(Counterparty, CounterpartyPayableProfile).join(
+        CounterpartyPayableProfile,
+        CounterpartyPayableProfile.counterparty_id == Counterparty.id,
+        isouter=True,
     )
     if not include_archived:
-        query = query.where(Counterparty.status != ARCHIVED_STATUS)
+        query = query.where(Counterparty.status.notin_(ARCHIVED_STATUSES))
     if category_id is not None:
         query = query.where(CounterpartyPayableProfile.ledger_category_id == category_id)
     if kassa_only:
@@ -459,9 +457,7 @@ async def list_registry(
         .where(SupplierPrepayment.status.in_(("open", "partially_settled")))
         .group_by(SupplierPrepayment.counterparty_id)
     )
-    prepay_by_cp: dict[uuid.UUID, Decimal] = {
-        cp_id: _money(total) for cp_id, total in prepay_rows
-    }
+    prepay_by_cp: dict[uuid.UUID, Decimal] = {cp_id: _money(total) for cp_id, total in prepay_rows}
 
     def _remaining(cp_id: uuid.UUID, direction: str) -> tuple[int, Decimal]:
         count, total = open_by_dir.get((cp_id, direction), (0, Decimal("0.00")))
@@ -477,7 +473,11 @@ async def list_registry(
                 counterparty_id=counterparty.id,
                 name=counterparty.name,
                 inn=counterparty.inn,
-                status=counterparty.status,
+                status=(
+                    ARCHIVED_STATUS
+                    if counterparty.status in ARCHIVED_STATUSES
+                    else counterparty.status
+                ),
                 relationship=profile.relationship if profile else "official",
                 ledger_category_id=profile.ledger_category_id if profile else None,
                 brand_group=profile.brand_group if profile else None,
@@ -551,7 +551,7 @@ async def get_counterparty_card(
         name=counterparty.name,
         inn=counterparty.inn,
         type=counterparty.type,
-        status=counterparty.status,
+        status=ARCHIVED_STATUS if counterparty.status in ARCHIVED_STATUSES else counterparty.status,
         relationship=profile.relationship if profile else "official",
         barter_balance=barter_balance,
         profile=_profile_dict(profile),
@@ -773,7 +773,7 @@ async def create_manual_invoice(
     counterparty = await session.get(Counterparty, counterparty_id)
     if counterparty is None:
         raise CounterpartyRegistryError("Контрагент не найден")
-    if counterparty.status == ARCHIVED_STATUS:
+    if counterparty.status in ARCHIVED_STATUSES:
         raise CounterpartyRegistryError("Контрагент в архиве — новые накладные недоступны")
     if _money(amount) <= 0:
         raise CounterpartyRegistryError("Сумма должна быть больше нуля")
@@ -899,12 +899,56 @@ async def create_counterparty(
     payment_due_day_of_month: int | None = None,
     manager_name: str | None = None,
     manager_phone: str | None = None,
+    default_dds_article_id: uuid.UUID | None = None,
+    confirm_no_dds_article: bool = False,
+    requisites: dict[str, Any] | None = None,
+    requisites_verified: bool = False,
+    requisites_verified_by_user_id: uuid.UUID | None = None,
     iiko_supplier_guid: str | None = None,
+    role: str = "supplier",
 ) -> Counterparty:
     clean_name = (name or "").strip()
     if not clean_name:
         raise CounterpartyRegistryError("Укажите название контрагента")
-    clean_inn = (inn or "").strip() or None
+    if default_dds_article_id is None and not confirm_no_dds_article:
+        raise CounterpartyRegistryError(
+            "Выберите статью ДДС или явно подтвердите, что у контрагента нет статьи"
+        )
+    if default_dds_article_id is not None and confirm_no_dds_article:
+        raise CounterpartyRegistryError(
+            "Нельзя одновременно выбрать статью ДДС и указать, что статьи нет"
+        )
+    requested_requisites = {
+        str(key): value.strip() if isinstance(value, str) else value
+        for key, value in (requisites or {}).items()
+        if not isinstance(value, str) or value.strip()
+    }
+    # Банковские реквизиты относятся только к официальному каналу оплаты. Для
+    # informal используется выплата на карту ИП/Сейф, для barter — взаимозачёт.
+    accepts_requisites = relationship == "official"
+    clean_requisites = requested_requisites if accepts_requisites else {}
+    requisites_verified = requisites_verified and accepts_requisites
+    clean_inn = None
+    if accepts_requisites:
+        clean_inn = (str(clean_requisites.get("inn") or inn or "")).strip() or None
+        if clean_inn:
+            clean_requisites["inn"] = clean_inn
+        clean_requisites.setdefault("recipientName", clean_name)
+    if relationship == "official" and role == "supplier":
+        missing_requisites = [
+            label
+            for key, label in OFFICIAL_SUPPLIER_REQUIRED_REQUISITES.items()
+            if not str(clean_requisites.get(key) or "").strip()
+        ]
+        if missing_requisites:
+            raise CounterpartyRegistryError(
+                "Заполните обязательные реквизиты официального поставщика: "
+                + ", ".join(missing_requisites)
+            )
+    if requisites_verified:
+        account_error = payee_account_error(clean_requisites)
+        if account_error:
+            raise CounterpartyRegistryError(account_error)
     if clean_inn:
         existing = await session.scalar(select(Counterparty).where(Counterparty.inn == clean_inn))
         if existing is not None:
@@ -926,7 +970,7 @@ async def create_counterparty(
     counterparty = Counterparty(name=clean_name, inn=clean_inn, type=cp_type, status="active")
     session.add(counterparty)
     await session.flush()
-    session.add(CounterpartyRole(counterparty_id=counterparty.id, role="supplier"))
+    session.add(CounterpartyRole(counterparty_id=counterparty.id, role=role))
     session.add(
         CounterpartyPayableProfile(
             counterparty_id=counterparty.id,
@@ -938,6 +982,13 @@ async def create_counterparty(
             payment_due_day_of_month=payment_due_day_of_month,
             manager_name=manager_name,
             manager_phone=manager_phone,
+            default_dds_article_id=default_dds_article_id,
+            requisites=clean_requisites,
+            requisites_verified=requisites_verified,
+            requisites_verified_at=datetime.now(tz=UTC) if requisites_verified else None,
+            requisites_verified_by_user_id=(
+                requisites_verified_by_user_id if requisites_verified else None
+            ),
         )
     )
     if clean_guid:
@@ -956,17 +1007,14 @@ async def create_counterparty(
     return counterparty
 
 
-async def set_counterparty_archived(
-    session: AsyncSession, counterparty_id: uuid.UUID, *, archived: bool
-) -> Counterparty:
-    counterparty = await session.get(Counterparty, counterparty_id)
-    if counterparty is None:
-        raise CounterpartyRegistryError("Контрагент не найден")
+async def _set_counterparty_archive_state(
+    session: AsyncSession, counterparty: Counterparty, *, archived: bool
+) -> None:
     if archived:
         in_draft = await session.scalar(
             select(SupplierInvoice.id)
             .where(
-                SupplierInvoice.counterparty_id == counterparty_id,
+                SupplierInvoice.counterparty_id == counterparty.id,
                 SupplierInvoice.draft_id.isnot(None),
             )
             .limit(1)
@@ -978,9 +1026,98 @@ async def set_counterparty_archived(
         counterparty.status = ARCHIVED_STATUS
     else:
         counterparty.status = "active"
+
+
+async def set_counterparty_archived(
+    session: AsyncSession, counterparty_id: uuid.UUID, *, archived: bool
+) -> Counterparty:
+    counterparty = await session.get(Counterparty, counterparty_id)
+    if counterparty is None:
+        raise CounterpartyRegistryError("Контрагент не найден")
+    await _set_counterparty_archive_state(session, counterparty, archived=archived)
     await session.commit()
     await session.refresh(counterparty)
     return counterparty
+
+
+async def update_counterparty_identity(
+    session: AsyncSession,
+    counterparty_id: uuid.UUID,
+    *,
+    changes: dict[str, Any],
+) -> Counterparty:
+    """Compatibility entry point for legacy clients; owns base-card validation centrally."""
+    counterparty = await session.get(Counterparty, counterparty_id)
+    if counterparty is None:
+        raise CounterpartyRegistryError("Контрагент не найден")
+
+    if "name" in changes:
+        clean_name = str(changes["name"] or "").strip()
+        if not clean_name:
+            raise CounterpartyRegistryError("Укажите название контрагента")
+        counterparty.name = clean_name
+
+    if "inn" in changes:
+        clean_inn = str(changes["inn"] or "").strip() or None
+        if clean_inn:
+            duplicate = await session.scalar(
+                select(Counterparty.id).where(
+                    Counterparty.inn == clean_inn,
+                    Counterparty.id != counterparty_id,
+                )
+            )
+            if duplicate is not None:
+                raise CounterpartyRegistryError("Контрагент с таким ИНН уже существует")
+        counterparty.inn = clean_inn
+
+    if "type" in changes and changes["type"] is not None:
+        counterparty.type = str(changes["type"])
+
+    if "status" in changes and changes["status"] is not None:
+        requested_status = str(changes["status"])
+        if requested_status in {"inactive", ARCHIVED_STATUS}:
+            await _set_counterparty_archive_state(session, counterparty, archived=True)
+        elif requested_status == "active":
+            await _set_counterparty_archive_state(session, counterparty, archived=False)
+        elif requested_status == "requires_setup":
+            counterparty.status = requested_status
+        else:
+            raise CounterpartyRegistryError("Неизвестный статус контрагента")
+
+    await session.commit()
+    await session.refresh(counterparty)
+    return counterparty
+
+
+async def add_counterparty_alias(
+    session: AsyncSession,
+    counterparty_id: uuid.UUID,
+    *,
+    alias: str,
+    source: str | None = None,
+) -> CounterpartyAlias:
+    if await session.get(Counterparty, counterparty_id) is None:
+        raise CounterpartyRegistryError("Контрагент не найден")
+    clean_alias = (alias or "").strip()
+    if not clean_alias:
+        raise CounterpartyRegistryError("Укажите псевдоним контрагента")
+    item = CounterpartyAlias(
+        counterparty_id=counterparty_id,
+        alias=clean_alias,
+        source=source,
+    )
+    session.add(item)
+    await session.commit()
+    await session.refresh(item)
+    return item
+
+
+async def delete_counterparty_alias(session: AsyncSession, alias_id: uuid.UUID) -> None:
+    alias = await session.get(CounterpartyAlias, alias_id)
+    if alias is None:
+        raise CounterpartyRegistryError("Псевдоним контрагента не найден")
+    await session.delete(alias)
+    await session.commit()
 
 
 async def list_needs_setup(session: AsyncSession) -> list[dict[str, Any]]:

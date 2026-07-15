@@ -429,7 +429,7 @@ const routes: AppRoute[] = [
       },
       {
         path: "counterparties",
-        render: ({ navigate }) => <DdsRoute activeTab="counterparties" onNavigate={navigate} />,
+        render: ({ navigate }) => <Redirect to="/warehouse/registry" navigate={navigate} />,
       },
       {
         path: "articles",

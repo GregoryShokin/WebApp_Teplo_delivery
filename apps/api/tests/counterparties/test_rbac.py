@@ -111,6 +111,146 @@ def test_admin_tier_create_category(
     )
 
 
+def test_create_counterparty_saves_all_onboarding_tabs(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    admin = _admin(async_session_factory)
+    suffix = uuid.uuid4().hex[:8]
+    article = client.post(
+        "/api/v1/dds/articles",
+        json={
+            "code": f"onboarding_{suffix}",
+            "name": "Оплата поставщикам",
+            "movement_type": "outflow",
+            "activity_type": "operating",
+        },
+        headers=admin,
+    )
+    assert article.status_code == 201, article.text
+
+    response = client.post(
+        BASE,
+        headers=admin,
+        json={
+            "name": "ООО Три вкладки",
+            "type": "legal_entity",
+            "relationship": "official",
+            "default_dds_article_id": article.json()["id"],
+            "manager_name": "Анна",
+            "manager_phone": "+7 999 123-45-67",
+            "requisites": {
+                "recipientName": "ООО Три вкладки",
+                "inn": "7701234567",
+                "bankAcnt": "40702810200000012345",
+                "bankBik": "044525225",
+                "recipientCorrAccountNumber": "30101810400000000225",
+            },
+            "requisites_verified": True,
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["name"] == "ООО Три вкладки"
+    assert body["inn"] == "7701234567"
+    assert body["profile"]["relationship"] == "official"
+    assert body["profile"]["ledger_category_id"] is None
+    assert body["profile"]["default_dds_article_id"] == article.json()["id"]
+    assert body["profile"]["manager_name"] == "Анна"
+    assert body["profile"]["manager_phone"] == "+7 999 123-45-67"
+    assert body["profile"]["requisites"]["bankAcnt"] == "40702810200000012345"
+    assert "kpp" not in body["profile"]["requisites"]
+    assert body["profile"]["requisites_verified"] is True
+
+
+def test_create_counterparty_requires_article_or_explicit_exception(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    response = client.post(
+        BASE,
+        headers=_admin(async_session_factory),
+        json={"name": "Без решения по статье", "relationship": "informal"},
+    )
+
+    assert response.status_code == 409
+    assert "статью ДДС" in response.json()["detail"]
+
+
+def test_create_official_supplier_requires_complete_bank_requisites(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    response = client.post(
+        BASE,
+        headers=_admin(async_session_factory),
+        json={
+            "name": "ООО Неполные реквизиты",
+            "relationship": "official",
+            "confirm_no_dds_article": True,
+            "requisites": {"inn": "7707654321", "bankBik": "044525225"},
+        },
+    )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert "расчётный счёт" in detail
+    assert "корреспондентский счёт" in detail
+
+
+def test_create_counterparty_rejects_invalid_verified_requisites_atomically(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    admin = _admin(async_session_factory)
+    response = client.post(
+        BASE,
+        headers=admin,
+        json={
+            "name": "ООО Ошибка реквизитов",
+            "inn": "7707654321",
+            "confirm_no_dds_article": True,
+            "requisites": {
+                "inn": "7707654321",
+                "bankAcnt": "40702810826000036193",
+                "bankBik": "044525974",
+                "recipientCorrAccountNumber": "30101810400000000974",
+            },
+            "requisites_verified": True,
+        },
+    )
+
+    assert response.status_code == 409
+    registry = client.get(f"{BASE}/registry", headers=admin)
+    assert registry.status_code == 200
+    assert all(item["inn"] != "7707654321" for item in registry.json())
+
+
+def test_create_informal_counterparty_drops_bank_requisites(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    response = client.post(
+        BASE,
+        headers=_admin(async_session_factory),
+        json={
+            "name": f"Неофициальный {uuid.uuid4().hex[:8]}",
+            "inn": "7707654321",
+            "relationship": "informal",
+            "confirm_no_dds_article": True,
+            "requisites": {
+                "recipientName": "Скрытые реквизиты",
+                "inn": "7707654321",
+                "bankAcnt": "not-a-bank-account",
+            },
+            "requisites_verified": True,
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["inn"] is None
+    assert body["profile"]["relationship"] == "informal"
+    assert body["profile"]["requisites"] == {}
+    assert body["profile"]["requisites_verified"] is False
+
+
 def test_post_draft_without_verified_requisites_returns_409(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -171,9 +311,12 @@ def test_kassa_enabled_filter_and_toggle(
     assert on.json()["profile"]["kassa_enabled"] is True
 
     # Теперь он попадает в kassa_only и помечен флагом.
-    after = {row["counterparty_id"]: row for row in client.get(
-        f"{BASE}/registry", params={"kassa_only": "true"}, headers=admin
-    ).json()}
+    after = {
+        row["counterparty_id"]: row
+        for row in client.get(
+            f"{BASE}/registry", params={"kassa_only": "true"}, headers=admin
+        ).json()
+    }
     assert str(cp_id) in after
     assert after[str(cp_id)]["kassa_enabled"] is True
 

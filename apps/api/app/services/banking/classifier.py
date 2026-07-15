@@ -602,10 +602,9 @@ async def _transaction_counterparty_shares_brand_group(
         )
     )
     for inn, group in rows:
-        if (
-            (group or "").strip().casefold() == candidate_group_norm
-            and clean_digits(inn) == operation_inn
-        ):
+        if (group or "").strip().casefold() == candidate_group_norm and clean_digits(
+            inn
+        ) == operation_inn:
             return True
     return False
 
@@ -733,9 +732,7 @@ async def apply_operation_split(
     splits = [tuple(item) + (None,) * (5 - len(item)) for item in splits]
     total = sum((amount for _article, amount, *_rest in splits), Decimal("0"))
     if total != Decimal(operation.amount):
-        raise ValueError(
-            f"Сумма по статьям ({total}) не равна сумме операции ({operation.amount})"
-        )
+        raise ValueError(f"Сумма по статьям ({total}) не равна сумме операции ({operation.amount})")
     wallet = await _wallet_for_operation(session, operation)
     if wallet is None:
         raise ValueError("Не найден кошелёк для операции")
@@ -782,6 +779,18 @@ async def apply_operation_split(
         except CounterpartyMatchError as error:
             raise ValueError(str(error)) from error
         invoice_by_id[invoice_id] = invoice
+
+    # Накладная и аналитика ДДС обязаны указывать на одного контрагента. Без этой проверки
+    # проводка могла попасть в карточку B, одновременно погасив накладную карточки A.
+    invoice_counterparty_ids = {invoice.counterparty_id for invoice in invoice_by_id.values()}
+    if len(invoice_counterparty_ids) > 1:
+        raise ValueError("В одной операции нельзя гасить накладные разных контрагентов")
+    if invoice_counterparty_ids:
+        invoice_counterparty_id = next(iter(invoice_counterparty_ids))
+        if counterparty_id is None:
+            counterparty_id = invoice_counterparty_id
+        elif counterparty_id != invoice_counterparty_id:
+            raise ValueError("Выбранный контрагент не совпадает с контрагентом накладной")
 
     # Re-split: снять прежние гашения накладных ЭТОЙ операцией (cashflow чистит
     # _clear_operation_cashflow, аллокации — здесь), иначе повторный разбор задвоит гашение.
@@ -879,8 +888,9 @@ async def apply_operation_split(
             )
         # Зарплатная статья + сотрудник → леджер «выплачено» (EmployeePayout), привязанный к этой
         # проводке. Второй проводки НЕ создаём: денежный факт несёт строка выписки (баланс из
-        # выписки). Режим оклада определяет kind: on_demand собственник → 'owner_salary' (гасится
-        # compute_on_demand_debt), обычный сотрудник → 'salary' (гасится apply_employee_payout_offsets).
+        # выписки). Режим оклада определяет kind: on_demand собственник → 'owner_salary'
+        # (гасится compute_on_demand_debt), обычный сотрудник → 'salary'
+        # (гасится apply_employee_payout_offsets).
         if employee_id is not None and article_id in salary_article_ids:
             from app.services.payroll_admin import resolve_employee_payout_kind
 

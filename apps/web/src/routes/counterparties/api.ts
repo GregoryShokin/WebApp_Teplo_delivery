@@ -304,6 +304,24 @@ export async function getRegistry(params?: {
   return response.data;
 }
 
+export type CounterpartyDirectoryItem = {
+  id: string;
+  name: string;
+  inn: string | null;
+  status: string;
+};
+
+/** Один справочник для реестра, фильтров и классификации ДДС. */
+export async function getCounterpartyDirectory(): Promise<CounterpartyDirectoryItem[]> {
+  const items = await getRegistry();
+  return items.map((item) => ({
+    id: item.counterparty_id,
+    name: item.name,
+    inn: item.inn,
+    status: item.status,
+  }));
+}
+
 export async function getNeedsSetup(): Promise<NeedsSetup> {
   const response = await api.get<NeedsSetup>(`${BASE}/needs-setup`);
   return response.data;
@@ -332,12 +350,15 @@ export type CounterpartyCreatePayload = {
   type?: string;
   relationship?: string;
   internal_name?: string | null;
-  ledger_category_id?: string | null;
   brand_group?: string | null;
   payment_delay_days?: number | null;
   payment_due_day_of_month?: number | null;
   manager_name?: string | null;
   manager_phone?: string | null;
+  default_dds_article_id?: string | null;
+  confirm_no_dds_article?: boolean;
+  requisites?: Record<string, string>;
+  requisites_verified?: boolean;
   iiko_supplier_guid?: string | null;
 };
 
@@ -468,10 +489,11 @@ export async function confirmMatch(payload: {
   bank_operation_id: string;
   enrich: boolean;
 }): Promise<{ invoice_id: string; payment_status: string; enriched: boolean }> {
-  const response = await api.post<{ invoice_id: string; payment_status: string; enriched: boolean }>(
-    `${BASE}/match/confirm`,
-    payload,
-  );
+  const response = await api.post<{
+    invoice_id: string;
+    payment_status: string;
+    enriched: boolean;
+  }>(`${BASE}/match/confirm`, payload);
   return response.data;
 }
 

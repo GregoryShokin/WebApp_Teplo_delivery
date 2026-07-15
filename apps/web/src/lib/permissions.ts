@@ -285,7 +285,8 @@ const SECTION_PERMISSIONS: Record<AppSection, readonly PermissionCode[]> = {
   "finance.dds": [...PERMISSION_GROUPS.financeRead, ...PERMISSION_GROUPS.financeWrite],
   "finance.payment-calendar": ["finance.payment_calendar.read", "finance.payment_calendar.edit"],
   "finance.balance": ["finance.balance.read", "finance.balance.edit"],
-  counterparties: ["counterparties.read"],
+  // Старое право ДДС ведёт в тот же справочник «Накладные → Контрагенты».
+  counterparties: ["counterparties.read", "finance.counterparties.read"],
   kassa: [
     "kassa.shifts.read",
     "kassa.cheques.read",

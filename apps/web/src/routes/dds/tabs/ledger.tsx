@@ -17,12 +17,12 @@ import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { usePermissions } from "@/lib/permissions";
 import {
   getDdsArticles,
-  getDdsCounterparties,
   getDdsJournal,
   getDdsWallets,
   type JournalQuery,
   type JournalRow,
 } from "@/lib/api";
+import { getCounterpartyDirectory } from "@/routes/counterparties/api";
 import { OperationClassifyDialog } from "@/routes/dds/OperationClassifyDialog";
 import {
   DdsStatusBadge,
@@ -56,8 +56,8 @@ export function LedgerTab() {
   const walletsQuery = useQuery({ queryKey: ["dds", "wallets"], queryFn: getDdsWallets });
   const articlesQuery = useQuery({ queryKey: ["dds", "articles"], queryFn: getDdsArticles });
   const counterpartiesQuery = useQuery({
-    queryKey: ["dds", "counterparties", "ledger"],
-    queryFn: () => getDdsCounterparties(),
+    queryKey: ["cp", "directory"],
+    queryFn: getCounterpartyDirectory,
   });
 
   const params: JournalQuery = useMemo(
@@ -192,7 +192,6 @@ export function LedgerTab() {
       cell: (row) => <DdsStatusBadge status={row.status} />,
     },
   ];
-
 
   return (
     <div className="space-y-5">

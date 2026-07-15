@@ -21,18 +21,20 @@ import {
   applyCardRefundCase,
   classifyOwnerReviewCase,
   confirmIikoManualCase,
-  createDdsCounterparty,
   dismissOwnerReviewCase,
   getDdsArticles,
-  getDdsCounterparties,
   getDdsOwnerReview,
   retryIikoPaymentCase,
   type ClassifyPayload,
-  type CounterpartyRead,
   type DdsArticleRead,
   type OwnerReviewKind,
   type ReconciliationCaseRead,
 } from "@/lib/api";
+import {
+  createCounterparty,
+  getCounterpartyDirectory,
+  type CounterpartyDirectoryItem,
+} from "@/routes/counterparties/api";
 import {
   DirectionBadge,
   PaginationControls,
@@ -53,8 +55,8 @@ export function OwnerReviewTab({ canClassify }: { canClassify: boolean }) {
   });
   const articlesQuery = useQuery({ queryKey: ["dds", "articles"], queryFn: getDdsArticles });
   const counterpartiesQuery = useQuery({
-    queryKey: ["dds", "counterparties", "owner-review"],
-    queryFn: () => getDdsCounterparties(),
+    queryKey: ["cp", "directory"],
+    queryFn: getCounterpartyDirectory,
   });
 
   return (
@@ -80,9 +82,7 @@ export function OwnerReviewTab({ canClassify }: { canClassify: boolean }) {
             <SelectItem value="payer_wallet_unresolved">
               Не определён банк-счёт плательщика
             </SelectItem>
-            <SelectItem value="iiko_payment_unsettled">
-              Оплата в iiko не проведена
-            </SelectItem>
+            <SelectItem value="iiko_payment_unsettled">Оплата в iiko не проведена</SelectItem>
             <SelectItem value="card_refund_after_cheque">Возврат по проведённому чеку</SelectItem>
             <SelectItem value="cheque_refund_missing">Возврат не пришёл от банка</SelectItem>
           </SelectContent>
@@ -135,7 +135,7 @@ function OwnerReviewCard({
 }: {
   articles: DdsArticleRead[];
   canClassify: boolean;
-  counterparties: CounterpartyRead[];
+  counterparties: CounterpartyDirectoryItem[];
   item: ReconciliationCaseRead;
 }) {
   const queryClient = useQueryClient();
@@ -227,14 +227,17 @@ function OwnerReviewCard({
 
   const createCounterpartyMutation = useMutation({
     mutationFn: () =>
-      createDdsCounterparty({
+      createCounterparty({
         name: newCounterpartyName,
         inn: newCounterpartyInn || null,
         type: "legal_entity",
       }),
     onSuccess: async (counterparty) => {
-      await queryClient.invalidateQueries({ queryKey: ["dds", "counterparties"] });
-      setCounterpartyId(counterparty.id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["cp"] }),
+        queryClient.invalidateQueries({ queryKey: ["dds", "counterparties"] }),
+      ]);
+      setCounterpartyId(counterparty.counterparty_id);
       setIsCreateCounterpartyOpen(false);
       toast.success("Контрагент создан");
     },
@@ -352,8 +355,8 @@ function OwnerReviewCard({
               ) : (
                 <>
                   Ни один чек не ждёт эту сумму — вероятно, кассир не отметил возврат в чеке.
-                  «Учесть возврат» заведёт входящую проводку «Возврат расходов» и закроет кейс
-                  (чеки и iiko не меняются; изъятия в iiko необратимы).
+                  «Учесть возврат» заведёт входящую проводку «Возврат расходов» и закроет кейс (чеки
+                  и iiko не меняются; изъятия в iiko необратимы).
                 </>
               )}
             </div>
@@ -382,9 +385,9 @@ function OwnerReviewCard({
         ) : isRefundMissing ? (
           <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
             Чек <span className="font-medium">{payloadText("cheque_number")}</span> ждёт возврат{" "}
-            {payloadText("expected_refund")} ₽ (позиции исключены при вводе), но банк его не
-            прислал дольше порога. Проверьте у кассира/в банке, действительно ли возврат был;
-            если пометка ошибочна — разберите чек, иначе отложите кейс до прихода денег.
+            {payloadText("expected_refund")} ₽ (позиции исключены при вводе), но банк его не прислал
+            дольше порога. Проверьте у кассира/в банке, действительно ли возврат был; если пометка
+            ошибочна — разберите чек, иначе отложите кейс до прихода денег.
           </div>
         ) : hasOperation ? (
           <>
@@ -508,8 +511,7 @@ function OwnerReviewCard({
             {isCardRefund ? (
               <Button
                 disabled={
-                  isBusy ||
-                  (item.payload?.reason === "ambiguous" && chosenChequeId === "none")
+                  isBusy || (item.payload?.reason === "ambiguous" && chosenChequeId === "none")
                 }
                 onClick={() => applyRefundMutation.mutate()}
               >
