@@ -31,6 +31,7 @@ from app.models import (
     SupplierInvoice,
     Wallet,
 )
+from app.services import supplier_service_periods as service_periods
 from app.services.banking import BankClient, TbankClient
 from app.services.banking.exceptions import BankFetchError
 from app.services.banking.ip_card_requisites import (
@@ -221,6 +222,19 @@ async def create_payment_draft_for_invoices(
     # на Сейф, а контроль «поставщик получил наличные» несёт целевой резерв Сейфа,
     # который заводит paid-переход (см. bank_payment_status.apply_payment_status).
     pays_via_safe = profile is not None and profile.relationship == "informal"
+    if profile is not None and profile.service_period_required:
+        missing_period = [inv for inv in invoices if inv.service_period_status != "ready"]
+        if missing_period:
+            raise CounterpartyPaymentError(
+                "Для контрагента обязателен период оказания услуг — заполните его у каждого счёта"
+            )
+    # Даже для необязательного периода нельзя смешивать в одном банковском документе разные
+    # правила признания: один черновик = один и тот же период (включая «период не указан»).
+    period_keys = {(inv.service_period_start, inv.service_period_end) for inv in invoices}
+    if len(period_keys) > 1:
+        raise CounterpartyPaymentError(
+            "Счета с разными периодами оказания услуг нельзя объединять в один платёж"
+        )
     if not pays_via_safe and (profile is None or not profile.requisites_verified):
         raise RequisitesNotVerifiedError(
             "Реквизиты контрагента не подтверждены — отправка в банк недоступна"
@@ -247,6 +261,7 @@ async def create_payment_draft_for_invoices(
             requisites.setdefault("inn", counterparty.inn)
         purpose = _payment_purpose(counterparty, invoices, _aggregate_vat(invoices))
 
+    period_start, period_end = next(iter(period_keys))
     draft = CounterpartyPaymentDraft(
         id=uuid.uuid4(),
         counterparty_id=counterparty_id,
@@ -254,6 +269,8 @@ async def create_payment_draft_for_invoices(
         amount=total,
         status="created",
         pays_via_safe=pays_via_safe,
+        service_period_start=period_start,
+        service_period_end=period_end,
         created_by_user_id=actor_user_id,
     )
     document_id = f"teplo-cp-{draft.id}"
@@ -296,6 +313,7 @@ async def create_payment_draft_for_invoices(
     await session.flush()
     for inv in invoices:
         inv.draft_id = draft.id
+        await service_periods.sync_invoice_accrual(session, inv)
     await session.commit()
     await session.refresh(draft)
     return draft
@@ -419,6 +437,18 @@ class ExpenseLineInput:
     amount: Decimal
     purpose: str = ""
     counterparty_id: uuid.UUID | None = None
+    service_period_start: date | None = None
+    service_period_end: date | None = None
+
+
+@dataclass(frozen=True)
+class PreparedExpenseLine:
+    article: DdsArticle
+    amount: Decimal
+    purpose: str
+    counterparty_id: uuid.UUID | None
+    service_period_start: date | None
+    service_period_end: date | None
 
 
 async def create_expense_payment_draft(
@@ -460,7 +490,7 @@ async def create_expense_payment_draft(
 
     # Валидируем каждую строку (статья годна для свободного вывода, сумма > 0) и собираем
     # нормализованные (статья, сумма, назначение); пустое назначение → имя статьи.
-    prepared: list[tuple[DdsArticle, Decimal, str, uuid.UUID | None]] = []
+    prepared: list[PreparedExpenseLine] = []
     direct_recipient: tuple[Counterparty, CounterpartyPayableProfile] | None = None
     total = Decimal("0")
     for line in lines:
@@ -487,6 +517,15 @@ async def create_expense_payment_draft(
             )
             if profile is None:
                 raise CounterpartyPaymentError("Платёжный профиль контрагента не найден")
+            try:
+                if profile.service_period_required or (
+                    line.service_period_start is not None or line.service_period_end is not None
+                ):
+                    service_periods.validate_period(
+                        line.service_period_start, line.service_period_end
+                    )
+            except service_periods.ServicePeriodError as exc:
+                raise CounterpartyPaymentError(str(exc)) from exc
             if profile.relationship != "informal":
                 if profile.requisites:
                     if not profile.requisites_verified:
@@ -503,7 +542,16 @@ async def create_expense_payment_draft(
                         "У официального контрагента не указаны реквизиты — "
                         "подтвердите вывод на карту ИП"
                     )
-        prepared.append((article, line_amount, line_purpose, line.counterparty_id))
+        prepared.append(
+            PreparedExpenseLine(
+                article=article,
+                amount=line_amount,
+                purpose=line_purpose,
+                counterparty_id=line.counterparty_id,
+                service_period_start=line.service_period_start,
+                service_period_end=line.service_period_end,
+            )
+        )
         total += line_amount
 
     if total <= 0:
@@ -511,6 +559,15 @@ async def create_expense_payment_draft(
     if direct_recipient is not None and len(prepared) != 1:
         raise CounterpartyPaymentError(
             "Платёж по реквизитам оформляется одной строкой на одного контрагента"
+        )
+    period_keys = {
+        (line.service_period_start, line.service_period_end)
+        for line in prepared
+        if line.counterparty_id is not None
+    }
+    if len(period_keys) > 1:
+        raise CounterpartyPaymentError(
+            "Платежи с разными периодами оказания услуг оформите отдельными черновиками"
         )
 
     settings = get_settings()
@@ -528,6 +585,7 @@ async def create_expense_payment_draft(
         requisites = await _ip_card_requisites(session)
 
     single = len(prepared) == 1
+    draft_period = next(iter(period_keys)) if period_keys else (None, None)
     draft = CounterpartyPaymentDraft(
         id=uuid.uuid4(),
         counterparty_id=direct_recipient[0].id if direct_recipient else None,
@@ -538,17 +596,19 @@ async def create_expense_payment_draft(
         bank_provider=provider,
         # Одиночный платёж дублирует статью/назначение в поля черновика (наглядность и
         # обратная совместимость); транш из нескольких строк несёт разбивку только в строках.
-        target_article_id=prepared[0][0].id if single else None,
-        target_purpose=prepared[0][2] if single else None,
+        target_article_id=prepared[0].article.id if single else None,
+        target_purpose=prepared[0].purpose if single else None,
+        service_period_start=draft_period[0],
+        service_period_end=draft_period[1],
         created_by_user_id=actor_user_id,
     )
     document_id = f"teplo-cp-{draft.id}"
     draft.document_id = document_id[:64]
     # Назначение в банк (лимит платёжки): одиночный — назначение строки, транш — сводка.
     if single:
-        bank_purpose = prepared[0][2][:210]
+        bank_purpose = prepared[0].purpose[:210]
     else:
-        summary = "; ".join(line_purpose for _, _, line_purpose, _ in prepared)
+        summary = "; ".join(line.purpose for line in prepared)
         bank_purpose = f"Транш {len(prepared)} платежей: {summary}"[:210]
 
     try:
@@ -587,17 +647,23 @@ async def create_expense_payment_draft(
     draft.synced_at = datetime.now(tz=UTC)
     session.add(draft)
     await session.flush()  # черновик должен существовать до строк (FK draft_id)
-    for position, (article, line_amount, line_purpose, line_cp_id) in enumerate(prepared):
-        session.add(
-            ExpenseDraftLine(
-                draft_id=draft.id,
-                article_id=article.id,
-                counterparty_id=line_cp_id,
-                amount=line_amount,
-                purpose=line_purpose,
-                position=position,
-            )
+    for position, prepared_line in enumerate(prepared):
+        line = ExpenseDraftLine(
+            draft_id=draft.id,
+            article_id=prepared_line.article.id,
+            counterparty_id=prepared_line.counterparty_id,
+            amount=prepared_line.amount,
+            purpose=prepared_line.purpose,
+            position=position,
+            service_period_start=prepared_line.service_period_start,
+            service_period_end=prepared_line.service_period_end,
+            service_period_source=(
+                "manual" if prepared_line.service_period_start is not None else None
+            ),
         )
+        session.add(line)
+        await session.flush()
+        await service_periods.sync_expense_line_accrual(session, line)
     await session.commit()
     await session.refresh(draft)
     return draft

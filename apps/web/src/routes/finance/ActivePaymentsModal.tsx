@@ -29,6 +29,8 @@ import { api } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { NewPaymentDialog } from "@/routes/dds/NewPaymentDialog";
+import { SendDialog } from "@/routes/payment-page/SendDialog";
+import { getIntake, type PaymentIntake } from "@/routes/payment-page/api";
 import { navigateTo } from "@/router";
 
 import { PayPayrollReserveDialog } from "./PayPayrollReserveDialog";
@@ -107,6 +109,7 @@ export function ActivePaymentsModal({
   const canCreate = permissions.canPerformAction("payments.create");
   const [createOpen, setCreateOpen] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);
+  const [sendIntake, setSendIntake] = useState<PaymentIntake | null>(null);
   const [payRow, setPayRow] = useState<PaymentRow | null>(null);
   const [payrollRow, setPayrollRow] = useState<PaymentRow | null>(null);
   const [search, setSearch] = useState("");
@@ -128,7 +131,7 @@ export function ActivePaymentsModal({
     refetchOnWindowFocus: true,
   });
 
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data?.items]);
   const buckets = data?.buckets ?? [];
   const totalSum = items.reduce((acc, row) => acc + row.amount, 0);
 
@@ -143,10 +146,11 @@ export function ActivePaymentsModal({
     });
   }, [items, bucketFilter, q]);
 
-  async function sendToBank(row: PaymentRow) {
+  async function openSendDialog(row: PaymentRow) {
     setSendingId(row.id);
     try {
       if (row.source === "payroll_draft") {
+        // У зарплатного черновика нет intake и периода услуги — отправляем в банк напрямую.
         const runId = typeof row.extra.run_id === "string" ? row.extra.run_id : null;
         if (!runId) {
           throw new Error("У зарплатного черновика не указан расчёт");
@@ -156,17 +160,16 @@ export function ActivePaymentsModal({
           params: { bank_provider: bankProvider },
         });
         toast.success("Черновик выплаты повторно отправлен в банк");
+        await refetch();
+        await queryClient.invalidateQueries({ queryKey: ["finance-payments"] });
       } else {
-        await api.post(`/payment-page/intakes/${row.ref_id}/send-to-bank`, {});
-        toast.success("Счёт отправлен в банк");
+        setSendIntake(await getIntake(row.ref_id));
       }
-      await refetch();
-      await queryClient.invalidateQueries({ queryKey: ["finance-payments"] });
     } catch (error) {
       const detail =
         (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
         (error instanceof Error ? error.message : null) ??
-        "Не удалось отправить в банк";
+        "Не удалось открыть платёж";
       toast.error(detail);
     } finally {
       setSendingId(null);
@@ -185,7 +188,7 @@ export function ActivePaymentsModal({
           size="sm"
           variant="outline"
           className="h-8"
-          onClick={() => sendToBank(row)}
+          onClick={() => openSendDialog(row)}
           disabled={sendingId === row.id}
         >
           {sendingId === row.id ? (
@@ -391,6 +394,15 @@ export function ActivePaymentsModal({
         }}
         presetArticleCode={null}
       />
+      {sendIntake ? (
+        <SendDialog
+          intake={sendIntake}
+          onClose={() => {
+            setSendIntake(null);
+            void refetchAll();
+          }}
+        />
+      ) : null}
 
       <PayReserveDialog
         row={payRow}

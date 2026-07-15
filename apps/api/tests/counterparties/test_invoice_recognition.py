@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from app.services.invoice_recognition import deterministic_recognize
@@ -136,6 +137,9 @@ def test_starter_invoice_number_without_hash():
     assert rec.invoice_number == "0000-001175"  # формат «Счет <номер> от», без «№»
     assert rec.bank_acnt == "40702810232060001962"
     assert rec.corr_account == "30101810600000000786"
+    assert rec.service_period_start == date(2026, 3, 1)
+    assert rec.service_period_end == date(2026, 3, 31)
+    assert rec.service_period_ambiguous is False
 
 
 def test_starter_upd_is_not_invoice():
@@ -153,6 +157,40 @@ def test_lemma_invoice_with_licensor_wording():
     # р/с и к/с — поставщика, НЕ наши (наш р/с 40802…, к/с …0974 рядом с нашим ИНН).
     assert rec.bank_acnt == "40702810401500157556"
     assert rec.corr_account == "30101810745374525104"  # к/с по БИК 044525104, а не наш …0974
+    assert rec.service_period_start == date(2026, 4, 1)
+    assert rec.service_period_end == date(2026, 4, 30)
+
+
+def test_explicit_service_period_range():
+    rec = deterministic_recognize(
+        IIKO_LICENSE + "\nПериод лицензии: с 01.08.2026 по 31.08.2026"
+    )
+    assert rec.service_period_start == date(2026, 8, 1)
+    assert rec.service_period_end == date(2026, 8, 31)
+    assert rec.service_period_source == "document_range"
+
+
+def test_service_period_can_come_from_email_subject():
+    rec = deterministic_recognize(
+        IIKO_LICENSE,
+        context_text="Лицензия за август 2026 — счёт 040426-2244-лк.pdf",
+    )
+    assert rec.service_period_start == date(2026, 8, 1)
+    assert rec.service_period_end == date(2026, 8, 31)
+    assert rec.service_period_source == "subject_month"
+
+
+def test_multiple_service_periods_require_manual_review():
+    rec = deterministic_recognize(
+        LEMMA_INVOICE + "\nДополнительная услуга за май 2026 г."
+    )
+    assert rec.service_period_ambiguous is True
+    assert rec.service_period_start is None
+    assert rec.service_period_end is None
+    assert rec.service_period_candidates == [
+        (date(2026, 4, 1), date(2026, 4, 30)),
+        (date(2026, 5, 1), date(2026, 5, 31)),
+    ]
 
 
 def test_empty_text_is_unknown():

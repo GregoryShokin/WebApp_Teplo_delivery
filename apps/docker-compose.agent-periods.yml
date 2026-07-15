@@ -1,0 +1,71 @@
+# Изолированный стек агента counterparty-service-periods (слот 2 / «c»): свой проект/порты/БД.
+# Не пересекается с default (5432/8000/5173), agent-b (5442/8010/5183),
+# agent-dds (5462/8030/5203), payments (5472/8040/7153), partial (5482/8050/7163).
+#
+# Запуск (из apps/ в этом worktree):
+#   docker compose -p teplo-periods -f docker-compose.agent-periods.yml up -d postgres
+#   docker compose -p teplo-periods -f docker-compose.agent-periods.yml up -d        # + api/web
+#   docker exec -w /app/apps/api teplo-api-periods alembic upgrade head
+#
+# Превью: web http://localhost:5193, api http://localhost:8020/docs
+services:
+  postgres:
+    image: postgres:16
+    container_name: teplo-postgres-periods
+    environment:
+      POSTGRES_DB: teplo
+      POSTGRES_USER: teplo
+      POSTGRES_PASSWORD: teplo
+    ports:
+      - "5452:5432"
+    volumes:
+      - teplo_pgdata_periods:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teplo -d teplo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    container_name: teplo-api-periods
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
+      TEPLO_TEST_DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo_test_periods
+      TEPLO_ADMIN_EMAIL: admin1@teplo.local
+      TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
+      TEPLO_BANK_CLIENT_MODE: mock
+      JWT_SECRET_KEY: change-me-in-local-env-change-me
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 90
+      BACKEND_CORS_ORIGINS: '["http://localhost:5193","http://127.0.0.1:5193"]'
+    ports:
+      - "8020:8000"
+    volumes:
+      - ./api:/app/apps/api
+      - ../integrations:/app/integrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    container_name: teplo-web-periods
+    environment:
+      VITE_API_BASE_URL: http://localhost:8020
+    ports:
+      - "5193:5173"
+    volumes:
+      - ./web:/app/apps/web
+      - /app/apps/web/node_modules
+    depends_on:
+      - api
+
+volumes:
+  teplo_pgdata_periods:

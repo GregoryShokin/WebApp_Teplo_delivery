@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import logging
 import re
+from calendar import monthrange
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -34,9 +35,32 @@ OWN_INNS = frozenset({"890307589201"})
 OWN_ACCOUNTS = frozenset({"40802810100002438573"})
 
 _RU_MONTHS = {
-    "января": 1, "февраля": 2, "марта": 3, "апреля": 4, "мая": 5, "июня": 6,
-    "июля": 7, "августа": 8, "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12,
+    "январь": 1,
+    "января": 1,
+    "февраль": 2,
+    "февраля": 2,
+    "март": 3,
+    "марта": 3,
+    "апрель": 4,
+    "апреля": 4,
+    "май": 5,
+    "мая": 5,
+    "июнь": 6,
+    "июня": 6,
+    "июль": 7,
+    "июля": 7,
+    "август": 8,
+    "августа": 8,
+    "сентябрь": 9,
+    "сентября": 9,
+    "октябрь": 10,
+    "октября": 10,
+    "ноябрь": 11,
+    "ноября": 11,
+    "декабрь": 12,
+    "декабря": 12,
 }
+_RU_MONTH_PATTERN = "|".join(sorted(_RU_MONTHS, key=len, reverse=True))
 
 # Деньги: «1 234,56» / «1 234.56» / «12 000,00» (тысячные — пробел/неразрывный пробел).
 _MONEY = r"\d[\d   ]*[.,]\d{2}"
@@ -65,6 +89,13 @@ class RecognizedInvoice:
     amount: Decimal | None = None
     invoice_number: str | None = None
     invoice_date: date | None = None
+    service_period_start: date | None = None
+    service_period_end: date | None = None
+    service_period_source: str | None = None
+    service_period_confidence: float | None = None
+    # Несколько различных периодов в одном счёте не угадываем: весь счёт уходит оператору.
+    service_period_ambiguous: bool = False
+    service_period_candidates: list[tuple[date, date]] = field(default_factory=list)
     confidence: float = 0.0
     engine: str = "none"
     raw_text_excerpt: str = ""
@@ -109,6 +140,19 @@ class RecognizedInvoice:
             "amount": str(self.amount) if self.amount is not None else None,
             "invoice_number": self.invoice_number,
             "invoice_date": self.invoice_date.isoformat() if self.invoice_date else None,
+            "service_period_start": (
+                self.service_period_start.isoformat() if self.service_period_start else None
+            ),
+            "service_period_end": (
+                self.service_period_end.isoformat() if self.service_period_end else None
+            ),
+            "service_period_source": self.service_period_source,
+            "service_period_confidence": self.service_period_confidence,
+            "service_period_ambiguous": self.service_period_ambiguous,
+            "service_period_candidates": [
+                {"start": start.isoformat(), "end": end.isoformat()}
+                for start, end in self.service_period_candidates
+            ],
             "confidence": round(self.confidence, 3),
             "engine": self.engine,
             "document_kind": self.document_kind,
@@ -154,6 +198,101 @@ def _parse_date(value: str | None) -> date | None:
         except ValueError:
             return None
     return None
+
+
+def _month_period(year: int, month: int) -> tuple[date, date]:
+    return date(year, month, 1), date(year, month, monthrange(year, month)[1])
+
+
+def _extract_service_periods(text: str) -> list[tuple[date, date, str, float]]:
+    """Извлечь все различные периоды с детерминированным приоритетом.
+
+    Поддерживает явные диапазоны, словесные диапазоны и формулировки «за август 2026» /
+    «за период: апрель 2026». Дата самого счёта без маркера периода не используется.
+    """
+    found: list[tuple[date, date, str, float]] = []
+
+    # [01.08.2026—31.08.2026], 01.08.2026 - 31.08.2026, с 01.08 по 31.08.2026.
+    numeric = re.compile(
+        r"(?:\bс\s+|\[)?(\d{1,2})[.\-/](\d{1,2})(?:[.\-/](\d{2,4}))?\s*"
+        r"(?:—|–|-|по)\s*(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2,4})(?:\])?",
+        re.IGNORECASE,
+    )
+    for match in numeric.finditer(text):
+        d1, m1, y1_raw, d2, m2, y2_raw = match.groups()
+        y2 = int(y2_raw)
+        if y2 < 100:
+            y2 += 2000
+        y1 = int(y1_raw) if y1_raw else y2
+        if y1 < 100:
+            y1 += 2000
+        try:
+            start, end = date(y1, int(m1), int(d1)), date(y2, int(m2), int(d2))
+        except ValueError:
+            continue
+        if end >= start:
+            found.append((start, end, "document_range", 0.99))
+
+    # «с 1 августа 2026 по 31 августа 2026» (год в первой дате может отсутствовать).
+    words = re.compile(
+        rf"\bс\s+(\d{{1,2}})\s+({_RU_MONTH_PATTERN})(?:\s+(\d{{4}}))?\s+"
+        rf"по\s+(\d{{1,2}})\s+({_RU_MONTH_PATTERN})\s+(\d{{4}})",
+        re.IGNORECASE,
+    )
+    for match in words.finditer(text):
+        d1, month1, y1_raw, d2, month2, y2_raw = match.groups()
+        y2 = int(y2_raw)
+        y1 = int(y1_raw) if y1_raw else y2
+        try:
+            start = date(y1, _RU_MONTHS[month1.casefold()], int(d1))
+            end = date(y2, _RU_MONTHS[month2.casefold()], int(d2))
+        except (KeyError, ValueError):
+            continue
+        if end >= start:
+            found.append((start, end, "document_range", 0.98))
+
+    # «вознаграждение … за июнь 2026», «за период: апрель 2026».
+    month_phrase = re.compile(
+        rf"(?:\bза\s+(?:период\s*[:\-]?\s*)?|\bпериод\s*[:\-]\s*)"
+        rf"({_RU_MONTH_PATTERN})\s+(\d{{4}})",
+        re.IGNORECASE,
+    )
+    for match in month_phrase.finditer(text):
+        month_name, year_raw = match.groups()
+        month = _RU_MONTHS.get(month_name.casefold())
+        if month is not None:
+            start, end = _month_period(int(year_raw), month)
+            found.append((start, end, "document_month", 0.94))
+
+    # Дедуп: одна строка может одновременно совпасть с несколькими формулировками.
+    unique: dict[tuple[date, date], tuple[date, date, str, float]] = {}
+    for candidate in found:
+        key = candidate[0], candidate[1]
+        current = unique.get(key)
+        if current is None or candidate[3] > current[3]:
+            unique[key] = candidate
+    return list(unique.values())
+
+
+def _apply_service_period(rec: RecognizedInvoice, text: str, context_text: str | None) -> None:
+    candidates = _extract_service_periods(text)
+    source_prefix = "document"
+    if not candidates and (context_text or "").strip():
+        candidates = _extract_service_periods(context_text or "")
+        source_prefix = "subject"
+    rec.service_period_candidates = [(item[0], item[1]) for item in candidates]
+    if len(candidates) > 1:
+        rec.service_period_ambiguous = True
+        rec.notes.append("обнаружено несколько периодов оказания услуг — требуется ручной разбор")
+        return
+    if len(candidates) == 1:
+        start, end, source, confidence = candidates[0]
+        rec.service_period_start = start
+        rec.service_period_end = end
+        rec.service_period_source = source.replace("document", source_prefix)
+        rec.service_period_confidence = (
+            confidence if source_prefix == "document" else min(confidence, 0.85)
+        )
 
 
 def extract_pdf_text(pdf: bytes) -> str:
@@ -223,19 +362,28 @@ def _pick_recipient(text: str) -> str | None:
 # документ по-разному: iiko — «счёт на оплату», ЛЕММА — «счёт-договор», Стартер печатает
 # «образец заполнения платёжного поручения».
 _INVOICE_MARKERS = (
-    "счет на оплату", "счёт на оплату",
-    "счет-договор", "счёт-договор", "счет договор", "счёт договор",
-    "счет-оферта", "счёт-оферта",
-    "образец заполнения платежного поручения", "образец заполнения платёжного поручения",
+    "счет на оплату",
+    "счёт на оплату",
+    "счет-договор",
+    "счёт-договор",
+    "счет договор",
+    "счёт договор",
+    "счет-оферта",
+    "счёт-оферта",
+    "образец заполнения платежного поручения",
+    "образец заполнения платёжного поручения",
 )
 _PAY_DUE_RE = re.compile(r"(всего|итого|сумма)\s+к\s+оплате", re.IGNORECASE)
 
 # Маркеры закрывающих актов (НЕ счёт на оплату): акт выполненных работ/услуг (Спецавто Юг),
 # акт передачи прав / приёма-передачи (DocsInbox и пр.).
 _ACT_MARKERS = (
-    "о приемке выполненных работ", "о приёмке выполненных работ",
-    "акт сдачи-приемки", "акт сдачи-приёмки",
-    "акт приема-передачи", "акт приёма-передачи",
+    "о приемке выполненных работ",
+    "о приёмке выполненных работ",
+    "акт сдачи-приемки",
+    "акт сдачи-приёмки",
+    "акт приема-передачи",
+    "акт приёма-передачи",
     "акт передачи прав",
 )
 
@@ -350,10 +498,11 @@ def _confidence(rec: RecognizedInvoice) -> float:
     return min(score, 1.0)
 
 
-def deterministic_recognize(text: str) -> RecognizedInvoice:
+def deterministic_recognize(text: str, *, context_text: str | None = None) -> RecognizedInvoice:
     rec = RecognizedInvoice(engine="deterministic", raw_text_excerpt=text[:2000])
     if not text.strip():
         rec.document_kind = "unknown"  # пустой текст (скан) — пусть решает LLM/оператор
+        _apply_service_period(rec, text, context_text)
         return rec
     rec.document_kind = _classify_document(text)
     rec.inn = _pick_inn(text)
@@ -377,6 +526,7 @@ def deterministic_recognize(text: str) -> RecognizedInvoice:
         re.IGNORECASE,
     )
     rec.invoice_date = _parse_date(dm.group(1)) if dm else None
+    _apply_service_period(rec, text, context_text)
     rec.product_hint = _iiko_product(text, rec.invoice_number)
     if rec.product_hint == "courierica":
         rec.notes.append("iiko: Курьерика (ПО курьеров)")
@@ -411,6 +561,14 @@ _LLM_TOOL = {
             "amount": {"type": "string", "description": "Итоговая сумма К ОПЛАТЕ с НДС, число."},
             "invoice_number": {"type": "string"},
             "invoice_date": {"type": "string", "description": "Дата счёта в формате YYYY-MM-DD."},
+            "service_period_start": {
+                "type": "string",
+                "description": "Начало периода оказания услуги, YYYY-MM-DD.",
+            },
+            "service_period_end": {
+                "type": "string",
+                "description": "Окончание периода оказания услуги, YYYY-MM-DD.",
+            },
             "confidence": {"type": "number", "description": "Уверенность 0..1."},
         },
         "required": ["is_invoice", "confidence"],
@@ -420,7 +578,8 @@ _LLM_TOOL = {
 _LLM_PROMPT = (
     "Это документ из почты поставщика. Покупатель — наш ИП «Тепло» (ИП Шокина Е.А., ИНН "
     "890307589201). Если это счёт на оплату / счёт-фактура / УПД — извлеки реквизиты "
-    "ПОЛУЧАТЕЛЯ платежа (поставщика), НЕ покупателя, и итоговую сумму К ОПЛАТЕ с НДС. "
+    "ПОЛУЧАТЕЛЯ платежа (поставщика), НЕ покупателя, итоговую сумму К ОПЛАТЕ с НДС и "
+    "период оказания услуги, только если он явно указан. "
     "Если документ НЕ является счётом/УПД (письмо, акт сверки, договор, реклама) — верни "
     "is_invoice=false и confidence=0. Вызови инструмент record_invoice."
 )
@@ -491,6 +650,22 @@ async def llm_recognize(pdf: bytes, *, settings: Settings) -> RecognizedInvoice 
     rec.amount = _money(str(payload.get("amount"))) if payload.get("amount") is not None else None
     rec.invoice_number = _text("invoice_number")
     rec.invoice_date = _parse_date(_text("invoice_date") or "")
+    start_text = _text("service_period_start")
+    end_text = _text("service_period_end")
+    try:
+        if start_text and end_text:
+            rec.service_period_start = date.fromisoformat(start_text)
+            rec.service_period_end = date.fromisoformat(end_text)
+            if rec.service_period_end >= rec.service_period_start:
+                rec.service_period_source = "llm"
+                rec.service_period_confidence = float(payload.get("confidence") or 0.0)
+                rec.service_period_candidates = [(rec.service_period_start, rec.service_period_end)]
+            else:
+                rec.service_period_start = None
+                rec.service_period_end = None
+    except (TypeError, ValueError):
+        rec.service_period_start = None
+        rec.service_period_end = None
     try:
         rec.confidence = float(payload.get("confidence") or 0.0)
     except (TypeError, ValueError):
@@ -504,18 +679,31 @@ async def llm_recognize(pdf: bytes, *, settings: Settings) -> RecognizedInvoice 
 def _merge(base: RecognizedInvoice, extra: RecognizedInvoice) -> RecognizedInvoice:
     """Дополнить ``base`` недостающими полями из ``extra`` (детерминированное в приоритете)."""
     for attr in (
-        "recipient_name", "inn", "kpp", "bank_acnt",
-        "bank_bik", "corr_account", "amount", "invoice_number", "invoice_date",
+        "recipient_name",
+        "inn",
+        "kpp",
+        "bank_acnt",
+        "bank_bik",
+        "corr_account",
+        "amount",
+        "invoice_number",
+        "invoice_date",
+        "service_period_start",
+        "service_period_end",
+        "service_period_source",
+        "service_period_confidence",
     ):
         if getattr(base, attr) in (None, "") and getattr(extra, attr) not in (None, ""):
             setattr(base, attr, getattr(extra, attr))
     return base
 
 
-async def recognize(pdf: bytes, *, settings: Settings) -> RecognizedInvoice:
+async def recognize(
+    pdf: bytes, *, settings: Settings, context_text: str | None = None
+) -> RecognizedInvoice:
     """Распознать счёт: детерминированный слой, при нехватке — LLM-фолбэк, затем слияние."""
     text = extract_pdf_text(pdf)
-    det = deterministic_recognize(text)
+    det = deterministic_recognize(text, context_text=context_text)
 
     # Закрывающие/сверочные документы (УПД, акт сверки, передаточный акт) опознаются по тексту
     # надёжно — не зовём LLM, чтобы он ошибочно не «спас» не-счёт в счёт на оплату.

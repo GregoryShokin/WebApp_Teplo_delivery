@@ -534,6 +534,9 @@ class NewPaymentArticleCounterpartyRead(BaseModel):
     relationship: Literal["official", "informal", "barter"]
     has_requisites: bool
     requisites_verified: bool
+    service_period_required: bool = False
+    service_period_mode: Literal["automatic", "manual"] = "manual"
+    default_service_period_offset_months: int | None = None
 
 
 class NewPaymentArticleRead(BaseModel):
@@ -612,6 +615,20 @@ class NewPaymentExpenseLineIn(BaseModel):
     purpose: str = Field(default="", max_length=210)
     # Необязательная атрибуция: кому платим (для статей с привязанными контрагентами).
     counterparty_id: uuid.UUID | None = None
+    service_period_start: date | None = None
+    service_period_end: date | None = None
+
+    @model_validator(mode="after")
+    def _complete_service_period(self) -> NewPaymentExpenseLineIn:
+        if (self.service_period_start is None) != (self.service_period_end is None):
+            raise ValueError("Укажите обе даты периода оказания услуги")
+        if (
+            self.service_period_start is not None
+            and self.service_period_end is not None
+            and self.service_period_end < self.service_period_start
+        ):
+            raise ValueError("Окончание периода не может быть раньше начала")
+        return self
 
 
 class NewPaymentExpenseDraftCreate(BaseModel):

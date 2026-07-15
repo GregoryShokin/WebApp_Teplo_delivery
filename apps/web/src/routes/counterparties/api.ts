@@ -18,6 +18,9 @@ export type CounterpartyInvoice = {
   number: string | null;
   invoice_date: string | null;
   due_date: string | null;
+  service_period_start: string | null;
+  service_period_end: string | null;
+  service_period_status: string;
   amount: number;
   vat_total: number;
   vat_breakdown: Record<string, string>;
@@ -80,6 +83,9 @@ export type CounterpartyProfile = {
   manager_name: string | null;
   manager_phone: string | null;
   default_dds_article_id: string | null;
+  service_period_required: boolean;
+  service_period_mode: "automatic" | "manual";
+  default_service_period_offset_months: number | null;
   requisites: Record<string, unknown>;
   requisites_verified: boolean;
   kassa_enabled: boolean;
@@ -357,6 +363,9 @@ export type CounterpartyCreatePayload = {
   manager_phone?: string | null;
   default_dds_article_id?: string | null;
   confirm_no_dds_article?: boolean;
+  service_period_required?: boolean;
+  service_period_mode?: "automatic" | "manual";
+  default_service_period_offset_months?: number | null;
   requisites?: Record<string, string>;
   requisites_verified?: boolean;
   iiko_supplier_guid?: string | null;
@@ -370,6 +379,9 @@ export async function createCounterparty(
 }
 
 export type ProfileUpdatePayload = {
+  name?: string;
+  inn?: string | null;
+  type?: string;
   ledger_category_id?: string | null;
   relationship?: string | null;
   brand_group?: string | null;
@@ -379,6 +391,10 @@ export type ProfileUpdatePayload = {
   manager_name?: string | null;
   manager_phone?: string | null;
   default_dds_article_id?: string | null;
+  allow_without_dds_article?: boolean;
+  service_period_required?: boolean | null;
+  service_period_mode?: "automatic" | "manual" | null;
+  default_service_period_offset_months?: number | null;
   status?: string | null;
 };
 

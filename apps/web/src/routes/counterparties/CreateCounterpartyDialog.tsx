@@ -73,6 +73,9 @@ export function CreateCounterpartyDialog({
   const [relationship, setRelationship] = useState(defaultRelationship);
   const [ddsArticleId, setDdsArticleId] = useState("");
   const [confirmNoDdsArticle, setConfirmNoDdsArticle] = useState(false);
+  const [servicePeriodRequired, setServicePeriodRequired] = useState(false);
+  const [servicePeriodMode, setServicePeriodMode] = useState<"automatic" | "manual">("manual");
+  const [periodOffset, setPeriodOffset] = useState("0");
   const [requisites, setRequisites] = useState<Record<string, string>>(emptyRequisites);
   const [requisitesVerified, setRequisitesVerified] = useState(false);
   const [managerName, setManagerName] = useState("");
@@ -87,6 +90,9 @@ export function CreateCounterpartyDialog({
     setRelationship(defaultRelationship);
     setDdsArticleId("");
     setConfirmNoDdsArticle(false);
+    setServicePeriodRequired(false);
+    setServicePeriodMode("manual");
+    setPeriodOffset("0");
     setRequisites(emptyRequisites());
     setRequisitesVerified(false);
     setManagerName("");
@@ -159,6 +165,9 @@ export function CreateCounterpartyDialog({
         relationship,
         default_dds_article_id: ddsArticleId || null,
         confirm_no_dds_article: confirmNoDdsArticle,
+        service_period_required: servicePeriodRequired,
+        service_period_mode: servicePeriodMode,
+        default_service_period_offset_months: servicePeriodRequired ? Number(periodOffset) : null,
         requisites: cleanRequisites,
         requisites_verified: isOfficial && requisitesVerified,
         manager_name: managerName.trim() || null,
@@ -274,6 +283,51 @@ export function CreateCounterpartyDialog({
                 случайно нельзя.
               </p>
             </Field>
+
+            <div className="grid gap-3 rounded-md border p-4">
+              <label className="flex items-start gap-3">
+                <Switch
+                  checked={servicePeriodRequired}
+                  onCheckedChange={setServicePeriodRequired}
+                />
+                <span>
+                  <span className="block text-sm font-medium">Требовать период оказания услуг</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Без периода счёт или ручной платёж нельзя отправить в банк.
+                  </span>
+                </span>
+              </label>
+              {servicePeriodRequired ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Как определять период">
+                    <Select
+                      value={servicePeriodMode}
+                      onValueChange={(value) => setServicePeriodMode(value as "automatic" | "manual")}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="automatic">Автоматически из счёта / ЭДО</SelectItem>
+                        <SelectItem value="manual">Указывать вручную</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="Период по умолчанию">
+                    <Select value={periodOffset} onValueChange={setPeriodOffset}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="-1">Предыдущий месяц</SelectItem>
+                        <SelectItem value="0">Месяц платежа</SelectItem>
+                        <SelectItem value="1">Следующий месяц</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </div>
+              ) : null}
+            </div>
           </TabsContent>
 
           <TabsContent value="requisites" className="space-y-4 pt-2">

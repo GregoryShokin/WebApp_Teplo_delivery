@@ -233,6 +233,9 @@ async def _counterparties_by_article(
             CounterpartyPayableProfile.relationship,
             CounterpartyPayableProfile.requisites,
             CounterpartyPayableProfile.requisites_verified,
+            CounterpartyPayableProfile.service_period_required,
+            CounterpartyPayableProfile.service_period_mode,
+            CounterpartyPayableProfile.default_service_period_offset_months,
         )
         .join(Counterparty, Counterparty.id == CounterpartyPayableProfile.counterparty_id)
         .where(
@@ -242,7 +245,18 @@ async def _counterparties_by_article(
         .order_by(Counterparty.name)
     )
     by_article: dict[Any, list[dict[str, Any]]] = {}
-    for article_id, cp_id, name, inn, relationship, requisites, requisites_verified in rows:
+    for (
+        article_id,
+        cp_id,
+        name,
+        inn,
+        relationship,
+        requisites,
+        requisites_verified,
+        service_period_required,
+        service_period_mode,
+        default_service_period_offset_months,
+    ) in rows:
         by_article.setdefault(article_id, []).append(
             {
                 "counterparty_id": cp_id,
@@ -251,6 +265,9 @@ async def _counterparties_by_article(
                 "relationship": relationship,
                 "has_requisites": bool(requisites),
                 "requisites_verified": bool(requisites_verified),
+                "service_period_required": bool(service_period_required),
+                "service_period_mode": service_period_mode or "manual",
+                "default_service_period_offset_months": default_service_period_offset_months,
             }
         )
     return by_article

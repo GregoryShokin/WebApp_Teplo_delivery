@@ -24,6 +24,7 @@ import { PayrollRunDetailRoute } from "@/routes/payroll/run-detail";
 import { ScheduleRoute } from "@/routes/schedule";
 import { SettingsRoute } from "@/routes/settings";
 import { StaffRoute } from "@/routes/staff";
+import { DzKzRoute } from "@/routes/accounting/dz-kz";
 
 type Navigate = (path: string) => void;
 
@@ -472,7 +473,7 @@ const routes: AppRoute[] = [
   },
   {
     path: "/dz-kz",
-    render: () => <EmptyModule name="Учёт ДЗ/КЗ" />,
+    render: () => <DzKzRoute />,
   },
   {
     path: "/settings",

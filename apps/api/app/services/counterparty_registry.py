@@ -118,6 +118,9 @@ class InvoiceItem:
     number: str | None
     invoice_date: date | None
     due_date: date | None
+    service_period_start: date | None
+    service_period_end: date | None
+    service_period_status: str
     amount: Decimal
     vat_total: Decimal
     vat_breakdown: dict[str, Any]
@@ -336,6 +339,9 @@ def _build_invoice_item(
         number=invoice.number,
         invoice_date=invoice.invoice_date,
         due_date=invoice.due_date,
+        service_period_start=invoice.service_period_start,
+        service_period_end=invoice.service_period_end,
+        service_period_status=invoice.service_period_status,
         amount=amount,
         vat_total=_money(invoice.vat_total),
         vat_breakdown=invoice.vat_breakdown or {},
@@ -592,6 +598,9 @@ def _profile_dict(profile: CounterpartyPayableProfile | None) -> dict[str, Any] 
         "internal_name": profile.internal_name,
         "payment_delay_days": profile.payment_delay_days,
         "payment_due_day_of_month": profile.payment_due_day_of_month,
+        "service_period_required": profile.service_period_required,
+        "service_period_mode": profile.service_period_mode,
+        "default_service_period_offset_months": profile.default_service_period_offset_months,
         "manager_name": profile.manager_name,
         "manager_phone": profile.manager_phone,
         "default_dds_article_id": profile.default_dds_article_id,
@@ -620,45 +629,93 @@ async def _get_or_create_profile(
     return profile
 
 
+_UNSET = object()
+
+
 async def update_profile(
     session: AsyncSession,
     counterparty_id: uuid.UUID,
     *,
-    ledger_category_id: uuid.UUID | None = None,
-    relationship: str | None = None,
-    brand_group: str | None = None,
-    internal_name: str | None = None,
-    payment_delay_days: int | None = None,
-    payment_due_day_of_month: int | None = None,
-    manager_name: str | None = None,
-    manager_phone: str | None = None,
-    default_dds_article_id: uuid.UUID | None = None,
-    status: str | None = None,
+    name: str | object = _UNSET,
+    inn: str | None | object = _UNSET,
+    cp_type: str | object = _UNSET,
+    ledger_category_id: uuid.UUID | None | object = _UNSET,
+    relationship: str | None | object = _UNSET,
+    brand_group: str | None | object = _UNSET,
+    internal_name: str | None | object = _UNSET,
+    payment_delay_days: int | None | object = _UNSET,
+    payment_due_day_of_month: int | None | object = _UNSET,
+    manager_name: str | None | object = _UNSET,
+    manager_phone: str | None | object = _UNSET,
+    default_dds_article_id: uuid.UUID | None | object = _UNSET,
+    service_period_required: bool | None | object = _UNSET,
+    service_period_mode: str | None | object = _UNSET,
+    default_service_period_offset_months: int | None | object = _UNSET,
+    status: str | None | object = _UNSET,
 ) -> CounterpartyPayableProfile:
     counterparty = await session.get(Counterparty, counterparty_id)
     if counterparty is None:
         raise CounterpartyRegistryError("Контрагент не найден")
-    if relationship is not None and relationship not in RELATIONSHIP_KINDS:
+    if (
+        relationship is not _UNSET
+        and relationship is not None
+        and relationship not in RELATIONSHIP_KINDS
+    ):
         raise CounterpartyRegistryError("Неизвестный тип контрагента")
+    if name is not _UNSET:
+        clean_name = str(name or "").strip()
+        if not clean_name:
+            raise CounterpartyRegistryError("Укажите название контрагента")
+        counterparty.name = clean_name
+    if inn is not _UNSET:
+        clean_inn = str(inn or "").strip() or None
+        if clean_inn and clean_inn != counterparty.inn:
+            duplicate = await session.scalar(
+                select(Counterparty.id).where(
+                    Counterparty.inn == clean_inn,
+                    Counterparty.id != counterparty_id,
+                )
+            )
+            if duplicate is not None:
+                raise CounterpartyRegistryError("Контрагент с таким ИНН уже существует")
+        counterparty.inn = clean_inn
+    if cp_type is not _UNSET:
+        counterparty.type = str(cp_type)
     profile = await _get_or_create_profile(session, counterparty_id)
-    profile.ledger_category_id = ledger_category_id
-    if relationship is not None:
+    if ledger_category_id is not _UNSET:
+        profile.ledger_category_id = ledger_category_id
+    if relationship is not _UNSET and relationship is not None:
         # Явная смена типа в карточке закрепляет выбор: iiko-синхронизация больше не перебьёт
         # его обратно в barter (см. _mark_relationship_barter). Сохранение без изменения типа
         # (правили другие поля) замок не ставит — чтобы случайно не «залочить» авто-barter.
         if relationship != profile.relationship:
             profile.relationship_manual = True
         profile.relationship = relationship
-    profile.brand_group = brand_group
-    profile.internal_name = internal_name
-    profile.payment_delay_days = payment_delay_days
-    profile.payment_due_day_of_month = payment_due_day_of_month
-    profile.manager_name = manager_name
-    profile.manager_phone = manager_phone
+    if brand_group is not _UNSET:
+        profile.brand_group = brand_group
+    if internal_name is not _UNSET:
+        profile.internal_name = internal_name
+    if payment_delay_days is not _UNSET:
+        profile.payment_delay_days = payment_delay_days
+    if payment_due_day_of_month is not _UNSET:
+        profile.payment_due_day_of_month = payment_due_day_of_month
+    if manager_name is not _UNSET:
+        profile.manager_name = manager_name
+    if manager_phone is not _UNSET:
+        profile.manager_phone = manager_phone
     # Статья ДДС по умолчанию для оплат этого контрагента (та же колонка, что
     # закрепляет чекбокс «Закрепить за контрагентом» в окне оплаты «Страницы на оплату»).
-    profile.default_dds_article_id = default_dds_article_id
-    if status:
+    if default_dds_article_id is not _UNSET:
+        profile.default_dds_article_id = default_dds_article_id
+    if service_period_required is not _UNSET and service_period_required is not None:
+        profile.service_period_required = service_period_required
+    if service_period_mode is not _UNSET and service_period_mode is not None:
+        if service_period_mode not in ("automatic", "manual"):
+            raise CounterpartyRegistryError("Неизвестный способ заполнения периода услуг")
+        profile.service_period_mode = service_period_mode
+    if default_service_period_offset_months is not _UNSET:
+        profile.default_service_period_offset_months = default_service_period_offset_months
+    if status is not _UNSET and status:
         profile.status = status
     await session.commit()
     await session.refresh(profile)
@@ -691,13 +748,38 @@ async def set_requisites(
     if counterparty is None:
         raise CounterpartyRegistryError("Контрагент не найден")
     new_requisites = dict(requisites or {})
+    profile = await _get_or_create_profile(session, counterparty_id)
+    if profile.relationship == "official":
+        required = {
+            "recipientName": new_requisites.get("recipientName"),
+            "inn": new_requisites.get("inn"),
+            "bankAcnt": new_requisites.get("bankAcnt"),
+            "bankBik": new_requisites.get("bankBik"),
+            "recipientCorrAccountNumber": new_requisites.get("recipientCorrAccountNumber"),
+        }
+        if any(not str(value or "").strip() for value in required.values()):
+            raise CounterpartyRegistryError(
+                "Для официального контрагента обязательны название, ИНН, БИК, "
+                "расчётный и корреспондентский счета"
+            )
+        clean_inn = str(required["inn"]).strip()
+        if clean_inn != counterparty.inn:
+            duplicate = await session.scalar(
+                select(Counterparty.id).where(
+                    Counterparty.inn == clean_inn,
+                    Counterparty.id != counterparty_id,
+                )
+            )
+            if duplicate is not None:
+                raise CounterpartyRegistryError("Контрагент с таким ИНН уже существует")
+        counterparty.name = str(required["recipientName"]).strip()
+        counterparty.inn = clean_inn
     # Подтверждение реквизитов — не голая отметка: битый контрольный разряд счёта банк
     # всё равно отклонит (422), поэтому не даём пометить такие реквизиты «подтверждёнными».
     if verified:
         account_error = payee_account_error(new_requisites)
         if account_error:
             raise CounterpartyRegistryError(account_error)
-    profile = await _get_or_create_profile(session, counterparty_id)
     profile.requisites = new_requisites
     profile.requisites_verified = verified
     if verified:
@@ -901,6 +983,9 @@ async def create_counterparty(
     manager_phone: str | None = None,
     default_dds_article_id: uuid.UUID | None = None,
     confirm_no_dds_article: bool = False,
+    service_period_required: bool = False,
+    service_period_mode: str = "manual",
+    default_service_period_offset_months: int | None = None,
     requisites: dict[str, Any] | None = None,
     requisites_verified: bool = False,
     requisites_verified_by_user_id: uuid.UUID | None = None,
@@ -953,6 +1038,11 @@ async def create_counterparty(
         existing = await session.scalar(select(Counterparty).where(Counterparty.inn == clean_inn))
         if existing is not None:
             raise CounterpartyRegistryError("Контрагент с таким ИНН уже существует")
+    clean_requisites = dict(requisites or {})
+    if requisites_verified:
+        account_error = payee_account_error(clean_requisites)
+        if account_error:
+            raise CounterpartyRegistryError(account_error)
     # Onboarding a supplier straight from the iiko directory: bind its GUID as an alias so the
     # reverse invoice-sync recognises this counterparty instead of auto-creating a duplicate
     # (a prepayment-only supplier has no posted invoice yet, hence no auto-create). Guard against
@@ -983,6 +1073,9 @@ async def create_counterparty(
             manager_name=manager_name,
             manager_phone=manager_phone,
             default_dds_article_id=default_dds_article_id,
+            service_period_required=service_period_required,
+            service_period_mode=service_period_mode,
+            default_service_period_offset_months=default_service_period_offset_months,
             requisites=clean_requisites,
             requisites_verified=requisites_verified,
             requisites_verified_at=datetime.now(tz=UTC) if requisites_verified else None,

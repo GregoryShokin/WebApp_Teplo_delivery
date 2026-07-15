@@ -132,6 +132,9 @@ class InvoiceRead(BaseModel):
     number: str | None
     invoice_date: date | None
     due_date: date | None
+    service_period_start: date | None
+    service_period_end: date | None
+    service_period_status: str
     amount: float
     vat_total: float
     vat_breakdown: dict[str, Any]
@@ -227,6 +230,9 @@ class DraftCreate(BaseModel):
 class ProfileUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    inn: str | None = Field(default=None, max_length=12)
+    type: str | None = Field(default=None, max_length=32)
     ledger_category_id: uuid.UUID | None = None
     relationship: str | None = None
     brand_group: str | None = Field(default=None, max_length=160)
@@ -236,6 +242,10 @@ class ProfileUpdate(BaseModel):
     manager_name: str | None = Field(default=None, max_length=160)
     manager_phone: str | None = Field(default=None, max_length=64)
     default_dds_article_id: uuid.UUID | None = None
+    allow_without_dds_article: bool = False
+    service_period_required: bool | None = None
+    service_period_mode: Literal["automatic", "manual"] | None = None
+    default_service_period_offset_months: int | None = Field(default=None, ge=-12, le=12)
     status: str | None = None
 
 
@@ -351,7 +361,11 @@ class CounterpartyCreate(BaseModel):
     manager_name: str | None = Field(default=None, max_length=160)
     manager_phone: str | None = Field(default=None, max_length=64)
     default_dds_article_id: uuid.UUID | None = None
+    # Статья обязательна; отсутствие — только через явный переключатель в форме.
     confirm_no_dds_article: bool = False
+    service_period_required: bool = False
+    service_period_mode: Literal["automatic", "manual"] = "manual"
+    default_service_period_offset_months: int | None = Field(default=None, ge=-12, le=12)
     requisites: dict[str, Any] = Field(default_factory=dict)
     requisites_verified: bool = False
     # Привязка к поставщику из справочника iiko (GUID) — заводит alias source='iiko', чтобы
@@ -839,6 +853,30 @@ async def post_counterparty(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> CardRead:
+    if payload.default_dds_article_id is None and not payload.allow_without_dds_article:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=("Укажите статью ДДС или явно включите «У контрагента нет статьи»"),
+        )
+    requisites = dict(payload.requisites or {})
+    if payload.relationship == "official":
+        required = {
+            "recipientName": payload.name,
+            "inn": payload.inn,
+            "bankAcnt": requisites.get("bankAcnt"),
+            "bankBik": requisites.get("bankBik"),
+            "recipientCorrAccountNumber": requisites.get("recipientCorrAccountNumber"),
+        }
+        missing = [key for key, value in required.items() if not str(value or "").strip()]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Для официального контрагента обязательны название, ИНН, БИК, "
+                    "расчётный и корреспондентский счета"
+                ),
+            )
+        requisites.update({key: str(value).strip() for key, value in required.items()})
     try:
         counterparty = await registry.create_counterparty(
             session,
@@ -855,6 +893,9 @@ async def post_counterparty(
             manager_phone=payload.manager_phone,
             default_dds_article_id=payload.default_dds_article_id,
             confirm_no_dds_article=payload.confirm_no_dds_article,
+            service_period_required=payload.service_period_required,
+            service_period_mode=payload.service_period_mode,
+            default_service_period_offset_months=payload.default_service_period_offset_months,
             requisites=payload.requisites,
             requisites_verified=payload.requisites_verified,
             requisites_verified_by_user_id=actor.user_id,
@@ -884,21 +925,21 @@ async def put_profile(
     payload: ProfileUpdate,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> CardRead:
-    try:
-        await registry.update_profile(
-            session,
-            counterparty_id,
-            ledger_category_id=payload.ledger_category_id,
-            relationship=payload.relationship,
-            brand_group=payload.brand_group,
-            internal_name=payload.internal_name,
-            payment_delay_days=payload.payment_delay_days,
-            payment_due_day_of_month=payload.payment_due_day_of_month,
-            manager_name=payload.manager_name,
-            manager_phone=payload.manager_phone,
-            default_dds_article_id=payload.default_dds_article_id,
-            status=payload.status,
+    values = payload.model_dump(exclude_unset=True)
+    allow_without_article = bool(values.pop("allow_without_dds_article", False))
+    if (
+        "default_dds_article_id" in values
+        and values["default_dds_article_id"] is None
+        and not allow_without_article
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Укажите статью ДДС или явно включите «У контрагента нет статьи»",
         )
+    if "type" in values:
+        values["cp_type"] = values.pop("type")
+    try:
+        await registry.update_profile(session, counterparty_id, **values)
     except registry.CounterpartyRegistryError as exc:
         raise _conflict(exc) from exc
     card = await registry.get_counterparty_card(session, counterparty_id)

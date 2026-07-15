@@ -235,6 +235,7 @@ export const PERMISSION_GROUPS = {
   accountingWrite: [
     "accounting.fixed_assets.edit",
     "accounting.suppliers.edit",
+    "accounting.service_periods.correct_recognized",
     "accounting.periods.close",
   ],
   settingsRead: [

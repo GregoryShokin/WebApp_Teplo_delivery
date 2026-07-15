@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.payroll_config import router as payroll_config_router
 from app.api.v1.routes.access_control import router as access_control_router
+from app.api.v1.routes.accounting_suppliers import router as accounting_suppliers_router
 from app.api.v1.routes.accumulation_fund import router as accumulation_fund_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.counterparties import router as counterparties_router
@@ -29,12 +30,13 @@ from app.api.v1.routes.webhooks import router as webhooks_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
+api_router.include_router(
+    accounting_suppliers_router, prefix="/accounting/suppliers", tags=["accounting-suppliers"]
+)
 api_router.include_router(access_control_router, prefix="/access-control", tags=["access-control"])
 api_router.include_router(health_router, tags=["health"])
 api_router.include_router(couriers_router, prefix="/couriers", tags=["couriers"])
-api_router.include_router(
-    counterparties_router, prefix="/counterparties", tags=["counterparties"]
-)
+api_router.include_router(counterparties_router, prefix="/counterparties", tags=["counterparties"])
 api_router.include_router(deposits_router, prefix="/deposits", tags=["deposits"])
 api_router.include_router(dds_router, prefix="/dds", tags=["dds"])
 api_router.include_router(employees_router, prefix="/employees", tags=["employees"])
@@ -57,4 +59,6 @@ api_router.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"]
 api_router.include_router(warehouse_router, prefix="/warehouse", tags=["warehouse"])
 api_router.include_router(kassa_router, prefix="/kassa", tags=["kassa"])
 api_router.include_router(payment_page_router, prefix="/payment-page", tags=["payment-page"])
-api_router.include_router(finance_payments_router, prefix="/finance/payments", tags=["finance-payments"])
+api_router.include_router(
+    finance_payments_router, prefix="/finance/payments", tags=["finance-payments"]
+)

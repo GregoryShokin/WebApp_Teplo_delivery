@@ -334,6 +334,11 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ("accounting.fixed_assets.edit", "Учёт", "Редактировать основные средства"),
     ("accounting.suppliers.read", "Учёт", "Смотреть взаиморасчёты с поставщиками"),
     ("accounting.suppliers.edit", "Учёт", "Редактировать взаиморасчёты с поставщиками"),
+    (
+        "accounting.service_periods.correct_recognized",
+        "Учёт",
+        "Переносить период уже признанного расхода поставщика",
+    ),
     ("accounting.periods.close", "Учёт", "Закрывать учётный период"),
     ("counterparties.read", "Контрагенты", "Смотреть контрагентов и счета к оплате"),
     (

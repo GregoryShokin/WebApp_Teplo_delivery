@@ -22,6 +22,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
 import { apiErrorMessage, getDdsArticles } from "@/lib/api";
 import { InvoiceDetailDialog } from "@/routes/warehouse/InvoiceDetailDialog";
@@ -34,7 +35,6 @@ import {
   deleteCollectionSource,
   deleteRoutingRule,
   getCounterpartyCard,
-  getLedgerCategories,
   getRegistry,
   getRequisitesSuggestion,
   setKassaEnabled,
@@ -112,8 +112,22 @@ function CardBody({
         ) : null}
       </div>
       {card.relationship === "barter" ? <BarterBalanceBanner card={card} /> : null}
-      <ProfileSection card={card} canAdmin={canAdmin} />
-      <RequisitesSection card={card} canAdmin={canAdmin} />
+      <Tabs defaultValue="general">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="general">Общая информация</TabsTrigger>
+          <TabsTrigger value="requisites">Реквизиты</TabsTrigger>
+          <TabsTrigger value="manager">Данные менеджера</TabsTrigger>
+        </TabsList>
+        <TabsContent value="general" className="mt-5">
+          <ProfileSection card={card} canAdmin={canAdmin} />
+        </TabsContent>
+        <TabsContent value="requisites" className="mt-5">
+          <RequisitesSection card={card} canAdmin={canAdmin} />
+        </TabsContent>
+        <TabsContent value="manager" className="mt-5">
+          <ManagerSection card={card} canAdmin={canAdmin} />
+        </TabsContent>
+      </Tabs>
       <CollectionSourcesSection card={card} canAdmin={canAdmin} />
       {card.aliases.some((alias) => alias.source === "iiko") ? (
         <RoutingSection card={card} canAdmin={canAdmin} />
@@ -139,48 +153,44 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean }) {
   const queryClient = useQueryClient();
-  const categoriesQuery = useQuery({
-    queryKey: ["cp", "categories"],
-    queryFn: getLedgerCategories,
-  });
   const articlesQuery = useQuery({ queryKey: ["dds", "articles"], queryFn: getDdsArticles });
   const profile = card.profile;
   const [relationship, setRelationship] = useState("official");
-  const [internalName, setInternalName] = useState("");
-  const [brandGroup, setBrandGroup] = useState("");
-  const [categoryId, setCategoryId] = useState("");
+  const [name, setName] = useState("");
+  const [type, setType] = useState("legal_entity");
   const [ddsArticleId, setDdsArticleId] = useState("");
-  const [delayDays, setDelayDays] = useState("");
-  const [dueDay, setDueDay] = useState("");
-  const [managerName, setManagerName] = useState("");
-  const [managerPhone, setManagerPhone] = useState("");
+  const [allowWithoutArticle, setAllowWithoutArticle] = useState(false);
+  const [servicePeriodRequired, setServicePeriodRequired] = useState(false);
+  const [servicePeriodMode, setServicePeriodMode] = useState<"automatic" | "manual">("manual");
+  const [periodOffset, setPeriodOffset] = useState("0");
 
   useEffect(() => {
     setRelationship(profile?.relationship ?? "official");
-    setInternalName(profile?.internal_name ?? "");
-    setBrandGroup(profile?.brand_group ?? "");
-    setCategoryId(profile?.ledger_category_id ?? "");
+    setName(card.name);
+    setType(card.type);
     setDdsArticleId(profile?.default_dds_article_id ?? "");
-    setDelayDays(profile?.payment_delay_days != null ? String(profile.payment_delay_days) : "");
-    setDueDay(
-      profile?.payment_due_day_of_month != null ? String(profile.payment_due_day_of_month) : "",
+    setAllowWithoutArticle(false);
+    setServicePeriodRequired(profile?.service_period_required ?? false);
+    setServicePeriodMode(profile?.service_period_mode ?? "manual");
+    setPeriodOffset(
+      profile?.default_service_period_offset_months != null
+        ? String(profile.default_service_period_offset_months)
+        : "0",
     );
-    setManagerName(profile?.manager_name ?? "");
-    setManagerPhone(profile?.manager_phone ?? "");
-  }, [profile, card.counterparty_id]);
+  }, [profile, card.counterparty_id, card.name, card.type]);
 
   const saveMutation = useMutation({
     mutationFn: () =>
       updateProfile(card.counterparty_id, {
+        name: relationship === "official" ? undefined : name.trim(),
+        inn: relationship === "official" ? undefined : null,
+        type,
         relationship,
-        internal_name: internalName || null,
-        brand_group: brandGroup || null,
-        ledger_category_id: categoryId || null,
         default_dds_article_id: ddsArticleId || null,
-        payment_delay_days: delayDays ? Number(delayDays) : null,
-        payment_due_day_of_month: dueDay ? Number(dueDay) : null,
-        manager_name: managerName || null,
-        manager_phone: managerPhone || null,
+        allow_without_dds_article: allowWithoutArticle,
+        service_period_required: servicePeriodRequired,
+        service_period_mode: servicePeriodMode,
+        default_service_period_offset_months: servicePeriodRequired ? Number(periodOffset) : null,
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["cp"] });
@@ -190,10 +200,22 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
   });
 
   const disabled = !canAdmin;
+  const canSave = Boolean(
+    (relationship === "official" || name.trim()) && (ddsArticleId || allowWithoutArticle),
+  );
 
   return (
-    <Section title="Исходные данные">
+    <Section title="Общая информация">
       <div className="grid gap-4 sm:grid-cols-2">
+        {relationship !== "official" ? (
+          <Field label="Название контрагента">
+            <Input
+              disabled={disabled}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+        ) : null}
         <Field label="Тип отношений">
           <Select disabled={disabled} value={relationship} onValueChange={setRelationship}>
             <SelectTrigger>
@@ -214,29 +236,15 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
             </p>
           ) : null}
         </Field>
-        <Field label="Внутреннее имя (рудимент)">
-          <Input
-            disabled={disabled}
-            value={internalName}
-            onChange={(event) => setInternalName(event.target.value)}
-          />
-        </Field>
-        <Field label="Группа-бренд">
-          <Input
-            disabled={disabled}
-            value={brandGroup}
-            onChange={(event) => setBrandGroup(event.target.value)}
-          />
-        </Field>
-        <Field label="Категория (леджер)">
-          <Select disabled={disabled} value={categoryId} onValueChange={setCategoryId}>
+        <Field label="Тип контрагента">
+          <Select disabled={disabled} value={type} onValueChange={setType}>
             <SelectTrigger>
-              <SelectValue placeholder="Не выбрана" />
+              <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {(categoriesQuery.data ?? []).map((category) => (
-                <SelectItem key={category.id} value={category.id}>
-                  {category.name}
+              {Object.entries(COUNTERPARTY_TYPE_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -247,51 +255,128 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
             articles={articlesQuery.data ?? []}
             value={ddsArticleId}
             onChange={setDdsArticleId}
-            disabled={disabled}
+            disabled={disabled || allowWithoutArticle}
             placeholder="Не выбрана"
           />
           <p className="text-xs text-muted-foreground">
             Подставляется в окно «В банк» при оплате счетов этого контрагента.
           </p>
+          <label className="flex items-center gap-2 text-sm">
+            <Switch
+              checked={allowWithoutArticle}
+              disabled={disabled}
+              onCheckedChange={(checked) => {
+                setAllowWithoutArticle(checked);
+                if (checked) setDdsArticleId("");
+              }}
+            />
+            У контрагента нет статьи ДДС
+          </label>
         </Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Отсрочка, дней">
-            <Input
+        <div className="grid gap-3 rounded-md border p-3 sm:col-span-2">
+          <label className="flex items-start gap-3 text-sm">
+            <Switch
+              checked={servicePeriodRequired}
               disabled={disabled}
-              type="number"
-              value={delayDays}
-              onChange={(event) => setDelayDays(event.target.value)}
+              onCheckedChange={setServicePeriodRequired}
             />
-          </Field>
-          <Field label="Платить до числа">
-            <Input
-              disabled={disabled}
-              type="number"
-              min={1}
-              max={31}
-              value={dueDay}
-              onChange={(event) => setDueDay(event.target.value)}
-            />
-          </Field>
+            <span>
+              <span className="block font-medium">Требовать период оказания услуг</span>
+              <span className="block text-xs text-muted-foreground">
+                Платёж без периода нельзя отправить в банк.
+              </span>
+            </span>
+          </label>
+          {servicePeriodRequired ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Заполнение периода">
+                <Select
+                  disabled={disabled}
+                  value={servicePeriodMode}
+                  onValueChange={(value) =>
+                    setServicePeriodMode(value as "automatic" | "manual")
+                  }
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="automatic">Автоматически из счёта / ЭДО</SelectItem>
+                    <SelectItem value="manual">Вручную</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Период по умолчанию">
+                <Select disabled={disabled} value={periodOffset} onValueChange={setPeriodOffset}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="-1">Предыдущий месяц</SelectItem>
+                    <SelectItem value="0">Месяц платежа</SelectItem>
+                    <SelectItem value="1">Следующий месяц</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+          ) : null}
         </div>
+      </div>
+      {canAdmin ? (
+        <Button
+          disabled={!canSave || saveMutation.isPending}
+          onClick={() => saveMutation.mutate()}
+        >
+          {saveMutation.isPending ? (
+            <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+          ) : null}
+          Сохранить
+        </Button>
+      ) : null}
+    </Section>
+  );
+}
+
+function ManagerSection({ card, canAdmin }: { card: CardData; canAdmin: boolean }) {
+  const queryClient = useQueryClient();
+  const [managerName, setManagerName] = useState("");
+  const [managerPhone, setManagerPhone] = useState("");
+
+  useEffect(() => {
+    setManagerName(card.profile?.manager_name ?? "");
+    setManagerPhone(card.profile?.manager_phone ?? "");
+  }, [card.profile, card.counterparty_id]);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      updateProfile(card.counterparty_id, {
+        manager_name: managerName.trim() || null,
+        manager_phone: managerPhone.trim() || null,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["cp"] });
+      toast.success("Данные менеджера сохранены");
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить")),
+  });
+
+  return (
+    <Section title="Данные менеджера">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Менеджер поставщика">
           <Input
-            disabled={disabled}
+            disabled={!canAdmin}
             value={managerName}
             onChange={(event) => setManagerName(event.target.value)}
           />
         </Field>
         <Field label="Телефон менеджера">
           <Input
-            disabled={disabled}
+            disabled={!canAdmin}
             value={managerPhone}
             onChange={(event) => setManagerPhone(event.target.value)}
           />
         </Field>
       </div>
       {canAdmin ? (
-        <Button disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-          {saveMutation.isPending ? (
+        <Button disabled={mutation.isPending} onClick={() => mutation.mutate()}>
+          {mutation.isPending ? (
             <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
           ) : null}
           Сохранить
@@ -352,6 +437,19 @@ function RequisitesSection({ card, canAdmin }: { card: CardData; canAdmin: boole
   });
 
   const disabled = !canAdmin;
+
+  if (card.relationship !== "official") {
+    return (
+      <Section title="Реквизиты">
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-medium">Реквизиты недоступны</p>
+          <p className="mt-1 text-amber-800">
+            Неофициальные контрагенты оплачиваются переводом на карту или наличными.
+          </p>
+        </div>
+      </Section>
+    );
+  }
 
   return (
     <Section title="Платёжные реквизиты">

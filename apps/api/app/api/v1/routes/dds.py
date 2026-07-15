@@ -661,6 +661,8 @@ async def post_new_payment_expense_draft(
             amount=line.amount,
             purpose=line.purpose,
             counterparty_id=line.counterparty_id,
+            service_period_start=line.service_period_start,
+            service_period_end=line.service_period_end,
         )
         for line in payload.normalized_lines()
     ]

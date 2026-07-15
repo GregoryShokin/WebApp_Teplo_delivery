@@ -2740,6 +2740,9 @@ export type NewPaymentArticleCounterparty = {
   relationship: "official" | "informal" | "barter";
   has_requisites: boolean;
   requisites_verified: boolean;
+  service_period_required: boolean;
+  service_period_mode: "automatic" | "manual";
+  default_service_period_offset_months: number | null;
 };
 
 export type NewPaymentArticle = {
@@ -2783,6 +2786,8 @@ export type NewPaymentExpenseLine = {
   purpose: string;
   // Необязательная атрибуция: кому платим (для статей с привязанными контрагентами).
   counterparty_id?: string | null;
+  service_period_start?: string | null;
+  service_period_end?: string | null;
 };
 
 export type NewPaymentExpenseDraftPayload = {

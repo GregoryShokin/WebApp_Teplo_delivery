@@ -72,6 +72,8 @@ export function ReviewDialog({
   const [amount, setAmount] = useState(intake.amount ?? "");
   const [invoiceNumber, setInvoiceNumber] = useState(intake.invoice_number ?? "");
   const [invoiceDate, setInvoiceDate] = useState(intake.invoice_date ?? "");
+  const [periodStart, setPeriodStart] = useState(intake.service_period_start ?? "");
+  const [periodEnd, setPeriodEnd] = useState(intake.service_period_end ?? "");
   const [r, setR] = useState({
     recipientName: req.recipientName ?? intake.recipient_name ?? "",
     inn: req.inn ?? intake.inn ?? "",
@@ -106,7 +108,10 @@ export function ReviewDialog({
   const setReq = (key: keyof typeof r, value: string) => setR((prev) => ({ ...prev, [key]: value }));
 
   const canConfirm =
-    amount.trim() !== "" && (mode === "existing" ? counterpartyId !== "" : newName.trim() !== "");
+    amount.trim() !== "" &&
+    (mode === "existing" ? counterpartyId !== "" : newName.trim() !== "") &&
+    ((!intake.service_period_required && intake.service_period_status !== "ambiguous") ||
+      Boolean(periodStart && periodEnd));
 
   const buildPayload = (apply: boolean) => ({
     counterparty_id: mode === "existing" ? counterpartyId : null,
@@ -115,6 +120,8 @@ export function ReviewDialog({
     amount: amount.trim(),
     invoice_number: invoiceNumber.trim() || null,
     invoice_date: invoiceDate || null,
+    service_period_start: periodStart || null,
+    service_period_end: periodEnd || null,
     requisites: r,
     apply_requisites: apply,
   });
@@ -201,6 +208,40 @@ export function ReviewDialog({
               <Field label="Сумма к оплате" value={amount} onChange={setAmount} />
               <Field label="№ счёта" value={invoiceNumber} onChange={setInvoiceNumber} />
               <Field label="Дата" type="date" value={invoiceDate} onChange={setInvoiceDate} />
+            </div>
+
+            <div className="grid gap-2 rounded-md border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-medium uppercase text-muted-foreground">
+                  Период оказания услуги
+                </div>
+                {intake.service_period_status === "ambiguous" ? (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-800">
+                    найдено несколько периодов
+                  </span>
+                ) : intake.service_period_source?.startsWith("document") ||
+                  intake.service_period_source?.startsWith("subject") ? (
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
+                    определён автоматически
+                  </span>
+                ) : null}
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Field label="С" type="date" value={periodStart} onChange={setPeriodStart} />
+                <Field label="По" type="date" value={periodEnd} onChange={setPeriodEnd} />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Если в счёте указаны разные периоды, выберите правильный вручную. После окончания
+                периода расход будет признан автоматически.
+              </p>
+              {(intake.service_period_required || intake.service_period_status === "ambiguous") &&
+              (!periodStart || !periodEnd) ? (
+                <p className="text-xs text-amber-600">
+                  {intake.service_period_status === "ambiguous"
+                    ? "Выберите один правильный период вручную."
+                    : "Для этого контрагента период обязателен."}
+                </p>
+              ) : null}
             </div>
 
             <div className="grid gap-2 rounded-md border p-3">

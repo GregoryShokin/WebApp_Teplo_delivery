@@ -29,6 +29,7 @@ from app.models import (
 from app.models.email_invoice_intake import EMAIL_INTAKE_STATUSES
 from app.services import counterparty_payments as payments
 from app.services import email_invoice_ingest as ingest
+from app.services import supplier_service_periods as service_periods
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 
 router = APIRouter()
@@ -56,6 +57,13 @@ class IntakeRead(BaseModel):
     amount: str | None
     invoice_number: str | None
     invoice_date: str | None
+    service_period_start: str | None
+    service_period_end: str | None
+    service_period_source: str | None
+    service_period_status: str | None
+    service_period_confidence: float | None
+    service_period_required: bool
+    service_period_mode: str
     # Распознанные банковские реквизиты (recipientName/inn/kpp/bankAcnt/bankBik/corr) — для
     # предзаполнения окна разбора.
     requisites: dict[str, Any]
@@ -93,6 +101,8 @@ class ConfirmIn(BaseModel):
     amount: str | None = None
     invoice_number: str | None = None
     invoice_date: str | None = None
+    service_period_start: str | None = None
+    service_period_end: str | None = None
     requisites: ReviewRequisites | None = None
     # Перенести реквизиты в карточку контрагента и пометить проверенными.
     apply_requisites: bool = False
@@ -122,8 +132,33 @@ def _to_read(
     invoice_draft_id: uuid.UUID | None = None,
     invoice_dds_article_id: uuid.UUID | None = None,
     default_dds_article_id: uuid.UUID | None = None,
+    invoice_service_period_start: date | None = None,
+    invoice_service_period_end: date | None = None,
+    invoice_service_period_source: str | None = None,
+    invoice_service_period_status: str | None = None,
+    invoice_service_period_confidence: Any | None = None,
+    service_period_required: bool | None = False,
+    service_period_mode: str | None = "manual",
 ) -> IntakeRead:
     rec: dict[str, Any] = intake.recognition or {}
+    period_start_value = (
+        invoice_service_period_start.isoformat()
+        if invoice_service_period_start
+        else rec.get("service_period_start")
+    )
+    period_end_value = (
+        invoice_service_period_end.isoformat()
+        if invoice_service_period_end
+        else rec.get("service_period_end")
+    )
+    period_status_value = invoice_service_period_status
+    if period_status_value is None:
+        if rec.get("service_period_ambiguous"):
+            period_status_value = "ambiguous"
+        elif period_start_value and period_end_value:
+            period_status_value = "ready"
+        else:
+            period_status_value = "missing" if service_period_required else "not_required"
     return IntakeRead(
         id=intake.id,
         mailbox=intake.mailbox,
@@ -142,6 +177,21 @@ def _to_read(
         amount=rec.get("amount"),
         invoice_number=rec.get("invoice_number"),
         invoice_date=rec.get("invoice_date"),
+        service_period_start=period_start_value,
+        service_period_end=period_end_value,
+        service_period_source=invoice_service_period_source or rec.get("service_period_source"),
+        service_period_status=period_status_value,
+        service_period_confidence=(
+            float(invoice_service_period_confidence)
+            if invoice_service_period_confidence is not None
+            else (
+                float(rec["service_period_confidence"])
+                if rec.get("service_period_confidence") is not None
+                else None
+            )
+        ),
+        service_period_required=bool(service_period_required),
+        service_period_mode=service_period_mode or "manual",
         requisites=rec.get("requisites") or {},
         requisites_verified=bool(requisites_verified),
         invoice_payment_status=invoice_payment_status,
@@ -178,6 +228,7 @@ async def _apply_article_choice(
         invoice = await session.get(SupplierInvoice, intake.invoice_id)
         if invoice is not None:
             invoice.dds_article_id = dds_article_id
+            await service_periods.sync_invoice_accrual(session, invoice)
     if remember_for_counterparty and intake.counterparty_id is not None:
         profile = await session.scalar(
             select(CounterpartyPayableProfile).where(
@@ -204,6 +255,13 @@ async def _load_read(session: AsyncSession, intake_id: uuid.UUID) -> IntakeRead:
                 SupplierInvoice.draft_id,
                 SupplierInvoice.dds_article_id,
                 CounterpartyPayableProfile.default_dds_article_id,
+                SupplierInvoice.service_period_start,
+                SupplierInvoice.service_period_end,
+                SupplierInvoice.service_period_source,
+                SupplierInvoice.service_period_status,
+                SupplierInvoice.service_period_confidence,
+                CounterpartyPayableProfile.service_period_required,
+                CounterpartyPayableProfile.service_period_mode,
             )
             .outerjoin(Counterparty, Counterparty.id == EmailInvoiceIntake.counterparty_id)
             .outerjoin(
@@ -216,7 +274,22 @@ async def _load_read(session: AsyncSession, intake_id: uuid.UUID) -> IntakeRead:
     ).first()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена")
-    intake, cp_name, verified, pay_status, draft_id, inv_article, default_article = row
+    (
+        intake,
+        cp_name,
+        verified,
+        pay_status,
+        draft_id,
+        inv_article,
+        default_article,
+        period_start,
+        period_end,
+        period_source,
+        period_status,
+        period_confidence,
+        period_required,
+        period_mode,
+    ) = row
     return _to_read(
         intake,
         cp_name,
@@ -225,6 +298,13 @@ async def _load_read(session: AsyncSession, intake_id: uuid.UUID) -> IntakeRead:
         invoice_draft_id=draft_id,
         invoice_dds_article_id=inv_article,
         default_dds_article_id=default_article,
+        invoice_service_period_start=period_start,
+        invoice_service_period_end=period_end,
+        invoice_service_period_source=period_source,
+        invoice_service_period_status=period_status,
+        invoice_service_period_confidence=period_confidence,
+        service_period_required=period_required,
+        service_period_mode=period_mode,
     )
 
 
@@ -243,6 +323,13 @@ async def list_intakes(
             SupplierInvoice.draft_id,
             SupplierInvoice.dds_article_id,
             CounterpartyPayableProfile.default_dds_article_id,
+            SupplierInvoice.service_period_start,
+            SupplierInvoice.service_period_end,
+            SupplierInvoice.service_period_source,
+            SupplierInvoice.service_period_status,
+            SupplierInvoice.service_period_confidence,
+            CounterpartyPayableProfile.service_period_required,
+            CounterpartyPayableProfile.service_period_mode,
         )
         .outerjoin(Counterparty, Counterparty.id == EmailInvoiceIntake.counterparty_id)
         .outerjoin(
@@ -267,8 +354,30 @@ async def list_intakes(
             invoice_draft_id=draft_id,
             invoice_dds_article_id=inv_article,
             default_dds_article_id=default_article,
+            invoice_service_period_start=period_start,
+            invoice_service_period_end=period_end,
+            invoice_service_period_source=period_source,
+            invoice_service_period_status=period_status,
+            invoice_service_period_confidence=period_confidence,
+            service_period_required=period_required,
+            service_period_mode=period_mode,
         )
-        for intake, cp_name, verified, pay_status, draft_id, inv_article, default_article in rows
+        for (
+            intake,
+            cp_name,
+            verified,
+            pay_status,
+            draft_id,
+            inv_article,
+            default_article,
+            period_start,
+            period_end,
+            period_source,
+            period_status,
+            period_confidence,
+            period_required,
+            period_mode,
+        ) in rows
     ]
 
 
@@ -290,6 +399,14 @@ async def get_intake_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": disposition},
     )
+
+
+@router.get("/intakes/{intake_id}", response_model=IntakeRead, dependencies=READ)
+async def get_intake(
+    intake_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> IntakeRead:
+    return await _load_read(session, intake_id)
 
 
 @router.post("/intakes/{intake_id}/confirm", response_model=IntakeRead, dependencies=OPERATE)
@@ -315,6 +432,8 @@ async def confirm_intake(
             amount=body.amount,
             invoice_number=body.invoice_number,
             invoice_date=body.invoice_date,
+            service_period_start=body.service_period_start,
+            service_period_end=body.service_period_end,
             requisites=body.requisites.model_dump(exclude_none=True) if body.requisites else None,
             apply_requisites=body.apply_requisites,
         )
@@ -390,6 +509,16 @@ async def schedule_send(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Счёт уже отправлен в банк"
         )
+    profile = await session.scalar(
+        select(CounterpartyPayableProfile).where(
+            CounterpartyPayableProfile.counterparty_id == invoice.counterparty_id
+        )
+    )
+    if profile and profile.service_period_required and invoice.service_period_status != "ready":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Для этого контрагента обязателен период оказания услуги",
+        )
     verified = await session.scalar(
         select(CounterpartyPayableProfile.requisites_verified).where(
             CounterpartyPayableProfile.counterparty_id == intake.counterparty_id
@@ -455,9 +584,7 @@ async def restore_intake(
     return await _load_read(session, intake_id)
 
 
-@router.delete(
-    "/intakes/{intake_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=OPERATE
-)
+@router.delete("/intakes/{intake_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=OPERATE)
 async def delete_intake(
     intake_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],

@@ -47,9 +47,7 @@ class CounterpartyLedgerCategory(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
-    sort_order: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0"
-    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )
@@ -73,6 +71,15 @@ class CounterpartyPayableProfile(Base):
             "or (payment_due_day_of_month >= 1 and payment_due_day_of_month <= 31)",
             name="ck_payable_profile_due_day",
         ),
+        CheckConstraint(
+            "service_period_mode in ('automatic', 'manual')",
+            name="ck_payable_profile_service_period_mode",
+        ),
+        CheckConstraint(
+            "default_service_period_offset_months is null "
+            "or default_service_period_offset_months between -12 and 12",
+            name="ck_payable_profile_service_period_offset",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -95,6 +102,17 @@ class CounterpartyPayableProfile(Base):
     # Nth day of the month. Explicit iiko dueDate wins over both.
     payment_delay_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     payment_due_day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Услуговые контрагенты обязаны иметь период оказания услуг на каждом платеже. Для
+    # email/ЭДО он извлекается автоматически; для ручных платежей менеджер вводит даты.
+    # ``default_service_period_offset_months`` — необязательная подсказка относительно месяца
+    # даты счёта/платежа (-1 прошлый, 0 текущий, +1 следующий), но не замена явному периоду.
+    service_period_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    service_period_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="manual", server_default=text("'manual'")
+    )
+    default_service_period_offset_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Supplier-side contact (manager) for questions about invoices/payments.
     manager_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     manager_phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -169,9 +187,7 @@ class CounterpartyCollectionSource(Base):
     counterparty_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("counterparty.id", ondelete="CASCADE"), nullable=False
     )
-    kind: Mapped[str] = mapped_column(
-        counterparty_collection_source_kind_enum, nullable=False
-    )
+    kind: Mapped[str] = mapped_column(counterparty_collection_source_kind_enum, nullable=False)
     # Channel identifier: email address, telegram handle, iiko supplier GUID; NULL for manual.
     value: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(
@@ -193,9 +209,7 @@ class CounterpartyRoutingRule(Base):
 
     __tablename__ = "counterparty_routing_rule"
     __table_args__ = (
-        UniqueConstraint(
-            "iiko_supplier_guid", "prefix", name="uq_routing_rule_guid_prefix"
-        ),
+        UniqueConstraint("iiko_supplier_guid", "prefix", name="uq_routing_rule_guid_prefix"),
         Index("ix_routing_rule_guid", "iiko_supplier_guid"),
     )
 
@@ -268,6 +282,10 @@ class CounterpartyPaymentDraft(Base):
     bank_provider: Mapped[str] = mapped_column(
         String(16), nullable=False, default="tbank", server_default=text("'tbank'")
     )
+    # Единый период черновика. Для пачки накладных он заполняется только когда все счета
+    # имеют одинаковый период; разные периоды на уровне сервиса запрещены.
+    service_period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    service_period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )
@@ -303,6 +321,11 @@ class ExpenseDraftLine(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     purpose: Mapped[str] = mapped_column(Text, nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # Период оказания услуги для ручного платежа. Хранится на строке, потому что транш через
+    # Сейф может содержать несколько статей/получателей.
+    service_period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    service_period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    service_period_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
 
 
 class SupplierInvoice(Base):
@@ -344,6 +367,15 @@ class SupplierInvoice(Base):
     number: Mapped[str | None] = mapped_column(String(128), nullable=True)
     invoice_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Период, к которому относится услуга. ``status``: not_required / missing / ready /
+    # ambiguous. Для ambiguous даты не выбираются автоматически — счёт идёт на ручной разбор.
+    service_period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    service_period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    service_period_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    service_period_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="not_required", server_default="not_required"
+    )
+    service_period_confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     # VAT is part of the gross ``amount``. ``vat_breakdown`` maps a rate ("10", "22")
     # to its VAT amount (as a string) so the bank payment purpose can state it.
@@ -407,7 +439,8 @@ class SupplierInvoice(Base):
     # Оплачивать новую зачётом НЕЛЬЗЯ — settle-дебет уезжает в баланс и завышает его (проверено на
     # живом API). Чек-пойнты саги (для ретрая):
     #   iiko_return_external_id         — возвратная накладная (шаг 1);
-    #   iiko_correction_new_external_id — новая приходная Y (шаг 2), external_id перецепляется на неё.
+    #   iiko_correction_new_external_id — новая приходная Y (шаг 2), external_id
+    #   перецепляется на неё.
     # Статусы iiko_return_status как у iiko_push: none/pending/booked/failed/skipped.
     iiko_return_external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     iiko_return_status: Mapped[str] = mapped_column(
@@ -416,9 +449,7 @@ class SupplierInvoice(Base):
     iiko_return_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # id новой (правильной) приходной Y в iiko — чек-пойнт шага 2, чтобы ретрай не пересоздал её.
     # После успеха шага 2 external_id накладной перецепляется X→Y, старый X закрывается тумбстоном.
-    iiko_correction_new_external_id: Mapped[str | None] = mapped_column(
-        String(128), nullable=True
-    )
+    iiko_correction_new_external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Снимок ВСЕХ старых товаров (для возврата), ждущий проводки/ретрая; очищается при успехе.
     # Список {product, quantity, price, name}. Склад/дату оркестратор добавляет при пуше.
     iiko_return_lines: Mapped[list[dict[str, Any]]] = mapped_column(
@@ -439,7 +470,8 @@ class SupplierInvoice(Base):
     # товара (порог +N%/−M%), помечает всю накладную «подозрительной». Пока статус ``flagged`` —
     # оплата и отправка в банк заблокированы (assert_price_cleared); человек сверяет и подтверждает
     # («ОК, всё верно») → ``confirmed`` разблокирует. Любая правка позиций пересчитывает контроль и
-    # сбрасывает подтверждение. ``clean`` — аномалий нет / контроль неприменим (бартер, нет истории).
+    # сбрасывает подтверждение. ``clean`` — аномалий нет / контроль неприменим
+    # (бартер, нет истории).
     price_control_status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="clean", server_default="clean"
     )
@@ -459,6 +491,87 @@ class SupplierInvoice(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class SupplierExpenseAccrual(Base):
+    """Журнал признания расходов поставщиков по периоду оказания услуг.
+
+    До окончания периода оплаченная сумма является выданным авансом (дебиторкой). После
+    окончания периода строка признаётся в P&L; неоплаченный остаток становится кредиторкой.
+    Сам денежный факт остаётся в ДДС и не смешивается с этим журналом начислений.
+    """
+
+    __tablename__ = "supplier_expense_accrual"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('scheduled', 'recognized', 'cancelled')",
+            name="ck_supplier_expense_accrual_status",
+        ),
+        CheckConstraint(
+            "service_period_end >= service_period_start",
+            name="ck_supplier_expense_accrual_period",
+        ),
+        UniqueConstraint("invoice_id", name="uq_supplier_expense_accrual_invoice"),
+        UniqueConstraint("expense_draft_line_id", name="uq_supplier_expense_accrual_line"),
+        Index("ix_supplier_expense_accrual_counterparty", "counterparty_id"),
+        Index("ix_supplier_expense_accrual_due", "status", "service_period_end"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    counterparty_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("counterparty.id", ondelete="RESTRICT"), nullable=False
+    )
+    invoice_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("supplier_invoice.id", ondelete="CASCADE"), nullable=True
+    )
+    expense_draft_line_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("expense_draft_line.id", ondelete="CASCADE"), nullable=True
+    )
+    payment_draft_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("counterparty_payment_draft.id", ondelete="SET NULL"), nullable=True
+    )
+    article_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("dds_articles.id", ondelete="SET NULL"), nullable=True
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    service_period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    service_period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="scheduled", server_default="scheduled"
+    )
+    recognition_month: Mapped[date | None] = mapped_column(Date, nullable=True)
+    recognized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class SupplierServicePeriodChange(Base):
+    """Аудит переноса периода, включая корректировки уже признанного P&L."""
+
+    __tablename__ = "supplier_service_period_change"
+    __table_args__ = (Index("ix_supplier_service_period_change_accrual", "accrual_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    accrual_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("supplier_expense_accrual.id", ondelete="CASCADE"), nullable=False
+    )
+    old_period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    old_period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    new_period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    new_period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    old_recognition_month: Mapped[date | None] = mapped_column(Date, nullable=True)
+    new_recognition_month: Mapped[date | None] = mapped_column(Date, nullable=True)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -694,6 +807,13 @@ class SupplierPrepayment(Base):
     )
     article_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("dds_articles.id", ondelete="SET NULL"), nullable=True
+    )
+    # Исторические незакрытые авансы мигрируют со статусом missing: они остаются в дебиторке,
+    # но попадают в отдельную очередь распределения периода, а не признаются автоматически.
+    service_period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    service_period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    service_period_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="missing", server_default="missing"
     )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(

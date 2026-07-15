@@ -34,6 +34,7 @@ from app.models import (
 )
 from app.services import counterparty_payments as payments
 from app.services import counterparty_registry as registry
+from app.services import supplier_service_periods as service_periods
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 from app.services.invoice_recognition import RecognizedInvoice, recognize
 from app.services.mail.imap_client import (
@@ -82,9 +83,7 @@ async def _counterparty_by_inn(session: AsyncSession, inn: str | None) -> uuid.U
     return row.id if row else None
 
 
-async def _counterparty_by_exact_name(
-    session: AsyncSession, name: str | None
-) -> uuid.UUID | None:
+async def _counterparty_by_exact_name(session: AsyncSession, name: str | None) -> uuid.UUID | None:
     """Консервативный матч по имени: только точное совпадение без регистра. Фуцци-матч НЕ
     делаем — риск привязать счёт не тому контрагенту и уйти на ошибочный платёж."""
     if not name:
@@ -112,9 +111,7 @@ async def _ensure_email_source(
     )
     if existing is None:
         session.add(
-            CounterpartyCollectionSource(
-                counterparty_id=counterparty_id, kind="email", value=email
-            )
+            CounterpartyCollectionSource(counterparty_id=counterparty_id, kind="email", value=email)
         )
         await session.flush()
 
@@ -220,6 +217,32 @@ async def materialize_from_intake(
         except ValueError:
             inv_date = None
 
+    period_start: date | None = None
+    period_end: date | None = None
+    with contextlib.suppress(ValueError, TypeError):
+        if rec_json.get("service_period_start"):
+            period_start = date.fromisoformat(str(rec_json["service_period_start"]))
+        if rec_json.get("service_period_end"):
+            period_end = date.fromisoformat(str(rec_json["service_period_end"]))
+    profile = await session.scalar(
+        select(CounterpartyPayableProfile).where(
+            CounterpartyPayableProfile.counterparty_id == cp_id
+        )
+    )
+    period_required = bool(profile and profile.service_period_required)
+    period_ambiguous = bool(rec_json.get("service_period_ambiguous"))
+    if period_ambiguous and not (period_start is not None and period_end is not None):
+        raise ValueError(
+            "В счёте найдено несколько периодов оказания услуг — выберите один вручную"
+        )
+    if period_ambiguous:
+        period_status = "ambiguous"
+    elif period_start is not None and period_end is not None:
+        service_periods.validate_period(period_start, period_end)
+        period_status = "ready"
+    else:
+        period_status = "missing" if period_required else "not_required"
+
     intake.counterparty_id = cp_id
     probe = RecognizedInvoice(amount=amount, invoice_number=number, invoice_date=inv_date)
     dup = await _find_duplicate_email_invoice(session, cp_id, probe)
@@ -235,6 +258,11 @@ async def materialize_from_intake(
         external_id=intake.attachment_sha256[:128],
         number=number,
         invoice_date=inv_date,
+        service_period_start=period_start,
+        service_period_end=period_end,
+        service_period_source=rec_json.get("service_period_source") or None,
+        service_period_status=period_status,
+        service_period_confidence=rec_json.get("service_period_confidence"),
         amount=amount,
         payment_status="unpaid",
         note=intake.subject,
@@ -250,6 +278,7 @@ async def materialize_from_intake(
     )
     session.add(invoice)
     await session.flush()
+    await service_periods.sync_invoice_accrual(session, invoice)
     intake.invoice_id = invoice.id
     intake.status = "linked"
     return intake.status
@@ -266,6 +295,8 @@ async def confirm_intake_with_review(
     amount: str | None = None,
     invoice_number: str | None = None,
     invoice_date: str | None = None,
+    service_period_start: str | None = None,
+    service_period_end: str | None = None,
     requisites: dict[str, str] | None = None,
     apply_requisites: bool = False,
 ) -> str:
@@ -313,6 +344,11 @@ async def confirm_intake_with_review(
         rec["invoice_number"] = invoice_number.strip() or None
     if invoice_date is not None:
         rec["invoice_date"] = invoice_date.strip() or None
+    if service_period_start is not None or service_period_end is not None:
+        rec["service_period_start"] = (service_period_start or "").strip() or None
+        rec["service_period_end"] = (service_period_end or "").strip() or None
+        rec["service_period_source"] = "manual"
+        rec["service_period_ambiguous"] = False
     clean_req = {k: v.strip() for k, v in (requisites or {}).items() if v and v.strip()}
     if requisites is not None:
         rec["requisites"] = clean_req
@@ -338,6 +374,24 @@ async def confirm_intake_with_review(
             if iso_date:
                 with contextlib.suppress(ValueError):
                     inv.invoice_date = date.fromisoformat(str(iso_date))
+            start_raw = rec.get("service_period_start")
+            end_raw = rec.get("service_period_end")
+            profile = await session.scalar(
+                select(CounterpartyPayableProfile).where(
+                    CounterpartyPayableProfile.counterparty_id == cp_id
+                )
+            )
+            if start_raw and end_raw:
+                start = date.fromisoformat(str(start_raw))
+                end = date.fromisoformat(str(end_raw))
+                service_periods.validate_period(start, end)
+                inv.service_period_start = start
+                inv.service_period_end = end
+                inv.service_period_source = "manual"
+                inv.service_period_status = "ready"
+                await service_periods.sync_invoice_accrual(session, inv)
+            elif profile and profile.service_period_required:
+                inv.service_period_status = "missing"
         return intake.status
 
     return await materialize_from_intake(session, intake, counterparty_id=cp_id)
@@ -352,9 +406,7 @@ async def exclude_intake(session: AsyncSession, intake: EmailInvoiceIntake) -> N
     из платёжного контура. Плановую отправку снимаем. НЕ коммитит — это делает вызывающий."""
     if intake.status == "excluded":
         raise ValueError("Счёт уже в исключённых")
-    invoice = (
-        await session.get(SupplierInvoice, intake.invoice_id) if intake.invoice_id else None
-    )
+    invoice = await session.get(SupplierInvoice, intake.invoice_id) if intake.invoice_id else None
     if invoice is not None and invoice.draft_id is not None:
         raise ValueError("Счёт уже отправлен в банк — исключение недоступно")
     if invoice is not None and invoice.payment_status not in ("paid", "void"):
@@ -369,9 +421,7 @@ async def restore_intake(session: AsyncSession, intake: EmailInvoiceIntake) -> N
     возвращаем в unpaid. НЕ коммитит."""
     if intake.status != "excluded":
         raise ValueError("Счёт не в исключённых")
-    invoice = (
-        await session.get(SupplierInvoice, intake.invoice_id) if intake.invoice_id else None
-    )
+    invoice = await session.get(SupplierInvoice, intake.invoice_id) if intake.invoice_id else None
     if invoice is not None and invoice.payment_status == "void":
         invoice.payment_status = "unpaid"
     intake.status = intake.previous_status or "needs_review"
@@ -383,9 +433,7 @@ async def delete_intake_forever(session: AsyncSession, intake: EmailInvoiceIntak
     оплачена). Доступно только из «Исключённых» — рабочие счета сначала исключают. НЕ коммитит."""
     if intake.status != "excluded":
         raise ValueError("Удалять можно только из «Исключённых»")
-    invoice = (
-        await session.get(SupplierInvoice, intake.invoice_id) if intake.invoice_id else None
-    )
+    invoice = await session.get(SupplierInvoice, intake.invoice_id) if intake.invoice_id else None
     await session.delete(intake)
     await session.flush()
     if invoice is not None and invoice.draft_id is None and invoice.payment_status != "paid":
@@ -409,6 +457,16 @@ async def send_intake_to_bank(
         raise payments.CounterpartyPaymentError("Накладная не найдена")
     if invoice.draft_id is not None:
         raise payments.CounterpartyPaymentError("Счёт уже отправлен в банк")
+    profile = await session.scalar(
+        select(CounterpartyPayableProfile).where(
+            CounterpartyPayableProfile.counterparty_id == invoice.counterparty_id
+        )
+    )
+    if profile and profile.service_period_required and invoice.service_period_status != "ready":
+        raise payments.CounterpartyPaymentError(
+            "Для этого контрагента обязателен период оказания услуги — укажите даты"
+        )
+    await service_periods.sync_invoice_accrual(session, invoice)
     await payments.create_payment_draft_for_invoices(
         session, invoice_ids=[intake.invoice_id], actor_user_id=actor_user_id
     )
@@ -469,7 +527,11 @@ async def process_attachment(
     await session.flush()
 
     try:
-        rec = await recognize(att.content, settings=settings)
+        rec = await recognize(
+            att.content,
+            settings=settings,
+            context_text="\n".join(part for part in (att.subject, att.filename) if part),
+        )
     except Exception as exc:  # noqa: BLE001 - распознавание одного файла не валит проход
         logger.warning("распознавание не удалось sha=%s", att.sha256[:12], exc_info=True)
         intake.status = "failed"
@@ -490,12 +552,23 @@ async def process_attachment(
     cp_id = await _match_or_create_counterparty(session, rec, _sender_email(att.from_addr))
     intake.counterparty_id = cp_id
 
+    profile = None
+    if cp_id is not None:
+        profile = await session.scalar(
+            select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == cp_id
+            )
+        )
+    period_required = bool(profile and profile.service_period_required)
+
     # Авто-материализуем только уверенно опознанный счёт с известным контрагентом. Формат
     # «unknown» (нет явного маркера счёта) — всегда оператору, чтобы не провести неведомый макет.
     if (
         cp_id is None
         or rec.document_kind != "invoice"
         or rec.confidence < settings.invoice_recognition_min_confidence
+        or rec.service_period_ambiguous
+        or (period_required and not (rec.service_period_start and rec.service_period_end))
     ):
         intake.status = "needs_review"
         return intake.status
@@ -514,6 +587,17 @@ async def process_attachment(
         external_id=att.sha256[:128],
         number=rec.invoice_number,
         invoice_date=rec.invoice_date,
+        service_period_start=rec.service_period_start,
+        service_period_end=rec.service_period_end,
+        service_period_source=rec.service_period_source,
+        service_period_status=(
+            "ready"
+            if rec.service_period_start and rec.service_period_end
+            else "missing"
+            if period_required
+            else "not_required"
+        ),
+        service_period_confidence=rec.service_period_confidence,
         amount=rec.amount,
         payment_status="unpaid",
         note=att.subject,
@@ -528,6 +612,7 @@ async def process_attachment(
     )
     session.add(invoice)
     await session.flush()
+    await service_periods.sync_invoice_accrual(session, invoice)
     intake.invoice_id = invoice.id
     intake.status = "linked"
     return intake.status
@@ -548,8 +633,13 @@ async def poll_and_ingest(
         return {"status": "not_configured"}
 
     result: dict[str, int] = {
-        "fetched": 0, "skipped": 0, "linked": 0,
-        "needs_review": 0, "ignored": 0, "failed": 0, "errors": 0,
+        "fetched": 0,
+        "skipped": 0,
+        "linked": 0,
+        "needs_review": 0,
+        "ignored": 0,
+        "failed": 0,
+        "errors": 0,
     }
     for account in accounts:
         try:
@@ -587,7 +677,8 @@ async def poll_and_ingest(
                 await session.rollback()
                 logger.warning(
                     "poll_mail_invoices: сбой обработки вложения sha=%s",
-                    att.sha256[:12], exc_info=True,
+                    att.sha256[:12],
+                    exc_info=True,
                 )
                 result["errors"] += 1
 

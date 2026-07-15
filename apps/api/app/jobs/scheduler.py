@@ -8,6 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.core.config import get_settings
 from app.jobs.counterparty_invoice_sync_job import run_counterparty_invoice_sync_job
 from app.jobs.employee_sync_job import run_employee_sync_job
+from app.jobs.supplier_service_period_job import run_supplier_service_period_job
 
 _scheduler: BackgroundScheduler | None = None
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
@@ -25,6 +26,16 @@ def get_scheduler() -> BackgroundScheduler:
 
 def register_jobs(scheduler: BackgroundScheduler) -> None:
     settings = get_settings()
+    scheduler.add_job(
+        run_supplier_service_period_job,
+        "cron",
+        hour=0,
+        minute=5,
+        id="supplier_service_period_recognition",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     if settings.employee_sync_enabled:
         scheduler.add_job(
             run_employee_sync_job,

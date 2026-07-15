@@ -21,6 +21,13 @@ export type PaymentIntake = {
   amount: string | null;
   invoice_number: string | null;
   invoice_date: string | null;
+  service_period_start: string | null;
+  service_period_end: string | null;
+  service_period_source: string | null;
+  service_period_status: string | null;
+  service_period_confidence: number | null;
+  service_period_required: boolean;
+  service_period_mode: "automatic" | "manual";
   requisites: Record<string, string>;
   requisites_verified: boolean;
   invoice_payment_status: string | null;
@@ -39,6 +46,8 @@ export type ConfirmPayload = {
   amount?: string | null;
   invoice_number?: string | null;
   invoice_date?: string | null;
+  service_period_start?: string | null;
+  service_period_end?: string | null;
   requisites?: Record<string, string | null> | null;
   apply_requisites?: boolean;
 };
@@ -61,6 +70,11 @@ export async function listIntakes(status?: string): Promise<PaymentIntake[]> {
   const response = await api.get<PaymentIntake[]>(`${BASE}/intakes`, {
     params: status ? { status } : undefined,
   });
+  return response.data;
+}
+
+export async function getIntake(id: string): Promise<PaymentIntake> {
+  const response = await api.get<PaymentIntake>(`${BASE}/intakes/${id}`);
   return response.data;
 }
 

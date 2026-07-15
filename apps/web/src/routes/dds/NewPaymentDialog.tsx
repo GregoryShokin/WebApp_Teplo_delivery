@@ -133,7 +133,24 @@ type ExpenseRow = {
   amount: string;
   purpose: string;
   counterpartyId: string; // «кому платим» — статьи с закреплёнными контрагентами
+  servicePeriodStart: string;
+  servicePeriodEnd: string;
 };
+
+function dateInput(year: number, month: number, day: number): string {
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function defaultServicePeriod(offsetMonths: number | null | undefined) {
+  if (offsetMonths == null) return { servicePeriodStart: "", servicePeriodEnd: "" };
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth() + offsetMonths, 1);
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+  return {
+    servicePeriodStart: dateInput(first.getFullYear(), first.getMonth(), 1),
+    servicePeriodEnd: dateInput(last.getFullYear(), last.getMonth(), last.getDate()),
+  };
+}
 
 function normalizeAmount(value: string): string {
   return value.trim().replace(",", ".");
@@ -254,7 +271,15 @@ export function NewPaymentDialog({
   const [expenseRows, setExpenseRows] = useState<ExpenseRow[]>([]);
 
   function emptyExpenseRow(articleId = "", counterpartyId = ""): ExpenseRow {
-    return { key: nextKey(), articleId, amount: "", purpose: "", counterpartyId };
+    return {
+      key: nextKey(),
+      articleId,
+      amount: "",
+      purpose: "",
+      counterpartyId,
+      servicePeriodStart: "",
+      servicePeriodEnd: "",
+    };
   }
   function updateExpenseRow(key: string, patch: Partial<ExpenseRow>) {
     setExpenseRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
@@ -266,11 +291,16 @@ export function NewPaymentDialog({
   }
   function changeExpenseArticle(key: string, articleId: string) {
     const article = expenseArticles.find((item) => item.id === articleId) ?? null;
+    const counterpartyId = presetCounterparty(article);
+    const counterparty = article?.counterparties?.find(
+      (item) => item.counterparty_id === counterpartyId,
+    );
     // Смена статьи сбрасывает доп-данные строки — они относились к прежней статье.
     updateExpenseRow(key, {
       articleId,
-      counterpartyId: presetCounterparty(article),
+      counterpartyId,
       purpose: "",
+      ...defaultServicePeriod(counterparty?.default_service_period_offset_months),
     });
   }
 
@@ -287,11 +317,27 @@ export function NewPaymentDialog({
         if (emptyIndex >= 0) {
           return prev.map((row, index) =>
             index === emptyIndex
-              ? { ...row, articleId: article.id, counterpartyId: presetCounterparty(article) }
+              ? {
+                  ...row,
+                  articleId: article.id,
+                  counterpartyId: presetCounterparty(article),
+                  ...defaultServicePeriod(
+                    article.counterparties?.[0]?.default_service_period_offset_months,
+                  ),
+                }
               : row,
           );
         }
-        return [...prev, emptyExpenseRow(article.id, presetCounterparty(article))];
+        const next = emptyExpenseRow(article.id, presetCounterparty(article));
+        return [
+          ...prev,
+          {
+            ...next,
+            ...defaultServicePeriod(
+              article.counterparties?.[0]?.default_service_period_offset_months,
+            ),
+          },
+        ];
       });
       return;
     }
@@ -1038,7 +1084,6 @@ function ExpenseForm({
   const selectedWallet = wallets.find((wallet) => wallet.id === walletId) ?? null;
   const isCashSource = selectedWallet?.kind === "cash";
   const isSafeSource = isCashSource && selectedWallet?.location === "safe";
-  const srcShort = selectedWallet ? shortWalletName(selectedWallet) : "";
   const channel: "bank_draft" | "bank_draft_sber" =
     selectedWallet?.bank_code === "sber" ? "bank_draft_sber" : "bank_draft";
 
@@ -1082,6 +1127,18 @@ function ExpenseForm({
   const missingRequisitesRecipient = selectedCounterparties.find(
     (item) => item.relationship !== "informal" && !item.has_requisites,
   );
+  const missingServicePeriodRecipient = rows
+    .map((row) => {
+      const article = articleById.get(row.articleId);
+      const counterparty = article?.counterparties?.find(
+        (item) => item.counterparty_id === row.counterpartyId,
+      );
+      return counterparty?.service_period_required &&
+        (!row.servicePeriodStart || !row.servicePeriodEnd)
+        ? counterparty
+        : null;
+    })
+    .find(Boolean);
   const requiresRequisites = Boolean(requisitesRecipient);
   const directRouteBlocked =
     requiresRequisites &&
@@ -1091,7 +1148,16 @@ function ExpenseForm({
   const canSubmit =
     Boolean(walletId) &&
     rows.length > 0 &&
-    rows.every((row) => row.articleId && amountOf(row.amount) > 0) &&
+    rows.every((row) => {
+      const article = articleById.get(row.articleId);
+      const counterparty = article?.counterparties?.find(
+        (item) => item.counterparty_id === row.counterpartyId,
+      );
+      const periodReady =
+        !counterparty?.service_period_required ||
+        Boolean(row.servicePeriodStart && row.servicePeriodEnd);
+      return row.articleId && amountOf(row.amount) > 0 && periodReady;
+    }) &&
     !directRouteBlocked &&
     !fallbackRouteBlocked;
 
@@ -1101,6 +1167,8 @@ function ExpenseForm({
       amount: amountOf(row.amount),
       purpose: row.purpose.trim(),
       counterparty_id: row.counterpartyId || null,
+      service_period_start: row.servicePeriodStart || null,
+      service_period_end: row.servicePeriodEnd || null,
     }));
 
   const mutation = useMutation({
@@ -1155,6 +1223,9 @@ function ExpenseForm({
   if (!selectedWallet) {
     tone = "warning";
     summary = "Выберите счёт списания.";
+  } else if (missingServicePeriodRecipient) {
+    tone = "warning";
+    summary = `Укажите период оказания услуги для ${shortName(missingServicePeriodRecipient.name)}.`;
   } else if (requiresRequisites && rows.length !== 1) {
     tone = "warning";
     summary = "Платёж по реквизитам оформляется отдельной строкой на одного контрагента.";
@@ -1249,6 +1320,9 @@ function ExpenseForm({
           {rows.map((row) => {
             const article = articleById.get(row.articleId) ?? null;
             const pinned = article?.counterparties ?? [];
+            const selectedCounterparty = pinned.find(
+              (item) => item.counterparty_id === row.counterpartyId,
+            );
             return (
               <div className="space-y-1.5 rounded-md border p-2.5" key={row.key}>
                 <div className="grid grid-cols-[minmax(0,1fr)_130px_auto] items-center gap-2">
@@ -1288,7 +1362,18 @@ function ExpenseForm({
                   {pinned.length > 0 ? (
                     <Select
                       onValueChange={(value) =>
-                        onUpdateRow(row.key, { counterpartyId: value === "none" ? "" : value })
+                        (() => {
+                          const counterpartyId = value === "none" ? "" : value;
+                          const counterparty = pinned.find(
+                            (item) => item.counterparty_id === counterpartyId,
+                          );
+                          onUpdateRow(row.key, {
+                            counterpartyId,
+                            ...defaultServicePeriod(
+                              counterparty?.default_service_period_offset_months,
+                            ),
+                          });
+                        })()
                       }
                       value={row.counterpartyId || "none"}
                     >
@@ -1306,6 +1391,39 @@ function ExpenseForm({
                     </Select>
                   ) : null}
                 </div>
+                {selectedCounterparty?.service_period_required ? (
+                  <div className="rounded-md bg-muted/40 p-2">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <Label className="text-xs font-medium">Период оказания услуги</Label>
+                      <span className="text-[11px] text-muted-foreground">
+                        {selectedCounterparty.service_period_mode === "automatic"
+                          ? "для ручного платежа укажите явно"
+                          : "обязательное поле"}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        aria-label="Начало периода оказания услуги"
+                        className="h-8 text-sm"
+                        type="date"
+                        value={row.servicePeriodStart}
+                        onChange={(event) =>
+                          onUpdateRow(row.key, { servicePeriodStart: event.target.value })
+                        }
+                      />
+                      <Input
+                        aria-label="Окончание периода оказания услуги"
+                        className="h-8 text-sm"
+                        min={row.servicePeriodStart || undefined}
+                        type="date"
+                        value={row.servicePeriodEnd}
+                        onChange={(event) =>
+                          onUpdateRow(row.key, { servicePeriodEnd: event.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
+                ) : null}
               </div>
             );
           })}
@@ -1839,7 +1957,6 @@ function AdvanceForm({
     value: employee.id,
     label: employee.full_name,
   }));
-  const employeeName = employees.find((employee) => employee.id === employeeId)?.full_name ?? null;
 
   const availabilityQuery = useQuery({
     queryKey: ["payroll-advance-availability", employeeId],

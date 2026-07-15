@@ -63,6 +63,8 @@ export function SendDialog({
   const today = new Date().toISOString().slice(0, 10);
 
   const [date, setDate] = useState(intake.scheduled_send_date ?? today);
+  const [periodStart, setPeriodStart] = useState(intake.service_period_start ?? "");
+  const [periodEnd, setPeriodEnd] = useState(intake.service_period_end ?? "");
   // Статья ДДС оплаты: уже выбранная на счёте → закреплённая за контрагентом → пусто (на бэке
   // дефолт «Оплата поставщикам»). Чекбокс закрепляет выбранную статью за контрагентом на будущее.
   const [ddsArticleId, setDdsArticleId] = useState(
@@ -84,13 +86,23 @@ export function SendDialog({
     void queryClient.invalidateQueries({ queryKey: ["payment-page", "intakes"] });
 
   const ready =
-    r.bankAcnt.trim() !== "" && r.bankBik.trim() !== "" && r.inn.trim() !== "";
+    r.recipientName.trim() !== "" &&
+    r.bankAcnt.trim() !== "" &&
+    r.bankBik.trim() !== "" &&
+    r.inn.trim() !== "" &&
+    r.recipientCorrAccountNumber.trim() !== "";
+  const periodReady = !intake.service_period_required || Boolean(periodStart && periodEnd);
   const isNow = date <= today;
 
   const send = useMutation({
     mutationFn: async () => {
       // Подтверждаем реквизиты (заносим в карточку + verified), затем отправляем или планируем.
-      await confirmIntake(intake.id, { requisites: r, apply_requisites: true });
+      await confirmIntake(intake.id, {
+        requisites: r,
+        apply_requisites: true,
+        service_period_start: periodStart || null,
+        service_period_end: periodEnd || null,
+      });
       const choice = {
         dds_article_id: ddsArticleId || null,
         remember_for_counterparty: rememberForCp,
@@ -151,6 +163,12 @@ export function SendDialog({
               Реквизиты получателя
             </div>
             <ReqField
+              label="Официальное название"
+              value={r.recipientName}
+              onChange={(v) => setField("recipientName", v)}
+              missing={r.recipientName.trim() === ""}
+            />
+            <ReqField
               label="Расчётный счёт"
               value={r.bankAcnt}
               onChange={(v) => setField("bankAcnt", v)}
@@ -176,14 +194,61 @@ export function SendDialog({
                 label="Корр. счёт"
                 value={r.recipientCorrAccountNumber}
                 onChange={(v) => setField("recipientCorrAccountNumber", v)}
+                missing={r.recipientCorrAccountNumber.trim() === ""}
               />
             </div>
             {!ready ? (
               <p className="text-xs text-amber-600">
-                Заполните расчётный счёт, БИК и ИНН — без них банк не примет платёж.
+                Заполните название, ИНН, БИК, расчётный и корреспондентский счета.
               </p>
             ) : null}
           </div>
+
+          {intake.service_period_required || periodStart || periodEnd ? (
+            <div className="grid gap-2 rounded-md border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-medium uppercase text-muted-foreground">
+                  Период оказания услуги
+                </div>
+                {intake.service_period_source?.startsWith("document") ||
+                intake.service_period_source?.startsWith("subject") ? (
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
+                    определён автоматически
+                  </span>
+                ) : null}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="grid gap-1">
+                  <Label className="text-xs text-muted-foreground">С</Label>
+                  <Input
+                    type="date"
+                    value={periodStart}
+                    onChange={(event) => setPeriodStart(event.target.value)}
+                    className={!periodStart && intake.service_period_required ? "border-amber-400" : undefined}
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <Label className="text-xs text-muted-foreground">По</Label>
+                  <Input
+                    type="date"
+                    min={periodStart || undefined}
+                    value={periodEnd}
+                    onChange={(event) => setPeriodEnd(event.target.value)}
+                    className={!periodEnd && intake.service_period_required ? "border-amber-400" : undefined}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                По окончании этого периода расход автоматически попадёт в P&L, а предоплата
+                закроется в учёте ДЗ/КЗ.
+              </p>
+              {!periodReady ? (
+                <p className="text-xs text-amber-600">
+                  Для этого контрагента период обязателен — без него отправка недоступна.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="grid gap-1">
             <Label className="text-xs text-muted-foreground">Дата отправки в банк</Label>
@@ -241,7 +306,7 @@ export function SendDialog({
             <Button variant="outline" onClick={onClose} disabled={busy}>
               Отмена
             </Button>
-            <Button onClick={() => send.mutate()} disabled={!ready || busy}>
+            <Button onClick={() => send.mutate()} disabled={!ready || !periodReady || busy}>
               {isNow ? "Отправить в банк" : "Запланировать"}
             </Button>
           </div>
