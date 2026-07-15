@@ -175,11 +175,15 @@ export function CreateCounterpartyDialog({
         iiko_supplier_guid: iikoGuid === NO_IIKO ? null : iikoGuid,
       });
     },
-    onSuccess: async (created) => {
-      await queryClient.invalidateQueries({ queryKey: ["cp"] });
+    onSuccess: (created) => {
+      // Закрываем ДО инвалидации: ключ ["cp"] задевает и справочник поставщиков iiko,
+      // а он с недоступного iiko отвечает 502 через ~11 с и ретраится — ожидание держало
+      // окно в спиннере ~23 с, хотя контрагент уже создан. Закрытие снимает enabled у
+      // iiko-запроса, так что зря дёргать его никто не будет.
       onOpenChange(false);
       toast.success("Контрагент создан");
       onCreated?.(created);
+      void queryClient.invalidateQueries({ queryKey: ["cp"] });
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось создать контрагента")),
   });
