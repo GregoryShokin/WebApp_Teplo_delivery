@@ -175,7 +175,11 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
         ? String(profile.default_service_period_offset_months)
         : "0",
     );
-  }, [profile, card.counterparty_id, card.name, card.type]);
+    // Заливаем серверные значения ТОЛЬКО при смене контрагента. Если зависеть от profile,
+    // любой фоновый рефетч (например, от соседнего мгновенного тумблера «Активен в Кассе»,
+    // который инвалидирует весь ключ ["cp"]) молча затирает несохранённые правки формы.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.counterparty_id]);
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -339,7 +343,9 @@ function ManagerSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
   useEffect(() => {
     setManagerName(card.profile?.manager_name ?? "");
     setManagerPhone(card.profile?.manager_phone ?? "");
-  }, [card.profile, card.counterparty_id]);
+    // Только при смене контрагента — иначе фоновый рефетч затрёт набранное. См. ProfileSection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.counterparty_id]);
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -398,7 +404,9 @@ function RequisitesSection({ card, canAdmin }: { card: CardData; canAdmin: boole
     });
     setValues(next);
     setVerified(Boolean(profile?.requisites_verified));
-  }, [profile, card.counterparty_id]);
+    // Только при смене контрагента — иначе фоновый рефетч затрёт набранное. См. ProfileSection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.counterparty_id]);
 
   const suggestionMutation = useMutation({
     mutationFn: () => getRequisitesSuggestion(card.counterparty_id),
