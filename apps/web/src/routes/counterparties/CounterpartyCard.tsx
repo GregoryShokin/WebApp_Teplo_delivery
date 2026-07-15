@@ -159,7 +159,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
   const [name, setName] = useState("");
   const [type, setType] = useState("legal_entity");
   const [ddsArticleId, setDdsArticleId] = useState("");
-  const [allowWithoutArticle, setAllowWithoutArticle] = useState(false);
+  const [confirmNoDdsArticle, setConfirmNoDdsArticle] = useState(false);
   const [servicePeriodRequired, setServicePeriodRequired] = useState(false);
   const [servicePeriodMode, setServicePeriodMode] = useState<"automatic" | "manual">("manual");
   const [periodOffset, setPeriodOffset] = useState("0");
@@ -169,7 +169,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     setName(card.name);
     setType(card.type);
     setDdsArticleId(profile?.default_dds_article_id ?? "");
-    setAllowWithoutArticle(false);
+    setConfirmNoDdsArticle(false);
     setServicePeriodRequired(profile?.service_period_required ?? false);
     setServicePeriodMode(profile?.service_period_mode ?? "manual");
     setPeriodOffset(
@@ -187,7 +187,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
         type,
         relationship,
         default_dds_article_id: ddsArticleId || null,
-        allow_without_dds_article: allowWithoutArticle,
+        confirm_no_dds_article: confirmNoDdsArticle,
         service_period_required: servicePeriodRequired,
         service_period_mode: servicePeriodMode,
         default_service_period_offset_months: servicePeriodRequired ? Number(periodOffset) : null,
@@ -201,7 +201,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
 
   const disabled = !canAdmin;
   const canSave = Boolean(
-    (relationship === "official" || name.trim()) && (ddsArticleId || allowWithoutArticle),
+    (relationship === "official" || name.trim()) && (ddsArticleId || confirmNoDdsArticle),
   );
 
   return (
@@ -255,7 +255,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
             articles={articlesQuery.data ?? []}
             value={ddsArticleId}
             onChange={setDdsArticleId}
-            disabled={disabled || allowWithoutArticle}
+            disabled={disabled || confirmNoDdsArticle}
             placeholder="Не выбрана"
           />
           <p className="text-xs text-muted-foreground">
@@ -263,10 +263,10 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
           </p>
           <label className="flex items-center gap-2 text-sm">
             <Switch
-              checked={allowWithoutArticle}
+              checked={confirmNoDdsArticle}
               disabled={disabled}
               onCheckedChange={(checked) => {
-                setAllowWithoutArticle(checked);
+                setConfirmNoDdsArticle(checked);
                 if (checked) setDdsArticleId("");
               }}
             />

@@ -632,6 +632,23 @@ async def _get_or_create_profile(
 _UNSET = object()
 
 
+def _require_dds_article_decision(
+    default_dds_article_id: uuid.UUID | None, confirm_no_dds_article: bool
+) -> None:
+    """Статья ДДС — решение, а не пустое поле: либо выбрана, либо явно подтверждено, что её нет.
+
+    Одна проверка на создание и на правку карточки, иначе контуры разъезжаются.
+    """
+    if default_dds_article_id is None and not confirm_no_dds_article:
+        raise CounterpartyRegistryError(
+            "Выберите статью ДДС или явно подтвердите, что у контрагента нет статьи"
+        )
+    if default_dds_article_id is not None and confirm_no_dds_article:
+        raise CounterpartyRegistryError(
+            "Нельзя одновременно выбрать статью ДДС и указать, что статьи нет"
+        )
+
+
 async def update_profile(
     session: AsyncSession,
     counterparty_id: uuid.UUID,
@@ -648,6 +665,7 @@ async def update_profile(
     manager_name: str | None | object = _UNSET,
     manager_phone: str | None | object = _UNSET,
     default_dds_article_id: uuid.UUID | None | object = _UNSET,
+    confirm_no_dds_article: bool = False,
     service_period_required: bool | None | object = _UNSET,
     service_period_mode: str | None | object = _UNSET,
     default_service_period_offset_months: int | None | object = _UNSET,
@@ -656,6 +674,10 @@ async def update_profile(
     counterparty = await session.get(Counterparty, counterparty_id)
     if counterparty is None:
         raise CounterpartyRegistryError("Контрагент не найден")
+    # Решение по статье ДДС проверяем только когда её реально меняют: у PATCH
+    # незаданное поле значит «не трогать», а не «сбросить в NULL».
+    if default_dds_article_id is not _UNSET:
+        _require_dds_article_decision(default_dds_article_id, confirm_no_dds_article)
     if (
         relationship is not _UNSET
         and relationship is not None
@@ -970,14 +992,7 @@ async def create_counterparty(
     clean_name = (name or "").strip()
     if not clean_name:
         raise CounterpartyRegistryError("Укажите название контрагента")
-    if default_dds_article_id is None and not confirm_no_dds_article:
-        raise CounterpartyRegistryError(
-            "Выберите статью ДДС или явно подтвердите, что у контрагента нет статьи"
-        )
-    if default_dds_article_id is not None and confirm_no_dds_article:
-        raise CounterpartyRegistryError(
-            "Нельзя одновременно выбрать статью ДДС и указать, что статьи нет"
-        )
+    _require_dds_article_decision(default_dds_article_id, confirm_no_dds_article)
     requested_requisites = {
         str(key): value.strip() if isinstance(value, str) else value
         for key, value in (requisites or {}).items()

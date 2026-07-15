@@ -391,7 +391,7 @@ export type ProfileUpdatePayload = {
   manager_name?: string | null;
   manager_phone?: string | null;
   default_dds_article_id?: string | null;
-  allow_without_dds_article?: boolean;
+  confirm_no_dds_article?: boolean;
   service_period_required?: boolean | null;
   service_period_mode?: "automatic" | "manual" | null;
   default_service_period_offset_months?: number | null;

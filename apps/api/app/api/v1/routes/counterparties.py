@@ -242,7 +242,8 @@ class ProfileUpdate(BaseModel):
     manager_name: str | None = Field(default=None, max_length=160)
     manager_phone: str | None = Field(default=None, max_length=64)
     default_dds_article_id: uuid.UUID | None = None
-    allow_without_dds_article: bool = False
+    # Статья обязательна; отсутствие — только через явный переключатель в форме.
+    confirm_no_dds_article: bool = False
     service_period_required: bool | None = None
     service_period_mode: Literal["automatic", "manual"] | None = None
     default_service_period_offset_months: int | None = Field(default=None, ge=-12, le=12)
@@ -904,16 +905,6 @@ async def put_profile(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> CardRead:
     values = payload.model_dump(exclude_unset=True)
-    allow_without_article = bool(values.pop("allow_without_dds_article", False))
-    if (
-        "default_dds_article_id" in values
-        and values["default_dds_article_id"] is None
-        and not allow_without_article
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Укажите статью ДДС или явно включите «У контрагента нет статьи»",
-        )
     if "type" in values:
         values["cp_type"] = values.pop("type")
     try:
