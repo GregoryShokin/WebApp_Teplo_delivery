@@ -15,8 +15,8 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 from app.auth.permissions import PERMISSION_CATALOG
 
-revision = "0187_supplier_service_periods"
-down_revision = "0186_payroll_reserve_run_link"
+revision = "0190_supplier_service_periods"
+down_revision = "0189_payroll_draft_deleted"
 branch_labels = None
 depends_on = None
 
