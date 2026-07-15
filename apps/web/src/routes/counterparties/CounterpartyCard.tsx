@@ -202,9 +202,28 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
   });
 
   const disabled = !canAdmin;
-  const canSave = Boolean(
-    (relationship === "official" || name.trim()) && (ddsArticleId || confirmNoDdsArticle),
-  );
+  // Почему «Сохранить» не нажимается — говорим вслух: поле-виновник часто за сгибом,
+  // а погасшая кнопка без причины читается как «сломалось».
+  const saveBlockedReason =
+    relationship !== "official" && !name.trim()
+      ? "Укажите название контрагента"
+      : !ddsArticleId && !confirmNoDdsArticle
+        ? "Выберите статью ДДС или отметьте, что её нет"
+        : null;
+  const canSave = !saveBlockedReason;
+  const periodOffsetSaved =
+    profile?.default_service_period_offset_months != null
+      ? String(profile.default_service_period_offset_months)
+      : "0";
+  const dirty =
+    relationship !== (profile?.relationship ?? "official") ||
+    (relationship !== "official" && name !== card.name) ||
+    type !== card.type ||
+    ddsArticleId !== (profile?.default_dds_article_id ?? "") ||
+    confirmNoDdsArticle !== (profile?.confirm_no_dds_article ?? false) ||
+    servicePeriodRequired !== (profile?.service_period_required ?? false) ||
+    servicePeriodMode !== (profile?.service_period_mode ?? "manual") ||
+    (servicePeriodRequired && periodOffset !== periodOffsetSaved);
 
   return (
     <Section title="Общая информация">
@@ -321,15 +340,26 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
         </div>
       </div>
       {canAdmin ? (
-        <Button
-          disabled={!canSave || saveMutation.isPending}
-          onClick={() => saveMutation.mutate()}
-        >
-          {saveMutation.isPending ? (
-            <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+        // Причина блокировки и признак несохранённого — рядом с кнопкой: поле-виновник
+        // может быть выше по форме, а погасшая кнопка без объяснения читается как поломка.
+        <div className="flex flex-wrap items-center gap-3 border-t pt-4">
+          <Button
+            disabled={!canSave || saveMutation.isPending}
+            onClick={() => saveMutation.mutate()}
+          >
+            {saveMutation.isPending ? (
+              <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+            ) : null}
+            Сохранить
+          </Button>
+          {saveBlockedReason ? (
+            <span className="text-xs text-muted-foreground">{saveBlockedReason}</span>
+          ) : dirty ? (
+            <span className="text-xs font-medium text-amber-700">
+              Есть несохранённые изменения
+            </span>
           ) : null}
-          Сохранить
-        </Button>
+        </div>
       ) : null}
     </Section>
   );
