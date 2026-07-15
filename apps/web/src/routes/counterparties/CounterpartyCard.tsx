@@ -823,9 +823,16 @@ function KassaToggle({ card }: { card: CardData }) {
   );
 }
 
+/** Поле формы: подпись + контрол, прижатые к верху ячейки.
+ *
+ *  Именно flex, а не grid: в сетке `sm:grid-cols-2` ячейка растягивается по высоте соседа,
+ *  а у grid `align-content: normal` = stretch — внутренние строки растут вместе с ячейкой и
+ *  «роняют» контрол вниз на разную величину. Из-за этого поля с подсказкой и без неё
+ *  вставали на разной высоте в одной строке (замер: контрол на 292 против 280).
+ */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid gap-2">
+    <div className="flex flex-col gap-2">
       <Label>{label}</Label>
       {children}
     </div>

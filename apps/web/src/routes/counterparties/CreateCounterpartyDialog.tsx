@@ -417,9 +417,12 @@ export function CreateCounterpartyDialog({
   );
 }
 
+/** Поле формы: подпись + контрол, прижатые к верху ячейки. flex, а не grid — см. тот же
+ *  Field в CounterpartyCard: в двухколоночной сетке grid растягивает внутренние строки по
+ *  высоте соседней ячейки, и поля с подсказкой и без неё встают на разной высоте. */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid gap-2">
+    <div className="flex flex-col gap-2">
       <Label>{label}</Label>
       {children}
     </div>
