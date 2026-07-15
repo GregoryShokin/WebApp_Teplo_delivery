@@ -25,7 +25,6 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
 import { apiErrorMessage, getDdsArticles } from "@/lib/api";
-import { InvoiceDetailDialog } from "@/routes/warehouse/InvoiceDetailDialog";
 
 import { BarterSection } from "./BarterSection";
 import {
@@ -47,12 +46,9 @@ import {
   COLLECTION_KIND_LABELS,
   COUNTERPARTY_REQUISITE_FIELDS,
   COUNTERPARTY_TYPE_LABELS,
-  INVOICE_DIRECTION_LABELS,
-  InvoiceStatusBadge,
   RELATIONSHIP_HINTS,
   RELATIONSHIP_LABELS,
   RelationshipBadge,
-  SOURCE_LABELS,
   formatRub,
 } from "./shared";
 
@@ -118,8 +114,13 @@ function CardBody({
           <TabsTrigger value="requisites">Реквизиты</TabsTrigger>
           <TabsTrigger value="manager">Данные менеджера</TabsTrigger>
         </TabsList>
-        <TabsContent value="general" className="mt-5">
+        {/* «Общая информация» — всё, что описывает самого контрагента: профиль, откуда
+            приходят его счета и доступен ли он Кассе. Накладные тут не показываем: карточка
+            отвечает на «кто это», а не «сколько ему должны» — для этого есть «Накладные». */}
+        <TabsContent value="general" className="mt-5 space-y-8">
           <ProfileSection card={card} canAdmin={canAdmin} />
+          <CollectionSourcesSection card={card} canAdmin={canAdmin} />
+          {canOperate ? <KassaSection card={card} /> : null}
         </TabsContent>
         <TabsContent value="requisites" className="mt-5">
           <RequisitesSection card={card} canAdmin={canAdmin} />
@@ -128,15 +129,12 @@ function CardBody({
           <ManagerSection card={card} canAdmin={canAdmin} />
         </TabsContent>
       </Tabs>
-      <CollectionSourcesSection card={card} canAdmin={canAdmin} />
       {card.aliases.some((alias) => alias.source === "iiko") ? (
         <RoutingSection card={card} canAdmin={canAdmin} />
       ) : null}
-      <InvoicesSection card={card} />
       {card.relationship === "barter" ? (
         <BarterSection counterpartyId={card.counterparty_id} canOperate={canOperate} />
       ) : null}
-      {canOperate ? <KassaSection card={card} /> : null}
       {canAdmin ? <ArchiveSection card={card} /> : null}
     </div>
   );
@@ -709,77 +707,6 @@ function BarterBalanceBanner({ card }: { card: CardData }) {
   );
 }
 
-function InvoicesSection({ card }: { card: CardData }) {
-  const payables = card.invoices.filter((invoice) => invoice.direction === "payable");
-  const receivables = card.invoices.filter((invoice) => invoice.direction === "receivable");
-  const [detailId, setDetailId] = useState<string | null>(null);
-  return (
-    <Section title="Накладные">
-      <InvoiceList
-        title={INVOICE_DIRECTION_LABELS.payable}
-        invoices={payables}
-        onSelect={setDetailId}
-      />
-      {receivables.length > 0 ? (
-        <InvoiceList
-          title={INVOICE_DIRECTION_LABELS.receivable}
-          invoices={receivables}
-          onSelect={setDetailId}
-        />
-      ) : null}
-      <InvoiceDetailDialog
-        invoiceId={detailId}
-        onOpenChange={(open) => !open && setDetailId(null)}
-      />
-    </Section>
-  );
-}
-
-function InvoiceList({
-  title,
-  invoices,
-  onSelect,
-}: {
-  title: string;
-  invoices: CardData["invoices"];
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <h4 className="text-xs font-medium uppercase text-muted-foreground">{title}</h4>
-      {invoices.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Нет накладных.</p>
-      ) : (
-        <div className="grid gap-2">
-          {invoices.slice(0, 20).map((invoice) => (
-            <button
-              key={invoice.id}
-              type="button"
-              onClick={() => onSelect(invoice.id)}
-              className="flex items-center justify-between gap-2 rounded-md border p-2 text-left text-sm transition-colors hover:bg-muted/50"
-            >
-              <span className="min-w-0 truncate">
-                <Badge variant="outline" className="mr-2">
-                  {SOURCE_LABELS[invoice.source] ?? invoice.source}
-                </Badge>
-                {invoice.number ?? "—"}
-              </span>
-              <span className="flex items-center gap-3">
-                <span className="tabular-nums">{formatRub(invoice.amount)}</span>
-                <InvoiceStatusBadge
-                  status={invoice.payment_status}
-                  direction={invoice.direction}
-                  barterSettled={!!invoice.barter_settlement_id}
-                  barterRole={invoice.barter_role}
-                />
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function ArchiveSection({ card }: { card: CardData }) {
   const queryClient = useQueryClient();
