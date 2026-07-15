@@ -1,8 +1,18 @@
-import { useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, LoaderCircle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +63,20 @@ import {
   formatRub,
 } from "./shared";
 
+/** Реестр форм с несохранёнными правками. Формы живут в разных секциях и сохраняются
+ *  каждая своей кнопкой, поэтому карточка узнаёт о «грязном» состоянии только так —
+ *  иначе Esc или клик мимо выбрасывают набранное без единого вопроса. */
+const DirtyFormsContext = createContext<((formId: string, dirty: boolean) => void) | null>(null);
+
+/** Сообщает карточке, что в этой форме есть несохранённые правки. */
+function useReportDirty(formId: string, dirty: boolean) {
+  const report = useContext(DirtyFormsContext);
+  useEffect(() => {
+    report?.(formId, dirty);
+    return () => report?.(formId, false);
+  }, [report, formId, dirty]);
+}
+
 export function CounterpartyCard({
   counterpartyId,
   canOperate,
@@ -69,9 +93,32 @@ export function CounterpartyCard({
     queryFn: () => getCounterpartyCard(counterpartyId as string),
     enabled: Boolean(counterpartyId),
   });
+  const dirtyForms = useRef(new Set<string>());
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const reportDirty = useCallback((formId: string, dirty: boolean) => {
+    if (dirty) dirtyForms.current.add(formId);
+    else dirtyForms.current.delete(formId);
+  }, []);
+
+  function close() {
+    dirtyForms.current.clear();
+    setConfirmOpen(false);
+    onClose();
+  }
 
   return (
-    <Sheet open={Boolean(counterpartyId)} onOpenChange={(open) => !open && onClose()}>
+    <Sheet
+      open={Boolean(counterpartyId)}
+      onOpenChange={(open) => {
+        if (open) return;
+        // Не закрываем молча поверх набранного: Esc, клик мимо и крестик идут сюда же.
+        if (dirtyForms.current.size > 0) {
+          setConfirmOpen(true);
+          return;
+        }
+        close();
+      }}
+    >
       <SheetContent className="w-full overflow-y-auto sm:max-w-2xl">
         <SheetHeader>
           <SheetTitle>{cardQuery.data?.name ?? "Контрагент"}</SheetTitle>
@@ -84,9 +131,27 @@ export function CounterpartyCard({
           </SheetDescription>
         </SheetHeader>
         {cardQuery.data ? (
-          <CardBody card={cardQuery.data} canOperate={canOperate} canAdmin={canAdmin} />
+          <DirtyFormsContext.Provider value={reportDirty}>
+            <CardBody card={cardQuery.data} canOperate={canOperate} canAdmin={canAdmin} />
+          </DirtyFormsContext.Provider>
         ) : null}
       </SheetContent>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Закрыть без сохранения?</AlertDialogTitle>
+            <AlertDialogDescription>
+              В карточке есть несохранённые изменения — они пропадут.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmOpen(false)}>
+              Вернуться к правке
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={close}>Закрыть без сохранения</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sheet>
   );
 }
@@ -117,11 +182,18 @@ function CardBody({
           <TabsTrigger value="manager">Данные менеджера</TabsTrigger>
         </TabsList>
         {/* «Общая информация» — всё, что описывает самого контрагента: профиль, откуда
-            приходят его счета и доступен ли он Кассе. Накладные тут не показываем: карточка
-            отвечает на «кто это», а не «сколько ему должны» — для этого есть «Накладные». */}
+            приходят его документы (источники + маршрутизация iiko) и бартерное сальдо.
+            Накладные тут не показываем: карточка отвечает на «кто это», а не «сколько ему
+            должны» — для этого есть «Накладные». */}
         <TabsContent value="general" className="mt-5 space-y-8">
           <ProfileSection card={card} canAdmin={canAdmin} />
           <CollectionSourcesSection card={card} canAdmin={canAdmin} />
+          {card.aliases.some((alias) => alias.source === "iiko") ? (
+            <RoutingSection card={card} canAdmin={canAdmin} />
+          ) : null}
+          {card.relationship === "barter" ? (
+            <BarterSection counterpartyId={card.counterparty_id} canOperate={canOperate} />
+          ) : null}
         </TabsContent>
         <TabsContent value="requisites" className="mt-5">
           <RequisitesSection card={card} canAdmin={canAdmin} />
@@ -130,12 +202,8 @@ function CardBody({
           <ManagerSection card={card} canAdmin={canAdmin} />
         </TabsContent>
       </Tabs>
-      {card.aliases.some((alias) => alias.source === "iiko") ? (
-        <RoutingSection card={card} canAdmin={canAdmin} />
-      ) : null}
-      {card.relationship === "barter" ? (
-        <BarterSection counterpartyId={card.counterparty_id} canOperate={canOperate} />
-      ) : null}
+      {/* Архив — действие над всей карточкой, а не свойство вкладки: оставляем внизу,
+          но отделяем, чтобы не читался как часть последней открытой вкладки. */}
       {canAdmin ? <ArchiveSection card={card} /> : null}
     </div>
   );
@@ -231,6 +299,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     servicePeriodRequired !== (profile?.service_period_required ?? false) ||
     servicePeriodMode !== (profile?.service_period_mode ?? "manual") ||
     (servicePeriodRequired && periodOffset !== periodOffsetSaved);
+  useReportDirty("profile", dirty);
 
   return (
     <Section title="Общая информация">
@@ -392,6 +461,12 @@ function ManagerSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.counterparty_id]);
 
+  useReportDirty(
+    "manager",
+    managerName !== (card.profile?.manager_name ?? "") ||
+      managerPhone !== (card.profile?.manager_phone ?? ""),
+  );
+
   const mutation = useMutation({
     mutationFn: () =>
       updateProfile(card.counterparty_id, {
@@ -488,6 +563,14 @@ function RequisitesSection({ card, canAdmin }: { card: CardData; canAdmin: boole
   });
 
   const disabled = !canAdmin;
+  useReportDirty(
+    "requisites",
+    verified !== Boolean(profile?.requisites_verified) ||
+      COUNTERPARTY_REQUISITE_FIELDS.some(({ key }) => {
+        const saved = (profile?.requisites as Record<string, unknown> | undefined)?.[key];
+        return (values[key] ?? "") !== (saved != null ? String(saved) : "");
+      }),
+  );
   // Отметку «проверены» нельзя ставить на неполном наборе — это же правило стоит на
   // сервере (registry._require_official_supplier_requisites). Показываем причину здесь,
   // чтобы человек увидел её до отправки, а не поймал 409.
