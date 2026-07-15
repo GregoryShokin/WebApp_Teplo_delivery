@@ -748,38 +748,13 @@ async def set_requisites(
     if counterparty is None:
         raise CounterpartyRegistryError("Контрагент не найден")
     new_requisites = dict(requisites or {})
-    profile = await _get_or_create_profile(session, counterparty_id)
-    if profile.relationship == "official":
-        required = {
-            "recipientName": new_requisites.get("recipientName"),
-            "inn": new_requisites.get("inn"),
-            "bankAcnt": new_requisites.get("bankAcnt"),
-            "bankBik": new_requisites.get("bankBik"),
-            "recipientCorrAccountNumber": new_requisites.get("recipientCorrAccountNumber"),
-        }
-        if any(not str(value or "").strip() for value in required.values()):
-            raise CounterpartyRegistryError(
-                "Для официального контрагента обязательны название, ИНН, БИК, "
-                "расчётный и корреспондентский счета"
-            )
-        clean_inn = str(required["inn"]).strip()
-        if clean_inn != counterparty.inn:
-            duplicate = await session.scalar(
-                select(Counterparty.id).where(
-                    Counterparty.inn == clean_inn,
-                    Counterparty.id != counterparty_id,
-                )
-            )
-            if duplicate is not None:
-                raise CounterpartyRegistryError("Контрагент с таким ИНН уже существует")
-        counterparty.name = str(required["recipientName"]).strip()
-        counterparty.inn = clean_inn
     # Подтверждение реквизитов — не голая отметка: битый контрольный разряд счёта банк
     # всё равно отклонит (422), поэтому не даём пометить такие реквизиты «подтверждёнными».
     if verified:
         account_error = payee_account_error(new_requisites)
         if account_error:
             raise CounterpartyRegistryError(account_error)
+    profile = await _get_or_create_profile(session, counterparty_id)
     profile.requisites = new_requisites
     profile.requisites_verified = verified
     if verified:
@@ -1038,11 +1013,6 @@ async def create_counterparty(
         existing = await session.scalar(select(Counterparty).where(Counterparty.inn == clean_inn))
         if existing is not None:
             raise CounterpartyRegistryError("Контрагент с таким ИНН уже существует")
-    clean_requisites = dict(requisites or {})
-    if requisites_verified:
-        account_error = payee_account_error(clean_requisites)
-        if account_error:
-            raise CounterpartyRegistryError(account_error)
     # Onboarding a supplier straight from the iiko directory: bind its GUID as an alias so the
     # reverse invoice-sync recognises this counterparty instead of auto-creating a duplicate
     # (a prepayment-only supplier has no posted invoice yet, hence no auto-create). Guard against

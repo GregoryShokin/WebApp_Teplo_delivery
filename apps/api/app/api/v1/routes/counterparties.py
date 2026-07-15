@@ -853,30 +853,8 @@ async def post_counterparty(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> CardRead:
-    if payload.default_dds_article_id is None and not payload.allow_without_dds_article:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=("Укажите статью ДДС или явно включите «У контрагента нет статьи»"),
-        )
-    requisites = dict(payload.requisites or {})
-    if payload.relationship == "official":
-        required = {
-            "recipientName": payload.name,
-            "inn": payload.inn,
-            "bankAcnt": requisites.get("bankAcnt"),
-            "bankBik": requisites.get("bankBik"),
-            "recipientCorrAccountNumber": requisites.get("recipientCorrAccountNumber"),
-        }
-        missing = [key for key, value in required.items() if not str(value or "").strip()]
-        if missing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "Для официального контрагента обязательны название, ИНН, БИК, "
-                    "расчётный и корреспондентский счета"
-                ),
-            )
-        requisites.update({key: str(value).strip() for key, value in required.items()})
+    # Валидация (статья ДДС + реквизиты официального поставщика) живёт в реестре —
+    # там же исключение для банка и налоговой, которым реквизиты не нужны.
     try:
         counterparty = await registry.create_counterparty(
             session,
