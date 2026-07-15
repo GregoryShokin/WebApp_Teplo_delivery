@@ -5,7 +5,7 @@ import { usePermissions } from "@/lib/permissions";
 import { CounterpartyCard } from "./CounterpartyCard";
 import { RegistryTab } from "./tabs/registry";
 
-/** Единственное место создания и редактирования контрагентов: «Накладные → Контрагенты». */
+/** Единственное место создания и редактирования контрагентов: «Финансы → Контрагенты». */
 export function CounterpartyRegistryModule() {
   const permissions = usePermissions();
   const canOperate = permissions.canPerformAction("counterparties.operate");
