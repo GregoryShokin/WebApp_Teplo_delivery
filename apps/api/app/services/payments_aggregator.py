@@ -43,6 +43,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from app.models import (
     Counterparty,
@@ -200,6 +201,9 @@ async def _invoice_items(session: AsyncSession) -> list[PaymentItem]:
         )
         .outerjoin(SupplierInvoice, SupplierInvoice.id == EmailInvoiceIntake.invoice_id)
         .order_by(EmailInvoiceIntake.created_at.desc())
+        # PDF счёта витрине не нужен, а весит сотни килобайт на запись: без defer
+        # каждый опрос списка тянул из TOAST все вложения за всю историю почты.
+        .options(defer(EmailInvoiceIntake.pdf_bytes))
     )
     rows = (await session.execute(stmt)).all()
     article_ids = {r[5] for r in rows if r[5] is not None}
