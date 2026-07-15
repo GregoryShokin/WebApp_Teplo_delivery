@@ -134,6 +134,20 @@ def _informal_payment_purpose(
     return " ".join(base.split())[:210]
 
 
+def _purpose_with_match_marker(purpose: str, draft_id: uuid.UUID) -> str:
+    """Добавить короткую внутреннюю метку для связи черновика с выпиской.
+
+    Старые назначения остаются валидными для точного матча целиком. Для новых платежей
+    метка даёт второй независимый признак поверх ``documentNumber``. Юридически значимую
+    часть назначения не режем: если лимита 210 символов не хватает, отправляем исходный
+    текст без метки.
+    """
+    normalized = " ".join(purpose.split())
+    marker = f"[TPL-{draft_id.hex[:12].upper()}]"
+    tagged = f"{normalized} {marker}"
+    return tagged if len(tagged) <= 210 else normalized
+
+
 async def _ip_card_requisites(session: AsyncSession) -> dict[str, Any]:
     """Единый, зафиксированный владельцем получатель выплат через Сейф."""
 
@@ -243,6 +257,7 @@ async def create_payment_draft_for_invoices(
     )
     document_id = f"teplo-cp-{draft.id}"
     draft.document_id = document_id[:64]
+    purpose = _purpose_with_match_marker(purpose, draft.id)
 
     try:
         payload = build_payment_draft_api_payload(

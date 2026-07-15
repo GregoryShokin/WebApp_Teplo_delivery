@@ -115,6 +115,7 @@ async def test_create_draft_packs_invoices_and_links_them(
         # VAT is stated in the payment purpose and the whole purpose fits the limit.
         purpose = draft.payload["paymentPurpose"]
         assert "НДС" in purpose
+        assert f"[TPL-{draft.id.hex[:12].upper()}]" in purpose
         assert len(purpose) <= 210
 
 

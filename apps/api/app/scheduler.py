@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta
@@ -65,10 +66,10 @@ SUPPORTED_BANK_PROVIDERS = ("sber", "tbank")
 async def poll_banks() -> None:
     # Почасовой polling выписки банков (Sber + T-Bank). Для Sber это ЕДИНСТВЕННЫЙ источник
     # данных — вебхука у него нет; для T-Bank — сверка/фоллбэк к realtime-вебхуку «операция по
-    # счёту» (если вебхук не доставит, поллинг доберёт). Черновики этим путём НЕ гасятся (их
-    # доводит статусный webhook по provider_ref); анти-дубль с оплатой черновика — prebooked-
-    # механизм классификатора. Дедуп по operationId + стабильному ключу выписки в
-    # ingest_operations делает повторный прогон идемпотентным.
+    # счёту» (если webhook не доставит, polling доберёт). Сохранённую Transaction на следующем
+    # минутном ``poll_payment_statuses`` можно связать с черновиком по сумме/назначению даже при
+    # застрявшем SUBMITTED. Дедуп по operationId + стабильному ключу выписки в
+    # ``ingest_operations`` делает повторный прогон идемпотентным.
     for provider in _bank_sync_providers():
         await run_bank_sync_job(provider=provider)
 
@@ -215,6 +216,7 @@ async def run_payment_status_poll(
         "failed": 0,
         "deleted": 0,
         "errors": 0,
+        "matched_by_operation": 0,
         "reconciled": 0,
         "absorbed": 0,
     }
@@ -321,6 +323,12 @@ async def run_payment_status_poll(
         elif advance_status == "failed":
             result["failed"] += 1
 
+    # Статус черновика T-Банка может застрять на SUBMITTED уже после фактического списания.
+    # В таком случае подтверждённая Transaction из выписки закрывает черновик по точному
+    # многофакторному совпадению (сумма + назначение + счёт + documentNumber/метка).
+    result["matched_by_operation"] = await settle_drafts_from_recorded_operations(session)
+    result["paid"] += result["matched_by_operation"]
+
     # Сводим «требующие проверки» операции с prebooked-проводками, появившимися позже них
     # (гонка вебхук↔поллинг) — иначе один платёж висит двумя строками в журнале.
     result["reconciled"] = await reconcile_needs_review_prebooked(session)
@@ -334,33 +342,26 @@ async def run_payment_status_poll(
 async def settle_counterparty_draft_from_operation(
     session: AsyncSession,
     *,
-    operation: NormalizedBankOperation,
-    client: TbankClient | None = None,
+    operation: NormalizedBankOperation | BankOperation,
 ) -> str | None:
-    """Near-realtime доводка ОПЛАТЫ банковского черновика по входящей операции выписки.
+    """Закрыть черновик по подтверждённой операции T-Банка без ожидания ``EXECUTED``.
 
-    Т-Банк на исполнение платежа шлёт «операцию по счёту» (в теле есть documentNumber, но НЕТ
-    documentId), а по documentId статус доступен только опросом. Здесь входящую исходящую
-    проведённую операцию матчим к ``created/updated`` ``CounterpartyPaymentDraft`` по
-    documentNumber (детерминированно выводится из ``draft.document_id`` = ``teplo-cp-<id>``
-    тем же ``_document_number``, что мы шлём банку) И по точной сумме. Требуем РОВНО одного
-    кандидата — при 0/неоднозначности не трогаем (доведёт 15-мин поллинг), т.к. documentNumber
-    6-значный и слабо-уникален. Статусу из тела операции («Active») НЕ доверяем: берём
-    АВТОРИТЕТНЫЙ статус банка ``get_payment_status(provider_ref)`` и доводим штатным
-    ``apply_payment_status`` (идемпотентно, row-lock, переход только из created/updated).
-    Затем ``reconcile_needs_review_prebooked`` — чтобы та же операция забрала свежую
-    prebooked-проводку, а не встала второй строкой. Не коммитит: коммит на вызывающем
-    (обработчике вебхука, в одной транзакции с ингестом операции). Удаление черновика этим
-    путём НЕ ускоряется — банк на удаление операцию по счёту не шлёт (остаётся за поллингом).
+    ``payment/status`` у черновика может оставаться ``SUBMITTED``, хотя выписка уже содержит
+    подтверждённую ``Transaction``. Поэтому источник истины здесь — проведённая операция,
+    но автозакрытие допускается только при точном совпадении суммы, нормализованного
+    назначения и счёта списания. ``documentNumber`` (если есть) обязан совпасть; у новых
+    платежей назначение дополнительно содержит метку ``[TPL-…]``. Неоднозначность или любой
+    конфликт оставляют операцию в ручном разборе. Не коммитит.
     """
-    if operation.direction != "out":
+    if operation.provider != "tbank" or operation.direction != "out":
         return None
-    raw_num = (operation.document_number or "").strip()
-    if not raw_num:
+    raw_payload = operation.raw_payload if isinstance(operation.raw_payload, dict) else {}
+    operation_stage = str(raw_payload.get("operationStatus") or "").strip().casefold()
+    if operation_stage != "transaction":
         return None
-    try:
-        op_num = int(raw_num)
-    except ValueError:
+
+    operation_purpose = _normalize_payment_purpose(operation.payment_purpose)
+    if not operation_purpose:
         return None
 
     candidates = (
@@ -368,34 +369,42 @@ async def settle_counterparty_draft_from_operation(
             select(CounterpartyPaymentDraft).where(
                 CounterpartyPaymentDraft.status.in_(("created", "updated")),
                 CounterpartyPaymentDraft.provider_ref.is_not(None),
+                CounterpartyPaymentDraft.bank_provider == "tbank",
                 CounterpartyPaymentDraft.amount == operation.amount,
             )
         )
     ).all()
-    matches = [d for d in candidates if int(_document_number(d.document_id)) == op_num]
+
+    operation_account = await _operation_account_number(session, operation)
+    raw_num = (operation.document_number or "").strip()
+    matches: list[CounterpartyPaymentDraft] = []
+    for draft in candidates:
+        draft_purpose = _normalize_payment_purpose((draft.payload or {}).get("paymentPurpose"))
+        if draft_purpose != operation_purpose:
+            continue
+        if draft.created_at is not None and operation.operation_date < draft.created_at.date():
+            continue
+        draft_account = clean_digits((draft.payload or {}).get("accountNumber"))
+        if operation_account and draft_account and operation_account != draft_account:
+            continue
+        if raw_num and raw_num != _document_number(draft.document_id):
+            continue
+        # Без documentNumber разрешаем матч только для нового назначения с уникальной TPL-меткой.
+        if not raw_num and not _PURPOSE_MARKER_RE.search(operation_purpose):
+            continue
+        matches.append(draft)
+
     if len(matches) != 1:
-        # 0 — операция не от нашего черновика; >1 — неоднозначно. Безопасно отдаём поллингу.
+        # 0 — операция не от нашего черновика; >1 — неоднозначно. Оставляем ручному разбору.
         return None
 
     draft = matches[0]
-    client = client or TbankClient(session)
-    try:
-        raw_status = await client.get_payment_status(draft.provider_ref or "")
-    except BankFetchError:
-        # Сетевая/429 — не доводим сейчас, но и НЕ валим приём вебхука: доберёт поллинг.
-        logger.warning(
-            "realtime-доводка: get_payment_status по черновику %s не удался — доведёт поллинг",
-            draft.id,
-            exc_info=True,
-        )
-        return None
-    if raw_status is None:
-        return None
-
     status = await apply_payment_status(
         session,
         draft=draft,
-        raw_status=raw_status,
+        # ``Transaction`` официально означает подтверждённую операцию; передаём штатному
+        # идемпотентному обработчику его нормализованный терминальный эквивалент.
+        raw_status="executed",
         operation_date=operation.operation_date,
         commit=False,
     )
@@ -406,6 +415,69 @@ async def settle_counterparty_draft_from_operation(
         # правило) — поглощаем её той же prebooked-проводкой, иначе платёж останется задвоенным.
         await absorb_auto_classified_counterparty_payment(session)
     return status
+
+
+_PURPOSE_MARKER_RE = re.compile(r"\[tpl-[0-9a-f]{12}\]", re.IGNORECASE)
+
+
+def _normalize_payment_purpose(value: object) -> str:
+    """Сравнивать назначение строго, нормализуя только регистр и пробельные символы."""
+    return " ".join(str(value or "").replace("\u00a0", " ").split()).casefold()
+
+
+async def _operation_account_number(
+    session: AsyncSession, operation: NormalizedBankOperation | BankOperation
+) -> str:
+    if isinstance(operation, NormalizedBankOperation):
+        return clean_digits(operation.account_number)
+    if operation.account_id is None:
+        return ""
+    account_number = await session.scalar(
+        select(Account.account_number).where(Account.id == operation.account_id)
+    )
+    return clean_digits(account_number)
+
+
+async def settle_drafts_from_recorded_operations(session: AsyncSession) -> int:
+    """Добрать активные T-Банк-черновики по уже сохранённым Transaction из ДДС.
+
+    Это страховка для двух случаев: webhook пришёл до деплоя новой логики либо операция была
+    получена почасовым polling выписки. Скан ограничен суммами и датой активных черновиков.
+    """
+    active_drafts = (
+        await session.scalars(
+            select(CounterpartyPaymentDraft).where(
+                CounterpartyPaymentDraft.status.in_(("created", "updated")),
+                CounterpartyPaymentDraft.provider_ref.is_not(None),
+                CounterpartyPaymentDraft.bank_provider == "tbank",
+            )
+        )
+    ).all()
+    if not active_drafts:
+        return 0
+
+    amounts = {draft.amount for draft in active_drafts}
+    created_dates = [draft.created_at.date() for draft in active_drafts if draft.created_at]
+    oldest_date = min(created_dates) if created_dates else datetime.now(MOSCOW_TZ).date()
+    operations = (
+        await session.scalars(
+            select(BankOperation)
+            .where(
+                BankOperation.provider == "tbank",
+                BankOperation.direction == "out",
+                BankOperation.amount.in_(amounts),
+                BankOperation.operation_date >= oldest_date,
+            )
+            .order_by(BankOperation.operation_date, BankOperation.imported_at)
+        )
+    ).all()
+
+    matched = 0
+    for operation in operations:
+        status = await settle_counterparty_draft_from_operation(session, operation=operation)
+        if status == "paid":
+            matched += 1
+    return matched
 
 
 @scheduler.scheduled_job(

@@ -1,16 +1,16 @@
-"""Фоновый добор статуса платежей (замена ручного мэчинга): scheduler.run_payment_status_poll
-опрашивает банк по «отправленным в банк» черновикам и гасит исполненные."""
+"""Фоновая доводка платежей: ``run_payment_status_poll`` опрашивает статусы черновиков
+и добирает застрявшие ``SUBMITTED`` по подтверждённым операциям выписки."""
 
 from __future__ import annotations
 
 import uuid
 from decimal import Decimal
 
-from cp_helpers import make_counterparty, make_draft, make_invoice
+from cp_helpers import make_account, make_counterparty, make_draft, make_invoice, make_wallet
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from test_payroll_payouts import create_payroll_run
 
-from app.models import PayrollBankDraft
+from app.models import BankOperation, PayrollBankDraft
 from app.scheduler import run_payment_status_poll
 from app.services.banking.tbank import TbankClient, _payment_status_from_payload
 
@@ -47,6 +47,10 @@ class _FakeClient:
 async def _sent_draft(session: AsyncSession, cp_id, *, provider_ref: str = "pay-1"):
     draft = await make_draft(session, counterparty_id=cp_id, amount="1000.00")
     draft.provider_ref = provider_ref
+    draft.payload = {
+        "paymentPurpose": "Оплата поставщику по счёту 1",
+        "accountNumber": "00000000000000000000",
+    }
     await session.flush()
     inv = await make_invoice(session, counterparty_id=cp_id, amount="1000.00", draft_id=draft.id)
     return draft, inv
@@ -68,6 +72,7 @@ async def test_poll_settles_executed_draft(
             "failed": 0,
             "deleted": 0,
             "errors": 0,
+            "matched_by_operation": 0,
             "reconciled": 0,
             "absorbed": 0,
         }
@@ -88,6 +93,52 @@ async def test_poll_leaves_pending_draft(
         assert result["checked"] == 1 and result["paid"] == 0
         await session.refresh(draft)
         assert draft.status == "created"
+
+
+async def test_poll_settles_submitted_draft_from_recorded_transaction(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Уже сохранённая Transaction закрывает SUBMITTED по сумме и назначению."""
+    from app.services.banking.tbank import _document_number
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="P")
+        draft, inv = await _sent_draft(session, cp.id)
+        account = await make_account(
+            session,
+            account_number="40702819999999999999",
+            legal_entity="ИП Шокина Е.А.",
+        )
+        await make_wallet(session, wallet_type="bank", account_id=account.id)
+        draft.payload = {**draft.payload, "accountNumber": account.account_number}
+        operation = BankOperation(
+            id=uuid.uuid4(),
+            provider="tbank",
+            provider_operation_id="eco-center-operation",
+            account_id=account.id,
+            operation_date=draft.created_at.date(),
+            direction="out",
+            amount=Decimal("1000.00"),
+            currency="RUB",
+            payment_purpose=draft.payload["paymentPurpose"],
+            document_number=_document_number(draft.document_id),
+            raw_payload={"operationStatus": "Transaction"},
+            classification_status="needs_review",
+        )
+        session.add(operation)
+        await session.commit()
+
+        result = await run_payment_status_poll(session, client=_FakeClient("SUBMITTED"))
+
+        assert result["matched_by_operation"] == 1
+        assert result["paid"] == 1
+        await session.refresh(draft)
+        await session.refresh(inv)
+        await session.refresh(operation)
+        assert draft.status == "paid"
+        assert inv.payment_status == "paid"
+        assert operation.classification_status == "classified"
+        assert operation.cashflow_transaction_id is not None
 
 
 async def test_poll_removes_deleted_draft_from_active_state(
