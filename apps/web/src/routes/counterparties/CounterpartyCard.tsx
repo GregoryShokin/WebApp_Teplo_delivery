@@ -106,6 +106,7 @@ function CardBody({
         {card.status === "archived" ? (
           <Badge className="border-muted bg-muted text-muted-foreground">В архиве</Badge>
         ) : null}
+        {canOperate ? <KassaToggle card={card} /> : null}
       </div>
       {card.relationship === "barter" ? <BarterBalanceBanner card={card} /> : null}
       <Tabs defaultValue="general">
@@ -120,7 +121,6 @@ function CardBody({
         <TabsContent value="general" className="mt-5 space-y-8">
           <ProfileSection card={card} canAdmin={canAdmin} />
           <CollectionSourcesSection card={card} canAdmin={canAdmin} />
-          {canOperate ? <KassaSection card={card} /> : null}
         </TabsContent>
         <TabsContent value="requisites" className="mt-5">
           <RequisitesSection card={card} canAdmin={canAdmin} />
@@ -740,32 +740,36 @@ function ArchiveSection({ card }: { card: CardData }) {
   );
 }
 
-function KassaSection({ card }: { card: CardData }) {
+/** Видимость в Кассе — не поле профиля, а статус: применяется сразу и живёт на праве
+ *  canOperate (у кассира кнопки «Сохранить» вообще нет). Поэтому стоит в шапке рядом с
+ *  бейджами, а не в форме: рядом с отложенными тумблерами он читался бы как такой же,
+ *  хотя пишет в БД по клику. Подпись называет СОСТОЯНИЕ, а не действие. */
+function KassaToggle({ card }: { card: CardData }) {
   const queryClient = useQueryClient();
   const enabled = Boolean(card.profile?.kassa_enabled);
   const mutation = useMutation({
     mutationFn: (next: boolean) => setKassaEnabled(card.counterparty_id, next),
     onSuccess: async (_data, next) => {
       await queryClient.invalidateQueries({ queryKey: ["cp"] });
-      toast.success(next ? "Контрагент активен в Кассе" : "Контрагент скрыт из Кассы");
+      toast.success(next ? "Контрагент доступен в Кассе" : "Контрагент скрыт из Кассы");
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось переключить")),
   });
 
   return (
-    <Section title="Касса">
-      <label className="flex items-center gap-2 text-sm">
-        <Switch
-          checked={enabled}
-          disabled={mutation.isPending}
-          onCheckedChange={(value) => mutation.mutate(value)}
-        />
-        Активен в Кассе
-      </label>
-      <p className="text-xs text-muted-foreground">
-        Когда включено — поставщик доступен в дропдауне при создании накладной через Кассу.
-      </p>
-    </Section>
+    <label
+      className="flex cursor-pointer items-center gap-2 rounded-md border bg-background px-2.5 py-1 text-xs"
+      title="Доступен в списке поставщиков при создании накладной через Кассу. Применяется сразу, без «Сохранить»."
+    >
+      <Switch
+        checked={enabled}
+        disabled={mutation.isPending}
+        onCheckedChange={(value) => mutation.mutate(value)}
+      />
+      <span className={enabled ? "font-medium" : "text-muted-foreground"}>
+        {enabled ? "Доступен в Кассе" : "Скрыт из Кассы"}
+      </span>
+    </label>
   );
 }
 
