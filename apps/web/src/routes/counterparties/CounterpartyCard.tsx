@@ -197,7 +197,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["cp"] });
-      toast.success("Исходные данные сохранены");
+      toast.success("Общая информация сохранена");
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить")),
   });
@@ -278,7 +278,9 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
             value={ddsArticleId}
             onChange={setDdsArticleId}
             disabled={disabled || confirmNoDdsArticle}
-            placeholder="Не выбрана"
+            // «Не выбрана» на выключенном поле читалось как «забыли заполнить», хотя
+            // решение принято. Формулировки те же, что в окне создания.
+            placeholder={confirmNoDdsArticle ? "Статья не применяется" : "Выберите статью"}
           />
           <p className="text-xs text-muted-foreground">
             Подставляется в окно «В банк» при оплате счетов этого контрагента.

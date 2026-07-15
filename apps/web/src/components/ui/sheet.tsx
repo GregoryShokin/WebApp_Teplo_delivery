@@ -60,7 +60,9 @@ const SheetContent = React.forwardRef<
     <SheetOverlay />
     <SheetPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
       {children}
-      <SheetPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
+      {/* -m-1.5 p-1.5: зона нажатия 28x28 при иконке 16x16 (минимум по WCAG 2.2 — 24x24),
+          отрицательный внешний отступ гасит внутренний, поэтому крестик визуально не сдвинулся. */}
+      <SheetPrimitive.Close className="absolute right-4 top-4 -m-1.5 rounded-sm p-1.5 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
         <X className="h-4 w-4" />
         <span className="sr-only">Закрыть</span>
       </SheetPrimitive.Close>
