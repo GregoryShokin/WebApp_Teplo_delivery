@@ -94,6 +94,12 @@ class CounterpartyPayableProfile(Base):
     default_dds_article_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("dds_articles.id", ondelete="SET NULL"), nullable=True
     )
+    # Пустая статья — решение, а не недозаполненность: снимает разницу между «статью ещё не
+    # выбрали» и «статьи у контрагента нет». Решение принимается один раз и хранится, иначе
+    # карточку без статьи нельзя сохранить, не подтвердив это заново при каждом открытии.
+    confirm_no_dds_article: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     # Optional brand grouping for analytics ("Амай" over ООО «ТОРА» + ИП Скачкова).
     brand_group: Mapped[str | None] = mapped_column(String(160), nullable=True)
     # Legacy internal name carried from DDS/iiko; the menu shows the legal name.

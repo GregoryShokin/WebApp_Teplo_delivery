@@ -169,7 +169,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     setName(card.name);
     setType(card.type);
     setDdsArticleId(profile?.default_dds_article_id ?? "");
-    setConfirmNoDdsArticle(false);
+    setConfirmNoDdsArticle(profile?.confirm_no_dds_article ?? false);
     setServicePeriodRequired(profile?.service_period_required ?? false);
     setServicePeriodMode(profile?.service_period_mode ?? "manual");
     setPeriodOffset(

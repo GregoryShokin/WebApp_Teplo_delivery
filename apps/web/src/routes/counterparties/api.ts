@@ -83,6 +83,9 @@ export type CounterpartyProfile = {
   manager_name: string | null;
   manager_phone: string | null;
   default_dds_article_id: string | null;
+  // Пустая статья — принятое решение, а не недозаполненность: хранится, чтобы карточку
+  // без статьи не приходилось подтверждать заново при каждом открытии.
+  confirm_no_dds_article: boolean;
   service_period_required: boolean;
   service_period_mode: "automatic" | "manual";
   default_service_period_offset_months: number | null;

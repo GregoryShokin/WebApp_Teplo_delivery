@@ -604,6 +604,7 @@ def _profile_dict(profile: CounterpartyPayableProfile | None) -> dict[str, Any] 
         "manager_name": profile.manager_name,
         "manager_phone": profile.manager_phone,
         "default_dds_article_id": profile.default_dds_article_id,
+        "confirm_no_dds_article": profile.confirm_no_dds_article,
         "requisites": profile.requisites or {},
         "requisites_verified": profile.requisites_verified,
         "kassa_enabled": profile.kassa_enabled,
@@ -729,6 +730,9 @@ async def update_profile(
     # закрепляет чекбокс «Закрепить за контрагентом» в окне оплаты «Страницы на оплату»).
     if default_dds_article_id is not _UNSET:
         profile.default_dds_article_id = default_dds_article_id
+        # Решение по статье меняется только вместе с самой статьёй — иначе PATCH без
+        # флага молча снял бы подтверждение и запер карточку.
+        profile.confirm_no_dds_article = confirm_no_dds_article
     if service_period_required is not _UNSET and service_period_required is not None:
         profile.service_period_required = service_period_required
     if service_period_mode is not _UNSET and service_period_mode is not None:
@@ -1058,6 +1062,7 @@ async def create_counterparty(
             manager_name=manager_name,
             manager_phone=manager_phone,
             default_dds_article_id=default_dds_article_id,
+            confirm_no_dds_article=confirm_no_dds_article,
             service_period_required=service_period_required,
             service_period_mode=service_period_mode,
             default_service_period_offset_months=default_service_period_offset_months,
