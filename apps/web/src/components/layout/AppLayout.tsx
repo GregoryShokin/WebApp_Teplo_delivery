@@ -4,6 +4,7 @@ import {
   ArrowLeftRight,
   Banknote,
   Boxes,
+  Building2,
   CalendarClock,
   CalendarDays,
   CalendarRange,
@@ -99,6 +100,12 @@ const navGroups: NavGroup[] = [
   {
     title: "Финансы",
     items: [
+      {
+        label: "Контрагенты",
+        href: "/finance/counterparties",
+        icon: Building2,
+        section: "counterparties",
+      },
       { label: "Платежи", href: "/finance/payments", icon: CreditCard, section: "counterparties" },
       { label: "ДДС", href: "/dds", icon: Banknote, section: "finance.dds" },
       {

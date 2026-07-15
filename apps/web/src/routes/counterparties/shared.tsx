@@ -1,19 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-export type CounterpartiesTab = "inbox" | "drafts" | "registry";
-
-export const COUNTERPARTIES_TABS: Array<{ value: CounterpartiesTab; label: string; path: string }> =
-  [
-    { value: "inbox", label: "К оплате", path: "/counterparties" },
-    { value: "drafts", label: "Черновики и мэчинг", path: "/counterparties/drafts" },
-    { value: "registry", label: "Реестр", path: "/counterparties/registry" },
-  ];
-
-export function counterpartiesTabPath(tab: CounterpartiesTab) {
-  return COUNTERPARTIES_TABS.find((item) => item.value === tab)?.path ?? "/counterparties";
-}
-
 const rubFormatter = new Intl.NumberFormat("ru-RU", {
   style: "currency",
   currency: "RUB",

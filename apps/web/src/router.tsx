@@ -11,6 +11,7 @@ import { PayrollRoute } from "@/routes/payroll";
 import { DdsRoute } from "@/routes/dds";
 import { KassaRoute } from "@/routes/kassa";
 import { PaymentPageRoute } from "@/routes/payment-page";
+import { FinanceCounterpartiesRoute } from "@/routes/finance/counterparties";
 import { FinancePaymentsRoute } from "@/routes/finance/payments";
 import { WarehouseInvoicesRoute } from "@/routes/warehouse";
 import { LoginRoute } from "@/routes/login";
@@ -75,11 +76,14 @@ const routes: AppRoute[] = [
   {
     path: "/counterparties",
     children: [
-      { path: "", render: ({ navigate }) => <Redirect to="/warehouse/invoices" navigate={navigate} /> },
+      {
+        path: "",
+        render: ({ navigate }) => <Redirect to="/finance/counterparties" navigate={navigate} />,
+      },
       { path: "drafts", render: ({ navigate }) => <Redirect to="/warehouse/invoices" navigate={navigate} /> },
       {
         path: "registry",
-        render: ({ navigate }) => <Redirect to="/warehouse/registry" navigate={navigate} />,
+        render: ({ navigate }) => <Redirect to="/finance/counterparties" navigate={navigate} />,
       },
     ],
   },
@@ -90,6 +94,10 @@ const routes: AppRoute[] = [
   {
     path: "/finance/payments",
     render: ({ navigate }) => <FinancePaymentsRoute onNavigate={navigate} />,
+  },
+  {
+    path: "/finance/counterparties",
+    render: () => <FinanceCounterpartiesRoute />,
   },
   {
     path: "/warehouse",
@@ -112,9 +120,7 @@ const routes: AppRoute[] = [
       },
       {
         path: "registry",
-        render: ({ navigate }) => (
-          <WarehouseInvoicesRoute activeTab="registry" onNavigate={navigate} />
-        ),
+        render: ({ navigate }) => <Redirect to="/finance/counterparties" navigate={navigate} />,
       },
     ],
   },
@@ -430,7 +436,7 @@ const routes: AppRoute[] = [
       },
       {
         path: "counterparties",
-        render: ({ navigate }) => <Redirect to="/warehouse/registry" navigate={navigate} />,
+        render: ({ navigate }) => <Redirect to="/finance/counterparties" navigate={navigate} />,
       },
       {
         path: "articles",

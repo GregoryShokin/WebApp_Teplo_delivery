@@ -11,17 +11,16 @@ import { usePermissions } from "@/lib/permissions";
 
 import { getInvoices, syncInvoices } from "../counterparties/api";
 import { CounterpartyCard } from "../counterparties/CounterpartyCard";
-import { CounterpartyRegistryModule } from "../counterparties/CounterpartyRegistryModule";
 import { MetricCard, formatRub, isOverdue } from "../counterparties/shared";
 import { InboxTab } from "../counterparties/tabs/inbox";
 import { syncProducts } from "./api";
 
-export type WarehouseTab = "normal" | "barter" | "registry";
+// Реестр контрагентов живёт отдельной страницей «Финансы → Контрагенты»; здесь его вкладки нет.
+export type WarehouseTab = "normal" | "barter";
 
 const WAREHOUSE_TABS: Array<{ value: WarehouseTab; label: string; path: string }> = [
   { value: "normal", label: "Обычные накладные", path: "/warehouse/invoices" },
   { value: "barter", label: "Бартер", path: "/warehouse/barter" },
-  { value: "registry", label: "Контрагенты", path: "/warehouse/registry" },
 ];
 
 export function warehouseTabPath(tab: WarehouseTab): string {
@@ -83,7 +82,7 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate, embedded = false
       {embedded ? null : (
         <PageHeader
           title="Накладные"
-          description="Накладные из iiko и созданные вручную: оплата, отправка в банк, бартер, персонал-разнесение и реестр контрагентов."
+          description="Накладные из iiko и созданные вручную: оплата, отправка в банк, бартер и персонал-разнесение. Контрагенты — в разделе «Финансы»."
         />
       )}
 
@@ -165,16 +164,12 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate, embedded = false
           onOpenCounterparty={setOpenId}
         />
       ) : null}
-      {effectiveTab === "registry" ? <CounterpartyRegistryModule /> : null}
-
-      {effectiveTab === "registry" ? null : (
-        <CounterpartyCard
-          counterpartyId={openId}
-          canOperate={canOperate}
-          canAdmin={canAdmin}
-          onClose={() => setOpenId(null)}
-        />
-      )}
+      <CounterpartyCard
+        counterpartyId={openId}
+        canOperate={canOperate}
+        canAdmin={canAdmin}
+        onClose={() => setOpenId(null)}
+      />
     </div>
   );
 }
