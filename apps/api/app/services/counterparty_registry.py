@@ -43,6 +43,9 @@ ARCHIVED_STATUS = "archived"
 ARCHIVED_STATUSES = frozenset({ARCHIVED_STATUS, "inactive"})
 
 OPEN_STATUSES = ("unpaid", "partially_paid")
+# Банк и налоговая — не поставщики, платёжных реквизитов у них не требуем. Роль при
+# создании выводится из типа ровно по этому же правилу (routes/counterparties.py).
+NON_SUPPLIER_TYPES = frozenset({"bank", "tax_authority"})
 OFFICIAL_SUPPLIER_REQUIRED_REQUISITES = {
     "bankBik": "БИК банка",
     "inn": "ИНН",
@@ -633,6 +636,24 @@ async def _get_or_create_profile(
 _UNSET = object()
 
 
+def _require_official_supplier_requisites(requisites: dict[str, Any]) -> None:
+    """Официальному поставщику нужен полный набор реквизитов — иначе платить нечем.
+
+    Одна проверка на создание и на подтверждение реквизитов: раньше правило жило только
+    в create_counterparty, и через правку можно было получить контрагента, которого
+    нельзя создать — с отметкой «реквизиты проверены» поверх пустого набора.
+    """
+    missing = [
+        label
+        for key, label in OFFICIAL_SUPPLIER_REQUIRED_REQUISITES.items()
+        if not str(requisites.get(key) or "").strip()
+    ]
+    if missing:
+        raise CounterpartyRegistryError(
+            "Заполните обязательные реквизиты официального поставщика: " + ", ".join(missing)
+        )
+
+
 def _require_dds_article_decision(
     default_dds_article_id: uuid.UUID | None, confirm_no_dds_article: bool
 ) -> None:
@@ -774,13 +795,18 @@ async def set_requisites(
     if counterparty is None:
         raise CounterpartyRegistryError("Контрагент не найден")
     new_requisites = dict(requisites or {})
+    profile = await _get_or_create_profile(session, counterparty_id)
     # Подтверждение реквизитов — не голая отметка: битый контрольный разряд счёта банк
     # всё равно отклонит (422), поэтому не даём пометить такие реквизиты «подтверждёнными».
     if verified:
         account_error = payee_account_error(new_requisites)
         if account_error:
             raise CounterpartyRegistryError(account_error)
-    profile = await _get_or_create_profile(session, counterparty_id)
+        # …и не даём подтвердить неполный набор: гард «реквизиты не подтверждены» —
+        # единственное, что стоит между пустой карточкой и платежом. Неполные реквизиты
+        # сохранять по-прежнему можно, но без отметки «проверены».
+        if profile.relationship == "official" and counterparty.type not in NON_SUPPLIER_TYPES:
+            _require_official_supplier_requisites(new_requisites)
     profile.requisites = new_requisites
     profile.requisites_verified = verified
     if verified:
@@ -1014,16 +1040,7 @@ async def create_counterparty(
             clean_requisites["inn"] = clean_inn
         clean_requisites.setdefault("recipientName", clean_name)
     if relationship == "official" and role == "supplier":
-        missing_requisites = [
-            label
-            for key, label in OFFICIAL_SUPPLIER_REQUIRED_REQUISITES.items()
-            if not str(clean_requisites.get(key) or "").strip()
-        ]
-        if missing_requisites:
-            raise CounterpartyRegistryError(
-                "Заполните обязательные реквизиты официального поставщика: "
-                + ", ".join(missing_requisites)
-            )
+        _require_official_supplier_requisites(clean_requisites)
     if requisites_verified:
         account_error = payee_account_error(clean_requisites)
         if account_error:

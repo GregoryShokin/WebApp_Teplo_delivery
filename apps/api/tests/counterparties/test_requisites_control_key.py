@@ -135,11 +135,53 @@ async def test_set_requisites_accepts_valid_account_when_verified(
         profile = await set_requisites(
             session,
             cp.id,
-            requisites={"bankAcnt": VALID_ACCOUNT, "bankBik": VALID_BIK},
+            # Набор полный: подтвердить можно только то, чем реально можно заплатить.
+            requisites={
+                "bankAcnt": VALID_ACCOUNT,
+                "bankBik": VALID_BIK,
+                "inn": "7701234567",
+                "recipientCorrAccountNumber": "30101810400000000225",
+            },
             verified=True,
             actor_user_id=None,
         )
         assert profile.requisites_verified is True
+
+
+async def test_set_requisites_rejects_verified_with_incomplete_requisites(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Официального поставщика нельзя пометить «реквизиты проверены» на пустом наборе.
+
+    Раньше проходило: контрагента, которого нельзя СОЗДАТЬ без реквизитов, можно было
+    получить правкой — с отметкой о проверке поверх пустоты. Гард «реквизиты не
+    подтверждены» после этого пропускал платёж в банк.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ООО Пустой", inn="7701234599")
+        await session.commit()
+
+        with pytest.raises(CounterpartyRegistryError, match="обязательные реквизиты"):
+            await set_requisites(session, cp.id, requisites={}, verified=True, actor_user_id=None)
+
+
+async def test_set_requisites_allows_incomplete_requisites_when_unverified(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Черновик реквизитов сохранять можно — гард стоит на подтверждении, а не на вводе."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ООО Наполовину", inn="7701234588")
+        await session.commit()
+
+        profile = await set_requisites(
+            session,
+            cp.id,
+            requisites={"bankBik": VALID_BIK},
+            verified=False,
+            actor_user_id=None,
+        )
+        assert profile.requisites_verified is False
+        assert profile.requisites == {"bankBik": VALID_BIK}
 
 
 # --- отказ банка при отправке накладной не роняет запрос в 500 ----------------

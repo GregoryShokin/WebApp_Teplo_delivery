@@ -46,6 +46,7 @@ import {
   COLLECTION_KIND_LABELS,
   COUNTERPARTY_REQUISITE_FIELDS,
   COUNTERPARTY_TYPE_LABELS,
+  OFFICIAL_SUPPLIER_REQUIRED_REQUISITE_KEYS,
   RELATIONSHIP_HINTS,
   RELATIONSHIP_LABELS,
   RelationshipBadge,
@@ -473,6 +474,19 @@ function RequisitesSection({ card, canAdmin }: { card: CardData; canAdmin: boole
   });
 
   const disabled = !canAdmin;
+  // Отметку «проверены» нельзя ставить на неполном наборе — это же правило стоит на
+  // сервере (registry._require_official_supplier_requisites). Показываем причину здесь,
+  // чтобы человек увидел её до отправки, а не поймал 409.
+  const missingRequired = OFFICIAL_SUPPLIER_REQUIRED_REQUISITE_KEYS.filter(
+    (key) => !(values[key] ?? "").trim(),
+  );
+  const verifyBlockedReason =
+    verified && missingRequired.length > 0
+      ? "Для отметки «проверены» заполните: " +
+        missingRequired
+          .map((key) => COUNTERPARTY_REQUISITE_FIELDS.find((f) => f.key === key)?.label ?? key)
+          .join(", ")
+      : null;
 
   if (card.relationship !== "official") {
     return (
@@ -519,12 +533,18 @@ function RequisitesSection({ card, canAdmin }: { card: CardData; canAdmin: boole
             <Switch checked={verified} onCheckedChange={setVerified} />
             Реквизиты проверены
           </label>
-          <Button disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
+          <Button
+            disabled={saveMutation.isPending || Boolean(verifyBlockedReason)}
+            onClick={() => saveMutation.mutate()}
+          >
             {saveMutation.isPending ? (
               <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
             ) : null}
             Сохранить
           </Button>
+          {verifyBlockedReason ? (
+            <span className="text-xs text-muted-foreground">{verifyBlockedReason}</span>
+          ) : null}
         </div>
       ) : null}
     </Section>
