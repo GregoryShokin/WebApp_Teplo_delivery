@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   ArrowLeftRight,
   Banknote,
   Clock,
@@ -39,6 +40,10 @@ const money = new Intl.NumberFormat("ru-RU", {
   currency: "RUB",
   maximumFractionDigits: 0,
 });
+
+// Без символа валюты — для первой половины пары «выплачено X из Y ₽», чтобы
+// подпись строки влезала и не обрезалась на самом важном.
+const moneyPlain = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
 
 // Оформление каждой корзины: иконка + семантический цвет (палитра проекта:
 // border-{c}-200 bg-{c}-50 text-{c}-700). Классы записаны целиком — Tailwind JIT
@@ -94,6 +99,31 @@ function methodHint(row: PaymentRow): string | null {
   return null;
 }
 
+// Сообщение об ошибке для тоста. Бэкенд на отказ по правам отдаёт английское
+// «Insufficient permission», axios на мёртвый сервер — «Network Error»: показывать
+// это владельцу как есть нельзя.
+const ERROR_TEXTS: Record<string, string> = {
+  "insufficient permission": "Недостаточно прав для этого действия",
+  "not authenticated": "Сессия истекла — войдите заново",
+  "network error": "Нет связи с сервером",
+};
+
+function errorText(error: unknown, fallback: string): string {
+  const detail =
+    (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+    (error instanceof Error ? error.message : null);
+  if (!detail) return fallback;
+  return ERROR_TEXTS[detail.trim().toLowerCase()] ?? detail;
+}
+
+// Сколько ещё нужно денег по строке. Окно отвечает на вопрос «сколько платить»,
+// поэтому везде считаем остаток, а не номинал: у частично выплаченного резерва
+// номинал завышает потребность на уже выданную часть. Без частичной выплаты
+// (amount_paid пуст или 0) остаток равен номиналу — поведение не меняется.
+function outstanding(row: PaymentRow): number {
+  return row.amount - (row.amount_paid ?? 0);
+}
+
 export function ActivePaymentsModal({
   open,
   onOpenChange,
@@ -117,7 +147,7 @@ export function ActivePaymentsModal({
     await queryClient.invalidateQueries({ queryKey: ["finance-payments"] });
   }
 
-  const { data, isLoading, isFetching, refetch } = useQuery({
+  const query = useQuery({
     queryKey: ["finance-payments", "active"],
     queryFn: () => getPayments("active"),
     enabled: open,
@@ -127,10 +157,31 @@ export function ActivePaymentsModal({
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
+  const { data, isLoading, isFetching, isError, refetch } = query;
+  // Недоступный сервер react-query ошибкой НЕ считает: он трактует сетевой сбой как
+  // офлайн и ставит запрос на паузу — status остаётся 'pending', isError=false, причина
+  // видна только в fetchFailureReason. Поэтому одного isError мало: без проверки паузы
+  // мёртвый сервер снова притворится пустым списком («всё оплачено»).
+  const offline = query.fetchStatus === "paused";
+  const broken = isError || offline;
 
   const items = data?.items ?? [];
   const buckets = data?.buckets ?? [];
-  const totalSum = items.reduce((acc, row) => acc + row.amount, 0);
+  const totalSum = items.reduce((acc, row) => acc + outstanding(row), 0);
+  // Запрос сорвался и показать нечего — это НЕ «платежей нет». Пустой список и молчащий
+  // сервер обязаны выглядеть по-разному, иначе сбой читается как «всё оплачено».
+  const failedEmpty = broken && data === undefined;
+  // Данные есть, но обновиться не удалось: список верен на момент последней удачной
+  // загрузки — молча показывать его как актуальный нельзя.
+  const stale = broken && data !== undefined;
+
+  // Приостановленный запрос не поднять ни refetch(), ни resetQueries: react-query ждёт
+  // события «сеть вернулась», а браузер офлайн и не считался — событию взяться неоткуда.
+  // Дёргать onlineManager ради этого — лезть библиотеке во внутренности; перезагрузка
+  // страницы решает надёжно и предсказуемо.
+  function retryLoad() {
+    window.location.reload();
+  }
 
   const q = search.trim().toLowerCase();
   const visible = useMemo(() => {
@@ -160,16 +211,18 @@ export function ActivePaymentsModal({
         await api.post(`/payment-page/intakes/${row.ref_id}/send-to-bank`, {});
         toast.success("Счёт отправлен в банк");
       }
-      await refetch();
-      await queryClient.invalidateQueries({ queryKey: ["finance-payments"] });
     } catch (error) {
-      const detail =
-        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        (error instanceof Error ? error.message : null) ??
-        "Не удалось отправить в банк";
-      toast.error(detail);
+      toast.error(errorText(error, "Не удалось отправить в банк"));
+      return;
     } finally {
       setSendingId(null);
+    }
+    // Обновление списка — уже после успеха и вне try: раньше падение refetch
+    // показывало «Не удалось отправить в банк» по фактически ушедшему платежу.
+    try {
+      await refetchAll();
+    } catch {
+      // список подтянется следующим поллингом — платёж от этого не пострадал
     }
   }
 
@@ -232,7 +285,9 @@ export function ActivePaymentsModal({
             <DialogDescription className="mt-0.5">
               {isLoading
                 ? "Загрузка…"
-                : `${items.length} шт · ${money.format(totalSum)} — ждут оплаты, отправки или выдачи`}
+                : failedEmpty
+                  ? "Список не загрузился — сумма неизвестна"
+                  : `${items.length} шт · ${money.format(totalSum)} — ждут оплаты, отправки или выдачи`}
             </DialogDescription>
           </DialogHeader>
 
@@ -292,11 +347,38 @@ export function ActivePaymentsModal({
             </div>
           </div>
 
+          {stale ? (
+            <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-6 py-2 text-xs text-amber-800">
+              {offline ? "Нет связи с сервером" : "Обновить список не удалось"} — данные могли
+              устареть.
+            </div>
+          ) : null}
+
           <div className="min-h-0 flex-1 overflow-y-auto [max-height:calc(86vh-11rem)]">
             <div className="space-y-6 px-6 py-5">
               {isLoading ? (
                 <div className="flex items-center justify-center py-16 text-muted-foreground">
                   <Loader2 className="mr-2 animate-spin" size={18} /> Загрузка…
+                </div>
+              ) : failedEmpty ? (
+                // Ветка обязана стоять ВЫШЕ проверки на пустоту: иначе несостоявшийся
+                // запрос снова выдаст себя за «платежей нет — всё оплачено».
+                <div className="flex flex-col items-center gap-3 py-16 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100">
+                    <AlertTriangle className="text-rose-600" size={22} />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">
+                      {offline ? "Нет связи с сервером" : "Не удалось загрузить платежи"}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Список не получен, поэтому показать нечего. Это не значит, что платежей нет.
+                    </div>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={retryLoad}>
+                    <RefreshCw className="mr-1.5" size={14} />
+                    Обновить страницу
+                  </Button>
                 </div>
               ) : visible.length === 0 ? (
                 <div className="flex flex-col items-center gap-3 py-16 text-center">
@@ -321,7 +403,7 @@ export function ActivePaymentsModal({
                   const meta = buckets.find((b) => b.key === key);
                   const style = BUCKET_STYLE[key];
                   const Icon = style.icon;
-                  const sum = rows.reduce((acc, row) => acc + row.amount, 0);
+                  const sum = rows.reduce((acc, row) => acc + outstanding(row), 0);
                   return (
                     <section key={key}>
                       <header className="mb-2 flex items-center gap-2.5">
@@ -342,6 +424,13 @@ export function ActivePaymentsModal({
                       <div className="overflow-hidden rounded-lg border">
                         {rows.map((row, index) => {
                           const hint = methodHint(row);
+                          const paidHint =
+                            row.amount_paid && row.amount_paid > 0
+                              ? `выплачено ${moneyPlain.format(row.amount_paid)} из ${money.format(row.amount)}`
+                              : null;
+                          const subtitle = [row.article_name ?? "Без статьи", hint, paidHint]
+                            .filter(Boolean)
+                            .join(" · ");
                           return (
                             <div
                               key={row.id}
@@ -356,16 +445,15 @@ export function ActivePaymentsModal({
                               />
                               <div className="min-w-0 flex-1">
                                 <div className="truncate text-sm font-medium">{row.title}</div>
-                                <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                                  {row.article_name ?? "Без статьи"}
-                                  {hint ? ` · ${hint}` : ""}
-                                  {row.amount_paid && row.amount_paid > 0
-                                    ? ` · выплачено ${money.format(row.amount_paid)}`
-                                    : ""}
+                                <div
+                                  className="mt-0.5 truncate text-xs text-muted-foreground"
+                                  title={subtitle}
+                                >
+                                  {subtitle}
                                 </div>
                               </div>
                               <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
-                                {money.format(row.amount)}
+                                {money.format(outstanding(row))}
                               </div>
                               <div className="w-[92px] shrink-0 text-right">{rowAction(row)}</div>
                             </div>
@@ -456,10 +544,7 @@ function PayReserveDialog({
       await onPaid();
       onOpenChange(false);
     } catch (error) {
-      const detail =
-        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        "Не удалось провести выплату";
-      toast.error(detail);
+      toast.error(errorText(error, "Не удалось провести выплату"));
     } finally {
       setSubmitting(false);
     }
@@ -476,10 +561,7 @@ function PayReserveDialog({
       await onPaid();
       onOpenChange(false);
     } catch (error) {
-      const detail =
-        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        "Не удалось списать остаток";
-      toast.error(detail);
+      toast.error(errorText(error, "Не удалось списать остаток"));
     } finally {
       setWritingOff(false);
     }
@@ -496,10 +578,7 @@ function PayReserveDialog({
       await onPaid();
       onOpenChange(false);
     } catch (error) {
-      const detail =
-        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        "Не удалось переместить резерв";
-      toast.error(detail);
+      toast.error(errorText(error, "Не удалось переместить резерв"));
     } finally {
       setMoving(false);
     }
