@@ -592,6 +592,34 @@ async def _make_second_half_period(session: AsyncSession) -> PayrollPeriod:
     return period
 
 
+async def test_dishwasher_pool_is_split_equally_between_half_month_runs(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        employee = await _make_admin_employee(session, position="Посудомойка")
+        first = await _make_period(session)
+        second = await _make_second_half_period(session)
+        for day in range(1, 32):
+            session.add(
+                DishwasherShift(
+                    id=uuid.uuid4(), employee_id=employee.id, work_date=date(2026, 5, day)
+                )
+            )
+        await session.commit()
+
+        first_run = await run_admin_payroll(session, first.id)
+        second_run = await run_admin_payroll(session, second.id)
+        first_line = (await _lines(session, first_run.id))[0]
+        second_line = (await _lines(session, second_run.id))[0]
+
+        assert first_line.base_pay == Decimal("7500.00")
+        assert first_line.components["period_days"] == 15
+        assert first_line.components["shift_rate"] == "500.00"
+        assert second_line.base_pay == Decimal("7500.00")
+        assert second_line.components["period_days"] == 16
+        assert second_line.components["shift_rate"] == "468.75"
+
+
 async def test_cleaner_first_half_mode_pays_full_oklad_on_15th(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -624,26 +652,40 @@ async def test_cleaner_first_half_mode_skips_second_half(
         assert await _lines(session, run.id) == []
 
 
-async def test_dishwasher_paid_by_shifts_from_pool(
+async def test_dishwasher_period_pool_is_distributed_by_employee_shifts(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
-        employee = await _make_admin_employee(session, position="Посудомойка")
-        period = await _make_period(session)  # 1–15 мая, месяц = 31 день
-        for day in range(1, 11):  # 10 смен в полупериоде
-            session.add(
-                DishwasherShift(
-                    id=uuid.uuid4(), employee_id=employee.id, work_date=date(2026, 5, day)
+        employees = [await _make_admin_employee(session, position="Посудомойка") for _ in range(3)]
+        period = await _make_period(session)
+        next_day = 1
+        for employee, shift_count in zip(employees, (7, 4, 4), strict=True):
+            for day in range(next_day, next_day + shift_count):
+                session.add(
+                    DishwasherShift(
+                        id=uuid.uuid4(), employee_id=employee.id, work_date=date(2026, 5, day)
+                    )
                 )
-            )
+            next_day += shift_count
         await session.commit()
 
         run = await run_admin_payroll(session, period.id)
-        line = (await _lines(session, run.id))[0]
-        assert line.role == "Посудомойка"
-        # Ставка = 15000 / 31 = 483.87; 10 смен → 4838.70
-        assert line.base_pay == Decimal("4838.70")
-        assert line.total_payable == Decimal("4838.70")
+        lines = await _lines(session, run.id)
+        by_employee = {line.employee_id: line for line in lines}
+
+        # Половина пула на ведомость = 7500; 7500 / 15 дней = 500 за смену.
+        assert [by_employee[employee.id].base_pay for employee in employees] == [
+            Decimal("3500.00"),
+            Decimal("2000.00"),
+            Decimal("2000.00"),
+        ]
+        assert sum((line.total_payable for line in lines), Decimal("0")) == Decimal("7500.00")
+        for line in lines:
+            assert line.role == "Посудомойка"
+            assert line.components["monthly_pool"] == "15000.00"
+            assert line.components["period_pool"] == "7500.00"
+            assert line.components["period_days"] == 15
+            assert line.components["shift_rate"] == "500.00"
 
 
 async def test_dishwasher_without_shifts_not_in_run(

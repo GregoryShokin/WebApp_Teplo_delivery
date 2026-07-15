@@ -310,6 +310,8 @@ async def calculate_admin_payroll_lines(
     included_by_employee = await load_included_payouts_by_employee(session, run_id)
     dishwasher_pool = await _load_dishwasher_pool(session)
     dishwasher_rate = _dishwasher_shift_rate(dishwasher_pool, period)
+    dishwasher_period_pool = dishwasher_pool / Decimal("2")
+    dishwasher_period_days = (period.end_date - period.start_date).days + 1
     shift_counts = await _load_dishwasher_shift_counts(
         session, employee_ids, period.start_date, period.end_date
     )
@@ -360,6 +362,8 @@ async def calculate_admin_payroll_lines(
                 "shifts": shifts,
                 "shift_rate": money_string(dishwasher_rate),
                 "monthly_pool": money_string(dishwasher_pool),
+                "period_pool": money_string(dishwasher_period_pool),
+                "period_days": dishwasher_period_days,
                 "base_pay": money_string(base_pay),
                 "adjustments": {"bonuses": bonus_items, "penalties": penalty_items},
             }
@@ -886,9 +890,16 @@ async def _load_dishwasher_pool(session: AsyncSession) -> Decimal:
 
 
 def _dishwasher_shift_rate(pool: Decimal, period: PayrollPeriod) -> Decimal:
-    """Ставка за смену = месячный пул ÷ календарные дни месяца периода."""
-    days_in_month = _last_day_of_month(period.start_date.year, period.start_date.month)
-    return (pool / Decimal(days_in_month)).quantize(_CENTS)
+    """Ставка за смену = половина месячного пула ÷ дни полумесячной ведомости.
+
+    Каждая админская ведомость получает ровно половину месячного пула посудомоек.
+    Внутри ведомости эта половина распределяется по её календарным дням, после чего
+    ставка умножается на число смен сотрудника. Округление выполняется уже для итоговой
+    суммы строки, чтобы промежуточная ставка не создавала лишний остаток пула.
+    """
+    period_days = (period.end_date - period.start_date).days + 1
+    period_pool = pool / Decimal("2")
+    return period_pool / Decimal(period_days)
 
 
 async def _load_dishwasher_shift_counts(
