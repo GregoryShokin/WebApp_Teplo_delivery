@@ -212,6 +212,12 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
         ? "Выберите статью ДДС или отметьте, что её нет"
         : null;
   const canSave = !saveBlockedReason;
+  // Уход из «официального» стирает ИНН и реквизиты (правило реестра: они относятся только
+  // к банковскому каналу). Предупреждаем ДО сохранения — иначе данные исчезают молча.
+  const leavingOfficialWithRequisites =
+    profile?.relationship === "official" &&
+    relationship !== "official" &&
+    Object.keys(profile?.requisites ?? {}).length > 0;
   const periodOffsetSaved =
     profile?.default_service_period_offset_months != null
       ? String(profile.default_service_period_offset_months)
@@ -252,6 +258,12 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">{RELATIONSHIP_HINTS[relationship]}</p>
+          {leavingOfficialWithRequisites ? (
+            <p className="text-xs font-medium text-amber-700">
+              При сохранении ИНН и банковские реквизиты будут удалены: они относятся только к
+              официальному каналу оплаты. Вернуть их можно будет только вводом заново.
+            </p>
+          ) : null}
           {profile?.relationship_manual ? (
             <p className="text-xs text-muted-foreground">
               Закреплено вручную — синхронизация из iiko не изменит тип.

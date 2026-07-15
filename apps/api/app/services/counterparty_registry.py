@@ -734,6 +734,15 @@ async def update_profile(
         # (правили другие поля) замок не ставит — чтобы случайно не «залочить» авто-barter.
         if relationship != profile.relationship:
             profile.relationship_manual = True
+            # Банковские реквизиты относятся только к официальному каналу оплаты — то же
+            # правило, что в create_counterparty. Без этого правкой получался контрагент,
+            # которого нельзя создать: informal с подтверждёнными реквизитами и без ИНН,
+            # причём вкладка «Реквизиты» у informal скрыта и вычистить их было нечем.
+            if relationship != "official":
+                profile.requisites = {}
+                profile.requisites_verified = False
+                profile.requisites_verified_at = None
+                profile.requisites_verified_by_user_id = None
         profile.relationship = relationship
     if brand_group is not _UNSET:
         profile.brand_group = brand_group
