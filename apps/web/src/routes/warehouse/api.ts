@@ -129,6 +129,8 @@ export type LinePayload = {
   vat_percent?: number | null;
   is_staff: boolean;
   dds_article_id?: string | null;
+  // Сумма строки как её видит пользователь — эталон (кол-во×округлённая цена не всегда точна).
+  sum?: number;
 };
 
 export type CreateInvoicePayload = {

@@ -145,6 +145,10 @@ class LineInput:
     is_staff: bool = False
     # Статья ДДС персональной строки — на неё ляжет «персонал»-часть при оплате.
     dds_article_id: uuid.UUID | None = None
+    # Явная сумма строки (эталон из документа поставщика). Если задана — хранится как есть, а
+    # не пересчитывается кол-во×цена: цена в 2 знака не всегда даёт точную сумму (80×41,225 =
+    # 3298, но округлённая цена 41,23 даёт 3298,40). None → обратная совместимость (кол-во×цена).
+    sum: Decimal | None = None
 
 
 def _assert_goods_have_product(
@@ -295,7 +299,9 @@ async def create_warehouse_invoice(
         product = products.get(line.iiko_product_id) if line.iiko_product_id else None
         quantity = _qty(line.quantity)
         price = _money(line.price)
-        line_sum = _money(quantity * price)
+        # Явная сумма строки — эталон (если пришла); иначе кол-во×цена. Так итог накладной
+        # совпадает с введённым в форме: округление цены до копейки не «уводит» сумму.
+        line_sum = _money(line.sum) if line.sum is not None else _money(quantity * price)
         vat_sum: Decimal | None = None
         if line.vat_percent:
             rate = Decimal(str(line.vat_percent))
@@ -378,7 +384,9 @@ async def _rebuild_invoice_lines(
         product = products.get(line.iiko_product_id) if line.iiko_product_id else None
         quantity = _qty(line.quantity)
         price = _money(line.price)
-        line_sum = _money(quantity * price)
+        # Явная сумма строки — эталон (если пришла); иначе кол-во×цена. Так итог накладной
+        # совпадает с введённым в форме: округление цены до копейки не «уводит» сумму.
+        line_sum = _money(line.sum) if line.sum is not None else _money(quantity * price)
         vat_sum: Decimal | None = None
         if line.vat_percent:
             rate = Decimal(str(line.vat_percent))

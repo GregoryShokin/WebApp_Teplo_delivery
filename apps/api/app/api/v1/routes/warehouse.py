@@ -110,6 +110,10 @@ class LineCreate(BaseModel):
     # Статья ДДС персональной строки (питание / прочие затраты на персонал) — задаёт,
     # на какую статью ляжет «персонал»-часть при оплате накладной. Только для is_staff.
     dds_article_id: uuid.UUID | None = None
+    # Сумма строки как её видит пользователь (эталон из документа поставщика). Если задана —
+    # бэк хранит её, а не пересчитывает кол-во×цена (цена в 2 знака не всегда точна). None —
+    # старые клиенты / фолбэк на кол-во×цена.
+    sum: Decimal | None = Field(default=None, ge=0)
 
 
 class InvoiceCreate(BaseModel):
@@ -671,6 +675,7 @@ async def post_invoice(
                     vat_percent=line.vat_percent,
                     is_staff=line.is_staff,
                     dds_article_id=line.dds_article_id,
+                    sum=line.sum,
                 )
                 for line in payload.lines
             ],
@@ -728,6 +733,7 @@ async def put_invoice(
                     vat_percent=line.vat_percent,
                     is_staff=line.is_staff,
                     dds_article_id=line.dds_article_id,
+                    sum=line.sum,
                 )
                 for line in payload.lines
             ],
@@ -782,6 +788,7 @@ async def post_adjust_paid_invoice(
                     vat_percent=line.vat_percent,
                     is_staff=line.is_staff,
                     dds_article_id=line.dds_article_id,
+                    sum=line.sum,
                 )
                 for line in payload.lines
             ],

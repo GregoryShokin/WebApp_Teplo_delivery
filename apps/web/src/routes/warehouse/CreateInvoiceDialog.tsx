@@ -179,6 +179,8 @@ export function CreateInvoiceDialog({
               iiko_product_id: l.product_id,
               vat_percent: num(l.vat) > 0 ? num(l.vat) : null,
               is_staff: false,
+              // Сумма строки — эталон: то, что видит пользователь, а не кол-во×округлённая цена.
+              sum: l.amount !== "" ? num(l.amount) : num(l.quantity) * num(l.price),
             })),
           // Блок «Траты на персонал» — только у обычной накладной; подпись → наименование,
           // сумма → цена (кол-во 1), статья ДДС → dds_article_id, без товара.
@@ -197,6 +199,7 @@ export function CreateInvoiceDialog({
                   vat_percent: null,
                   is_staff: true,
                   dds_article_id: l.articleId,
+                  sum: num(l.amount),
                 }))),
         ],
       }),
