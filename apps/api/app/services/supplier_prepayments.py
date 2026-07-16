@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,16 +26,62 @@ from app.models import (
     Wallet,
 )
 from app.services.counterparty_matching import _invoice_remaining, _recompute_status
-from app.services.counterparty_payments import CounterpartyPaymentError
+from app.services.counterparty_payments import CounterpartyPaymentError, _money
 
 PREPAYMENT_ARTICLE_CODE = "advance_to_supplier"
 # Приходная статья «Возврат переплаты от поставщиков» — возврат гасит открытые предоплаты.
 SUPPLIER_REFUND_ARTICLE_CODE = "vozvrat_pereplaty_ot_postavschikov"
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
 
+# Целевые авансы под конкретную поставку (kind='goods') гасятся ЯВНО — когда придёт накладная
+# именно этой поставки (settle_invoice_from_prepayment). Их НЕЛЬЗЯ авто-гасить FIFO любой
+# приходящей накладной: иначе аванс под недопоставленный заказ молча «съест» посторонний
+# счёт/УПД. Остальные виды (subscription/ad/rent/other) — это «деньги у поставщика» (баланс
+# рекламного кабинета/подписки), который закрывающие документы правомерно списывают по FIFO.
+EARMARKED_PREPAYMENT_KINDS = frozenset({"goods"})
 
-def _money(value: object) -> Decimal:
-    return Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+def _prepayment_untouched(prepayment: SupplierPrepayment) -> bool:
+    """Предоплата ещё не начала гаситься: можно безопасно чинить/сносить реквизиты."""
+    return prepayment.status == "open" and _money(prepayment.amount_settled) == 0
+
+
+def _consume_prepayment(
+    prepayment: SupplierPrepayment, amount: Decimal, *, full_status: str
+) -> None:
+    """Списать часть остатка предоплаты и перевести статус.
+
+    Единственное место арифметики amount_settled и порога «исчерпана» — ручное гашение,
+    авто-гашение и возврат обязаны считать одинаково, иначе копии разъезжаются
+    (см. исторический edge 'refunded со стейл amount_settled<amount')."""
+    prepayment.amount_settled = _money(prepayment.amount_settled) + amount
+    prepayment.status = (
+        full_status
+        if prepayment.amount_settled >= _money(prepayment.amount)
+        else "partially_settled"
+    )
+
+
+async def _allocate_invoice_from_prepayment(
+    session: AsyncSession,
+    *,
+    invoice: SupplierInvoice,
+    prepayment: SupplierPrepayment,
+    amount: Decimal,
+    actor_user_id: uuid.UUID | None,
+) -> None:
+    """Аллокация «накладная ← предоплата» (денег не двигает) + списание остатка."""
+    session.add(
+        InvoicePaymentAllocation(
+            invoice_id=invoice.id,
+            source_kind="prepayment",
+            prepayment_id=prepayment.id,
+            amount=amount,
+            created_by_user_id=actor_user_id,
+        )
+    )
+    _consume_prepayment(prepayment, amount, full_status="settled")
+    await session.flush()
 
 
 async def create_supplier_prepayment(
@@ -153,42 +199,63 @@ async def create_opening_prepayment(
 async def ensure_prepayment_from_bank_transaction(
     session: AsyncSession, transaction: CashflowTransaction
 ) -> SupplierPrepayment | None:
-    """Предоплатная модель по банк-фиду: списание в пользу контрагента → дебиторка.
+    """Синхронизировать автопредоплату по банк-фиду с текущим состоянием проводки.
 
-    Вызывается классификатором ДДС после присвоения контрагента. Новую ДДС-проводку
-    НЕ создаёт (деньги уже учтены транзакцией из выписки) — только запись предоплаты,
-    привязанную к транзакции. Идемпотентно: одна предоплата на одну транзакцию.
-    Гасится закрывающими УПД из СБИС (auto-settle при материализации)."""
-    if transaction.direction != "out" or transaction.counterparty_id is None:
-        return None
-    profile = await session.scalar(
-        select(CounterpartyPayableProfile).where(
-            CounterpartyPayableProfile.counterparty_id == transaction.counterparty_id
-        )
-    )
-    if profile is None or not profile.bank_payments_create_prepayment:
-        return None
+    Предоплатная модель (флаг на профиле контрагента, кейс Манго): списание в пользу
+    поставщика пополняет его дебиторку. Новую ДДС-проводку НЕ создаём (деньги уже учтены
+    транзакцией выписки) — только запись предоплаты, привязанную к транзакции.
+
+    Не «создать один раз», а ПРИВЕСТИ предоплату в соответствие транзакции — иначе
+    переклассификация оставляет фантом на старом контрагенте:
+      • транзакция больше не квалифицируется (сняли контрагента, сменили на не-предоплатного,
+        стала приходом) → нетронутую предоплату удаляем;
+      • контрагент/сумма/статья/кошелёк изменились → чиним нетронутую предоплату;
+      • гашёную (amount_settled>0) не трогаем — её аллокации уже связаны с накладными.
+    Идемпотентно: одна предоплата на одну транзакцию. Гасится закрывающими документами
+    (auto-settle при материализации)."""
     existing = await session.scalar(
         select(SupplierPrepayment).where(
             SupplierPrepayment.cashflow_transaction_id == transaction.id
         )
     )
-    if existing is not None:
-        return existing
-    prepayment = SupplierPrepayment(
-        counterparty_id=transaction.counterparty_id,
-        kind="subscription",
-        wallet_id=transaction.wallet_id,
-        amount=_money(transaction.amount),
-        amount_settled=Decimal("0.00"),
-        status="open",
-        cashflow_transaction_id=transaction.id,
-        article_id=transaction.article_id,
-        note="Автопредоплата из банковского списания (предоплатная модель)",
-    )
-    session.add(prepayment)
-    await session.flush()
-    return prepayment
+    should_have = transaction.direction == "out" and transaction.counterparty_id is not None
+    if should_have:
+        profile = await session.scalar(
+            select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == transaction.counterparty_id
+            )
+        )
+        should_have = profile is not None and profile.bank_payments_create_prepayment
+
+    if not should_have:
+        if existing is not None and _prepayment_untouched(existing):
+            await session.delete(existing)
+            await session.flush()
+        return None
+
+    if existing is None:
+        prepayment = SupplierPrepayment(
+            counterparty_id=transaction.counterparty_id,
+            kind="subscription",
+            wallet_id=transaction.wallet_id,
+            amount=_money(transaction.amount),
+            amount_settled=Decimal("0.00"),
+            status="open",
+            cashflow_transaction_id=transaction.id,
+            article_id=transaction.article_id,
+            note="Автопредоплата из банковского списания (предоплатная модель)",
+        )
+        session.add(prepayment)
+        await session.flush()
+        return prepayment
+
+    if _prepayment_untouched(existing):
+        existing.counterparty_id = transaction.counterparty_id
+        existing.amount = _money(transaction.amount)
+        existing.article_id = transaction.article_id
+        existing.wallet_id = transaction.wallet_id
+        await session.flush()
+    return existing
 
 
 async def refund_counterparty_prepayments(
@@ -224,18 +291,12 @@ async def refund_counterparty_prepayments(
         if rest <= 0:
             continue
         take = min(rest, remaining)
-        prepayment.amount_settled = _money(prepayment.amount_settled) + take
-        if prepayment.amount_settled >= _money(prepayment.amount):
-            prepayment.status = "refunded"
+        _consume_prepayment(prepayment, take, full_status="refunded")
         remaining -= take
         settled_total += take
     if settled_total > 0:
         await session.flush()
     return settled_total
-
-
-async def prepayment_remaining(prepayment: SupplierPrepayment) -> Decimal:
-    return _money(prepayment.amount) - _money(prepayment.amount_settled)
 
 
 async def cancel_supplier_prepayment(session: AsyncSession, prepayment_id: uuid.UUID) -> None:
@@ -311,20 +372,9 @@ async def settle_invoice_from_prepayment(
     if alloc <= 0:
         raise CounterpartyPaymentError("Сумма гашения вне допустимого остатка")
 
-    session.add(
-        InvoicePaymentAllocation(
-            invoice_id=invoice.id,
-            source_kind="prepayment",
-            prepayment_id=prepayment.id,
-            amount=alloc,
-            created_by_user_id=actor_user_id,
-        )
+    await _allocate_invoice_from_prepayment(
+        session, invoice=invoice, prepayment=prepayment, amount=alloc, actor_user_id=actor_user_id
     )
-    prepayment.amount_settled = _money(prepayment.amount_settled) + alloc
-    prepayment.status = (
-        "settled" if prepayment.amount_settled >= _money(prepayment.amount) else "partially_settled"
-    )
-    await session.flush()
     await _recompute_status(session, invoice)
     await session.commit()
     await session.refresh(invoice)
@@ -341,7 +391,11 @@ async def auto_settle_invoice_from_open_prepayments(
 
     Кейс владельца (2026-07-16): поставщик оплачивается авансом, закрывающий УПД из ЭДО
     не должен попадать «к оплате» — он гасит дебиторку. Деньги не двигаются (ушли при
-    создании предоплаты). Возвращает суммарно погашенное (0 — если предоплат нет)."""
+    создании предоплаты). Возвращает суммарно погашенное (0 — если предоплат нет).
+
+    Целевые товарные авансы (kind='goods') НЕ трогаем: они привязаны к конкретной поставке
+    и гасятся явно (settle_invoice_from_prepayment), иначе посторонняя накладная списала бы
+    аванс под недопоставленный заказ."""
     total = Decimal("0.00")
     prepayments = (
         await session.scalars(
@@ -349,6 +403,7 @@ async def auto_settle_invoice_from_open_prepayments(
             .where(
                 SupplierPrepayment.counterparty_id == invoice.counterparty_id,
                 SupplierPrepayment.status.in_(OPEN_PREPAYMENT_STATUSES),
+                SupplierPrepayment.kind.notin_(EARMARKED_PREPAYMENT_KINDS),
             )
             .order_by(SupplierPrepayment.created_at)
         )
@@ -361,22 +416,13 @@ async def auto_settle_invoice_from_open_prepayments(
         if pre_remaining <= 0:
             continue
         alloc = min(inv_remaining, pre_remaining)
-        session.add(
-            InvoicePaymentAllocation(
-                invoice_id=invoice.id,
-                source_kind="prepayment",
-                prepayment_id=prepayment.id,
-                amount=alloc,
-                created_by_user_id=actor_user_id,
-            )
+        await _allocate_invoice_from_prepayment(
+            session,
+            invoice=invoice,
+            prepayment=prepayment,
+            amount=alloc,
+            actor_user_id=actor_user_id,
         )
-        prepayment.amount_settled = _money(prepayment.amount_settled) + alloc
-        prepayment.status = (
-            "settled"
-            if prepayment.amount_settled >= _money(prepayment.amount)
-            else "partially_settled"
-        )
-        await session.flush()
         total += alloc
     if total > 0:
         await _recompute_status(session, invoice)

@@ -383,11 +383,15 @@ async def apply_operation_action(
         return
 
     if action == "mark_internal_transfer":
+        if operation.cashflow_transaction_id is not None:
+            await _drop_untouched_bank_prepayments(session, {operation.cashflow_transaction_id})
         operation.classification_status = "internal_transfer"
         operation.cashflow_transaction_id = None
         return
 
     if action == "exclude":
+        if operation.cashflow_transaction_id is not None:
+            await _drop_untouched_bank_prepayments(session, {operation.cashflow_transaction_id})
         operation.classification_status = "excluded"
         operation.cashflow_transaction_id = None
         return
@@ -632,19 +636,49 @@ def _operation_review_payload(operation: BankOperation) -> dict[str, Any]:
     }
 
 
+async def _drop_untouched_bank_prepayments(
+    session: AsyncSession, transaction_ids: set[UUID]
+) -> None:
+    """Снять нетронутые автопредоплаты, привязанные к удаляемым/пересматриваемым проводкам.
+
+    Предоплата по банк-фиду — проекция out-проводки с контрагентом. Если проводку удаляют
+    (переразбор сплитом) или операцию исключают, привязанная предоплата осталась бы сиротой
+    (FK ondelete=SET NULL) со статусом open — двойной учёт (аллокация счёта + открытая
+    дебиторка) и риск второй предоплаты при повторной классификации. Гашёную
+    (amount_settled>0) не трогаем: её аллокации уже связаны с накладными."""
+    if not transaction_ids:
+        return
+    rows = await session.scalars(
+        select(SupplierPrepayment).where(
+            SupplierPrepayment.cashflow_transaction_id.in_(transaction_ids)
+        )
+    )
+    dropped = False
+    for prepayment in rows.all():
+        if prepayment.status == "open" and Decimal(prepayment.amount_settled) == 0:
+            await session.delete(prepayment)
+            dropped = True
+    if dropped:
+        await session.flush()
+
+
 async def _clear_operation_cashflow(session: AsyncSession, operation: BankOperation) -> None:
     """Drop cashflow rows previously booked from this bank operation (re-split).
 
     Only rows whose ``source`` is this very operation are removed — a pre-booked
     manual payment (different ``source_kind``) linked to the op is left untouched.
+    Auto-prepayments derived from those rows are cleaned first so none is orphaned.
     """
-    existing = await session.scalars(
-        select(CashflowTransaction).where(
-            CashflowTransaction.source_kind == "bank_operation",
-            CashflowTransaction.source_id == operation.id,
+    existing = (
+        await session.scalars(
+            select(CashflowTransaction).where(
+                CashflowTransaction.source_kind == "bank_operation",
+                CashflowTransaction.source_id == operation.id,
+            )
         )
-    )
-    for transaction in existing.all():
+    ).all()
+    await _drop_untouched_bank_prepayments(session, {t.id for t in existing})
+    for transaction in existing:
         await session.delete(transaction)
     operation.cashflow_transaction_id = None
     await session.flush()
@@ -891,6 +925,15 @@ async def apply_operation_split(
                 amount=amount,
                 actor_user_id=actor_user_id,
             )
+        # Прочая строка расхода на контрагента с предоплатной моделью по банк-фиду (кейс
+        # Манго): доля пополняет дебиторку, как и при простой классификации через set_article.
+        # Аванс (goods-предоплата выше), оплата накладной и выплата ЗП обрабатываются отдельно.
+        is_advance = advance_article_id is not None and article_id == advance_article_id
+        is_payout = employee_id is not None and article_id in salary_article_ids
+        if not is_advance and invoice_id is None and not is_payout:
+            from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
+
+            await ensure_prepayment_from_bank_transaction(session, transaction)
         # Зарплатная статья + сотрудник → леджер «выплачено» (EmployeePayout), привязанный к этой
         # проводке. Второй проводки НЕ создаём: денежный факт несёт строка выписки (баланс из
         # выписки). Режим оклада определяет kind: on_demand собственник → 'owner_salary'

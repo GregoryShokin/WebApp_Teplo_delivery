@@ -106,7 +106,11 @@ class SbisDocument(Base):
         String(24), nullable=False, default="mirror", server_default="mirror"
     )
 
-    raw: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # deferred: полный СБИС-payload нужен только конвейеру синка (период из вложений,
+    # письма-счета) — реестр ЭДО его не показывает, а таблица только растёт. Без deferred
+    # каждый открытый список тянул бы мегабайты JSONB из БД впустую. Читающие места
+    # обязаны явно грузить: options(undefer(SbisDocument.raw)).
+    raw: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True, deferred=True)
     first_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

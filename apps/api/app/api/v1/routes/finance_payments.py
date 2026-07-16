@@ -19,13 +19,17 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_permission
+from app.api.deps import require_any_permission
 from app.db.session import get_session
 from app.services import payments_aggregator as agg
 
 router = APIRouter()
 
-READ = (Depends(require_permission("counterparties.read")),)
+# Страница «Финансы → Платежи» в навигации открыта обоим правам — бэкенд обязан принимать
+# те же, иначе finance-роль видит вечное фейковое «Платежей нет» при тихом 403.
+READ = (
+    Depends(require_any_permission(("counterparties.read", "finance.counterparties.read"))),
+)
 
 
 class PaymentRead(BaseModel):

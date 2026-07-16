@@ -188,3 +188,99 @@ async def test_bank_debit_tops_up_prepayment_when_profile_flag_on(
             select(func.count()).select_from(SupplierPrepayment)
         )
         assert count == 1
+
+
+async def test_bank_debit_reclassified_to_other_counterparty_moves_prepayment(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Переклассификация списания на ДРУГОГО контрагента чинит нетронутую предоплату,
+    а не оставляет фантом на прежнем — иначе старый копил бы дебиторку на чужие деньги."""
+    from datetime import date as date_cls
+
+    from cp_helpers import make_counterparty, make_wallet
+    from sqlalchemy import func, select
+
+    from app.models import CashflowTransaction, CounterpartyPayableProfile
+    from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
+
+    async with async_session_factory() as session:
+        mango = await make_counterparty(session, name="Манго Телеком", inn="7709501144")
+        other = await make_counterparty(session, name="Другой поставщик", inn="7712345678")
+        for cp in (mango, other):
+            profile = (
+                await session.execute(
+                    select(CounterpartyPayableProfile).where(
+                        CounterpartyPayableProfile.counterparty_id == cp.id
+                    )
+                )
+            ).scalar_one()
+            profile.bank_payments_create_prepayment = True
+        wallet = await make_wallet(session, name="T-Bank", wallet_type="bank")
+        transaction = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("4900.00"),
+            operation_date=date_cls(2026, 7, 15),
+            counterparty_id=mango.id,
+            source_kind="bank_operation",
+            payment_purpose="MANGO OFFICE",
+            quality_status="auto",
+        )
+        session.add(transaction)
+        await session.flush()
+
+        prepayment = await ensure_prepayment_from_bank_transaction(session, transaction)
+        assert prepayment is not None and prepayment.counterparty_id == mango.id
+
+        # Оператор переразметил ту же транзакцию на другого контрагента.
+        transaction.counterparty_id = other.id
+        moved = await ensure_prepayment_from_bank_transaction(session, transaction)
+        assert moved is not None and moved.id == prepayment.id
+        assert moved.counterparty_id == other.id  # фантом на Манго не остался
+        count = await session.scalar(select(func.count()).select_from(SupplierPrepayment))
+        assert count == 1
+
+
+async def test_bank_debit_de_qualified_drops_untouched_prepayment(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Если транзакция перестала квалифицироваться (сняли контрагента) — нетронутая
+    автопредоплата удаляется, а не висит открытой дебиторкой без основания."""
+    from datetime import date as date_cls
+
+    from cp_helpers import make_counterparty, make_wallet
+    from sqlalchemy import func, select
+
+    from app.models import CashflowTransaction, CounterpartyPayableProfile
+    from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Манго Телеком", inn="7709501144")
+        profile = (
+            await session.execute(
+                select(CounterpartyPayableProfile).where(
+                    CounterpartyPayableProfile.counterparty_id == cp.id
+                )
+            )
+        ).scalar_one()
+        profile.bank_payments_create_prepayment = True
+        wallet = await make_wallet(session, name="T-Bank", wallet_type="bank")
+        transaction = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("4900.00"),
+            operation_date=date_cls(2026, 7, 15),
+            counterparty_id=cp.id,
+            source_kind="bank_operation",
+            payment_purpose="MANGO OFFICE",
+            quality_status="auto",
+        )
+        session.add(transaction)
+        await session.flush()
+
+        assert await ensure_prepayment_from_bank_transaction(session, transaction) is not None
+        # Контрагента сняли (переразметка в «требует разбора»/исключение).
+        transaction.counterparty_id = None
+        assert await ensure_prepayment_from_bank_transaction(session, transaction) is None
+        count = await session.scalar(select(func.count()).select_from(SupplierPrepayment))
+        assert count == 0

@@ -21,7 +21,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+import uuid
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
@@ -29,6 +31,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
 from app.core.config import get_settings
 from app.models import (
@@ -42,7 +45,7 @@ from app.models import (
 from app.services import supplier_prepayments as prepayments
 from app.services import supplier_service_periods as service_periods
 from app.services.counterparty_registry import compute_invoice_due_date
-from app.services.email_invoice_ingest import process_attachment
+from app.services.email_invoice_ingest import _guess_type, process_attachment
 from app.services.invoice_recognition import _extract_service_periods
 from app.services.mail.imap_client import FetchedAttachment
 from app.services.sbis.client import SbisClient
@@ -73,20 +76,9 @@ class SbisSyncResult:
     errors: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
-        return {
-            "configured": self.configured,
-            "fetched": self.fetched,
-            "created": self.created,
-            "updated": self.updated,
-            "matched": self.matched,
-            "skipped_deleted": self.skipped_deleted,
-            "new_counterparties": self.new_counterparties,
-            "materialized": self.materialized,
-            "duplicates": self.duplicates,
-            "settled_from_prepayments": self.settled_from_prepayments,
-            "sent_to_recognition": self.sent_to_recognition,
-            "errors": self.errors,
-        }
+        # asdict, а не ручное перечисление: забытое при добавлении счётчика поле уже
+        # роняло /sbis/sync (ValidationError → 500). Одно место истины — сам dataclass.
+        return dataclasses.asdict(self)
 
 
 def _parse_amount(value: Any) -> Decimal | None:
@@ -99,6 +91,10 @@ def _parse_amount(value: Any) -> Decimal | None:
 
 
 def _parse_date(value: Any) -> date | None:
+    # НЕ заменять на invoice_recognition._parse_date: тот ищет дату regex'ом в любом месте
+    # строки, принимает '-'/'/' и двухзначные годы — на строгом реестровом формате СБИС
+    # («ДД.ММ.ГГГГ [ЧЧ.ММ.СС]») это даёт ложные срабатывания (например, ISO-строку
+    # '2026-07-14' он прочтёт как 2014-07-26, где мы честно вернём None).
     if not value:
         return None
     raw = str(value).strip().split(" ")[0]
@@ -204,11 +200,6 @@ async def _upsert_documents(
         entry.last_synced_at = func.now()
 
 
-def _guess_type(inn: str | None) -> str:
-    # 12 цифр — ИП (individual), 10 — юрлицо (legal_entity). Как в email/iiko-синках.
-    return "individual" if inn and len(inn) == 12 else "legal_entity"
-
-
 async def _resolve_or_create_counterparty(
     session: AsyncSession,
     doc: SbisDocument,
@@ -249,6 +240,13 @@ async def _resolve_or_create_counterparty(
     return counterparty
 
 
+# Счёт (СчетВх) и его закрывающий УПД (ДокОтгрВх) по одной поставке — это ОДНА обязанность,
+# но у них разные номера и даты, поэтому строгий дедуп их не ловит. Пару ловим по
+# контрагенту+сумме в узком окне дат — окно короче месяца, чтобы две помесячные накладные
+# одного типа с равной суммой (напр. подписка) НЕ слились.
+_SBIS_CROSS_TYPE_WINDOW_DAYS = 7
+
+
 async def _find_existing_invoice(
     session: AsyncSession, counterparty_id, doc: SbisDocument
 ) -> SupplierInvoice | None:
@@ -256,7 +254,11 @@ async def _find_existing_invoice(
 
     Поставщик может прислать тот же счёт и письмом, и через ЭДО — второй канал не
     должен родить второй счёт. Зеркальный iiko-контур сюда не входит: у контрагентов
-    с каналом 'sbis' производственных iiko-накладных нет по определению."""
+    с каналом 'sbis' производственных iiko-накладных нет по определению.
+
+    Дополнительно ловим пару «счёт ↔ закрывающий УПД» одной поставки: они приходят
+    РАЗНЫМИ типами СБИС-документов с разными номерами/датами, поэтому строгий дедуп их
+    пропустил бы — и по одной услуге встали бы две накладные «к оплате» (двойная оплата)."""
     if doc.amount is None:
         return None
     candidates = (
@@ -276,6 +278,16 @@ async def _find_existing_invoice(
             and normalize_number(candidate.number) == want_number
         ):
             return candidate
+    want_type = doc.doc_type or ""
+    if want_type in _MATERIALIZABLE_DOC_TYPES and doc.doc_date is not None:
+        for candidate in candidates:
+            if candidate.source != "sbis" or candidate.invoice_date is None:
+                continue
+            cand_type = (candidate.raw_payload or {}).get("doc_type") or ""
+            if cand_type == want_type or cand_type not in _MATERIALIZABLE_DOC_TYPES:
+                continue  # только пара РАЗНЫХ материализуемых типов (счёт↔УПД)
+            if abs((candidate.invoice_date - doc.doc_date).days) <= _SBIS_CROSS_TYPE_WINDOW_DAYS:
+                return candidate
     return None
 
 
@@ -304,7 +316,12 @@ def _service_period_fields(doc: SbisDocument, *, required: bool) -> dict[str, An
 
 
 async def _materialize_document(
-    session: AsyncSession, doc: SbisDocument, counterparty: Counterparty, result: SbisSyncResult
+    session: AsyncSession,
+    doc: SbisDocument,
+    counterparty: Counterparty,
+    result: SbisSyncResult,
+    *,
+    profile: CounterpartyPayableProfile | None = None,
 ) -> None:
     # Идемпотентность на случай дрейфа: счёт из этого же СБИС-документа уже есть.
     existing = await session.scalar(
@@ -325,11 +342,14 @@ async def _materialize_document(
         result.duplicates += 1
         return
 
-    profile = await session.scalar(
-        select(CounterpartyPayableProfile).where(
-            CounterpartyPayableProfile.counterparty_id == counterparty.id
+    # Профиль приходит из балк-кэша маршрутизации; одиночный SELECT — только для
+    # прямых вызовов вне конвейера (тесты, ручные сценарии).
+    if profile is None:
+        profile = await session.scalar(
+            select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == counterparty.id
+            )
         )
-    )
     period = _service_period_fields(
         doc, required=bool(profile and profile.service_period_required)
     )
@@ -449,7 +469,9 @@ async def _route_documents(
     client = client or SbisClient()
     docs = (
         await session.scalars(
-            select(SbisDocument).where(
+            select(SbisDocument)
+            .options(undefer(SbisDocument.raw))  # raw deferred; конвейеру нужен целиком
+            .where(
                 SbisDocument.intake_status.in_(("mirror", "new_counterparty")),
                 SbisDocument.invoice_id.is_(None),
             )
@@ -466,7 +488,26 @@ async def _route_documents(
             )
         ).all()
     )
+    # Зеркало-набор перечитывается каждый прогон целиком (так задумано: документы
+    # new_counterparty материализуются задним числом после настройки карточки) — поэтому
+    # контрагентов резолвим ОДНИМ запросом по всем ИНН пачки, а не по SELECT'у на документ.
     cache: dict[str, Counterparty] = {}
+    doc_inns = {doc.counterparty_inn for doc in docs if doc.counterparty_inn}
+    if doc_inns:
+        known = await session.scalars(
+            select(Counterparty).where(Counterparty.inn.in_(doc_inns))
+        )
+        cache = {cp.inn: cp for cp in known if cp.inn}
+    # Профили материализуемых карточек — тоже пачкой (нужны для срока оплаты и периода).
+    profile_cache: dict[uuid.UUID, CounterpartyPayableProfile] = {}
+    cached_ids = {cp.id for cp in cache.values()}
+    if cached_ids:
+        profiles = await session.scalars(
+            select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id.in_(cached_ids)
+            )
+        )
+        profile_cache = {profile.counterparty_id: profile for profile in profiles}
     for doc in docs:
         counterparty = await _resolve_or_create_counterparty(session, doc, cache, result)
         if counterparty is None:
@@ -485,7 +526,10 @@ async def _route_documents(
             and (doc.doc_type or "") in _MATERIALIZABLE_DOC_TYPES
             and doc.amount is not None
         ):
-            await _materialize_document(session, doc, counterparty, result)
+            await _materialize_document(
+                session, doc, counterparty, result,
+                profile=profile_cache.get(counterparty.id),
+            )
         elif counterparty.id in channel_ids and (doc.doc_type or "") == "КоррВх":
             # Неформализованный счёт ходит письмом (сумма только в PDF) —
             # отправляем в распознавание «Страницы на оплату».
@@ -527,6 +571,23 @@ async def _match_documents(session: AsyncSession, result: SbisSyncResult) -> Non
         (await session.execute(select(SupplierInvoice).where(*invoice_filters))).scalars().all()
     )
 
+    # ИНН-гард против кросс-поставщикового матча: сумма 5000 у поставщика А не должна
+    # «пришиться» к накладной поставщика Б только потому, что даты рядом. Сверяем ИНН
+    # карточек, когда он есть у ОБЕИХ сторон; карточки без ИНН (iiko-имена) не режем —
+    # это известный кейс двойного реестра, там матч по сумме+дате остаётся единственным.
+    invoice_cp_ids = {inv.counterparty_id for inv in invoices if inv.counterparty_id}
+    inn_by_cp: dict[uuid.UUID, str | None] = {}
+    if invoice_cp_ids:
+        rows = await session.execute(
+            select(Counterparty.id, Counterparty.inn).where(Counterparty.id.in_(invoice_cp_ids))
+        )
+        inn_by_cp = {cp_id: inn for cp_id, inn in rows}
+
+    def _inn_compatible(doc: SbisDocument, invoice: SupplierInvoice) -> bool:
+        doc_inn = (doc.counterparty_inn or "").strip()
+        invoice_inn = (inn_by_cp.get(invoice.counterparty_id) or "").strip()
+        return not doc_inn or not invoice_inn or doc_inn == invoice_inn
+
     by_number_amount: dict[tuple[str, Decimal], list[SupplierInvoice]] = {}
     by_amount: dict[Decimal, list[SupplierInvoice]] = {}
     for invoice in invoices:
@@ -540,7 +601,11 @@ async def _match_documents(session: AsyncSession, result: SbisSyncResult) -> Non
         note: str | None = None
         number = normalize_number(doc.number)
         if number and doc.amount is not None:
-            exact = by_number_amount.get((number, doc.amount)) or []
+            exact = [
+                invoice
+                for invoice in by_number_amount.get((number, doc.amount)) or []
+                if _inn_compatible(doc, invoice)
+            ]
             if len(exact) == 1:
                 matched, note = exact[0], "number_amount"
         if matched is None and doc.amount is not None and doc.doc_date is not None:
@@ -549,6 +614,7 @@ async def _match_documents(session: AsyncSession, result: SbisSyncResult) -> Non
                 for invoice in by_amount.get(doc.amount, [])
                 if invoice.invoice_date is not None
                 and abs((invoice.invoice_date - doc.doc_date).days) <= _DATE_WINDOW_DAYS
+                and _inn_compatible(doc, invoice)
             ]
             if len(near) == 1:
                 matched, note = near[0], "amount_date"
@@ -573,17 +639,21 @@ async def sync_sbis_documents(
 
     lookback = days or settings.sbis_sync_lookback_days
     date_from = date.today() - timedelta(days=lookback)
-    items = await client.list_incoming_documents(date_from)
-    if settings.sbis_fetch_invoice_registry:
-        # Счета — отдельный реестр (и отдельное право доступа); идут общим конвейером.
-        items.extend(await client.list_documents_by_type("СчетВх", date_from))
-    result.fetched = len(items)
+    try:
+        items = await client.list_incoming_documents(date_from)
+        if settings.sbis_fetch_invoice_registry:
+            # Счета — отдельный реестр (и отдельное право доступа); идут общим конвейером.
+            items.extend(await client.list_documents_by_type("СчетВх", date_from))
+        result.fetched = len(items)
 
-    await _upsert_documents(session, items, result)
-    await session.flush()
-    await _route_documents(session, result, client)
-    await session.flush()
-    await _match_documents(session, result)
-    await session.commit()
+        await _upsert_documents(session, items, result)
+        await session.flush()
+        await _route_documents(session, result, client)
+        await session.flush()
+        await _match_documents(session, result)
+        await session.commit()
+    finally:
+        # Один прогон = одно keep-alive-соединение; закрываем его вместе с прогоном.
+        await client.aclose()
     logger.info("sbis sync (%s): %s", run_reason, result.as_dict())
     return result

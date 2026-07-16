@@ -59,8 +59,26 @@ def _format_date(value: date) -> str:
 
 
 class SbisClient:
+    """Один инстанс = одно переиспользуемое HTTP-соединение (keep-alive).
+
+    Клиент на каждый вызов означал бы новый TCP+TLS-хендшейк на каждый файл/страницу —
+    в проходе синка с N письмами-счетами это секунды чистой задержки, а СБИС ограничивает
+    приложение ≤5 активными сессиями. Закрывать через ``aclose()`` (или контекстом)."""
+
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or get_settings()
+        self._http: httpx.AsyncClient | None = None
+
+    async def __aenter__(self) -> SbisClient:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self.aclose()
+
+    async def aclose(self) -> None:
+        if self._http is not None:
+            await self._http.aclose()
+            self._http = None
 
     @property
     def configured(self) -> bool:
@@ -136,31 +154,34 @@ class SbisClient:
     def _client(self) -> httpx.AsyncClient:
         # trust_env=False: контейнерный HTTPS_PROXY (туннель для iiko) не должен
         # перехватывать СБИС — прямой egress к online.sbis.ru работает и в dev, и на проде.
-        return httpx.AsyncClient(
-            timeout=self._settings.sbis_http_timeout_seconds, trust_env=False
-        )
+        # Ленивая инициализация: соединение живёт всё время жизни SbisClient (keep-alive).
+        if self._http is None or self._http.is_closed:
+            self._http = httpx.AsyncClient(
+                timeout=self._settings.sbis_http_timeout_seconds, trust_env=False
+            )
+        return self._http
 
     async def list_incoming_documents(
         self, date_from: date, date_to: date | None = None
     ) -> list[dict[str, Any]]:
         """Реестр «Входящие» за окно дат — все страницы, элементы «Реестра» как есть."""
         items: list[dict[str, Any]] = []
-        async with self._client() as client:
-            page = 0
-            while True:
-                filter_payload: dict[str, Any] = {
-                    "ДатаС": _format_date(date_from),
-                    "ТипРеестра": INCOMING_REGISTRY,
-                    "Навигация": {"РазмерСтраницы": str(_PAGE_SIZE), "Страница": str(page)},
-                }
-                if date_to is not None:
-                    filter_payload["ДатаПо"] = _format_date(date_to)
-                result = await self._rpc(client, _LIST_METHOD, {"Фильтр": filter_payload})
-                registry = (result or {}).get("Реестр") or []
-                items.extend(registry)
-                if len(registry) < _PAGE_SIZE:
-                    return items
-                page += 1
+        client = self._client()
+        page = 0
+        while True:
+            filter_payload: dict[str, Any] = {
+                "ДатаС": _format_date(date_from),
+                "ТипРеестра": INCOMING_REGISTRY,
+                "Навигация": {"РазмерСтраницы": str(_PAGE_SIZE), "Страница": str(page)},
+            }
+            if date_to is not None:
+                filter_payload["ДатаПо"] = _format_date(date_to)
+            result = await self._rpc(client, _LIST_METHOD, {"Фильтр": filter_payload})
+            registry = (result or {}).get("Реестр") or []
+            items.extend(registry)
+            if len(registry) < _PAGE_SIZE:
+                return items
+            page += 1
 
     async def list_documents_by_type(
         self, doc_type: str, date_from: date, date_to: date | None = None
@@ -172,28 +193,28 @@ class SbisClient:
         Элементы нормализуются к форме реестра «ПоСобытиям» ({"Документ": ...}), чтобы
         дальше идти общим конвейером."""
         items: list[dict[str, Any]] = []
-        async with self._client() as client:
-            page = 0
-            while True:
-                filter_payload: dict[str, Any] = {
-                    "Тип": doc_type,
-                    "ДатаС": _format_date(date_from),
-                    "Навигация": {"РазмерСтраницы": str(_PAGE_SIZE), "Страница": str(page)},
-                }
-                if date_to is not None:
-                    filter_payload["ДатаПо"] = _format_date(date_to)
-                result = await self._rpc(
-                    client, "СБИС.СписокДокументов", {"Фильтр": filter_payload}
-                )
-                documents = (result or {}).get("Документ") or (result or {}).get("Реестр") or []
-                for item in documents:
-                    if "Документ" in item and isinstance(item.get("Документ"), dict):
-                        items.append(item)
-                    else:
-                        items.append({"Документ": item, "Состояние": item.get("Состояние")})
-                if len(documents) < _PAGE_SIZE:
-                    return items
-                page += 1
+        client = self._client()
+        page = 0
+        while True:
+            filter_payload: dict[str, Any] = {
+                "Тип": doc_type,
+                "ДатаС": _format_date(date_from),
+                "Навигация": {"РазмерСтраницы": str(_PAGE_SIZE), "Страница": str(page)},
+            }
+            if date_to is not None:
+                filter_payload["ДатаПо"] = _format_date(date_to)
+            result = await self._rpc(
+                client, "СБИС.СписокДокументов", {"Фильтр": filter_payload}
+            )
+            documents = (result or {}).get("Документ") or (result or {}).get("Реестр") or []
+            for item in documents:
+                if "Документ" in item and isinstance(item.get("Документ"), dict):
+                    items.append(item)
+                else:
+                    items.append({"Документ": item, "Состояние": item.get("Состояние")})
+            if len(documents) < _PAGE_SIZE:
+                return items
+            page += 1
 
     async def _get_raw(self, client: httpx.AsyncClient, url: str) -> httpx.Response:
         """GET по ссылке СБИС с токеном и одним переполучением на 401."""
@@ -214,8 +235,7 @@ class SbisClient:
 
     async def download_file(self, url: str) -> bytes:
         """Скачать файл по ссылке из реестра (XML вложения и т.п.) с текущим токеном."""
-        async with self._client() as client:
-            response = await self._get_raw(client, url)
+        response = await self._get_raw(self._client(), url)
         if response.status_code != 200:
             raise SbisApiError(f"СБИС файл: HTTP {response.status_code} {response.text[:200]}")
         return response.content
@@ -233,14 +253,14 @@ class SbisClient:
     async def download_pdf(self, url: str, *, attempts: int = 6, delay_seconds: float = 3) -> bytes:
         """Печатная форма PDF: генерится на стороне СБИС асинхронно — ретраим, пока сервис
         отвечает «файл ещё формируется» (это приходит и с HTTP 200, и с HTTP 500)."""
-        async with self._client() as client:
-            for _ in range(attempts):
-                response = await self._get_raw(client, url)
-                content = response.content
-                if response.status_code == 200 and content.startswith(b"%PDF"):
-                    return content
-                if self._not_ready_message(content) is not None:
-                    await asyncio.sleep(delay_seconds)
-                    continue
-                raise SbisApiError(f"СБИС PDF: HTTP {response.status_code} {content[:200]!r}")
+        client = self._client()
+        for _ in range(attempts):
+            response = await self._get_raw(client, url)
+            content = response.content
+            if response.status_code == 200 and content.startswith(b"%PDF"):
+                return content
+            if self._not_ready_message(content) is not None:
+                await asyncio.sleep(delay_seconds)
+                continue
+            raise SbisApiError(f"СБИС PDF: HTTP {response.status_code} {content[:200]!r}")
         raise SbisFileNotReadyError("СБИС PDF: файл так и не сформировался — повторите позже")

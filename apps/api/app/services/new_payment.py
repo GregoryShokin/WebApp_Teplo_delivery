@@ -32,7 +32,7 @@ from app.models import (
     Employee,
     Wallet,
 )
-from app.services.counterparty_registry import NON_PAYOUT_WALLET_CODES
+from app.services.counterparty_registry import ARCHIVED_STATUSES, NON_PAYOUT_WALLET_CODES
 from app.services.kassa.payouts import (
     EMPLOYEE_ADVANCE_ARTICLE_CODE,
     EMPLOYEE_LOAN_ARTICLE_CODE,
@@ -239,7 +239,8 @@ async def _counterparties_by_article(
         .join(Counterparty, Counterparty.id == CounterpartyPayableProfile.counterparty_id)
         .where(
             CounterpartyPayableProfile.default_dds_article_id.in_(article_ids),
-            Counterparty.status != "archived",
+            # notin_: легаси-статус 'inactive' — тоже архив, в пикер попадать не должен.
+            Counterparty.status.notin_(ARCHIVED_STATUSES),
         )
         .order_by(Counterparty.name)
     )

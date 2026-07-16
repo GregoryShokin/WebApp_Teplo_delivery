@@ -477,7 +477,7 @@ async def test_materialized_invoice_auto_settles_from_open_prepayment(
         )
         prepayment = SupplierPrepayment(
             counterparty_id=cp.id,
-            kind="goods",
+            kind="subscription",  # баланс «денег у поставщика», а не целевой товарный аванс
             amount=Decimal("200000.00"),
             amount_settled=Decimal("0.00"),
             status="open",
@@ -517,7 +517,7 @@ async def test_materialized_invoice_partial_prepayment_coverage(
         )
         prepayment = SupplierPrepayment(
             counterparty_id=cp.id,
-            kind="goods",
+            kind="subscription",  # баланс «денег у поставщика», а не целевой товарный аванс
             amount=Decimal("100000.00"),
             amount_settled=Decimal("0.00"),
             status="open",
@@ -539,6 +539,99 @@ async def test_materialized_invoice_partial_prepayment_coverage(
         await session.refresh(prepayment)
         assert prepayment.status == "settled"
         assert prepayment.amount_settled == Decimal("100000.00")
+
+
+async def test_earmarked_goods_advance_not_auto_settled(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Целевой товарный аванс (kind='goods') НЕ гасится авто-FIFO посторонней СБИС-накладной —
+    иначе аванс под недопоставленный заказ молча «съел» бы чужой счёт/УПД."""
+    from app.models import CounterpartyCollectionSource, SupplierPrepayment
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Стартер", inn="231006560100")
+        session.add(
+            CounterpartyCollectionSource(
+                counterparty_id=cp.id, kind="sbis", value="231006560100"
+            )
+        )
+        prepayment = SupplierPrepayment(
+            counterparty_id=cp.id,
+            kind="goods",
+            amount=Decimal("200000.00"),
+            amount_settled=Decimal("0.00"),
+            status="open",
+        )
+        session.add(prepayment)
+        await session.flush()
+
+        result = SbisSyncResult()
+        await _upsert_documents(session, [_registry_item()], result)
+        await session.flush()
+        route_result = await _route(session)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        invoice = await session.get(SupplierInvoice, doc.invoice_id)
+        assert route_result.materialized == 1
+        assert route_result.settled_from_prepayments == 0
+        assert invoice is not None
+        assert invoice.payment_status == "unpaid"  # накладная осталась «к оплате»
+        await session.refresh(prepayment)
+        assert prepayment.amount_settled == Decimal("0.00")
+        assert prepayment.status == "open"
+
+
+async def test_invoice_and_closing_upd_collapse_to_one_payable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Счёт (СчетВх) и его закрывающий УПД (ДокОтгрВх) одной поставки — ОДНА обязанность:
+    разные номера/даты, поэтому строгий дедуп их пропустил бы, и встали бы две накладные
+    «к оплате» (двойная оплата). Ловим пару по контрагенту+сумме в узком окне дат."""
+    from app.models import CounterpartyCollectionSource
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ЛЕММА", inn="231006560100")
+        session.add(
+            CounterpartyCollectionSource(
+                counterparty_id=cp.id, kind="sbis", value="231006560100"
+            )
+        )
+        await session.flush()
+
+        schet = _registry_item(
+            doc_id="019f0000-0000-0000-0000-0000000000a1",
+            number="СЧ-100",
+            amount="5000.00",
+            doc_date="01.07.2026",
+            doc_type="СчетВх",
+        )
+        upd = _registry_item(
+            doc_id="019f0000-0000-0000-0000-0000000000b2",
+            number="УПД-312",
+            amount="5000.00",
+            doc_date="05.07.2026",
+            doc_type="ДокОтгрВх",
+        )
+        result = SbisSyncResult()
+        await _upsert_documents(session, [schet, upd], result)
+        await session.flush()
+        await _route(session)
+        await session.commit()
+
+        invoices = (
+            await session.execute(
+                select(SupplierInvoice).where(SupplierInvoice.counterparty_id == cp.id)
+            )
+        ).scalars().all()
+        assert len(invoices) == 1  # одна накладная на одну поставку, не две
+        docs = (
+            await session.execute(select(SbisDocument).order_by(SbisDocument.doc_date))
+        ).scalars().all()
+        statuses = {d.doc_type: d.intake_status for d in docs}
+        assert statuses["СчетВх"] == "materialized"
+        assert statuses["ДокОтгрВх"] == "duplicate"  # УПД схлопнулся на счёт
+        assert all(d.invoice_id == invoices[0].id for d in docs)
 
 
 async def test_invoice_letter_routed_to_recognition(

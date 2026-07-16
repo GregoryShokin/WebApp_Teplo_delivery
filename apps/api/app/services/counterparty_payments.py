@@ -508,7 +508,8 @@ async def create_expense_payment_draft(
         line_purpose = " ".join((line.purpose or "").split()) or article.name
         if line.counterparty_id is not None:
             counterparty = await session.get(Counterparty, line.counterparty_id)
-            if counterparty is None or counterparty.status == "archived":
+            # in ARCHIVED_...: легаси-статус 'inactive' — тоже архив, иначе гард дыряв.
+            if counterparty is None or counterparty.status in ARCHIVED_COUNTERPARTY_STATUSES:
                 raise CounterpartyPaymentError("Контрагент не найден")
             profile = await session.scalar(
                 select(CounterpartyPayableProfile).where(

@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.api.deps import require_permission
+from app.api.deps import require_any_permission, require_permission
 from app.db.session import get_session
 from app.models import (
     Counterparty,
@@ -33,7 +33,11 @@ from app.services.sbis.sync import sync_sbis_documents
 
 router = APIRouter()
 
-READ = (Depends(require_permission("counterparties.read")),)
+# Реестр ЭДО живёт на «Финансы → Платежи», куда навигация пускает и finance-право —
+# чтение обязано принимать оба, иначе вкладка тихо показывает фейковое «пусто» (403).
+READ = (
+    Depends(require_any_permission(("counterparties.read", "finance.counterparties.read"))),
+)
 OPERATE = (Depends(require_permission("counterparties.operate")),)
 
 
@@ -259,13 +263,15 @@ async def document_pdf(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="У документа нет печатной формы"
         )
-    client = SbisClient()
-    try:
-        content = await client.download_pdf(doc.link_pdf)
-    except SbisCredentialsError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except SbisApiError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    async with SbisClient() as client:
+        try:
+            content = await client.download_pdf(doc.link_pdf)
+        except SbisCredentialsError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        except SbisApiError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+            ) from exc
     # ASCII-фолбэк обязателен: кириллица в Content-Disposition роняет Starlette (latin-1).
     filename = (
         f"sbis-{doc.number or doc.sbis_doc_id}.pdf".replace('"', "")

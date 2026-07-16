@@ -245,7 +245,9 @@ def test_create_informal_counterparty_drops_bank_requisites(
 
     assert response.status_code == 201, response.text
     body = response.json()
-    assert body["inn"] is None
+    # ИНН — ключ идентификации (по нему синки iiko/почты/ЭДО находят карточку), он
+    # сохраняется у любого типа отношений; отбрасываются только БАНКОВСКИЕ реквизиты.
+    assert body["inn"] == "7707654321"
     assert body["profile"]["relationship"] == "informal"
     assert body["profile"]["requisites"] == {}
     assert body["profile"]["requisites_verified"] is False

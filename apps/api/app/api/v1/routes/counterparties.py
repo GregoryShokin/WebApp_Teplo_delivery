@@ -939,12 +939,14 @@ async def get_registry(
     category_id: uuid.UUID | None = None,
     include_archived: bool = False,
     kassa_only: bool = False,
+    include_non_suppliers: bool = False,
 ) -> list[RegistryRead]:
     items = await registry.list_registry(
         session,
         category_id=category_id,
         include_archived=include_archived,
         kassa_only=kassa_only,
+        include_non_suppliers=include_non_suppliers,
     )
     return [RegistryRead.model_validate(item) for item in items]
 

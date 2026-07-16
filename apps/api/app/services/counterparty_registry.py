@@ -422,12 +422,22 @@ async def list_registry(
     category_id: uuid.UUID | None = None,
     include_archived: bool = False,
     kassa_only: bool = False,
+    include_non_suppliers: bool = False,
 ) -> list[RegistryItem]:
     query = select(Counterparty, CounterpartyPayableProfile).join(
         CounterpartyPayableProfile,
         CounterpartyPayableProfile.counterparty_id == Counterparty.id,
         isouter=True,
     )
+    if not include_non_suppliers:
+        # По умолчанию — только поставщики: реестр кормит пикеры накладных и платежей,
+        # куда банк/налоговая/безролевые карточки попадать не должны (оператор мог бы
+        # провести накладную на банк). Полный список — явный opt-in: страница реестра
+        # (единственный UI управления всеми карточками) и справочник классификации ДДС.
+        supplier_ids = select(CounterpartyRole.counterparty_id).where(
+            CounterpartyRole.role == "supplier"
+        )
+        query = query.where(Counterparty.id.in_(supplier_ids))
     if not include_archived:
         query = query.where(Counterparty.status.notin_(ARCHIVED_STATUSES))
     if category_id is not None:
@@ -933,6 +943,25 @@ async def create_manual_invoice(
             due_date = compute_invoice_due_date(
                 invoice_date, delay_days=terms[0], due_day_of_month=terms[1]
             )
+    # Дедуп как у почты/ЭДО (сумма+дата+номер): тот же счёт мог уже прийти другим
+    # каналом — второй раз «к оплате» вставать не должен (двойная оплата).
+    clean_number = (number or "").strip() or None
+    duplicate_candidates = (
+        await session.scalars(
+            select(SupplierInvoice).where(
+                SupplierInvoice.counterparty_id == counterparty_id,
+                SupplierInvoice.amount == _money(amount),
+                SupplierInvoice.payment_status != "void",
+                SupplierInvoice.source.in_(("email", "sbis", "manual")),
+            )
+        )
+    ).all()
+    for candidate in duplicate_candidates:
+        if candidate.invoice_date == invoice_date and (candidate.number or None) == clean_number:
+            raise CounterpartyRegistryError(
+                "Такой счёт уже есть (совпали контрагент, сумма, дата и номер) — "
+                "он пришёл почтой/ЭДО или был внесён ранее"
+            )
     invoice = SupplierInvoice(
         counterparty_id=counterparty_id,
         source="manual",
@@ -947,6 +976,12 @@ async def create_manual_invoice(
         created_by_user_id=actor_user_id,
     )
     session.add(invoice)
+    await session.flush()
+    # Закрывающий документ поставщика с предоплатной моделью гасит дебиторку независимо от
+    # канала (почта/ЭДО/ручной ввод) — иначе накладная встаёт «к оплате» и её оплатят повторно.
+    from app.services.supplier_prepayments import auto_settle_invoice_from_open_prepayments
+
+    await auto_settle_invoice_from_open_prepayments(session, invoice)
     await session.commit()
     await session.refresh(invoice)
     return invoice
@@ -1063,12 +1098,13 @@ async def create_counterparty(
     }
     # Банковские реквизиты относятся только к официальному каналу оплаты. Для
     # informal используется выплата на карту ИП/Сейф, для barter — взаимозачёт.
+    # ИНН — НЕ реквизит оплаты, а ключ идентификации: по нему счета из iiko/почты/ЭДО
+    # находят карточку. Храним его для любого типа отношений, иначе синки плодят дубли.
     accepts_requisites = relationship == "official"
     clean_requisites = requested_requisites if accepts_requisites else {}
     requisites_verified = requisites_verified and accepts_requisites
-    clean_inn = None
+    clean_inn = (str(clean_requisites.get("inn") or inn or "")).strip() or None
     if accepts_requisites:
-        clean_inn = (str(clean_requisites.get("inn") or inn or "")).strip() or None
         if clean_inn:
             clean_requisites["inn"] = clean_inn
         clean_requisites.setdefault("recipientName", clean_name)

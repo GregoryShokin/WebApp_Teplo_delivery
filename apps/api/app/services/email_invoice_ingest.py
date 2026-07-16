@@ -34,6 +34,7 @@ from app.models import (
 )
 from app.services import counterparty_payments as payments
 from app.services import counterparty_registry as registry
+from app.services import supplier_prepayments as prepayments
 from app.services import supplier_service_periods as service_periods
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 from app.services.invoice_recognition import RecognizedInvoice, recognize
@@ -166,9 +167,11 @@ async def _find_duplicate_email_invoice(
     candidates = (
         await session.scalars(
             select(SupplierInvoice).where(
-                # 'sbis' тоже: поставщик на ЭДО может продублировать счёт письмом —
-                # почтовый intake должен схлопнуться на уже материализованный счёт.
-                SupplierInvoice.source.in_(("email", "sbis")),
+                # 'sbis' и 'manual' тоже: поставщик на ЭДО может продублировать счёт
+                # письмом, а внесённый вручную счёт — прийти почтой позже. Матрица
+                # дедупа обязана быть симметричной (sbis-сторона видит все три источника),
+                # иначе второй канал рождает второй счёт «к оплате» — двойная оплата.
+                SupplierInvoice.source.in_(("email", "sbis", "manual")),
                 SupplierInvoice.counterparty_id == cp_id,
                 SupplierInvoice.amount == rec.amount,
                 SupplierInvoice.payment_status != "void",
@@ -282,6 +285,9 @@ async def materialize_from_intake(
     session.add(invoice)
     await session.flush()
     await service_periods.sync_invoice_accrual(session, invoice)
+    # Закрывающий документ поставщика с предоплатной моделью гасит дебиторку независимо от
+    # канала прихода (почта/ЭДО/ручной) — иначе счёт встаёт «к оплате» и его оплатят повторно.
+    await prepayments.auto_settle_invoice_from_open_prepayments(session, invoice)
     intake.invoice_id = invoice.id
     intake.status = "linked"
     return intake.status
@@ -617,6 +623,9 @@ async def process_attachment(
     session.add(invoice)
     await session.flush()
     await service_periods.sync_invoice_accrual(session, invoice)
+    # Закрывающий документ поставщика с предоплатной моделью гасит дебиторку независимо от
+    # канала прихода (почта/ЭДО/ручной) — иначе счёт встаёт «к оплате» и его оплатят повторно.
+    await prepayments.auto_settle_invoice_from_open_prepayments(session, invoice)
     intake.invoice_id = invoice.id
     intake.status = "linked"
     return intake.status

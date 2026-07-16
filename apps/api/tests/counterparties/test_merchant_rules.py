@@ -139,6 +139,117 @@ async def test_merchant_rule_adopts_existing_orphan_rule(
         assert len(rules) == 1  # дубль не создан
 
 
+async def test_merchant_rule_adoption_repairs_broken_rule(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Перенимаемое правило чинится до рабочего: неактивное включается, пустая статья
+    заполняется выбранной — иначе эндпоинт отчитался бы об успехе, а правило никогда бы
+    не сработало (классификатор фильтрует is_active, set_article без статьи бесполезен)."""
+    from app.models import ClassificationRule
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Манго Телеком", inn="7709501144")
+        article = await make_expense_article(session, code="telecom", name="Телекоммуникации")
+        profile = await _profile(session, cp.id)
+        profile.default_dds_article_id = article.id
+        session.add(
+            ClassificationRule(
+                name="сломанная сирота",
+                priority=100,
+                is_active=False,
+                purpose_pattern="mango",
+                action="set_article",
+                article_id=None,
+            )
+        )
+        await session.flush()
+
+        result = await create_merchant_rule(
+            session, counterparty_id=cp.id, purpose_pattern="mango"
+        )
+        assert result.updated_existing is True
+        assert result.rule.is_active is True
+        assert result.rule.article_id == article.id
+        assert result.rule.counterparty_id == cp.id
+
+
+async def test_merchant_rule_adoption_refuses_foreign_action(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Правило с той же подстрокой, но действием exclude — чужая семантика: молча
+    перещёлкивать её в set_article нельзя, честный отказ с адресом решения."""
+    from app.models import ClassificationRule
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Манго Телеком", inn="7709501144")
+        article = await make_expense_article(session, code="telecom", name="Телекоммуникации")
+        profile = await _profile(session, cp.id)
+        profile.default_dds_article_id = article.id
+        session.add(
+            ClassificationRule(
+                name="исключение по мерчанту",
+                priority=100,
+                purpose_pattern="mango",
+                action="exclude",
+            )
+        )
+        await session.flush()
+
+        with pytest.raises(MerchantRuleError, match="действием"):
+            await create_merchant_rule(session, counterparty_id=cp.id, purpose_pattern="mango")
+
+
+async def test_merchant_rule_blocks_shadowing_substring_overlap(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Движок матчит подстрокой по приоритету: существующее широкое правило («mango»)
+    перехватило бы все будущие операции нового «mango-office.ru» — бэкфилл прошёл бы,
+    а поток молча остановился. Пересечение с чужим правилом блокируем; своё — можно."""
+    from app.models import ClassificationRule
+
+    async with async_session_factory() as session:
+        article = await make_expense_article(session, code="telecom", name="Телекоммуникации")
+        mango = await make_counterparty(session, name="Манго", inn="7709501144")
+        other = await make_counterparty(session, name="Чужой", inn="7700000001")
+        for cp in (mango, other):
+            profile = await _profile(session, cp.id)
+            profile.default_dds_article_id = article.id
+        session.add(
+            ClassificationRule(
+                name="широкое чужое правило",
+                priority=50,
+                purpose_pattern="mango",
+                action="set_article",
+                article_id=article.id,
+                counterparty_id=other.id,
+            )
+        )
+        await session.flush()
+
+        with pytest.raises(MerchantRuleError, match="пересекается"):
+            await create_merchant_rule(
+                session, counterparty_id=mango.id, purpose_pattern="MANGO-OFFICE.RU MOSKVA"
+            )
+
+        # Пересечение с СОБСТВЕННЫМ правилом безвредно — оба ведут к нам
+        # (паттерны без пересечения с чужим «mango», чтобы изолировать проверку).
+        session.add(
+            ClassificationRule(
+                name="своё узкое правило",
+                priority=90,
+                purpose_pattern="headhunter site",
+                action="set_article",
+                article_id=article.id,
+                counterparty_id=mango.id,
+            )
+        )
+        await session.flush()
+        result = await create_merchant_rule(
+            session, counterparty_id=mango.id, purpose_pattern="headhunter"
+        )
+        assert result.rule.counterparty_id == mango.id
+
+
 async def test_merchant_rule_conflicts_and_validation(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

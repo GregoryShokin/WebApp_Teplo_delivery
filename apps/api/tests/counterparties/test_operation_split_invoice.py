@@ -29,6 +29,7 @@ from app.models import (
     SupplierInvoice,
 )
 from app.services.banking.classifier import (
+    apply_operation_action,
     apply_operation_split,
     resolve_or_create_operation_counterparty,
 )
@@ -245,6 +246,57 @@ async def test_resplit_reverses_prior_invoice_allocation(
 
         assert (await session.get(SupplierInvoice, inv_id)).payment_status == "unpaid"
         assert await _alloc_count(session, op.id) == 0
+
+
+async def test_resplit_of_flagged_debit_leaves_single_prepayment(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Списание контрагента с предоплатной моделью: простая классификация заводит предоплату,
+    привязанную к проводке. Переразбор сплитом удаляет ту проводку — нетронутая предоплата
+    НЕ должна остаться сиротой (двойной учёт) и НЕ должна задвоиться при повторном заведении."""
+    from app.models import SupplierPrepayment
+
+    async with async_session_factory() as session:
+        account = await make_account(session)
+        await make_wallet(session, wallet_type="bank", account_id=account.id)
+        article = await make_expense_article(session, code="prochie_rashody", name="Прочие")
+        cp = await make_counterparty(session, name="Манго Телеком", inn="7709501144")
+        profile = (
+            await session.execute(
+                select(CounterpartyPayableProfile).where(
+                    CounterpartyPayableProfile.counterparty_id == cp.id
+                )
+            )
+        ).scalar_one()
+        profile.bank_payments_create_prepayment = True
+        op = await make_bank_operation(
+            session, amount="5000.00", direction="out", account_id=account.id
+        )
+        await session.commit()
+
+        # Простая классификация → предоплата #1, привязанная к проводке A.
+        await apply_operation_action(
+            session, op, action="set_article", article_id=article.id, counterparty_id=cp.id
+        )
+        await session.commit()
+        assert await session.scalar(select(func.count()).select_from(SupplierPrepayment)) == 1
+
+        # Переразбор сплитом на обычную статью: проводка A удаляется, сирота не остаётся,
+        # новая нога заводит ровно одну предоплату.
+        created_ids = await apply_operation_split(
+            session,
+            op,
+            splits=[(article.id, Decimal("5000.00"), None, None)],
+            counterparty_id=cp.id,
+        )
+        await session.commit()
+
+        prepayments = (
+            await session.execute(select(SupplierPrepayment))
+        ).scalars().all()
+        assert len(prepayments) == 1  # ни сироты, ни дубля
+        assert prepayments[0].cashflow_transaction_id == created_ids[0]
+        assert prepayments[0].amount == Decimal("5000.00")
 
 
 async def test_create_counterparty_from_operation_new(

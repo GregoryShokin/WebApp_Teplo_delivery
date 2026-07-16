@@ -130,6 +130,7 @@ from app.services.banking.safe_allocations import (
 from app.services.banking.transfer_matching import find_and_link_transfer_pairs
 from app.services.counterparty_bank_match import _is_card_noise
 from app.services.counterparty_payments import (
+    ARCHIVED_COUNTERPARTY_STATUSES,
     CounterpartyPaymentError,
     ExpenseLineInput,
     create_bank_safe_topup_draft,
@@ -155,6 +156,7 @@ from app.services.payroll_advance_service import (
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
 from app.services.supplier_prepayments import (
     SUPPLIER_REFUND_ARTICLE_CODE,
+    ensure_prepayment_from_bank_transaction,
     refund_counterparty_prepayments,
 )
 from app.services.warehouse_invoices import invoice_permission_kind
@@ -733,7 +735,8 @@ async def post_new_payment_expense_cash(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         if line.counterparty_id is not None:
             cp = await session.get(Counterparty, line.counterparty_id)
-            if cp is None or cp.status == "archived":
+            # in ARCHIVED_...: легаси-статус 'inactive' — тоже архив, иначе гард дыряв.
+            if cp is None or cp.status in ARCHIVED_COUNTERPARTY_STATUSES:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT, detail="Контрагент не найден"
                 )
@@ -856,7 +859,8 @@ async def post_new_payment_income_cash(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         if line.counterparty_id is not None:
             cp = await session.get(Counterparty, line.counterparty_id)
-            if cp is None or cp.status == "archived":
+            # in ARCHIVED_...: легаси-статус 'inactive' — тоже архив, иначе гард дыряв.
+            if cp is None or cp.status in ARCHIVED_COUNTERPARTY_STATUSES:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT, detail="Контрагент не найден"
                 )
@@ -1940,6 +1944,11 @@ async def classify_transaction(
     txn.article_id = payload.article_id
     txn.counterparty_id = payload.counterparty_id
     txn.quality_status = "manual_override"
+    # Проводка из выписки (кейс Манго — предоплатная модель по банк-фиду): смена контрагента
+    # обязана привести привязанную автопредоплату в соответствие, иначе фантомная дебиторка
+    # осталась бы на прежнем контрагенте.
+    if txn.source_kind == "bank_operation":
+        await ensure_prepayment_from_bank_transaction(session, txn)
     await session.commit()
     return {
         "id": txn.id,

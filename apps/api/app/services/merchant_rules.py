@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -101,18 +101,28 @@ async def create_merchant_rule(
     )
     updated_existing = False
     if existing is not None:
-        if existing.counterparty_id is None:
-            existing.counterparty_id = counterparty_id
-            rule = existing
-            updated_existing = True
-        elif existing.counterparty_id == counterparty_id:
-            rule = existing
-            updated_existing = True
-        else:
+        if existing.counterparty_id not in (None, counterparty_id):
             raise MerchantRuleError(
                 f"Паттерн «{pattern}» уже занят правилом «{existing.name}» другого контрагента"
             )
+        # Перенимая правило, ЧИНИМ его до рабочего состояния, а не только дописываем
+        # контрагента: неактивное никогда не сработает, set_article без статьи вернёт
+        # операции в needs_review — эндпоинт отчитался бы об успехе, а модель молча
+        # не включилась бы. Действие с другой семантикой (exclude/перевод) не трогаем.
+        if existing.action != "set_article":
+            raise MerchantRuleError(
+                f"Паттерн «{pattern}» уже занят правилом «{existing.name}» "
+                f"с действием «{existing.action}» — измените его в настройках ДДС"
+            )
+        existing.counterparty_id = counterparty_id
+        existing.is_active = True
+        if existing.article_id is None:
+            existing.article_id = resolved_article_id
+        rule = existing
+        updated_existing = True
+        await session.flush()
     else:
+        await _ensure_no_shadowing_rule(session, pattern, counterparty_id)
         rule = ClassificationRule(
             name=f"Карт-списания: {counterparty.name}",
             priority=100,
@@ -133,6 +143,43 @@ async def create_merchant_rule(
     return MerchantRuleResult(rule=rule, updated_existing=updated_existing, backfilled=backfilled)
 
 
+async def _ensure_no_shadowing_rule(
+    session: AsyncSession, pattern: str, counterparty_id: uuid.UUID
+) -> None:
+    """Не дать создать правило, которое не сработает или перехватит чужие списания.
+
+    Движок классификации матчит ПОДСТРОКОЙ в порядке приоритета, а не точным равенством:
+    существующее более широкое правило («mango», приоритет 50) заберёт все будущие операции
+    у нового «mango-office.ru» (приоритет 100) — исторический бэкфилл пройдёт, а поток молча
+    остановится. И наоборот: более узкое чужое правило потеряло бы операции в нашу пользу.
+    Оба направления — конфликт, который должен решить человек в настройках ДДС."""
+    wanted = pattern.casefold()
+    candidates = (
+        await session.scalars(
+            select(ClassificationRule).where(
+                ClassificationRule.is_active.is_(True),
+                ClassificationRule.purpose_pattern.is_not(None),
+                or_(
+                    ClassificationRule.direction == "out",
+                    ClassificationRule.direction.is_(None),
+                ),
+            )
+        )
+    ).all()
+    for candidate in candidates:
+        if candidate.counterparty_id == counterparty_id:
+            continue  # оба ведут к нам — пересечение безвредно
+        other = (candidate.purpose_pattern or "").casefold()
+        if not other or other == wanted:
+            continue  # точное равенство обрабатывает ветка адопции
+        if other in wanted or wanted in other:
+            raise MerchantRuleError(
+                f"Паттерн «{pattern}» пересекается с правилом «{candidate.name}» "
+                f"(«{candidate.purpose_pattern}») — одно из них перехватит списания "
+                "другого. Разрешите конфликт в настройках ДДС."
+            )
+
+
 async def _backfill_pending_operations(session: AsyncSession, rule: ClassificationRule) -> int:
     """Переклассифицировать висящие needs_review-списания под свежее правило.
 
@@ -150,6 +197,17 @@ async def _backfill_pending_operations(session: AsyncSession, rule: Classificati
             )
         )
     ).all()
+    # Кейсы «требует разбора» — одним запросом на весь бэклог, не по одному в цикле.
+    case_by_operation: dict[uuid.UUID, ReconciliationCase] = {}
+    if operations:
+        pending_cases = await session.scalars(
+            select(ReconciliationCase).where(
+                ReconciliationCase.bank_operation_id.in_([op.id for op in operations]),
+                ReconciliationCase.kind == "unclassified_operation",
+                ReconciliationCase.status == "pending",
+            )
+        )
+        case_by_operation = {case.bank_operation_id: case for case in pending_cases.all()}
     backfilled = 0
     for operation in operations:
         await apply_operation_action(
@@ -163,13 +221,7 @@ async def _backfill_pending_operations(session: AsyncSession, rule: Classificati
         if operation.classification_status != "classified":
             continue  # кошелёк не нашёлся и т.п. — кейс остаётся открытым
         backfilled += 1
-        case = await session.scalar(
-            select(ReconciliationCase).where(
-                ReconciliationCase.bank_operation_id == operation.id,
-                ReconciliationCase.kind == "unclassified_operation",
-                ReconciliationCase.status == "pending",
-            )
-        )
+        case = case_by_operation.get(operation.id)
         if case is not None:
             await close_reconciliation_case(
                 session,

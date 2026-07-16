@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -183,7 +183,16 @@ async def change_accrual_period(
     old_start = accrual.service_period_start
     old_end = accrual.service_period_end
     old_month = accrual.recognition_month
-    new_month = recognition_month(end) if accrual.status == "recognized" else None
+    # Признанный расход, чей НОВЫЙ период ещё не закончился, признанным быть не может:
+    # услуга ещё оказывается. Возвращаем в scheduled — ночная джоба признает его заново,
+    # когда период реально завершится (та же строгая граница end < today, что и у неё).
+    today = datetime.now(MOSCOW_TZ).date()
+    revert_to_scheduled = accrual.status == "recognized" and end >= today
+    new_month = (
+        recognition_month(end)
+        if accrual.status == "recognized" and not revert_to_scheduled
+        else None
+    )
     session.add(
         SupplierServicePeriodChange(
             accrual_id=accrual.id,
@@ -199,7 +208,11 @@ async def change_accrual_period(
     )
     accrual.service_period_start = start
     accrual.service_period_end = end
-    if accrual.status == "recognized":
+    if revert_to_scheduled:
+        accrual.status = "scheduled"
+        accrual.recognition_month = None
+        accrual.recognized_at = None
+    elif accrual.status == "recognized":
         accrual.recognition_month = new_month
 
     if accrual.invoice_id is not None:
@@ -288,4 +301,6 @@ async def cancel_invoice_accrual(
 
 
 def money(value: Decimal | int | float | None) -> Decimal:
-    return Decimal(str(value or 0)).quantize(Decimal("0.01"))
+    # ROUND_HALF_UP — как во ВСЁМ платёжном контуре (_money в counterparty_payments и др.).
+    # Дефолтный HALF_EVEN дал бы иное округление на пол-копейке и расхождение балансов.
+    return Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)

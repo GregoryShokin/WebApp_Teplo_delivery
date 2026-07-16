@@ -18,6 +18,7 @@ from sqlalchemy import select
 from app.models import CounterpartyPayableProfile, SupplierExpenseAccrual
 from app.services.counterparty_registry import void_invoice
 from app.services.supplier_service_periods import (
+    change_accrual_period,
     recognize_due_expenses,
     set_invoice_service_period,
     sync_invoice_accrual,
@@ -110,6 +111,62 @@ async def test_scheduled_amount_still_tracks_invoice(async_session_factory):
         accrual = await _accrual(session, invoice.id)
         assert accrual.status == "scheduled"
         assert accrual.amount == Decimal("6200.00")
+
+
+async def test_correcting_recognized_to_future_period_reverts_to_scheduled(
+    async_session_factory,
+):
+    """Признанный расход, чей период поправили в БУДУЩЕЕ, признанным быть не может:
+    услуга ещё оказывается. Возвращается в scheduled — ночная джоба признает заново,
+    когда период реально закончится (иначе P&L показывал бы расход будущего периода)."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ООО «Реклама»", inn="7710000005")
+        await _require_period(session, cp.id)
+        invoice = await make_invoice(session, counterparty_id=cp.id, amount="4000.00")
+        await session.commit()
+        await set_invoice_service_period(
+            session, invoice=invoice, start=date(2026, 6, 1), end=date(2026, 6, 30),
+            actor_user_id=None,
+        )
+        await recognize_due_expenses(session, as_of=date(2026, 7, 1), commit=True)
+        accrual = await _accrual(session, invoice.id)
+        assert accrual.status == "recognized"
+
+        # Корректировка периода на будущий месяц (относительно СЕГОДНЯ).
+        today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+        future_start = today + timedelta(days=15)
+        future_end = today + timedelta(days=44)
+        await change_accrual_period(
+            session,
+            accrual=accrual,
+            start=future_start,
+            end=future_end,
+            actor_user_id=None,
+            reason="перенос по акту",
+        )
+        await session.commit()
+        await session.refresh(accrual)
+        assert accrual.status == "scheduled"  # признание снято
+        assert accrual.recognition_month is None
+        assert accrual.recognized_at is None
+
+        # Прошедшая корректировка признанного остаётся признанной (месяц пересчитан).
+        await change_accrual_period(
+            session,
+            accrual=accrual,
+            start=date(2026, 5, 1),
+            end=date(2026, 5, 31),
+            actor_user_id=None,
+            reason="вернули назад",
+        )
+        # (после отката в scheduled статус recognized не возвращается сам — признает джоба)
+        await recognize_due_expenses(session, as_of=date(2026, 7, 1), commit=True)
+        await session.refresh(accrual)
+        assert accrual.status == "recognized"
+        assert accrual.recognition_month == date(2026, 5, 1)
 
 
 async def test_recognition_is_strict_after_last_day(async_session_factory):
