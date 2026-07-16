@@ -374,6 +374,11 @@ async def apply_operation_action(
             transaction.counterparty_id = counterparty_id
             transaction.payment_purpose = operation.payment_purpose
             transaction.quality_status = quality_status
+        # Предоплатная модель по банк-фиду (флаг на профиле контрагента, кейс Манго):
+        # списание в пользу поставщика пополняет его дебиторку; идемпотентно.
+        from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
+
+        await ensure_prepayment_from_bank_transaction(session, transaction)
         operation.classification_status = "classified"
         return
 

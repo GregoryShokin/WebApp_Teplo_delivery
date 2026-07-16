@@ -131,3 +131,60 @@ async def test_opening_prepayment_no_cashflow_and_upd_settling_keeps_running_bal
         assert top_up.status == "partially_settled"
         await session.refresh(invoice)
         assert invoice.payment_status == "paid"  # УПД закрыт дебиторкой, к оплате не попал
+
+
+async def test_bank_debit_tops_up_prepayment_when_profile_flag_on(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Предоплатная модель по банк-фиду (кейс Манго): исходящее списание в пользу
+    контрагента с флагом → открытая предоплата, привязанная к транзакции (без новой
+    ДДС-проводки). Идемпотентно; без флага — ничего."""
+    from datetime import date as date_cls
+
+    from cp_helpers import make_counterparty, make_wallet
+    from sqlalchemy import func, select
+
+    from app.models import CashflowTransaction, CounterpartyPayableProfile
+    from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Манго Телеком", inn="7709501144")
+        profile = (
+            await session.execute(
+                select(CounterpartyPayableProfile).where(
+                    CounterpartyPayableProfile.counterparty_id == cp.id
+                )
+            )
+        ).scalar_one()
+        wallet = await make_wallet(session, name="T-Bank", wallet_type="bank")
+        transaction = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("4900.00"),
+            operation_date=date_cls(2026, 7, 15),
+            counterparty_id=cp.id,
+            source_kind="bank_operation",
+            payment_purpose="MANGO OFFICE оплата услуг связи",
+            quality_status="auto",
+        )
+        session.add(transaction)
+        await session.flush()
+
+        # Флаг выключен — предоплата не создаётся.
+        assert await ensure_prepayment_from_bank_transaction(session, transaction) is None
+
+        profile.bank_payments_create_prepayment = True
+        await session.flush()
+        prepayment = await ensure_prepayment_from_bank_transaction(session, transaction)
+        assert prepayment is not None
+        assert prepayment.amount == Decimal("4900.00")
+        assert prepayment.cashflow_transaction_id == transaction.id
+        assert prepayment.status == "open"
+
+        # Повторный вызов (повторная классификация) — та же запись, не дубль.
+        again = await ensure_prepayment_from_bank_transaction(session, transaction)
+        assert again is not None and again.id == prepayment.id
+        count = await session.scalar(
+            select(func.count()).select_from(SupplierPrepayment)
+        )
+        assert count == 1

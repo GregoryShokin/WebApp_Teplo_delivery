@@ -114,6 +114,12 @@ class CounterpartyPayableProfile(Base):
     # Преднабор дат для РУЧНОГО платежа, у которого счёта нет вовсе (-1 прошлый месяц,
     # 0 текущий, +1 следующий). Счёта не касается и явный период не заменяет.
     default_service_period_offset_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Предоплатная модель по банк-фиду (Манго: авто-списания с карты): каждое исходящее
+    # списание в пользу контрагента из выписки пополняет дебиторку (supplier_prepayment
+    # без новой ДДС-проводки), закрывающий УПД из СБИС гасит её.
+    bank_payments_create_prepayment: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     # Supplier-side contact (manager) for questions about invoices/payments.
     manager_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     manager_phone: Mapped[str | None] = mapped_column(String(64), nullable=True)

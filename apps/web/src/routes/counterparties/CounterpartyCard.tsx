@@ -228,6 +228,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
   const [ddsArticleId, setDdsArticleId] = useState("");
   const [confirmNoDdsArticle, setConfirmNoDdsArticle] = useState(false);
   const [servicePeriodRequired, setServicePeriodRequired] = useState(false);
+  const [bankPrepayment, setBankPrepayment] = useState(false);
   const [periodOffset, setPeriodOffset] = useState("0");
 
   useEffect(() => {
@@ -237,6 +238,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     setDdsArticleId(profile?.default_dds_article_id ?? "");
     setConfirmNoDdsArticle(profile?.confirm_no_dds_article ?? false);
     setServicePeriodRequired(profile?.service_period_required ?? false);
+    setBankPrepayment(profile?.bank_payments_create_prepayment ?? false);
     setPeriodOffset(
       profile?.default_service_period_offset_months != null
         ? String(profile.default_service_period_offset_months)
@@ -258,6 +260,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
         default_dds_article_id: ddsArticleId || null,
         confirm_no_dds_article: confirmNoDdsArticle,
         service_period_required: servicePeriodRequired,
+        bank_payments_create_prepayment: bankPrepayment,
         default_service_period_offset_months: servicePeriodRequired ? Number(periodOffset) : null,
       }),
     onSuccess: async () => {
@@ -294,6 +297,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     ddsArticleId !== (profile?.default_dds_article_id ?? "") ||
     confirmNoDdsArticle !== (profile?.confirm_no_dds_article ?? false) ||
     servicePeriodRequired !== (profile?.service_period_required ?? false) ||
+    bankPrepayment !== (profile?.bank_payments_create_prepayment ?? false) ||
     (servicePeriodRequired && periodOffset !== periodOffsetSaved);
   useReportDirty("profile", dirty);
 
@@ -375,6 +379,21 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
           </label>
         </Field>
         <div className="grid gap-3 rounded-md border p-3 sm:col-span-2">
+          <label className="flex items-start gap-3 text-sm">
+            <Switch
+              checked={bankPrepayment}
+              disabled={disabled}
+              onCheckedChange={setBankPrepayment}
+            />
+            <span>
+              <span className="block font-medium">Списания из банка пополняют баланс у поставщика</span>
+              <span className="block text-xs text-muted-foreground">
+                Предоплатная модель (рекламный кабинет, авто-списания с карты): каждое списание
+                в пользу контрагента из выписки становится предоплатой, закрывающий УПД из СБИС
+                гасит её.
+              </span>
+            </span>
+          </label>
           <label className="flex items-start gap-3 text-sm">
             <Switch
               checked={servicePeriodRequired}

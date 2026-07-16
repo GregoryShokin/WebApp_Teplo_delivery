@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import (
     CashflowTransaction,
     Counterparty,
+    CounterpartyPayableProfile,
     DdsArticle,
     InvoicePaymentAllocation,
     SupplierInvoice,
@@ -146,6 +147,47 @@ async def create_opening_prepayment(
     await session.flush()
     await session.commit()
     await session.refresh(prepayment)
+    return prepayment
+
+
+async def ensure_prepayment_from_bank_transaction(
+    session: AsyncSession, transaction: CashflowTransaction
+) -> SupplierPrepayment | None:
+    """Предоплатная модель по банк-фиду: списание в пользу контрагента → дебиторка.
+
+    Вызывается классификатором ДДС после присвоения контрагента. Новую ДДС-проводку
+    НЕ создаёт (деньги уже учтены транзакцией из выписки) — только запись предоплаты,
+    привязанную к транзакции. Идемпотентно: одна предоплата на одну транзакцию.
+    Гасится закрывающими УПД из СБИС (auto-settle при материализации)."""
+    if transaction.direction != "out" or transaction.counterparty_id is None:
+        return None
+    profile = await session.scalar(
+        select(CounterpartyPayableProfile).where(
+            CounterpartyPayableProfile.counterparty_id == transaction.counterparty_id
+        )
+    )
+    if profile is None or not profile.bank_payments_create_prepayment:
+        return None
+    existing = await session.scalar(
+        select(SupplierPrepayment).where(
+            SupplierPrepayment.cashflow_transaction_id == transaction.id
+        )
+    )
+    if existing is not None:
+        return existing
+    prepayment = SupplierPrepayment(
+        counterparty_id=transaction.counterparty_id,
+        kind="subscription",
+        wallet_id=transaction.wallet_id,
+        amount=_money(transaction.amount),
+        amount_settled=Decimal("0.00"),
+        status="open",
+        cashflow_transaction_id=transaction.id,
+        article_id=transaction.article_id,
+        note="Автопредоплата из банковского списания (предоплатная модель)",
+    )
+    session.add(prepayment)
+    await session.flush()
     return prepayment
 
 

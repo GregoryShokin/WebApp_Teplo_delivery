@@ -138,6 +138,7 @@ class InvoiceRead(BaseModel):
     service_period_end: date | None
     service_period_status: str
     service_period_required: bool = False
+    bank_payments_create_prepayment: bool = False
     amount: float
     vat_total: float
     vat_breakdown: dict[str, Any]
@@ -256,6 +257,7 @@ class ProfileUpdate(BaseModel):
     # Статья обязательна; отсутствие — только через явный переключатель в форме.
     confirm_no_dds_article: bool = False
     service_period_required: bool | None = None
+    bank_payments_create_prepayment: bool | None = None
     default_service_period_offset_months: int | None = Field(default=None, ge=-12, le=12)
     status: str | None = None
 

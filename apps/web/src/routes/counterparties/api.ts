@@ -90,6 +90,8 @@ export type CounterpartyProfile = {
   confirm_no_dds_article: boolean;
   service_period_required: boolean;
   default_service_period_offset_months: number | null;
+  // Предоплатная модель по банк-фиду (Манго): списания с карты пополняют дебиторку.
+  bank_payments_create_prepayment: boolean;
   requisites: Record<string, unknown>;
   requisites_verified: boolean;
   kassa_enabled: boolean;
@@ -397,6 +399,7 @@ export type ProfileUpdatePayload = {
   confirm_no_dds_article?: boolean;
   service_period_required?: boolean | null;
   default_service_period_offset_months?: number | null;
+  bank_payments_create_prepayment?: boolean | null;
   status?: string | null;
 };
 

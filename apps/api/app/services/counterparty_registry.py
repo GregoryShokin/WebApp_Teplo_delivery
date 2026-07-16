@@ -631,6 +631,7 @@ def _profile_dict(profile: CounterpartyPayableProfile | None) -> dict[str, Any] 
         "requisites": profile.requisites or {},
         "requisites_verified": profile.requisites_verified,
         "kassa_enabled": profile.kassa_enabled,
+        "bank_payments_create_prepayment": profile.bank_payments_create_prepayment,
         "status": profile.status,
     }
 
@@ -710,6 +711,7 @@ async def update_profile(
     confirm_no_dds_article: bool = False,
     service_period_required: bool | None | object = _UNSET,
     default_service_period_offset_months: int | None | object = _UNSET,
+    bank_payments_create_prepayment: bool | None | object = _UNSET,
     status: str | None | object = _UNSET,
 ) -> CounterpartyPayableProfile:
     counterparty = await session.get(Counterparty, counterparty_id)
@@ -784,6 +786,11 @@ async def update_profile(
         profile.confirm_no_dds_article = confirm_no_dds_article
     if service_period_required is not _UNSET and service_period_required is not None:
         profile.service_period_required = service_period_required
+    if (
+        bank_payments_create_prepayment is not _UNSET
+        and bank_payments_create_prepayment is not None
+    ):
+        profile.bank_payments_create_prepayment = bank_payments_create_prepayment
     if default_service_period_offset_months is not _UNSET:
         profile.default_service_period_offset_months = default_service_period_offset_months
     if status is not _UNSET and status:
