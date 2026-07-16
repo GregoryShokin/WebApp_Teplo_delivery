@@ -21,6 +21,7 @@ from app.api.v1.routes.payroll_adjustments import router as payroll_adjustments_
 from app.api.v1.routes.payroll_admin import router as payroll_admin_router
 from app.api.v1.routes.payroll_advances import router as payroll_advances_router
 from app.api.v1.routes.positions import router as positions_router
+from app.api.v1.routes.sbis import router as sbis_router
 from app.api.v1.routes.settings import router as settings_router
 from app.api.v1.routes.shift_schedule import router as shift_schedule_router
 from app.api.v1.routes.shifts import router as shifts_router
@@ -51,6 +52,7 @@ api_router.include_router(payroll_router, prefix="/payroll", tags=["payroll"])
 api_router.include_router(payroll_adjustments_router, prefix="/payroll", tags=["payroll"])
 api_router.include_router(payroll_config_router, prefix="/payroll/config", tags=["payroll-config"])
 api_router.include_router(positions_router, prefix="/settings/positions", tags=["positions"])
+api_router.include_router(sbis_router, prefix="/sbis", tags=["sbis"])
 api_router.include_router(settings_router, prefix="/settings", tags=["settings"])
 api_router.include_router(shift_schedule_router, prefix="/schedule", tags=["schedule"])
 api_router.include_router(shifts_router, prefix="/shifts", tags=["shifts"])

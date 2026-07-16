@@ -80,6 +80,22 @@ class Settings(BaseSettings):
     iiko_webhook_token: str | None = None
     iiko_webhook_allowed_ips: str = ""
 
+    # --- СБИС (Saby) ЭДО: зеркало входящих документов для сверки с iiko-накладными ---
+    # Сервисная авторизация внешнего приложения (OAuth 2): хватает пары app_client_id +
+    # secret_key из кабинета Saby (прокидываются из ../.env как SBIS_*). Токен передаётся
+    # заголовком X-SBISAccessToken; на 401 переполучаем. Пусто = синк пропускается
+    # (джоба не падает, просто логирует «не настроено»).
+    sbis_app_client_id: str | None = None
+    sbis_secret_key: str | None = None
+    sbis_auth_url: str = "https://online.sbis.ru/oauth/service/"
+    sbis_service_url: str = "https://online.sbis.ru/service/?srv=1"
+    sbis_sync_enabled: bool = True
+    sbis_sync_interval_minutes: int = 60
+    # Насколько вглубь запрашивать реестр «Входящие» при каждом проходе. Идемпотентность —
+    # по идентификатору документа СБИС, повторный проход того же окна бесплатен.
+    sbis_sync_lookback_days: int = 30
+    sbis_http_timeout_seconds: float = 60
+
     # --- Почта: ingest счетов/УПД для «Страницы на оплату» (Фаза 1) ---
     # Креды обоих ящиков прокидываются из ../.env (MAILRU_*). Пусто = ingest пропускается
     # (джоба не падает, просто логирует «не настроено»).

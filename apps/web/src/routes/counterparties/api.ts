@@ -575,3 +575,77 @@ export async function settleBarter(
   );
   return response.data;
 }
+
+// --- СБИС (ЭДО): зеркало входящих документов для сверки с накладными ---
+// СБИС — не источник оплат (решение владельца): к оплате ведёт iiko-синк, здесь
+// подсвечиваем «пришло по ЭДО, но нет в iiko».
+
+const SBIS_BASE = "/sbis";
+
+export type SbisMatchedInvoice = {
+  id: string;
+  number: string | null;
+  invoice_date: string | null;
+  // Decimal с бэка приходит строкой.
+  amount: number | string;
+  source: string;
+  payment_status: string;
+};
+
+export type SbisDocument = {
+  id: string;
+  doc_type: string | null;
+  regulation: string | null;
+  title: string | null;
+  number: string | null;
+  doc_date: string | null;
+  // Decimal с бэка приходит строкой.
+  amount: number | string | null;
+  amount_wo_vat: number | string | null;
+  counterparty_name: string | null;
+  counterparty_inn: string | null;
+  state_name: string | null;
+  attachment_kind: string | null;
+  link_cabinet: string | null;
+  has_pdf: boolean;
+  match_status: "unmatched" | "matched" | "dismissed";
+  match_note: string | null;
+  matched_invoice: SbisMatchedInvoice | null;
+  last_synced_at: string;
+};
+
+export type SbisSyncResult = {
+  configured: boolean;
+  fetched: number;
+  created: number;
+  updated: number;
+  matched: number;
+  skipped_deleted: number;
+};
+
+export async function getSbisDocuments(matchStatus?: string): Promise<SbisDocument[]> {
+  const response = await api.get<SbisDocument[]>(`${SBIS_BASE}/documents`, {
+    params: matchStatus ? { match_status: matchStatus } : undefined,
+  });
+  return response.data;
+}
+
+export async function syncSbisDocuments(): Promise<SbisSyncResult> {
+  const response = await api.post<SbisSyncResult>(`${SBIS_BASE}/sync`);
+  return response.data;
+}
+
+export async function fetchSbisPdfUrl(id: string): Promise<string> {
+  const response = await api.get(`${SBIS_BASE}/documents/${id}/pdf`, { responseType: "blob" });
+  return URL.createObjectURL(response.data as Blob);
+}
+
+export async function dismissSbisDocument(id: string): Promise<SbisDocument> {
+  const response = await api.post<SbisDocument>(`${SBIS_BASE}/documents/${id}/dismiss`);
+  return response.data;
+}
+
+export async function restoreSbisDocument(id: string): Promise<SbisDocument> {
+  const response = await api.post<SbisDocument>(`${SBIS_BASE}/documents/${id}/restore`);
+  return response.data;
+}

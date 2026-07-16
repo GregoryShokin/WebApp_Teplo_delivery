@@ -140,6 +140,7 @@ from app.models.payroll_forecast import PayrollForecastRun, ShiftCostEstimate
 from app.models.period import Period
 from app.models.position import Position, PositionChangeEvent
 from app.models.revenue_forecast import RevenueForecast
+from app.models.sbis_document import SbisDocument
 from app.models.settings import AppSetting, AppSettingHistory
 from app.models.shift_schedule import ScheduledShift, ShiftAllowanceOverride, ShiftSchedule
 from app.models.vacation import VacationPeriod
@@ -257,6 +258,7 @@ __all__ = [
     "SalaryAdvanceRecoveryOverride",
     "ReconciliationCase",
     "SafeAllocation",
+    "SbisDocument",
     "Role",
     "RolePermission",
     "RolePermissionEvent",

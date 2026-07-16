@@ -122,6 +122,12 @@ const routes: AppRoute[] = [
         path: "registry",
         render: ({ navigate }) => <Redirect to="/finance/counterparties" navigate={navigate} />,
       },
+      {
+        path: "sbis",
+        render: ({ navigate }) => (
+          <WarehouseInvoicesRoute activeTab="sbis" onNavigate={navigate} />
+        ),
+      },
     ],
   },
   {
