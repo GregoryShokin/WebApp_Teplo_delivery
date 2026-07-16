@@ -19,15 +19,19 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from test_admin_payout_split import _payer_wallet, _safe_wallet
-from test_payroll_payouts import RecordingBankClient
+from test_payroll_payouts import RecordingBankClient, create_actor_user
 
 from app.models import (
+    CashflowTransaction,
+    CourierDepositAccount,
+    CourierDepositTransaction,
     DdsArticle,
     DepositAccount,
     DepositBankDraft,
     DepositTransaction,
     Employee,
     EmployeePayout,
+    EmployeePositionAssignment,
     SafeAllocation,
 )
 from app.services.banking.safe_allocations import pay_allocation
@@ -304,6 +308,142 @@ async def test_cash_tk_reserve_lands_on_kassa(
             select(DepositAccount).where(DepositAccount.employee_id == employee.id)
         )
         assert account.balance == Decimal("7000")  # не списан до выдачи
+
+
+async def _seed_courier_with_deposit(
+    session: AsyncSession, created_by_user_id: uuid.UUID, balance_cents: int
+) -> Employee:
+    employee = Employee(
+        id=uuid.uuid4(),
+        full_name=f"Курьер {uuid.uuid4().hex[:6]}",
+        iiko_id=f"iiko-{uuid.uuid4()}",
+        category="category_2",
+        status="active",
+        is_senior=False,
+        is_deputy_senior=False,
+        pin_hash="hashed-pin",
+        pin_set_at=datetime(2026, 5, 1, tzinfo=UTC),
+        created_at=datetime(2026, 5, 1, tzinfo=UTC),
+        updated_at=datetime(2026, 5, 1, tzinfo=UTC),
+    )
+    session.add(employee)
+    await session.flush()
+    session.add(
+        EmployeePositionAssignment(
+            employee_id=employee.id, position="Курьер", effective_from=date(2026, 1, 1)
+        )
+    )
+    session.add(
+        CourierDepositAccount(
+            employee_id=employee.id,
+            target_amount_cents=500_000,
+            opening_balance_cents=0,
+            opening_date=date(2026, 1, 1),
+        )
+    )
+    session.add(
+        CourierDepositTransaction(
+            account_employee_id=employee.id,
+            transaction_type="top_up",
+            amount_cents=balance_cents,
+            transaction_date=date(2026, 1, 1),
+            created_by=created_by_user_id,
+        )
+    )
+    await session.flush()
+    # Выселяем из сессии: get_courier_or_404 перечитает курьера SELECT'ом (посчитав
+    # column_property ``position``) — как в проде, где сессия запроса свежая. Без этого
+    # session.get вернул бы кэш без position → ленивая загрузка → MissingGreenlet.
+    employee_id = employee.id
+    session.expunge(employee)
+    return await session.get(Employee, employee_id)
+
+
+async def _courier_balance_cents(session: AsyncSession, employee_id: uuid.UUID) -> int:
+    rows = (
+        await session.execute(
+            select(
+                CourierDepositTransaction.transaction_type,
+                func.coalesce(func.sum(CourierDepositTransaction.amount_cents), 0),
+            )
+            .where(CourierDepositTransaction.account_employee_id == employee_id)
+            .group_by(CourierDepositTransaction.transaction_type)
+        )
+    ).all()
+    balance = 0
+    for tx_type, total in rows:
+        balance += int(total) if str(tx_type) == "top_up" else -int(total)
+    return balance
+
+
+async def test_courier_bank_return_full_cycle_no_double_expense(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Этап 5: банк-возврат курьеру полным циклом — строка возврата и списание ТОЛЬКО при выдаче.
+
+    Ключевой инвариант R2: НЕТ двойного расхода — при выдаче резерва расход книжит только
+    ``pay_allocation`` (safe_payout), а курьерский ``_book_deposit_return_cashflow``
+    (``courier_deposit_return``) в полном цикле НЕ вызывается.
+    """
+    async with async_session_factory() as session:
+        await _seed_bank_and_articles(session)
+        user = await create_actor_user(session)
+        courier = await _seed_courier_with_deposit(session, user.id, 500_000)  # 5000 ₽
+
+        draft = await create_deposit_payout_draft(
+            session,
+            recipient_kind="courier",
+            amount=Decimal("5000"),
+            purpose="Возврат депозита курьеру",
+            provider="tbank",
+            employee_id=courier.id,
+            created_by_user_id=user.id,
+            bank_client=RecordingBankClient(),
+        )
+        assert draft.recipient_kind == "courier"
+        assert draft.courier_deposit_transaction_id is None  # транзакция появится при выдаче
+
+        status_after = await apply_deposit_draft_status(
+            session, draft=draft, raw_status="executed", commit=True
+        )
+        assert status_after == "paid"
+        allocation = await session.get(SafeAllocation, draft.safe_allocation_id)
+        assert allocation.employee_id is None  # 🔴 R1
+
+        # Депозит курьера цел, строки возврата нет — до выдачи.
+        assert await _courier_balance_cents(session, courier.id) == 500_000
+
+        await pay_allocation(
+            session, allocation, amount=Decimal("5000"), operation_date=date(2026, 7, 16)
+        )
+        disbursement = await sync_deposit_after_allocation_change(
+            session, allocation_id=allocation.id
+        )
+        assert disbursement is not None
+        await session.commit()
+
+        assert draft.status == "disbursed"
+        assert draft.courier_deposit_transaction_id is not None
+
+        # Курьерская строка возврата — ledger-only (без своего кошелька-проводки), баланс обнулён.
+        courier_return = await session.scalar(
+            select(CourierDepositTransaction).where(
+                CourierDepositTransaction.account_employee_id == courier.id,
+                CourierDepositTransaction.transaction_type == "return",
+            )
+        )
+        assert courier_return is not None
+        assert courier_return.amount_cents == 500_000
+        assert courier_return.payout_wallet_id is None
+        assert await _courier_balance_cents(session, courier.id) == 0
+
+        # 🔴 R2: единственный расход — safe_payout; курьерского courier_deposit_return нет.
+        double_expense = await session.scalar(
+            select(func.count(CashflowTransaction.id)).where(
+                CashflowTransaction.source_kind == "courier_deposit_return"
+            )
+        )
+        assert double_expense == 0
 
 
 async def test_deposit_not_settled_while_bank_draft_active(

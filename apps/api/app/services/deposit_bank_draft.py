@@ -301,6 +301,7 @@ async def create_deposit_payout_draft(
     provider: str,
     employee_id: uuid.UUID | None = None,
     courier_deposit_transaction_id: int | None = None,
+    created_by_user_id: uuid.UUID | None = None,
     bank_client: BankClient | None = None,
 ) -> DepositBankDraft:
     """Завести банк-черновик под выдачу депозита (синхронно, зеркало create_advance_bank_draft).
@@ -309,6 +310,9 @@ async def create_deposit_payout_draft(
     черновика (транзит+резерв) и фактической выдачи. ``document_id`` — по id черновика, чтобы
     вебхук/поллинг нашли платёж по ``provider_ref``. При сетевой/банк-ошибке черновик
     сохраняется со статусом ``failed`` (выдачу не валим — можно отправить заново).
+
+    ``created_by_user_id`` — автор выдачи; хранится в payload и нужен курьерскому возврату:
+    ``CourierDepositTransaction.created_by`` NOT NULL, а транзакция создаётся лишь при выдаче.
     """
     amount = _money(amount)
     draft_id = uuid.uuid4()
@@ -323,7 +327,9 @@ async def create_deposit_payout_draft(
         requisites=requisites,
         payer_account=payer_account,
     )
-    stored_payload = {"accountNumber": payer_account, "request": api_payload}
+    stored_payload: dict[str, Any] = {"accountNumber": payer_account, "request": api_payload}
+    if created_by_user_id is not None:
+        stored_payload["created_by"] = str(created_by_user_id)
 
     def _make(status: str, provider_ref: str | None, last_error: str | None) -> DepositBankDraft:
         return DepositBankDraft(
@@ -656,13 +662,34 @@ async def sync_deposit_after_allocation_change(
             if account is not None:
                 account.balance = _money(account.balance) - draft.amount
                 account.last_updated = now
-        elif draft.recipient_kind == "courier":
-            # Курьерский леджер (своя таблица) пока не подключён к полному циклу — курьерский
-            # возврат идёт старым путём и черновиков не создаёт, поэтому сюда не попадает.
-            logger.warning(
-                "Депозитный черновик %s курьерский — выдача через резерв ещё не поддержана",
-                draft.id,
+        elif draft.recipient_kind == "courier" and draft.employee_id is not None:
+            # Курьерский леджер (своя таблица, целочисленный id): строка возврата создаётся
+            # ТОЛЬКО здесь (уменьшает баланс депозита курьера) — раньше депозит был цел. Расход
+            # в ДДС уже провёл pay_allocation. Локальный импорт: курьерский сервис импортирует
+            # этот модуль на верхнем уровне (транзит), top-import замкнул бы цикл.
+            from app.services.couriers.deposit_service import (
+                add_return_transaction_ledger_only,
             )
+
+            created_by = (draft.payload or {}).get("created_by")
+            if not created_by:
+                # Автора нет в payload (created_by — user.id, NOT NULL) — не выдаём вслепую,
+                # оставляем резерв/черновик paid для разбора (штатно так не бывает: роут его пишет).
+                logger.warning(
+                    "Курьерский черновик %s без created_by в payload — выдача пропущена", draft.id
+                )
+                return None
+            courier_tx = await add_return_transaction_ledger_only(
+                session,
+                employee_id=draft.employee_id,
+                amount_cents=int((draft.amount * 100).to_integral_value()),
+                transaction_date=now.date(),
+                comment=None,
+                created_by_user_id=uuid.UUID(created_by),
+                payout_method="bank_draft_sber" if draft.bank_provider == "sber" else "bank_draft",
+            )
+            draft.courier_deposit_transaction_id = courier_tx.id
+        else:
             return None
         draft.status = "disbursed"
         draft.synced_at = now

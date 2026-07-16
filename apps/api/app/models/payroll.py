@@ -1412,11 +1412,13 @@ class DepositBankDraft(Base):
             "recipient_kind in ('production', 'courier')",
             name="ck_deposit_bank_draft_recipient_kind",
         ),
-        # Ровно один получатель заполнен, соответствующий recipient_kind.
+        # Получатель — сотрудник (employee_id): у производственника это адресат, у курьера тоже
+        # (курьер — Employee). courier_deposit_transaction_id заполняется при фактической выдаче
+        # (0192), поэтому у производственника он NULL, у курьера — необязателен.
         CheckConstraint(
             "(recipient_kind = 'production' AND employee_id IS NOT NULL "
             "AND courier_deposit_transaction_id IS NULL) "
-            "OR (recipient_kind = 'courier' AND courier_deposit_transaction_id IS NOT NULL)",
+            "OR (recipient_kind = 'courier' AND employee_id IS NOT NULL)",
             name="ck_deposit_bank_draft_recipient_ref",
         ),
         Index("ix_deposit_bank_draft_status", "status"),

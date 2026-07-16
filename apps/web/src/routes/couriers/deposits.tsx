@@ -462,7 +462,13 @@ function CourierOperationDialog({
       });
     },
     onSuccess: async () => {
-      toast.success("Операция создана");
+      const isBankReturn =
+        operation?.type === "return" && payoutMethod.startsWith("bank_draft");
+      toast.success(
+        isBankReturn
+          ? "Черновик отправлен в банк — платёж появится в «Активных платежах»"
+          : "Операция создана",
+      );
       setConfirmOpen(false);
       onClose();
       await Promise.all([
