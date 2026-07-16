@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Banknote,
+  CalendarClock,
   CheckCircle2,
   LoaderCircle,
   Pencil,
@@ -24,6 +25,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { apiErrorMessage } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { formatRub } from "@/routes/counterparties/shared";
@@ -38,6 +41,7 @@ import {
   pushInvoiceToIiko,
   retryIikoReturn,
   sendIikoPayment,
+  setInvoiceServicePeriod,
   type WarehouseInvoiceDetail,
 } from "./api";
 
@@ -60,6 +64,161 @@ const RETURN_STATUS: Record<string, { label: string; cls: string }> = {
 function formatDateTime(value: string | null): string {
   if (!value) return "—";
   return new Date(value).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
+}
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString("ru-RU", { dateStyle: "short" });
+}
+
+/** Первое и последнее число текущего месяца в формате input[type=date] — разумный дефолт
+ *  для платежа без счёта (период чаще всего = месяц оплаты). */
+function currentMonthRange(): { start: string; end: string } {
+  const now = new Date();
+  const iso = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return {
+    start: iso(new Date(now.getFullYear(), now.getMonth(), 1)),
+    end: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+  };
+}
+
+/** Блок «Период оказания услуги» для накладной контрагента, которому период обязателен.
+ *  Пока период не заполнен — накладную нельзя отправить в банк, а заполнить его больше негде
+ *  (у накладной не из почты период при создании не ставится). Здесь оператор его вводит. */
+function ServicePeriodBlock({
+  invoiceId,
+  detail,
+  canEdit,
+}: {
+  invoiceId: string;
+  detail: WarehouseInvoiceDetail;
+  canEdit: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const ready = detail.service_period_status === "ready";
+  const [editing, setEditing] = useState(false);
+  const fallback = useMemo(currentMonthRange, []);
+  const [start, setStart] = useState(detail.service_period_start ?? fallback.start);
+  const [end, setEnd] = useState(detail.service_period_end ?? fallback.end);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      setInvoiceServicePeriod(invoiceId, {
+        service_period_start: start,
+        service_period_end: end,
+      }),
+    onSuccess: () => {
+      queryClient.setQueryData<WarehouseInvoiceDetail | undefined>(
+        ["wh", "invoice", invoiceId],
+        (prev) =>
+          prev
+            ? {
+                ...prev,
+                service_period_status: "ready",
+                service_period_start: start,
+                service_period_end: end,
+              }
+            : prev,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["wh"] });
+      void queryClient.invalidateQueries({ queryKey: ["cp"] });
+      toast.success("Период оказания услуги сохранён");
+      setEditing(false);
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, "Не удалось сохранить период")),
+  });
+
+  const canSubmit = Boolean(start && end) && start <= end && !mutation.isPending;
+
+  // Заполнен и не редактируем — компактная строка со сводкой и кнопкой «Изменить».
+  if (ready && !editing) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 rounded-md border p-3 text-sm">
+        <CalendarClock size={16} className="text-muted-foreground" aria-hidden="true" />
+        <span>
+          Период оказания услуги:{" "}
+          <span className="font-medium">
+            {formatDate(detail.service_period_start)} — {formatDate(detail.service_period_end)}
+          </span>
+        </span>
+        {canEdit ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto"
+            onClick={() => setEditing(true)}
+          >
+            <Pencil size={14} aria-hidden="true" /> Изменить
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
+  const border = ready ? "border" : "border-amber-200 bg-amber-50/40";
+  return (
+    <div className={`grid gap-3 rounded-md p-3 ${border}`}>
+      <div className="flex items-start gap-2 text-sm">
+        <CalendarClock
+          size={16}
+          className={ready ? "mt-0.5 text-muted-foreground" : "mt-0.5 text-amber-700"}
+          aria-hidden="true"
+        />
+        <div>
+          <span className="block font-medium">Период оказания услуги</span>
+          {!ready ? (
+            <span className="block text-xs text-amber-700">
+              Не заполнен — накладную нельзя отправить в банк, пока не укажете период.
+            </span>
+          ) : null}
+        </div>
+      </div>
+      {canEdit ? (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs">С</Label>
+              <Input
+                type="date"
+                value={start}
+                max={end || undefined}
+                onChange={(e) => setStart(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs">По</Label>
+              <Input
+                type="date"
+                value={end}
+                min={start || undefined}
+                onChange={(e) => setEnd(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" disabled={!canSubmit} onClick={() => mutation.mutate()}>
+              {mutation.isPending ? (
+                <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
+              ) : (
+                <CheckCircle2 size={14} aria-hidden="true" />
+              )}
+              Сохранить период
+            </Button>
+            {ready ? (
+              <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+                Отмена
+              </Button>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <span className="text-xs text-muted-foreground">
+          Заполнить период может тот, кто редактирует накладные.
+        </span>
+      )}
+    </div>
+  );
 }
 
 /** Детализация накладной: позиции (номенклатура + суммы), оплата и статус отправки в iiko
@@ -372,6 +531,13 @@ export function InvoiceDetailDialog({
                   ? ` · ${formatDateTime(detail.price_confirmed_at)}`
                   : ""}
               </div>
+            ) : null}
+
+            {/* Период оказания услуги — только для контрагентов, которым он обязателен. Пока
+                не заполнен, накладную не отправить в банк; здесь его и вводят (для накладной
+                не из почты это единственная точка). */}
+            {invoiceId && detail.service_period_required ? (
+              <ServicePeriodBlock invoiceId={invoiceId} detail={detail} canEdit={canEdit} />
             ) : null}
 
             {detail.payment_status === "unpaid" && !detail.barter_role && !detail.draft_id ? (

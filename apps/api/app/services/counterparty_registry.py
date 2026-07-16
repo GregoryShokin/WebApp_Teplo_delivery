@@ -35,6 +35,7 @@ from app.models import (
     SupplierPrepayment,
     Wallet,
 )
+from app.services import supplier_service_periods as service_periods
 from app.services.banking.requisites import payee_account_error
 
 COLLECTION_SOURCE_KINDS = frozenset({"iiko", "email", "telegram", "manual"})
@@ -124,6 +125,9 @@ class InvoiceItem:
     service_period_start: date | None
     service_period_end: date | None
     service_period_status: str
+    # Требует ли контрагент период на каждом платеже — берётся из профиля, а не из накладной,
+    # чтобы UI показал «нужен период» даже когда флаг включили уже после создания накладной.
+    service_period_required: bool
     amount: Decimal
     vat_total: Decimal
     vat_breakdown: dict[str, Any]
@@ -229,7 +233,12 @@ async def list_invoices(
     not_in_iiko: bool | None = None,
 ) -> list[InvoiceItem]:
     query = (
-        select(SupplierInvoice, Counterparty.name, CounterpartyPayableProfile.ledger_category_id)
+        select(
+            SupplierInvoice,
+            Counterparty.name,
+            CounterpartyPayableProfile.ledger_category_id,
+            CounterpartyPayableProfile.service_period_required,
+        )
         .join(Counterparty, Counterparty.id == SupplierInvoice.counterparty_id)
         .join(
             CounterpartyPayableProfile,
@@ -294,8 +303,9 @@ async def list_invoices(
             ledger_category_id,
             allocations.get(invoice.id),
             drafts.get(invoice.draft_id) if invoice.draft_id else None,
+            service_period_required=bool(period_required),
         )
-        for invoice, counterparty_name, ledger_category_id in rows
+        for invoice, counterparty_name, ledger_category_id, period_required in rows
     ]
     # Attach the barter role (loan/return by chronology) to settled barter invoices so the
     # inbox/card badge reflects who lent — not the raw приход/расход direction.
@@ -329,9 +339,14 @@ def _build_invoice_item(
     ledger_category_id: uuid.UUID | None,
     allocated: Decimal | None,
     draft: CounterpartyPaymentDraft | None = None,
+    *,
+    service_period_required: bool = False,
 ) -> InvoiceItem:
     amount = _money(invoice.amount)
     allocated_money = _money(allocated)
+    period_status = service_periods.effective_period_status(
+        invoice.service_period_status, required=service_period_required
+    )
     return InvoiceItem(
         id=invoice.id,
         counterparty_id=invoice.counterparty_id,
@@ -344,7 +359,8 @@ def _build_invoice_item(
         due_date=invoice.due_date,
         service_period_start=invoice.service_period_start,
         service_period_end=invoice.service_period_end,
-        service_period_status=invoice.service_period_status,
+        service_period_status=period_status,
+        service_period_required=service_period_required,
         amount=amount,
         vat_total=_money(invoice.vat_total),
         vat_breakdown=invoice.vat_breakdown or {},
@@ -369,6 +385,7 @@ async def get_invoice_item(session: AsyncSession, invoice_id: uuid.UUID) -> Invo
                 SupplierInvoice,
                 Counterparty.name,
                 CounterpartyPayableProfile.ledger_category_id,
+                CounterpartyPayableProfile.service_period_required,
             )
             .join(Counterparty, Counterparty.id == SupplierInvoice.counterparty_id)
             .join(
@@ -381,7 +398,7 @@ async def get_invoice_item(session: AsyncSession, invoice_id: uuid.UUID) -> Invo
     ).first()
     if row is None:
         return None
-    invoice, counterparty_name, ledger_category_id = row
+    invoice, counterparty_name, ledger_category_id, period_required = row
     allocations = await _allocations_by_invoice(session, [invoice.id])
     drafts = await _drafts_by_id(session, [invoice.draft_id] if invoice.draft_id else [])
     return _build_invoice_item(
@@ -390,6 +407,7 @@ async def get_invoice_item(session: AsyncSession, invoice_id: uuid.UUID) -> Invo
         ledger_category_id,
         allocations.get(invoice.id),
         drafts.get(invoice.draft_id) if invoice.draft_id else None,
+        service_period_required=bool(period_required),
     )
 
 

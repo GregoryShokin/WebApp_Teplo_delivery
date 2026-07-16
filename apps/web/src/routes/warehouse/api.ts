@@ -119,6 +119,12 @@ export type WarehouseInvoiceDetail = WarehouseInvoiceSummary & {
   iiko_payment_auto_sendable?: boolean;
   // Заполняется ответом send-iiko-payment, если автоотправка не прошла (iiko отклонил / сеть).
   iiko_payment_push_error?: string | null;
+  // Период оказания услуги: нужен ли контрагенту (обязателен на платеже) и заполнен ли.
+  // «missing» у обязательного — накладную нельзя отправить в банк, пока период не введён.
+  service_period_required?: boolean;
+  service_period_status?: string;
+  service_period_start?: string | null;
+  service_period_end?: string | null;
 };
 
 export type LinePayload = {
@@ -248,6 +254,16 @@ export async function confirmIikoPaymentManual(id: string): Promise<WarehouseInv
     `${BASE}/invoices/${id}/confirm-iiko-payment`,
   );
   return response.data;
+}
+
+/** Проставить период оказания услуги у накладной, у которой его нет (разрывает тупик:
+ *  без периода счёт нельзя отправить в банк, а заполнить его больше негде). Роут живёт в
+ *  контуре контрагентов, поэтому путь абсолютный, а не от warehouse-BASE. */
+export async function setInvoiceServicePeriod(
+  id: string,
+  period: { service_period_start: string; service_period_end: string },
+): Promise<void> {
+  await api.patch(`/counterparties/invoices/${id}/service-period`, period);
 }
 
 export async function payInvoiceFromKassa(

@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
     CurrentActor,
+    ensure_any_permission,
     ensure_permission,
     get_current_actor,
     require_any_permission,
@@ -35,6 +36,7 @@ from app.services import counterparty_matching as matching
 from app.services import counterparty_payments as payments
 from app.services import counterparty_registry as registry
 from app.services import supplier_prepayments as prepayments
+from app.services import supplier_service_periods as service_periods
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 from app.services.counterparty_invoice_sync import (
     list_unlinked_iiko_suppliers,
@@ -135,6 +137,7 @@ class InvoiceRead(BaseModel):
     service_period_start: date | None
     service_period_end: date | None
     service_period_status: str
+    service_period_required: bool = False
     amount: float
     vat_total: float
     vat_breakdown: dict[str, Any]
@@ -151,6 +154,13 @@ class InvoiceRead(BaseModel):
     draft_pays_via_safe: bool = False
     # Контроль цен: flagged → строку подсвечиваем в списке (подозрительные цены).
     price_control_status: str = "clean"
+
+
+class InvoiceServicePeriodIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    service_period_start: date
+    service_period_end: date
 
 
 class RegistryRead(BaseModel):
@@ -575,6 +585,41 @@ async def post_void_invoice(
     try:
         await registry.void_invoice(session, invoice_id)
     except registry.CounterpartyRegistryError as exc:
+        raise _conflict(exc) from exc
+    item = await registry.get_invoice_item(session, invoice_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    return InvoiceRead.model_validate(item)
+
+
+@router.patch("/invoices/{invoice_id}/service-period", response_model=InvoiceRead)
+async def patch_invoice_service_period(
+    invoice_id: uuid.UUID,
+    payload: InvoiceServicePeriodIn,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> InvoiceRead:
+    """Проставить период оказания услуги у накладной, у которой его нет.
+
+    Разрывает тупик: у накладной не из почты (iiko/склад/ручная/касса) период при создании
+    не заполняется, а гард оплаты требует его у контрагента с ``service_period_required``.
+    Право — как на правку самой накладной (``invoices.{kind}.edit``): кто правит накладную,
+    тот и уточняет её период.
+    """
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    kind = await invoice_permission_kind(session, invoice)
+    ensure_any_permission(actor, (f"invoices.{kind}.edit", "kassa.invoices.create"))
+    try:
+        await service_periods.set_invoice_service_period(
+            session,
+            invoice=invoice,
+            start=payload.service_period_start,
+            end=payload.service_period_end,
+            actor_user_id=actor.user_id,
+        )
+    except service_periods.ServicePeriodError as exc:
         raise _conflict(exc) from exc
     item = await registry.get_invoice_item(session, invoice_id)
     if item is None:

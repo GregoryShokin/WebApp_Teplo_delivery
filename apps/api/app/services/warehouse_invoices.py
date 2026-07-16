@@ -35,6 +35,7 @@ from app.models import (
     SupplierPrepayment,
     User,
 )
+from app.services import supplier_service_periods as service_periods
 from app.services.counterparty_matching import _allocated_amount, _recompute_status
 from app.services.invoice_price_control import PriceCheckLine, apply_price_control
 
@@ -843,6 +844,25 @@ async def get_warehouse_invoice(
     )
     summary["draft_status"] = draft.status if draft else None
     summary["draft_pays_via_safe"] = bool(draft.pays_via_safe) if draft else False
+    # Период оказания услуги: нужен ли он этому контрагенту и заполнен ли. Накладная не из
+    # почты рождается без периода — тогда карточка даёт его ввести (иначе счёт не уйдёт в банк).
+    period_required = bool(
+        await session.scalar(
+            select(CounterpartyPayableProfile.service_period_required).where(
+                CounterpartyPayableProfile.counterparty_id == invoice.counterparty_id
+            )
+        )
+    )
+    summary["service_period_required"] = period_required
+    summary["service_period_status"] = service_periods.effective_period_status(
+        invoice.service_period_status, required=period_required
+    )
+    summary["service_period_start"] = (
+        invoice.service_period_start.isoformat() if invoice.service_period_start else None
+    )
+    summary["service_period_end"] = (
+        invoice.service_period_end.isoformat() if invoice.service_period_end else None
+    )
     # Контроль ошибочных цен: статус + снимок аномалий (для баннера и блокировки оплаты).
     anomalies = list(invoice.price_anomalies or [])
     summary["price_control_status"] = invoice.price_control_status

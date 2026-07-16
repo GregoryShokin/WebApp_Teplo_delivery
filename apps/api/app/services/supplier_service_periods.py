@@ -38,6 +38,15 @@ def recognition_month(period_end: date) -> date:
     return date(period_end.year, period_end.month, 1)
 
 
+def effective_period_status(stored_status: str, *, required: bool) -> str:
+    """Честный статус для выдачи: у контрагента с обязательным периодом ``not_required`` —
+    это «ещё не заполнен» (накладная не из почты), а не «не нужен». Показываем ``missing``,
+    чтобы оператор видел, почему счёт нельзя отправить в банк."""
+    if required and stored_status == "not_required":
+        return "missing"
+    return stored_status
+
+
 async def sync_invoice_accrual(
     session: AsyncSession, invoice: SupplierInvoice
 ) -> SupplierExpenseAccrual | None:
@@ -199,6 +208,52 @@ async def change_accrual_period(
             line.service_period_source = "corrected"
     await session.commit()
     await session.refresh(accrual)
+    return accrual
+
+
+async def set_invoice_service_period(
+    session: AsyncSession,
+    *,
+    invoice: SupplierInvoice,
+    start: date,
+    end: date,
+    actor_user_id: uuid.UUID | None,
+    reason: str | None = None,
+) -> SupplierExpenseAccrual:
+    """Проставить период у накладной, у которой начисления ещё нет.
+
+    Это единственный вход, разрывающий chicken-and-egg периодов: ``sync_invoice_accrual``
+    заводит начисление только при ``status='ready'``, а перенести период у существующего
+    начисления умеет ``change_accrual_period`` — но начисления нет, пока период не проставлен.
+    Здесь период пишется прямо в накладную, статус переводится в ``ready``, и начисление
+    рождается тем же ``sync_invoice_accrual``. Если начисление уже есть (накладная из почты
+    или повторная правка) — отдаём штатному ``change_accrual_period`` ради полного аудита.
+    """
+    start, end = validate_period(start, end)
+    existing = await session.scalar(
+        select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.invoice_id == invoice.id)
+    )
+    if existing is not None:
+        return await change_accrual_period(
+            session,
+            accrual=existing,
+            start=start,
+            end=end,
+            actor_user_id=actor_user_id,
+            reason=reason,
+        )
+
+    # Первичная установка — не «перенос», поэтому в журнал SupplierServicePeriodChange
+    # (у него old_* обязательны) не пишем: факт ручного ввода несёт source='manual' на
+    # накладной, а последующие правки идут через change_accrual_period с полным аудитом.
+    invoice.service_period_start = start
+    invoice.service_period_end = end
+    invoice.service_period_source = "manual"
+    invoice.service_period_status = "ready"
+    accrual = await sync_invoice_accrual(session, invoice)
+    await session.commit()
+    if accrual is not None:
+        await session.refresh(accrual)
     return accrual
 
 
