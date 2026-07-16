@@ -234,7 +234,6 @@ async def _counterparties_by_article(
             CounterpartyPayableProfile.requisites,
             CounterpartyPayableProfile.requisites_verified,
             CounterpartyPayableProfile.service_period_required,
-            CounterpartyPayableProfile.service_period_mode,
             CounterpartyPayableProfile.default_service_period_offset_months,
         )
         .join(Counterparty, Counterparty.id == CounterpartyPayableProfile.counterparty_id)
@@ -254,7 +253,6 @@ async def _counterparties_by_article(
         requisites,
         requisites_verified,
         service_period_required,
-        service_period_mode,
         default_service_period_offset_months,
     ) in rows:
         by_article.setdefault(article_id, []).append(
@@ -266,7 +264,6 @@ async def _counterparties_by_article(
                 "has_requisites": bool(requisites),
                 "requisites_verified": bool(requisites_verified),
                 "service_period_required": bool(service_period_required),
-                "service_period_mode": service_period_mode or "manual",
                 "default_service_period_offset_months": default_service_period_offset_months,
             }
         )

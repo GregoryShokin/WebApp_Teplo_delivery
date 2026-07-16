@@ -74,7 +74,6 @@ export function CreateCounterpartyDialog({
   const [ddsArticleId, setDdsArticleId] = useState("");
   const [confirmNoDdsArticle, setConfirmNoDdsArticle] = useState(false);
   const [servicePeriodRequired, setServicePeriodRequired] = useState(false);
-  const [servicePeriodMode, setServicePeriodMode] = useState<"automatic" | "manual">("manual");
   const [periodOffset, setPeriodOffset] = useState("0");
   const [requisites, setRequisites] = useState<Record<string, string>>(emptyRequisites);
   const [requisitesVerified, setRequisitesVerified] = useState(false);
@@ -91,7 +90,6 @@ export function CreateCounterpartyDialog({
     setDdsArticleId("");
     setConfirmNoDdsArticle(false);
     setServicePeriodRequired(false);
-    setServicePeriodMode("manual");
     setPeriodOffset("0");
     setRequisites(emptyRequisites());
     setRequisitesVerified(false);
@@ -166,7 +164,6 @@ export function CreateCounterpartyDialog({
         default_dds_article_id: ddsArticleId || null,
         confirm_no_dds_article: confirmNoDdsArticle,
         service_period_required: servicePeriodRequired,
-        service_period_mode: servicePeriodMode,
         default_service_period_offset_months: servicePeriodRequired ? Number(periodOffset) : null,
         requisites: cleanRequisites,
         requisites_verified: isOfficial && requisitesVerified,
@@ -297,27 +294,13 @@ export function CreateCounterpartyDialog({
                 <span>
                   <span className="block text-sm font-medium">Требовать период оказания услуг</span>
                   <span className="block text-xs text-muted-foreground">
-                    Без периода счёт или ручной платёж нельзя отправить в банк.
+                    Платёж без периода нельзя отправить в банк.
                   </span>
                 </span>
               </label>
               {servicePeriodRequired ? (
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Как определять период">
-                    <Select
-                      value={servicePeriodMode}
-                      onValueChange={(value) => setServicePeriodMode(value as "automatic" | "manual")}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="automatic">Автоматически из счёта / ЭДО</SelectItem>
-                        <SelectItem value="manual">Указывать вручную</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Период по умолчанию">
+                  <Field label="Подставлять в ручной платёж">
                     <Select value={periodOffset} onValueChange={setPeriodOffset}>
                       <SelectTrigger>
                         <SelectValue />
@@ -328,6 +311,9 @@ export function CreateCounterpartyDialog({
                         <SelectItem value="1">Следующий месяц</SelectItem>
                       </SelectContent>
                     </Select>
+                    <span className="text-xs text-muted-foreground">
+                      Только для платежа без счёта. Из счёта период распознаётся сам.
+                    </span>
                   </Field>
                 </div>
               ) : null}

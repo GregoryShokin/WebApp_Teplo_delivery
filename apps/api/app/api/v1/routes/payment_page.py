@@ -63,7 +63,6 @@ class IntakeRead(BaseModel):
     service_period_status: str | None
     service_period_confidence: float | None
     service_period_required: bool
-    service_period_mode: str
     # Распознанные банковские реквизиты (recipientName/inn/kpp/bankAcnt/bankBik/corr) — для
     # предзаполнения окна разбора.
     requisites: dict[str, Any]
@@ -138,7 +137,6 @@ def _to_read(
     invoice_service_period_status: str | None = None,
     invoice_service_period_confidence: Any | None = None,
     service_period_required: bool | None = False,
-    service_period_mode: str | None = "manual",
 ) -> IntakeRead:
     rec: dict[str, Any] = intake.recognition or {}
     period_start_value = (
@@ -191,7 +189,6 @@ def _to_read(
             )
         ),
         service_period_required=bool(service_period_required),
-        service_period_mode=service_period_mode or "manual",
         requisites=rec.get("requisites") or {},
         requisites_verified=bool(requisites_verified),
         invoice_payment_status=invoice_payment_status,
@@ -261,7 +258,6 @@ async def _load_read(session: AsyncSession, intake_id: uuid.UUID) -> IntakeRead:
                 SupplierInvoice.service_period_status,
                 SupplierInvoice.service_period_confidence,
                 CounterpartyPayableProfile.service_period_required,
-                CounterpartyPayableProfile.service_period_mode,
             )
             .outerjoin(Counterparty, Counterparty.id == EmailInvoiceIntake.counterparty_id)
             .outerjoin(
@@ -288,7 +284,6 @@ async def _load_read(session: AsyncSession, intake_id: uuid.UUID) -> IntakeRead:
         period_status,
         period_confidence,
         period_required,
-        period_mode,
     ) = row
     return _to_read(
         intake,
@@ -304,7 +299,6 @@ async def _load_read(session: AsyncSession, intake_id: uuid.UUID) -> IntakeRead:
         invoice_service_period_status=period_status,
         invoice_service_period_confidence=period_confidence,
         service_period_required=period_required,
-        service_period_mode=period_mode,
     )
 
 
@@ -329,7 +323,6 @@ async def list_intakes(
             SupplierInvoice.service_period_status,
             SupplierInvoice.service_period_confidence,
             CounterpartyPayableProfile.service_period_required,
-            CounterpartyPayableProfile.service_period_mode,
         )
         .outerjoin(Counterparty, Counterparty.id == EmailInvoiceIntake.counterparty_id)
         .outerjoin(
@@ -360,7 +353,6 @@ async def list_intakes(
             invoice_service_period_status=period_status,
             invoice_service_period_confidence=period_confidence,
             service_period_required=period_required,
-            service_period_mode=period_mode,
         )
         for (
             intake,
@@ -376,7 +368,6 @@ async def list_intakes(
             period_status,
             period_confidence,
             period_required,
-            period_mode,
         ) in rows
     ]
 

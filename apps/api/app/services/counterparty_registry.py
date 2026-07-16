@@ -602,7 +602,6 @@ def _profile_dict(profile: CounterpartyPayableProfile | None) -> dict[str, Any] 
         "payment_delay_days": profile.payment_delay_days,
         "payment_due_day_of_month": profile.payment_due_day_of_month,
         "service_period_required": profile.service_period_required,
-        "service_period_mode": profile.service_period_mode,
         "default_service_period_offset_months": profile.default_service_period_offset_months,
         "manager_name": profile.manager_name,
         "manager_phone": profile.manager_phone,
@@ -689,7 +688,6 @@ async def update_profile(
     default_dds_article_id: uuid.UUID | None | object = _UNSET,
     confirm_no_dds_article: bool = False,
     service_period_required: bool | None | object = _UNSET,
-    service_period_mode: str | None | object = _UNSET,
     default_service_period_offset_months: int | None | object = _UNSET,
     status: str | None | object = _UNSET,
 ) -> CounterpartyPayableProfile:
@@ -765,10 +763,6 @@ async def update_profile(
         profile.confirm_no_dds_article = confirm_no_dds_article
     if service_period_required is not _UNSET and service_period_required is not None:
         profile.service_period_required = service_period_required
-    if service_period_mode is not _UNSET and service_period_mode is not None:
-        if service_period_mode not in ("automatic", "manual"):
-            raise CounterpartyRegistryError("Неизвестный способ заполнения периода услуг")
-        profile.service_period_mode = service_period_mode
     if default_service_period_offset_months is not _UNSET:
         profile.default_service_period_offset_months = default_service_period_offset_months
     if status is not _UNSET and status:
@@ -1020,7 +1014,6 @@ async def create_counterparty(
     default_dds_article_id: uuid.UUID | None = None,
     confirm_no_dds_article: bool = False,
     service_period_required: bool = False,
-    service_period_mode: str = "manual",
     default_service_period_offset_months: int | None = None,
     requisites: dict[str, Any] | None = None,
     requisites_verified: bool = False,
@@ -1090,7 +1083,6 @@ async def create_counterparty(
             default_dds_article_id=default_dds_article_id,
             confirm_no_dds_article=confirm_no_dds_article,
             service_period_required=service_period_required,
-            service_period_mode=service_period_mode,
             default_service_period_offset_months=default_service_period_offset_months,
             requisites=clean_requisites,
             requisites_verified=requisites_verified,

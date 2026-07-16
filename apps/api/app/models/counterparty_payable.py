@@ -72,10 +72,6 @@ class CounterpartyPayableProfile(Base):
             name="ck_payable_profile_due_day",
         ),
         CheckConstraint(
-            "service_period_mode in ('automatic', 'manual')",
-            name="ck_payable_profile_service_period_mode",
-        ),
-        CheckConstraint(
             "default_service_period_offset_months is null "
             "or default_service_period_offset_months between -12 and 12",
             name="ck_payable_profile_service_period_offset",
@@ -108,16 +104,15 @@ class CounterpartyPayableProfile(Base):
     # Nth day of the month. Explicit iiko dueDate wins over both.
     payment_delay_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     payment_due_day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Услуговые контрагенты обязаны иметь период оказания услуг на каждом платеже. Для
-    # email/ЭДО он извлекается автоматически; для ручных платежей менеджер вводит даты.
-    # ``default_service_period_offset_months`` — необязательная подсказка относительно месяца
-    # даты счёта/платежа (-1 прошлый, 0 текущий, +1 следующий), но не замена явному периоду.
+    # Услуговые контрагенты обязаны иметь период оказания услуг на каждом платеже: от него
+    # зависит месяц признания расхода. Из PDF-счёта период извлекается автоматически всегда
+    # (см. invoice_recognition), поэтому режима «автоматически/вручную» тут нет — флаг решает
+    # только «обязателен ли», а не «откуда брать».
     service_period_required: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
-    service_period_mode: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="manual", server_default=text("'manual'")
-    )
+    # Преднабор дат для РУЧНОГО платежа, у которого счёта нет вовсе (-1 прошлый месяц,
+    # 0 текущий, +1 следующий). Счёта не касается и явный период не заменяет.
     default_service_period_offset_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Supplier-side contact (manager) for questions about invoices/payments.
     manager_name: Mapped[str | None] = mapped_column(String(160), nullable=True)

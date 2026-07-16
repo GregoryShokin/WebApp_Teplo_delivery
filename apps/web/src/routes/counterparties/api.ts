@@ -87,7 +87,6 @@ export type CounterpartyProfile = {
   // без статьи не приходилось подтверждать заново при каждом открытии.
   confirm_no_dds_article: boolean;
   service_period_required: boolean;
-  service_period_mode: "automatic" | "manual";
   default_service_period_offset_months: number | null;
   requisites: Record<string, unknown>;
   requisites_verified: boolean;
@@ -367,7 +366,6 @@ export type CounterpartyCreatePayload = {
   default_dds_article_id?: string | null;
   confirm_no_dds_article?: boolean;
   service_period_required?: boolean;
-  service_period_mode?: "automatic" | "manual";
   default_service_period_offset_months?: number | null;
   requisites?: Record<string, string>;
   requisites_verified?: boolean;
@@ -396,7 +394,6 @@ export type ProfileUpdatePayload = {
   default_dds_article_id?: string | null;
   confirm_no_dds_article?: boolean;
   service_period_required?: boolean | null;
-  service_period_mode?: "automatic" | "manual" | null;
   default_service_period_offset_months?: number | null;
   status?: string | null;
 };

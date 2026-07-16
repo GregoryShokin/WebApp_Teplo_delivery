@@ -2741,7 +2741,6 @@ export type NewPaymentArticleCounterparty = {
   has_requisites: boolean;
   requisites_verified: boolean;
   service_period_required: boolean;
-  service_period_mode: "automatic" | "manual";
   default_service_period_offset_months: number | null;
 };
 

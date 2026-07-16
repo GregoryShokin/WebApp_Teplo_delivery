@@ -1395,11 +1395,7 @@ function ExpenseForm({
                   <div className="rounded-md bg-muted/40 p-2">
                     <div className="mb-1.5 flex items-center justify-between gap-2">
                       <Label className="text-xs font-medium">Период оказания услуги</Label>
-                      <span className="text-[11px] text-muted-foreground">
-                        {selectedCounterparty.service_period_mode === "automatic"
-                          ? "для ручного платежа укажите явно"
-                          : "обязательное поле"}
-                      </span>
+                      <span className="text-[11px] text-muted-foreground">обязательное поле</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <Input

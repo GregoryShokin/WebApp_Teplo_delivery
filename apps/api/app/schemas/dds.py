@@ -535,7 +535,6 @@ class NewPaymentArticleCounterpartyRead(BaseModel):
     has_requisites: bool
     requisites_verified: bool
     service_period_required: bool = False
-    service_period_mode: Literal["automatic", "manual"] = "manual"
     default_service_period_offset_months: int | None = None
 
 

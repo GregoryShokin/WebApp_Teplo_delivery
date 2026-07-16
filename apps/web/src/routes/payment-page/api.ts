@@ -27,7 +27,6 @@ export type PaymentIntake = {
   service_period_status: string | null;
   service_period_confidence: number | null;
   service_period_required: boolean;
-  service_period_mode: "automatic" | "manual";
   requisites: Record<string, string>;
   requisites_verified: boolean;
   invoice_payment_status: string | null;

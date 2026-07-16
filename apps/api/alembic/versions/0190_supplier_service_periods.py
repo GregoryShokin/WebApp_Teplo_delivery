@@ -36,21 +36,7 @@ def upgrade() -> None:
     )
     op.add_column(
         "counterparty_payable_profile",
-        sa.Column(
-            "service_period_mode",
-            sa.String(length=16),
-            nullable=False,
-            server_default="manual",
-        ),
-    )
-    op.add_column(
-        "counterparty_payable_profile",
         sa.Column("default_service_period_offset_months", sa.Integer(), nullable=True),
-    )
-    op.create_check_constraint(
-        "ck_payable_profile_service_period_mode",
-        "counterparty_payable_profile",
-        "service_period_mode in ('automatic', 'manual')",
     )
     op.create_check_constraint(
         "ck_payable_profile_service_period_offset",
@@ -243,14 +229,8 @@ def downgrade() -> None:
         "counterparty_payable_profile",
         type_="check",
     )
-    op.drop_constraint(
-        "ck_payable_profile_service_period_mode",
-        "counterparty_payable_profile",
-        type_="check",
-    )
     for column in (
         "default_service_period_offset_months",
-        "service_period_mode",
         "service_period_required",
     ):
         op.drop_column("counterparty_payable_profile", column)

@@ -245,7 +245,6 @@ class ProfileUpdate(BaseModel):
     # Статья обязательна; отсутствие — только через явный переключатель в форме.
     confirm_no_dds_article: bool = False
     service_period_required: bool | None = None
-    service_period_mode: Literal["automatic", "manual"] | None = None
     default_service_period_offset_months: int | None = Field(default=None, ge=-12, le=12)
     status: str | None = None
 
@@ -365,7 +364,6 @@ class CounterpartyCreate(BaseModel):
     # Статья обязательна; отсутствие — только через явный переключатель в форме.
     confirm_no_dds_article: bool = False
     service_period_required: bool = False
-    service_period_mode: Literal["automatic", "manual"] = "manual"
     default_service_period_offset_months: int | None = Field(default=None, ge=-12, le=12)
     requisites: dict[str, Any] = Field(default_factory=dict)
     requisites_verified: bool = False
@@ -873,7 +871,6 @@ async def post_counterparty(
             default_dds_article_id=payload.default_dds_article_id,
             confirm_no_dds_article=payload.confirm_no_dds_article,
             service_period_required=payload.service_period_required,
-            service_period_mode=payload.service_period_mode,
             default_service_period_offset_months=payload.default_service_period_offset_months,
             requisites=payload.requisites,
             requisites_verified=payload.requisites_verified,
