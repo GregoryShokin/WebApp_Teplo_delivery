@@ -20,18 +20,33 @@ from cashflow_transactions c
   left join dds_articles a on a.id = c.article_id
 order by c.created_at;"
 
-echo "=== 3. СЛЕДЫ БАНК-ЧЕРНОВИКА (который ждёт подписи в банке) ==="
+echo "=== 3. БАНК-ЧЕРНОВИКИ ВЫДАЧИ ДЕПОЗИТА (полный цикл) ==="
+# created/updated — ждёт подписи в банке (Активные платежи «Отправлен в банк»);
+# paid — оплачен, деньги резервом на Сейфе («На Сейфе»); disbursed — выдан сотруднику;
+# failed/deleted/cancelled — история. Депозит-счёт списывается ТОЛЬКО при disbursed.
 docker exec teplo-postgres-b psql -U teplo -d teplo -c "
-select 'запись о черновике депозита' as где_искали,
-       (select count(*) from counterparty_payment_draft) as черновики_контрагентов,
-       (select count(*) from payroll_bank_draft) as черновики_зп,
-       (select count(*) from reconciliation_cases) as кейсы_на_разбор;"
+select coalesce(e.full_name, 'курьер') as получатель, d.status as статус,
+       d.bank_provider as банк, d.amount as сумма,
+       (d.provider_ref is not null) as есть_ref,
+       (d.safe_allocation_id is not null) as есть_резерв,
+       (d.deposit_transaction_id is not null) as списан_депозит
+from deposit_bank_draft d
+  left join employee e on e.id = d.employee_id
+order by d.created_at;"
 
-echo "=== 4. ЛОГ (по коду — единственный след успешной отправки) ==="
-FOUND=$(docker logs teplo-api-b 2>&1 | grep -c "Банк-черновик выдачи депозита" || true)
-if [ "$FOUND" = "0" ]; then
-  echo "  Записей нет. Успех логируется через logger.info, а уровень логов — WARNING,"
-  echo "  поэтому info не пишется. При УСПЕХЕ следа не остаётся вообще нигде."
-else
-  docker logs teplo-api-b 2>&1 | grep "Банк-черновик выдачи депозита" | tail -3
-fi
+echo "=== 4. ДЕПОЗИТ-РЕЗЕРВЫ НА СЕЙФЕ/В КАССЕ (обязательство перед сотрудником) ==="
+# R1: employee_id ОБЯЗАН быть NULL — иначе pay_allocation срежет ЗП. Ссылка на получателя —
+# в deposit_bank_draft. status reserved → ждёт «Выплатить депозит»; paid → уже выдан.
+docker exec teplo-postgres-b psql -U teplo -d teplo -c "
+select s.purpose as назначение, s.status as статус, s.location as где,
+       s.amount as сумма, s.amount_paid as выплачено,
+       (s.employee_id is null) as employee_id_null_R1
+from safe_allocations s
+where s.id in (select safe_allocation_id from deposit_bank_draft where safe_allocation_id is not null)
+order by s.created_at;"
+
+echo "=== 5. КЕЙСЫ НА РАЗБОР (банк не ответил при отправке черновика) ==="
+docker exec teplo-postgres-b psql -U teplo -d teplo -c "
+select count(*) filter (where kind='deposit_bank_draft_failed') as депозитные_кейсы,
+       count(*) as всего_кейсов
+from reconciliation_cases where status='pending';"
