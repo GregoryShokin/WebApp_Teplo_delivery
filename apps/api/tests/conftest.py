@@ -22,6 +22,10 @@ os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ.setdefault("TEPLO_BANK_CLIENT_MODE", "mock")
 os.environ["TEPLO_ADMIN_EMAIL"] = "admin@teplo.local"
 os.environ["TEPLO_ADMIN_PASSWORD"] = "test-admin-password"
+# Планировщик в тестах ОБЯЗАН молчать: TestClient поднимает lifespan приложения, и живые
+# джобы (agent_run-журнал, синки) пишут в тестовую БД параллельно с teardown-транкейтом —
+# отсюда плавающие deadlock'и в случайных тестах (в полном прогоне — десятки ERROR'ов).
+os.environ["SCHEDULER_ENABLED"] = "false"
 
 from app.core.config import get_settings
 from app.db.session import get_session
