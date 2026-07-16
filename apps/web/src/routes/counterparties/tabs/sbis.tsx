@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { EyeOff, ExternalLink, FileText, LoaderCircle, RefreshCw, Undo2 } from "lucide-react";
+import { EyeOff, ExternalLink, FileText, LoaderCircle, Plug, RefreshCw, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,7 @@ import { apiErrorMessage } from "@/lib/api";
 
 import {
   dismissSbisDocument,
+  enableSbisChannel,
   fetchSbisPdfUrl,
   getSbisDocuments,
   restoreSbisDocument,
@@ -25,34 +26,83 @@ import {
 } from "../api";
 import { MetricCard, formatDate, formatRub } from "../shared";
 
-// Человеческие подписи типов документов СБИС (Документ.Тип / Вложение.Тип).
+// Человеческие подписи типов документов СБИС (Документ.Тип).
 const DOC_TYPE_LABELS: Record<string, string> = {
   ДокОтгрВх: "УПД / отгрузка",
   АктСверВх: "Акт сверки",
+  ДоговорВх: "Договор",
+  КоррВх: "Корреспонденция",
 };
 
-type FilterValue = "all" | "unmatched" | "matched" | "dismissed";
+type FilterValue =
+  | "all"
+  | "new_counterparty"
+  | "materialized"
+  | "duplicate"
+  | "unmatched"
+  | "matched"
+  | "dismissed";
 
 const FILTERS: Array<{ value: FilterValue; label: string }> = [
   { value: "all", label: "Все документы" },
-  { value: "unmatched", label: "Нет в iiko" },
-  { value: "matched", label: "Связаны с накладной" },
+  { value: "new_counterparty", label: "Новые контрагенты" },
+  { value: "materialized", label: "Счета созданы" },
+  { value: "duplicate", label: "Дубли счетов" },
+  { value: "unmatched", label: "Зеркало: нет в iiko" },
+  { value: "matched", label: "Зеркало: связаны" },
   { value: "dismissed", label: "Скрытые" },
 ];
 
-function MatchBadge({ doc }: { doc: SbisDocument }) {
-  if (doc.match_status === "matched") {
-    const invoice = doc.matched_invoice;
-    const note = doc.match_note === "manual" ? " (вручную)" : "";
+function matchesFilter(doc: SbisDocument, filter: FilterValue): boolean {
+  switch (filter) {
+    case "all":
+      return doc.match_status !== "dismissed";
+    case "new_counterparty":
+    case "materialized":
+    case "duplicate":
+      return doc.intake_status === filter && doc.match_status !== "dismissed";
+    case "unmatched":
+    case "matched":
+      return doc.intake_status === "mirror" && doc.match_status === filter;
+    case "dismissed":
+      return doc.match_status === "dismissed";
+  }
+}
+
+// Единый статус строки: итог маршрутизации, для зеркальных — статус сверки с iiko.
+function StatusBadge({ doc }: { doc: SbisDocument }) {
+  if (doc.match_status === "dismissed") {
+    return <Badge variant="secondary">Скрыт из сверки</Badge>;
+  }
+  if (doc.intake_status === "new_counterparty") {
     return (
-      <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-700">
-        В iiko{invoice?.number ? ` №${invoice.number}` : ""}
-        {note}
+      <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800">
+        Новый контрагент — настроить карточку
       </Badge>
     );
   }
-  if (doc.match_status === "dismissed") {
-    return <Badge variant="secondary">Скрыт из сверки</Badge>;
+  if (doc.intake_status === "materialized") {
+    return (
+      <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-700">
+        Счёт создан{doc.invoice?.number ? ` №${doc.invoice.number}` : ""}
+      </Badge>
+    );
+  }
+  if (doc.intake_status === "duplicate") {
+    return (
+      <Badge variant="secondary" title="Тот же счёт уже пришёл другим каналом (почта/вручную)">
+        Дубль счёта{doc.invoice?.number ? ` №${doc.invoice.number}` : ""}
+      </Badge>
+    );
+  }
+  if (doc.match_status === "matched") {
+    const note = doc.match_note === "manual" ? " (вручную)" : "";
+    return (
+      <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-700">
+        В iiko{doc.matched_invoice?.number ? ` №${doc.matched_invoice.number}` : ""}
+        {note}
+      </Badge>
+    );
   }
   return (
     <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800">
@@ -75,14 +125,19 @@ export function SbisTab({ canOperate }: Props) {
   });
   const documents = useMemo(() => documentsQuery.data ?? [], [documentsQuery.data]);
   const visible = useMemo(
-    () => (filter === "all" ? documents.filter((d) => d.match_status !== "dismissed") : documents.filter((d) => d.match_status === filter)),
+    () => documents.filter((doc) => matchesFilter(doc, filter)),
     [documents, filter],
   );
-  const unmatchedCount = documents.filter((d) => d.match_status === "unmatched").length;
-  const matchedCount = documents.filter((d) => d.match_status === "matched").length;
-  const unmatchedSum = documents
-    .filter((d) => d.match_status === "unmatched")
-    .reduce((sum, d) => sum + Number(d.amount ?? 0), 0);
+  const newCounterpartyInns = new Set(
+    documents
+      .filter((d) => d.intake_status === "new_counterparty")
+      .map((d) => d.counterparty_inn ?? d.id),
+  );
+  const materializedCount = documents.filter((d) => d.intake_status === "materialized").length;
+  const mirrorUnmatched = documents.filter(
+    (d) => d.intake_status === "mirror" && d.match_status === "unmatched",
+  );
+  const mirrorUnmatchedSum = mirrorUnmatched.reduce((sum, d) => sum + Number(d.amount ?? 0), 0);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["sbis"] });
 
@@ -90,8 +145,15 @@ export function SbisTab({ canOperate }: Props) {
     mutationFn: syncSbisDocuments,
     onSuccess: async (r) => {
       await invalidate();
+      // Материализация создаёт накладные — обновляем и их списки.
+      await queryClient.invalidateQueries({ queryKey: ["cp"] });
+      const extras: string[] = [];
+      if (r.materialized) extras.push(`счетов создано ${r.materialized}`);
+      if (r.duplicates) extras.push(`дублей ${r.duplicates}`);
+      if (r.new_counterparties) extras.push(`новых контрагентов ${r.new_counterparties}`);
       toast.success(
-        `СБИС: получено ${r.fetched}, новых ${r.created}, связано ${r.matched}`,
+        `СБИС: получено ${r.fetched}, связано с iiko ${r.matched}` +
+          (extras.length ? `, ${extras.join(", ")}` : ""),
       );
     },
     onError: (e) => toast.error(apiErrorMessage(e, "Синхронизация со СБИС не удалась")),
@@ -105,6 +167,14 @@ export function SbisTab({ canOperate }: Props) {
     mutationFn: restoreSbisDocument,
     onSuccess: invalidate,
     onError: (e) => toast.error(apiErrorMessage(e, "Не удалось вернуть документ")),
+  });
+  const enableChannelMutation = useMutation({
+    mutationFn: enableSbisChannel,
+    onSuccess: async () => {
+      await invalidate();
+      toast.success("Канал СБИС подключён — счета материализуются следующим обновлением из СБИС");
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, "Не удалось подключить канал")),
   });
 
   // PDF готовится на стороне СБИС асинхронно и качается через наш прокси с Bearer —
@@ -132,6 +202,17 @@ export function SbisTab({ canOperate }: Props) {
     }
   };
 
+  // «Быстрое переподключение» почтовика на ЭДО: контрагент настроен, канала sbis нет,
+  // но почтовый канал есть — кнопка прямо в строке. Остальным канал включается из
+  // карточки контрагента (секция источников, kind «СБИС (ЭДО)»).
+  const showEnableChannel = (doc: SbisDocument) =>
+    canOperate &&
+    !doc.channel_enabled &&
+    doc.has_email_channel &&
+    doc.counterparty_id !== null &&
+    doc.counterparty_status !== "requires_setup" &&
+    doc.intake_status === "mirror";
+
   const columns: Array<DataTableColumn<SbisDocument>> = [
     {
       key: "date",
@@ -144,9 +225,10 @@ export function SbisTab({ canOperate }: Props) {
       cell: (doc) => (
         <div>
           <div className="font-medium">{doc.counterparty_name ?? "—"}</div>
-          {doc.counterparty_inn ? (
-            <div className="text-xs text-muted-foreground">ИНН {doc.counterparty_inn}</div>
-          ) : null}
+          <div className="text-xs text-muted-foreground">
+            {doc.counterparty_inn ? `ИНН ${doc.counterparty_inn}` : null}
+            {doc.channel_enabled ? " · канал СБИС" : null}
+          </div>
         </div>
       ),
     },
@@ -173,9 +255,9 @@ export function SbisTab({ canOperate }: Props) {
       cell: (doc) => doc.state_name ?? "—",
     },
     {
-      key: "match",
-      header: "Сверка",
-      cell: (doc) => <MatchBadge doc={doc} />,
+      key: "status",
+      header: "Статус",
+      cell: (doc) => <StatusBadge doc={doc} />,
     },
     {
       key: "actions",
@@ -183,6 +265,21 @@ export function SbisTab({ canOperate }: Props) {
       className: "text-right",
       cell: (doc) => (
         <div className="flex items-center justify-end gap-1">
+          {showEnableChannel(doc) ? (
+            <Button
+              variant="outline"
+              size="sm"
+              title="Поставщик с почты появился в ЭДО — включить канал СБИС"
+              disabled={enableChannelMutation.isPending}
+              onClick={(event) => {
+                event.stopPropagation();
+                enableChannelMutation.mutate(doc.id);
+              }}
+            >
+              <Plug size={15} aria-hidden="true" />
+              Подключить СБИС
+            </Button>
+          ) : null}
           {doc.has_pdf ? (
             <Button
               variant="ghost"
@@ -214,7 +311,7 @@ export function SbisTab({ canOperate }: Props) {
               <ExternalLink size={15} aria-hidden="true" />
             </Button>
           ) : null}
-          {canOperate && doc.match_status === "unmatched" ? (
+          {canOperate && doc.intake_status === "mirror" && doc.match_status === "unmatched" ? (
             <Button
               variant="ghost"
               size="sm"
@@ -251,17 +348,20 @@ export function SbisTab({ canOperate }: Props) {
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard
-          label="Нет в iiko"
-          value={String(unmatchedCount)}
-          accent={unmatchedCount > 0 ? "danger" : undefined}
+          label="Новые контрагенты"
+          value={String(newCounterpartyInns.size)}
+          accent={newCounterpartyInns.size > 0 ? "danger" : undefined}
         />
-        <MetricCard label="Сумма несведённых" value={formatRub(unmatchedSum)} />
-        <MetricCard label="Связаны с накладными" value={String(matchedCount)} />
+        <MetricCard
+          label="Зеркало: нет в iiko"
+          value={`${mirrorUnmatched.length} · ${formatRub(mirrorUnmatchedSum)}`}
+        />
+        <MetricCard label="Счетов создано из ЭДО" value={String(materializedCount)} accent="info" />
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Select value={filter} onValueChange={(value) => setFilter(value as FilterValue)}>
-          <SelectTrigger className="w-56">
+          <SelectTrigger className="w-60">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

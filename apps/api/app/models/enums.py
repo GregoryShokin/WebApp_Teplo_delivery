@@ -72,6 +72,9 @@ counterparty_invoice_source_enum = Enum(
     # kassa_invoice = накладная, созданная вручную на странице «Касса» (вкладка
     # «Накладные» Кассы фильтрует по нему; в «Управлении складом» видны все).
     "kassa_invoice",
+    # sbis = счёт/УПД/акт сервисного поставщика, материализованный из СБИС ЭДО
+    # (только для контрагентов с каналом сбора 'sbis'; производственные — зеркало).
+    "sbis",
     name="counterparty_invoice_source",
 )
 counterparty_invoice_status_enum = Enum(
@@ -97,6 +100,7 @@ counterparty_collection_source_kind_enum = Enum(
     "email",
     "telegram",
     "manual",
+    "sbis",
     name="counterparty_collection_source_kind",
 )
 # Payment relationship axis (orthogonal to the legal form in counterparty_type):

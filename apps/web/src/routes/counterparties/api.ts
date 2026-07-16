@@ -592,6 +592,8 @@ export type SbisMatchedInvoice = {
   payment_status: string;
 };
 
+export type SbisIntakeStatus = "mirror" | "new_counterparty" | "materialized" | "duplicate";
+
 export type SbisDocument = {
   id: string;
   doc_type: string | null;
@@ -612,6 +614,13 @@ export type SbisDocument = {
   match_note: string | null;
   matched_invoice: SbisMatchedInvoice | null;
   last_synced_at: string;
+  // Маршрутизация: режим определяет карточка контрагента (канал 'sbis').
+  intake_status: SbisIntakeStatus;
+  counterparty_id: string | null;
+  counterparty_status: string | null;
+  channel_enabled: boolean;
+  has_email_channel: boolean;
+  invoice: SbisMatchedInvoice | null;
 };
 
 export type SbisSyncResult = {
@@ -621,12 +630,20 @@ export type SbisSyncResult = {
   updated: number;
   matched: number;
   skipped_deleted: number;
+  new_counterparties: number;
+  materialized: number;
+  duplicates: number;
 };
 
 export async function getSbisDocuments(matchStatus?: string): Promise<SbisDocument[]> {
   const response = await api.get<SbisDocument[]>(`${SBIS_BASE}/documents`, {
     params: matchStatus ? { match_status: matchStatus } : undefined,
   });
+  return response.data;
+}
+
+export async function enableSbisChannel(id: string): Promise<SbisDocument> {
+  const response = await api.post<SbisDocument>(`${SBIS_BASE}/documents/${id}/enable-channel`);
   return response.data;
 }
 

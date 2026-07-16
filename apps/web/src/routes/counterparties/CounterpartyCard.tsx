@@ -698,6 +698,7 @@ function CollectionSourcesSection({ card, canAdmin }: { card: CardData; canAdmin
                 <SelectItem value="email">Почта</SelectItem>
                 <SelectItem value="telegram">Telegram</SelectItem>
                 <SelectItem value="iiko">iiko</SelectItem>
+                <SelectItem value="sbis">СБИС (ЭДО)</SelectItem>
                 <SelectItem value="manual">Ручной ввод</SelectItem>
               </SelectContent>
             </Select>

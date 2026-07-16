@@ -165,7 +165,9 @@ async def _find_duplicate_email_invoice(
     candidates = (
         await session.scalars(
             select(SupplierInvoice).where(
-                SupplierInvoice.source == "email",
+                # 'sbis' тоже: поставщик на ЭДО может продублировать счёт письмом —
+                # почтовый intake должен схлопнуться на уже материализованный счёт.
+                SupplierInvoice.source.in_(("email", "sbis")),
                 SupplierInvoice.counterparty_id == cp_id,
                 SupplierInvoice.amount == rec.amount,
                 SupplierInvoice.payment_status != "void",

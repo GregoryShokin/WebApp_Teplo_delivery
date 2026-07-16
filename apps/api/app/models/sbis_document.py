@@ -34,6 +34,14 @@ from app.db.base import Base
 #   dismissed — оператор скрыл документ из сверки (акт сверки, дубль и т.п.)
 SBIS_MATCH_STATUSES = ("unmatched", "matched", "dismissed")
 
+# Итог маршрутизации документа (режим определяет карточка контрагента, не документ):
+#   mirror           — зеркало: контрагент без канала 'sbis' или тип не материализуемый
+#   new_counterparty — контрагент не найден/не настроен (requires_setup) — ждёт настройки,
+#                      после включения канала документы материализуются задним числом
+#   materialized     — создан счёт SupplierInvoice(source='sbis') (invoice_id)
+#   duplicate        — счёт уже существует (пришёл почтой/вручную) — invoice_id на него
+SBIS_INTAKE_STATUSES = ("mirror", "new_counterparty", "materialized", "duplicate")
+
 
 class SbisDocument(Base):
     __tablename__ = "sbis_document"
@@ -42,6 +50,8 @@ class SbisDocument(Base):
         Index("ix_sbis_document_match_status", "match_status"),
         Index("ix_sbis_document_invoice", "matched_invoice_id"),
         Index("ix_sbis_document_date", "doc_date"),
+        Index("ix_sbis_document_counterparty", "counterparty_id"),
+        Index("ix_sbis_document_intake_status", "intake_status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -75,6 +85,18 @@ class SbisDocument(Base):
     )
     # Каким правилом сматчили: number_amount / amount_date / manual.
     match_note: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # Маршрутизация (см. SBIS_INTAKE_STATUSES): контрагент по ИНН и созданный из
+    # документа счёт (или существующий, если сработал дедуп с почтой/ручным вводом).
+    counterparty_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("counterparty.id", ondelete="SET NULL"), nullable=True
+    )
+    invoice_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("supplier_invoice.id", ondelete="SET NULL"), nullable=True
+    )
+    intake_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="mirror", server_default="mirror"
+    )
 
     raw: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     first_seen_at: Mapped[datetime] = mapped_column(

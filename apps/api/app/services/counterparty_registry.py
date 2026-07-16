@@ -38,7 +38,7 @@ from app.models import (
 from app.services import supplier_service_periods as service_periods
 from app.services.banking.requisites import payee_account_error
 
-COLLECTION_SOURCE_KINDS = frozenset({"iiko", "email", "telegram", "manual"})
+COLLECTION_SOURCE_KINDS = frozenset({"iiko", "email", "telegram", "manual", "sbis"})
 RELATIONSHIP_KINDS = frozenset({"official", "informal", "barter"})
 ARCHIVED_STATUS = "archived"
 ARCHIVED_STATUSES = frozenset({ARCHIVED_STATUS, "inactive"})

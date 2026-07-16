@@ -58,6 +58,7 @@ export const COLLECTION_KIND_LABELS: Record<string, string> = {
   email: "Почта",
   telegram: "Telegram",
   manual: "Ручной ввод",
+  sbis: "СБИС (ЭДО)",
 };
 
 export const COUNTERPARTY_TYPE_LABELS: Record<string, string> = {
