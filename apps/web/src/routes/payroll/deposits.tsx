@@ -545,12 +545,15 @@ function DepositOperationDialog({
       });
     },
     onSuccess: async () => {
+      const isBankDraft = type === "payout" && !isScheduled && payoutMethod.startsWith("bank_draft");
       toast.success(
         type === "writeoff"
           ? "Депозит списан"
           : isScheduled
             ? "Выдача запланирована в ближайшей ведомости"
-            : "Депозит выдан",
+            : isBankDraft
+              ? "Черновик отправлен в банк — платёж появится в «Активных платежах»"
+              : "Депозит выдан",
       );
       setConfirmOpen(false);
       onClose();

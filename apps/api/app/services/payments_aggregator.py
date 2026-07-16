@@ -50,7 +50,9 @@ from app.models import (
     CounterpartyPayableProfile,
     CounterpartyPaymentDraft,
     DdsArticle,
+    DepositBankDraft,
     EmailInvoiceIntake,
+    Employee,
     PayrollBankDraft,
     PayrollLine,
     PayrollPayment,
@@ -369,6 +371,10 @@ async def _reserve_items(session: AsyncSession) -> list[PaymentItem]:
     art_ids = {r.article_id for r in reserves if r.article_id is not None}
     cp_names = await _counterparty_names(session, cp_ids)
     art_names = await _article_names(session, art_ids)
+    # Депозит-резервы (созданы оплатой банк-черновика выдачи депозита): их нельзя отменять/
+    # переносить — это обязательство перед сотрудником, а не свободный резерв Сейфа. Ссылка на
+    # получателя живёт в DepositBankDraft (R1: в самом резерве employee_id=None).
+    deposit_by_alloc = await _deposit_reserve_names(session)
 
     items: list[PaymentItem] = []
     for r in reserves:
@@ -388,16 +394,22 @@ async def _reserve_items(session: AsyncSession) -> list[PaymentItem]:
         # Резерв-контейнер выплаты ЗП (привязан к ведомости): «Выплата зарплаты… · сумма»,
         # клик открывает список сотрудников ведомости (kind='payroll_reserve').
         is_payroll = r.source_run_id is not None
-        if is_payroll:
+        deposit_name = deposit_by_alloc.get(r.id)
+        is_deposit = deposit_name is not None
+        extra: dict = {"location": r.location, "wallet_id": str(r.wallet_id)}
+        if is_deposit:
+            recipient = deposit_name or "получатель"
+            title = f"Выдача депозита — {recipient} · {_fmt_money(Decimal(r.amount))}"
+            kind = "deposit_reserve"
+            extra["deposit"] = True
+        elif is_payroll:
             title = f"{r.purpose or 'Выплата зарплаты'} · {_fmt_money(Decimal(r.amount))}"
             kind = "payroll_reserve"
+            extra["run_id"] = str(r.source_run_id)
+            extra["payroll"] = True
         else:
             title = cp_name or r.purpose or article_name or "Резерв Сейфа"
             kind = "kassa_reserve" if r.location == "kassa" else "safe_reserve"
-        extra: dict = {"location": r.location, "wallet_id": str(r.wallet_id)}
-        if is_payroll:
-            extra["run_id"] = str(r.source_run_id)
-            extra["payroll"] = True
         items.append(
             PaymentItem(
                 id=f"reserve:{r.id}",
@@ -419,12 +431,32 @@ async def _reserve_items(session: AsyncSession) -> list[PaymentItem]:
                 can_edit=False,
                 can_send_to_bank=False,
                 can_pay=state in ("reserved_safe", "reserved_kassa"),
-                # ЗП-резервы отменяются через дефинализацию ведомости, не из «Платежей».
-                can_cancel=(not is_payroll) and state in ("reserved_safe", "reserved_kassa"),
+                # ЗП-резервы отменяются через дефинализацию, депозит-резервы — вообще нельзя
+                # (обязательство перед сотрудником); остальные целёвки — можно.
+                can_cancel=(not is_payroll)
+                and (not is_deposit)
+                and state in ("reserved_safe", "reserved_kassa"),
                 extra=extra,
             )
         )
     return items
+
+
+async def _deposit_reserve_names(session: AsyncSession) -> dict[uuid.UUID, str | None]:
+    """Резервы Сейфа/Кассы, привязанные к банк-черновику выдачи депозита → имя получателя.
+
+    Ключ — ``safe_allocation_id`` черновика, значение — ФИО производственника (курьер — None).
+    По этому словарю ``_reserve_items`` метит депозит-резервы (kind='deposit_reserve') и
+    запрещает их отмену/перенос.
+    """
+    rows = (
+        await session.execute(
+            select(DepositBankDraft.safe_allocation_id, Employee.full_name)
+            .outerjoin(Employee, Employee.id == DepositBankDraft.employee_id)
+            .where(DepositBankDraft.safe_allocation_id.is_not(None))
+        )
+    ).all()
+    return {alloc_id: name for alloc_id, name in rows}
 
 
 async def _payroll_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
@@ -530,6 +562,68 @@ async def _payroll_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
     return items
 
 
+async def _deposit_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
+    """Банк-черновики выдачи депозита — «Отправлен в банк».
+
+    Зеркало ``_payroll_bank_draft_items``. После оплаты (``paid``) деньги транзитом уходят на
+    Сейф и представлены депозит-резервом (``kind='deposit_reserve'``) — сам оплаченный черновик
+    уходит в историю, чтобы одна выдача не висела двумя строками. Заголовок — с ФИО получателя
+    (решение владельца). ``disbursed`` (выдан сотруднику) и терминальные статусы — только история.
+    """
+    rows = (
+        await session.execute(
+            select(DepositBankDraft, Employee.full_name).outerjoin(
+                Employee, Employee.id == DepositBankDraft.employee_id
+            )
+        )
+    ).all()
+    status_map = {
+        "created": "in_bank",
+        "updated": "in_bank",
+        # Оплачен — активную строку несёт депозит-резерв (см. _reserve_items), черновик историчен.
+        "paid": "paid",
+        "disbursed": "paid",
+        "failed": "failed",
+        "deleted": "deleted",
+        "cancelled": "cancelled",
+    }
+    items: list[PaymentItem] = []
+    for draft, emp_name in rows:
+        state = status_map.get(draft.status, draft.status)
+        recipient = emp_name or ("курьер" if draft.recipient_kind == "courier" else "получатель")
+        items.append(
+            PaymentItem(
+                id=f"deposit_draft:{draft.id}",
+                source="deposit_draft",
+                kind="deposit_bank_draft",
+                ref_id=draft.id,
+                title=f"Выдача депозита — {recipient} · {_fmt_money(Decimal(draft.amount))}",
+                counterparty_id=None,
+                counterparty_name=None,
+                amount=Decimal(draft.amount),
+                amount_paid=None,
+                article_id=None,
+                article_name=None,
+                method="bank",
+                bank_channel=draft.bank_provider,
+                state=state,
+                bucket=BUCKET_BY_STATE.get(state),
+                created_at=draft.created_at,
+                can_edit=False,
+                can_send_to_bank=False,
+                can_pay=False,  # ждёт подписи/оплаты в банке; после оплаты платят резерв
+                can_cancel=False,
+                extra={
+                    "deposit": True,
+                    "recipient_kind": draft.recipient_kind,
+                    "employee_id": str(draft.employee_id) if draft.employee_id else None,
+                    "last_error": draft.last_error,
+                },
+            )
+        )
+    return items
+
+
 # --- публичный API -------------------------------------------------------------
 
 
@@ -543,7 +637,8 @@ async def list_payments(session: AsyncSession, *, scope: str = "active") -> list
     drafts = await _draft_items(session)
     reserves = await _reserve_items(session)
     payroll_drafts = await _payroll_bank_draft_items(session)
-    items = invoices + drafts + reserves + payroll_drafts
+    deposit_drafts = await _deposit_bank_draft_items(session)
+    items = invoices + drafts + reserves + payroll_drafts + deposit_drafts
 
     if scope == "active":
         items = [i for i in items if i.state in _ACTIVE_STATES]

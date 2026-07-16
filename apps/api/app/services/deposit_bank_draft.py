@@ -28,11 +28,12 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -46,6 +47,8 @@ from app.models import (
     SafeAllocation,
     Wallet,
 )
+from app.services import deposit_service
+from app.services.bank_payment_status import classify_payment_status
 from app.services.banking import BankClient
 from app.services.banking.exceptions import BankFetchError
 from app.services.banking.ip_card_requisites import (
@@ -53,7 +56,6 @@ from app.services.banking.ip_card_requisites import (
 )
 from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.tbank import build_payment_draft_api_payload
-from app.services.bank_payment_status import classify_payment_status
 from app.services.wallets import (
     DDS_ARTICLE_TRANSFER_IN_CODE,
     DDS_ARTICLE_TRANSFER_OUT_CODE,
@@ -480,3 +482,117 @@ async def _draft_recipient_name(session: AsyncSession, draft: DepositBankDraft) 
 def _draft_reserve_purpose(recipient_name: str | None) -> str:
     base = "Выдача депозита"
     return f"{base} — {recipient_name}" if recipient_name else base
+
+
+# --- гард «в пути» + фактическая выдача резерва (этапы 2–3) -------------------
+
+# Статусы черновика, при которых деньги ещё «в пути» — заняты под выдачу этому сотруднику,
+# хотя депозит-счёт ещё не списан (created/updated — в банке, paid — резервом на Сейфе).
+IN_FLIGHT_DRAFT_STATUSES = ("created", "updated", "paid")
+
+
+async def deposit_in_flight_amount(
+    session: AsyncSession, employee_id: uuid.UUID
+) -> Decimal:
+    """Σ сумм активных банк-черновиков выдачи депозита сотрудника (created/updated/paid).
+
+    Пока черновик висит, депозит-счёт не списан — но эти деньги уже заняты под выдачу.
+    Гард роута вычитает это из баланса: нельзя выписать новый черновик или выдать наличными
+    сверх свободного остатка (balance − in_flight), иначе одна сумма уйдёт дважды (R2/R3).
+    """
+    total = await session.scalar(
+        select(func.coalesce(func.sum(DepositBankDraft.amount), 0)).where(
+            DepositBankDraft.employee_id == employee_id,
+            DepositBankDraft.status.in_(IN_FLIGHT_DRAFT_STATUSES),
+        )
+    )
+    return _money(total)
+
+
+async def allocation_deposit_draft(
+    session: AsyncSession, allocation_id: uuid.UUID
+) -> DepositBankDraft | None:
+    """Депозитный черновик, привязанный к резерву Сейфа (такому запрещены отмена/перенос)."""
+    return await session.scalar(
+        select(DepositBankDraft).where(DepositBankDraft.safe_allocation_id == allocation_id)
+    )
+
+
+@dataclass(frozen=True)
+class DepositDisbursement:
+    """Факт состоявшейся выдачи депозита (резерв оплачен) — для пост-commit шагов (iiko)."""
+
+    draft_id: uuid.UUID
+    recipient_kind: str
+    employee_id: uuid.UUID | None
+    courier_deposit_transaction_id: int | None
+    amount: Decimal
+
+
+async def sync_deposit_after_allocation_change(
+    session: AsyncSession, *, allocation_id: uuid.UUID, now: datetime | None = None
+) -> DepositDisbursement | None:
+    """Свести депозитный черновик со статусом его резерва Сейфа/Кассы.
+
+    Оплата резерва («Выплатить депозит» с Сейфа или «Выдать» из кассы) = фактическая выдача
+    денег сотруднику. ТОЛЬКО здесь списывается депозит-счёт и пишется ``DepositTransaction``
+    типа ``payout`` — раньше, пока черновик висел, депозит был цел (решение владельца). Отмена
+    резерва (гард этапа 3 её блокирует, но на всякий) → черновик ``cancelled``, депозит цел.
+
+    Зеркало ``sync_advance_after_allocation_change``, но у депозита транзакции-леджера до выдачи
+    НЕ было — она создаётся здесь. Возвращает ``DepositDisbursement``, если выдача состоялась
+    (вызывающий проводит iiko-изъятие ПОСЛЕ commit для кассового пути); иначе None. Идемпотентно:
+    повторный вызов на ``disbursed`` — no-op (переход только из paid).
+    """
+    now = now or datetime.now(UTC)
+    draft = await session.scalar(
+        select(DepositBankDraft)
+        .where(DepositBankDraft.safe_allocation_id == allocation_id)
+        .with_for_update()
+    )
+    if draft is None:
+        return None
+    allocation = await session.get(SafeAllocation, allocation_id)
+    if allocation is None:
+        return None
+
+    if allocation.status == "paid" and draft.status == "paid":
+        if draft.recipient_kind == "production" and draft.employee_id is not None:
+            # Депозит-леджер: OUT-проводка выдачи + списание баланса на ту же сумму
+            # (расход в ДДС уже провёл pay_allocation/pay_kassa_target по статье выдачи).
+            transaction = deposit_service.add_transaction(
+                session,
+                employee_id=draft.employee_id,
+                transaction_type="payout",
+                amount=draft.amount,
+                now=now,
+            )
+            await session.flush()
+            draft.deposit_transaction_id = transaction.id
+            account = await deposit_service.get_deposit_account(
+                session, draft.employee_id, for_update=True
+            )
+            if account is not None:
+                account.balance = _money(account.balance) - draft.amount
+                account.last_updated = now
+        elif draft.recipient_kind == "courier":
+            # Курьерский леджер (своя таблица) пока не подключён к полному циклу — курьерский
+            # возврат идёт старым путём и черновиков не создаёт, поэтому сюда не попадает.
+            logger.warning(
+                "Депозитный черновик %s курьерский — выдача через резерв ещё не поддержана",
+                draft.id,
+            )
+            return None
+        draft.status = "disbursed"
+        draft.synced_at = now
+        return DepositDisbursement(
+            draft_id=draft.id,
+            recipient_kind=draft.recipient_kind,
+            employee_id=draft.employee_id,
+            courier_deposit_transaction_id=draft.courier_deposit_transaction_id,
+            amount=draft.amount,
+        )
+    if allocation.status == "cancelled" and draft.status in ("created", "updated", "paid"):
+        draft.status = "cancelled"
+        draft.synced_at = now
+    return None

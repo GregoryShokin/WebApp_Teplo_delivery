@@ -24,12 +24,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.db.session import get_session
-from app.models import CounterpartyPaymentDraft, PayrollBankDraft, SalaryAdvanceBankDraft
+from app.models import (
+    CounterpartyPaymentDraft,
+    DepositBankDraft,
+    PayrollBankDraft,
+    SalaryAdvanceBankDraft,
+)
 from app.services.bank_payment_status import apply_payment_status
 from app.services.banking.base import clean_digits
 from app.services.banking.tbank import is_tbank_operation_hold, normalize_tbank_statement_row
 from app.services.couriers.cloud_shift_ingest import ingest_cloud_shift_event
 from app.services.couriers.shift_matching import recalculate_matches
+from app.services.deposit_bank_draft import apply_deposit_draft_status
 from app.services.payroll_advance_service import apply_advance_draft_status
 from app.services.payroll_payouts import apply_payroll_draft_status
 
@@ -252,6 +258,18 @@ async def tbank_payment_status(
     if advance_draft is not None:
         new_status = await apply_advance_draft_status(
             session, draft=advance_draft, raw_status=raw_status
+        )
+        return {"ok": True, "matched": True, "draft_status": new_status}
+
+    # Банк-выдача депозита (полный цикл): при «исполнен» — транзит р/с→Сейф + резерв Сейфа
+    # (депозит-счёт спишется лишь при фактической выдаче резерва). Единственный путь довести
+    # депозитный черновик до paid у Т-Банка (у Сбера — поллинг).
+    deposit_draft = await session.scalar(
+        select(DepositBankDraft).where(DepositBankDraft.provider_ref == payment_id)
+    )
+    if deposit_draft is not None:
+        new_status = await apply_deposit_draft_status(
+            session, draft=deposit_draft, raw_status=raw_status
         )
         return {"ok": True, "matched": True, "draft_status": new_status}
 

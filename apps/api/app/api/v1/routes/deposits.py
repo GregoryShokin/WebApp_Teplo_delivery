@@ -8,6 +8,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -22,9 +23,13 @@ from app.db.session import get_session
 from app.models import DepositAccount, DepositTransaction, Employee, PayrollPeriod
 from app.schemas.payroll import PayrollPeriodRead
 from app.services import deposit_schedule, deposit_service
-from app.services.deposit_bank_draft import send_deposit_payout_bank_draft
-from app.services.deposit_payout import execute_deposit_payout
+from app.services.banking.payout import channel_provider
+from app.services.deposit_bank_draft import (
+    create_deposit_payout_draft,
+    deposit_in_flight_amount,
+)
 from app.services.deposit_iiko_payout_production import post_production_deposit_payout_to_iiko
+from app.services.deposit_payout import execute_deposit_payout
 from app.services.payroll_calculator import (
     category_deposit_target,
     decimal,
@@ -144,10 +149,20 @@ class DepositInitialBalanceRequest(BaseModel):
     amount: Decimal = Field(ge=0)
 
 
+class DepositBankDraftRead(BaseModel):
+    id: uuid.UUID
+    status: str
+    bank_provider: str
+    amount: str
+
+
 class DepositOperationRead(BaseModel):
     employee_id: uuid.UUID
     balance: str
-    transaction: DepositTransactionRead
+    # Наличная выдача возвращает проведённую транзакцию; банк-канал — только заведённый
+    # черновик (депозит ещё не списан), transaction=None.
+    transaction: DepositTransactionRead | None = None
+    draft: DepositBankDraftRead | None = None
 
 
 @router.get("", response_model=list[DepositEmployeeRead], dependencies=DEPOSITS_READ_ACCESS)
@@ -289,17 +304,83 @@ async def payout_deposit(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Сумма выплаты должна быть больше 0",
         )
-    if amount > balance:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Сумма выплаты больше текущего баланса",
+    # Гард «в пути»: депозит-счёт не списывается, пока висит банк-черновик, поэтому доступный
+    # остаток = баланс − уже занятые под выдачу черновики (created/updated/paid). Иначе клик
+    # «выдать ещё раз» (нал или банк) увёл бы одну сумму дважды (R2/R3).
+    in_flight = await deposit_in_flight_amount(session, employee_id)
+    available = balance - in_flight
+    if amount > available:
+        free = deposit_service.decimal_string(available)
+        detail = f"Сумма выплаты больше свободного остатка: {free} ₽"
+        if in_flight > 0:
+            detail += f" (в банке уже {deposit_service.decimal_string(in_flight)} ₽)"
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+    provider = channel_provider(payload.payout_method)
+    if provider is not None:
+        # БАНК-КАНАЛ: только заводим черновик. Депозит-счёт НЕ списываем и ДДС НЕ двигаем —
+        # деньги двинутся после оплаты черновика (транзит+резерв) и фактической выдачи.
+        if account is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Депозит-счёт не найден"
+            )
+        before = deposit_service.deposit_account_snapshot(account)
+        try:
+            draft = await create_deposit_payout_draft(
+                session,
+                recipient_kind="production",
+                amount=amount,
+                purpose=f"Выдача депозита {employee.full_name} (через Сейф)",
+                provider=provider,
+                employee_id=employee_id,
+            )
+        except IntegrityError:
+            # Уникум «один активный черновик на сотрудника» — гонка двойного клика.
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="У сотрудника уже есть активный банк-черновик выдачи депозита",
+            ) from None
+        after = deposit_service.deposit_account_snapshot(account) | {
+            "bank_draft": {
+                "id": str(draft.id),
+                "status": draft.status,
+                "provider": draft.bank_provider,
+                "amount": deposit_service.decimal_string(amount),
+            },
+            "comment": payload.comment,
+        }
+        await deposit_service.add_deposit_action(
+            session,
+            action_type="deposit_payout_bank_draft",
+            target_table="deposit_account",
+            target_id=account.id,
+            employee_id=employee_id,
+            before=before,
+            after=after,
+            now=now,
+            actor=actor,
+            comment=payload.comment,
         )
+        await session.commit()
+        await session.refresh(account)
+        return {
+            "employee_id": employee_id,
+            "balance": deposit_service.decimal_string(account.balance),
+            "transaction": None,
+            "draft": {
+                "id": draft.id,
+                "status": draft.status,
+                "bank_provider": draft.bank_provider,
+                "amount": deposit_service.decimal_string(amount),
+            },
+        }
+
+    # НАЛИЧНЫЙ КАНАЛ (cash_tk / cash_safe): списываем и книжим расход сразу.
     before = deposit_service.deposit_account_snapshot(account)
     account = deposit_service.ensure_account(session, employee_id, account, now)
     account.balance = balance - amount
     account.last_updated = now
-    # Леджер + расход в ДДС + транзит банк→Сейф — общий контур с выдачей при увольнении.
-    # Черновик в банк уходит после commit (см. ниже): БД — источник истины.
     payout = await execute_deposit_payout(
         session,
         employee_id=employee_id,
@@ -312,7 +393,6 @@ async def payout_deposit(
     )
     transaction = payout.transaction
     payout_wallet = payout.payout_wallet
-    bank_provider = payout.bank_provider
     after = deposit_service.deposit_account_snapshot(account) | {
         "transaction": deposit_service.transaction_payload(transaction),
         "comment": payload.comment,
@@ -336,15 +416,6 @@ async def payout_deposit(
     if payout_wallet is not None and payout_wallet.code == "tk_chernikova":
         post_production_deposit_payout_to_iiko(
             amount=amount, payout_date=now.date(), source_id=transaction.id
-        )
-    # Банк-черновик на Сейф (Шокину) — после commit, ошибка банка не валит выдачу.
-    if bank_provider is not None:
-        await send_deposit_payout_bank_draft(
-            session,
-            document_id=f"teplo-deposit-{transaction.id}",
-            amount=amount,
-            purpose=f"Выдача депозита {employee.full_name} (через Сейф)",
-            provider=bank_provider,
         )
     return _operation_payload(account, transaction)
 

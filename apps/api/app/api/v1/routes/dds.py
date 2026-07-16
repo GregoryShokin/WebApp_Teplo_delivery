@@ -133,6 +133,10 @@ from app.services.counterparty_payments import (
     create_bank_safe_topup_draft,
     create_expense_payment_draft,
 )
+from app.services.deposit_bank_draft import (
+    allocation_deposit_draft,
+    sync_deposit_after_allocation_change,
+)
 from app.services.kassa.payouts import (
     KassaPayoutError,
     ensure_article_kassa_eligible,
@@ -2117,6 +2121,16 @@ async def pay_safe_allocation(
             status_code=status.HTTP_409_CONFLICT,
             detail="Целёвка передана в кассу — выдача только из модуля «Касса»",
         )
+    # Депозит-резерв (обязательство перед сотрудником) выплачивается ТОЛЬКО целиком: частичная
+    # выплата разъехала бы депозит-леджер (списываем всю сумму черновика) с ДДС (частичный расход).
+    deposit_draft = await allocation_deposit_draft(session, allocation.id)
+    if deposit_draft is not None:
+        outstanding = Decimal(str(allocation.amount)) - Decimal(str(allocation.amount_paid))
+        if Decimal(str(payload.amount)) < outstanding - Decimal("0.01"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Депозит-резерв выплачивается только целиком (частичная выплата запрещена)",
+            )
     try:
         await pay_allocation(
             session,
@@ -2130,6 +2144,9 @@ async def pay_safe_allocation(
     disbursed_advance = await sync_advance_after_allocation_change(
         session, allocation_id=allocation.id
     )
+    # Если резерв — это банк-выдача депозита, полная оплата = фактическая выдача: списывается
+    # депозит-счёт, пишется DepositTransaction('payout'), черновик → disbursed.
+    await sync_deposit_after_allocation_change(session, allocation_id=allocation.id)
     await session.commit()
     await session.refresh(allocation)
     # Выдача состоялась через оплату резерва (не кнопкой «Выплачено») → изъятие в iiko
@@ -2161,6 +2178,14 @@ async def cancel_safe_allocation(
     allocation = await session.get(SafeAllocation, allocation_id, with_for_update=True)
     if allocation is None:
         raise HTTPException(status_code=404, detail="Резерв не найден")
+    # Депозит-резерв отменять нельзя: это обязательство перед сотрудником (деньги уже пришли
+    # транзитом на Сейф). «Списать остаток» убило бы выдачу без следа — R5. Выдаётся только целиком.
+    if await allocation_deposit_draft(session, allocation.id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Депозит-резерв нельзя списать — это выдача депозита сотруднику, "
+            "она проводится только целиком кнопкой «Выплатить депозит»",
+        )
     try:
         await cancel_allocation(session, allocation)
     except ValueError as error:
@@ -2199,6 +2224,14 @@ async def transfer_safe_allocation_to_kassa(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Этот резерв привязан к банковской выдаче аванса/займа — "
+            "он выдаётся оплатой с Сейфа, передача в кассу недоступна",
+        )
+    # Депозит-резерв банк-выдачи тоже привязан к Сейфу — деньги пришли транзитом на Сейф,
+    # выдаётся оплатой с Сейфа, передача в кассу недоступна.
+    if await allocation_deposit_draft(session, allocation.id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Этот резерв привязан к банковской выдаче депозита — "
             "он выдаётся оплатой с Сейфа, передача в кассу недоступна",
         )
     try:
@@ -2241,6 +2274,12 @@ async def move_safe_allocation(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Этот резерв привязан к банковской выдаче аванса/займа — перемещение недоступно",
+        )
+    # Депозит-резерв банк-выдачи перемещать нельзя по той же причине.
+    if await allocation_deposit_draft(session, allocation.id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Этот резерв привязан к банковской выдаче депозита — перемещение недоступно",
         )
     try:
         await move_allocation_location(

@@ -269,7 +269,11 @@ export function ActivePaymentsModal({
     if (row.can_pay) {
       return (
         <Button size="sm" variant="outline" className="h-8" onClick={() => setPayRow(row)}>
-          {row.bucket === "reserved_kassa" ? "Выдать" : "Выплатить"}
+          {row.kind === "deposit_reserve"
+            ? "Выплатить депозит"
+            : row.bucket === "reserved_kassa"
+              ? "Выдать"
+              : "Выплатить"}
         </Button>
       );
     }
@@ -520,6 +524,9 @@ function PayReserveDialog({
   const paid = row?.amount_paid ?? 0;
   const remaining = row ? row.amount - paid : 0;
   const isKassa = row?.bucket === "reserved_kassa";
+  // Депозит-резерв — обязательство перед сотрудником: выдаётся ТОЛЬКО целиком, отмена/перенос
+  // запрещены (иначе выдача исчезнет без следа / депозит разъедется с ДДС). См. R1/R5.
+  const isDeposit = row?.kind === "deposit_reserve";
   const where = isKassa ? "в кассе" : "на Сейфе";
 
   useEffect(() => {
@@ -529,7 +536,7 @@ function PayReserveDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row?.id]);
 
-  const value = Number(amount.replace(",", ".").replace(/\s/g, ""));
+  const value = isDeposit ? remaining : Number(amount.replace(",", ".").replace(/\s/g, ""));
   const valid = value > 0 && value <= remaining + 0.01;
 
   async function submit() {
@@ -540,7 +547,7 @@ function PayReserveDialog({
         ? `/kassa/targets/${row.ref_id}/payout`
         : `/dds/allocations/${row.ref_id}/pay`;
       await api.post(url, { amount: value });
-      toast.success(isKassa ? "Выдано из кассы" : "Выплачено с Сейфа");
+      toast.success(isDeposit ? "Депозит выдан" : isKassa ? "Выдано из кассы" : "Выплачено с Сейфа");
       await onPaid();
       onOpenChange(false);
     } catch (error) {
@@ -590,7 +597,9 @@ function PayReserveDialog({
     <Dialog open={row !== null} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{isKassa ? "Выдать из кассы" : "Выплатить с Сейфа"}</DialogTitle>
+          <DialogTitle>
+            {isDeposit ? "Выплатить депозит" : isKassa ? "Выдать из кассы" : "Выплатить с Сейфа"}
+          </DialogTitle>
           <DialogDescription>
             {row?.title}
             {row?.article_name ? ` · ${row.article_name}` : ""}
@@ -613,93 +622,107 @@ function PayReserveDialog({
             <span className="font-medium tabular-nums">{money.format(remaining)}</span>
           </div>
 
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium" htmlFor="pay-amount">
-                Сумма выплаты
-              </label>
-              <button
-                type="button"
-                className="text-xs text-primary hover:underline"
-                onClick={() => setAmount(String(remaining))}
-              >
-                Весь остаток
-              </button>
-            </div>
-            <Input
-              id="pay-amount"
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="tabular-nums"
-            />
-            {amount && !valid ? (
-              <p className="text-xs text-rose-600">
-                Сумма должна быть больше 0 и не больше остатка {money.format(remaining)}.
-              </p>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-2 rounded-md border p-3">
-          <span className="text-xs text-muted-foreground">
-            {isKassa ? "Вернуть резерв на карту Сейф" : "Передать резерв в кассу для выдачи"}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 shrink-0"
-            onClick={move}
-            disabled={busy}
-          >
-            {moving ? (
-              <Loader2 className="animate-spin" size={14} />
-            ) : (
-              <>
-                <ArrowLeftRight size={14} className="mr-1.5" />
-                {isKassa ? "Вернуть на Сейф" : "Передать в Кассу"}
-              </>
-            )}
-          </Button>
-        </div>
-
-        <div className="rounded-md border border-dashed p-3">
-          {confirmWriteOff ? (
-            <div className="space-y-2">
-              <p className="text-sm">
-                Списать остаток {money.format(remaining)}? Резерв снимется, деньги останутся
-                свободными {where} — платёж не проводится.
-              </p>
-              <div className="flex gap-2">
-                <Button size="sm" variant="destructive" onClick={writeOff} disabled={writingOff}>
-                  {writingOff ? <Loader2 className="mr-1.5 animate-spin" size={14} /> : null}
-                  Списать {money.format(remaining)}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setConfirmWriteOff(false)}
-                  disabled={writingOff}
-                >
-                  Отмена
-                </Button>
-              </div>
-            </div>
+          {isDeposit ? (
+            // Депозит-резерв: сумма фиксирована (только целиком), ввода нет — это выдача
+            // конкретному сотруднику, дробить нельзя (депозит разъедется с ДДС).
+            <p className="px-3 text-xs text-muted-foreground">
+              Выдаётся полностью, одной суммой — депозит сотрудника нельзя выдавать частями.
+            </p>
           ) : (
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-muted-foreground">
-                Не платить — снять резерв, освободить остаток.
-              </span>
-              <button
-                type="button"
-                className="shrink-0 text-sm font-medium text-rose-600 hover:underline"
-                onClick={() => setConfirmWriteOff(true)}
-              >
-                Списать остаток
-              </button>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium" htmlFor="pay-amount">
+                  Сумма выплаты
+                </label>
+                <button
+                  type="button"
+                  className="text-xs text-primary hover:underline"
+                  onClick={() => setAmount(String(remaining))}
+                >
+                  Весь остаток
+                </button>
+              </div>
+              <Input
+                id="pay-amount"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="tabular-nums"
+              />
+              {amount && !valid ? (
+                <p className="text-xs text-rose-600">
+                  Сумма должна быть больше 0 и не больше остатка {money.format(remaining)}.
+                </p>
+              ) : null}
             </div>
           )}
         </div>
+
+        {/* Перенос между Сейфом и Кассой и «Списать остаток» — только для обычных целёвок.
+            Депозит-резерв это обязательство перед сотрудником: снять/перенести его нельзя. */}
+        {isDeposit ? null : (
+          <div className="flex items-center justify-between gap-2 rounded-md border p-3">
+            <span className="text-xs text-muted-foreground">
+              {isKassa ? "Вернуть резерв на карту Сейф" : "Передать резерв в кассу для выдачи"}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 shrink-0"
+              onClick={move}
+              disabled={busy}
+            >
+              {moving ? (
+                <Loader2 className="animate-spin" size={14} />
+              ) : (
+                <>
+                  <ArrowLeftRight size={14} className="mr-1.5" />
+                  {isKassa ? "Вернуть на Сейф" : "Передать в Кассу"}
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
+        {isDeposit ? null : (
+          <div className="rounded-md border border-dashed p-3">
+            {confirmWriteOff ? (
+              <div className="space-y-2">
+                <p className="text-sm">
+                  Списать остаток {money.format(remaining)}? Резерв снимется, деньги останутся
+                  свободными {where} — платёж не проводится.
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="destructive" onClick={writeOff} disabled={writingOff}>
+                    {writingOff ? <Loader2 className="mr-1.5 animate-spin" size={14} /> : null}
+                    Списать {money.format(remaining)}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setConfirmWriteOff(false)}
+                    disabled={writingOff}
+                  >
+                    Отмена
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground">
+                  Не платить — снять резерв, освободить остаток.
+                </span>
+                <button
+                  type="button"
+                  className="shrink-0 text-sm font-medium text-rose-600 hover:underline"
+                  onClick={() => setConfirmWriteOff(true)}
+                >
+                  Списать остаток
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
