@@ -85,11 +85,8 @@ from app.services import employee_change_events as employee_change_event_service
 from app.services import employee_effective_events as employee_effective_event_service
 from app.services.accumulation_fund_service import forfeit_active_fund_on_dismiss
 from app.services.banking.payout import channel_provider
-from app.services.deposit_bank_draft import (
-    PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
-    book_deposit_bank_to_safe_transfer,
-    send_deposit_payout_bank_draft,
-)
+from app.services.deposit_bank_draft import send_deposit_payout_bank_draft
+from app.services.deposit_payout import execute_deposit_payout
 from app.services.deposit_iiko_payout_production import post_production_deposit_payout_to_iiko
 from app.services.employee_status import (
     COOKING_STATIONS,
@@ -3960,40 +3957,26 @@ async def _apply_dismiss_deposit_decision(
     )
     schedule_id: uuid.UUID | None = None
     if decision.payout_amount > 0 and decision.payout_target == DepositPayoutTarget.ACCOUNT:
-        payout_tx = deposit_service.add_transaction(
+        # Реальная выдача денег — общий контур с обычной выдачей депозита: леджер +
+        # расход в ДДС + транзит банк→Сейф. Тип операции — dismissal_payout.
+        method = decision.payout_method or DepositPayoutMethod.CASH_TK
+        payout = await execute_deposit_payout(
             session,
             employee_id=employee_id,
-            transaction_type="dismissal_payout",
+            employee_full_name=employee_full_name,
             amount=decision.payout_amount,
-            now=now,
-        )
-        transactions.append(payout_tx)
-        # Реальная выдача денег — тот же контур, что и обычная выдача депозита:
-        # расход с выбранного счёта (для банк-черновика — с Сейфа + транзит банк→Сейф).
-        method = decision.payout_method or DepositPayoutMethod.CASH_TK
-        payout_wallet = await deposit_service.book_production_deposit_payout_cashflow(
-            session,
-            transaction=payout_tx,
             payout_method=method.value,
-            transaction_date=now.date(),
+            transaction_type="dismissal_payout",
+            now=now,
             comment=comment,
         )
-        transit_provider = channel_provider(method.value)
-        if transit_provider is not None:
-            await book_deposit_bank_to_safe_transfer(
-                session,
-                source_kind=PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
-                source_id=payout_tx.id,
-                amount=decision.payout_amount,
-                operation_date=now.date(),
-                purpose=f"Выдача депозита {employee_full_name} (через Сейф)",
-                provider=transit_provider,
-            )
+        payout_tx = payout.transaction
+        transactions.append(payout_tx)
         payout_effect = DismissDepositPayoutEffect(
             transaction_id=payout_tx.id,
             amount=decision.payout_amount,
             method=method,
-            wallet_code=payout_wallet.code if payout_wallet is not None else None,
+            wallet_code=payout.payout_wallet.code if payout.payout_wallet is not None else None,
         )
     elif via_payroll:
         # Выдача через зарплатную ведомость: деньги сейчас не двигаем — планируем выдачу в

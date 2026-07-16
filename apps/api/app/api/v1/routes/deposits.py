@@ -22,12 +22,8 @@ from app.db.session import get_session
 from app.models import DepositAccount, DepositTransaction, Employee, PayrollPeriod
 from app.schemas.payroll import PayrollPeriodRead
 from app.services import deposit_schedule, deposit_service
-from app.services.banking.payout import channel_provider
-from app.services.deposit_bank_draft import (
-    PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
-    book_deposit_bank_to_safe_transfer,
-    send_deposit_payout_bank_draft,
-)
+from app.services.deposit_bank_draft import send_deposit_payout_bank_draft
+from app.services.deposit_payout import execute_deposit_payout
 from app.services.deposit_iiko_payout_production import post_production_deposit_payout_to_iiko
 from app.services.payroll_calculator import (
     category_deposit_target,
@@ -302,35 +298,21 @@ async def payout_deposit(
     account = deposit_service.ensure_account(session, employee_id, account, now)
     account.balance = balance - amount
     account.last_updated = now
-    transaction = deposit_service.add_transaction(
+    # Леджер + расход в ДДС + транзит банк→Сейф — общий контур с выдачей при увольнении.
+    # Черновик в банк уходит после commit (см. ниже): БД — источник истины.
+    payout = await execute_deposit_payout(
         session,
         employee_id=employee_id,
-        transaction_type="payout",
+        employee_full_name=employee.full_name,
         amount=amount,
-        now=now,
-    )
-    # Реальная выдача денег → проводка ДДС (расход с выбранного счёта; для
-    # банк-черновика — с Сейфа).
-    payout_wallet = await deposit_service.book_production_deposit_payout_cashflow(
-        session,
-        transaction=transaction,
         payout_method=payload.payout_method,
-        transaction_date=now.date(),
+        transaction_type="payout",
+        now=now,
         comment=payload.comment,
     )
-    # Банк-черновик (Т-Банк / Сбер): транзит банк→Сейф (расход выше списан с Сейфа), сам
-    # черновик — после commit. Провайдер берётся из выбранного канала.
-    bank_provider = channel_provider(payload.payout_method)
-    if bank_provider is not None:
-        await book_deposit_bank_to_safe_transfer(
-            session,
-            source_kind=PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
-            source_id=transaction.id,
-            amount=amount,
-            operation_date=now.date(),
-            purpose=f"Выдача депозита {employee.full_name} (через Сейф)",
-            provider=bank_provider,
-        )
+    transaction = payout.transaction
+    payout_wallet = payout.payout_wallet
+    bank_provider = payout.bank_provider
     after = deposit_service.deposit_account_snapshot(account) | {
         "transaction": deposit_service.transaction_payload(transaction),
         "comment": payload.comment,

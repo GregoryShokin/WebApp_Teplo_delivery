@@ -2991,12 +2991,16 @@ def _patch_dismiss_money_flow(monkeypatch: pytest.MonkeyPatch) -> dict[str, list
     def fake_iiko(*, amount: Decimal, payout_date: Any, source_id: Any) -> None:
         calls["iiko"].append(amount)
 
+    # Общий контур выдачи переехал в deposit_payout — там теперь и вызовы cashflow/транзита,
+    # поэтому патчим по месту нового вызова (send_draft остаётся на роуте увольнения).
+    from app.services import deposit_payout as deposit_payout_service
+
     monkeypatch.setattr(
-        employee_routes.deposit_service,
+        deposit_payout_service.deposit_service,
         "book_production_deposit_payout_cashflow",
         fake_cashflow,
     )
-    monkeypatch.setattr(employee_routes, "book_deposit_bank_to_safe_transfer", fake_transfer)
+    monkeypatch.setattr(deposit_payout_service, "book_deposit_bank_to_safe_transfer", fake_transfer)
     monkeypatch.setattr(employee_routes, "send_deposit_payout_bank_draft", fake_draft)
     monkeypatch.setattr(employee_routes, "post_production_deposit_payout_to_iiko", fake_iiko)
     return calls
