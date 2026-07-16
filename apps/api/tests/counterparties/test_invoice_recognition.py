@@ -301,3 +301,67 @@ def test_docsinbox_act_referencing_invoice_stays_act():
     # Заголовок «Акт …» определяет тип РАНЬШЕ маркера «счёт-оферта» в теле основания.
     assert rec.document_kind == "act"
     assert rec.is_payment_invoice is False
+
+
+# --- Слияние det+LLM: спорность периода снимается, если LLM дал один период ------------------
+
+
+def _fake_settings():
+    from types import SimpleNamespace
+
+    return SimpleNamespace(anthropic_api_key="k", invoice_recognition_min_confidence=0.7)
+
+
+async def test_ambiguous_reset_when_llm_resolves_single_period(monkeypatch):
+    """Det нашёл >1 период (спорно, дат нет); LLM дал один — спорность снимаем."""
+    from app.services import invoice_recognition as ir
+
+    det = ir.RecognizedInvoice()
+    det.service_period_ambiguous = True
+    det.notes = ["обнаружено несколько периодов оказания услуг — требуется ручной разбор"]
+
+    llm = ir.RecognizedInvoice()
+    llm.service_period_start = date(2026, 6, 1)
+    llm.service_period_end = date(2026, 6, 30)
+    llm.service_period_candidates = [(date(2026, 6, 1), date(2026, 6, 30))]
+    llm.confidence = 0.9
+
+    monkeypatch.setattr(ir, "extract_pdf_text", lambda pdf: "счёт с текстом")
+    monkeypatch.setattr(ir, "deterministic_recognize", lambda text, context_text=None: det)
+
+    async def _fake_llm(pdf, *, settings):
+        return llm
+
+    monkeypatch.setattr(ir, "llm_recognize", _fake_llm)
+
+    result = await ir.recognize(b"pdf", settings=_fake_settings())
+    assert result.service_period_ambiguous is False
+    assert result.service_period_start == date(2026, 6, 1)
+    assert not any("несколько периодов" in n for n in result.notes)
+
+
+async def test_ambiguous_kept_when_llm_also_multiple(monkeypatch):
+    """Если и LLM видит несколько кандидатов — спорность сохраняем, счёт идёт оператору."""
+    from app.services import invoice_recognition as ir
+
+    det = ir.RecognizedInvoice()
+    det.service_period_ambiguous = True
+
+    llm = ir.RecognizedInvoice()
+    llm.service_period_start = date(2026, 6, 1)
+    llm.service_period_end = date(2026, 6, 30)
+    llm.service_period_candidates = [
+        (date(2026, 6, 1), date(2026, 6, 30)),
+        (date(2026, 5, 1), date(2026, 5, 31)),
+    ]
+
+    monkeypatch.setattr(ir, "extract_pdf_text", lambda pdf: "счёт с текстом")
+    monkeypatch.setattr(ir, "deterministic_recognize", lambda text, context_text=None: det)
+
+    async def _fake_llm(pdf, *, settings):
+        return llm
+
+    monkeypatch.setattr(ir, "llm_recognize", _fake_llm)
+
+    result = await ir.recognize(b"pdf", settings=_fake_settings())
+    assert result.service_period_ambiguous is True

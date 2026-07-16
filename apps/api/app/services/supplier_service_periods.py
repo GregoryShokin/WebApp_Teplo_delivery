@@ -10,6 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,10 @@ from app.models import (
     SupplierInvoice,
     SupplierServicePeriodChange,
 )
+
+# Признание идёт по московской дате: джоба запускается в 00:05 МСК, а UTC-дата в этот
+# момент ещё вчерашняя — по ней расход признавался бы на сутки позже срока.
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 
 class ServicePeriodError(ValueError):
@@ -78,8 +83,11 @@ async def sync_invoice_accrual(
         existing.counterparty_id = invoice.counterparty_id
         existing.payment_draft_id = invoice.draft_id
         existing.article_id = invoice.dds_article_id
-        existing.amount = invoice.amount
+        # Сумму и период признанного расхода не двигаем молча: он уже в P&L закрытого
+        # месяца. Привязки (контрагент/черновик/статья) обновлять безопасно — они не
+        # меняют величину расхода. Корректировка признанной суммы — только осознанно.
         if existing.status != "recognized":
+            existing.amount = invoice.amount
             existing.service_period_start = start
             existing.service_period_end = end
     await session.flush()
@@ -119,8 +127,9 @@ async def sync_expense_line_accrual(
         existing.counterparty_id = line.counterparty_id
         existing.payment_draft_id = line.draft_id
         existing.article_id = line.article_id
-        existing.amount = line.amount
+        # Признанный расход не двигаем молча (см. sync_invoice_accrual).
         if existing.status != "recognized":
+            existing.amount = line.amount
             existing.service_period_start = start
             existing.service_period_end = end
     await session.flush()
@@ -135,7 +144,7 @@ async def recognize_due_expenses(
     ``service_period_end < as_of`` намеренно строго: весь последний день услуга ещё
     оказывается, признание выполняется первым запуском следующего дня.
     """
-    cutoff = as_of or datetime.now(UTC).date()
+    cutoff = as_of or datetime.now(MOSCOW_TZ).date()
     rows = list(
         (
             await session.scalars(
@@ -254,6 +263,27 @@ async def set_invoice_service_period(
     await session.commit()
     if accrual is not None:
         await session.refresh(accrual)
+    return accrual
+
+
+async def cancel_invoice_accrual(
+    session: AsyncSession, invoice_id: uuid.UUID
+) -> SupplierExpenseAccrual | None:
+    """Отменить начисление аннулированной накладной. Не коммитит.
+
+    Начисление рождается при ``ready`` независимо от оплаты, а аннулирование накладной его
+    не трогало — джоба признания превращала расход по несуществующей накладной в фантом в
+    P&L. Здесь начисление переводится в ``cancelled`` (джоба его пропускает, отчёт исключает).
+    Если расход уже признан — аннулирование накладной сторнирует его: накладной нет, значит и
+    расхода нет.
+    """
+    accrual = await session.scalar(
+        select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.invoice_id == invoice_id)
+    )
+    if accrual is None or accrual.status == "cancelled":
+        return accrual
+    accrual.status = "cancelled"
+    await session.flush()
     return accrual
 
 

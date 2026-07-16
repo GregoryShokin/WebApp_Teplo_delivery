@@ -956,6 +956,9 @@ async def void_invoice(session: AsyncSession, invoice_id: uuid.UUID) -> Supplier
     if has_allocations is not None:
         raise CounterpartyRegistryError("По накладной есть оплаты — аннулирование недоступно")
     invoice.payment_status = "void"
+    # Аннулированной накладной не существует — её начисление тоже отменяем, иначе джоба
+    # признания превратит расход по ней в фантом в P&L.
+    await service_periods.cancel_invoice_accrual(session, invoice_id)
     await session.commit()
     await session.refresh(invoice)
     return invoice

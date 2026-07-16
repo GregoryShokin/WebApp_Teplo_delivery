@@ -729,6 +729,18 @@ async def recognize(
         return llm
 
     merged = _merge(det, llm)
+    # Детерминированный слой мог пометить период спорным (>1 кандидата) и оставить даты
+    # пустыми. Если LLM затем дал ОДИН однозначный период — снимаем «спорно», иначе счёт с
+    # уже определённым периодом зря уйдёт оператору. Спорным оставляем, только если и LLM
+    # видит несколько кандидатов.
+    if (
+        merged.service_period_ambiguous
+        and merged.service_period_start
+        and merged.service_period_end
+        and len(llm.service_period_candidates) <= 1
+    ):
+        merged.service_period_ambiguous = False
+        merged.notes = [n for n in merged.notes if "несколько периодов" not in n]
     merged.engine = "deterministic+llm"
     merged.raw_text_excerpt = text[:2000]
     merged.confidence = max(det.confidence, llm.confidence, _confidence(merged))
