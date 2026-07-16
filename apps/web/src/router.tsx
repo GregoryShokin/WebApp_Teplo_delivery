@@ -115,6 +115,12 @@ const routes: AppRoute[] = [
           <WarehouseInvoicesRoute activeTab="registry" onNavigate={navigate} />
         ),
       },
+      {
+        path: "sbis",
+        render: ({ navigate }) => (
+          <WarehouseInvoicesRoute activeTab="sbis" onNavigate={navigate} />
+        ),
+      },
     ],
   },
   {

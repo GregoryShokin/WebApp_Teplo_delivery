@@ -14,14 +14,16 @@ import { CounterpartyCard } from "../counterparties/CounterpartyCard";
 import { MetricCard, formatRub, isOverdue } from "../counterparties/shared";
 import { InboxTab } from "../counterparties/tabs/inbox";
 import { RegistryTab } from "../counterparties/tabs/registry";
+import { SbisTab } from "../counterparties/tabs/sbis";
 import { syncProducts } from "./api";
 
-export type WarehouseTab = "normal" | "barter" | "registry";
+export type WarehouseTab = "normal" | "barter" | "registry" | "sbis";
 
 const WAREHOUSE_TABS: Array<{ value: WarehouseTab; label: string; path: string }> = [
   { value: "normal", label: "Обычные накладные", path: "/warehouse/invoices" },
   { value: "barter", label: "Бартер", path: "/warehouse/barter" },
   { value: "registry", label: "Контрагенты", path: "/warehouse/registry" },
+  { value: "sbis", label: "СБИС (ЭДО)", path: "/warehouse/sbis" },
 ];
 
 export function warehouseTabPath(tab: WarehouseTab): string {
@@ -168,6 +170,7 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate, embedded = false
       {effectiveTab === "registry" ? (
         <RegistryTab canOperate={canOperate} canAdmin={canAdmin} onOpenCounterparty={setOpenId} />
       ) : null}
+      {effectiveTab === "sbis" ? <SbisTab canOperate={canOperate} /> : null}
 
       <CounterpartyCard
         counterpartyId={openId}
