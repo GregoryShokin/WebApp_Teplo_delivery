@@ -2418,7 +2418,8 @@ export type OwnerReviewKind =
   | "payer_wallet_unresolved"
   | "iiko_payment_unsettled"
   | "card_refund_after_cheque"
-  | "cheque_refund_missing";
+  | "cheque_refund_missing"
+  | "deposit_bank_draft_failed";
 
 export type ReconciliationCaseRead = {
   id: string;

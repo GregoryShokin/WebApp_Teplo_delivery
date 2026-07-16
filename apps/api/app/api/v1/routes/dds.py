@@ -1465,6 +1465,7 @@ async def list_owner_review_cases(
         "iiko_payment_unsettled",
         "card_refund_after_cheque",
         "cheque_refund_missing",
+        "deposit_bank_draft_failed",
     ]
     | None = None,
 ) -> dict[str, object]:
@@ -1477,6 +1478,9 @@ async def list_owner_review_cases(
         "iiko_payment_unsettled",
         "card_refund_after_cheque",
         "cheque_refund_missing",
+        # Депозит списан, а черновик в банк не ушёл: платёж не появится ни в банке,
+        # ни в «Активных платежах» — без этого кейса сотрудник останется без денег молча.
+        "deposit_bank_draft_failed",
     )
     conditions = [
         ReconciliationCase.status == "pending",

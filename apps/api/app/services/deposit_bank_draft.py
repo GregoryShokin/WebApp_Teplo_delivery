@@ -36,7 +36,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.models import Account, CashflowTransaction, DdsArticle, Wallet
+from app.models import Account, CashflowTransaction, DdsArticle, ReconciliationCase, Wallet
 from app.services.banking import BankClient
 from app.services.banking.ip_card_requisites import (
     load_owner_approved_ip_card_requisites,
@@ -159,7 +159,9 @@ async def send_deposit_payout_bank_draft(
     Open API, Сбер — рублёвый РПП без подписи (черновик, подписывается в СберБизнес).
     Получатель-Сейф общий и зафиксирован в коде; одноимённая настройка БД используется
     только для контроля дрейфа. Вызывать ПОСЛЕ commit (БД — источник истины). Устойчиво:
-    нет расчётного счёта или ошибка банка — логируется, исключение НЕ поднимается.
+    нет расчётного счёта или ошибка банка — исключение НЕ поднимается, уже проведённая
+    выдача не откатывается. Но молчать о провале нельзя: депозит списан, сотрудник считается
+    рассчитанным, а платёж в банк не ушёл — поэтому заводим кейс владельцу на разбор.
     Возвращает True, если черновик отправлен (или сэмулирован в mock-режиме).
     """
     try:
@@ -174,6 +176,14 @@ async def send_deposit_payout_bank_draft(
                 "Банк-черновик выдачи депозита %s: не настроен расчётный счёт плательщика (%s)",
                 document_id,
                 provider,
+            )
+            await _open_draft_failure_case(
+                session,
+                document_id=document_id,
+                amount=amount,
+                purpose=purpose,
+                provider=provider,
+                reason="Не настроен расчётный счёт плательщика",
             )
             return False
         # Валидация полей платежа (выкинет ValueError при нехватке реквизитов) — до сетевого вызова.
@@ -201,9 +211,53 @@ async def send_deposit_payout_bank_draft(
         return True
     except Exception as exc:  # noqa: BLE001 — банк не должен валить уже проведённую выдачу
         logger.warning(
-            "Банк-черновик выдачи депозита %s не отправлен: %s", document_id, exc
+            "Банк-черновик выдачи депозита %s не отправлен: %s", document_id, exc, exc_info=True
+        )
+        await _open_draft_failure_case(
+            session,
+            document_id=document_id,
+            amount=amount,
+            purpose=purpose,
+            provider=provider,
+            reason=str(exc)[:500],
         )
         return False
+
+
+async def _open_draft_failure_case(
+    session: AsyncSession,
+    *,
+    document_id: str,
+    amount: Decimal,
+    purpose: str,
+    provider: str,
+    reason: str,
+) -> None:
+    """Кейс владельцу: выдача проведена, а черновик в банк не ушёл — платить нечем.
+
+    Своим коммитом: функцию зовут ПОСЛЕ commit роута, кейс должен пережить возврат ответа.
+    Уникального индекса на этот kind нет — каждый провал заводит свой кейс (document_id
+    у выдач разный). Падение самого кейса не валит ответ: выдача уже проведена и
+    откатывать её из-за журнала нельзя.
+    """
+    try:
+        session.add(
+            ReconciliationCase(
+                kind="deposit_bank_draft_failed",
+                status="pending",
+                provider=provider,
+                payload={
+                    "document_id": document_id,
+                    "amount": str(amount),
+                    "purpose": purpose,
+                    "reason": reason,
+                },
+            )
+        )
+        await session.commit()
+    except Exception:  # noqa: BLE001 — журнал не важнее уже выданного депозита
+        logger.exception("Не удалось завести кейс о непрошедшем черновике %s", document_id)
+        await session.rollback()
 
 
 async def _bank_payout_requisites(session: AsyncSession) -> dict[str, Any]:

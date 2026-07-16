@@ -23,7 +23,9 @@ from app.models import (
     DdsArticle,
     DepositTransaction,
     Employee,
+    ReconciliationCase,
 )
+from app.services.banking.exceptions import BankFetchError
 from app.services.deposit_bank_draft import (
     PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
     book_deposit_bank_to_safe_transfer,
@@ -235,3 +237,59 @@ async def test_production_payout_bank_draft_books_expense_from_safe(
         assert expense.direction == "out"
         assert expense.wallet_id == safe_wallet.id
         assert expense.amount == Decimal("5000.00")
+
+
+class FailingBankClient:
+    """Банк недоступен: любая попытка выписать черновик падает."""
+
+    provider = "tbank"
+
+    async def create_payment_draft(
+        self,
+        *,
+        document_id: str,
+        amount: Decimal,
+        purpose: str,
+        requisites: dict[str, object],
+        payer_account: str,
+    ) -> object:
+        raise BankFetchError("tbank", "банк недоступен")
+
+
+async def test_failed_bank_draft_opens_owner_case(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Банк упал → выдача не откатывается, но владелец узнаёт об этом кейсом.
+
+    Молчаливый провал здесь — потеря денег сотрудника: депозит уже списан, а платёж в
+    банк не ушёл, и в «Активных платежах» его нет (витрина знает только черновики
+    контрагентов и ЗП).
+    """
+    async with async_session_factory() as session:
+        await session.execute(
+            delete(ReconciliationCase).where(
+                ReconciliationCase.kind == "deposit_bank_draft_failed"
+            )
+        )
+        await session.commit()
+
+        sent = await send_deposit_payout_bank_draft(
+            session,
+            document_id="teplo-deposit-fail-1",
+            amount=Decimal("9000"),
+            purpose="Выдача депозита (через Сейф)",
+            bank_client=FailingBankClient(),
+        )
+        assert sent is False
+
+        case = (
+            await session.execute(
+                select(ReconciliationCase).where(
+                    ReconciliationCase.kind == "deposit_bank_draft_failed",
+                    ReconciliationCase.status == "pending",
+                )
+            )
+        ).scalar_one()
+        assert case.payload["document_id"] == "teplo-deposit-fail-1"
+        assert case.payload["amount"] == "9000.00"
+        assert "банк недоступен" in case.payload["reason"]
