@@ -591,6 +591,9 @@ async def _deposit_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
     for draft, emp_name in rows:
         state = status_map.get(draft.status, draft.status)
         recipient = emp_name or ("курьер" if draft.recipient_kind == "courier" else "получатель")
+        # Наличный резерв (этап 4) хранится тем же черновиком, но bank_provider — маркер
+        # канала (cash_safe/cash_tk), не банк: показываем как наличный.
+        is_bank = draft.bank_provider in ("tbank", "sber")
         items.append(
             PaymentItem(
                 id=f"deposit_draft:{draft.id}",
@@ -604,8 +607,8 @@ async def _deposit_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
                 amount_paid=None,
                 article_id=None,
                 article_name=None,
-                method="bank",
-                bank_channel=draft.bank_provider,
+                method="bank" if is_bank else "cash",
+                bank_channel=draft.bank_provider if is_bank else None,
                 state=state,
                 bucket=BUCKET_BY_STATE.get(state),
                 created_at=draft.created_at,

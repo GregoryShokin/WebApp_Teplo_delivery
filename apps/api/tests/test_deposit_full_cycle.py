@@ -34,6 +34,7 @@ from app.services.banking.safe_allocations import pay_allocation
 from app.services.deposit_bank_draft import (
     DEPOSIT_PAYOUT_ARTICLE_CODE,
     apply_deposit_draft_status,
+    create_deposit_cash_reserve,
     create_deposit_payout_draft,
     deposit_in_flight_amount,
     sync_deposit_after_allocation_change,
@@ -223,6 +224,86 @@ async def test_paid_without_safe_wallet_keeps_draft_created(
         assert status_after == "created"
         await session.refresh(draft)
         assert draft.safe_allocation_id is None
+
+
+async def test_cash_safe_reserve_full_cycle_r1(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Этап 4: наличный резерв на Сейфе → R1 (employee_id=None) → выдача = списание депозита."""
+    async with async_session_factory() as session:
+        await _seed_bank_and_articles(session)
+        employee = await _seed_employee_with_deposit(session, Decimal("5000"))
+
+        draft = await create_deposit_cash_reserve(
+            session,
+            employee_id=employee.id,
+            amount=Decimal("5000"),
+            purpose="Выдача депозита — тест",
+            channel="cash_safe",
+        )
+        # Наличный резерв — черновик сразу paid (банк-шага нет), провайдер = маркер канала.
+        assert draft.status == "paid"
+        assert draft.bank_provider == "cash_safe"
+        assert draft.provider_ref is None
+        assert draft.safe_allocation_id is not None
+
+        allocation = await session.get(SafeAllocation, draft.safe_allocation_id)
+        assert allocation.employee_id is None  # 🔴 R1
+        assert allocation.location == "safe"
+        assert allocation.amount == Decimal("5000")
+
+        # Депозит цел, транзакции-леджера нет — списание только при выдаче.
+        account = await session.scalar(
+            select(DepositAccount).where(DepositAccount.employee_id == employee.id)
+        )
+        assert account.balance == Decimal("5000")
+
+        await pay_allocation(
+            session, allocation, amount=Decimal("5000"), operation_date=date(2026, 7, 16)
+        )
+        assert await _employee_payouts(session, employee.id) == 0  # 🔴 R1
+        disbursement = await sync_deposit_after_allocation_change(
+            session, allocation_id=allocation.id
+        )
+        assert disbursement is not None
+        await session.commit()
+
+        assert draft.status == "disbursed"
+        assert draft.deposit_transaction_id is not None
+        assert account.balance == Decimal("0")
+        payout = await session.scalar(
+            select(DepositTransaction).where(
+                DepositTransaction.employee_id == employee.id,
+                DepositTransaction.transaction_type == "payout",
+            )
+        )
+        assert payout is not None and payout.amount == Decimal("5000")
+
+
+async def test_cash_tk_reserve_lands_on_kassa(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Этап 4: «передать в кассу» заводит резерв на кассе (location='kassa'), депозит цел."""
+    async with async_session_factory() as session:
+        await _seed_bank_and_articles(session)
+        employee = await _seed_employee_with_deposit(session, Decimal("7000"))
+
+        draft = await create_deposit_cash_reserve(
+            session,
+            employee_id=employee.id,
+            amount=Decimal("7000"),
+            purpose="Выдача депозита — тест",
+            channel="cash_tk",
+        )
+        assert draft.status == "paid"
+        assert draft.bank_provider == "cash_tk"
+        allocation = await session.get(SafeAllocation, draft.safe_allocation_id)
+        assert allocation.location == "kassa"
+        assert allocation.employee_id is None  # 🔴 R1
+        account = await session.scalar(
+            select(DepositAccount).where(DepositAccount.employee_id == employee.id)
+        )
+        assert account.balance == Decimal("7000")  # не списан до выдачи
 
 
 async def test_deposit_not_settled_while_bank_draft_active(

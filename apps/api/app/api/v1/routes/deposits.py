@@ -25,6 +25,7 @@ from app.schemas.payroll import PayrollPeriodRead
 from app.services import deposit_schedule, deposit_service
 from app.services.banking.payout import channel_provider
 from app.services.deposit_bank_draft import (
+    create_deposit_cash_reserve,
     create_deposit_payout_draft,
     deposit_in_flight_amount,
 )
@@ -114,6 +115,10 @@ class DepositPayoutRequest(BaseModel):
     # Счёт немедленной выдачи: ТК Черникова (по умолч., +iiko-изъятие) / Сейф (без iiko) /
     # банк-черновик Т-Банк (``bank_draft``) или Сбер (``bank_draft_sber``) — оба через Сейф.
     payout_method: Literal["cash_tk", "cash_safe", "bank_draft", "bank_draft_sber"] = "cash_tk"
+    # Режим наличных каналов (этап 4): ``immediate`` — выдать сразу (как раньше); ``reserve`` —
+    # только завести резерв («В кассе»/«На Сейфе»), выдать позже кнопкой. Для банк-каналов не
+    # применяется (там всегда черновик).
+    payout_mode: Literal["immediate", "reserve"] = "immediate"
 
 
 class DepositSchedulePayoutRequest(BaseModel):
@@ -376,7 +381,67 @@ async def payout_deposit(
             },
         }
 
-    # НАЛИЧНЫЙ КАНАЛ (cash_tk / cash_safe): списываем и книжим расход сразу.
+    if payload.payout_mode == "reserve":
+        # НАЛИЧНЫЙ РЕЗЕРВ (этап 4): «Создать резерв» (Сейф) / «Передать в кассу» (Касса).
+        # Деньги уже наличными — заводим только резерв, депозит-счёт НЕ списываем (списание при
+        # фактической выдаче резерва). Резерв защищён теми же гардами, что и банковский.
+        if account is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Депозит-счёт не найден"
+            )
+        before = deposit_service.deposit_account_snapshot(account)
+        try:
+            draft = await create_deposit_cash_reserve(
+                session,
+                employee_id=employee_id,
+                amount=amount,
+                purpose=f"Выдача депозита {employee.full_name}",
+                channel=payload.payout_method,
+            )
+        except ValueError as exc:  # перерезервирование Сейфа / нет кошелька
+            await session.rollback()
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except IntegrityError:
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="У сотрудника уже есть активная выдача депозита",
+            ) from None
+        after = deposit_service.deposit_account_snapshot(account) | {
+            "cash_reserve": {
+                "id": str(draft.id),
+                "channel": payload.payout_method,
+                "amount": deposit_service.decimal_string(amount),
+            },
+            "comment": payload.comment,
+        }
+        await deposit_service.add_deposit_action(
+            session,
+            action_type="deposit_payout_cash_reserve",
+            target_table="deposit_account",
+            target_id=account.id,
+            employee_id=employee_id,
+            before=before,
+            after=after,
+            now=now,
+            actor=actor,
+            comment=payload.comment,
+        )
+        await session.commit()
+        await session.refresh(account)
+        return {
+            "employee_id": employee_id,
+            "balance": deposit_service.decimal_string(account.balance),
+            "transaction": None,
+            "draft": {
+                "id": draft.id,
+                "status": draft.status,
+                "bank_provider": draft.bank_provider,
+                "amount": deposit_service.decimal_string(amount),
+            },
+        }
+
+    # НАЛИЧНЫЙ КАНАЛ, СРАЗУ (cash_tk / cash_safe): списываем и книжим расход немедленно.
     before = deposit_service.deposit_account_snapshot(account)
     account = deposit_service.ensure_account(session, employee_id, account, now)
     account.balance = balance - amount

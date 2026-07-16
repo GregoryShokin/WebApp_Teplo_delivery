@@ -55,6 +55,7 @@ from app.services.banking.ip_card_requisites import (
     load_owner_approved_ip_card_requisites,
 )
 from app.services.banking.payout import payer_account_for, payout_client_for
+from app.services.banking.safe_allocations import create_allocation, safe_reserved_total
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.wallets import (
     DDS_ARTICLE_TRANSFER_IN_CODE,
@@ -358,6 +359,86 @@ async def create_deposit_payout_draft(
 
     status = result.status if result.status in ("created", "updated") else "created"
     draft = _make(status, result.provider_ref, None)
+    session.add(draft)
+    await session.flush()
+    return draft
+
+
+# Наличные каналы «резерв» (этап 4): деньги уже наличными, банк не участвует.
+CASH_RESERVE_CHANNELS = {"cash_safe": "safe", "cash_tk": "kassa"}
+
+
+async def create_deposit_cash_reserve(
+    session: AsyncSession,
+    *,
+    employee_id: uuid.UUID,
+    amount: Decimal,
+    purpose: str,
+    channel: str,
+    recipient_kind: str = "production",
+) -> DepositBankDraft:
+    """Наличный депозит-резерв (этап 4): «Создать резерв» (Сейф) / «Передать в кассу» (Касса).
+
+    Деньги уже наличными (на карте Сейфа или в ящике кассы) — движения перемещения НЕ книжим,
+    только заводим резерв ``SafeAllocation(reserved)`` + ``DepositBankDraft`` сразу в статусе
+    ``paid`` (банк-шага нет, поэтому provider_ref=None). Депозит-счёт спишется при фактической
+    выдаче резерва (``sync_deposit_after_allocation_change``) — как в банк-цикле, тем же кодом.
+
+    🔴 R1: резерв идёт с ``employee_id=None`` (получатель — в ``DepositBankDraft``), иначе
+    ``pay_allocation`` завёл бы EmployeePayout вида salary. Для Сейфа проверяем свободный
+    остаток (перерезервирование → ValueError); для кассы — нет (деньги физически в ящике).
+    """
+    amount = _money(amount)
+    location = CASH_RESERVE_CHANNELS[channel]
+    article_id = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == DEPOSIT_PAYOUT_ARTICLE_CODE)
+    )
+    if location == "kassa":
+        # Локальный импорт: kassa.payouts локально импортирует этот модуль (pay_kassa_target),
+        # top-import здесь замкнул бы цикл.
+        from app.services.kassa.payouts import get_kassa_wallet, kassa_balance
+
+        wallet = await get_kassa_wallet(session)
+        free_amount = None  # деньги уже в ящике кассы — перемещения нет
+    else:
+        from app.services.kassa.payouts import kassa_balance
+
+        wallet = await session.scalar(
+            select(Wallet).where(Wallet.code == SAFE_WALLET_CODE, Wallet.status == "active")
+        )
+        if wallet is None:
+            raise ValueError("Кошелёк «Сейф» не найден")
+        # Свободно на Сейфе = наличный баланс − уже зарезервировано (как create_safe_allocation).
+        free_amount = await kassa_balance(session, wallet) - await safe_reserved_total(
+            session, wallet.id
+        )
+
+    allocation = await create_allocation(
+        session,
+        wallet_id=wallet.id,
+        amount=amount,
+        free_amount=free_amount,
+        article_id=article_id,
+        employee_id=None,  # R1
+        purpose=purpose,
+        location=location,
+    )
+    draft = DepositBankDraft(
+        id=uuid.uuid4(),
+        recipient_kind=recipient_kind,
+        employee_id=employee_id,
+        courier_deposit_transaction_id=None,
+        deposit_transaction_id=None,  # спишется при выдаче резерва
+        document_id=f"teplo-deposit-cash-{uuid.uuid4()}"[:64],
+        amount=amount,
+        status="paid",  # деньги уже наличными — сразу «резерв», без банк-шага
+        bank_provider=channel,  # маркер наличного канала (не банк-провайдер)
+        provider_ref=None,
+        safe_allocation_id=allocation.id,
+        payload={},
+        last_error=None,
+        synced_at=datetime.now(UTC),
+    )
     session.add(draft)
     await session.flush()
     return draft

@@ -1940,6 +1940,9 @@ export type DepositPayoutPayload = {
   // Счёт немедленной выдачи: ТК Черникова (по умолч., +iiko) / Сейф / банк-черновик Т-Банк
   // (bank_draft) или Сбер (bank_draft_sber).
   payout_method?: DepositPayoutMethod;
+  // Режим наличных каналов: immediate — выдать сразу; reserve — завести резерв («В кассе»/
+  // «На Сейфе»), выдать позже. Для банк-каналов игнорируется (там всегда черновик).
+  payout_mode?: "immediate" | "reserve";
 };
 
 export type DepositWriteoffPayload = {
