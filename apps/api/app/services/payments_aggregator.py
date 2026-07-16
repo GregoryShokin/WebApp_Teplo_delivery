@@ -58,6 +58,8 @@ from app.models import (
     PayrollPayment,
     PayrollRun,
     SafeAllocation,
+    SalaryAdvance,
+    SalaryAdvanceBankDraft,
     SupplierInvoice,
 )
 from app.services.payroll_reserves import (
@@ -627,6 +629,68 @@ async def _deposit_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
     return items
 
 
+async def _advance_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
+    """Банк-черновики выдачи аванса/займа — «Отправлен в банк».
+
+    Зеркало ``_deposit_bank_draft_items``. Банковская выдача аванса/займа создаёт
+    платёжный черновик в Т-Банке/Сбере; здесь он показывается активной строкой, пока
+    ждёт подписи/оплаты в банке. После оплаты (``paid``/``disbursed``) — история.
+    """
+    rows = (
+        await session.execute(
+            select(SalaryAdvanceBankDraft, SalaryAdvance, Employee.full_name)
+            .join(SalaryAdvance, SalaryAdvance.id == SalaryAdvanceBankDraft.advance_id)
+            .outerjoin(Employee, Employee.id == SalaryAdvance.employee_id)
+        )
+    ).all()
+    status_map = {
+        "created": "in_bank",
+        "updated": "in_bank",
+        "paid": "paid",
+        "disbursed": "paid",
+        "failed": "failed",
+        "cancelled": "cancelled",
+    }
+    items: list[PaymentItem] = []
+    for draft, advance, emp_name in rows:
+        state = status_map.get(draft.status, draft.status)
+        recipient = emp_name or "сотрудник"
+        kind_label = "Заём" if advance.kind == "loan" else "Аванс"
+        is_bank = draft.bank_provider in ("tbank", "sber")
+        items.append(
+            PaymentItem(
+                id=f"advance_draft:{draft.id}",
+                source="advance_draft",
+                kind="advance_bank_draft",
+                ref_id=draft.id,
+                title=f"{kind_label} — {recipient} · {_fmt_money(Decimal(draft.amount))}",
+                counterparty_id=None,
+                counterparty_name=None,
+                amount=Decimal(draft.amount),
+                amount_paid=None,
+                article_id=None,
+                article_name=None,
+                method="bank" if is_bank else "cash",
+                bank_channel=draft.bank_provider if is_bank else None,
+                state=state,
+                bucket=BUCKET_BY_STATE.get(state),
+                created_at=draft.created_at,
+                can_edit=False,
+                can_send_to_bank=False,
+                can_pay=False,  # ждёт подписи/оплаты в банке
+                can_cancel=False,
+                extra={
+                    "advance": True,
+                    "advance_id": str(advance.id),
+                    "employee_id": str(advance.employee_id) if advance.employee_id else None,
+                    "kind": advance.kind,
+                    "last_error": draft.last_error,
+                },
+            )
+        )
+    return items
+
+
 # --- публичный API -------------------------------------------------------------
 
 
@@ -641,7 +705,8 @@ async def list_payments(session: AsyncSession, *, scope: str = "active") -> list
     reserves = await _reserve_items(session)
     payroll_drafts = await _payroll_bank_draft_items(session)
     deposit_drafts = await _deposit_bank_draft_items(session)
-    items = invoices + drafts + reserves + payroll_drafts + deposit_drafts
+    advance_drafts = await _advance_bank_draft_items(session)
+    items = invoices + drafts + reserves + payroll_drafts + deposit_drafts + advance_drafts
 
     if scope == "active":
         items = [i for i in items if i.state in _ACTIVE_STATES]
