@@ -91,6 +91,7 @@ class SyncResultRead(BaseModel):
     materialized: int
     duplicates: int
     settled_from_prepayments: int
+    sent_to_recognition: int
 
 
 class MatchIn(BaseModel):
@@ -144,7 +145,9 @@ async def _load_doc(session: AsyncSession, doc_id: uuid.UUID) -> SbisDocument:
 async def list_documents(
     session: Annotated[AsyncSession, Depends(get_session)],
     match_status: Literal["unmatched", "matched", "dismissed"] | None = Query(default=None),
-    intake_status: Literal["mirror", "new_counterparty", "materialized", "duplicate"]
+    intake_status: Literal[
+        "mirror", "new_counterparty", "materialized", "duplicate", "sent_to_recognition"
+    ]
     | None = Query(default=None),
 ) -> list[SbisDocumentRead]:
     matched_invoice = aliased(SupplierInvoice)

@@ -40,7 +40,15 @@ SBIS_MATCH_STATUSES = ("unmatched", "matched", "dismissed")
 #                      после включения канала документы материализуются задним числом
 #   materialized     — создан счёт SupplierInvoice(source='sbis') (invoice_id)
 #   duplicate        — счёт уже существует (пришёл почтой/вручную) — invoice_id на него
-SBIS_INTAKE_STATUSES = ("mirror", "new_counterparty", "materialized", "duplicate")
+#   sent_to_recognition — письмо-счёт (КоррВх, сумма только в PDF) отдано в распознавание
+#                      «Страницы на оплату» — дальше живёт как intake
+SBIS_INTAKE_STATUSES = (
+    "mirror",
+    "new_counterparty",
+    "materialized",
+    "duplicate",
+    "sent_to_recognition",
+)
 
 
 class SbisDocument(Base):

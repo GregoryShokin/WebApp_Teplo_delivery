@@ -594,7 +594,12 @@ export type SbisMatchedInvoice = {
   payment_status: string;
 };
 
-export type SbisIntakeStatus = "mirror" | "new_counterparty" | "materialized" | "duplicate";
+export type SbisIntakeStatus =
+  | "mirror"
+  | "new_counterparty"
+  | "materialized"
+  | "duplicate"
+  | "sent_to_recognition";
 
 export type SbisDocument = {
   id: string;
@@ -636,6 +641,7 @@ export type SbisSyncResult = {
   materialized: number;
   duplicates: number;
   settled_from_prepayments: number;
+  sent_to_recognition: number;
 };
 
 export async function getSbisDocuments(matchStatus?: string): Promise<SbisDocument[]> {

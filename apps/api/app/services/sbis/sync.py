@@ -42,7 +42,9 @@ from app.models import (
 from app.services import supplier_prepayments as prepayments
 from app.services import supplier_service_periods as service_periods
 from app.services.counterparty_registry import compute_invoice_due_date
+from app.services.email_invoice_ingest import process_attachment
 from app.services.invoice_recognition import _extract_service_periods
+from app.services.mail.imap_client import FetchedAttachment
 from app.services.sbis.client import SbisClient
 
 logger = logging.getLogger(__name__)
@@ -67,6 +69,7 @@ class SbisSyncResult:
     materialized: int = 0
     duplicates: int = 0
     settled_from_prepayments: int = 0
+    sent_to_recognition: int = 0
     errors: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
@@ -81,6 +84,7 @@ class SbisSyncResult:
             "materialized": self.materialized,
             "duplicates": self.duplicates,
             "settled_from_prepayments": self.settled_from_prepayments,
+            "sent_to_recognition": self.sent_to_recognition,
             "errors": self.errors,
         }
 
@@ -375,8 +379,74 @@ async def _materialize_document(
     result.materialized += 1
 
 
-async def _route_documents(session: AsyncSession, result: SbisSyncResult) -> None:
+# Письмо (КоррВх) считаем счётом, если у вложения «говорящее» имя. Неформализованные
+# счета в СБИС ходят именно письмами (пример: счёт-оферта ДоксИнБокс).
+_INVOICE_LETTER_MARKERS = ("счет", "счёт", "invoice")
+
+
+def _letter_invoice_attachment(doc: SbisDocument) -> dict[str, str] | None:
+    raw_doc = (doc.raw or {}).get("Документ") or {}
+    for attachment in raw_doc.get("Вложение") or []:
+        if attachment.get("Служебный") == "Да":
+            continue
+        file_info = attachment.get("Файл") or {}
+        name = str(attachment.get("Название") or file_info.get("Имя") or "")
+        link = file_info.get("Ссылка")
+        if link and any(marker in name.casefold() for marker in _INVOICE_LETTER_MARKERS):
+            return {"name": name, "link": link}
+    return None
+
+
+async def _route_invoice_letter(
+    session: AsyncSession,
+    client: SbisClient,
+    doc: SbisDocument,
+    result: SbisSyncResult,
+) -> bool:
+    """Письмо-счёт → распознавание «Страницы на оплату» (суммы в письме нет — она в PDF).
+
+    Скачиваем PDF и отдаём в существующий конвейер intake (распознавание regex+LLM,
+    ручной разбор, дедуп, статья ДДС, банк). Идемпотентность — по SHA-256 файла."""
+    attachment = _letter_invoice_attachment(doc)
+    if attachment is None:
+        return False
+    from app.models import EmailInvoiceIntake
+
+    try:
+        content = await client.download_file(attachment["link"])
+    except Exception as exc:  # noqa: BLE001 — одно битое письмо не валит синк
+        logger.warning("СБИС письмо-счёт: не скачался PDF (%s): %s", doc.sbis_doc_id, exc)
+        result.errors.append(f"письмо {doc.number}: PDF не скачался")
+        return False
+    fetched = FetchedAttachment(
+        mailbox="sbis",
+        message_uid=doc.sbis_doc_id,
+        message_id=f"sbis:{doc.sbis_doc_id}",
+        from_addr=f"СБИС ИНН {doc.counterparty_inn or '—'}",
+        subject=doc.title,
+        received_at=None,
+        filename=attachment["name"],
+        mime="application/pdf",
+        content=content,
+    )
+    existing = await session.scalar(
+        select(EmailInvoiceIntake).where(
+            EmailInvoiceIntake.attachment_sha256 == fetched.sha256
+        )
+    )
+    if existing is None:
+        settings = get_settings()
+        await process_attachment(session, fetched, settings=settings)
+        result.sent_to_recognition += 1
+    doc.intake_status = "sent_to_recognition"
+    return True
+
+
+async def _route_documents(
+    session: AsyncSession, result: SbisSyncResult, client: SbisClient | None = None
+) -> None:
     """Маршрутизация: режим определяет карточка контрагента, а не документ."""
+    client = client or SbisClient()
     docs = (
         await session.scalars(
             select(SbisDocument).where(
@@ -416,6 +486,12 @@ async def _route_documents(session: AsyncSession, result: SbisSyncResult) -> Non
             and doc.amount is not None
         ):
             await _materialize_document(session, doc, counterparty, result)
+        elif counterparty.id in channel_ids and (doc.doc_type or "") == "КоррВх":
+            # Неформализованный счёт ходит письмом (сумма только в PDF) —
+            # отправляем в распознавание «Страницы на оплату».
+            handled = await _route_invoice_letter(session, client, doc, result)
+            if not handled:
+                doc.intake_status = "mirror"
         else:
             doc.intake_status = "mirror"
 
@@ -505,7 +581,7 @@ async def sync_sbis_documents(
 
     await _upsert_documents(session, items, result)
     await session.flush()
-    await _route_documents(session, result)
+    await _route_documents(session, result, client)
     await session.flush()
     await _match_documents(session, result)
     await session.commit()

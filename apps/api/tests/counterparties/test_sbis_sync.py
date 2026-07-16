@@ -539,3 +539,73 @@ async def test_materialized_invoice_partial_prepayment_coverage(
         await session.refresh(prepayment)
         assert prepayment.status == "settled"
         assert prepayment.amount_settled == Decimal("100000.00")
+
+
+async def test_invoice_letter_routed_to_recognition(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Письмо (КоррВх) с вложением-счётом у канального контрагента уходит в распознавание
+    «Страницы на оплату» (сумма только в PDF); идемпотентно по SHA-256 файла."""
+    from app.models import CounterpartyCollectionSource, EmailInvoiceIntake
+    from app.services.sbis.sync import _route_documents
+
+    class FakeClient:
+        async def download_file(self, url: str) -> bytes:
+            return b"%PDF-1.7 fake invoice"
+
+    letter = {
+        "ДатаВремя": "18.06.2026 10.00.00",
+        "Состояние": {"Код": "5", "Название": "Доставлен"},
+        "Документ": {
+            "Идентификатор": "letter-15758",
+            "Дата": "18.06.2026",
+            "Номер": "15758",
+            "Тип": "КоррВх",
+            "Удален": "Нет",
+            "Название": "Письмо № 15758 от 18.06.2026",
+            "Контрагент": {
+                "СвЮЛ": {"ИНН": "7802193688", "Название": "ООО ДОКСИНБОКС"}
+            },
+            "Вложение": [
+                {
+                    "Служебный": "Нет",
+                    "Название": "Счет-оферта_№0006634309 _от 18.06.2026.pdf",
+                    "Файл": {
+                        "Имя": "Счет-оферта_№0006634309 _от 18.06.2026.pdf",
+                        "Ссылка": "https://disk.sbis.ru/x",
+                    },
+                }
+            ],
+        },
+    }
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ДоксИнБокс", inn="7802193688")
+        session.add(
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="7802193688")
+        )
+        await session.flush()
+        result = SbisSyncResult()
+        await _upsert_documents(session, [letter], result)
+        await session.flush()
+        await _route_documents(session, result, FakeClient())
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        assert result.sent_to_recognition == 1
+        assert doc.intake_status == "sent_to_recognition"
+        intake = (await session.execute(select(EmailInvoiceIntake))).scalar_one()
+        assert intake.mailbox == "sbis"
+        assert intake.attachment_filename.startswith("Счет-оферта")
+
+        # Повторный проход — новый intake не создаётся (SHA-дедуп).
+        doc.intake_status = "mirror"
+        await session.flush()
+        result2 = SbisSyncResult()
+        await _route_documents(session, result2, FakeClient())
+        await session.commit()
+        assert result2.sent_to_recognition == 0
+        count = await session.scalar(select(func.count()).select_from(EmailInvoiceIntake))
+        assert count == 1
+        await session.refresh(doc)
+        assert doc.intake_status == "sent_to_recognition"

@@ -96,6 +96,13 @@ function StatusBadge({ doc }: { doc: SbisDocument }) {
       </Badge>
     );
   }
+  if (doc.intake_status === "sent_to_recognition") {
+    return (
+      <Badge variant="outline" className="border-sky-300 bg-sky-50 text-sky-700">
+        Счёт-письмо — в разборе на «Странице на оплату»
+      </Badge>
+    );
+  }
   if (doc.intake_status === "duplicate") {
     return (
       <Badge variant="secondary" title="Тот же счёт уже пришёл другим каналом (почта/вручную)">
@@ -160,6 +167,7 @@ export function SbisTab({ canOperate }: Props) {
       if (r.settled_from_prepayments) {
         extras.push(`закрыто предоплатой ${r.settled_from_prepayments}`);
       }
+      if (r.sent_to_recognition) extras.push(`писем-счетов в разбор ${r.sent_to_recognition}`);
       if (r.duplicates) extras.push(`дублей ${r.duplicates}`);
       if (r.new_counterparties) extras.push(`новых контрагентов ${r.new_counterparties}`);
       toast.success(
