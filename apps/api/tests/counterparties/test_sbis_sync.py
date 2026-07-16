@@ -459,3 +459,83 @@ async def test_archived_counterparty_not_materialized_even_with_channel(
         assert route_result.materialized == 0
         assert doc.intake_status == "mirror"
         assert doc.invoice_id is None
+
+
+async def test_materialized_invoice_auto_settles_from_open_prepayment(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Закрывающий документ»: поставщик оплачен авансом → УПД гасит дебиторку,
+    счёт не попадает «к оплате». Денег не двигает."""
+    from app.models import CounterpartyCollectionSource, SupplierPrepayment
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Стартер", inn="231006560100")
+        session.add(
+            CounterpartyCollectionSource(
+                counterparty_id=cp.id, kind="sbis", value="231006560100"
+            )
+        )
+        prepayment = SupplierPrepayment(
+            counterparty_id=cp.id,
+            kind="goods",
+            amount=Decimal("200000.00"),
+            amount_settled=Decimal("0.00"),
+            status="open",
+        )
+        session.add(prepayment)
+        await session.flush()
+
+        result = SbisSyncResult()
+        await _upsert_documents(session, [_registry_item()], result)
+        await session.flush()
+        route_result = await _route(session)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        invoice = await session.get(SupplierInvoice, doc.invoice_id)
+        assert route_result.materialized == 1
+        assert route_result.settled_from_prepayments == 1
+        assert invoice is not None
+        assert invoice.payment_status == "paid"  # закрыт предоплатой целиком
+        await session.refresh(prepayment)
+        assert prepayment.amount_settled == Decimal("121313.24")
+        assert prepayment.status == "partially_settled"
+
+
+async def test_materialized_invoice_partial_prepayment_coverage(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Предоплата меньше счёта: гасим сколько есть, остаток остаётся «к оплате»."""
+    from app.models import CounterpartyCollectionSource, SupplierPrepayment
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Стартер", inn="231006560100")
+        session.add(
+            CounterpartyCollectionSource(
+                counterparty_id=cp.id, kind="sbis", value="231006560100"
+            )
+        )
+        prepayment = SupplierPrepayment(
+            counterparty_id=cp.id,
+            kind="goods",
+            amount=Decimal("100000.00"),
+            amount_settled=Decimal("0.00"),
+            status="open",
+        )
+        session.add(prepayment)
+        await session.flush()
+
+        result = SbisSyncResult()
+        await _upsert_documents(session, [_registry_item()], result)
+        await session.flush()
+        route_result = await _route(session)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        invoice = await session.get(SupplierInvoice, doc.invoice_id)
+        assert route_result.settled_from_prepayments == 1
+        assert invoice is not None
+        assert invoice.payment_status == "partially_paid"
+        await session.refresh(prepayment)
+        assert prepayment.status == "settled"
+        assert prepayment.amount_settled == Decimal("100000.00")

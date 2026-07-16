@@ -13,16 +13,15 @@ import { getInvoices, syncInvoices } from "../counterparties/api";
 import { CounterpartyCard } from "../counterparties/CounterpartyCard";
 import { MetricCard, formatRub, isOverdue } from "../counterparties/shared";
 import { InboxTab } from "../counterparties/tabs/inbox";
-import { SbisTab } from "../counterparties/tabs/sbis";
 import { syncProducts } from "./api";
 
-// Реестр контрагентов живёт отдельной страницей «Финансы → Контрагенты»; здесь его вкладки нет.
-export type WarehouseTab = "normal" | "barter" | "sbis";
+// Реестр контрагентов — на «Финансы → Контрагенты», реестр ЭДО (СБИС) — на «Финансы →
+// Платежи»; здесь только складские накладные.
+export type WarehouseTab = "normal" | "barter";
 
 const WAREHOUSE_TABS: Array<{ value: WarehouseTab; label: string; path: string }> = [
   { value: "normal", label: "Обычные накладные", path: "/warehouse/invoices" },
   { value: "barter", label: "Бартер", path: "/warehouse/barter" },
-  { value: "sbis", label: "СБИС (ЭДО)", path: "/warehouse/sbis" },
 ];
 
 export function warehouseTabPath(tab: WarehouseTab): string {
@@ -166,8 +165,6 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate, embedded = false
           onOpenCounterparty={setOpenId}
         />
       ) : null}
-      {effectiveTab === "sbis" ? <SbisTab canOperate={canOperate} /> : null}
-
       <CounterpartyCard
         counterpartyId={openId}
         canOperate={canOperate}

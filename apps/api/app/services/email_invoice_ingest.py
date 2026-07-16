@@ -137,6 +137,7 @@ async def _match_or_create_counterparty(
         inn=rec.inn,
         type=_guess_type(rec.inn),
         status="requires_setup",
+        origin="email",
     )
     session.add(counterparty)
     await session.flush()
@@ -321,6 +322,7 @@ async def confirm_intake_with_review(
                 inn=inn,
                 type=_guess_type(inn),
                 status="requires_setup",
+                origin="email",
             )
             session.add(cp)
             await session.flush()

@@ -406,6 +406,7 @@ async def _resolve_counterparty(
             inn=supplier.inn or None,
             type=_guess_counterparty_type(supplier.inn),
             status="requires_setup",
+            origin="iiko",
         )
         session.add(counterparty)
         await session.flush()

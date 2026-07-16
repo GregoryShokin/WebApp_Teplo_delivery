@@ -12,7 +12,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { usePermissions } from "@/lib/permissions";
 
+import { SbisTab } from "@/routes/counterparties/tabs/sbis";
 import { getPayments, type PaymentRow } from "./payments-api";
 
 const money = new Intl.NumberFormat("ru-RU", {
@@ -35,10 +37,12 @@ function methodLabel(row: PaymentRow): string {
 }
 
 export function FinancePaymentsRoute(_props: { onNavigate?: (path: string) => void }) {
-  const [scope, setScope] = useState<"active" | "all">("active");
+  const [scope, setScope] = useState<"active" | "all" | "edo">("active");
+  const permissions = usePermissions();
   const { data, isLoading } = useQuery({
     queryKey: ["finance-payments", scope],
-    queryFn: () => getPayments(scope),
+    queryFn: () => getPayments(scope === "edo" ? "active" : scope),
+    enabled: scope !== "edo",
   });
 
   const items = data?.items ?? [];
@@ -55,10 +59,11 @@ export function FinancePaymentsRoute(_props: { onNavigate?: (path: string) => vo
       </div>
 
       <div className="flex items-center justify-between gap-3">
-        <Tabs value={scope} onValueChange={(v) => setScope(v as "active" | "all")}>
+        <Tabs value={scope} onValueChange={(v) => setScope(v as "active" | "all" | "edo")}>
           <TabsList>
             <TabsTrigger value="active">Активные</TabsTrigger>
             <TabsTrigger value="all">Вся история</TabsTrigger>
+            <TabsTrigger value="edo">ЭДО (СБИС)</TabsTrigger>
           </TabsList>
         </Tabs>
         {scope === "active" ? (
@@ -75,6 +80,9 @@ export function FinancePaymentsRoute(_props: { onNavigate?: (path: string) => vo
         ) : null}
       </div>
 
+      {scope === "edo" ? (
+        <SbisTab canOperate={permissions.canPerformAction("counterparties.operate")} />
+      ) : (
       <div className="rounded-lg border">
         <Table>
           <TableHeader>
@@ -130,6 +138,7 @@ export function FinancePaymentsRoute(_props: { onNavigate?: (path: string) => vo
           </TableBody>
         </Table>
       </div>
+      )}
     </div>
   );
 }

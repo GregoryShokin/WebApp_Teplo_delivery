@@ -90,6 +90,7 @@ class SyncResultRead(BaseModel):
     new_counterparties: int
     materialized: int
     duplicates: int
+    settled_from_prepayments: int
 
 
 class MatchIn(BaseModel):

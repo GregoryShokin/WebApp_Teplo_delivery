@@ -39,6 +39,7 @@ from app.models import (
     SbisDocument,
     SupplierInvoice,
 )
+from app.services import supplier_prepayments as prepayments
 from app.services import supplier_service_periods as service_periods
 from app.services.counterparty_registry import compute_invoice_due_date
 from app.services.invoice_recognition import _extract_service_periods
@@ -65,6 +66,7 @@ class SbisSyncResult:
     new_counterparties: int = 0
     materialized: int = 0
     duplicates: int = 0
+    settled_from_prepayments: int = 0
     errors: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
@@ -78,6 +80,7 @@ class SbisSyncResult:
             "new_counterparties": self.new_counterparties,
             "materialized": self.materialized,
             "duplicates": self.duplicates,
+            "settled_from_prepayments": self.settled_from_prepayments,
             "errors": self.errors,
         }
 
@@ -226,6 +229,7 @@ async def _resolve_or_create_counterparty(
             inn=inn,
             type=_guess_type(inn),
             status="requires_setup",
+            origin="sbis",
         )
         session.add(counterparty)
         await session.flush()
@@ -361,6 +365,11 @@ async def _materialize_document(
     session.add(invoice)
     await session.flush()
     await service_periods.sync_invoice_accrual(session, invoice)
+    # «Закрывающий документ»: если поставщик оплачен авансом, УПД гасит дебиторку
+    # и не попадает «к оплате» (решение владельца 2026-07-16).
+    settled = await prepayments.auto_settle_invoice_from_open_prepayments(session, invoice)
+    if settled > 0:
+        result.settled_from_prepayments += 1
     doc.invoice_id = invoice.id
     doc.intake_status = "materialized"
     result.materialized += 1

@@ -249,6 +249,58 @@ async def settle_invoice_from_prepayment(
     return invoice
 
 
+async def auto_settle_invoice_from_open_prepayments(
+    session: AsyncSession,
+    invoice: SupplierInvoice,
+    *,
+    actor_user_id: uuid.UUID | None = None,
+) -> Decimal:
+    """Авто-гашение счёта из ОТКРЫТЫХ предоплат контрагента (FIFO), без коммита.
+
+    Кейс владельца (2026-07-16): поставщик оплачивается авансом, закрывающий УПД из ЭДО
+    не должен попадать «к оплате» — он гасит дебиторку. Деньги не двигаются (ушли при
+    создании предоплаты). Возвращает суммарно погашенное (0 — если предоплат нет)."""
+    total = Decimal("0.00")
+    prepayments = (
+        await session.scalars(
+            select(SupplierPrepayment)
+            .where(
+                SupplierPrepayment.counterparty_id == invoice.counterparty_id,
+                SupplierPrepayment.status.in_(OPEN_PREPAYMENT_STATUSES),
+            )
+            .order_by(SupplierPrepayment.created_at)
+        )
+    ).all()
+    for prepayment in prepayments:
+        inv_remaining = await _invoice_remaining(session, invoice)
+        if inv_remaining <= 0:
+            break
+        pre_remaining = _money(prepayment.amount) - _money(prepayment.amount_settled)
+        if pre_remaining <= 0:
+            continue
+        alloc = min(inv_remaining, pre_remaining)
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=invoice.id,
+                source_kind="prepayment",
+                prepayment_id=prepayment.id,
+                amount=alloc,
+                created_by_user_id=actor_user_id,
+            )
+        )
+        prepayment.amount_settled = _money(prepayment.amount_settled) + alloc
+        prepayment.status = (
+            "settled"
+            if prepayment.amount_settled >= _money(prepayment.amount)
+            else "partially_settled"
+        )
+        await session.flush()
+        total += alloc
+    if total > 0:
+        await _recompute_status(session, invoice)
+    return total
+
+
 async def counterparty_prepayment_balance(
     session: AsyncSession, counterparty_id: uuid.UUID
 ) -> Decimal:

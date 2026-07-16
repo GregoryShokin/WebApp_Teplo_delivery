@@ -88,6 +88,24 @@ export function RegistryTab({
       cell: (item) => <RelationshipBadge relationship={item.relationship} />,
     },
     {
+      key: "origin",
+      header: "Происхождение",
+      cell: (item) => {
+        // Откуда карточка появилась: различение по просьбе владельца (iiko / вручную / ЭДО / почта).
+        const origin = item.origin ?? (item.has_iiko_guid ? "iiko" : null);
+        if (origin === "iiko") {
+          return <Badge className="border-sky-200 bg-sky-50 text-sky-700">iiko</Badge>;
+        }
+        if (origin === "sbis") {
+          return <Badge className="border-violet-200 bg-violet-50 text-violet-700">СБИС (ЭДО)</Badge>;
+        }
+        if (origin === "email") {
+          return <Badge className="border-teal-200 bg-teal-50 text-teal-700">Почта</Badge>;
+        }
+        return <Badge variant="outline">Вручную</Badge>;
+      },
+    },
+    {
       key: "requisites",
       header: "Реквизиты",
       cell: (item) =>

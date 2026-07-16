@@ -27,6 +27,8 @@ class Counterparty(Base):
     inn: Mapped[str | None] = mapped_column(String(12), nullable=True)
     type: Mapped[str] = mapped_column(counterparty_type_enum, nullable=False)
     status: Mapped[str] = mapped_column(String(64), nullable=False, default="active")
+    # Откуда карточка появилась: iiko / manual / email / sbis (различение в реестре).
+    origin: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

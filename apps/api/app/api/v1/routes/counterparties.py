@@ -178,6 +178,7 @@ class RegistryRead(BaseModel):
     requisites_verified: bool
     kassa_enabled: bool
     has_iiko_guid: bool
+    origin: str | None
     unpaid_count: int
     unpaid_remaining: float
     receivable_remaining: float

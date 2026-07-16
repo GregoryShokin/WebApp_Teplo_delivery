@@ -123,10 +123,9 @@ const routes: AppRoute[] = [
         render: ({ navigate }) => <Redirect to="/finance/counterparties" navigate={navigate} />,
       },
       {
+        // Реестр ЭДО переехал на страницу «Платежи» (решение владельца 16.07).
         path: "sbis",
-        render: ({ navigate }) => (
-          <WarehouseInvoicesRoute activeTab="sbis" onNavigate={navigate} />
-        ),
+        render: ({ navigate }) => <Redirect to="/finance/payments" navigate={navigate} />,
       },
     ],
   },

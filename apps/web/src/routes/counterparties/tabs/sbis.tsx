@@ -82,9 +82,16 @@ function StatusBadge({ doc }: { doc: SbisDocument }) {
     );
   }
   if (doc.intake_status === "materialized") {
+    const paid = doc.invoice?.payment_status === "paid";
+    const partial = doc.invoice?.payment_status === "partially_paid";
     return (
       <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-700">
-        Счёт создан{doc.invoice?.number ? ` №${doc.invoice.number}` : ""}
+        {paid
+          ? "Закрывающий — погашен предоплатой"
+          : partial
+            ? "Счёт частично погашен предоплатой"
+            : "Счёт к оплате"}
+        {doc.invoice?.number ? ` №${doc.invoice.number}` : ""}
       </Badge>
     );
   }
@@ -149,6 +156,9 @@ export function SbisTab({ canOperate }: Props) {
       await queryClient.invalidateQueries({ queryKey: ["cp"] });
       const extras: string[] = [];
       if (r.materialized) extras.push(`счетов создано ${r.materialized}`);
+      if (r.settled_from_prepayments) {
+        extras.push(`закрыто предоплатой ${r.settled_from_prepayments}`);
+      }
       if (r.duplicates) extras.push(`дублей ${r.duplicates}`);
       if (r.new_counterparties) extras.push(`новых контрагентов ${r.new_counterparties}`);
       toast.success(

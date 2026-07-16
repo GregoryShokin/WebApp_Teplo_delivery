@@ -167,6 +167,8 @@ class RegistryItem:
     requisites_verified: bool
     kassa_enabled: bool
     has_iiko_guid: bool
+    # Откуда карточка появилась: iiko / manual / email / sbis (бейдж в реестре).
+    origin: str | None
     unpaid_count: int
     unpaid_remaining: Decimal
     # Barter: open receivables (they owe us). Net balance = unpaid_remaining − receivable_remaining.
@@ -513,6 +515,7 @@ async def list_registry(
                 requisites_verified=bool(profile.requisites_verified) if profile else False,
                 kassa_enabled=bool(profile.kassa_enabled) if profile else False,
                 has_iiko_guid=counterparty.id in have_guid,
+                origin=counterparty.origin,
                 unpaid_count=payable_count,
                 unpaid_remaining=payable_remaining,
                 receivable_remaining=receivable_remaining,
@@ -1086,7 +1089,9 @@ async def create_counterparty(
         )
         if linked is not None:
             raise CounterpartyRegistryError("Этот поставщик iiko уже привязан к контрагенту")
-    counterparty = Counterparty(name=clean_name, inn=clean_inn, type=cp_type, status="active")
+    counterparty = Counterparty(
+        name=clean_name, inn=clean_inn, type=cp_type, status="active", origin="manual"
+    )
     session.add(counterparty)
     await session.flush()
     session.add(CounterpartyRole(counterparty_id=counterparty.id, role=role))

@@ -58,6 +58,8 @@ export type RegistryItem = {
   requisites_verified: boolean;
   kassa_enabled: boolean;
   has_iiko_guid: boolean;
+  // Откуда карточка появилась: iiko / manual / email / sbis.
+  origin: string | null;
   unpaid_count: number;
   unpaid_remaining: number;
   receivable_remaining: number;
@@ -633,6 +635,7 @@ export type SbisSyncResult = {
   new_counterparties: number;
   materialized: number;
   duplicates: number;
+  settled_from_prepayments: number;
 };
 
 export async function getSbisDocuments(matchStatus?: string): Promise<SbisDocument[]> {
