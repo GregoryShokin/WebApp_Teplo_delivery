@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -36,18 +36,32 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.models import Account, CashflowTransaction, DdsArticle, ReconciliationCase, Wallet
+from app.models import (
+    Account,
+    CashflowTransaction,
+    DdsArticle,
+    DepositBankDraft,
+    Employee,
+    ReconciliationCase,
+    SafeAllocation,
+    Wallet,
+)
 from app.services.banking import BankClient
+from app.services.banking.exceptions import BankFetchError
 from app.services.banking.ip_card_requisites import (
     load_owner_approved_ip_card_requisites,
 )
 from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.tbank import build_payment_draft_api_payload
+from app.services.bank_payment_status import classify_payment_status
 from app.services.wallets import (
     DDS_ARTICLE_TRANSFER_IN_CODE,
     DDS_ARTICLE_TRANSFER_OUT_CODE,
     SAFE_WALLET_CODE,
 )
+
+# Статья резерва Сейфа под выдачу депозита (та же, что у наличного расхода).
+DEPOSIT_PAYOUT_ARTICLE_CODE = "vydacha_depozita_sotrudniku"
 
 logger = logging.getLogger(__name__)
 
@@ -270,3 +284,199 @@ def _payer_account(settings: Any) -> str | None:
     if settings.teplo_bank_client_mode == "mock":
         return MOCK_PAYER_ACCOUNT
     return None
+
+
+# --- полный цикл: черновик → активные платежи → оплата → резерв → выплата ---------
+
+
+async def create_deposit_payout_draft(
+    session: AsyncSession,
+    *,
+    recipient_kind: str,
+    amount: Decimal,
+    purpose: str,
+    provider: str,
+    employee_id: uuid.UUID | None = None,
+    courier_deposit_transaction_id: int | None = None,
+    bank_client: BankClient | None = None,
+) -> DepositBankDraft:
+    """Завести банк-черновик под выдачу депозита (синхронно, зеркало create_advance_bank_draft).
+
+    Депозит-счёт НЕ трогается и расход НЕ книжится — деньги двигаются только после оплаты
+    черновика (транзит+резерв) и фактической выдачи. ``document_id`` — по id черновика, чтобы
+    вебхук/поллинг нашли платёж по ``provider_ref``. При сетевой/банк-ошибке черновик
+    сохраняется со статусом ``failed`` (выдачу не валим — можно отправить заново).
+    """
+    amount = _money(amount)
+    draft_id = uuid.uuid4()
+    document_id = f"teplo-deposit-{draft_id}"
+    settings = get_settings()
+    payer_account = payer_account_for(settings, provider)
+    requisites = await _bank_payout_requisites(session)
+    api_payload = build_payment_draft_api_payload(
+        document_id=document_id,
+        amount=amount,
+        purpose=purpose,
+        requisites=requisites,
+        payer_account=payer_account,
+    )
+    stored_payload = {"accountNumber": payer_account, "request": api_payload}
+
+    def _make(status: str, provider_ref: str | None, last_error: str | None) -> DepositBankDraft:
+        return DepositBankDraft(
+            id=draft_id,
+            recipient_kind=recipient_kind,
+            employee_id=employee_id,
+            courier_deposit_transaction_id=courier_deposit_transaction_id,
+            deposit_transaction_id=None,  # заполнится при выдаче
+            document_id=document_id[:64],
+            amount=amount,
+            status=status,
+            bank_provider=provider,
+            provider_ref=provider_ref,
+            payload=stored_payload,
+            last_error=last_error,
+            synced_at=datetime.now(UTC),
+        )
+
+    client = bank_client or payout_client_for(provider, session)
+    try:
+        result = await client.create_payment_draft(
+            document_id=document_id,
+            amount=amount,
+            purpose=purpose,
+            requisites=dict(requisites),
+            payer_account=payer_account,
+        )
+    except BankFetchError as exc:
+        draft = _make("failed", None, str(exc)[:500])
+        session.add(draft)
+        await session.flush()
+        return draft
+
+    status = result.status if result.status in ("created", "updated") else "created"
+    draft = _make(status, result.provider_ref, None)
+    session.add(draft)
+    await session.flush()
+    return draft
+
+
+async def apply_deposit_draft_status(
+    session: AsyncSession,
+    *,
+    draft: DepositBankDraft,
+    raw_status: str | None,
+    operation_date: date | None = None,
+    commit: bool = True,
+) -> str:
+    """Продвинуть депозитный черновик по статусу платежа (webhook Т-Банк / поллинг Сбер).
+
+    При ``paid`` заводит транзит р/с→Сейф и резерв Сейфа под выдачу (см.
+    ``_book_deposit_transit_and_reserve``). Депозит-счёт сотрудника НЕ списывается — это
+    случится при фактической выдаче (оплата резерва). Идемпотентно: row-lock сериализует
+    гонку, переход только из created/updated. В ``paid`` переходим ТОЛЬКО если транзит+резерв
+    реально заведены — иначе (кошельки не настроены) черновик остаётся created, поллинг
+    повторит, и «Выплатить» не окажется навсегда заблокированным без резерва.
+    """
+    outcome = classify_payment_status(raw_status)
+    draft = await session.get(DepositBankDraft, draft.id, with_for_update=True)
+    if draft is None:
+        return "created"
+
+    if outcome == "paid" and draft.status in ("created", "updated"):
+        if await _book_deposit_transit_and_reserve(
+            session, draft=draft, operation_date=operation_date
+        ):
+            draft.status = "paid"
+            draft.synced_at = datetime.now(UTC)
+    elif outcome == "failed" and draft.status in ("created", "updated"):
+        draft.status = "failed"
+        draft.last_error = f"Платёж отклонён банком: {raw_status}"[:500]
+        draft.synced_at = datetime.now(UTC)
+
+    if commit:
+        await session.commit()
+    return draft.status
+
+
+async def _book_deposit_transit_and_reserve(
+    session: AsyncSession,
+    *,
+    draft: DepositBankDraft,
+    operation_date: date | None = None,
+) -> bool:
+    """Транзит р/с→Сейф на сумму выдачи + резерв Сейфа под выдачу депозита.
+
+    Транзит идёт через общую ``book_deposit_bank_to_safe_transfer`` (source_id = id черновика,
+    универсальный для производственника и курьера). Затем ``SafeAllocation(reserved)`` на ту же
+    сумму со статьёй «Выдача депозита» — деньги висят под выдачу, видны в «Активных платежах»,
+    гасятся кнопкой «Выплатить депозит».
+
+    🔴 R1: резерв создаётся с ``employee_id=None`` — иначе ``pay_allocation`` завёл бы
+    ``EmployeePayout`` вида salary, и выдача депозита срезала бы зарплату сотрудника из
+    ближайшей ведомости. Получатель живёт в ``DepositBankDraft`` (employee_id/courier_tx).
+
+    Возвращает True, если транзит+резерв заведены (или уже были); False — кошельки не настроены
+    (вызывающий не переводит черновик в paid, поллинг повторит).
+    """
+    if draft.safe_allocation_id is not None:
+        return True
+
+    operation_date = operation_date or datetime.now(UTC).date()
+    reserve_purpose = _draft_reserve_purpose(await _draft_recipient_name(session, draft))
+    booked = await book_deposit_bank_to_safe_transfer(
+        session,
+        source_kind=PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
+        source_id=draft.id,
+        amount=draft.amount,
+        operation_date=operation_date,
+        purpose=reserve_purpose,
+        provider=draft.bank_provider,
+    )
+    # booked=False может значить «уже было» ИЛИ «нет кошельков». Отличаем по факту наличия
+    # проводки: если транзит есть — идём дальше к резерву; если нет — кошельки не настроены.
+    if not booked:
+        existing_transit = await session.scalar(
+            select(CashflowTransaction.id).where(
+                CashflowTransaction.source_kind == PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
+                CashflowTransaction.source_id == draft.id,
+            )
+        )
+        if existing_transit is None:
+            return False
+
+    safe_wallet = await session.scalar(
+        select(Wallet).where(Wallet.code == SAFE_WALLET_CODE, Wallet.status == "active")
+    )
+    if safe_wallet is None:
+        return False
+    article_id = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == DEPOSIT_PAYOUT_ARTICLE_CODE)
+    )
+    allocation = SafeAllocation(
+        wallet_id=safe_wallet.id,
+        amount=draft.amount,
+        amount_paid=Decimal("0"),
+        article_id=article_id,
+        counterparty_id=None,
+        employee_id=None,  # R1: НЕ привязывать сотрудника — иначе съест ЗП
+        purpose=reserve_purpose,
+        status="reserved",
+    )
+    session.add(allocation)
+    await session.flush()
+    draft.safe_allocation_id = allocation.id
+    return True
+
+
+async def _draft_recipient_name(session: AsyncSession, draft: DepositBankDraft) -> str | None:
+    if draft.employee_id is not None:
+        return await session.scalar(
+            select(Employee.full_name).where(Employee.id == draft.employee_id)
+        )
+    return None
+
+
+def _draft_reserve_purpose(recipient_name: str | None) -> str:
+    base = "Выдача депозита"
+    return f"{base} — {recipient_name}" if recipient_name else base
