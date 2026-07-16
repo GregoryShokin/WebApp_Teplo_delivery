@@ -87,6 +87,8 @@ export function PayrollAdvancesRoute() {
   });
   const availability = availabilityQuery.data ?? null;
   const available = availability?.available ?? 0;
+  // День выплаты: заработанное уходит с ведомостью — аванс за период уже недоступен.
+  const payoutReached = availability?.payout_reached ?? false;
   const issueWalletsQuery = useQuery({
     queryKey: ["advance-issue-wallets"],
     queryFn: getAdvanceIssueWallets,
@@ -97,6 +99,14 @@ export function PayrollAdvancesRoute() {
   const overEarned = amountNumber > available;
   const isLoan = kind === "loan";
   const advanceOverEarned = kind === "advance" && overEarned;
+  const availabilityReady = Boolean(issueEmployeeId) && !availabilityQuery.isLoading;
+  // Заём в день выплаты: available уже 0, но справочно показываем полное заработанное.
+  const earnedToDate = availability?.earned_to_date ?? 0;
+  const loanReference = payoutReached ? earnedToDate : available;
+  // Note-строку не дублируем, когда её перекрывает amber-box (аванс + день выплаты + сумма),
+  // и не показываем payout-note про аванс при выбранном займе (к займу неприменима).
+  const showAvailabilityNote =
+    Boolean(availability?.note) && !(payoutReached && (isLoan || advanceOverEarned));
   const isBackdated = issuedOn < todayIso();
   const throughPayroll = walletId === PAYROLL_WALLET;
   // ТК Черникова сегодняшней датой = разрешение на выдачу через кассу (не мгновенно);
@@ -377,20 +387,29 @@ export function PayrollAdvancesRoute() {
                   {issueEmployeeId ? (
                     availabilityQuery.isLoading ? (
                       <span className="text-xs text-muted-foreground">Считаем заработанное…</span>
-                    ) : availability?.note ? (
-                      <span className="text-xs text-amber-600">{availability.note}</span>
+                    ) : showAvailabilityNote ? (
+                      <span className="text-xs text-amber-600">{availability!.note}</span>
                     ) : (
                       <span className="text-xs text-muted-foreground">
                         {isLoan ? "В пределах заработанного" : "Доступно к авансу"}:{" "}
-                        <b className="font-medium text-foreground">{formatMoney(available)}</b>
+                        <b className="font-medium text-foreground">
+                          {formatMoney(isLoan ? loanReference : available)}
+                        </b>
                       </span>
                     )
                   ) : null}
-                  {advanceOverEarned ? (
-                    <div className="rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800">
-                      Превышает заработанное ({formatMoney(available)}) — выдать можно только как{" "}
-                      <b>заём</b>.
-                    </div>
+                  {availabilityReady && advanceOverEarned ? (
+                    payoutReached ? (
+                      <div className="rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800">
+                        Наступил день выплаты — заработанное уходит с ведомостью. Аванс за этот
+                        период уже недоступен{canLoan ? "; можно оформить заём" : ""}.
+                      </div>
+                    ) : (
+                      <div className="rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800">
+                        Превышает заработанное ({formatMoney(available)}) — выдать можно только как{" "}
+                        <b>заём</b>.
+                      </div>
+                    )
                   ) : null}
                 </div>
 
@@ -550,9 +569,11 @@ export function PayrollAdvancesRoute() {
                         <span className="text-right">{formatDate(issuedOn)}</span>
                       </div>
                     </div>
-                    {advanceOverEarned ? (
+                    {availabilityReady && advanceOverEarned ? (
                       <div className="rounded-md bg-amber-50 p-2.5 text-xs text-amber-800">
-                        Сумма больше заработанного — переключите на заём.
+                        {payoutReached
+                          ? "День выплаты — аванс за этот период недоступен, оформите заём."
+                          : "Сумма больше заработанного — переключите на заём."}
                       </div>
                     ) : null}
                   </div>

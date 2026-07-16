@@ -1008,6 +1008,8 @@ export type PayrollAdvanceAvailability = {
   already_advanced: number;
   available: number;
   note: string | null;
+  // true в день выплаты периода: заработанное уходит с ведомостью, аванс недоступен.
+  payout_reached: boolean;
 };
 
 export type PayrollAdvancePayoutStatus =
@@ -4292,9 +4294,16 @@ export async function deletePayrollAdjustment(id: string): Promise<void> {
 export async function getPayrollAdvanceAvailability(
   employeeId: string,
   asOf?: string,
+  // applyPayoutGate=false — для реконсиляции уже прошедшей операции: дата операции в
+  // прошлом не должна обнулять исторический аванс отсечкой «день выплаты».
+  applyPayoutGate = true,
 ): Promise<PayrollAdvanceAvailability> {
   const response = await api.get<PayrollAdvanceAvailability>("/payroll/advances/availability", {
-    params: { employee_id: employeeId, as_of: asOf || undefined },
+    params: {
+      employee_id: employeeId,
+      as_of: asOf || undefined,
+      apply_payout_gate: applyPayoutGate ? undefined : false,
+    },
   });
   return response.data;
 }
