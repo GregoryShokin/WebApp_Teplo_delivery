@@ -43,6 +43,11 @@ export const DDS_TABS: Array<{ value: DdsActiveTab; label: string; path: string 
   { value: "today", label: "Деньги сегодня", path: "/dds" },
   { value: "accounts", label: "Счета", path: "/dds/accounts" },
   { value: "ledger", label: "Журнал ДДС", path: "/dds/ledger" },
+  // Единый Журнал (98916b2b) забрал разбор операций, но кейсы владельцу — не операции:
+  // «оплата не в iiko», «найти перевод», непрошедший черновик. Их некуда было открыть —
+  // вкладку убрали, а кнопку «Требует разбора» на «Деньгах сегодня» оставили, и она
+  // редиректила обратно. Без этой строки кейсы копятся вслепую.
+  { value: "owner-review", label: "Требуют разбора", path: "/dds/owner-review" },
   { value: "counterparties", label: "Контрагенты", path: "/dds/counterparties" },
   { value: "articles", label: "Статьи ДДС", path: "/dds/articles" },
   { value: "credentials", label: "Доступы", path: "/dds/credentials" },
