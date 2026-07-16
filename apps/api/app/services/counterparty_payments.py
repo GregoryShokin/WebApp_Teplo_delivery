@@ -9,6 +9,7 @@ matched (see ``counterparty_matching``).
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -146,6 +147,15 @@ def _purpose_with_match_marker(purpose: str, draft_id: uuid.UUID) -> str:
     marker = f"[TPL-{draft_id.hex[:12].upper()}]"
     tagged = f"{normalized} {marker}"
     return tagged if len(tagged) <= 210 else normalized
+
+
+_MATCH_MARKER_RE = re.compile(r"\s*\[TPL-[0-9A-F]{12}\]", re.IGNORECASE)
+
+
+def strip_match_marker(purpose: str) -> str:
+    """Срезать метку ``[TPL-…]`` там, где назначение идёт людям (проводки, резервы),
+    а не в банк: техметка нужна только для матча черновика с операцией выписки."""
+    return _MATCH_MARKER_RE.sub("", purpose).strip()
 
 
 async def _ip_card_requisites(session: AsyncSession) -> dict[str, Any]:
@@ -361,6 +371,7 @@ async def create_standalone_payment_draft(
     )
     document_id = f"teplo-cp-{draft.id}"
     draft.document_id = document_id[:64]
+    purpose = _purpose_with_match_marker(purpose, draft.id)
 
     requisites: dict[str, Any] = dict(profile.requisites or {})
     requisites.setdefault("recipientName", counterparty.name)
@@ -549,6 +560,7 @@ async def create_expense_payment_draft(
     else:
         summary = "; ".join(line_purpose for _, _, line_purpose, _ in prepared)
         bank_purpose = f"Транш {len(prepared)} платежей: {summary}"[:210]
+    bank_purpose = _purpose_with_match_marker(bank_purpose, draft.id)
 
     try:
         # payload — запись черновика в едином (Т-Банк) формате; ``accountNumber`` = счёт
@@ -643,7 +655,7 @@ async def create_bank_safe_topup_draft(
     )
     document_id = f"teplo-cp-{draft.id}"
     draft.document_id = document_id[:64]
-    bank_purpose = text[:210]
+    bank_purpose = _purpose_with_match_marker(text[:210], draft.id)
     try:
         payload = build_payment_draft_api_payload(
             document_id=document_id,

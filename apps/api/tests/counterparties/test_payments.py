@@ -161,6 +161,28 @@ async def test_create_standalone_draft_rejects_invalid_inn_before_bank(
             )
 
 
+async def test_standalone_draft_carries_match_marker(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        supplier = await _verified_supplier(session)
+        await session.commit()
+
+        draft = await create_standalone_payment_draft(
+            session,
+            counterparty_id=supplier.id,
+            amount=Decimal("1500.00"),
+            actor_user_id=None,
+        )
+
+        assert draft.status == "created"
+        assert draft.creates_prepayment is True
+        purpose = draft.payload["paymentPurpose"]
+        assert purpose.startswith("Предоплата поставщику ООО Поставщик")
+        assert f"[TPL-{draft.id.hex[:12].upper()}]" in purpose
+        assert len(purpose) <= 210
+
+
 async def test_create_draft_rejects_mixed_counterparties(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
