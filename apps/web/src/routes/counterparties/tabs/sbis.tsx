@@ -28,6 +28,7 @@ import { MetricCard, formatDate, formatRub } from "../shared";
 
 // Человеческие подписи типов документов СБИС (Документ.Тип).
 const DOC_TYPE_LABELS: Record<string, string> = {
+  СчетВх: "Счёт на оплату",
   ДокОтгрВх: "УПД / отгрузка",
   АктСверВх: "Акт сверки",
   ДоговорВх: "Договор",

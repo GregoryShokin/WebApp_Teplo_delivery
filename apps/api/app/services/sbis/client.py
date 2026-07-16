@@ -162,6 +162,39 @@ class SbisClient:
                     return items
                 page += 1
 
+    async def list_documents_by_type(
+        self, doc_type: str, date_from: date, date_to: date | None = None
+    ) -> list[dict[str, Any]]:
+        """Документы конкретного реестра (например «СчетВх») через СБИС.СписокДокументов.
+
+        Счета живут в ОТДЕЛЬНОМ реестре и не приходят в «Входящих» — плюс на них нужно
+        отдельное право сервисного доступа (без права метод отдаёт пусто, не ошибку).
+        Элементы нормализуются к форме реестра «ПоСобытиям» ({"Документ": ...}), чтобы
+        дальше идти общим конвейером."""
+        items: list[dict[str, Any]] = []
+        async with self._client() as client:
+            page = 0
+            while True:
+                filter_payload: dict[str, Any] = {
+                    "Тип": doc_type,
+                    "ДатаС": _format_date(date_from),
+                    "Навигация": {"РазмерСтраницы": str(_PAGE_SIZE), "Страница": str(page)},
+                }
+                if date_to is not None:
+                    filter_payload["ДатаПо"] = _format_date(date_to)
+                result = await self._rpc(
+                    client, "СБИС.СписокДокументов", {"Фильтр": filter_payload}
+                )
+                documents = (result or {}).get("Документ") or (result or {}).get("Реестр") or []
+                for item in documents:
+                    if "Документ" in item and isinstance(item.get("Документ"), dict):
+                        items.append(item)
+                    else:
+                        items.append({"Документ": item, "Состояние": item.get("Состояние")})
+                if len(documents) < _PAGE_SIZE:
+                    return items
+                page += 1
+
     async def _get_raw(self, client: httpx.AsyncClient, url: str) -> httpx.Response:
         """GET по ссылке СБИС с токеном и одним переполучением на 401."""
         token = await self._fetch_token(client)

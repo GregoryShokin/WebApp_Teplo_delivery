@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 # сверки, договоры и корреспонденция учёт не двигают — остаются в зеркале. Этот же
 # набор участвует в зеркальном матчинге с iiko.
 _MATCHABLE_DOC_TYPES = {"ДокОтгрВх"}
-_MATERIALIZABLE_DOC_TYPES = {"ДокОтгрВх"}
+_MATERIALIZABLE_DOC_TYPES = {"ДокОтгрВх", "СчетВх"}
 _DATE_WINDOW_DAYS = 5
 
 
@@ -498,6 +498,9 @@ async def sync_sbis_documents(
     lookback = days or settings.sbis_sync_lookback_days
     date_from = date.today() - timedelta(days=lookback)
     items = await client.list_incoming_documents(date_from)
+    if settings.sbis_fetch_invoice_registry:
+        # Счета — отдельный реестр (и отдельное право доступа); идут общим конвейером.
+        items.extend(await client.list_documents_by_type("СчетВх", date_from))
     result.fetched = len(items)
 
     await _upsert_documents(session, items, result)
