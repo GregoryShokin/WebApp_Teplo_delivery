@@ -43,7 +43,9 @@ import {
   archiveCounterparty,
   deleteCollectionSource,
   deleteRoutingRule,
+  createMerchantRule,
   getCounterpartyCard,
+  getMerchantRules,
   getRegistry,
   getRequisitesSuggestion,
   setKassaEnabled,
@@ -394,6 +396,9 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
               </span>
             </span>
           </label>
+          {bankPrepayment ? (
+            <MerchantRulesBlock counterpartyId={card.counterparty_id} disabled={disabled} />
+          ) : null}
           <label className="flex items-start gap-3 text-sm">
             <Switch
               checked={servicePeriodRequired}
@@ -936,6 +941,82 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div className="flex flex-col gap-2">
       <Label>{label}</Label>
       {children}
+    </div>
+  );
+}
+
+
+/** Merchant-правила «назначение содержит X → этот контрагент»: без них карт-списания
+ *  (реквизитов не несут) не привязываются, и предоплатная модель не срабатывает.
+ *  Создание сразу переклассифицирует висящие списания с этим паттерном. */
+function MerchantRulesBlock({
+  counterpartyId,
+  disabled,
+}: {
+  counterpartyId: string;
+  disabled: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [pattern, setPattern] = useState("");
+  const rulesQuery = useQuery({
+    queryKey: ["cp", "merchant-rules", counterpartyId],
+    queryFn: () => getMerchantRules(counterpartyId),
+  });
+  const rules = rulesQuery.data ?? [];
+
+  const createMutation = useMutation({
+    mutationFn: () => createMerchantRule(counterpartyId, { purpose_pattern: pattern }),
+    onSuccess: async (r) => {
+      setPattern("");
+      await queryClient.invalidateQueries({ queryKey: ["cp"] });
+      await queryClient.invalidateQueries({ queryKey: ["dds"] });
+      const tail = r.backfilled
+        ? ` — привязано существующих списаний: ${r.backfilled}`
+        : "";
+      toast.success(
+        (r.updated_existing ? "Правило дополнено контрагентом" : "Правило создано") + tail,
+      );
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, "Не удалось создать правило")),
+  });
+
+  return (
+    <div className="ml-12 grid gap-2">
+      {rules.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {rules.map((rule) => (
+            <Badge key={rule.id} variant="outline" className="font-normal">
+              назначение содержит «{rule.purpose_pattern}»
+              {rule.is_active ? "" : " · выключено"}
+            </Badge>
+          ))}
+        </div>
+      ) : (
+        <span className="text-xs text-muted-foreground">
+          Правила распознавания нет — списания не будут привязываться к контрагенту.
+        </span>
+      )}
+      {!disabled ? (
+        <div className="flex items-center gap-2">
+          <Input
+            className="max-w-64"
+            placeholder="Текст в назначении (напр. mango)"
+            value={pattern}
+            onChange={(event) => setPattern(event.target.value)}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={createMutation.isPending || pattern.trim().length < 3}
+            onClick={() => createMutation.mutate()}
+          >
+            {createMutation.isPending ? (
+              <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+            ) : null}
+            Создать правило
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

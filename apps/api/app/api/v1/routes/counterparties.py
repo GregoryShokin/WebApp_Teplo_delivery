@@ -35,6 +35,7 @@ from app.services import counterparty_barter_match as barter
 from app.services import counterparty_matching as matching
 from app.services import counterparty_payments as payments
 from app.services import counterparty_registry as registry
+from app.services import merchant_rules
 from app.services import supplier_prepayments as prepayments
 from app.services import supplier_service_periods as service_periods
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
@@ -690,6 +691,70 @@ async def post_pay_invoice(
 
 
 # --- предоплаты поставщикам (дебиторка) ----------------------------------------
+
+
+class MerchantRuleCreate(BaseModel):
+    purpose_pattern: str
+    article_id: uuid.UUID | None = None
+
+
+class MerchantRuleRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    purpose_pattern: str | None
+    article_id: uuid.UUID | None
+    is_active: bool
+
+
+class MerchantRuleCreateResult(BaseModel):
+    rule: MerchantRuleRead
+    updated_existing: bool
+    backfilled: int
+
+
+@router.get(
+    "/{counterparty_id}/merchant-rules",
+    response_model=list[MerchantRuleRead],
+    dependencies=READ,
+)
+async def get_merchant_rules(
+    counterparty_id: uuid.UUID, session: Annotated[AsyncSession, Depends(get_session)]
+) -> list[MerchantRuleRead]:
+    rules = await merchant_rules.list_merchant_rules(session, counterparty_id)
+    return [MerchantRuleRead.model_validate(rule) for rule in rules]
+
+
+@router.post(
+    "/{counterparty_id}/merchant-rule",
+    response_model=MerchantRuleCreateResult,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=ADMIN,
+)
+async def post_merchant_rule(
+    counterparty_id: uuid.UUID,
+    payload: MerchantRuleCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> MerchantRuleCreateResult:
+    """Правило «назначение содержит X → контрагент» из карточки (предоплатная модель).
+
+    Сразу переклассифицирует висящие needs_review-списания с этим паттерном — их
+    предоплаты создаёт обычный хук классификатора."""
+    try:
+        result = await merchant_rules.create_merchant_rule(
+            session,
+            counterparty_id=counterparty_id,
+            purpose_pattern=payload.purpose_pattern,
+            article_id=payload.article_id,
+        )
+    except merchant_rules.MerchantRuleError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return MerchantRuleCreateResult(
+        rule=MerchantRuleRead.model_validate(result.rule),
+        updated_existing=result.updated_existing,
+        backfilled=result.backfilled,
+    )
 
 
 class OpeningPrepaymentCreate(BaseModel):

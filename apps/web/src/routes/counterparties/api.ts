@@ -403,6 +403,27 @@ export type ProfileUpdatePayload = {
   status?: string | null;
 };
 
+export type MerchantRule = {
+  id: string;
+  name: string;
+  purpose_pattern: string | null;
+  article_id: string | null;
+  is_active: boolean;
+};
+
+export async function getMerchantRules(id: string): Promise<MerchantRule[]> {
+  const response = await api.get<MerchantRule[]>(`${BASE}/${id}/merchant-rules`);
+  return response.data;
+}
+
+export async function createMerchantRule(
+  id: string,
+  payload: { purpose_pattern: string; article_id?: string | null },
+): Promise<{ rule: MerchantRule; updated_existing: boolean; backfilled: number }> {
+  const response = await api.post(`${BASE}/${id}/merchant-rule`, payload);
+  return response.data;
+}
+
 export async function updateProfile(
   id: string,
   payload: ProfileUpdatePayload,
