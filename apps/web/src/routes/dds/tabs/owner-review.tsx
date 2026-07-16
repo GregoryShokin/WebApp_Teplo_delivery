@@ -231,6 +231,11 @@ function OwnerReviewCard({
         name: newCounterpartyName,
         inn: newCounterpartyInn || null,
         type: "legal_entity",
+        // Реестровый create требует полные банковские реквизиты у official-поставщика и
+        // решение по статье ДДС. Из разбора владельца реквизитов нет — заводим неофициальным
+        // (канал оплаты уточнят в карточке), а статьёй по умолчанию берём выбранную в форме.
+        relationship: "informal",
+        default_dds_article_id: articleId !== "none" ? articleId : null,
       }),
     onSuccess: async (counterparty) => {
       await Promise.all([
@@ -460,7 +465,11 @@ function OwnerReviewCard({
                   />
                 </div>
                 <Button
-                  disabled={!newCounterpartyName.trim() || createCounterpartyMutation.isPending}
+                  disabled={
+                    !newCounterpartyName.trim() ||
+                    articleId === "none" ||
+                    createCounterpartyMutation.isPending
+                  }
                   onClick={() => createCounterpartyMutation.mutate()}
                 >
                   {createCounterpartyMutation.isPending ? (
@@ -468,6 +477,12 @@ function OwnerReviewCard({
                   ) : null}
                   Сохранить
                 </Button>
+                {articleId === "none" ? (
+                  <p className="text-xs text-muted-foreground md:col-span-3">
+                    Сначала выберите статью выше — она станет статьёй ДДС по умолчанию нового
+                    контрагента.
+                  </p>
+                ) : null}
               </div>
             ) : null}
 

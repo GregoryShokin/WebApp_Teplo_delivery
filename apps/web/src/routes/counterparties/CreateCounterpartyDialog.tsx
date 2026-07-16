@@ -101,9 +101,10 @@ export function CreateCounterpartyDialog({
   function changeRelationship(nextRelationship: string) {
     setRelationship(nextRelationship);
     if (nextRelationship !== "official") {
+      // Набранные реквизиты НЕ стираем: человек мог переключить тип, только чтобы
+      // прочитать подсказку, и вернуться. В payload для неофициала они всё равно не
+      // уходят (фильтр на сабмите) — терять ввод до отправки формы незачем.
       setActiveTab("general");
-      setRequisites(emptyRequisites());
-      setRequisitesVerified(false);
     }
   }
 
@@ -158,7 +159,9 @@ export function CreateCounterpartyDialog({
         : {};
       return createCounterparty({
         name: name.trim(),
-        inn: isOfficial ? cleanRequisites.inn || null : null,
+        // ИНН уходит и у неофициала (если ввели): это ключ идентификации для синков
+        // iiko/почты/ЭДО, а не банковский реквизит — backend хранит его для любого типа.
+        inn: (requisites.inn ?? "").trim() || null,
         type,
         relationship,
         default_dds_article_id: ddsArticleId || null,

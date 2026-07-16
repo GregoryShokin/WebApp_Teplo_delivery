@@ -311,6 +311,9 @@ export async function getRegistry(params?: {
   category_id?: string;
   include_archived?: boolean;
   kassa_only?: boolean;
+  // По умолчанию backend отдаёт только поставщиков (пикеры накладных/платежей).
+  // true — полный список с банками/налоговой: страница реестра и справочник ДДС.
+  include_non_suppliers?: boolean;
 }): Promise<RegistryItem[]> {
   const response = await api.get<RegistryItem[]>(`${BASE}/registry`, { params });
   return response.data;
@@ -325,7 +328,8 @@ export type CounterpartyDirectoryItem = {
 
 /** Один справочник для реестра, фильтров и классификации ДДС. */
 export async function getCounterpartyDirectory(): Promise<CounterpartyDirectoryItem[]> {
-  const items = await getRegistry();
+  // Классификации ДДС нужны и не-поставщики: комиссия банка, налоговая и т.п.
+  const items = await getRegistry({ include_non_suppliers: true });
   return items.map((item) => ({
     id: item.counterparty_id,
     name: item.name,

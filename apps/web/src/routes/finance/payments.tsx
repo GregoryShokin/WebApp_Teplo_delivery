@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { apiErrorMessage } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 
 import { SbisTab } from "@/routes/counterparties/tabs/sbis";
@@ -39,7 +40,7 @@ function methodLabel(row: PaymentRow): string {
 export function FinancePaymentsRoute(_props: { onNavigate?: (path: string) => void }) {
   const [scope, setScope] = useState<"active" | "all" | "edo">("active");
   const permissions = usePermissions();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["finance-payments", scope],
     queryFn: () => getPayments(scope === "edo" ? "active" : scope),
     enabled: scope !== "edo",
@@ -100,6 +101,16 @@ export function FinancePaymentsRoute(_props: { onNavigate?: (path: string) => vo
               <TableRow>
                 <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
                   <Loader2 className="mr-2 inline animate-spin" size={16} /> Загрузка…
+                </TableCell>
+              </TableRow>
+            ) : isError ? (
+              // Ошибка запроса (403/500/сеть) — не выдаём за «платежей нет».
+              <TableRow>
+                <TableCell colSpan={6} className="py-10 text-center text-destructive">
+                  Не удалось загрузить платежи: {apiErrorMessage(error, "ошибка запроса")}.{" "}
+                  <button className="underline" onClick={() => refetch()} type="button">
+                    Повторить
+                  </button>
                 </TableCell>
               </TableRow>
             ) : items.length === 0 ? (

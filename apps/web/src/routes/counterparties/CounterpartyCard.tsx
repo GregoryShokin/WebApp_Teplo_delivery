@@ -187,7 +187,14 @@ function CardBody({
             приходят его документы (источники + маршрутизация iiko) и бартерное сальдо.
             Накладные тут не показываем: карточка отвечает на «кто это», а не «сколько ему
             должны» — для этого есть «Накладные». */}
-        <TabsContent value="general" className="mt-5 space-y-8">
+        {/* forceMount + hidden: без него Radix РАЗМОНТИРУЕТ неактивную вкладку — набранные
+            реквизиты пропадали при переключении, а cleanup useReportDirty снимал dirty-флаг,
+            и гард «Закрыть без сохранения?» молча пропускал потерю правок. */}
+        <TabsContent
+          value="general"
+          forceMount
+          className="mt-5 space-y-8 data-[state=inactive]:hidden"
+        >
           <ProfileSection card={card} canAdmin={canAdmin} />
           <CollectionSourcesSection card={card} canAdmin={canAdmin} />
           {card.aliases.some((alias) => alias.source === "iiko") ? (
@@ -197,10 +204,14 @@ function CardBody({
             <BarterSection counterpartyId={card.counterparty_id} canOperate={canOperate} />
           ) : null}
         </TabsContent>
-        <TabsContent value="requisites" className="mt-5">
+        <TabsContent
+          value="requisites"
+          forceMount
+          className="mt-5 data-[state=inactive]:hidden"
+        >
           <RequisitesSection card={card} canAdmin={canAdmin} />
         </TabsContent>
-        <TabsContent value="manager" className="mt-5">
+        <TabsContent value="manager" forceMount className="mt-5 data-[state=inactive]:hidden">
           <ManagerSection card={card} canAdmin={canAdmin} />
         </TabsContent>
       </Tabs>
@@ -256,7 +267,9 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     mutationFn: () =>
       updateProfile(card.counterparty_id, {
         name: relationship === "official" ? undefined : name.trim(),
-        inn: relationship === "official" ? undefined : null,
+        // ИНН эта форма НЕ трогает (не слать даже null: backend понял бы это как «стереть»).
+        // Он живёт в «Реквизитах» у официальных, а у неофициалов хранится как пришёл из
+        // iiko/ЭДО — по нему синки узнают контрагента, затирание плодит дубли.
         type,
         relationship,
         default_dds_article_id: ddsArticleId || null,
@@ -282,8 +295,9 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
         ? "Выберите статью ДДС или отметьте, что её нет"
         : null;
   const canSave = !saveBlockedReason;
-  // Уход из «официального» стирает ИНН и реквизиты (правило реестра: они относятся только
-  // к банковскому каналу). Предупреждаем ДО сохранения — иначе данные исчезают молча.
+  // Уход из «официального» стирает банковские реквизиты (правило реестра: они относятся
+  // только к банковскому каналу; ИНН сохраняется — по нему синки узнают контрагента).
+  // Предупреждаем ДО сохранения — иначе данные исчезают молча.
   const leavingOfficialWithRequisites =
     profile?.relationship === "official" &&
     relationship !== "official" &&
@@ -292,9 +306,11 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     profile?.default_service_period_offset_months != null
       ? String(profile.default_service_period_offset_months)
       : "0";
+  // Сравниваем ТО, что уйдёт при сохранении (trim) — иначе хвостовой пробел оставляет
+  // форму «вечно несохранённой» после успешного сохранения и даёт ложный гард закрытия.
   const dirty =
     relationship !== (profile?.relationship ?? "official") ||
-    (relationship !== "official" && name !== card.name) ||
+    (relationship !== "official" && name.trim() !== card.name) ||
     type !== card.type ||
     ddsArticleId !== (profile?.default_dds_article_id ?? "") ||
     confirmNoDdsArticle !== (profile?.confirm_no_dds_article ?? false) ||
@@ -331,8 +347,9 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
           <p className="text-xs text-muted-foreground">{RELATIONSHIP_HINTS[relationship]}</p>
           {leavingOfficialWithRequisites ? (
             <p className="text-xs font-medium text-amber-700">
-              При сохранении ИНН и банковские реквизиты будут удалены: они относятся только к
-              официальному каналу оплаты. Вернуть их можно будет только вводом заново.
+              При сохранении банковские реквизиты будут удалены: они относятся только к
+              официальному каналу оплаты. Вернуть их можно будет только вводом заново. ИНН
+              сохранится — по нему счета из iiko и ЭДО находят эту карточку.
             </p>
           ) : null}
           {profile?.relationship_manual ? (
@@ -469,10 +486,11 @@ function ManagerSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.counterparty_id]);
 
+  // trim — как в payload сохранения, иначе пробел в конце «навечно» подсвечивает dirty.
   useReportDirty(
     "manager",
-    managerName !== (card.profile?.manager_name ?? "") ||
-      managerPhone !== (card.profile?.manager_phone ?? ""),
+    managerName.trim() !== (card.profile?.manager_name ?? "") ||
+      managerPhone.trim() !== (card.profile?.manager_phone ?? ""),
   );
 
   const mutation = useMutation({
@@ -576,7 +594,8 @@ function RequisitesSection({ card, canAdmin }: { card: CardData; canAdmin: boole
     verified !== Boolean(profile?.requisites_verified) ||
       COUNTERPARTY_REQUISITE_FIELDS.some(({ key }) => {
         const saved = (profile?.requisites as Record<string, unknown> | undefined)?.[key];
-        return (values[key] ?? "") !== (saved != null ? String(saved) : "");
+        // trim — как в payload сохранения, иначе пробел держит форму «несохранённой».
+        return (values[key] ?? "").trim() !== (saved != null ? String(saved) : "");
       }),
   );
   // Отметку «проверены» нельзя ставить на неполном наборе — это же правило стоит на
@@ -729,13 +748,19 @@ function CollectionSourcesSection({ card, canAdmin }: { card: CardData; canAdmin
           </div>
           <Input
             className="flex-1"
-            placeholder="email / @handle / id"
+            // Канал СБИС ключуется по типу источника, значение не нужно: заставлять
+            // выдумывать текст = мусор в глобальной проверке уникальности (409 между
+            // карточками на одинаковых придуманных значениях).
+            placeholder={kind === "sbis" ? "не требуется — канал по ИНН" : "email / @handle / id"}
             value={value}
             onChange={(event) => setValue(event.target.value)}
           />
           <Button
             variant="outline"
-            disabled={addMutation.isPending || (kind !== "manual" && !value.trim())}
+            disabled={
+              addMutation.isPending ||
+              (kind !== "manual" && kind !== "sbis" && !value.trim())
+            }
             onClick={() => addMutation.mutate()}
           >
             Добавить
@@ -749,7 +774,7 @@ function CollectionSourcesSection({ card, canAdmin }: { card: CardData; canAdmin
 function RoutingSection({ card, canAdmin }: { card: CardData; canAdmin: boolean }) {
   const queryClient = useQueryClient();
   const registryQuery = useQuery({
-    queryKey: ["cp", "registry", "all"],
+    queryKey: ["cp", "registry", "suppliers"],
     queryFn: () => getRegistry(),
   });
   const [prefix, setPrefix] = useState("");

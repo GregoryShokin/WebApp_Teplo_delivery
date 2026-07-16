@@ -408,13 +408,25 @@ export function SbisTab({ canOperate }: Props) {
         ) : null}
       </div>
 
-      <DataTable
-        columns={columns}
-        rows={visible}
-        isLoading={documentsQuery.isLoading}
-        getRowKey={(doc) => doc.id}
-        emptyMessage="Документов СБИС нет — нажмите «Обновить из СБИС» или дождитесь автосинка."
-      />
+      {documentsQuery.isError ? (
+        // Ошибка запроса (403/500/сеть) — НЕ маскируем под «документов нет»: пустой
+        // реестр и недоступный реестр — разные состояния, владелец должен видеть разницу.
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          Не удалось загрузить реестр ЭДО:{" "}
+          {apiErrorMessage(documentsQuery.error, "ошибка запроса")}.{" "}
+          <button className="underline" onClick={() => documentsQuery.refetch()} type="button">
+            Повторить
+          </button>
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={visible}
+          isLoading={documentsQuery.isLoading}
+          getRowKey={(doc) => doc.id}
+          emptyMessage="Документов СБИС нет — нажмите «Обновить из СБИС» или дождитесь автосинка."
+        />
+      )}
     </div>
   );
 }

@@ -44,8 +44,16 @@ export function RegistryTab({
   const categoriesQuery = useQuery({ queryKey: ["cp", "categories"], queryFn: getLedgerCategories });
   const needsSetupQuery = useQuery({ queryKey: ["cp", "needs-setup"], queryFn: getNeedsSetup });
   const registryQuery = useQuery({
-    queryKey: ["cp", "registry", categoryId],
-    queryFn: () => getRegistry({ category_id: categoryId === ALL ? undefined : categoryId }),
+    // «full» в ключе: RoutingSection карточки грузит этот же реестр БЕЗ не-поставщиков —
+    // без различия в ключе они бы делили кэш с разными данными.
+    queryKey: ["cp", "registry", "full", categoryId],
+    // Страница реестра — единственный UI управления ВСЕМИ карточками, включая
+    // банк/налоговую (пикеры накладных и платежей получают только поставщиков).
+    queryFn: () =>
+      getRegistry({
+        category_id: categoryId === ALL ? undefined : categoryId,
+        include_non_suppliers: true,
+      }),
   });
 
   const queryClient = useQueryClient();

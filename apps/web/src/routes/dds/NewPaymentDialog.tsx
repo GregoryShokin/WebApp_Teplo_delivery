@@ -289,6 +289,16 @@ export function NewPaymentDialog({
       ? article.counterparties![0].counterparty_id
       : "";
   }
+  /** Период сеем ТОЛЬКО от реально предвыбранного контрагента (ровно один закреплённый).
+   *  Иначе (2+ закреплённых, выбран «Без контрагента») строка уносила бы в черновик
+   *  скрытый период от первого попавшегося — поля периода при этом даже не показываются. */
+  function presetServicePeriod(article: NewPaymentArticle) {
+    const counterpartyId = presetCounterparty(article);
+    const counterparty = article.counterparties?.find(
+      (item) => item.counterparty_id === counterpartyId,
+    );
+    return defaultServicePeriod(counterparty?.default_service_period_offset_months);
+  }
   function changeExpenseArticle(key: string, articleId: string) {
     const article = expenseArticles.find((item) => item.id === articleId) ?? null;
     const counterpartyId = presetCounterparty(article);
@@ -321,23 +331,13 @@ export function NewPaymentDialog({
                   ...row,
                   articleId: article.id,
                   counterpartyId: presetCounterparty(article),
-                  ...defaultServicePeriod(
-                    article.counterparties?.[0]?.default_service_period_offset_months,
-                  ),
+                  ...presetServicePeriod(article),
                 }
               : row,
           );
         }
         const next = emptyExpenseRow(article.id, presetCounterparty(article));
-        return [
-          ...prev,
-          {
-            ...next,
-            ...defaultServicePeriod(
-              article.counterparties?.[0]?.default_service_period_offset_months,
-            ),
-          },
-        ];
+        return [...prev, { ...next, ...presetServicePeriod(article) }];
       });
       return;
     }
