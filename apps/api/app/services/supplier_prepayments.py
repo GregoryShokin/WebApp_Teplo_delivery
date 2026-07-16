@@ -109,6 +109,46 @@ async def create_supplier_prepayment(
     return prepayment
 
 
+async def create_opening_prepayment(
+    session: AsyncSession,
+    *,
+    counterparty_id: uuid.UUID,
+    amount: Decimal,
+    kind: str = "other",
+    note: str | None = None,
+    actor_user_id: uuid.UUID | None = None,
+) -> SupplierPrepayment:
+    """Начальный остаток «денег у поставщика» (рекламный кабинет, депозит ЛК и т.п.).
+
+    Деньги ушли ИСТОРИЧЕСКИ, до внедрения системы — кошелёк не трогаем и
+    CashflowTransaction НЕ создаём (иначе задвоили бы расход в ДДС). Дальше остаток
+    живёт как обычная дебиторка: закрывающие УПД гасят его автоматически, реестр
+    показывает в «Предоплатах». Суммы ведём с НДС (gross) — как оплаты и счета."""
+    cp = await session.get(Counterparty, counterparty_id)
+    if cp is None:
+        raise CounterpartyPaymentError("Контрагент не найден")
+    amt = _money(amount)
+    if amt <= 0:
+        raise CounterpartyPaymentError("Сумма начального остатка должна быть больше нуля")
+
+    prepayment = SupplierPrepayment(
+        counterparty_id=counterparty_id,
+        kind=kind,
+        wallet_id=None,
+        amount=amt,
+        amount_settled=Decimal("0.00"),
+        status="open",
+        cashflow_transaction_id=None,
+        note=note or "Начальный остаток (до внедрения системы)",
+        created_by_user_id=actor_user_id,
+    )
+    session.add(prepayment)
+    await session.flush()
+    await session.commit()
+    await session.refresh(prepayment)
+    return prepayment
+
+
 async def refund_counterparty_prepayments(
     session: AsyncSession,
     *,

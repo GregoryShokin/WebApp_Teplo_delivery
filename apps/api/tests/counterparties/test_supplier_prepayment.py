@@ -71,3 +71,63 @@ async def test_settle_open_prepayment_allocates(
         await session.refresh(pre)
         assert pre.amount_settled == Decimal("600.00")
         assert pre.status == "partially_settled"
+
+
+async def test_opening_prepayment_no_cashflow_and_upd_settling_keeps_running_balance(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Баланс «денег у поставщика» = Σ пополнений − Σ реализаций (формула владельца):
+    остаток 5к + оплата 38к − закрывающий УПД 33к = 10к. Начальный остаток денег не двигает."""
+    from sqlalchemy import func as sa_func
+    from sqlalchemy import select
+
+    from app.models import CashflowTransaction
+    from app.services.supplier_prepayments import (
+        auto_settle_invoice_from_open_prepayments,
+        create_opening_prepayment,
+    )
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Синапсис", inn="3525357535")
+        # Начальный остаток кабинета: 5 000 (историческая переплата) — без ДДС-проводки.
+        cashflows_before = await session.scalar(
+            select(sa_func.count()).select_from(CashflowTransaction)
+        )
+        opening = await create_opening_prepayment(
+            session, counterparty_id=cp.id, amount=Decimal("5000.00"), kind="ad"
+        )
+        cashflows_after = await session.scalar(
+            select(sa_func.count()).select_from(CashflowTransaction)
+        )
+        assert cashflows_after == cashflows_before  # денег не двигали
+        assert opening.wallet_id is None and opening.cashflow_transaction_id is None
+
+        # Новая оплата 38 000 (упрощённо тоже как открытая предоплата в дебиторке).
+        top_up = SupplierPrepayment(
+            counterparty_id=cp.id,
+            kind="ad",
+            amount=Decimal("38000.00"),
+            amount_settled=Decimal("0.00"),
+            status="open",
+        )
+        session.add(top_up)
+        await session.flush()
+
+        # Закрывающий УПД на 33 000 гасит дебиторку (FIFO: сначала начальный остаток).
+        invoice = await make_invoice(
+            session, counterparty_id=cp.id, amount="33000.00", number="УПД-333", source="sbis"
+        )
+        settled = await auto_settle_invoice_from_open_prepayments(session, invoice)
+        await session.commit()
+        assert settled == Decimal("33000.00")
+
+        await session.refresh(opening)
+        await session.refresh(top_up)
+        balance = (opening.amount - opening.amount_settled) + (
+            top_up.amount - top_up.amount_settled
+        )
+        assert balance == Decimal("10000.00")  # 5к + 38к − 33к
+        assert opening.status == "settled"  # начальный остаток съеден целиком
+        assert top_up.status == "partially_settled"
+        await session.refresh(invoice)
+        assert invoice.payment_status == "paid"  # УПД закрыт дебиторкой, к оплате не попал

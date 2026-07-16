@@ -690,6 +690,40 @@ async def post_pay_invoice(
 # --- предоплаты поставщикам (дебиторка) ----------------------------------------
 
 
+class OpeningPrepaymentCreate(BaseModel):
+    counterparty_id: uuid.UUID
+    amount: float
+    kind: str = "other"
+    note: str | None = None
+
+
+@router.post(
+    "/prepayments/opening", response_model=PrepaymentRead, status_code=status.HTTP_201_CREATED
+)
+async def post_create_opening_prepayment(
+    payload: OpeningPrepaymentCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PrepaymentRead:
+    """Начальный остаток «денег у поставщика» (рекламный кабинет, депозит ЛК).
+
+    Деньги ушли исторически — расход в ДДС НЕ создаётся, только запись дебиторки.
+    Дальше остаток гасится закрывающими УПД как обычная предоплата."""
+    ensure_permission(actor, "counterparties.admin")
+    try:
+        prepayment = await prepayments.create_opening_prepayment(
+            session,
+            counterparty_id=payload.counterparty_id,
+            amount=Decimal(str(payload.amount)),
+            kind=payload.kind,
+            note=payload.note,
+            actor_user_id=actor.user_id,
+        )
+    except payments.CounterpartyPaymentError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return PrepaymentRead.model_validate(prepayment)
+
+
 @router.post("/prepayments", response_model=PrepaymentRead, status_code=status.HTTP_201_CREATED)
 async def post_create_prepayment(
     payload: PrepaymentCreate,
